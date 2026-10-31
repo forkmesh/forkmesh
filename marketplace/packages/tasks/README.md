@@ -10,5 +10,7 @@ The package is discovered exclusively through `marketplace/catalog.json`.
 Removing that catalog entry removes its staged dashboard page and navigation.
 
 Task boards can be filtered by assignee, and tasks can carry images shown on
-the desktop and the web. On the desktop, Tasks answers the top search box
-(`desktop/src/MainWindowTasks.cpp`, `desktop/src/MainWindowSearch.cpp`).
+the desktop and the web. On the desktop, the Tasks page is its own module
+(`content/desktop/TasksPage.cpp`, built as `tasks.so`) and answers the top
+search box from the board it holds; the catalog and the signed relay requests
+stay in the app (`desktop/src/OrganizationTaskStore.cpp`).

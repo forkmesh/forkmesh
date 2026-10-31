@@ -22,6 +22,9 @@ function escapeHtml(value) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
   })[char]);
 }
+function repoKey(repo) {
+  return `${repo.owner || ""}/${repo.name || ""}`;
+}
 function repoRawUrl(repo, path) {
   return `/api/repo/${repo.owner}/${repo.name}/raw?path=${encodeURIComponent(path)}`;
 }

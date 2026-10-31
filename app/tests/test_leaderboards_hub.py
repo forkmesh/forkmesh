@@ -75,6 +75,16 @@ def test_contributor_board_resolves_human_account_names():
     assert 'r.get("display_name", "")' in network
 
 
+def test_contributor_board_hides_private_profiles_behind_a_label():
+    network = ENTRY.split("async def network_leaderboards", 1)[1].split(
+        "# --- Referral program", 1)[0]
+    lookup = network.index('await _account_row(env, label)')
+    assert network.index('contrib_rows = await') < lookup
+    assert '.get("profile_private")' in network[lookup:]
+    assert lookup < network.index('"Private contributor"') < network.index(
+        '"contributors": contrib_board')
+
+
 def test_leaderboard_cards_use_theme_aware_surface_tokens():
     assert "var(--surface" not in PAGE
     assert "var(--card)" in PAGE

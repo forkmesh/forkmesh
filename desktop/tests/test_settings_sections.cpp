@@ -57,6 +57,12 @@ QWidget *body(const QList<QWidget *> &controls, int filler)
     return widget;
 }
 
+QString litText(const SettingsSectionsView &view)
+{
+    const auto *label = qobject_cast<const QLabel *>(view.litHeading());
+    return label && label->property("settingsLit").toBool() ? label->text() : QString();
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -134,10 +140,17 @@ int main(int argc, char **argv)
           "the page opens at its first section, which is revealed");
     check(!revealed.contains(3), "a section far down the page is not revealed yet");
 
+    check(litText(view) == QStringLiteral("Profile"),
+          "the heading of the section lit in the list is lit on the page");
+    QWidget *profileTitle = view.litHeading();
+
     view.setCurrentIndex(3);
     settle(60);
     check(view.currentIndex() == 3 && bar->value() == dataFrame->y() && nav->currentRow() == 3,
           "setCurrentIndex scrolls the section's heading to the top and lights its entry");
+    check(litText(view) == QStringLiteral("Data") && profileTitle &&
+              !profileTitle->property("settingsLit").toBool(),
+          "jumping moves the lit heading on the page with the list");
     check(revealed.contains(3), "jumping to a section reveals it");
     check(storageList->height() >= storageList->sizeHint().height() - 1,
           "a list on the long page keeps its preferred height");
@@ -435,6 +448,8 @@ int main(int argc, char **argv)
     check(openHeight >= closedHeight * 3 && paged.currentSubSection() == 0 &&
               pagedNav->currentRow() == 1,
           "the section being read opens its sub-sections in the list and lights the first");
+    check(litText(paged) == QStringLiteral("GENERATE SSH KEY"),
+          "the page lights the heading of the sub-section lit in the list");
     check(pagedNav->visualItemRect(pagedNav->item(0)).height() == closedHeight,
           "the other sections stay folded in the list");
 
@@ -442,6 +457,42 @@ int main(int argc, char **argv)
     settle(30);
     check(paged.currentIndex() == 1 && paged.currentSubSection() == 1,
           "scrolling lights the sub-section being read");
+    check(litText(paged) == QStringLiteral("PUBLIC KEY"),
+          "scrolling moves the lit heading on the page to the sub-section being read");
+
+    auto *sticky = paged.findChild<QWidget *>(QStringLiteral("settingsStickyHeader"));
+    auto *stickyTitle = paged.findChild<QLabel *>(QStringLiteral("settingsStickyTitle"));
+    auto *stickySub = paged.findChild<QLabel *>(QStringLiteral("settingsStickySub"));
+    check(sticky && stickyTitle && stickySub && sticky->isVisible() && sticky->y() == 0 &&
+              stickyTitle->text() == QStringLiteral("Keys") && stickySub->isVisible() &&
+              stickySub->text() == QStringLiteral("PUBLIC KEY") &&
+              stickySub->property("settingsLit").toBool(),
+          "the heading and sub-heading being read stay pinned to the top of the page");
+
+    const QList<QWidget *> pagedFrames =
+        pagedScroll->widget()->findChildren<QWidget *>(QStringLiteral("settingsSection"));
+    QWidget *keysFrame = pagedFrames.value(1);
+    QWidget *lateFrame = pagedFrames.value(2);
+    pagedBar->setValue(lateFrame->y() - 30);
+    settle(30);
+    check(paged.currentIndex() == 1 && sticky->isVisible() && sticky->y() < 0 &&
+              sticky->y() + sticky->height() <= 30,
+          "the next section's heading pushes the pinned heading up and out");
+
+    pagedBar->setValue(publicCard->mapTo(pagedScroll->widget(), QPoint(0, 0)).y() + 4);
+    settle(30);
+    const QPoint titlePoint(sticky->width() / 2, stickyTitle->geometry().center().y());
+    QMouseEvent stickyPress(QEvent::MouseButtonPress, QPointF(titlePoint),
+                            sticky->mapToGlobal(QPointF(titlePoint)), Qt::LeftButton,
+                            Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent stickyRelease(QEvent::MouseButtonRelease, QPointF(titlePoint),
+                              sticky->mapToGlobal(QPointF(titlePoint)), Qt::LeftButton,
+                              Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(sticky, &stickyPress);
+    QApplication::sendEvent(sticky, &stickyRelease);
+    settle(60);
+    check(pagedBar->value() == keysFrame->y() && !sticky->isVisible(),
+          "clicking the pinned heading goes back to the top of its section");
 
     const int activatedBeforeSub = activated;
     int pagedActivated = 0;
@@ -459,8 +510,9 @@ int main(int argc, char **argv)
     QApplication::sendEvent(pagedNav->viewport(), &subRelease);
     settle(60);
     const int usageY = usageCard->mapTo(pagedScroll->widget(), QPoint(0, 0)).y();
-    check(paged.currentSubSection() == 2 && pagedBar->value() <= usageY &&
-              pagedBar->value() >= usageY - 20 && pagedActivated == 1 &&
+    const int pinnedBottom = sticky->isVisible() ? sticky->y() + sticky->height() : 0;
+    check(paged.currentSubSection() == 2 && pagedBar->value() + pinnedBottom <= usageY &&
+              pagedBar->value() + pinnedBottom >= usageY - 20 && pagedActivated == 1 &&
               activated == activatedBeforeSub,
           "clicking a sub-section in the list scrolls to its card and counts as a choice");
 

@@ -162,6 +162,12 @@ int main(int argc, char **argv)
     QJsonObject big;
     big.insert(QStringLiteral("command"), QString(300, QLatin1Char('x')));
     check(toolLine(QStringLiteral("Bash"), big).size() < 220, "long tool arguments are clipped");
+    const QJsonObject ask = QJsonDocument::fromJson(
+        R"({"questions":[{"header":"Scope","question":"Which scope?\nPick one.","options":[{"label":"A"}]},)"
+        R"({"question":"Ship today?","options":[{"label":"Yes"}]}]})").object();
+    same(toolLine(QStringLiteral("AskUserQuestion"), ask),
+         QStringLiteral("\n[AskUserQuestion Which scope? Pick one. \u00B7 Ship today?]\n"),
+         "a question tool shows the questions it asks, not its JSON");
 
     if (failures == 0)
         std::cout << "agent log text tests passed\n";

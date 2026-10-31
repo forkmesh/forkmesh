@@ -40,6 +40,7 @@ const sessionHeaders = (json) => ({ accept: "application/json", ...(json ? { "co
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const formatCount = (value) => String(value);
 const readDashboardTheme = () => "dark";
+const seasonActive = () => false;
 const $$ = () => [];
 globalThis.setTimeout = () => 0;
 %s

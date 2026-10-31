@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import app_runtime  # noqa: E402
+import instance_sidebar  # noqa: E402
 from test_repository_fork_tree import run  # noqa: E402
 
 RUNTIME = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
@@ -29,8 +30,9 @@ def _sidebar_tops(html):
     return re.findall(r'data-sidebar-repo="([^"]+)"(?! data-sidebar-repo-fork)', html)
 
 
-def _render(setting):
-    return run(MORE_REPOSITORIES + "api.state.sidebarSetting = %s;\n" % json.dumps(setting) + """
+def _render(setting, loading=False):
+    return run(MORE_REPOSITORIES + "api.state.repositoriesLoading = %s;\n" % ("true" if loading else "false")
+               + "api.state.sidebarSetting = %s;\n" % json.dumps(setting) + """
 api.renderSidebarRepositories(api.state.session);
 api.renderHomeRepositories();
 out.sidebar = sidebar.innerHTML;
@@ -82,24 +84,35 @@ def _setting(monkeypatch, doc):
         return {"doc": doc} if doc is not None else None
     monkeypatch.setattr(app_runtime, "d1_first", d1_first, raising=False)
     monkeypatch.setattr(app_runtime, "json", json, raising=False)
+    monkeypatch.setattr(app_runtime, "instance_sidebar", instance_sidebar, raising=False)
     return asyncio.run(app_runtime.Default._instance_sidebar_setting(
         SimpleNamespace(env=SimpleNamespace())))
 
 
 def test_the_instance_document_carries_a_cleaned_setting(monkeypatch):
-    assert _setting(monkeypatch, None) == {"pinned": [], "forks": 3}
-    assert _setting(monkeypatch, "not json") == {"pinned": [], "forks": 3}
-    assert _setting(monkeypatch, "[1, 2]") == {"pinned": [], "forks": 3}
+    assert _setting(monkeypatch, None) == {"pinned": [], "forks": 3, "devto": ""}
+    assert _setting(monkeypatch, "not json") == {"pinned": [], "forks": 3, "devto": ""}
+    assert _setting(monkeypatch, "[1, 2]") == {"pinned": [], "forks": 3, "devto": ""}
     pinned = ["Alice/Widget", "alice/widget", " lamp ", "", "a/b/c", "x" * 162]
     pinned += ["r%d" % n for n in range(20)]
     cleaned = _setting(monkeypatch, json.dumps({"pinned": pinned, "forks": 99}))
     assert cleaned["pinned"][:2] == ["alice/widget", "lamp"]
     assert len(cleaned["pinned"]) == 10
     assert _setting(monkeypatch, json.dumps({"pinned": "acme/app"})) == {
-        "pinned": [], "forks": 3}
+        "pinned": [], "forks": 3, "devto": ""}
     assert cleaned["forks"] == 50
     assert _setting(monkeypatch, json.dumps({"forks": -4}))["forks"] == 0
     assert _setting(monkeypatch, json.dumps({"forks": "two"}))["forks"] == 3
     route = RUNTIME.split("    async def _route(self, request, url):", 1)[1]
     assert '"sidebar": await self._instance_sidebar_setting(),' in route
     assert "## Pinned repositories and fork count" in DOCS
+
+
+def test_a_bare_name_pins_the_original_not_a_fork_with_that_name():
+    out = _render({"pinned": ["widget"], "forks": 3})
+    assert _sidebar_tops(out["sidebar"]) == ["alice/widget"]
+
+
+def test_an_unmatched_pin_waits_while_the_catalog_loads():
+    out = _render({"pinned": ["nothing/here"], "forks": 3}, loading=True)
+    assert out["sidebar"] == ""

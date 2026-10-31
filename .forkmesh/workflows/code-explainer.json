@@ -32,8 +32,9 @@
                 "avatar": "sage",
                 "description": "Explains the code from evidence on demand and performs a weekly, review-ready documentation-drift pass grounded in current behavior and tests.",
                 "focus": "Explain & Keep Docs Current",
-                "improvementCycles": 3,
+                "improvementCycles": 4,
                 "improvementNotes": [
+                    "When one surface makes a security or privacy claim, search for the same claim's wording in every app's UI text before editing. Here that showed the drift was limited to one file and that no product code needed to change.",
                     "Before documenting a \"now hidden\" fix, check every way a reader can still reach the data (names, raw commit ids, listings that publish ids), not only the ref names the commit message mentions.",
                     "When auditing a canonical document, read its raw bytes (`od -c` on the tail) and resolve every link target before reading the prose — this run's two highest-impact defects were a stray tag and a 404, both invisible in rendered or prose-level review.",
                     "Before reporting a suspicious value in a committed config file as a defect, find the code that writes that field — runtime state often lives in QSettings rather than the repo, and the zero is expected."
@@ -95,6 +96,6 @@
             "y": 0
         }
     ],
-    "updatedAtMs": 1791352814458,
+    "updatedAtMs": 1793393430132,
     "version": 1
 }

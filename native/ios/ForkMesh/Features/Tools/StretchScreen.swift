@@ -67,9 +67,11 @@ final class StretchVoice: StretchSpeaker {
             synthesizer.stopSpeaking(at: .immediate)
         }
         PromptDictation.yieldOverhearing()
-        let session: AVAudioSession = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: OtherAppCall.duckingOptions)
-        try? session.setActive(true)
+        if !OtherAppCall.ownCall {
+            let session: AVAudioSession = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .spokenAudio, options: OtherAppCall.duckingOptions)
+            try? session.setActive(true)
+        }
         synthesizer.speak(AppleSpeechEngine.utterance(text, voiceId: voiceId, rate: rate, pitch: 1))
     }
 
@@ -84,7 +86,7 @@ final class StretchVoice: StretchSpeaker {
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
         guard !PromptDictation.isListening else { return }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        OtherAppCall.deactivateSession()
     }
 }
 

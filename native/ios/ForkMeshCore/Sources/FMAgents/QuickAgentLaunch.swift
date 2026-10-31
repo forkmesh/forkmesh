@@ -140,10 +140,19 @@ public enum QuickLaunchOutcome: Equatable, Sendable {
 public protocol QuickLaunchDesktop: AnyObject {
     var desktopName: String { get }
     var desktopDetail: String { get }
+    var desktopNames: [String] { get }
+    func desktopDetail(for name: String) -> String
+    func choose(desktop name: String)
     func start(
         owner: String, name: String, task: String, provider: String, model: String, mode: String,
         options: QuickLaunchRunOptions, images: [PromptAttachment]
     ) async throws -> Int
+}
+
+extension QuickLaunchDesktop {
+    public var desktopNames: [String] { desktopName.isEmpty ? [] : [desktopName] }
+    public func desktopDetail(for name: String) -> String { desktopDetail }
+    public func choose(desktop name: String) {}
 }
 
 public struct QuickLaunchRunOptions: Equatable, Sendable {
@@ -176,6 +185,27 @@ public final class HubQuickLaunchDesktop: QuickLaunchDesktop {
     public var desktopDetail: String {
         guard let reach = hub()?.reach else { return "" }
         return reach.isConnected ? reach.label : "connects when you send"
+    }
+
+    public var desktopNames: [String] {
+        guard let hub = hub() else { return [] }
+        let names = hub.choices.map(\.name)
+        return names.isEmpty ? (desktopName.isEmpty ? [] : [desktopName]) : names
+    }
+
+    public func desktopDetail(for name: String) -> String {
+        guard let hub = hub(), let choice = hub.choices.first(where: { $0.name == name }) else { return desktopDetail }
+        if choice.active && hub.reach.isConnected { return hub.reach.label }
+        switch choice.presence {
+        case .online: return "Running · connects when you send"
+        case .offline: return "Not reachable right now"
+        case .checking: return "Checking…"
+        case .unknown: return "connects when you send"
+        }
+    }
+
+    public func choose(desktop name: String) {
+        hub()?.choose(name: name)
     }
 
     public func start(
@@ -331,15 +361,15 @@ public final class QuickAgentLauncher {
         if form.plan?.options?.canQueue ?? false {
             all += (form.plan?.options?.targets ?? []).map { .node($0.node) }
         }
-        if let linked = linkedDesktop { all.append(linked) }
+        all += linkedDesktops
         if form.canRunOnDevice { all.append(.device) }
         if model.runsOnDevice { return all.filter { $0 == .device } }
         return all
     }
 
-    private var linkedDesktop: QuickLaunchDestination? {
-        guard repository?.isOnMesh ?? false, let name = desktop?.desktopName, !name.isEmpty else { return nil }
-        return .desktop(name)
+    private var linkedDesktops: [QuickLaunchDestination] {
+        guard repository?.isOnMesh ?? false, let desktop else { return [] }
+        return desktop.desktopNames.filter { !$0.isEmpty }.map { .desktop($0) }
     }
 
     /// A node's line in the picker.
@@ -348,8 +378,9 @@ public final class QuickAgentLauncher {
         case .device:
             if model.runsOnDevice { return form.onDeviceGemmaLabel }
             return form.deviceCredentials == nil ? "Needs a model or an API key" : form.deviceModelLabel
-        case .desktop:
-            return ["Your desktop, directly", desktop?.desktopDetail ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        case .desktop(let name):
+            return ["Your desktop, directly", desktop?.desktopDetail(for: name) ?? ""].filter { !$0.isEmpty }.joined(
+                separator: " · ")
         case .node(let name):
             guard let node = form.plan?.options?.targetNamed(name) else { return "" }
             let kind = node.kindLabel
@@ -522,7 +553,8 @@ public final class QuickAgentLauncher {
             switch remembered {
             case .node(let name) where canQueue && options?.targetNamed(name) != nil: return remembered
             case .device where form.canRunOnDevice: return remembered
-            case .desktop where linkedDesktop != nil: return linkedDesktop
+            case .desktop where linkedDesktops.contains(remembered): return remembered
+            case .desktop where !linkedDesktops.isEmpty: return linkedDesktops.first
             default: break
             }
         }
@@ -728,6 +760,7 @@ public final class QuickAgentLauncher {
     ) async -> QuickLaunchOutcome {
         if let problem = promptAttachmentsProblem(images) { return .failed(problem) }
         guard let desktop else { return .failed(ControlErrorText.describe(code: "not_connected")) }
+        if desktop.desktopNames.contains(name) { desktop.choose(desktop: name) }
         var owners: [String] = []
         for owner in [target.publicOwner, target.owner] where !owner.isEmpty && !owners.contains(owner) {
             owners.append(owner)

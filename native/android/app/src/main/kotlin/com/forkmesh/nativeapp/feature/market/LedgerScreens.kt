@@ -247,7 +247,7 @@ private fun Send(wallet: WalletRequestModel, onChanged: () -> Unit) {
                     })
                 }
                 FmTextField(amount, { amount = it }, hint = "Amount in SOL", errorText = if (amount.isNotBlank()) wallet.amountProblem else null)
-                FmToneButton("Prepare tip", onPressed = if (wallet.canPrepareTip) ({ scope.launch(Dispatchers.IO) { wallet.prepareTip(); onChanged() } }) else null, tone = FmTone.Accent, filled = true)
+                FmToneButton("Prepare tip", onPressed = if (wallet.canPrepareTip) ({ scope.launch(Dispatchers.IO) { wallet.prepareTip(); onChanged() } }) else null, tone = FmTone.Accent, filled = true, busy = false)
                 wallet.lastRequest?.let { Text("Last request: ${it.summary.ifEmpty { it.action }} · ${it.status.replace('_', ' ')}", style = Fm.text.bodySmall, color = Fm.colors.textTertiary) }
             }
         }

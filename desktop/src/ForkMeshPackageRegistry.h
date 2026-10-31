@@ -2,6 +2,7 @@
 
 #include <QDate>
 #include <QDateTime>
+#include <QHash>
 #include <QList>
 #include <QMap>
 #include <QSet>
@@ -241,11 +242,14 @@ private:
     bool removeOne(const PackageManifest &manifest, QString *error);
     bool effectivelyInstalled(const QString &id, QSet<QString> *visiting) const;
     QString statePrefix(const QString &id) const;
+    void reindex();
 
     std::unique_ptr<QSettings> m_ownedSettings;
     QSettings *m_settings = nullptr;
     QDateTime m_projectCreated;
     QList<PackageManifest> m_packages;
+    QHash<QString, qsizetype> m_packageIndex;
+    QHash<QString, QStringList> m_nestedPackages;
     QList<PackagePack> m_packs;
     QList<PackageGuide> m_guides;
     QString m_error;

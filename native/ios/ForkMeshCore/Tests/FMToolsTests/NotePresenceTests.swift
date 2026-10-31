@@ -34,7 +34,7 @@ final class NotePresenceTests: XCTestCase {
         XCTAssertTrue(first.newcomer)
         XCTAssertNil(first.event)
         XCTAssertFalse(presence.receive(peerFrame("presence"), now: now).newcomer)
-        XCTAssertEqual(presence.label(open: true, now: now), "Live · ana is here")
+        XCTAssertEqual(presence.label(open: true, now: now), "Live · ana is viewing")
         XCTAssertFalse(presence.receive(peerFrame("presence", client: "me", name: "me"), now: now).newcomer)
 
         _ = presence.receive(peerFrame("cursor", client: "peer-2", name: "bo"), now: now)
@@ -70,7 +70,7 @@ final class NotePresenceTests: XCTestCase {
         let socket = connector.lastConnection!
         let announced = await socket.waitForSent(1)
         XCTAssertTrue(announced)
-        XCTAssertEqual(socket.sentJSON.first, ["type": "presence", "clientId": "me"])
+        XCTAssertEqual(socket.sentJSON.first, ["type": "presence", "clientId": "me", "state": "viewing"])
         XCTAssertEqual(socket.url.absoluteString, "wss://forkmesh.test/api/notes/\(noteId)/ws")
         XCTAssertTrue(room.connected)
         XCTAssertEqual(room.label, "Live")
@@ -78,16 +78,17 @@ final class NotePresenceTests: XCTestCase {
         socket.receive(text: peerFrame("presence"))
         let joined = await eventually { room.faces.map(\.name) == ["ana"] }
         XCTAssertTrue(joined)
-        XCTAssertEqual(room.label, "Live · ana is here")
+        XCTAssertEqual(room.label, "Live · ana is viewing")
         let answered = await socket.waitForSent(2)
         XCTAssertTrue(answered)
 
         room.draftChanged(title: "One", markdown: "a", baseVersion: 3)
         room.draftChanged(title: "One", markdown: "ab", baseVersion: 3)
-        let drafted = await socket.waitForSent(3)
+        let drafted = await socket.waitForSent(4)
         XCTAssertTrue(drafted)
         try? await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertEqual(socket.sentJSON.filter { $0["type"] == "draft" }.map { $0["markdown"] }, ["ab"])
+        XCTAssertEqual(socket.sentJSON.filter { $0["type"] == "presence" }.map { $0["state"] }, ["viewing", "viewing", "editing"])
 
         socket.receive(text: #"{"type":"note-updated","version":4}"#)
         let updated = await eventually { events == [.updated(version: 4)] }
@@ -98,6 +99,90 @@ final class NotePresenceTests: XCTestCase {
         XCTAssertTrue(closed)
         XCTAssertFalse(room.connected)
         XCTAssertTrue(room.faces.isEmpty)
+    }
+
+    func testPeersCarryTheirStateAndLeaveAtOnce() {
+        var presence = NotePresence(clientId: "me")
+        let now: Int64 = 2_000_000
+        _ = presence.receive(peerFrame("presence", ["state": "editing"]), now: now)
+        XCTAssertEqual(presence.peers(now: now).map(\.state), [.editing])
+        XCTAssertEqual(presence.label(open: true, now: now), "ana is editing…")
+        XCTAssertEqual(presence.peers(now: now).first?.stateLabel, "ana · editing")
+
+        _ = presence.receive(peerFrame("cursor"), now: now)
+        XCTAssertEqual(presence.peers(now: now).map(\.state), [.editing])
+        _ = presence.receive(peerFrame("presence", ["state": "viewing"]), now: now)
+        XCTAssertEqual(presence.label(open: true, now: now), "Live · ana is viewing")
+        _ = presence.receive(peerFrame("presence", ["state": "bogus"], client: "peer-2", name: "bo"), now: now)
+        XCTAssertEqual(presence.peers(now: now).map(\.state), [.viewing, .viewing])
+        XCTAssertEqual(presence.label(open: true, now: now), "Live · 2 others here")
+
+        _ = presence.receive(#"{"type":"leave","clientId":"peer-1","name":"ana"}"#, now: now)
+        XCTAssertEqual(presence.peers(now: now).map(\.name), ["bo"])
+        _ = presence.receive(#"{"type":"leave","clientId":"me","name":"me"}"#, now: now)
+        _ = presence.receive(#"{"type":"leave","clientId":"nobody"}"#, now: now)
+        XCTAssertEqual(presence.peers(now: now).map(\.name), ["bo"])
+        _ = presence.receive(peerFrame("presence"), now: now)
+        XCTAssertEqual(presence.peers(now: now).map(\.name), ["bo", "ana"])
+
+        XCTAssertEqual(presence.receive(#"{"type":"note-comments","actor":"ana"}"#, now: now).event, .commentsChanged)
+    }
+
+    func testOwnStateIsEditingForTenSecondsAfterTyping() {
+        var presence = NotePresence(clientId: "me")
+        XCTAssertEqual(presence.localState(now: 5_000), .viewing)
+        presence.typed(now: 10_000)
+        XCTAssertEqual(presence.localState(now: 10_000), .editing)
+        XCTAssertEqual(presence.localState(now: 19_999), .editing)
+        XCTAssertEqual(presence.localState(now: 20_000), .viewing)
+        let frame = (try? JSON.parse(presence.presenceFrame(state: .editing)))?.objectValue
+        XCTAssertEqual(frame, ["type": "presence", "clientId": "me", "state": "editing"])
+    }
+
+    @MainActor
+    func testTheRoomSendsStateChangesShowsFourFacesAndForgetsLeavers() async {
+        let connector = FakeWebSocketConnector()
+        let clock = FixedClock(epochMillis: toolsNowMillis)
+        let room = NoteRoomModel(
+            noteId: noteId, clientId: "me",
+            open: { _ in try await connector.connect(url: URL(string: "wss://forkmesh.test/ws")!) },
+            clock: clock, sleep: parkedSleep, onEvent: { _ in })
+        room.start()
+        _ = await connector.waitForConnections(1)
+        let socket = connector.lastConnection!
+        _ = await socket.waitForSent(1)
+
+        room.typed()
+        let editing = await socket.waitForSent(2)
+        XCTAssertTrue(editing)
+        XCTAssertEqual(socket.sentJSON.last, ["type": "presence", "clientId": "me", "state": "editing"])
+        room.typed()
+        clock.advance(by: 5)
+        room.checkState()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(socket.sent.count, 2)
+        clock.advance(by: 10)
+        room.checkState()
+        let viewing = await socket.waitForSent(3)
+        XCTAssertTrue(viewing)
+        XCTAssertEqual(socket.sentJSON.last, ["type": "presence", "clientId": "me", "state": "viewing"])
+
+        for (index, name) in ["ana", "bo", "cy", "di", "ed", "flo"].enumerated() {
+            socket.receive(text: peerFrame("presence", ["state": index == 1 ? "editing" : "viewing"], client: "p\(index)", name: name))
+        }
+        let six = await eventually { room.everyone.count == 6 }
+        XCTAssertTrue(six)
+        XCTAssertEqual(room.faces.map(\.name), ["ana", "bo", "cy", "di"])
+        XCTAssertEqual(room.overflow, 2)
+        XCTAssertEqual(room.label, "bo is editing…")
+
+        socket.receive(text: #"{"type":"leave","clientId":"p1","name":"bo"}"#)
+        let left = await eventually { room.everyone.count == 5 }
+        XCTAssertTrue(left)
+        XCTAssertEqual(room.faces.map(\.name), ["ana", "cy", "di", "ed"])
+        XCTAssertEqual(room.overflow, 1)
+        XCTAssertEqual(room.label, "Live · 5 others here")
+        room.stop()
     }
 
     @MainActor

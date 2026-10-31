@@ -1,0 +1,756 @@
+[
+ {
+  "slug": "taskip",
+  "name": "Taskip",
+  "tagline": "White-label client portal and agency workspace with CRM, projects, invoicing and payments",
+  "summary": "Taskip is a hosted workspace for agencies, freelancers and service businesses. It has task boards with Kanban, list, Gantt and calendar views, a client portal where clients follow progress, sign documents, share files, open tickets and pay invoices, team discussions, a WhatsApp and email inbox, branded quotes and invoices, a CRM pipeline, timers and timesheets. Payments go through Stripe, PayPal and other gateways. A built-in AI agent drafts replies and creates invoices, and an MCP server lets Claude, ChatGPT and Cursor work in a workspace. Web, iOS and Android apps.",
+  "watching": "It was named in a 2026-10-27 X thread asking for one platform for agency client work. It covers the same tasks, chat and CRM ground as the desktop's Tasks, Chat and CRM packages, adds the client portal and invoicing ForkMesh does not have, and exposes its workspace to agents over MCP as ForkMesh does.",
+  "url": "https://taskip.net",
+  "category": "work-management",
+  "tags": [
+   "client-portal",
+   "agencies",
+   "invoicing",
+   "crm",
+   "projects",
+   "time-tracking",
+   "mcp",
+   "white-label"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A hosted workspace that runs an agency's clients, projects, documents, invoices and payments in one place.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Projects and tasks",
+    "project": "Task boards in Kanban, list, Gantt and calendar views, with timers and timesheets.",
+    "forkmesh": "Issues, milestones and projects are signed records in the repository; the Tasks package plans, assigns and hands off organization work."
+   },
+   {
+    "topic": "Clients",
+    "project": "Clients join a branded portal for free to follow progress, sign documents, share files, open tickets and pay.",
+    "forkmesh": "Collaborators need a ForkMesh account; there is no guest client portal."
+   },
+   {
+    "topic": "Invoicing",
+    "project": "Branded quotes and invoices paid through Stripe, PayPal, Razorpay, Mollie or Xendit.",
+    "forkmesh": "No client invoicing; memberships are paid through Patreon and Workflows can connect Stripe and PayPal."
+   },
+   {
+    "topic": "AI",
+    "project": "A built-in AI agent, and an MCP server for Claude, ChatGPT and Cursor.",
+    "forkmesh": "Desktop agents such as Claude Code and Codex run in isolated Git worktrees and reach ForkMesh through its MCP server."
+   },
+   {
+    "topic": "Platforms",
+    "project": "Web, iOS and Android, hosted in the EU.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "medium",
+   "threat": "low",
+   "opportunity": "medium",
+   "confidence": "medium",
+   "action": "investigate",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/rohit_2702/status/2115148187719913699",
+    "https://taskip.net"
+   ],
+   "notes": "Named by @rohit_2702 in the 2026-10-27 X thread. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "suitedash",
+  "name": "SuiteDash",
+  "tagline": "White-label client portal, CRM and business suite with flat pricing for unlimited staff and clients",
+  "summary": "SuiteDash is a hosted business suite of 25 or more toolkits that share one client record: a CRM with custom fields and onboarding funnels, projects and tasks with templates and Kanban boards, a branded client portal, encrypted messaging and team chat, file sharing and file requests, documents with e-signatures, estimates, one-time and subscription invoices with online payments, task timers that bill tracked time, proposals, scheduling, email marketing, support tickets, courses and communities. The whole suite can carry the customer's own domain, logo and colours, including a white-label mobile app.",
+  "watching": "It was named in a 2026-10-27 X thread asking for one platform for agency client work, as one of the suites already sold as the replacement for that stack. It spans the ground of the desktop's CRM, Tasks, Chat and Notes packages and adds client invoicing.",
+  "url": "https://suitedash.com",
+  "category": "work-management",
+  "tags": [
+   "client-portal",
+   "crm",
+   "invoicing",
+   "projects",
+   "white-label",
+   "agencies"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A hosted business suite where CRM, projects, client portal, documents, billing and marketing share one client record.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Clients",
+    "project": "A branded portal where each client sees only their own files, progress and messages.",
+    "forkmesh": "Collaborators need a ForkMesh account; there is no guest client portal."
+   },
+   {
+    "topic": "Chat",
+    "project": "Encrypted secure messaging with clients and team chat with channels and direct messages.",
+    "forkmesh": "Authenticated, encrypted repository rooms; private channels and direct messages are end-to-end encrypted between devices."
+   },
+   {
+    "topic": "Invoicing",
+    "project": "Estimates, one-time and subscription invoices, stored payment methods and billable time from task timers.",
+    "forkmesh": "No client invoicing; memberships are paid through Patreon and Workflows can connect Stripe and PayPal."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "medium",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "medium",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/rohit_2702/status/2115148187719913699",
+    "https://suitedash.com"
+   ],
+   "notes": "Named by @rohit_2702 in the 2026-10-27 X thread. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "plutio",
+  "name": "Plutio",
+  "tagline": "All-in-one workspace for freelancers and agencies: projects, client portals, proposals, invoices",
+  "summary": "Plutio is a hosted business workspace for freelancers, agencies and consultants. It has projects and tasks in kanban, card, list, table, timeline and calendar views, time tracking and timesheets, client portals and interactive pages, direct messages, channels and project discussions, files and a wiki, proposals, contracts and forms built in a drag-and-drop editor, invoices and payments, bookings and schedulers, and automation flows across modules. It handles 25 or more languages, local taxes and multiple currencies, and has a built-in AI assistant. Apps for the web, iPhone and iPad, Android, Mac and Windows.",
+  "watching": "It was named in a 2026-10-27 X thread asking for one platform for agency client work. Its projects, channels and wiki cover the same ground as the desktop's Tasks, Chat and Notes packages, and it adds proposals, contracts and invoicing.",
+  "url": "https://www.plutio.com",
+  "category": "work-management",
+  "tags": [
+   "client-portal",
+   "freelancers",
+   "invoicing",
+   "proposals",
+   "projects",
+   "time-tracking"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A hosted workspace that runs a freelancer's or agency's projects, clients, documents and billing.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Projects and tasks",
+    "project": "Projects and tasks in six views, with time tracking, timesheets and automation flows.",
+    "forkmesh": "Issues, milestones and projects are signed records in the repository; the Tasks package plans, assigns and hands off organization work."
+   },
+   {
+    "topic": "Docs",
+    "project": "Files, a wiki, and proposals, contracts and forms from a drag-and-drop editor.",
+    "forkmesh": "Encrypted Markdown notes with live collaboration and selective publishing; files live in repositories."
+   },
+   {
+    "topic": "Invoicing",
+    "project": "Invoices and payments with local taxes and multiple currencies.",
+    "forkmesh": "No client invoicing; memberships are paid through Patreon and Workflows can connect Stripe and PayPal."
+   },
+   {
+    "topic": "Platforms",
+    "project": "Web, iPhone and iPad, Android, Mac and Windows.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "medium",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "medium",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/rohit_2702/status/2115148187719913699",
+    "https://www.plutio.com"
+   ],
+   "notes": "Named by @rohit_2702 in the 2026-10-27 X thread. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "clientramp",
+  "name": "ClientRamp",
+  "tagline": "White-label client portal embedded in your own website, with quotes, contracts and invoices",
+  "summary": "ClientRamp is a hosted platform for freelancers, agencies and service businesses whose white-label client portal sits on the business's own website. Clients submit project requests, approve quotes, sign contracts, pay invoices and message the team from it. Directory listings describe CRM, invoicing, e-signatures and time tracking alongside the portal, a flat price per account rather than per user, and connections to Stripe, PayPal, QuickBooks, Zoom, Google Meet, Slack, Mailchimp and Zapier.",
+  "watching": "It was named in a 2026-10-27 X thread asking for one platform for agency client work. Its portal sits on the customer's own website instead of a vendor domain, so clients never leave the agency's site.",
+  "url": "https://clientramp.com",
+  "category": "work-management",
+  "tags": [
+   "client-portal",
+   "white-label",
+   "invoicing",
+   "contracts",
+   "agencies"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A white-label client portal for service businesses, with quotes, contracts, invoices and messages.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Clients",
+    "project": "Clients use a portal embedded on the business's own website, in its logo and colours.",
+    "forkmesh": "Collaborators need a ForkMesh account; there is no guest client portal."
+   },
+   {
+    "topic": "Invoicing",
+    "project": "Quotes, e-signed contracts and invoices paid through Stripe or PayPal.",
+    "forkmesh": "No client invoicing; memberships are paid through Patreon and Workflows can connect Stripe and PayPal."
+   },
+   {
+    "topic": "Pricing",
+    "project": "A flat price per account rather than per user, with a free plan, according to directory listings.",
+    "forkmesh": "The apps are free and MIT-licensed; optional memberships are sold through Patreon."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "low",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "low",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/rohit_2702/status/2115148187719913699",
+    "https://www.saasworthy.com/product/clientramp",
+    "https://www.saashub.com/clientramp"
+   ],
+   "notes": "Named by @rohit_2702 in the 2026-10-27 X thread. clientramp.com did not answer on 2026-10-28; the listing comes from directory pages. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "basecamp",
+  "name": "Basecamp",
+  "tagline": "37signals' project management app: to-dos, message boards, chat, docs, schedules, client access",
+  "summary": "Basecamp is the project management app from 37signals. Each project holds to-do lists with assignees and due dates, a message board, group chat, docs and file folders, a schedule, a card table for work moving through stages, and Hill Charts that show where work stands. Clients can be invited to work in a project. It has a free plan with paid upgrades, apps for every platform, and an API, CLI and skills for AI agents. It does not invoice or take payments.",
+  "watching": "It was the first answer in a 2026-10-27 X thread asking for one platform for agency client work; another reply noted it does not handle invoicing and payments. Its project-holds-everything model is close to a ForkMesh repository holding issues, projects, discussions and chat rooms together.",
+  "url": "https://basecamp.com",
+  "category": "work-management",
+  "tags": [
+   "project-management",
+   "to-dos",
+   "message-boards",
+   "chat",
+   "client-access",
+   "37signals"
+  ],
+  "openSource": false,
+  "gitNative": false,
+  "maker": "37signals",
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Project management where each project holds its to-dos, messages, chat, docs and schedule.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Project space",
+    "project": "A project bundles to-dos, a message board, group chat, docs and files, a schedule and a card table.",
+    "forkmesh": "A repository bundles code, signed issues, projects, milestones, discussions and an encrypted chat room."
+   },
+   {
+    "topic": "Clients",
+    "project": "Clients can be invited into a project and upload files to it.",
+    "forkmesh": "Collaborators need a ForkMesh account; there is no guest client portal."
+   },
+   {
+    "topic": "Invoicing",
+    "project": "None.",
+    "forkmesh": "None; memberships are paid through Patreon."
+   },
+   {
+    "topic": "Agents",
+    "project": "An API, CLI and skills let AI agents work in Basecamp.",
+    "forkmesh": "Desktop agents such as Claude Code and Codex run in isolated Git worktrees and reach ForkMesh through its MCP server."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "medium",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "high",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/deifosv/status/2115171534151221461",
+    "https://x.com/nursahketene/status/2115219991783993846",
+    "https://basecamp.com"
+   ],
+   "notes": "Named by @deifosv in the 2026-10-27 X thread; @nursahketene replied that it lacks invoicing and payments. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "trello",
+  "name": "Trello",
+  "tagline": "Atlassian's Kanban board app for lists and cards",
+  "summary": "Trello is a hosted Kanban app from Atlassian. Boards hold lists of cards with checklists, due dates, attachments, labels and comments, and other views show the same cards as a calendar, timeline or table. Power-Ups connect other services and built-in automation moves cards by rule. Apps for the web, desktop and phones.",
+  "watching": "It was named in the 2026-10-27 X thread as one of the tools agencies juggle for client work. A board of cards is the same shape as the desktop's task board and a repository's project view.",
+  "url": "https://trello.com",
+  "category": "work-management",
+  "tags": [
+   "kanban",
+   "boards",
+   "project-management",
+   "atlassian"
+  ],
+  "openSource": false,
+  "gitNative": false,
+  "maker": "Atlassian",
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Kanban boards of lists and cards for any kind of work.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Boards",
+    "project": "Cards with checklists, due dates, attachments and comments, in board, calendar, timeline and table views.",
+    "forkmesh": "Issues and projects are signed records in the repository; the Tasks package keeps an organization board shared by people and agents."
+   },
+   {
+    "topic": "Where data lives",
+    "project": "On Atlassian's servers.",
+    "forkmesh": "In Git repositories that are mirrored across nodes and can be cloned like any repository."
+   },
+   {
+    "topic": "Integrations",
+    "project": "Power-Ups and rule-based automation.",
+    "forkmesh": "Marketplace packages and Workflows with integration packs."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "medium",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "high",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://trello.com"
+   ],
+   "notes": "Named in the original post of the 2026-10-27 X thread as part of the stack agencies juggle. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "notion",
+  "name": "Notion",
+  "tagline": "Connected workspace of pages, wikis and databases, with built-in AI",
+  "summary": "Notion is a hosted workspace where pages, wikis and databases live together. Databases show the same records as tables, boards, calendars, timelines and lists, so teams use it for docs, project tracking and knowledge bases, and pages can be shared publicly or with guests. Notion AI writes, summarizes and searches across a workspace. Apps for the web, desktop and phones.",
+  "watching": "It was named in the 2026-10-27 X thread as one of the tools agencies juggle, and a reply noted agencies keep returning to Slack and Notion because clients will not log into another portal. Its pages and guest sharing are the same job the Notes package does with encrypted Markdown and selective publishing.",
+  "url": "https://www.notion.com",
+  "category": "work-management",
+  "tags": [
+   "docs",
+   "wiki",
+   "databases",
+   "notes",
+   "project-management"
+  ],
+  "openSource": false,
+  "gitNative": false,
+  "maker": "Notion Labs",
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Pages, wikis and databases in one hosted workspace.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Docs",
+    "project": "Rich pages and wikis shared publicly or with guests.",
+    "forkmesh": "Encrypted Markdown notes with live collaboration and selective publishing."
+   },
+   {
+    "topic": "Tracking",
+    "project": "Databases shown as tables, boards, calendars and timelines.",
+    "forkmesh": "Issues, milestones and projects are signed records in the repository; the Tasks package plans organization work."
+   },
+   {
+    "topic": "AI",
+    "project": "Notion AI writes, summarizes and searches the workspace.",
+    "forkmesh": "Desktop agents such as Claude Code and Codex run in isolated Git worktrees and reach ForkMesh through its MCP server."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "medium",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "high",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/buildwith_yash/status/2115293804630847623",
+    "https://www.notion.com"
+   ],
+   "notes": "Named in the original post of the 2026-10-27 X thread. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "loftside",
+  "name": "Loftside",
+  "tagline": "Client portal for agencies and freelancers where clients get a private link, not an account",
+  "summary": "Loftside is an early, unlaunched client portal for agencies and freelancers. Each client gets a private magic link to a page in the studio's name and colour showing work in progress, what is due, what they owe and the latest message, with no account or password. Project boards mark every task as visible to the client or private, chat and files sit beside the work, and invoices with line items, tax and due dates print to PDF and will be paid by card through Stripe. Teammates have owner, admin and member roles, and members never see money. Planned from $19 a month per studio.",
+  "watching": "It was linked in a 2026-10-27 X thread asking for one platform for agency client work. Its link-instead-of-account client access and per-task client visibility answer the thread's point that clients will not log into another portal, a case ForkMesh's account-based collaboration does not cover.",
+  "url": "https://loftside-waitlist.pages.dev",
+  "category": "work-management",
+  "tags": [
+   "client-portal",
+   "agencies",
+   "freelancers",
+   "invoicing",
+   "magic-link",
+   "waitlist"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "One page per client holding the projects, chat, files and invoices a studio shares with them.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Client access",
+    "project": "A private magic link per client that can be replaced if it leaks; no client account.",
+    "forkmesh": "Collaborators need a ForkMesh account; there is no guest client portal."
+   },
+   {
+    "topic": "Visibility",
+    "project": "Every task, comment and file is marked as shared with the client or private.",
+    "forkmesh": "Repositories are public or private, and private chat rooms admit only invited members."
+   },
+   {
+    "topic": "Invoicing",
+    "project": "Invoices with line items, tax and PDF print; Stripe card payments are in testing.",
+    "forkmesh": "No client invoicing; memberships are paid through Patreon and Workflows can connect Stripe and PayPal."
+   },
+   {
+    "topic": "Status",
+    "project": "A working early build with a waitlist; not open to the public.",
+    "forkmesh": "Released desktop, phone and web apps."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "low",
+   "threat": "low",
+   "opportunity": "medium",
+   "confidence": "medium",
+   "action": "investigate",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/Derek02_R/status/2115267783714038102",
+    "https://loftside-waitlist.pages.dev"
+   ],
+   "notes": "Linked by @Derek02_R in the 2026-10-27 X thread. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "nexpmx",
+  "name": "NEXPMX",
+  "tagline": "Business memory platform for agencies: clients, projects, documents and GST invoicing with AI",
+  "summary": "NEXPMX is a hosted workspace for service businesses, sold in India, that keeps clients, projects, documents, decisions and invoices connected so a team and its AI work from the same records. Modules cover Kanban projects with timelines and milestones, tasks and time logging, a branded client portal, a document hub for proposals, SOPs and reports, GST-compliant invoicing with UPI payments, expenses and profitability, team roles and capacity, automations, an AI studio that drafts documents and AI search across a client's history. Priced per user from ₹650 to ₹3,800 a month by Taucap Private Limited.",
+  "watching": "It was linked in a 2026-10-27 X thread asking for one platform for agency client work. It pitches one shared memory for people and AI agents, the same idea behind ForkMesh keeping issues, notes and agent history beside the repository.",
+  "url": "https://www.nexpmx.com",
+  "category": "work-management",
+  "tags": [
+   "client-portal",
+   "gst",
+   "invoicing",
+   "projects",
+   "ai",
+   "india"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "maker": "Taucap Private Limited",
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "One workspace connecting a service business's clients, projects, documents, decisions and invoices for people and AI.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Projects and tasks",
+    "project": "Kanban boards, timelines, milestones, task assignment and hour logging.",
+    "forkmesh": "Issues, milestones and projects are signed records in the repository; the Tasks package plans, assigns and hands off organization work."
+   },
+   {
+    "topic": "Invoicing",
+    "project": "GST-compliant invoices with UPI payments, plus expense and profitability tracking.",
+    "forkmesh": "No client invoicing; the Ledger package keeps expense and income records beside ForkMesh's public financial record."
+   },
+   {
+    "topic": "AI",
+    "project": "An AI studio for SOPs, proposals and reports, AI search, and up to five AI agents on the top plan.",
+    "forkmesh": "Desktop agents such as Claude Code and Codex run in isolated Git worktrees and reach ForkMesh through its MCP server."
+   },
+   {
+    "topic": "Pricing",
+    "project": "₹650, ₹1,300 or ₹3,800 per user a month; no free trial.",
+    "forkmesh": "The apps are free and MIT-licensed; optional memberships are sold through Patreon."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "low",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "medium",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/aifounderayush/status/2115148482126467552",
+    "https://www.nexpmx.com",
+    "https://www.nexpmx.com/pricing"
+   ],
+   "notes": "Linked by its maker @aifounderayush in the 2026-10-27 X thread. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "daily-tracker",
+  "name": "Daily Tracker",
+  "tagline": "Shared daily work log for small teams with routines, live timers and a daily completion score",
+  "summary": "Daily Tracker is a hosted daily work log for small teams. Routines appear on the days they are scheduled, tasks carry timers that bank time on pause and keep it across a closed laptop, subtasks rebuild each scheduled day with their own clocks, and each day closes with one completion figure counted against what was scheduled. Everyone in a workspace reads the same day; owners write and members propose work for an owner to approve or reject.",
+  "watching": "It was linked in a 2026-10-27 X thread asking for one platform for agency client work. Its timers and approval of proposed work sit close to the desktop's Timers and Tasks packages.",
+  "url": "https://www.dailytracker.lol",
+  "category": "work-management",
+  "tags": [
+   "time-tracking",
+   "timers",
+   "routines",
+   "teams",
+   "daily-log"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "One shared daily log of routines, deadlines and timed work for a small team.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Timers",
+    "project": "Timers live on each task row, bank time on pause and are computed on the server.",
+    "forkmesh": "The Timers package keeps timers, countdowns and alarms in the desktop's top bar across restarts."
+   },
+   {
+    "topic": "Planning",
+    "project": "Owners write the log; members propose tasks that an owner approves or rejects.",
+    "forkmesh": "The Tasks package plans, assigns, hands off and reviews organization work across people and agents."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "low",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "medium",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/SHKImran2705/status/2115141607783870532",
+    "https://www.dailytracker.lol/about"
+   ],
+   "notes": "Linked by @SHKImran2705 in the 2026-10-27 X thread. It covers time and routines, not client chat, invoicing or payments. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "ignara",
+  "name": "Ignara",
+  "tagline": "AI operating system for solopreneurs joining daily execution, accountability and growth",
+  "summary": "Ignara is an early AI operating system for solopreneurs. It brings daily execution, accountability and business growth into one system with two AI engines that share one memory of the person's work.",
+  "watching": "Its maker replied to a 2026-10-27 X thread asking for one platform for agency client work that he had built one. It is an early product aimed at one person's work rather than an agency's clients.",
+  "url": "https://ignara.vercel.app",
+  "category": "work-management",
+  "tags": [
+   "ai",
+   "solopreneurs",
+   "productivity",
+   "early"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "An AI system for one person's daily work, accountability and business growth.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "AI",
+    "project": "Two AI engines sharing one memory of the user's work.",
+    "forkmesh": "Desktop agents such as Claude Code and Codex run in isolated Git worktrees and reach ForkMesh through its MCP server."
+   },
+   {
+    "topic": "Status",
+    "project": "An early product from a solo developer.",
+    "forkmesh": "Released desktop, phone and web apps."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "low",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "low",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/M18AD_/status/2115201207925166378",
+    "https://ignara.vercel.app"
+   ],
+   "notes": "@M18AD_ replied that he built this; his profile names Ignara. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "polynet",
+  "name": "Polynet",
+  "tagline": "Community platform with channels, threads, courses, paid access and an AI community agent",
+  "summary": "Polynet is a hosted community platform. A community has channels, threads and direct messages with voice input, courses and resources, member roles and join requests, and paid access billed through Stripe. Each community can run an AI agent with its own instructions that reads the links and notes the owner adds and posts in the community's channels.",
+  "watching": "It was introduced by its maker in a 2026-10-27 X thread asking for one platform for agency client work. Its channels, threads and agent that posts in them are the same shape as ForkMesh chat rooms and the agents that report into them.",
+  "url": "https://www.polynet.ai",
+  "category": "chat",
+  "tags": [
+   "community",
+   "chat",
+   "courses",
+   "paid-communities",
+   "ai-agent"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Paid or free communities with channels, threads, courses and an AI community agent.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Chat",
+    "project": "Channels, threads and direct messages with voice input.",
+    "forkmesh": "Authenticated, encrypted repository rooms; private channels and direct messages are end-to-end encrypted between devices."
+   },
+   {
+    "topic": "Agents",
+    "project": "One AI agent per community, with its own instructions and knowledge from the owner's links and notes.",
+    "forkmesh": "Desktop agents such as Claude Code and Codex run in isolated Git worktrees and can post into chat through ForkMesh's MCP server."
+   },
+   {
+    "topic": "Payments",
+    "project": "Paid community access through Stripe.",
+    "forkmesh": "Memberships are paid through Patreon; there is no paid access to a chat room."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "low",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "low",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/NeilMcDevitt_/status/2115291474762027157",
+    "https://www.polynet.ai"
+   ],
+   "notes": "Introduced by its maker @NeilMcDevitt_ in the 2026-10-27 X thread. The site is a single-page app; the description comes from its interface text. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ },
+ {
+  "slug": "biscuit",
+  "name": "Biscuit",
+  "tagline": "Platform that takes an idea to revenue while handling billing, infrastructure, legal and operations",
+  "summary": "Biscuit is a platform for launching a business: it says it turns an idea into revenue while it handles billing, infrastructure, legal and operations, so a founder does not set up payments, hosting or company paperwork alone.",
+  "watching": "Its founding product manager replied to a 2026-10-27 X thread asking for one platform for agency client work that Biscuit is being built for exactly that. Little of the product is public yet.",
+  "url": "https://www.biscuit.so",
+  "category": "apps",
+  "tags": [
+   "billing",
+   "founders",
+   "operations",
+   "infrastructure"
+  ],
+  "openSource": null,
+  "gitNative": false,
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Taking a business from idea to revenue, with billing, infrastructure, legal and operations handled.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Billing",
+    "project": "Handles billing for the business it launches.",
+    "forkmesh": "No billing for users' businesses; memberships are paid through Patreon."
+   },
+   {
+    "topic": "Infrastructure",
+    "project": "Provides the infrastructure the business runs on.",
+    "forkmesh": "Repositories are mirrored across self-hosted core and mirror nodes; ForkMesh hosts repositories, not websites."
+   }
+  ],
+  "reviewed": "2026-10-28",
+  "published": true,
+  "internal": {
+   "overlap": "low",
+   "threat": "low",
+   "opportunity": "low",
+   "confidence": "low",
+   "action": "ignore",
+   "sources": [
+    "https://x.com/askwhykartik/status/2115118935150354782",
+    "https://x.com/marias_martin/status/2115174074410275248",
+    "https://www.biscuit.so"
+   ],
+   "notes": "Named by @marias_martin, its founding PM, in the 2026-10-27 X thread. The site gives only a one-line description. Analysis in docs/app/ecosystem-client-work.md."
+  }
+ }
+]

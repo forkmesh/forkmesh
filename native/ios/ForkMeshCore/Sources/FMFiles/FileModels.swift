@@ -22,6 +22,22 @@ public struct FileEntry: Identifiable, Hashable, Sendable {
 
     public var id: String { path }
     public var kind: FileKind { isFolder ? .folder : FileKinds.kind(name: name) }
+
+    public var localName: String? {
+        let last = (name as NSString).lastPathComponent
+        guard !last.isEmpty, last != ".", last != "..", !last.contains("/") else { return nil }
+        return last
+    }
+
+    public func localTarget(in folder: URL) throws -> URL {
+        let base = folder.standardizedFileURL
+        guard let local = localName else { throw FileSourceError("That file name cannot be saved on this phone.") }
+        let target = base.appendingPathComponent(local).standardizedFileURL
+        guard target.deletingLastPathComponent().standardizedFileURL.path == base.path else {
+            throw FileSourceError("That file name cannot be saved on this phone.")
+        }
+        return target
+    }
 }
 
 public enum FileSort: String, CaseIterable, Sendable {

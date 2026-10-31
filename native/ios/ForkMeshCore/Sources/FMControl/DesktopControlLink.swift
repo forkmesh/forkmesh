@@ -94,6 +94,7 @@ public enum ControlErrorText {
         case "not_connected", "closed": return "The desktop is not connected."
         case "timeout": return "The desktop did not answer in time."
         case "not_paired": return "Approve this phone on the desktop first."
+        case "remote_off": return "Remote control is off on the desktop. Turn it on in a session's Environment panel there."
         case "pair_on_lan":
             return "Sign this phone and the desktop in to the same ForkMesh account, or approve this phone on the desktop while both are on the same network; after that it works from anywhere."
         case "not_owner": return "Only the account that owns this desktop can manage its hosts."

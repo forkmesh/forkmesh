@@ -431,6 +431,7 @@ private fun CandidateList(
                 icon = "download",
                 tone = FmTone.Accent,
                 filled = true,
+                busy = model.busy,
             )
             FmToneButton("Close", onPressed = onClose)
         }

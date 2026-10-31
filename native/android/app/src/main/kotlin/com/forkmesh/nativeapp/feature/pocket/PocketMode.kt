@@ -111,7 +111,7 @@ fun PocketModeRow(onClose: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 36.dp)
+            .heightIn(min = 46.dp)
             .clickable {
                 haptics.selection()
                 onClose()
@@ -124,7 +124,7 @@ fun PocketModeRow(onClose: () -> Unit) {
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PulsingIcon(PocketText.hubIcon(walking), c.accent, pulsing = walking)
+        com.forkmesh.nativeapp.ui.kit.FmMenuTile { PulsingIcon(PocketText.hubIcon(walking), c.accent, pulsing = walking) }
         Spacer(Modifier.width(FmSpace.x3))
         Text(
             PocketText.hubTitle(walking),
@@ -133,6 +133,7 @@ fun PocketModeRow(onClose: () -> Unit) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        FmIcon("chevron_right", size = 18.dp, tint = c.textTertiary)
     }
 }
 

@@ -261,11 +261,11 @@ class MarketingModel(
         }
     }
 
-    fun closeReadyPost(status: String): Boolean {
+    fun closeReadyPost(status: String, url: String = ""): Boolean {
         val post = readyX?.post ?: return false
         return busy("ready-post") {
             val closed = try {
-                readyPost = client.closeReadyPost(organization, post.id, status)
+                readyPost = client.closeReadyPost(organization, post.id, status, url = if (status == "posted") url else "")
                 readyOrganization = organization
                 notice = (if (status == "posted") "Marked posted." else "Skipped.") + " Herald writes the next one."
                 true

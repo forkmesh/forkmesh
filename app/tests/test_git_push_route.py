@@ -126,6 +126,7 @@ BASE_GLOBALS = {
     "Date": _Date,
     "LOGIN_MAX_SKEW_MS": SKEW_MS,
     "MAX_NODE_NAME": 64,
+    "CHAT_NODE_DEVICE_KIND": "chat_node",
 }
 
 
@@ -175,6 +176,7 @@ def _authorize_harness(
     devices=None,
     org_write_accounts=(),
     pubkey_accounts=None,
+    foreign_devices=None,
 ):
     """Build _git_push_authorize with account/device/org stubs."""
     devices = devices or {}
@@ -212,6 +214,8 @@ def _authorize_harness(
         return (("node-bi", record) if record else (None, None))
 
     async def d1_first(_env, sql, *args):
+        if "account_bi<>?" in sql and args[0] in (foreign_devices or {}):
+            return {"account_bi": foreign_devices[args[0]]}
         return None
 
     async def decrypt_row(_env, _data):
@@ -324,6 +328,18 @@ def test_org_write_member_is_authorized_with_their_own_key():
     assert _run_authorize(namespace, _signed(MEMBER_PRIMARY_KEY)) == "bob"
     assert audits[-1]["outcome"] == "success"
     assert audits[-1]["actor"] == "bob"
+
+
+def test_primary_key_proven_as_another_accounts_device_resolves_to_nobody():
+    namespace, audits = _authorize_harness(
+        org_write_accounts={("alice", "app", "bob")},
+        pubkey_accounts={MEMBER_PRIMARY_KEY: {"name": "bob"}},
+        foreign_devices={MEMBER_PRIMARY_KEY: "bi:carol"},
+    )
+    assert _run_authorize(namespace, _signed(MEMBER_PRIMARY_KEY)) == ""
+    assert audits[-1]["outcome"] == "denied"
+    assert asyncio.run(namespace["_git_push_account_for_pubkey"](
+        object(), MEMBER_PRIMARY_KEY)) == ""
 
 
 def test_member_without_org_write_is_denied():

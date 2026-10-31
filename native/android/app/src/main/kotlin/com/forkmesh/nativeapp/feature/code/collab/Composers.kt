@@ -90,61 +90,6 @@ internal suspend fun CollabEnv.showIssueActions(repo: Repository, issue: Issue) 
     }
 }
 
-private data class PullForm(val title: String, val base: String, val head: String, val patch: String)
-
-internal suspend fun CollabEnv.showNewPullDialog(repo: Repository) {
-    if (!requireAccount("open a pull request")) return
-    val form = messenger.showDialog<PullForm> { done ->
-        var title by remember { mutableStateOf("") }
-        var base by remember { mutableStateOf(repo.defaultBranch) }
-        var head by remember { mutableStateOf("") }
-        var patch by remember { mutableStateOf("") }
-        CollabDialog(
-            title = "New pull request",
-            width = 520.dp,
-            onDismiss = { done(null) },
-            actions = {
-                FmDialogActions(
-                    onCancel = { done(null) },
-                    onConfirm = { done(PullForm(title, base, head, patch)) },
-                    confirmLabel = "Submit",
-                )
-            },
-        ) {
-            SessionIdentityBar("Posting")
-            Spacer(Modifier.height(8.dp))
-            FmField("Title") { FmTextField(title, { title = it }) }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.Top) {
-                FmField("Base branch", Modifier.weight(1f)) { FmTextField(base, { base = it }) }
-                Spacer(Modifier.width(10.dp))
-                FmField("Head branch", Modifier.weight(1f)) { FmTextField(head, { head = it }) }
-            }
-            Spacer(Modifier.height(10.dp))
-            FmField("Unified diff (patch)") {
-                FmTextField(
-                    patch,
-                    { patch = it },
-                    minLines = 5,
-                    maxLines = 14,
-                    textStyle = Fm.text.bodySmall.copy(fontFamily = FmType.mono, color = Fm.colors.textPrimary),
-                )
-            }
-        }
-    } ?: return
-    if (form.title.trim().isEmpty() || form.patch.trim().isEmpty()) return
-    run(PENDING_NOTE) {
-        inbox.submitNewPull(
-            repo.owner,
-            repo.name,
-            title = form.title.trim(),
-            base = form.base.trim(),
-            head = form.head.trim(),
-            patch = form.patch,
-        )
-    }
-}
-
 private data class DiscussionForm(val title: String, val category: String, val body: String)
 
 internal suspend fun CollabEnv.showNewDiscussionDialog(repo: Repository) {
@@ -234,6 +179,16 @@ private suspend fun CollabEnv.pullSheet(header: String, subtitle: String, withRe
             SheetTile("Leave review comment", "rate_review_outlined") { close(PullSheetAction.ReviewComment) }
         }
     }
+}
+
+internal suspend fun CollabEnv.reviewPublishedPull(repo: Repository, pull: PublishedPull, state: String) {
+    if (!requireAccount("review pull requests")) return
+    review(repo, pull.number, state)
+}
+
+internal suspend fun CollabEnv.commentOnPublishedPull(repo: Repository, pull: PublishedPull) {
+    if (!requireAccount("comment on pull requests")) return
+    commentOnPull(repo, pull.number)
 }
 
 private suspend fun CollabEnv.commentOnPull(repo: Repository, number: Int) {

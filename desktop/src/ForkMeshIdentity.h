@@ -86,6 +86,9 @@ public:
     // the new key. Returns {} if the identity is not loaded.
     QJsonObject signRotation(const QString &newPublicKeyB64url) const;
     static bool verifyRotation(const QJsonObject &record);
+    QJsonObject acceptRotation(const QJsonObject &record,
+                               const QString &nodeName) const;
+    static bool verifyRotationAcceptance(const QJsonObject &record);
 
 private:
     static QString defaultKeyDir();

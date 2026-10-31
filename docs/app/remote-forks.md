@@ -30,6 +30,14 @@ because pull submissions are authorized by their Ed25519 signature, not
 sessions. Unreachable targets report `remote_unreachable`. Review happens on
 the target instance; both copies must share history.
 
+The iPhone app's New pull request sheet offers the same **Send to** menu
+(`NewPullSheet`, `InboxService.openRemotePull`, `native/ios/docs/FMCodeCollab.md`):
+it reads the saved list, compares the branches on this instance's mirror, signs
+with the device's key for the target's owner and name, and posts the same body
+(`{owner, repo, pull}`) with no session. It refuses an origin that is not
+`https://host[:port]`, and reports an unreachable target the way the website
+does.
+
 ## Sending many branches at once
 
 `/<owner>/<repo>/pulls/send` (the **Send pull requests** button beside New pull

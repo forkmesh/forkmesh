@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.navigation
 object GuestGate {
     private val detailActions: Map<Route.Kind, String> = mapOf(
         Route.Kind.Note to "use notes",
+        Route.Kind.NotePage to "use notes",
         Route.Kind.Task to "use tasks",
         Route.Kind.Host to "manage your hosts",
         Route.Kind.Contact to "use the CRM",

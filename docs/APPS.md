@@ -77,7 +77,15 @@ app disables all of its tokens.
 Organizations: owners and admins install directly; a member's consent creates
 an install request that admins approve for exactly those scopes. Owners set a
 request policy (`any`, `allowlist`, `none`). Private (unlisted) apps are
-available only to their developer and owning organization.
+available only to their developer and owning organization's insiders.
+
+Only owners, admins, maintainers and members may install or request an app for
+an organization; auditors are read-only and guests are outside collaborators,
+so both get `not_org_member`. Revoking an organization install also withdraws
+the organization's approval of that app, so the next member who wants it asks
+the admins again instead of reinstalling it at once. Slash commands from
+organization installs are offered to the organization's insiders only, never
+to guests.
 
 ## Web API
 

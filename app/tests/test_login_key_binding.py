@@ -58,7 +58,16 @@ def _load_account_login(extra_globals):
             "_device_bind_canonical",
             "_device_proven_user_bis",
             "_device_retire_unproven_claims",
+            "_account_key_revoked",
+            "_verify_password_miss",
         }
+    ] + [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign) and {
+            target.id for target in node.targets
+            if isinstance(target, ast.Name)
+        } & {"PASSWORD_MISS_SALT", "PASSWORD_MISS_HASH"}
     ]
     assert selected, "missing _account_login"
     module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
@@ -456,6 +465,37 @@ def test_login_without_desktop_pubkey_still_allows_plain_web_session():
     assert response["data"]["desktopCapable"] is False
     assert saved == []
     assert login_fails == []
+
+
+@pytest.mark.parametrize("identifier,rec", [
+    ("nobody@example.com", _active_account()),
+    ("alice@example.com", _active_account(pass_hash="")),
+    ("alice@example.com", _active_account()),
+    ("alice@example.com", _active_account(status="disabled")),
+])
+def test_login_spends_exactly_one_password_hash_whether_or_not_the_account_exists(
+        identifier, rec):
+    handler, _saved, _devices, _login_clears, login_fails = _login_harness(rec)
+    hashed = []
+    real_verify = handler.__globals__["verify_password"]
+
+    async def counting_verify(password, salt, digest):
+        hashed.append(salt)
+        return await real_verify(password, salt, digest)
+
+    handler.__globals__["verify_password"] = counting_verify
+    response = asyncio.run(handler(object(), _Request(
+        {"email": identifier, "password": "wrong guess"})))
+
+    assert response["status"] == 401
+    assert response["data"] == {"error": "invalid_credentials"}
+    assert len(hashed) == 1
+    expected_salt = ("salt" if rec.get("pass_hash")
+                     else handler.__globals__["PASSWORD_MISS_SALT"])
+    if identifier.startswith("nobody"):
+        expected_salt = handler.__globals__["PASSWORD_MISS_SALT"]
+    assert hashed == [expected_salt]
+    assert login_fails
 
 
 def test_login_failure_counter_is_atomic_and_progressive():
@@ -1280,3 +1320,194 @@ def test_non_admin_without_totp_is_not_asked_to_enroll():
 
     assert response["status"] == 200
     assert saved == []
+
+
+def test_desktop_login_replaces_a_primary_key_whose_device_was_revoked():
+    revoked = {
+        "device_bi": "revoked-primary-device",
+        "account_bi": "bi:alice-node",
+        "pubkey": DEVICE_KEY,
+        "kind": "desktop_node",
+        "label": "stolen laptop",
+        "capabilities": (
+            "browse,host_repo,publish_repo,owner_sign,"
+            "contribution_key_proof"
+        ),
+        "enabled": 0,
+        "last_seen": 1,
+        "revoked_at": 5,
+    }
+    handler, saved, _devices, _clears, _fails = _login_harness(
+        _active_account(pubkey=DEVICE_KEY), initial_devices=[revoked])
+
+    response = asyncio.run(handler(object(), _Request({
+        "email": "alice@example.com",
+        "password": "correct horse battery staple",
+        "pubkey": SECOND_DEVICE_KEY,
+        "deviceTs": DEVICE_TS,
+        "deviceSig": DEVICE_SIG,
+    })))
+
+    assert response["status"] == 200
+    assert response["data"]["pubkey"] == SECOND_DEVICE_KEY
+    assert saved == [("bi:alice-node", {
+        **_active_account(pubkey=SECOND_DEVICE_KEY),
+        "prev_pubkeys": [DEVICE_KEY],
+    })]
+
+
+def test_desktop_login_with_the_revoked_key_never_restores_it_as_primary():
+    revoked = {
+        "device_bi": "revoked-primary-device",
+        "account_bi": "bi:alice-node",
+        "pubkey": DEVICE_KEY,
+        "kind": "desktop_node",
+        "label": "stolen laptop",
+        "capabilities": (
+            "browse,host_repo,publish_repo,owner_sign,"
+            "contribution_key_proof"
+        ),
+        "enabled": 0,
+        "last_seen": 1,
+        "revoked_at": 5,
+    }
+    handler, saved, _devices, _clears, _fails = _login_harness(
+        _active_account(pubkey=""), initial_devices=[revoked])
+
+    asyncio.run(handler(object(), _Request({
+        "email": "alice@example.com",
+        "password": "correct horse battery staple",
+        "pubkey": DEVICE_KEY,
+        "deviceTs": DEVICE_TS,
+        "deviceSig": DEVICE_SIG,
+    })))
+
+    assert all(rec.get("pubkey") != DEVICE_KEY for _bi, rec in saved)
+
+
+class _AddressRequest:
+    def __init__(self, address):
+        self.headers = {"cf-connecting-ip": address}
+
+
+def _load_login_source_keys():
+    import ipaddress
+    tree = ast.parse(ENTRY.read_text(encoding="utf-8"), filename=str(ENTRY))
+    names = {"_client_source_bucket", "_login_source_key",
+             "_login_attempt_keys", "_transient_client_address"}
+    selected = [
+        node for node in tree.body
+        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+        and node.name in names
+    ]
+    assert {node.name for node in selected} == names
+
+    async def blind_index(_env, value):
+        return "bi(" + str(value) + ")"
+
+    namespace = {"ipaddress": ipaddress, "blind_index": blind_index}
+    module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
+    exec(compile(module, str(ENTRY), "exec"), namespace)
+    return namespace
+
+
+def test_login_budgets_charge_an_ipv6_slash_64_as_one_source():
+    ns = _load_login_source_keys()
+    keys = ns["_login_attempt_keys"]
+    first = asyncio.run(keys(
+        None, _AddressRequest("2001:db8:1:2:aaaa::1"), "alice"))
+    second = asyncio.run(keys(
+        None, _AddressRequest("2001:db8:1:2:ffff:1:2:3"), "alice"))
+    other = asyncio.run(keys(
+        None, _AddressRequest("2001:db8:1:3::1"), "alice"))
+    assert first == second
+    assert first != other
+    assert first[0] == asyncio.run(ns["_login_source_key"](
+        None, _AddressRequest("2001:db8:1:2::9")))
+    assert ns["_client_source_bucket"]("2001:db8:1:2:aaaa::1") == (
+        "2001:db8:1:2::/64")
+    assert ns["_client_source_bucket"]("203.0.113.7") == "203.0.113.7"
+    assert ns["_client_source_bucket"]("::ffff:203.0.113.7") == "203.0.113.7"
+    v4 = asyncio.run(keys(None, _AddressRequest("203.0.113.7"), "alice"))
+    assert v4[0] == "bi(login-source:bi(203.0.113.7))"
+    assert asyncio.run(ns["_login_source_key"](
+        None, _AddressRequest(""))) == ""
+
+
+def test_every_per_address_budget_folds_ipv6_into_its_64():
+    import ast as _ast
+    budgets = {
+        ("entry.py", "_signup_backup_gate"),
+        ("entry.py", "_account_reserve"),
+        ("entry.py", "_login_source_key"),
+        ("entry.py", "_login_attempt_keys"),
+        ("entry.py", "client_error_handler"),
+        ("entry.py", "_security_report_source_budget"),
+        ("bug_reports.py", "_reporter_key"),
+        ("product_analysis.py", "_login_budget_key"),
+        ("instance_launch.py", "client_key"),
+    }
+    stored_not_budgets = {
+        ("entry.py", "_account_signup"),
+        ("entry.py", "_signup_metadata"),
+        ("entry.py", "feedback_handler"),
+        ("account_users.py", "_record_referral_signup"),
+        ("attribution.py", "_observation_from_request"),
+        ("attribution.py", "relay_capture_handler"),
+        ("route_handlers.py", "_account_finalize"),
+    }
+    seen = set()
+    for path in sorted((ROOT / "app" / "src").glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "_transient_client_address(" not in source:
+            continue
+        tree = _ast.parse(source, filename=str(path))
+        parents = {}
+        for node in _ast.walk(tree):
+            for child in _ast.iter_child_nodes(node):
+                parents[child] = node
+        for node in _ast.walk(tree):
+            if not (isinstance(node, _ast.Call)
+                    and getattr(node.func, "id", "") == "_transient_client_address"):
+                continue
+            function = node
+            while function in parents and not isinstance(
+                    function, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                function = parents[function]
+            site = (path.name, getattr(function, "name", ""))
+            seen.add(site)
+            parent = parents.get(node)
+            wrapped = isinstance(parent, _ast.Call) and getattr(
+                parent.func, "id", "") == "_client_source_bucket"
+            assert site in budgets | stored_not_budgets, site
+            if site in budgets:
+                assert wrapped, site
+    assert budgets <= seen
+    signup = ENTRY.read_text(encoding="utf-8")
+    assert ("await blind_index(env, _client_source_bucket(signup_ip))"
+            in signup)
+    guestbook = (ROOT / "app" / "src" / "guestbook_runtime.py").read_text(
+        encoding="utf-8")
+    assert "_client_source_bucket(address)" in guestbook
+
+
+def test_every_address_budget_in_the_worker_folds_ipv6_to_a_slash_64():
+    text = ENTRY.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    tree = ast.parse(text, filename=str(ENTRY))
+    budgeted = []
+    for node in tree.body:
+        if not isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):
+            continue
+        body = "".join(lines[node.lineno - 1:node.end_lineno])
+        if "_transient_client_address(" not in body:
+            continue
+        if not any(marker in body for marker in (
+                "signup_rate_check(", "_login_attempt_keys",
+                "login-source:")):
+            continue
+        budgeted.append(node.name)
+        assert "_client_source_bucket(" in body, node.name
+    assert {"_account_signup", "_account_reserve", "_signup_backup_gate",
+            "_login_attempt_keys", "_login_source_key",
+            "_security_report_source_budget"} <= set(budgeted)

@@ -180,6 +180,21 @@ final class CITests: XCTestCase {
         XCTAssertEqual(excerpt.split(separator: "\n").count, 10)
     }
 
+    func testFailedRunPromptKeepsTheFailureAtTheEndOfALongLog() {
+        let build = (0..<180).map { "[ 33%] Building CXX object CMakeFiles/forkmesh-window-tests.dir/src/File\($0).cpp.o" }
+        let log = (["esh-window-tests.dir/src/ClientErrorReports.cpp.o"] + build
+            + ["!! Process crashed", "", "==> FAILED: Critical Qt client contracts exceeded the process time limit."])
+            .joined(separator: "\n")
+        XCTAssertGreaterThan(log.count, MessageHandoff.maxMessageLength)
+        let run = ActionsRunSummary(id: 8092, workflow: "Desktop client CI tests", commit: "f86a1b189b07", ref: "refs/heads/main",
+                                    status: .failed, logTail: log, steps: [ActionsStep(name: "Critical Qt client contracts", status: "failed")])
+        let text = CIPrompts.fixFailedRun(run, repo: repo).text!
+        XCTAssertTrue(text.contains("exceeded the process time limit"))
+        XCTAssertTrue(text.contains("Failed steps: Critical Qt client contracts."))
+        XCTAssertFalse(text.contains("ClientErrorReports"))
+        XCTAssertFalse(MessageHandoff.cleaned(log).contains("exceeded the process time limit"))
+    }
+
     func testFailedRunPromptAndPullChecks() {
         let summary = ActionsSummary(json: CITests.runsPayload().objectValue!)
         let run = summary.runs.first { $0.id == 7 }!

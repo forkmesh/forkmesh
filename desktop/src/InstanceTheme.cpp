@@ -3,6 +3,7 @@
 #include "DesignTokens.h"
 
 #include <QColor>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QSettings>
 
@@ -124,11 +125,28 @@ Colors fromInstanceDocument(const QJsonObject &document)
     Colors colors;
     colors.dark = roleColors(source.value(QStringLiteral("dark")).toObject(), true);
     colors.light = roleColors(source.value(QStringLiteral("light")).toObject(), false);
-    colors.name = document.value(QStringLiteral("theme"))
-                      .toObject()
-                      .value(QStringLiteral("preset"))
-                      .toString();
+    const QString preset = document.value(QStringLiteral("theme"))
+                               .toObject()
+                               .value(QStringLiteral("preset"))
+                               .toString();
+    colors.name = preset;
+    for (const QJsonValue &entry : document.value(QStringLiteral("themes")).toArray()) {
+        const QJsonObject theme = entry.toObject();
+        if (theme.value(QStringLiteral("id")).toString() != preset)
+            continue;
+        const QString name = theme.value(QStringLiteral("name")).toString().trimmed();
+        if (!name.isEmpty())
+            colors.name = name;
+        break;
+    }
     return colors;
+}
+
+QString label(const Colors &colors)
+{
+    if (!colors.name.isEmpty())
+        return colors.name;
+    return colors.isEmpty() ? QStringLiteral("Default") : QStringLiteral("Custom");
 }
 
 QJsonObject toJson(const Colors &colors)

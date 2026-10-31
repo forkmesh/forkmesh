@@ -19,7 +19,10 @@ SIGNING_KEY = "device-key-of-the-desk-giving-up-the-session"
 
 
 class Recorder:
-    def __init__(self, other_nodes=1, batch_raises=False, targets=()):
+    def __init__(self, other_nodes=1, batch_raises=False, targets=(),
+                 desktops=()):
+        self.desktops = list(desktops)
+        self.desktop_accounts = []
         self.targets = list(targets)
         self.target_contexts = []
         self.batches = []
@@ -45,6 +48,14 @@ class Recorder:
     async def owner_targets(self, _env, context):
         self.target_contexts.append(context)
         return self.targets
+
+    async def account_row(self, _env, name):
+        self.desktop_accounts.append(name)
+        return "bi:" + name, {"name": name}
+
+    async def account_desktops(self, _env, account_bi, record):
+        assert account_bi == "bi:" + record["name"]
+        return [dict(item) for item in self.desktops]
 
     async def notify(self, _env, owner, repo, channel):
         self.notified.append((owner, repo, channel))
@@ -73,6 +84,7 @@ def _load(recorder, signing_key=SIGNING_KEY, keys=None, owned=(),
         "_agent_handoff_signer",
         "_agent_handoff_model",
         "_agent_handoff_mirror_target",
+        "_agent_handoff_desktops",
         "_ring_cloud_agent_readers",
     }
     selected = [
@@ -156,6 +168,8 @@ def _load(recorder, signing_key=SIGNING_KEY, keys=None, owned=(),
         "notify_account_event": recorder.notify_account,
         "d1_first": recorder.first,
         "_org_agent_owner_targets": recorder.owner_targets,
+        "_account_row": recorder.account_row,
+        "_account_desktops": recorder.account_desktops,
         "_profile_catalog_owner_names": lambda _env, name: asyncio.sleep(
             0, result=[name, "mirror9", "workshop"]),
         "json_response": response,
@@ -256,13 +270,95 @@ def test_an_unsigned_request_is_rejected_before_anything_is_queued():
     assert recorder.batches == []
 
 
-def test_only_get_shaped_methods_are_refused():
+def test_methods_other_than_get_and_post_are_refused():
     recorder = Recorder()
     handler, _model = _load(recorder)
     response = asyncio.run(handler(
-        object(), _request(method="GET"), "jett", "forkmesh", "412"))
+        object(), _request(method="PUT"), "jett", "forkmesh", "412"))
     assert response["status"] == 405
     assert recorder.batches == []
+
+
+LAPTOP_KEY = "device-key-of-the-laptop"
+
+
+def _desktops():
+    return [
+        {"key": LAPTOP_KEY, "node": "laptop", "lastSeen": 2_099_999_000_000},
+        {"key": SIGNING_KEY, "node": "workshop", "lastSeen": 2_099_999_900_000},
+        {"key": "device-key-of-the-studio", "node": "studio", "lastSeen": 0},
+    ]
+
+
+def test_get_lists_the_accounts_other_desktops():
+    recorder = Recorder(desktops=_desktops())
+    handler, _model = _load(recorder)
+    response = asyncio.run(handler(
+        object(), _request(method="GET"), "jett", "forkmesh", "412"))
+    assert response["status"] == 200
+    assert response["data"]["ok"] is True
+    assert [item["node"] for item in response["data"]["desktops"]] == [
+        "laptop", "studio"]
+    assert response["data"]["desktops"][0] == {
+        "key": LAPTOP_KEY, "node": "laptop", "lastSeen": 2_099_999_000_000}
+    assert recorder.desktop_accounts == ["jett"]
+    assert recorder.batches == []
+
+
+def test_get_lists_the_signing_accounts_desktops_not_the_serving_nodes():
+    recorder = Recorder(desktops=_desktops())
+    handler, _model = _load(
+        recorder, keys={"jett": SIGNING_KEY}, owned={("jett", "workshop")})
+    response = asyncio.run(handler(
+        object(), _request(method="GET", signer="jett"),
+        "workshop", "forkmesh", "412"))
+    assert response["status"] == 200
+    assert recorder.desktop_accounts == ["jett"]
+
+
+def test_an_unsigned_desktop_list_is_refused():
+    recorder = Recorder(desktops=_desktops())
+    handler, _model = _load(recorder, signing_key="")
+    response = asyncio.run(handler(
+        object(), _request(method="GET"), "jett", "forkmesh", "412"))
+    assert response["status"] == 401
+    assert recorder.desktop_accounts == []
+
+
+def test_a_session_sent_to_one_desktop_is_queued_for_that_desktop_only():
+    recorder = Recorder(
+        desktops=_desktops(), targets=[_target("mirror9")])
+    response = _post(recorder, toKey=LAPTOP_KEY)
+    assert response["status"] == 202
+    assert response["data"]["targetDevice"] == "laptop"
+    assert "targetNode" not in response["data"]
+    assert "Sent to laptop" in response["data"]["message"]
+    record = recorder.payload(0)
+    job = recorder.payload(1)
+    assert record["targetNode"] == "jett"
+    assert job["repositoryOwner"] == "jett"
+    assert job["toKey"] == LAPTOP_KEY
+    assert job["toDevice"] == "laptop"
+    assert record["handoff"]["toKey"] == LAPTOP_KEY
+    assert recorder.target_contexts == []
+    assert recorder.notified == [("jett", "forkmesh", "org-agents")]
+    assert recorder.audits[0][4]["toDevice"] == "laptop"
+
+
+def test_a_desktop_that_is_not_the_accounts_is_refused():
+    for key in ("device-key-of-someone-else", SIGNING_KEY):
+        recorder = Recorder(desktops=_desktops())
+        response = _post(recorder, toKey=key)
+        assert response["status"] == 409
+        assert response["data"]["error"] == "unknown_desktop"
+        assert recorder.batches == []
+
+
+def test_a_handoff_without_a_desktop_names_none():
+    recorder = Recorder()
+    _post(recorder)
+    assert recorder.payload(1)["toKey"] == ""
+    assert recorder.desktop_accounts == []
 
 
 def test_a_branch_the_cloud_could_not_fetch_is_refused():

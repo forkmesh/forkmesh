@@ -210,6 +210,7 @@ private fun NotificationsHeader(
             label = "Back",
             onPressed = if (canPop) onBack else null,
             colors = IconButtonDefaults.iconButtonColors(contentColor = c.textPrimary, disabledContentColor = c.textDisabled),
+            busy = false,
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Text(

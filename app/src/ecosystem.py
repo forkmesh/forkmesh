@@ -22,6 +22,7 @@ CATEGORIES = (
     ("issue-tracking", "Issue tracking"),
     ("code-review", "Code review"),
     ("chat", "Chat & discussions"),
+    ("work-management", "Work & client management"),
     ("software-factories", "Software factories"),
     ("agent-workspaces", "Agent workspaces"),
     ("agent-infrastructure", "Agent infrastructure"),

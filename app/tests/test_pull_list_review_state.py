@@ -36,7 +36,7 @@ def _slice(start, end):
     return CONTENT[i:CONTENT.index(end, i)]
 
 
-POLICY = _slice("  function pullReviewPolicy(events", "  function renderPullReviewers(")
+POLICY = _slice("  function pullReviewerKey(ev", "  function renderPullReviewers(")
 LIST = _slice("  function pullStateIconHtml(", "  // Shared unified-diff parser")
 
 STUBS = r"""

@@ -180,7 +180,7 @@ object SurfacesFeature {
                 detail = row.statusLabel,
                 updatedAtMs = row.updatedAtMs,
                 localId = row.localId,
-                isDesktop = row.isDesktop,
+                isDesktop = row.isDesktop && !row.elsewhere,
                 canStop = row.canStop,
                 route = if (row.cloudSessionId.isNotEmpty() && row.repoOwner.isNotEmpty()) {
                     Route.LaunchedAgent(RepoRef(row.repoOwner, row.repoName), row.cloudSessionId)

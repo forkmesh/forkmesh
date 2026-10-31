@@ -13,6 +13,7 @@
 
 class QComboBox;
 class QCompleter;
+class QHBoxLayout;
 class QDateEdit;
 class QDoubleSpinBox;
 class QLabel;
@@ -29,6 +30,7 @@ class QTimer;
 
 namespace forkmesh::calories {
 
+class CaloriesRing;
 class DayChart;
 class WeightChart;
 
@@ -118,6 +120,11 @@ private:
     void reportInvites(const QJsonObject &payload);
     void setStatus(const QString &text, bool error = false);
     void focusSearchHit();
+    void arrangeNextHeader(QHBoxLayout *heading, QLabel *title, QLabel *lede,
+                           QPushButton *refreshButton);
+    void applyNextStyle();
+    void renderNextDiary();
+    void syncNextDay();
 
     Request m_request;
     QLabel *m_status = nullptr;
@@ -140,6 +147,16 @@ private:
     QLabel *m_fatLabel = nullptr;
     QLabel *m_streakLabel = nullptr;
     QLabel *m_weightLabel = nullptr;
+    CaloriesRing *m_ring = nullptr;
+    QLabel *m_remainingTitle = nullptr;
+    QLabel *m_remainingLabel = nullptr;
+    QLabel *m_entriesTodayLabel = nullptr;
+    QLabel *m_streakValue = nullptr;
+    QLabel *m_streakCaption = nullptr;
+    QLabel *m_weightValue = nullptr;
+    QLabel *m_weightCaption = nullptr;
+    QPushButton *m_todayButton = nullptr;
+    QWidget *m_menuHolder = nullptr;
     QLineEdit *m_foodSearch = nullptr;
     QCompleter *m_foodCompleter = nullptr;
     QStandardItemModel *m_foodModel = nullptr;

@@ -67,7 +67,7 @@ struct AgentsScreen: View {
         return PerformanceMonitorService.section("agents.lines") {
             reads.lines(listSort.sorted(AgentLines.merge(
                 entries: model.entries, rows: center?.rows ?? [], cover: center?.desktopCover)))
-                .filter { !pending.isHidden(AgentLines.deletion($0)?.key ?? "") }
+                .filter { !pending.isHidden(AgentLines.deletionKey($0) ?? "") }
         }
     }
 
@@ -135,7 +135,7 @@ struct AgentsScreen: View {
         .onChange(of: AgentLines.runnerCounts(shown), initial: true) { (_: [String: Int], counts: [String: Int]) in
             ShellCounts.shared.runnerAgents = counts
         }
-        .navigationDestination(item: $opened) { (target: AgentOpenedLine) in
+        .shellDetail(item: $opened) { (target: AgentOpenedLine) in
             page(target)
         }
         .agentOutsideDeleteConfirmation($confirmDelete) { delete($0) }
@@ -299,7 +299,7 @@ struct AgentsScreen: View {
                 }
             }
             if let center = HostsFeature.agents, center.hub.desktop != nil, desktopTerminals != false {
-                NavigationLink {
+                ShellPaneLink {
                     DesktopTerminalScreen(center: center)
                         .shellPageClearance()
                 } label: {
@@ -310,7 +310,7 @@ struct AgentsScreen: View {
                 .accessibilityIdentifier("agents-desktop-terminal")
             }
             if let client = AgentOpsFeature.client, HostsFeature.agents?.hub.desktop != nil {
-                NavigationLink {
+                ShellPaneLink {
                     RecycleBinScreen(client: client)
                         .shellPageClearance()
                 } label: {
@@ -322,7 +322,7 @@ struct AgentsScreen: View {
             }
             if let watch = AgentWatchScreen.forAgentsTab(
                 model.groups, center: HostsFeature.agents, ownerAccount: { model.ownerAccount(for: $0) }) {
-                NavigationLink {
+                ShellPaneLink {
                     watch
                         .shellPageClearance()
                 } label: {
@@ -333,7 +333,7 @@ struct AgentsScreen: View {
                 .accessibilityIdentifier("agents-watch")
             }
             if let local = Services.get(LocalModelManager.self), local.engineAvailability.isAvailable {
-                NavigationLink {
+                ShellPaneLink {
                     OnDeviceChatView(manager: local)
                         .shellPageClearance()
                 } label: {
@@ -576,6 +576,7 @@ struct AgentsScreen: View {
                     eagleFeed: listView == .eagle ? eagle : nil, watch: dots?.controller, watchKeys: watchKeys(line))
             }
             .buttonStyle(.plain)
+            .shellPaneSelected(opened?.line.id == line.id)
         }
     }
 
@@ -607,6 +608,8 @@ struct AgentsScreen: View {
             case .control(let row):
                 if let center = HostsFeature.agents {
                     AgentRunScreen(center: center, row: row)
+                } else {
+                    AgentOpsUnavailableView()
                 }
             }
         }
@@ -644,7 +647,7 @@ struct AgentsScreen: View {
 
     @ViewBuilder private var controlNotes: some View {
         if let center = HostsFeature.agents {
-            ForEach([center.desktopNote, center.cloudNote].filter { !$0.isEmpty }, id: \.self) { (note: String) in
+            ForEach(([center.desktopNote, center.cloudNote] + center.otherDesktopNotes).filter { !$0.isEmpty }, id: \.self) { (note: String) in
                 Label(note, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 10))
                     .foregroundStyle(fm.warning)

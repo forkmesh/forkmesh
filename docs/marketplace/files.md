@@ -88,6 +88,12 @@ The same features on every platform:
   everything else goes to QuickLook / the share sheet (iPhone), a FileProvider
   `ACTION_VIEW` (Android) or the system app after a temporary download
   (desktop).
+  On the iPhone the temporary copy for opening, sharing and exporting is
+  named by `FileEntry.localTarget(in:)`: the last path component of the name
+  the server listed, refused when it is empty, `.` or `..`, and checked to
+  sit directly in the temporary folder. A malicious SMB server listing
+  `../../Documents/x` could otherwise write into the app's Documents folder
+  (guard: `FMFilesTests/FileLocalTargetTests.swift`).
 - **Local deletes** never use a raw recursive delete
   ([../engineering/destructive-actions.md](../engineering/destructive-actions.md)).
   The desktop moves local files to the trash (`QFile::moveToTrash`). The phones

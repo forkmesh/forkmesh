@@ -129,6 +129,7 @@ def test_the_release_build_refuses_system_qt_and_openssl():
     assert "-DOPENSSL_USE_STATIC_LIBS=ON" in build
     assert "NEEDED.*(libQt6|libssl|libcrypto|libnghttp3|libwebp|libicu)" in build
     assert "nghttp3_conn_client_new" in build
+    assert "-DFORKMESH_PACKAGE_MODULES=OFF" in build
     driver = DRIVER.read_text()
     assert 'cmd_check "$out/forkmesh-linux-x86_64" "$out/forkmesh-linux-x86_64.AppImage"' in driver
     for image in ("ubuntu:22.04", "ubuntu:24.04", "debian:12"):

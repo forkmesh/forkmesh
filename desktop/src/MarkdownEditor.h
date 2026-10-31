@@ -35,6 +35,7 @@ public:
     void focusEditor();
     QPlainTextEdit *sourceEdit() const { return m_source; }
     void showWriteArea();
+    void showPreviewArea();
     void addImageFile(const QString &path);
     void clearPendingAttachments();
 

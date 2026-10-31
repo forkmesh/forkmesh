@@ -20,6 +20,7 @@ deleted (`ON DELETE CASCADE`), and each note keeps its latest 500
 | `restore` | `POST /api/notes/<id>/versions` | the version restored and the new version it became (`as`) |
 | `link`, `unlink` | `POST` / `DELETE /api/notes/<id>/links` | `owner`, `repo`, `kind`, `number` |
 | `export`, `copy-link`, `task`, `issue` | the client, after Download Markdown, Copy link, Turn into a task or Turn into an issue | `owner`, `repo`, `number` for `issue` |
+| `comment`, `resolve`, `reopen` | `POST` / `PATCH /api/notes/<id>/comments` (`docs/app/notes-comments.md`) | `reply` for a reply |
 
 A share that changes nothing (inviting someone again with the same role,
 removing someone who was not there, linking an issue that is already linked)
@@ -62,6 +63,27 @@ when `owner`, `repo` and `number` are valid.
 `GET /api/notes` and `GET /api/notes/<id>` also carry `views`, `readers` and
 `actions` for every note (one grouped query per batch of the listing, as with
 shares), so the list needs no request per row.
+
+## Unread notes and the last edit
+
+`GET /api/notes` and `GET /api/notes/<id>` also tell each signed-in reader
+what changed since they last looked (`_freshness` in `app/src/notes.py`):
+
+- `lastEditedBy`: the account that saved the current version;
+- `myLastViewedAt`: your latest `view` event on the note (0 if never);
+- `unreadComments`: comments by other people written after that;
+- `openComments`: open threads (`docs/app/notes-comments.md`);
+- `unread`: someone else saved the note after your last view, or
+  `unreadComments` is above 0. A note shared with you that you never opened
+  is unread; your own edits never make a note unread.
+
+Opening a note on any client records a `view` (`POST /api/notes/<id>/activity`
+with `{"kind": "view"}`), which is what clears the mark; the client also
+clears it locally at once. Every client's note list shows a dot on unread
+rows, the shared-with avatars, Private / Shared / Public (and on the desktop
+Local / Cloud / Local + cloud), and the last edit as "Today 3:14 PM",
+"Yesterday 9:02 AM", "Oct 29, 3:14 PM" or "Oct 29, 2025", with "by <name>"
+when someone else made it.
 
 ## The web page
 

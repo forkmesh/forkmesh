@@ -115,7 +115,7 @@ final class GlassesWatcher: NSObject {
         player?.stop()
         player = nil
         if !PromptDictation.isListening && DesktopAlarm.shared.ringing == nil {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            OtherAppCall.deactivateSession()
         }
     }
 
@@ -132,7 +132,7 @@ final class GlassesWatcher: NSObject {
         haptics = nil
         ringing = nil
         if !PromptDictation.isListening && DesktopAlarm.shared.ringing == nil {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            OtherAppCall.deactivateSession()
         }
     }
 
@@ -149,7 +149,7 @@ final class GlassesWatcher: NSObject {
         case .unauthorized:
             failed("Allow Bluetooth for ForkMesh in Settings so Glasses Alert can scan.")
         case .poweredOff:
-            failed("Turn Bluetooth on to watch for smart glasses.")
+            failed("Turn Bluetooth on to watch for smart glasses and cameras.")
         case .unsupported:
             failed("This device has no Bluetooth LE.")
         default:
@@ -258,7 +258,7 @@ final class GlassesWatcher: NSObject {
             let had: Bool = homingState.target != nil
             homingState.follow(nearby, now: now)
             if !had && homingState.target != nil { publishHoming() }
-        } else if ids.allSatisfy({ !GlassesSignatures.companyIds.contains($0) }) && !GlassesSignatures.nameMatches(name),
+        } else if GlassesSignatures.kind(advert) == nil,
             let device = NearbyKinds.device(advert, now: now)
         {
             census.observe(device)
@@ -297,7 +297,7 @@ final class GlassesWatcher: NSObject {
 
     private func notify(_ sighting: GlassesSighting) {
         let content: UNMutableNotificationContent = UNMutableNotificationContent()
-        content.title = "Smart glasses nearby"
+        content.title = sighting.kind.title
         content.body = GlassesSignatures.alertText(sighting)
         content.sound = UNNotificationSound(named: UNNotificationSoundName("\(DesktopAlarm.soundName).wav"))
         content.interruptionLevel = .timeSensitive

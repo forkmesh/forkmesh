@@ -2,12 +2,15 @@ import asyncio
 import smtplib
 import socket
 from email.message import EmailMessage
-from email.utils import formataddr, formatdate, make_msgid
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 25
 TIMEOUT_SECONDS = 20
 FEEDBACK_SENDER = "forkmesh"
+SENDER = "founders@forkmesh.com"
+SENDER_NAME = "ForkMesh"
+BOUNCE_MAILBOX = "no-reply"
 
 
 def enabled(env):
@@ -52,9 +55,17 @@ def build(sender, sender_name, to_email, subject, text, html=None, kind="",
     return message
 
 
+def envelope_sender(message):
+    address = parseaddr(str(message["From"] or ""))[1]
+    if "@" not in address:
+        return None
+    return "%s@%s" % (BOUNCE_MAILBOX, address.rsplit("@", 1)[-1])
+
+
 def _deliver(host, port, message, timeout):
     with smtplib.SMTP(host, port, timeout=timeout) as client:
-        refused = client.send_message(message)
+        refused = client.send_message(
+            message, from_addr=envelope_sender(message))
     if refused:
         raise smtplib.SMTPRecipientsRefused(refused)
 

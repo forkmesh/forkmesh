@@ -294,6 +294,8 @@ QJsonObject unauthorizedReply(const QString &method)
         action = QStringLiteral("manage its releases");
     else if (method.startsWith(WindowMethodPrefix))
         action = QStringLiteral("open or read its windows");
+    else if (method.startsWith(QLatin1String("terminals.")))
+        action = QStringLiteral("read or type in its terminals");
     return errorReply(QStringLiteral("unauthorized"),
                       QStringLiteral("Only agents this ForkMesh desktop launched "
                                      "can %1.")

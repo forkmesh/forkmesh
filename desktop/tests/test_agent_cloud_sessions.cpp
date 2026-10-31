@@ -877,6 +877,43 @@ int main(int argc, char **argv)
         }
     }
 
+    {
+        const QJsonObject listed = QJsonDocument::fromJson(R"json({
+          "ok": true,
+          "desktops": [
+            {"key": "AAAAAAkey-old", "node": "laptop", "lastSeen": 1000},
+            {"key": "", "node": "nokey", "lastSeen": 9000},
+            {"key": "BBBBBBkey-new", "node": "laptop", "lastSeen": 5000},
+            {"key": "CCCCCCkey", "node": "studio", "lastSeen": 3000},
+            {"key": "CCCCCCkey", "node": "studio-again", "lastSeen": 3000},
+            {"key": "DDDDDDkey", "node": "", "lastSeen": 0}
+          ]})json").object();
+        const QList<HandoffDesktop> desktops = handoffDesktops(listed);
+        check(desktops.size() == 4, "rows without a key or with a repeated key are dropped");
+        check(desktops.size() == 4 && desktops.at(0).key == "BBBBBBkey-new" &&
+                  desktops.at(1).key == "CCCCCCkey" &&
+                  desktops.at(2).key == "AAAAAAkey-old",
+              "desktops are listed most recently seen first");
+        check(desktops.size() == 4 && desktops.at(0).label == "laptop (BBBBBB)" &&
+                  desktops.at(2).label == "laptop (AAAAAA)" &&
+                  desktops.at(1).label == "studio",
+              "two desktops with one name are told apart by their key");
+        check(desktops.size() == 4 && desktops.at(3).label == "Unnamed desktop",
+              "a desktop without a name still gets a label");
+        check(handoffDesktops(QJsonObject()).isEmpty(),
+              "an answer without desktops lists none");
+        const qint64 now = 10LL * 24 * 3600 * 1000;
+        check(handoffDesktopSeenText(0, now) == "Not seen online yet" &&
+                  handoffDesktopSeenText(now - 30 * 1000, now) == "Seen just now" &&
+                  handoffDesktopSeenText(now - 15 * 60 * 1000, now) ==
+                      "Seen 15 minutes ago" &&
+                  handoffDesktopSeenText(now - 5LL * 3600 * 1000, now) ==
+                      "Seen 5 hours ago" &&
+                  handoffDesktopSeenText(now - 3LL * 24 * 3600 * 1000, now) ==
+                      "Seen 3 days ago",
+              "when each desktop was last seen reads plainly");
+    }
+
     if (failures == 0)
         std::cout << "agent cloud sessions: all checks passed\n";
     return failures == 0 ? 0 : 1;

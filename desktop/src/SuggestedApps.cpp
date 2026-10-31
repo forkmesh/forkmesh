@@ -113,6 +113,9 @@ QString packageName(const QString &id, PackageManager manager)
         {QStringLiteral("cloudflared"),
          {"cloudflared", nullptr, "cloudflared", "cloudflared", "cloudflared", nullptr,
           "Cloudflare.cloudflared", "cloudflared"}},
+        {QStringLiteral("webengine"),
+         {"qt", "qt6-webengine-dev", "qt6-qtwebengine-devel", "qt6-webengine",
+          "qt6-webengine-devel", "qt6-qtwebengine-dev", nullptr, nullptr}},
     };
 
     const auto it = packages.constFind(id);
@@ -218,6 +221,16 @@ const QVector<SuggestedApp> &suggestedApps()
          QStringLiteral("Supports optional Cloudflare tunnel and deployment workflows."), true},
     };
     return apps;
+}
+
+const SuggestedApp &embeddedBrowserComponent()
+{
+    static const SuggestedApp component = {
+        QStringLiteral("webengine"), QStringLiteral("Qt WebEngine"), {}, {},
+        QStringLiteral("Shows web pages inside ForkMesh: the Browser tab, agent "
+                       "browser windows and YouTube decks."),
+        true};
+    return component;
 }
 
 const SuggestedApp *suggestedAppById(const QString &id)

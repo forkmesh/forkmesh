@@ -17,16 +17,17 @@ def _header():
 
 def test_the_header_has_one_primary_action_and_a_more_menu():
     header = _header()
-    # Add contact is the only green button on the page header.
-    assert header.count("bg-primary") == 1
-    assert re.search(r"<button data-crm-contact-new[^>]*bg-primary", header)
+    # Add contact is the only green (cta) button on the page header.
+    assert header.count("bg-cta ") == 1 and "bg-primary" not in header
+    assert re.search(r"<button data-crm-contact-new[^>]*bg-cta [^>]*text-cta-foreground hover:bg-cta/90", header)
     # Weekly chores live behind a native disclosure menu, still wired to the
     # same hooks the page script already drives.
     menu = header.split("<details data-crm-actions", 1)[1].split("</details>", 1)[0]
     for hook in ("data-crm-import", "data-crm-export",
                  "data-crm-zoho-sync", "data-crm-open-gmail",
                  "data-crm-open-zoho", "data-crm-extension-install",
-                 "data-crm-extensions-open", "data-crm-settings-open"):
+                 "data-crm-extensions-open", "data-crm-settings-open",
+                 "data-crm-my-zoho-open"):
         assert hook in menu, hook
     # Refresh is not a weekly chore any more: it is the only way to see a
     # teammate's change, so it sits on the header itself.
@@ -145,8 +146,8 @@ def test_contacts_inbox_outreach_and_team_are_separate_tabs():
     assert re.search(r'<div data-crm-sections data-crm-org-only role="tablist" aria-label="CRM sections"', WEB_VIEW)
     app = WEB_VIEW.split("<div data-crm-app", 1)[1]
     panels = re.findall(r'<div data-crm-section="([a-z]+)" id="crm-section-\1" role="tabpanel" aria-labelledby="crm-section-tab-\1"', app)
-    assert panels == ["contacts", "inbox", "outreach", "team"]
-    for section in ("contacts", "inbox", "outreach", "team"):
+    assert panels == ["contacts", "inbox", "outreach", "team", "zoho"]
+    for section in ("contacts", "inbox", "outreach", "team", "zoho"):
         assert f'data-crm-section-tab="{section}"' in WEB_VIEW, section
 
     def panel(name):
@@ -159,12 +160,13 @@ def test_contacts_inbox_outreach_and_team_are_separate_tabs():
     assert "data-crm-team-board" in panel("team")
     assert "data-crm-team-chart" in panel("team")
     assert "data-crm-team-table" in panel("team")
+    assert "data-crm-my-zoho-form" in panel("zoho")
     # The open tab is in the address, and arrow keys move between tabs.
     assert 'url.searchParams.set("section", next)' in WEB_SCRIPT
     assert "state.crmView.section = crmSectionFromUrl();" in WEB_SCRIPT
     assert WEB_SCRIPT.index("state.crmView.section = crmSectionFromUrl();") < WEB_SCRIPT.index(
         "select.value = state.crmView.organization; await loadCrm();")
-    assert "{ ArrowRight: 1, ArrowLeft: -1 }[event.key]" in WEB_SCRIPT
+    assert "{ ArrowDown: 1, ArrowUp: -1, ArrowRight: 1, ArrowLeft: -1 }[event.key]" in WEB_SCRIPT
 
 
 def test_the_contact_dialog_has_an_input_for_every_field_it_saves():
@@ -208,7 +210,7 @@ def test_reads_retry_a_wedged_isolate_blip_and_writes_are_never_replayed():
 
 
 def test_the_team_tab_ranks_members_and_charts_their_days_in_local_time():
-    assert 'const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team"];' in WEB_SCRIPT
+    assert 'const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "zoho"];' in WEB_SCRIPT
     assert "tz: String(-new Date().getTimezoneOffset())" in WEB_SCRIPT
     assert "state.crmView.activity = payload.activity" in WEB_SCRIPT
     assert "renderCrmTeam();" in WEB_SCRIPT.split("function renderCrm() {", 1)[1].split("\n  }", 1)[0]
@@ -245,7 +247,7 @@ def test_the_contacts_tab_opens_with_the_best_person_to_contact():
     assert (f"const CRM_NEXT_FOLLOW_UP_DAYS = "
             f"{worker_constant('EMAIL_SUGGESTION_FOLLOW_UP_DAYS')};") in WEB_SCRIPT
     contacts = WEB_VIEW.split('data-crm-section="contacts"', 1)[1]
-    assert contacts.index("data-crm-next ") < contacts.index("data-crm-tabs")
+    assert contacts.index("data-crm-next ") < contacts.index("data-crm-search")
     assert "renderCrmNextContact();" in WEB_SCRIPT.split("function renderCrmContacts() {", 1)[1]
     render = WEB_SCRIPT.split("function renderCrmNextContact(", 1)[1].split("\n  }\n", 1)[0]
     assert "CRM_NEXT_MODES.map(crmNextCardHtml)" in render

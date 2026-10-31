@@ -69,7 +69,7 @@ packs, Standard preselected, with a single Continue:
 desktop keep the off-by-default rule.
 
 - Where: iOS `StarterPack` beside `PackageGate.starterPackages` in
-  `FMApi/Navigation/PackageGate.swift`, screen `StarterPackView`, shown by
+  `FMApi/Navigation/PackageGate.swift`, screen `StarterPackPage`, shown by
   `AppHomeView` while `SettingsService.needsStarterPack`; Android
   `StarterPack` beside `PackageGate.STARTER` in `C/market/PackageGate.kt`,
   screen `StarterPackScreen`, shown by `Features.Root` while
@@ -107,7 +107,9 @@ repository tab, sidebar link, search hit, command palette entry, assistant
 route, quick action, recents row) shows only while the package is effectively
 installed (it and everything it depends on are installed) and the app's own
 place is in the package's places. Deep links and direct routes keep working;
-hiding is about entry points.
+hiding is about entry points. On the desktop the core's background services
+behind a switch (the agent watchers, the local mesh, log feeds, the task
+read) start and stop with it too ([shell](../desktop/shell.md)).
 
 ### Account state
 

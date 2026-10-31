@@ -30,7 +30,7 @@ test("the official site origins can embed World and an unlisted origin cannot", 
     .find((line) => line.startsWith("Content-Security-Policy: "))
     .slice("Content-Security-Policy: ".length);
   expect(csp.split(";").map((value) => value.trim())).toContain(
-    "frame-ancestors 'self' https://forkmesh.com https://forkmesh.com",
+    "frame-ancestors 'self' https://forkmesh.com https://www.forkmesh.com",
   );
   expect(rule).toContain("! X-Frame-Options");
   expect(rule).not.toContain("X-Frame-Options: SAMEORIGIN");

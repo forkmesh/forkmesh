@@ -245,4 +245,14 @@ QByteArray cloudAgentProofCanonical(const QString &proof, const QString &user,
                                     const QString &path, const QString &prompt,
                                     const QString &timestamp);
 
+struct HandoffDesktop {
+    QString key;
+    QString node;
+    QString label;
+    qint64 lastSeenMs = 0;
+};
+
+QList<HandoffDesktop> handoffDesktops(const QJsonObject &payload);
+QString handoffDesktopSeenText(qint64 lastSeenMs, qint64 nowMs);
+
 } // namespace forkmesh::agents

@@ -1,0 +1,63 @@
+{
+  "version": "v1.0.0",
+  "entity": {
+    "type": "organisation",
+    "role": "owner",
+    "name": "Kaif",
+    "email": "kaif@forkmesh.com",
+    "description": "ForkMesh is building resilient, decentralised infrastructure for preserving and distributing open-source software repositories. It helps ensure that critical open-source code remains accessible, recoverable and independently available even when individual hosting platforms become unavailable.",
+    "webpageUrl": {
+      "url": "https://forkmesh.com/"
+    }
+  },
+  "projects": [
+    {
+      "guid": "forkmesh",
+      "name": "Forkmesh",
+      "description": "ForkMesh is building resilient, decentralised infrastructure for preserving and distributing open-source software repositories. It helps ensure that critical open-source code remains accessible, recoverable and independently available even when individual hosting platforms become unavailable.",
+      "webpageUrl": {
+        "url": "https://forkmesh.com/"
+      },
+      "repositoryUrl": {
+        "url": "https://forkmesh.com/forkmesh/forkmesh"
+      },
+      "licenses": [
+        "spdx:MIT"
+      ],
+      "tags": [
+        "git",
+        "developer-tools",
+        "decentralization",
+        "repository-mirroring",
+        "distributed-systems",
+        "infrastructure",
+        "open-source",
+        "software-preservation"
+      ]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "grant-disbursement",
+        "type": "other",
+        "address": "Disbursement details to be coordinated with FOSS United after approval.",
+        "description": "Grant disbursement for ForkMesh open-source development and infrastructure. Payment recipient, banking details and applicable documentation will be coordinated with FOSS United after grant approval."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "foss-united-project-grant",
+        "status": "inactive",
+        "name": "ForkMesh Infrastructure and Open Source Development Grant",
+        "amount": 600000,
+        "currency": "INR",
+        "frequency": "one-time",
+        "channels": [
+          "grant-disbursement"
+        ]
+      }
+    ],
+    "history": []
+  }
+}

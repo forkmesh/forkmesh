@@ -246,6 +246,7 @@ def snapshot_build(runner, sleep=time.sleep):
         public = Path(str(common.ssh_key_path()) + ".pub").read_text().split()
         ssh.run(ip, "umask 077; install -d -m 0700 /root/.ssh; cat >/root/.ssh/authorized_keys",
                 input_bytes=(" ".join(public[:2]) + " fmnext-fleet\n").encode())
+        ssh.run(ip, next_fleet.ssh_port_image_script(fleet))
         ssh.run(ip, SNAPSHOT_CLEAN, check=False)
         description = "fmnext-autoscale %s rev %s" % (
             time.strftime("%Y-%m-%d %H:%M", time.gmtime()), next_deploy.git_rev(

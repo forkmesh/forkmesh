@@ -189,6 +189,7 @@
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    followSystemDashboardTheme();
     applyPlatformName();
     void instanceInfo();
     watchGenieSetting();
@@ -216,10 +217,17 @@
       initCommentTips();
       void initReactionSettings();
       void initAiReviewSettings();
+      void initSeasonSettings();
+      watchSeason();
+      initRepoMirrorQuota();
+      void instanceInfo().then(() => {
+        if (instancePluginOn("post-translate")) initPostTranslate();
+      }).catch(() => {});
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
       watchUserNames();
+      document.documentElement.dataset.composerHost = "1";
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Invoice</title>
+    <meta name="description" content="An invoice sent with ForkMesh." />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/invoice/invoice.css?v=${version}" />
+    <script src="/invoice/invoice.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <main class="iv-wrap">
+      <p class="iv-status" data-iv-status role="status">Loading the invoice…</p>
+      <article class="iv-sheet" data-iv-sheet hidden>
+        <header class="iv-head">
+          <div>
+            <h1 class="iv-business" data-iv-business></h1>
+            <p class="iv-muted iv-pre" data-iv-business-address></p>
+            <p class="iv-muted" data-iv-business-email></p>
+          </div>
+          <div class="iv-meta">
+            <p class="iv-kicker">Invoice</p>
+            <p class="iv-number" data-iv-number></p>
+            <p class="iv-badge" data-iv-badge></p>
+          </div>
+        </header>
+        <section class="iv-parties">
+          <div>
+            <p class="iv-kicker">Billed to</p>
+            <p data-iv-client-name></p>
+            <p class="iv-muted" data-iv-client-company></p>
+            <p class="iv-muted iv-pre" data-iv-client-address></p>
+          </div>
+          <dl class="iv-dates">
+            <div><dt>Issued</dt><dd data-iv-issued></dd></div>
+            <div><dt>Due</dt><dd data-iv-due></dd></div>
+          </dl>
+        </section>
+        <table class="iv-lines">
+          <thead><tr><th>Description</th><th class="iv-num">Qty</th><th class="iv-num">Unit price</th><th class="iv-num">Amount</th></tr></thead>
+          <tbody data-iv-lines></tbody>
+          <tfoot data-iv-totals></tfoot>
+        </table>
+        <section class="iv-pay" data-iv-pay hidden>
+          <p class="iv-kicker">Amount due</p>
+          <p class="iv-due-amount" data-iv-balance></p>
+          <a class="iv-pay-button" data-iv-pay-link rel="noopener noreferrer" hidden>Pay now</a>
+        </section>
+        <section class="iv-block" data-iv-instructions-block hidden><p class="iv-kicker">How to pay</p><p class="iv-pre" data-iv-instructions></p></section>
+        <section class="iv-block" data-iv-notes-block hidden><p class="iv-kicker">Notes</p><p class="iv-pre" data-iv-notes></p></section>
+        <section class="iv-block" data-iv-terms-block hidden><p class="iv-kicker">Terms</p><p class="iv-pre" data-iv-terms></p></section>
+        <footer class="iv-footer"><p class="iv-pre" data-iv-footer></p></footer>
+      </article>
+      <div class="iv-actions" data-iv-actions hidden>
+        <button type="button" class="secondary-button" data-iv-print>Print or save as PDF</button>
+      </div>
+      <p class="iv-credit">Sent with <a href="https://forkmesh.com">ForkMesh</a></p>
+    </main>
+  </body>
+</html>

@@ -3,7 +3,8 @@
 Part of [the website docs](README.md). The same Genie spider as on the phone
 ([../native/GENIE.md](../native/GENIE.md)) and the desktop
 ([../desktop/genie.md](../desktop/genie.md)) appears on web pages as a guide.
-It has no health, speech or model, and says nothing until it is clicked.
+It has no health, speech or model, and says nothing until it is clicked. In the 3D World it is a different, autonomous spider:
+[../world/genie-spider.md](../world/genie-spider.md).
 
 ## Where the code is
 
@@ -24,7 +25,10 @@ a content-hash `?v=`; an App page picks up a change only when the App is
 deployed too.
 
 Left out on purpose: the full-screen chat (its composer is part of the
-layout), the OAuth consent screen and the pitch deck. A page opts out with
+layout), the OAuth consent screen and the pitch deck. The full-screen chat
+still loads the script, with `data-genie="off"`, when it draws a `#welcome`
+genie spider greeting: only `paint` is used
+([../app/chat-genie-welcome.md](../app/chat-genie-welcome.md)). A page opts out with
 an empty `{% block genie %}` or `data-genie="off"` on `<html>`.
 
 **White-label instances.** The spider is the `genie` instance plugin and is
@@ -130,3 +134,13 @@ news for signed-in users (notifications from
 `GET /api/notifications?node=…&limit=1`, cached 5 minutes in
 `forkmesh.genie.inbox`, or new chat messages), then the page's line
 (`PAGE_LINES`), then general lines (`GUEST_LINES`, `MEMBER_LINES`).
+
+## Halloween
+
+While `<html>` has `data-season="halloween"` (set by `season.js`, see
+[the seasonal theme](../app/seasonal-theme.md)), the painter swaps the teal
+glow (`TEAL_GLOW*`) for orange (`EMBER*`) and draws `witchHat()` instead of
+`turban()`: a purple-black hat with a bent tip that flops as it walks, an
+orange band and a glowing buckle. The check runs every frame, so the Genie
+changes as soon as the season does. Effect strokes built with `glowRgb()`, the
+focus ring and the speech bubble border follow the same colour.

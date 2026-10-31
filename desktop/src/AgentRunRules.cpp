@@ -241,4 +241,89 @@ QString claudeSettingsWithAllowRules(const QString &settings, const QStringList 
     return QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
 }
 
+QString readGuardHookScript()
+{
+    return QStringLiteral(R"PY(import json, os, sys
+
+LIMIT = %1
+SKIP = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".pdf", ".ipynb")
+
+def main():
+    try:
+        event = json.load(sys.stdin)
+    except Exception:
+        return 0
+    data = event.get("tool_input")
+    if not isinstance(data, dict):
+        return 0
+    if data.get("offset") or data.get("limit") or data.get("pages"):
+        return 0
+    path = str(data.get("file_path") or "")
+    if not path or path.lower().endswith(SKIP):
+        return 0
+    if not os.path.isabs(path):
+        path = os.path.join(str(event.get("cwd") or ""), path)
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return 0
+    if size <= LIMIT:
+        return 0
+    lines = 0
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(8192)
+            if b"\0" in head:
+                return 0
+            lines = head.count(b"\n")
+            while True:
+                chunk = handle.read(1 << 20)
+                if not chunk:
+                    break
+                lines += chunk.count(b"\n")
+    except OSError:
+        return 0
+    lines += 1
+    reason = ("%s is %d lines (about %dK tokens), too large to read whole. "
+              "Grep -n the symbol or its headings first, then Read about 300 lines "
+              "around the match with offset and limit. If you need every line, "
+              "Read it with offset 1 and limit %d."
+              % (os.path.basename(path), lines, max(1, size // 4000), lines))
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": reason}}))
+    return 0
+
+sys.exit(main())
+)PY")
+        .arg(kReadGuardBytes);
+}
+
+QString claudeSettingsWithReadGuard(const QString &settings)
+{
+    const QString encoded = QString::fromLatin1(readGuardHookScript().toUtf8().toBase64());
+    const QString command =
+        QStringLiteral("python3 -c \"import base64,sys;exec(base64.b64decode(sys.argv[1]))\" %1")
+            .arg(encoded);
+    QJsonObject object = QJsonDocument::fromJson(settings.toUtf8()).object();
+    QJsonObject hooks = object.value(QStringLiteral("hooks")).toObject();
+    QJsonArray pre = hooks.value(QStringLiteral("PreToolUse")).toArray();
+    for (const QJsonValue &entry : std::as_const(pre)) {
+        const QJsonArray commands = entry.toObject().value(QStringLiteral("hooks")).toArray();
+        for (const QJsonValue &hook : commands)
+            if (hook.toObject().value(QStringLiteral("command")).toString() == command)
+                return settings;
+    }
+    pre.append(QJsonObject{
+        {QStringLiteral("matcher"), QStringLiteral("Read")},
+        {QStringLiteral("hooks"),
+         QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("command")},
+                                {QStringLiteral("command"), command},
+                                {QStringLiteral("timeout"), 10}}}}});
+    hooks.insert(QStringLiteral("PreToolUse"), pre);
+    object.insert(QStringLiteral("hooks"), hooks);
+    return QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
+}
+
 } // namespace forkmesh::agentrules

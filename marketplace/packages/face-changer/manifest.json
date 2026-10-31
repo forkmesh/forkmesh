@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Privacy",
-  "version": "1.2.0",
-  "summary": "Wear a stand-in face and a new outfit, swap your background and change your voice live in the browser or the phone app. Share a clip, take a snapshot, or pop it out into any call or meeting app. Video and sound stay on your device.",
+  "version": "1.3.0",
+  "summary": "Wear a stand-in face and a new outfit, swap your background and change your voice live. On the desktop it becomes a \"ForkMesh Camera\" any call or meeting app can pick. Video and sound stay on your device.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -71,8 +71,18 @@
     },
     {
       "id": "chrome.rail.button",
-      "label": "Add a Face Changer button to the desktop rail that opens this page in your browser",
+      "label": "Add a Face Changer page to the desktop rail",
       "risk": "low"
+    },
+    {
+      "id": "device.video.virtual",
+      "label": "Create a \"ForkMesh Camera\" other apps can pick while the desktop camera is on (Linux)",
+      "risk": "sensitive"
+    },
+    {
+      "id": "device.process.video",
+      "label": "Ask for your password to load the system's v4l2loopback camera driver when you set it up",
+      "risk": "sensitive"
     }
   ],
   "dependencies": [],

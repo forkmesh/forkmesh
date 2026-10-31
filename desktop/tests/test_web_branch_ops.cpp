@@ -520,6 +520,12 @@ void testMergeAndCleanUpRemovesTheBranchAndItsWorktree()
         QDir(worktreeRoot.path()).filePath(QStringLiteral("linked"));
     git(path, {QStringLiteral("worktree"), QStringLiteral("add"), linked,
                QStringLiteral("feature/own")});
+    writeFile(worktreeRoot.path(), QStringLiteral(".gitignore"),
+              QStringLiteral("# ForkMesh agent worktrees. Never part of the project.\n*\n"));
+    const QString scratch =
+        QDir(worktreeRoot.path()).filePath(QStringLiteral(".scratch/linked"));
+    QDir().mkpath(scratch);
+    writeFile(scratch, QStringLiteral("build.log"), QStringLiteral("log\n"));
 
     auto merged = forkmesh::branchops::applyBranchOp(
         path, QStringLiteral("main"),
@@ -538,6 +544,7 @@ void testMergeAndCleanUpRemovesTheBranchAndItsWorktree()
               == merged.branchOid,
           "clean-up leaves a tombstone so replication cannot restore the branch");
     check(!QDir(linked).exists(), "its worktree is gone");
+    check(!QDir(scratch).exists(), "its scratch folder is gone");
     check(merged.message.contains(QStringLiteral("worktree")),
           "the report says the worktree went too");
 

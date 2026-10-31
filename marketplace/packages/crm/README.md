@@ -42,6 +42,76 @@ generic package sockets and generated registries.
   any member may save `tableViews`, every other setting is for owners and
   admins. Deleted built-in columns are recorded in `removedColumns`.
 
+## Loading and paging
+
+Every contact is sealed, so the worker opens each row it returns; an
+organization with a few thousand contacts took 5 to 6 seconds to answer the
+whole list in one response (October 2026, 2,800 contacts, 600 KB gzipped).
+Paging keeps the first screen fast without moving list filters to the server,
+which cannot read sealed list memberships.
+
+- **Contacts API**: `GET /api/crm/<org>/contacts?limit=<n>&cursor=<c>` answers
+  up to `n` contacts (at most `CONTACT_PAGE_MAX`, 1000), newest edit first,
+  and `next`, the cursor for the following page (`<updated_at>.<contact id>`,
+  empty after the last page). Without `limit` it answers every contact, as
+  before, so older desktop and phone builds are unchanged.
+- **Summary**: `GET /api/crm/<org>?contacts=<n>` sends only the first `n`
+  contacts, with `contactsNext` (the cursor for the rest) and
+  `contactsTotal`. `summary.contacts` is the total; `summary.customers` is left
+  out because it would need every row, and the client counts it as pages
+  arrive. The revision also covers the count, latest and summed edit times of
+  all contacts, so a Refresh still notices a change on a page not yet sent.
+- **Web**: the page asks for the first 250 contacts, renders them, then reads
+  the rest 1000 at a time in the background (`crmLoadRemainingContacts`) and
+  re-renders after each page; the pager reads "loading contacts, N of M"
+  meanwhile. A newer read, or switching organization, drops an older load. A
+  failed page clears the revision so the next Refresh reads everything again.
+- **Row pager**: the table and the phone cards render one page of the filtered
+  rows (50, 100, 250 or 500, remembered in the browser as
+  `forkmesh.crm.rowPageSize`, 100 by default), with Previous and Next. Changing
+  the list, search, filters or sort returns to the first page. Selection,
+  **Select all** and bulk actions still cover every filtered row, not only the
+  page shown. The board and People layouts are not paged.
+- **Desktop** asks for the first 250 contacts too (`kContactFirstPage`), then
+  reads the rest 1000 at a time (`CrmFeature::loadRemainingContacts`) and
+  re-applies the summary after each page, with "Loading contacts, N of M" in
+  the status line. It saves its on-disk copy only once every page is in, so a
+  saved copy is never partial; a newer load or another organization drops an
+  older one, and a failed page clears the revision. The desktop table is not
+  row-paged.
+- **Phones** (iOS `CrmViewModel`, Android `CrmModel`) ask the summary for the
+  first 250 contacts, show them, then read the rest 1000 at a time
+  (`crmContactsPage`) in the background, with "Loading contacts, N of M" in
+  the CRM header. A newer load or another organization drops an older load's
+  pages; a failed page stops loading, says "Some contacts did not load" and
+  clears the revision; the in-memory copy is kept only once every page is in.
+  On Android an edit saved while pages arrive keeps the pages that came in
+  after it was built. Genie, the toolbox and the navigator counts still read
+  every contact in one summary. `docs/native/ANDROID.md` has the details.
+- Added in 1.46.0.
+
+
+`POST /api/crm/<org>/contacts` is safe to send again. Every client picks a
+`requestId` (32 hex characters) when its add form opens and sends it with the
+contact; the worker uses it as the new contact's id, so a second send of the
+same form (a double tap, a phone that lost the reply, a retry after a 5xx)
+answers `200` with `"replayed": true` and the contact it already made instead
+of adding a twin or answering "already uses that email". Web, desktop and iOS
+retry a create on a network error or a 5xx only because of this; edits are
+never replayed.
+
+An email the organization already has answers `409 contact_email_exists`
+with that `contact`, so the form can say who it is and offer **Open it** (web,
+desktop) or, on iOS, **Open** and **Add these details to them** (fills only
+the fields their record is missing, adds new tags and the list the form was
+opened from; nothing they already have is overwritten). The form shows the
+error inside itself: before this the web message landed behind the open
+dialog and the iOS one at the bottom of a long form, so a failed add looked
+like nothing happened. Two adds of one address racing past the check hit the
+unique email index; the worker turns that into the same `409` (and a CSV row
+into an update) instead of a `500`. A shared sheet's add still answers
+`contact_exists` without naming anyone.
+
 ## Editing contacts
 
 - Moves: **Move to pipeline list** (keeps a stage of the same name, else the
@@ -56,6 +126,21 @@ generic package sockets and generated registries.
 - Header menus delete a column outright (`POST /contacts/delete-column`): a
   custom column's values leave every contact; a built-in column (other than
   Name, Email, Flow and Stage) is blanked and hidden, and can be restored.
+- Copying a column (1.45.0, desktop and web): **Copy "<column>" column** heads
+  the header's right-click menu (also on a shared sheet) and copies every shown
+  row's value in that column, one per line, in table order. Pressing on a cell
+  and dragging up or down within the same column picks just those cells in
+  place of the usual row drag. A right click on a picked cell offers **Copy N
+  values**, and Ctrl/Cmd+C copies them too. Ctrl, Shift or Cmd with the press
+  keeps the row selection. The desktop does this in `ContactsTable`, a
+  `QTableWidget` subclass: it takes over the mouse moves once the drag has
+  moved to a new row in the same column. Its release skips `itemClicked`, so a
+  drag never opens an editor, the detail card or a compose window. The web
+  page tags each cell `data-crm-cell="<field>"`. It reads a cell's value from
+  its input or select, the name button, or its text, so computed columns and
+  shared sheets copy what is on screen. A pick is one column of single cells,
+  not whole rows, so the row actions (move, stage, mark contacted) see no
+  selected contact until the next plain click.
 - Filters: owner (**My contacts**, **Unassigned**, a member), **Next step
   set**, **Quiet 30+ days** (`CRM_QUIET_DAYS`), **Never contacted**, **My
   queue**, **Waiting on us** (newest linked email is inbound), **Possible
@@ -254,6 +339,20 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
 
 ## Email
 
+**One-off sends** (`POST /api/crm/<org>/emails/send`) that do not go out
+through the member's own Zoho connection follow the founders
+outreach rules: only owners, admins and the outreach roster may send, each
+sender gets `OUTREACH_DAILY_LIMIT` one-off sends per 24 hours, and only owners
+and admins may set `fromEmail`/`fromName`; everyone else sends as the
+organization's saved sender. Why: without a key the send goes through the
+host's shared mail account, so any account that made an organization and
+installed the CRM could otherwise send arbitrary HTML under a display name of
+its choice. On the shared sender the host then sends from its own address as
+`<organization> via ForkMesh` with the CRM's sender address as `Reply-To`
+(docs/MAIL_LOG.md), so the saved and chosen `fromName` show only in the CRM;
+every shared send carries `organization` and `account` so the host's per-org
+and per-account daily caps apply.
+
 ### Zoho Mail connection
 
 - **One click** (when the host runs a ForkMesh Zoho app): an owner or admin
@@ -344,6 +443,56 @@ still pointed there. Now:
 
 Tests: the two `forbidden_send` tests in `tests/test_auto_email.py` and the
 desktop bar test in `tests/test_note_drafts_and_zoho_guide.py`.
+
+**Every member connects their own Zoho Mail** (1.44.0). Before 1.44.0 Zoho
+Mail was one connection per organization, made by an owner or admin, so every
+member's automated email went out from that one mailbox and only that mailbox
+was synced. Now each member can connect their own mailbox, and the
+organization connection stays as the shared fallback:
+
+- **Stored**: `crm_zoho_members` (`org_bi`, `member_bi`, `member_name`,
+  `updated_at`, sealed `data`), one row per member, with the same fields as
+  the organization's `zoho` record (`region`, `accountId`, `clientId`,
+  `clientSecret` for a Self Client, `refreshToken`, `managed`, `scope`,
+  `connectedAt`, `lastSyncAt`, `lastSentAt`, `sendRefusedAt`,
+  `tokenRejectedAt`, `lastSyncError`). Uninstalling purges it with the rest
+  and drops the table with the schema; the uninstall export leaves it out.
+- **Connecting**: `POST /zoho/connect`, `POST /zoho/exchange` and the new
+  `POST /zoho/disconnect` take `{"mine": true}` for the caller's own mailbox.
+  With `mine` any member may call them; without it they act on the
+  organization connection and stay for owners and admins (disconnect then
+  equals `PUT /settings {"zohoDisconnect": true}`). The one-click `state`
+  carries `mine`; the callback re-checks membership and install (not the
+  role) and redirects with `zoho=connected_mine`. A member's own connection
+  files no team ping.
+- **Projected**: `settings.zohoMine` (`_zoho_mine`) is `_zoho_project` of the
+  caller's own record plus `own: true`, on the summary, `GET /settings`, a
+  settings save, a sync and a connect. `settings.zoho` is still the
+  organization's.
+- **Sending**: automated email (`POST /outreach/auto`) uses the sender's own
+  connection first, then the organization's, then Mailtrap
+  (`_zoho_for`). The send grant (`lastSentAt`, `sendRefusedAt`, ...) is
+  recorded on the connection that was used. A one-off **Compose**
+  (`POST /emails/send`) from a member with their own connection goes out
+  from that mailbox (`_send_own_zoho`; plain text becomes escaped HTML, the
+  answer carries `via: "zoho"` and `fromEmail`) unless the request names a
+  Mailtrap key; members without one keep the Mailtrap path. The organization
+  connection alone does not change Compose.
+- **Syncing**: `POST /mail/import` takes `mailbox: "mine" | "organization"`;
+  without it the caller's own mailbox wins when connected. Each record keeps
+  its own `lastSyncAt`, so the 15-minute auto-sync throttle is per mailbox.
+  The web page auto-syncs both the viewer's mailbox and the organization's.
+- **Privacy**: messages synced from a member's own mailbox carry `ownerBi`
+  and `owner` in their sealed envelope and are listed only for that member
+  (`_mail_visible`): other members, the export and `GET`/`PATCH`/`DELETE
+  /mail/<id>` see them as missing. The listing returns `mine: true` instead of
+  the blind index. Sent mail that matches a contact is still linked to that
+  contact through `_link_message`, so the team sees the email history and the
+  stage moves as before.
+- `email_channel_report` adds `zoho.members`, the number of member
+  connections.
+
+Tests: `tests/test_zoho_per_member.py`.
 
 A sync reads the Sent folder after the others, reserving half the sync limit
 for it, and records each sent-folder message as an outbound CRM email. Email
@@ -871,13 +1020,47 @@ raising, so the caller can keep the lead.
 
 ## Surfaces
 
-- **Web**: lists and pipelines, the contacts table, board, detail card,
-  activity, Zoho boxes, import, settings, team, outreach and drafts.
+- **Web** (1.44.0 layout, matching the desktop): a left column lists every
+  list and pipeline (icon, name, share count, contact count, `⋯` menu;
+  right-click, double-click to rename and drag to reorder as before), then
+  **Shared with me**, then **More**: Inbox (Zoho boxes and email activity),
+  Outreach, Team leaderboard, **My Zoho Mail**, People with pictures, Import
+  CSV list and CRM settings. The open page fills the right; `?section=` is one
+  of `contacts`, `inbox`, `outreach`, `team`, `zoho`, and opening a list
+  switches back to its contacts. Arrow keys move along the More pages. The
+  column stacks above the page on phones. Controls use the compact sizes, the
+  header's **Add contact** is the page's one `cta` button, and **Hide
+  suggestions** folds the Reach out / Follow up cards into one line
+  (remembered per browser under `forkmesh-crm-next-collapsed`). **My Zoho
+  Mail** shows your own connection's state and steps, Connect with Zoho
+  (one-click), a Self Client code form, Sync now and Disconnect, and the
+  organization mailbox line. The Zoho bar above the page follows your own
+  connection when you have one, else the organization's, and hides when it has
+  no step to show or while My Zoho Mail is open. Compose says which mailbox it
+  sends from. Inbox groups that hold mail from your own mailbox carry **Only
+  you**.
 - **Desktop** (`CrmFeature.cpp`): a three-column page (lists, table, detail
   panel), spreadsheet-style editing, a People grid of contacts with pictures,
   imports, and a rail count of never-contacted contacts. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
+- **iPhone layout**: a section bar under the title holds **Home** (greeting,
+  four tiles: contacts with the week's new ones, open deal value, people to
+  contact, won value; the busiest or open pipeline as a bar; **Up next** with
+  one Reach out and one Follow up drawn from every contact; recent emails),
+  **Contacts** (the list and pipeline chips, then the list), **Pipeline** (a
+  board or a stage list you open stage by stage, with a pipeline picker),
+  **Activity** (Activity, Mail, Outreach, Team, Decks, Shared) and **More**
+  (CRM settings, then the layout and theme switcher, then mail, organizing
+  and CSV tools, and the package's rate/report row). `+` adds a contact at
+  once and holds the other adds. The app's layout setting
+  (`appearance/layoutMode`, Settings > Appearance > Layout, also in the
+  toolbar's mode menu) sets the density: **Control Tower** is compact
+  (coloured tiles, small rows, the pipeline opens as a board), **Focus** is
+  roomier (Up next first, larger rows, the pipeline opens as a stage list).
+  The contact page is a short header, four quick actions and Overview /
+  Activity / Notes tabs; the add form keeps name, email, company, title,
+  phone and the pipeline in view and folds the rest under **More details**.
 - **iOS and Android**: under Business in the You hub; read `GET /api/crm` and
   `GET /api/crm/<org>?since=<revision>&tz=<minutes>` and offer the same
   editing, sharing, email, outreach, deck, drafts and Zoho Self Client
