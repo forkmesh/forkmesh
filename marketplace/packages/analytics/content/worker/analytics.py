@@ -1176,6 +1176,7 @@ class _Context:
         self.cohorts = cohorts or {}
         self.actions = actions or {}
         self.groups = groups or {}
+        self.now = None
         self._actors = {}
 
     def actor(self, event):
@@ -1775,6 +1776,8 @@ def _overview_totals(events, context):
     sessions = _sessions(events, context)
     visitors = {context.actor(event) for event in events}
     pageviews = sum(1 for event in events if event["e"] == "$pageview")
+    sites = {_bare_host(event["p"].get("$host")) for event in events
+             if event["e"] == "$pageview" and event["p"].get("$host")}
     durations = [entry["end"] - entry["start"] for entry in sessions.values()]
     # A bounce is the usual definition: one pageview, no interaction, and
     # under ten seconds on the site.
@@ -1782,7 +1785,7 @@ def _overview_totals(events, context):
                   if entry["pageviews"] <= 1 and not entry["interactions"]
                   and entry["end"] - entry["start"] < 10000)
     return {"visitors": len(visitors), "pageviews": pageviews,
-            "sessions": len(sessions),
+            "sessions": len(sessions), "sites": len(sites),
             "bounceRate": round(bounces / len(sessions), 4) if sessions else 0,
             "averageSessionMs": int(sum(durations) / len(durations))
             if durations else 0,
@@ -1813,6 +1816,19 @@ def _referrer_url(value):
     if not re.match(r"^https?://", text, re.IGNORECASE):
         return ""
     return _text(text.split("#", 1)[0], 300)
+
+
+def _outbound_link(event):
+    elements = event["p"].get("$elements")
+    for element in elements if isinstance(elements, list) else ():
+        if not isinstance(element, dict) or element.get("tag") != "a":
+            continue
+        href = str((element.get("attrs") or {}).get("href") or "")
+        host = _bare_host(_referrer_host(href))
+        if host and host != _bare_host(event["p"].get("$host")):
+            return _referrer_url(href)
+        return ""
+    return ""
 
 
 def _screen(properties):
@@ -1846,6 +1862,9 @@ def _overview_extras(current, previous, sessions, context, offset_ms):
     counters = {name: {} for name in (
         "channels", "referringDomains", "referringUrls")}
 
+    counters["referralLandings"] = {}
+    counters["outboundLinks"] = {}
+
     def bump(name, key):
         if key:
             key = _text(key, 300)
@@ -1858,6 +1877,20 @@ def _overview_extras(current, previous, sessions, context, offset_ms):
         if host and host != _bare_host(properties.get("$host")):
             bump("referringDomains", host)
             bump("referringUrls", _referrer_url(properties.get("$referrer")))
+            bump("referralLandings", host + " → " + _bare_host(
+                properties.get("$host")) + _path_name(first, "$pageview"))
+
+    sites = {}
+    for event in current:
+        if event["e"] == "$autocapture":
+            bump("outboundLinks", _outbound_link(event))
+        if event["e"] != "$pageview":
+            continue
+        host = _bare_host(event["p"].get("$host")) or "(unknown)"
+        site = sites.setdefault(host, [0, set(), set()])
+        site[0] += 1
+        site[1].add(context.actor(event))
+        site[2].add(event.get("s") or ("actor:" + context.actor(event)))
 
     seen_before = {context.actor(event) for event in previous}
     visitors = {context.actor(event) for event in current}
@@ -1901,8 +1934,14 @@ def _overview_extras(current, previous, sessions, context, offset_ms):
             "scroll": round(sum(scrolls) / len(scrolls), 4) if scrolls else None})
     engagement.sort(key=lambda row: -row["count"])
 
-    breakdowns = {name: _top(counter, 20 if name == "referringUrls" else 12)
+    breakdowns = {name: _top(counter, 12 if name in (
+        "channels", "referringDomains") else 20)
                   for name, counter in counters.items()}
+    breakdowns["sites"] = [
+        {"value": host, "count": views, "visitors": len(actors),
+         "sessions": len(keys)}
+        for host, (views, actors, keys) in sorted(
+            sites.items(), key=lambda item: -item[1][0])[:20]]
     return breakdowns, {
         "visitorKinds": {"new": len(visitors) - returning,
                          "returning": returning},
@@ -1926,10 +1965,14 @@ def overview(events, query, context, start, end):
             previous.append(event)
     totals, sessions = _overview_totals(current, context)
     previous_totals, _ = _overview_totals(previous, context)
+    now = getattr(context, "now", None)
+    if now is not None and abs(now - end) <= 5 * 60000:
+        totals["liveVisitors"] = len({context.actor(event) for event in current
+                                      if event["t"] >= now - 5 * 60000})
     counters = {name: {} for name in (
         "pages", "referrers", "sources", "campaigns", "browsers", "os",
         "devices", "countries", "entryPages", "exitPages", "events",
-        "mediums", "languages", "screens")}
+        "mediums", "languages", "screens", "terms", "contents")}
     page_visitors = {}
     for event in current:
         properties = event["p"]
@@ -1952,6 +1995,8 @@ def overview(events, query, context, start, end):
                 ("devices", properties.get("$device_type")),
                 ("countries", properties.get("$geo_country")),
                 ("mediums", properties.get("utm_medium")),
+                ("terms", properties.get("utm_term")),
+                ("contents", properties.get("utm_content")),
                 ("languages", properties.get("$language")),
                 ("screens", _screen(properties))):
             if value:
@@ -3066,6 +3111,7 @@ async def _context(runtime, project, query, events, now):
             if cohort["id"] in text:
                 context.cohorts[cohort["id"]] = cohort_members(
                     cohort, events, context, now)
+    context.now = now
     return context
 
 
