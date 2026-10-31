@@ -154,6 +154,10 @@ CRON_PHASE_CATALOG = (
     ("tip-verify", 5, (2,), "rewards",
      "Look for the Solana transfers paying up to three pending comment "
      "tips (read-only RPC; the forge never signs or holds funds)."),
+    ("stale-pulls", 5, (1,), "notifications",
+     "On repositories that turned on stale pull requests, remind authors "
+     "who left a maintainer's comment unanswered after 1, 3 and 7 days and "
+     "close the pull request after 8."),
     ("ai-review", 5, (0,), "platform",
      "Review at most one queued pull request with Cloudflare Workers AI "
      "when an administrator turned AI review on."),

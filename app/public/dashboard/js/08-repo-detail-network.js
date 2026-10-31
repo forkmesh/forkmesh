@@ -221,6 +221,8 @@
               <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="actions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Actions (run this repository's workflows)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="protectDefaultBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Protect the default branch: it changes only by merging a pull request an organization owner or admin approved</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Close stale pull requests: when a maintainer's comment or change request gets no reply from the author, ForkBot reminds them after 1, 3 and 7 days and closes the pull request after 8</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePullsDeleteBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />When ForkBot closes a stale pull request, also delete its head branch if that branch is in this repository and is not the default or a protected branch</label>
             </fieldset>
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
