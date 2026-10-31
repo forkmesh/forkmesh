@@ -1066,6 +1066,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentCloudSessions.cpp
     src/ClaudeDesktopSessions.h
     src/ClaudeDesktopSessions.cpp
+    src/ClaudeDesktopSidebar.h
+    src/ClaudeDesktopSidebar.cpp
     src/AgentCloudStream.h
     src/AgentCloudStream.cpp
     src/RunnerLogin.h
@@ -3025,6 +3027,8 @@ if(FORKMESH_BUILD_TESTS)
         tests/test_claude_desktop_sessions.cpp
         src/ClaudeDesktopSessions.h
         src/ClaudeDesktopSessions.cpp
+        src/ClaudeDesktopSidebar.h
+        src/ClaudeDesktopSidebar.cpp
     )
     target_include_directories(forkmesh-claude-desktop-sessions-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)

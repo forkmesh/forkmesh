@@ -1005,6 +1005,11 @@ Files and Stats).
   dot and a `⇄ N` badge when the session sent or received messages from other
   sessions. Right-click: Open in Agents, Continue, Stop, Send message to
   another session…, Delete (confirms through `deleteAgentSessionFromRow`).
+- **Grouped like the Claude app (2026-10-31).** The filter menu's **Group
+  by** offers **Like the Claude app** (the default), **Repository** and
+  **Status**, kept in `sessions/groupBy`. Like the Claude app lists the
+  sessions the way the Claude desktop app's Code tab does, see "Claude app
+  sessions" below.
 - Centre: header (title, status chip, repository, branch, provider/model,
   mode, Stop, Continue, Open in Agents), the **Between sessions** strip (the
   last six messages to or from the open session; click one to open the other
@@ -1016,6 +1021,42 @@ Files and Stats).
   session. In new-session mode the row shows Repository and Agent instead,
   and Send calls `startAdHocAgentForRepo` without leaving the page, then opens
   the new session.
+
+**Claude app sessions (2026-10-31).** The list also shows every session in
+the Claude desktop app's Code tab, and lays them out the same way.
+
+- `forkmesh::claudedesktop::readDesktopIndex` (`src/ClaudeDesktopSidebar.*`,
+  Qt Core only, tested in `forkmesh-claude-desktop-sessions-tests`) reads the
+  Code tab's records (`<Claude config>/claude-code-sessions/<account>/<org>/local_*.json`,
+  archived ones left out, a `waiting-input/` marker means Waiting) and its
+  sidebar layout from `claude_desktop_config.json`
+  (`preferences.epitaxyPrefs`: `dframe-code-sections` for the section order,
+  `dframe-group-scopes` for named groups and their members,
+  `starred-local-code-sessions` for Pinned). It is read off the GUI thread
+  every 5 s while the page is on screen (`requestSessionsDesktopIndex`), and
+  the list only redraws when something changed.
+- A record is matched to a ForkMesh session by `claudeAppSessionId`, an
+  imported session's `claudeImportId`, an outside session's id, then by the
+  agent worktree it ran in (`<repo>/.worktrees/<worktreeName>`); a matched
+  agent keeps its row and shows the Claude app's title (with the progress
+  emoji agents set). A record with no match becomes a Claude app row
+  (`rebuildSessionsDesktopRows`, ids from -900000 down in the outside band).
+  Those rows live only in the Sessions page (`SessionsPageUi::desktopRows`),
+  not in `m_agentSessions`, so they never reach the Agents tab, the phone or
+  the outside-session setting. Running means the transcript was written in the
+  last 90 s.
+- `arrangeSidebar` builds the groups: Pinned, then each named group in the
+  Claude app's order (empty groups hidden), then one group per folder (the
+  last folder of the session's working directory, so an agent worktree is its
+  own group) in natural order (`15-…` before `30-…` before `2625-…`), newest
+  session first inside each group. ForkMesh sessions the Claude app does not
+  have go in their worktree's folder group, or the checkout's. Group headings
+  put the fold chevron after the name, as the Claude app does
+  (`kSessionTrailingChevronRole`).
+- Opening a Claude app row reads its transcript like an outside session
+  (`sessionsOutsideSession` gives the path), with the composer disabled.
+  Right-click: **Open in Claude app** (the `claude://resume` link) and
+  **Send its last reply to…**.
 
 **Side panels (2026-10-27).** The right column of the new interface is
 `SessionSidePanels` (`src/SessionSidePanels.*`), a stack of cards:

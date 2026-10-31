@@ -6,6 +6,8 @@
 #include "AgentHub.h"
 #include "AgentLogText.h"
 #include "AppPaths.h"
+#include "ClaudeDesktopSessions.h"
+#include "ClaudeDesktopSidebar.h"
 #include "ClaudePeerMessaging.h"
 #include "ClaudeSessionScan.h"
 #include "ClaudeTranscriptView.h"
@@ -64,6 +66,8 @@ using namespace forkmesh::ui;
 namespace hub = forkmesh::agenthub;
 
 enum class SessionsSource { Local, External, Cloud };
+
+enum class SessionsGrouping { Claude, Repository, Status };
 
 struct SessionsQueued {
     QJsonObject event;
@@ -128,8 +132,21 @@ struct SessionsPageUi : public QObject {
     QPointer<forkmesh::ui::SessionSidePanels> details;
     bool next = false;
     bool panelOpen = true;
-    bool groupByRepo = true;
+    SessionsGrouping grouping = SessionsGrouping::Claude;
     QSet<QString> collapsedGroups;
+
+    forkmesh::claudedesktop::DesktopIndex desktop;
+    QHash<int, AgentSession> desktopRows;
+    QHash<int, ExternalClaudeSession> desktopExternal;
+    QHash<int, QString> desktopRecord;
+    QHash<int, QString> desktopTitle;
+    QHash<int, QString> desktopFolder;
+    QHash<QString, int> desktopIds;
+    QHash<QString, QString> desktopTranscripts;
+    int nextDesktopId = -900000;
+    QString desktopSignature;
+    bool desktopReading = false;
+    qint64 desktopReadAtMs = 0;
 
     int openId = 0;
     bool newMode = false;
@@ -169,6 +186,9 @@ constexpr int kSessionsPickerLimit = 40;
 constexpr int kSessionsRelayLimit = 200;
 constexpr int kSessionsRelayChips = 6;
 constexpr qint64 kSessionsRelayDedupMs = 3000;
+constexpr qint64 kSessionsDesktopReadMs = 4000;
+constexpr qint64 kSessionsDesktopLiveMs = 90 * 1000;
+const QString kSessionsGroupingSetting = QStringLiteral("sessions/groupBy");
 
 enum SessionsRole {
     kSessionIdRole = Qt::UserRole,
@@ -182,6 +202,7 @@ enum SessionsRole {
     kSessionGroupRole,
     kSessionCollapsedRole,
     kSessionAddableRole,
+    kSessionTrailingChevronRole,
 };
 
 bool sessionsHeaderId(int id)
@@ -551,18 +572,23 @@ public:
             pen.setJoinStyle(Qt::RoundJoin);
             painter->setPen(pen);
             painter->setBrush(Qt::NoBrush);
-            const QPointF mark(band.left() + 10.5, band.center().y() + 0.5);
-            QPainterPath chevron;
-            if (index.data(kSessionCollapsedRole).toBool()) {
-                chevron.moveTo(mark + QPointF(-1.5, -3.0));
-                chevron.lineTo(mark + QPointF(1.5, 0.0));
-                chevron.lineTo(mark + QPointF(-1.5, 3.0));
-            } else {
-                chevron.moveTo(mark + QPointF(-3.0, -1.5));
-                chevron.lineTo(mark + QPointF(0.0, 1.5));
-                chevron.lineTo(mark + QPointF(3.0, -1.5));
-            }
-            painter->drawPath(chevron);
+            const bool trailing = index.data(kSessionTrailingChevronRole).toBool();
+            const bool collapsed = index.data(kSessionCollapsedRole).toBool();
+            const auto drawChevron = [painter, collapsed](const QPointF &mark) {
+                QPainterPath chevron;
+                if (collapsed) {
+                    chevron.moveTo(mark + QPointF(-1.5, -3.0));
+                    chevron.lineTo(mark + QPointF(1.5, 0.0));
+                    chevron.lineTo(mark + QPointF(-1.5, 3.0));
+                } else {
+                    chevron.moveTo(mark + QPointF(-3.0, -1.5));
+                    chevron.lineTo(mark + QPointF(0.0, 1.5));
+                    chevron.lineTo(mark + QPointF(3.0, -1.5));
+                }
+                painter->drawPath(chevron);
+            };
+            if (!trailing)
+                drawChevron(QPointF(band.left() + 10.5, band.center().y() + 0.5));
             const bool addable = index.data(kSessionAddableRole).toBool();
             int textRight = band.right() - 8;
             if (addable && hovered) {
@@ -571,18 +597,26 @@ public:
                 painter->drawLine(plus + QPointF(0.0, -4.0), plus + QPointF(0.0, 4.0));
                 textRight = band.right() - 28;
             }
+            if (trailing)
+                textRight -= 14;
             QFont font = option.font;
             font.setPixelSize(12);
             font.setWeight(QFont::Medium);
             painter->setFont(font);
             painter->setPen(tone);
-            const int left = band.left() + 20;
-            const QString label = QFontMetrics(font).elidedText(
+            const int left = band.left() + (trailing ? 10 : 20);
+            const QFontMetrics metrics(font);
+            const QString label = metrics.elidedText(
                 index.data(Qt::DisplayRole).toString(), Qt::ElideRight,
                 qMax(0, textRight - left));
             painter->drawText(QRect(left, band.top(), qMax(0, textRight - left),
                                     band.height()),
                               Qt::AlignLeft | Qt::AlignVCenter, label);
+            if (trailing) {
+                painter->setPen(pen);
+                drawChevron(QPointF(left + metrics.horizontalAdvance(label) + 9.5,
+                                    band.center().y() + 0.5));
+            }
             painter->restore();
             return;
         }
@@ -767,6 +801,10 @@ QWidget *MainWindow::buildSessionsSection()
     SessionsPageUi *ui = m_sessionsUi;
     const bool next = Theme::isNext();
     ui->next = next;
+    const int savedGrouping = QSettings().value(kSessionsGroupingSetting, 0).toInt();
+    if (savedGrouping >= int(SessionsGrouping::Claude) &&
+        savedGrouping <= int(SessionsGrouping::Status))
+        ui->grouping = SessionsGrouping(savedGrouping);
 
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("sessionsPage"));
@@ -1396,18 +1434,21 @@ QWidget *MainWindow::buildSessionsSection()
             between->setToolTip(ui->betweenFilter ? ui->betweenFilter->toolTip()
                                                   : QString());
             filterMenu->addSection(QStringLiteral("Group by"));
-            const auto groupAction = [this, filterMenu](const QString &text, bool byRepo) {
-                QAction *action = filterMenu->addAction(text, this, [this, byRepo] {
-                    if (!m_sessionsUi || m_sessionsUi->groupByRepo == byRepo)
+            const auto groupAction = [this, filterMenu](const QString &text,
+                                                        SessionsGrouping grouping) {
+                QAction *action = filterMenu->addAction(text, this, [this, grouping] {
+                    if (!m_sessionsUi || m_sessionsUi->grouping == grouping)
                         return;
-                    m_sessionsUi->groupByRepo = byRepo;
+                    m_sessionsUi->grouping = grouping;
+                    QSettings().setValue(kSessionsGroupingSetting, int(grouping));
                     refreshSessionsList();
                 });
                 action->setCheckable(true);
-                action->setChecked(m_sessionsUi && m_sessionsUi->groupByRepo == byRepo);
+                action->setChecked(m_sessionsUi && m_sessionsUi->grouping == grouping);
             };
-            groupAction(QStringLiteral("Repository"), true);
-            groupAction(QStringLiteral("Status"), false);
+            groupAction(QStringLiteral("Like the Claude app"), SessionsGrouping::Claude);
+            groupAction(QStringLiteral("Repository"), SessionsGrouping::Repository);
+            groupAction(QStringLiteral("Status"), SessionsGrouping::Status);
         });
         connect(ui->betweenFilter, &QPushButton::toggled, this, [this](bool on) {
             if (!m_sessionsUi || !m_sessionsUi->filterButton)
@@ -1485,6 +1526,13 @@ QWidget *MainWindow::buildSessionsSection()
             ui->list->viewport()));
         retintSessionsIcons(ui);
     }
+    auto *desktopTimer = new QTimer(page);
+    desktopTimer->setInterval(int(kSessionsDesktopReadMs) + 1000);
+    connect(desktopTimer, &QTimer::timeout, this, [this] {
+        if (sessionsPageOnScreen())
+            requestSessionsDesktopIndex();
+    });
+    desktopTimer->start();
     return page;
 }
 
@@ -1546,7 +1594,7 @@ void MainWindow::refreshSessionsPage()
     }
     if (ui->listDirty)
         refreshSessionsList();
-    if (ui->openId != 0 && !findAgentSession(ui->openId)) {
+    if (ui->openId != 0 && !sessionsFind(ui->openId)) {
         ++ui->generation;
         ui->openId = 0;
         ui->queue.clear();
@@ -1569,12 +1617,225 @@ void MainWindow::refreshSessionsPage()
         markAgentSessionRead(ui->openId);
 }
 
+void MainWindow::requestSessionsDesktopIndex(bool force)
+{
+    SessionsPageUi *ui = m_sessionsUi;
+    if (!ui || ui->desktopReading)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!force && now - ui->desktopReadAtMs < kSessionsDesktopReadMs)
+        return;
+    ui->desktopReading = true;
+    ui->desktopReadAtMs = now;
+    const QString root = ClaudeSessionScan::desktopConfigRoot();
+    const QString home = forkmesh::claudedesktop::defaultClaudeHome();
+    const QHash<QString, QString> known = ui->desktopTranscripts;
+    runOffThread<forkmesh::claudedesktop::DesktopIndex>(
+        [root, home, known] {
+            return forkmesh::claudedesktop::readDesktopIndex(root, home, known);
+        },
+        [this](forkmesh::claudedesktop::DesktopIndex index) {
+            SessionsPageUi *ui = m_sessionsUi;
+            if (!ui)
+                return;
+            ui->desktopReading = false;
+            for (const forkmesh::claudedesktop::DesktopRecord &record :
+                 std::as_const(index.records))
+                if (!record.transcript.isEmpty())
+                    ui->desktopTranscripts.insert(record.sessionId, record.transcript);
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            QStringList signature;
+            for (const forkmesh::claudedesktop::DesktopRecord &record :
+                 std::as_const(index.records))
+                signature << record.key + QLatin1Char('|') + record.title +
+                                 QLatin1Char('|') + QString::number(record.activityMs) +
+                                 QLatin1Char('|') + record.transcript + QLatin1Char('|') +
+                                 QString::number(record.waiting) +
+                                 QString::number(now - record.writtenMs <
+                                                 kSessionsDesktopLiveMs);
+            for (const forkmesh::claudedesktop::DesktopSection &section :
+                 std::as_const(index.sections))
+                signature << section.id + QLatin1Char('|') + section.name +
+                                 QLatin1Char('|') + section.members.join(QLatin1Char(','));
+            signature << index.pinned.join(QLatin1Char(','));
+            const QString joined = signature.join(QLatin1Char('\n'));
+            ui->desktop = std::move(index);
+            if (joined == ui->desktopSignature)
+                return;
+            ui->desktopSignature = joined;
+            ui->listDirty = true;
+            if (sessionsPageOnScreen())
+                refreshSessionsPage();
+        });
+}
+
+void MainWindow::rebuildSessionsDesktopRows()
+{
+    SessionsPageUi *ui = m_sessionsUi;
+    if (!ui)
+        return;
+    QHash<QString, QString> repoPaths;
+    for (const RepositoryRecord &repo : std::as_const(m_repositories))
+        if (!repo.localPath.trimmed().isEmpty())
+            repoPaths.insert(repo.owner + QLatin1Char('/') + repo.name,
+                             QDir::cleanPath(repo.localPath));
+    QHash<QString, int> bySession;
+    QHash<QString, int> byWorktree;
+    QHash<QString, qint64> worktreeAt;
+    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+        if (session.deletedAtMs > 0 || session.associationOnly || session.id == 0)
+            continue;
+        if (!session.claudeAppSessionId.isEmpty())
+            bySession.insert(session.claudeAppSessionId.toLower(), session.id);
+        if (session.claudeImported())
+            bySession.insert(session.claudeImportId.toLower(), session.id);
+        const QString repoPath =
+            repoPaths.value(session.owner + QLatin1Char('/') + session.name);
+        if (session.id <= 0 || session.worktreeName.isEmpty() || repoPath.isEmpty())
+            continue;
+        const QString key =
+            repoPath + QStringLiteral("/.worktrees/") + session.worktreeName;
+        const qint64 at = sessionsActivityMs(session);
+        if (!byWorktree.contains(key) || worktreeAt.value(key) < at) {
+            byWorktree.insert(key, session.id);
+            worktreeAt.insert(key, at);
+        }
+    }
+    for (auto it = m_externalSurfaced.cbegin(); it != m_externalSurfaced.cend(); ++it)
+        if (!it->uuid.isEmpty())
+            bySession.insert(it->uuid.toLower(), it.key());
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QHash<int, AgentSession> rows;
+    QHash<int, ExternalClaudeSession> external;
+    QHash<int, QString> recordOf;
+    QHash<int, QString> titleOf;
+    QHash<int, QString> folderOf;
+    QHash<int, qint64> recordAt;
+    for (const forkmesh::claudedesktop::DesktopRecord &record :
+         std::as_const(ui->desktop.records)) {
+        const QString cwd = QDir::cleanPath(record.cwd);
+        const QString folder = forkmesh::claudedesktop::folderLabel(record.cwd);
+        int id = record.sessionId.isEmpty() ? 0 : bySession.value(record.sessionId, 0);
+        if (id == 0)
+            id = byWorktree.value(cwd, 0);
+        if (id != 0) {
+            if (recordAt.contains(id) && recordAt.value(id) >= record.activityMs)
+                continue;
+            recordAt.insert(id, record.activityMs);
+            recordOf.insert(id, record.key);
+            folderOf.insert(id, folder);
+            if (record.title.isEmpty())
+                titleOf.remove(id);
+            else
+                titleOf.insert(id, record.title);
+            continue;
+        }
+        const QString identity = record.sessionId.isEmpty() ? record.key : record.sessionId;
+        int rowId = ui->desktopIds.value(identity, 0);
+        if (rowId == 0) {
+            rowId = ui->nextDesktopId--;
+            ui->desktopIds.insert(identity, rowId);
+        }
+        AgentSession row;
+        row.id = rowId;
+        int matched = -1;
+        for (auto it = repoPaths.cbegin(); it != repoPaths.cend(); ++it) {
+            if (cwd != it.value() && !cwd.startsWith(it.value() + QLatin1Char('/')))
+                continue;
+            if (it.value().size() <= matched)
+                continue;
+            matched = int(it.value().size());
+            const int slash = int(it.key().indexOf(QLatin1Char('/')));
+            row.owner = it.key().left(slash);
+            row.name = it.key().mid(slash + 1);
+        }
+        row.provider = QStringLiteral("claude-code");
+        row.model = record.model;
+        row.issueTitle =
+            record.title.isEmpty() ? QStringLiteral("Claude Code session") : record.title;
+        const qint64 written = record.writtenMs;
+        row.status = record.waiting ? AgentStatus::Waiting
+                     : written > 0 && now - written < kSessionsDesktopLiveMs
+                         ? AgentStatus::Running
+                         : AgentStatus::Success;
+        row.createdAtMs = record.createdMs;
+        row.finishedAtMs = std::max(record.activityMs, written);
+        rows.insert(rowId, row);
+        ExternalClaudeSession ext;
+        ext.uuid = record.sessionId;
+        ext.path = record.transcript;
+        ext.cwd = record.cwd;
+        ext.title = record.title;
+        ext.model = record.model;
+        ext.createdMs = record.createdMs;
+        ext.lastActivityMs = row.finishedAtMs;
+        external.insert(rowId, ext);
+        recordOf.insert(rowId, record.key);
+        titleOf.insert(rowId, row.issueTitle);
+        folderOf.insert(rowId, folder);
+    }
+    ui->desktopRows = std::move(rows);
+    ui->desktopExternal = std::move(external);
+    ui->desktopRecord = std::move(recordOf);
+    ui->desktopTitle = std::move(titleOf);
+    ui->desktopFolder = std::move(folderOf);
+}
+
+const AgentSession *MainWindow::sessionsFind(int sessionId)
+{
+    if (const AgentSession *session = findAgentSession(sessionId))
+        return session;
+    if (!m_sessionsUi)
+        return nullptr;
+    const auto row = m_sessionsUi->desktopRows.constFind(sessionId);
+    return row == m_sessionsUi->desktopRows.constEnd() ? nullptr : &row.value();
+}
+
+bool MainWindow::sessionsDesktopRow(int sessionId) const
+{
+    return m_sessionsUi && m_sessionsUi->desktopRows.contains(sessionId) &&
+           !m_externalSurfaced.contains(sessionId);
+}
+
+ExternalClaudeSession MainWindow::sessionsOutsideSession(int sessionId) const
+{
+    const auto surfaced = m_externalSurfaced.constFind(sessionId);
+    if (surfaced != m_externalSurfaced.constEnd())
+        return surfaced.value();
+    return m_sessionsUi ? m_sessionsUi->desktopExternal.value(sessionId)
+                        : ExternalClaudeSession();
+}
+
+QString MainWindow::sessionsFolder(const AgentSession &session) const
+{
+    if (m_sessionsUi) {
+        const auto folder = m_sessionsUi->desktopFolder.constFind(session.id);
+        if (folder != m_sessionsUi->desktopFolder.constEnd())
+            return folder.value();
+    }
+    if (!session.worktreeName.isEmpty())
+        return session.worktreeName;
+    if (isExternalSession(session.id) && !isCloudSession(session.id)) {
+        const QString cwd = sessionsOutsideSession(session.id).cwd;
+        if (!cwd.isEmpty())
+            return forkmesh::claudedesktop::folderLabel(cwd);
+    }
+    for (const RepositoryRecord &repo : std::as_const(m_repositories))
+        if (repo.owner == session.owner && repo.name == session.name &&
+            !repo.localPath.trimmed().isEmpty())
+            return forkmesh::claudedesktop::folderLabel(repo.localPath);
+    return session.name;
+}
+
 void MainWindow::refreshSessionsList()
 {
     SessionsPageUi *ui = m_sessionsUi;
     if (!ui || !ui->list)
         return;
     ui->listDirty = false;
+    requestSessionsDesktopIndex();
+    rebuildSessionsDesktopRows();
     const QString needle =
         ui->search ? ui->search->text().trimmed().toLower() : QString();
     const bool between = ui->betweenFilter && ui->betweenFilter->isChecked();
@@ -1586,27 +1847,33 @@ void MainWindow::refreshSessionsList()
     };
     QList<Row> active;
     QList<Row> recent;
-    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+    const auto consider = [&](const AgentSession &session) {
         if (session.deletedAtMs > 0 || session.associationOnly || session.id == 0)
-            continue;
+            return;
         if (between && !ui->relayCounts.contains(session.id))
-            continue;
+            return;
         if (!needle.isEmpty()) {
             const QString haystack =
-                QStringList{sessionsTitle(session), session.owner, session.name,
+                QStringList{sessionsTitle(session), ui->desktopTitle.value(session.id),
+                            sessionsFolder(session), session.owner, session.name,
                             session.branchName, session.provider, session.model,
                             QStringLiteral("#%1").arg(session.id)}
                     .join(QLatin1Char(' '))
                     .toLower();
             if (!haystack.contains(needle))
-                continue;
+                return;
         }
         const int rank = sessionsActiveRank(session);
         qint64 at = sessionsActivityMs(session);
         if (isExternalSession(session.id) && !isCloudSession(session.id))
-            at = std::max(at, m_externalSurfaced.value(session.id).lastActivityMs);
+            at = std::max(at, sessionsOutsideSession(session.id).lastActivityMs);
         (rank >= 0 ? active : recent).append({&session, rank, at});
-    }
+    };
+    for (const AgentSession &session : std::as_const(m_agentSessions))
+        consider(session);
+    for (auto it = ui->desktopRows.cbegin(); it != ui->desktopRows.cend(); ++it)
+        if (!m_externalSurfaced.contains(it.key()))
+            consider(it.value());
     std::stable_sort(active.begin(), active.end(), [](const Row &a, const Row &b) {
         return a.rank != b.rank ? a.rank < b.rank : a.at > b.at;
     });
@@ -1620,6 +1887,7 @@ void MainWindow::refreshSessionsList()
         QString key;
         bool collapsed = false;
         bool addable = false;
+        bool trailing = false;
     };
     QList<int> ids;
     QList<const AgentSession *> sessions;
@@ -1634,7 +1902,28 @@ void MainWindow::refreshSessionsList()
         sessions.append(row.session);
         headers.append(Header());
     };
-    if (ui->next && ui->groupByRepo) {
+    const bool claudeLayout = ui->next && ui->grouping == SessionsGrouping::Claude;
+    if (claudeLayout) {
+        QList<Row> rows = active + recent;
+        QList<forkmesh::claudedesktop::SidebarItem> items;
+        items.reserve(rows.size());
+        for (const Row &row : std::as_const(rows))
+            items.append({ui->desktopRecord.value(row.session->id),
+                          sessionsFolder(*row.session), row.at});
+        const QList<forkmesh::claudedesktop::SidebarGroup> groups =
+            forkmesh::claudedesktop::arrangeSidebar(ui->desktop, items);
+        for (const forkmesh::claudedesktop::SidebarGroup &group : groups) {
+            Header header;
+            header.key = group.key;
+            header.label = group.label;
+            header.trailing = true;
+            header.collapsed = ui->collapsedGroups.contains(group.key);
+            addHeader(kSessionsHeaderGroup, header);
+            if (!header.collapsed)
+                for (int item : group.items)
+                    addRow(rows.at(item));
+        }
+    } else if (ui->next && ui->grouping == SessionsGrouping::Repository) {
         QSet<QString> localRepos;
         for (const RepositoryRecord &repo : std::as_const(m_repositories))
             if (!repo.previewOnly && !repo.localPath.trimmed().isEmpty())
@@ -1717,7 +2006,7 @@ void MainWindow::refreshSessionsList()
         }
     }
 
-    const auto fill = [this, ui](QListWidgetItem *item, int id,
+    const auto fill = [this, ui, claudeLayout](QListWidgetItem *item, int id,
                                  const AgentSession *session, const Header &header) {
         if (!session) {
             item->setData(kSessionIdRole, 0);
@@ -1727,6 +2016,7 @@ void MainWindow::refreshSessionsList()
                 item->setData(kSessionGroupRole, header.key);
                 item->setData(kSessionCollapsedRole, header.collapsed);
                 item->setData(kSessionAddableRole, header.addable);
+                item->setData(kSessionTrailingChevronRole, header.trailing);
                 item->setToolTip(header.addable
                                      ? QStringLiteral("%1. Click to fold, + starts a new "
                                                       "session here.")
@@ -1744,26 +2034,32 @@ void MainWindow::refreshSessionsList()
         QString provider = agentModelLabel(session->model);
         if (provider.isEmpty())
             provider = cliProviderLabel(session->provider);
+        const bool desktopRow = sessionsDesktopRow(id);
         if (isCloudSession(id))
             provider += QStringLiteral(" (cloud)");
+        else if (desktopRow)
+            provider = QStringLiteral("Claude app");
         else if (isExternalSession(id))
             provider = QStringLiteral("Claude Code (outside)");
         if (!provider.trimmed().isEmpty())
             subtitle << provider;
         qint64 at = sessionsActivityMs(*session);
         if (isExternalSession(id) && !isCloudSession(id))
-            at = std::max(at, m_externalSurfaced.value(id).lastActivityMs);
+            at = std::max(at, sessionsOutsideSession(id).lastActivityMs);
+        const QString claudeTitle = claudeLayout ? ui->desktopTitle.value(id) : QString();
         item->setData(kSessionIdRole, id);
         item->setData(kSessionHeaderRole, false);
-        item->setData(Qt::DisplayRole, sessionsTitle(*session));
+        item->setData(Qt::DisplayRole,
+                      claudeTitle.isEmpty() ? sessionsTitle(*session) : claudeTitle);
         item->setData(kSessionSubtitleRole,
                       subtitle.join(QString::fromUtf8(" \xC2\xB7 ")));
         item->setData(kSessionAgeRole, formatShortRelativeTime(at / 1000));
         item->setData(kSessionDotRole, agentStatusIconColor(*session));
-        item->setData(kSessionUnreadRole, agentSessionUnread(*session));
+        item->setData(kSessionUnreadRole, !desktopRow && agentSessionUnread(*session));
         item->setData(kSessionRelaysRole, ui->relayCounts.value(id));
-        const QString tip = QStringLiteral("#%1 %2 \u2014 %3")
-                                .arg(id)
+        const QString tip = QStringLiteral("%1 %2 \u2014 %3")
+                                .arg(desktopRow ? QStringLiteral("Claude app:")
+                                                : QStringLiteral("#%1").arg(id))
                                 .arg(sessionsTitle(*session), agentStatusLabel(*session));
         if (ui->next) {
             item->setData(kSessionStateRole, session->merged ? QStringLiteral("merged")
@@ -1799,14 +2095,15 @@ void MainWindow::refreshSessionsHeader()
     if (!ui || !ui->title)
         return;
     const AgentSession *session =
-        ui->newMode || ui->openId == 0 ? nullptr : findAgentSession(ui->openId);
+        ui->newMode || ui->openId == 0 ? nullptr : sessionsFind(ui->openId);
     ui->stop->setVisible(session && isStoppableAgentSession(session->id));
     const bool watchOnly =
         session && isExternalSession(session->id) && !isCloudSession(session->id);
     ui->resume->setVisible(session && !watchOnly &&
                            !isStoppableAgentSession(session->id) &&
                            session->status != AgentStatus::Queued);
-    ui->openInAgents->setVisible(session != nullptr);
+    const bool desktopRow = session && sessionsDesktopRow(session->id);
+    ui->openInAgents->setVisible(session != nullptr && !desktopRow);
     if (ui->next) {
         if (ui->header)
             ui->header->setVisible(!ui->newMode);
@@ -1819,7 +2116,7 @@ void MainWindow::refreshSessionsHeader()
             branch = session->branchName;
             if (branch.isEmpty() && isExternalSession(session->id) &&
                 !isCloudSession(session->id))
-                branch = m_externalSurfaced.value(session->id).gitBranch;
+                branch = sessionsOutsideSession(session->id).gitBranch;
         }
         if (ui->branchText)
             ui->branchText->setText(branch);
@@ -1849,7 +2146,10 @@ void MainWindow::refreshSessionsHeader()
     ui->title->setText(sessionsTitle(*session));
     if (ui->next)
         ui->title->setToolTip(ui->title->text());
-    QStringList meta{QStringLiteral("#%1").arg(session->id)};
+    QStringList meta{desktopRow ? QStringLiteral("Claude app")
+                                : QStringLiteral("#%1").arg(session->id)};
+    if (desktopRow && session->owner.isEmpty())
+        meta << sessionsOutsideSession(session->id).cwd;
     if (!session->owner.isEmpty())
         meta << session->owner + QLatin1Char('/') + session->name;
     if (!session->branchName.isEmpty() && !ui->next)
@@ -1889,7 +2189,7 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
     if (!panels)
         return;
     SessionSidePanels::Details details;
-    const AgentSession *session = sessionId != 0 ? window.findAgentSession(sessionId) : nullptr;
+    const AgentSession *session = sessionId != 0 ? window.sessionsFind(sessionId) : nullptr;
     window.fillAgentSubSessions(panels, session ? sessionId : 0);
     QPointer<MainWindow> self(&window);
     panels->setRemoteActions(
@@ -1939,10 +2239,10 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
     }
     QString branch = session->branchName;
     if (branch.isEmpty() && outside)
-        branch = window.m_externalSurfaced.value(session->id).gitBranch;
+        branch = window.sessionsOutsideSession(session->id).gitBranch;
     QString path = stat.worktree;
     if (path.isEmpty() && outside)
-        path = window.m_externalSurfaced.value(session->id).cwd;
+        path = window.sessionsOutsideSession(session->id).cwd;
     if (path.isEmpty())
         path = session->claudeImportCwd;
     details.pathFull = path;
@@ -2103,11 +2403,16 @@ void MainWindow::refreshSessionsComposer()
         return;
     }
     const AgentSession *session =
-        ui->openId == 0 ? nullptr : findAgentSession(ui->openId);
+        ui->openId == 0 ? nullptr : sessionsFind(ui->openId);
     QString note;
     bool enabled = session != nullptr;
     if (!session) {
         note = QStringLiteral("Open a session or start a new one.");
+    } else if (sessionsDesktopRow(session->id)) {
+        enabled = false;
+        note = QStringLiteral("This session belongs to the Claude app, so it can only "
+                              "be watched here. Right-click it and pick Open in Claude "
+                              "app to reply, or forward its reply to another session.");
     } else if (isExternalSession(session->id) && !isCloudSession(session->id) &&
                !outsideAgentSteerable(session->id)) {
         enabled = false;
@@ -2163,7 +2468,7 @@ void MainWindow::refreshSessionsRelayStrip()
         const bool outgoing = it->from == open;
         const int other = outgoing ? it->to : it->from;
         QString title;
-        if (const AgentSession *session = findAgentSession(other)) {
+        if (const AgentSession *session = sessionsFind(other)) {
             title = sessionsTitle(*session);
             if (title.size() > 28)
                 title = title.left(27) + QString::fromUtf8("\xE2\x80\xA6");
@@ -2276,11 +2581,21 @@ void MainWindow::openSessionInSessionsPage(int sessionId)
         showSessionsPage(sessionId);
         return;
     }
-    const AgentSession *opened = findAgentSession(sessionId);
+    const AgentSession *opened = sessionsFind(sessionId);
     if (!opened)
         return;
-    if (ui->next &&
-        ui->collapsedGroups.remove(sessionsGroupKey(*opened, ui->groupByRepo)))
+    QString groupKey;
+    if (ui->grouping == SessionsGrouping::Claude) {
+        const QList<forkmesh::claudedesktop::SidebarGroup> own =
+            forkmesh::claudedesktop::arrangeSidebar(
+                ui->desktop,
+                {{ui->desktopRecord.value(sessionId), sessionsFolder(*opened), 0}});
+        if (!own.isEmpty())
+            groupKey = own.first().key;
+    } else {
+        groupKey = sessionsGroupKey(*opened, ui->grouping == SessionsGrouping::Repository);
+    }
+    if (ui->next && ui->collapsedGroups.remove(groupKey))
         refreshSessionsList();
     const bool changed = ui->openId != sessionId || ui->newMode;
     ui->newMode = false;
@@ -2380,7 +2695,7 @@ void MainWindow::prepareSessionsTranscript(int sessionId)
     view->setBulkPopulate(false);
     view->clear();
     view->jumpToBottom();
-    if (const AgentSession *session = findAgentSession(sessionId)) {
+    if (const AgentSession *session = sessionsFind(sessionId)) {
         const bool cli = session->provider == QLatin1String("claude-code") ||
                          agentIsCodexProvider(session->provider);
         const bool outside = ui->source == SessionsSource::External;
@@ -2457,7 +2772,7 @@ void MainWindow::syncSessionsTranscript()
             });
         } else if (!ui->fallbackShown && !m_streamEvents.contains(id)) {
             ui->fallbackShown = true;
-            if (const AgentSession *session = findAgentSession(id);
+            if (const AgentSession *session = sessionsFind(id);
                 session && !session->prompt.trimmed().isEmpty())
                 ui->queue.append({QJsonObject{{QStringLiteral("type"),
                                                QStringLiteral("_local_user")},
@@ -2523,10 +2838,9 @@ void MainWindow::readSessionsExternalTranscript(int sessionId)
         ui->externalAgain = true;
         return;
     }
-    const auto it = m_externalSurfaced.constFind(sessionId);
-    if (it == m_externalSurfaced.constEnd())
+    const ExternalClaudeSession ext = sessionsOutsideSession(sessionId);
+    if (ext.path.isEmpty())
         return;
-    const ExternalClaudeSession ext = it.value();
     const qint64 offset = ui->externalOffset;
     if (offset >= 0 && QFileInfo(ext.path).size() <= offset)
         return;
@@ -2779,7 +3093,7 @@ bool MainWindow::relayBetweenSessions(int fromId, int toId, const QString &text,
     };
     if (fromId == toId)
         return fail(QStringLiteral("A session cannot message itself."));
-    const AgentSession *sender = findAgentSession(fromId);
+    const AgentSession *sender = sessionsFind(fromId);
     const AgentSession *target = findAgentSession(toId);
     if (!sender || !target || target->deletedAtMs > 0 || target->associationOnly)
         return fail(QStringLiteral("Session #%1 is not on this desktop.").arg(toId));
@@ -2847,7 +3161,7 @@ bool MainWindow::forwardLastSessionReply(int fromId, int toId, QString *why)
 
 void MainWindow::promptSessionsMessage(int fromId, int toId)
 {
-    const AgentSession *sender = findAgentSession(fromId);
+    const AgentSession *sender = sessionsFind(fromId);
     if (!sender || !findAgentSession(toId))
         return;
     bool ok = false;
@@ -2872,11 +3186,32 @@ void MainWindow::promptSessionsMessage(int fromId, int toId)
 
 void MainWindow::showSessionsContextMenu(int sessionId, const QPoint &globalPos)
 {
-    const AgentSession *session = findAgentSession(sessionId);
+    const AgentSession *session = sessionsFind(sessionId);
     if (!session)
         return;
     const bool outside = isExternalSession(sessionId) && !isCloudSession(sessionId);
     QMenu menu(this);
+    if (sessionsDesktopRow(sessionId)) {
+        const QString uuid = sessionsOutsideSession(sessionId).uuid;
+        QAction *open = menu.addAction(QStringLiteral("Open in Claude app"), this,
+                                       [this, uuid] { queueClaudeDesktopLink(uuid, true); });
+        open->setEnabled(forkmesh::claudedesktop::isSessionId(uuid));
+        QMenu *message =
+            menu.addMenu(QString::fromUtf8("Send its last reply to\xE2\x80\xA6"));
+        SessionsPickerCombo picker;
+        fillSessionsPicker(&picker, 0, sessionId, QString());
+        for (int row = 0; row < picker.count(); ++row) {
+            const int to = picker.itemData(row).toInt();
+            message->addAction(picker.itemText(row), this, [this, sessionId, to] {
+                QString why;
+                if (!forwardLastSessionReply(sessionId, to, &why) && !why.isEmpty())
+                    flashMessage(why, true);
+            });
+        }
+        message->setEnabled(!message->isEmpty());
+        menu.exec(globalPos);
+        return;
+    }
     menu.addAction(QStringLiteral("Open in Agents"), this,
                    [this, sessionId] { switchToAgentsTab(sessionId); });
     QAction *resume = menu.addAction(QStringLiteral("Continue"), this, [this, sessionId] {
