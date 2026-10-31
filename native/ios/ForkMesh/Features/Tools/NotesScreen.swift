@@ -85,7 +85,7 @@ private struct NoteListRow: View {
     }
 
     private var titleLine: some View {
-        Text(row.title)
+        Text(row.emoji.isEmpty ? row.title : "\(row.emoji) \(row.title)")
             .fmText(.titleSmall, weight: row.unread ? .bold : nil)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -600,11 +600,19 @@ private struct NoteEditorBody: View {
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: FmSpace.x2) {
-            TextField("", text: titleBinding, prompt: Text("Title").foregroundColor(fm.textTertiary))
-                .fmText(.titleLarge)
-                .textInputAutocapitalization(.sentences)
-                .disabled(!model.canEdit)
-                .accessibilityIdentifier("note-title")
+            HStack(spacing: FmSpace.x2) {
+                if !model.emoji.isEmpty {
+                    Text(model.emoji)
+                        .fmText(.titleLarge)
+                        .accessibilityLabel(Text("Emoji \(model.emoji)"))
+                        .accessibilityIdentifier("note-emoji")
+                }
+                TextField("", text: titleBinding, prompt: Text("Title").foregroundColor(fm.textTertiary))
+                    .fmText(.titleLarge)
+                    .textInputAutocapitalization(.sentences)
+                    .disabled(!model.canEdit)
+                    .accessibilityIdentifier("note-title")
+            }
             Text(metaLine)
                 .fmText(.bodySmall, color: fm.textTertiary)
                 .accessibilityIdentifier("note-save-state")

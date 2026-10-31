@@ -71,6 +71,10 @@ let noteErrorMessages: [String: String] = [
     "too_many_comments": "This note already has 1000 comments, the most it can hold.",
     "comment_author_required": "Only the comment's author can do that.",
     "resolve_not_allowed": "Only the note's owner, an editor or the thread's author can resolve it.",
+    "invalid_emoji": "Use a single emoji, such as 📝 or 🇫🇷.",
+    "page_not_found": "This page no longer exists, or you no longer have access to it.",
+    "invalid_page": "Some of this page's settings are not valid.",
+    "too_many_entries": "A page holds at most 300 entries.",
 ]
 
 public typealias ToolsSleep = @Sendable (_ millis: Int) async throws -> Void
@@ -118,6 +122,7 @@ public struct NoteRow: Equatable, Identifiable, Sendable {
     public var morePeople: Int = 0
     public var openComments: Int = 0
     public var isOwner: Bool = true
+    public var emoji: String = ""
 }
 
 @MainActor
@@ -309,7 +314,8 @@ public final class NotesListModel {
             reach: NoteReachBadge.of(note),
             people: avatars.shown, morePeople: avatars.more,
             openComments: max(0, ToolsJSON.int(note["openComments"])),
-            isOwner: ToolsJSON.text(note["role"], "owner") == "owner")
+            isOwner: ToolsJSON.text(note["role"], "owner") == "owner",
+            emoji: ToolsJSON.text(note["emoji"], ""))
     }
 }
 
@@ -541,6 +547,7 @@ public final class NoteEditorModel {
     public private(set) var room: NoteRoomModel?
     public private(set) var comments: NoteCommentsModel?
     public private(set) var selectionRequest: NoteSelectionRequest?
+    public private(set) var emojiDraft: String?
     @ObservationIgnored private var requestSerial = 0
     public var commentsOpen = false
     public var selection: Range<Int>?
@@ -727,22 +734,30 @@ public final class NoteEditorModel {
         if conflict != nil { return .failed(Self.conflictMessage) }
         saving = true
         saveFailure = ""
-        let sentTitle = title, sentMarkdown = markdown
+        let sentTitle = title, sentMarkdown = markdown, sentEmoji = emojiDraft
         do {
-            let data: JSONObject
-            if let id {
-                data = try await call("PATCH", "/\(id)", [
+            var body: JSONObject
+            if id != nil {
+                body = [
                     "baseVersion": .int(Int64(version)),
                     "title": .string(sentTitle.dartTrimmed),
                     "markdown": .string(sentMarkdown),
-                ])
+                ]
             } else {
-                data = try await call("POST", "", [
+                body = [
                     "title": .string(sentTitle.dartTrimmed),
                     "markdown": .string(sentMarkdown),
                     "visibility": "private",
-                ])
+                ]
             }
+            if let sentEmoji { body["emoji"] = .string(sentEmoji) }
+            let data: JSONObject
+            if let id {
+                data = try await call("PATCH", "/\(id)", body)
+            } else {
+                data = try await call("POST", "", body)
+            }
+            if emojiDraft == sentEmoji { emojiDraft = nil }
             let typedTitle = title, typedMarkdown = markdown
             apply(ToolsJSON.object(data["note"]))
             if typedTitle != sentTitle || typedMarkdown != sentMarkdown {
@@ -907,6 +922,46 @@ public final class NoteEditorModel {
         saveFailure = ""
         apply(latest)
         return .done("Showing the latest saved version")
+    }
+
+    public var emoji: String { emojiDraft ?? ToolsJSON.text(note?["emoji"], "") }
+
+    public func setEmoji(_ raw: String) async -> ToolsOutcome {
+        guard canEdit else { return ToolsOutcome() }
+        guard let clean = NoteEmoji.clean(raw) else { return .failed(NoteEmoji.invalidMessage) }
+        guard let id else {
+            emojiDraft = clean
+            return ToolsOutcome()
+        }
+        if saving { return .failed("The note is still saving. Try again in a moment.") }
+        if dirty || conflict != nil {
+            emojiDraft = clean
+            return conflict == nil ? await save() : ToolsOutcome()
+        }
+        do {
+            let data = try await call("PATCH", "/\(id)", ["baseVersion": .int(Int64(version)), "emoji": .string(clean)])
+            applyMeta(data)
+            return .done(clean.isEmpty ? "Emoji removed" : "Emoji updated")
+        } catch let refusal as OrgApiException where refusal.code == "version_conflict" {
+            emojiDraft = clean
+            await reload()
+            return dirty ? ToolsOutcome() : await setEmojiAgain()
+        } catch {
+            return .failed(notesErrorText(error, "The emoji was not changed."))
+        }
+    }
+
+    private func setEmojiAgain() async -> ToolsOutcome {
+        guard let pending = emojiDraft, let id else { return ToolsOutcome() }
+        do {
+            let data = try await call("PATCH", "/\(id)", ["baseVersion": .int(Int64(version)), "emoji": .string(pending)])
+            emojiDraft = nil
+            applyMeta(data)
+            return .done(pending.isEmpty ? "Emoji removed" : "Emoji updated")
+        } catch {
+            emojiDraft = nil
+            return .failed(notesErrorText(error, "The emoji was not changed."))
+        }
     }
 
     public func format(_ kind: NoteFormat) {
@@ -1126,6 +1181,11 @@ public final class NoteShareModel {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var picked: String?
     public let noteId: String
+    public let isPage: Bool
+    public var includeNotes = true
+    public static let includeNotesLabel = "Also share the notes on this page"
+    public static let pageSubtitle = "Viewers can read the page; editors can change it."
+    public static let pageAccessHint = "Only people this page is shared with can open it."
     public private(set) var shares: [JSONObject]
     public private(set) var suggestions: [NoteShareSuggestion] = []
     public var name = ""
@@ -1137,9 +1197,10 @@ public final class NoteShareModel {
 
     public init(
         noteId: String, initial: [JSONObject], call: @escaping ToolsApiCall,
-        sleep: @escaping ToolsSleep = toolsTaskSleep, webLink: @escaping ToolsWebLink = { _ in nil }
+        sleep: @escaping ToolsSleep = toolsTaskSleep, webLink: @escaping ToolsWebLink = { _ in nil }, page: Bool = false
     ) {
         self.noteId = noteId
+        isPage = page
         shares = initial
         self.call = call
         self.sleep = sleep
@@ -1159,8 +1220,11 @@ public final class NoteShareModel {
     }
 
     public var showsAccessLink: Bool { !shares.isEmpty }
-    public var accessPath: String { "/dashboard/notes?note=\(noteId)" }
+    public var accessPath: String { isPage ? "/dashboard/notes?page=\(noteId)" : "/dashboard/notes?note=\(noteId)" }
     public var accessLink: URL? { webLink(accessPath) }
+    public var subtitleText: String { isPage ? Self.pageSubtitle : Self.subtitle }
+    public var accessHintText: String { isPage ? Self.pageAccessHint : Self.accessHint }
+    var sharesPath: String { isPage ? "/pages/\(noteId)/shares" : "/\(noteId)/shares" }
 
     public var query: String {
         String(ToolsText.dropLeadingAts(name.dartTrimmed).lowercased().unicodeScalars.filter {
@@ -1172,7 +1236,7 @@ public final class NoteShareModel {
         generation += 1
         let current = generation
         let text = query
-        if text.isEmpty || text.count > Self.maxQueryLength || text == picked {
+        if isPage || text.isEmpty || text.count > Self.maxQueryLength || text == picked {
             suggestions = []
             return
         }
@@ -1209,11 +1273,14 @@ public final class NoteShareModel {
     }
 
     /// Returns the failure to show, if any.
+    @ObservationIgnored private var sharedNotes = 0
+
     private func send(_ method: String, _ body: JSONObject) async -> String? {
         busy = true
         do {
-            let data = try await call(method, "/\(noteId)/shares", body)
+            let data = try await call(method, sharesPath, body)
             shares = ToolsJSON.maps(data["shares"])
+            sharedNotes = data["sharedNotes"]?.arrayValue?.count ?? 0
             busy = false
             return nil
         } catch {
@@ -1229,10 +1296,16 @@ public final class NoteShareModel {
         let cleaned = ToolsText.dropLeadingAts(name.dartTrimmed).lowercased()
         if cleaned.isEmpty { return ToolsOutcome() }
         dismissSuggestions()
-        if let failure = await send("POST", ["type": .string(type), "name": .string(cleaned), "role": .string(role)]) {
+        var body: JSONObject = ["type": .string(type), "name": .string(cleaned), "role": .string(role)]
+        if isPage { body["includeNotes"] = .bool(includeNotes) }
+        if let failure = await send("POST", body) {
             return .failed(failure)
         }
         name = ""
+        if isPage && includeNotes && sharedNotes > 0 {
+            let notes = sharedNotes == 1 ? "1 note" : "\(sharedNotes) notes"
+            return .done("Shared with \(cleaned), with \(notes) on this page. Copy the link below to send it.")
+        }
         return .done("Shared with \(cleaned). Copy the link below to send it.")
     }
 

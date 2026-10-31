@@ -488,6 +488,44 @@ On screen:
   text removes the highlight.
 - Comment boxes offer `@` suggestions as chips under the field.
 
+### Pages and note emoji (logic only so far)
+
+The contract is `docs/app/notes-pages.md`. FMTools' `NotePages.swift` holds
+the logic, tested in `Tests/FMToolsTests/NotePagesTests.swift`; the screens
+are not built yet.
+
+- `NoteEmoji.clean` applies the server's rule on the device (1–16 code
+  points, at most 64 UTF-8 bytes, no whitespace, control characters or other
+  ASCII, symbols and marks only), with Android's keycap rule: a digit, `#` or
+  `*` must be followed by U+20E3, or by U+FE0F then U+20E3. `NoteEmoji.common`
+  is Android's 40-emoji picker set; the error reads "Use a single emoji, such
+  as 📝 or 🇫🇷."
+- `NoteEditorModel.setEmoji` sends `emoji` in the note PATCH, or with the next
+  save when there are unsaved edits, or in the POST of a new note; a
+  `version_conflict` reloads and retries once. List rows and the editor
+  header show the emoji before the title. There is no picker on iOS yet.
+- `NotePagesModel` lists (`GET /api/notes/pages`) and creates pages ("1
+  entry" / "n entries"). `NotePageModel` loads
+  `GET /api/notes/pages/<id>?content=1`, fetches the markdown of notes that
+  came without it, builds the outline rows (`NotePageOutline.rows`: sections
+  that collapse the entries under them until the next section at the same or
+  a shallower depth, as on the web; notes with emoji and unread dots; links;
+  locked entries "You don't have access to this note"), edits a draft
+  (title, emoji, description, accent, layout, show emoji, and the outline:
+  add notes by title search, sections and `https://` links; rename, indent,
+  outdent, move up and down, drag-style `move(from:to:)`, remove) and saves
+  it with `baseVersion`, keeping the draft after a conflict. Only the owner
+  deletes a page.
+- `NoteShareModel(page: true)` shares a page through
+  `/api/notes/pages/<id>/shares` with `includeNotes` (on by default, "Also
+  share the notes on this page"), without name suggestions, since that route
+  has none.
+
+Not done on iOS yet: the Pages group in the list, the page screen, the
+Customize sheet, the emoji picker, page sharing on screen, and the
+`/dashboard/notes?page=<id>[&note=<id>]` deep link (the `RouteParser` case was
+left out so a link never opens a placeholder).
+
 ### Tests
 
 `Tests/FMToolsTests/`: `NotesTasksTests.swift` and `NotesParityTests.swift`
