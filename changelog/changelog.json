@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Server", "text": "A self-hosted instance built from its own repository can merge the latest ForkMesh into that repository and update itself, at once or about once a day, from the Update page."},
   {"date": "2026-10-31", "area": "Server", "text": "Site admin pages show your profile picture in the top bar and have a Back to dashboard button that takes you out of admin."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "The bell in the web dashboard now opens a Pings page that lists every ping with an Unread filter, Mark as read, Load more, and a link to each ping's settings."},
   {"date": "2026-10-31", "area": "Market", "text": "Analytics: the overview is denser, so most of it fits on one screen. It adds a Sites card (click a site to filter the whole page), a live visitor count, which link each referral landed on, outbound link clicks, and campaign terms and content."},
