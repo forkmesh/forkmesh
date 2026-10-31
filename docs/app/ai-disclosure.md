@@ -143,8 +143,9 @@ none, and nothing otherwise.
 
 ## Issue AI prompt
 
-Open issues show a box under the title row with the prompt in one truncated
-line (full text in the tooltip) and a **Copy prompt** button. Copying uses the
+Open issues show an **AI prompt** section in the sidebar, after Agent, with
+the whole prompt in small monospaced text and a compact **Copy prompt**
+button. Copying uses the
 dashboard's shared `data-dashboard-copy` handler (Clipboard API with a
 textarea fallback) and swaps the label to **Copied**. Closed issues show no
 box. Signed-out visitors see and copy it too.

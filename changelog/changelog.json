@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Projects", "text": "Issue and pull request pages go straight from the title to the conversation: the issue AI prompt and the pull request's Diff and files links now sit in the sidebar."},
   {"date": "2026-10-31", "area": "Agents", "text": "Claude Code agents now ask before a command they watch with the Monitor tool reaches the internet or deletes files, just as they do for ordinary shell commands."},
   {"date": "2026-10-31", "area": "Agents", "text": "Merge & clean up and deleting an agent now also remove its Claude Code session, so finished agents no longer pile up in Claude's session list."},
   {"date": "2026-10-31", "area": "Desktop", "text": "On Debian and Ubuntu you can now install ForkMesh with sudo apt install forkmesh after adding the ForkMesh apt repository, and sudo apt upgrade keeps it up to date."},
