@@ -1333,6 +1333,19 @@ design tokens.
   section title otherwise. Next paints it `accentFg` on `accentSubtle`; Classic
   uses the list's selection blue. Titles and sub-headings carry the same
   padding lit or not, so lighting one never moves the page.
+- **Pinned heading.** In October 2026 the user asked for the section heading
+  and the sub-heading being read to stay in view. `#settingsStickyHeader`, a
+  child of the scroll area's viewport (so it does not scroll), shows the
+  current section's icon and title once the real title has gone above the top
+  edge, and under it the lit sub-heading once that one has gone under the
+  bar (`SettingsSectionsView::updateSticky`, run from `updateCurrentSub`). The
+  next section pushes it up and out. It copies the lit state of the heading it
+  stands for, so the page and the list still agree. Sub-heading jumps and the
+  reading line that picks the lit sub-heading both allow for the bar's title
+  row (`stickyTitleHeight`), so a jump lands just under it. Clicking the
+  title returns to the top of the section, clicking the sub-heading to that
+  card. Both looks style it: `Theme.h` (Classic, dark and light) and
+  `20-settings.qss` (Next).
 - **Outline check.** `forkmesh-window-tests --settings-outline-only` (add
   `--next` for the new interface) opens every section and fails if a group
   card on the page has no heading in the list, if the list and the page

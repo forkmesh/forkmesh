@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Settings", "text": "The Settings header and the heading of the section you are reading now stay at the top as you scroll, on the desktop, the web and both phone apps."},
   {"date": "2026-10-31", "area": "Projects", "text": "Repository tabs other than Code start right under the tab strip, every tab has a left rail, repository settings can be searched, and an instance can show a dev.to account's posts on Home."},
   {"date": "2026-10-31", "area": "Market", "text": "On a GitHub, GitLab, Codeberg or Gitea repository, the Chrome extension's popup now shows its size, stars, forks and other details, with a button to mirror it to your ForkMesh account."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The debug bar charts agent input and output tokens, can expand its charts to full height, and its All log count no longer covers the icon or stops at 20,000."},

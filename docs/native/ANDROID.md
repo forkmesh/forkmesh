@@ -3234,3 +3234,22 @@ edit or delete as somebody else. Nothing here talks to older builds.
   `HubCatalog.workspace` lists `Route.Nexus`, `/dashboard/nexus` opens it, and
   the Scan tab fills an empty target from `LocalNetwork.current()` with a
   "Use this network" row (`NexusTest.testLocalNetworkSuggestion`).
+
+## 37. Pinned Settings headings (2026-10-31)
+
+The user asked for the Settings header and the heading of the section being
+read to stay in view on every platform.
+
+- **iPhone.** `SettingsScreen` already keeps "Settings" in the navigation bar;
+  the search field now stays under it (`navigationBarDrawer(displayMode:
+  .always)`). Each `SettingsSection` reports its frame
+  (`settingsSectionFrame`, `SettingsSectionFramesKey`), and the page's scroll
+  view draws the heading of the section crossing its top edge over the page
+  (`settingsPinnedHeaders`, `SettingsPinnedHeader.swift`). The next section's
+  heading pushes it up and out (`SettingsPinnedSection.pick`). The pinned copy
+  is hidden from VoiceOver, which reads the real heading.
+- **Android.** `SettingsScreen` builds each section with
+  `LazyListScope.section`: the heading is a `stickyHeader` on the canvas
+  colour (`settings-section-header`) and the body an item after it, so Compose
+  pins and pushes it. The hub's search field (`SettingsHubScreen`) is a
+  `stickyHeader` too; the app bar sits outside the list and never scrolled.
