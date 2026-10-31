@@ -7658,6 +7658,17 @@ private:
                           bool warning = false, const QString &icon = QString(),
                           const QString &activateHref = QString(),
                           bool dismissOnly = false, bool fileLocally = true);
+    bool batchNativeNotificationCard(const QString &title, const QString &body,
+                                     bool warning, const QString &icon,
+                                     const QString &activateHref);
+    void flushNativeNotificationBatch();
+    void showNativeNotificationCard(const QString &title, const QString &body,
+                                    bool warning, const QString &icon,
+                                    const QString &activateHref,
+                                    bool dismissOnly, int trayTimeoutMs = 6000);
+    bool admitPingSound();
+    bool sendPingToPhones(const forkmesh::pingforward::Ping &ping);
+    void flushPhonePingBatch();
     // Where a desktop notification takes you when it is clicked. The href is the
     // same "fm:agent:N" scheme the in-app notices already link with.
     NotificationLink notificationLinkForHref(const QString &href);

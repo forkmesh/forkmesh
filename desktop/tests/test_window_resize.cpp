@@ -2068,6 +2068,31 @@ void checkNotificationDefaultsAndDelivery(MainWindow &window)
               QStringLiteral("fm:agent:73002"),
           QStringLiteral("explicitly enabling native system notifications "
                          "opens their delivery gate"));
+    for (int i = 3; i <= 4; ++i)
+        window.testPostNotification(
+            QStringLiteral("Burst probe %1").arg(i),
+            QStringLiteral("burst body %1").arg(i),
+            QStringLiteral("fm:agent:7300%1").arg(i));
+    check(window.testDesktopNotificationHref() ==
+              QStringLiteral("fm:agent:73004"),
+          QStringLiteral("the first three cards of a burst show one by one"));
+    for (int i = 5; i <= 9; ++i)
+        window.testPostNotification(
+            QStringLiteral("Burst probe %1").arg(i),
+            QStringLiteral("burst body %1").arg(i),
+            QStringLiteral("fm:agent:7300%1").arg(i));
+    window.testPostNotification(QStringLiteral("Burst probe 10"),
+                                QStringLiteral("burst body 10"),
+                                QStringLiteral("fm:agent:73010"));
+    check(window.testDesktopNotificationHref() ==
+              QStringLiteral("fm:agent:73004"),
+          QStringLiteral("later cards of a burst are held"));
+    window.testPostNotification(QStringLiteral("Burst probe 11"),
+                                QStringLiteral("burst body 11"),
+                                QStringLiteral("fm:agent:73011"));
+    check(window.testDesktopNotificationHref() == QStringLiteral("fm:pings"),
+          QStringLiteral("the tenth ping of a burst raises one summary card "
+                         "that opens the Pings page"));
     settings.remove(forkmesh::ui::kNativeSystemNotificationsSetting);
 
     // A stale acknowledgement must not clear a newer pause selected while the
