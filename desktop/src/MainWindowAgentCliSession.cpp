@@ -2004,6 +2004,37 @@ int MainWindow::externalTempIdFor(const QString &uuid)
     return id;
 }
 
+QStringList MainWindow::claudeTranscriptConfigDirs() const
+{
+    QStringList dirs{QDir::homePath() + QStringLiteral("/.claude"),
+                     agentAccountDefaultConfigDir(QStringLiteral("claude-code"))};
+    for (const AgentAccountProfile &profile :
+         agentAccountProfiles(QStringLiteral("claude-code")))
+        if (!profile.configDir.trimmed().isEmpty())
+            dirs.append(profile.configDir);
+    dirs.removeDuplicates();
+    return dirs;
+}
+
+void MainWindow::removeOrphanedClaudeTranscripts(const QString &worktreePath)
+{
+    if (worktreePath.trimmed().isEmpty())
+        return;
+    runOffThread<QStringList>(
+        [dirs = claudeTranscriptConfigDirs(), worktreePath] {
+            QStringList removed;
+            ClaudeSessionScan::removeOrphanedTranscripts(dirs, worktreePath, &removed);
+            return removed;
+        },
+        [this, worktreePath](QStringList removed) {
+            if (removed.isEmpty())
+                return;
+            logSystem(QStringLiteral("Agents: removed the Claude Code sessions of "
+                                     "deleted worktree %1: %2.")
+                          .arg(worktreePath, removed.join(QStringLiteral(", "))));
+        });
+}
+
 void MainWindow::scanExternalClaudeSessions()
 {
     if (m_externalClaudeScanInFlight)

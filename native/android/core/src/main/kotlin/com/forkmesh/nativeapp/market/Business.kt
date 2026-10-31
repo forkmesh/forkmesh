@@ -359,7 +359,21 @@ data class CrmOrganizationData(
     val sharedViews: List<CrmView> = emptyList(),
     val team: CrmTeamActivity = CrmTeamActivity.fromJson(emptyMap()),
     val decks: List<CrmDeckLink> = emptyList(),
+    val contactsNext: String = "",
+    val contactsTotal: Int = contacts.size,
+    val countsCustomers: Boolean = false,
 ) {
+    val contactsComplete: Boolean get() = contactsNext.isEmpty()
+
+    fun appendingContacts(page: List<CrmContact>, next: String): CrmOrganizationData {
+        val known = contacts.mapTo(HashSet()) { it.id }
+        val merged = contacts + page.filter { PackagesText.isHexId(it.id) && known.add(it.id) }
+        return copy(
+            contacts = merged, contactsNext = next,
+            counts = if (countsCustomers) counts.copy(customers = customersIn(merged)) else counts,
+        )
+    }
+
     fun flow(id: String?): CrmFlow = flows.firstOrNull { it.id == id } ?: flows.firstOrNull() ?: CrmFlow.FALLBACK
 
     fun contactsIn(flow: CrmFlow, query: String = ""): List<CrmContact> = contacts.filter { it.flow == flow.id && it.matches(query) }
@@ -389,6 +403,7 @@ data class CrmOrganizationData(
             val contacts = json.maps("contacts").map(CrmContact::fromJson).filter { PackagesText.isHexId(it.id) }
             val flows = json.obj("settings").maps("flows").map(CrmFlow::fromJson).filter { it.id.isNotEmpty() }
             val summary = json.obj("summary")
+            val countsCustomers = !summary.containsKey("customers") && json.containsKey("contactsTotal")
             return CrmOrganizationData(
                 organization = json.str("organization"),
                 role = json.str("role", "member"),
@@ -398,7 +413,9 @@ data class CrmOrganizationData(
                 flows = flows.ifEmpty { listOf(CrmFlow.FALLBACK) },
                 members = json.list("members").map { if (it is Map<*, *>) it.asMap().str("name") else jsonText(it) }.filter { it.isNotEmpty() },
                 counts = CrmSummaryCounts(
-                    summary.int("contacts", contacts.size), summary.int("customers"), summary.int("sent"), summary.int("failed"), summary.int("mail"),
+                    summary.int("contacts", contacts.size),
+                    if (countsCustomers) customersIn(contacts) else summary.int("customers"),
+                    summary.int("sent"), summary.int("failed"), summary.int("mail"),
                 ),
                 revision = json.str("revision"),
                 mail = json.maps("mail").map(CrmMailMessage::fromJson).filter { PackagesText.isHexId(it.id) },
@@ -408,8 +425,13 @@ data class CrmOrganizationData(
                 sharedViews = json.maps("sharedViews").map(CrmView::fromJson).filter { PackagesText.isHexId(it.id) },
                 team = CrmTeamActivity.fromJson(json.obj("activity")),
                 decks = json.maps("decks").map(CrmDeckLink::fromJson).filter { it.token.isNotEmpty() },
+                contactsNext = json.str("contactsNext"),
+                contactsTotal = json.int("contactsTotal", contacts.size),
+                countsCustomers = countsCustomers,
             )
         }
+
+        fun customersIn(contacts: List<CrmContact>): Int = contacts.count { it.stage == "customer" }
     }
 }
 

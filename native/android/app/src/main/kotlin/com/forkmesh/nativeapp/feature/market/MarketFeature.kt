@@ -49,7 +49,11 @@ object MarketFeature {
         WalletClient(ControlFamilyChannel(DesktopControlFamilyName.Wallet, HubControlCalling(AgentsFeature.hub)))
     }.getOrNull()
 
-    internal fun crm(): CrmModel? = crmModel ?: client()?.let { CrmModel(it) }?.also { crmModel = it }
+    internal fun crm(): CrmModel? = crmModel ?: client()?.let { CrmModel(it) }?.also { model ->
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        model.onContactsChanged = { main.post { CrmRevision.bump() } }
+        crmModel = model
+    }
 
     suspend fun organizationNames(): List<String> =
         runCatching { Services.get<ApiService>()?.myOrgs()?.map { it.name } }.getOrNull() ?: emptyList()

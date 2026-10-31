@@ -3897,6 +3897,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_claude_session_scan.cpp
         src/ClaudeSessionScan.h
         src/ClaudeSessionScan.cpp
+        src/SafeDelete.h
+        src/AppPaths.h
         src/ClaudeSessionImport.h
         src/ClaudeSessionImport.cpp
     )

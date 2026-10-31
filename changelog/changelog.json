@@ -13,6 +13,8 @@
  "notes": [
   {"date": "2026-10-31", "area": "Highlights", "text": "Notes can have their own emoji, and you can gather many notes into one shareable page with an outline on the left, sections, links, your own title, emoji and colour, on the web, desktop, iPhone and Android."},
   {"date": "2026-10-31", "area": "Highlights", "text": "Notes now have inline comments: select text to comment, reply, @mention collaborators and resolve threads, and you can see who else has a note open and whether they are viewing or editing, on the web, desktop, iPhone and Android."},
+  {"date": "2026-10-31", "area": "Agents", "text": "Claude Code agents now ask before a command they watch with the Monitor tool reaches the internet or deletes files, just as they do for ordinary shell commands."},
+  {"date": "2026-10-31", "area": "Agents", "text": "Merge & clean up and deleting an agent now also remove its Claude Code session, so finished agents no longer pile up in Claude's session list."},
   {"date": "2026-10-31", "area": "Desktop", "text": "On Debian and Ubuntu you can now install ForkMesh with sudo apt install forkmesh after adding the ForkMesh apt repository, and sudo apt upgrade keeps it up to date."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The Sessions page now lists every session from the Claude app's Code tab and groups them the same way: pinned, your named groups, then one group per folder, with the Claude app's titles."},
   {"date": "2026-10-31", "area": "Desktop", "text": "When pings arrive in a burst, the desktop and your phone show the first three, then one summary at 10 and at 100 that lists each kind of ping and its numbers, instead of one notification per ping."},
@@ -22,6 +24,9 @@
   {"date": "2026-10-31", "area": "Settings", "text": "The Settings header and the heading of the section you are reading now stay at the top as you scroll, on the desktop, the web and both phone apps."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "A button that is working on something now shows a spinning ring around its icon until it is done, and left-rail icons ring while their section has work running, such as agents or shortcuts, on the desktop, the website and the phone apps."},
   {"date": "2026-10-31", "area": "Desktop", "text": "Hovering a pull request in the list shows a button that opens its changes in Git in one click."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "The desktop CRM's first load is faster for large organizations: the first contacts show at once and the rest load in the background."},
+  {"date": "2026-10-31", "area": "iPhone", "text": "The CRM opens faster for large organizations on iPhone and Android: the first contacts show at once and the rest load in the background."},
+  {"date": "2026-10-31", "area": "Market", "text": "The CRM on the web opens faster for large organizations: the first contacts show at once while the rest load in the background, and the contacts table now pages its rows, 100 at a time by default."},
   {"date": "2026-10-31", "area": "Desktop", "text": "Click a group heading in the left rail to fold that group away, and click it again to bring it back."},
   {"date": "2026-10-31", "area": "Projects", "text": "Repository tabs other than Code start right under the tab strip, every tab has a left rail, repository settings can be searched, and an instance can show a dev.to account's posts on Home."},
   {"date": "2026-10-31", "area": "Market", "text": "On a GitHub, GitLab, Codeberg or Gitea repository, the Chrome extension's popup now shows its size, stars, forks and other details, with a button to mirror it to your ForkMesh account."},

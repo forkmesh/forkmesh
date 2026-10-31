@@ -4022,6 +4022,8 @@ void MainWindow::removeWorktree(const QString &worktreePath, const QString &bran
                         true, forkmesh::kLocalOperationNoticeKind);
                 }
             }
+            if (!removal.refused)
+                removeOrphanedClaudeTranscripts(worktreePath);
             if (removal.branchDeleted)
                 propagateBranchDeletion(repo.owner, repo.name);
             if (here) {
@@ -4470,12 +4472,13 @@ void MainWindow::deleteWorktreeBranchAndAgentInBackground(
                   .arg(worktreePath.isEmpty() ? QStringLiteral("(none)") : worktreePath)
                   .arg(branch));
 
-    auto finish = [this, repo, issueNumbers, branch, deleteBranch, taskId,
+    auto finish = [this, repo, issueNumbers, worktreePath, branch, deleteBranch, taskId,
                    completed, cleanupTimer, onDone = std::move(onDone)](
                       bool success, const QString &error) {
         if (*completed)
             return;
         *completed = true;
+        removeOrphanedClaudeTranscripts(worktreePath);
         int closedIssues = 0;
         if (success && !issueNumbers.isEmpty()) {
             const RepositoryRecord &writable = writableRecordFor(repo);
