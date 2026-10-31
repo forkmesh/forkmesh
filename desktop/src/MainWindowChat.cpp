@@ -3076,7 +3076,7 @@ QWidget *MainWindow::buildStatusBar()
     debugRow->setSizeConstraint(QLayout::SetMinimumSize);
     if (m_resourceChart) {
         m_resourceChart->setObjectName(QStringLiteral("debugResourceChart"));
-        m_resourceChart->setFixedSize(40, 40);
+        m_resourceChart->setFixedSize(kDebugTileQuadSide, kDebugTileQuadSide);
         debugRow->addWidget(m_resourceChart, 0, Qt::AlignVCenter);
     }
     QVector<ResourceSparkline *> debugTiles;
@@ -3219,6 +3219,9 @@ QWidget *MainWindow::buildStatusBar()
     chartsExpandButton->setObjectName(QStringLiteral("debugChartsExpandButton"));
     chartsExpandButton->setCheckable(true);
     chartsExpandButton->setCompact(true);
+    chartsExpandButton->setToolTip(
+        QStringLiteral("Expand every debug chart, CPU, memory, swap and disk "
+                       "included, to full height"));
     connect(chartsExpandButton, &QPushButton::toggled, this, [this](bool on) {
         setDebugChartsExpanded(on);
         QSettings().setValue(kDebugChartsExpandedSetting, on);
@@ -3378,6 +3381,8 @@ void MainWindow::setDebugChartsExpanded(bool expanded)
     m_debugChartsExpanded = expanded;
     const int side =
         expanded ? kDebugChartExpandedSide : kResourceSparklineCompactSide;
+    if (auto *resources = dynamic_cast<ResourceQuadrantSparkline *>(m_resourceChart))
+        resources->setExpanded(expanded, kDebugChartExpandedSide);
     for (int q = 0; q < m_debugTileQuads.size(); ++q) {
         QWidget *quad = m_debugTileQuads.at(q);
         auto *grid = quad ? qobject_cast<QGridLayout *>(quad->layout()) : nullptr;
@@ -3409,9 +3414,11 @@ void MainWindow::setDebugChartsExpanded(bool expanded)
                                   : QStringLiteral("chevron-up"),
                          expanded ? QStringLiteral("Compact")
                                   : QStringLiteral("Expand"));
-        button->setToolTip(expanded
-                               ? QStringLiteral("Shrink the debug charts back to compact")
-                               : QStringLiteral("Expand the debug charts to full height"));
+        button->setToolTip(
+            expanded ? QStringLiteral("Collapse every debug chart, CPU, memory, "
+                                      "swap and disk included, back to compact")
+                     : QStringLiteral("Expand every debug chart, CPU, memory, "
+                                      "swap and disk included, to full height"));
     }
 }
 

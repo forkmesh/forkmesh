@@ -2186,6 +2186,19 @@ public:
         m_samples[resource].onClicked = std::move(handler);
     }
 
+    void setExpanded(bool expanded, int side)
+    {
+        m_expanded = expanded;
+        if (expanded)
+            setFixedSize(ResourceCount * side + (ResourceCount - 1) * kExpandedGap,
+                         side);
+        else
+            setFixedSize(side, side);
+        update();
+    }
+
+    bool isExpanded() const { return m_expanded; }
+
     SparklineHoverContent hoverContent(int resource) const
     {
         static const char *const titles[ResourceCount] = {
@@ -2301,8 +2314,14 @@ private:
 
     QRectF quadrantRect(int resource) const
     {
-        constexpr qreal gap = 1.0;
         const QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        if (m_expanded) {
+            const qreal cellWidth =
+                (box.width() - (ResourceCount - 1) * kExpandedGap) / ResourceCount;
+            return QRectF(box.left() + resource * (cellWidth + kExpandedGap),
+                          box.top(), cellWidth, box.height());
+        }
+        constexpr qreal gap = 1.0;
         const qreal cellWidth = (box.width() - gap) / 2.0;
         const qreal cellHeight = (box.height() - gap) / 2.0;
         const int row = resource / 2;
@@ -2323,7 +2342,8 @@ private:
     void paintQuadrant(QPainter &p, int resource, const QRectF &box) const
     {
         QPainterPath cardPath;
-        cardPath.addRoundedRect(box, 2, 2);
+        const qreal radius = m_expanded ? 4 : 2;
+        cardPath.addRoundedRect(box, radius, radius);
         QColor card = palette().color(QPalette::WindowText);
         card.setAlpha(28);
         p.setPen(Qt::NoPen);
@@ -2331,9 +2351,56 @@ private:
         p.drawPath(cardPath);
 
         const Sample &sample = m_samples[resource];
-        const QRectF area = box.adjusted(1.0, 1.0, -1.0, -1.0);
-        if (area.height() < 2 || sample.history.size() < 2)
-            return;
+        const qreal inset = m_expanded ? 1.5 : 1.0;
+        const QRectF area = box.adjusted(inset, inset, -inset, -inset);
+        if (area.height() >= 2 && sample.history.size() >= 2)
+            paintCurve(p, sample, cardPath, area);
+        if (m_expanded)
+            paintCaption(p, resource, box);
+    }
+
+    void paintCaption(QPainter &p, int resource, const QRectF &box) const
+    {
+        static const char *const labels[ResourceCount] = {"CPU", "MEM", "SWAP",
+                                                          "DISK"};
+        const Sample &sample = m_samples[resource];
+        const QString label = QString::fromLatin1(labels[resource]);
+        const double pct = sample.history.isEmpty()
+                               ? 0.0
+                               : sample.history.last() / sample.max * 100.0;
+        const QString value =
+            sample.history.isEmpty()
+                ? QStringLiteral("…")
+                : QString::number(qRound(pct)) + QStringLiteral("%");
+        QFont f = font();
+        double pt = f.pointSizeF() > 0 ? qMin(8.0, f.pointSizeF()) : 7.0;
+        const double avail = box.width() - 6;
+        for (; pt > 5.5; pt -= 0.5) {
+            f.setPointSizeF(pt);
+            const QFontMetrics fm(f);
+            if (fm.horizontalAdvance(label) <= avail &&
+                fm.horizontalAdvance(value) <= avail)
+                break;
+        }
+        f.setPointSizeF(pt);
+        p.setFont(f);
+        const int lineH = QFontMetrics(f).height();
+        const double topY = box.top() + (box.height() - lineH * 2) / 2.0;
+        QColor lab = palette().color(QPalette::WindowText);
+        lab.setAlpha(170);
+        p.setPen(lab);
+        p.drawText(QRectF(box.left() + 3, topY, box.width() - 6, lineH),
+                   Qt::AlignVCenter | Qt::AlignHCenter, label);
+        QColor val = gaugeColor(pct);
+        val.setAlpha(210);
+        p.setPen(val);
+        p.drawText(QRectF(box.left() + 3, topY + lineH, box.width() - 6, lineH),
+                   Qt::AlignVCenter | Qt::AlignHCenter, value);
+    }
+
+    void paintCurve(QPainter &p, const Sample &sample,
+                    const QPainterPath &cardPath, const QRectF &area) const
+    {
 
         p.save();
         p.setClipPath(cardPath);
@@ -2355,16 +2422,18 @@ private:
         p.setPen(Qt::NoPen);
         p.drawPolygon(fill);
         QPen pen(line);
-        pen.setWidthF(1.0);
+        pen.setWidthF(m_expanded ? 1.2 : 1.0);
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
         p.drawPolyline(curve);
         p.restore();
     }
 
+    static constexpr int kExpandedGap = 2;
     Sample m_samples[ResourceCount];
     int m_maxPoints = 60;
     int m_hoveredResource = -1;
+    bool m_expanded = false;
 };
 
 class ProcessMemorySparkline : public QWidget

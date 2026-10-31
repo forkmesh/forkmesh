@@ -157,7 +157,12 @@ The desktop has no toasts or floating cards; information is shown inline.
   `ui/debugChartsExpanded`) switches every chart between the compact quadrant
   and full bar height (`kDebugChartExpandedSide`, 40 px) in one row, where each
   chart has room for its caption and value. `setDebugChartsExpanded` re-lays the
-  quads in place; the bar scrolls sideways if the row is too wide.
+  quads in place; the bar scrolls sideways if the row is too wide. The
+  CPU/memory/swap/disk chart (`debugResourceChart`) follows the same toggle
+  (2026-10-31): `ResourceQuadrantSparkline::setExpanded` turns its 2x2
+  quadrants into four 40 px charts in a row, each with its CPU/MEM/SWAP/DISK
+  caption and percent, and back. The chevron's tooltip says whether a click
+  expands or collapses every chart, the resource chart included.
 - The All button's count (`debugLogAllButton`) is drawn beside its icon, not
   over it (`ActivityRailButton::setBadgeBeside`): the button widens as the
   number grows and overlaps only the icon's top-right corner.
