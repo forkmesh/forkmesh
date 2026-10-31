@@ -79,6 +79,15 @@ which cannot read sealed list memberships.
   saved copy is never partial; a newer load or another organization drops an
   older one, and a failed page clears the revision. The desktop table is not
   row-paged.
+- **Phones** (iOS `CrmViewModel`, Android `CrmModel`) ask the summary for the
+  first 250 contacts, show them, then read the rest 1000 at a time
+  (`crmContactsPage`) in the background, with "Loading contacts, N of M" in
+  the CRM header. A newer load or another organization drops an older load's
+  pages; a failed page stops loading, says "Some contacts did not load" and
+  clears the revision; the in-memory copy is kept only once every page is in.
+  On Android an edit saved while pages arrive keeps the pages that came in
+  after it was built. Genie, the toolbox and the navigator counts still read
+  every contact in one summary. `docs/native/ANDROID.md` has the details.
 - Added in 1.46.0.
 
 

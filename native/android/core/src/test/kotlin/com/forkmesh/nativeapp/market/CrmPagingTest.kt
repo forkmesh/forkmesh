@@ -140,4 +140,21 @@ class CrmPagingTest {
         model.load()
         expect(transport.queries("/api/crm/acme").last()["since"] == null)
     }
+
+    fun testAnEditMadeFromAnOlderSnapshotKeepsPagesThatArrivedSinceAndStaysDeleted() {
+        val transport = PagingTransport()
+        transport.answer("/api/crm/acme", firstPage())
+        transport.answer("/api/crm/acme/contacts?cursor=c1", mapOf("ok" to true, "contacts" to listOf(contact(3)), "next" to "c2"))
+        transport.answer("/api/crm/acme/contacts?cursor=c2", mapOf("ok" to true, "contacts" to listOf(contact(4)), "next" to ""))
+        val jobs = mutableListOf<() -> Unit>()
+        val model = model(transport, jobs)
+        model.load()
+        val snapshot = model.data!!
+        jobs.single()()
+        assertEq((1..4).map(::hex), model.data?.contacts?.map { it.id })
+        val remember = CrmModel::class.java.getDeclaredMethod("remember", CrmOrganizationData::class.java).apply { isAccessible = true }
+        remember.invoke(model, snapshot.removing(hex(2)))
+        assertEq(listOf(hex(1), hex(3), hex(4)), model.data?.contacts?.map { it.id })
+        expect(model.data?.contactsComplete == true)
+    }
 }

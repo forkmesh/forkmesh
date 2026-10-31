@@ -162,6 +162,7 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     var sleep: (Long) -> Unit = { Thread.sleep(it) }
     private val memory = HashMap<String, CrmOrganizationData>()
     @Volatile private var contactsGeneration = 0
+    private val appendedPages = ArrayList<Pair<String, List<CrmContact>>>()
     var contactsLoading: Boolean = false
         private set
     var background: (() -> Unit) -> Unit = { work -> Thread(work, "crm-contacts").apply { isDaemon = true }.start() }
@@ -265,6 +266,7 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     private fun stopContacts(): Int = synchronized(this) {
         contactsGeneration++
         contactsLoading = false
+        appendedPages.clear()
         contactsGeneration
     }
 
@@ -317,6 +319,7 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
                     contactsLoading = false
                     return
                 }
+                appendedPages.add(cursor to page.contacts)
                 data = data?.appendingContacts(page.contacts, page.next)
                 cursor = page.next
                 if (cursor.isEmpty()) {
@@ -335,9 +338,13 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         existing = null
     }
 
-    private fun remember(next: CrmOrganizationData?) {
-        data = next
-        next?.takeIf { it.contactsComplete }?.let { memory[organization] = it }
+    private fun remember(next: CrmOrganizationData?) = synchronized(this) {
+        val current = data
+        val start = if (next != null && current != null && next.organization == current.organization &&
+            next.contactsNext != current.contactsNext) appendedPages.indexOfFirst { it.first == next.contactsNext } else -1
+        val caughtUp = if (start >= 0) next!!.appendingContacts(appendedPages.drop(start).flatMap { it.second }, current!!.contactsNext) else next
+        data = caughtUp
+        caughtUp?.takeIf { it.contactsComplete }?.let { memory[organization] = it }
     }
 
     private fun <T> perform(work: () -> T): T? {
