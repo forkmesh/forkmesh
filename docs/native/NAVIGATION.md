@@ -427,7 +427,13 @@ half of the screen width less the island's 126 pt. The operator asked on
 it, starting 7 pt below the island's middle, with the node lights overlapping. Node lights follow Status Page and its filters like the
 footer's; the desktop light shows whenever Diagnostics is on, red while no
 desktop is connected. The shell refreshes the desktop load light on
-activation alongside the fleet.
+activation alongside the fleet. The desktop glyph itself turns green while
+that desktop is connected (LAN or relay), and each stacked other desktop's
+glyph turns green while its presence is online, so the desktops read like the
+node lights; otherwise the glyph stays `textSecondary` and the corner dot
+carries the state. The operator asked for that on 2026-10-30 (iOS
+`ShellFooterDesktopLight` and `ShellStackedDesktopLight`, Android
+`ShellDesktopLight` and `ShellStackedDesktopLight` in `DesktopLights.kt`).
 
 **Resource bars on the machine lights.** Each core node light and the desktop
 light carry three tiny bars (`ShellResourceBars`, 1.5 pt wide, 6 pt tall, on a

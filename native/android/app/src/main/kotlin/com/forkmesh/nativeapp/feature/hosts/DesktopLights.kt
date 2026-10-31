@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.control.DesktopChoice
+import com.forkmesh.nativeapp.control.DesktopPresence
 import com.forkmesh.nativeapp.control.ShellLocalDesktop
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.hosts.DesktopHealth
@@ -131,7 +132,7 @@ private fun ShellDesktopLight(lights: ShellDesktopLights, side: Dp) {
     }
     val relayed = desktop is ShellLocalDesktop.Relay
     Box(Modifier.size(side), contentAlignment = Alignment.Center) {
-        FmIcon("desktop_windows", size = 10.dp, tint = c.textSecondary)
+        FmIcon("desktop_windows", size = 10.dp, tint = if (desktop.isConnected) c.success else c.textSecondary)
         Box(
             Modifier
                 .align(Alignment.TopEnd)
@@ -165,7 +166,7 @@ private fun ShellStackedDesktopLight(choice: DesktopChoice, side: Dp) {
     val c = Fm.colors
     Box(Modifier.height(side), contentAlignment = Alignment.Center) {
         Box(Modifier.background(c.bgBase, RoundedCornerShape(3.dp)).padding(1.dp)) {
-            FmIcon("desktop_windows", size = 10.dp, tint = c.textSecondary)
+            FmIcon("desktop_windows", size = 10.dp, tint = if (choice.presence == DesktopPresence.Online) c.success else c.textSecondary)
         }
         Box(
             Modifier

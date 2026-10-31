@@ -655,7 +655,7 @@ struct ShellFooterDesktopLight: View {
         } label: {
             Image(systemName: "desktopcomputer")
                 .font(.system(size: glyph, weight: .semibold))
-                .foregroundStyle(fm.textSecondary)
+                .foregroundStyle(desktop.isConnected ? fm.success : fm.textSecondary)
                 .overlay(alignment: .topTrailing) {
                     Circle()
                         .fill(lightColor)
@@ -722,7 +722,7 @@ struct ShellStackedDesktopLight: View {
     var body: some View {
         Image(systemName: "desktopcomputer")
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(fm.textSecondary)
+            .foregroundStyle(light.presence == .online ? fm.success : fm.textSecondary)
             .padding(1)
             .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(fm.bgBase))
             .overlay(alignment: .topTrailing) {
