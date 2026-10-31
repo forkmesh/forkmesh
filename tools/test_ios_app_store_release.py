@@ -97,10 +97,14 @@ def pick(tmp_path, app_store, store_version):
     bin_dir = work / "bin"
     bin_dir.mkdir()
     (work / "tools" / "asc_bundle_ids.py").write_text(
-        "import sys\nprint('20' if sys.argv[1] == 'latest-build' else '6803060735')\n")
+        "import sys\n"
+        "if sys.argv[1] == 'next-build':\n"
+        "    print('0' if sys.argv[2] == '1.4.1' else '21')\n"
+        "else:\n"
+        "    print('6803060735')\n")
     (work / "tools" / "asc_appstore.py").write_text(f"print({store_version!r})\n")
     (work / "Config" / "Version.xcconfig").write_text(
-        "MARKETING_VERSION = 1.4.0\nCURRENT_PROJECT_VERSION = 17\n")
+        "MARKETING_VERSION = 1.4.0\nCURRENT_PROJECT_VERSION = 0\n")
     cm_env = work / "cm_env"
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "CM_ENV": str(cm_env),
            "FORKMESH_IOS_APP_STORE": app_store, "ASC_ISSUER_ID": "i", "ASC_KEY_ID": "k"}
@@ -113,7 +117,7 @@ def pick(tmp_path, app_store, store_version):
 
 def test_a_release_build_takes_the_version_the_store_still_accepts(tmp_path):
     assert pick(tmp_path, "1", "1.4.1") == (
-        "1.4.1", "FORKMESH_IOS_VERSION=1.4.1\nFORKMESH_IOS_BUILD=21\n")
+        "1.4.1", "FORKMESH_IOS_VERSION=1.4.1\nFORKMESH_IOS_BUILD=0\n")
     assert pick(tmp_path, "1", "1.4.0")[0] == "1.4.0"
     assert pick(tmp_path, "0", "9.9.9") == (
         "1.4.0", "FORKMESH_IOS_VERSION=1.4.0\nFORKMESH_IOS_BUILD=21\n")

@@ -413,6 +413,24 @@ constexpr int kAgentFolderSummaryRole = Qt::UserRole + 51;
 constexpr int kAgentRowFolderRole = Qt::UserRole + 52;
 
 constexpr int kAgentTickerRole = Qt::UserRole + 53;
+constexpr int kAgentTitleBaseRole = Qt::UserRole + 54;
+constexpr int kAgentTaskProgressRole = Qt::UserRole + 55;
+
+inline void feedAgentTaskTracker(forkmesh::agenttasks::Tracker &tracker,
+                                 const QJsonObject &event)
+{
+    if (event.value(QStringLiteral("type")).toString() == QLatin1String("_local_user") &&
+        tracker.allCompleted())
+        tracker.clear();
+    else
+        tracker.ingest(event);
+}
+
+inline QString agentTitleWithProgress(const QString &title, const QString &progress)
+{
+    return progress.isEmpty() ? title
+                              : title + QString::fromUtf8("   \xC2\xB7  ") + progress;
+}
 
 inline QString agentTickerText(int sessionId, const QString &prose)
 {

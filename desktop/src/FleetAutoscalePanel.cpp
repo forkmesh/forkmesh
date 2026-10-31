@@ -125,7 +125,7 @@ FleetAutoscalePanel::FleetAutoscalePanel(QWidget *parent) : QFrame(parent)
 
     m_app.runner = false;
     m_runner.runner = true;
-    auto *pools = new QHBoxLayout;
+    auto *pools = new QVBoxLayout;
     pools->setSpacing(12);
     pools->addWidget(buildPool(m_app, QStringLiteral("App capacity")), 1);
     pools->addWidget(buildPool(m_runner, QStringLiteral("Burst runners")), 1);

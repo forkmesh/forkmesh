@@ -32,6 +32,15 @@ static void testNames()
     check(computerRestartSummary(1).contains(QLatin1String("entire computer")), "computer summary");
     check(computerRestartSummary(3).contains(QLatin1String("3 agents are running")),
           "computer summary agents");
+    const QString denied = computerRestartFailure(
+        1, QStringLiteral("Call to Reboot failed: Interactive authentication required.\n"));
+    check(denied.contains(QLatin1String("Let my phones restart this computer")),
+          "a polkit refusal names the setting that allows it");
+    check(computerRestartFailure(1, QStringLiteral(" boom \n")) ==
+              QLatin1String("Could not request a computer restart: boom"),
+          "other failures keep systemctl's words");
+    check(computerRestartFailure(3, QString()).contains(QLatin1String("exited 3")),
+          "a silent failure reports the exit code");
 }
 
 static void testLinesSplitAndCarry()

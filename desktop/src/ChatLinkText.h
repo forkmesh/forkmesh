@@ -79,6 +79,14 @@ inline QString sanitizedHref(const QString &raw)
     return url.toString(QUrl::FullyEncoded);
 }
 
+inline QUrl externalLinkUrl(const QString &raw)
+{
+    QString safe = sanitizedHref(raw);
+    if (safe.isEmpty() && !QUrl(raw.trimmed()).isValid())
+        safe = sanitizedHref(QUrl::fromUserInput(raw.trimmed()).toString());
+    return safe.isEmpty() ? QUrl() : QUrl(safe);
+}
+
 // One escaped plain-text run of a message body: newlines survive as <br> the
 // way a QLabel renders them, everything else is inert.
 inline QString escapedSegment(QString segment)

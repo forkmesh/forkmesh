@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -47,12 +48,12 @@ def _released(tag="v1.2.8", builds=None):
 
 def test_every_build_gets_a_larger_android_version_code():
     codes = [tool.android_version_code(tag, build)
-             for tag, build in (("v1.2.8", 1), ("v1.2.8", 2), ("v1.2.8", 99), ("v1.2.9", 1),
-                                ("v1.3.0", 1), ("v2.0.0", 1))]
+             for tag, build in (("v1.2.8", 0), ("v1.2.8", 1), ("v1.2.8", 99), ("v1.2.9", 0),
+                                ("v1.3.0", 0), ("v1.5.0", 0), ("v2.0.0", 0))]
     assert codes == sorted(codes) and len(set(codes)) == len(codes)
-    assert tool.android_version_code("v1.2.9") == 1020901
+    assert tool.android_version_code("v1.5.0") == 1050000
     assert tool.android_version_code("v1.2.9") > 10208
-    for build in (0, 100):
+    for build in (-1, 100):
         with pytest.raises(tool.CompletionError):
             tool.android_version_code("v1.2.9", build)
 
@@ -60,19 +61,19 @@ def test_every_build_gets_a_larger_android_version_code():
 def test_build_numbers_file_round_trips_and_ignores_garbage():
     text = tool.render_builds("v1.2.8", {"android": 3, "linux": 2})
     assert json.loads(text) == {"tag": "v1.2.8", "builds": {
-        "android": 3, "linux": 2, "macos": 1, "windows": 1}}
+        "android": 3, "linux": 2, "macos": 0, "windows": 0}}
     assert tool.parse_builds(text)["builds"]["android"] == 3
-    junk = tool.parse_builds('{"tag": "latest", "builds": {"android": true, "linux": 0, '
+    junk = tool.parse_builds('{"tag": "latest", "builds": {"android": true, "linux": -1, '
                              '"macos": "4", "windows": 100}}')
-    assert junk == {"tag": "", "builds": {p: 1 for p in tool.PLATFORM_ASSETS}}
+    assert junk == {"tag": "", "builds": {p: 0 for p in tool.PLATFORM_ASSETS}}
     assert tool.parse_builds("not json")["tag"] == ""
-    assert tool.recorded_builds(text, "v1.2.9") == {p: 1 for p in tool.PLATFORM_ASSETS}
+    assert tool.recorded_builds(text, "v1.2.9") == {p: 0 for p in tool.PLATFORM_ASSETS}
 
 
-def test_the_first_rebuild_of_a_release_is_build_two_from_main():
+def test_the_first_rebuild_of_a_release_is_build_one_from_main():
     plan = tool.plan_deploy(_released(), "android", "", MAIN)
     assert (plan["tag"], plan["build"], plan["commit"], plan["rebuild"]) == (
-        "v1.2.8", 2, MAIN, True)
+        "v1.2.8", 1, MAIN, True)
     assert plan["channel"] == "candidate-1.2.8"
 
 
@@ -82,7 +83,7 @@ def test_the_next_build_follows_the_file_and_the_signed_manifest():
     manifests = _released(builds={APK: 6})
     assert tool.plan_deploy(manifests, "android", builds, MAIN)["build"] == 7
     stale = tool.render_builds("v1.2.7", {"android": 9})
-    assert tool.plan_deploy(_released(), "android", stale, MAIN)["build"] == 2
+    assert tool.plan_deploy(_released(), "android", stale, MAIN)["build"] == 1
 
 
 def test_a_reset_never_reuses_a_published_build_number():
@@ -96,12 +97,25 @@ def test_a_new_version_builds_each_platform_once_at_its_build_commit():
     manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR,))
     plan = tool.plan_deploy(manifests, "linux", "", MAIN)
     assert (plan["tag"], plan["build"], plan["commit"], plan["rebuild"]) == (
-        "v1.2.9", 1, COMMIT, False)
+        "v1.2.9", 0, COMMIT, False)
     assert tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True)["skip"] is False
     manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR, *LINUX))
     skipped = tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True)
-    assert skipped["skip"] is True and skipped["build"] == 1
-    assert tool.plan_deploy(manifests, "linux", "", MAIN)["build"] == 2
+    assert skipped["skip"] is True and skipped["build"] == 0
+    assert tool.plan_deploy(manifests, "linux", "", MAIN)["build"] == 1
+
+
+def test_a_platform_the_build_commit_cannot_build_ships_build_one_from_main():
+    manifests = _released()
+    manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR,))
+    plan = tool.plan_deploy(manifests, "linux", "", MAIN, from_main=True)
+    assert (plan["tag"], plan["build"], plan["commit"], plan["rebuild"]) == (
+        "v1.2.9", 1, MAIN, True)
+    first = tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True, from_main=True)
+    assert (first["skip"], first["build"], first["commit"]) == (False, 1, MAIN)
+    manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR, *LINUX))
+    assert tool.plan_deploy(manifests, "linux", "", MAIN, first_build=True,
+                            from_main=True)["skip"] is True
 
 
 def test_the_target_is_the_newest_candidate_not_older_than_latest():
@@ -138,13 +152,17 @@ def _args(tmp_path, *extra):
 
 def _fake_host(monkeypatch, tmp_path, manifests, built):
     monkeypatch.setattr(tool, "manifests_at", lambda repo, ref: manifests)
-    monkeypatch.setattr(tool, "git", lambda *a, **k: MAIN if "rev-parse" in a else "")
+    monkeypatch.setattr(tool, "git",
+                        lambda *a, **k: MAIN if "rev-parse" in a or "log" in a else "")
     monkeypatch.setattr(tool, "parked_tag_target", lambda *a: None)
     monkeypatch.setattr(tool, "installer_public_key", lambda text: "key")
     monkeypatch.setattr(tool, "seed_targets", lambda hosts, *a: ["host"])
     monkeypatch.setattr(tool, "seed_mirrors", lambda *a, **k: None)
     monkeypatch.setattr(tool, "remove_worktree", lambda *a: None)
     calls = {}
+    monkeypatch.setattr(tool, "require_build_from_tag",
+                        lambda repo, channel, tag_commit, commit: calls.setdefault(
+                            "descends", (tag_commit, commit)))
 
     def build_apk(repo, work, tag, commit, code, signer):
         calls["apk"] = (tag, commit, code)
@@ -164,15 +182,16 @@ def _fake_host(monkeypatch, tmp_path, manifests, built):
     return calls
 
 
-def test_an_android_rebuild_publishes_build_two_and_promotes(tmp_path, monkeypatch):
+def test_an_android_rebuild_publishes_build_one_and_promotes(tmp_path, monkeypatch):
     calls = _fake_host(monkeypatch, tmp_path, _released(), None)
     assert tool.main(_args(tmp_path, "--deploy-build", "android")) == 0
-    assert calls["apk"] == ("v1.2.8", MAIN, 1020802)
+    assert calls["apk"] == ("v1.2.8", MAIN, 1020801)
     assert calls["promote"] is True
-    assert calls["publish_args"] == ("--build", "2", "--asset-commit", MAIN)
-    assert json.loads(calls["extra_files"][tool.BUILDS_FILE])["builds"]["android"] == 2
+    assert calls["publish_args"] == ("--build", "1", "--asset-commit", MAIN)
+    assert json.loads(calls["extra_files"][tool.BUILDS_FILE])["builds"]["android"] == 1
     assert calls["built_at"] == MAIN
-    assert "Android v1.2.8 build 2" in calls["landed"]
+    assert calls["descends"] == (COMMIT, MAIN)
+    assert "Android v1.2.8 build 1" in calls["landed"]
     assert calls["moved"][1:] == ("v1.2.8", "b" * 40)
 
 
@@ -181,7 +200,7 @@ def test_a_first_build_of_a_new_version_waits_for_the_others(tmp_path, monkeypat
     manifests["candidate-1.2.9"] = _manifest("v1.2.9", (MIRROR, *LINUX))
     calls = _fake_host(monkeypatch, tmp_path, manifests, None)
     assert tool.main(_args(tmp_path, "--deploy-build", "android", "--first-build")) == 0
-    assert calls["apk"] == ("v1.2.9", COMMIT, 1020901)
+    assert calls["apk"] == ("v1.2.9", COMMIT, 1020900)
     assert calls["promote"] is False
     assert calls["publish_args"] == ()
     assert "moved" not in calls
@@ -191,7 +210,7 @@ def test_a_dry_run_only_plans(tmp_path, monkeypatch, capsys):
     calls = _fake_host(monkeypatch, tmp_path, _released(), None)
     assert tool.main(_args(tmp_path, "--deploy-build", "android", "--dry-run")) == 0
     assert "apk" not in calls and "promote" not in calls
-    assert "Android v1.2.8 build 2" in capsys.readouterr().out
+    assert "Android v1.2.8 build 1" in capsys.readouterr().out
 
 
 def test_check_build_waits_for_the_homepage(monkeypatch):
@@ -230,6 +249,7 @@ def test_wait_for_candidate_polls_until_main_has_it(monkeypatch):
     [],
     ["--wait-candidate"],
     ["--first-build", "--tag", "v1.2.8"],
+    ["--from-main", "--tag", "v1.2.8"],
     ["--auto", "--deploy-build", "linux"],
     ["--deploy-build", "ios"],
 ])
@@ -253,3 +273,63 @@ def test_build_modes_wait_for_the_lock(tmp_path):
             fcntl.flock(held, fcntl.LOCK_UN)
         assert tool.acquire_lock(other, True, sleep=release) is True
         assert waits == [tool.LOCK_POLL_SECONDS]
+
+
+def _git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t",
+                           *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def _release_repo(tmp_path):
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "CMakeLists.txt").write_text("project(ForkMesh VERSION 1.2.8 LANGUAGES CXX)\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", "release/v1.5.0")
+    (repo / "CMakeLists.txt").write_text("project(ForkMesh VERSION 1.5.0 LANGUAGES CXX)\n")
+    _git(repo, "commit", "-qam", "release: bump version to 1.5.0")
+    tag_commit = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    return repo, tag_commit
+
+
+def test_the_release_branch_reaches_main_only_with_the_promotion(tmp_path):
+    repo, tag_commit = _release_repo(tmp_path)
+    (repo / "other.txt").write_text("main moved on\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "unrelated work")
+    assert tool.bring_release_onto_main(repo, "v1.5.0", tag_commit) is True
+    assert "VERSION 1.5.0" in (repo / "CMakeLists.txt").read_text()
+    assert (repo / "other.txt").is_file()
+    assert _git(repo, "log", "-1", "--format=%s") == "release: v1.5.0 reaches main as it is promoted"
+    assert tool.bring_release_onto_main(repo, "v1.5.0", tag_commit) is False
+
+
+def test_a_release_branch_that_conflicts_with_main_stops_the_promotion(tmp_path):
+    repo, tag_commit = _release_repo(tmp_path)
+    (repo / "CMakeLists.txt").write_text("project(ForkMesh VERSION 1.3.0 LANGUAGES CXX)\n")
+    _git(repo, "commit", "-qam", "someone else bumped it")
+    head = _git(repo, "rev-parse", "HEAD")
+    with pytest.raises(tool.CompletionError, match="does not merge into main"):
+        tool.bring_release_onto_main(repo, "v1.5.0", tag_commit)
+    assert _git(repo, "rev-parse", "HEAD") == head
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_signing_keys_and_the_served_mirror_live_in_the_core_data_folder():
+    assert tool.FORKMESH_DATA == tool.LAYOUT.core
+
+
+def test_a_rebuild_from_main_takes_the_commit_its_build_provenance_names(tmp_path):
+    repo, tag_commit = _release_repo(tmp_path)
+    (repo / "other.txt").write_text("code\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "code")
+    code = _git(repo, "rev-parse", "HEAD")
+    (repo / ".forkmesh" / "releases").mkdir(parents=True)
+    (repo / ".forkmesh" / "releases" / "builds.json").write_text("{}\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "release metadata")
+    assert _git(repo, "rev-parse", "HEAD") != code
+    assert tool.code_commit(repo, "main") == code

@@ -6,6 +6,7 @@
 
 #include "AgentJail.h"
 #include "AgentScratch.h"
+#include "AgentSummaryPreload.h"
 #include "AgentResources.h"
 #include "AgentWorktree.h"
 #include "SafeDelete.h"
@@ -468,7 +469,7 @@ QProcessEnvironment AgentRunner::processEnvironment(Phase phase) const
     }
     if (phase == Phase::Agent && !forkmesh::vm::active()) {
         for (const QString &kv : forkmesh::agentscratch::environment(
-                 forkmesh::agentscratch::folderFor(m_worktree))) {
+                 forkmesh::agentscratch::folderFor(m_worktree), m_worktree)) {
             const int eq = kv.indexOf(QLatin1Char('='));
             env.insert(kv.left(eq), kv.mid(eq + 1));
         }
@@ -531,6 +532,8 @@ QProcessEnvironment AgentRunner::processEnvironment(Phase phase) const
     // never fail to exec a CLI the UI reported as present.
     forkmesh::agentcli::widenPath(env);
     if (phase == Phase::Agent) {
+        if (provider == QLatin1String("claude-code"))
+            forkmesh::agentsummary::applyEnvironment(env);
         for (const QString &kv : m_config.extraEnvironment) {
             const int eq = kv.indexOf(QLatin1Char('='));
             if (eq > 0)
@@ -892,20 +895,24 @@ void AgentRunner::cleanupWorktree()
     // session reuses it — move each directory aside first, then delete off the
     // GUI thread. `worktree prune` (not `remove`) drops git's administrative
     // record, because the checkout is no longer where git recorded it.
-    QStringList discarded;
-    for (const QString &path : {forkmesh::agentscratch::folderFor(m_worktree), m_worktree,
-                                m_worktree + QStringLiteral("-jail"),
+    const QString worktreeRoot = QFileInfo(m_worktree).absolutePath();
+    QVector<QPair<QString, QString>> discarded;
+    for (const QString &scratch : forkmesh::agentscratch::foldersFor(m_worktree)) {
+        const QString aside = moveAsideForDeletion(scratch);
+        if (!aside.isEmpty())
+            discarded.append({aside, QFileInfo(aside).absolutePath()});
+    }
+    for (const QString &path : {m_worktree, m_worktree + QStringLiteral("-jail"),
                                 m_worktree + QStringLiteral("-codex-home")}) {
         const QString aside = moveAsideForDeletion(path);
         if (!aside.isEmpty())
-            discarded << aside;
+            discarded.append({aside, worktreeRoot});
     }
-    const QString worktreeRoot = QFileInfo(m_worktree).absolutePath();
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     (void)QtConcurrent::run([repoPath = m_repoPath, discarded, worktreeRoot,
                              nowMs] {
-        for (const QString &path : discarded)
-            forkmesh::safedelete::removeTree(path, worktreeRoot, nullptr,
+        for (const auto &path : discarded)
+            forkmesh::safedelete::removeTree(path.first, path.second, nullptr,
                                              forkmesh::safedelete::Allow::OwnWorktree);
         forkmesh::agentscratch::sweepOrphans(worktreeRoot);
         QProcess::execute(QStringLiteral("git"),
@@ -995,7 +1002,8 @@ QString AgentRunner::toolUseInstruction()
         "- Keep a Read range to about 300 lines around the match; page on only if "
         "needed. Read a whole file only when it is under ~300 lines: for a larger "
         "source file, or a docs page you will add to, Grep -n the symbol or its "
-        "headings (^#) first and Read that section. Bound command output with "
+        "headings (^#) first and Read that section; a Read without offset and "
+        "limit of a file over 32 KB is refused with its line count. Bound command output with "
         "tail, head or grep; when a long result is saved to a tool-results file, "
         "Grep it or Read a range, never all of it.\n"
         "- Without Glob, Grep and Read (Codex), the shell is the reader: find "
@@ -1003,8 +1011,12 @@ QString AgentRunner::toolUseInstruction()
         "(rg -m counts per file, not in total), add --max-columns 200 and leave "
         "out data, logs and build trees, and print ~150-line sed -n ranges, "
         "~300 lines per call in total. head and sed -n bound lines, not "
-        "bytes: cut -c1-300 logs, JSONL and minified files. git show --stat "
-        "first, then one path; git status --short | head -50. With several "
+        "bytes: cut -c1-300 logs, JSONL and minified files. A chain or loop "
+        "of several reads, diffs or logs shares that budget: wrap it as "
+        "{ ...; } | head -n 300 and read the next file in a second call. "
+        "git log --oneline without --stat | head -n 30; git diff and git show "
+        "--stat first, then one path with the default context, never a whole "
+        "branch or many refs at once; git status --short | head -50. With several "
         "files, write tail -n N (tail -N fails).\n"
         "- Change files with small anchored edits (Edit, or apply_patch hunks "
         "around the changed lines), not a rewrite of most of the file; Write "
@@ -1033,7 +1045,8 @@ QString AgentRunner::toolUseInstruction()
         "$FORKMESH_AGENT_SCRATCH ($TMPDIR already points inside it). Put build "
         "trees, logs, test output, throwaway scripts and any extra checkout or "
         "worktree there, never in /tmp, ~/.cache or a shared builds folder; the "
-        "folder is deleted with the agent. The harness refuses rm on a $VAR "
+        "folder is deleted with the agent. The exception is a build folder the "
+        "project's own instructions place inside the worktree. The harness refuses rm on a $VAR "
         "path or a relative glob after cd: spell the absolute path, or use "
         "fm_safe_rm_tree <parent> <path> (tools/forkmesh-safe-rm.sh).\n"
         "- Put a throwaway script longer than a few lines in a file under the "

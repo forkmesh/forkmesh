@@ -346,7 +346,7 @@ internal fun ReportBugSheet(
                         )
                     }
                     Spacer(Modifier.height(FmSpace.x3))
-                    FmToneButton("Add files", onPressed = if (draft.busy || attachments.size >= 5) null else ({ files.launch(arrayOf("*/*")) }), tone = FmTone.Neutral)
+                    FmToneButton("Add files", onPressed = if (draft.busy || attachments.size >= 5) null else ({ files.launch(arrayOf("*/*")) }), tone = FmTone.Neutral, busy = draft.busy)
                     if (attachments.isNotEmpty()) {
                         Spacer(Modifier.height(FmSpace.x2))
                         Text(

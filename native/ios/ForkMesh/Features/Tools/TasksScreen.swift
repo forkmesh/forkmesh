@@ -32,7 +32,7 @@ struct TasksScreen: View {
             .navigationTitle(TasksListModel.title)
             .navigationBarTitleDisplayMode(.inline)
             .background(fm.canvas)
-            .navigationDestination(isPresented: $detailOpen) {
+            .shellDetail(isPresented: $detailOpen, id: detail.map { ObjectIdentifier($0) }) {
                 if let detail = detail {
                     TaskDetailScreen(model: detail)
                         .shellPageClearance()

@@ -21,9 +21,18 @@ and what stays at `/api/admin/...` are in
 
 ## Update ForkMesh (`?view=update`)
 
-The page shows the build this server runs next to the newest commit on the
-source it follows, with a pill saying "Up to date" or "Update available", and
-an **Update ForkMesh** button that needs a confirmation tick.
+The page shows one **Version** card: the build this server runs, the newest
+commit on the source it follows (only when it differs), when that was last
+checked, and a pill saying "Up to date" or "Update available". Under it are
+the **Update** card, with an **Update ForkMesh** button that needs a
+confirmation tick, and on instances one **Automatic updates** card. While an
+update runs, the Update card shows the old and new commit only once the new
+one is known, so it no longer repeats the running build.
+
+`server_update.freshness` says "Update available" when the newest commit is
+not the running one, unless that commit is older than the running build's
+commit time: a check made before the last deploy names an older commit, and
+the build running here is newer, not behind. A newer check replaces it.
 
 **Running build.** `server_update.running` reads `BUILD_INFO_FILE` (JSON:
 `version`, `commit`, `commitTime`, `subject`, `builtAt`) and falls back to
@@ -83,7 +92,7 @@ While a request or run is open the page refreshes every 5 seconds and hides
 the buttons. The app restarts during the update, so the page may fail to load
 for a moment.
 
-The "This server" card also warns when `build-info.json` says the git node
+The Version card also warns when `build-info.json` says the git node
 program was built from older `server/` code than the running source
 (`daemon.state` = `stale`); the installer keeps the installed program on an
 instance that follows its own source, see
@@ -91,7 +100,8 @@ instance that follows its own source, see
 
 ### Update when a pull request is merged
 
-A card under **Update** (instances only) turns automatic updates on and off
+A switch in the **Automatic updates** card (instances only) turns automatic
+updates on and off; its one-line description names the repository and branch
 (`save_auto_update`, CSRF-checked, audited as
 `admin.console_save_auto_update`). The setting is the `self_update` row of
 `instance_settings` (`{"auto": true}`); `app/src/self_update.py` holds the
@@ -150,7 +160,7 @@ head and deploys it exactly like a phone-approved merge; see
 [../deploy/self-deploy.md](../deploy/self-deploy.md). The page lists the last
 five admin requests with each core's progress.
 
-"Latest available" on the cores is the `core_upstream` row of
+The newest commit on the cores is the `core_upstream` row of
 `instance_settings`, which each self-deploy agent rewrites when `main` moves.
 
 ## Repository addresses (`?view=repo-addresses`)

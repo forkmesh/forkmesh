@@ -100,18 +100,18 @@ V6 = "2001:db8::10"
 def test_route_address_keeps_ipv4_while_it_answers_and_falls_back_to_ipv6():
     up = {V4}
     common._route_cache.clear()
-    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a: a in up) == V4
+    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a, port: a in up) == V4
     common._route_cache.clear()
     up = {V6}
-    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a: a in up) == V6
+    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a, port: a in up) == V6
     common._route_cache.clear()
     up = set()
-    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a: a in up) == V4
+    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a, port: a in up) == V4
     common._route_cache.clear()
 
 
 def test_route_address_forced_families_and_unknown_nodes():
-    never = lambda address: pytest.fail("forced families never probe")
+    never = lambda address, port: pytest.fail("forced families never probe")
     assert common.route_address(V4, "6", {V4: V6}, probe=never) == V6
     assert common.route_address(V4, "4", {V4: V6}, probe=never) == V4
     assert common.route_address("203.0.113.9", "6", {V4: V6}, probe=never) == "203.0.113.9"
@@ -139,7 +139,8 @@ def test_ssh_over_ipv6_keeps_the_ipv4_host_key(tmp_path, monkeypatch):
     def run(command, **kwargs):
         calls.append(command)
         return subprocess.CompletedProcess(command, 0, b"", b"")
-    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run, route=True)
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run, route=True,
+                     port=22)
     ssh.run(V4, "hostname")
     ssh.put(V4, tmp_path / "key", "/tmp/x")
     login, upload = calls
@@ -159,3 +160,41 @@ def test_a_fake_runner_never_routes(tmp_path, monkeypatch):
                      subprocess.CompletedProcess(command, 0, b"", b""))
     ssh.run(V4, "hostname")
     assert "root@%s" % V4 in calls[0]
+
+
+def test_ssh_uses_the_fleet_port_and_pins_the_host_key_by_address(tmp_path):
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run,
+                     port=822)
+    ssh.run("198.51.100.10", "true")
+    assert "Port=822" in seen[-1] and "HostKeyAlias=198.51.100.10" in seen[-1]
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run,
+                     port=22)
+    ssh.run("198.51.100.10", "true")
+    assert not any(part.startswith(("Port=", "HostKeyAlias=")) for part in seen[-1])
+
+
+def test_ssh_falls_back_to_22_for_a_node_not_moved_yet(tmp_path):
+    def probe(address, port):
+        return port == 22
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh",
+                     route=True, port=822, probe=probe)
+    assert ssh.port("198.51.100.10") == 22
+    ssh.use_port("198.51.100.10", 822)
+    assert ssh.port("198.51.100.10") == 822
+    assert ssh.dest("198.51.100.10")[-1] == "Port=822"
+
+
+def test_the_fleet_port_comes_from_fleet_toml(tmp_path, monkeypatch):
+    monkeypatch.delenv("FMNEXT_SSH_PORT", raising=False)
+    path = tmp_path / "fleet.toml"
+    path.write_text('ssh_key_name = "fmnext-fleet"\nssh_port = 822\n')
+    assert common.fleet_ssh_port(path) == 822
+    path.write_text('ssh_key_name = "fmnext-fleet"\n')
+    assert common.fleet_ssh_port(path) == 22
+    monkeypatch.setenv("FMNEXT_SSH_PORT", "2200")
+    assert common.fleet_ssh_port(path) == 2200

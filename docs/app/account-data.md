@@ -124,6 +124,12 @@ table at a time.
   (`TOUCH_COLUMNS`: `approved_by_bi`, `reviewed_by_bi`, `last_used_by_bi`,
   `updated_by_bi`, …) keeps its sealed data closed for everyone: an admin who
   last used a sign-up code, or reviewed a report, does not get the record.
+- `STAFF_NOTE_TABLES` (`moderation_blocks`, `repo_terms_flags`) keep their
+  rows and plain columns (scope, category, whether content is hidden), but
+  their sealed `data` is shown as a fixed placeholder: it holds the moderator
+  or administrator who acted and their private reason or note, which the
+  blocked or flagged account must not read
+  (`test_moderator_notes_about_you_stay_with_the_moderators`).
 - `DELETABLE` lists the tables where one row can go on its own without
   breaking anything else (notifications, stars, follows, reactions, read
   marks, activity days, presence, lobby links, package use, sign-in attempts).
@@ -152,4 +158,4 @@ when it comes back, but only sources whose SHA-256 differs from the last copy
 saved for that account (`accountSync/hash/<account>/<key>`). Restore is
 explicit and asks first; it replaces the layout, subscriptions (local feeds
 keep their articles and fetch state when the address matches) and settings.
-Android registers the same screens through `docs/native/SYNC.md`.
+Android has the same screens (`feature/account/settings/AccountDataScreens.kt`).

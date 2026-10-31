@@ -401,6 +401,22 @@
             <button type="button" class="launch-btn" data-start-config-launch hidden>Start my instance now</button>
           </section>
 
+          <section class="start-card config-card" aria-labelledby="start-agent-title">
+            <div class="section-head"><h2 id="start-agent-title">Let your coding agent do it <span class="sub" style="font-weight: 400; color: var(--ink-faint)">(optional)</span></h2></div>
+            <p class="hint">Using Claude Code or another coding agent? Paste this into it. It reads our agent guide, asks you for your server details, writes the settings file for you and walks you through every step. The same guide covers how we open pull requests.</p>
+            <div class="field">
+              <div class="copy-row">
+                <input type="text" readonly spellcheck="false" value="Read https://app.forkmesh.com/forkmesh-agent.md and help me start my own ForkMesh instance. Ask me for anything you need first." aria-label="Prompt for your coding agent" data-start-agent-prompt />
+                <button type="button" class="ghost-btn" data-start-agent-copy>Copy</button>
+              </div>
+            </div>
+            <div class="config-links">
+              <a href="/forkmesh-agent.md" target="_blank" rel="noopener" data-start-agent-guide>Read the agent guide</a>
+              <a href="/forkmesh-agent.md" download="FORKMESH.md">Download it as FORKMESH.md</a>
+              <a href="https://forkmesh.com/docs/coding-agents/" target="_blank" rel="noopener">Keep it private in your repository</a>
+            </div>
+          </section>
+
           <section class="start-card" aria-labelledby="start-name-title">
             <div class="section-head"><span class="section-num">1</span><h2 id="start-name-title">Name your project</h2></div>
             <p class="hint">This name replaces “ForkMesh” across your instance, its emails and its pages.</p>

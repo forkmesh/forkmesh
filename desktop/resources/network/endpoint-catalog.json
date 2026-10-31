@@ -183,7 +183,7 @@
       "requestNeeded": 30,
       "source": [
         "desktop/src/MainWindowMessages.cpp: MainWindow::refreshChatUserDirectory",
-        "desktop/src/MainWindowCalendar.cpp: MainWindow::requestCalendar"
+        "marketplace/packages/calendar/content/desktop/CalendarPage.cpp: CalendarPage::requestCalendar"
       ]
     },
     {
@@ -932,9 +932,9 @@
       "alternative": "The tasks topic already announces changes; the refetch after each write is redundant",
       "requestNeeded": 35,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskCatalogPage",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskCatalog",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::refreshOrganizationTasks"
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::requestCatalogPage",
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::requestCatalog",
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::refresh"
       ]
     },
     {
@@ -947,9 +947,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::composeOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::composeOrganizationTask",
         "desktop/src/MainWindowAgentLanding.cpp: MainWindow::openOrgTaskForSession",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::createOrganizationTaskFollowUp"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::createOrganizationTaskFollowUp"
       ]
     },
     {
@@ -988,9 +988,9 @@
       "alternative": "none: on-demand reads",
       "requestNeeded": 90,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::loadOrganizationTaskHistory",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskAttachment",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::applyOrganizationTasks"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::loadOrganizationTaskHistory",
+        "desktop/src/OrganizationTaskStore.cpp: OrganizationTaskStore::requestAttachment",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::applyOrganizationTasks"
       ]
     },
     {
@@ -1003,9 +1003,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::runOrganizationTaskAction",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::commentOnOrganizationTask",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::checkInOnOrganizationTask"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::runOrganizationTaskAction",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::commentOnOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::checkInOnOrganizationTask"
       ]
     },
     {
@@ -1018,9 +1018,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::editOrganizationTask",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::assignOrganizationTaskToAgent",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::queueOrganizationTaskAgent"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::editOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::assignOrganizationTaskToAgent",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::queueOrganizationTaskAgent"
       ]
     },
     {
@@ -1033,9 +1033,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTasks.cpp: MainWindow::deleteOrganizationTask",
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::deleteOrganizationTask",
         "desktop/src/MainWindowAgentLaunch.cpp: MainWindow::deleteAgentSessionAndCleanup",
-        "desktop/src/MainWindowTasks.cpp: MainWindow::deleteClosedOrganizationTasks"
+        "marketplace/packages/tasks/content/desktop/TasksPage.cpp: TasksPage::deleteClosedOrganizationTasks"
       ]
     },
     {
@@ -1048,7 +1048,7 @@
       "alternative": "A notes-changed event",
       "requestNeeded": 40,
       "source": [
-        "desktop/src/MainWindowNotes.cpp: MainWindow::refreshNotes"
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::refreshNotes"
       ]
     },
     {
@@ -1061,7 +1061,7 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowNotes.cpp: MainWindow::showNoteVersions"
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::showNoteVersions"
       ]
     },
     {
@@ -1074,7 +1074,7 @@
       "alternative": "A note-updated event on the node socket; this is the busiest poller in the app",
       "requestNeeded": 15,
       "source": [
-        "desktop/src/MainWindowNotes.cpp: MainWindow::selectNote"
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::selectNote"
       ]
     },
     {
@@ -1087,9 +1087,9 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowNotes.cpp: MainWindow::saveNote",
-        "desktop/src/MainWindowNotes.cpp: MainWindow::shareNote",
-        "desktop/src/MainWindowNotes.cpp: MainWindow::showNoteVersions"
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::saveNote",
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::shareNote",
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::showNoteVersions"
       ]
     },
     {
@@ -1102,7 +1102,7 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowNotes.cpp: MainWindow::saveNote"
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::saveNote"
       ]
     },
     {
@@ -1115,7 +1115,7 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowNotes.cpp: MainWindow::deleteNote"
+        "marketplace/packages/notes/content/desktop/NotesPage.cpp: NotesPage::deleteNote"
       ]
     },
     {
@@ -1128,7 +1128,7 @@
       "alternative": "A calendar-changed event (there is no calendar topic yet)",
       "requestNeeded": 45,
       "source": [
-        "desktop/src/MainWindowCalendar.cpp: MainWindow::refreshCalendar"
+        "marketplace/packages/calendar/content/desktop/CalendarPage.cpp: CalendarPage::refreshCalendar"
       ]
     },
     {
@@ -1141,7 +1141,7 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowCalendar.cpp: MainWindow::openCalendarEventDialog"
+        "marketplace/packages/calendar/content/desktop/CalendarPage.cpp: CalendarPage::openCalendarEventDialog"
       ]
     },
     {
@@ -1154,7 +1154,7 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowCalendar.cpp: MainWindow::openCalendarEventDialog"
+        "marketplace/packages/calendar/content/desktop/CalendarPage.cpp: CalendarPage::openCalendarEventDialog"
       ]
     },
     {
@@ -1167,7 +1167,7 @@
       "alternative": "none: a user action",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowCalendar.cpp: MainWindow::openCalendarEventDialog"
+        "marketplace/packages/calendar/content/desktop/CalendarPage.cpp: CalendarPage::openCalendarEventDialog"
       ]
     },
     {
@@ -1446,7 +1446,7 @@
       "alternative": "none: only this desktop knows when its timer ran out",
       "requestNeeded": 100,
       "source": [
-        "desktop/src/MainWindowTimers.cpp: MainWindow::sendTimerPing"
+        "marketplace/packages/timers/content/desktop/TimersClock.cpp: TimersClock::sendPing"
       ]
     },
     {
@@ -2234,6 +2234,72 @@
       "requestNeeded": 100,
       "source": [
         "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::undoEvent"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/poker",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Poker wallet, stats and the tables you can join",
+      "trigger": "Opening the Poker page, Refresh, returning to the lobby, and the account doorbell ringing package:poker while the lobby is open",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::loadLobby"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/poker/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads the open poker table, looks up a six-letter table code, or exports your Poker wallet and stats",
+      "trigger": "Opening a table, the account doorbell ringing package:poker while a table is open, Join by code, and export on removal",
+      "modestPerHour": 240,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::loadTable",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::joinByCode",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::exportData"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/poker/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Claims free chips, creates a table, sits down, acts in a hand, sends the turn-clock tick at wakeAt, sits out, rebuys, leaves, adds or removes bots, chats or invites players",
+      "trigger": "Claim free chips, New table, Sit down, Fold / Check / Call / Bet / Raise / All-in, the one-shot game-clock timer at the table's wakeAt, Sit out, Rebuy, Leave, Bots, Chat and Invite",
+      "modestPerHour": 240,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::claimChips",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::createTable",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::act",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::sendTick",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::tableWrite",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::sitDown",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::setAway",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::rebuy",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::leaveTable",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::addBot",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::removeBot",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::sendChat",
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::inviteFriends"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/poker/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Closes a poker table you own and pays every stack back to its wallet",
+      "trigger": "Close table in the table's More menu",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/poker/content/desktop/PokerPage.cpp: PokerPage::closeTable"
       ]
     },
     {

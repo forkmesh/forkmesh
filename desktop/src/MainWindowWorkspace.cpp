@@ -2,8 +2,12 @@
 #include "MainWindowInternal.h"
 #include "MainWindowAgentsInternal.h"
 #include "MainWindowNextAccess.h"
+#include "AgentCloudSessions.h"
+#include "SessionSidePanels.h"
 #include "WorkspaceBrowserPane.h"
 #include "WorkspaceLayout.h"
+#include "WorkspaceOpenIn.h"
+#include "WorkspaceShortcuts.h"
 
 #include <QAbstractButton>
 #include <QAction>
@@ -11,8 +15,15 @@
 #include <QApplication>
 #include <QBoxLayout>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QClipboard>
+#include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QHeaderView>
@@ -28,14 +39,18 @@
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QProcess>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QShortcut>
+#include <QStandardPaths>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTableWidget>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace forkmesh::ui {
@@ -57,7 +72,7 @@ constexpr int kComposerHeight = 118;
 constexpr int kParkedAt = -20000;
 constexpr char kListViewSetting[] = "agents/listView";
 
-enum PanelTab { TabChanges, TabTerminal, TabBrowser, TabCount };
+enum PanelTab { TabChanges, TabTerminal, TabBrowser, TabDetails, TabCount };
 
 enum Command {
     CmdNewSession,
@@ -72,6 +87,14 @@ enum Command {
     CmdDetails,
     CmdQueue,
     CmdSend,
+    CmdNextSession,
+    CmdPreviousSession,
+    CmdModeMenu,
+    CmdModelMenu,
+    CmdEffortMenu,
+    CmdShortcuts,
+    CmdToggleDetails,
+    CmdShowDetails,
 };
 
 enum MenuKind { MenuSidebar, MenuSession, MenuComposer };
@@ -457,6 +480,12 @@ struct Chrome : public QObject {
         case QEvent::Show:
             if (watched == split.data() && !syncing)
                 refresh.start();
+            if (watched == page.data())
+                enableShortcuts();
+            break;
+        case QEvent::Hide:
+            if (watched == page.data())
+                enableShortcuts();
             break;
         case QEvent::Resize:
             if (watched == transcript.data())
@@ -472,14 +501,24 @@ struct Chrome : public QObject {
         return QObject::eventFilter(watched, event);
     }
 
+    void enableShortcuts()
+    {
+        const bool on = applied && page && page->isVisible();
+        for (QShortcut *shortcut : std::as_const(shortcuts))
+            if (shortcut && shortcut->isEnabled() != on)
+                shortcut->setEnabled(on);
+    }
+
     MainWindow *window = nullptr;
+    QPointer<QWidget> page;
+    QList<QPointer<QShortcut>> shortcuts;
     QTimer refresh;
     QTimer column;
     QTimer tick;
     bool applied = false;
     bool syncing = false;
     bool panelOpen = false;
-    int tab = TabTerminal;
+    int tab = TabDetails;
     AppViewMode lastMode = AppViewMode::Standard;
     bool lastDark = false;
     bool iconsReady = false;
@@ -504,6 +543,7 @@ struct Chrome : public QObject {
     QVBoxLayout *detailLayout = nullptr;
     QVBoxLayout *topRow = nullptr;
     QHBoxLayout *statusRow = nullptr;
+    int statusIndex = 0;
     QPointer<QWidget> titleBlock;
     QPointer<QWidget> outputPage;
     QPointer<QScrollArea> transcript;
@@ -542,6 +582,7 @@ struct Chrome : public QObject {
     QStackedWidget *panelStack = nullptr;
     QWidget *hosts[TabCount] = {nullptr, nullptr, nullptr};
     WorkspaceBrowserPane *browser = nullptr;
+    SessionSidePanels *details = nullptr;
     QPointer<QSplitter> filesSplit;
 
     bool composerReady = false;
@@ -597,6 +638,7 @@ void refreshIcons(Chrome *chrome)
     chrome->resume->setIcon(glyph(QStringLiteral("play"), Theme::Role::Fg));
     chrome->toggles[TabTerminal]->setIcon(toggleGlyph(QStringLiteral("terminal")));
     chrome->toggles[TabBrowser]->setIcon(toggleGlyph(QStringLiteral("globe")));
+    chrome->toggles[TabDetails]->setIcon(toggleGlyph(QStringLiteral("checklist")));
     chrome->panelNewShell->setIcon(glyph(QStringLiteral("plus"), muted));
     chrome->panelClose->setIcon(glyph(QStringLiteral("x"), muted));
     if (chrome->composerSend) {
@@ -660,6 +702,98 @@ void applyRowHeight(QTableWidget *table, int height)
     table->verticalHeader()->setDefaultSectionSize(height);
     for (int row = 0; row < table->rowCount(); ++row)
         table->setRowHeight(row, height);
+}
+
+void showWorkspaceShortcuts(QWidget *parent)
+{
+    if (QDialog *open = parent->findChild<QDialog *>(
+            QStringLiteral("workspaceShortcutSheet"), Qt::FindDirectChildrenOnly)) {
+        open->raise();
+        open->activateWindow();
+        return;
+    }
+    auto *dialog = new QDialog(parent);
+    dialog->setObjectName(QStringLiteral("workspaceShortcutSheet"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QStringLiteral("Keyboard shortcuts"));
+    auto *layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(20, 18, 20, 14);
+    layout->setSpacing(12);
+    auto *heading = new QLabel(QStringLiteral("Agents workspace"));
+    heading->setObjectName(QStringLiteral("workspaceShortcutHeading"));
+    layout->addWidget(heading);
+    auto *grid = new QGridLayout;
+    grid->setHorizontalSpacing(24);
+    grid->setVerticalSpacing(6);
+    int row = 0;
+    for (const forkmesh::workspaceshortcuts::Binding &binding :
+         forkmesh::workspaceshortcuts::bindings()) {
+        auto *label = new QLabel(binding.label);
+        label->setObjectName(QStringLiteral("workspaceShortcutLabel"));
+        auto *keys = new QLabel(forkmesh::workspaceshortcuts::keysText(binding.keys));
+        keys->setObjectName(QStringLiteral("workspaceShortcutKeys"));
+        keys->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        grid->addWidget(label, row, 0);
+        grid->addWidget(keys, row, 1);
+        ++row;
+    }
+    layout->addLayout(grid);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+    layout->addWidget(buttons);
+    dialog->show();
+}
+
+void addOpenInMenu(QMenu *menu, QWidget *owner, const QString &folder,
+                   const QString &branch)
+{
+    if (folder.isEmpty() && branch.isEmpty())
+        return;
+    QMenu *open = menu->addMenu(glyph(QStringLiteral("code"), Theme::Role::FgMuted),
+                                QStringLiteral("Open in"));
+    open->setObjectName(QStringLiteral("workspaceOpenInMenu"));
+    open->setToolTipsVisible(true);
+    if (!folder.isEmpty()) {
+        const QList<forkmesh::openin::Editor> editors =
+            forkmesh::openin::availableEditors([](const QString &program) {
+                return QStandardPaths::findExecutable(program);
+            });
+        for (const forkmesh::openin::Editor &editor : editors) {
+            QAction *action = open->addAction(editor.label);
+            action->setToolTip(QStringLiteral("%1 %2").arg(editor.program, folder));
+            QObject::connect(action, &QAction::triggered, owner,
+                             [program = editor.program, folder] {
+                                 QProcess::startDetached(program, {folder}, folder);
+                             });
+        }
+        if (editors.isEmpty()) {
+            QAction *none = open->addAction(QStringLiteral("No editor found on PATH"));
+            none->setEnabled(false);
+            none->setToolTip(QStringLiteral(
+                "Looks for code, codium, cursor, zed and windsurf"));
+        }
+        open->addSeparator();
+        QAction *files = open->addAction(
+            glyph(QStringLiteral("file-directory"), Theme::Role::FgMuted),
+            QStringLiteral("File manager"));
+        QObject::connect(files, &QAction::triggered, owner, [folder] {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        });
+    }
+    menu->addSeparator();
+    if (!folder.isEmpty()) {
+        QAction *copy = menu->addAction(glyph(QStringLiteral("copy"), Theme::Role::FgMuted),
+                                        QStringLiteral("Copy folder path"));
+        QObject::connect(copy, &QAction::triggered, owner, [folder] {
+            QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(folder));
+        });
+    }
+    if (!branch.isEmpty()) {
+        QAction *copy = menu->addAction(glyph(QStringLiteral("copy"), Theme::Role::FgMuted),
+                                        QStringLiteral("Copy branch name"));
+        QObject::connect(copy, &QAction::triggered, owner,
+                         [branch] { QGuiApplication::clipboard()->setText(branch); });
+    }
 }
 
 }
@@ -788,10 +922,15 @@ void NextAccess::installWorkspace(MainWindow &window)
                        ? qobject_cast<QVBoxLayout *>(
                              detailLayout->itemAt(0)->layout())
                        : nullptr;
-    auto *statusRow = topRow && topRow->count() > 0
-                          ? qobject_cast<QHBoxLayout *>(
-                                topRow->itemAt(0)->layout())
-                          : nullptr;
+    QHBoxLayout *statusRow = nullptr;
+    int statusIndex = -1;
+    for (int index = 0; topRow && index < topRow->count() && !statusRow; ++index) {
+        auto *row = qobject_cast<QHBoxLayout *>(topRow->itemAt(index)->layout());
+        if (row && row->indexOf(window.m_agentStatusPill) >= 0) {
+            statusRow = row;
+            statusIndex = index;
+        }
+    }
     auto *dockLayout =
         qobject_cast<QVBoxLayout *>(window.m_workspaceTerminalDock->layout());
     QWidget *listPane = window.m_agentTable->parentWidget();
@@ -949,6 +1088,7 @@ void NextAccess::installWorkspace(MainWindow &window)
     chrome->detailLayout = detailLayout;
     chrome->topRow = topRow;
     chrome->statusRow = statusRow;
+    chrome->statusIndex = statusIndex;
     chrome->titleBlock = window.m_agentTitle->parentWidget();
     chrome->outputPage = window.m_agentCodeSplit->parentWidget();
     chrome->transcript = window.m_agentTranscript;
@@ -996,6 +1136,10 @@ void NextAccess::installWorkspace(MainWindow &window)
     chrome->toggles[TabBrowser] = iconButton(
         QStringLiteral("workspaceToggleBrowser"),
         QStringLiteral("Browser: preview a page beside the conversation"), true);
+    chrome->toggles[TabDetails] = iconButton(
+        QStringLiteral("workspaceToggleDetails"),
+        QStringLiteral("Details: progress, outputs, sources, background tasks and more"),
+        true);
     chrome->more = iconButton(QStringLiteral("workspaceSessionMore"),
                               QStringLiteral("Session actions"));
     headerRow->addWidget(chrome->title, 1);
@@ -1004,6 +1148,7 @@ void NextAccess::installWorkspace(MainWindow &window)
     headerRow->addWidget(chrome->resume);
     headerRow->addWidget(chrome->toggles[TabChanges]);
     headerRow->addSpacing(2);
+    headerRow->addWidget(chrome->toggles[TabDetails]);
     headerRow->addWidget(chrome->toggles[TabTerminal]);
     headerRow->addWidget(chrome->toggles[TabBrowser]);
     headerRow->addWidget(chrome->more);
@@ -1077,6 +1222,8 @@ void NextAccess::installWorkspace(MainWindow &window)
                      chrome, command(CmdToggleTerminal));
     QObject::connect(chrome->toggles[TabBrowser], &QPushButton::clicked, chrome,
                      command(CmdToggleBrowser));
+    QObject::connect(chrome->toggles[TabDetails], &QPushButton::clicked, chrome,
+                     command(CmdToggleDetails));
     QObject::connect(chrome->changesOpen, &QPushButton::clicked, chrome,
                      command(CmdToggleChanges));
     QObject::connect(chrome->more, &QPushButton::clicked, chrome,
@@ -1101,9 +1248,10 @@ void NextAccess::installWorkspace(MainWindow &window)
     panelRow->setSpacing(6);
     const QString tabLabels[TabCount] = {QStringLiteral("Diff"),
                                          QStringLiteral("Terminal"),
-                                         QStringLiteral("Browser")};
+                                         QStringLiteral("Browser"),
+                                         QStringLiteral("Details")};
     const int tabCommands[TabCount] = {CmdShowChanges, CmdShowTerminal,
-                                       CmdShowBrowser};
+                                       CmdShowBrowser, CmdShowDetails};
     for (int index = 0; index < TabCount; ++index) {
         auto *tab = textButton(QStringLiteral("workspacePanelTab"),
                                tabLabels[index], QString(), 30);
@@ -1147,6 +1295,10 @@ void NextAccess::installWorkspace(MainWindow &window)
     stack->addWidget(chrome->hosts[TabTerminal]);
     stack->addWidget(chrome->hosts[TabChanges]);
     stack->addWidget(chrome->hosts[TabBrowser]);
+    chrome->hosts[TabDetails] = paneHost(QStringLiteral("workspaceDetailsHost"));
+    chrome->details = new SessionSidePanels;
+    chrome->hosts[TabDetails]->layout()->addWidget(chrome->details);
+    stack->addWidget(chrome->hosts[TabDetails]);
     dockLayout->removeWidget(window.m_workspaceTerminal);
     window.m_workspaceTerminal->setParent(chrome->hosts[TabTerminal]);
     chrome->hosts[TabTerminal]->layout()->addWidget(window.m_workspaceTerminal);
@@ -1183,8 +1335,50 @@ void NextAccess::installWorkspace(MainWindow &window)
         QObject::connect(model, &QAbstractItemModel::modelReset, chrome,
                          changed);
     }
+    chrome->page = window.m_agentsPage;
+    window.m_agentsPage->installEventFilter(chrome);
+    namespace keys = forkmesh::workspaceshortcuts;
+    for (const keys::Binding &binding : keys::bindings()) {
+        if (!binding.bound)
+            continue;
+        int id = -1;
+        switch (binding.action) {
+        case keys::Action::NextSession:
+        case keys::Action::NextSessionAlt: id = CmdNextSession; break;
+        case keys::Action::PreviousSession:
+        case keys::Action::PreviousSessionAlt: id = CmdPreviousSession; break;
+        case keys::Action::ToggleDiff: id = CmdToggleChanges; break;
+        case keys::Action::ToggleTerminal: id = CmdToggleTerminal; break;
+        case keys::Action::ToggleBrowser: id = CmdToggleBrowser; break;
+        case keys::Action::ClosePanel: id = CmdClosePanel; break;
+        case keys::Action::ModeMenu: id = CmdModeMenu; break;
+        case keys::Action::ModelMenu: id = CmdModelMenu; break;
+        case keys::Action::EffortMenu: id = CmdEffortMenu; break;
+        case keys::Action::ShowShortcuts: id = CmdShortcuts; break;
+        default: break;
+        }
+        if (id < 0)
+            continue;
+        auto *shortcut = new QShortcut(binding.keys, &window);
+        shortcut->setObjectName(QStringLiteral("workspaceShortcut"));
+        shortcut->setContext(Qt::WindowShortcut);
+        shortcut->setEnabled(false);
+        QObject::connect(shortcut, &QShortcut::activated, chrome, command(id));
+        chrome->shortcuts.append(shortcut);
+    }
     chrome->tick.start();
     syncWorkspace(window);
+}
+
+void NextAccess::applyLayoutMode(MainWindow &window, LayoutMode mode)
+{
+    if (layoutMode() == mode)
+        return;
+    setLayoutMode(mode);
+    syncWorkspace(window);
+    window.applyGitLayout();
+    window.logSystem(
+        QStringLiteral("Layout switched to %1").arg(layoutModeName(mode)));
 }
 
 void NextAccess::syncWorkspace(MainWindow &window)
@@ -1287,6 +1481,7 @@ void NextAccess::syncWorkspace(MainWindow &window)
             chrome->toolbar->setVisible(!next);
         chrome->sidebarHeader->setVisible(next);
         chrome->sidebarFooter->setVisible(next);
+        chrome->enableShortcuts();
 
         if (next) {
             if (chrome->statusRow->parent() == chrome->topRow) {
@@ -1296,7 +1491,8 @@ void NextAccess::syncWorkspace(MainWindow &window)
                     widget->move(kParkedAt, kParkedAt);
             }
         } else if (!chrome->statusRow->parent()) {
-            chrome->topRow->insertLayout(0, chrome->statusRow);
+            chrome->topRow->insertLayout(
+                qMin(chrome->statusIndex, chrome->topRow->count()), chrome->statusRow);
         }
         if (chrome->titleBlock)
             chrome->titleBlock->setVisible(!next);
@@ -1358,7 +1554,7 @@ void NextAccess::syncWorkspace(MainWindow &window)
                           : MainWindow::AgentListView::Compact);
             if (window.m_agentCodePage->parentWidget() != window.m_agentCodeSplit) {
                 const bool shown = !window.m_agentCodePage->isHidden();
-                window.m_agentCodeSplit->addWidget(window.m_agentCodePage);
+                window.m_agentCodeSplit->insertWidget(1, window.m_agentCodePage);
                 window.m_agentCodePage->setVisible(shown);
             }
             chrome->panelStack->setCurrentWidget(chrome->hosts[TabTerminal]);
@@ -1374,6 +1570,7 @@ void NextAccess::syncWorkspace(MainWindow &window)
             }
         }
         fitColumn(chrome);
+        window.refreshAgentTowerPanels();
         window.positionGlobalFooterOverlays();
         window.refreshAgentTranscriptTheme(dark);
         window.updateQuickAddTargetAgentLabel();
@@ -1416,7 +1613,8 @@ void NextAccess::syncWorkspace(MainWindow &window)
         chrome->lastMode = window.m_viewMode;
         if (workspace) {
             chrome->panelOpen = true;
-            if (chrome->tab == TabChanges && !window.m_agentCodeMode)
+            if ((chrome->tab == TabChanges && !window.m_agentCodeMode) ||
+                chrome->tab == TabDetails)
                 chrome->tab = TabTerminal;
         } else if (leaving) {
             chrome->panelOpen = window.m_agentCodeMode;
@@ -1540,6 +1738,9 @@ void NextAccess::syncWorkspace(MainWindow &window)
                       .arg(repository));
     }
 
+    if (chrome->details && chrome->panelOpen && chrome->tab == TabDetails)
+        feedSessionSidePanels(window, chrome->details, session ? session->id : 0);
+
     const bool showCard = session && stats.any() && !diffOpen;
     chrome->changesBar->setVisible(showCard);
     if (showCard) {
@@ -1581,6 +1782,23 @@ void NextAccess::syncWorkspace(MainWindow &window)
     fitColumn(chrome);
 }
 
+void NextAccess::workspaceSessionStarted(MainWindow &window, int sessionId)
+{
+    Chrome *chrome = chromeOf(window);
+    if (!chrome || !chrome->applied)
+        return;
+    MainWindow *self = &window;
+    QTimer::singleShot(0, chrome, [self, chrome, sessionId] {
+        if (!chrome->applied || self->m_agentCodeMode ||
+            (self->m_selectedAgentSessionId > 0 &&
+             self->m_selectedAgentSessionId != sessionId))
+            return;
+        chrome->panelOpen = true;
+        chrome->tab = TabDetails;
+        chrome->refresh.start();
+    });
+}
+
 void NextAccess::workspaceCommand(MainWindow &window, int command)
 {
     Chrome *chrome = chromeOf(window);
@@ -1601,6 +1819,8 @@ void NextAccess::workspaceCommand(MainWindow &window, int command)
             window.setAgentCodeMode(false);
         if (tab == TabBrowser && !chrome->browser) {
             chrome->browser = new WorkspaceBrowserPane;
+            chrome->browser->setInstallHandler(
+                [w = &window] { w->installEmbeddedBrowser(); });
             chrome->hosts[TabBrowser]->layout()->addWidget(chrome->browser);
             chrome->iconsReady = false;
         }
@@ -1647,6 +1867,12 @@ void NextAccess::workspaceCommand(MainWindow &window, int command)
     case CmdToggleBrowser:
         openTab(TabBrowser, true);
         break;
+    case CmdToggleDetails:
+        openTab(TabDetails, true);
+        break;
+    case CmdShowDetails:
+        openTab(TabDetails, false);
+        break;
     case CmdShowChanges:
         openTab(TabChanges, false);
         break;
@@ -1691,6 +1917,40 @@ void NextAccess::workspaceCommand(MainWindow &window, int command)
         }
         break;
     }
+    case CmdNextSession:
+    case CmdPreviousSession: {
+        QTableWidget *table = window.m_agentTable;
+        const int rows = table->rowCount();
+        const int step = command == CmdNextSession ? 1 : -1;
+        int row = table->currentRow();
+        for (int tries = 0; tries < rows; ++tries) {
+            row = row < 0 ? (step > 0 ? 0 : rows - 1) : (row + step + rows) % rows;
+            if (!table->isRowHidden(row))
+                break;
+        }
+        if (row < 0 || row >= rows || table->isRowHidden(row) ||
+            row == table->currentRow())
+            break;
+        table->setCurrentCell(row, kAgentIdColumn);
+        if (QTableWidgetItem *item = table->item(row, kAgentIdColumn))
+            table->scrollToItem(item);
+        break;
+    }
+    case CmdModeMenu:
+    case CmdModelMenu:
+    case CmdEffortMenu: {
+        QComboBox *picker = command == CmdModeMenu    ? window.m_quickAddModeSelector
+                            : command == CmdModelMenu ? window.m_quickAddAgentModelSelector
+                                                      : window.m_quickAddSpeedSelector;
+        if (!picker || !picker->isVisible() || !picker->isEnabled())
+            break;
+        picker->setFocus(Qt::ShortcutFocusReason);
+        picker->showPopup();
+        break;
+    }
+    case CmdShortcuts:
+        showWorkspaceShortcuts(&window);
+        break;
     case CmdSend: {
         QPushButton *target =
             !window.promptChatRoom().isEmpty() && window.m_quickAddSendToChannelButton
@@ -1767,19 +2027,19 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
         QMenu *layout = menu->addMenu(
             glyph(QStringLiteral("list-unordered"), Theme::Role::FgMuted),
             QStringLiteral("Layout"));
+        layout->setToolTipsVisible(true);
         auto *layoutGroup = new QActionGroup(layout);
-        for (const bool classic : {false, true}) {
-            QAction *action = layout->addAction(
-                classic ? QStringLiteral("Classic") : QStringLiteral("New"));
+        for (const LayoutMode mode : kLayoutModes) {
+            QAction *action = layout->addAction(layoutModeName(mode));
             action->setCheckable(true);
-            action->setChecked(classic == workspaceLayoutClassic());
+            action->setChecked(mode == layoutMode());
+            action->setToolTip(layoutModeDescription(mode));
             layoutGroup->addAction(action);
-            QObject::connect(action, &QAction::triggered, self, [self, classic] {
-                if (workspaceLayoutClassic() == classic)
+            QObject::connect(action, &QAction::triggered, self, [self, mode] {
+                if (layoutMode() == mode)
                     return;
-                QTimer::singleShot(0, self, [self, classic] {
-                    setWorkspaceLayoutClassic(classic);
-                    NextAccess::syncWorkspace(*self);
+                QTimer::singleShot(0, self, [self, mode] {
+                    NextAccess::applyLayoutMode(*self, mode);
                 });
             });
         }
@@ -1790,6 +2050,14 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
         addProxy(menu, window.m_agentModelsButton, QStringLiteral("smart-toy"));
         addProxy(menu, window.m_agentAnnouncerButton,
                  QStringLiteral("broadcast"));
+        QAction *keysAction = menu->addAction(
+            glyph(QStringLiteral("list-unordered"), Theme::Role::FgMuted),
+            QString::fromUtf8("Keyboard shortcuts\xE2\x80\xA6"));
+        keysAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Slash));
+        keysAction->setShortcutVisibleInContextMenu(true);
+        QObject::connect(keysAction, &QAction::triggered, self, [self] {
+            QTimer::singleShot(0, self, [self] { showWorkspaceShortcuts(self); });
+        });
         menu->addSeparator();
         if (window.m_agentUsageButton) {
             QAction *usage = menu->addAction(
@@ -1826,9 +2094,6 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
         menu->addSeparator();
         addProxy(menu, window.m_promptClearButton, QStringLiteral("x"),
                  QStringLiteral("Clear the prompt"), true);
-        addProxy(menu, window.m_promptDetachButton,
-                 QStringLiteral("screen-full"),
-                 QStringLiteral("Pop the prompt out into its own window"), true);
         return;
     }
 
@@ -1856,6 +2121,19 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
              QStringLiteral("Open branch in Git"));
     addProxy(menu, window.m_agentWorktreeButton, QStringLiteral("worktree"),
              QStringLiteral("Open worktree"));
+    QString folder = window.m_streamWorktree.value(session->id);
+    if (folder.isEmpty()) {
+        const int repoIndex = window.repoIndexFor(session->owner, session->name);
+        if (repoIndex >= 0) {
+            const QString repoLocal = window.m_repositories.at(repoIndex).localPath;
+            if (branched)
+                folder = window.cachedSessionWorktreeForUi(session->id, repoLocal,
+                                                           session->branchName);
+            if (folder.isEmpty() || !QDir(folder).exists())
+                folder = repoLocal;
+        }
+    }
+    addOpenInMenu(menu, self, folder, session->branchName);
     if (branched) {
         addProxy(menu, window.m_agentUpdateButton, QStringLiteral("sync"),
                  QStringLiteral("Update from the default branch"));
@@ -1865,6 +2143,25 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
     }
     menu->addSeparator();
     addProxy(menu, window.m_agentMoveToCloudButton, QStringLiteral("cloud"));
+    if (window.m_agentMoveToCloudButton &&
+        !window.m_agentMoveToCloudButton->isHidden()) {
+        const int sessionId = window.m_selectedAgentSessionId;
+        const bool movable = window.m_agentMoveToCloudButton->isEnabled();
+        QMenu *toDesktop = menu->addMenu(
+            glyph(QStringLiteral("device-desktop"), Theme::Role::FgMuted),
+            QStringLiteral("Send to another desktop"));
+        toDesktop->setObjectName(QStringLiteral("agentSendToDesktopMenu"));
+        toDesktop->setToolTipsVisible(true);
+        toDesktop->menuAction()->setEnabled(movable);
+        toDesktop->menuAction()->setToolTip(
+            movable ? QStringLiteral("Have one of this account's other "
+                                     "desktops continue this session")
+                    : window.m_agentMoveToCloudButton->toolTip());
+        QObject::connect(toDesktop, &QMenu::aboutToShow, self,
+                         [self, toDesktop, sessionId] {
+            self->fillAgentHandoffDesktopMenu(toDesktop, sessionId);
+        });
+    }
     addProxy(menu, window.m_agentContinueHereButton,
              QStringLiteral("device-desktop"));
     addProxy(menu, window.m_agentRetryInCloudButton, QStringLiteral("sync"));

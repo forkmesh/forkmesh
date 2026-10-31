@@ -99,9 +99,12 @@ def test_qt_bridge_api_is_capture_implementation_agnostic_and_audited():
 
 
 def test_qt_ui_wires_local_capture_status_and_never_puts_secret_in_world_url():
-    assert "initializeWorldSpeechBridge();" in (
+    assert "initializeWorldSpeechBridge();" not in (
         ROOT.parent / "desktop" / "src" / "MainWindow.cpp"
     ).read_text(encoding="utf-8")
+    pairing = QT_CHAT[QT_CHAT.index("void MainWindow::createWorldSpeechPairing()"):]
+    pairing = pairing[: pairing.index("\n}\n")]
+    assert "initializeWorldSpeechBridge();" in pairing
     assert "Create pairing code" in QT_SETTINGS
     assert "One-use capability. It expires in two minutes and is never saved." in QT_SETTINGS
     assert "m_worldSpeechBridge->issuePairing(origin, 120)" in QT_CHAT

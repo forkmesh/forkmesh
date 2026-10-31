@@ -8,10 +8,6 @@ from pathlib import Path
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPOSITORY / "tools"))
-
-import changelog  # noqa: E402
-
 TEMPLATES = REPOSITORY / "www" / "templates"
 PAGES = TEMPLATES / "pages"
 PUBLIC = REPOSITORY / "www" / "public"
@@ -185,17 +181,12 @@ def page_templates() -> list[Path]:
     return sorted(PAGES.rglob("*.html"))
 
 
-def page_variables() -> dict[str, str]:
-    return {"changelog_releases": changelog.releases_html(changelog.load())}
-
-
 def rendered_pages(environment: Environment | None = None) -> dict[Path, str]:
     environment = environment or Environment()
-    variables = page_variables()
     pages = {}
     for path in page_templates():
         relative = path.relative_to(TEMPLATES).as_posix()
-        pages[PUBLIC / path.relative_to(PAGES)] = environment.render(relative, variables)
+        pages[PUBLIC / path.relative_to(PAGES)] = environment.render(relative)
     return pages
 
 

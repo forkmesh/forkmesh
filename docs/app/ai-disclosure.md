@@ -16,7 +16,7 @@ and nothing changes for a repository without them.
 | --- | --- | --- |
 | `.forkmesh/pulls.json` | `"requireAiDisclosure": true` | A pull request must say which AI model was used (or `None`). Anything other than JSON `true` means optional. |
 | `.forkmesh/issues.json` | `"aiPromptTemplate": "..."` | Replaces the default issue prompt. At most 500 characters, folded to one line. |
-| `.forkmesh/pulls.json` | `"reviewPromptTemplate": "..."` | Replaces the default "Review with your agent" prompt on open pull requests ([pull-review-prompt.md](pull-review-prompt.md)). |
+| `.forkmesh/pulls.json` | `"reviewPromptTemplate": "..."` | Replaces the default review prompt ("Copy review prompt") on open pull requests ([pull-review-prompt.md](pull-review-prompt.md)). |
 | `.forkmesh/issues.json` | `"assignmentHours": 24` | Shows each assignee a deadline bar ([issue-assignment-deadline.md](issue-assignment-deadline.md)). |
 | `AI_POLICY.md` (repository root) | present or not | The composer links to it next to the AI model field. |
 
@@ -143,8 +143,9 @@ none, and nothing otherwise.
 
 ## Issue AI prompt
 
-Open issues show a box under the title row with the prompt in one truncated
-line (full text in the tooltip) and a **Copy prompt** button. Copying uses the
+Open issues show an **AI prompt** section in the sidebar, after Agent, with
+the whole prompt in small monospaced text and a compact **Copy prompt**
+button. Copying uses the
 dashboard's shared `data-dashboard-copy` handler (Clipboard API with a
 textarea fallback) and swaps the label to **Copied**. Closed issues show no
 box. Signed-out visitors see and copy it too.

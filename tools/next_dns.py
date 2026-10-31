@@ -330,6 +330,11 @@ def node_entry(name, path=None):
 
 
 probe = dns_rules.probe
+probe_state = dns_rules.probe_state
+
+
+PROBE_LABELS = {dns_rules.READY: "ok", dns_rules.READ_ONLY: "READ-ONLY",
+                dns_rules.DOWN: "FAIL"}
 
 
 class HealthState:
@@ -445,7 +450,7 @@ def change(fleet, cf, runner, state, decision, now):
     return True
 
 
-def health_round(fleet, cf, runner, prober=probe, now=None, path=None):
+def health_round(fleet, cf, runner, prober=probe_state, now=None, path=None):
     now = time.time() if now is None else now
     path = path or state_path()
     host = probe_host(fleet)
@@ -464,19 +469,27 @@ def health_round(fleet, cf, runner, prober=probe, now=None, path=None):
                 change(fleet, cf, runner, state, ("remove", name), now)
         probed = []
         for node in dns_nodes(fleet):
-            ok = prober(node["public_ipv4"], host)
+            found = dns_rules.state_of(prober(node["public_ipv4"], host))
             extra = ""
             if node.get("public_ipv6"):
-                extra = " v6 %s" % ("ok" if prober(node["public_ipv6"], host)
-                                    else "FAIL")
-            probed.append((node, ok, extra))
-        offline = len(probed) > 1 and not any(ok for _node, ok, _extra in probed)
-        for node, ok, extra in probed:
+                extra = " v6 %s" % PROBE_LABELS[dns_rules.state_of(
+                    prober(node["public_ipv6"], host))]
+            probed.append((node, found, extra))
+        serving = dns_rules.serving({node["name"]: found
+                                     for node, found, _extra in probed})
+        offline = len(probed) > 1 and all(
+            found == dns_rules.DOWN for _node, found, _extra in probed)
+        if not offline and dns_rules.READY not in {
+                found for _node, found, _extra in probed}:
+            runner.say("health: no core is fully ready; read-only cores "
+                       "count as healthy until one is (docs/PLAN.md)")
+        for node, found, extra in probed:
+            ok = serving[node["name"]]
             if not offline:
                 state.observe(node["name"], node["public_ipv4"], ok, now)
             entry = state.node(node["name"], node["public_ipv4"])
             runner.say("%s %s %s (fails %d)%s%s" % (
-                node["name"], node["public_ipv4"], "ok" if ok else "FAIL",
+                node["name"], node["public_ipv4"], PROBE_LABELS[found],
                 entry["fails"], extra, " held" if entry.get("held") else ""))
         if offline:
             runner.say("health: no core answered; this box looks offline, so no "
@@ -494,7 +507,7 @@ UNDRAIN_PROBES = 3
 UNDRAIN_PROBE_GAP = 2.0
 
 
-def healthy_now(fleet, name, prober=probe, sleep=time.sleep):
+def healthy_now(fleet, name, prober=probe_state, sleep=time.sleep):
     node = next((n for n in dns_nodes(fleet) if n["name"] == name), None)
     if node is None:
         return False
@@ -502,15 +515,17 @@ def healthy_now(fleet, name, prober=probe, sleep=time.sleep):
     for attempt in range(UNDRAIN_PROBES):
         if attempt:
             sleep(UNDRAIN_PROBE_GAP)
-        if not prober(node["public_ipv4"], host):
+        if dns_rules.state_of(prober(node["public_ipv4"], host)) != \
+                dns_rules.READY:
             return False
-        if node.get("public_ipv6") and not prober(node["public_ipv6"], host):
+        if node.get("public_ipv6") and dns_rules.state_of(
+                prober(node["public_ipv6"], host)) != dns_rules.READY:
             return False
     return True
 
 
-def hold(fleet, cf, runner, name, held, now=None, path=None, prober=probe,
-         sleep=time.sleep):
+def hold(fleet, cf, runner, name, held, now=None, path=None,
+         prober=probe_state, sleep=time.sleep):
     now = time.time() if now is None else now
     path = path or state_path()
     known = {n["name"] for n in dns_nodes(fleet)}
@@ -563,7 +578,7 @@ def status(fleet, cf, out=None):
                   file=out)
 
 
-def main(argv=None, cf=None, prober=probe, sleep=time.sleep) -> int:
+def main(argv=None, cf=None, prober=probe_state, sleep=time.sleep) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--fleet")
     sub = parser.add_subparsers(dest="command", required=True)

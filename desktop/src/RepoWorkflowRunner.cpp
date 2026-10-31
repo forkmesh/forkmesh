@@ -276,9 +276,13 @@ void Runner::tick()
         if (it == m_active.end())
             continue;
         if (!result.done) {
-            if (result.sessionId > 0) {
-                if (StepRun *running = it->run.step(nodeId))
+            if (StepRun *running = it->run.step(nodeId)) {
+                if (result.sessionId > 0)
                     running->sessionId = result.sessionId;
+                if (!result.output.isEmpty())
+                    running->output = result.output.left(kMaxStepOutputChars);
+                if (!result.logs.isEmpty())
+                    running->logs = result.logs;
             }
             continue;
         }

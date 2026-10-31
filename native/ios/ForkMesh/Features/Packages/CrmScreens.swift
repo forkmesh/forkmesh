@@ -85,11 +85,9 @@ struct CrmScreen: View {
     @State private var sheet: CrmSheet?
     @State private var importing = false
     @State private var notice: FmNotice?
-    @State private var board = false
     @State private var selecting = false
     @State private var selection = Set<String>()
     @State private var visible = false
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 0) {
@@ -111,6 +109,7 @@ struct CrmScreen: View {
             if let organization, PackagesText.isOrgName(organization) { model.organization = organization }
             if let flow { model.flowId = flow }
             await model.refresh()
+            if flow != nil { model.show(.pipeline) }
         }
         .sheet(item: $sheet) { item in
             CrmSheetHost(model: model, sheet: item, present: { sheet = $0 })
@@ -136,19 +135,20 @@ struct CrmScreen: View {
             selection.removeAll()
             selecting = false
         }
+        .onChange(of: model.query) { _, query in
+            if !query.isEmpty, model.section != .contacts, model.section != .pipeline { model.show(.contacts) }
+        }
     }
 
     @ViewBuilder private var content: some View {
         if model.needsInstall && !model.loading {
             List { CrmInstallSection(model: model) }
         } else if let data = model.data {
-            CrmTabContent(
-                model: model, data: data, board: board, selecting: $selecting, selection: $selection,
-                present: { sheet = $0 }
-            )
-            .safeAreaInset(edge: .top, spacing: 0) {
-                CrmHeader(model: model, data: data)
-            }
+            section(data)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    CrmHeader(model: model, data: data)
+                }
         } else if !model.loading && model.installedOrganizations.isEmpty {
             List {
                 PackagesErrorBanner(text: model.errorText) { await model.refresh() }
@@ -156,6 +156,25 @@ struct CrmScreen: View {
             }
         } else {
             List { PackagesErrorBanner(text: model.errorText) { await model.refresh() } }
+        }
+    }
+
+    @ViewBuilder private func section(_ data: CrmOrganizationData) -> some View {
+        switch model.section {
+        case .home:
+            CrmHomePane(model: model, data: data, present: { sheet = $0 })
+        case .contacts:
+            CrmTabContent(
+                model: model, data: data, selecting: $selecting, selection: $selection,
+                present: { sheet = $0 })
+        case .pipeline:
+            CrmPipelinePane(model: model, data: data, present: { sheet = $0 })
+        case .activity:
+            CrmActivitySection(model: model, data: data, present: { sheet = $0 })
+        case .more:
+            CrmMorePane(
+                model: model, data: data, present: { sheet = $0 }, importCSV: { importing = true },
+                export: { await export() })
         }
     }
 
@@ -183,17 +202,16 @@ struct CrmScreen: View {
                     selection.removeAll()
                 }
             } else {
+                if model.section == .contacts { moreMenu }
+                CrmModePill()
                 addMenu
-                moreMenu
             }
         }
     }
 
     private var addMenu: some View {
         Menu {
-            Button("New contact", systemImage: "person.badge.plus") {
-                sheet = .newContact(model.activeView.flatMap { $0.isPipeline ? nil : $0.id })
-            }
+            Button("New contact", systemImage: "person.badge.plus") { newContact() }
             Button("New list", systemImage: "list.bullet.rectangle") { sheet = .newList }
             if model.canManage {
                 Button("New pipeline", systemImage: "point.3.connected.trianglepath.dotted") { sheet = .pipeline(CrmFlowDraft()) }
@@ -201,47 +219,30 @@ struct CrmScreen: View {
             Divider()
             Button("Import CSV", systemImage: "square.and.arrow.down") { importing = true }
         } label: {
-            Label("Add", systemImage: "plus")
+            Label("New contact", systemImage: "plus")
+        } primaryAction: {
+            newContact()
         }
         .disabled(model.data == nil)
+        .accessibilityIdentifier("crm-new-contact")
+    }
+
+    private func newContact() {
+        if !model.activeTab.isContacts, let first = model.data?.defaultTab { model.select(first) }
+        sheet = .newContact(model.activeView.flatMap { $0.isPipeline ? nil : $0.id })
     }
 
     private var moreMenu: some View {
         Menu {
-            Group {
-                if model.activeTab.isContacts {
-                    Button("Select contacts", systemImage: "checkmark.circle") { selecting = true }
-                    if model.activeFlow != nil {
-                        Picker("Layout", selection: $board) {
-                            Label("List", systemImage: "list.bullet").tag(false)
-                            Label("Board", systemImage: "rectangle.split.3x1").tag(true)
-                        }
-                    }
-                    CrmFilterMenu(model: model)
-                    if let item = model.data?.contactTabs.first(where: { $0.tab == model.activeTab }), item.view != nil || item.flow != nil {
-                        Button("\(item.title) settings", systemImage: "slider.horizontal.3") { sheet = .tabSettings(item) }
-                    }
-                }
-                Divider()
-                Button("Pipelines", systemImage: "point.3.connected.trianglepath.dotted") { sheet = .pipelines }
-                Button(model.noteDrafts.isEmpty ? "Unsent drafts" : "Unsent drafts (\(model.noteDrafts.count))", systemImage: "pencil.and.list.clipboard") {
-                    sheet = .noteDrafts
-                }
-                Button("Export CSV", systemImage: "square.and.arrow.up") { Task { await export() } }
-                Button("Sync mail", systemImage: "arrow.triangle.2.circlepath") { Task { await syncMail() } }
-                if let url = model.data?.settings.composeURL(to: "") {
-                    Button(model.data?.settings.mailProvider == "gmail" ? "Open Gmail" : "Open Zoho Mail", systemImage: "envelope") {
-                        openURL(url)
-                    }
-                }
-                Button("CRM settings", systemImage: "gearshape") { sheet = .settings }
-                Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.load() } }
+            Button("Select contacts", systemImage: "checkmark.circle") { selecting = true }
+            CrmFilterMenu(model: model)
+            if let item = model.data?.contactTabs.first(where: { $0.tab == model.activeTab }), item.view != nil || item.flow != nil {
+                Button("\(item.title) settings", systemImage: "slider.horizontal.3") { sheet = .tabSettings(item) }
             }
-            .disabled(model.data == nil)
-            PluginMenuItems()
         } label: {
-            Label("More", systemImage: "ellipsis.circle")
+            Label("Sort and filter", systemImage: model.filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
         }
+        .disabled(model.data == nil)
     }
 
     private func export() async {
@@ -254,10 +255,6 @@ struct CrmScreen: View {
             notice = FmNotice.error("Couldn't save the export.")
         }
     }
-
-    private func syncMail() async {
-        if let url = await model.syncMail() { openURL(url) }
-    }
 }
 
 struct CrmHeader: View {
@@ -265,90 +262,45 @@ struct CrmHeader: View {
     let data: CrmOrganizationData
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
+            CrmSectionBar(model: model, data: data)
             if !model.errorText.isEmpty {
                 PackagesErrorBanner(text: model.errorText) { await model.load() }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .padding(.horizontal)
             }
-            CrmZohoBar(model: model, data: data)
-                .padding(.horizontal)
-            HStack(spacing: 8) {
-                CrmStatTile(value: "\(data.contacts.count)", label: "Contacts", icon: "person.2.fill", tint: .blue)
-                    .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                CrmStatTile(value: CrmText.money(data.pipelineValue), label: "Pipeline", icon: "chart.line.uptrend.xyaxis", tint: .green)
-                    .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                CrmStatTile(value: "\(data.activity.count)", label: "Emails", icon: "paperplane.fill", tint: .indigo)
-                    .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                CrmStatTile(value: "\(data.decks.filter(\.active).count)", label: "Decks", icon: "rectangle.on.rectangle.angled", tint: .orange)
-                    .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .padding(.horizontal)
-            CrmTabStrip(model: model, data: data)
-        }
-        .padding(.top, 6)
-        .padding(.bottom, 8)
-    }
-}
-
-struct CrmTabStrip: View {
-    @Bindable var model: CrmModel
-    let data: CrmOrganizationData
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
+            if !model.contactsStatus.isEmpty {
                 HStack(spacing: 6) {
-                    ForEach(data.contactTabs) { item in chip(item) }
-                    Divider().frame(height: 22)
-                    ForEach(data.workspaceTabs) { item in chip(item) }
+                    ProgressView().controlSize(.mini)
+                    Text(model.contactsStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
-                .padding(.vertical, 2)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("crm-contacts-loading")
             }
-            .onAppear { proxy.scrollTo(model.activeTab.id, anchor: .center) }
-            .onChange(of: model.activeTab) { _, tab in
-                withAnimation { proxy.scrollTo(tab.id, anchor: .center) }
+            switch model.section {
+            case .contacts:
+                CrmTabChips(model: model, items: data.contactTabs)
+            case .activity:
+                CrmTabChips(model: model, items: data.workspaceTabs)
+            default:
+                EmptyView()
             }
         }
-    }
-
-    private func chip(_ item: CrmTabItem) -> some View {
-        let active = model.activeTab == item.tab
-        return Button {
-            FmHaptics.selection()
-            model.select(item.tab)
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: item.icon).imageScale(.small)
-                Text(item.title).lineLimit(1)
-                if let count = item.count {
-                    Text("\(count)")
-                        .font(.caption2.monospacedDigit().weight(.bold))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(active ? Color.white.opacity(0.25) : Color.secondary.opacity(0.15), in: Capsule())
-                }
-            }
-            .font(.subheadline.weight(active ? .semibold : .regular))
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .foregroundStyle(active ? Color.white : Color.primary)
-            .background(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.clear), in: Capsule())
-            .shellGlass(Capsule())
-        }
-        .buttonStyle(.plain)
-        .id(item.tab.id)
-        .accessibilityAddTraits(active ? .isSelected : [])
+        .padding(.top, 4)
+        .padding(.bottom, 6)
     }
 }
 
 struct CrmTabContent: View {
     @Bindable var model: CrmModel
     let data: CrmOrganizationData
-    let board: Bool
     @Binding var selecting: Bool
     @Binding var selection: Set<String>
     let present: (CrmSheet) -> Void
@@ -356,11 +308,7 @@ struct CrmTabContent: View {
     var body: some View {
         switch model.activeTab {
         case .list, .pipeline, .noPipeline:
-            if board, let flow = model.activeFlow, !selecting {
-                CrmBoard(model: model, data: data, flow: flow, present: present)
-            } else {
-                CrmContactList(model: model, data: data, selecting: $selecting, selection: $selection, present: present)
-            }
+            CrmContactList(model: model, data: data, selecting: $selecting, selection: $selection, present: present)
         case .activity:
             CrmActivityPane(model: model, data: data, present: present)
         case .mail:

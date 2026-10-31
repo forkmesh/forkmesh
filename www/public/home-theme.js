@@ -8,7 +8,7 @@
     try {
       for (const key of THEME_KEYS) {
         const value = localStorage.getItem(key);
-        if (value === "light" || value === "dark") return value;
+        if (value === "light" || value === "dark" || value === "system") return value;
       }
     } catch (_) {}
     return "";
@@ -20,9 +20,9 @@
   // white. Pages without the attribute keep following the OS preference.
   function resolveTheme() {
     const saved = storedTheme();
-    if (saved) return saved;
+    if (saved === "light" || saved === "dark") return saved;
     const preset = document.documentElement.dataset.themeDefault;
-    if (preset === "light" || preset === "dark") return preset;
+    if (!saved && (preset === "light" || preset === "dark")) return preset;
     try {
       if (window.matchMedia("(prefers-color-scheme: light)").matches) return "light";
     } catch (_) {}

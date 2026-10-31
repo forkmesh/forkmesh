@@ -65,7 +65,9 @@ def test_virtual_tabs_store_nothing_on_the_worker():
 def test_the_stage_strip_sits_above_the_filters_and_edits_its_pipeline():
     contacts = WEB_VIEW.split('data-crm-section="contacts"', 1)[1]
     assert contacts.index("data-crm-stage-strip") < contacts.index("data-crm-search")
-    assert contacts.index("data-crm-tabs") < contacts.index("data-crm-stage-strip")
+    assert "data-crm-tabs" not in contacts
+    side = WEB_VIEW.split("<nav data-crm-side", 1)[1].split("</nav>", 1)[0]
+    assert "<div data-crm-tabs" in side
     assert 'strip?.addEventListener("contextmenu", openCrmStageStripMenu);' in WEB_SCRIPT
     assert "pickCrmStage(chip.dataset.crmStageChip)" in WEB_SCRIPT
     assert 'const next = stage === select.value ? "" : stage;' in _function("pickCrmStage")
@@ -86,7 +88,7 @@ def test_the_tab_menu_matches_the_desktop():
     assert "...crmSheetShareItems(view)" in menu
     assert "const CRM_SHARE_SHOWN = 15;" in WEB_SCRIPT
     assert "Delete sheet" not in WEB_SCRIPT + WEB_VIEW
-    assert "+ List" in WEB_VIEW and "+ Sheet" not in WEB_VIEW
+    assert 'aria-label="New list"' in WEB_VIEW and "+ Sheet" not in WEB_VIEW
     assert "&& (!view.flow || crmPipelineLists(view.flow).length > 1)" in _function("crmCanDeleteList")
     assert "Its contacts stay in the organization and on their pipelines." in _function("deleteCrmSheet")
 

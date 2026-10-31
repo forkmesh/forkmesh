@@ -102,7 +102,7 @@ def test_record_detail_mounts_the_composer_for_numbered_issues_only():
     assert "${renderIssueCommentForm(number)}" in detail
     # The timeline container is always mounted for issues so an optimistic
     # comment has somewhere to land, even on an issue with no events yet.
-    assert 'data-repo-issue-timeline data-empty="${timeline ? "false" : "true"}"' in detail
+    assert 'data-repo-issue-timeline data-empty="${timelineEntries.length ? "false" : "true"}"' in detail
 
 
 def test_issue_comment_form_is_wired_to_the_delegated_submit_listener():
@@ -138,6 +138,6 @@ def test_timeline_comment_row_is_shared_by_history_and_new_comments():
     # What must never come back is the raw body reaching innerHTML.
     assert "renderRecordMarkdown(body)" in row
     assert "${body}" not in row
-    timeline = _slice("function renderIssueTimeline(events)",
-                      "function projectJsonPath(number)")
-    assert "items.push(renderIssueTimelineComment(ev));" in timeline
+    timeline = _slice("function issueTimelineEntries(events)",
+                      "const ISSUE_TIMELINE_FIRST")
+    assert "html: () => renderIssueTimelineComment({" in timeline

@@ -1,9 +1,15 @@
 (() => {
   if (window.ForkMeshGenie) return;
 
-  const GLOW = [64, 242, 219, 1];
-  const GLOW_SOFT = [107, 219, 240, 1];
-  const GLOW_DEEP = [13, 140, 143, 1];
+  const TEAL_GLOW = [64, 242, 219, 1];
+  const TEAL_GLOW_SOFT = [107, 219, 240, 1];
+  const TEAL_GLOW_DEEP = [13, 140, 143, 1];
+  const EMBER = [250, 122, 24, 1];
+  const EMBER_SOFT = [253, 223, 104, 1];
+  const EMBER_DEEP = [189, 86, 29, 1];
+  const HAT = [46, 26, 74, 1];
+  const HAT_DARK = [16, 9, 30, 1];
+  const BUCKLE = [255, 214, 120, 1];
   const LILAC = [143, 102, 209, 1];
   const VIOLET = [102, 61, 168, 1];
   const PLUM = [54, 33, 97, 1];
@@ -25,6 +31,8 @@
     wave: 1.8, cheer: 1.6, surprise: 1.3, nod: 0.9, dizzy: 1.7, eureka: 1.4, giggle: 1.1,
   };
 
+  const halloween = () => document.documentElement.dataset.season === "halloween";
+  const glowRgb = () => (halloween() ? "250,122,24" : "64,242,219");
   const clamp01 = (v) => Math.min(Math.max(v, 0), 1);
   const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
   const alpha = (c, o) => [c[0], c[1], c[2], clamp01(c[3] * o)];
@@ -60,6 +68,10 @@
   }
 
   function painter(ctx, s) {
+    const spooky = halloween();
+    const GLOW = spooky ? EMBER : TEAL_GLOW;
+    const GLOW_SOFT = spooky ? EMBER_SOFT : TEAL_GLOW_SOFT;
+    const GLOW_DEEP = spooky ? EMBER_DEEP : TEAL_GLOW_DEEP;
     const is = (r) => s.reaction === r;
     const radial = (c, r, colors) => stops(ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r), colors);
     const linear = (a, b, colors) => stops(ctx.createLinearGradient(a.x, a.y, b.x, b.y), colors);
@@ -358,6 +370,47 @@
       stroke(cross, alpha(WHITE, 0.9), 0.45);
     }
 
+    function witchHat() {
+      const flop = Math.sin(s.t * 1.3) * 1.6 + (1 - vitality) * 6;
+      const brim = oval(50, 50, 37, 8.6);
+      fill(brim, linear(pt(13, 44), pt(87, 58), [HAT, HAT_DARK]));
+      stroke(brim, alpha(LILAC, 0.45), 0.7);
+      const cone = new Path2D();
+      cone.moveTo(29, 49);
+      cone.bezierCurveTo(36, 34, 43, 20, 50, 11);
+      cone.bezierCurveTo(55, 4 + flop * 0.3, 64, 1 + flop, 73, 6 + flop);
+      cone.bezierCurveTo(66, 6 + flop * 0.6, 60, 9, 58, 15);
+      cone.bezierCurveTo(61, 28, 66, 39, 71, 49);
+      cone.quadraticCurveTo(50, 55, 29, 49);
+      cone.closePath();
+      fill(cone, linear(pt(34, 10), pt(68, 52), [HAT, HAT_DARK]));
+      const crease = new Path2D();
+      crease.moveTo(33, 45);
+      crease.bezierCurveTo(39, 31, 45, 19, 51, 12);
+      stroke(crease, alpha(LILAC, 0.35), 0.9);
+      ctx.save();
+      ctx.clip(cone);
+      const band = new Path2D();
+      band.moveTo(20, 41);
+      band.quadraticCurveTo(50, 48, 80, 41);
+      band.lineTo(80, 50);
+      band.quadraticCurveTo(50, 57, 20, 50);
+      band.closePath();
+      fill(band, linear(pt(30, 41), pt(70, 52), [GLOW, GLOW_DEEP]));
+      ctx.restore();
+      const front = new Path2D();
+      front.ellipse(50, 50, 37, 8.6, 0, 0, Math.PI);
+      front.ellipse(50, 50, 22, 4.2, 0, Math.PI, 0, true);
+      front.closePath();
+      fill(front, linear(pt(13, 50), pt(87, 59), [HAT, HAT_DARK]));
+      stroke(front, alpha(LILAC, 0.4), 0.6);
+      const buckle = new Path2D();
+      buckle.rect(46.4, 45.6, 7.2, 5.6);
+      glow(50, 48.4, 6 + magic * 6, alpha(tint, 0.35 * glowStrength + 0.4 * magic));
+      stroke(buckle, BUCKLE, 1.3);
+      fill(oval(50, 48.4, 1, 1), alpha(WHITE, 0.9));
+    }
+
     function turban() {
       feather();
       const dome = new Path2D();
@@ -541,7 +594,8 @@
     tail();
     legs(false);
     head();
-    turban();
+    if (spooky) witchHat();
+    else turban();
     eyes();
     mouth();
     legs(true);
@@ -963,6 +1017,9 @@
 .fm-genie-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
 .fm-genie-row a,.fm-genie-row button{font:inherit;font-size:12.5px;line-height:1;padding:7px 11px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:transparent;color:#eef0f7;cursor:pointer;text-decoration:none}
 .fm-genie-row a:hover,.fm-genie-row button:hover{border-color:rgba(64,242,219,.8)}
+html[data-season=halloween] .fm-genie:focus-visible{outline-color:rgb(250,122,24)}
+html[data-season=halloween] .fm-genie-bubble{border-color:rgba(250,122,24,.4)}
+html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .fm-genie-row button:hover{border-color:rgba(250,122,24,.8)}
 .fm-genie-fx{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:949;pointer-events:none;overflow:visible}
 @media print{.fm-genie,.fm-genie-bubble,.fm-genie-fx{display:none!important}}
 `;
@@ -1522,7 +1579,7 @@
       thread: {
         duration: 2.4,
         begin(p) {
-          p.data.glow = fxNode("path", { fill: "none", stroke: "rgba(64,242,219,.3)", "stroke-width": 4, "stroke-linecap": "round" });
+          p.data.glow = fxNode("path", { fill: "none", stroke: `rgba(${glowRgb()},.3)`, "stroke-width": 4, "stroke-linecap": "round" });
           p.data.line = fxNode("path", { fill: "none", stroke: "rgba(230,236,248,.95)", "stroke-width": 1.3, "stroke-linecap": "round" });
           p.data.knot = fxNode("circle", { r: 2.6, fill: "rgb(230,236,248)", opacity: 0 });
         },
@@ -1554,7 +1611,7 @@
               u: Math.random(),
               delay: i * 0.18,
               scale: 4 + Math.random() * 4,
-              node: fxNode("path", { d: SPARK, fill: "rgb(64,242,219)", opacity: 0 }),
+              node: fxNode("path", { d: SPARK, fill: `rgb(${glowRgb()})`, opacity: 0 }),
             });
           }
           react("eureka");
@@ -1579,8 +1636,8 @@
       outline: {
         duration: 2.2,
         begin(p) {
-          p.data.halo = fxNode("rect", { fill: "none", stroke: "rgba(64,242,219,.25)", "stroke-width": 7 });
-          p.data.ring = fxNode("rect", { fill: "none", stroke: "rgb(64,242,219)", "stroke-width": 2 });
+          p.data.halo = fxNode("rect", { fill: "none", stroke: `rgba(${glowRgb()},.25)`, "stroke-width": 7 });
+          p.data.ring = fxNode("rect", { fill: "none", stroke: `rgb(${glowRgb()})`, "stroke-width": 2 });
         },
         tick(p) {
           const r = p.rect;
@@ -1625,7 +1682,7 @@
         begin(p) {
           p.data.links = rowLinks(p.element);
           p.duration = p.data.links.length * 0.55 + 0.4;
-          p.data.dot = fxNode("circle", { r: 3, fill: "rgb(64,242,219)" });
+          p.data.dot = fxNode("circle", { r: 3, fill: `rgb(${glowRgb()})` });
         },
         tick(p) {
           const links = p.data.links;
@@ -1655,7 +1712,7 @@
           const dy = p.rect.top - p.data.top;
           const shown = Math.min(Math.floor(p.age / 0.45) + 1, n);
           while (p.data.numbers.length < shown) {
-            p.data.numbers.push(fxNode("circle", { r: 3, fill: "rgb(64,242,219)" }));
+            p.data.numbers.push(fxNode("circle", { r: 3, fill: `rgb(${glowRgb()})` }));
             react("nod");
           }
           p.data.numbers.forEach((node, i) => {
@@ -1942,7 +1999,7 @@
           p.data.halo = fxNode("circle", { cy: -17, r: 21, fill: "url(#fm-genie-orb)", opacity: 0.3 }, g);
           fxNode("path", { d: "M-9 0L-6 -6H6L9 0Z", fill: "url(#fm-genie-gold)", stroke: "rgba(120,80,20,.85)", "stroke-width": 0.7 }, g);
           fxNode("circle", { cy: -17, r: 12, fill: "url(#fm-genie-ball)", stroke: "rgba(230,236,248,.7)", "stroke-width": 0.8 }, g);
-          p.data.mists = [0, 1, 2].map(() => fxNode("ellipse", { rx: 6.5, ry: 2.4, fill: "rgba(64,242,219,.55)" }, g));
+          p.data.mists = [0, 1, 2].map(() => fxNode("ellipse", { rx: 6.5, ry: 2.4, fill: `rgba(${glowRgb()},.55)` }, g));
           fxNode("ellipse", { cx: -4, cy: -22, rx: 3, ry: 1.8, fill: "rgba(255,255,255,.75)", transform: "rotate(-30 -4 -22)" }, g);
         },
         tick(p) {
@@ -1967,7 +2024,7 @@
           const line = { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0 };
           p.data.runes = RUNES.map((d, i) => ({
             i,
-            glow: fxNode("path", { d, ...line, stroke: "rgba(64,242,219,.35)", "stroke-width": 3 }),
+            glow: fxNode("path", { d, ...line, stroke: `rgba(${glowRgb()},.35)`, "stroke-width": 3 }),
             line: fxNode("path", { d, ...line, stroke: "rgb(150,255,240)", "stroke-width": 1.1 }),
           }));
         },
@@ -2193,8 +2250,8 @@
       jewelBeam: {
         duration: 2.8,
         begin(p) {
-          p.data.wash = fxNode("rect", { fill: "rgba(64,242,219,.14)", stroke: "rgba(64,242,219,.7)", "stroke-width": 1.5, opacity: 0 });
-          p.data.glow = fxNode("path", { fill: "none", stroke: "rgba(64,242,219,.28)", "stroke-width": 9, "stroke-linecap": "round" });
+          p.data.wash = fxNode("rect", { fill: `rgba(${glowRgb()},.14)`, stroke: `rgba(${glowRgb()},.7)`, "stroke-width": 1.5, opacity: 0 });
+          p.data.glow = fxNode("path", { fill: "none", stroke: `rgba(${glowRgb()},.28)`, "stroke-width": 9, "stroke-linecap": "round" });
           p.data.core = fxNode("path", { fill: "none", stroke: "rgb(220,255,250)", "stroke-width": 2, "stroke-linecap": "round" });
           react("eureka");
         },
@@ -2324,7 +2381,7 @@
         begin(p) {
           p.data.ghosts = [0, 0.5, 1].map((start, i) => ({
             start,
-            node: fxNode("path", { fill: "rgba(143,102,209,.08)", stroke: i % 2 ? "rgba(64,242,219,.75)" : "rgba(190,160,235,.8)", "stroke-width": 1.4, "stroke-linejoin": "round", opacity: 0 }),
+            node: fxNode("path", { fill: "rgba(143,102,209,.08)", stroke: i % 2 ? `rgba(${glowRgb()},.75)` : "rgba(190,160,235,.8)", "stroke-width": 1.4, "stroke-linejoin": "round", opacity: 0 }),
           }));
         },
         tick(p) {

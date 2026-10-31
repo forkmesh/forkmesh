@@ -1147,7 +1147,11 @@ func (d *Daemon) cycle(parent context.Context, fetch bool) {
 		upstreams := d.upstreamsFor(*repo)
 		if fetch && !seenDirs[repo.GitDir] && len(upstreams) > 0 {
 			seenDirs[repo.GitDir] = true
-			if err := syncRepository(ctx, *repo, upstreams, d.gateway.Node.Name, d.desiredStatesFor(*repo)...); err != nil {
+			syncUpstream := syncRepository
+			if d.config.Role == RoleCore {
+				syncUpstream = syncCoreRepository
+			}
+			if err := syncUpstream(ctx, *repo, upstreams, d.gateway.Node.Name, d.desiredStatesFor(*repo)...); err != nil {
 				failures = append(failures, key+": "+err.Error())
 			} else {
 				d.noteUpstreamSync(repo.GitDir, time.Now())

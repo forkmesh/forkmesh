@@ -1,0 +1,206 @@
+#ledgerSection[ledgerNextPage="true"] { background-color: @bg; }
+#ledgerSection QLabel#sectionTitle {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+#ledgerSection QLabel#mutedLabel[ledgerRole="summary"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#ledgerSection QFrame[ledgerRule="true"] { background-color: @border; border: none; }
+
+#ledgerSection QPushButton[ledgerVariant="ghost"] {
+    background-color: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgMuted; font-size: 12px; font-weight: 500;
+    padding: 0px 10px; min-height: 28px; max-height: 28px;
+}
+#ledgerSection QPushButton[ledgerVariant="ghost"]:hover { background-color: @surfaceRaised; color: @fg; }
+#ledgerSection QPushButton[ledgerVariant="ghost"]:pressed { background-color: @surfaceActive; }
+#ledgerSection QPushButton[ledgerVariant="ghost"]:disabled { color: @fgSubtle; }
+#ledgerSection QPushButton[ledgerVariant="outline"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 12px; font-weight: 500;
+    padding: 0px 10px; min-height: 28px; max-height: 28px;
+}
+#ledgerSection QPushButton[ledgerVariant="outline"]:hover { background-color: @surfaceRaised; }
+#ledgerSection QPushButton[ledgerVariant="outline"]:pressed { background-color: @surfaceActive; }
+#ledgerSection QPushButton[ledgerVariant="inverse"] {
+    background-color: @fg; border: 1px solid @fg; border-radius: 8px;
+    color: @bg; font-size: 12px; font-weight: 500;
+    padding: 0px 10px 0px 8px; min-height: 28px; max-height: 28px;
+}
+#ledgerSection QPushButton[ledgerVariant="inverse"]:hover {
+    background-color: @fgSecondary; border-color: @fgSecondary;
+}
+#ledgerSection QPushButton[ledgerVariant="inverse"]:pressed {
+    background-color: @fgMuted; border-color: @fgMuted;
+}
+#ledgerSection QPushButton[ledgerVariant="inverse"]:disabled {
+    background-color: @surfaceRaised; border-color: @border; color: @fgSubtle;
+}
+#ledgerSection QPushButton[ledgerVariant="icon"] {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px;
+}
+#ledgerSection QPushButton[ledgerVariant="icon"]:hover { background-color: @surfaceRaised; }
+
+#ledgerSection QFrame#ledgerWalletCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#ledgerSection QFrame#ledgerWalletCard QLabel { background: transparent; }
+#ledgerSection QLabel#ledgerWalletLabel { color: @fgSubtle; font-size: 11px; font-weight: 500; }
+#ledgerSection QLabel#ledgerWalletAge { color: @fgSubtle; font-size: 11px; }
+#ledgerSection QLabel#ledgerWalletAmount { color: @fg; font-size: 20px; font-weight: 600; }
+#ledgerSection QLabel#ledgerWalletAmount[ledgerEmpty="true"] { font-size: 15px; }
+#ledgerSection QLabel#ledgerWalletUsd { color: @fgMuted; font-size: 12px; font-weight: 400; }
+#ledgerSection QLabel#ledgerWalletAddress { color: @fgSubtle; font-size: 12px; }
+#ledgerSection QLabel#ledgerWalletNote { color: @fgMuted; font-size: 12px; }
+#ledgerSection QLabel#ledgerWalletWarning { color: @warning; font-size: 12px; font-weight: 500; }
+#ledgerSection QFrame#ledgerWalletCard QPushButton#ledgerWalletSetUpButton {
+    padding: 0px 10px; min-height: 28px; max-height: 28px; font-size: 13px;
+}
+#ledgerSection QFrame#ledgerWalletCard QPushButton#ledgerWalletRefresh,
+#ledgerSection QFrame#ledgerWalletCard QPushButton#ledgerWalletQrButton,
+#ledgerSection QFrame#ledgerWalletCard QPushButton#ghostButton {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-width: 22px; max-width: 22px; min-height: 22px; max-height: 22px;
+}
+#ledgerSection QFrame#ledgerWalletCard QPushButton#ledgerWalletRefresh:hover,
+#ledgerSection QFrame#ledgerWalletCard QPushButton#ledgerWalletQrButton:hover,
+#ledgerSection QFrame#ledgerWalletCard QPushButton#ghostButton:hover {
+    background-color: @surfaceRaised;
+}
+QWidget#ledgerWalletQrPanel { background: transparent; }
+QLabel#ledgerWalletQr { background: transparent; }
+QLabel#ledgerWalletQrAddress { color: @fgMuted; font-size: 12px; background: transparent; }
+QPushButton#ledgerWalletQrCopy {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-width: 22px; max-width: 22px; min-height: 22px; max-height: 22px;
+}
+QPushButton#ledgerWalletQrCopy:hover { background-color: @surfaceRaised; }
+
+#ledgerSection QFrame#ledgerEntryForm {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#ledgerSection QFrame#ledgerEntryForm[ledgerPopover="true"] {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 12px;
+}
+#ledgerSection QFrame#ledgerEntryForm QLabel,
+#ledgerSection QFrame#ledgerEntryForm QCheckBox { background: transparent; }
+#ledgerSection QFrame#ledgerEntryForm QLabel[ledgerRole="formTitle"] {
+    color: @fg; font-size: 13px; font-weight: 500;
+}
+#ledgerSection QFrame#ledgerEntryForm QLabel[ledgerRole="formHint"] {
+    color: @fgSubtle; font-size: 12px;
+}
+#ledgerSection QFrame#ledgerEntryForm QLineEdit,
+#ledgerSection QFrame#ledgerEntryForm QComboBox,
+#ledgerSection QFrame#ledgerEntryForm QDateEdit {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; padding: 0px 8px 0px 10px;
+    min-height: 30px; max-height: 30px;
+}
+#ledgerSection QFrame#ledgerEntryForm QLineEdit:hover,
+#ledgerSection QFrame#ledgerEntryForm QComboBox:hover,
+#ledgerSection QFrame#ledgerEntryForm QDateEdit:hover { border-color: @borderStrong; }
+#ledgerSection QFrame#ledgerEntryForm QLineEdit:focus,
+#ledgerSection QFrame#ledgerEntryForm QComboBox:focus,
+#ledgerSection QFrame#ledgerEntryForm QComboBox:on,
+#ledgerSection QFrame#ledgerEntryForm QDateEdit:focus { border-color: @accent; }
+#ledgerSection QFrame#ledgerEntryForm QCheckBox { color: @fgMuted; font-size: 13px; }
+
+#ledgerSection QFrame#ledgerNextStat {
+    background-color: transparent; border: 1px solid @border; border-radius: 12px;
+}
+#ledgerSection QFrame#ledgerNextStat QLabel { background: transparent; }
+#ledgerSection QFrame#ledgerNextStat QLabel[ledgerRole="statName"] { color: @fgMuted; font-size: 12px; }
+#ledgerSection QFrame#ledgerNextStat QLabel[ledgerRole="statValue"] {
+    color: @fg; font-size: 18px; font-weight: 600;
+}
+#ledgerSection QFrame#ledgerNextStat QLabel[ledgerRole="statNote"] { color: @fgSubtle; font-size: 12px; }
+
+#ledgerSection QWidget#ledgerNextToolbar {
+    background-color: @surface; border: 1px solid @border;
+    border-top-left-radius: 12px; border-top-right-radius: 12px;
+}
+#ledgerSection QWidget#ledgerNextToolbar QLabel { background: transparent; }
+#ledgerSection QLabel#ledgerNextPrice { color: @fgSubtle; font-size: 12px; }
+#ledgerSection QWidget#ledgerNextToolbar QLineEdit#ledgerNextSearch {
+    background-color: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: @fg; font-size: 13px; padding: 0px 6px 0px 2px;
+    min-height: 28px; max-height: 28px;
+}
+#ledgerSection QWidget#ledgerNextToolbar QLineEdit#ledgerNextSearch:hover,
+#ledgerSection QWidget#ledgerNextToolbar QLineEdit#ledgerNextSearch:focus {
+    background-color: @surfaceRaised;
+}
+#ledgerSection QWidget#ledgerNextToolbar QFrame#segmentedControl {
+    background-color: @bg; border: 1px solid @border; border-radius: 8px;
+}
+#ledgerSection QWidget#ledgerNextToolbar QPushButton#segmentedButton {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: @fgMuted; font-size: 13px; font-weight: 500;
+    padding: 0px 10px; min-height: 24px; max-height: 24px;
+}
+#ledgerSection QWidget#ledgerNextToolbar QPushButton#segmentedButton:hover { color: @fg; }
+#ledgerSection QWidget#ledgerNextToolbar QPushButton#segmentedButton:checked {
+    background-color: @surfaceActive; border-color: transparent; color: @fg;
+}
+
+#ledgerSection QTableWidget#ledgerTable[ledgerNext="true"] {
+    background-color: @bg; border: 1px solid @border; border-top: none;
+    border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+    outline: none; color: @fg; font-size: 13px;
+    selection-background-color: @accentSubtle; selection-color: @fg;
+}
+#ledgerSection QTableWidget#ledgerTable[ledgerNext="true"] QHeaderView {
+    background: transparent; border: none;
+}
+#ledgerSection QTableWidget#ledgerTable[ledgerNext="true"] QHeaderView::section {
+    background-color: transparent; color: @fgSubtle; border: none;
+    border-bottom: 1px solid @border; padding: 0px 10px; min-height: 36px;
+    font-size: 12px; font-weight: 400;
+}
+#ledgerSection QTableWidget#ledgerTable[ledgerNext="true"] QHeaderView::section:first {
+    padding-left: 16px;
+}
+#ledgerSection QTableWidget#ledgerTable[ledgerNext="true"]::item { border: none; padding: 0px; }
+
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerPayButton,
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerSettleButton {
+    background-color: @surface; border: 1px solid @border; border-radius: 6px;
+    color: @fg; font-size: 12px; font-weight: 500;
+    padding: 0px 8px; min-height: 24px; max-height: 24px;
+}
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerPayButton:hover,
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerSettleButton:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong;
+}
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerPayButton:disabled,
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerSettleButton:disabled {
+    color: @fgSubtle; border-color: @border;
+}
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerRemindButton,
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerRemoveButton {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: @fgMuted; font-size: 12px; font-weight: 500;
+    padding: 0px 8px; min-height: 24px; max-height: 24px;
+}
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerRemindButton:hover,
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerRemoveButton:hover {
+    background-color: @surfaceActive; color: @fg;
+}
+#ledgerSection QTableWidget#ledgerTable QPushButton#ledgerRemindButton:disabled { color: @fgSubtle; }
+#ledgerSection QTableWidget#ledgerTable QLabel#ledgerPaymentProgressLabel {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+
+#ledgerSection QFrame#ledgerPayoutHoldPanel {
+    background-color: @warningSubtle; border: 1px solid @warning; border-radius: 12px;
+}
+#ledgerSection QFrame#ledgerPayoutHoldPanel QLabel { background: transparent; }
+#ledgerSection QLabel#ledgerPayoutHoldTitle { color: @warning; font-size: 13px; font-weight: 600; }
+#ledgerSection QLabel#ledgerPayoutHoldDetails { color: @fgSecondary; font-size: 12px; }
+
+#ledgerSection QLabel#ledgerStatus { color: @fgMuted; font-size: 12px; background: transparent; }
+#ledgerSection QLabel#mutedLabel[ledgerRole="footnote"] {
+    color: @fgSubtle; font-size: 12px; background: transparent;
+}

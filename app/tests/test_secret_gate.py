@@ -399,6 +399,37 @@ def test_pre_push_hook_blocks_before_the_remote_receives_objects(tmp_path):
                check=False).returncode != 0
 
 
+def test_pre_push_hook_with_policy_options_lets_a_clean_push_through(tmp_path):
+    remote = tmp_path / "remote.git"
+    git("init", "-q", "--bare", "-b", "main", str(remote))
+    client = make_client(tmp_path)
+    git("push", "-q", str(remote), "main", cwd=client)
+    _install(client, tmp_path)
+    assert commit(client, "notes.txt", "nothing secret\n", "--no-verify").returncode == 0
+    pushed = git("push", str(remote), "main", cwd=client, check=False)
+    assert pushed.returncode == 0, pushed.stderr
+    assert "unrecognized arguments" not in pushed.stderr
+
+
+def test_hooks_installed_with_options_after_the_stage_still_parse(tmp_path):
+    remote = tmp_path / "remote.git"
+    git("init", "-q", "--bare", "-b", "main", str(remote))
+    client = make_client(tmp_path)
+    git("push", "-q", str(remote), "main", cwd=client)
+    _install(client, tmp_path)
+    hook = client / ".git" / "hooks" / "pre-push"
+    hook.write_text(
+        '#!/bin/sh\n%s\nexec python3 -I %s hook pre-push --repository alice/app "$@"\n'
+        % (gate.HOOK_MARKER, Path(gate.__file__).resolve()), encoding="utf-8")
+    assert commit(client, "notes.txt", "nothing secret\n", "--no-verify").returncode == 0
+    clean = git("push", str(remote), "main", cwd=client, check=False)
+    assert clean.returncode == 0, clean.stderr
+    assert commit(client, "src/config.py", TOKEN_LINE, "--no-verify").returncode == 0
+    blocked = git("push", str(remote), "main", cwd=client, check=False)
+    assert blocked.returncode != 0
+    assert "blocked this push" in blocked.stderr
+
+
 def test_install_hooks_preserves_foreign_hooks(tmp_path):
     client = make_client(tmp_path)
     hook = client / ".git" / "hooks" / "pre-commit"

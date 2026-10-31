@@ -721,6 +721,344 @@ _MONO_FONTS = {
         "JvNJuF9+R5milsuUDUpe+v3/5POn6n3vFo29vRu28PamvvmiIYgDFvGzERS+QwXvlz9c7F2c"
         "6sMZ1/8HCk4qug=="
     )),
+    # GeistMono-Regular 25px
+    "r25": (15, 34, 26, (
+        "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"
+        "lg=="
+    )),
+    # GeistMono-SemiBold 25px
+    "b25": (15, 34, 26, (
+        "eNrtXWdgVkXWnhQglITeO4KAKEWzgsIKCKIiqCt2RFFxBQUrCLYFrKiodFBQdFVAwEaRd6mh"
+        "V6kBQg2dNAKk5015vnPO3DI3oB9xXQtvzo+Qh9w7c++dmTOnj1JFVER/DGUh67eCmcgw4Vkk"
+        "mzAex00Yg50mXIUVJpyFb0z4AcZf8AvdCeDOXwkDi/oD/1JDgf4OfEW9asIX1UsOfBQYrIYA"
+        "j2h4KzBQvQB017AN8Jx6HmitYQPgGfUsUF/DMsAA9RRQ2uo4HU9S8+n2c8Sin+qH2KK1+DvT"
+        "DoxWai6WaFQqFw8qdRLvaNgWaKZqA3dp+BQyQtQd1oiugUPZwbyyHdqnVLEFvnzE+HzpOOqT"
+        "tioC9ymVgmG6pXbAVaoWcK+GfYBw1RloqeFInOSpl1+SwWq34dxiSh134UGlgn9cDOzw+XKx"
+        "3/cuX90c6KQqAI/qlnoBlVRHIFLD95n9PIvckhouxgKlPsPui2tEB2LEz8LaT67A2gcjNAgZ"
+        "mSPf8UwvgWOcD3s3oYZ5yB/9EeZvABJKKfUk8Ak3FX5MBu110HLllt8Ac+VngK8FVmnXrqlS"
+        "TfOBeZ+7/X4gra7vWszCz6XIfxx7Ikjjck9uk//4Pth55oUrIFznqSFDykvL7wFrlaLr/iGQ"
+        "5lO8UhOAhQKrgUf2arpn5KsYUepL4Adq5t+E8xGXCuS1JRg2x3o/v8W/esw7jdy94xtf0Ke7"
+        "yOjKZZnxo2UdzMQg1SAFp3Iwh9B12FdcjcKm4q2BFip4M25Vai1e4L36MfUYFtEl0fQbLcvn"
+        "I+JzmxFcThsIse/eIzGOm3sd+2rej/wbs5MrMKx0lL/42LnE/IVqTtq6ot9N2BnqPkroTtzY"
+        "b/mWiTVsLjNnHN9zpBKjCsnZN+Xj/lr78RrD8XjvYd4l/oUoQs1y4yMGYrWiB9tBcBH6qH/y"
+        "ch7M/3cbNgerFsDVxTbhQ1V8H/5Ol8xBzimkNKBd62vhd2MSs6KuCkS+H/F2TFb61kHWMJTb"
+        "qVfGLA3fpHWzbi/hNgI3gfbq4GXAUwJ3Cz8dD94qiL4H+qqII/Drjf4m4MDlxDXesDqazmsQ"
+        "71qo5GRqNaWbhaps4k7zutI0aVxKBa8FYl4BTjdUzwH33APEVWXeEV3mC5qLU4D3iWcRv1+Y"
+        "Qaz/W+BN3ldiuYW+aiKxk3qKRx5YEcJ7CbI3LjnMf9xeQqmxNmvLIg7BksvcuJyMwz/0qpuE"
+        "vA4Bue+TOIYyFwqLEyxm3OxHttnWaZwy4VEcNuFur5C/EetNuNQWPYrof0uXnMTBqg6qfhCn"
+        "3H0vaJGIZzY9Acx3UdhJR35iegweLY3ufNq4liSKy1zYilahwehJdDxg3PowsMULN6ufvfhK"
+        "b1MFOiJRjpQNz0OuVD/7CvyCCwwYRHc/YODqsTjd1PvpYqv+dUe+WixOXmLgxsk4WM3A9wP/"
+        "Ma+fD/zTgJEkW5Uw8ApH/xN6xvstL6NxKm7s7dlAc+PPB4DbDbgF6G3ArV54gKW9n2uqQEek"
+        "aPqMW1c6KgDT37yvsMDzgr08r9/0NA5Wd1DVAp/uLzn8dehHXXvAOyasDFbBq5K6aHhpKqnw"
+        "g5Bur6XeyLoryxjfr4jzT7N+dzUvnAf6fL4dEGXMGocS23AG28LslsbiSL2jmGChW5DfSXUB"
+        "7rCkwgWj6OeEJXWcweZdJ6iIa/+5KBrRvwY+QXPCl4pU/ucJpcYZM2fcOfC/6eh8sIguaupG"
+        "s6ZbYWAX4+bQhNRSnrammk1/jY6mwpR5uIgf/fdU3mdTedmcnKVf7TywiIroF6jIy/P/f6CX"
+        "DTgLaGTo+Bn4yasFvGDAH4C6LiqbxdZXhx7yalsLkF/TRRVzsNyrij1hwCXIreKiqrliUbTp"
+        "SaCPR9PwV3BRzXz8qDwC/4MGXIessi6qB3xv/HGwR71Vm5FR2kWNgJnGH18Belxs86D5Vydy"
+        "Tnx5uYVu9Wuvjd4Yr8wCkpcnA5niffkPsCZCVdipTQBNgPxLlSqXBJk6/bVaPZIten1FOXhX"
+        "qQbZCVOBL0QH78fm5H4D2CxPX5mU6muwK5Rmy0+i6vVSa3GLekD0/CV08T1YrFQ/8BSYBoyO"
+        "zaMneBv4im3AyMan1NUyNj2qZtR9eg3qKg9orLX9HWVV+ApL57uKNMMzK08BWa3klW7XL+i3"
+        "d/7m0+JyT351ReAyyghghgHbm7DUtdtdGKc335+B02jXjvE2NfAPh1/EEaXQ9KV/aBLOM7SJ"
+        "eefAAKQbvj6clR4zURv7Qv9tfYtMcemyy+/0mm25tHIuocVOq+sTkodb0kr6QHx8+8ToO1RW"
+        "/YTo6CHSRh9gk9H+Zx5W+3i+wcIv87Hbz3YxTKRusLy8Rh3Yj5s2JESju3OIz3xh7yHXEkeK"
+        "vc5uJHgH8YuKpgifVdvtbzRw1hYoJwtjcChGeI4JA49KD1pzOid51fNay6m3z/oW++vxh/2J"
+        "ftu5jH0kqwh2oUlBHz1oCGGaDDeMG/eEbXXr4DZYjsa3gQ2Kt1gAzLVAmOwpU0qZMPpu+9Ji"
+        "vmVHDP2e6Q5q+RYDjxL3U/0mTcrY0+wndi5aUsk7sk28BiSwu+6mdGAoiQ9n+BWi2AcUz97C"
+        "689YL3jkSrmp1jtbUnPiop4rHbisP2gpOAbCkJoM2DTThKHijXPgcGCKC/+Wg92lHFgyBlkt"
+        "lAPHiK/ehp3yxftuwbJHcKyiC/9tOdw0vIwmXTQTwd3RzSJhUmQB6LyE540KCQOGHnU+3CZr"
+        "NE34KbBBc80xSgtUlxv37rFibyzKwPEKg2ZNH64dvJWBkwkSjvOSyI/uCLEj6HZ2wEaWunoD"
+        "SWw07N0XL/6BWULFFK9TYTow0YC0umfTBtSundY5aN59JGEj4oYK2Sue5060RzxAs/RDkuxY"
+        "hVjEjGwFP4noOOVWWU8xVkeRBPdeFJd9ZHanQF344c+uT8w68tU11la81/o6L4qKdohGLyaK"
+        "v11nJWE0m5oSj56O3G+VqpCFs5WFvYfzz540UlUHTZ/9fjtp6GPi0qlanConKppDC4M4DITU"
+        "h7bhjT+HaFGkNuwRvwuNzXfsJ7YiCP4J7FWKdp6uAm8GkkTU136H3sAuiUHQfqUZsi80pRaf"
+        "CdICBscbfkT40LJj9NPHZjkntmepJSrc/WO8//h/egYH4tBPMrjmpHPgAFteOukGafA6zsR2"
+        "1xgaEYszDd0/fgI85KIOYMXNEdA2I/dSF97lFdQ3Aq1cRBw92rvlv2nAA8B1LqpNj1vehbfB"
+        "Ezs8CFhnwPfhMSTQLP02cPf8kD6L4/3xix7V0nWFDdbYr+cFq76h3w4so08tVo+IfL0mSeHO"
+        "p+Vel/47QiuMbP4JPizqN9tljvBKapdMLHfpflIa9DjV3iMN79Vuu5aHrY4Osapdg7SIKU1L"
+        "NaWdJrGaDLXWv34U5WIbWwOYHgS2KpVoBxHfSlezCwfDbRlkh4QaZTCn6JohEmQDDh88uPwg"
+        "/TzLW1KHBKvf+PbaxPzS6gR/wuoXywXm6Jd4fOnJ7Li5lhHrku3Wx5nNzvIyu+i32BWsfI3R"
+        "o57N7vjH8pDfSJzm79oM5HUJtdW++jvAQTongHvsITskcbnTRcCkffi04ogtjKxf6spvISNY"
+        "epcnTlfV2yi/ps6ENg6GdB3z7deDq70uG73JLO6n7gaOaG2xmcwKSk0mRYCGMvKEfuZLSDs8"
+        "s2ILzdtYMQ7e47eiji0X9hVTD2Wd2jgoosg8ftEY2Ivs/IE8+kUe3t+Tmk1q7Up23Ra5xp+I"
+        "p/czm9X6RKMxvAdnfMzx30Fd5uezyWVIBdu4DKy6K8SVFddf5REdsaKH/UdVZxlffXiQI+c1"
+        "/4RNEumTnNi+Si9LxsdCx+ZX7L518JikVOtp/g6ed6hRpWjx/nYU4XOJdtVKhjZR6Rz4J2m5"
+        "iC6cWk8yA2l5hS7q5qrN14i9+GlHnLr84wyO4B/jOJIrDGHDbv78LjbvDL1LLDHt3SavWm8s"
+        "2JAeK9z1W36Q6AzLRIG4bFI6eyY+kSDP2gv5D8dfruTyjXX3OTHoHfzTWhvPXKVGoA/itZ8d"
+        "yEz+6VVL5Xk/Xy+bE+LSfYlVo5Xb8ohHhylVmU3noUr9LUWCnh8BNto2XBL+bx4xQitiI0UF"
+        "cLgwKVs3u7voUdfsr+P3JjvRtaQcJBpW/UWeiaCOcNaWS736/ILIcK93Zy8UDDAKvn9Rsv/w"
+        "ZCtSuTLpcSlxeUgTi114NFa1DVIVhuel8B46Gd9qh9yr7F9vmn80XN8UlpBVkhTtx9Xl83b0"
+        "WnOo1hR0CY7PKF33NJCbi5L98PxlWKC+wpaq3+EMyVFv3YfXy/jRQz2A3ep6jBuC3h2ZT9+O"
+        "ZeoGfDASXR/hxPBemKX+gWHjcP3TOMb6/BTVF4+ORecHkRqklmMi9XnV27jjWponbfOxMCLu"
+        "REh/PBN0ANk501OQimdo6U9TV+9O+6LU7ScThwapsNTUiua7T/BokKraKUyh96z/suUuYJNF"
+        "UrqrZlZ7Y0da4rqhjS6m4R9Fk/9DF8awM8VBdYUTOLE8fQFSmB+34XfAeNdWVuwssqv6cdZy"
+        "2ZIoF8UeOMso97aVG/6Whls407sNrCCiqvk4HaJCTiO/isUGuNFvLTPPNGcn/4qna6IDE4Ml"
+        "Oj8rhilLnDyv2hHn07k/tjP0Fvgw+ynL5QK1BNaiiVnuTjEVC+0ORLVPx0vmJCwdEOZCpt01"
+        "Nczz+ZZzFMcCDblUQ+gHtF1XdaAqky8p+zYMJ1jPvZjm1vogs6k9lxod5c+q6e0381m3oxr9"
+        "M2VM7JY5kGCdAYlfZBrwPuJaLqy7W9zSul/flmyIacjtKH+E22/63qltApTzt5990p845wYL"
+        "vWx9nFGCHqffklZwYv5gQmVPAV+WUMU/Jr2thjiCD/GmXWwn8JKkxAyTmwaLgY5kg+u1iB4Z"
+        "2VyVhicYsI7XMM8MxjC1cupgHeMJ02xhr+6IESRRkFj3qsCnJQxsIBDLhsnQbeAE3/LErT8v"
+        "oYpNoFnAjfRjFrGc7bv6plesF5xoCZsdvonLSZrXNSCHXia//4SvXwnlWYOHIpW99pcc4iib"
+        "Vu6S7HiMGGaou8qa+cWo66zBqeAkcAfeDiQYsJF4BxxYUUbagRVkljiwIcGyLrwVnCTqwCni"
+        "27VhU1rePR3YgRSKfcXtV2CXYsbV5gsebeO8b87Jhf1LBubKj3G14ybnhZZ/31dLww7eewsF"
+        "NzgBVmZHMeeH/01H5+/X1977gveeCwONJnlcuueB+61PN0DDYd57/xtoTrNz4X5j1v22/f4C"
+        "DDxqO/OEP3GBnR070BauQy1BGaeWH7HkgHASAGaEqaBBJDO1EJff0ZKW5P+x5PpqT+t18+ZN"
+        "5nJd1r4vVOq8+34PGd/vBJaz+06zL7ahSuVKPKKcZjFcYAcbNJS/DgBOSlTeOwLL0kPOiVCq"
+        "S4ZAzslFynKSCdIEqqe0QePgsxqqa2bG+w+Prni7BQOK5knsvVbl5v2P4U4Z653nC6U+F/5u"
+        "T2XCwNT4nBy5ApCz6zgubpGdX1fIQh9/AljgFX75fQOVOnjj2f9UsOQrr0hgqLoeXPkllFh3"
+        "BUu/X6PtNBJV8gHEF/sWKSS0bbRO0WXHqiYCmRu25wI7ZC9rd9pSaqwIs5of7slM2zY8MEN7"
+        "bNbXNF1CYSwYRtvk+uIOnAgk13UuvoN2/W7OvWzNHeE0FbqGdP0QB74NxFd3OpqdxxUaHAgr"
+        "VNSAe0q48Oh+W0NnmHNtVxrFS2z4lmQTLjBeoX6mZayznnkocCzchWEHJUbMed/uQG4Lg/PT"
+        "L2sD0FP/u4nTfyBMi9P0zv+r4wSeup/DAnPpHGGyrP6y1a8LHMji9Zsu5ETNVS7MClMlsx2Y"
+        "Tpp2R/ppwaUYqoZhiQ1fwxK1FMNteAMyymSgsw0rZGAwMsrbsMxyxCOqjAPfoE5ed+FNBG90"
+        "YUQeciNcqLZgszJgv9l9TWiJBufCQCN2b0r+6gwxdzCc6IWp4R4oYbsGjDahNrQ4cMZaDgV2"
+        "4QPwVzdgiQT8y4C0Yx8LNWCdXPQwoPoeS0x4A7DVgEExlsVGQ7YCm7BsmgdKlL8BmweotUep"
+        "rt+fyD7xveWCD5ps8cGPZBd8jT39USfBlZyVqpsFjA1VoeNoC64t3rRdvMeH7JY8mbV2Pt1g"
+        "lsaC6XP/Xav/NIOCOOKmtqPqV6jvGPbZtFuvgQPL0W/1K8P2xHGgfsVg0tzbCmxH7CVYrQee"
+        "t20T6xRxF+zgoBLO5iRBoT6xog9DVMgoYkx1Lb51YtkJWPtB8FTrBadY23y3H+L8cT/cEpjC"
+        "fpr4uxLWDCzjQpGJW1hwpW8pB8MfKachW+I6p3Ntbgeqd7UAZsNHdek9G47QifQWvD5NTxLd"
+        "Mkf9HStv9nu4pftUiWsHOU/VxPvM/yNYtPYLrv28pDxj7c+rpqrNd9b+EY5+LX3UXvtDpY1h"
+        "XEuZ135HW09Lk7WvbX31eDnXd3x8ztrX5TVo30cDXvs1nLVfmdd+G1WjYSV25WcG8dp/So3E"
+        "Us7h1Wt/S3Bb5JRfLsZGXvuTyp4EIX89a+37WTTRAUfO2v802Fn7OXbimEWrPGlDxMt2mLDO"
+        "Ky8Xv0iGvq8uZHFiTg8DMs0poWGCz7f6jJXNYRnEysykOyJc+1j5fNnuHXNZgoRymX9t5MDS"
+        "M3Rql255FamLe2qZ/W6q7X2MU22cfsMuX6RzS+2Wac7klzX6PS0ijAN3i6nZgSvEEenA2ZJR"
+        "7MCJtpk6wCjihdXJ/sSFD+il0PiQ9dl9HO1RTOJ8VnIsDTvm/gFk36hU8bH02RuLXUWKOYfs"
+        "kpzPd+wgn36LFw+RFMvcAW451TIchRk34RY7iq+xThpKsSPKQu6cK5niWU4Kb+l/zPBTR52V"
+        "ahkZKYb8S/eJS3cPuDo4UQ9wwNfnwAphVDcL7EiNcNXxiit0BOFsLj+/ZgPxjzyWQ0r/aIeR"
+        "PKxdB3fNi/Mnb32vfiCOvSf5/RzoM8ykvr+mpbfQMCCNPcPsHN4/IZxg5GmOlwBBbZn5SIx+"
+        "D5HMz2s/aIeU6qpODGN4kAqiW/1suuea7CdWnrA2LxU233Ym6ZKxwT0XJuUkLbw/EDO4OxGr"
+        "1WEtpUiiu75YCnCjwJuIKRfjqMqRAt8HH5FEUtZ2gTuk6HENyzVSjfgz23O36OLWvazy2m8A"
+        "/6Z/vrDErWtpEBQf+aIze4KTuBLEFUCS/u5fWWf6fKkfrCerET4JxWOqmIf0iHTk2lXa1gDU"
+        "/Gr7NV5mQxNesmErGd6WzltyYs8x96WnWBuZRbSfmdWfA4hukSAsoblA15ZupjsJ1i2qSF30"
+        "H3NpryWlr1JQNlKV2sf1FNKQHaRIRAgL8cMfXBJ8TgaNSB0W6OvWlXDKWcBVJO6jY6Skf5P6"
+        "ffNjBPt0lQDiF2idvo1YvPWQKI802AO/xkTMGCQD3gF4dxNuw8b3JKb/UmBqcm6ZvFOfAQ0V"
+        "xwiuxkEVSz/BOscZZGKhWkQ/T/OTczrwBBbjdP4/71wyr7hQnNSQwq2c4a/T81gjuIxrw3jF"
+        "/AChb+165N/K6ub6KpwR05CUPK5qNF+v3wlWcZQ2xE1rqYrpdmbeYuA9VvysAg00aGcrx7mB"
+        "VSuBjbrek9CNsiRvcvrmUgEb3UfhpG23ykJXufhGG64D1muXnsWZjlU8rY3SSqK2n+dx1D3d"
+        "ACSXUVUyrZCQlZr3TNAnCdB8zOB6Iw1yRSEltXCssmybUQE3+MWP2oetcaBOcbaP7he72X5R"
+        "gUvGa6Z4BxDPG8QQx84vtdnCk4G/sRJ+Otzepafzd7R0p/IpyGmXg1SbXZNSkOwezaKqcGZX"
+        "putVH+Mt2MVxvg1cGOaVzf53MJCoryHjzzgHdrVi6xaSzv6Ze9NLQJpbgCXSb1ZaKr1XH4Xl"
+        "7rFxlT1brJvVVSPJXnliZyIWvcsNrSVWne3WcWmRbRaLLbkTWOaKaeNp+tX2MA2j9upWkmyM"
+        "en0x3gJ9MQFXr8+qsIm4n4NL+UtNc2A1770XPSzw+r/wrf6C9Kq31HCBQsRqM9JLe6ycniLG"
+        "BUocFyiAXLA8coHiyQVKKxcsvFygLHOBos0FSzoXKPisFiDPKAddsFh0gVLSBQpNFyxDXaBI"
+        "NQuwRlkqrjrxykW69rnYrm+pd3pXCxxY4PUvurXPvpNhw4bVcuHbcFIr2bobh1zEOQnvdwGD"
+        "jQTHxdhNKpW9Rhvmk7r2PPKtlfEu10esnG0d4lo8QY5RnoUEcYrcq7f8LoHqSC+iPzs1MqqC"
+        "NJKSgWYJ2MjzVoT9q1EreKskkgKXYhxQdjfs0phCoaQUTlEegT8hxIWVMr1FFoooYKjMq9vS"
+        "M/eOtXaR2laR10Sp5Ru0DsjduCHbqvh7E5BE/988Q5tgbxk1SnaTL4GHneYqdCGt71n5tVyv"
+        "6QeksYEi8bGPOXdnjIZ3UBcvRIbxjsVwjlUcdLGGK8S6EzII2vTLxQm2r0rAFuAsTeLq2od5"
+        "tO5mreJVHn0w++ikGqrh0rS5gTd+Tby19AsNgx7fkp40p40NP5Nvm/eghn7kbVxFw5/VWCCO"
+        "0/A3OCxGdoZy4uUjkuFLMFsYShnxHTSRM9yZktkb4MLTfB58E/skTudiPfxOUzhBHV1yxO4o"
+        "BbnrV/udx1jwsechvwl6YlvGqbnXFK3lQlPD0bvTz6581LK83J1hFUAW09k1uZxAx6c6z2a4"
+        "HZgfQYs+WzbNK20z3/tiYR9ga5LFK1UqI3KoUUyEY8NM6FxcqXPn5kZT7+oA5GhgHnV0c7Yk"
+        "G6q29Bhno/gxPpWb7skwwlf4FcbEpCctDnBJdJM3wO3C4LVzktK3/NOGD+v8yKkacjp99qqN"
+        "eVzppYnUej9UX6nLj+ss3UTLMtBLIHsLxcoQks3wCthnOe8/D6xhW2ZDs+2mZPPoDbujI5co"
+        "dcUJOI/hX70+lziAPOQj+iEn+axXaDv3VMa2vlyQuEnRYi4ktZ52MDN2mi0Av6i/bJ7eunty"
+        "jOZyDum5jRd1IvIfC1JB/WjTDZE6DLMtmw7HX9Fi3yOS9iHxEnxmSNcfe+EsiSkyjxPrbrt6"
+        "b3uoW1XpCK/TxnCbH1nVtSUHCSvYpKs9DIOtomRfWgyr9ZcHs5MX3RO4Y/hMdJZRvuARbzWD"
+        "1UD8Iqv0gZLiy7aV7F6vBlQAtqd7/FZYkFXkKsnrTvlzwiK6YJl/yI70E1Nq3KaDQKps1vJ0"
+        "fw3nckzFqlOIF9hGJ4IU41CbkbJHS2BB8HaBc+x8uncErtH8Qk70Hil+Zl0lbKTAD+QEB9om"
+        "dgq8FnJzsTG6ZW4LR1cmIVPDSrrmfNLbVqRKyee2piXObDhA0g/Ltmyp3VUfcRCAqp8PPwf/"
+        "dc1m56VEpmC7FKhfyheFR1mTe4s2QYf0iTqdm7T08b9uiG+M18tRaHhT1NnUhVfaUJdGSG1i"
+        "wdScn6JhxX4SPNFcwjoyQjRkx2DxNJ3lEWOd+RKjz9SzO9rkFJD5fWBg6Hk+nylEt/EeXlEA"
+        "/jyleV2jBeB32mJuOk6r/f6wkWW4T9M7UKT3CKdIXBT2u8JSH5/P9PSNtMwq54c/R93s7zbk"
+        "fPBqEeP22FDTkD8lfNPzvmGbLVuEVJZZHAfkanuWXdVG+zE0TF37yF93FnTwViz5VTAyQzZN"
+        "C9Y8riubaliKWOqiUBsGzQJ2lXPufR1IbOA0dR+Q1dZpeT9t2yl1HKiPczLgUwdtYaCDHLfV"
+        "iQaingU5hGsysCTIfciyx7WD2H5m0jnS6htvNB2ICrz8fWZ9/n2vFTcgnMBaYZv0lc2DlEO2"
+        "mqF5kkthMpHPvAVP/3g4nBkQDf0W+md40Umsv+XE6fp0wrE7Vaedmb6qDFmeT22VKnIewYzD"
+        "pOzvTt5Ba7o4waSIanlAi5B9QMNICf86xEdnzQZaRUrgWDQH4X6mD1j8Q2DRmBaCqrEp5r71"
+        "aXHTG1jw8xdlFZ2soeHa7Ix1ByS+WtdH2kA85EMd1l9NIqmJI+cCJQVqc94xoKohtMXYtZV+"
+        "H1hEhaLrZh3KOjTT2q2D3rF4qK7Oz+e5Hll6VGvjqjwJB0ODVPBbtJ2HS5b3Lt5ng/eKyXey"
+        "nbzzmggN8+zzFh+VXLx5tiPwUbESFLi4QFMVMp2OUvloiOedx5DAsOAPrId829rmO35zOOvw"
+        "rOuKxrKQ1BcYEP5ebOb+j+pY8CV9SG/SFRrG4WwU6/sxITpamL08t/rtXNo0SeEeRxxDoM4q"
+        "uUFyMPpaaVeqMfhMhnNhgYt1U2PtpqSj7tTRXQLzcHYZbT/YFSxwqnbyJl6mH3JkpfFHsvZP"
+        "rGW9wkjvC144DDyq89H+zNj3yjytl/cVp3QS9ksCQ/nwxeioszQHGPYk6bI7cfr5mhd8ZQVz"
+        "V0gTuNMu3zVXYAKgTXBjvXCc92JtIfzSmhvldVP36Y4irI64sAh2LDtLc0Aespku7h/7qWVd"
+        "rDVxf9aRcRVH2sZGR+X91TBQ7LzyHd+qOvOM+P01HL/UOsI5jITsZGxB9mbrCGeloogHG+da"
+        "ROkiQAZs74WRvwHUj4E19E8755mF7jwXFlFhqPRLG1Oyj31vaYAVoj21/cdz7n8Ue3TlfI0j"
+        "kjUU8gZ0JYw4qemgQt4b9SGbA74Hlnd07eUNeZ/OXP3u363NOfzFHdLytivsKyp1f4900Vja"
+        "U+rOni0dhsVLFloYsYD+dFv1U3oKvMVm/2XrsojXs0c/9BvrITOs6LUec47706NHNygaTaFo"
+        "OVrjAmCM10paAD48cODAk8Cb9M/AqoVsudBwhyfri4vIdDfgJBIX3nQf4/Isr2W3zYLTgWXo"
+        "/W1IF8Fm9pn0O8Mc5gk1LZiltbWbLbhHAvrC11twFJA/Z8rhzFMaVo+XkX9ht4aq4ewz6T/1"
+        "IlkiqWg8C0U7bTPfnSJ7DwO+EPillG9qBiQzTw9N1pr9Tp1T29lKrB6mxb5xVqmny0gk0NtD"
+        "U7vtK9VVziHsw/jQldd17Sh99XZe703dJ7nBOLB9KLDfuVauhnut8A2zDtNQGNcW0QXSa04d"
+        "Xf6Aw+4UfSs4NFjc4j0ulYibhZwfTny4UXA662qJHHaZyDX3NgDhteiz14wANkiyZ6tbCXa/"
+        "SsLHnyJlbShS8a97JJW4A/DiD/gI378s2eHlgU+OoCUOTwUqioVoJ47Sz11sOpRT2/EdCxK6"
+        "ju8ICe592Y7tuV9O3b3RDiptxtUD5XiY5kUjWih6EviJXfWh26V8YtAyXUVxELCOo6bqpyG9"
+        "vqqThix9ZGd/LhXwg1Nigy//nFqwCzs1YAexv4XTOhfbNMpocXFN9+y8Lp7s/rJHkds7G0et"
+        "lEJq9X2em58Lokl1sJQqsZuLNihVMU6ri3/PR1xFPlPZivWk5r8uGtHC0F779I2OxGmFO+vh"
+        "GS1huo1IyJYg7ViAx3SDLrbQyrKtPq2rpwy3hrhqLpJoHmzjiG2m//DY1nO4+YO03Nl4aDGb"
+        "8AycKrZcB4IwzaCVnIut9oN1p66NQi7FkniquHmYE+GJTL90ljeH8xtDoHxq4MR8KVmgiSdo"
+        "XmcDpq7tHrDDn+TI+GnngV/rjKhYmGeeRKaYx7Q2TbSteEx1j9F6ddysVfcB3zhJQ+W2Agsd"
+        "jbDUatpXnFTj4j5gq1NgP3gmsMdN/mXWvtVKzqpL8r6hmFx+DrxYqfaw2Qt8jjGlTarnEKqd"
+        "njOpWgKpnZwsTnWPLt5iU2+7HP954SPeooeDbXu9ZtBbke1UWWi/OhV5A5y/3Uss+AplQuxy"
+        "d+Kgsrcl45iRbcZavGme6SMVAy/wIXtK5S+HSKrYayStlyT1L36x+62eLHBgV8/16X/xRNQ4"
+        "bw5yEfzV8E9P7X0LZg+r7VlWSGnjgXzgibNLdkrTG7VNX+gjTmx6x8qbsmiEfc6tpuFmXp74"
+        "38wttXY2tkYYuH8uUlYb5t1mn5rLqmWMuejCTuLUrWWdjeFuM+tcqRe9lSAKPFUBOEGObXQM"
+        "lvtdE3N73+J40lTDPB/nCeNbpa/vWSTw/Rq6ZXdmVEN2jeWwRsA5NjhcjSbTIS1zn312G3Y8"
+        "k6Rl8P3Em6vyAZo5vB0EZbEyUW951p7bij7jxUcP+Ex6YJinYOywArDocxXRzxHHePZ9gH50"
+        "Y0d/h0LBP+qZUUQBTAG5TO/0etULBS8q+j+6XV3T"
+    )),
     # GeistMono-Regular 35px
     "r35": (21, 47, 36, (
         "eNrtXQd4FUXX3vSQhITee5MqqCAiqIBSVKQoCooiRZogiCCKoESKolQrKFWKIoKCIkVQeg8t"
@@ -1609,30 +1947,7 @@ def _wrap_cols(text, cols, max_lines):
     return [_fit_cols(line, cols) for line in lines]
 
 
-def render_repo_card(info, now_s, logo=None):
-    """Render the 1200x630 OpenGraph PNG for a repo: a terminal window.
-
-    info keys (all optional except owner/repo): owner, repo, description,
-    host, stars, mirrors, issues, pulls, commits, branches, contributors,
-    sizeBytes, updatedAt, followers, accent ('#rrggbb', the instance theme's
-    accent) and ``path`` - the repository's public address on this site
-    ("/name" on an instance with short addresses, else "/owner/name"), which
-    the title bar, the command and the clone URL use. ``logo`` is a
-    card_logo() result drawn in place of the ForkMesh mark; without a theme
-    accent, the logo's own colour is the accent.
-    """
-    owner = str(info.get("owner") or "")
-    repo = str(info.get("repo") or "")
-    path = terminal_text(
-        str(info.get("path") or "").strip("/") or "%s/%s" % (owner, repo))
-    host = terminal_text(str(info.get("host") or "forkmesh.com"))
-    if logo:
-        mark = logo
-    else:
-        mark = (_LOGO_W, _LOGO_H, _logo_rgba())
-    accent = _legible(parse_color(info.get("accent"))
-                      or logo_accent(mark) or _TERM_DEFAULT_ACCENT)
-
+def _terminal_window(accent, title):
     top_wash = _mix(_TERM_BACKDROP, accent, 0.16)
     bottom_wash = _mix(_TERM_BACKDROP, accent, 0.05)
 
@@ -1657,9 +1972,39 @@ def render_repo_card(info, now_s, logo=None):
               _TERM_BAR)
 
     tw, th, _, _ = _mono("r20")
-    title = _fit_cols("%s \u2014 %s" % (host, path), (ww - 2 * 120) // tw)
+    title = _fit_cols(title, (ww - 2 * 120) // tw)
     _mono_text(canvas, wx + (ww - len(title) * tw) // 2,
                wy + (bar_h - th) // 2, title, "r20", _TERM_TITLE, _TERM_BAR)
+    return canvas, wx, wy, ww, wh
+
+
+def render_repo_card(info, now_s, logo=None):
+    """Render the 1200x630 OpenGraph PNG for a repo: a terminal window.
+
+    info keys (all optional except owner/repo): owner, repo, description,
+    host, stars, mirrors, issues, pulls, commits, branches, contributors,
+    sizeBytes, updatedAt, followers, accent ('#rrggbb', the instance theme's
+    accent) and ``path`` - the repository's public address on this site
+    ("/name" on an instance with short addresses, else "/owner/name"), which
+    the title bar, the command and the clone URL use. ``logo`` is a
+    card_logo() result drawn in place of the ForkMesh mark; without a theme
+    accent, the logo's own colour is the accent.
+    """
+    owner = str(info.get("owner") or "")
+    repo = str(info.get("repo") or "")
+    path = terminal_text(
+        str(info.get("path") or "").strip("/") or "%s/%s" % (owner, repo))
+    host = terminal_text(str(info.get("host") or "forkmesh.com"))
+    if logo:
+        mark = logo
+    else:
+        mark = (_LOGO_W, _LOGO_H, _logo_rgba())
+    accent = _legible(parse_color(info.get("accent"))
+                      or logo_accent(mark) or _TERM_DEFAULT_ACCENT)
+
+    canvas, wx, wy, ww, wh = _terminal_window(accent, "%s \u2014 %s" % (
+        host, path))
+    bar_h = TERM_BAR_H
 
     cw, ch, _, _ = _mono(_TERM_FACE)
     line_h = 52
@@ -1845,4 +2190,361 @@ def render_hackathon_card(info):
     right = "FORKMESH HACKATHON"
     canvas.text(CARD_W - pad - text_width(right, 2), footer_y + 4,
                 right, 2, _MUTED)
+    return canvas.png()
+
+
+PULL_AVATAR = 48
+PULL_REVIEW_AVATAR = 30
+PULL_PEOPLE_SHOWN = 10
+_PULL_GREEN = (63, 185, 80)
+_PULL_RED = (248, 81, 73)
+_PULL_ORANGE = (227, 160, 8)
+_PULL_PURPLE = (163, 113, 247)
+_PULL_GRAY = (139, 148, 158)
+_PULL_TILE = (17, 22, 20)
+_PULL_TRACK = (38, 44, 41)
+_PULL_STATES = {
+    "open": ("OPEN", _PULL_GREEN),
+    "draft": ("DRAFT", _PULL_GRAY),
+    "merged": ("MERGED", _PULL_PURPLE),
+    "closed": ("CLOSED", _PULL_RED),
+}
+_PULL_TONES = {"green": _PULL_GREEN, "orange": _PULL_ORANGE, "red": _PULL_RED}
+_PULL_VERDICTS = {
+    "approved": ("approved", _PULL_GREEN),
+    "changes_requested": ("requested changes", _PULL_RED),
+    "commented": ("reviewed", _TERM_TITLE),
+    "ai": ("AI review", None),
+}
+_PULL_INITIALS = (
+    (88, 120, 196), (150, 96, 182), (196, 104, 92), (70, 150, 120),
+    (180, 140, 60), (90, 140, 170), (170, 90, 130), (110, 130, 80),
+)
+_mask_memo = {}
+
+
+def _get_pixel(canvas, x, y):
+    off = (y * canvas.w + x) * 3
+    return canvas.buf[off], canvas.buf[off + 1], canvas.buf[off + 2]
+
+
+def _blend_pixel(canvas, x, y, color, alpha):
+    if alpha <= 0 or not (0 <= x < canvas.w and 0 <= y < canvas.h):
+        return
+    off = (y * canvas.w + x) * 3
+    if alpha >= 1:
+        canvas.buf[off:off + 3] = bytes(color)
+        return
+    for k in range(3):
+        canvas.buf[off + k] = int(canvas.buf[off + k] * (1 - alpha)
+                                  + color[k] * alpha + 0.5)
+
+
+def _disc_mask(diameter):
+    key = ("disc", diameter)
+    mask = _mask_memo.get(key)
+    if mask is None:
+        r = diameter / 2.0
+        mask = _mask_memo[key] = [
+            _coverage(px, py, r, r, r)
+            for py in range(diameter) for px in range(diameter)]
+    return mask
+
+
+def _corner_mask(radius):
+    key = ("corner", radius)
+    mask = _mask_memo.get(key)
+    if mask is None:
+        mask = _mask_memo[key] = [
+            _coverage(px, py, radius, radius, radius)
+            for py in range(radius) for px in range(radius)]
+    return mask
+
+
+def _round_rect(canvas, x, y, w, h, radius, color):
+    radius = max(0, min(radius, w // 2, h // 2))
+    canvas.fill_rect(x, y + radius, w, h - 2 * radius, color)
+    canvas.fill_rect(x + radius, y, w - 2 * radius, radius, color)
+    canvas.fill_rect(x + radius, y + h - radius, w - 2 * radius, radius, color)
+    mask = _corner_mask(radius)
+    for py in range(radius):
+        for px in range(radius):
+            cover = mask[py * radius + px]
+            for cx, cy in ((x + px, y + py),
+                           (x + w - 1 - px, y + py),
+                           (x + px, y + h - 1 - py),
+                           (x + w - 1 - px, y + h - 1 - py)):
+                _blend_pixel(canvas, cx, cy, color, cover)
+
+
+def _initial_color(name):
+    return _PULL_INITIALS[zlib.crc32(str(name or "").lower().encode(
+        "utf-8")) % len(_PULL_INITIALS)]
+
+
+def _avatar(canvas, x, y, diameter, rgba, name, ring=0):
+    if ring:
+        outer = diameter + 2 * ring
+        mask = _disc_mask(outer)
+        for py in range(outer):
+            for px in range(outer):
+                _blend_pixel(canvas, x - ring + px, y - ring + py, _TERM_BODY,
+                             mask[py * outer + px])
+    mask = _disc_mask(diameter)
+    if rgba and len(rgba) == diameter * diameter * 4:
+        for py in range(diameter):
+            for px in range(diameter):
+                i = (py * diameter + px) * 4
+                _blend_pixel(canvas, x + px, y + py, rgba[i:i + 3],
+                             mask[py * diameter + px] * rgba[i + 3] / 255.0)
+        return
+    color = _initial_color(name)
+    for py in range(diameter):
+        for px in range(diameter):
+            _blend_pixel(canvas, x + px, y + py, color,
+                         mask[py * diameter + px])
+    face = "b25" if diameter >= 40 else "r20"
+    cw, ch, _, _ = _mono(face)
+    letter = (terminal_text(str(name or "?").lstrip("@")).strip()[:1]
+              or "?").upper()
+    _mono_text(canvas, x + (diameter - cw) // 2, y + (diameter - ch) // 2,
+               letter, face, (255, 255, 255), color)
+
+
+def _plural(n, word):
+    return "%s %s%s" % (format_exact(n), word, "" if n == 1 else "s")
+
+
+def _diff_squares(canvas, x, y, adds, dels, size=14, gap=3):
+    total = adds + dels
+    green = int(round(5.0 * adds / total)) if total else 0
+    if adds and not green:
+        green = 1
+    if dels and green == 5:
+        green = 4
+    red = min(5 - green, int(round(5.0 * dels / total)) if total else 0)
+    if dels and not red:
+        red = 1
+    for index in range(5):
+        color = _PULL_GREEN if index < green else (
+            _PULL_RED if index < green + red else _PULL_TRACK)
+        canvas.fill_rect(x + index * (size + gap), y, size, size, color)
+    return x + 5 * (size + gap) - gap
+
+
+def _segments(canvas, x, y, parts, max_x, bg=_TERM_BODY):
+    for text, face, color in parts:
+        cw = _mono(face)[0]
+        room = (max_x - x) // cw
+        if room <= 0:
+            break
+        piece = _fit_cols(text, room)
+        x = _mono_text(canvas, x, y, piece, face, color, bg)
+        if piece != text:
+            break
+    return x
+
+
+def pull_review_label(review):
+    state = str((review or {}).get("state") or "")
+    approvals = _count(review or {}, "approvals")
+    blockers = _count(review or {}, "blockers")
+    if state == "approved":
+        return "approved by %s" % _plural(approvals, "reviewer"), _PULL_GREEN
+    if state == "changes_requested":
+        return "changes requested by %s" % format_exact(blockers), _PULL_RED
+    if state == "review_required":
+        return "review required", _PULL_GRAY
+    return "", _PULL_GRAY
+
+
+def _people_lookup(people):
+    found = {}
+    for person in people:
+        for field in ("key", "name"):
+            name = str(person.get(field) or "").lower()
+            if name and name not in found:
+                found[name] = person
+    return found
+
+
+def render_pull_card(info, now_s):
+    host = terminal_text(str(info.get("host") or "forkmesh.com"))
+    path = terminal_text(str(info.get("path") or "").strip("/"))
+    number = _count(info, "number")
+    accent = _legible(parse_color(info.get("accent")) or _TERM_DEFAULT_ACCENT)
+    canvas, wx, wy, ww, wh = _terminal_window(
+        accent, "%s — %s/pull/%d" % (host, path, number))
+
+    left = wx + 40
+    right = wx + ww - 40
+    small_w, small_h, _, _ = _mono("r20")
+    mid_w, mid_h, _, _ = _mono("r25")
+    big_w, big_h, _, _ = _mono("b35")
+    people = [p for p in info.get("people") or () if isinstance(p, dict)]
+    lookup = _people_lookup(people)
+
+    y = wy + TERM_BAR_H + 26
+    state = str(info.get("state") or "open").lower()
+    label, color = _PULL_STATES.get(state, (terminal_text(state.upper())[:10],
+                                            _PULL_GRAY))
+    pill_w = len(label) * mid_w + 28
+    _round_rect(canvas, left, y, pill_w, 38, 10, color)
+    _mono_text(canvas, left + 14, y + 2, label, "b25", _TERM_BODY, color)
+    review_text, review_color = pull_review_label(info.get("review"))
+    review_x = right
+    if review_text:
+        review_text = _fit_cols(review_text, 34)
+        review_x = right - len(review_text) * mid_w
+        _disc(canvas, review_x - 16, y + 19, 6, review_color, _TERM_BODY)
+        _mono_text(canvas, review_x, y + 2, review_text, "b25", review_color,
+                   _TERM_BODY)
+        review_x -= 36
+    head_bits = []
+    commits = _count(info, "commits")
+    if commits:
+        head_bits.append(_plural(commits, "commit"))
+    opened = format_age(info.get("ts"), now_s)
+    if opened != "-":
+        head_bits.append("opened " + opened)
+    _segments(canvas, left + pill_w + 18, y + 2, [
+        ("#%d" % number, "b25", _TERM_TEXT),
+        ("".join("  ·  " + bit for bit in head_bits), "r25", _TERM_DIM),
+    ], review_x)
+
+    y += 38 + 16
+    title = terminal_text(" ".join(str(info.get("title") or "").split())) \
+        or "Pull request #%d" % number
+    for line in _wrap_cols(title, (right - left) // big_w, 2):
+        _mono_text(canvas, left, y, line, "b35", _TERM_TEXT, _TERM_BODY)
+        y += big_h + 2
+
+    y += 4
+    author = terminal_text(str(info.get("author") or "unknown"))
+    head = terminal_text(str(info.get("head") or ""))
+    base = terminal_text(str(info.get("base") or ""))
+    verb = {"merged": " merged ", "closed": " proposed merging "}.get(
+        state, " wants to merge ")
+    branch_cols = max(8, ((right - left) // mid_w - len(author) - 24) // 2)
+    parts = [(author, "b25", _TERM_TEXT)]
+    if head and base:
+        parts += [(verb, "r25", _TERM_DIM),
+                  (_fit_cols(head, branch_cols), "r25", _TERM_TEXT),
+                  (" into ", "r25", _TERM_DIM),
+                  (_fit_cols(base, branch_cols), "r25", _TERM_TEXT)]
+    else:
+        parts.append((" opened this pull request", "r25", _TERM_DIM))
+    _segments(canvas, left, y, parts, right)
+    y += mid_h + 14
+
+    files = _count(info, "files")
+    adds = _count(info, "additions")
+    dels = _count(info, "deletions")
+    comments = _count(info, "comments")
+    commenters = _count(info, "commenters")
+    stats = []
+    x = left
+    if files:
+        x = _mono_text(canvas, x, y, "+" + format_exact(adds), "b25",
+                       _PULL_GREEN, _TERM_BODY)
+        x = _mono_text(canvas, x + mid_w, y, "-" + format_exact(dels), "b25",
+                       _PULL_RED, _TERM_BODY)
+        x = _diff_squares(canvas, x + mid_w, y + (mid_h - 14) // 2, adds, dels)
+        stats.append(_plural(files, "file") + " changed")
+    if comments:
+        stats.append(_plural(comments, "comment") + (
+            " from %s" % _plural(commenters, "person").replace(
+                "persons", "people") if commenters else ""))
+    elif state in ("open", "draft"):
+        stats.append("no comments yet")
+    _segments(canvas, x + (mid_w if files else 0), y, [
+        ("  ·  ".join(stats), "r25", _TERM_TITLE)], right)
+    y += mid_h + 14
+
+    health = [m for m in info.get("health") or () if isinstance(m, dict)][:6]
+    if health:
+        gap = 12
+        tile_w = (right - left - gap * (len(health) - 1)) // len(health)
+        tile_h = 76
+        for index, metric in enumerate(health):
+            tx = left + index * (tile_w + gap)
+            _round_rect(canvas, tx, y, tile_w, tile_h, 10, _PULL_TILE)
+            score = max(0, min(100, _count(metric, "score")))
+            tone = str(metric.get("tone") or "")
+            shade = _PULL_TONES.get(tone, _PULL_GRAY)
+            if metric.get("key") == "security" and tone == "green":
+                shade = _PULL_GRAY
+            name = _fit_cols(terminal_text(str(metric.get("label") or "")),
+                             (tile_w - 24) // small_w)
+            _mono_text(canvas, tx + 12, y + 6, name, "r20", _TERM_DIM,
+                       _PULL_TILE)
+            sx = _mono_text(canvas, tx + 12, y + 30, str(score), "b25", shade,
+                            _PULL_TILE)
+            _mono_text(canvas, sx, y + 30 + mid_h - small_h - 2, "/100", "r20",
+                       _TERM_DIM, _PULL_TILE)
+            bar_w = tile_w - 24
+            canvas.fill_rect(tx + 12, y + tile_h - 12, bar_w, 4, _PULL_TRACK)
+            canvas.fill_rect(tx + 12, y + tile_h - 12,
+                             max(2, bar_w * score // 100), 4, shade)
+        y += tile_h + 14
+
+    people_y = wy + wh - 22 - PULL_AVATAR
+    reviews = [r for r in info.get("reviews") or () if isinstance(r, dict)]
+    row_h = max(mid_h, PULL_REVIEW_AVATAR) + 4
+    room = max(0, (people_y - 10 - y) // row_h)
+    if not reviews and room and state in ("open", "draft"):
+        _mono_text(canvas, left, y, "no reviews yet", "r25", _TERM_DIM,
+                   _TERM_BODY)
+    shown = reviews[:room]
+    if len(reviews) > room >= 3:
+        shown = reviews[:room - 1] + [
+            {"name": "", "state": "more",
+             "text": "and %s" % _plural(len(reviews) - room + 1,
+                                        "more review")}]
+    for review in shown:
+        name = terminal_text(str(review.get("name") or ""))
+        x = left
+        if review.get("state") != "more":
+            person = lookup.get(str(review.get("key") or "").lower()) \
+                or lookup.get(str(review.get("name") or "").lower()) or {}
+            avatar = (person.get("avatars") or {}).get(PULL_REVIEW_AVATAR)
+            _avatar(canvas, x, y + (mid_h - PULL_REVIEW_AVATAR) // 2,
+                    PULL_REVIEW_AVATAR, avatar, name)
+            x += PULL_REVIEW_AVATAR + 12
+            word, tint = _PULL_VERDICTS.get(
+                str(review.get("state") or ""), ("commented", _TERM_TITLE))
+            text = terminal_text(" ".join(str(review.get("text") or "").split()))
+            _segments(canvas, x, y, [
+                (name, "b25", _TERM_TEXT),
+                (" " + word, "b25", tint or accent),
+                ((": \"%s\"" % text) if text else "", "r25", _TERM_TITLE),
+            ], right)
+        else:
+            _mono_text(canvas, x, y, review.get("text"), "r25", _TERM_DIM,
+                       _TERM_BODY)
+        y += row_h
+
+    x = left + 3
+    step = PULL_AVATAR - 8
+    for person in people[:PULL_PEOPLE_SHOWN]:
+        _avatar(canvas, x, people_y, PULL_AVATAR,
+                (person.get("avatars") or {}).get(PULL_AVATAR),
+                person.get("name"), ring=3)
+        x += step
+    x += 8 + 8
+    extra = len(people) - PULL_PEOPLE_SHOWN
+    if extra > 0:
+        x = _mono_text(canvas, x, people_y + (PULL_AVATAR - mid_h) // 2,
+                       "+%d" % extra, "b25", _TERM_TEXT, _TERM_BODY) + mid_w
+    if people:
+        names = ", ".join(terminal_text(str(p.get("name") or ""))
+                          for p in people[:4])
+        label = "%s involved" % _plural(len(people), "person").replace(
+            "persons", "people")
+        _segments(canvas, x, people_y + (PULL_AVATAR - mid_h) // 2, [
+            (label, "b25", _TERM_TEXT), ("  " + names, "r25", _TERM_DIM)],
+            right)
+
+    _dim_rows(canvas, wx + 1, ww - 2,
+              range(wy + TERM_BAR_H + 2, wy + wh - 14, 2), _TERM_SCANLINE)
     return canvas.png()

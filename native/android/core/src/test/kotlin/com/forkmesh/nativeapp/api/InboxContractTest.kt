@@ -137,6 +137,32 @@ class InboxContractTest {
         assertEq(0, Fixture().inbox.submitNewPull("o", "r", "t", "b", "h", "p"))
     }
 
+    fun testRemotePullIsSignedForTheTargetAndPostedThereWithoutASession() {
+        val identity = TestIdentity()
+        val transport = FakeTransport { jsonResponse(mapOf("ok" to true, "number" to 12)) }
+        val inbox = InboxService(TestSettings(serverUrl = "wss://app.forkmesh.com/ws"), { identity }, transport) { 1_770_000_000_000L }
+        val fork = com.forkmesh.nativeapp.model.RemoteFork("https://other.example/bob/tool", "https://other.example", "other.example", "bob", "tool")
+        val head = com.forkmesh.nativeapp.model.RemoteFork.signedHead("app.forkmesh.com", "alice", "tool", "fix/a")
+        val number = inbox.openRemotePull(fork, "Fix", "main", head, "diff --git a b", description = "Why")
+        assertEq(12, number)
+        val request = transport.requests.single()
+        assertEq("https://other.example/api/repo/bob/tool/pulls", request.url)
+        assertEq(null, request.headerValue("Authorization"))
+        val body = request.bodyJson()
+        assertEq("bob", body["owner"])
+        assertEq("tool", body["repo"])
+        val pull = body.map("pull")
+        assertEq("app.forkmesh.com/alice/tool:fix/a", pull["head"])
+        val hash = sha256Hex("Fix\u0000main\u0000app.forkmesh.com/alice/tool:fix/a\u0000diff --git a b\u0000")
+        expect(TestIdentity.verify("forkmesh-pull-event-v2\nbob/tool\n${identity.publicKeyB64url}\n1770000000000\n$hash".toByteArray(), pull["sig"] as String, identity.publicKeyB64url))
+        transport.handler = { throw java.io.IOException("down") }
+        assertEq("remote_unreachable", assertFails<DartException> { inbox.openRemotePull(fork, "Fix", "main", head, "p") }.message)
+        transport.handler = { jsonResponse(mapOf("error" to "bad_signature"), 401) }
+        assertEq("bad_signature", assertFails<DartException> { inbox.openRemotePull(fork, "Fix", "main", head, "p") }.message)
+        val bad = fork.copy(origin = "http://other.example")
+        assertEq("invalid_remote_fork", assertFails<DartException> { inbox.openRemotePull(bad, "Fix", "main", head, "p") }.message)
+    }
+
     fun testPullCommentsAndReviewsUseThePullCommentTemplate() = with(Fixture()) {
         inbox.commentOnPull("o", "r", 7, "Looks good")
         inbox.reviewPull("o", "r", 7, "approve", "LGTM")

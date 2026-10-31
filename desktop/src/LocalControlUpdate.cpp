@@ -58,6 +58,21 @@ QString computerRestartSummary(int agentsRunning)
     return text;
 }
 
+QString computerRestartFailure(int exitCode, const QString &output)
+{
+    const QString detail = output.simplified();
+    if (detail.contains(QLatin1String("Interactive authentication required"), Qt::CaseInsensitive))
+        return QStringLiteral(
+            "Could not restart the computer: it lets only the account on its screen restart "
+            "it, and another user is on the screen or nobody is logged in. On the desktop, turn "
+            "on Settings, General, Let my phones restart this computer (it asks for an "
+            "administrator password once), then try again.");
+    if (detail.isEmpty())
+        return QStringLiteral("Could not request a computer restart (systemctl exited %1).")
+            .arg(exitCode);
+    return QStringLiteral("Could not request a computer restart: %1").arg(detail);
+}
+
 QString cleanLine(const QString &line)
 {
     static const QRegularExpression ansi(QStringLiteral("\x1B\\[[0-9;?]*[ -/]*[@-~]"));

@@ -127,7 +127,8 @@ test("the fork menu in the title row lists who forked the repo", async ({
   await expect(forkButton).toBeVisible();
   await expect(page.locator("[data-repo-about] [data-repo-action-fork]")).toHaveCount(0);
   // Real count, not a placeholder and not a mock number.
-  await expect(page.locator("[data-repo-about-actions] [data-repo-fork-count]")).toHaveText("2");
+  await expect(page.locator("[data-repo-title-row] [data-repo-fork-count]")).toHaveText("2");
+  await expect(page.locator("[data-repo-about-actions] [data-repo-fork-count]")).toHaveCount(0);
 
   const menu = page.locator("[data-repo-fork-menu]");
   await expect(menu).toBeHidden();

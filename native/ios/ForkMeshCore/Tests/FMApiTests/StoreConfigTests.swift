@@ -195,9 +195,14 @@ final class StoreConfigTests: XCTestCase {
         XCTAssertEqual(info["LSSupportsOpeningDocumentsInPlace"] as? Bool, true)
     }
 
-    func testTheIPhoneLayoutIsLockedToPortrait() throws {
+    func testTheIPhoneListsLandscapeForTheDuoInnerDisplay() throws {
         let info = try plist("Config/ForkMesh-Info.plist")
-        XCTAssertEqual(info["UISupportedInterfaceOrientations"] as? [String], ["UIInterfaceOrientationPortrait"])
+        XCTAssertEqual(
+            info["UISupportedInterfaceOrientations"] as? [String],
+            [
+                "UIInterfaceOrientationPortrait", "UIInterfaceOrientationLandscapeLeft",
+                "UIInterfaceOrientationLandscapeRight",
+            ])
         XCTAssertEqual((info["UISupportedInterfaceOrientations~ipad"] as? [String])?.count, 4)
     }
 

@@ -73,6 +73,11 @@ Denied writes are recorded in the sensitive-action audit log with a reason
   (`docs/app/repo-settings-access.md` in the source tree).
 - World building access, office chat channels, task boards and succession
   votes, which enumerate the insider roles in SQL.
+- Notes shared with the organization, organization package state
+  (`/api/plugins/<org>` and the package list), installing or requesting an
+  app for the organization, and slash commands from its app installs. These
+  are insider surfaces too, so a guest gets none of them. An auditor reads an
+  organization-shared note but never edits it, and cannot install apps.
 
 Roles are stored as plain text in `org_members.role`; a build that does not
 know a role treats it as no membership.

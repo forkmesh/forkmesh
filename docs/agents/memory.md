@@ -36,9 +36,15 @@ started in `main.cpp`). Test: `forkmesh-agent-resources-tests`
    keeping their own per-step limits.
 5. **Build caps** (`environmentDefaults()`, only when unset):
    `CMAKE_BUILD_PARALLEL_LEVEL`, `CARGO_BUILD_JOBS`,
-   `PYTEST_XDIST_AUTO_NUM_WORKERS` at about one job per 3 GB of the per-agent
-   throttle, and `GRADLE_OPTS` gains `-Dorg.gradle.workers.max=<jobs>` and
+   `PYTEST_XDIST_AUTO_NUM_WORKERS` at about one job per 1.5 GB of the
+   per-agent throttle (`kBuildJobBytes`), and `GRADLE_OPTS` gains `-Dorg.gradle.workers.max=<jobs>` and
    `-Dorg.gradle.daemon.idletimeout=600000`. `MAKEFLAGS` is left alone.
+   Until 2026-10-25 a job was budgeted 3 GB: on a 36-core, 62 GB desktop that
+   gave agent builds 9 jobs while the slice allowed 28 cores and nothing was
+   throttled. A Qt translation unit peaks near 1 GB (the 47 MB resource file,
+   the worst, took 1.3 GB), so 1.5 GB per job doubles agent build parallelism
+   (18 jobs there) and still leaves the throttle and freezer below as the
+   backstop.
 6. **Freeze instead of thrash** (`Governor`, every 5 s). Pressure is the
    larger of the machine's and the slice's memory PSI "full" avg10. At 25 %
    or more, the newest unit in the slice holding at least 256 MB is frozen

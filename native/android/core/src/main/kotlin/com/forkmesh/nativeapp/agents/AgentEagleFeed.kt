@@ -83,7 +83,7 @@ class AgentEagleFeed(
             if (fetch != null) this.fetch = fetch
             for (row in rows) {
                 this.rows[row.id] = row
-                if (row.isDesktop && row.localId != 0 && !row.outside) desktopRows[desktopKey(row.repoName, row.localId)] = row.id
+                if (row.isDesktop && row.localId != 0 && !row.outside && !row.elsewhere) desktopRows[desktopKey(row.repoName, row.localId)] = row.id
             }
             followed.addAll(live.map { it.id })
             this.feeds ?: feeds().also { made ->

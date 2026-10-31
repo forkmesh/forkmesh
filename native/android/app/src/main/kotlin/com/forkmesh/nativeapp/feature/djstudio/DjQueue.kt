@@ -3,8 +3,11 @@ package com.forkmesh.nativeapp.feature.djstudio
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +42,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -62,6 +72,7 @@ import com.forkmesh.nativeapp.ui.kit.FmActionMenu
 import com.forkmesh.nativeapp.ui.kit.FmActionMenuButton
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -132,11 +143,11 @@ internal fun DjQueueView(model: DjStudioModel, u: Float, vertical: Boolean, modi
             }
         } else if (vertical) {
             Column(inner.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy((6 * u).dp)) {
-                items.forEachIndexed { index, item -> DjQueueThumb(model, item, index == 0, u, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) }
+                items.forEachIndexed { index, item -> DjQueueThumb(model, item, index == 0, u, true, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) }
             }
         } else {
             Row(inner.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy((6 * u).dp)) {
-                items.forEachIndexed { index, item -> DjQueueThumb(model, item, index == 0, u, Modifier.size((72 * u).dp, (44 * u).dp)) }
+                items.forEachIndexed { index, item -> DjQueueThumb(model, item, index == 0, u, false, Modifier.size((72 * u).dp, (44 * u).dp)) }
             }
         }
     }
@@ -155,41 +166,121 @@ internal fun DjQueueView(model: DjStudioModel, u: Float, vertical: Boolean, modi
     }
 }
 
+private enum class DjQueueTouch { Tap, Drag, Pass }
+
+private fun headsAcross(vertical: Boolean, moved: Offset): Boolean =
+    if (vertical) abs(moved.x) > abs(moved.y) else abs(moved.y) > abs(moved.x)
+
 @Composable
-private fun DjQueueThumb(model: DjStudioModel, item: DjQueueItem, next: Boolean, u: Float, modifier: Modifier) {
+private fun DjQueueThumb(model: DjStudioModel, item: DjQueueItem, next: Boolean, u: Float, vertical: Boolean, modifier: Modifier) {
     var choosing by remember { mutableStateOf(false) }
+    var pressed by remember { mutableStateOf(false) }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val current by rememberUpdatedState(item)
     val dragging = model.draggedId == item.id
+    val scale by animateFloatAsState(if (pressed && !dragging) 0.94f else 1f, tween(150), label = "queue-press")
+    val openMenu = {
+        DjHaptics.tick(model.context)
+        choosing = true
+    }
+    val title = item.title.ifEmpty { "YouTube video" }
+    val addedLine = item.addedLine()
     Box {
         Box(
             modifier
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
                 .alpha(if (dragging) 0.35f else 1f)
                 .clip(RoundedCornerShape((4 * u).dp))
                 .border(if (next) 1.5.dp else 1.dp, if (next) DjTheme.active.copy(alpha = 0.8f) else DjTheme.edge, RoundedCornerShape((4 * u).dp))
                 .onGloballyPositioned { origin = it.boundsInRoot().topLeft }
-                .pointerInput(item.id) { detectTapGestures { choosing = true } }
-                .pointerInput(item.id) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { at -> model.dragQueue(current, origin + at) },
-                        onDragEnd = { model.dropQueue(current) },
-                        onDragCancel = { model.cancelQueueDrag() },
-                    ) { change, _ ->
-                        change.consume()
-                        model.dragQueue(current, origin + change.position)
+                .pointerInput(item.id, vertical) {
+                    val slop = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        pressed = true
+                        var lift: PointerInputChange? = null
+                        val touch = withTimeoutOrNull(350L) {
+                            var outcome = DjQueueTouch.Pass
+                            while (true) {
+                                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                                if (change == null) break
+                                if (!change.pressed) {
+                                    if (!change.isConsumed) outcome = DjQueueTouch.Tap
+                                    break
+                                }
+                                val moved = change.position - down.position
+                                if (moved.getDistance() > slop) {
+                                    if (!change.isConsumed && model.draggedId == null && headsAcross(vertical, moved)) {
+                                        lift = change
+                                        outcome = DjQueueTouch.Drag
+                                    }
+                                    break
+                                }
+                            }
+                            outcome
+                        }
+                        when (touch) {
+                            null -> {
+                                openMenu()
+                                pressed = false
+                                do {
+                                    val event = awaitPointerEvent()
+                                    event.changes.forEach { it.consume() }
+                                } while (event.changes.any { it.pressed })
+                            }
+                            DjQueueTouch.Tap -> {
+                                pressed = false
+                                openMenu()
+                            }
+                            DjQueueTouch.Drag -> {
+                                pressed = false
+                                val start = lift ?: return@awaitEachGesture
+                                start.consume()
+                                model.dragQueue(current, origin + start.position)
+                                val ended = drag(down.id) { change ->
+                                    change.consume()
+                                    model.dragQueue(current, origin + change.position)
+                                }
+                                if (ended) model.dropQueue(current) else model.cancelQueueDrag()
+                            }
+                            DjQueueTouch.Pass -> pressed = false
+                        }
                     }
+                }
+                .semantics {
+                    contentDescription = listOfNotNull(if (item.title.isEmpty()) "Queued video" else "Queued: ${item.title}", if (model.inJam) addedLine else null)
+                        .joinToString(", ")
+                    role = Role.Button
+                    customActions = listOf(
+                        CustomAccessibilityAction("Load on Deck A") { model.playFromQueue(current, DjDeckSide.A); true },
+                        CustomAccessibilityAction("Load on Deck B") { model.playFromQueue(current, DjDeckSide.B); true },
+                        CustomAccessibilityAction("Remove from Queue") { model.removeFromQueue(current); true },
+                    )
                 },
         ) {
             DjThumb(item.thumbnail, Modifier.fillMaxSize())
             if (model.inJam && item.addedBy.isNotEmpty()) {
-                DjText(
-                    item.addedBy, 8 * u, DjTheme.ink, FontWeight.SemiBold,
-                    modifier = Modifier.align(Alignment.BottomStart).padding((2 * u).dp).clip(RoundedCornerShape((2 * u).dp)).background(Color.Black.copy(alpha = 0.65f)).padding(horizontal = (3 * u).dp),
-                )
+                val stamp = item.addedStamp(System.currentTimeMillis())
+                Column(
+                    Modifier.align(Alignment.BottomStart).padding((2 * u).dp).clip(RoundedCornerShape((2 * u).dp)).background(Color.Black.copy(alpha = 0.65f))
+                        .padding(horizontal = (3 * u).dp, vertical = (1 * u).dp),
+                ) {
+                    DjText(item.addedBy, 8 * u, DjTheme.ink, FontWeight.SemiBold)
+                    if (stamp != null) DjText(stamp, 7 * u, DjTheme.ink.copy(alpha = 0.8f), FontWeight.Medium, mono = true)
+                }
             }
         }
         FmActionMenu(choosing, { choosing = false }) {
-            DjText(item.title.ifEmpty { "YouTube video" }, 13f, DjTheme.muted, modifier = Modifier.padding(horizontal = 8.dp))
+            DjText(title, 13f, DjTheme.muted, modifier = Modifier.padding(horizontal = 8.dp))
+            androidx.compose.material3.Text(
+                listOfNotNull(addedLine?.let { "$it." }, "Or drag the thumbnail onto a deck.").joinToString("\n"),
+                modifier = Modifier.padding(horizontal = 8.dp),
+                color = DjTheme.muted,
+                fontSize = 12.sp,
+            )
             FmActionMenuButton("Load on Deck A", { choosing = false; model.playFromQueue(item, DjDeckSide.A) })
             FmActionMenuButton("Load on Deck B", { choosing = false; model.playFromQueue(item, DjDeckSide.B) })
             FmActionMenuButton("Tags and Playlists…", { choosing = false; model.editSong(item.videoId) })

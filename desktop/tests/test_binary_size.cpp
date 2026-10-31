@@ -1,4 +1,5 @@
 #include "BinarySize.h"
+#include "SourceDir.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -124,7 +125,7 @@ void testOwnBinary()
     options.binaryPath = QCoreApplication::applicationFilePath();
     options.buildDir = QCoreApplication::applicationDirPath();
     options.targetName = QFileInfo(options.binaryPath).completeBaseName();
-    options.sourceRoot = QStringLiteral(FORKMESH_SOURCE_DIR);
+    options.sourceRoot = forkmesh::sourceDir();
     int calls = 0;
     const Report report = analyse(options, [&](int done, int total) {
         ++calls;

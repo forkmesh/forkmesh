@@ -1,8 +1,9 @@
 # ForkMesh feature definition of done
 
 A feature is complete when its code and the following evidence can be reviewed
-together. The pull-request template has one section per item, and CI rejects a
-pull request with a missing or placeholder section.
+together. The pull-request template has one section per item. The GitHub mirror's CI
+(`python3 tools/quality_gate.py pr-evidence`) rejects a pull request with a
+missing or placeholder section; on ForkMesh the reviewer checks it.
 
 1. **Threat review.** Trust boundaries, sensitive inputs, authority changes,
    failure behaviour. Authorization, identity, custody and repository privacy

@@ -76,7 +76,7 @@ struct HostsScreen: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(snapshot.sorted) { host in
-                        NavigationLink {
+                        ShellPaneLink {
                             HostDetailScreen(store: store, hub: hub, hostName: host.name)
                                 .shellPageClearance()
                         } label: {
@@ -92,7 +92,7 @@ struct HostsScreen: View {
                     }
                 }
                 Section {
-                    NavigationLink {
+                    ShellPaneLink {
                         FleetOperationsDestination()
                             .shellPageClearance()
                     } label: {

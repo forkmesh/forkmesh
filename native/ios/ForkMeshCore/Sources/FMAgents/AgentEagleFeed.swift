@@ -46,7 +46,7 @@ public final class AgentEagleFeed {
         var keys = desktopRows
         for row in rows {
             self.rows[row.id] = row
-            if row.isDesktop && row.localId != 0 && !row.outside {
+            if row.isDesktop && row.localId != 0 && !row.outside && !row.elsewhere {
                 keys[Self.desktopKey(repo: row.repoName, localId: row.localId)] = row.id
             }
         }

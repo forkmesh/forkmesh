@@ -145,7 +145,7 @@ class NotesLogicTest {
         assertEq(true, hello.newcomer)
         assertEq(null, hello.event)
         assertEq(false, presence.receive("""{"type":"cursor","clientId":"p1","name":"ana"}""", 2_000).newcomer)
-        assertEq("Live \u00b7 ana is here", presence.label(true, 2_000))
+        assertEq("Live \u00b7 ana is viewing", presence.label(true, 2_000))
         assertEq(false, presence.receive("""{"type":"presence","clientId":"me"}""", 2_000).newcomer)
         val draft = presence.receive("""{"type":"draft","clientId":"p2","name":"bo","title":"T","markdown":"M","baseVersion":4}""", 3_000)
         assertEq(NoteRoomEvent.Draft("T", "M", 4), draft.event)

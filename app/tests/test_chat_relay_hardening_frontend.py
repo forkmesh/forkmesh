@@ -109,9 +109,11 @@ def test_channel_invite_tokens_travel_in_the_body_not_the_path():
       const token = "a".repeat(64);
       const CHAT_INVITES_ENDPOINT = "/api/chat/invites";
       const CHAT_ROOM_HASH_RE = /^#room=([0-9a-f]{32})$/;
+      const CHAT_DIRECT_HASH_RE = /^#direct=([0-9a-f]{32})$/;
       const CHAT_INVITE_HASH_RE = /^#invite=([0-9a-f]{64})$/;
       const isOfficeEmbed = false;
       const privateChannels = new Map();
+      const directMessages = new Map();
       let pendingInviteToken = "";
       const location = { hash: "#invite=" + token, assign() {} };
       const userSession = () => ({ nodeName: "alice", sessionToken: "t" });
@@ -134,6 +136,41 @@ def test_channel_invite_tokens_travel_in_the_body_not_the_path():
         {"path": "/api/chat/invites/preview", "method": "POST", "body": json.dumps({"token": "a" * 64}, separators=(",", ":"))},
         {"path": "/api/chat/invites/accept", "method": "POST", "body": json.dumps({"token": "a" * 64}, separators=(",", ":"))},
     ]
+
+
+def test_room_and_direct_links_wait_for_their_lists_before_selecting():
+    import json
+    import subprocess
+
+    opener = "async function openChatLinkFromHash" + _body(CHAT, "async function openChatLinkFromHash", "\nfunction channelInviteeNames")
+    script = """
+      const selected = [];
+      const room = "a".repeat(32);
+      const direct = "b".repeat(32);
+      const CHAT_INVITES_ENDPOINT = "/api/chat/invites";
+      const CHAT_ROOM_HASH_RE = /^#room=([0-9a-f]{32})$/;
+      const CHAT_DIRECT_HASH_RE = /^#direct=([0-9a-f]{32})$/;
+      const CHAT_INVITE_HASH_RE = /^#invite=([0-9a-f]{64})$/;
+      const isOfficeEmbed = false;
+      const privateChannels = new Map();
+      const directMessages = new Map();
+      let pendingInviteToken = "";
+      const location = { hash: "#room=" + room, assign() {} };
+      const userSession = () => ({ nodeName: "alice", sessionToken: "t" });
+      const clearChatLinkHash = () => {};
+      const refreshPrivateChannels = async () => { privateChannels.set(room, { id: room }); };
+      const refreshDirectMessages = async () => { directMessages.set(direct, { id: direct }); };
+      const privateChannelKey = (id) => "private:" + id;
+      const directMessageKey = (id) => "direct:" + id;
+      const setActiveChannel = (key) => selected.push(key);
+    """ + opener + """
+      await openChatLinkFromHash();
+      location.hash = "#direct=" + direct;
+      await openChatLinkFromHash();
+      process.stdout.write(JSON.stringify(selected));
+    """
+    done = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+    assert json.loads(done.stdout) == ["private:" + "a" * 32, "direct:" + "b" * 32]
 
 
 def test_webhook_lines_carry_a_server_visible_marker_and_private_channels_take_webhooks():

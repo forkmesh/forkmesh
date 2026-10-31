@@ -9,7 +9,10 @@ logs stay on the desktop.
 
 The desktop opens one SSH session per node with a dedicated reader key
 (`next_logread_ed25519`, created by `tools/next_fleet.py logread-key`), not the
-fleet key. On each node it is a forced command:
+fleet key. It connects on the fleet's `ssh_port`, read from
+`~/projects/forkmesh/src/deploy/fleet.toml`. Every other retry after a failure
+uses 22, for a node that has not moved yet ([deploy/ssh-port.md](deploy/ssh-port.md)).
+On each node it is a forced command:
 
 ```
 restrict,command="/usr/bin/python3 -I /opt/forkmesh-next/bin/fmnext-logread" ssh-ed25519 ... fmnext-logread

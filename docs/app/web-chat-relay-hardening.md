@@ -86,6 +86,12 @@ own, so there is nothing to clean up on first start.
   pane and the @mention list and are not sent back to ForkBot as context. Only
   the browser that asked ForkBot shows the plain `forkbot` reply, because it
   got that text from `/api/forkbot/chat` itself.
+- An issue ForkBot files from chat names a person only through the session.
+  Without one, the `sender` in the request is a claim anyone can type: the
+  issue opens as ForkBot with an empty `reporter`, no contributor count or
+  badge is credited, and the footer reads `Filed by ForkBot via chat for
+  <name> (unverified).` (only when the claim is a valid account name). A
+  signed-in request opens as the session's account.
 
 ## Account names come from the server (R4)
 

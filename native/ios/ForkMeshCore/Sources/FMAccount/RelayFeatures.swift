@@ -155,6 +155,7 @@ public enum RelayFeature: String, CaseIterable, Sendable {
         ("/api/sugar-break", .plugins),
         ("/api/stretch", .plugins),
         ("/api/video-mix-dj-studio", .plugins),
+        ("/api/poker", .plugins),
         ("/api/notes", .plugins),
         ("/api/tasks", .plugins),
         ("/api/security/owner-keys", .ownerKeys),

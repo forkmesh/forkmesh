@@ -57,7 +57,7 @@ globalThis.localStorage = {
   setItem: (key, value) => storage.set(key, String(value)),
 };
 globalThis.CSS = { escape: (value) => value };
-globalThis.document = { querySelector: () => null, activeElement: null };
+globalThis.document = { querySelector: (selector) => (selector.includes('data-comment-id="body"') ? { selector } : null), activeElement: null };
 globalThis.window = { setTimeout: () => 1, clearTimeout: () => {} };
 globalThis.state = { session: { nodeName: "carol", sessionToken: "token" }, repoRecordDetail: null };
 const world = { sent: [], posts: [], reply: null, panels: 0, local: [], blobs: {} };
@@ -73,6 +73,9 @@ async function fetchRepoBlobs(repo, paths, options) {
 function applyRepoPullLocalEvent(repo, number, event) { world.local.push(event); }
 function updateRepoPullMergePanel() { world.panels += 1; }
 const pullDetailIsCurrent = () => true;
+const pullAiModel = (values, body) => String(values?.aiModel || "") || (/AI model: (.+)/i.exec(String(body || ""))?.[1] || "");
+const commentReactionSubject = (kind, number) => `pull:${number}`;
+function sayCommentThanks(bar) { world.thanks = (world.thanks || 0) + 1; }
 globalThis.fetch = async (url, init = {}) => {
   world.posts.push({ url, init });
   return { ok: true, json: async () => ({ ok: true, sent: world.serverSent || [] }) };
@@ -168,6 +171,7 @@ console.log(JSON.stringify({
   checks: ids(repoPullQuickReplyModel(REPO, 7, pull({ checks: failed }))),
   ai: ids(repoPullQuickReplyModel(REPO, 7, pull({ settings: { requireAiDisclosure: true } }))),
   aiStated: ids(repoPullQuickReplyModel(REPO, 7, pull({ settings: { requireAiDisclosure: true }, values: { aiModel: "None" } }))),
+  aiInBody: ids(repoPullQuickReplyModel(REPO, 7, { ...pull({ settings: { requireAiDisclosure: true } }), body: "AI model: Claude Opus 5.5" })),
   contributing: ids(repoPullQuickReplyModel(REPO, 7, pull({ config: { replies: PULL_QUICK_REPLY_DEFAULTS, contributingPath: ".github/CONTRIBUTING.md" } }))),
   disabled: repoPullQuickReplyModel(REPO, 7, pull({ config: { replies: [], contributingPath: "" } })),
   unloaded: repoPullQuickReplyModel(REPO, 7, pull({ config: null })),
@@ -181,6 +185,7 @@ console.log(JSON.stringify({
     assert out["checks"] == ["checks"] + always
     assert out["ai"] == ["ai-model"] + always
     assert out["aiStated"] == always
+    assert out["aiInBody"] == always
     assert out["contributing"] == ["tests", "issue", "split", "screenshot", "contributing", "thanks"]
     assert out["disabled"] is None and out["unloaded"] is None
 
@@ -315,7 +320,7 @@ const otherHeadSent = repoPullQuickReplyModel(REPO, 7, otherHead).items.find((it
 const custom = pull({ config: { replies: [{ id: "note", label: "Note", body: "Noted.", state: "commented", when: "always", emoji: "" }], contributingPath: "" } });
 state.repoRecordDetail = { kind: "pulls", number: 7, parsed: custom };
 await sendRepoPullQuickReply(REPO, "note");
-console.log(JSON.stringify({ first, afterFirst, sentChip, repeat, approve, edited, duplicateHint, splitSent, errorHint, issueSent, remembered, otherHeadSent,
+console.log(JSON.stringify({ thanks: world.thanks || 0, first, afterFirst, sentChip, repeat, approve, edited, duplicateHint, splitSent, errorHint, issueSent, remembered, otherHeadSent,
   comment: world.sent[world.sent.length - 1], local: world.local, stored: Object.keys(JSON.parse(storage.get(PULL_QUICK_REPLY_SENT_KEY))) }));
 """)
     first = out["first"]
@@ -325,6 +330,7 @@ console.log(JSON.stringify({ first, afterFirst, sentChip, repeat, approve, edite
     assert first["delivery"] == {"relayOnly": True, "extra": {"quickReply": {"id": "conflict", "head": HEAD}}}
     assert out["sentChip"] is True and out["repeat"] == 1
     assert out["approve"]["fields"] == {"state": "approved", "body": "Thanks! Looks good."}
+    assert out["thanks"] == 1
     assert out["edited"]["fields"] == {"state": "changes_requested", "body": "Please add a test for the empty leaderboard."}
     assert out["duplicateHint"]["text"] == "You already sent that reply on this commit."
     assert out["splitSent"] is True

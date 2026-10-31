@@ -35,7 +35,7 @@ client joins again and lands on a surviving node.
 | Signalling | HTTP on `127.0.0.1:<http_port>` (default 7881), reached only through Caddy's `handle /calls/*` in the core's per-node block `nN.next.forkmesh.com`. The shared names `app.forkmesh.com` and `world.forkmesh.com` do not route `/calls/`. |
 | Media | UDP `<udp_port>` (default 3479) on all addresses. It is open in nftables on every core, in the AWS security group (`tools/next_aws.py ingress_rules`) and in the IDS listener list. |
 | Advertised addresses | `FORKMESH_CALLS_ADDRESSES`: the node's `public_ipv4` and, when set, `public_ipv6` (from `fleet-instances.json`) |
-| Allowed browser origins | `FORKMESH_CALLS_ORIGINS`: `https://<served app host>` (`app.forkmesh.com`), `https://app.next.forkmesh.com`, plus any `[calls] origins` |
+| Allowed browser origins | `FORKMESH_CALLS_ORIGINS`: `https://<served app host>` (`app.forkmesh.com`), `https://app.next.forkmesh.com`, `https://<served world host>` (`world.forkmesh.com`), `https://world.next.forkmesh.com`, plus any `[calls] origins`. The World loads `dashboard-chat.js` and opens calls from its own origin; without it in the list every call socket from the World got a 403 and the camera never started |
 | Outbound | `IPAddressDeny=` blocks the private, CGNAT, link-local, documentation and reserved ranges, the same list as the TURN relay. Loopback stays open because Caddy proxies over it. |
 | IDS | service user `fmnext-calls` (unit `fmnext-calls.service`, exe the binary), TCP listener 7881, UDP listener 3479, and the unit in the lockdown stop list with its `50-fmnext-ids.conf` drop-in |
 | FM Media (off) | with `[calls] fmm = true`: QUIC and WebTransport on UDP `<fmm_port>` (default 4433), certificates in `/var/lib/fmnext-calls` ([FM Media](#fm-media)) |
@@ -136,8 +136,8 @@ app signs join tickets with it, and the SFU checks them
 3. Check:
 
    ```sh
-   for n in n2 n3 n4; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
-   python3 tools/next_ids.py status n2 n3 n4
+   for n in n3 n4 n5; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
+   python3 tools/next_ids.py status n3 n4 n5
    ssh root@<core> systemctl status fmnext-calls
    ```
 
@@ -148,7 +148,7 @@ Edit `FORKMESH_CALLS_SECRET` in `secrets.env`, then run
 each core:
 
 ```sh
-for n in n2 n3 n4; do python3 tools/next_fleet.py install $n --steps calls --execute; done
+for n in n3 n4 n5; do python3 tools/next_fleet.py install $n --steps calls --execute; done
 ```
 
 The `calls` step sees that the running process loaded a different secret and
@@ -194,7 +194,7 @@ Rollout, once clients exist:
 2. Check every core advertises it:
 
    ```sh
-   for n in n2 n3 n4; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
+   for n in n3 n4 n5; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
    ```
 
    Each should list `fmm` with two hashes.

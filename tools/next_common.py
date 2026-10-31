@@ -213,17 +213,56 @@ def load_manifest(path=None) -> dict:
 
 
 def record_deploy(rev, commit="", signature="", fingerprint="", by="",
-                  path=None, clock=time.time) -> dict:
+                  path=None, clock=time.time, skipped=()) -> dict:
     path = Path(path or deploy_manifest_path())
     data = load_manifest(path)
     releases = data.get("releases") if isinstance(data.get("releases"), dict) else {}
     entry = {"rev": rev, "commit": commit, "signature": signature,
              "fingerprint": fingerprint, "by": by, "at": clock()}
+    if skipped:
+        entry["skipped"] = sorted(skipped)
     releases[rev] = entry
     data["releases"] = releases
     data["current"] = rev
     save_json(path, data)
     return entry
+
+
+def record_caught_up(rev, names, path=None, clock=time.time) -> list:
+    path = Path(path or deploy_manifest_path())
+    data = load_manifest(path)
+    entry = (data.get("releases") or {}).get(rev)
+    if not isinstance(entry, dict) or not entry.get("skipped"):
+        return []
+    caught = sorted(set(entry["skipped"]) & set(names))
+    if not caught:
+        return []
+    entry["skipped"] = sorted(set(entry["skipped"]) - set(caught))
+    if not entry["skipped"]:
+        del entry["skipped"]
+    entry.setdefault("caughtUp", {}).update({name: clock() for name in caught})
+    save_json(path, data)
+    return caught
+
+
+def deploy_quorum(cores: int) -> int:
+    return max(2, cores // 2 + 1)
+
+
+def dns_health_nodes(path=None) -> dict:
+    data = load_json(Path(path or config_dir() / "dns-health.json"), {}) or {}
+    nodes = data.get("nodes") if isinstance(data, dict) else None
+    return nodes if isinstance(nodes, dict) else {}
+
+
+def out_of_dns(entry) -> str:
+    if not isinstance(entry, dict) or not entry:
+        return ""
+    if entry.get("held"):
+        return "held out of DNS"
+    if not entry.get("in_dns"):
+        return "out of DNS"
+    return ""
 
 
 def read_env_file(path: Path) -> dict:
@@ -415,7 +454,27 @@ SSH_MUX_DIR_MAX = 48
 PUT_RESUME_ATTEMPTS = 6
 ROUTE_FAMILIES = ("auto", "4", "6")
 ROUTE_PROBE_SECONDS = 3
+LEGACY_SSH_PORT = 22
 _route_cache: dict = {}
+
+
+def fleet_ssh_port(path=None) -> int:
+    configured = os.environ.get("FMNEXT_SSH_PORT", "").strip()
+    if configured:
+        if not configured.isdigit() or not 1 <= int(configured) <= 65535:
+            raise GuardError("FMNEXT_SSH_PORT must be a TCP port")
+        return int(configured)
+    import tomllib
+    try:
+        with open(fleet_file(path), "rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, ValueError):
+        return LEGACY_SSH_PORT
+    return int(data.get("ssh_port") or LEGACY_SSH_PORT)
+
+
+def ssh_ports() -> tuple:
+    return tuple(dict.fromkeys((fleet_ssh_port(), LEGACY_SSH_PORT)))
 
 
 def ipv6_by_ipv4(path=None) -> dict:
@@ -424,7 +483,7 @@ def ipv6_by_ipv4(path=None) -> dict:
             if isinstance(entry, dict) and entry.get("ip") and entry.get("ipv6")}
 
 
-def _tcp_open(address, port=22, timeout=ROUTE_PROBE_SECONDS) -> bool:
+def _tcp_open(address, port=LEGACY_SSH_PORT, timeout=ROUTE_PROBE_SECONDS) -> bool:
     import socket
     try:
         with socket.create_connection((address, port), timeout=timeout):
@@ -433,7 +492,8 @@ def _tcp_open(address, port=22, timeout=ROUTE_PROBE_SECONDS) -> bool:
         return False
 
 
-def route_address(ip, family=None, mapping=None, probe=_tcp_open) -> str:
+def route_address(ip, family=None, mapping=None, probe=_tcp_open,
+                  ports=None) -> str:
     family = family or os.environ.get("FMNEXT_ROUTE_FAMILY", "auto")
     if family not in ROUTE_FAMILIES:
         raise GuardError("FMNEXT_ROUTE_FAMILY must be one of %s" % ", ".join(ROUTE_FAMILIES))
@@ -444,9 +504,11 @@ def route_address(ip, family=None, mapping=None, probe=_tcp_open) -> str:
         return ip
     if family == "6":
         return ipv6
-    key = (ip, ipv6)
+    ports = tuple(ports or ssh_ports())
+    key = (ip, ipv6, ports)
     if key not in _route_cache:
-        _route_cache[key] = ip if probe(ip) else (ipv6 if probe(ipv6) else ip)
+        _route_cache[key] = next((address for address in (ip, ipv6) if any(
+            probe(address, port) for port in ports)), ip)
     return _route_cache[key]
 
 
@@ -454,7 +516,7 @@ class Ssh:
     """ssh/scp to fleet nodes as root with the fleet key only."""
 
     def __init__(self, key=None, known_hosts=None, run=None, popen=None,
-                 mux=None, route=None):
+                 mux=None, route=None, port=None, probe=_tcp_open):
         self.key = Path(key or ssh_key_path())
         self.known_hosts = Path(known_hosts or config_dir() / "known_hosts")
         self._run = run or subprocess.run
@@ -462,6 +524,9 @@ class Ssh:
         self.mux = (run is None) if mux is None else mux
         self.route = (run is None) if route is None else route
         self._masters = set()
+        self.ssh_port = int(port or fleet_ssh_port())
+        self._probe = probe
+        self._ports = {}
 
     def mux_dir(self):
         configured = os.environ.get("FMNEXT_SSH_MUX_DIR")
@@ -501,10 +566,29 @@ class Ssh:
                           "-o", "ControlPath=%s/%%C" % directory]
 
     def address(self, host):
-        return route_address(host) if self.route else host
+        return route_address(host, probe=self._probe, ports=tuple(dict.fromkeys(
+            (self.ssh_port, LEGACY_SSH_PORT)))) if self.route else host
+
+    def port(self, host):
+        if host not in self._ports:
+            port = self.ssh_port
+            if self.route and port != LEGACY_SSH_PORT:
+                address = self.address(host)
+                if not self._probe(address, port) and self._probe(
+                        address, LEGACY_SSH_PORT):
+                    port = LEGACY_SSH_PORT
+            self._ports[host] = port
+        return self._ports[host]
+
+    def use_port(self, host, port):
+        self._ports[host] = int(port)
+        self._masters.discard(host)
 
     def dest(self, host):
-        return ["-o", "HostKeyAlias=%s" % host] if self.address(host) != host else []
+        port = self.port(host)
+        alias = self.address(host) != host or port != LEGACY_SSH_PORT
+        return (["-o", "HostKeyAlias=%s" % host] if alias else []) + (
+            ["-o", "Port=%d" % port] if port != LEGACY_SSH_PORT else [])
 
     def login(self, host):
         return "root@%s" % self.address(host)

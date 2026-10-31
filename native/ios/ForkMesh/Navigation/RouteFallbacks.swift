@@ -149,6 +149,10 @@ enum NavigationRoutes {
         }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
         fallback(routes, .videoMixDjStudio) { _ in AnyView(VideoMixDjStudioScreen()) }
+        fallback(routes, .poker) { route in
+            guard case let .poker(table) = route else { return AnyView(PokerScreen()) }
+            return AnyView(PokerScreen(table: table))
+        }
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }
         fallback(routes, .usage) { _ in AnyView(UsageScreen()) }
         fallback(routes, .runners) { _ in AnyView(RunnersScreen()) }

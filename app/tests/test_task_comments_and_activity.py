@@ -34,10 +34,9 @@ WORLD = (WORLD_PUBLIC / "world.js").read_text(encoding="utf-8")
 WORLD_CSS = (WORLD_PUBLIC / "world.css").read_text(encoding="utf-8")
 TASKS_VIEW = (PUBLIC / dashboard_shell.view_path("tasks")).read_text(
     encoding="utf-8")
-QT_TASKS = (ROOT.parent / "desktop" / "src" / "MainWindowTasks.cpp").read_text(
-    encoding="utf-8")
-QT_HEADER = (ROOT.parent / "desktop" / "src" / "MainWindow.h").read_text(
-    encoding="utf-8")
+TASKS_PLUGIN = ROOT.parent / "marketplace" / "packages" / "tasks" / "content" / "desktop"
+QT_TASKS = (TASKS_PLUGIN / "TasksPage.cpp").read_text(encoding="utf-8")
+QT_HEADER = (TASKS_PLUGIN / "TasksPage.h").read_text(encoding="utf-8")
 QT_ACTIONS = (
     ROOT.parent / "desktop" / "src" / "MainWindowActions.cpp"
 ).read_text(encoding="utf-8")
@@ -208,9 +207,9 @@ def test_world_board_shows_the_timeline_and_an_explicit_check_in_button():
 
 def test_desktop_can_comment_check_in_and_read_the_timeline():
     for marker in (
-        "void MainWindow::commentOnOrganizationTask()",
-        "void MainWindow::checkInOnOrganizationTask()",
-        "void MainWindow::loadOrganizationTaskHistory(",
+        "void TasksPage::commentOnOrganizationTask()",
+        "void TasksPage::checkInOnOrganizationTask()",
+        "void TasksPage::loadOrganizationTaskHistory(",
         "QStringList taskMentionedNames(",
         "QString taskHistoryHtml(",
         "QString taskEventLabel(",
@@ -228,8 +227,8 @@ def test_desktop_can_comment_check_in_and_read_the_timeline():
         assert 'QStringLiteral("%s")' % state in QT_TASKS, state
     # Checking in is offered when the relay would accept one; commenting is
     # offered on any visible task, including a finished one.
-    actions = QT_TASKS.split("void MainWindow::updateOrganizationTaskActions",
-                             1)[1].split("void MainWindow::", 1)[0]
+    actions = QT_TASKS.split("void TasksPage::updateOrganizationTaskActions",
+                             1)[1].split("void TasksPage::", 1)[0]
     assert "m_organizationTaskCommentButton->setEnabled(selected);" in actions
     assert "selected && mine && active && !done" in actions
     # A comment by somebody else never moves the row's updatedAt, so a refresh
@@ -268,10 +267,10 @@ def test_any_member_can_remind_the_assignee_from_the_dashboard_and_desktop():
         "function taskReminderWaitMs(task)")]
     assert "task.assignee !== state.tasksView.actor" in can_remind
     assert "!taskIsDone(task)" in can_remind
-    assert "void MainWindow::remindOrganizationTaskAssignee()" in QT_TASKS
+    assert "void TasksPage::remindOrganizationTaskAssignee()" in QT_TASKS
     assert 'QStringLiteral("/api/tasks/%1/remind").arg(id)' in QT_TASKS
     assert 'QStringLiteral("Last reminder")' in QT_TASKS
     assert "m_organizationTaskRemindButton" in QT_HEADER
-    actions = QT_TASKS.split("void MainWindow::updateOrganizationTaskActions",
-                             1)[1].split("void MainWindow::", 1)[0]
+    actions = QT_TASKS.split("void TasksPage::updateOrganizationTaskActions",
+                             1)[1].split("void TasksPage::", 1)[0]
     assert "selected && !done && !mine &&" in actions

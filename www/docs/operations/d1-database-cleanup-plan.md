@@ -66,9 +66,24 @@ through `encrypt_row`/`decrypt_row` so the format applies everywhere.
 
 ## Exports and measurement
 
-Before any destructive migration, export the database
-(`wrangler d1 export <db> --remote --output <file>`), load it into scratch
-SQLite and compare row counts with production. Measure reads with
+Production runs on rqlite on the core nodes. Before any destructive
+migration:
+
+1. Take a fresh backup: `python3 tools/next_backup.py run --execute` keeps it
+   only after `PRAGMA integrity_check` and table counts pass.
+2. Check it and print its row counts:
+   `python3 tools/next_backup.py verify <file> --identity <key>`.
+3. Decrypt it into scratch SQLite:
+   `python3 tools/next_backup.py restore <file> --out <scratch.sqlite3> --identity <key>`,
+   run the migration there and compare row counts with production.
+4. List what will run: `python3 tools/rqlite_migrate.py --list`, then apply
+   with `python3 tools/rqlite_migrate.py --url <leader> --user <u> --password <p>`.
+
+Measure reads with `FORKMESH_HOST_D1_LOG=1`: each statement is followed by a
+`D1-done <ms> ms, <rows> rows` line ([d1.md](../../../docs/app/d1.md)).
+
+On a Cloudflare Workers deployment only, export with
+`wrangler d1 export <db> --remote --output <file>` and measure with
 `wrangler d1 insights <db> --time-period 7d --sort-by reads`; table-browser
 `COUNT(*)` queries come from the dashboard, not App code.
 

@@ -587,14 +587,16 @@ class MarketingWorkspaceTest {
         expect(model.readyImageMissing)
 
         transport.answer("PATCH", "/api/marketing/acme/ready-post", mapOf("error" to "ready_post_changed", "readyPost" to readyJson(hexA)), 409)
-        assertEq(false, model.closeReadyPost("posted"))
+        assertEq(false, model.closeReadyPost("posted", "https://x.com/acme/status/7"))
         assertEq("Herald replaced that post. The card shows the current one.", model.notice)
         assertEq(hexB, transport.last("PATCH", "/api/marketing/acme/ready-post")?.body?.str("id"))
+        assertEq("https://x.com/acme/status/7", transport.last("PATCH", "/api/marketing/acme/ready-post")?.body?.str("url"))
 
         transport.answer("PATCH", "/api/marketing/acme/ready-post", mapOf("ok" to true, "readyPost" to readyJson(null)))
         transport.answer("GET", "/api/marketing/acme", overviewJson() + ("readyPosts" to mapOf("x" to readyJson(null))))
-        assertEq(true, model.closeReadyPost("skipped"))
+        assertEq(true, model.closeReadyPost("skipped", "https://x.com/acme/status/7"))
         assertEq("Skipped. Herald writes the next one.", model.notice)
+        expect(transport.last("PATCH", "/api/marketing/acme/ready-post")?.body?.containsKey("url") == false)
         assertEq(listOf("PATCH /api/marketing/acme/ready-post", "GET /api/marketing/acme"), transport.sent.takeLast(2).map { "${it.method} ${it.path}" })
         expect(model.readyX?.needsPost == true)
         assertEq("Old post", model.readyX?.last?.text)

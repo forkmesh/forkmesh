@@ -45,6 +45,20 @@ final class FreshInstallResetTests: XCTestCase {
         XCTAssertEqual(phone.reset().run(), .alreadyInstalled)
     }
 
+    func testALaunchBeforeTheFirstUnlockKeepsTheLogin() {
+        let keychain = MemoryKeychain(Self.leftovers)
+        let prefs = InMemoryKeyValueStore()
+        keychain.failing = true
+        let locked = FreshInstallReset(prefs: prefs, eraseKeychain: { XCTFail("erased while locked") }, isKeychainLocked: { true })
+        guard case .deferred = locked.run() else { return XCTFail("expected deferred") }
+        XCTAssertTrue(prefs.keys.isEmpty)
+        keychain.failing = false
+        prefs.set("app.forkmesh.com", forKey: "relays/active")
+        let unlocked = Phone(keychain: keychain, prefs: prefs).reset()
+        XCTAssertEqual(unlocked.run(), .upgraded)
+        XCTAssertEqual(keychain.snapshot, Self.leftovers)
+    }
+
     func testALockedKeychainIsErasedOnTheNextLaunch() {
         let keychain = MemoryKeychain(Self.leftovers)
         let phone = Phone(keychain: keychain, prefs: InMemoryKeyValueStore())

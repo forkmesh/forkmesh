@@ -400,6 +400,7 @@ def test_error_log_trim_is_a_primary_key_range_from_the_new_id():
             "d1_run": d1_run, "d1_first": d1_first,
             "ensure_schema": ensure_schema,
             "_privacy_safe_error_text": lambda _path, message: message,
+            "instance_privacy": SimpleNamespace(active=lambda _env: False),
             "clean_string": lambda value, size: str(value or "")[:size],
             "Date": SimpleNamespace(now=lambda: 1), "MAX_ERROR_LOG": 5000,
             "MAX_NODE_NAME": 64,

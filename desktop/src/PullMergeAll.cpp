@@ -127,6 +127,27 @@ QString launchMessage(const Launch &launch)
     return message;
 }
 
+QString draftMessage(int count, const QStringList &skipped)
+{
+    QString message =
+        QStringLiteral("Drafted Merge all for %1 pull request(s) in the composer, "
+                       "with no branch. Review it, then send it to an agent.")
+            .arg(count);
+    if (!skipped.isEmpty())
+        message += QStringLiteral(" Left out: %1").arg(skipped.join(QStringLiteral(", ")));
+    return message;
+}
+
+bool draftMatches(const Draft &draft, const QString &owner, const QString &name,
+                  const QString &prompt)
+{
+    if (draft.run.targets.isEmpty() || draft.run.owner != owner ||
+        draft.run.name != name)
+        return false;
+    const QString heading = draft.prompt.section(QLatin1Char('\n'), 0, 0).trimmed();
+    return !heading.isEmpty() && prompt.contains(heading);
+}
+
 QString agentPrompt(const QString &owner, const QString &name,
                     const QString &checkout, const QList<Target> &targets)
 {

@@ -886,6 +886,10 @@ class ForkMeshWorld(DurableObject):
                 _ws_attr(ws, "last", 0), now):
             self._depart(ws, 1001, "stale")
             return
+        live_kind = self._live_frame_kind(message)
+        if live_kind:
+            self._relay_live_frame(ws, state, message, live_kind, now)
+            return
         allowed, rate_start, rate_count = self._rate_step(
             ws, state, now)
         # Every frame (including a heartbeat or invalid JSON) is an opportunity
@@ -1031,6 +1035,34 @@ class ForkMeshWorld(DurableObject):
                             "from": state.get("id"),
                         })
                         break
+            elif interaction["kind"] in (
+                "bubble-invite", "bubble-knock", "bubble-decline",
+            ):
+                if (
+                    interaction["kind"] == "bubble-invite"
+                    and state.get("voice") != interaction["room"]
+                ):
+                    return
+                outgoing = {
+                    "type": "interaction",
+                    "kind": interaction["kind"],
+                    "from": state.get("id"),
+                }
+                if interaction["kind"] == "bubble-invite":
+                    outgoing["room"] = interaction["room"]
+                    outgoing["secret"] = interaction["secret"]
+                for peer in self._live_sockets(cleanup=True):
+                    if _ws_attr(peer, "id") == interaction["target"]:
+                        self._safe_send(peer, outgoing)
+                        break
+            elif interaction["kind"] == "reaction":
+                self._broadcast({
+                    "type": "interaction",
+                    "kind": "reaction",
+                    "reaction": interaction["reaction"],
+                    "target": interaction["target"],
+                    "from": state.get("id"),
+                }, exclude_id=state.get("id"), budgeted=True)
             else:
                 self._broadcast({
                     "type": "interaction",
@@ -1106,6 +1138,112 @@ class ForkMeshWorld(DurableObject):
     web_socket_message = webSocketMessage
     web_socket_close = webSocketClose
     web_socket_error = webSocketError
+
+    @staticmethod
+    def _live_frame_kind(message):
+        head = message[:40].replace(" ", "")
+        for kind in ("rig", "voice-signal"):
+            if '"type":"%s"' % kind in head:
+                return kind
+        return ""
+
+    def _live_rate(self, peer_id, kind, now):
+        windows = getattr(self, "_live_rate_windows", None)
+        if windows is None:
+            windows = {}
+            self._live_rate_windows = windows
+        start, count = windows.get((peer_id, kind), (0, 0))
+        if now - start >= world_protocol.WORLD_RATE_WINDOW_MS:
+            start, count = now, 0
+        count += 1
+        windows[(peer_id, kind)] = (start, count)
+        if len(windows) > 4 * world_protocol.WORLD_MAX_CONNECTIONS:
+            for key, (at, _) in list(windows.items()):
+                if now - at >= world_protocol.WORLD_RATE_WINDOW_MS:
+                    del windows[key]
+        return count
+
+    def _rig_audience(self, now):
+        cached = getattr(self, "_rig_index", None)
+        if cached is not None and now - cached[0] < 1000:
+            return cached[1]
+        audience = []
+        for peer in self._live_sockets():
+            peer_state = self._socket_state(peer)
+            try:
+                x = float(peer_state.get("x") or 0.0)
+                z = float(peer_state.get("z") or 0.0)
+            except (TypeError, ValueError):
+                x, z = 0.0, 0.0
+            audience.append((
+                peer, str(peer_state.get("id") or ""),
+                str(peer_state.get("space") or ""), x, z))
+        self._rig_index = (now, audience)
+        return audience
+
+    def _send_text(self, ws, payload):
+        try:
+            ws.send(payload)
+        except Exception:
+            self._safe_close(ws, 1011, "unavailable")
+            return
+        durable_object_traffic_note(
+            self, bytes_out=len(payload.encode("utf-8")))
+
+    def _relay_live_frame(self, ws, state, message, kind, now):
+        sender_id = str(state.get("id") or "")
+        count = self._live_rate(sender_id, kind, now)
+        if kind == "rig":
+            if count > world_protocol.WORLD_RIG_RATE_HARD_MAX_PER_WINDOW:
+                self._safe_close(ws, 1008, "rate limit")
+                return
+            if count > world_protocol.WORLD_RIG_RATE_MAX_PER_WINDOW:
+                return
+        elif count > world_protocol.WORLD_VOICE_RATE_MAX_PER_WINDOW:
+            if count > 4 * world_protocol.WORLD_VOICE_RATE_MAX_PER_WINDOW:
+                self._safe_close(ws, 1008, "rate limit")
+            return
+        try:
+            payload = json.loads(message)
+        except Exception:
+            return
+        if kind == "rig":
+            rig = world_protocol.sanitize_rig(payload)
+            if rig is None:
+                return
+            text = json.dumps(
+                {"type": "rig", "id": sender_id, **rig},
+                separators=(",", ":"))
+            try:
+                sx = float(state.get("x") or 0.0)
+                sz = float(state.get("z") or 0.0)
+            except (TypeError, ValueError):
+                sx, sz = 0.0, 0.0
+            space = str(state.get("space") or "")
+            reach = world_protocol.WORLD_RIG_RADIUS_UNITS ** 2
+            for peer, peer_id, peer_space, x, z in self._rig_audience(now):
+                if peer_id == sender_id or peer_space != space:
+                    continue
+                if (x - sx) ** 2 + (z - sz) ** 2 > reach:
+                    continue
+                self._send_text(peer, text)
+            return
+        signal = world_protocol.sanitize_voice_signal(payload, state)
+        if signal is None:
+            return
+        text = json.dumps({
+            "type": "voice-signal",
+            "room": signal["room"],
+            "from": sender_id,
+            "sender": str(state.get("name") or ""),
+            "frame": signal["frame"],
+        }, separators=(",", ":"))
+        for peer in self._live_sockets():
+            if _ws_attr(peer, "id") == sender_id:
+                continue
+            if _ws_attr(peer, "voice", "") != signal["room"]:
+                continue
+            self._send_text(peer, text)
 
     def _depart(self, ws, code, reason):
         peer_id = _ws_attr(ws, "id")

@@ -33,6 +33,15 @@ Code: `app/src/agent_branches.py`, imported lazily (listed in `LAZY_MODULES`,
 | `canOpenPull` | an `agent/` branch, idle, not merging or merged, no pull request, and the run published something |
 | `queue` | single-session GET only, while queued (see "Queue position") |
 
+Merging an agent branch lands it on its base with no review, so only an owner
+may do it (`agent_branches.merge_allowed`): the node's owner for an owner-scope
+session, an owner of the organization for an organization session. Any member
+with Engineering access could merge before, which let contributors land agent
+work on `main` around the pull request owner-only merge. Everyone else gets
+`403 forbidden` (`required_action: open_pull`) and opens a pull request
+instead. The list response carries `canMergeAgentBranches`, and the web hides
+**Merge & clean up** when it is false. Update and clean up are unchanged.
+
 ### Diff: `GET …/<sid>/diff?page=0&pageSize=25`
 
 The `AgentDiff` shape the phones parse for a desktop diff, plus paging and the

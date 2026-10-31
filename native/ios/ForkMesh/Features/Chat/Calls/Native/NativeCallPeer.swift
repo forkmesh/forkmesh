@@ -1,4 +1,5 @@
 #if canImport(WebRTC)
+import CoreGraphics
 import FMBase
 import FMChat
 import Foundation
@@ -32,6 +33,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
     private(set) var remoteVideo: RTCVideoTrack?
     weak var quality: CallQualityMonitor?
     private let probe = NativeQualityProbe()
+    private let rendered = NativeFrameCounter()
     private var closed = false
     private var live = false
     private var packets: Double = -1
@@ -76,6 +78,9 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
             connection.addTransceiver(of: .video, init: videoInit)
         }
         NativeCallMedia.preferRed(connection)
+        rendered.onFirst = { [weak self] in self?.firstFrame() }
+        let receiving = connection.transceivers.first { $0.mediaType == .video }?.receiver.track as? RTCVideoTrack
+        if let receiving { watchRemote(receiving) }
     }
 
     private static let streamIds = ["forkmesh"]
@@ -153,6 +158,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
         routeWatch?.cancel()
         probe.stop()
         camera?.stop()
+        remoteVideo?.remove(rendered)
         connection.close()
         if audioStarted {
             audioStarted = false
@@ -213,7 +219,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
                 live = true
                 if !audioStarted {
                     audioStarted = true
-                    NativeCallMedia.shared.beginAudio()
+                    NativeCallMedia.shared.beginAudio(video: media == .video)
                 }
                 watchRoute()
                 watchQuality()
@@ -238,7 +244,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
         var received: Double = 0
         var audio = false
         var frames: Double = 0
-        var video = false
+        var video = rendered.count > 0
         for entries in reports {
             for entry in entries where entry.type == "inbound-rtp" {
                 if entry.kind == "audio" {
@@ -250,6 +256,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
                 }
             }
         }
+        frames = max(frames, Double(rendered.count))
         let now = Date()
         if audio {
             if received > packets {
@@ -284,9 +291,22 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
     }
 
     fileprivate func receiverAdded(_ receiver: RTCRtpReceiver) {
-        guard let track = receiver.track as? RTCVideoTrack else { return }
-        remoteVideo = track
+        guard !closed, let track = receiver.track as? RTCVideoTrack, track.trackId != remoteVideo?.trackId else { return }
+        watchRemote(track)
         onRemoteVideo?(track)
+    }
+
+    private func watchRemote(_ track: RTCVideoTrack) {
+        remoteVideo?.remove(rendered)
+        remoteVideo = track
+        track.add(rendered)
+    }
+
+    private func firstFrame() {
+        guard !closed, !videoSeen else { return }
+        videoSeen = true
+        videoOn = true
+        onRemoteVideoActive?(true)
     }
 
     private func watchQuality() {
@@ -310,6 +330,28 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
                 self.onRoute?(await NativeCallMedia.readRoute(self.connection))
                 try? await Task.sleep(nanoseconds: UInt64(NativeCallPeer.routeEvery * 1_000_000_000))
             }
+        }
+    }
+}
+
+final class NativeFrameCounter: NSObject, RTCVideoRenderer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var frames = 0
+    var onFirst: (@MainActor () -> Void)?
+
+    var count: Int { lock.withLock { frames } }
+
+    func setSize(_ size: CGSize) {}
+
+    func renderFrame(_ frame: RTCVideoFrame?) {
+        guard frame != nil else { return }
+        let first: Bool = lock.withLock {
+            frames += 1
+            return frames == 1
+        }
+        guard first else { return }
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.onFirst?() }
         }
     }
 }

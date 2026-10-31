@@ -396,7 +396,8 @@ def test_third_parties_forkmesh_runs_on_have_their_own_vocabulary():
     assert project["integrationLabel"] == "Used by ForkMesh"
     for key in ("cloud-hosting", "networking", "ai-models", "messaging",
                 "storage", "security", "analytics", "runtimes", "libraries",
-                "platforms", "editors", "build-ci", "design-assets", "apps"):
+                "platforms", "editors", "build-ci", "design-assets", "apps",
+                "work-management"):
         assert eco.normalize(dict(stripe, category=key), now_ms=NOW)[1] == []
     assert len(set(eco.CATEGORY_LABELS)) == len(eco.CATEGORIES)
     assert len(set(eco.CATEGORY_LABELS.values())) == len(eco.CATEGORIES)

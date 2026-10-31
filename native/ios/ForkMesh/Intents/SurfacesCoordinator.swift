@@ -136,7 +136,8 @@ final class SurfacesCoordinator {
                 id: row.id, title: row.title, repoOwner: row.repoOwner, repoName: row.repoName, status: row.status,
                 isActive: row.isActive, provider: row.provider, model: row.model,
                 detail: row.node.isEmpty ? "" : "On \(row.node)", updatedAtMs: Int64(row.updatedAtMs),
-                startedAtMs: seen[row.id] ?? 0, localId: row.localId, isDesktop: row.isDesktop, canStop: row.canStop)
+                startedAtMs: seen[row.id] ?? 0, localId: row.elsewhere ? 0 : row.localId, isDesktop: row.isDesktop,
+                canStop: row.canStop)
         }
         firstSeenActive = seen
         let approvals: [AgentApprovalInput] = (AgentOpsFeature.approvals?.approvals ?? []).map {

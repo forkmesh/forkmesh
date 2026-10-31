@@ -2,6 +2,7 @@ import FMAgentWatch
 import FMAgents
 import FMApi
 import FMBase
+import FMDesktopRemote
 import SwiftUI
 
 struct AgentLineRow: View {
@@ -252,24 +253,27 @@ struct AgentEagleTile: View {
     var body: some View {
         ZStack {
             picture
-            AgentChurnRing(
-                added: line.linesAdded, removed: line.linesRemoved, radius: radius, width: Self.ring,
-                spinning: line.isActive
-            )
+            AgentTokenRing(line: line, radius: radius)
+                .allowsHitTesting(false)
+            VStack(spacing: 1.5) {
+                if line.filesChanged >= 0 {
+                    AgentTileFiles(line: line)
+                }
+                AgentTileBadges(line: line)
+                if line.status == .success && !line.isActive {
+                    AgentTileDone()
+                } else if line.backgroundTasks > 0 {
+                    AgentTileTasks(count: line.backgroundTasks, active: line.isActive)
+                }
+            }
+            .padding(Self.ring + 1)
             .allowsHitTesting(false)
         }
         .frame(width: Self.side, height: Self.side)
         .overlay(alignment: .topTrailing) {
-            AgentTilePill(line: line)
-                .padding(3)
+            AgentTileStatusDot(status: line.status)
+                .offset(x: 2, y: -2)
                 .allowsHitTesting(false)
-        }
-        .overlay(alignment: .bottomLeading) {
-            if line.backgroundTasks > 0 {
-                AgentTileTasks(count: line.backgroundTasks, active: line.isActive)
-                    .padding(4)
-                    .allowsHitTesting(false)
-            }
         }
         .overlay(alignment: .topLeading) {
             if line.unread {
@@ -291,15 +295,10 @@ struct AgentEagleTile: View {
 
 struct AgentChurnRing: View {
     @Environment(\.fmPalette) private var fm
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.shellTabHidden) private var tabHidden
     let added: Int
     let removed: Int
     let radius: CGFloat
     let width: CGFloat
-    var spinning = false
-
-    private static let period = 2.4
 
     private var share: CGFloat? {
         let plus = max(added, 0)
@@ -308,25 +307,12 @@ struct AgentChurnRing: View {
         return CGFloat(plus) / CGFloat(plus + minus)
     }
 
-    private var turns: Bool { spinning && !reduceMotion && share != nil }
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !turns || tabHidden)) {
-            (context: TimelineViewDefaultContext) in
-            ring(turns ? Self.phase(context.date) : 0)
-        }
-    }
-
-    private static func phase(_ date: Date) -> CGFloat {
-        CGFloat(date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period)
-    }
-
-    @ViewBuilder private func ring(_ phase: CGFloat) -> some View {
+    @ViewBuilder var body: some View {
         if let share {
             ZStack {
-                AgentRingArc(radius: radius, inset: width / 2, start: phase, length: share)
+                AgentRingArc(radius: radius, inset: width / 2, start: 0, length: share)
                     .stroke(fm.success, style: StrokeStyle(lineWidth: width))
-                AgentRingArc(radius: radius, inset: width / 2, start: phase + share, length: 1 - share)
+                AgentRingArc(radius: radius, inset: width / 2, start: share, length: 1 - share)
                     .stroke(fm.danger, style: StrokeStyle(lineWidth: width))
             }
         } else {
@@ -353,12 +339,114 @@ struct AgentRingArc: Shape {
     }
 }
 
-struct AgentTilePill: View {
+struct AgentTokenRing: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shellTabHidden) private var tabHidden
     let line: AgentLine
+    let radius: CGFloat
+    @State private var sampler = AgentTokenSampler()
+    @State private var clock = AgentTokenClock()
+    @State private var live: DesktopAgentTokens?
+
+    private static let width: CGFloat = 1
+    private static let dash: [CGFloat] = [2.5, 2]
+    private static let settleAfter: Duration = .seconds(10)
+    private static let holdEvery: Duration = .seconds(1)
+
+    private var reading: [Int] {
+        let fed = live?.totals ?? []
+        guard fed.count == 2 else { return [line.tokensIn, line.tokensOut] }
+        return [max(line.tokensIn, fed[0]), max(line.tokensOut, fed[1])]
+    }
+
+    private var inPace: AgentTokenPace { line.isActive ? sampler.inPace : .idle }
+
+    private var outPace: AgentTokenPace { line.isActive ? sampler.outPace : .idle }
+
+    private var inTravel: Double { line.isActive ? sampler.inTravel : 0 }
+
+    private var outTravel: Double { line.isActive ? sampler.outTravel : 0 }
+
+    private var moving: Bool { !reduceMotion && (inTravel > 0 || outTravel > 0) }
+
+    var body: some View {
+        let now = reading
+        Group {
+            if now[0] > 0 || now[1] > 0 {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !moving || tabHidden)) {
+                    (context: TimelineViewDefaultContext) in
+                    let phase = clock.advance(
+                        to: context.date.timeIntervalSinceReferenceDate, running: moving && !tabHidden,
+                        inTravel: inTravel, outTravel: outTravel, wrap: Double(Self.dash.reduce(0, +)))
+                    ZStack {
+                        lane(inset: Self.width / 2, pace: inPace, phase: phase.in)
+                        lane(inset: Self.width * 1.5, pace: outPace, phase: phase.out)
+                    }
+                }
+            } else {
+                RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: Self.width)
+                    .stroke(fm.border, lineWidth: 0.5)
+            }
+        }
+        .onChange(of: now, initial: true) { (_: [Int], next: [Int]) in
+            sampler.sample(tokensIn: next[0], tokensOut: next[1], atMs: Int(Date().timeIntervalSince1970 * 1000))
+        }
+        .onChange(of: line.desktopSessionId, initial: true) { (_: Int, session: Int) in
+            live = session > 0 ? DesktopRemoteFeature.vitals?.agentTokens(session) : nil
+        }
+        .task(id: now) {
+            try? await Task.sleep(for: Self.settleAfter)
+            if !Task.isCancelled { sampler.settle() }
+        }
+        .task(id: line.isActive) {
+            guard line.isActive else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.holdEvery)
+                if Task.isCancelled { return }
+                sampler.hold(atMs: Int(Date().timeIntervalSince1970 * 1000))
+            }
+        }
+    }
+
+    private func lane(inset: CGFloat, pace: AgentTokenPace, phase: Double) -> some View {
+        RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: inset)
+            .stroke(tint(pace), style: StrokeStyle(lineWidth: Self.width, dash: Self.dash, dashPhase: CGFloat(phase)))
+    }
+
+    private func tint(_ pace: AgentTokenPace) -> Color {
+        switch pace {
+        case .idle: return fm.textTertiary
+        case .slow: return fm.accent
+        case .steady: return fm.success
+        case .fast: return fm.warning
+        case .blazing: return fm.danger
+        }
+    }
+}
+
+final class AgentTokenClock {
+    private var last: Double?
+    private var inPhase = 0.0
+    private var outPhase = 0.0
+
+    func advance(to now: Double, running: Bool, inTravel: Double, outTravel: Double, wrap: Double) -> (in: Double, out: Double) {
+        if running, let last {
+            let elapsed = min(max(now - last, 0), 0.25)
+            inPhase = (inPhase - elapsed * inTravel).truncatingRemainder(dividingBy: wrap)
+            outPhase = (outPhase + elapsed * outTravel).truncatingRemainder(dividingBy: wrap)
+        }
+        last = running ? now : nil
+        return (inPhase, outPhase)
+    }
+}
+
+struct AgentTileStatusDot: View {
+    @Environment(\.fmPalette) private var fm
+    let status: AgentLineStatus
 
     private var tint: Color {
-        switch line.status {
+        switch status {
         case .running: return fm.accent
         case .waiting: return AgentDotsPainter.paused(fm.warning)
         case .success: return fm.success
@@ -369,21 +457,94 @@ struct AgentTilePill: View {
     }
 
     var body: some View {
-        HStack(spacing: 2) {
-            if line.filesChanged >= 0 {
-                Text(AgentLines.compactCount(line.filesChanged))
-                    .font(.system(size: 7, weight: .bold).monospacedDigit())
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                    .fixedSize()
+        Circle()
+            .fill(tint)
+            .frame(width: 8, height: 8)
+            .overlay(Circle().strokeBorder(fm.bgOverlay, lineWidth: 1.5).padding(-1.5))
+            .accessibilityHidden(true)
+    }
+}
+
+struct AgentTileFiles: View {
+    let line: AgentLine
+
+    private static let height: CGFloat = 9
+
+    var body: some View {
+        Text(AgentLines.compactCount(line.filesChanged))
+            .font(.system(size: 7, weight: .bold).monospacedDigit())
+            .foregroundStyle(Color.white)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 3)
+            .frame(height: Self.height)
+            .background(Capsule().fill(Color.black.opacity(0.45)))
+            .overlay(
+                AgentChurnRing(
+                    added: line.linesAdded, removed: line.linesRemoved, radius: Self.height / 2, width: 0.75))
+    }
+}
+
+struct AgentTileBadges: View {
+    @Environment(\.fmPalette) private var fm
+    let line: AgentLine
+
+    private static let shown = 4
+
+    var body: some View {
+        let badges = AgentLineBadge.of(line).prefix(Self.shown)
+        if !badges.isEmpty {
+            HStack(spacing: 1) {
+                ForEach(Array(badges), id: \.self) { (badge: AgentLineBadge) in
+                    Image(systemName: symbol(badge))
+                        .font(.system(size: 4.5, weight: .bold))
+                        .foregroundStyle(tint(badge))
+                        .frame(width: 5, height: 5)
+                }
             }
-            Circle()
-                .fill(tint)
-                .frame(width: 5, height: 5)
+            .padding(.horizontal, 1.5)
+            .frame(height: 7)
+            .background(Capsule().fill(Color.black.opacity(0.45)))
+            .accessibilityHidden(true)
         }
-        .padding(.horizontal, line.filesChanged >= 0 ? 3 : 2.5)
-        .frame(height: 10)
-        .background(Capsule().fill(Color.black.opacity(0.45)))
+    }
+
+    private func symbol(_ badge: AgentLineBadge) -> String {
+        switch badge {
+        case .conflicted: return "exclamationmark.triangle.fill"
+        case .behind: return "arrow.down"
+        case .worktree: return "folder.fill"
+        case .branch: return "arrow.triangle.branch"
+        case .ahead: return "smallcircle.filled.circle"
+        case .pull: return "arrow.triangle.pull"
+        case .runner: return "cpu"
+        case .cloud: return "cloud.fill"
+        case .outside: return "terminal"
+        }
+    }
+
+    private func tint(_ badge: AgentLineBadge) -> Color {
+        switch badge {
+        case .conflicted, .behind: return Color.fmHex("#e3742f") ?? fm.warning
+        case .worktree, .runner, .cloud: return fm.accent
+        case .branch, .ahead, .pull, .outside: return Color.white
+        }
+    }
+}
+
+struct AgentTileDone: View {
+    @Environment(\.fmPalette) private var fm
+
+    var body: some View {
+        Text("done")
+            .font(.system(size: 5.5, weight: .heavy))
+            .foregroundStyle(Color.white)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 3)
+            .frame(height: 7)
+            .background(Capsule().fill(fm.success))
+            .accessibilityHidden(true)
     }
 }
 
@@ -393,7 +554,8 @@ struct AgentTileTasks: View {
     let count: Int
     let active: Bool
 
-    private static let shown = 3
+    private static let shown = 10
+    private static let kept = 7
     private static let period = 1.4
 
     private var blinking: Bool { active && !reduceMotion }
@@ -411,20 +573,22 @@ struct AgentTileTasks: View {
         return 0.6 + 0.4 * cos(phase * 2 * .pi)
     }
 
+    private var drawn: Int { count > Self.shown ? Self.kept : count }
+
     private var dots: some View {
-        HStack(spacing: 1.5) {
-            ForEach(0..<min(count, Self.shown), id: \.self) { _ in
-                Circle().fill(Color.white).frame(width: 3.5, height: 3.5)
+        HStack(spacing: 1) {
+            ForEach(0..<drawn, id: \.self) { _ in
+                Capsule().fill(Color.white).frame(width: 1, height: 4)
             }
-            if count > Self.shown {
-                Text("+\(count - Self.shown)")
-                    .font(.system(size: 6.5, weight: .bold).monospacedDigit())
+            if count > drawn {
+                Text("+\(count - drawn)")
+                    .font(.system(size: 5.5, weight: .bold).monospacedDigit())
                     .foregroundStyle(Color.white)
                     .fixedSize()
             }
         }
-        .padding(.horizontal, 2.5)
-        .frame(height: 7)
+        .padding(.horizontal, 2)
+        .frame(height: 6)
         .background(Capsule().fill(Color.black.opacity(0.45)))
     }
 }

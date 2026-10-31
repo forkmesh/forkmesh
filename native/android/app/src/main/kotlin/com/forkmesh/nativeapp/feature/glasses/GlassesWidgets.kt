@@ -327,7 +327,7 @@ internal fun GlassesRadarChip() {
     val alarmed = state.ringing || glasses > 0
     val blips = GlassesRadarLayout.blips(state.others, state.nearby, state.homing, heading)
     val label = if (glasses > 0) {
-        "Glasses Alert: ${if (glasses == 1) "smart glasses" else "$glasses smart glasses"} nearby, $count devices heard"
+        "Glasses Alert: ${if (glasses == 1) "smart glasses or a camera" else "$glasses smart glasses or cameras"} nearby, $count devices heard"
     } else {
         "Glasses Alert scanning, ${if (count == 1) "1 device" else "$count devices"} heard"
     }

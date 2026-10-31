@@ -308,9 +308,8 @@ struct ChatAttachmentView: View {
     }
 
     static func temporaryFile(_ attachment: ChatAttachment) -> URL? {
-        let safe = attachment.fileName.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "..", with: "_")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("chat-media", isDirectory: true)
-        let url = directory.appendingPathComponent("\(attachment.messageId.prefix(24))-\(safe)")
+        guard let url = ChatMediaFile.url(for: attachment, in: directory) else { return nil }
         if FileManager.default.fileExists(atPath: url.path) { return url }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

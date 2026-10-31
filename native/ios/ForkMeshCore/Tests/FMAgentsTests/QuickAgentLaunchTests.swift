@@ -362,6 +362,35 @@ final class QuickAgentLaunchTests: XCTestCase {
         XCTAssertEqual(again.destination, .desktop("studio"))
     }
 
+    func testEveryDesktopOfTheAccountIsOfferedAndTheChosenOneTakesThePrompt() async {
+        let api = api([AgentLaunchTarget(node: "fmnext-r1", providers: ["claude-code"], online: true)])
+        let prefs = InMemoryKeyValueStore()
+        let quick = launcher(api, prefs: prefs)
+        let desk = FakeQuickDesktop(name: "studio")
+        desk.names = ["studio", "laptop"]
+        desk.details = ["laptop": "Not reachable right now"]
+        quick.desktop = desk
+        await quick.prepare()
+        XCTAssertTrue(quick.destinations.contains(.desktop("studio")))
+        XCTAssertTrue(quick.destinations.contains(.desktop("laptop")))
+        XCTAssertEqual(quick.detail(.desktop("laptop")), "Your desktop, directly · Not reachable right now")
+        quick.choose(.desktop("laptop"))
+        XCTAssertEqual(quick.contextLine, "alice/mobile · laptop (desktop)")
+        let outcome = await quick.send(prompt: "Go", images: [])
+        XCTAssertEqual(outcome, .desktop(name: "laptop", agentId: 7, message: "Started agent #7 on laptop."))
+        XCTAssertEqual(desk.chosen, ["laptop"])
+
+        let again = launcher(api, prefs: prefs)
+        again.desktop = desk
+        await again.prepare()
+        XCTAssertEqual(again.destination, .desktop("laptop"))
+        desk.names = ["studio"]
+        let later = launcher(api, prefs: prefs)
+        later.desktop = desk
+        await later.prepare()
+        XCTAssertEqual(later.destination, .desktop("studio"))
+    }
+
     func testYoloAndNoWorktreeGoToTheDesktopOnly() async {
         let api = api([AgentLaunchTarget(node: "fmnext-r1", providers: ["claude-code"], online: true)])
         let prefs = InMemoryKeyValueStore()
@@ -447,7 +476,17 @@ private final class FakeQuickDesktop: QuickLaunchDesktop {
     var startOptions: [QuickLaunchRunOptions] = []
     var startImages: [[PromptAttachment]] = []
 
+    var names: [String]?
+    var details: [String: String] = [:]
+    var chosen: [String] = []
+
     init(name: String) { desktopName = name }
+
+    var desktopNames: [String] { names ?? [desktopName] }
+
+    func desktopDetail(for name: String) -> String { details[name] ?? desktopDetail }
+
+    func choose(desktop name: String) { chosen.append(name) }
 
     func start(
         owner: String, name: String, task: String, provider: String, model: String, mode: String,

@@ -1,6 +1,7 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QDesktopServices>
@@ -341,23 +342,31 @@ void WelcomeOverlay::buildAccount()
     layout->addSpacing(8);
     layout->addWidget(welcomeLabel(
         "welcomeLede",
-        QStringLiteral("Use an account from this or another ForkMesh "
-                       "instance. The instance is saved with the account for "
-                       "quick switching."),
+        QStringLiteral("Use the same account you use on the ForkMesh "
+                       "website. Continue only signs you in: it does not "
+                       "create an account or an instance."),
         page));
     layout->addSpacing(20);
 
     m_accountEdit = new QLineEdit(page);
     m_accountEdit->setObjectName(QStringLiteral("welcomeAccountEdit"));
     m_accountEdit->setPlaceholderText(QStringLiteral("username"));
-    layout->addWidget(kit::labeledField(QStringLiteral("ForkMesh username"),
-                                        m_accountEdit, QString(), page));
+    layout->addWidget(kit::labeledField(
+        QStringLiteral("ForkMesh username"), m_accountEdit,
+        QStringLiteral("The name on your ForkMesh profile, not your email. "
+                       "This box may be filled in for you; change it if it "
+                       "is not your username."),
+        page));
     layout->addSpacing(14);
     m_instanceEdit = new QLineEdit(page);
     m_instanceEdit->setObjectName(QStringLiteral("welcomeInstanceEdit"));
     m_instanceEdit->setPlaceholderText(serverHostDisplay(kDefaultServerUrl));
-    layout->addWidget(kit::labeledField(QStringLiteral("Instance"),
-                                        m_instanceEdit, QString(), page));
+    layout->addWidget(kit::labeledField(
+        QStringLiteral("Instance"), m_instanceEdit,
+        QStringLiteral("The ForkMesh server that holds your account. Leave "
+                       "it as it is unless someone gave you a different "
+                       "one."),
+        page));
     layout->addSpacing(12);
 
     m_accountNotice = new kit::InlineNotice(page);
@@ -387,8 +396,8 @@ void WelcomeOverlay::buildCredentials()
     layout->addSpacing(8);
     layout->addWidget(welcomeLabel(
         "welcomeLede",
-        QStringLiteral("Log in with your email and password to join the "
-                       "network."),
+        QStringLiteral("Use the email and password you use on the ForkMesh "
+                       "website. There is no separate desktop password."),
         page));
     layout->addSpacing(20);
 
@@ -401,6 +410,7 @@ void WelcomeOverlay::buildCredentials()
     m_passwordEdit = new QLineEdit(page);
     m_passwordEdit->setObjectName(QStringLiteral("welcomePasswordEdit"));
     m_passwordEdit->setEchoMode(QLineEdit::Password);
+    kit::addPasswordReveal(m_passwordEdit);
     layout->addWidget(kit::labeledField(QStringLiteral("Password"),
                                         m_passwordEdit, QString(), page));
     layout->addSpacing(14);
@@ -728,6 +738,9 @@ bool WelcomeOverlay::runCredentials(const QString &accountName)
     m_loginAccount = accountName;
     m_credTitle->setText(QStringLiteral("Log in to @%1").arg(accountName));
     m_passwordEdit->clear();
+    if (auto *reveal = m_passwordEdit->findChild<QAction *>(
+            QStringLiteral("passwordReveal")))
+        reveal->setChecked(false);
     m_totpEdit->clear();
     m_credNotice->clear();
     m_awaitingAck = false;

@@ -47,7 +47,7 @@ import kotlinx.coroutines.withContext
 internal fun queueWaitingLabel(position: Int): String = "Waiting — #${position + 1} in queue"
 
 internal fun queuedRowFor(center: AgentControlCenter, sessionId: Int): UnifiedAgentRow? =
-    center.rows.firstOrNull { it.isDesktop && !it.outside && it.localId == sessionId }
+    center.rows.firstOrNull { it.isDesktop && !it.outside && !it.elsewhere && it.localId == sessionId }
 
 @Composable
 internal fun DesktopQueueSummaryRow(navigator: Navigator) {
@@ -244,6 +244,7 @@ private fun QueueSheetBody(
                     act(null) { center.setQueueLimit(next) }
                 }),
                 color = c.textSecondary,
+                busy = busy,
             )
             Text(
                 "${queue.limit}",
@@ -258,6 +259,7 @@ private fun QueueSheetBody(
                     act(null) { center.setQueueLimit(next) }
                 }),
                 color = c.accent,
+                busy = busy,
             )
         }
         Spacer(Modifier.height(FmSpace.x4))
@@ -336,24 +338,28 @@ private fun QueuedSheetItem(
                 "Move to top",
                 onPressed = if (movable && index > 0) ({ onMove(QueueMove.Top) }) else null,
                 color = c.textSecondary,
+                busy = busy,
             )
             FmIconButton(
                 "keyboard_arrow_up",
                 "Move up",
                 onPressed = if (movable && index > 0) ({ onMove(QueueMove.Up) }) else null,
                 color = c.textSecondary,
+                busy = busy,
             )
             FmIconButton(
                 "keyboard_arrow_down",
                 "Move down",
                 onPressed = if (movable && !last) ({ onMove(QueueMove.Down) }) else null,
                 color = c.textSecondary,
+                busy = busy,
             )
             FmIconButton(
                 "vertical_align_bottom",
                 "Move to bottom",
                 onPressed = if (movable && !last) ({ onMove(QueueMove.Bottom) }) else null,
                 color = c.textSecondary,
+                busy = busy,
             )
             Spacer(Modifier.weight(1f))
             if (row != null && row.canStop) {

@@ -77,8 +77,8 @@ void testWire()
     check((readU32(signedPacket, 16) & FlagSigned) && signedPacket.mid(48, 16) != QByteArray(16, '\0')
               && sign(signedPacket, key) == signedPacket,
           QStringLiteral("signing sets the flag and an HMAC-SHA256 signature that verifies"));
-    check(fromFileTime(toFileTime(QDateTime(QDate(2026, 10, 18), QTime(8, 30), QTimeZone::UTC)))
-              == QDateTime(QDate(2026, 10, 18), QTime(8, 30), QTimeZone::UTC),
+    check(fromFileTime(toFileTime(QDateTime(QDate(2026, 10, 18), QTime(8, 30), QTimeZone::utc())))
+              == QDateTime(QDate(2026, 10, 18), QTime(8, 30), QTimeZone::utc()),
           QStringLiteral("FILETIME converts both ways"));
     check(rpcBind(1).size() == 72 && readU16(rpcBind(1), 8) == 72, QStringLiteral("the srvsvc bind PDU carries its own length"));
 }
@@ -172,7 +172,7 @@ void testClient()
         return Entry();
     };
     check(find(QStringLiteral("Movies")).folder && find(QStringLiteral("big.bin")).size == big.size() && find(QStringLiteral(".hidden")).hidden
-              && find(QStringLiteral("big.bin")).modified == QDateTime(QDate(2026, 10, 1), QTime(12, 0), QTimeZone::UTC),
+              && find(QStringLiteral("big.bin")).modified == QDateTime(QDate(2026, 10, 1), QTime(12, 0), QTimeZone::utc()),
           QStringLiteral("entries carry folder, size, hidden and modified time"));
 
     QBuffer sink;

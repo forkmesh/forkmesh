@@ -179,9 +179,11 @@ def test_award_badge_is_a_noop_for_unknown_slug_or_missing_account():
 # --- account_badges_handler ---------------------------------------------------
 
 def _account_badges_ns(is_admin, account_exists=True, existing_awards=None,
-                       orgs=()):
+                       orgs=(), profile_private=False, session_name="actor",
+                       owned_nodes=()):
     writes = []
     audits = []
+    reads = []
 
     async def ensure_schema(env):
         return None
@@ -189,10 +191,18 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None,
     async def account_row(env, name):
         if not account_exists:
             return "", None
-        return name + "-bi", {"name": name}
+        rec = {"name": name}
+        if profile_private:
+            rec["profile_private"] = True
+        return name + "-bi", rec
 
     async def session_record(env, request, data=None):
-        return "actor-bi", {"name": "actor"}
+        if not session_name:
+            return "", None
+        return session_name + "-bi", {"name": session_name}
+
+    async def owns_node(env, actor, node):
+        return (actor, node) in owned_nodes
 
     async def org_row(env, name):
         return name + "-bi", ({"name": name} if name in orgs else None)
@@ -213,6 +223,7 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None,
         writes.append(("d1_run", sql, params))
 
     async def d1_all(env, sql, *params):
+        reads.append(sql)
         return existing_awards or []
 
     ns = _load(
@@ -227,6 +238,7 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None,
             "_account_row": account_row,
             "_org_row": org_row,
             "_account_session_record": session_record,
+            "_account_owns_node": owns_node,
             "_has_role": has_role,
             "_audit_sensitive_action": audit,
             "_award_badge": award_badge,
@@ -235,6 +247,7 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None,
             "json_response": _response,
         },
     )
+    ns["account_badges_handler"].reads = reads
     return ns["account_badges_handler"], writes, audits
 
 
@@ -272,6 +285,25 @@ def test_get_unknown_account_is_not_found():
         is_admin=False, account_exists=False)
     response = _run(handler(None, _Req("GET"), "ghost"))
     assert response == {"status": 404, "data": {"error": "not_found"}}
+
+
+def test_private_profile_badges_are_hidden_from_everyone_but_the_owner():
+    awards = [{"badge_slug": "mirror_operator", "granted_by": "system",
+               "created_at": 42}]
+    for session_name in ("", "mallory"):
+        handler, _writes, _audits = _account_badges_ns(
+            is_admin=False, existing_awards=awards, profile_private=True,
+            session_name=session_name)
+        response = _run(handler(None, _Req("GET"), "jett"))
+        assert response == {"status": 404, "data": {"error": "not_found"}}
+        assert handler.reads == []
+    for session_name, owned in (("jett", ()), ("ann", {("ann", "jett")})):
+        handler, _writes, _audits = _account_badges_ns(
+            is_admin=False, existing_awards=awards, profile_private=True,
+            session_name=session_name, owned_nodes=owned)
+        response = _run(handler(None, _Req("GET"), "jett"))
+        assert response["status"] == 200
+        assert response["data"]["badges"][0]["slug"] == "mirror_operator"
 
 
 def test_get_organization_badges_is_an_empty_public_list():

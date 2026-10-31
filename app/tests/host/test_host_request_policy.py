@@ -360,6 +360,21 @@ def test_rate_limit_answers_429_with_retry_after(monkeypatch):
     assert app.request_policy.stats["rate_limited"] == 2
 
 
+
+def test_rate_limit_charges_an_ipv6_slash_64_as_one_visitor(monkeypatch):
+    limiter = RateLimiter(requests=2, period=10, timeout=30)
+    app, _ = _app(monkeypatch=monkeypatch, limiter=limiter)
+    statuses = [
+        _call(app, _scope(ip="2001:db9:5:6::%x" % index))[0]
+        for index in range(1, 4)
+    ]
+    assert statuses == [200, 200, 429]
+    assert _call(app, _scope(ip="2001:db9:5:7::1"))[0] == 200
+    assert set(limiter._clients) == {"2001:db9:5:6::/64", "2001:db9:5:7::/64"}
+    assert _call(app, _scope(ip="::ffff:192.0.2.70"))[0] == 200
+    assert "192.0.2.70" in limiter._clients
+
+
 def test_rate_limit_window_resets_and_zero_disables():
     now = [0.0]
     limiter = RateLimiter(requests=2, period=10, timeout=0,

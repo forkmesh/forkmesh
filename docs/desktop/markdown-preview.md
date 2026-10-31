@@ -100,3 +100,21 @@ its own `markdownLinkHandler` (repository files) decides; every other preview
 opens only `http`, `https` and `mailto` links in the browser. Markdown from
 an untrusted repository or a network share can therefore not open `file://`,
 `smb://` or a custom URL handler on this machine with one click.
+
+Issue, pull request, discussion, comment and Market manifest bodies follow the
+same rule. `openBodyReference` and `openReferenceLink` handle their in-app
+prefixes (`forkmesh-issue:`, `fm-pull:`, `forkmesh://…`) themselves. Any other
+target goes through `ChatLinkText::externalLinkUrl`, which accepts only `http`
+or `https` with a host, or `mailto`, and drops everything else. The Markdown
+editor's preview (`MarkdownEditor`) routes `anchorClicked` through the same
+filter, as do the issue completeness report dialog, Market package guide links
+and special agent home link widgets. The remaining `setOpenExternalLinks(true)`
+labels hold only links the desktop builds itself, and
+`tests/validate_body_link_schemes.py` keeps a count per file so a new one has
+to be listed there or use the filter. Until 2026-10-27 those paths handed any
+href to `QDesktopServices`.
+A link labelled as a forkmesh.com page could point at
+`file://attacker/share/x.exe` (on Windows that leaks the user's NTLM hash
+over SMB) or at any registered protocol handler. Guarded by
+`tests/validate_body_link_schemes.py` and the `externalLinkUrl` checks in
+`forkmesh-tests`.

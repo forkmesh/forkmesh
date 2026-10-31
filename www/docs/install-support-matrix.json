@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-09-13",
+  "updated": "2026-10-24",
   "tiers": {
     "supported": "A prebuilt artifact is published on the latest release channel, bound into the Ed25519-signed release manifest, SHA-256 verified by the installer, and covered by automated install and lifecycle tests. Regressions block a release.",
     "preview": "Packaging exists, but the latest channel does not publish the artifact or clean-machine evidence is missing. Use it knowing that fixes are best-effort.",
@@ -165,10 +165,10 @@
       "os": "ios",
       "arch": "arm64",
       "tier": "preview",
-      "install": "TestFlight or App Store builds uploaded by the Codemagic ios-native-release workflow (codemagic.yaml, native/ios).",
+      "install": "Install ForkMesh from the App Store (https://apps.apple.com/app/forkmesh/id6803060735); the Apple Watch app ships inside it. Builds come from the Codemagic ios-native-release workflow (codemagic.yaml, native/ios). Listed as preview only because App Store builds are not in the signed release manifest.",
       "artifacts": [],
       "signing": "Apple distribution signing through App Store Connect.",
-      "evidence": []
+      "evidence": ["app/tests/test_codemagic_native_build.py"]
     },
     {
       "id": "oci-container",
