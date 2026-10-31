@@ -757,7 +757,7 @@ class InvoiceEditorScreen(private val model: InvoicesModel, private val seed: In
                         InvoiceRevision.bump()
                         if (current.isNew) navigator.replace(InvoiceDetailScreen(model, saved.id)) else navigator.pop()
                     }
-                }, enabled = !saving && edit != null) { Text(if (saving) "Saving…" else "Save") }
+                }, enabled = !saving && edit != null, busy = saving) { Text(if (saving) "Saving…" else "Save") }
             }
             if (edit == null) {
                 ErrorLine(error)

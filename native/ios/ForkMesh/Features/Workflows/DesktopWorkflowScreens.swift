@@ -207,7 +207,7 @@ struct DesktopWorkflowScreen: View {
                 FmTextField(text: $assignment, hint: row.specialAgent ? "Assignment (optional)" : "Input for the run (optional)")
                     .accessibilityIdentifier("desktop-workflow-assignment")
                 FmFilledButton(
-                    busy ? "Asking the desktop…" : "Run on the desktop", icon: "play_arrow", fillWidth: true,
+                    busy ? "Asking the desktop…" : "Run on the desktop", icon: "play_arrow", fillWidth: true, busy: busy,
                     onPressed: busy || !row.enabled || !row.error.isEmpty ? nil : { Task { await prepare("run", row) } })
                     .accessibilityIdentifier("desktop-workflow-run")
                 if !row.enabled {

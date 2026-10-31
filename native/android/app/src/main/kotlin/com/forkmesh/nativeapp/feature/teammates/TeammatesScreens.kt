@@ -694,6 +694,7 @@ internal class TeammateScreen(private val id: String) : Screen() {
                                     if (row.status.isWorking) "Steer the live run" else "Send",
                                     onClick = if (sending || prompt.isBlank()) null else ({ send() }),
                                     icon = "send",
+                                    busy = sending,
                                 )
                                 if (sending) CircularProgressIndicator(Modifier.padding(start = FmSpace.x2).size(20.dp), strokeWidth = 2.dp)
                             }

@@ -934,7 +934,8 @@ QWidget *MainWindow::buildSettingsSection()
 
     addLazyTab([this] { return buildMcpConnectorTab(); }, "MCP", "link");
 
-    addLazyTab([this] { return buildLocalControlTab(); }, "Phone", "device-mobile");
+    m_phoneSettingsTabIndex =
+        addLazyTab([this] { return buildLocalControlTab(); }, "Phone", "device-mobile");
 
     if (forkmesh::systemdtimers::systemctlAvailable()) {
         addLazyTab(
@@ -12613,7 +12614,8 @@ void MainWindow::flashMessageImpl(const QString &text, bool error,
         reportUserVisibleError(QStringLiteral("notice"), QString(), text,
                                QString(), pingId);
     if (unsolicited) {
-        if (!pingsPaused() && forkmesh::pings::pingKindEnabled(kind))
+        if (!pingsPaused() && forkmesh::pings::pingKindEnabled(kind) &&
+            admitPingSound())
             forkmesh::sonify::UiSounds::play(
                 error ? forkmesh::sonify::Cue::Error
                       : forkmesh::sonify::Cue::Arrive);

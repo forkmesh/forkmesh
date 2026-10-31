@@ -264,8 +264,8 @@ internal class FleetScreen : FleetActionScreen() {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Healthy mirrors: $desired", style = Fm.text.bodyMedium.copy(color = if (targetOn) Fm.colors.textPrimary else Fm.colors.textDisabled), modifier = Modifier.weight(1f))
-                    FmIconButton("remove", "Fewer", onPressed = if (targetOn && desired > 1) ({ desired-- }) else null)
-                    FmIconButton("add", "More", onPressed = if (targetOn && desired < 12) ({ desired++ }) else null)
+                    FmIconButton("remove", "Fewer", onPressed = if (targetOn && desired > 1) ({ desired-- }) else null, busy = false)
+                    FmIconButton("add", "More", onPressed = if (targetOn && desired < 12) ({ desired++ }) else null, busy = false)
                 }
             }
             item {
@@ -273,6 +273,7 @@ internal class FleetScreen : FleetActionScreen() {
                     FmToneButton(
                         "Apply",
                         onPressed = if (preparing || (targetOn == fleet.enabled && desired == fleet.desired)) null else ({ prepare(scope, store, FleetAction.Target(targetOn, desired)) }),
+                        busy = preparing,
                     )
                     FmToneButton(
                         "Check the fleet now",
@@ -321,7 +322,7 @@ internal class FleetScreen : FleetActionScreen() {
                     textStyle = Fm.text.bodyLarge.copy(fontFamily = FmType.mono),
                 )
                 Spacer(Modifier.width(FmSpace.x2))
-                FmToneButton("Link node", onPressed = if (preparing || !FleetInput.validLinkCode(linkCode)) null else ({ prepare(scope, store, FleetAction.LinkCode(linkCode)) }))
+                FmToneButton("Link node", onPressed = if (preparing || !FleetInput.validLinkCode(linkCode)) null else ({ prepare(scope, store, FleetAction.LinkCode(linkCode)) }), busy = preparing)
             }
         }
         item {
@@ -448,7 +449,7 @@ internal class AddSshHostScreen(private val onAdded: (String) -> Unit = {}) : Fl
                         style = Fm.text.labelSmall.copy(color = c.textTertiary),
                     )
                 }
-                item { FmToneButton("Next", tone = FmTone.Accent, onPressed = if (!valid || preparing) null else ({ prepare(scope, store, FleetAction.Add(name, address, user)) })) }
+                item { FmToneButton("Next", tone = FmTone.Accent, onPressed = if (!valid || preparing) null else ({ prepare(scope, store, FleetAction.Add(name, address, user)) }), busy = preparing) }
                 notices()
             }
         }

@@ -188,7 +188,7 @@ private struct SpeechContent: View {
                 }
                 .accessibilityIdentifier("speech-stop")
             }
-            FmIconButton(label: "Save audio", onPressed: model.canSpeak && !model.rendering ? {
+            FmIconButton(label: "Save audio", busy: model.rendering, onPressed: model.canSpeak && !model.rendering ? {
                 editing = false
                 Task {
                     if let url = await model.renderAudio() {

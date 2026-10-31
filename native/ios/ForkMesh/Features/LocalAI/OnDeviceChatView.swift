@@ -327,7 +327,7 @@ struct OnDeviceChatComposer: View {
                         chat.stop()
                     }
                 } else {
-                    FmIconButton(icon: "send_rounded", label: "Send", size: 26, color: fm.accent, onPressed: sendAction)
+                    FmIconButton(icon: "send_rounded", label: "Send", size: 26, color: fm.accent, busy: false, onPressed: sendAction)
                 }
             }
         }

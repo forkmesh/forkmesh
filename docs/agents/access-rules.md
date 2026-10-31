@@ -161,7 +161,8 @@ Teammate permissions enforced by the run
 
 Mode (`agentrules::teammateRunMode`): without `modify-code` or
 `run-unattended` a teammate plans. An empty mode is Auto only with
-`run-unattended`, otherwise Edit.
+`run-unattended`, otherwise Edit. A `ui-stalls` run always passes the empty
+mode, never the composer's ([../desktop/diagnostics.md](../desktop/diagnostics.md)).
 
 Narrow grants pre-approve specific commands
 (`agentrules::teammateAllowedToolRules`):
