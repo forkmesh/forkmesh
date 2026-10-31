@@ -131,6 +131,14 @@ can arrive up to a little over an hour after it is due on a small repository,
 more on a large one. Every read is charged to the phase's subrequest budget
 and the run stops when it is spent (`_cron_budget_exhausted`).
 
+The database side is bounded too: the due repositories come from the
+`next_at` index (`LIMIT 2`); the closed and draft pull requests of a batch
+drop their `stale_pulls` rows in one `DELETE ... number IN (...)` instead of
+one statement each, because a sweep passes every closed pull request of the
+repository again each hour and on the cores each write is a Raft entry; and
+the check for an already queued branch delete reads at most
+`MAX_PENDING_BRANCH_OPS` rows of `branch_op_inbox`.
+
 ## Never twice
 
 Each tracked pull request has one `stale_pulls` row with the step already

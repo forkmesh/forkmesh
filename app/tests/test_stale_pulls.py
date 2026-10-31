@@ -519,6 +519,28 @@ def test_a_sweep_is_bounded_and_resumes_where_it_stopped(rt):
     assert row[0] == rt.world.now + sp.SWEEP_MS
 
 
+def test_closed_pulls_drop_their_rows_in_one_statement(rt, monkeypatch):
+    rt.world.records = {n: pull_md(n) for n in (7, 8, 9)}
+    enable(rt)
+    for number in rt.world.records:
+        say(rt, "comment", "alice", T0 + HOUR, number=number)
+    cron(rt, T0 + HOUR + DAY)
+    assert rt.d1.db.execute("SELECT COUNT(*) FROM stale_pulls").fetchone()[0] == 3
+    rt.world.records = {n: pull_md(n, status="closed") for n in (7, 8, 9)}
+    sent = []
+    real = rt.d1.run
+
+    async def spy(env, sql, *args):
+        sent.append(sql)
+        return await real(env, sql, *args)
+
+    monkeypatch.setattr(sp, "d1_run", spy)
+    cron(rt, T0 + HOUR + DAY + sp.SWEEP_MS)
+    assert rt.d1.db.execute("SELECT COUNT(*) FROM stale_pulls").fetchone()[0] == 0
+    assert len([q for q in sent if q.startswith("DELETE FROM stale_pulls")
+                and "updated_at" not in q]) == 1
+
+
 def test_entry_wires_the_setting_the_cron_phase_and_the_purge():
     entry = (ROOT / "src" / "entry.py").read_text("utf-8")
     assert '_stale_pulls = _LazyModule("stale_pulls")' in entry

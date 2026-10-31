@@ -524,8 +524,8 @@ async def deletable_head(env, pass_state, record, head):
         if problem or _branch_protection.branch_is_protected(branch, refs):
             return ""
         rows = await d1_all(
-            env, "SELECT data FROM branch_op_inbox WHERE repo_bi=?",
-            pass_state["repo_bi"])
+            env, "SELECT data FROM branch_op_inbox WHERE repo_bi=? LIMIT ?",
+            pass_state["repo_bi"], MAX_PENDING_BRANCH_OPS)
     except Exception:
         return ""
     rows = list(rows or [])
@@ -682,7 +682,7 @@ async def sweep(env, row, now, totals):
            "public": data.get("publicOwner") or owner, "repo_bi": repo_bi,
            "features": features, "enabledAt": int(data.get("enabledAt") or 0),
            "commit": commit, "refs": refs}
-    done, checks = 0, 0
+    done, checks, settled = 0, 0, []
     for number in batch:
         if number == stop:
             break
@@ -694,8 +694,12 @@ async def sweep(env, row, now, totals):
             outcome = await check(env, pass_state, number, record, now)
             totals[outcome] = totals.get(outcome, 0) + 1
         elif record is not None:
-            await _forget(env, repo_bi, number)
+            settled.append(int(number))
         done += 1
+    if settled:
+        await d1_run(
+            env, "DELETE FROM stale_pulls WHERE repo_bi=? AND number IN (%s)"
+            % ",".join("?" * len(settled)), repo_bi, *settled)
     totals["checked"] = totals.get("checked", 0) + checks
     if done >= len(pending):
         data["cursor"] = 0
