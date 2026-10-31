@@ -86,6 +86,36 @@ def test_page_draws_every_section_with_the_active_one_marked():
     assert '<meta name="robots" content="noindex, nofollow">' in page
 
 
+def test_top_bar_leads_back_to_the_dashboard_and_shows_the_account_picture():
+    shell = _load()
+    page = shell.render_page("Overview", "", active="overview",
+                             console="/ops", account="Ada-Lovelace ")
+    top = page.split('<header class="ab-top">', 1)[1].split("</header>", 1)[0]
+
+    exit_link = re.search(r'<a class="btn btn-sm ab-exit" href="([^"]+)"[^>]*>',
+                          top)
+    assert exit_link and exit_link.group(1) == "/dashboard"
+    assert 'aria-label="Back to dashboard"' in exit_link.group(0)
+    assert "<span>Back to dashboard</span>" in top
+    assert top.index("ab-exit") < top.index('class="avatar"')
+    assert ('<span>AL</span><img src="/api/accounts/ada-lovelace/avatar" '
+            'alt="" decoding="async">') in top
+    assert "<object" not in top
+    assert ".ab-top .avatar img{position:absolute;inset:0" in shell.STYLE
+    assert ".ab-exit span{display:none}" in shell.STYLE
+
+    signed_out = shell.render_page("Overview", "", console="/ops")
+    assert "/api/accounts/" not in signed_out
+    assert 'href="/dashboard"' in signed_out
+
+
+def test_top_bar_avatar_path_cannot_be_steered_by_the_account_name():
+    shell = _load()
+    page = shell.render_page("Overview", "", account='../x"?y=1')
+
+    assert 'src="/api/accounts/..%2Fx%22%3Fy%3D1/avatar"' in page
+
+
 def test_console_links_and_search_need_a_known_console_path():
     shell = _load()
     page = shell.render_page("Product analytics", "", active="analytics")

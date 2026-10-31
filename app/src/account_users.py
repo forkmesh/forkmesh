@@ -2435,6 +2435,7 @@ AVATAR_THUMB_MAX_SOURCE_PIXELS = 4096 * 4096
 AVATAR_THUMB_CACHE_MAX = 512
 AVATAR_IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 AVATAR_SHORT_CACHE_CONTROL = "public, max-age=60"
+AVATAR_OWNER_CACHE_CONTROL = "private, no-store"
 _AVATAR_THUMBS = {}
 
 
@@ -2538,6 +2539,16 @@ def _avatar_bot_response(kind):
     }))
 
 
+async def _avatar_viewer_owns(env, request, rec, name):
+    if not rec or _account_kind(rec) != "user" or rec.get("status") != "active":
+        return False
+    try:
+        viewer = await _account_cookie_name(env, request)
+    except Exception:
+        return False
+    return bool(viewer) and viewer == name
+
+
 async def _account_avatar(env, request, raw_name):
     bot_kind = _avatar_bot_kind(raw_name)
     name = clean_string(raw_name, MAX_NODE_NAME).strip().lower()
@@ -2550,8 +2561,12 @@ async def _account_avatar(env, request, raw_name):
         return json_response(
             {"error": "bad_size"}, status=400, cache_control="no-store")
     rec = await _account_identity_rec_by_bi(env, await blind_index(env, name))
+    own = False
     if not _is_public_roster_member(rec):
-        return _avatar_bot_response(bot_kind) if bot_kind else _avatar_not_found()
+        own = await _avatar_viewer_owns(env, request, rec, name)
+        if not own:
+            return (_avatar_bot_response(bot_kind) if bot_kind
+                    else _avatar_not_found())
     if clean_string(rec.get("name", ""), MAX_NODE_NAME).lower() != name:
         return _avatar_not_found()
     avatar_b64 = _avatar_b64(rec.get("avatar_png", ""))
@@ -2572,7 +2587,8 @@ async def _account_avatar(env, request, raw_name):
         "headers": {
             "content-type": content_type,
             "cache-control": (
-                AVATAR_IMMUTABLE_CACHE_CONTROL if version == digest
+                AVATAR_OWNER_CACHE_CONTROL if own
+                else AVATAR_IMMUTABLE_CACHE_CONTROL if version == digest
                 else AVATAR_SHORT_CACHE_CONTROL),
             "cdn-cache-control": "no-store",
             "x-content-type-options": "nosniff",

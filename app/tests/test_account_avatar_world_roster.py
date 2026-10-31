@@ -169,6 +169,9 @@ class Harness:
             harness.admin_checks += 1
             return "root" if getattr(request, "admin", False) else ""
 
+        async def cookie_name(_env, request):
+            return getattr(request, "viewer", "")
+
         async def users_cache_get():
             hit = harness.cache.get("users")
             if hit is None:
@@ -234,6 +237,7 @@ class Harness:
             "edge_cache_match": edge_cache_match,
             "edge_cache_put": edge_cache_put,
             "_account_identity_rec_by_bi": identity_rec,
+            "_account_cookie_name": cookie_name,
             "blind_index": blind_index,
             "json_response": _json_response,
             "Response": FakeResponse,
@@ -263,10 +267,10 @@ class Harness:
     def run(self, name, *args):
         return asyncio.run(self.scope[name](object(), *args))
 
-    def avatar(self, name, query=""):
+    def avatar(self, name, query="", viewer=""):
         request = SimpleNamespace(
             url="https://app.example/api/accounts/%s/avatar%s" % (
-                name, ("?" + query) if query else ""))
+                name, ("?" + query) if query else ""), viewer=viewer)
         return self.run("_account_avatar", request, name)
 
     def digest(self, name):
@@ -323,6 +327,20 @@ def test_avatar_is_404_outside_the_public_roster():
     harness.records["zed"]["avatar_png"] = "bm90IGEgcG5n"
     assert harness.avatar("zed").status == 404
     assert harness.avatar("zed", "size=64").status == 400
+
+
+def test_owner_sees_their_own_private_avatar_and_nobody_else_does():
+    harness = Harness(_records(TINY_PNG))
+    own = harness.avatar("hid", viewer="hid")
+    assert own.status == 200
+    assert own.body == base64.b64decode(TINY_PNG)
+    assert own.headers["cache-control"] == "private, no-store"
+    assert own.headers["cdn-cache-control"] == "no-store"
+    assert harness.avatar("hid", viewer="zed").status == 404
+    for name in ("new", "box"):
+        assert harness.avatar(name, viewer=name).status == 404, name
+    public = harness.avatar("zed", viewer="zed")
+    assert public.headers["cache-control"] == "public, max-age=60"
 
 
 def test_thumbnail_is_a_128_webp_with_alpha_cached_by_hash():

@@ -40,3 +40,25 @@ profiles keep their logo. Tests:
 `app/tests/test_profile_avatar_fallback.py`.
 
 A fork usually carries an older copy of its parent's roster, so the parent of each of the person's own forks is read right after their own repositories (up to `PROFILE_AVATAR_ROSTER_REPOS`, 4, repositories in all).
+
+## Admin pages
+
+The admin shell (`app/src/admin_shell.py`, `top_bar`) used to draw only the
+signed-in account's initials. It now draws the same uploaded account picture
+the dashboard header shows, from `/api/accounts/<name>/avatar`, as an
+`<img alt="">` laid over the initials: the shell is script-free, an image
+with an empty `alt` that answers 404 draws nothing, so an account with no
+picture shows its initials. It is not an `<object>` with the initials as
+fallback content: every admin page's Content-Security-Policy has
+`object-src 'none'` (or `default-src 'none'`), which blocks the object, so
+the picture would never show; all of them allow `img-src 'self'`. The top bar also has a "Back to
+dashboard" button (`/dashboard`) that leaves admin; at phone width it keeps
+only its icon. The admin shell does not read contributor rosters, so an
+admin with no uploaded picture keeps the initials there.
+
+`/api/accounts/<name>/avatar` serves only public roster members. The signed-in
+owner of an active user account also gets their own picture when their
+profile is private (`_avatar_viewer_owns`), with
+`cache-control: private, no-store`, so an admin with a private profile still
+sees their picture. Tests: `app/tests/test_admin_shell.py` and
+`app/tests/test_account_avatar_world_roster.py`.
