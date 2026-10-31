@@ -191,6 +191,7 @@ detect_os_arch() {
   local n="$1"
   n="${n%.zsync}"
   n="${n%.AppImage}"
+  n="${n%.deb}"
   n="${n%.apk}"
   n="${n%.dmg}"
   n="${n%-setup.exe}"

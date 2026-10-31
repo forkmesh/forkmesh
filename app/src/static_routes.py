@@ -57,6 +57,7 @@ REPO_DOCUMENT_ROUTES = frozenset({
 
 CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "api",
+    "apt",
     "assets",
     "favicon",
     "dashboard",
