@@ -90,16 +90,16 @@ def _setting(monkeypatch, doc):
 
 
 def test_the_instance_document_carries_a_cleaned_setting(monkeypatch):
-    assert _setting(monkeypatch, None) == {"pinned": [], "forks": 3}
-    assert _setting(monkeypatch, "not json") == {"pinned": [], "forks": 3}
-    assert _setting(monkeypatch, "[1, 2]") == {"pinned": [], "forks": 3}
+    assert _setting(monkeypatch, None) == {"pinned": [], "forks": 3, "devto": ""}
+    assert _setting(monkeypatch, "not json") == {"pinned": [], "forks": 3, "devto": ""}
+    assert _setting(monkeypatch, "[1, 2]") == {"pinned": [], "forks": 3, "devto": ""}
     pinned = ["Alice/Widget", "alice/widget", " lamp ", "", "a/b/c", "x" * 162]
     pinned += ["r%d" % n for n in range(20)]
     cleaned = _setting(monkeypatch, json.dumps({"pinned": pinned, "forks": 99}))
     assert cleaned["pinned"][:2] == ["alice/widget", "lamp"]
     assert len(cleaned["pinned"]) == 10
     assert _setting(monkeypatch, json.dumps({"pinned": "acme/app"})) == {
-        "pinned": [], "forks": 3}
+        "pinned": [], "forks": 3, "devto": ""}
     assert cleaned["forks"] == 50
     assert _setting(monkeypatch, json.dumps({"forks": -4}))["forks"] == 0
     assert _setting(monkeypatch, json.dumps({"forks": "two"}))["forks"] == 3

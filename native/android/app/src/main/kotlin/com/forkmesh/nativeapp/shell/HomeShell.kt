@@ -1069,6 +1069,7 @@ object ShellBar {
     val height = 60.dp
     val cell = 52.dp
     val margin = 12.dp
+    val lensMargin = 10.dp
     val gap = 5.dp
     val homeIndicator = 34.dp
     val cornerOuter = 26.dp

@@ -358,17 +358,21 @@ private fun GenieAutoSendReview(receipt: GenieAutoSendReceipt, onDone: () -> Uni
 }
 
 @Composable
-fun SuggestionModeRow() {
+fun SuggestionModeRow(tiled: Boolean = false) {
     val c = Fm.colors
     val on by ShellSuggestions.on.collectAsState()
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 36.dp)
+            .heightIn(min = if (tiled) 46.dp else 36.dp)
             .semantics(mergeDescendants = true) { testTag = "hub-suggestion-mode" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FmIcon("auto_awesome", size = 20.dp, tint = c.accent, outlined = true)
+        if (tiled) {
+            com.forkmesh.nativeapp.ui.kit.FmMenuTile { FmIcon("auto_awesome", size = 16.dp, tint = c.accent, outlined = true) }
+        } else {
+            FmIcon("auto_awesome", size = 20.dp, tint = c.accent, outlined = true)
+        }
         Spacer(Modifier.width(FmSpace.x3))
         Text("Suggestion mode", Modifier.weight(1f), style = Fm.text.bodyLarge.copy(fontSize = Fm.text.bodyMedium.fontSize * 1.15f))
         FmSwitch(checked = on, onCheckedChange = ShellSuggestions::setOn)

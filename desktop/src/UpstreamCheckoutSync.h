@@ -81,5 +81,8 @@ bool parseServedBranchTrash(const QByteArray &body, const QString &owner,
                             QHash<QString, QStringList> *deleted);
 QStringList refsNamedAsBadObjects(const QString &gitErrors);
 QStringList dropUnreadableRefs(const QString &gitDir, const QString &gitErrors);
+QStringList emptyLooseObjectsNamed(const QString &gitErrors);
+QStringList removeEmptyLooseObjects(const QString &gitDir,
+                                    const QString &gitErrors);
 
 } // namespace forkmesh::upstream

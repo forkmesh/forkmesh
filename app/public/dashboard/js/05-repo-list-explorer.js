@@ -437,12 +437,29 @@
     return `${repoApiBase(repo)}/logo`;
   }
 
+  function instanceLogoUrl() {
+    const src = document.querySelector("header img.brand-mark")?.getAttribute("src") || "";
+    return /^\/(?!\/)[A-Za-z0-9._/-]+\.(?:svg|png|webp|jpe?g)(?:\?[A-Za-z0-9=&._-]*)?$/.test(src) ? src : "";
+  }
+
+  function instanceLogoFallbackMarkup() {
+    const src = instanceLogoUrl();
+    return src
+      ? `<img data-native-repo-logo-fallback src="${escapeHtml(src)}" alt="" decoding="async" class="h-full w-full object-contain p-[12%]" />`
+      : '<i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>';
+  }
+
+  function instanceLogoFrameMarkup(sizeClass = "h-10 w-10") {
+    if (!instanceLogoUrl()) return "";
+    return `<span data-instance-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary">${instanceLogoFallbackMarkup()}</span>`;
+  }
+
   function nativeRepositoryLogoMarkup(repo, sizeClass = "h-10 w-10") {
     const endpoint = nativeRepositoryLogoEndpoint(repo);
     if (!endpoint) return "";
     return `
       <span data-native-repo-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary text-muted-foreground">
-        <i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>
+        ${instanceLogoFallbackMarkup()}
         <img data-native-repo-logo data-logo-endpoint="${escapeHtml(endpoint)}" alt="" loading="lazy" decoding="async" class="absolute inset-0 hidden h-full w-full object-cover" />
       </span>
     `;
@@ -1520,7 +1537,7 @@
 
   function homeBlogPostCard(post) {
     return `
-      <a href="${escapeHtml(post.href)}" class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
+      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
         ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
         <span class="block px-3 py-2.5">
           ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
@@ -1543,8 +1560,61 @@
       : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
   }
 
+  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
+
+  function homeDevtoPost(article) {
+    let href = "";
+    let image = "";
+    try {
+      const link = new URL(String(article?.url || ""));
+      if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
+    } catch (_) {}
+    try {
+      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
+      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
+    } catch (_) {}
+    const when = Date.parse(String(article?.published_at || ""));
+    return {
+      title: String(article?.title || "").trim(),
+      href,
+      image,
+      meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
+    };
+  }
+
+  async function loadHomeDevtoPosts(user) {
+    const card = $("[data-home-blog-card]");
+    card?.removeAttribute("data-instance-plugin");
+    const viewAll = card?.querySelector("a[href]");
+    if (viewAll) {
+      viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
+      viewAll.target = "_blank";
+      viewAll.rel = "noopener";
+    }
+    try {
+      const response = await fetch(`https://dev.to/api/articles?username=${encodeURIComponent(user)}&per_page=${HOME_BLOG_POST_LIMIT}`, {
+        credentials: "omit",
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`dev.to returned ${response.status}`);
+      const articles = await response.json();
+      state.homeBlogPosts = (Array.isArray(articles) ? articles : [])
+        .map(homeDevtoPost)
+        .filter((post) => post.title && post.href)
+        .slice(0, HOME_BLOG_POST_LIMIT);
+    } catch (_) {
+      state.homeBlogPosts = [];
+    }
+    renderHomeBlogPosts();
+  }
+
   async function loadHomeBlogPosts() {
     if (!$("[data-home-blog-list]")) return;
+    const devto = String((await instanceInfo())?.sidebar?.devto || "");
+    if (/^[a-z0-9_]{1,30}$/.test(devto)) {
+      await loadHomeDevtoPosts(devto);
+      return;
+    }
     if (!(await instancePluginEnabled("blog"))) return;
     try {
       const response = await fetch(HOME_BLOG_FEED_URL, {
@@ -3001,6 +3071,7 @@
     const contentGrid = detail.querySelector("[data-repo-content-grid]");
     const about = detail.querySelector("[data-repo-about]");
     const showAbout = tab === "code";
+    detail.querySelector("[data-repo-title-row]")?.classList.toggle("hidden", !showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);
     about?.classList.toggle("hidden", !showAbout);
@@ -3036,6 +3107,7 @@
       // Leaving the tab closes any open agent detail page (adhoc #259) so
       // returning to Agents lands on the session list, not a stale transcript.
       state.agentsView.selectedAgentId = null;
+      state.agentsView.statusView = "all";
     }
     if (!state.selectedRepo) return;
     // Record pages have no Back button: the tab is the way back to the list,
@@ -3066,6 +3138,7 @@
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
     if (tab === "security") void loadRepoSecurity(state.selectedRepo);
     if (tab === "settings") {
+      renderRepoSettingsRail();
       loadRepoFediverse(state.selectedRepo);
       void loadRepoSettingsLogo(state.selectedRepo);
       void loadRepoCollaborators(state.selectedRepo);

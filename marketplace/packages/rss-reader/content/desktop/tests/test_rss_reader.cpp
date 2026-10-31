@@ -47,7 +47,7 @@ void check(bool condition, const char *message, const QString &detail = QString(
 
 qint64 utc(int year, int month, int day, int hour = 0, int minute = 0, int second = 0)
 {
-    return QDateTime(QDate(year, month, day), QTime(hour, minute, second), QTimeZone::UTC).toMSecsSinceEpoch();
+    return QDateTime(QDate(year, month, day), QTime(hour, minute, second), QTimeZone::utc()).toMSecsSinceEpoch();
 }
 
 bool waitFor(const std::function<bool()> &condition, int timeoutMs = 5000)
@@ -138,7 +138,7 @@ QByteArray rssWithItems(int count, int startDay, const QString &prefix)
 {
     QByteArray xml = "<rss version=\"2.0\"><channel><title>Bulk Example</title>";
     for (int i = 0; i < count; ++i) {
-        const QDateTime when = QDateTime(QDate(2020, 1, 1), QTime(0, 0), QTimeZone::UTC)
+        const QDateTime when = QDateTime(QDate(2020, 1, 1), QTime(0, 0), QTimeZone::utc())
                                    .addSecs(qint64(startDay) * 86400 + qint64(i) * 60);
         xml += QStringLiteral("<item><title>%1 %2</title><guid>%1-%2</guid><pubDate>%3</pubDate></item>")
                    .arg(prefix)

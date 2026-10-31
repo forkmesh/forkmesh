@@ -1,5 +1,9 @@
 package com.forkmesh.nativeapp.shell
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -284,6 +288,25 @@ private object ShellBarBase {
     val innerRadius = 10.dp
 }
 
+private fun barSheen(dark: Boolean): Brush = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = if (dark) 0.13f else 0.34f),
+    0.5f to Color.White.copy(alpha = if (dark) 0.03f else 0.08f),
+    1f to Color.Transparent,
+)
+
+private fun barBevel(dark: Boolean): Brush = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = if (dark) 0.42f else 0.85f),
+    0.46f to Color.Transparent,
+    0.55f to Color.Transparent,
+    1f to Color.Black.copy(alpha = if (dark) 0.5f else 0.12f),
+)
+
+private fun lensRim(dark: Boolean): Brush = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = if (dark) 0.5f else 0.85f),
+    0.55f to Color.White.copy(alpha = if (dark) 0.06f else 0.3f),
+    1f to Color.White.copy(alpha = if (dark) 0.2f else 0.5f),
+)
+
 private fun barShape(style: ShellBarStyle, side: Dp, rows: Int): Shape = when (style.shape) {
     ShellBarShape.capsule -> if (rows > 1) RoundedCornerShape(style.barRadius(side.value.toDouble()).dp) else RoundedCornerShape(50)
     ShellBarShape.panel -> RoundedCornerShape(style.barRadius(side.value.toDouble()).dp)
@@ -319,9 +342,9 @@ private fun Modifier.shellBarBackdrop(shape: Shape, fill: ShellBarFill, lift: Dp
                 .background(if (c.dark) c.bgElevated else c.bgRaised)
                 .border(0.5.dp, c.border.copy(alpha = 0.8f), shape)
         }
-        ShellBarFill.glass -> fmGlass(shape)
-        ShellBarFill.clear -> fmGlass(shape, tint = c.bgRaised.copy(alpha = if (c.dark) 0.22f else 0.3f))
-        ShellBarFill.tinted -> fmGlass(shape, tint = c.accent.copy(alpha = 0.35f).compositeOver(c.bgRaised.copy(alpha = if (c.dark) 0.55f else 0.66f)))
+        ShellBarFill.glass -> fmGlass(shape, tint = if (c.dark) Color.Black.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.12f)).background(barSheen(c.dark), shape).border(1.dp, barBevel(c.dark), shape)
+        ShellBarFill.clear -> fmGlass(shape, tint = c.bgRaised.copy(alpha = if (c.dark) 0.22f else 0.3f)).background(barSheen(c.dark), shape).border(1.dp, barBevel(c.dark), shape)
+        ShellBarFill.tinted -> fmGlass(shape, tint = c.accent.copy(alpha = 0.35f).compositeOver(c.bgRaised.copy(alpha = if (c.dark) 0.55f else 0.66f))).background(barSheen(c.dark), shape).border(1.dp, barBevel(c.dark), shape)
     }
 }
 
@@ -332,6 +355,7 @@ private fun Modifier.shellBarSlotChrome(shape: Shape, style: ShellBarStyle, sele
     if (style.shape.separate && style.shape.backed) result = result.shellBarBackdrop(shape, style.fill, lift = 5.dp)
     if (!selected) return result
     result = when (style.selection) {
+        ShellBarSelection.lens -> result
         ShellBarSelection.fill -> result.clip(shape).background(c.accent.copy(alpha = if (style.shape.separate) 0.2f else 0.14f))
         ShellBarSelection.glow -> result.drawBehind {
             val side = min(size.width, size.height)
@@ -361,6 +385,58 @@ private fun Modifier.shellBarSlotChrome(shape: Shape, style: ShellBarStyle, sele
 }
 
 @Composable
+private fun ShellBarLens(column: Int, row: Int, slot: Dp, side: Dp, gap: Dp, rowGap: Dp) {
+    val c = Fm.colors
+    val still = Fm.reducedMotion
+    val spec = if (still) snap<Dp>() else spring<Dp>(dampingRatio = 0.72f, stiffness = 280f)
+    val wide = slot + 6.dp
+    val start = (slot + gap) * column - (wide - slot) / 2
+    val x by animateDpAsState(start, spec, label = "shellLensX")
+    val y by animateDpAsState((side + rowGap) * row, spec, label = "shellLensY")
+    val target = (slot + gap) * column
+    val moving by animateDpAsState(target, tween(if (still) 0 else 260), label = "shellLensStretch")
+    val stretch = if (still) 0f else ((moving - target).value / max(1f, (slot + gap).value)).let { kotlin.math.abs(it).coerceAtMost(1f) }
+    Box(
+        Modifier
+            .offset(x, y)
+            .size(wide, side)
+            .graphicsLayer {
+                scaleX = 1f + 0.1f * stretch
+                scaleY = 1f - 0.08f * stretch
+            }
+            .clip(CircleShape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = if (c.dark) 0.2f else 0.5f), Color.White.copy(alpha = if (c.dark) 0.06f else 0.22f)),
+                ),
+            )
+            .drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(Color.White.copy(alpha = if (c.dark) 0.16f else 0.3f), Color.Transparent),
+                        center = Offset(size.width / 2f, size.height * 1.05f),
+                        radius = 46.dp.toPx(),
+                    ),
+                )
+            }
+            .border(1.dp, lensRim(c.dark), CircleShape),
+    )
+}
+
+private fun lensSpot(lines: List<List<ShellBarSlot<ShellBarCell>>>): Pair<Int, Int>? {
+    lines.forEachIndexed { row, line ->
+        val column = line.indexOfFirst { entry ->
+            when (entry) {
+                is ShellBarSlot.Single -> entry.item.selected
+                is ShellBarSlot.Folder -> entry.members.any { it.selected }
+            }
+        }
+        if (column >= 0) return column to row
+    }
+    return null
+}
+
+@Composable
 internal fun ShellBarRows(
     slots: List<ShellBarSlot<ShellBarCell>>,
     style: ShellBarStyle,
@@ -369,21 +445,27 @@ internal fun ShellBarRows(
     cells: List<ShellBarCell> = emptyList(),
     onSettings: () -> Unit = {},
 ) {
-    val metrics = style.metrics(available.value.toDouble(), slots.size, ShellBarBase.CELL_WIDTH, ShellBarBase.CELL_HEIGHT)
+    val lensed = style.selection == ShellBarSelection.lens
+    val inset = if (lensed && !style.shape.separate && style.width == ShellBarWidth.full) 4.dp else 0.dp
+    val metrics = style.metrics(available.value.toDouble() - 2 * inset.value, slots.size, ShellBarBase.CELL_WIDTH, ShellBarBase.CELL_HEIGHT + if (lensed) 2.0 else 0.0)
     val side = metrics.height.dp
     val slot = metrics.slot.dp
     val lines = style.rowSplit(slots)
     val shape = barShape(style, side, metrics.rows)
     val backed = if (style.shape.separate) Modifier else Modifier.shellBarBackdrop(shape, style.fill)
     val sized = if (style.width == ShellBarWidth.fit) Modifier.width(metrics.width.dp) else Modifier.fillMaxWidth()
+    val rowsWidth = slot * metrics.columns + metrics.gap.dp * (metrics.columns - 1)
+    val sideInset = if (inset > 0.dp && !metrics.scrolls) maxOf(metrics.padding.dp, (available - rowsWidth) / 2) else metrics.padding.dp
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Column(
+        Box(
             sized
                 .then(backed)
                 .then(if (metrics.scrolls) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
-                .padding(metrics.padding.dp),
-            verticalArrangement = Arrangement.spacedBy(metrics.rowGap.dp),
+                .padding(vertical = metrics.padding.dp, horizontal = sideInset),
         ) {
+            val spot = if (lensed && !style.shape.separate) lensSpot(lines) else null
+            if (spot != null) ShellBarLens(spot.first, spot.second, slot, side, metrics.gap.dp, metrics.rowGap.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(metrics.rowGap.dp)) {
             lines.forEachIndexed { row, line ->
                 Row(horizontalArrangement = Arrangement.spacedBy(metrics.gap.dp)) {
                     line.forEachIndexed { index, entry ->
@@ -401,6 +483,7 @@ internal fun ShellBarRows(
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -424,10 +507,17 @@ private fun ShellBarCellView(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     var menu by remember { mutableStateOf(false) }
+    val lensed = style.selection == ShellBarSelection.lens
     val glyph = (ShellBarBase.ICON * style.size.scale).roundToInt().dp
     val tiled = style.icons == ShellHomeIconStyle.tiles
     val tile = (glyph.value * 1.5f).roundToInt().dp
-    val tint = if (cell.selected || cell.running || style.icons == ShellHomeIconStyle.accent) c.accent else c.textPrimary
+    val tint = when {
+        lensed && cell.selected -> c.textPrimary
+        lensed -> if (cell.running || style.icons == ShellHomeIconStyle.accent) c.accent else c.textSecondary
+        cell.selected || cell.running || style.icons == ShellHomeIconStyle.accent -> c.accent
+        else -> c.textPrimary
+    }
+    val labelSize = ((if (lensed) 11 else 10) * style.size.scale).roundToInt()
     val homeMarks = style.marks == ShellBarMarks.home
     Box(
         Modifier
@@ -527,10 +617,14 @@ private fun ShellBarCellView(
                     cell.title,
                     style = TextStyle(
                         fontFamily = FmType.ui,
-                        fontSize = (10 * style.size.scale).roundToInt().sp,
-                        lineHeight = ((10 * style.size.scale).roundToInt() + 2).sp,
+                        fontSize = labelSize.sp,
+                        lineHeight = (labelSize + 2).sp,
                         fontWeight = if (cell.selected) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (cell.selected) c.accent else c.textSecondary,
+                        color = when {
+                            cell.selected && lensed -> c.textPrimary
+                            cell.selected -> c.accent
+                            else -> c.textSecondary
+                        },
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -572,7 +666,7 @@ internal fun ShellStyledBar(cells: List<ShellBarCell>) {
         Modifier
             .onSizeChanged { ShellBarStore.measured = with(density) { it.height.toDp() } }
             .onGloballyPositioned { ShellDrag.barArea = it.boundsInRoot() }
-            .padding(start = ShellBar.margin, end = ShellBar.margin, top = FmSpace.x1, bottom = ShellBar.bottomInset())
+            .padding(start = ShellBar.lensMargin, end = ShellBar.lensMargin, top = FmSpace.x1, bottom = ShellBar.bottomInset())
             .fillMaxWidth(),
     ) {
         val layout by ShellBarStore.layout.collectAsState()
@@ -669,7 +763,7 @@ fun ShellBarSettingsForm(onDone: (() -> Unit)? = null) {
                 }
             }
         }
-        SettingsGroup("Selected icon", footer = "The open page's icon is always drawn in the accent colour; this adds a mark around or under it.") {
+        SettingsGroup("Selected icon", footer = "Lens slides a pane of glass under the open page. The other styles draw its icon in the accent colour and add a mark around or under it.") {
             Choices(ShellBarSelection.entries, style.selection, { it.title }, ::selectionIcon) { edit { selection = it } }
         }
         SettingsGroup(
@@ -715,6 +809,7 @@ private fun fillIcon(fill: ShellBarFill): String = when (fill) {
 }
 
 private fun selectionIcon(selection: ShellBarSelection): String = when (selection) {
+    ShellBarSelection.lens -> "blur_circular"
     ShellBarSelection.fill -> "format_color_fill"
     ShellBarSelection.outline -> "crop_free"
     ShellBarSelection.glow -> "flare"

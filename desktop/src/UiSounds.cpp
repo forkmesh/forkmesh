@@ -51,6 +51,8 @@ UiSounds::UiSounds(QObject *parent) : QObject(parent)
         settings.value(kUiSoundVolumeSetting, kDefaultUiSoundVolume).toInt();
     m_volume = qBound(0, percent, 100) / 100.0;
     applyFilter();
+    if (m_volume > 0)
+        Player::warmPipePrograms();
 }
 
 UiSounds::~UiSounds()

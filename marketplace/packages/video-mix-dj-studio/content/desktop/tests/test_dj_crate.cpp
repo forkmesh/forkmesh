@@ -297,7 +297,7 @@ void testExportImportsBackIntoAnotherCrate()
     crate.createPlaylist(QStringLiteral("Warm Up"), QStringLiteral("p"));
     crate.add({crate::makeTrack(two, QStringLiteral("Two")), crate::makeTrack(one)}, QStringLiteral("p"));
     const QByteArray data =
-        crate.exported(DjFocus::everything(), QDateTime::fromSecsSinceEpoch(0, QTimeZone::UTC));
+        crate.exported(DjFocus::everything(), QDateTime::fromSecsSinceEpoch(0, QTimeZone::utc()));
     const QJsonObject object = QJsonDocument::fromJson(data).object();
     check(object.value(QStringLiteral("format")).toString() == QLatin1String(crate::format), "export has the format");
     check(object.value(QStringLiteral("version")).toInt() == 1, "export has version 1");

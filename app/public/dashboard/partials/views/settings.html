@@ -1022,6 +1022,10 @@
                         <label class="grid max-w-[12rem] gap-1 text-xs font-semibold text-foreground">Forks shown per repository
                           <input data-instance-sidebar-forks type="number" min="0" max="50" step="1" required class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
                         </label>
+                        <label class="grid max-w-[20rem] gap-1 text-xs font-semibold text-foreground">dev.to account for Latest from the blog
+                          <input data-instance-sidebar-devto type="text" maxlength="31" spellcheck="false" autocomplete="off" placeholder="yourname" aria-describedby="instance-sidebar-devto-help" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                          <span id="instance-sidebar-devto-help" class="font-normal text-muted-foreground">The Home page shows this account's newest dev.to posts on the right. Leave it empty for the instance's own blog.</span>
+                        </label>
                         <div class="flex flex-wrap items-center gap-2">
                           <button type="submit" class="fm-btn fm-btn-cta">Save</button>
                           <p data-instance-sidebar-status role="status" aria-live="polite" class="text-xs text-muted-foreground"></p>

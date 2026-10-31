@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.forkmesh.nativeapp.ui.kit.FmAvatar
+import com.forkmesh.nativeapp.ui.kit.FmMenuTile
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.draw.drawWithContent
@@ -763,7 +764,7 @@ private fun YouHubContent(scope: CoroutineScope, onClose: () -> Unit, onWhatsNew
         if (status.message != null) FmInlineStatus(status)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
             Box {
-                FmAvatar(account.label.ifEmpty { "Guest" }, 40.dp, avatarPng = session?.avatarPng.orEmpty())
+                FmAvatar(account.label.ifEmpty { "Guest" }, 44.dp, avatarPng = session?.avatarPng.orEmpty())
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
@@ -774,42 +775,58 @@ private fun YouHubContent(scope: CoroutineScope, onClose: () -> Unit, onWhatsNew
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(if (guest) "Guest" else account.label.ifEmpty { "You" }, style = Fm.text.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (described.isNotEmpty()) Text(described, style = Fm.text.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val subtitle = if (guest) "Exploring as a guest" else described
+                if (subtitle.isNotEmpty()) Text(subtitle, style = Fm.text.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (setStatus != null) HubChip("mood", "Set a status") { activate(setStatus) }
         }
-        HubDivider()
-        com.forkmesh.nativeapp.feature.pocket.PocketModeRow(onClose)
-        com.forkmesh.nativeapp.feature.genie.SuggestionModeRow()
-        if (settings != null) {
-            val shown by settings.showTelemetryStrip.collectAsState()
-            HubToggleRow("monitor_heart", "Diagnostics", shown, settings::setShowTelemetryStrip)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(c.textPrimary.copy(alpha = 0.05f))
+                .padding(horizontal = FmSpace.x3),
+        ) {
+            com.forkmesh.nativeapp.feature.pocket.PocketModeRow(onClose)
+            HubRowDivider()
+            com.forkmesh.nativeapp.feature.genie.SuggestionModeRow(tiled = true)
+            if (settings != null) {
+                HubRowDivider()
+                val shown by settings.showTelemetryStrip.collectAsState()
+                HubToggleRow("monitor_heart", "Diagnostics", shown, settings::setShowTelemetryStrip)
+            }
         }
-        if (accountItems.isNotEmpty()) {
-            HubDivider()
+        if (accountItems.size in 1..2) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                accountItems.forEach { item ->
+                    HubChip(item.icon, item.title, destructive = item.action == HubItem.Action.SignOut, modifier = Modifier.weight(1f)) { activate(item) }
+                }
+            }
+        } else if (accountItems.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 accountItems.forEach { item ->
                     HubChip(item.icon, item.title, destructive = item.action == HubItem.Action.SignOut) { activate(item) }
                 }
             }
         }
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.border.copy(alpha = 0.7f)))
         HubVersionRow(onWhatsNew = onWhatsNew, onDiagnostics = onDiagnostics)
     }
 }
 
 @Composable
-private fun HubDivider() {
-    Box(Modifier.fillMaxWidth().height(0.5.dp).background(Fm.colors.textPrimary.copy(alpha = 0.12f)))
+private fun HubRowDivider() {
+    Box(Modifier.fillMaxWidth().padding(start = 40.dp).height(0.5.dp).background(Fm.colors.border.copy(alpha = 0.7f)))
 }
 
 @Composable
 private fun HubToggleRow(icon: String, title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     val c = Fm.colors
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 36.dp).semantics(mergeDescendants = true) {},
+        Modifier.fillMaxWidth().heightIn(min = 46.dp).semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FmIcon(icon, size = 20.dp, tint = c.accent, outlined = true)
+        FmMenuTile { FmIcon(icon, size = 16.dp, tint = c.accent, outlined = true) }
         Spacer(Modifier.width(FmSpace.x3))
         Text(title, Modifier.weight(1f), style = Fm.text.bodyLarge.copy(fontSize = Fm.text.bodyMedium.fontSize * 1.15f))
         FmSwitch(checked = checked, onCheckedChange = onChange)
@@ -817,18 +834,20 @@ private fun HubToggleRow(icon: String, title: String, checked: Boolean, onChange
 }
 
 @Composable
-private fun HubChip(icon: String, title: String, destructive: Boolean = false, onClick: () -> Unit) {
+private fun HubChip(icon: String, title: String, destructive: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val c = Fm.colors
     val tint = if (destructive) c.danger else c.textPrimary
+    val shape = RoundedCornerShape(12.dp)
     Row(
-        Modifier
-            .heightIn(min = 34.dp)
-            .clip(CircleShape)
-            .background(tint.copy(alpha = 0.12f))
+        modifier
+            .heightIn(min = 42.dp)
+            .clip(shape)
+            .background(tint.copy(alpha = 0.07f))
             .clickable(onClick = onClick)
             .padding(horizontal = FmSpace.x3)
             .semantics(mergeDescendants = true) { role = Role.Button },
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
         FmIcon(icon, size = 18.dp, tint = tint, outlined = true)
         Spacer(Modifier.width(FmSpace.x2))

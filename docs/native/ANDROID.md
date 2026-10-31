@@ -647,8 +647,9 @@ default in new projects except the chosen starter pack
   `PackageGate.STARTER`: agents, chat, inbox, code, tour; `EVERYTHING` = every
   gated package except the organization packages) sits beside `STARTER` in
   `C/market/PackageGate.kt`. A new project with no `packages/starterPack` in
-  its prefs shows `A/feature/market/StarterPackScreen.kt` once ("Choose how to
-  start", Standard preselected, Continue) from `Features.Root`, driven by
+  its prefs shows `StarterPackPage` (`A/feature/market/StarterPackScreen.kt`)
+  once as a step of `A/feature/account/OnboardingFlow.kt` ("Choose how to
+  start", Standard preselected, "Start with <pack>") from `Features.Root`, driven by
   `PackageGateFeature.starterPackPending`; Continue stores the pack id
   (`PackageGateFeature.chooseStarterPack`) and republishes the gate. Unset
   reads as `STANDARD`; legacy projects are never asked. `MarketModel.starterPack`
@@ -1275,6 +1276,10 @@ bottom bar.
   shadow. Below API 31, or with high-contrast text on, glass is a near-opaque
   fill (the iOS Reduce Transparency fallback). `Modifier.blur` is not used: it
   blurs the element itself, not what is behind it. No dependency is added.
+- **Bar look** (`A/shell/ShellBottomBar.kt`). Filled icons and the Lens
+  selection by default, as iOS: a colourless `ShellBarLens` slides behind the
+  cells, `barSheen` and `barBevel` round the bar's surface in place of an
+  outline, and `ShellBar.lensMargin` insets it.
 - **Tab bar** (`GlassTabBar`, `A/shell/HomeShell.kt`). One glass capsule:
   12 dp side margin, 60 dp tall, radius 30, 52 dp cells, 24 dp icons (an SF
   Symbol at 20 pt draws about that size), 10 sp labels. The selected cell is an
@@ -2188,7 +2193,8 @@ build time, so Android always ships the same library as iOS.
   prefs. `PermissionsIntro.install` runs after the package gate with
   `freshInstall = needsStarterPack()`, so an install that predates this build
   never sees the screen and keeps its mesh starting at launch.
-  `PermissionsIntroScreen` shows before the starter pack. Android asked at
+  `PermissionsIntroPage` is the step before the starter pack in
+  `OnboardingFlow` (`docs/native/ONBOARDING.md`). Android asked at
   launch in two places: `PushFeature.PermissionPrompt` asked for
   `POST_NOTIFICATIONS` as soon as a session existed, and `ChatFeature`
   started the `#mesh` room at install, whose transport asked for

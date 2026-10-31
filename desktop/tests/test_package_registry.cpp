@@ -145,9 +145,11 @@ int main(int argc, char **argv)
               capture->creatorRetainsOwnership && capture->sourceAvailable &&
               capture->signatureVerified,
           "creator ownership and trust metadata survive parsing");
-    check(capture && capture->permissions.size() == 2 &&
+    check(capture && capture->permissions.size() == 3 &&
               capture->permissions.first().id ==
-                  QStringLiteral("screen.capture"),
+                  QStringLiteral("screen.capture") &&
+              capture->permissions.last().id ==
+                  QStringLiteral("clipboard.write"),
           "Capture discloses its bounded permissions");
     check(capture && capture->screenshots.size() == 1 &&
               capture->screenshots.first().path.endsWith(
@@ -327,8 +329,9 @@ int main(int argc, char **argv)
     check(reopened.install(QStringLiteral("capture"), &error) &&
               reopened.isInstalled(QStringLiteral("capture")),
           "Capture reinstalls and activates from the same manifest");
-    check(settings.value(QStringLiteral("market/packages/capture/version"))
-                  .toString() == QStringLiteral("1.0.0"),
+    check(capture && !capture->version.isEmpty() &&
+              settings.value(QStringLiteral("market/packages/capture/version"))
+                      .toString() == capture->version,
           "install records the exact activated package version");
 
     const QString ledgerDataKey =
@@ -568,8 +571,10 @@ int main(int argc, char **argv)
             statusRegistry.isEffectivelyInstalled(manifest.id))
             ++statusChecks;
     }
-    check(statusChecks == 18,
-          "all eighteen status checks are installed by default");
+    check(statusChecks == 17 &&
+              !statusRegistry.isEffectivelyInstalled(
+                  QStringLiteral("status-check-mirrors")),
+          "every status check except Mirrors is installed by default");
     check(statusRegistry.declaredSetting(statusPageId,
                                          QStringLiteral("onlyProblems")) ==
                   QVariant(false) &&
@@ -611,7 +616,7 @@ int main(int argc, char **argv)
     QStringList statusChanged;
     check(statusRegistry.uninstall(statusPageId, &statusError,
                                    &statusChanged) &&
-              statusError.isEmpty() && statusChanged.size() == 19 &&
+              statusError.isEmpty() && statusChanged.size() == 18 &&
               statusChanged.last() == statusPageId &&
               statusChanged.contains(apiCheckId) &&
               !statusRegistry.isInstalled(statusPageId) &&
@@ -767,9 +772,9 @@ int main(int argc, char **argv)
           "a dependency missing from the catalog fails the install closed");
 
     const QDateTime beforeCutoff(QDate(2026, 10, 10), QTime(23, 30),
-                                 QTimeZone::UTC);
+                                 QTimeZone::utc());
     const QDateTime afterCutoff(QDate(2026, 10, 11), QTime(0, 0),
-                                QTimeZone::UTC);
+                                QTimeZone::utc());
     check(writeChainPackage(
               QStringLiteral("before-a"), QString(),
               QStringLiteral(
@@ -1016,14 +1021,14 @@ int main(int argc, char **argv)
           "a legacy account entry installs in a project from before the core "
           "plugins");
     const QDateTime beforeWorkflowsCutoff(QDate(2026, 10, 13), QTime(9, 0),
-                                          QTimeZone::UTC);
+                                          QTimeZone::utc());
     placed.setProjectCreated(beforeWorkflowsCutoff);
     check(hook && late && !placed.legacyEntryInstalled(*hook) &&
               placed.legacyEntryInstalled(*late),
           "a project made between the two dates keeps a package dated later "
           "but not one without a date");
     placed.setProjectCreated(
-        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::UTC));
+        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::utc()));
     check(hook && late && !placed.legacyEntryInstalled(*hook) &&
               !placed.legacyEntryInstalled(*late),
           "a legacy account entry does not install in a new project");
@@ -1099,7 +1104,7 @@ int main(int argc, char **argv)
     check(workflows.isShownHere(QStringLiteral("workflows")),
           "a project created before 2026-10-14 keeps Workflows");
     workflows.setProjectCreated(
-        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::UTC));
+        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::utc()));
     bool workflowsFamilyOff = !workflows.isShownHere(QStringLiteral("workflows"));
     for (const QString &nested :
          workflows.nestedPackages(QStringLiteral("workflows")))
@@ -1135,7 +1140,7 @@ int main(int argc, char **argv)
           "a project.json with created is written");
     projectFile.close();
     check(forkmesh::market::PackageRegistry::readProjectCreated(projectDir) ==
-              QDateTime(QDate(2026, 10, 12), QTime(8, 15), QTimeZone::UTC),
+              QDateTime(QDate(2026, 10, 12), QTime(8, 15), QTimeZone::utc()),
           "project.json created is read as UTC");
 
     return failures == 0 ? 0 : 1;

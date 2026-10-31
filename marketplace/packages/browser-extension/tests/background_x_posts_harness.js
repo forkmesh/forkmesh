@@ -59,6 +59,7 @@ const backgroundContext = {
   clearTimeout(id) { if (liveTimers[id - 1]) liveTimers[id - 1].callback = () => {}; },
   importScripts() {},
   ForkMeshVaultBackground: { install: () => ({ forget: async () => {} }) },
+  ForkMeshRepoBackground: { install: () => {} },
   async fetch(url, options) {
     const target = new URL(url);
     const body = options.body === undefined ? null : JSON.parse(options.body);

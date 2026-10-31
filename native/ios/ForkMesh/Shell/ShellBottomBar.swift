@@ -531,6 +531,11 @@ struct ShellMenuGroup: Identifiable {
     let items: [ShellBarItem]
 }
 
+struct ShellBarLensSpot: Equatable {
+    let column: Int
+    let row: Int
+}
+
 struct ShellBottomBar: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -544,6 +549,8 @@ struct ShellBottomBar: View {
     @State private var targeted: Bool = false
     @State private var available: CGFloat = 0
     @State private var settingsShown: Bool = false
+    @State private var lensSpot: ShellBarLensSpot?
+    @State private var lensStretched: Bool = false
 
     @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 20
     @ScaledMetric(relativeTo: .body) private var cellWidth: CGFloat = 64
@@ -551,12 +558,26 @@ struct ShellBottomBar: View {
 
     private var style: ShellBarStyle { prefs.barStyle }
 
-    private var glyphSize: CGFloat { (iconSize * CGFloat(style.size.scale)).rounded() }
+    private var lensSlides: Bool { style.selection == .lens && !style.shape.separate }
+
+    private var lensInset: CGFloat { lensSlides && style.width == .full ? 4 : 0 }
+
+    private func sideInset(_ metrics: ShellBarMetrics) -> CGFloat {
+        guard lensInset > 0, !metrics.scrolls else { return CGFloat(metrics.padding) }
+        let rows: CGFloat = CGFloat(metrics.columns) * CGFloat(metrics.slot)
+            + CGFloat(metrics.columns - 1) * CGFloat(metrics.gap)
+        return max(CGFloat(metrics.padding), (available - rows) / 2)
+    }
+
+    private var glyphSize: CGFloat {
+        (iconSize * CGFloat(style.size.scale) * (style.selection == .lens ? 1.1 : 1)).rounded()
+    }
 
     var body: some View {
         let entries: [ShellBarEntry] = shown
         let metrics: ShellBarMetrics = style.metrics(
-            available: Double(available), count: entries.count, cell: Double(cellWidth), height: Double(cellHeight))
+            available: max(0, Double(available) - 2 * Double(lensInset)), count: entries.count, cell: Double(cellWidth),
+            height: Double(cellHeight) + (style.selection == .lens ? 2 : 0))
         let barShape: AnyShape = ShellBarShapes.bar(style, height: CGFloat(metrics.height), rows: metrics.rows)
         return container {
             VStack(spacing: 0) {
@@ -579,8 +600,9 @@ struct ShellBottomBar: View {
                 available = width
             }
         }
-        .padding(.horizontal, FmSpace.x3)
+        .padding(.horizontal, ShellBottomBar.sideMargin)
         .padding(.top, FmSpace.x1)
+        .padding(.bottom, ShellBottomBar.floatHeight)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("shell-bottom-bar")
@@ -633,9 +655,10 @@ struct ShellBottomBar: View {
 
     private func carousel(_ entries: [ShellBarEntry], metrics: ShellBarMetrics) -> some View {
         let warmth: [String: Double] = heat
+        let lines: [[ShellBarEntry]] = style.rowSplit(entries)
+        let spot: ShellBarLensSpot? = lensTarget(lines)
         return ScrollViewReader { (proxy: ScrollViewProxy) in
             ScrollView(.horizontal, showsIndicators: false) {
-                let lines: [[ShellBarEntry]] = style.rowSplit(entries)
                 VStack(alignment: .leading, spacing: CGFloat(metrics.rowGap)) {
                     ForEach(Array(lines.enumerated()), id: \.offset) {
                         (line: (offset: Int, element: [ShellBarEntry])) in
@@ -652,11 +675,22 @@ struct ShellBottomBar: View {
                         }
                     }
                 }
-                .padding(CGFloat(metrics.padding))
+                .background(alignment: .topLeading) { slidingLens(metrics) }
+                .padding(.vertical, CGFloat(metrics.padding))
+                .padding(.horizontal, sideInset(metrics))
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .scrollClipDisabled(style.shape.separate && !metrics.scrolls)
             .frame(width: style.width == .fit ? CGFloat(metrics.width) : nil)
+            .onChange(of: spot, initial: true) { (_: ShellBarLensSpot?, next: ShellBarLensSpot?) in
+                let first: Bool = lensSpot == nil || next == nil
+                withAnimation(first || reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.72)) {
+                    lensSpot = next
+                }
+                guard !first, !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 0.12)) { lensStretched = true }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.5).delay(0.12)) { lensStretched = false }
+            }
             .onChange(of: selectedId) { (_: String?, next: String?) in
                 guard let next = next else { return }
                 withAnimation(.snappy) {
@@ -676,6 +710,30 @@ struct ShellBottomBar: View {
     private var selectedId: String? {
         guard let item = items.first(where: { $0.selected }) else { return nil }
         return shown.first { $0.contains(item.id) }?.id
+    }
+
+    private func lensTarget(_ lines: [[ShellBarEntry]]) -> ShellBarLensSpot? {
+        guard lensSlides, let selectedId = selectedId else { return nil }
+        for (row, line) in lines.enumerated() {
+            if let column = line.firstIndex(where: { $0.id == selectedId }) {
+                return ShellBarLensSpot(column: column, row: row)
+            }
+        }
+        return nil
+    }
+
+    @ViewBuilder private func slidingLens(_ metrics: ShellBarMetrics) -> some View {
+        if let lensSpot = lensSpot {
+            let slot: CGFloat = CGFloat(metrics.slot)
+            let wide: CGFloat = slot + 6
+            let start: CGFloat = CGFloat(lensSpot.column) * (slot + CGFloat(metrics.gap)) - (wide - slot) / 2
+            ShellBarLens()
+                .frame(width: wide, height: CGFloat(metrics.height))
+                .scaleEffect(x: lensStretched ? 1.1 : 1, y: lensStretched ? 0.92 : 1)
+                .offset(
+                    x: start,
+                    y: CGFloat(lensSpot.row) * CGFloat(metrics.height + metrics.rowGap))
+        }
     }
 
     @ViewBuilder private func slot(
@@ -763,6 +821,8 @@ struct ShellBottomBar: View {
     }
 
     static let innerRadius: CGFloat = 10
+    static let sideMargin: CGFloat = 10
+    static let floatHeight: CGFloat = 24
 
     private func cell(_ item: ShellBarItem, shape: AnyShape, width: CGFloat, height: CGFloat, heat: Double)
         -> some View
@@ -774,7 +834,7 @@ struct ShellBottomBar: View {
         } label: {
             ShellBarCellLabel(item: item, iconSize: glyphSize, showsCounts: style.showCounts, look: style, heat: heat)
                 .frame(width: width, height: height)
-                .shellBarSlotChrome(shape, style: style, selected: item.selected)
+                .shellBarSlotChrome(shape, style: style, selected: item.selected, slides: lensSlides)
                 .contentShape(shape)
         }
         .buttonStyle(ShellBarButtonStyle())
@@ -897,7 +957,7 @@ struct ShellBarCellLabel: View {
             if look.labels.shows(selected: item.selected) {
                 Text(item.title)
                     .font(.system(size: labelSize, weight: item.selected ? .semibold : .medium))
-                    .foregroundStyle(item.selected ? fm.accent : fm.textSecondary)
+                    .foregroundStyle(labelColor)
                     .lineLimit(1)
                     .minimumScaleFactor(minimumScale)
                     .transition(.opacity)
@@ -1001,10 +1061,21 @@ struct ShellBarCellLabel: View {
         }
     }
 
-    private var labelSize: CGFloat { (10 * CGFloat(look.size.scale)).rounded() }
+    private var labelSize: CGFloat { ((look.selection == .lens ? 11 : 10) * CGFloat(look.size.scale)).rounded() }
+
+    private var labelColor: Color {
+        if look.selection == .lens {
+            return item.selected ? fm.textPrimary : fm.textSecondary
+        }
+        return item.selected ? fm.accent : fm.textSecondary
+    }
 
     private var glyphColor: Color {
-        item.selected || item.active || look.icons == .accent ? fm.accent : fm.textPrimary
+        if look.selection == .lens {
+            if item.selected { return fm.textPrimary }
+            return item.active || look.icons == .accent ? fm.accent : fm.textSecondary
+        }
+        return item.selected || item.active || look.icons == .accent ? fm.accent : fm.textPrimary
     }
 
     private var symbol: some View {

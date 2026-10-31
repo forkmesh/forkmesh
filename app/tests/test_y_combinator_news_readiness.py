@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 REPORT = ROOT / "www" / "docs" / "launch" / "y-combinator-news-readiness.md"
 LATEST = ROOT / ".forkmesh" / "releases" / "latest"
-CANDIDATE = ROOT / ".forkmesh" / "releases" / "candidate-0.7.95"
+CANDIDATE = ROOT / ".forkmesh" / "releases" / "candidate-1.2.8"
 CLEAN_MACHINE = ROOT / "www" / "docs" / "launch" / "clean-machine-evidence.md"
 TRANSCRIPT_TOOL = ROOT / "tools" / "clean_machine_transcript.sh"
 
@@ -94,6 +94,21 @@ def test_report_release_facts_follow_signed_manifest_metadata():
     assert "Build-workflow intent does not" in report
     assert "Stale candidate" in report
     assert "`96c5e6391`" in report
+
+
+def test_tag_commit_has_one_definition_that_matches_the_manifest():
+    report = " ".join(_read(REPORT).split())
+    protocol = " ".join(_read(ROOT / "docs" / "release" / "README.md").split())
+    host = _read(ROOT / "tools" / "forkmesh-release-host.py")
+    latest = json.loads(_read(LATEST / "release.json"))
+
+    assert "(../../../docs/release/README.md#protocols)" in report
+    assert "`tag_commit` is the commit the tag pointed to at signing" in protocol
+    assert "git merge-base --is-ancestor <tag_commit> <tag>" in protocol
+    assert "`parked_tag_target()`" in protocol and "def parked_tag_target(" in host
+    assert "This is the one definition" in protocol
+    assert "remains the peeled target" not in _read(ROOT / "www" / "public" / "install.sh")
+    assert f"git merge-base --is-ancestor {latest['tag_commit'][:12]} {latest['tag']}" in report
 
 
 def test_hn_constraints_and_research_baseline_remain_linked():

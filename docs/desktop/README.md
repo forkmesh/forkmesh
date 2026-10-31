@@ -248,7 +248,12 @@ Everything is in `desktop/`.
   `MainWindowInternal.h` (`waitForGit`, `runOffThread`); a GUI-thread wait pumps
   the event loop, and Git on the GUI thread shows up in the stall log.
   Index-writing commands for one repository run one at a time through
-  `GitIndexQueue`; see [git-locking.md](git-locking.md).
+  `GitIndexQueue`; see [git-locking.md](git-locking.md). Timer-driven
+  refreshes load pulls with `reloadPullsInBackground()`. The mesh converge
+  completion reports failures too, so with the synchronous `reloadPulls()`
+  a repository whose mirrors were unreachable froze the window for 1-3 s
+  on every cycle, waiting on the Git index lock in `PullStore::baseTip()`
+  (2026-10-31, `tests/validate_pull_refresh_responsiveness.py`).
 - **No display polling.** The desktop has no timers that re-read the relay
   for display. Updates arrive over the account event socket
   (`MainWindowRepoSync.cpp` handles topics such as `cloud-agents`, `tasks`,
@@ -676,11 +681,30 @@ measured and keep the plain branch icon.
   only when `publishToNetwork` is set and the mirror folder exists; before the
   first publish they say "Not published yet", and "Delete mirror..." is only
   offered when there is a mirror to delete.
+- **An empty loose object breaks every mirror fetch.** An interrupted write
+  can leave a zero-byte loose object. Git then fails each fetch ("object
+  file … is empty", "invalid index-pack output") without naming a ref, and
+  `isTransientSyncError()` reads that as a host outage. Dropping refs does
+  not help: Git takes the empty file for the object and never fetches it
+  again. The sync failure path in `MainWindowRepoFetch.cpp` first removes
+  exactly the files Git named, only while they are still empty regular
+  files (`removeEmptyLooseObjects()`, `UpstreamCheckoutSync.cpp`), and
+  fetches again; a ref left on a removed object is then dropped by the
+  bad-ref repair. Only the `objects/xx/rest` tail of the reported path is
+  trusted, because the prefix depends on where Git ran.
 - **Pull timestamp units.** Legacy pull and event records can store Unix
   seconds while current records use milliseconds. Normalize them with
   `issueDisplayTimestampMs()` before ordering, formatting, or storing a
   display timestamp; compact PR list labels otherwise render current records
   as decades old.
+- **Ordering branches by age costs a stat per loose head.**
+  `readBranchRefFiles()` orders loose heads under `refs/heads` by
+  modification time; on a WSL checkout under `/mnt/c` with ~190 heads that
+  is 280 ms warm and over a second cold, and restoring the last repository
+  at startup froze for 1.1 s on it. `repoDefaultBranchFast()` sorts by
+  name, so it takes the names-only walk
+  (`walkBranchRefFiles(dir, false)`); a path that only needs names should
+  too.
 - **Qt never draws a tooltip on screen.** `Tooltips::install()`
   (`src/Tooltips.h`) marks Qt's `QTipLabel` `WA_DontShowOnScreen` and draws its
   text in its own `Tooltips::Window`, because Qt's tip inherited transparent
@@ -698,6 +722,13 @@ measured and keep the plain branch icon.
   font carries. `tests/test_font_sizing.cpp` covers the helpers and
   `tests/validate_error_log_regressions.py` rejects a raw
   `setPointSizeF(x.pointSizeF() ...)`.
+- **The splash is finished inside the main window's first paint.**
+  `MainWindow::paintEvent` calls `noteHostPainted()` and then finishes the
+  startup splash, a child widget. `StartupSplash::pump()` queues the frame
+  with `update()` while the host is inside a paint event
+  (`Qt::WA_WState_InPaintEvent`); a synchronous `repaint()` there logged
+  "QWidget::repaint: Recursive repaint detected" on every launch.
+  `tests/test_startup_splash.cpp` fails on that warning.
 - **`MainWindowInternal.h` is in the precompiled header.** Editing it, or
   `MainWindow.h`, recompiles every `MainWindow*.cpp`. New helper bodies go in
   `MainWindowInternal1-4.cpp` with only a declaration in the header. New shell
@@ -789,6 +820,14 @@ measured and keep the plain branch icon.
   "Private repository is unavailable or this account is not authorized". A
   record owned by `accountOwner()` with a local source now stays local and
   says it needs a signed-in account to publish.
+- **Mesh converge backs off a repository whose mirrors all fail.** A
+  registered repository whose network copy is gone failed the background
+  converge on every sweep, about once a minute, forever. When no route can
+  be read, `convergeSourceRepoFromMesh()` records a failure in
+  `m_pollBackoff` under `mesh-converge:<repo>`: background passes then wait
+  1, 2, 4 … up to 30 minutes, a skipped pass is not an attempt, and any
+  successful read clears it. A forced converge (opening the repository, an
+  explicit refresh) ignores it. `tests/validate_mesh_converge_backoff.py`.
 
 ## Related docs
 

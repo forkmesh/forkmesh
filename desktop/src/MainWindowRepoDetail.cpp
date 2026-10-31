@@ -13703,42 +13703,53 @@ QStringList MainWindow::listRepoBranches(const QString &dir)
     return branches;
 }
 
-MainWindow::BranchRefFiles MainWindow::readBranchRefFiles(const QString &dir)
+namespace {
+
+struct BranchRefWalk {
+    bool readable = false;
+    QString common;
+    QStringList branches;
+    QSet<QString> seen;
+    qint64 newest = 0;
+};
+
+BranchRefWalk walkBranchRefFiles(const QString &dir, bool withModifiedTimes)
 {
-    BranchRefFiles files;
-    const QString common = dir.isEmpty() ? QString() : gitCommonDirPath(dir);
-    if (common.isEmpty() ||
-        QFileInfo(common + QStringLiteral("/reftable")).isDir())
-        return files;
+    BranchRefWalk walk;
+    walk.common = dir.isEmpty() ? QString() : gitCommonDirPath(dir);
+    if (walk.common.isEmpty() ||
+        QFileInfo(walk.common + QStringLiteral("/reftable")).isDir())
+        return walk;
     struct LooseHead {
         QString name;
         qint64 modifiedMs = 0;
     };
     QList<LooseHead> loose;
-    QSet<QString> seen;
-    qint64 newest = 0;
-    const QString headsRoot = common + QStringLiteral("/refs/heads");
+    const QString headsRoot = walk.common + QStringLiteral("/refs/heads");
     const QDir heads(headsRoot);
     QDirIterator it(headsRoot, QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot,
                     QDirIterator::Subdirectories);
     while (it.hasNext()) {
         it.next();
         const QString name = heads.relativeFilePath(it.filePath());
-        const qint64 modified = it.fileInfo().lastModified().toMSecsSinceEpoch();
-        newest = qMax(newest, modified);
-        if (name.endsWith(QLatin1String(".lock")) || seen.contains(name))
+        const qint64 modified =
+            withModifiedTimes
+                ? it.fileInfo().lastModified().toMSecsSinceEpoch()
+                : 0;
+        walk.newest = qMax(walk.newest, modified);
+        if (name.endsWith(QLatin1String(".lock")) || walk.seen.contains(name))
             continue;
-        seen.insert(name);
+        walk.seen.insert(name);
         loose.append({name, modified});
     }
-    std::stable_sort(loose.begin(), loose.end(),
-                     [](const LooseHead &a, const LooseHead &b) {
-                         return a.modifiedMs > b.modifiedMs;
-                     });
+    if (withModifiedTimes)
+        std::stable_sort(loose.begin(), loose.end(),
+                         [](const LooseHead &a, const LooseHead &b) {
+                             return a.modifiedMs > b.modifiedMs;
+                         });
     for (const LooseHead &head : std::as_const(loose))
-        files.branches.append(head.name);
-    const QString packedPath = common + QStringLiteral("/packed-refs");
-    QFile packed(packedPath);
+        walk.branches.append(head.name);
+    QFile packed(walk.common + QStringLiteral("/packed-refs"));
     if (packed.open(QIODevice::ReadOnly | QIODevice::Text)) {
         while (!packed.atEnd()) {
             const QByteArray line = packed.readLine().trimmed();
@@ -13751,13 +13762,31 @@ MainWindow::BranchRefFiles MainWindow::readBranchRefFiles(const QString &dir)
             if (!ref.startsWith("refs/heads/"))
                 continue;
             const QString name = QString::fromUtf8(ref.mid(11));
-            if (name.isEmpty() || seen.contains(name))
+            if (name.isEmpty() || walk.seen.contains(name))
                 continue;
-            seen.insert(name);
-            files.branches.append(name);
+            walk.seen.insert(name);
+            walk.branches.append(name);
         }
     }
-    files.branches.removeIf(isPullMetadataBranch);
+    walk.branches.removeIf(isPullMetadataBranch);
+    walk.readable = true;
+    return walk;
+}
+
+} // namespace
+
+MainWindow::BranchRefFiles MainWindow::readBranchRefFiles(const QString &dir)
+{
+    BranchRefFiles files;
+    BranchRefWalk walk = walkBranchRefFiles(dir, /*withModifiedTimes=*/true);
+    if (!walk.readable)
+        return files;
+    files.branches = std::move(walk.branches);
+    const QString &common = walk.common;
+    const QSet<QString> &seen = walk.seen;
+    const qint64 newest = walk.newest;
+    const QString headsRoot = common + QStringLiteral("/refs/heads");
+    const QString packedPath = common + QStringLiteral("/packed-refs");
     files.signature =
         QString::number(newest) + QLatin1Char(':') +
         QString::number(seen.size()) + QLatin1Char(':') +
@@ -13934,8 +13963,9 @@ QString MainWindow::repoDefaultBranchFast() const
          fingerprint == m_defaultBranchFastCacheSig)) {
         return m_defaultBranchFastCache;
     }
-    const BranchRefFiles files = readBranchRefFiles(dir);
-    QStringList branches = files.readable ? files.branches : repoBranches();
+    const BranchRefWalk walk =
+        walkBranchRefFiles(dir, /*withModifiedTimes=*/false);
+    QStringList branches = walk.readable ? walk.branches : repoBranches();
     std::sort(branches.begin(), branches.end());
     const QString base = repoDefaultBranch(branches);
     m_defaultBranchFastCacheDir = dir;
