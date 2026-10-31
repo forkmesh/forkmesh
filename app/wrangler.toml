@@ -130,6 +130,8 @@ run_worker_first = [
   "!/dashboard/achievements/",
   "!/dashboard/runners",
   "!/dashboard/runners/",
+  "!/dashboard/pings",
+  "!/dashboard/pings/",
   "!/dashboard/docs",
   "!/dashboard/docs/",
   "!/dashboard/apps",

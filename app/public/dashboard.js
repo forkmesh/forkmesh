@@ -85,7 +85,9 @@
     },
     notifications: [],
     notificationUnread: 0,
-    selectedNotificationId: "",
+    notificationTotal: 0,
+    notificationsLoaded: false,
+    notificationsFailed: false,
     issuesView: {
       filter: "open",
       items: [],
@@ -11573,7 +11575,7 @@
     $$("[data-notification-bell-on]").forEach((el) => { el.classList.toggle("hidden", Boolean(until)); });
     $$("[data-notification-bell-off]").forEach((el) => { el.classList.toggle("hidden", !until); });
     const toggle = $("#notificationToggle");
-    if (toggle) toggle.title = until ? label : "Ping notifications";
+    if (toggle) toggle.title = until ? label : "Pings";
     // The status line right above already says how long, so while a pause runs
     // this only has to offer the way to change it.
     $$("[data-ping-pause-toggle]").forEach((el) => {
@@ -48681,44 +48683,62 @@ Your reply
     return formatDate(value);
   }
 
-  function renderNotificationPreview() {
-    const countEl = $("[data-notification-count]");
-    const badge = $("[data-notification-badge]");
-    const list = $("[data-notification-preview-list]");
+  function renderNotificationBadge() {
     const unread = Number(state.notificationUnread) || 0;
-    if (countEl) countEl.textContent = unread === 1 ? "1 new" : `${unread} new`;
-    badge?.classList.toggle("hidden", unread <= 0);
-    if (!list) return;
-    const items = state.notifications.slice(0, 5);
-    if (!items.length) {
-      list.innerHTML = '<div class="px-3 py-4 text-xs text-muted-foreground">No pings yet. Mentions, PRs, assignments, shares, bounties, releases, and host status changes will appear here.</div>';
-      return;
-    }
-    list.innerHTML = items.map((item) => {
-      const lead = notificationLead(item);
-      const unreadItem = !item.readAt;
-      const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
-      const avatar = lead.actor
-        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(lead.actor.replace(/^@/, "")) ? botAvatarSvg(botAvatarKind(lead.actor.replace(/^@/, "")), "h-4 w-4") : escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+    $("[data-notification-badge]")?.classList.toggle("hidden", unread <= 0);
+    $$("[data-notification-count]").forEach((el) => {
+      el.textContent = String(unread);
+    });
+    const bell = $("#notificationToggle");
+    if (bell) bell.setAttribute("aria-label", unread > 0 ? `Pings, ${unread} unread` : "Pings");
+  }
+
+  function notificationAvatarHtml(item, lead) {
+    const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+    const login = lead.actor.replace(/^@/, "");
+    return lead.actor
+      ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(login) ? botAvatarSvg(botAvatarKind(login), "h-4 w-4") : escapeHtml(login.charAt(0) || "?")}</span>
           <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
-        : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
-      return `
-      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
-        <div class="flex items-start gap-2.5">
-          <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${avatar}</span></span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
-              <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
-              ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
-            </div>
-            <p class="mt-0.5 line-clamp-2 break-words text-xs leading-5 ${unreadItem ? "text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</p>
-          </div>
+      : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
+  }
+
+  function notificationTargetHref(item) {
+    return item?.href ? repoPublicHref(homeFeedHref(item)) : "";
+  }
+
+  function notificationRowHtml(item, { expanded = false } = {}) {
+    const id = escapeHtml(item.id || "");
+    const lead = notificationLead(item);
+    const unreadItem = !item.readAt;
+    const href = notificationTargetHref(item);
+    const tag = href ? "a" : "button";
+    const target = href ? `href="${escapeHtml(href)}"` : `type="button" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}"`;
+    const kindLabel = pingKindLabel(item.kind);
+    const settingsTitle = kindLabel ? `${kindLabel}: ping settings` : "Ping settings";
+    const when = Number(item.ts) || 0;
+    return `
+      <li data-notification-row data-ping-id="${id}" data-ping-unread="${unreadItem ? "true" : "false"}" class="${unreadItem ? "bg-background" : "bg-card"}">
+        <div class="flex items-start gap-1 px-2 py-2">
+          <${tag} ${target} data-notification-open="${id}" class="flex min-w-0 flex-1 items-start gap-3 rounded-md px-1 py-1 text-left">
+            <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${notificationAvatarHtml(item, lead)}</span></span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-2">
+                <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <time ${when ? `datetime="${escapeHtml(new Date(when).toISOString())}"` : ""} class="shrink-0 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</time>
+                ${unreadItem ? '<span data-notification-unread-dot class="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" role="img"></span>' : ""}
+              </span>
+              <span class="mt-0.5 block line-clamp-2 break-words text-sm leading-5 ${unreadItem ? "font-medium text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</span>
+            </span>
+          </${tag}>
+          <span class="flex shrink-0 items-center">
+            ${unreadItem ? `<button type="button" data-ping-mark-read="${id}" title="Mark as read" aria-label="Mark as read" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="check" aria-hidden="true"></i></button>` : ""}
+            <button type="button" data-ping-row-toggle="${id}" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}" title="${expanded ? "Hide details" : "Show details"}" aria-label="${expanded ? "Hide details" : "Show details"}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="${expanded ? "chevron-up" : "chevron-down"}" aria-hidden="true"></i></button>
+            <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(kindLabel ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="settings" aria-hidden="true"></i></a>
+          </span>
         </div>
-      </button>
+        ${expanded ? `<div id="ping-detail-${id}" data-ping-row-detail class="border-t border-border px-4 py-4">${notificationDetailHtml(item)}</div>` : ""}
+      </li>
     `;
-    }).join("");
-    window.lucide?.createIcons();
   }
 
   function notificationLead(item) {
@@ -48738,14 +48758,9 @@ Your reply
       : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
-  function renderNotificationDetail(item) {
-    const detail = $("[data-notification-modal-detail]");
-    if (!detail) return;
-    if (!item) {
-      detail.innerHTML = '<div class="text-sm text-muted-foreground">Select a ping to read it.</div>';
-      return;
-    }
-    detail.innerHTML = `
+  function notificationDetailHtml(item) {
+    const href = notificationTargetHref(item);
+    return `
       <div class="flex items-start gap-3">
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
@@ -48755,15 +48770,14 @@ Your reply
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
+      <p class="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
-      <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        ${href ? `<a href="${escapeHtml(href)}" data-notification-open="${escapeHtml(item.id || "")}" class="fm-btn fm-btn-sm">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
-    window.lucide?.createIcons();
   }
 
   // Where a ping's settings live: its own row on the Pings settings page when
@@ -48935,56 +48949,15 @@ Your reply
     form.hidden = !isRepoOwner(repo);
   }
 
-  function renderNotificationModal() {
-    const list = $("[data-notification-modal-list]");
-    if (!list) return;
-    if (!state.notifications.length) {
-      list.innerHTML = '<div class="p-3 text-xs text-muted-foreground">No pings yet.</div>';
-      renderNotificationDetail(null);
-      return;
-    }
-    const selected = state.notifications.find((item) => item.id === state.selectedNotificationId)
-      || state.notifications[0];
-    state.selectedNotificationId = selected?.id || "";
-    list.innerHTML = state.notifications.map((item) => {
-      const active = item.id === state.selectedNotificationId;
-      const lead = notificationLead(item);
-      const settingsTitle = pingKindLabel(item.kind)
-        ? `${pingKindLabel(item.kind)}: ping settings`
-        : "Ping settings";
-      // The trailing gear is the "settings" column: it opens this kind's row
-      // on the Pings settings page, where it can be switched off.
-      return `
-        <div data-notification-row class="mb-1 flex items-stretch gap-1 rounded-md ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
-          <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="min-w-0 flex-1 rounded-md px-3 py-2 text-left transition-colors">
-            <span class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">
-                ${notificationInstanceLogoHtml()}
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-                  <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
-                </span>
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
-                <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
-              </span>
-            </span>
-          </button>
-          <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(pingKindLabel(item.kind) ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="flex w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground transition-colors">
-            <i data-lucide="settings" class="h-3.5 w-3.5"></i>
-          </a>
-        </div>
-      `;
-    }).join("");
-    renderNotificationDetail(selected);
-  }
-
   async function loadNotifications() {
     const node = state.session?.nodeName || "";
     if (!node) {
       state.notifications = [];
       state.notificationUnread = 0;
-      renderNotificationPreview();
+      state.notificationTotal = 0;
+      state.notificationsLoaded = true;
+      renderNotificationBadge();
+      renderPingsPage();
       renderHomeFeed();
       return;
     }
@@ -48992,6 +48965,8 @@ Your reply
       const data = await fetchJson(`/api/notifications?node=${encodeURIComponent(node)}`);
       state.notifications = Array.isArray(data.notifications) ? data.notifications : [];
       state.notificationUnread = Number(data.unread) || 0;
+      state.notificationTotal = Number(data.total) || state.notifications.length;
+      state.notificationsFailed = false;
       // The relay owns the pause deadline, so this refresh is how a pause set
       // on another surface (the desktop app) reaches an open dashboard.
       state.session = {
@@ -49002,9 +48977,12 @@ Your reply
     } catch (_) {
       state.notifications = [];
       state.notificationUnread = 0;
+      state.notificationTotal = 0;
+      state.notificationsFailed = true;
     }
-    renderNotificationPreview();
-    renderNotificationModal();
+    state.notificationsLoaded = true;
+    renderNotificationBadge();
+    renderPingsPage();
     renderPingPause();
     renderHomeFeed();
     celebrateNewPings(state.notifications);
@@ -49018,30 +48996,11 @@ Your reply
       .catch(() => {});
   }
 
-  function setNotificationDropdownOpen(open) {
-    const toggle = $("#notificationToggle");
-    const dropdown = $("#notificationDropdown");
-    dropdown?.classList.toggle("hidden", !open);
-    toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-    // The pause presets are a submenu of this dropdown, so they collapse with
-    // it rather than being left open behind the next thing that opens.
-    if (!open) setPingPauseMenuOpen(false);
-  }
-
   function setAccountMenuOpen(open) {
     const toggle = $("#accountMenuToggle");
     const dropdown = $("#accountMenuDropdown");
     dropdown?.classList.toggle("hidden", !open);
     toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-
-  function setNotificationModalOpen(open) {
-    if (open) ensureDeferredMarkup("dialogs");
-    const modal = $("#notificationModal");
-    if (!modal) return;
-    modal.classList.toggle("hidden", !open);
-    modal.classList.toggle("flex", open);
-    if (open) renderNotificationModal();
   }
 
   async function markNotificationsRead(ids = [], all = false) {
@@ -49050,6 +49009,7 @@ Your reply
     try {
       await fetch("/api/notifications", {
         method: "POST",
+        keepalive: true,
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           node, ids, all,
@@ -49058,18 +49018,6 @@ Your reply
       });
     } catch (_) {}
     await loadNotifications();
-  }
-
-  async function openNotification(id, modal = false) {
-    const item = state.notifications.find((candidate) => candidate.id === id);
-    if (!item) return;
-    state.selectedNotificationId = id;
-    renderNotificationModal();
-    if (!item.readAt) await markNotificationsRead([id]);
-    if (modal) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-    }
   }
 
   // Each page is its own document (marked <body data-page="...">). Boot runs
@@ -49720,15 +49668,6 @@ Your reply
       return;
     }
 
-    const notificationToggle = event.target.closest("#notificationToggle");
-    if (notificationToggle) {
-      event.stopPropagation();
-      const dropdown = $("#notificationDropdown");
-      setNotificationDropdownOpen(dropdown?.classList.contains("hidden"));
-      if (state.session?.nodeName) loadNotifications();
-      return;
-    }
-
     const accountMenuToggle = event.target.closest("#accountMenuToggle");
     if (accountMenuToggle) {
       event.stopPropagation();
@@ -49794,29 +49733,15 @@ Your reply
       return;
     }
 
-    // Ping settings gear (bell footer, pings modal header, each modal row, the
-    // detail pane): a real link to /dashboard/settings/notifications, switched
-    // in place when this already is the settings page.
     const pingSettingsLink = event.target.closest("[data-ping-settings-link]");
     if (pingSettingsLink) {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(false);
       if (openPingSettingsInPlace(pingSettingsLink)) event.preventDefault();
       return;
     }
 
     if (handlePingSettingsClick(event)) {
       event.stopPropagation();
-      return;
-    }
-
-    const notificationOpen = event.target.closest("[data-notification-open]");
-    if (notificationOpen) {
-      await openNotification(
-        notificationOpen.dataset.notificationOpen || "",
-        !event.target.closest("#notificationModal"),
-      );
       return;
     }
 
@@ -49847,17 +49772,6 @@ Your reply
     if (pauseToggle) {
       event.stopPropagation();
       setPingPauseMenuOpen($("[data-ping-pause-menu]")?.hidden !== false);
-      return;
-    }
-
-    if (event.target.closest("[data-show-all-notifications]")) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-      return;
-    }
-
-    if (event.target.closest("[data-close-notification-modal], [data-notification-modal-backdrop]")) {
-      setNotificationModalOpen(false);
       return;
     }
 
@@ -50032,8 +49946,8 @@ Your reply
       $("[data-profile-popover]")?.classList.add("hidden");
       $("[data-profile-toggle]")?.setAttribute("aria-expanded", "false");
     }
-    if (!event.target.closest("#notificationToggle, #notificationDropdown")) {
-      setNotificationDropdownOpen(false);
+    if (!event.target.closest("[data-ping-pause-form]")) {
+      setPingPauseMenuOpen(false);
     }
     if (!event.target.closest("#accountMenuToggle, #accountMenuDropdown")) {
       setAccountMenuOpen(false);
@@ -52161,8 +52075,7 @@ Your reply
 	    }
 	    if (event.key === "Escape") {
 	      setProfileModalOpen(false);
-	      setNotificationDropdownOpen(false);
-	      setNotificationModalOpen(false);
+	      setPingPauseMenuOpen(false);
 	      setAgentModalOpen(false);
 	      setNewRepoModalOpen(false);
 	      closeRepoBranchMenus();
@@ -56791,6 +56704,224 @@ Your reply
     return loadDashboardChunk("notes").then((chunk) => chunk.initNotesPage(...args));
   }
 
+  const PINGS_PAGE_SIZE = 40;
+  const pingsView = {
+    filter: "all",
+    older: [],
+    expanded: new Set(),
+    loadingMore: false,
+    moreFailed: false,
+    wired: false,
+  };
+
+  function pingsPageItems() {
+    const seen = new Set();
+    const items = [];
+    for (const item of [...state.notifications, ...pingsView.older]) {
+      const id = String(item?.id || "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      items.push(item);
+    }
+    return items.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+  }
+
+  function pingsPageVisible(items) {
+    return pingsView.filter === "unread" ? items.filter((item) => !item.readAt) : items;
+  }
+
+  function pingsPageHasMore(items) {
+    const total = Number(state.notificationTotal) || 0;
+    return items.length < total;
+  }
+
+  function pingsBlankslateHtml(icon, title, desc, action = "") {
+    return `
+      <div class="fm-blankslate">
+        <i data-lucide="${icon}" aria-hidden="true"></i>
+        <p class="fm-blankslate-title">${escapeHtml(title)}</p>
+        <p class="fm-blankslate-desc">${escapeHtml(desc)}</p>
+        ${action}
+      </div>
+    `;
+  }
+
+  function renderPingsFilter() {
+    $$("[data-pings-filter]").forEach((button) => {
+      button.setAttribute("aria-pressed", button.dataset.pingsFilter === pingsView.filter ? "true" : "false");
+    });
+  }
+
+  function renderPingsPage() {
+    const list = $("[data-pings-list]");
+    if (!list) return;
+    renderPingsFilter();
+    const signedIn = Boolean(state.session?.nodeName);
+    const controls = $("[data-pings-account-controls]");
+    const toolbar = $("[data-pings-toolbar]");
+    const more = $("[data-pings-more]");
+    if (controls) controls.hidden = !signedIn;
+    if (toolbar) toolbar.hidden = !signedIn;
+    if (!signedIn) {
+      if (more) more.hidden = true;
+      const next = encodeURIComponent(`${location.pathname}${location.search}`);
+      list.innerHTML = pingsBlankslateHtml(
+        "bell",
+        "Sign in to see your pings",
+        "Mentions, pull requests, assignments, shares and host status changes for your account show up here.",
+        `<a href="/login?next=${next}" class="fm-btn fm-btn-sm mt-3">Log in</a>`,
+      );
+      window.lucide?.createIcons();
+      return;
+    }
+    if (!state.notificationsLoaded) {
+      if (more) more.hidden = true;
+      list.innerHTML = '<p class="px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading pings...</p>';
+      return;
+    }
+    const items = pingsPageItems();
+    const visible = pingsPageVisible(items);
+    const markAll = $("[data-pings-mark-all]");
+    if (markAll) markAll.disabled = !((Number(state.notificationUnread) || 0) > 0 || items.some((item) => !item.readAt));
+    if (state.notificationsFailed && !items.length) {
+      list.innerHTML = pingsBlankslateHtml("triangle-alert", "Pings could not be loaded", "Check your connection and reload the page.");
+    } else if (!visible.length) {
+      list.innerHTML = pingsView.filter === "unread"
+        ? pingsBlankslateHtml("check-check", "You're all caught up", "No unread pings. Switch to All to see the ones you have read.")
+        : pingsBlankslateHtml("bell", "No pings yet", "Mentions, pull requests, assignments, shares, bounties, releases and host status changes will appear here.");
+    } else {
+      list.innerHTML = `<ul class="divide-y divide-border">${visible.map((item) => notificationRowHtml(item, {
+        expanded: pingsView.expanded.has(String(item.id || "")),
+      })).join("")}</ul>`;
+    }
+    if (more) {
+      more.hidden = !pingsPageHasMore(items);
+      const button = more.querySelector("[data-pings-load-more]");
+      if (button) {
+        button.disabled = pingsView.loadingMore;
+        button.textContent = pingsView.loadingMore
+          ? "Loading..."
+          : pingsView.moreFailed ? "Could not load more. Try again" : "Load more";
+      }
+    }
+    window.lucide?.createIcons();
+  }
+
+  async function loadMorePings() {
+    const node = state.session?.nodeName || "";
+    if (!node || pingsView.loadingMore) return;
+    pingsView.loadingMore = true;
+    pingsView.moreFailed = false;
+    renderPingsPage();
+    try {
+      const offset = pingsPageItems().length;
+      const data = await fetchJson(`/api/notifications?node=${encodeURIComponent(node)}&limit=${PINGS_PAGE_SIZE}&offset=${offset}`);
+      const page = Array.isArray(data.notifications) ? data.notifications : [];
+      pingsView.older = pingsView.older.concat(page);
+      if (Number(data.total)) state.notificationTotal = Number(data.total);
+      if (!page.length) state.notificationTotal = pingsPageItems().length;
+    } catch (_) {
+      pingsView.moreFailed = true;
+    }
+    pingsView.loadingMore = false;
+    renderPingsPage();
+  }
+
+  function markPingsReadLocally(ids, all = false) {
+    const now = Date.now();
+    const wanted = new Set(ids.map(String));
+    for (const item of [...state.notifications, ...pingsView.older]) {
+      if (!item.readAt && (all || wanted.has(String(item.id || "")))) item.readAt = now;
+    }
+  }
+
+  async function markPingsRead(ids, all = false) {
+    const fresh = all
+      ? (Number(state.notificationUnread) || 0)
+      : pingsPageItems().filter((item) => ids.includes(String(item.id || "")) && !item.readAt).length;
+    markPingsReadLocally(ids, all);
+    state.notificationUnread = all ? 0 : Math.max(0, (Number(state.notificationUnread) || 0) - fresh);
+    renderNotificationBadge();
+    renderPingsPage();
+    await markNotificationsRead(all ? [] : ids, all);
+    markPingsReadLocally(ids, all);
+    renderPingsPage();
+  }
+
+  function setPingsFilter(filter) {
+    pingsView.filter = filter === "unread" ? "unread" : "all";
+    const url = new URL(location.href);
+    if (pingsView.filter === "unread") url.searchParams.set("filter", "unread");
+    else url.searchParams.delete("filter");
+    history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    renderPingsPage();
+  }
+
+  function focusPingControl(selector) {
+    $(selector)?.focus();
+  }
+
+  async function handlePingsPageClick(event) {
+    const page = event.target.closest("[data-pings-page]");
+    if (!page) return;
+    const filter = event.target.closest("[data-pings-filter]");
+    if (filter) {
+      setPingsFilter(filter.dataset.pingsFilter);
+      return;
+    }
+    if (event.target.closest("[data-pings-mark-all]")) {
+      await markPingsRead([], true);
+      return;
+    }
+    if (event.target.closest("[data-pings-load-more]")) {
+      await loadMorePings();
+      return;
+    }
+    const markRead = event.target.closest("[data-ping-mark-read]");
+    if (markRead) {
+      const id = markRead.dataset.pingMarkRead || "";
+      await markPingsRead([id]);
+      focusPingControl(`[data-ping-row-toggle="${CSS.escape(id)}"]`);
+      return;
+    }
+    const toggle = event.target.closest("[data-ping-row-toggle]");
+    if (toggle) {
+      const id = toggle.dataset.pingRowToggle || "";
+      if (pingsView.expanded.has(id)) pingsView.expanded.delete(id);
+      else pingsView.expanded.add(id);
+      renderPingsPage();
+      focusPingControl(`[data-ping-row-toggle="${CSS.escape(id)}"]`);
+      return;
+    }
+    const open = event.target.closest("[data-notification-open]");
+    if (open) {
+      const id = open.dataset.notificationOpen || "";
+      const item = pingsPageItems().find((candidate) => String(candidate.id || "") === id);
+      if (!item) return;
+      if (open.tagName === "BUTTON") {
+        if (pingsView.expanded.has(id)) pingsView.expanded.delete(id);
+        else pingsView.expanded.add(id);
+        renderPingsPage();
+        focusPingControl(`button[data-notification-open="${CSS.escape(id)}"]`);
+        if (!item.readAt) await markPingsRead([id]);
+        return;
+      }
+      if (!item.readAt) setTimeout(() => { void markPingsRead([id]); }, 0);
+    }
+  }
+
+  function initPingsPage() {
+    if (!$("[data-pings-page]")) return;
+    const bell = $("#notificationToggle");
+    bell?.setAttribute("aria-current", "page");
+    pingsView.filter = new URLSearchParams(location.search).get("filter") === "unread" ? "unread" : "all";
+    if (!pingsView.wired) {
+      pingsView.wired = true;
+      document.addEventListener("click", (event) => { void handlePingsPageClick(event); });
+    }
+    renderPingsPage();
+    renderPingPause();
+  }
   const pluginMenuState = { plugin: null, account: null, loading: null };
 
   function currentPluginPage() {
@@ -60487,7 +60618,7 @@ Your reply
   // DEFERRED_MARKUP); ensureDeferredMarkup adds it on first use.
   function deferredMarkup(name) {
     return {
-      "dialogs": { marker: "#notificationModal", after: null, html: "    <div\n      data-profile-modal\n      class=\"hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileModalTitle\"\n    >\n      <button data-profile-modal-backdrop type=\"button\" aria-label=\"Close profile settings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileModalTitle\" class=\"fm-dialog-title\">Profile settings</h2>\n            <p class=\"fm-dialog-desc\">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>\n          </div>\n          <button data-profile-modal-close type=\"button\" aria-label=\"Close profile settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <div class=\"flex items-start justify-between gap-3 border-b border-border pb-4\">\n            <div class=\"min-w-0\">\n              <p class=\"text-sm font-medium text-foreground\">Email verification</p>\n              <p data-profile-email-status class=\"mt-1 text-xs text-muted-foreground\">Sign in to view email status.</p>\n            </div>\n            <button data-profile-verify-email type=\"button\" class=\"fm-btn fm-btn-sm shrink-0\">\n              Send link\n            </button>\n          </div>\n\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Solana payout address\n            <input data-profile-solana type=\"text\" inputmode=\"latin\" autocomplete=\"off\" placeholder=\"Your public Solana address\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n            <span class=\"text-xs leading-5 text-muted-foreground\">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>\n            <span class=\"text-xs leading-5 text-muted-foreground\">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>\n          </label>\n\n          <form data-credential-scope class=\"contents\">\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Current password\n            <input data-profile-password type=\"password\" autocomplete=\"current-password\" placeholder=\"Required to save payout changes\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n          </label>\n          </form>\n\n          <p data-profile-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n            Save profile\n          </button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      data-profile-about-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileAboutModalTitle\"\n    >\n      <button data-profile-about-modal-backdrop type=\"button\" aria-label=\"Close about editor\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-3xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileAboutModalTitle\" class=\"fm-dialog-title\">Edit about yourself</h2>\n            <p class=\"fm-dialog-desc\">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>\n          </div>\n          <button data-profile-about-modal-close type=\"button\" aria-label=\"Close about editor\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <label class=\"grid gap-2 text-xs font-medium text-muted-foreground\">\n            About yourself\n            <textarea data-profile-about-textarea rows=\"14\" maxlength=\"32000\" spellcheck=\"true\" class=\"min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\" placeholder=\"# Hi, I'm ...\"></textarea>\n          </label>\n          <p data-profile-about-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-about-cancel type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-profile-about-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Save about</button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      id=\"notificationModal\"\n      class=\"hidden fixed inset-0 z-[80] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"notificationModalTitle\"\n    >\n      <button data-notification-modal-backdrop type=\"button\" aria-label=\"Close pings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-4xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"notificationModalTitle\" class=\"fm-dialog-title\">Pings</h2>\n            <p class=\"fm-dialog-desc\">Read node, repository, and network updates.</p>\n          </div>\n          <div class=\"flex shrink-0 items-center gap-1\">\n            <a href=\"/dashboard/settings/notifications\" data-ping-settings-link=\"\" title=\"Ping settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible\">\n              <i data-lucide=\"settings\" aria-hidden=\"true\"></i>\n              Ping settings\n            </a>\n            <button data-close-notification-modal type=\"button\" aria-label=\"Close pings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n              <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n            </button>\n          </div>\n        </div>\n\n        <div class=\"grid min-h-0 flex-1 md:grid-cols-[19rem_minmax(0,1fr)]\">\n          <div data-notification-modal-list class=\"max-h-80 overflow-y-auto border-b border-border p-2 md:max-h-none md:border-b-0 md:border-r\"></div>\n          <article data-notification-modal-detail class=\"min-h-0 overflow-y-auto p-5\"></article>\n        </div>\n      </div>\n    </div>\n\n    <!--\n      Provider sign-in, streamed from the owner's own node (agent-terminal.js).\n      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser\n      could only complete on a machine with the desktop app installed.\n    -->\n    <div\n      data-agent-login-modal\n      class=\"fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"agentLoginModalTitle\"\n    >\n      <button data-agent-login-backdrop type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"agentLoginModalTitle\" data-agent-login-title class=\"fm-dialog-title flex items-center gap-2\"><i data-lucide=\"terminal\" class=\"h-4 w-4 text-muted-foreground\"></i>Sign in on your node</h2>\n            <p data-agent-login-status class=\"fm-dialog-desc\">Connecting\u2026</p>\n          </div>\n          <button data-agent-login-close type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div data-agent-login-surface class=\"fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2\"></div>\n        <p data-agent-login-footer class=\"border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground\">\n          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command \u2014 not a shell \u2014 and the credential itself is created on the provider's site, never here.\n        </p>\n      </div>\n    </div>\n\n    <div\n      data-feedback-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"feedbackModalTitle\"\n    >\n      <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"absolute inset-0 cursor-default\"></button>\n      <form data-feedback-form class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"feedbackModalTitle\" class=\"fm-dialog-title\">Send feedback</h2>\n            <p class=\"fm-dialog-desc\">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>\n          </div>\n          <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-3\">\n          <label class=\"grid gap-1.5 text-xs font-medium text-muted-foreground\">\n            Your feedback\n            <textarea data-feedback-message name=\"message\" rows=\"6\" minlength=\"2\" maxlength=\"2000\" required placeholder=\"What should we know?\" class=\"min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\"></textarea>\n          </label>\n          <p data-feedback-status class=\"min-h-4 text-xs text-muted-foreground\" role=\"status\" aria-live=\"polite\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-feedback-close type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-feedback-submit type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Send feedback</button>\n        </div>\n      </form>\n    </div>\n" },
+      "dialogs": { marker: "#profileModalTitle", after: null, html: "    <div\n      data-profile-modal\n      class=\"hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileModalTitle\"\n    >\n      <button data-profile-modal-backdrop type=\"button\" aria-label=\"Close profile settings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileModalTitle\" class=\"fm-dialog-title\">Profile settings</h2>\n            <p class=\"fm-dialog-desc\">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>\n          </div>\n          <button data-profile-modal-close type=\"button\" aria-label=\"Close profile settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <div class=\"flex items-start justify-between gap-3 border-b border-border pb-4\">\n            <div class=\"min-w-0\">\n              <p class=\"text-sm font-medium text-foreground\">Email verification</p>\n              <p data-profile-email-status class=\"mt-1 text-xs text-muted-foreground\">Sign in to view email status.</p>\n            </div>\n            <button data-profile-verify-email type=\"button\" class=\"fm-btn fm-btn-sm shrink-0\">\n              Send link\n            </button>\n          </div>\n\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Solana payout address\n            <input data-profile-solana type=\"text\" inputmode=\"latin\" autocomplete=\"off\" placeholder=\"Your public Solana address\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n            <span class=\"text-xs leading-5 text-muted-foreground\">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>\n            <span class=\"text-xs leading-5 text-muted-foreground\">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>\n          </label>\n\n          <form data-credential-scope class=\"contents\">\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Current password\n            <input data-profile-password type=\"password\" autocomplete=\"current-password\" placeholder=\"Required to save payout changes\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n          </label>\n          </form>\n\n          <p data-profile-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n            Save profile\n          </button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      data-profile-about-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileAboutModalTitle\"\n    >\n      <button data-profile-about-modal-backdrop type=\"button\" aria-label=\"Close about editor\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-3xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileAboutModalTitle\" class=\"fm-dialog-title\">Edit about yourself</h2>\n            <p class=\"fm-dialog-desc\">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>\n          </div>\n          <button data-profile-about-modal-close type=\"button\" aria-label=\"Close about editor\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <label class=\"grid gap-2 text-xs font-medium text-muted-foreground\">\n            About yourself\n            <textarea data-profile-about-textarea rows=\"14\" maxlength=\"32000\" spellcheck=\"true\" class=\"min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\" placeholder=\"# Hi, I'm ...\"></textarea>\n          </label>\n          <p data-profile-about-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-about-cancel type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-profile-about-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Save about</button>\n        </div>\n      </div>\n    </div>\n\n    <!--\n      Provider sign-in, streamed from the owner's own node (agent-terminal.js).\n      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser\n      could only complete on a machine with the desktop app installed.\n    -->\n    <div\n      data-agent-login-modal\n      class=\"fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"agentLoginModalTitle\"\n    >\n      <button data-agent-login-backdrop type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"agentLoginModalTitle\" data-agent-login-title class=\"fm-dialog-title flex items-center gap-2\"><i data-lucide=\"terminal\" class=\"h-4 w-4 text-muted-foreground\"></i>Sign in on your node</h2>\n            <p data-agent-login-status class=\"fm-dialog-desc\">Connecting\u2026</p>\n          </div>\n          <button data-agent-login-close type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div data-agent-login-surface class=\"fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2\"></div>\n        <p data-agent-login-footer class=\"border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground\">\n          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command \u2014 not a shell \u2014 and the credential itself is created on the provider's site, never here.\n        </p>\n      </div>\n    </div>\n\n    <div\n      data-feedback-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"feedbackModalTitle\"\n    >\n      <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"absolute inset-0 cursor-default\"></button>\n      <form data-feedback-form class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"feedbackModalTitle\" class=\"fm-dialog-title\">Send feedback</h2>\n            <p class=\"fm-dialog-desc\">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>\n          </div>\n          <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-3\">\n          <label class=\"grid gap-1.5 text-xs font-medium text-muted-foreground\">\n            Your feedback\n            <textarea data-feedback-message name=\"message\" rows=\"6\" minlength=\"2\" maxlength=\"2000\" required placeholder=\"What should we know?\" class=\"min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\"></textarea>\n          </label>\n          <p data-feedback-status class=\"min-h-4 text-xs text-muted-foreground\" role=\"status\" aria-live=\"polite\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-feedback-close type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-feedback-submit type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Send feedback</button>\n        </div>\n      </form>\n    </div>\n" },
       "agent": { marker: "#agentModal", after: "#agentModalToggle", html: "<div\n  id=\"agentModal\"\n  class=\"fm-popover hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]\"\n  role=\"dialog\"\n  aria-labelledby=\"agentModalTitle\"\n>\n  <div class=\"fm-popover-header\">\n    <div class=\"min-w-0 py-1\">\n      <h2 id=\"agentModalTitle\" class=\"fm-popover-title\">Start an agent</h2>\n      <p class=\"text-xs text-muted-foreground\">Run on an agent-capable node owned by your account.</p>\n    </div>\n    <button data-agent-modal-close type=\"button\" aria-label=\"Close agent composer\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n      <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n    </button>\n  </div>\n  <form data-repo-agent-new-form class=\"grid gap-3 p-3 text-xs\">\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Repository\n      <select data-agent-modal-repo name=\"repository\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Run on\n      <select data-agent-modal-target name=\"targetNode\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"><option value=\"\">Choose an owned node\u2026</option></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Agent and model\n      <select data-repo-agent-new-agent-model required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <input data-repo-agent-new-provider name=\"provider\" type=\"hidden\" value=\"claude-code\" />\n    <input data-repo-agent-new-model name=\"model\" type=\"hidden\" value=\"\" />\n    <div data-agent-modal-login class=\"hidden flex-col gap-1.5\">\n      <button data-agent-modal-login-start type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"key\" aria-hidden=\"true\"></i>\n        <span data-agent-modal-login-label>Sign in to agent</span>\n      </button>\n      <a data-agent-modal-login-desktop href=\"#\" class=\"text-xs text-accent hover:underline\">Or hand this off to the <span data-desktop-brand>ForkMesh </span>desktop app</a>\n    </div>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Task\n      <textarea data-repo-agent-new-input name=\"prompt\" required maxlength=\"8000\" rows=\"5\" class=\"w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground\" placeholder=\"Describe the change you want the agent to make\u2026\"></textarea>\n    </label>\n    <input data-repo-agent-new-file-input type=\"file\" accept=\"image/png,image/jpeg,image/webp,image/gif\" multiple class=\"hidden\" />\n    <div class=\"flex flex-wrap items-center gap-2\">\n      <button data-repo-agent-new-attach type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"image-plus\" aria-hidden=\"true\"></i>\n        Attach images\n      </button>\n      <span class=\"text-xs text-muted-foreground\">or paste a screenshot into the task</span>\n    </div>\n    <div data-repo-agent-new-attachments class=\"hidden\"></div>\n    <label class=\"flex items-center gap-2 text-foreground\">\n      <input name=\"createPr\" type=\"checkbox\" class=\"h-4 w-4 rounded border-border\" />\n      Create a pull request when the run finishes\n    </label>\n    <p class=\"text-xs leading-5 text-muted-foreground\">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>\n    <p data-repo-agent-new-hint class=\"text-xs leading-5 text-muted-foreground\">The request is saved durably and starts when the selected node claims it.</p>\n    <div class=\"flex justify-end border-t border-border pt-3\">\n      <button type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n        <i data-lucide=\"play\" aria-hidden=\"true\"></i>\n        Start agent\n      </button>\n    </div>\n  </form>\n</div>\n" },
     }[name] || null;
   }
@@ -60504,6 +60635,7 @@ Your reply
     "network": initNetworkPage,
     "ads": initAdsPage,
     "runners": initRunnersPage,
+    "pings": initPingsPage,
     "agents": initAgentsPage,
     "docs": initDocsPage,
     "apps": initAppsPage,

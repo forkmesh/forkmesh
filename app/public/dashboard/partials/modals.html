@@ -83,38 +83,6 @@
       </div>
     </div>
 
-    <div
-      id="notificationModal"
-      class="hidden fixed inset-0 z-[80] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="notificationModalTitle"
-    >
-      <button data-notification-modal-backdrop type="button" aria-label="Close pings" class="absolute inset-0 cursor-default"></button>
-      <div class="fm-dialog relative z-10 w-full max-w-4xl">
-        <div class="fm-dialog-header">
-          <div class="fm-dialog-heading">
-            <h2 id="notificationModalTitle" class="fm-dialog-title">Pings</h2>
-            <p class="fm-dialog-desc">Read node, repository, and network updates.</p>
-          </div>
-          <div class="flex shrink-0 items-center gap-1">
-            <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="fm-btn fm-btn-sm fm-btn-invisible">
-              <i data-lucide="settings" aria-hidden="true"></i>
-              Ping settings
-            </a>
-            <button data-close-notification-modal type="button" aria-label="Close pings" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
-              <i data-lucide="x" aria-hidden="true"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="grid min-h-0 flex-1 md:grid-cols-[19rem_minmax(0,1fr)]">
-          <div data-notification-modal-list class="max-h-80 overflow-y-auto border-b border-border p-2 md:max-h-none md:border-b-0 md:border-r"></div>
-          <article data-notification-modal-detail class="min-h-0 overflow-y-auto p-5"></article>
-        </div>
-      </div>
-    </div>
-
     <!--
       Provider sign-in, streamed from the owner's own node (agent-terminal.js).
       This replaces a `forkmesh://agent-login/<node>` hand-off that a browser

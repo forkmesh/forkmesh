@@ -31,7 +31,7 @@ person to lead with. Its title already names the event.
 | Email, digest | `_notification_digest_email` | Subject is the newest item's lead plus `(+N more)`. The heading names who is waiting (`bob, carol and 2 more · 5 pings`) and the count line is gone. |
 | Email item card | `_notification_email_item` | Avatar, name, repo, number and time on top, the text in 15px under it, the event label as a small link at the bottom. |
 | Email inbox preview | `preheader` of `_forkmesh_email_card_html` | The first item's text, so the mail list shows the message rather than "Hi alice". |
-| Web pings dropdown and Show all pings list | `renderNotificationPreview`, `renderNotificationModal`, `notificationLead` in `app/public/dashboard/js/08-repo-detail-network.js` | Avatar initial with a kind badge, `actor · repo #n` and the time on top, two lines of text, a blue dot on unread rows. |
+| Web Pings page (`/dashboard/pings`, [pings-page](pings-page.md)) | `notificationRowHtml`, `notificationAvatarHtml`, `notificationLead` in `app/public/dashboard/js/08-repo-detail-network.js` | Avatar initial with a kind badge, `actor · repo #n` and the time on top, two lines of text, a blue dot on unread rows. |
 | Desktop OS alerts and Pings rows | `alertLeadTitle`, `alertSnippet` in `desktop/src/PingSettings.h`, used by `MainWindowIssues.cpp`, `MainWindowPulls.cpp`, `MainWindowCoves.cpp`, `MainWindowRepoSync.cpp` | Title `bob · o/r #4`, body the issue title or the comment text. A batch keeps the repository as its title and the count as its body. |
 
 Chat messages and mentions were already content-first (sender as title,
@@ -42,7 +42,7 @@ message as body) on every surface and are unchanged.
 Each ping row in the inbox shows the logo of the instance it came from, so
 someone signed in to several instances can tell them apart at a glance.
 
-- **Web** (pings dropdown and Show all pings list):
+- **Web** (Pings page rows):
   `notificationInstanceLogoHtml` draws `/assets/logo.svg` at 16px, named with
   `platformName()`. On a branded instance `app/tools/apply_instance_brand.py`
   writes the instance's logo over that file, so the path is always the
@@ -75,7 +75,7 @@ the actor and the content the same way.
 
 ## Dashboard CSS
 
-The dropdown uses only utilities already in the committed
+The Pings page rows use only utilities already in the committed
 `app/public/dashboard/tailwind.css`. Regenerating that file from the current
 config drops classes other pages still use, so new markup sticks to classes it
 already has (`bottom-0` rather than `-bottom-0.5`, for example).
