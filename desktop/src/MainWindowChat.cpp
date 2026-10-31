@@ -3172,19 +3172,60 @@ QWidget *MainWindow::buildStatusBar()
         *definition.slot = tile;
         debugTiles.append(tile);
     }
+    const struct {
+        QWidget **slot;
+        const char *name;
+        const char *label;
+        const char *accessible;
+        const char *tip;
+    } tokenTiles[] = {
+        {&m_debugTokensInTile, "debugTokensInTile", "IN",
+         "Agent input tokens sent", "Input tokens sent to agent models per second"},
+        {&m_debugTokensOutTile, "debugTokensOutTile", "OUT",
+         "Agent output tokens received",
+         "Output tokens received from agent models per second"},
+    };
+    for (const auto &definition : tokenTiles) {
+        auto *tile = new ResourceSparkline(QString::fromLatin1(definition.label),
+                                           debugContent,
+                                           kResourceSparklineCompactSide, 60);
+        tile->setObjectName(QString::fromLatin1(definition.name));
+        tile->setAccessibleName(QString::fromLatin1(definition.accessible));
+        tile->setToolTip(QString::fromLatin1(definition.tip));
+        tile->setUnit(QStringLiteral("tok/s"));
+        tile->addSample(0, 1000, QStringLiteral("0"));
+        *definition.slot = tile;
+        debugTiles.append(tile);
+    }
+    m_debugChartTiles.clear();
+    m_debugTileQuads.clear();
     for (int first = 0; first < debugTiles.size(); first += 4) {
         auto *quad = new QWidget(debugContent);
         quad->setObjectName(QStringLiteral("debugTileQuad"));
-        quad->setFixedSize(40, 40);
+        quad->setFixedSize(kDebugTileQuadSide, kDebugTileQuadSide);
         auto *grid = new QGridLayout(quad);
         grid->setContentsMargins(0, 0, 0, 0);
         grid->setSpacing(2);
         for (int i = first; i < qMin(first + 4, int(debugTiles.size())); ++i) {
             debugTiles.at(i)->setHoverCardEnabled(true);
-            grid->addWidget(debugTiles.at(i), (i - first) / 2, (i - first) % 2);
+            m_debugChartTiles.append(debugTiles.at(i));
         }
+        m_debugTileQuads.append(quad);
         debugRow->addWidget(quad, 0, Qt::AlignVCenter);
     }
+    auto *chartsExpandButton = new ActivityRailButton(
+        QStringLiteral("chevron-up"), QStringLiteral("Expand"));
+    m_debugChartsExpandButton = chartsExpandButton;
+    chartsExpandButton->setObjectName(QStringLiteral("debugChartsExpandButton"));
+    chartsExpandButton->setCheckable(true);
+    chartsExpandButton->setCompact(true);
+    connect(chartsExpandButton, &QPushButton::toggled, this, [this](bool on) {
+        setDebugChartsExpanded(on);
+        QSettings().setValue(kDebugChartsExpandedSetting, on);
+    });
+    debugRow->addWidget(chartsExpandButton, 0, Qt::AlignVCenter);
+    setDebugChartsExpanded(
+        QSettings().value(kDebugChartsExpandedSetting, false).toBool());
     auto *separator = new QFrame;
     separator->setObjectName(QStringLiteral("debugBarSeparator"));
     separator->setFrameShape(QFrame::VLine);
@@ -3196,6 +3237,7 @@ QWidget *MainWindow::buildStatusBar()
     allLogsButton->setObjectName(QStringLiteral("debugLogAllButton"));
     allLogsButton->setCheckable(false);
     allLogsButton->setCompact(true);
+    allLogsButton->setBadgeBeside(true);
     allLogsButton->setBadgeCount(m_debugAllLogCount);
     allLogsButton->setToolTip(
         QStringLiteral("Open every debug log category on the full Log page"));
@@ -3329,6 +3371,48 @@ QWidget *MainWindow::buildStatusBar()
     QTimer::singleShot(kCloudLogMonitorStartupDelayMs, this,
                        [this] { startCloudLogMonitorIfConfigured(); });
     return statusArea;
+}
+
+void MainWindow::setDebugChartsExpanded(bool expanded)
+{
+    m_debugChartsExpanded = expanded;
+    const int side =
+        expanded ? kDebugChartExpandedSide : kResourceSparklineCompactSide;
+    for (int q = 0; q < m_debugTileQuads.size(); ++q) {
+        QWidget *quad = m_debugTileQuads.at(q);
+        auto *grid = quad ? qobject_cast<QGridLayout *>(quad->layout()) : nullptr;
+        if (!grid)
+            continue;
+        const int first = q * 4;
+        const int count = qMin(4, int(m_debugChartTiles.size()) - first);
+        for (int j = 0; j < count; ++j) {
+            QWidget *tile = m_debugChartTiles.at(first + j);
+            grid->removeWidget(tile);
+            tile->setFixedSize(side, side);
+            if (expanded)
+                grid->addWidget(tile, 0, j);
+            else if (count <= 2)
+                grid->addWidget(tile, j, 0);
+            else
+                grid->addWidget(tile, j / 2, j % 2);
+        }
+        if (expanded)
+            quad->setFixedSize(count * side + (count - 1) * grid->spacing(), side);
+        else
+            quad->setFixedSize(count <= 2 ? side : kDebugTileQuadSide,
+                               kDebugTileQuadSide);
+    }
+    if (auto *button = dynamic_cast<ActivityRailButton *>(m_debugChartsExpandButton)) {
+        const QSignalBlocker blocker(button);
+        button->setChecked(expanded);
+        button->setGlyph(expanded ? QStringLiteral("chevron-down")
+                                  : QStringLiteral("chevron-up"),
+                         expanded ? QStringLiteral("Compact")
+                                  : QStringLiteral("Expand"));
+        button->setToolTip(expanded
+                               ? QStringLiteral("Shrink the debug charts back to compact")
+                               : QStringLiteral("Expand the debug charts to full height"));
+    }
 }
 
 void MainWindow::applyDebugBarStartupPreference()

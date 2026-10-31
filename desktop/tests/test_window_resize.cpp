@@ -1054,6 +1054,50 @@ void checkFooterOverlayGeometry(MainWindow &window)
               QStringLiteral("every debug chart is one quadrant of a 2x2 block, "
                              "the size of the resource chart's own quadrants"));
 
+        auto *tokensIn = window.findChild<QWidget *>(QStringLiteral("debugTokensInTile"));
+        auto *tokensOut =
+            window.findChild<QWidget *>(QStringLiteral("debugTokensOutTile"));
+        check(tokensIn && tokensOut && tokensIn->isVisibleTo(debugBar) &&
+                  tokensOut->isVisibleTo(debugBar) &&
+                  tokensIn->parentWidget() == tokensOut->parentWidget() &&
+                  tokensIn->size() ==
+                      QSize(forkmesh::ui::kResourceSparklineCompactSide,
+                            forkmesh::ui::kResourceSparklineCompactSide) &&
+                  !tokensIn->accessibleName().isEmpty() &&
+                  !tokensOut->accessibleName().isEmpty(),
+              QStringLiteral("the debug strip charts agent input and output "
+                             "tokens in their own compact pair"));
+
+        auto *chartsExpand = window.findChild<QPushButton *>(
+            QStringLiteral("debugChartsExpandButton"));
+        auto *stallTile = window.findChild<QWidget *>(QStringLiteral("debugStallTile"));
+        if (chartsExpand)
+            chartsExpand->click();
+        QApplication::processEvents();
+        const QSize fullSide(forkmesh::ui::kDebugChartExpandedSide,
+                             forkmesh::ui::kDebugChartExpandedSide);
+        const bool expandedFull = chartsExpand && chartsExpand->isChecked() &&
+                                  stallTile && stallTile->size() == fullSide &&
+                                  tokensOut && tokensOut->size() == fullSide;
+        if (chartsExpand)
+            chartsExpand->click();
+        QApplication::processEvents();
+        check(expandedFull && !chartsExpand->isChecked() && stallTile &&
+                  stallTile->size() ==
+                      QSize(forkmesh::ui::kResourceSparklineCompactSide,
+                            forkmesh::ui::kResourceSparklineCompactSide),
+              QStringLiteral("the debug strip's expand button grows every chart "
+                             "to full height and back to compact"));
+
+        auto *allRail = dynamic_cast<forkmesh::ui::ActivityRailButton *>(
+            window.findChild<QPushButton *>(QStringLiteral("debugLogAllButton")));
+        const int allSmallWidth = allRail ? (allRail->setBadgeCount(1), allRail->width()) : 0;
+        const int allWideWidth =
+            allRail ? (allRail->setBadgeCount(123456), allRail->width()) : 0;
+        check(allRail && allWideWidth > allSmallWidth,
+              QStringLiteral("the debug strip's All count sits beside its icon "
+                             "and widens the button instead of covering it"));
+
         auto *loopTile = window.findChild<QWidget *>(
             QStringLiteral("qtDiagnosticLoopTile"));
         if (loopTile) {

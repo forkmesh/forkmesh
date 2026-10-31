@@ -1902,6 +1902,8 @@ private:
 
 constexpr int kResourceSparklineSide = 34;
 constexpr int kResourceSparklineCompactSide = 19;
+constexpr int kDebugChartExpandedSide = 40;
+constexpr int kDebugTileQuadSide = 40;
 constexpr qint64 kDebugStallChartMaxMs = 2000;
 
 class ResourceSparkline : public QWidget
@@ -4256,6 +4258,8 @@ const QString kListenToNewAgentsSetting =
     QStringLiteral("agents/listenToNewRuns");
 const QString kShowDebugBarOnStartupSetting =
     QStringLiteral("ui/showDebugBarOnStartup");
+const QString kDebugChartsExpandedSetting =
+    QStringLiteral("ui/debugChartsExpanded");
 const QString kDiagnosticsReportBaselineSetting =
     QStringLiteral("diagnostics/selfFixReportBaseline");
 const QString kCloudLogMonitorSetting =
@@ -8962,6 +8966,8 @@ constexpr int kRailItemWidth = 42;
 constexpr int kRailItemHeight = 44; // 16px icon + 10px caption + breathing room
 constexpr int kRailItemHeightNoCaption = 30; // icon only, no caption line
 constexpr int kRailIconPx = 16;
+constexpr int kBadgeBesideIconLeft = 6;
+constexpr int kBadgeBesideOverlap = 4;
 constexpr int kRepoTabRowTopInset = 4;
 
 // Settings → Appearance can switch the rail captions off. Every rail metric
@@ -9055,11 +9061,22 @@ public:
         update();
     }
 
+    void setBadgeBeside(bool beside)
+    {
+        if (m_badgeBeside == beside)
+            return;
+        m_badgeBeside = beside;
+        setFixedSize(railButtonWidth(), railButtonHeight());
+        update();
+    }
+
     void setBadgeCount(int count)
     {
         if (m_badge == count)
             return;
         m_badge = count;
+        if (m_badgeBeside)
+            setFixedSize(railButtonWidth(), railButtonHeight());
         update();
         if (m_badgeObserver)
             m_badgeObserver();
@@ -9251,7 +9268,8 @@ protected:
             p.fillRect(QRectF(0, 4, 2, height() - 8), QColor("#2ea043"));
 
         const int iconPx = kRailIconPx;
-        const QRect iconRect((width() - iconPx) / 2,
+        const QRect iconRect(m_badgeBeside ? kBadgeBesideIconLeft
+                                           : (width() - iconPx) / 2,
                              showLabel ? 6 : (height() - iconPx) / 2,
                              iconPx, iconPx);
         if (m_iconPainter)
@@ -9327,7 +9345,8 @@ protected:
             const int h = 14;
             const int w = qMax(h, QFontMetrics(f).horizontalAdvance(text) + 8);
             const QRectF badge(
-                iconRect.right() - w + h / 2.0 + 2,
+                m_badgeBeside ? iconRect.right() - kBadgeBesideOverlap + 1.0
+                              : iconRect.right() - w + h / 2.0 + 2,
                 qMax(0.0, double(iconRect.top() - 5)),
                 w, h);
             p.setPen(Qt::NoPen);
@@ -9409,6 +9428,7 @@ private:
         state.accent = m_accent;
         state.syncing = m_syncing;
         state.compact = m_compact;
+        state.badgeBeside = m_badgeBeside;
         state.captionAlwaysVisible = m_captionAlwaysVisible;
         state.captionVisible = captionVisible();
         state.blink = m_blink;
@@ -9424,9 +9444,18 @@ private:
         const QSize hooked = railButtonSizeHook(this, paintState());
         if (hooked.isValid())
             return hooked.width();
-        return (!m_captionAlwaysVisible && railCaptionsHidden())
-                   ? kRailItemWidth
-                   : railCaptionItemWidth();
+        const int base = (!m_captionAlwaysVisible && railCaptionsHidden())
+                             ? kRailItemWidth
+                             : railCaptionItemWidth();
+        if (!m_badgeBeside || m_badge <= 0)
+            return base;
+        QFont f = font();
+        f.setPixelSize(9);
+        f.setBold(true);
+        const int pill = qMax(14, QFontMetrics(f).horizontalAdvance(
+                                      QString::number(m_badge)) + 10);
+        return qMax(base, kBadgeBesideIconLeft + kRailIconPx -
+                              kBadgeBesideOverlap + pill + 2);
     }
 
     int railButtonHeight() const
@@ -9454,6 +9483,7 @@ private:
     bool m_accent = false;
     bool m_syncing = false;
     bool m_compact = false;
+    bool m_badgeBeside = false;
     bool m_captionAlwaysVisible = true;
     bool m_blink = false;
     bool m_blinkOn = true;

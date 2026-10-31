@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Desktop", "text": "The debug bar charts agent input and output tokens, can expand its charts to full height, and its All log count no longer covers the icon or stops at 20,000."},
   {"date": "2026-10-30", "area": "iPhone", "text": "The desktop icons in the phone app's top bar turn green while the desktop is connected, on iPhone and Android."},
   {"date": "2026-10-30", "area": "Projects", "text": "A repository's Files view opens faster after issues, reviews or other project activity, which no longer redo its code analysis."},
   {"date": "2026-10-30", "area": "Projects", "text": "Sending an approving quick reply on a pull request also adds the Thank you sticker to its description."},
