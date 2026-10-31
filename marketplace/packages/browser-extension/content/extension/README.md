@@ -10,6 +10,9 @@ One extension, one sign-in:
 - **Marketing readers.** Reads the counts that channel pages show (X profile,
   Reddit, any configured channel) for the `marketing` package, only when you
   ask.
+- **Repositories.** On a GitHub, GitLab, Codeberg or Gitea repository, the
+  popup shows its size and other details and mirrors it to your ForkMesh
+  account in one click.
 
 The CRM half works in Gmail (`mail.google.com`), Zoho Mail (`mail.zoho.com`,
 `.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`) and any Mastodon instance
@@ -367,6 +370,64 @@ send or channel update finishes, the extension writes one line to
 seconds), so the desktop's Marketing page can react. Only pages the readers
 already read are reported.
 
+## Repositories
+
+Open the popup on a repository page of `github.com`, `gitlab.com`,
+`codeberg.org` or `gitea.com` (any page inside it: a file, an issue, a merge
+request). A card at the top names the repository and shows:
+
+- **Size**, **Stars**, **Forks** and **Issues** (on GitHub, **Issues+PRs**:
+  GitHub counts open pull requests as issues). GitLab tells only a project's
+  members its size, so the size reads "–" there.
+- Its language, licence, default branch, when it last changed, and whether it
+  is a fork or archived.
+- Whether it is on ForkMesh already: not yet, listed (with its status, such as
+  External repository or Mirror requested), or mirrored.
+
+**Mirror to my ForkMesh account** lists the repository under your account,
+the same import the phone apps' "Mirror from GitHub/GitLab/Codeberg/Gitea"
+makes (the dashboard's **Repositories → New** can also bring over issues and
+pull requests, through `/api/repository-imports/migrations`). The mirror nodes copy
+a public listing's Git history on their next pass (about every 30 minutes);
+from then on **Open on ForkMesh** opens `/<you>/<name>`, and until then the
+**Repositories** page, where it sits under External repositories. A
+repository already listed by someone else is not listed twice: the card says
+so and offers **Open on ForkMesh**. Archived repositories are listed but not
+copied.
+
+Private repositories get no card: the provider's public API does not show
+them. Import one from **Repositories** on ForkMesh with a read token.
+
+How it works, and why:
+
+- **No script on the provider's site.** The popup reads the tab's address
+  (`tabs`), so nothing runs inside GitHub or GitLab and no new host
+  permission is asked for. `repo.js` in the service worker works out the
+  repository from the address, mirroring the server's
+  `parse_provider_source` (`app/src/repository_imports.py`): GitHub, Codeberg
+  and Gitea take the first two path segments, GitLab everything before `/-/`;
+  site pages such as `github.com/settings` or `gitlab.com/explore` are skipped.
+- **Details come from the provider's public API**
+  (`api.github.com/repos/…`, `gitlab.com/api/v4/projects/…` plus its
+  `/languages`, `codeberg.org` and `gitea.com`'s `/api/v1/repos/…`), which
+  answer any origin, without cookies (`credentials: "omit"`), so your
+  provider sign-in is never used. GitHub allows 60 such requests an hour per
+  address, so each answer is kept in `chrome.storage.session` for 10 minutes
+  (40 repositories at most). When the provider is rate-limiting, the card
+  says so and still offers Mirror: the server reads the provider itself.
+- **The ForkMesh status** is `GET /api/repository-imports/<id>`. The id is the
+  server's `external_repository_id`: `ext_` and the first 24 hex digits of
+  SHA-256 of `<provider>\n<provider's repository id>\n`, computed in the
+  extension, so no list of imports is downloaded. A 404 means "not yet".
+- **Mirror** is `POST /api/repository-imports` with the canonical URL and
+  `mode: "import"`, and no provider token and no `targetOwner`, so it lands on
+  the signed-in account. The handlers (`fm-repo-info`, `fm-repo-mirror`,
+  `fm-repo-open`) answer the popup only, and `fm-repo-open` opens only
+  addresses on your ForkMesh server.
+
+`tests/background_repo_harness.js` drives `repo.js` under a fake browser; the
+pytest wrapper checks its ids and canonical URLs against the server module.
+
 ## What leaves the browser
 
 - **CRM**: only when you press a button, send a message, or open your own
@@ -380,6 +441,9 @@ already read are reported.
   and up to five recent posts of a channel update; Reddit desk fields; posted
   link fields; X keys once to `x-connection`. Nothing is sent to the channel
   sites, Reddit or X.
+- **Repositories**: when you open the popup on a repository page, its owner
+  and name go to that provider's public API, and the derived import id to
+  ForkMesh. **Mirror** sends ForkMesh the repository's URL.
 - **Vault**: ciphertext only, to `/api/vault` (encrypted items, wrapped keys,
   signed shares). The master password, keyset and decrypted logins stay in the
   extension.
@@ -401,6 +465,8 @@ extension's storage with the host permission Chrome granted.
 | `vault-client.js`  | The vault's client logic (copied from the `vault` package).   |
 | `popup.html/js`    | Sign in, the organization, Mastodon instances, the CRM panel. |
 | `popup-vault.js`   | The popup's Password Vault section.                           |
+| `repo.js`          | Repository pages: provider details, ForkMesh status, Mirror.  |
+| `popup-repo.js`    | The popup's repository card.                                  |
 | `panel.js`         | The CRM panel and header, shared by every page and the popup. |
 | `content.js`       | Reads the open email in Gmail and Zoho Mail; tracks sends.    |
 | `zoho-sort.js`     | The sort header and inbox-zero tools above a Zoho Mail list. |
@@ -426,3 +492,5 @@ Endpoints used:
   `/posts`, `/activity`, `/x-connection`; `GET`/`POST /api/marketing/<org>/reddit`,
   `PATCH /api/marketing/<org>/reddit/<id>`, `POST /api/marketing/<org>/reddit-rules`.
 - Vault (`vault` package, `content/worker/vault.py`): `/api/vault`.
+- Repositories (`app/src/repository_imports.py`):
+  `GET /api/repository-imports/<id>`, `POST /api/repository-imports`.

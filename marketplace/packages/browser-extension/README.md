@@ -20,6 +20,8 @@ own. What it does is documented in `content/extension/README.md`:
   admin through X's developer console to connect X for posting;
 - shows, in Chrome's side panel, the popup and a toolbar badge, which pages of
   the current site feed Marketing, with no script injected into channel sites;
+- shows a GitHub, GitLab, Codeberg or Gitea repository's size and details in
+  the popup, and mirrors it to your ForkMesh account in one click;
 - walks the Reddit desk's watch list in one tab at a reader's pace when you
   ask, without clicking, typing, voting or posting.
 
