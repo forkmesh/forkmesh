@@ -1071,23 +1071,39 @@ void checkFooterOverlayGeometry(MainWindow &window)
         auto *chartsExpand = window.findChild<QPushButton *>(
             QStringLiteral("debugChartsExpandButton"));
         auto *stallTile = window.findChild<QWidget *>(QStringLiteral("debugStallTile"));
+        auto *resourceChart =
+            window.findChild<QWidget *>(QStringLiteral("debugResourceChart"));
+        const QString compactTip = chartsExpand ? chartsExpand->toolTip() : QString();
         if (chartsExpand)
             chartsExpand->click();
         QApplication::processEvents();
-        const QSize fullSide(forkmesh::ui::kDebugChartExpandedSide,
-                             forkmesh::ui::kDebugChartExpandedSide);
+        const int expandedSide = forkmesh::ui::kDebugChartExpandedSide;
+        const QSize fullSide(expandedSide, expandedSide);
+        const QString expandedTip = chartsExpand ? chartsExpand->toolTip() : QString();
         const bool expandedFull = chartsExpand && chartsExpand->isChecked() &&
                                   stallTile && stallTile->size() == fullSide &&
-                                  tokensOut && tokensOut->size() == fullSide;
+                                  tokensOut && tokensOut->size() == fullSide &&
+                                  resourceChart &&
+                                  resourceChart->height() == expandedSide &&
+                                  resourceChart->width() >= 4 * expandedSide;
         if (chartsExpand)
             chartsExpand->click();
         QApplication::processEvents();
         check(expandedFull && !chartsExpand->isChecked() && stallTile &&
                   stallTile->size() ==
                       QSize(forkmesh::ui::kResourceSparklineCompactSide,
-                            forkmesh::ui::kResourceSparklineCompactSide),
-              QStringLiteral("the debug strip's expand button grows every chart "
-                             "to full height and back to compact"));
+                            forkmesh::ui::kResourceSparklineCompactSide) &&
+                  resourceChart &&
+                  resourceChart->size() == QSize(forkmesh::ui::kDebugTileQuadSide,
+                                                 forkmesh::ui::kDebugTileQuadSide),
+              QStringLiteral("the debug strip's expand button grows every chart, "
+                             "the CPU/memory/swap/disk chart included, to full "
+                             "height and back to compact"));
+        check(compactTip.startsWith(QStringLiteral("Expand")) &&
+                  expandedTip.startsWith(QStringLiteral("Collapse")) &&
+                  chartsExpand->toolTip() == compactTip,
+              QStringLiteral("the debug strip's chevron says on hover whether it "
+                             "expands or collapses the charts"));
 
         auto *allRail = dynamic_cast<forkmesh::ui::ActivityRailButton *>(
             window.findChild<QPushButton *>(QStringLiteral("debugLogAllButton")));
