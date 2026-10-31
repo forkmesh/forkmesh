@@ -183,16 +183,19 @@ def render(values, number, template=""):
     box_id = "repo-pull-review-prompt-%d" % int(number)
     raw = values.get("rawDiffUrl") or ""
     link = "font-medium text-[var(--dashboard-link)] hover:underline"
+    button = ("inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border "
+              "px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary")
     diff_links = (
-        '<a href="%s" data-repo-pull-diff-link class="%s">Diff</a>'
-        '<a href="%s" data-repo-pull-patch-link class="%s">Patch</a>' % (
+        '\n            <span class="flex items-center gap-3"><a href="%s" '
+        'data-repo-pull-diff-link class="%s">Diff</a><a href="%s" data-repo-pull-patch-link '
+        'class="%s">Patch</a></span>' % (
             esc(raw), link, esc(values["patchUrl"]), link)) if raw else ""
     toggle_button = (
         '<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" '
-        'aria-controls="%s" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 '
-        'font-medium text-foreground hover:bg-secondary">%s<span '
-        'data-repo-pull-review-prompt-toggle-label>Show all</span></button>' % (
-            box_id, icon("chevron-down", "h-3.5 w-3.5"))) if toggle else ""
+        'aria-controls="%s" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md '
+        'px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary '
+        'hover:text-foreground">%s<span data-repo-pull-review-prompt-toggle-label>Show all'
+        '</span></button>' % (box_id, icon("chevron-down", "h-3 w-3"))) if toggle else ""
     rows = "".join(
         '<li class="truncate"><a href="%s" title="%s" class="text-[var(--dashboard-link)] '
         'hover:underline">%s</a></li>' % (esc(href), esc(path), esc(path)) if href else
@@ -201,30 +204,21 @@ def render(values, number, template=""):
     if more > 0:
         rows += '<li class="text-muted-foreground">and %d more</li>' % more
     listing = (
-        '\n            <ul id="%s" data-repo-pull-review-files class="%s overflow-hidden '
-        'border-t border-border bg-background px-3 py-2 font-mono text-[12px] leading-5 '
-        'text-foreground">%s</ul>' % (
+        '\n            <ul id="%s" data-repo-pull-review-files class="%s min-w-0 overflow-hidden '
+        'rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 '
+        'font-mono text-[11px] leading-5 text-foreground">%s</ul>' % (
             box_id, "max-h-28" if toggle else "max-h-none", rows)) if rows else ""
     return (
-        '<section data-repo-pull-review-prompt aria-label="Diff and files" class="mt-3 '
-        'min-w-0 overflow-hidden rounded-md border border-border '
-        'bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">\n'
-        '            <div class="flex min-w-0 flex-wrap items-center gap-2 py-1 pl-3 pr-1">\n'
-        '              %s<span class="whitespace-nowrap font-semibold text-foreground">Diff '
-        'and files</span>%s\n'
-        '              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">'
-        '%s<a href="%s" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary '
-        'title="Open ChatGPT with a request to summarize this pull request" class="inline-flex '
-        'h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground '
-        'hover:bg-secondary">%sSummarize in ChatGPT</a><button type="button" '
+        '<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 '
+        'gap-1.5 text-[12px]">%s%s\n'
+        '            <span class="flex flex-wrap items-center gap-1"><button type="button" '
         'data-dashboard-copy="%s" aria-label="Copy the review prompt for this pull request" '
-        'title="Copy a review prompt for your coding agent" class="copy-button inline-flex h-7 '
-        'shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground '
-        'hover:bg-secondary">%s%s<span class="copy-icon">Copy review prompt</span><span '
-        'class="copy-check">Copied</span></button></span>\n'
-        '            </div>%s\n'
-        '          </section>' % (
-            icon("code", "h-4 w-4", "shrink-0"), diff_links, toggle_button,
-            esc(chatgpt_url(values)), icon("external-link", "h-3.5 w-3.5"), prompt,
-            icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5"),
-            listing))
+        'title="Copy a review prompt for your coding agent" class="copy-button %s">%s%s<span '
+        'class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span>'
+        '</button><a href="%s" target="_blank" rel="noopener noreferrer" '
+        'data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this '
+        'pull request" class="%s">%sSummarize in ChatGPT</a>%s</span>\n'
+        '          </div>' % (
+            diff_links, listing, prompt, button, icon("copy", "copy-icon h-3 w-3"),
+            icon("check", "copy-check h-3 w-3"), esc(chatgpt_url(values)), button,
+            icon("external-link", "h-3 w-3"), toggle_button))

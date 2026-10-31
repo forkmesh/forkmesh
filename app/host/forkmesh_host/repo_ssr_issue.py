@@ -1850,17 +1850,18 @@ def ai_prompt_text(ctx, number, title, repo, template=""):
 def ai_prompt_html(ctx, number, title, repo, template=""):
     prompt = esc(ai_prompt_text(ctx, number, title, repo, template))
     return (
-        '<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-start gap-2 rounded-md '
-        'border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] '
-        'text-muted-foreground">\n            %s\n            <code '
-        'data-repo-issue-ai-prompt-text title="%s" class="min-w-0 flex-1 break-words font-mono '
-        'text-foreground">%s</code>\n            <button type="button" data-dashboard-copy="%s" '
-        'aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" '
-        'class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 '
-        'font-medium text-foreground hover:bg-secondary">%s%s<span class="copy-icon">Copy prompt'
-        '</span><span class="copy-check">Copied</span></button>\n          </div>' % (
-            icon("bot", "h-4 w-4", "shrink-0"), prompt, prompt, prompt,
-            icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5")))
+        '<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">\n            <code '
+        'data-repo-issue-ai-prompt-text title="%s" class="min-w-0 break-words '
+        'rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 '
+        'font-mono text-[11px] leading-4 text-muted-foreground">%s</code>\n            <span '
+        'class="flex flex-wrap items-center gap-1"><button type="button" '
+        'data-dashboard-copy="%s" aria-label="AI prompt for this issue" title="Copy this prompt '
+        'into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 '
+        'rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground '
+        'hover:bg-secondary">%s%s<span class="copy-icon">Copy prompt</span>'
+        '<span class="copy-check">Copied</span></button></span>\n          </div>' % (
+            prompt, prompt, prompt,
+            icon("copy", "copy-icon h-3 w-3"), icon("check", "copy-check h-3 w-3")))
 
 
 SOURCE_URL_RE = re.compile(r"^https://[A-Za-z0-9.-]+(?::\d{1,5})?/[A-Za-z0-9._~/-]*$")
@@ -2167,7 +2168,7 @@ def _render_issue(issue, ctx, owner, path, index, now, viewer, repo, prompt, rea
         '            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 '
         'rounded-full %s px-3 font-medium text-white">%s%s</span>\n            <span>%s %s'
         '</span>\n            <span aria-hidden="true">·</span>\n            <span>%s %s</span>\n'
-        '            %s\n          </p>\n          %s\n        </header>\n        <div data-repo-record-layout class="mt-6 '
+        '            %s\n          </p>\n        </header>\n        <div data-repo-record-layout class="mt-6 '
         'grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">\n          <div class="grid min-w-0 '
         'gap-4 self-start">\n            <section data-repo-record-conversation class="grid '
         'min-w-0 gap-4">\n              %s\n              %s\n              <div '
@@ -2187,13 +2188,13 @@ def _render_issue(issue, ctx, owner, path, index, now, viewer, repo, prompt, rea
             parents_html(ctx, parents), pill_class, icon(pill_icon, "h-4 w-4"), state_label,
             format_count(comments), "comment" if comments == 1 else "comments",
             format_count(len(people)), plural, issue_views_html(number),
-            "" if closed or "issue-ai-prompt" in off
-            else ai_prompt_html(ctx, number, title, repo, prompt),
             opening, sub_issues, "false" if items else "true", timeline, comment_box,
             "" if "fediverse-ui" in off else FEDERATED_THREAD % (
                 icon("radio", "h-4 w-4"), icon(
                     "chevron-down", "ml-auto h-4 w-4 transition-transform group-open:rotate-180")),
-            section("Assignees", assignee_value, "assignees"), section("Agent", agent_value),
+            section("Assignees", assignee_value, "assignees"), section("Agent", agent_value) + (
+                "" if closed or "issue-ai-prompt" in off else section(
+                    "AI prompt", ai_prompt_html(ctx, number, title, repo, prompt))),
             section("Labels", label_value, "labels"), section("Type", "Issue"),
             section("Fields", fields_value, "fields"),
             section("Milestone", milestone_value, "milestone"),
