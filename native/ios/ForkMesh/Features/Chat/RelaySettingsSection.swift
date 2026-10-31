@@ -353,7 +353,7 @@ private struct AddRelayForm: View {
                 FmOutlinedButton(model.checkLabel, fillWidth: true, onPressed: model.checking ? nil : {
                     Task { await model.check() }
                 })
-                FmFilledButton(model.addLabel, fillWidth: true, onPressed: model.canAdd ? { add() } : nil)
+                FmFilledButton(model.addLabel, fillWidth: true, busy: false, onPressed: model.canAdd ? { add() } : nil)
             }
             .padding(.top, FmSpace.x4)
         }

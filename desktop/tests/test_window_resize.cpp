@@ -29674,6 +29674,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                                           QStringLiteral("Closed"),
                                           QStringLiteral("Merged"),
                                           QStringLiteral("All"),
+                                          QStringLiteral("Review all"),
                                           QStringLiteral("Merge all"),
                                           QStringLiteral("Delete closed and merged")};
             QStringList captions;
@@ -29834,12 +29835,22 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   {ledgerPull(13, QStringLiteral("open"))}),
               QStringLiteral("the pull list shows a loading row while the first "
                              "load runs and drops it once the rows arrive"));
+        check(window.testClickPullRowDiffButton(
+                  {ledgerPull(21, QStringLiteral("open")),
+                   ledgerPull(22, QStringLiteral("open"))},
+                  22) == 22,
+              QStringLiteral("hovering a pull row shows a button that opens that "
+                             "pull's changes in Git without selecting the row"));
     }
     bool prFixButtonFound = false;
     bool prHeaderStyleUniform = true;
+    QWidget *branchPullReviewBar =
+        window.findChild<QWidget *>(QStringLiteral("branchPullReviewBar"));
     for (QPushButton *b : window.findChildren<QPushButton *>()) {
         if (b->text() == QStringLiteral("Fix") && !b->menu())
             prFixButtonFound = true;
+        if (branchPullReviewBar && branchPullReviewBar->isAncestorOf(b))
+            continue;
         if (b->text() == QStringLiteral("AI review") ||
             b->text() == QStringLiteral("Fix all") ||
             b->text() == QStringLiteral("Merge") ||

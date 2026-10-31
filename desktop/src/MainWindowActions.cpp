@@ -8523,6 +8523,16 @@ qint64 MainWindow::estimatedRunDurationMs(const ActionRun &run) const
 
 void MainWindow::updateAgentsTabIndicator()
 {
+    if (auto *rail = dynamic_cast<ActivityRailButton *>(m_agentsNavButton)) {
+        bool anyAgentRunning = false;
+        for (const AgentSession &s : std::as_const(m_agentSessions)) {
+            if (!s.merged && s.status == AgentStatus::Running) {
+                anyAgentRunning = true;
+                break;
+            }
+        }
+        rail->setRailActive(anyAgentRunning);
+    }
     QString owner, name;
     if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
         owner = m_repositories.at(m_repoDetailIndex).owner;

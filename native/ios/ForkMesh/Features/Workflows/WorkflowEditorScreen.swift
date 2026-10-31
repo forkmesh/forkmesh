@@ -253,7 +253,7 @@ struct WorkflowEditorScreen: View {
             FmSectionHeader(title: "Run")
             FmFilledButton(
                 busy == "desktop" ? "Running on your desktop…" : "Run on your desktop", icon: "desktop_windows_outlined",
-                fillWidth: true,
+                fillWidth: true, busy: busy == "desktop",
                 onPressed: busy.isEmpty && store.canRunOnDesktop ? { confirmDesktopRun = true } : nil)
                 .accessibilityIdentifier("workflow-run-desktop")
             Text(store.canRunOnDesktop ? WorkflowsText.desktopRunNote : WorkflowsText.desktopMissing)
@@ -272,10 +272,12 @@ struct WorkflowEditorScreen: View {
             FmSectionHeader(title: "Run")
             FmFilledButton(
                 busy == "phone" ? "Running on this phone…" : "Run on this phone", icon: "smartphone", fillWidth: true,
+                busy: busy == "phone",
                 onPressed: busy.isEmpty && store.canRunOnPhone ? { Task { await runOnPhone() } } : nil)
                 .accessibilityIdentifier("workflow-run-phone")
             FmOutlinedButton(
                 busy == "server" ? "Running on ForkMesh…" : "Run on ForkMesh", icon: "cloud_outlined", fillWidth: true,
+                busy: busy == "server",
                 onPressed: busy.isEmpty ? { Task { await runOnServer() } } : nil)
                 .accessibilityIdentifier("workflow-run-server")
             Text(store.canRunOnPhone ? WorkflowsText.phoneRunNote : WorkflowsText.phoneEngineMissing)

@@ -779,6 +779,8 @@ set(FORKMESH_APP_SOURCES
     src/OverflowActionRow.cpp
     src/UiKit.h
     src/UiKit.cpp
+    src/BusyRing.h
+    src/BusyRing.cpp
     src/MessageBoxClicks.h
     src/NextShellHooks.h
     src/MainWindowNextAccess.h
@@ -1798,6 +1800,19 @@ if(FORKMESH_BUILD_TESTS)
     target_include_directories(forkmesh-ui-kit-tests PRIVATE src)
     if(APPLE)
         set_target_properties(forkmesh-ui-kit-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-busy-ring-tests
+        tests/test_busy_ring.cpp
+        src/Theme.h
+        src/BusyRing.h
+        src/BusyRing.cpp
+    )
+    target_link_libraries(forkmesh-busy-ring-tests PRIVATE Qt6::Widgets Qt6::Test)
+    target_include_directories(forkmesh-busy-ring-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-busy-ring-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -4356,6 +4371,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-stats-dashboard-tests)
     add_test(NAME forkmesh-ui-kit-tests
              COMMAND forkmesh-ui-kit-tests)
+    add_test(NAME forkmesh-busy-ring-tests
+             COMMAND forkmesh-busy-ring-tests)
+    set_tests_properties(forkmesh-busy-ring-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     set_tests_properties(forkmesh-ui-kit-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-font-sizing-tests
