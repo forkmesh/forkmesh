@@ -6032,6 +6032,12 @@ private:
     void scheduleSessionsPageRefresh();
     void refreshSessionsPage();
     void refreshSessionsList();
+    void requestSessionsDesktopIndex(bool force = false);
+    void rebuildSessionsDesktopRows();
+    const AgentSession *sessionsFind(int sessionId);
+    bool sessionsDesktopRow(int sessionId) const;
+    ExternalClaudeSession sessionsOutsideSession(int sessionId) const;
+    QString sessionsFolder(const AgentSession &session) const;
     void refreshSessionsHeader();
     void refreshSessionsComposer();
     void refreshSessionsRelayStrip();
