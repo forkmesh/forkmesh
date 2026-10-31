@@ -188,7 +188,7 @@ struct ShellBarSettingsForm: View {
         } header: {
             Text("Selected icon")
         } footer: {
-            Text("The open page's icon is always drawn in the accent colour; this adds a mark around or under it.")
+            Text("Lens slides a pane of glass under the open page. The other styles draw its icon in the accent colour and add a mark around or under it.")
         }
     }
 

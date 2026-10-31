@@ -83,6 +83,7 @@ public enum ShellBarLabels: String, CaseIterable, Codable, Sendable {
 }
 
 public enum ShellBarSelection: String, CaseIterable, Codable, Sendable {
+    case lens
     case fill
     case outline
     case glow
@@ -92,6 +93,7 @@ public enum ShellBarSelection: String, CaseIterable, Codable, Sendable {
 
     public var title: String {
         switch self {
+        case .lens: return "Lens"
         case .fill: return "Fill"
         case .outline: return "Outline"
         case .glow: return "Glow"
@@ -103,6 +105,7 @@ public enum ShellBarSelection: String, CaseIterable, Codable, Sendable {
 
     public var symbol: String {
         switch self {
+        case .lens: return "capsule.inset.filled"
         case .fill: return "square.fill"
         case .outline: return "square"
         case .glow: return "sun.max"
@@ -239,10 +242,10 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
 
     public var shape: ShellBarShape = .capsule
     public var fill: ShellBarFill = .glass
-    public var icons: ShellHomeIconStyle = .outline
+    public var icons: ShellHomeIconStyle = .filled
     public var size: ShellBarSize = .medium
     public var labels: ShellBarLabels = .always
-    public var selection: ShellBarSelection = .fill
+    public var selection: ShellBarSelection = .lens
     public var width: ShellBarWidth = .full
     public var corner: Double = 0.5
     public var spacing: Double = 0

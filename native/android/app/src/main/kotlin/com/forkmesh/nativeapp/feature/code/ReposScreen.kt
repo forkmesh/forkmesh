@@ -271,8 +271,7 @@ internal class ReposScreen : Screen() {
                 Row(
                     Modifier
                         .fillMaxHeight()
-                        .horizontalScroll(state)
-                        .padding(end = FmSpace.x4),
+                        .horizontalScroll(state),
                     horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -289,7 +288,7 @@ internal class ReposScreen : Screen() {
                                     haptics.selection()
                                     filter = option
                                 }
-                                .padding(horizontal = FmSpace.x4),
+                                .padding(horizontal = 10.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
@@ -320,15 +319,14 @@ internal class ReposScreen : Screen() {
                         .border(1.dp, c.border, shape)
                         .clickable { open = true }
                         .semantics {
-                            contentDescription = "Sort repositories"
+                            contentDescription = "Sort repositories, ${sort.buttonLabel}"
                             role = Role.Button
                         }
-                        .padding(horizontal = FmSpace.x3),
+                        .width(36.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
                 ) {
                     FmIcon("sort", size = 16.dp, tint = c.textSecondary)
-                    Spacer(Modifier.width(FmSpace.x1))
-                    Text(sort.buttonLabel, style = Fm.text.labelMedium.copy(color = c.textSecondary))
                 }
             }
             FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
