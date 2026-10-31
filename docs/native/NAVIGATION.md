@@ -62,6 +62,20 @@ bottom edge holding up to `ShellBarStyle.capacity` slots: `limit` (3 to 8,
 default 6; a folder is one slot) per row, times one or two rows. Home is always
 one of them (`ShellBarPrefs.keep`).
 
+The bar floats: `ShellBottomBar.sideMargin` in from each side and
+`floatHeight` above the bottom edge. The Glass fill is a heavy material blur
+with a dark tint, so the bar takes its colour from what passes behind it; Clear
+is the iOS 26 clear glass. The default look is filled icons and the Lens
+selection: `ShellBarLens`, a colourless pane wider than its slot, drawn once
+behind the cells. It slides on its own spring, because a pick runs with
+animations off, and stretches briefly as it moves. A small `lensInset` centres
+the row, so the lens keeps the same gap to the bar's edge at both ends. The bar
+has no outline: `ShellBarBevel` lights the top edge and shades the bottom, which
+with the soft shadow reads as a rounded surface. Reduce Motion moves the lens
+without the slide or the stretch. The Settings preview and the iPad pane draw it
+in place. Saved styles keep their own selection, and older apps
+read an unknown `lens` as the default.
+
 - Every pick runs through `ShellBottomBar.run`, which records the use and acts
   with animations disabled, so pages appear in place.
 - Every bottom-bar button lands on its first page: `HomeShell.landOnTop` gives

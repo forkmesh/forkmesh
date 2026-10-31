@@ -1276,6 +1276,10 @@ bottom bar.
   shadow. Below API 31, or with high-contrast text on, glass is a near-opaque
   fill (the iOS Reduce Transparency fallback). `Modifier.blur` is not used: it
   blurs the element itself, not what is behind it. No dependency is added.
+- **Bar look** (`A/shell/ShellBottomBar.kt`). Filled icons and the Lens
+  selection by default, as iOS: a colourless `ShellBarLens` slides behind the
+  cells, `barSheen` and `barBevel` round the bar's surface in place of an
+  outline, and `ShellBar.lensMargin` insets it.
 - **Tab bar** (`GlassTabBar`, `A/shell/HomeShell.kt`). One glass capsule:
   12 dp side margin, 60 dp tall, radius 30, 52 dp cells, 24 dp icons (an SF
   Symbol at 20 pt draws about that size), 10 sp labels. The selected cell is an
