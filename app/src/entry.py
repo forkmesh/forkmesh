@@ -16756,7 +16756,7 @@ async def _catalog_logical_owners(env, repository_rows):
         logical = []
         user_owner = user_by_owner_bi.get(owner_bi, "")
         organizations = organization_by_route.get(route, [])
-        if user_owner and not organizations:
+        if user_owner and len(organizations) != 1:
             logical.append({"kind": "user", "owner": user_owner})
         for organization in organizations:
             if not any(

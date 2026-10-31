@@ -135,6 +135,29 @@ def test_catalog_lists_the_organization_and_not_the_member():
     assert plain["logicalOwners"] == [{"kind": "user", "owner": "bob"}]
 
 
+def test_catalog_keeps_the_member_first_for_two_organizations():
+    async def d1_all(_env, sql, *args):
+        if "FROM users WHERE" in sql:
+            return [{"user_bi": "bi-alice", "username": "alice"}]
+        if "FROM org_repos r" in sql:
+            return [{"node_owner": "alice", "repo": "project", "name": org}
+                    for org in ("acme", "beta")]
+        return []
+    scope = _load(
+        "entry", "_catalog_logical_owners", d1_all=d1_all,
+        clean_string=lambda value, _limit: str(value or ""),
+        MAX_NODE_NAME=40, MAX_REPO_SEGMENT=100,
+        valid_node_name=lambda value: bool(NAME_RE.fullmatch(value or "")))
+    linked = {"owner": "alice", "name": "Project"}
+    _run(scope["_catalog_logical_owners"](None, [(linked, "bi-alice")]))
+    assert linked["ownerKind"] == "user"
+    assert linked["logicalOwner"] == "alice"
+    assert linked["logicalOwners"] == [
+        {"kind": "user", "owner": "alice"},
+        {"kind": "organization", "owner": "acme"},
+        {"kind": "organization", "owner": "beta"}]
+
+
 def test_catalog_projection_leaves_signed_fields_alone():
     scope = _load(
         "catalog_routes", "_catalog_organization_projection",

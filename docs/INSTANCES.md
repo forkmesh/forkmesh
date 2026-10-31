@@ -972,8 +972,13 @@ JSON line:
   from, to, rows}` (`totals` for views): `repo_stars`, `pull_batch_sent`,
   `repo_remote_forks` are moved row by row, a row already present under the
   organization wins and the member copy is dropped; `repo_views` /
-  `issue_views` merge per viewer (hits added, first and last view widened)
-  and their totals are added, less the viewers counted under both keys.
+  `issue_views` rows move to the organization and their totals are added.
+  The statements also merge a viewer present under both keys (hits added,
+  first and last view widened, the viewer counted once), but a viewer key
+  is derived from the repository address it was counted under
+  (`_repo_viewer_key`), so a member-address key never equals an
+  organization-address key: someone who viewed the repository at both
+  addresses stays two viewers.
 
 Each table moves in one transaction. A second run prints empty `forks` and
 `tables`, so the command is idempotent and safe to rerun after a partial run.

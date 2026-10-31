@@ -217,7 +217,10 @@ organization instead:
   A fork's "forked from" line shows the parent's display name.
 
 A repository linked to two organizations keeps the member as its public owner
-(neither organization is preferred). Data stored before this change under the
+(neither organization is preferred): `_repo_organization` returns nothing for
+it, and the catalog keeps the member first in `logicalOwners` (`ownerKind:
+"user"`) with both organizations after it, so the catalog, the public facts
+and the redirect agree. Data stored before this change under the
 member address is moved by `forkmesh_host org-repo-identity`
 (docs/INSTANCES.md).
 
