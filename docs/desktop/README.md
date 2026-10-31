@@ -669,6 +669,14 @@ measured and keep the plain branch icon.
   `issueDisplayTimestampMs()` before ordering, formatting, or storing a
   display timestamp; compact PR list labels otherwise render current records
   as decades old.
+- **Ordering branches by age costs a stat per loose head.**
+  `readBranchRefFiles()` orders loose heads under `refs/heads` by
+  modification time; on a WSL checkout under `/mnt/c` with ~190 heads that
+  is 280 ms warm and over a second cold, and restoring the last repository
+  at startup froze for 1.1 s on it. `repoDefaultBranchFast()` sorts by
+  name, so it takes the names-only walk
+  (`walkBranchRefFiles(dir, false)`); a path that only needs names should
+  too.
 - **Qt never draws a tooltip on screen.** `Tooltips::install()`
   (`src/Tooltips.h`) marks Qt's `QTipLabel` `WA_DontShowOnScreen` and draws its
   text in its own `Tooltips::Window`, because Qt's tip inherited transparent
