@@ -4709,8 +4709,11 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     const QJsonObject custom = contact.value(QStringLiteral("fields")).toObject();
     for (auto entry = custom.constBegin(); entry != custom.constEnd(); ++entry) {
         const QString value = entry.value().toString().trimmed();
-        if (!value.isEmpty())
-            addField(customColumnLabel(entry.key()), valueLabel(value, {}), false);
+        if (!value.isEmpty()) {
+            const QString label = sheetColumnLabel(entry.key());
+            addField(label.isEmpty() ? customColumnLabel(entry.key()) : label,
+                     valueLabel(value, {}), false);
+        }
     }
     const int emails = int(m_contactEmails.value(contactId).size());
     const int toots = int(m_contactToots.value(contactId).size());
@@ -6985,21 +6988,66 @@ bool CrmFeature::sheetCarriesField(const QString &field) const
     return false;
 }
 
+QStringList CrmFeature::sheetLayoutFields() const
+{
+    const QJsonObject sheet = activeSheet();
+    if (!storedSheet(sheet))
+        return {};
+    QStringList fields;
+    for (const QJsonValue &value : sheet.value(QStringLiteral("columns")).toArray()) {
+        const QJsonObject column = value.toObject();
+        const QString field = text(column, "field");
+        if (field.isEmpty() || column.value(QStringLiteral("hidden")).toBool() ||
+            fields.contains(field))
+            continue;
+        const bool shown = std::any_of(m_columns.cbegin(), m_columns.cend(),
+                                       [this, &field](const ContactColumnSpec &spec) {
+            return viewField(spec) == field;
+        });
+        if (shown)
+            fields << field;
+    }
+    return fields;
+}
+
+QString CrmFeature::sheetColumnLabel(const QString &field) const
+{
+    const QJsonObject sheet = activeSheet();
+    if (!storedSheet(sheet) || field.isEmpty())
+        return QString();
+    for (const QJsonValue &value : sheet.value(QStringLiteral("columns")).toArray()) {
+        const QJsonObject column = value.toObject();
+        if (text(column, "field") == field)
+            return text(column, "label").trimmed();
+    }
+    return QString();
+}
+
 bool CrmFeature::columnHiddenInView(const ContactColumnSpec &column) const
 {
     if (column.kind == ContactColumnSpec::Actions ||
         column.kind == ContactColumnSpec::AddColumn)
         return false;
-    if (allColumnsView())
+    if (allColumnsView()) {
+        const QStringList layout = sheetLayoutFields();
+        if (!layout.isEmpty())
+            return !layout.contains(viewField(column));
         return column.kind == ContactColumnSpec::CustomField &&
                !sheetCarriesField(column.key);
+    }
     return !tableViewFields().contains(viewField(column));
 }
 
 void CrmFeature::applyColumnVisibility()
 {
-    for (int index = 0; index < m_columns.size(); ++index)
-        m_contactsTable->setColumnHidden(index, columnHiddenInView(m_columns.at(index)));
+    for (int index = 0; index < m_columns.size(); ++index) {
+        const ContactColumnSpec &column = m_columns.at(index);
+        m_contactsTable->setColumnHidden(index, columnHiddenInView(column));
+        if (QTableWidgetItem *header = m_contactsTable->horizontalHeaderItem(index)) {
+            const QString label = sheetColumnLabel(sheetField(column));
+            header->setText(label.isEmpty() ? column.label : label);
+        }
+    }
     applyColumnOrder();
 }
 
@@ -7007,9 +7055,27 @@ void CrmFeature::applyColumnOrder()
 {
     QHeaderView *header = m_contactsTable->horizontalHeader();
     m_orderingColumns = true;
-    if (allColumnsView()) {
+    const QStringList layout = allColumnsView() ? sheetLayoutFields() : QStringList();
+    if (allColumnsView() && layout.isEmpty()) {
         for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical)
             header->moveSection(header->visualIndex(logical), logical);
+    } else if (!layout.isEmpty()) {
+        QList<int> placed;
+        int target = 0;
+        for (const QString &field : layout) {
+            for (int logical = 0; logical < m_columns.size() && logical < header->count();
+                 ++logical) {
+                if (placed.contains(logical) || viewField(m_columns.at(logical)) != field)
+                    continue;
+                header->moveSection(header->visualIndex(logical), target++);
+                placed << logical;
+                break;
+            }
+        }
+        for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical) {
+            if (!placed.contains(logical))
+                header->moveSection(header->visualIndex(logical), target++);
+        }
     } else {
         int target = 0;
         for (const QString &field : tableViewFields()) {
@@ -7051,6 +7117,9 @@ QStringList CrmFeature::builtinViewFields() const
     };
     QStringList fields;
     if (m_tableViewId == QLatin1String(kAllTableView)) {
+        const QStringList layout = sheetLayoutFields();
+        if (!layout.isEmpty())
+            return layout;
         for (const ContactColumnSpec &column : m_columns) {
             const QString field = viewField(column);
             if (field.isEmpty() || fields.contains(field) ||

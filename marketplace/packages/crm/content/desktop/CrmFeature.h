@@ -365,6 +365,8 @@ private:
     void showColumn(const QString &id);
     void addColumnToSheet(const QString &id);
     bool sheetCarriesField(const QString &field) const;
+    QStringList sheetLayoutFields() const;
+    QString sheetColumnLabel(const QString &field) const;
     QJsonArray tableViews() const;
     QStringList tableViewFields() const;
     QStringList shownViewFields() const;
