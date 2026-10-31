@@ -145,9 +145,11 @@ int main(int argc, char **argv)
               capture->creatorRetainsOwnership && capture->sourceAvailable &&
               capture->signatureVerified,
           "creator ownership and trust metadata survive parsing");
-    check(capture && capture->permissions.size() == 2 &&
+    check(capture && capture->permissions.size() == 3 &&
               capture->permissions.first().id ==
-                  QStringLiteral("screen.capture"),
+                  QStringLiteral("screen.capture") &&
+              capture->permissions.last().id ==
+                  QStringLiteral("clipboard.write"),
           "Capture discloses its bounded permissions");
     check(capture && capture->screenshots.size() == 1 &&
               capture->screenshots.first().path.endsWith(
@@ -327,8 +329,9 @@ int main(int argc, char **argv)
     check(reopened.install(QStringLiteral("capture"), &error) &&
               reopened.isInstalled(QStringLiteral("capture")),
           "Capture reinstalls and activates from the same manifest");
-    check(settings.value(QStringLiteral("market/packages/capture/version"))
-                  .toString() == QStringLiteral("1.0.0"),
+    check(capture && !capture->version.isEmpty() &&
+              settings.value(QStringLiteral("market/packages/capture/version"))
+                      .toString() == capture->version,
           "install records the exact activated package version");
 
     const QString ledgerDataKey =
@@ -568,8 +571,10 @@ int main(int argc, char **argv)
             statusRegistry.isEffectivelyInstalled(manifest.id))
             ++statusChecks;
     }
-    check(statusChecks == 18,
-          "all eighteen status checks are installed by default");
+    check(statusChecks == 17 &&
+              !statusRegistry.isEffectivelyInstalled(
+                  QStringLiteral("status-check-mirrors")),
+          "every status check except Mirrors is installed by default");
     check(statusRegistry.declaredSetting(statusPageId,
                                          QStringLiteral("onlyProblems")) ==
                   QVariant(false) &&
@@ -611,7 +616,7 @@ int main(int argc, char **argv)
     QStringList statusChanged;
     check(statusRegistry.uninstall(statusPageId, &statusError,
                                    &statusChanged) &&
-              statusError.isEmpty() && statusChanged.size() == 19 &&
+              statusError.isEmpty() && statusChanged.size() == 18 &&
               statusChanged.last() == statusPageId &&
               statusChanged.contains(apiCheckId) &&
               !statusRegistry.isInstalled(statusPageId) &&
