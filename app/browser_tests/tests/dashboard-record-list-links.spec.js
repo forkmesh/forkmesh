@@ -150,6 +150,7 @@ test("a pull-request row is a link that opens in a new tab on middle-click", asy
   const opened = context.waitForEvent("page");
   await row.click({ button: "middle" });
   const newTab = await opened;
+  await newTab.waitForURL("**/acme/widgets/pull/93", { waitUntil: "commit" });
   await expect(page).toHaveURL(/\/acme\/widgets\/pulls$/);
   await expect(page.locator('[data-repo-record-detail="pulls"]')).toHaveCount(0);
   expect(new URL(newTab.url()).pathname).toBe("/acme/widgets/pull/93");

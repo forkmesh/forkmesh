@@ -7,6 +7,7 @@
 #include "../src/AgentJail.h"
 #include "../src/AgentStore.h"
 #include "../src/AgentWorktree.h"
+#include "../src/SourceDir.h"
 #include "../src/BackgroundActivity.h"
 #include "../src/BackoffNetworkAccessManager.h"
 #include "../src/ChatHistoryLimits.h"
@@ -568,6 +569,29 @@ int main(int argc, char *argv[])
                   !MarkdownRender::resolveRepoLink("README.md", "#setup") &&
                   !MarkdownRender::resolveRepoLink("README.md", "/forkmesh/forkmesh"),
               "URLs, same-document anchors and absolute paths are not repository links");
+    }
+
+    {
+        const QChar br(0x2028);
+        const QString prepared = MarkdownRender::forPreview(
+            QStringLiteral("# Title\r\n\\\r\nFirst line\\\nsecond line  \nthird line\n\n"
+                           "Last line\\\n\n- item\\\n- next\n"));
+        check(!prepared.contains(QLatin1Char('\\')),
+              "a lone or paragraph-ending backslash never reaches the preview as text");
+        check(prepared.contains(QStringLiteral("First line") + br + QStringLiteral("second line") +
+                                br + QStringLiteral("third line")),
+              "hard line breaks stay inside one paragraph instead of splitting it");
+        check(prepared.contains(QStringLiteral("- item\n- next")),
+              "a backslash before a new list item is dropped, not joined");
+        check(prepared.startsWith(QStringLiteral("# Title\n\nFirst line")),
+              "a lone backslash line becomes a paragraph break");
+
+        const QString kept = MarkdownRender::forPreview(
+            QStringLiteral("```\nC:\\dir\\\nnext\n```\n\nEscaped \\\\\nplain\n"));
+        check(kept.contains(QStringLiteral("C:\\dir\\\nnext")),
+              "fenced code keeps its backslashes and lines");
+        check(kept.contains(QStringLiteral("Escaped \\\\\nplain")),
+              "an escaped backslash is literal text, not a line break");
     }
 
     // Ctrl+K search: the rules that decide what the overlay finds, and the
@@ -1441,6 +1465,18 @@ int main(int argc, char *argv[])
         check(ChatLinkText::sanitizedHref(QStringLiteral("java\tscript:alert(1)"))
                   .isEmpty(),
               "a scheme smuggled past with control characters is rejected");
+        for (const char *refused :
+             {"file://attacker.example/share/setup.exe", "FILE:///etc/passwd",
+              "smb://attacker.example/share", "search-ms:query=x",
+              "vscode://file/etc/passwd", "javascript:alert(1)", "/etc/passwd",
+              "https:///no-host"})
+            check(!ChatLinkText::externalLinkUrl(QString::fromLatin1(refused)).isValid(),
+                  "an issue body link outside http(s) and mailto is never handed to the OS");
+        check(ChatLinkText::externalLinkUrl(QStringLiteral("https://example.com/a?b=1"))
+                      == QUrl(QStringLiteral("https://example.com/a?b=1")) &&
+                  ChatLinkText::externalLinkUrl(QStringLiteral("mailto:hi@forkmesh.com"))
+                      .isValid(),
+              "http(s) with a host and mailto links still open");
 
         // The web composer sends a rich source plus a flattened "text" that
         // drops [label](url) down to "label" — so the address behind a linked
@@ -1615,6 +1651,25 @@ int main(int argc, char *argv[])
         tampered["newPubkey"] = QStringLiteral("attacker-key");
         check(!ForkMeshIdentity::verifyRotation(tampered),
               "a rotation record retargeted to a different successor is rejected");
+        check(identity.acceptRotation(rotate, QStringLiteral("alice")).isEmpty(),
+              "only the successor key can accept a rotation");
+        const QJsonObject selfRotate = identity.signRotation(identity.publicKey());
+        const QJsonObject accepted =
+            identity.acceptRotation(selfRotate, QStringLiteral("Alice"));
+        check(accepted.value("nodeName").toString() == "alice" &&
+                  ForkMeshIdentity::verifyRotationAcceptance(accepted),
+              "the successor key signs the rotation acceptance");
+        check(ForkMeshIdentity::verifySignature(
+                  identity.publicKey(), accepted.value("newSig").toString(),
+                  ("forkmesh-rotate-accept-v1\nalice\n" + identity.publicKey() +
+                   "\n" + identity.publicKey() + "\n" +
+                   accepted.value("ts").toString())
+                      .toUtf8()),
+              "the acceptance signs the relay's forkmesh-rotate-accept-v1 text");
+        QJsonObject renamed = accepted;
+        renamed["nodeName"] = QStringLiteral("mallory");
+        check(!ForkMeshIdentity::verifyRotationAcceptance(renamed),
+              "an acceptance moved to another account is rejected");
     }
 
     // The desktop recovery kit uses the exact public container shared by the
@@ -1676,18 +1731,32 @@ int main(int argc, char *argv[])
         const QString sealRoom = QStringLiteral("world-general");
         auto senderDevice = forkmesh::chatv3::ChatDevice::inMemory(QByteArray(32, '\x41'));
         auto receiverDevice = forkmesh::chatv3::ChatDevice::inMemory(QByteArray(32, '\x42'));
+        const QByteArray adaNodeSeed(32, '\x51');
+        const QByteArray bobNodeSeed(32, '\x52');
+        const QString adaNode =
+            forkmesh::chatv3::b64u(forkmesh::chatv3::ed25519Public(adaNodeSeed));
+        const QString bobNode =
+            forkmesh::chatv3::b64u(forkmesh::chatv3::ed25519Public(bobNodeSeed));
         RoomSeal sender(sealRoom, sealRoom, RoomSeal::Policy::Open, QStringLiteral("ada"),
-                        QStringLiteral("ada-node"), senderDevice);
+                        adaNode, senderDevice);
         RoomSeal receiver(sealRoom, sealRoom, RoomSeal::Policy::Open, QStringLiteral("bob"),
-                          QStringLiteral("bob-node"), receiverDevice);
+                          bobNode, receiverDevice);
         check(sender.isValid() && receiver.isValid() &&
                   RoomSeal::isKeyFrame(sender.keyFrame()),
               "v3 room seals sign a bundle with the device identity");
+        check(receiver.acceptKeyFrame(sender.keyFrame()) == RoomSeal::BundleResult::Rejected,
+              "an open room refuses a bundle its node key did not sign");
+        sender.setNodeSigner([adaNodeSeed](const QByteArray &message) {
+            return forkmesh::chatv3::ed25519Sign(adaNodeSeed, message);
+        });
+        receiver.setNodeSigner([bobNodeSeed](const QByteArray &message) {
+            return forkmesh::chatv3::ed25519Sign(bobNodeSeed, message);
+        });
         receiver.acceptKeyFrame(sender.keyFrame());
         sender.acceptKeyFrame(receiver.keyFrame());
         const QJsonObject sealPlain{{"type", QStringLiteral("chat")},
                                     {"id", QStringLiteral("m1")},
-                                    {"senderId", QStringLiteral("ada-node")},
+                                    {"senderId", adaNode},
                                     {"text", QStringLiteral("no setup required")}};
         const QJsonObject sealed = sender.sealObject(sealPlain);
         check(RoomSeal::isSealedFrame(sealed) && sealed.value("v").toInt() == 3 &&
@@ -2160,6 +2229,29 @@ int main(int argc, char *argv[])
                        .contains(QStringLiteral("Login failed")),
               "a login with no relay verdict names the transport failure, not bad credentials");
     }
+    {
+        const QJsonObject request = AccountCapability::passwordLoginRequest(
+            QStringLiteral(" Ada@Example.com "), QStringLiteral("secret"),
+            QStringLiteral("123456"));
+        check(!request.contains(QStringLiteral("nodeName")) &&
+                  request.value(QStringLiteral("identifier")).toString() ==
+                      QStringLiteral("Ada@Example.com") &&
+                  request.value(QStringLiteral("password")).toString() ==
+                      QStringLiteral("secret"),
+              "a password login is checked against the typed email, not a suggested username");
+        const QString lockout = AccountCapability::loginLockoutMessage(90000);
+        check(lockout.contains(QStringLiteral("about 2 minutes")) &&
+                  lockout.contains(QStringLiteral("not a wrong password")) &&
+                  AccountCapability::loginLockoutMessage(4000).contains(
+                      QStringLiteral("about 4 seconds")) &&
+                  AccountCapability::loginLockoutMessage(0).contains(
+                      QStringLiteral("a few minutes")),
+              "a lockout says how long to wait and that the password is not wrong");
+        check(AccountCapability::incorrectPasswordMessage(
+                  QStringLiteral("app.forkmesh.com"))
+                  .contains(QStringLiteral("same account and password as app.forkmesh.com")),
+              "a wrong password says the desktop and the website share one account");
+    }
     check(AccountCapability::ownerSigningAllowed(
               true, true, QStringLiteral("Alice-Node")) &&
               !AccountCapability::ownerSigningAllowed(
@@ -2257,6 +2349,21 @@ int main(int argc, char *argv[])
                       QStringLiteral("remote-key")),
               "cached signing capability requires the original and freshly "
               "validated local key");
+        check(SessionCache::mayRestoreDesktopCapability(
+                  alice, QStringLiteral("local-key"),
+                  QStringLiteral("first-desktop-key"),
+                  {QStringLiteral("first-desktop-key"),
+                   QStringLiteral("local-key")}) &&
+                  !SessionCache::mayRestoreDesktopCapability(
+                      alice, QStringLiteral("local-key"),
+                      QStringLiteral("first-desktop-key"),
+                      {QStringLiteral("first-desktop-key")}) &&
+                  !SessionCache::mayRestoreDesktopCapability(
+                      alice, QStringLiteral("rotated-local-key"),
+                      QStringLiteral("first-desktop-key"),
+                      {QStringLiteral("rotated-local-key")}),
+              "a second desktop of the account restores signing when the "
+              "account lists its key");
         alice.clearSensitive();
         check(sessions.remove(QStringLiteral("alice"), appRoom,
                               QStringLiteral("v2.alice.secret")) &&
@@ -3295,7 +3402,7 @@ int main(int argc, char *argv[])
               "every shipped endpoint catalog entry is valid");
         {
             // Each entry names where its call is made, and the file exists.
-            const QDir repoRoot(QStringLiteral(FORKMESH_SOURCE_DIR "/.."));
+            const QDir repoRoot(forkmesh::sourceDir() + QStringLiteral("/.."));
             QStringList missing;
             for (const FW::EndpointProfile &profile : shippedProfiles) {
                 if (profile.sources.isEmpty())
@@ -3974,6 +4081,25 @@ int main(int argc, char *argv[])
               "a remote release event merges into the issue log");
         check(issues.loadAll().first().assignees == (QStringList{"maintainer"}),
               "releasing a claim removes only the claiming account");
+
+        IssueEvent signedEdit;
+        signedEdit.type = "edit";
+        signedEdit.id = "edit-web-1";
+        signedEdit.author = "WEBPUB";
+        signedEdit.authorName = "alice";
+        signedEdit.target = "comment-web-1";
+        signedEdit.body = "first draft";
+        signedEdit.ts = 1700000004000LL;
+        signedEdit.sig = "SIGNED-EDIT";
+        check(issues.applyRemoteEvent(issueNumber, signedEdit, QString(), &err),
+              "a signed remote edit merges into the issue log");
+        const int eventsAfterEdit = int(issues.loadAll().first().events.size());
+        IssueEvent replayedEdit = signedEdit;
+        replayedEdit.id = "edit-web-replayed";
+        replayedEdit.target = "comment-web-2";
+        check(issues.applyRemoteEvent(issueNumber, replayedEdit, QString(), &err) &&
+                  issues.loadAll().first().events.size() == eventsAfterEdit,
+              "a signed event replayed under a new id or target is not appended");
 
         // An owner-authored reward estimate, written into the issue record the
         // way the reward sync tool reads it. Paying it from the desktop wallet
@@ -5783,6 +5909,123 @@ int main(int argc, char *argv[])
         }
 
         {
+            QTemporaryDir stackRoot;
+            QTemporaryDir authorRoot;
+            const QString stackRepo = stackRoot.path();
+            const QString authorRepo = authorRoot.path() + QStringLiteral("/author");
+            const QString authorName = QStringLiteral("Stack Author");
+            const QString authorEmail = QStringLiteral("stack@example.test");
+            bool stackSetup =
+                stackRoot.isValid() && authorRoot.isValid() &&
+                runTestGit(stackRepo, {QStringLiteral("init"), QStringLiteral("-q"),
+                                       QStringLiteral("-b"), QStringLiteral("main")}) &&
+                runTestGit(stackRepo, {QStringLiteral("config"), QStringLiteral("user.name"),
+                                       QStringLiteral("Stack Tester")}) &&
+                runTestGit(stackRepo, {QStringLiteral("config"), QStringLiteral("user.email"),
+                                       QStringLiteral("tester@example.test")}) &&
+                writeTestFile(stackRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\n")) &&
+                writeTestFile(stackRepo + QStringLiteral("/b.txt"),
+                              QByteArrayLiteral("x\n")) &&
+                commitTestTree(stackRepo, QStringLiteral("base"),
+                               QStringLiteral("2026-09-01T10:00:00Z"),
+                               QStringLiteral("Stack Tester"),
+                               QStringLiteral("tester@example.test"));
+            const QString authorBase = testGitHead(stackRepo);
+            stackSetup =
+                stackSetup && !authorBase.isEmpty() &&
+                runTestGit(authorRoot.path(), {QStringLiteral("clone"), QStringLiteral("-q"),
+                                               stackRepo, authorRepo}) &&
+                writeTestFile(authorRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\np1\n")) &&
+                commitTestTree(authorRepo, QStringLiteral("part one"),
+                               QStringLiteral("2026-09-02T10:00:00Z"), authorName,
+                               authorEmail);
+            const QString partOne = testGitHead(authorRepo);
+            QByteArray partOneMbox;
+            QByteArray partTwoPatch;
+            QByteArray partTwoMbox;
+            stackSetup =
+                stackSetup && !partOne.isEmpty() &&
+                writeTestFile(authorRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\np1\np2\n")) &&
+                writeTestFile(authorRepo + QStringLiteral("/b.txt"),
+                              QByteArrayLiteral("x\ny\n")) &&
+                commitTestTree(authorRepo, QStringLiteral("part two"),
+                               QStringLiteral("2026-09-02T11:00:00Z"), authorName,
+                               authorEmail) &&
+                runTestGit(authorRepo,
+                           {QStringLiteral("format-patch"), QStringLiteral("--stdout"),
+                            authorBase + QStringLiteral("..") + partOne},
+                           &partOneMbox) &&
+                runTestGit(authorRepo,
+                           {QStringLiteral("diff"), QStringLiteral("--binary"),
+                            partOne + QStringLiteral("..HEAD")},
+                           &partTwoPatch) &&
+                runTestGit(authorRepo,
+                           {QStringLiteral("format-patch"), QStringLiteral("--stdout"),
+                            partOne + QStringLiteral("..HEAD")},
+                           &partTwoMbox) &&
+                writeTestFile(stackRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("HEAD\n1\n2\n3\n4\n5\nend\n")) &&
+                commitTestTree(stackRepo, QStringLiteral("upstream moves"),
+                               QStringLiteral("2026-09-03T10:00:00Z"),
+                               QStringLiteral("Stack Tester"),
+                               QStringLiteral("tester@example.test")) &&
+                runTestGitInput(stackRepo, {QStringLiteral("am"), QStringLiteral("-q")},
+                                partOneMbox) &&
+                writeTestFile(stackRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("HEAD\n1\n2\n3\n4\n5\nEND\np1\n")) &&
+                commitTestTree(stackRepo, QStringLiteral("upstream edits the end"),
+                               QStringLiteral("2026-09-04T10:00:00Z"),
+                               QStringLiteral("Stack Tester"),
+                               QStringLiteral("tester@example.test"));
+            check(stackSetup,
+                  "set up a stacked pull whose earlier part merged in another form");
+            if (stackSetup) {
+                PullStore stackPulls(stackRepo, QString(), &identity,
+                                     QStringLiteral("tester"));
+                PullRequest stacked;
+                stacked.title = QStringLiteral("Stacked part two");
+                stacked.base = QStringLiteral("main");
+                stacked.head = QStringLiteral("othernode:pr/02-part-two");
+                stacked.patch = QString::fromUtf8(partTwoPatch);
+                stacked.commits = QString::fromUtf8(partTwoMbox);
+                stacked = stackPulls.makeSignedPull(stacked);
+                QString stackError;
+                check(stackPulls.applyRemotePull(stacked, &stackError),
+                      "a stacked cross-node pull is stored");
+                int stackedNumber = 0;
+                for (const PullRequest &candidate : stackPulls.loadAll())
+                    if (candidate.title == stacked.title)
+                        stackedNumber = candidate.number;
+                QByteArray stackedA;
+                QByteArray stackedB;
+                QByteArray stackedMergeBase;
+                check(stackedNumber > 0 &&
+                          runTestGit(stackRepo,
+                                     {QStringLiteral("show"),
+                                      QStringLiteral("pr/%1:a.txt").arg(stackedNumber)},
+                                     &stackedA) &&
+                          runTestGit(stackRepo,
+                                     {QStringLiteral("show"),
+                                      QStringLiteral("pr/%1:b.txt").arg(stackedNumber)},
+                                     &stackedB) &&
+                          stackedA == QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\np1\np2\n") &&
+                          stackedB == QByteArrayLiteral("x\ny\n"),
+                      "a stacked pull is rebuilt on its author's earlier part and "
+                      "carries the author's exact tree");
+                check(stackedNumber > 0 &&
+                          runTestGit(stackRepo,
+                                     {QStringLiteral("merge-base"), QStringLiteral("main"),
+                                      QStringLiteral("pr/%1").arg(stackedNumber)},
+                                     &stackedMergeBase) &&
+                          QString::fromUtf8(stackedMergeBase).trimmed() == authorBase,
+                      "the rebuilt stacked pull forks from the base its author had");
+            }
+        }
+
+        {
             QTemporaryDir vectorRoot;
             const QString vectorRepo = vectorRoot.path();
             const QByteArray vectorPatch = QByteArrayLiteral(
@@ -6085,8 +6328,14 @@ int main(int argc, char *argv[])
                             drainedBrowserPull.sig,
                             PullStore::canonicalString(drainedBrowserPull)),
               "drained browser change bytes retain their valid signature");
-        check(pulls.applyRemotePull(drainedBrowserPull, &err),
+        bool browserPullOpened = false;
+        check(pulls.applyRemotePull(drainedBrowserPull, &err, &browserPullOpened),
               "owner drain stores a portable browser pull");
+        check(browserPullOpened, "a first delivery reports the pull as opened");
+        bool replayOpened = true;
+        check(pulls.applyRemotePull(drainedBrowserPull, &err, &replayOpened) &&
+                  !replayOpened,
+              "a replayed delivery is accepted but not reported as a new pull");
         int browserPullNumber = 0;
         for (const PullRequest &candidate : pulls.loadAll()) {
             if (candidate.title == browserPull.title) {
@@ -10664,6 +10913,38 @@ int main(int argc, char *argv[])
               "a scan canceled up front produces an empty tree, not a partial one");
     }
 
+    {
+        const QHash<qint64, qint64> parentOf{
+            {500, 400}, {400, 300}, {300, 1}, {600, 500}, {700, 500},
+            {800, 1}, {900, 1}, {950, 1}};
+        const QHash<qint64, QString> nameOf{
+            {300, QStringLiteral("systemd")}, {400, QStringLiteral("konsole")},
+            {500, QStringLiteral("forkmesh")}, {600, QStringLiteral("claude")},
+            {700, QStringLiteral("forkmesh")}, {800, QStringLiteral("gnome-shell")},
+            {900, QStringLiteral("chrome")}, {950, QStringLiteral("forkmesh")}};
+        const QHash<qint64, QString> executableOf{
+            {600, QStringLiteral("/usr/bin/node")},
+            {700, QStringLiteral("/opt/forkmesh/forkmesh")},
+            {900, QStringLiteral("/opt/google/chrome/chrome")},
+            {950, QStringLiteral("/home/u/old/forkmesh")}};
+        const QSet<qint64> guarded = SystemStats::killProtectedPids(
+            500, {QStringLiteral("/opt/forkmesh/forkmesh")}, parentOf, nameOf,
+            executableOf);
+        check(guarded.contains(1) && guarded.contains(500),
+              "the high memory killer never ends PID 1 or ForkMesh");
+        check(guarded.contains(400) && guarded.contains(300),
+              "the high memory killer never ends what started ForkMesh, "
+              "whose exit would close it too");
+        check(guarded.contains(700),
+              "a process running the ForkMesh binary is protected");
+        check(guarded.contains(800),
+              "the display server is protected, since ending it closes ForkMesh");
+        check(!guarded.contains(600) && !guarded.contains(900) &&
+                  !guarded.contains(950),
+              "agent children, other programs and a ForkMesh from another path "
+              "stay killable");
+    }
+
 #if defined(Q_OS_LINUX)
     {
         QProcess victim;
@@ -10901,8 +11182,14 @@ int main(int argc, char *argv[])
         const Finding logFinding = findingFor(evaluate(logs), "log-errors");
         check(logFinding.severity == Warning &&
                   logFinding.message.contains("12 errors") &&
-                  logFinding.message.contains("exit 128"),
-              "a run of log errors warns and carries the newest line");
+                  !logFinding.message.contains("exit 128") &&
+                  logFinding.detail.contains("exit 128"),
+              "a run of log errors warns and keeps the newest line local");
+        check(!QJsonDocument(toJson({logFinding})).toJson().contains("exit 128") &&
+                  QJsonDocument(toJson({logFinding})).toJson().contains("12 errors"),
+              "the heartbeat carries the error count but not the log line");
+        check(detailText({logFinding}).contains("exit 128"),
+              "this desktop's own diagnostics still show the newest line");
         logs.logErrors = 2;
         check(findingFor(evaluate(logs), "log-errors").severity == Info,
               "a couple of log errors is a note, not a warning");

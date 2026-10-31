@@ -86,7 +86,9 @@ test('the office chat shows receipts on own messages and withdraws a deleted dir
 
 test('edits and deletes from the author still reach the transcript', () => {
   assert.ok(CHAT.includes('function mutate(c, plain) {'));
-  assert.ok(CHAT.includes('if (!m || m.senderId !== plain.senderId) return false;'));
+  assert.ok(CHAT.includes('if (!m || !mayChangeMessage(plain, m)) return false;'));
+  assert.ok(CHAT.includes("if (!plain || plain.type !== 'chat' || !isSealedPlain(plain)) return false;"));
+  assert.ok(!CHAT.includes('forkmesh.chat.selfId'));
   assert.ok(CHAT.includes('const changed = keep(c, plain) || mutate(c, plain);'));
 });
 

@@ -253,7 +253,7 @@ private fun ShellStatusDots(row: StatusDotRow, onOpen: () -> Unit, modifier: Mod
 }
 
 @Composable
-private fun ShellStatusDot(dot: StatusDot) {
+internal fun ShellStatusDot(dot: StatusDot, size: androidx.compose.ui.unit.Dp = 7.dp) {
     val color: Color = when (dot.state) {
         ServiceState.Operational -> Fm.colors.success
         ServiceState.Degraded -> Fm.colors.warning
@@ -272,5 +272,5 @@ private fun ShellStatusDot(dot: StatusDot) {
     } else {
         1f
     }
-    Box(Modifier.size(7.dp).alpha(alpha).clip(CircleShape).background(color))
+    Box(Modifier.size(size).alpha(alpha).clip(CircleShape).background(color))
 }

@@ -51,5 +51,5 @@ def test_direct_https_gateway_emits_bounded_file_leaf_paths():
     assert '"type": "file"' in MIRROR_GATEWAY
     assert '"type": "directory"' in MIRROR_GATEWAY
     assert "children[:max_children]" in MIRROR_GATEWAY
-    assert "max_children = 40" in MIRROR_GATEWAY
+    assert "MAX_SIZES_CHILDREN = 40" in MIRROR_GATEWAY
     assert "max_depth = 8" in MIRROR_GATEWAY

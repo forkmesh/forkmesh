@@ -96,7 +96,8 @@ class LocalMeshQueueTest {
             expect(restarted.connectToPeer(loopback, grace.listenPort))
             expect(waitUntil { !restarted.isQueued(sent) && grace.messages.any { it.id == sent } }, "the first joiner takes it")
             expect(carol.connectToPeer(loopback, grace.listenPort))
-            expect(waitUntil { carol.messages.any { it.id == sent && it.text == "anyone out there?" } }, "a joiner is backfilled")
+            expect(waitUntil { carol.peerCount == 1 && grace.peerCount == 2 })
+            expect(!waitUntil(1_500) { carol.messages.any { it.id == sent } }, "an earlier message is not re-sealed to a device that joined later")
 
             val line = restarted.diagnosticsLine()
             expect(line.contains("dial 1 ok 1 fail 0"), line)

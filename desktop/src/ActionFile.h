@@ -8,6 +8,7 @@
 struct ActionStep {
     QString name;
     QString run;
+    int timeoutMinutes = 0;
 };
 
 // One workflow parsed from a.forkmesh/*.yml|*.yaml file. The trust unit for

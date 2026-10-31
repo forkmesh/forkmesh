@@ -22,6 +22,9 @@ function escapeHtml(value) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
   })[char]);
 }
+function repoKey(repo) {
+  return `${repo.owner || ""}/${repo.name || ""}`;
+}
 function repoRawUrl(repo, path) {
   return `/api/repo/${repo.owner}/${repo.name}/raw?path=${encodeURIComponent(path)}`;
 }
@@ -505,3 +508,17 @@ def test_mentions_cannot_smuggle_markup():
     assert [handle for handle, _ in _mentions(html)] == ["x", "alert", "y"]
     assert "<script" not in html and 'onmouseover="' not in html and "<img src=x" not in html
     assert ">@x</a>&quot;onmouseover=&quot;alert(1)" in html
+
+
+def test_html_entities_render_like_github_without_becoming_markup():
+    html = _render(
+        "### &rlm;انجمن Example&zwnj;\n\n"
+        "&rlm;BBS یک انجمن &amp; more &#8207;done&#x200C; &lt;script&gt;alert(1)&lt;/script&gt;\n\n"
+        "Keep `&rlm;` literal in code and &unknownentity; as text."
+    )
+    assert "&amp;rlm;" not in html.split("<code")[0] and "&rlm;انجمن Example&zwnj;" in html
+    assert "\u200fdone\u200c" in html and "issues/8207" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html and "<script" not in html
+    assert "&amp; more" in html
+    assert "<code" in html and "&amp;rlm;</code>" in html
+    assert "&unknownentity;" in html

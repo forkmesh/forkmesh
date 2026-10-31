@@ -64,6 +64,10 @@ public:
         : QObject(window), m_window(window)
     {
         setObjectName(QStringLiteral("windowFrameControl"));
+        m_resizeApply.setSingleShot(true);
+        m_resizeApply.setInterval(0);
+        connect(&m_resizeApply, &QTimer::timeout, this,
+                [this] { applyPendingResize(); });
         qApp->installEventFilter(this);
         QTimer::singleShot(0, this, [this] { watchScreen(); });
     }
@@ -99,9 +103,11 @@ protected:
                 static_cast<QMouseEvent *>(event)->globalPosition().toPoint() -
                 m_startPos;
             if (resizing()) {
-                m_window->setGeometry(
+                m_pendingGeometry =
                     resizedGeometry(m_startGeometry, m_edges, delta,
-                                    m_window->minimumSize(), m_window->maximumSize()));
+                                    m_window->minimumSize(), m_window->maximumSize());
+                if (!m_resizeApply.isActive())
+                    m_resizeApply.start();
                 return true;
             }
             if (moving()) {
@@ -197,8 +203,18 @@ private:
         return true;
     }
 
+    void applyPendingResize()
+    {
+        m_resizeApply.stop();
+        if (m_window && m_pendingGeometry.isValid() &&
+            m_pendingGeometry != m_window->geometry())
+            m_window->setGeometry(m_pendingGeometry);
+        m_pendingGeometry = QRect();
+    }
+
     void endResize()
     {
+        applyPendingResize();
         m_edges = {};
         m_moving = false;
         if (m_window)
@@ -240,6 +256,8 @@ private:
     bool m_moving = false;
     QRect m_startGeometry;
     QPoint m_startPos;
+    QRect m_pendingGeometry;
+    QTimer m_resizeApply;
 };
 
 }

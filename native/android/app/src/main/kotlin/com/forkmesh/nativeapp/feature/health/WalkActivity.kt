@@ -56,6 +56,7 @@ object WalkActivity {
     private var lastDaySteps = 0
     private var movingMark: Int? = null
     private var ticker: Job? = null
+    private var background = false
 
     fun start() {
         watching = true
@@ -63,6 +64,7 @@ object WalkActivity {
     }
 
     fun stop() {
+        background = false
         stopPace()
         watching = false
         detector = WalkDetector()
@@ -71,15 +73,28 @@ object WalkActivity {
     }
 
     fun appResumed() {
+        if (background) {
+            background = false
+            stopPace()
+        }
         startPace()
     }
 
     fun appPaused() {
-        stopPace()
+        if (watching && pacing && stepping) apply(detector.begin(Instant.now(), WalkDetector.LEAVE_START_AFTER))
+        if (walking && pacing) {
+            background = true
+            bridge?.stopMotionSamples()
+            sensing = false
+            meter.reset()
+            showLive()
+        } else {
+            stopPace()
+        }
     }
 
     private fun startPace() {
-        if (pacing || !watching || !AppLifecycle.foreground.value) return
+        if (pacing || background || !watching || !AppLifecycle.foreground.value) return
         val source = StepsSensorBridge()
         if (!source.available) return
         bridge = source
@@ -162,12 +177,24 @@ object WalkActivity {
                 walkStartedAt = event.at
                 updateWalk()
             }
-            is WalkEvent.Ended -> endWalk()
+            is WalkEvent.Ended -> {
+                endWalk()
+                if (background) {
+                    background = false
+                    stopPace()
+                }
+            }
             null -> Unit
         }
     }
 
+    private fun showLive() {
+        val current = progress ?: return
+        WalkLiveService.show(WalkLiveState(current.startedAt, current.steps, current.todaySteps, current.distanceM))
+    }
+
     private fun endWalk() {
+        WalkLiveService.hide()
         progress = null
         walking = false
         walkStartedAt = null
@@ -181,5 +208,6 @@ object WalkActivity {
         current.record(steps, steps * StepsDailyLog.STRIDE_M)
         walkSteps = current.steps
         walkDistanceM = current.distanceM
+        showLive()
     }
 }

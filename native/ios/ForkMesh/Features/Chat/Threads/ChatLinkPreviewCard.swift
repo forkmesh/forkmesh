@@ -7,6 +7,7 @@ import UIKit
 
 struct ChatLinkPreviews: View {
     let text: String
+    let autoLoad: Bool
     @State private var service: ChatLinkPreviewService? = Services.get(ChatLinkPreviewService.self)
 
     var body: some View {
@@ -15,7 +16,7 @@ struct ChatLinkPreviews: View {
             if !urls.isEmpty {
                 VStack(alignment: .leading, spacing: FmSpace.x2) {
                     ForEach(urls, id: \.absoluteString) { (url: URL) in
-                        ChatLinkPreviewCard(url: url, service: service)
+                        ChatLinkPreviewCard(url: url, service: service, autoLoad: autoLoad)
                     }
                 }
             }
@@ -28,20 +29,53 @@ struct ChatLinkPreviewCard: View {
     @Environment(\.openURL) private var openURL
     let url: URL
     let service: ChatLinkPreviewService
+    let autoLoad: Bool
 
     var body: some View {
         content
-            .task(id: url.absoluteString) { await service.load(url) }
+            .task(id: url.absoluteString) { if autoLoad { await service.load(url) } }
     }
 
     @ViewBuilder private var content: some View {
-        if case .ready(let preview) = service.state(for: url) {
+        switch service.state(for: url) {
+        case .ready(let preview):
             card(preview)
                 .padding(.top, FmSpace.x2)
                 .transition(.opacity)
-        } else {
+        case .idle where !autoLoad:
+            loadButton
+                .padding(.top, FmSpace.x2)
+        case .loading where !autoLoad:
+            Text("Loading preview\u{2026}")
+                .font(.system(size: 14))
+                .foregroundStyle(fm.textSecondary)
+                .padding(.top, FmSpace.x2)
+        default:
             Color.clear.frame(height: 0)
         }
+    }
+
+    private var loadButton: some View {
+        let shape: RoundedRectangle = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        return Button(action: { Task { await service.load(url) } }) {
+            HStack(spacing: 7) {
+                ChatLinkSiteBadge(site: ChatLinkSites.site(for: url))
+                Text("Show preview of \(ChatLinkSites.bareHost(url.host ?? ""))")
+                    .font(.system(size: 14))
+                    .foregroundStyle(fm.accent)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: 520, alignment: .leading)
+            .background(fm.bgRaised.opacity(fm.dark ? 0.55 : 0.85))
+            .clipShape(shape)
+            .overlay(shape.stroke(fm.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Asks the site for a preview. The site sees this phone's address.")
+        .accessibilityIdentifier("chat-link-preview-load")
     }
 
     private func card(_ preview: ChatLinkPreview) -> some View {

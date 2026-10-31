@@ -110,6 +110,11 @@ def test_received_frames_are_acked_once_in_one_batch():
       const plain = await encryptObject({ type: "chat", id: "m3", text: "c" }, key);
       const forged = await encryptObject({ type: "chat", id: "m4", text: "d" }, key);
       forged.ref = "not-a-ref";
+      const person = await encryptObject({ type: "chat", id: "m5", text: "e" }, key);
+      person.persist = true;
+      person.ref = "d".repeat(40);
+      for (const frame of [first, second, plain, forged]) frame.srv = true;
+      socket.emit("message", { data: JSON.stringify(person) });
       socket.emit("message", { data: JSON.stringify(first) });
       socket.emit("message", { data: JSON.stringify(second) });
       socket.emit("message", { data: JSON.stringify(first) });

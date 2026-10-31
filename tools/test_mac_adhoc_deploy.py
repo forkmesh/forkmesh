@@ -575,15 +575,25 @@ def repo_paths_the_core_tests_read():
                 constants[f"{owner[-1]}.{match.group(1)}"] = match.group(2)
     tests = {test: test.read_text(encoding="utf-8") for test in (core / "Tests").rglob("*.swift")}
     helpers = {name for text in tests.values() if "fileURLWithPath: #file" in text
-               for name in re.findall(r"\b(?:func|var|let)\s+(\w+)", text)}
+               for name in re.findall(r"\bfunc\s+(\w+)", text)}
     paths = set()
-    for text in tests.values():
+    for test, text in tests.items():
         if "fileURLWithPath: #file" not in text and not any(re.search(rf"\b{name}\(", text) for name in helpers):
             continue
+        walks_up = "deleteLastPathComponent" in text
         for match in re.finditer(r'\w\(\s*(?:"([^"]*)"|([A-Z]\w*\.\w+)\))', text):
             path = (match.group(1) or constants.get(match.group(2), "")).split("\\(", 1)[0]
-            if "/" in path.strip("/") and not path.startswith(("/", ".")) and (ROOT / path).exists():
+            if "/" not in path.strip("/") or path.startswith(("/", ".")):
+                continue
+            if (ROOT / path).exists():
                 paths.add(path.rstrip("/"))
+            elif walks_up:
+                for folder in test.parents:
+                    if folder == ROOT.parent:
+                        break
+                    if (folder / path).exists():
+                        paths.add((folder / path).relative_to(ROOT).as_posix().rstrip("/"))
+                        break
     return paths
 
 
@@ -591,10 +601,34 @@ def test_the_mac_checkout_holds_every_file_the_core_tests_read():
     patterns = sparse_patterns(mac_adhoc_deploy.RELEASE.MAC_IOS_FETCH_SCRIPT)
     found = repo_paths_the_core_tests_read()
     for path in ["app/src/apns.py", "app/src/app_runtime.py", "conformance/chat/v4/vectors.json",
+                 "native/fixtures/insight",
                  "docs/native/PERFORMANCE_CHECKS.md", "docs/marketplace/video-mix-dj-studio-performance.md",
                  "marketplace/packages/secure-drive/tests/fixtures"]:
         assert path in found, path
     for path in sorted(found | {"native/ios/ForkMeshCore/Package.swift", "codemagic.yaml"}):
+        assert any(pattern.rstrip("/") == f"/{path}" or (pattern.endswith("/") and f"/{path}".startswith(pattern))
+                   for pattern in patterns), path
+
+
+def repo_paths_the_build_steps_read():
+    steps = (ROOT / "codemagic.yaml").read_text(encoding="utf-8")
+    paths = set()
+    for tool in (ROOT / "native/ios/tools").glob("*.py"):
+        if f"tools/{tool.name}" not in steps:
+            continue
+        text = tool.read_text(encoding="utf-8")
+        for root in re.findall(r"(\w+) = Path\(__file__\)\.resolve\(\)\.parents\[3\]", text):
+            for chain in re.findall(rf"\b{root}((?:\s*/\s*\"[^\"]+\")+)", text):
+                paths.add("/".join(re.findall(r'"([^"]+)"', chain)))
+    return paths
+
+
+def test_the_mac_checkout_holds_every_file_the_build_steps_read():
+    patterns = sparse_patterns(mac_adhoc_deploy.RELEASE.MAC_IOS_FETCH_SCRIPT)
+    found = repo_paths_the_build_steps_read()
+    assert {"tools/changelog.py", "changelog/changelog.json"} <= found
+    for path in sorted(found):
+        assert (ROOT / path).exists(), path
         assert any(pattern.rstrip("/") == f"/{path}" or (pattern.endswith("/") and f"/{path}".startswith(pattern))
                    for pattern in patterns), path
 

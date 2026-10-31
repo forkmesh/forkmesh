@@ -1,7 +1,7 @@
 """External repository imports, stubs, invitations, and logo helpers.
 
 The relay keeps external-provider metadata separate from ``repositories``.
-That separation is intentional: a GitHub/GitLab/Codeberg listing is never cloneable
+That separation is intentional: a GitHub/GitLab/Codeberg/Gitea listing is never cloneable
 through ForkMesh until an independently verified mirror is linked to it.
 
 This module is stdlib-only.  The Worker-specific adapter in ``entry.py``
@@ -24,7 +24,15 @@ import re
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
-PROVIDERS = ("github", "gitlab", "codeberg")
+PROVIDERS = ("github", "gitlab", "codeberg", "gitea")
+GITEA_API_HOSTS = {"codeberg": "codeberg.org", "gitea": "gitea.com"}
+GITEA_API_PROVIDERS = tuple(GITEA_API_HOSTS)
+PROVIDER_LABELS = {
+    "github": "GitHub",
+    "gitlab": "GitLab",
+    "codeberg": "Codeberg",
+    "gitea": "Gitea",
+}
 IMPORT_MODES = ("stub", "import")
 REPOSITORY_STATUSES = (
     "external_repository",
@@ -172,7 +180,7 @@ def _safe_segment(value):
 
 
 def parse_provider_source(value):
-    """Parse a public web/clone URL for GitHub, GitLab, or Codeberg.
+    """Parse a public web/clone URL for GitHub, GitLab, Codeberg, or Gitea.
 
     Only the primary provider hosts are accepted.  API URLs, credentials,
     query strings, fragments, arbitrary ports, and ambiguous extra paths are
@@ -233,15 +241,18 @@ def parse_provider_source(value):
             "metadataPath": "/projects/%s?license=true" % quote(
                 full_name, safe=""),
         }
-    if host in ("codeberg.org", "www.codeberg.org"):
+    gitea_provider = _gitea_api_provider(host)
+    if gitea_provider:
+        provider_host = GITEA_API_HOSTS[gitea_provider]
         if len(parts) != 2:
-            raise ProviderSourceError("codeberg_owner_and_repository_required")
+            raise ProviderSourceError(
+                gitea_provider + "_owner_and_repository_required")
         owner, name = parts
-        canonical = "https://codeberg.org/%s/%s" % (
-            quote(owner, safe=""), quote(name, safe=""))
+        canonical = "https://%s/%s/%s" % (
+            provider_host, quote(owner, safe=""), quote(name, safe=""))
         return {
-            "provider": "codeberg",
-            "host": "codeberg.org",
+            "provider": gitea_provider,
+            "host": provider_host,
             "owner": owner,
             "name": name,
             "fullName": owner + "/" + name,
@@ -252,13 +263,20 @@ def parse_provider_source(value):
     raise ProviderSourceError("unsupported_provider")
 
 
+def _gitea_api_provider(host):
+    for provider, provider_host in GITEA_API_HOSTS.items():
+        if host in (provider_host, "www." + provider_host):
+            return provider
+    return ""
+
+
 def parse_provider_namespace(value):
     """Parse an organization/group URL into a bulk-import namespace.
 
     A GitLab organization is a group, and a group may nest subgroups, so its
     namespace is a slash-joined path and discovery starts at whichever level
-    was given.  A Codeberg organization (or user) is a single-segment profile
-    path.  The host, scheme, credential, port, query, and segment rules match
+    was given.  A Codeberg or Gitea organization (or user) is a single-segment
+    profile path.  The host, scheme, credential, port, query, and segment rules match
     ``parse_provider_source`` so bulk import cannot become an SSRF proxy
     either.
     """
@@ -279,10 +297,11 @@ def parse_provider_namespace(value):
         raise ProviderSourceError("invalid_provider_url")
     parts = [_safe_segment(part) for part in parsed.path.strip("/").split("/")
              if part]
-    if host in ("codeberg.org", "www.codeberg.org"):
+    gitea_provider = _gitea_api_provider(host)
+    if gitea_provider:
         if len(parts) != 1 or not parts[0]:
-            raise ProviderSourceError("codeberg_namespace_required")
-        return {"provider": "codeberg", "namespace": parts[0]}
+            raise ProviderSourceError(gitea_provider + "_namespace_required")
+        return {"provider": gitea_provider, "namespace": parts[0]}
     if host in ("gitlab.com", "www.gitlab.com"):
         if not parts or len(parts) > 20 or any(not part for part in parts):
             raise ProviderSourceError("gitlab_group_required")
@@ -300,7 +319,7 @@ def namespace_discovery_paths(provider, namespace, page):
     organization rather than only the projects sitting at its top level.
     """
     encoded = quote(namespace, safe="")
-    if provider == "codeberg":
+    if provider in GITEA_API_PROVIDERS:
         return ["/users/%s/repos?limit=%d&page=%d"
                 % (encoded, NAMESPACE_PAGE_SIZE, page)]
     if provider == "gitlab":
@@ -358,14 +377,14 @@ def provider_api_origin(provider):
         return "https://api.github.com"
     if provider == "gitlab":
         return "https://gitlab.com/api/v4"
-    if provider == "codeberg":
-        return "https://codeberg.org/api/v1"
+    if provider in GITEA_API_PROVIDERS:
+        return "https://%s/api/v1" % GITEA_API_HOSTS[provider]
     raise ProviderSourceError("unsupported_provider")
 
 
 def provider_extra_paths(source, root):
     """Metadata-only API paths; no blob, archive, raw-file, or source endpoint."""
-    if source["provider"] in ("github", "codeberg"):
+    if source["provider"] in ("github",) + GITEA_API_PROVIDERS:
         base = "/repos/%s/%s" % (
             quote(source["owner"], safe=""), quote(source["name"], safe=""))
         default_branch = clean_text(root.get("default_branch"), 160)
@@ -386,7 +405,7 @@ def provider_extra_paths(source, root):
             "pullRequests": base + "/pulls?state=all&per_page=50",
             "releases": base + "/releases?per_page=30",
         }
-        if source["provider"] == "codeberg":
+        if source["provider"] in GITEA_API_PROVIDERS:
             paths.update({
                 "topics": base + "/topics",
                 "structure": (
@@ -871,7 +890,7 @@ def build_repository_record(
     if not isinstance(root, dict):
         raise ProviderRequestError("invalid_provider_response", status=502)
     provider = source["provider"]
-    if provider in ("github", "codeberg"):
+    if provider in ("github",) + GITEA_API_PROVIDERS:
         external_id = str(root.get("id") or "")
         full_name = clean_text(root.get("full_name"), 300) or source["fullName"]
         original_url = clean_text(root.get("html_url"), 500) or source["canonicalUrl"]
@@ -953,11 +972,7 @@ def build_repository_record(
         "providerRateLimit": provider_rate or {},
         "metadataIncomplete": list(incomplete or []),
         "attribution": {
-            "provider": {
-                "github": "GitHub",
-                "gitlab": "GitLab",
-                "codeberg": "Codeberg",
-            }[provider],
+            "provider": PROVIDER_LABELS[provider],
             "originalRepository": original_url,
             "api": provider_api_origin(provider),
             "termsUrl": (
@@ -966,6 +981,8 @@ def build_repository_record(
                 if provider == "github"
                 else "https://about.gitlab.com/terms/"
                 if provider == "gitlab"
+                else "https://about.gitea.com/terms-of-service/"
+                if provider == "gitea"
                 else "https://codeberg.org/Codeberg/org/src/branch/main/TermsOfUse.md"),
             "rateLimitPolicy": (
                 "https://docs.github.com/rest/using-the-rest-api/"
@@ -974,6 +991,8 @@ def build_repository_record(
                 else "https://docs.gitlab.com/administration/"
                 "settings/user_and_ip_rate_limits/"
                 if provider == "gitlab"
+                else "https://docs.gitea.com/development/api-usage/"
+                if provider == "gitea"
                 else "https://docs.codeberg.org/getting-started/faq/"),
         },
         "ownershipNotice": (

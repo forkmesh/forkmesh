@@ -34,6 +34,7 @@ from pathlib import Path
 import posixpath
 import re
 import selectors
+import shlex
 import signal
 import shutil
 import stat
@@ -97,6 +98,20 @@ SCHEMA_VERSION = 1
 CAPABILITY_WINDOW_MS = 60_000
 MAX_REQUEST_BODY = 8 * 1024 * 1024
 VISIBLE_REF_PREFIXES = ("refs/heads/", "refs/tags/", "refs/pr/", "refs/remotes/origin/")
+COMMIT_ID_VISIBLE_REF_PREFIXES = VISIBLE_REF_PREFIXES + ("refs/forkmesh/history/",)
+COMMIT_ID_MIN_HEX = 7
+MAX_VISIBLE_COMMIT_MEMO = 1024
+VISIBLE_COMMIT_SET_LIMIT = 50_000
+VISIBLE_COMMIT_WALK_SLOTS = 2
+VISIBLE_COMMIT_WALK_WAIT_SECONDS = 5.0
+_visible_commit_walks = threading.BoundedSemaphore(VISIBLE_COMMIT_WALK_SLOTS)
+
+
+def _acquire_visible_commit_walk() -> None:
+    if not _visible_commit_walks.acquire(timeout=VISIBLE_COMMIT_WALK_WAIT_SECONDS):
+        raise GitError("repository visibility check is busy")
+
+
 # A receive-pack POST carrying a verified router capability may exceed
 # MAX_REQUEST_BODY up to limits.receiveMaxInputBytes (git's own
 # receive.maxInputSize). This default matches the SSH gateway's; a single
@@ -113,8 +128,8 @@ MIN_AVERAGE_CHUNK_BYTES = 256
 # the pack so a large legitimate push is not cut off at the fixed floor.
 RECEIVE_PACK_BYTES_PER_SECOND = 1024 * 1024
 MAX_REQUEST_CHUNKS = 4096
-MAX_JSON_BLOB = 2 * 1024 * 1024
-MAX_JSON_OUTPUT = 8 * 1024 * 1024
+MAX_JSON_BLOB = 16 * 1024 * 1024
+MAX_JSON_OUTPUT = 32 * 1024 * 1024
 MAX_COMPARE_BYTES = 4 * 1024 * 1024
 MAX_COMPARE_COMMITS = 500
 MAX_CHERRY_UPSTREAM_COMMITS = 2000
@@ -123,7 +138,14 @@ MAX_CHERRY_UPSTREAM_COMMITS = 2000
 # bounded well below the patch limits above.
 MAX_PREVIEW_CONFLICTS = 200
 MAX_TREE_ENTRIES = 500
-MAX_SEARCH_RESULTS = 60
+MAX_COLLABORATION_TREE_ENTRIES = 50000
+MAX_SIZES_CHILDREN = 40
+PULL_REVIEW_FILE_RE = re.compile(
+    r"\.forkmesh/pulls/([1-9][0-9]{0,8})/([0-9]{4,})-review\.md")
+MAX_PULL_REVIEW_FILES = 4000
+MAX_PULL_REVIEW_FILE_BYTES = 64 * 1024
+MAX_PULL_REVIEW_TOTAL_BYTES = 8 * 1024 * 1024
+MAX_SEARCH_RESULTS = 200
 MAX_SEARCH_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_ANALYSIS_FILES = 320
 MAX_ANALYSIS_REPOSITORY_FILES = 20_000
@@ -142,6 +164,13 @@ PREWARM_AFTER_MERGE_QUIET_SECONDS = 5.0
 BACKGROUND_MUTATIONS = frozenset({"delete-agent-branch"})
 MAX_MERGE_REQUEST_BODY = 8 * 1024
 MAX_MERGE_JOB_CACHE = 1_000
+MERGE_PROGRESS_PREFIX = "forkmesh-progress "
+MERGE_PROGRESS_PHASES = (
+    "claimed", "fetching", "verifying", "checking", "testing",
+    "committing", "hooks", "pushing", "publishing",
+)
+MAX_MERGE_PROGRESS_LINES = 64
+MAX_MERGE_PROGRESS_LINE_BYTES = 256
 # A published mutation result carries the executor's node-signed attestation
 # of the refs this mirror serves right after the change. The relay checks the
 # attestation's freshness before admitting that state, so a cached result
@@ -240,6 +269,8 @@ WEBSITE_COUNTER_OPERATIONS = frozenset({
     "release-blob",
     "merge-preview",
     "pulse",
+    "issue-index",
+    "issue-search",
 })
 SERVICE_COUNTER_ROW_FIELDS = ("clonesServed", "websiteServed", "updatedAt")
 # Optional per-row extension: when the last clone / website request was served
@@ -349,6 +380,8 @@ DIRECT_PUBLIC_READ_OPERATIONS = frozenset({
     "release-blob",
     "merge-preview",
     "pulse",
+    "issue-index",
+    "issue-search",
 })
 # Mutating pull operations share one operator-owned executor command and one
 # job runner. Everything that differs between them is data: the wire type the
@@ -425,7 +458,8 @@ BRANCH_TRASH_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 FULL_COMMIT_ID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 MAX_BRANCH_TRASH_ENTRIES = 5000
 LOG_OPERATIONS = PUBLIC_OPERATIONS | {
-    "private-replica", "dashboard", BRANCH_TRASH_OPERATION, "pulse"}
+    "private-replica", "dashboard", BRANCH_TRASH_OPERATION, "pulse",
+    "issue-index", "issue-search"}
 NODE_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
@@ -444,20 +478,22 @@ OPERATION_QUERY_FIELDS = {
     "git-info-refs": frozenset({"service"}),
     "git-upload-pack": frozenset(),
     "git-receive-pack": frozenset(
-        {"service", "tagMoves", "protect", "pushPrefix"}),
+        {"service", "tagMoves", "protect", "pushPrefix", "rewrite"}),
     "tree": frozenset({"path", "ref"}),
     "blobs": frozenset({"path", "ref"}),
     "blob": frozenset({"path", "ref"}),
     "raw": frozenset({"path", "ref"}),
     "history": frozenset({"ref", "all", "since", "until", "path"}),
     "commit": frozenset({"path"}),
-    "compare": frozenset({"base", "head", "cherry", "limit"}),
+    "compare": frozenset({"base", "head", "cherry", "limit", "counts"}),
     "merge-preview": frozenset({"base", "head", "rules", "pull", "orgRules"}),
     "update-pull-branch": frozenset(),
     "branches": frozenset(),
     "search": frozenset({"path", "ref"}),
     "stats": frozenset({"ref"}),
     "pulse": frozenset({"period", "person", "view"}),
+    "issue-index": frozenset({"ref", "related"}),
+    "issue-search": frozenset({"ref", "q"}),
     "sizes": frozenset({"ref"}),
     "release-blob": frozenset({"sha256", "path"}),
     "merge-pull": frozenset(),
@@ -676,6 +712,14 @@ class GitError(RuntimeError):
     """Internal Git failure; its message never includes Git stderr or paths."""
 
 
+class GitOutputLimit(GitError):
+    pass
+
+
+class ComparisonTooLarge(GatewayError):
+    pass
+
+
 def _canonical_json(value: Any) -> str:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -692,6 +736,19 @@ def _base64url_decode(value: str, expected_bytes: int | None = None) -> bytes:
     if expected_bytes is not None and len(decoded) != expected_bytes:
         raise GatewayError(f"value must contain exactly {expected_bytes} bytes")
     return decoded
+
+
+def _utf8_prefix(data: bytes) -> bytes:
+    for cut in range(0, min(4, len(data) + 1)):
+        candidate = data[:len(data) - cut]
+        try:
+            candidate.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            if exc.end < len(candidate):
+                return data
+            continue
+        return candidate
+    return data
 
 
 def _base64url_encode(value: bytes) -> str:
@@ -1251,6 +1308,17 @@ MAX_CONTRIBUTOR_BRANCHES = 32
 REF_UPDATES_HEADER = "X-ForkMesh-Ref-Updates"
 REF_UPDATES_MAX = 40
 REF_UPDATE_COMMIT_COUNT_LIMIT = 10000
+REWRITE_QUERY_FIELD = "rewrite"
+MAX_REWRITE_REFS = 8
+REWRITE_EXCLUDED_PREFIXES = ("refs/heads/forkmesh/",)
+PUSH_HISTORY_PREFIX = INTERNAL_GIT_REF_NAMESPACE + "history/"
+PUSH_HISTORY_SAVE_ATTEMPTS = 8
+PUSH_HISTORY_SEQUENCE_RE = re.compile(r"^[0-9]{10}$")
+PUSH_HOOK_REWRITE_ENV = "FORKMESH_PUSH_REWRITE"
+PUSH_HOOK_DEFAULT_ENV = "FORKMESH_PUSH_DEFAULT_REF"
+PUSH_HOOK_DIRECTORY = "push-hooks"
+FORCED_PULLS_MAX = 10
+PULL_SYNC_BRANCHES_MAX = 8
 
 
 def parse_tag_moves(value: Any) -> dict[str, str]:
@@ -1310,6 +1378,127 @@ def enforce_protected_refs(
                 raise GatewayError(
                     "%s is protected: it changes only by merging an approved "
                     "pull request" % ref)
+
+
+def parse_rewrite_refs(value: Any) -> list[str]:
+    text = str(value or "")
+    if not text:
+        return []
+    items = text.split(" ")
+    if len(items) > MAX_REWRITE_REFS:
+        raise GatewayError("force-push grant is invalid")
+    refs = []
+    for item in items:
+        if item == "refs/heads/":
+            refs.append(item)
+            continue
+        name = item[:-1] if item.endswith("/") else item
+        if not name.startswith("refs/heads/") or len(name) <= len("refs/heads/"):
+            raise GatewayError("force-push grant is invalid")
+        try:
+            if _safe_ref(name) != name:
+                raise GatewayError("force-push grant is invalid")
+        except GatewayError as exc:
+            raise GatewayError("force-push grant is invalid") from exc
+        refs.append(item)
+    return refs
+
+
+def _zero_oid(oid: str) -> bool:
+    return not oid or set(oid) == {"0"}
+
+
+def rewritable_refs(
+    commands: list[tuple[str, str, str]],
+    patterns: list[str],
+    protected: list[str],
+    default_ref: str,
+) -> frozenset[str]:
+    allowed = set()
+    for old, new, ref in commands:
+        if (
+            _zero_oid(old)
+            or _zero_oid(new)
+            or not ref.startswith("refs/heads/")
+            or ref == default_ref
+            or ref.startswith(REWRITE_EXCLUDED_PREFIXES)
+            or any(
+                ref == item or (item.endswith("/") and ref.startswith(item))
+                for item in protected)
+        ):
+            continue
+        if any(
+            ref == item or (item.endswith("/") and ref.startswith(item))
+            for item in patterns
+        ):
+            allowed.add(ref)
+    return frozenset(allowed)
+
+
+def enforce_branch_deletes(commands: list[tuple[str, str, str]]) -> None:
+    for old, new, ref in commands:
+        if ref.startswith("refs/heads/") and _zero_oid(new) and not _zero_oid(
+                old):
+            raise PushRefused(
+                "a push does not delete branches; delete %s on the "
+                "repository's Branches page, which keeps its tip restorable"
+                % ref[len("refs/heads/"):])
+
+
+def push_rewrite_hook_script(next_hook: str = "") -> bytes:
+    lines = [
+        "#!/bin/sh",
+        "set -f",
+        "input=$(cat)",
+        "status=0",
+        "while IFS=' ' read -r old new ref; do",
+        '  [ -n "${ref:-}" ] || continue',
+        '  case "$ref" in refs/heads/*) ;; *) continue ;; esac',
+        '  case "$old" in *[!0]*) ;; *) continue ;; esac',
+        '  case "$new" in *[!0]*) ;; *) continue ;; esac',
+        "  allowed=no",
+        "  for candidate in ${%s:-}; do" % PUSH_HOOK_REWRITE_ENV,
+        '    [ "$candidate" = "$ref" ] && allowed=yes',
+        "  done",
+        '  [ "$allowed" = yes ] && continue',
+        '  git merge-base --is-ancestor "$old" "$new" 2>/dev/null && continue',
+        "  branch=${ref#refs/heads/}",
+        '  if [ "$ref" = "${%s:-}" ]; then' % PUSH_HOOK_DEFAULT_ENV,
+        '    echo "error: $branch is the default branch: it only moves'
+        ' forward, so a force push cannot rewrite it." >&2',
+        '    echo "hint: run \'git pull --rebase origin $branch\', then push'
+        ' again without --force." >&2',
+        '    echo "hint: to rewrite commits, push them to a new branch and'
+        ' open a pull request." >&2',
+        "  else",
+        '    echo "error: $branch only moves forward for this push." >&2',
+        '    echo "hint: run \'git pull --rebase origin $branch\', then push'
+        ' again." >&2',
+        "  fi",
+        "  status=1",
+        "done <<FORKMESH_PUSH_INPUT",
+        "$input",
+        "FORKMESH_PUSH_INPUT",
+        '[ "$status" -eq 0 ] || exit 1',
+    ]
+    if next_hook:
+        lines.append(
+            "printf '%s\\n' \"$input\" | " + shlex.quote(next_hook))
+        lines.append("exit $?")
+    else:
+        lines.append("exit 0")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def install_push_rewrite_hook(directory: Path, next_hook: str = "") -> Path:
+    directory.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(directory, 0o700)
+    target = directory / "pre-receive"
+    staged = directory / ".pre-receive.tmp"
+    staged.write_bytes(push_rewrite_hook_script(next_hook))
+    os.chmod(staged, 0o700)
+    os.replace(staged, target)
+    return directory
 
 
 def parse_push_prefix(value: Any) -> str:
@@ -1776,6 +1965,87 @@ class ExternalMergeExecutor:
             raise GatewayError("merge executor returned a non-object")
         _assert_no_secret_fields(response, "merge executor response")
         return response
+
+    def stream(
+        self,
+        request: dict[str, Any],
+        *,
+        timeout: int,
+        on_progress: Callable[[str], None],
+        max_bytes: int = 16 * 1024,
+    ) -> dict[str, Any]:
+        read_end, write_end = os.pipe()
+        try:
+            process = subprocess.Popen(
+                list(self.command),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=write_end,
+                text=True,
+                env=_safe_merge_environment(),
+            )
+        except OSError as exc:
+            os.close(read_end)
+            os.close(write_end)
+            raise GatewayError("merge executor failed") from exc
+        os.close(write_end)
+        reader = threading.Thread(
+            target=_read_merge_progress,
+            args=(read_end, on_progress),
+            name="forkmesh-merge-progress",
+            daemon=True,
+        )
+        reader.start()
+        try:
+            stdout, _ = process.communicate(
+                _canonical_json(request) + "\n", timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.communicate()
+            raise GatewayError("merge executor failed") from exc
+        finally:
+            reader.join(timeout=1)
+        if process.returncode != 0:
+            raise GatewayError("merge executor failed")
+        if len(stdout.encode("utf-8", "replace")) > max_bytes:
+            raise GatewayError("merge executor returned too much data")
+        try:
+            response = json.loads(stdout)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise GatewayError("merge executor returned invalid JSON") from exc
+        if not isinstance(response, dict):
+            raise GatewayError("merge executor returned a non-object")
+        _assert_no_secret_fields(response, "merge executor response")
+        return response
+
+
+def _merge_progress_phase(line: bytes) -> str:
+    text = line.decode("utf-8", "replace").strip()
+    if not text.startswith(MERGE_PROGRESS_PREFIX):
+        return ""
+    try:
+        value = json.loads(text[len(MERGE_PROGRESS_PREFIX):])
+    except (ValueError, RecursionError):
+        return ""
+    phase = value.get("phase") if isinstance(value, dict) else None
+    return phase if phase in MERGE_PROGRESS_PHASES else ""
+
+
+def _read_merge_progress(
+    descriptor: int, on_progress: Callable[[str], None]
+) -> None:
+    lines = 0
+    with os.fdopen(descriptor, "rb") as stream:
+        while True:
+            line = stream.readline(MAX_MERGE_PROGRESS_LINE_BYTES + 1)
+            if not line:
+                return
+            if lines >= MAX_MERGE_PROGRESS_LINES:
+                continue
+            lines += 1
+            phase = _merge_progress_phase(line)
+            if phase:
+                on_progress(phase)
 
 
 @dataclass(frozen=True)
@@ -2928,6 +3198,7 @@ TREE_BATCH_SUMMARY_MIN_ENTRIES = 65
 # to (and the other query fields), so their cache key can use the commit.
 COMMIT_KEYED_OPERATIONS = frozenset({
     "tree", "blob", "blobs", "history", "search", "stats", "sizes",
+    "issue-index", "issue-search",
 })
 
 
@@ -2936,6 +3207,23 @@ def _lower_priority() -> None:
         os.nice(10)
     except OSError:
         pass
+
+
+def _front_matter_values(text: str) -> dict[str, str]:
+    """The ``key: value`` lines of a ``---`` front-matter block, read the
+    way the dashboard's parseFrontMatter reads them."""
+    normalized = text.replace("\r\n", "\n")
+    if not normalized.startswith("---\n"):
+        return {}
+    end = normalized.find("\n---\n", 4)
+    if end < 0:
+        return {}
+    values: dict[str, str] = {}
+    for line in normalized[4:end].split("\n"):
+        colon = line.find(":")
+        if colon > 0:
+            values[line[:colon].strip()] = line[colon + 1:].strip()
+    return values
 
 
 def _run_git(
@@ -2948,8 +3236,11 @@ def _run_git(
     allow_exit_one: bool = False,
     git_protocol: str = "",
     alternate: Path | None = None,
+    extra_environment: Mapping[str, str] | None = None,
 ) -> bytes:
     environment = _git_environment(git_protocol)
+    if extra_environment:
+        environment.update(extra_environment)
     if alternate is not None:
         environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(
             alternate / "objects")
@@ -2969,7 +3260,7 @@ def _run_git(
     ):
         raise GitError("git operation failed")
     if len(completed.stdout) > max_output:
-        raise GitError("git operation exceeded its output limit")
+        raise GitOutputLimit("git operation exceeded its output limit")
     return completed.stdout
 
 
@@ -3036,7 +3327,7 @@ def _run_git_status(
     if completed.returncode not in allowed_codes:
         raise GitError("git operation failed")
     if len(completed.stdout) > max_output:
-        raise GitError("git operation exceeded its output limit")
+        raise GitOutputLimit("git operation exceeded its output limit")
     return completed.returncode, completed.stdout
 
 
@@ -3664,9 +3955,14 @@ PULSE_SCORE_WEIGHTS = {
     "issuesClosed": 3,
     "reviews": 4,
     "comments": 1,
+    "pullsOpened": 2,
+    "issuesOpened": 1,
 }
 PULSE_COMMITS_PER_DAY = 5
 PULSE_COMMENTS_PER_THREAD = 3
+PULSE_OPENED_PER_DAY = 3
+PULSE_TIE_BREAK = ("merged", "reviews", "issuesClosed", "activeDays",
+                   "commits", "pullsOpened", "issuesOpened", "comments")
 PULSE_LIST_LIMIT = 200
 PULSE_LEADERBOARD_LIMIT = 50
 PULSE_COMMITTERS_LIMIT = 20
@@ -3861,6 +4157,9 @@ def pulse_exclusion_rules(
     raw = (os.environ if environ is None else environ).get(
         PULSE_EXCLUDE_ENV, "")
     rules = [item.strip().casefold() for item in str(raw).split(",")]
+    for name in ("FORKMESH_COMMIT_NAME", "FORKMESH_COMMIT_EMAIL"):
+        rules.append(" ".join(str(environ.get(name, "") if environ is not None
+                                  else os.environ.get(name, "")).split()).casefold())
     if node:
         rules.append(str(node).strip().casefold())
     return tuple(sorted({rule for rule in rules if rule}))[:200]
@@ -3992,6 +4291,660 @@ def _pulse_issue_record(number: int, raw: bytes) -> dict[str, Any] | None:
     }
 
 
+ISSUE_INDEX_OPERATION = "issue-index"
+ISSUE_INDEX_CARRIER_OPERATION = "blobs"
+ISSUE_INDEX_MAX_ISSUES = 50_000
+ISSUE_INDEX_READ_BYTES = 1024 * 1024 * 1024
+ISSUE_INDEX_RECORD_CACHE = 20_000
+ISSUE_INDEX_RECENT_COMMENTERS = 4
+ISSUE_INDEX_FOLDER_RE = re.compile(r"^(?:(open|closed)/)?([0-9]+)/(.+)$")
+_JS_SPACE = (
+    "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006"
+    "\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff")
+_JS_WS = (r"[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f"
+          r"\u205f\u3000\ufeff]")
+_JS_NAN = float("nan")
+_JS_INF = float("inf")
+_JS_DECIMAL_RE = re.compile(
+    r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_JS_RADIX_RE = re.compile(r"0([xXoObB])([0-9A-Za-z]+)")
+ISSUE_INDEX_REFERENCE_RE = re.compile(
+    r"(?<![\w&#/])#([1-9]\d{0,8})\b", re.ASCII)
+ISSUE_INDEX_INLINE_CODE_RE = re.compile(r"`+[^`]*`+")
+ISSUE_INDEX_MENTION_RE = re.compile(r"(?<![\w@])@([\w-]+)", re.ASCII)
+ISSUE_INDEX_DEPENDENCY_RE = re.compile((
+    r"^{S}*(?:[-*+]{S}+)?(?:\*\*)?(?:parent{S}+issues?|depends?{S}+on)"
+    r"(?:\*\*)?{S}*:(?:\*\*)?{S}*([^\n]+)$"
+).replace("{S}", _JS_WS), re.IGNORECASE | re.MULTILINE | re.ASCII)
+ISSUE_INDEX_DEPENDENCY_NUMBER_RE = re.compile(r"#([1-9]\d*)\b", re.ASCII)
+ISSUE_INDEX_CHILD_RE = re.compile(
+    r"\(sub-issue{S}+#([1-9]\d*)\)".replace("{S}", _JS_WS),
+    re.IGNORECASE | re.ASCII)
+ISSUE_INDEX_LINE_BREAKS = str.maketrans({"\r": "\n", "\u2028": "\n",
+                                         "\u2029": "\n"})
+ISSUE_SEARCH_OPERATION = "issue-search"
+ISSUE_SEARCH_MAX_QUERY = 200
+ISSUE_SEARCH_CACHE_CHARS = 96 * 1024 * 1024
+ISSUE_INDEX_PULL_LINK_RE = re.compile((
+    r"\b(?:(un)?linked{S}+(?:pull{S}+request|PR){S}+|"
+    r"(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?){S}+"
+    r"(?:(?:by|in|with|via){S}+(?:(?:pull{S}+request|PR|pull){S}+)?|"
+    r"(?:pull{S}+request|PR){S}+))#([1-9]\d{0,8})\b"
+).replace("{S}", _JS_WS), re.IGNORECASE | re.ASCII)
+
+
+class _JsUndefined:
+    __slots__ = ()
+
+
+_JS_UNDEFINED = _JsUndefined()
+
+
+def _js_get(value: Any, key: str) -> Any:
+    if isinstance(value, dict) and key in value:
+        return value[key]
+    return _JS_UNDEFINED
+
+
+def _js_truthy(value: Any) -> bool:
+    if value is _JS_UNDEFINED or value is None or value is False:
+        return False
+    if value is True:
+        return True
+    if isinstance(value, (int, float)):
+        return value == value and value != 0
+    if isinstance(value, str):
+        return value != ""
+    return True
+
+
+def _js_or(*values: Any) -> Any:
+    for value in values[:-1]:
+        if _js_truthy(value):
+            return value
+    return values[-1]
+
+
+def _js_trim(text: str) -> str:
+    return text.strip(_JS_SPACE)
+
+
+def _js_number(value: Any) -> float:
+    if value is _JS_UNDEFINED:
+        return _JS_NAN
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if isinstance(value, int):
+        try:
+            return float(value)
+        except OverflowError:
+            return _JS_INF if value > 0 else -_JS_INF
+    if isinstance(value, float):
+        return value
+    if isinstance(value, str):
+        text = _js_trim(value)
+        if not text:
+            return 0.0
+        if text in ("Infinity", "+Infinity"):
+            return _JS_INF
+        if text == "-Infinity":
+            return -_JS_INF
+        if _JS_DECIMAL_RE.fullmatch(text):
+            return float(text)
+        radix = _JS_RADIX_RE.fullmatch(text)
+        if radix:
+            base = {"x": 16, "o": 8, "b": 2}[radix.group(1).lower()]
+            try:
+                return float(int(radix.group(2), base))
+            except (ValueError, OverflowError):
+                return _JS_NAN
+        return _JS_NAN
+    if isinstance(value, list):
+        return _js_number(_js_string(value))
+    return _JS_NAN
+
+
+def _js_number_text(value: float) -> str:
+    if value != value:
+        return "NaN"
+    if value in (_JS_INF, -_JS_INF):
+        return "Infinity" if value > 0 else "-Infinity"
+    if value == 0:
+        return "0"
+    if value < 0:
+        return "-" + _js_number_text(-value)
+    mantissa, _e, exponent = repr(float(value)).partition("e")
+    whole, _dot, fraction = mantissa.partition(".")
+    digits = whole + fraction
+    point = len(whole) + int(exponent or 0)
+    stripped = digits.lstrip("0")
+    point -= len(digits) - len(stripped)
+    digits = stripped.rstrip("0") or "0"
+    count = len(digits)
+    if count <= point <= 21:
+        return digits + "0" * (point - count)
+    if 0 < point <= 21:
+        return digits[:point] + "." + digits[point:]
+    if -6 < point <= 0:
+        return "0." + "0" * (-point) + digits
+    power = point - 1
+    sign = "+" if power >= 0 else "-"
+    head = digits if count == 1 else digits[0] + "." + digits[1:]
+    return "%se%s%d" % (head, sign, abs(power))
+
+
+def _js_string(value: Any) -> str:
+    if value is _JS_UNDEFINED:
+        return "undefined"
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)):
+        return _js_number_text(_js_number(value))
+    if isinstance(value, list):
+        return ",".join(
+            "" if item is None else _js_string(item) for item in value)
+    return "[object Object]"
+
+
+def _js_same(left: Any, right: Any) -> bool:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return (isinstance(left, bool) and isinstance(right, bool)
+                and left == right)
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return _js_number(left) == _js_number(right)
+    if isinstance(left, str) and isinstance(right, str):
+        return left == right
+    return left is right
+
+
+def _js_number_or_zero(value: Any) -> float:
+    number = _js_number(value)
+    return number if number == number and number != 0 else 0
+
+
+def _json_number(value: float) -> Any:
+    if value != value or value in (_JS_INF, -_JS_INF):
+        return None
+    if float(value).is_integer() and abs(value) < 2 ** 63:
+        return int(value)
+    return value
+
+
+def _js_set_key(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return ("object", id(value))
+    if isinstance(value, bool):
+        return ("boolean", value)
+    if isinstance(value, (int, float)):
+        number = _js_number(value)
+        return ("number", "NaN" if number != number else number)
+    if value is _JS_UNDEFINED:
+        return ("undefined",)
+    return (type(value).__name__, value)
+
+
+def _issue_index_prose_lines(body: Any) -> list[str]:
+    lines: list[str] = []
+    fence = ""
+    for raw in _js_string(_js_or(body, "")).split("\n"):
+        trimmed = _js_trim(raw)
+        fence_line = trimmed.startswith("```") or trimmed.startswith("~~~")
+        if fence:
+            if fence_line and trimmed.startswith(fence):
+                fence = ""
+            continue
+        if fence_line:
+            fence = trimmed[:3]
+            continue
+        lines.append(ISSUE_INDEX_INLINE_CODE_RE.sub(" ", raw))
+    return lines
+
+
+def _issue_index_reference_numbers(body: Any) -> list[int]:
+    numbers: list[int] = []
+    seen: set[int] = set()
+    for line in _issue_index_prose_lines(body):
+        for match in ISSUE_INDEX_REFERENCE_RE.finditer(line):
+            number = int(match.group(1))
+            if number not in seen:
+                seen.add(number)
+                numbers.append(number)
+    return numbers
+
+
+def _issue_index_relations(
+    number: float, author: Any, events: list[Any]
+) -> tuple[list[list[Any]], list[list[Any]]]:
+    present = [event for event in events if _js_truthy(event)]
+    edits: dict[str, Any] = {}
+    deleted: set[str] = set()
+    for event in present:
+        kind = _js_get(event, "type")
+        target = _js_get(event, "target")
+        if kind == "edit" and _js_truthy(target):
+            edits[_js_string(target)] = _js_get(event, "body")
+        elif kind == "delete" and _js_truthy(target):
+            deleted.add(_js_string(target))
+    references: list[list[Any]] = []
+    credited: dict[int, set[Any]] = {}
+    links: dict[int, bool] = {}
+    for event in present:
+        kind = _js_get(event, "type")
+        opening = kind == "open"
+        if not opening and kind != "comment":
+            continue
+        identifier = _js_string(_js_or(_js_get(event, "id"), ""))
+        if identifier and identifier in deleted:
+            continue
+        body = edits[identifier] if identifier and identifier in edits \
+            else _js_get(event, "body")
+        who = _js_or(author if opening else "", _js_get(event, "authorName"),
+                     _js_get(event, "author"), "unknown")
+        for target in _issue_index_reference_numbers(body):
+            if target == number:
+                continue
+            seen = credited.setdefault(target, set())
+            key = _js_set_key(who)
+            if key in seen:
+                continue
+            seen.add(key)
+            references.append([
+                target,
+                _json_number(_js_number_or_zero(_js_get(event, "ts"))),
+                _js_or(_js_get(event, "author"), ""),
+                who,
+            ])
+        prose = "\n".join(_issue_index_prose_lines(body))
+        for match in ISSUE_INDEX_PULL_LINK_RE.finditer(prose):
+            links[int(match.group(2))] = match.group(1) is None
+    return references, [[pull, linked] for pull, linked in links.items()]
+
+
+def _issue_index_dependency_numbers(body: Any) -> list[int]:
+    numbers: list[int] = []
+    text = _js_string(_js_or(body, "")).translate(ISSUE_INDEX_LINE_BREAKS)
+    for match in ISSUE_INDEX_DEPENDENCY_RE.finditer(text):
+        for reference in ISSUE_INDEX_DEPENDENCY_NUMBER_RE.finditer(
+                match.group(1)):
+            number = int(reference.group(1))
+            if number not in numbers:
+                numbers.append(number)
+            if len(numbers) == 25:
+                return numbers
+    return numbers
+
+
+def _issue_index_child_numbers(body: Any, number: float) -> list[int]:
+    numbers: list[int] = []
+    for match in ISSUE_INDEX_CHILD_RE.finditer(_js_string(body)):
+        child = int(match.group(1))
+        if child != number and child not in numbers:
+            numbers.append(child)
+    return numbers
+
+
+def _issue_index_labels(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [_js_string(item) for item in value]
+    text = _js_trim(_js_string(_js_or(value, "")))
+    if not (text.startswith("[") and text.endswith("]")):
+        return []
+    return [item for item in (
+        _js_trim(part) for part in text[1:-1].split(",")) if item]
+
+
+def _issue_index_fold(fallback: int, issue: dict[str, Any]) -> dict[str, Any]:
+    events = _js_get(issue, "events")
+    events = events if isinstance(events, list) else []
+    number = _js_number(_js_or(_js_get(issue, "number"), fallback))
+    opened: Any = next((
+        event for event in events
+        if isinstance(event, dict) and _js_get(event, "type") == "open"), {})
+    edits: dict[str, Any] = {}
+    for event in events:
+        if _js_get(event, "type") == "edit" and _js_truthy(
+                _js_get(event, "target")):
+            edits[_js_string(event["target"])] = event
+    effective = edits.get(
+        _js_string(_js_or(_js_get(opened, "id"), "")), opened)
+    creator = _js_or(_js_get(opened, "author"), "")
+    deletes = [
+        event for event in events
+        if _js_get(event, "type") == "delete"
+        and _js_get(event, "target") == "self"]
+    deleted = any(
+        _js_truthy(_js_get(event, "author"))
+        and _js_same(_js_get(event, "author"), creator) for event in deletes)
+    attempted = not deleted and any(
+        _js_truthy(_js_get(event, "author"))
+        and not _js_same(_js_get(event, "author"), creator)
+        for event in deletes)
+    updated = _js_number(_js_or(
+        _js_get(issue, "updatedAt"), _js_get(issue, "createdAt"),
+        _js_get(opened, "ts"), 0))
+    for event in events:
+        stamp = _js_number(_js_or(_js_get(event, "ts"), 0))
+        if stamp == stamp and abs(stamp) != _JS_INF and stamp > updated:
+            updated = stamp
+    status = _js_or(_js_get(issue, "status"), _js_get(issue, "state"), "open")
+    for event in events:
+        if _js_get(event, "type") == "status" and _js_truthy(
+                _js_get(event, "status")):
+            status = event["status"]
+    labels = _issue_index_labels(_js_get(issue, "labels"))
+    removed = {
+        _js_string(event["target"]) for event in events
+        if _js_get(event, "type") == "delete"
+        and _js_truthy(_js_get(event, "target"))
+        and _js_get(event, "target") != "self"}
+    comments = sum(
+        1 for event in events if _js_get(event, "type") == "comment"
+        and _js_string(_js_or(_js_get(event, "id"), "")) not in removed)
+    commenters: list[str] = []
+    for event in reversed(events):
+        if len(commenters) >= ISSUE_INDEX_RECENT_COMMENTERS:
+            break
+        if _js_get(event, "type") != "comment" or _js_string(
+                _js_or(_js_get(event, "id"), "")) in removed:
+            continue
+        name = _js_trim(_js_string(_js_or(
+            _js_get(event, "authorName"), _js_get(event, "author"), "")))
+        if name and name not in commenters:
+            commenters.append(name)
+    milestone = _js_get(issue, "milestone")
+    author = _js_or(
+        _js_get(issue, "authorName"), _js_get(opened, "authorName"),
+        _js_get(issue, "author"), _js_get(opened, "author"), "unknown")
+    body = _js_or(_js_get(effective, "body"), _js_get(issue, "body"), "")
+    date = _js_or(updated, _js_get(issue, "createdAt"), _js_get(opened, "ts"))
+    assignees = _js_get(issue, "assignees")
+    votes = _js_get(issue, "votes")
+    if not _js_truthy(votes):
+        votes = sum(1 for event in events if _js_get(event, "type") == "vote")
+    participants: list[str] = []
+    for event in events:
+        name = _js_trim(_js_string(_js_or(_js_get(event, "authorName"), "")))
+        if name and name not in participants:
+            participants.append(name)
+    handles: set[str] = set()
+    for text in [body] + [
+            _js_get(event, "body") for event in events
+            if _js_get(event, "type") == "comment"]:
+        for match in ISSUE_INDEX_MENTION_RE.finditer(
+                _js_string(_js_or(text, ""))):
+            handles.add(match.group(1).lower())
+    references, pull_links = _issue_index_relations(number, author, events)
+    status_events = []
+    for event in events:
+        if _js_get(event, "type") != "status":
+            continue
+        status_events.append({
+            key: event[key] for key in ("type", "id", "ts", "status",
+                                        "authorName") if key in event})
+    return {
+        "number": _json_number(number),
+        "title": _js_or(_js_get(issue, "title"), _js_get(opened, "title"),
+                        "issue #" + _js_number_text(number)),
+        "status": status,
+        "deleted": deleted,
+        "deleteAttempted": attempted,
+        "author": author,
+        "creator": creator,
+        "dateValue": (_json_number(date) if isinstance(date, float)
+                      else date) if _js_truthy(date) else None,
+        "labels": labels,
+        "meta": " · ".join(
+            _js_string(value) for value in (
+                status, ", ".join(labels), milestone) if _js_truthy(value)),
+        "dependsOn": _issue_index_dependency_numbers(body),
+        "childRefs": _issue_index_child_numbers(body, number),
+        "commentCount": comments,
+        "recentCommenters": commenters,
+        "wantsAgent": _js_truthy(_js_get(issue, "wantsAgent")),
+        "milestone": _js_string(_js_or(milestone, "")),
+        "priority": _json_number(_js_number_or_zero(
+            _js_or(_js_get(issue, "priority"), 0))),
+        "progress": _json_number(_js_number_or_zero(
+            _js_or(_js_get(issue, "progress"), 0))),
+        "assignees": [_js_string(value) for value in assignees]
+        if isinstance(assignees, list) else [],
+        "startDate": _json_number(_js_number_or_zero(
+            _js_or(_js_get(issue, "startDate"), 0))),
+        "endDate": _json_number(_js_number_or_zero(
+            _js_or(_js_get(issue, "endDate"), 0))),
+        "votes": _json_number(_js_number_or_zero(votes)),
+        "openEventId": _js_string(_js_or(_js_get(opened, "id"), "")),
+        "creatorKey": _js_string(_js_or(creator, "")),
+        "createdAtMs": _json_number(_js_number_or_zero(_js_or(
+            _js_get(issue, "createdAt"), _js_get(opened, "ts"), 0))),
+        "updatedAtMs": _json_number(updated if _js_truthy(updated) else 0),
+        "events": status_events,
+        "participants": participants,
+        "mentionHandles": sorted(handles),
+        "mentionRefs": references,
+        "pullLinks": pull_links,
+    }
+
+
+FORGE_SOURCE_PATH = ".forkmesh/forge-source.json"
+FORGE_SOURCE_SCHEMA = "forkmesh-forge-source-v1"
+FORGE_LEDGER_PATH = ".forkmesh/forge-sync.json"
+FORGE_SOURCE_URL_RE = re.compile(
+    r"https://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?/[A-Za-z0-9._~/-]{0,400}",
+    re.ASCII)
+FORGE_LEDGER_MAX_BYTES = 64 * 1024 * 1024
+FORGE_REPOSITORY_RE = re.compile(
+    r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", re.ASCII)
+FORGE_WEB_BASE_RE = re.compile(
+    r"https://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~-]+)*",
+    re.ASCII)
+FORGE_GITHUB_API = ("", "https://api.github.com")
+
+
+def _forge_web_base(ledger: Mapping[str, Any]) -> str:
+    provider = ledger.get("provider")
+    base = ledger.get("baseUrl") or ""
+    if not isinstance(base, str):
+        return ""
+    base = base.rstrip("/")
+    if provider == "github":
+        return "https://github.com" if base in FORGE_GITHUB_API else ""
+    if provider == "gitea" and FORGE_WEB_BASE_RE.fullmatch(base):
+        return base
+    return ""
+
+
+def _forge_source_urls(raw: bytes) -> dict[int, str]:
+    try:
+        ledger = json.loads(raw.decode("utf-8"),
+                            parse_constant=_issue_index_reject)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return {}
+    if not isinstance(ledger, dict):
+        return {}
+    repository = ledger.get("repository")
+    base = _forge_web_base(ledger)
+    issues = ledger.get("issues")
+    if not base or not isinstance(repository, str) \
+            or not FORGE_REPOSITORY_RE.fullmatch(repository) \
+            or any(part in (".", "..") for part in repository.split("/")) \
+            or not isinstance(issues, dict):
+        return {}
+    sources: dict[int, str] = {}
+    for local, entry in issues.items():
+        if not isinstance(entry, dict) or entry.get("detached") \
+                or not re.fullmatch(r"[1-9][0-9]{0,8}", str(local)):
+            continue
+        remote = entry.get("remoteNumber")
+        if isinstance(remote, bool) or not isinstance(remote, int) \
+                or not 0 < remote < 10 ** 9:
+            continue
+        sources[int(local)] = "%s/%s/issues/%d" % (base, repository, remote)
+    return sources
+
+
+FORGE_AVATAR_DIR = ".forkmesh/contributors"
+FORGE_AVATAR_FILE_RE = re.compile(
+    r"(github|gitea)-([a-z0-9](?:[a-z0-9._-]{0,38}[a-z0-9])?)\.png", re.ASCII)
+
+
+def _forge_avatar_names(listing: bytes) -> list[str]:
+    names = set()
+    for entry in listing.split(b"\0"):
+        meta, _tab, raw = entry.partition(b"\t")
+        fields = meta.split()
+        if len(fields) < 2 or fields[1] != b"blob":
+            continue
+        match = FORGE_AVATAR_FILE_RE.fullmatch(raw.decode("utf-8", "replace"))
+        if match and ".." not in match.group(2):
+            names.add("%s:%s" % match.groups())
+    return sorted(names)
+
+
+def _forge_source_spec(raw: bytes) -> dict[str, Any]:
+    try:
+        doc = json.loads(raw.decode("utf-8"), parse_constant=_issue_index_reject)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return {}
+    if not isinstance(doc, dict) or doc.get("schema") != FORGE_SOURCE_SCHEMA:
+        return {}
+    provider, template = doc.get("provider"), doc.get("issueUrl")
+    if not isinstance(provider, str) or not re.fullmatch(r"[a-z]{1,20}", provider) \
+            or not isinstance(template, str) or template.count("{number}") != 1 \
+            or not FORGE_SOURCE_URL_RE.fullmatch(template.replace("{number}", "1")):
+        return {}
+    renumbered: dict[int, int] = {}
+    moved = doc.get("renumbered")
+    for local, remote in (moved.items() if isinstance(moved, dict) else ()):
+        if re.fullmatch(r"[1-9][0-9]{0,8}", str(local)) \
+                and isinstance(remote, int) and not isinstance(remote, bool) \
+                and 0 < remote < 10 ** 9:
+            renumbered[int(local)] = remote
+    return {"prefix": "forge-%s-" % provider, "template": template,
+            "renumbered": renumbered}
+
+
+def _forge_source_url(spec: Mapping[str, Any], number: Any,
+                      opener: Any) -> str:
+    if not spec or isinstance(number, bool) or not isinstance(number, int):
+        return ""
+    if "urls" in spec:
+        return spec["urls"].get(number, "")
+    if not isinstance(opener, str) or not opener.startswith(spec["prefix"]):
+        return ""
+    remote = spec["renumbered"].get(number, number)
+    return spec["template"].replace("{number}", str(remote))
+
+
+ISSUE_INDEX_RELATION_ONLY_FIELDS = frozenset({"mentionRefs"})
+ISSUE_INDEX_RELATED_FIELDS = (
+    "number", "title", "status", "deleted", "author", "progress", "priority",
+    "assignees", "dependsOn", "location")
+
+
+def _issue_index_related(result: Mapping[str, Any], number: int
+                         ) -> dict[str, Any]:
+    issues = result.get("issues") or []
+    own = next((item for item in issues if item.get("number") == number), {})
+    wanted = set(own.get("dependsOn") or []) | set(own.get("childRefs") or [])
+    related: list[dict[str, Any]] = []
+    for item in issues:
+        if item.get("number") == number:
+            continue
+        references = [reference for reference in item.get("mentionRefs") or []
+                      if reference[0] == number]
+        if item.get("number") in wanted or references or number in (
+                item.get("dependsOn") or []):
+            entry = {key: item[key] for key in ISSUE_INDEX_RELATED_FIELDS
+                     if key in item}
+            entry["mentionRefs"] = references
+            related.append(entry)
+    answer = {"issues": related, "related": number,
+              "truncated": bool(result.get("truncated"))}
+    if own.get("sourceUrl"):
+        answer["sourceUrl"] = own["sourceUrl"]
+    people = {_js_string(name).lower() for name in (own.get("participants") or [])
+              + (own.get("assignees") or []) + (own.get("recentCommenters") or [])}
+    avatars = [name for name in result.get("forgeAvatars") or [] if name in people]
+    if avatars:
+        answer["forgeAvatars"] = avatars
+    return answer
+
+
+def _issue_index_reject(_constant: str) -> Any:
+    raise ValueError("non-standard JSON constant")
+
+
+def _issue_index_parse(raw: bytes) -> dict[str, Any]:
+    try:
+        text = raw.decode("utf-8") if len(raw) <= MAX_JSON_BLOB else ""
+    except UnicodeDecodeError:
+        text = ""
+    try:
+        parsed = json.loads(text or "{}", parse_constant=_issue_index_reject)
+    except (ValueError, RecursionError):
+        parsed = {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _issue_index_summary(number: int, raw: bytes) -> dict[str, Any]:
+    try:
+        return _issue_index_fold(number, _issue_index_parse(raw))
+    except RecursionError:
+        return _issue_index_fold(number, {})
+
+
+def _issue_search_text(number: int, raw: bytes) -> str:
+    issue = _issue_index_parse(raw)
+    try:
+        summary = _issue_index_fold(number, issue)
+    except RecursionError:
+        issue = {}
+        summary = _issue_index_fold(number, issue)
+    events = _js_get(issue, "events")
+    events = events if isinstance(events, list) else []
+    opened = next((
+        event for event in events
+        if isinstance(event, dict) and _js_get(event, "type") == "open"), {})
+    edits: dict[str, Any] = {}
+    removed: set[str] = set()
+    for event in events:
+        kind = _js_get(event, "type")
+        target = _js_get(event, "target")
+        if kind == "edit" and _js_truthy(target):
+            edits[_js_string(target)] = event
+        elif kind == "delete" and _js_truthy(target):
+            removed.add(_js_string(target))
+    effective = edits.get(
+        _js_string(_js_or(_js_get(opened, "id"), "")), opened)
+    body = _js_or(_js_get(effective, "body"), _js_get(issue, "body"), "")
+    number_text = _js_number_text(_js_number(_js_or(
+        _js_get(issue, "number"), number)))
+    parts = [
+        "#" + number_text, number_text, summary["title"], body,
+        summary["author"], summary["meta"]]
+    head = " ".join("" if part is None or part is _JS_UNDEFINED
+                    else _js_string(part) for part in parts)
+    comments = []
+    for event in events:
+        if _js_get(event, "type") != "comment":
+            continue
+        identifier = _js_string(_js_or(_js_get(event, "id"), ""))
+        if identifier in removed:
+            continue
+        source = edits.get(identifier, event) if identifier else event
+        comments.append(_js_string(_js_or(_js_get(source, "body"), "")))
+    return "\n".join([head] + comments).lower()
+
+
 def _pulse_tree_entries(raw: bytes, oid_bytes: int) -> dict[str, str]:
     entries: dict[str, str] = {}
     cursor = 0
@@ -4033,17 +4986,13 @@ def _pulse_ranking(
 ) -> list[tuple[int, str, int, dict[str, int]]]:
     ordered = sorted(
         scores.items(),
-        key=lambda item: (-item[1][0], names.get(item[0], item[0]).casefold()),
+        key=lambda item: (
+            -item[1][0],
+            *(-int(item[1][1].get(name, 0)) for name in PULSE_TIE_BREAK),
+            names.get(item[0], item[0]).casefold(), item[0]),
     )
-    ranked: list[tuple[int, str, int, dict[str, int]]] = []
-    previous_score = None
-    rank = 0
-    for position, (key, (score, parts)) in enumerate(ordered, 1):
-        if score != previous_score:
-            rank = position
-            previous_score = score
-        ranked.append((rank, key, score, parts))
-    return ranked
+    return [(position, key, score, parts)
+            for position, (key, (score, parts)) in enumerate(ordered, 1)]
 
 
 def _pulse_empty_parts() -> dict[str, int]:
@@ -4056,8 +5005,11 @@ def _pulse_scores(
     parts: dict[str, dict[str, int]] = {}
     events = ledger["events"]
     threads: Counter[tuple[str, str]] = Counter()
-    fields = {"merged": "merged", "review": "reviews", "closed": "issuesClosed"}
-    for _at, key, kind, thread, _number, _bug in events[
+    opened: Counter[tuple[str, str, int]] = Counter()
+    active: dict[str, set[int]] = {}
+    fields = {"merged": "merged", "review": "reviews", "closed": "issuesClosed",
+              "pull": "pullsOpened", "issue": "issuesOpened"}
+    for at, key, kind, thread, _number, _bug in events[
             bisect.bisect_left(events, (start,)):
             bisect.bisect_left(events, (end,))]:
         field = fields.get(kind, "")
@@ -4065,8 +5017,13 @@ def _pulse_scores(
             threads[(key, thread)] += 1
             if threads[(key, thread)] <= PULSE_COMMENTS_PER_THREAD:
                 field = "comments"
+        elif kind in ("pull", "issue"):
+            opened[(key, kind, at // 86400)] += 1
+            if opened[(key, kind, at // 86400)] > PULSE_OPENED_PER_DAY:
+                field = ""
         if field:
             parts.setdefault(key, _pulse_empty_parts())[field] += 1
+            active.setdefault(key, set()).add(at // 86400)
     for key, times in ledger["commits"].items():
         low = bisect.bisect_left(times, start)
         high = bisect.bisect_left(times, end)
@@ -4074,9 +5031,11 @@ def _pulse_scores(
             days = Counter(at // 86400 for at in times[low:high])
             parts.setdefault(key, _pulse_empty_parts())["commits"] += sum(
                 min(PULSE_COMMITS_PER_DAY, count) for count in days.values())
+            active.setdefault(key, set()).update(days)
     return {
-        key: (sum(PULSE_SCORE_WEIGHTS[name] * value
-                  for name, value in row.items()), row)
+        key: (sum(PULSE_SCORE_WEIGHTS[name] * row[name]
+                  for name in PULSE_SCORE_WEIGHTS),
+              dict(row, activeDays=len(active.get(key, ()))))
         for key, row in parts.items()
         if any(row.values())
     }
@@ -4122,6 +5081,11 @@ def _pulse_person_entry(ledger: Mapping[str, Any], key: str) -> dict[str, Any]:
     return entry
 
 
+def _analysis_path_skipped(path: str) -> bool:
+    return path.startswith(".forkmesh/") and (
+        path.rsplit("/", 1)[-1].lower() not in COVERAGE_ARTIFACT_NAMES)
+
+
 class GitRepository:
     def __init__(self, config: RepositoryConfig, git_dir: Path) -> None:
         self.config = config
@@ -4132,18 +5096,29 @@ class GitRepository:
         self._trusted_routing_refs_sha256 = ""
         self._analysis_lock = threading.Lock()
         self._analysis_commit = ""
+        self._analysis_key = ""
         self._analysis_value: dict[str, Any] = {}
         self._counts_lock = threading.Lock()
         self._counts_key: tuple[str, str, str] = ("", "", "")
         self._counts_value: dict[str, int] = {}
         self._deleted_pulls_key = ""
         self._deleted_pulls_value: dict[str, int] = {}
+        self._pull_reviews_lock = threading.Lock()
+        self._pull_reviews_key = ""
+        self._pull_reviews_value: dict[str, list[list[str]]] | None = None
         self._upload_objects_lock = threading.Lock()
         self._pulse_lock = threading.Lock()
         self._pulse_numstat_lock = threading.Lock()
         self._pulse_commits: dict[str, Any] = {}
         self._pulse_issues: tuple[str, list[dict[str, Any]]] = ("\0", [])
         self._pulse_issue_records: dict[str, dict[str, Any] | None] = {}
+        self._issue_index_lock = threading.Lock()
+        self._issue_index_tree: tuple[Any, dict[str, Any]] = ("\0", {})
+        self._issue_index_records: OrderedDict[
+            tuple[str, int], dict[str, Any]] = OrderedDict()
+        self._issue_search_texts: OrderedDict[
+            tuple[str, int], str] = OrderedDict()
+        self._issue_search_chars = 0
         self._pulse_pulls: tuple[tuple[str, str], list[dict[str, Any]]] = (
             ("\0", "\0"), [])
         self._pulse_pull_records: dict[str, dict[str, Any] | None] = {}
@@ -4155,6 +5130,12 @@ class GitRepository:
         # Ref -> commit within one cache generation (see cache_ref).
         self._ref_memo_lock = threading.Lock()
         self._ref_memo: dict[tuple[int, str], str] = {}
+        self._visible_commit_memo: dict[tuple[int, str], bool] = {}
+        self._visible_index_lock = threading.Lock()
+        self._visible_index_key = 0
+        self._visible_refs: frozenset[str] = frozenset()
+        self._visible_tips: frozenset[str] = frozenset()
+        self._visible_commits: frozenset[bytes] | None = None
         # Process-unique and advanced after an in-process receive-pack. A
         # daemon generation reload creates fresh repository objects, so a
         # response can never cross a validated refs/config boundary.
@@ -4162,6 +5143,7 @@ class GitRepository:
         # The application points this at its operator-policy hooks directory;
         # repository-planted hooks never run either way.
         self.receive_hooks_path = os.devnull
+        self.rewrite_hooks_path = ""
         _ensure_bare_repository(git_dir)
         self.check_integrity(force=True)
 
@@ -4171,7 +5153,6 @@ class GitRepository:
             self._integrity_checked_at = 0.0
         with self._analysis_lock:
             self._analysis_commit = ""
-            self._analysis_value = {}
         with self._counts_lock:
             self._counts_key = ("", "", "")
             self._counts_value = {}
@@ -4180,6 +5161,7 @@ class GitRepository:
             self._upload_objects = frozenset()
         with self._ref_memo_lock:
             self._ref_memo.clear()
+            self._visible_commit_memo.clear()
 
     def cache_ref(self, requested: Any = "") -> str:
         """The commit ``requested`` names in the current cache generation.
@@ -4281,6 +5263,7 @@ class GitRepository:
     def resolve_commit(self, requested: Any = "") -> str:
         ref = _safe_ref(requested)
         candidates = [ref]
+        commit_id = ""
         if ref.startswith("refs/"):
             if not ref.startswith(VISIBLE_REF_PREFIXES):
                 raise GatewayError("invalid repository ref")
@@ -4290,31 +5273,157 @@ class GitRepository:
                 "refs/remotes/origin/" + ref,
                 "refs/tags/" + ref,
             ]
-            if re.fullmatch(r"[0-9a-f]{4,64}", ref):
-                candidates.append(ref)
+            if re.fullmatch(r"[0-9a-f]{%d,64}" % COMMIT_ID_MIN_HEX, ref):
+                commit_id = ref
+        if FULL_COMMIT_ID_RE.fullmatch(commit_id):
+            names, _tips, commits = self._visible_index()
+            if commits is not None and not names.intersection(candidates):
+                if bytes.fromhex(commit_id) in commits:
+                    return commit_id
+                raise GatewayError("repository ref was not found")
         for candidate in candidates:
-            code, output = _run_git_status(
-                self.git_dir,
-                [
-                    "rev-parse",
-                    "--verify",
-                    "--quiet",
-                    "--end-of-options",
-                    candidate + "^{commit}",
-                ],
-                max_output=128,
-                allowed_codes=(0, 1),
-            )
-            if code == 1:
-                continue
-            commit = output.decode("ascii", "ignore").strip().lower()
-            if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit):
+            commit = self._rev_parse_commit(candidate)
+            if commit:
+                return commit
+        if commit_id:
+            commit = self._rev_parse_commit(commit_id)
+            if commit and self._commit_is_visible(commit):
                 return commit
         # ``rev-parse --verify --quiet`` reserves exit 1 for a name that does
         # not resolve.  Keep that ordinary repository answer separate from an
         # invocation/storage failure, which _run_git_status raises as GitError
         # and the gateway correctly exposes as a retryable 503.
         raise GatewayError("repository ref was not found")
+
+    def _rev_parse_commit(self, name: str) -> str:
+        code, output = _run_git_status(
+            self.git_dir,
+            [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--end-of-options",
+                name + "^{commit}",
+            ],
+            max_output=128,
+            allowed_codes=(0, 1),
+        )
+        if code == 1:
+            return ""
+        commit = output.decode("ascii", "ignore").strip().lower()
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit):
+            return commit
+        return ""
+
+    def _visible_index(
+        self,
+    ) -> tuple[frozenset[str], frozenset[str], frozenset[bytes] | None]:
+        generation = self.cache_generation
+        if not self._visible_index_lock.acquire(
+                timeout=VISIBLE_COMMIT_WALK_WAIT_SECONDS):
+            raise GitError("repository visibility check is busy")
+        try:
+            if self._visible_index_key != generation:
+                index = self._build_visible_index()
+                self._visible_refs, self._visible_tips, self._visible_commits = index
+                self._visible_index_key = generation
+            return self._visible_refs, self._visible_tips, self._visible_commits
+        finally:
+            self._visible_index_lock.release()
+
+    def _build_visible_index(
+        self,
+    ) -> tuple[frozenset[str], frozenset[str], frozenset[bytes] | None]:
+        listing = _run_git(
+            self.git_dir,
+            [
+                "for-each-ref",
+                "--format=%(objectname)%00%(objecttype)%00%(*objectname)"
+                "%00%(*objecttype)%00%(refname)",
+                *(prefix.rstrip("/") for prefix in COMMIT_ID_VISIBLE_REF_PREFIXES),
+            ],
+            max_output=16 * 1024 * 1024,
+        )
+        names: set[str] = set()
+        tips: set[str] = set()
+        complete = True
+        for row in listing.decode("utf-8", "replace").splitlines():
+            fields = row.split("\x00", 4)
+            if len(fields) != 5:
+                complete = False
+                continue
+            oid, kind, peeled, peeled_kind, name = fields
+            names.add(name)
+            if kind == "commit" and FULL_COMMIT_ID_RE.fullmatch(oid):
+                tips.add(oid)
+            elif (kind == "tag" and peeled_kind == "commit"
+                    and FULL_COMMIT_ID_RE.fullmatch(peeled)):
+                tips.add(peeled)
+            else:
+                complete = False
+        commits: frozenset[bytes] | None = None
+        if complete and not tips:
+            commits = frozenset()
+        elif complete:
+            _acquire_visible_commit_walk()
+            try:
+                raw = _run_git(
+                    self.git_dir,
+                    [
+                        "-c",
+                        "core.commitGraph=true",
+                        "rev-list",
+                        "--max-count=%d" % (VISIBLE_COMMIT_SET_LIMIT + 1),
+                        "--stdin",
+                    ],
+                    input_bytes=("\n".join(sorted(tips)) + "\n").encode("ascii"),
+                    max_output=(VISIBLE_COMMIT_SET_LIMIT + 1) * 66,
+                ).split()
+            except GitError:
+                raw = None
+            finally:
+                _visible_commit_walks.release()
+            if raw is not None and len(raw) <= VISIBLE_COMMIT_SET_LIMIT:
+                commits = frozenset(
+                    bytes.fromhex(item.decode("ascii")) for item in raw
+                    if FULL_COMMIT_ID_RE.fullmatch(item.decode("ascii", "ignore")))
+        return frozenset(names), frozenset(tips), commits
+
+    def _commit_is_visible(self, commit: str) -> bool:
+        _names, tips, commits = self._visible_index()
+        if commit in tips:
+            return True
+        if commits is not None:
+            return bytes.fromhex(commit) in commits
+        key = (self.cache_generation, commit)
+        with self._ref_memo_lock:
+            known = self._visible_commit_memo.get(key)
+        if known is not None:
+            return known
+        _acquire_visible_commit_walk()
+        try:
+            output = _run_git(
+                self.git_dir,
+                [
+                    "-c",
+                    "core.commitGraph=true",
+                    "for-each-ref",
+                    "--count=1",
+                    "--format=%(refname)",
+                    "--contains",
+                    commit,
+                    *(prefix.rstrip("/") for prefix in COMMIT_ID_VISIBLE_REF_PREFIXES),
+                ],
+                max_output=4096,
+            )
+        finally:
+            _visible_commit_walks.release()
+        visible = bool(output.strip())
+        with self._ref_memo_lock:
+            if len(self._visible_commit_memo) >= MAX_VISIBLE_COMMIT_MEMO:
+                self._visible_commit_memo.clear()
+            self._visible_commit_memo[key] = visible
+        return visible
 
     def _commit_summary(self, commit: str, path: str = "") -> dict[str, Any]:
         args = [
@@ -4521,7 +5630,10 @@ class GitRepository:
         return result, partial
 
     def _build_analysis(self, commit: str) -> dict[str, Any]:
-        all_blobs = self._all_blobs(commit)
+        all_blobs = [
+            blob for blob in self._all_blobs(commit)
+            if not _analysis_path_skipped(blob[1])
+        ]
         repository_partial = len(all_blobs) > MAX_ANALYSIS_REPOSITORY_FILES
         blobs = all_blobs[:MAX_ANALYSIS_REPOSITORY_FILES]
         known_paths = {path for _size, path in blobs}
@@ -4598,12 +5710,46 @@ class GitRepository:
             },
         }
 
+    def _analysis_content_key(self, commit: str) -> str:
+        output = _run_git(
+            self.git_dir,
+            ["ls-tree", "-r", "-z", commit],
+            max_output=64 * 1024 * 1024,
+        )
+        digest = hashlib.sha256()
+        for record in output.split(b"\0"):
+            _metadata, separator, raw_path = record.partition(b"\t")
+            if not separator:
+                continue
+            if _analysis_path_skipped(raw_path.decode("utf-8", "replace")):
+                continue
+            digest.update(record + b"\0")
+        return digest.hexdigest()
+
+    @staticmethod
+    def _analysis_for_commit(
+        value: dict[str, Any], commit: str
+    ) -> dict[str, Any]:
+        return {
+            **value,
+            "commit": commit,
+            "summary": {**value.get("summary", {}), "commit": commit},
+        }
+
     def _analysis(self, commit: str) -> dict[str, Any]:
         with self._analysis_lock:
             if self._analysis_commit == commit and self._analysis_value:
                 return self._analysis_value
-            value = self._build_analysis(commit)
+            try:
+                key = self._analysis_content_key(commit)
+            except GitError:
+                key = ""
+            if key and key == self._analysis_key and self._analysis_value:
+                value = self._analysis_for_commit(self._analysis_value, commit)
+            else:
+                value = self._build_analysis(commit)
             self._analysis_commit = commit
+            self._analysis_key = key
             self._analysis_value = value
             return value
 
@@ -4957,8 +6103,9 @@ class GitRepository:
             raise GatewayError("repository path was not found")
         entries = []
         records = output.split(b"\0")
-        if len(records) > MAX_TREE_ENTRIES + 1:
-            records = records[:MAX_TREE_ENTRIES]
+        limit = MAX_COLLABORATION_TREE_ENTRIES if collaboration_tree else MAX_TREE_ENTRIES
+        if len(records) > limit + 1:
+            records = records[:limit]
             truncated = True
         else:
             truncated = False
@@ -5062,7 +6209,85 @@ class GitRepository:
                 pulls_commit = ""
             result["pullRefs"] = self._live_independent_pull_refs(
                 pulls_commit, self._independent_pull_refs()[1])
+            reviews = self._pull_reviews(commit)
+            if reviews is not None:
+                result["pullReviews"] = reviews
         return result
+
+    def _pull_reviews(self, commit: str) -> dict[str, list[list[str]]] | None:
+        """Every committed review under .forkmesh/pulls at ``commit``, as
+        ``{"<n>": [[reviewer, state], ...]}`` in file order, read with one
+        ls-tree and one cat-file. The web list derives each pull's review
+        state from it with the merge box's latest-review-per-reviewer rule.
+        None when the reviews do not fit the bounds."""
+        with self._pull_reviews_lock:
+            if self._pull_reviews_key == commit:
+                return self._pull_reviews_value
+        output = _run_git(
+            self.git_dir,
+            ["ls-tree", "-r", "-l", "-z", commit, "--",
+             ":(top,literal).forkmesh/pulls/"],
+            max_output=16 * 1024 * 1024,
+        )
+        files: list[tuple[int, int, str]] = []
+        total = 0
+        value: dict[str, list[list[str]]] | None = {}
+        for record in output.split(b"\0"):
+            metadata, separator, raw_path = record.partition(b"\t")
+            fields = metadata.split()
+            if not separator or len(fields) < 4 or fields[1] != b"blob":
+                continue
+            match = PULL_REVIEW_FILE_RE.fullmatch(
+                raw_path.decode("utf-8", "replace"))
+            if not match:
+                continue
+            try:
+                size = int(fields[3])
+            except ValueError:
+                continue
+            if size > MAX_PULL_REVIEW_FILE_BYTES:
+                continue
+            total += size
+            files.append((int(match.group(1)), int(match.group(2)),
+                          fields[2].decode("ascii", "replace")))
+        if len(files) > MAX_PULL_REVIEW_FILES \
+                or total > MAX_PULL_REVIEW_TOTAL_BYTES:
+            value = None
+        elif files:
+            files.sort()
+            payload = _run_git(
+                self.git_dir,
+                ["cat-file", "--batch"],
+                input_bytes=b"".join(
+                    oid.encode("ascii") + b"\n" for _n, _i, oid in files),
+                max_output=total + len(files) * 160,
+            )
+            cursor = 0
+            for number, _index, _oid in files:
+                line_end = payload.find(b"\n", cursor)
+                if line_end < 0:
+                    break
+                header = payload[cursor:line_end].split()
+                cursor = line_end + 1
+                if len(header) != 3 or header[1] != b"blob":
+                    continue
+                try:
+                    size = int(header[2])
+                except ValueError:
+                    break
+                body = payload[cursor:cursor + size]
+                cursor += size + 1
+                values = _front_matter_values(body.decode("utf-8", "replace"))
+                reviewer = values.get("author", "")
+                if values.get("type") != "review" or not reviewer \
+                        or not values.get("state"):
+                    continue
+                value.setdefault(str(number), []).append(
+                    [reviewer, values["state"]])
+        with self._pull_reviews_lock:
+            self._pull_reviews_key = commit
+            self._pull_reviews_value = value
+        return value
 
     def _tree_entries(
         self, commit: str, paths: Iterable[str]
@@ -5104,6 +6329,8 @@ class GitRepository:
         )
         truncated = len(output) > MAX_JSON_BLOB
         output = output[:MAX_JSON_BLOB]
+        if truncated:
+            output = _utf8_prefix(output)
         try:
             content = output.decode("utf-8")
             encoding = "utf8"
@@ -5201,16 +6428,7 @@ class GitRepository:
         except ValueError as exc:
             raise GitError("repository object has an invalid size") from exc
         guessed_type = mimetypes.guess_type(path)[0] or ""
-        active_types = {
-            "image/svg+xml",
-            "text/html",
-            "application/xhtml+xml",
-            "application/xml",
-            "text/xml",
-            "application/javascript",
-            "text/javascript",
-        }
-        if guessed_type in active_types:
+        if _active_media_type(guessed_type):
             content_type = "application/octet-stream"
             disposition = "attachment"
         elif guessed_type.startswith("text/"):
@@ -5444,8 +6662,16 @@ class GitRepository:
         except ValueError as exc:
             raise GitError("repository commit count is invalid") from exc
         if commit_count > MAX_COMPARE_COMMITS:
-            raise GatewayError("repository comparison is too large")
+            raise ComparisonTooLarge("repository comparison is too large")
 
+        try:
+            return self._compare_payload(base, head, merge_base, commit_count)
+        except GitOutputLimit as exc:
+            raise ComparisonTooLarge("repository comparison is too large") from exc
+
+    def _compare_payload(
+        self, base: str, head: str, merge_base: str, commit_count: int
+    ) -> dict[str, Any]:
         patch = _run_git(
             self.git_dir,
             [
@@ -5477,7 +6703,7 @@ class GitRepository:
                 max_output=MAX_COMPARE_BYTES,
             )
         if len(patch) + len(commits) > MAX_COMPARE_BYTES:
-            raise GatewayError("repository comparison is too large")
+            raise ComparisonTooLarge("repository comparison is too large")
         return {
             "ok": True,
             "baseOid": base,
@@ -5513,6 +6739,25 @@ class GitRepository:
                 max_output=128, allow_exit_one=True,
             ).strip():
                 raise GatewayError("upstream comparison commit is missing")
+        if "counts" in query:
+            if str(query.get("counts")) != "1" or values["limit"]:
+                raise GatewayError("upstream counts take only base and head")
+            sides = git(
+                ["rev-list", "--left-right", "--count",
+                 values["base"] + "..." + values["head"]],
+                max_output=64,
+            ).decode("ascii", "replace").split()
+            try:
+                behind, ahead = int(sides[0]), int(sides[1])
+            except (IndexError, ValueError) as exc:
+                raise GitError("repository commit count is invalid") from exc
+            return {
+                "ok": True,
+                "baseOid": values["base"],
+                "headOid": values["head"],
+                "ahead": ahead,
+                "behind": behind,
+            }
         since = values["limit"] or values["base"]
         count_raw = git(
             ["rev-list", "--count", f"--max-count={MAX_COMPARE_COMMITS + 1}",
@@ -5524,7 +6769,7 @@ class GitRepository:
         except ValueError as exc:
             raise GitError("repository commit count is invalid") from exc
         if own > MAX_COMPARE_COMMITS:
-            raise GatewayError("repository comparison is too large")
+            raise ComparisonTooLarge("repository comparison is too large")
         upstream_raw = git(
             ["rev-list", "--count",
              f"--max-count={MAX_CHERRY_UPSTREAM_COMMITS + 1}",
@@ -5536,7 +6781,7 @@ class GitRepository:
         except ValueError as exc:
             raise GitError("repository commit count is invalid") from exc
         if upstream > MAX_CHERRY_UPSTREAM_COMMITS:
-            raise GatewayError("upstream comparison is too large")
+            raise ComparisonTooLarge("upstream comparison is too large")
         arguments = ["cherry", values["base"], values["head"]]
         if values["limit"]:
             arguments.append(values["limit"])
@@ -6091,6 +7336,242 @@ class GitRepository:
         self._pulse_commits = state
         return state
 
+    def _issues_tree(self, commit: str) -> str:
+        code, output = _run_git_status(
+            self.git_dir,
+            ["rev-parse", "--verify", "--quiet",
+             commit + ":.forkmesh/issues"],
+            max_output=256,
+            allowed_codes=(0, 1),
+        )
+        return output.decode("ascii", "replace").strip().lower() \
+            if code == 0 else ""
+
+    def issue_index(self, query: Mapping[str, str]) -> dict[str, Any]:
+        related = query.get("related", "")
+        if related and not re.fullmatch(r"[1-9][0-9]{0,8}", related):
+            raise GatewayError("issue number is invalid")
+        commit = self.resolve_commit(query.get("ref", ""))
+        tree = self._issues_tree(commit)
+        source = self._forge_source_blob(commit)
+        pictures = self._forge_avatar_tree(commit)
+        with self._issue_index_lock:
+            if self._issue_index_tree[0] != (tree, source, pictures):
+                built = self._build_issue_index(tree, self._forge_sources(source))
+                avatars = self._forge_avatars(pictures)
+                if avatars:
+                    built["forgeAvatars"] = avatars
+                self._issue_index_tree = ((tree, source, pictures), built)
+            result = self._issue_index_tree[1]
+        if related:
+            return dict(_issue_index_related(result, int(related)),
+                        ok=True, commit=commit)
+        return dict(result, ok=True, commit=commit, issues=[
+            {key: value for key, value in item.items()
+             if key not in ISSUE_INDEX_RELATION_ONLY_FIELDS}
+            for item in result["issues"]])
+
+    def issue_search(self, query: Mapping[str, str]) -> dict[str, Any]:
+        text = _js_trim(str(query.get("q", ""))).lower()
+        if not text or len(text) > ISSUE_SEARCH_MAX_QUERY:
+            raise GatewayError("search query is invalid")
+        commit = self.resolve_commit(query.get("ref", ""))
+        tree = self._issues_tree(commit)
+        with self._issue_index_lock:
+            chosen, records, _opened, _closed = self._issue_folders(tree)
+            numbers = sorted(chosen, reverse=True)[:ISSUE_INDEX_MAX_ISSUES]
+            cache = self._issue_search_texts
+            wanted = []
+            budget = ISSUE_INDEX_READ_BYTES
+            unread = False
+            for number in numbers:
+                record = records.get((chosen[number], number))
+                if record is not None and (record[0], number) not in cache \
+                        and record[1] <= MAX_JSON_BLOB:
+                    if record[1] > budget:
+                        unread = True
+                        continue
+                    budget -= record[1]
+                    wanted.append(record)
+            blobs = self._pulse_read(wanted) if wanted else {}
+            matches: list[int] = []
+            for number in numbers:
+                record = records.get((chosen[number], number))
+                if record is None:
+                    continue
+                key = (record[0], number)
+                haystack = cache.get(key)
+                if haystack is None:
+                    if record[1] > MAX_JSON_BLOB:
+                        haystack = _issue_search_text(number, b"")
+                    elif record[0] in blobs:
+                        haystack = _issue_search_text(number, blobs[record[0]])
+                    else:
+                        continue
+                    cache[key] = haystack
+                    self._issue_search_chars += len(haystack)
+                    while self._issue_search_chars > ISSUE_SEARCH_CACHE_CHARS \
+                            and len(cache) > 1:
+                        _old, dropped = cache.popitem(last=False)
+                        self._issue_search_chars -= len(dropped)
+                else:
+                    cache.move_to_end(key)
+                if text in haystack:
+                    matches.append(number)
+        return {"ok": True, "commit": commit, "numbers": matches,
+                "truncated": unread or len(chosen) > ISSUE_INDEX_MAX_ISSUES}
+
+    def _issue_folders(self, tree: str) -> tuple[
+            dict[int, str], dict[tuple[str, int], tuple[str, int]],
+            set[int], set[int]]:
+        folders: set[tuple[str, int]] = set()
+        records: dict[tuple[str, int], tuple[str, int]] = {}
+        if tree:
+            try:
+                listing = _run_git(
+                    self.git_dir,
+                    ["ls-tree", "-r", "-l", "-z", tree],
+                    max_output=256 * 1024 * 1024,
+                )
+            except GitError:
+                listing = b""
+            for entry in listing.split(b"\0"):
+                meta, _tab, raw_path = entry.partition(b"\t")
+                fields = meta.split()
+                if len(fields) != 4 or fields[1] != b"blob":
+                    continue
+                match = ISSUE_INDEX_FOLDER_RE.fullmatch(
+                    raw_path.decode("utf-8", "replace"))
+                if not match:
+                    continue
+                key = (match.group(1) or "", int(match.group(2)))
+                folders.add(key)
+                if (match.group(2) == str(key[1])
+                        and match.group(3) == "issue-%d.json" % key[1]
+                        and fields[3].isdigit()):
+                    records[key] = (
+                        fields[2].decode("ascii").lower(), int(fields[3]))
+        opened = {number for place, number in folders if place == "open"}
+        closed = {number for place, number in folders if place == "closed"}
+        chosen: dict[int, str] = {
+            number: "" for place, number in folders
+            if place == "" and number not in opened and number not in closed}
+        chosen.update({number: "closed" for number in closed - opened})
+        chosen.update({number: "open" for number in opened})
+        return chosen, records, opened, closed
+
+    def _forge_avatar_tree(self, commit: str) -> str:
+        code, output = _run_git_status(
+            self.git_dir,
+            ["rev-parse", "--verify", "--quiet", commit + ":" + FORGE_AVATAR_DIR],
+            max_output=256,
+            allowed_codes=(0, 1),
+        )
+        return output.decode("ascii", "replace").strip().lower() \
+            if code == 0 else ""
+
+    def _forge_avatars(self, tree: str) -> list[str]:
+        if not tree:
+            return []
+        try:
+            listing = _run_git(self.git_dir, ["ls-tree", "-z", tree],
+                               max_output=64 * 1024 * 1024)
+        except GitError:
+            return []
+        return _forge_avatar_names(listing)
+
+    def _forge_source_blob(self, commit: str) -> tuple[str, str]:
+        for path in (FORGE_SOURCE_PATH, FORGE_LEDGER_PATH):
+            code, output = _run_git_status(
+                self.git_dir,
+                ["rev-parse", "--verify", "--quiet", commit + ":" + path],
+                max_output=256,
+                allowed_codes=(0, 1),
+            )
+            if code == 0:
+                return path, output.decode("ascii", "replace").strip().lower()
+        return "", ""
+
+    def _forge_sources(self, source: tuple[str, str]) -> dict[str, Any]:
+        path, blob = source
+        if not blob:
+            return {}
+        try:
+            raw = _run_git(self.git_dir, ["cat-file", "blob", blob],
+                           max_output=FORGE_LEDGER_MAX_BYTES)
+        except GitError:
+            return {}
+        if path == FORGE_SOURCE_PATH:
+            return _forge_source_spec(raw)
+        urls = _forge_source_urls(raw)
+        return {"urls": urls} if urls else {}
+
+    def _build_issue_index(self, tree: str,
+                           sources: Mapping[str, Any] | None = None
+                           ) -> dict[str, Any]:
+        chosen, records, opened, closed = self._issue_folders(tree)
+        numbers = sorted(chosen, reverse=True)
+        truncated = len(numbers) > ISSUE_INDEX_MAX_ISSUES
+        numbers = numbers[:ISSUE_INDEX_MAX_ISSUES]
+        cache = self._issue_index_records
+        wanted: list[tuple[str, int]] = []
+        budget = ISSUE_INDEX_READ_BYTES
+        unread: set[int] = set()
+        for number in numbers:
+            record = records.get((chosen[number], number))
+            if record is None or (record[0], number) in cache \
+                    or record[1] > MAX_JSON_BLOB:
+                continue
+            if record[1] > budget:
+                unread.add(number)
+                continue
+            budget -= record[1]
+            wanted.append(record)
+        blobs = self._pulse_read(wanted) if wanted else {}
+        issues: list[dict[str, Any]] = []
+        missing: list[int] = []
+        used = 256
+        for number in numbers:
+            place = chosen[number]
+            record = records.get((place, number))
+            if record is None or number in unread:
+                missing.append(number)
+                continue
+            key = (record[0], number)
+            summary = cache.get(key)
+            if summary is None:
+                if record[1] > MAX_JSON_BLOB:
+                    summary = _issue_index_fold(number, {})
+                elif record[0] in blobs:
+                    summary = _issue_index_summary(number, blobs[record[0]])
+                else:
+                    missing.append(number)
+                    continue
+                cache[key] = summary
+                while len(cache) > ISSUE_INDEX_RECORD_CACHE:
+                    cache.popitem(last=False)
+            else:
+                cache.move_to_end(key)
+            item = dict(summary, location=place)
+            source_url = _forge_source_url(sources or {}, number,
+                                           summary.get("openEventId"))
+            if source_url:
+                item["sourceUrl"] = source_url
+            used += len(json.dumps(
+                item, separators=(",", ":"), ensure_ascii=False).encode(
+                    "utf-8")) + 1
+            if used > MAX_JSON_OUTPUT:
+                truncated = True
+                break
+            issues.append(item)
+        return {
+            "issues": issues,
+            "missing": missing,
+            "openFolders": len(opened),
+            "closedFolders": len(closed),
+            "truncated": truncated,
+        }
+
     def _pulse_issue_index(self, main: str) -> tuple[str, list[dict[str, Any]]]:
         code, output = _run_git_status(
             self.git_dir,
@@ -6535,6 +8016,8 @@ class GitRepository:
                 "weights": dict(PULSE_SCORE_WEIGHTS),
                 "commitsPerDay": PULSE_COMMITS_PER_DAY,
                 "commentsPerThread": PULSE_COMMENTS_PER_THREAD,
+                "openedPerDay": PULSE_OPENED_PER_DAY,
+                "tieBreak": list(PULSE_TIE_BREAK),
                 "excludesAutomated": True,
             },
         }
@@ -6673,7 +8156,6 @@ class GitRepository:
         commit = self.resolve_commit(query.get("ref", ""))
         blobs = self._all_blobs(commit)
         max_depth = 8
-        max_children = 40
         root: dict[str, Any] = {
             "name": "",
             "size": 0,
@@ -6707,7 +8189,7 @@ class GitRepository:
                 "type": "file",
             }
 
-        def serialize(node: dict[str, Any]) -> dict[str, Any]:
+        def serialize(node: dict[str, Any], path: str = "") -> dict[str, Any]:
             result = {
                 "name": node["name"],
                 "size": node["size"],
@@ -6720,8 +8202,19 @@ class GitRepository:
                 node["_children"].values(),
                 key=lambda item: (-item["size"], item["name"]),
             )
+            collaboration = any(
+                path == folder or path.startswith(folder + "/")
+                for folder in COLLABORATION_TREE_ROOTS
+            )
+            max_children = (
+                MAX_COLLABORATION_TREE_ENTRIES if collaboration
+                else MAX_SIZES_CHILDREN
+            )
             shown = children[:max_children]
-            output = [serialize(item) for item in shown]
+            output = [
+                serialize(item, f"{path}/{item['name']}" if path else item["name"])
+                for item in shown
+            ]
             if len(children) > max_children:
                 output.append(
                     {
@@ -6874,7 +8367,9 @@ class GitRepository:
 
     @staticmethod
     def _receive_pack_configuration(
-        max_input_bytes: int, hooks_path: str = os.devnull
+        max_input_bytes: int,
+        hooks_path: str = os.devnull,
+        allow_rewrite: bool = False,
     ) -> list[str]:
         """Fixed fail-closed receive-pack policy.
 
@@ -6888,7 +8383,8 @@ class GitRepository:
             "-c",
             "receive.denyDeletes=true",
             "-c",
-            "receive.denyNonFastForwards=true",
+            "receive.denyNonFastForwards=false"
+            if allow_rewrite else "receive.denyNonFastForwards=true",
             "-c",
             "core.hooksPath=" + hooks_path,
             "-c",
@@ -6937,27 +8433,189 @@ class GitRepository:
     def receive_pack_transitions(
         self, body: bytes, max_input_bytes: int
     ) -> tuple[bytes, list[tuple[str, str, str]]]:
+        output, changes, _forced = self.receive_pack_rewrites(
+            body, max_input_bytes)
+        return output, changes
+
+    def receive_pack_rewrites(
+        self,
+        body: bytes,
+        max_input_bytes: int,
+        rewrite: frozenset[str] | None = None,
+        default_ref: str = "",
+    ) -> tuple[bytes, list[tuple[str, str, str]], dict[str, str]]:
         if len(body) > max_input_bytes:
             raise GatewayError("push request is too large")
+        hook_mode = rewrite is not None and bool(self.rewrite_hooks_path) and (
+            Path(self.rewrite_hooks_path) / "pre-receive").is_file()
+        if hook_mode:
+            configuration = self._receive_pack_configuration(
+                max_input_bytes, self.rewrite_hooks_path, allow_rewrite=True)
+            environment = {
+                PUSH_HOOK_REWRITE_ENV: " ".join(sorted(rewrite or ())),
+                PUSH_HOOK_DEFAULT_ENV: default_ref,
+            }
+        else:
+            configuration = self._receive_pack_configuration(
+                max_input_bytes, self.receive_hooks_path)
+            environment = {}
+        forced: dict[str, str] = {}
+        kept: dict[str, tuple[str, str]] = {}
+        serial = rewrite_push_lock(self.git_dir) if hook_mode else None
+        if serial is not None:
+            serial.acquire()
         lock = maintenance_push_lock(self.git_dir)
         try:
             before = stable_refs(self.git_dir)
+            if hook_mode:
+                for ref in sorted(rewrite or ()):
+                    old = before.get(ref, "")
+                    if _zero_oid(old):
+                        continue
+                    name = self.keep_push_history(ref, old)
+                    if not name:
+                        raise GatewayError(
+                            "the current tip of %s could not be kept, so the "
+                            "push was refused" % ref[len("refs/heads/"):])
+                    kept[ref] = (old, name)
             output = _run_git(
                 self.git_dir,
-                self._receive_pack_configuration(
-                    max_input_bytes, self.receive_hooks_path)
+                configuration
                 + ["receive-pack", "--stateless-rpc", str(self.git_dir)],
                 input_bytes=body,
                 max_output=MAX_JSON_OUTPUT,
                 timeout=receive_pack_timeout_seconds(len(body)),
+                extra_environment=environment,
             )
             changes = ref_transitions(before, stable_refs(self.git_dir))
+            moved = {ref: new for ref, _old, new in changes}
+            for ref, (old, name) in kept.items():
+                new = moved.get(ref, "")
+                if new and not _zero_oid(new) and not self.is_ancestor(
+                        old, new):
+                    forced[ref] = name
+                else:
+                    self.release_push_history(name, old)
         finally:
             if lock is not None:
                 os.close(lock)
+            if serial is not None:
+                serial.release()
         if changes:
             mark_maintenance_due(self.git_dir)
-        return output, changes
+        return output, changes, forced
+
+    def is_ancestor(self, older: str, newer: str) -> bool:
+        try:
+            _run_git(
+                self.git_dir,
+                ["merge-base", "--is-ancestor", older, newer],
+                max_output=1024,
+            )
+        except (GitError, OSError):
+            return False
+        return True
+
+    def keep_push_history(self, ref: str, old: str) -> str:
+        branch = ref[len("refs/heads/"):]
+        prefix = PUSH_HISTORY_PREFIX + branch + "/"
+        try:
+            existing = sorted(
+                name for name in prefix_refs(self.git_dir, prefix)
+                if PUSH_HISTORY_SEQUENCE_RE.fullmatch(name[len(prefix):]))
+        except (GitError, OSError):
+            existing = []
+        sequence = int(existing[-1][len(prefix):]) + 1 if existing else 1
+        zero = "0" * len(old)
+        for attempt in range(PUSH_HISTORY_SAVE_ATTEMPTS):
+            name = prefix + "%010d" % (sequence + attempt)
+            try:
+                _run_git(self.git_dir, ["update-ref", name, old, zero],
+                         max_output=1024)
+            except (GitError, OSError):
+                continue
+            return name
+        return ""
+
+    def release_push_history(self, name: str, old: str) -> None:
+        try:
+            _run_git(self.git_dir, ["update-ref", "-d", name, old],
+                     max_output=1024)
+        except (GitError, OSError):
+            pass
+
+    def open_pulls_for_head(self, branch: str) -> list[int]:
+        if not branch:
+            return []
+        try:
+            raw = _run_git(
+                self.git_dir,
+                ["for-each-ref", "--format=%(objectname)",
+                 "refs/heads/forkmesh/pull/", "refs/heads/forkmesh/pulls"],
+                max_output=4 * 1024 * 1024,
+            ).decode("ascii", "replace").split()
+        except (GitError, OSError):
+            return []
+        commits = sorted({oid for oid in raw if GIT_OID_RE.fullmatch(oid)})
+        if not commits:
+            return []
+        try:
+            code, output = _run_git_status(
+                self.git_dir,
+                ["grep", "-l", "-z", "-F", "-e", "head: " + branch,
+                 *commits[:512], "--",
+                 ":(glob).forkmesh/pulls/*/pull.md"],
+                max_output=4 * 1024 * 1024,
+                allowed_codes=(0, 1),
+            )
+        except (GitError, OSError):
+            return []
+        if code == 1:
+            return []
+        found: dict[int, str] = {}
+        for item in output.split(b"\0"):
+            text = item.decode("utf-8", "replace")
+            commit, _, path = text.partition(":")
+            match = re.fullmatch(
+                r"\.forkmesh/pulls/([1-9][0-9]{0,8})/pull\.md", path)
+            if match:
+                found.setdefault(int(match.group(1)), commit)
+        numbers = []
+        for number in sorted(found):
+            try:
+                record = _run_git(
+                    self.git_dir,
+                    ["cat-file", "blob", "%s:.forkmesh/pulls/%d/pull.md" % (
+                        self._pull_record_commit(number, found[number]),
+                        number)],
+                    max_output=256 * 1024,
+                ).decode("utf-8", "replace")
+            except (GitError, OSError):
+                continue
+            header = record.split("\n---", 1)[0]
+            status = re.search(r"(?m)^status:[ \t]*([A-Za-z-]+)", header)
+            head = re.search(r"(?m)^head:[ \t]*(.*)$", header)
+            if (
+                head and head.group(1).strip() == branch
+                and (status is None or status.group(1).lower() == "open")
+            ):
+                numbers.append(number)
+            if len(numbers) >= FORCED_PULLS_MAX:
+                break
+        return numbers
+
+    def _pull_record_commit(self, number: int, fallback: str) -> str:
+        try:
+            oid = _run_git(
+                self.git_dir,
+                ["rev-parse", "--verify", "-q",
+                 "refs/heads/forkmesh/pull/%d^{commit}" % number],
+                max_output=256,
+                allow_exit_one=True,
+            ).decode("ascii", "replace").strip()
+        except (GitError, OSError):
+            oid = ""
+        return oid if GIT_OID_RE.fullmatch(oid) else fallback
 
     def new_commit_count(self, old: str, new: str) -> int:
         if set(new) == {"0"} or not GIT_OID_RE.fullmatch(new):
@@ -6974,6 +8632,16 @@ class GitRepository:
             return int(output.decode("ascii").strip() or 0)
         except (GitError, OSError, ValueError):
             return 0
+
+
+_REWRITE_PUSH_LOCKS: dict[str, threading.Lock] = {}
+_REWRITE_PUSH_LOCKS_GUARD = threading.Lock()
+
+
+def rewrite_push_lock(git_dir: Path) -> threading.Lock:
+    with _REWRITE_PUSH_LOCKS_GUARD:
+        return _REWRITE_PUSH_LOCKS.setdefault(
+            str(Path(git_dir).resolve()), threading.Lock())
 
 
 def maintenance_push_lock(git_dir: Path | None) -> int | None:
@@ -7165,7 +8833,19 @@ def _repository_serves(repository: Any, operation: str) -> bool:
         return BRANCH_TRASH_CARRIER_OPERATION in operations
     if operation == PULSE_OPERATION:
         return PULSE_CARRIER_OPERATION in operations
+    if operation in (ISSUE_INDEX_OPERATION, ISSUE_SEARCH_OPERATION):
+        return ISSUE_INDEX_CARRIER_OPERATION in operations
     return operation in operations
+
+
+def _unicode_json_response(value: Any) -> GatewayResponse:
+    try:
+        body = json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode("utf-8") + b"\n"
+    except UnicodeEncodeError:
+        return json_response(value)
+    return GatewayResponse(200, "application/json; charset=utf-8", body)
 
 
 def json_response(value: Any, status: int = 200) -> GatewayResponse:
@@ -7182,6 +8862,8 @@ GIT_ERROR_TEXT = {
                  "address. Check the owner and repository name.",
     "mirror_unavailable": "This ForkMesh mirror could not read the "
                           "repository just now. Try again in a minute.",
+    "comparison_too_large": "This comparison is larger than a mirror "
+                            "serves at once. Compare a smaller range.",
 }
 
 
@@ -7678,6 +9360,11 @@ class ReplayCache:
             return True
 
 
+def privacy_mode() -> bool:
+    return os.environ.get("FORKMESH_PRIVACY_MODE", "").strip().lower() in (
+        "1", "true", "yes", "on", "strict")
+
+
 def service_counter_agent_class(user_agent: str) -> str:
     """Reduce a request User-Agent to one bounded, non-identifying class.
 
@@ -8157,6 +9844,12 @@ def _dashboard_pull_event_content(event: Mapping[str, Any]) -> str | None:
             return "closed\0" + body
         if event_type == "delete":
             return body
+        if event_type == "comment-edit":
+            target = str(event.get("target") or "")
+            return target + "\0" + body if target.strip() else None
+        if event_type == "comment-delete":
+            target = str(event.get("target") or "")
+            return target if target.strip() else None
     except (TypeError, ValueError):
         return None
     return None
@@ -9717,6 +11410,10 @@ class GatewayApplication:
             prefix="forkmesh-mirror-runtime-"
         )
         os.chmod(self._temporary_root.name, 0o700)
+        self.rewrite_hooks_path = str(install_push_rewrite_hook(
+            Path(self._temporary_root.name) / PUSH_HOOK_DIRECTORY,
+            "" if self.receive_hooks_path == os.devnull
+            else str(Path(self.receive_hooks_path) / "pre-receive")))
         materializer = self._materializer
         self.repositories: dict[tuple[str, str], GitRepository] = {}
         # Restricted repositories (see the config parser): kept apart from
@@ -9758,6 +11455,7 @@ class GatewayApplication:
                     raise GatewayError("public repository storage is missing")
                 runtime = GitRepository(repository, git_dir)
                 runtime.receive_hooks_path = self.receive_hooks_path
+                runtime.rewrite_hooks_path = self.rewrite_hooks_path
                 if not runtime.check_integrity(force=True):
                     raise GatewayError("public repository integrity pin mismatch")
                 target = (
@@ -9911,6 +11609,7 @@ class GatewayApplication:
         except (GatewayError, GitError, OSError):
             return None
         repository.receive_hooks_path = self.receive_hooks_path
+        repository.rewrite_hooks_path = self.rewrite_hooks_path
         return repository
 
     def _writable_repository(
@@ -10300,7 +11999,9 @@ class GatewayApplication:
 
     @staticmethod
     def _merge_response(
-        value: Mapping[str, Any], operation: str = "merge-pull"
+        value: Mapping[str, Any],
+        operation: str = "merge-pull",
+        progress: Mapping[str, Any] | None = None,
     ) -> GatewayResponse:
         profile = PULL_MUTATIONS[operation]
         request_id = str(value.get("requestId") or "")
@@ -10322,11 +12023,14 @@ class GatewayApplication:
             status != profile["terminal"]
             or value.get("published") is not True
         ):
-            return json_response({
+            processing: dict[str, Any] = {
                 "ok": True,
                 "status": "processing",
                 "requestId": request_id,
-            }, 202)
+            }
+            if progress:
+                processing["progress"] = dict(progress)
+            return json_response(processing, 202)
         output = {
             "ok": True,
             "status": profile["terminal"],
@@ -10367,6 +12071,13 @@ class GatewayApplication:
             "ok": True, "status": "processing", "requestId": request_id}
         if operation in BACKGROUND_MUTATIONS:
             _lower_thread_priority()
+
+        def report(phase: str) -> None:
+            self._note_merge_progress(request_id, phase)
+
+        with self._merge_lock:
+            self.__dict__.setdefault("_merge_progress", {}).pop(request_id, None)
+        report("claimed")
         try:
             status_payload = dict(payload, action="status")
             status = self.merge_executor.call(status_payload, timeout=30)
@@ -10377,14 +12088,22 @@ class GatewayApplication:
                     status.get("status") == terminal
                     and status.get("generationReady") is True
                 ):
-                    status = self.merge_executor.call(
-                        dict(payload, action="execute"),
-                        timeout=MERGE_EXECUTOR_TIMEOUT_SECONDS,
-                    )
+                    execute = dict(payload, action="execute")
+                    stream = getattr(self.merge_executor, "stream", None)
+                    if callable(stream):
+                        status = stream(
+                            execute,
+                            timeout=MERGE_EXECUTOR_TIMEOUT_SECONDS,
+                            on_progress=report,
+                        )
+                    else:
+                        status = self.merge_executor.call(
+                            execute, timeout=MERGE_EXECUTOR_TIMEOUT_SECONDS)
                 if (
                     status.get("status") == terminal
                     and status.get("generationReady") is True
                 ):
+                    report("publishing")
                     self.reload_from_disk(prewarm=False)
                     self._schedule_prewarm()
                     registered = self.merge_executor.call(
@@ -10400,6 +12119,38 @@ class GatewayApplication:
             with self._merge_lock:
                 self._merge_results[request_id] = result
                 self._merge_threads.pop(request_id, None)
+
+    def _note_merge_progress(self, request_id: str, phase: str) -> None:
+        if phase not in MERGE_PROGRESS_PHASES:
+            return
+        clock = self.__dict__.get("clock_ms")
+        now = int(clock() if clock else time.time() * 1000)
+        with self._merge_lock:
+            table = self.__dict__.setdefault("_merge_progress", {})
+            progress = table.get(request_id)
+            if progress is None:
+                progress = {"startedAt": now, "steps": []}
+                table[request_id] = progress
+            steps = progress["steps"]
+            if steps and steps[-1]["phase"] == phase:
+                return
+            if len(steps) >= len(MERGE_PROGRESS_PHASES) * 2:
+                return
+            steps.append({"phase": phase, "at": now})
+            progress["phase"] = phase
+            progress["updatedAt"] = now
+
+    def _merge_progress_snapshot(self, request_id: str) -> dict[str, Any]:
+        with self._merge_lock:
+            progress = self.__dict__.get("_merge_progress", {}).get(request_id)
+            if not progress or not progress.get("steps"):
+                return {}
+            return {
+                "phase": progress["phase"],
+                "startedAt": progress["startedAt"],
+                "updatedAt": progress["updatedAt"],
+                "steps": [dict(step) for step in progress["steps"]],
+            }
 
     def _prewarm_after_merge(self) -> None:
         try:
@@ -10490,6 +12241,8 @@ class GatewayApplication:
                     if old_id not in self._merge_threads:
                         self._merge_payload_digests.pop(old_id, None)
                         self._merge_results.pop(old_id, None)
+                        self.__dict__.get("_merge_progress", {}).pop(
+                            old_id, None)
                         break
                 if len(self._merge_payload_digests) >= MAX_MERGE_JOB_CACHE:
                     raise GatewayError("merge job capacity is exhausted")
@@ -10530,7 +12283,7 @@ class GatewayApplication:
             "ok": True,
             "status": "processing",
             "requestId": request_id,
-        }, operation)
+        }, operation, self._merge_progress_snapshot(request_id))
 
     def _actions_status(
         self, owner: str, repository: str
@@ -10913,6 +12666,8 @@ class GatewayApplication:
         delivered: bool,
         user_agent: str = "",
     ) -> bool:
+        if privacy_mode():
+            return False
         if not delivered or not 200 <= int(status) < 300:
             return False
         try:
@@ -10983,22 +12738,42 @@ class GatewayApplication:
         name: str,
         decoded_body: bytes,
         actions: bool = False,
+        rewrite: frozenset[str] | None = None,
+        default_ref: str = "",
     ) -> GatewayResponse:
         """Run one authorized receive-pack and publish its side effects."""
         if len(decoded_body) > self.config.receive_max_input_bytes:
             return json_response(
                 {"ok": False, "error": "request_too_large"}, 413)
-        output, changes = repository.receive_pack_transitions(
-            decoded_body, self.config.receive_max_input_bytes
-        )
+        output, changes, forced = repository.receive_pack_rewrites(
+            decoded_body, self.config.receive_max_input_bytes,
+            rewrite, default_ref)
         refs_changed = bool(changes)
         headers = {"Cache-Control": "no-store"}
         if changes:
             updates = []
+            looked_up = 0
             for ref, old, new in changes[:REF_UPDATES_MAX]:
                 update: dict[str, Any] = {"ref": ref, "old": old, "new": new}
                 if ref.startswith("refs/heads/"):
                     update["commits"] = repository.new_commit_count(old, new)
+                if ref in forced:
+                    update["forced"] = True
+                    if forced[ref]:
+                        update["kept"] = forced[ref]
+                if (
+                    ref.startswith("refs/heads/")
+                    and not ref.startswith(REWRITE_EXCLUDED_PREFIXES)
+                    and ref != default_ref
+                    and not _zero_oid(old)
+                    and not _zero_oid(new)
+                    and looked_up < PULL_SYNC_BRANCHES_MAX
+                ):
+                    looked_up += 1
+                    pulls = repository.open_pulls_for_head(
+                        ref[len("refs/heads/"):])
+                    if pulls:
+                        update["pulls"] = pulls
                 updates.append(update)
             report: dict[str, Any] = {
                 "total": len(changes), "updates": updates}
@@ -11240,7 +13015,7 @@ class GatewayApplication:
     def _compare(
         self, repository: GitRepository, query: Mapping[str, str]
     ) -> dict[str, Any]:
-        if "cherry" not in query and "limit" not in query:
+        if not {"cherry", "limit", "counts"} & set(query):
             return repository.compare(query)
         owner, _, name = str(query.get("cherry") or "").partition("/")
         owner = owner.lower()
@@ -11992,7 +13767,7 @@ class GatewayApplication:
                     method != "POST"
                     or set(query) - {
                         TAG_MOVES_QUERY_FIELD, PROTECT_QUERY_FIELD,
-                        PUSH_PREFIX_QUERY_FIELD}
+                        PUSH_PREFIX_QUERY_FIELD, REWRITE_QUERY_FIELD}
                     or normalized_headers.get("content-type", "")
                     .split(";", 1)[0]
                     .strip()
@@ -12014,6 +13789,12 @@ class GatewayApplication:
                     query.get(PUSH_PREFIX_QUERY_FIELD, ""))
                 if push_prefix and tag_moves:
                     raise GatewayError("contributor push grant is invalid")
+                rewrite_patterns = parse_rewrite_refs(
+                    query.get(REWRITE_QUERY_FIELD, ""))
+                if push_prefix and any(
+                        not item.startswith(push_prefix)
+                        for item in rewrite_patterns):
+                    raise GatewayError("contributor push grant is invalid")
                 enforce_push_ref_policy(commands, tag_moves)
                 enforce_protected_refs(commands, protected)
                 try:
@@ -12021,6 +13802,7 @@ class GatewayApplication:
                         commands, push_prefix,
                         prefix_refs(repository.git_dir, push_prefix)
                         if push_prefix else None)
+                    enforce_branch_deletes(commands)
                 except PushRefused as refused:
                     return GatewayResponse(
                         200,
@@ -12029,8 +13811,13 @@ class GatewayApplication:
                             decoded_body, commands, str(refused)),
                         {"Cache-Control": "no-store"},
                     )
+                default_ref = repository.default_branch_ref()
                 return self._run_receive_pack(
-                    repository, owner, name, decoded_body)
+                    repository, owner, name, decoded_body,
+                    rewrite=rewritable_refs(
+                        commands, rewrite_patterns, protected, default_ref)
+                    if rewrite_patterns else None,
+                    default_ref=default_ref)
             if method not in ("GET", "HEAD"):
                 raise GatewayError("repository operation is read-only")
             if operation == "blobs":
@@ -12071,6 +13858,13 @@ class GatewayApplication:
                         query, now_seconds,
                         pulse_exclusion_rules(self.config.node))),
                 )
+            if operation in (ISSUE_INDEX_OPERATION, ISSUE_SEARCH_OPERATION):
+                assert cache_key is not None
+                read = repository.issue_index \
+                    if operation == ISSUE_INDEX_OPERATION \
+                    else repository.issue_search
+                return self._single_flight(
+                    cache_key, lambda: _unicode_json_response(read(query)))
             function = {
                 "tree": repository.tree,
                 "blob": repository.blob,
@@ -12087,6 +13881,9 @@ class GatewayApplication:
             assert cache_key is not None
             return self._single_flight(
                 cache_key, lambda: json_response(function(query)))
+        except ComparisonTooLarge:
+            response = dispatch_error_response(
+                "comparison_too_large", 413, target)
         except GatewayError:
             response = dispatch_error_response("not_found", 404, target)
         except GitError:
@@ -12126,6 +13923,12 @@ def _decode_org_pull_rules(value: str) -> str:
 def _safe_download_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._ -]+", "_", value).strip(" .")
     return (cleaned or "file")[:180]
+
+
+def _active_media_type(value: str) -> bool:
+    media = str(value or "").split(";", 1)[0].strip().lower()
+    return (not media or "html" in media or "xml" in media
+            or "script" in media or media.startswith("multipart/"))
 
 
 class MirrorGatewayHandler(BaseHTTPRequestHandler):
@@ -12876,10 +14679,14 @@ def main(argv: list[str] | None = None) -> int:
         # default action terminates the process, so hold an early request
         # until the live handler is installed below instead of dying.
         original_hup_handler = signal.getsignal(signal.SIGHUP)
+        original_usr1_handler = signal.getsignal(signal.SIGUSR1)
         early_reload = threading.Event()
+        early_invalidation = threading.Event()
         if not args.check:
             signal.signal(
                 signal.SIGHUP, lambda *_arguments: early_reload.set())
+            signal.signal(
+                signal.SIGUSR1, lambda *_arguments: early_invalidation.set())
         application = GatewayApplication(config)
         if args.check:
             summary = {
@@ -12900,7 +14707,6 @@ def main(argv: list[str] | None = None) -> int:
             }
             print(_canonical_json(summary))
             return 0 if summary["ok"] else 1
-        application.prewarm_memory_caches()
         server = MirrorGatewayServer(
             (config.listen_host, config.listen_port), application
         )
@@ -12910,7 +14716,7 @@ def main(argv: list[str] | None = None) -> int:
         # validated application in place, leaving the listener continuously
         # available to visitors.
         previous_hup_handler = original_hup_handler
-        previous_usr1_handler = signal.getsignal(signal.SIGUSR1)
+        previous_usr1_handler = original_usr1_handler
         signal.signal(signal.SIGHUP, lambda *_arguments: server.request_reload())
         if early_reload.is_set():
             server.request_reload()
@@ -12918,6 +14724,8 @@ def main(argv: list[str] | None = None) -> int:
             signal.SIGUSR1,
             lambda *_arguments: server.request_cache_invalidation(),
         )
+        if early_invalidation.is_set():
+            server.request_cache_invalidation()
         try:
             record_gateway_generation(
                 config.config_path, config.generation_sha256)
@@ -12933,6 +14741,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 flush=True,
             )
+            server.start_prewarm()
             try:
                 server.serve_forever(poll_interval=0.5)
             except KeyboardInterrupt:

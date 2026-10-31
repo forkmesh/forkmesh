@@ -212,6 +212,7 @@ def test_staging_is_self_host_complete_without_shipping_official_blog():
             "chat-apps.js",
             "chat-attachments.js",
             "chat-crypto.js",
+            "chat-frame-auth.js",
             "chat-issue-filing.js",
             "chat-mlkem.js",
             "chat-moderation.js",

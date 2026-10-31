@@ -83,6 +83,10 @@ struct DirectCallPreviewScreen: View {
                 }
                 .padding(.horizontal, FmSpace.x4)
                 header
+                if peer != nil && !failed && !busy && !reviewing {
+                    CallQualityWidget(monitor: factory.quality)
+                        .padding(.top, 6)
+                }
                 Spacer()
                 controls
                     .padding(.bottom, FmSpace.x5)

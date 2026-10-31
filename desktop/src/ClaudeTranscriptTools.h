@@ -43,6 +43,7 @@ QString serverToolResultText(const QJsonObject &block, bool *isError = nullptr);
 
 QString parentToolUseId(const QJsonObject &event);
 QString systemNotice(const QJsonObject &event);
+QString commandLifecycleNotice(const QJsonObject &event);
 QString resultTokenSummary(const QJsonObject &resultEvent);
 
 struct TaskNotification {
@@ -73,6 +74,12 @@ struct WindowResult {
     qint64 totalChars = 0;
     int consoleErrors = 0;
     bool screenshot = false;
+    bool widget = false;
+    int events = 0;
+    QString action;
+    QString suggestion;
+    int sessionId = 0;
+    QString message;
     bool valid = false;
 };
 WindowResult parseWindowResult(const QString &text);
@@ -97,6 +104,38 @@ public:
 
 private:
     QHash<QString, qint64> m_seen;
+};
+
+class InputTokenCounter
+{
+public:
+    qint64 add(const QJsonObject &message);
+    void clear() { m_seen.clear(); }
+
+private:
+    QHash<QString, qint64> m_seen;
+};
+
+struct TokenStep {
+    qint64 in = 0;
+    qint64 out = 0;
+};
+
+class LiveTokenMeter
+{
+public:
+    static constexpr qint64 kCharsPerToken = 4;
+
+    TokenStep add(const QJsonObject &event);
+
+private:
+    TokenStep addMessage(const QJsonObject &message);
+
+    InputTokenCounter m_in;
+    OutputTokenCounter m_out;
+    QString m_message;
+    qint64 m_messageChars = 0;
+    qint64 m_codexChars = 0;
 };
 
 }

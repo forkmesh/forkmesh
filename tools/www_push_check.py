@@ -16,6 +16,8 @@ PROTECTED_REFS = ("refs/heads/main",)
 ARCHIVED = (
     "app/tools/site_templates.py",
     "app/tools/build_market_catalog.py",
+    "tools/changelog.py",
+    "changelog",
     "www/templates",
     "www/public",
     "marketplace",
@@ -43,7 +45,10 @@ def pushed_commits(stdin_text: str) -> list[str]:
 
 
 def check_commit(commit: str, worktree: Path = REPOSITORY) -> list[str]:
-    archive = git("archive", "--format=tar", commit, "--", *ARCHIVED,
+    present = [path for path in ARCHIVED
+               if git("cat-file", "-e", "%s:%s" % (commit, path), worktree=worktree,
+                      capture_output=True).returncode == 0]
+    archive = git("archive", "--format=tar", commit, "--", *(present or ARCHIVED),
                   worktree=worktree, capture_output=True)
     if archive.returncode != 0:
         return ["could not read %s: %s" % (commit[:12], archive.stderr.decode(errors="replace").strip())]

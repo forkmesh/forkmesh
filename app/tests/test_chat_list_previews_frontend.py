@@ -227,6 +227,8 @@ def test_direct_message_thread_replies_reach_the_thread_store():
     result = _run_module(f"""
       import {{ createThreadStore }}
         from {json.dumps((PUBLIC / "chat-thread-model.js").as_uri())};
+      import {{ isSealedPlain }}
+        from {json.dumps((PUBLIC / "chat-frame-auth.js").as_uri())};
       const selfId = "me";
       const MAX_NAME = 40;
       const activeChannel = {json.dumps(DIRECT)};
@@ -251,12 +253,15 @@ def test_direct_message_thread_replies_reach_the_thread_store():
         senderId: "me", sender: "jett", text: "root", ts: 1 }});
       const reply = {{ type: "thread-reply", id: "t1", rootId: "r1",
         senderId: "peer", sender: "ana", ts: 2, text: "answer",
-        channel: channelWireLabel(activeChannel) }};
+        channel: channelWireLabel(activeChannel),
+        frameAuth: {{ sealed: true, node: "peer", acct: "ana", kid: "k".repeat(16), self: false }} }};
       const stray = {{ ...reply, id: "t2", channel: "direct:" + "b".repeat(32) }};
+      const unsealed = {{ ...reply, id: "t3", frameAuth: undefined }};
       const matches = [frameMatchesScope(reply, activeChannel),
         frameMatchesScope(stray, activeChannel)];
       renderThreadEntry(reply, activeChannel);
       renderThreadEntry(reply, activeChannel);
+      renderThreadEntry(unsealed, activeChannel);
       const replies = threads.replies("r1").map((r) => ({{
         id: r.id, self: r.self, relayed: r.relayed, channel: r.channel }}));
       process.stdout.write(JSON.stringify({{

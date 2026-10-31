@@ -5,6 +5,7 @@ import ast
 import asyncio
 import hashlib
 import hmac
+import ipaddress
 import re
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -23,6 +24,7 @@ FUNCTIONS = {
     "_chat_direct_message_retained",
     "_chat_direct_message_recipient",
     "_chat_direct_message_parties",
+    "_chat_blocked_by",
     "_chat_direct_ticket",
     "_chat_direct_ticket_claims",
     "_require_data_secret",
@@ -93,6 +95,7 @@ def _helpers():
         "_INSECURE_DATA_KEYS": frozenset({"", "forkmesh-dev-data-key"}),
         "_to_js": lambda value: value,
         "hmac": hmac,
+        "ipaddress": ipaddress,
         "js_crypto": _FakeCrypto(),
         "re": re,
     }
@@ -102,7 +105,7 @@ def _helpers():
 
 def _socket_harness(participant=True, version=1, account_status="active"):
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
-    names = FUNCTIONS | {"_chat_direct_socket_handler"}
+    names = FUNCTIONS | {"_chat_direct_socket_handler", "_chat_socket_address"}
     selected = [
         node for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -149,6 +152,7 @@ def _socket_harness(participant=True, version=1, account_status="active"):
             0, result={"request": request, "target": target_url}),
         "ensure_schema": lambda _env: asyncio.sleep(0),
         "hmac": hmac,
+        "ipaddress": ipaddress,
         "js_crypto": _FakeCrypto(),
         "json_response": lambda data, status=200: {
             "status": status, "data": data},

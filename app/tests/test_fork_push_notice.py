@@ -268,3 +268,18 @@ def test_stock_git_prints_the_link_as_remote_lines(tmp_path):
     assert ("remote:      https://git.example.test/alice/BLT/compare/"
             "main...fix" in pushed.stderr), pushed.stderr
     assert "[new branch]" in pushed.stderr
+
+
+def test_a_forced_update_names_both_tips_and_recommends_a_lease():
+    plain = {("alice", "BLT"): {"owner": "alice", "name": "BLT",
+                                "branch": "main"}}
+    forced = dict(_branch("feature"), forced=True, pulls=[3],
+                  kept="refs/forkmesh/history/feature/0000000001")
+    result, upstream = _run(plain, [forced])
+    assert upstream.reads == 1
+    assert ("Forced update of 'feature' from %s to %s; the previous tip is "
+            "kept." % (OLD[:7], NEW[:7])).encode() in result
+    assert ("https://git.example.test/alice/BLT/compare/%s...%s"
+            % (OLD, NEW)).encode() in result
+    assert b"git push --force-with-lease" in result
+    assert b"Open a pull request" not in result

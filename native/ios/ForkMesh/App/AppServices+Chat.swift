@@ -5,6 +5,7 @@ import FMChat
 import FMControl
 import FMDiscord
 import FMNet
+import FMPush
 import SwiftUI
 
 @MainActor
@@ -30,7 +31,8 @@ struct ChatInstaller: AppServicesInstaller {
                     return ChatHistoryCodec.projectScope(
                         projectId: project.isEmpty ? settings.serverUrl : project, room: settings.room)
                 },
-                formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) })
+                formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) },
+                inBackground: true)
         }
         if let workspace = ChatInstaller.bindProject() { hub.workspace = workspace }
         if let switcher = Services.get(RelaySwitchController.self) {
@@ -39,6 +41,7 @@ struct ChatInstaller: AppServicesInstaller {
             switcher.onSuspend = {
                 try await suspend?()
                 await hub.leaveProject()
+                Services.get(ChatLinkPreviewService.self)?.leaveProject()
                 DirectLiveMotionFeed.shared.stop()
             }
             switcher.onResume = {
@@ -47,14 +50,24 @@ struct ChatInstaller: AppServicesInstaller {
             }
         }
         if let api = api, let sockets = Services.get(WebSocketConnector.self), let secure = Services.get(SecureStore.self) {
+            let owners: ChatNodeOwners = ChatNodeOwners(api: api)
+            let verifiedNames: PushVerifiedNames = PushVerifiedNames(
+                store: KeychainSharedItemStore(service: PushCredentialStore.service, accessGroup: PushCredentialStore.accessGroup))
+            owners.onAnswer = { (node: String, account: String) in verifiedNames.remember(node: node, account: account) }
             let office: OfficeChannelService = OfficeChannelService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
-                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" }, nodeIdentity: relay.nodeIdentity)
             let direct: DirectMessageService = DirectMessageService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
                 selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+            office.nodeOwners = owners
+            direct.onConversations = { (records: [DirectConversation]) in
+                verifiedNames.rememberDirect(records.map { (conversation: $0.conversation, account: $0.otherUser) })
+            }
             hub.office = office
             hub.direct = direct
+            hub.accountApi = api
+            relay.nodeOwners = owners
             let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
             let roomsKey: @MainActor () -> String = {
                 let account: String = (auth?.session?.nodeName ?? "").lowercased()
@@ -119,16 +132,16 @@ struct ChatInstaller: AppServicesInstaller {
                 }
                 Services.put(ChatAuthListener(auth: auth, token: token))
             }
+            var returns: AppReturnGate = AppReturnGate()
             Services.get(AppLifecycle.self)?.observe { (state: AppLifecycleState) in
                 direct.appLifecycleChanged(state)
                 if state == .hidden || state == .paused || state == .detached {
                     live.stopSharingMotion()
                     DirectLiveMotionFeed.shared.stop()
                 }
-                if state == .resumed {
-                    Task { await hub.refreshMemberDirectory() }
-                }
-                if state == .resumed && !(auth?.session?.sessionToken ?? "").isEmpty {
+                guard returns.isReturn(state) else { return }
+                Task { await hub.refreshMemberDirectory() }
+                if !(auth?.session?.sessionToken ?? "").isEmpty {
                     Task { await office.refresh() }
                     Task { await direct.refresh() }
                     Task { await hub.applyReadMarks() }
@@ -141,8 +154,15 @@ struct ChatInstaller: AppServicesInstaller {
                     if topic == "direct-messages" {
                         Task { await direct.refresh() }
                     } else if topic == ChatReadMarks.topic {
-                        Task { await hub.applyReadMarks() }
+                        Task { await hub.applyReadMarks(force: true) }
                     }
+                }
+                let previousEvent: (@MainActor (String, JSONObject) -> Void)? = events.onEvent
+                events.onEvent = { (topic: String, frame: JSONObject) in
+                    previousEvent?(topic, frame)
+                    guard topic == DirectCallEngine.ringTopic else { return }
+                    let conversation: String = frame.str("conversation")
+                    Task { await direct.openRinging(conversation) }
                 }
                 let previousConnected: (@MainActor () -> Void)? = events.onConnected
                 events.onConnected = {
@@ -152,7 +172,7 @@ struct ChatInstaller: AppServicesInstaller {
             }
         }
         _ = Services.put(
-            ChatReplySender(relay: relay, extras: hub.extras, office: { hub.office }),
+            ChatReplySender(relay: relay, extras: hub.extras, office: { hub.office }, direct: { hub.direct }),
             as: (any NotificationReplySending).self)
         if let desktops = Services.get(DesktopControlHub.self) {
             Services.put(DiscordBridge(channel: desktops))
@@ -186,7 +206,12 @@ struct ChatInstaller: AppServicesInstaller {
                 await direct.sendCallFrame(conversation, type: type, extra: extra)
             },
             look: studio.look)
+        #if canImport(WebRTC)
+        NativeCallMedia.shared.follow(studio.look)
+        calls.peerFactory = NativeCallPeerFactory.shared
+        #else
         calls.peerFactory = studio.factory
+        #endif
         calls.onMissed = { (conversation: String, media: DirectCallKind) in
             Task { _ = await direct.send(conversation, text: "📞 Missed \(media.rawValue) call") }
         }
@@ -195,7 +220,18 @@ struct ChatInstaller: AppServicesInstaller {
         }
         hub.calls = calls
         Services.put(calls)
+        #if canImport(WebRTC)
+        NativeGroupCall.shared.office = hub.office
+        hub.office?.onRoomOpened = { (conversation: String, roomName: String) in
+            Task { _ = await NativeGroupCall.shared.channelRekeyed(conversation, chatRoom: roomName) }
+        }
+        hub.onGroupCallFrame = { (frame: JSONObject, conversation: String) in
+            NativeGroupCall.shared.handleFrame(frame, conversation: conversation)
+        }
+        #endif
         CallRinger.shared.attach(calls)
+        DirectCallKit.shared.attach(calls, direct: direct)
+        DirectCallAudio.shared.attach(calls)
     }
 
     private func installLive(hub: ChatHub, direct: DirectMessageService) -> DirectLiveEngine {
@@ -219,8 +255,9 @@ struct ChatInstaller: AppServicesInstaller {
         auth.addListener {
             Task { @MainActor in await retention.syncSession() }
         }
+        var returns: AppReturnGate = AppReturnGate()
         Services.get(AppLifecycle.self)?.observe { (state: AppLifecycleState) in
-            if state != .resumed { return }
+            guard returns.isReturn(state) else { return }
             hub.pruneExpired()
             Task {
                 do {

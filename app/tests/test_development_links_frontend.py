@@ -14,7 +14,8 @@ WIRING = (ROOT / "public/dashboard/js/08-repo-detail-network.js").read_text()
 needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 FUNCTIONS = ("issueReferenceNumbers", "developmentProse", "pullClosingIssueNumbers",
-             "pullOwnIssueNumbers", "issueDevelopmentPullStates", "issueLinkedPullNumbers",
+             "pullOwnIssueNumbers", "issueDevelopmentPullStates", "issueRecordPullStates",
+             "issueLinkedPullNumbers",
              "pullLinkedIssueNumbers", "developmentLinkComment")
 CONSTANTS = ("PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK", "ISSUE_PULL_LINK_LINE")
 

@@ -313,11 +313,22 @@ PackageRegistry::~PackageRegistry() = default;
 
 const PackageManifest *PackageRegistry::package(const QString &id) const
 {
-    for (const PackageManifest &manifest : m_packages) {
-        if (manifest.id == id)
-            return &manifest;
+    const auto found = m_packageIndex.constFind(id);
+    return found == m_packageIndex.constEnd() ? nullptr
+                                              : &m_packages.at(*found);
+}
+
+void PackageRegistry::reindex()
+{
+    m_packageIndex.clear();
+    m_nestedPackages.clear();
+    for (qsizetype i = 0; i < m_packages.size(); ++i)
+        m_packageIndex.insert(m_packages.at(i).id, i);
+    for (const PackageManifest &candidate : std::as_const(m_packages)) {
+        const QString parent = marketParent(candidate.id);
+        if (!parent.isEmpty())
+            m_nestedPackages[parent].append(candidate.id);
     }
-    return nullptr;
 }
 
 QString PackageRegistry::statePrefix(const QString &id) const
@@ -355,7 +366,11 @@ bool PackageRegistry::setPackageSetting(const QString &id, const QString &key,
             *error = QStringLiteral("Invalid package setting for %1.").arg(id);
         return false;
     }
-    m_settings->setValue(packageDataPrefix(id) + QLatin1Char('/') + key, value);
+    const QString settingKey = packageDataPrefix(id) + QLatin1Char('/') + key;
+    if (m_settings->contains(settingKey) &&
+        m_settings->value(settingKey) == value)
+        return true;
+    m_settings->setValue(settingKey, value);
     m_settings->sync();
     if (m_settings->status() == QSettings::NoError)
         return true;
@@ -488,7 +503,7 @@ bool PackageRegistry::projectCreatedBefore(const QDate &date) const
         return false;
     if (!m_projectCreated.isValid())
         return true;
-    return m_projectCreated < QDateTime(date, QTime(0, 0), QTimeZone::UTC);
+    return m_projectCreated < QDateTime(date, QTime(0, 0), QTimeZone::utc());
 }
 
 bool PackageRegistry::isLegacyProject() const
@@ -725,12 +740,7 @@ QString PackageRegistry::marketParent(const QString &id) const
 
 QStringList PackageRegistry::nestedPackages(const QString &id) const
 {
-    QStringList nested;
-    for (const PackageManifest &candidate : m_packages) {
-        if (marketParent(candidate.id) == id)
-            nested.append(candidate.id);
-    }
-    return nested;
+    return m_nestedPackages.value(id);
 }
 
 bool PackageRegistry::installableHere(const PackageManifest &manifest)
@@ -1191,6 +1201,7 @@ bool PackageRegistry::loadCatalog(const QString &path, bool append)
     if (!append)
         m_packages.clear();
     m_packages += additions;
+    reindex();
     m_error.clear();
     m_warnings.append(rejected);
     return true;

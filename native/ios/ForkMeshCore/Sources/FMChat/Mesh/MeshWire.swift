@@ -16,21 +16,6 @@ public let meshMaxFrameBytes = 24 * 1024 * 1024
 public let meshMaxHandshakeBytes = 4 * 1024
 let meshMaxTextChars = 16000
 let meshMaxNameChars = 32
-let meshWakeTokenMaxChars = 200
-let meshWakeMaxTokens = 32
-let meshWakeRefreshBeforeMs: Int64 = 24 * 60 * 60 * 1000
-
-func meshWakeTokenExpiry(_ token: String) -> Int64? {
-    if token.isEmpty || token.count > meshWakeTokenMaxChars { return nil }
-    let parts = token.split(separator: ".", omittingEmptySubsequences: false)
-    guard parts.count == 4, parts[0] == "mw1", let expires = Int64(parts[2]) else { return nil }
-    return expires
-}
-
-func meshWakeTokenUsable(_ token: String, now: Int64) -> Bool {
-    guard let expires = meshWakeTokenExpiry(token) else { return false }
-    return expires > now
-}
 
 public struct MeshBeacon: Equatable, Sendable {
     public var nodeId: String
@@ -38,17 +23,19 @@ public struct MeshBeacon: Equatable, Sendable {
     public var timestampMs: Int64
     public var reply: Bool
     public var control: Bool
-    public var node: String
 
-    public init(
-        nodeId: String, port: Int, timestampMs: Int64 = 0, reply: Bool = false, control: Bool = false, node: String = ""
-    ) {
+    public init(nodeId: String, port: Int, timestampMs: Int64 = 0, reply: Bool = false, control: Bool = false) {
         self.nodeId = nodeId
         self.port = port
         self.timestampMs = timestampMs
         self.reply = reply
         self.control = control
-        self.node = node
+    }
+
+    public static func randomId() -> String {
+        var bytes = [UInt8](repeating: 0, count: 12)
+        for index in bytes.indices { bytes[index] = UInt8.random(in: 0...255) }
+        return B64.encodeUrlNoPadding(bytes)
     }
 
     public func toJSON() -> JSONObject {
@@ -60,10 +47,7 @@ public struct MeshBeacon: Equatable, Sendable {
             "ts": .int(timestampMs),
         ]
         if reply { object["reply"] = true }
-        if control {
-            object["control"] = true
-            if !node.isEmpty { object["node"] = .string(node) }
-        }
+        if control { object["control"] = true }
         return object
     }
 
@@ -85,14 +69,12 @@ public struct MeshBeacon: Equatable, Sendable {
         case .double(let d)? where d.isFinite: ts = Int64(d)
         default: ts = 0
         }
-        let control = object["control"] == .bool(true)
         return MeshBeacon(
             nodeId: dartPrefix(id, 160),
             port: portValue,
             timestampMs: ts,
             reply: object["reply"] == .bool(true),
-            control: control,
-            node: control ? dartPrefix(dartString(object["node"]).dartTrimmed, 160) : "")
+            control: object["control"] == .bool(true))
     }
 }
 

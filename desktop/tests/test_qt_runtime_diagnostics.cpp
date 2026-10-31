@@ -140,6 +140,47 @@ int main(int argc, char **argv)
     }
 
     {
+        QWidget window;
+        QWidget *doomed = nullptr;
+        for (int i = 0; i < 40; ++i) {
+            auto *row = new QWidget(&window);
+            for (int j = 0; j < 20; ++j)
+                new QTimer(row);
+            if (i == 30)
+                doomed = row;
+        }
+        diagnostics.resetSession();
+        const auto whole = diagnostics.snapshot();
+        const int slices = diagnostics.walkStructureInSlicesForTest({});
+        const auto sliced = diagnostics.snapshot();
+        if (slices < 2 || sliced.objectCount != whole.objectCount ||
+            sliced.timerCount != whole.timerCount ||
+            sliced.widgetCount != whole.widgetCount) {
+            std::fprintf(stderr,
+                         "a sliced walk counted %d objects / %d timers in %d "
+                         "slices; the whole walk counted %d / %d\n",
+                         sliced.objectCount, sliced.timerCount, slices,
+                         whole.objectCount, whole.timerCount);
+            return 1;
+        }
+        diagnostics.walkStructureInSlicesForTest([&](int slice) {
+            if (slice == 1 && doomed) {
+                delete doomed;
+                doomed = nullptr;
+            }
+        });
+        const auto after = diagnostics.snapshot();
+        if (doomed || after.objectCount > whole.objectCount ||
+            after.objectCount < whole.objectCount - 21) {
+            std::fprintf(stderr,
+                         "a walk that lost a subtree mid-way counted %d "
+                         "objects (whole walk %d)\n",
+                         after.objectCount, whole.objectCount);
+            return 1;
+        }
+    }
+
+    {
         diagnostics.resetSession();
         QWidget host;
         host.setObjectName(QStringLiteral("paintHost"));

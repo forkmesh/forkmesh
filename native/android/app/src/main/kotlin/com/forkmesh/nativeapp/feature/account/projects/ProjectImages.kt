@@ -142,7 +142,18 @@ object ProjectImages {
 
     fun fetch(origin: String, logoUrl: String = "", favicon: Boolean = true): Bitmap? {
         val favicons = if (favicon) listOf("/favicon.ico", "/favicon/favicon.ico").map { origin + it } else emptyList()
-        val urls = listOf(logoUrl).filter { it.isNotEmpty() } + favicons
+        return instanceLogo(listOf(logoUrl).filter { it.isNotEmpty() } + favicons)
+    }
+
+    private val directoryLogos = java.util.concurrent.ConcurrentHashMap<String, Bitmap>()
+
+    fun directoryLogo(url: String): Bitmap? {
+        if (url.isEmpty()) return null
+        directoryLogos[url]?.let { return it }
+        return instanceLogo(listOf(url))?.also { directoryLogos[url] = it }
+    }
+
+    fun instanceLogo(urls: List<String>): Bitmap? {
         for (url in urls) {
             val response = runCatching { HttpClient.Request.get(url).timeouts(8_000, 10_000).send() }.getOrNull() ?: continue
             if (response.status != 200 || response.body.isEmpty()) continue

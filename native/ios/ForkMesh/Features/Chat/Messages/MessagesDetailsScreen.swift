@@ -18,13 +18,11 @@ struct MessagesDetailsScreen: View {
     @State private var pictureFor: String?
     @State private var pictures: MessagesPeoplePictures = MessagesPeoplePictures.shared
     @State private var background: Bool = false
-    @State private var inviting: Bool = false
     @State private var adding: Bool = false
     @State private var newMember: String = ""
     @State private var officeMembers: [String]?
     @State private var managing: OfficeRoom?
     @State private var confirmClear: Bool = false
-    @State private var confirmLeave: Bool = false
     @State private var confirmBlock: Bool = false
     @State private var viewing: MessagesPhotoBox?
     @State private var working: Bool = false
@@ -98,11 +96,6 @@ struct MessagesDetailsScreen: View {
                     Button(role: .destructive, action: { confirmClear = true }) {
                         Label("Delete Conversation", systemImage: "trash")
                     }
-                    if group && officeRoom == nil {
-                        Button(role: .destructive, action: { confirmLeave = true }) {
-                            Label("Leave this Conversation", systemImage: "rectangle.portrait.and.arrow.right")
-                        }
-                    }
                 }
             }
             .listStyle(.insetGrouped)
@@ -112,7 +105,6 @@ struct MessagesDetailsScreen: View {
             .overlay { if working { ProgressView() } }
             .task { await loadMembers() }
             .sheet(isPresented: $background) { MessagesBackgroundPicker(hub: hub) }
-            .sheet(isPresented: $inviting) { InviteToChannelSheet(hub: hub, channel: conversation) }
             .sheet(item: $managing) { (room: OfficeRoom) in
                 if let office = hub.office {
                     NavigationStack { OfficeChannelSettingsScreen(office: office, room: room) }
@@ -156,14 +148,6 @@ struct MessagesDetailsScreen: View {
                 }
             } message: {
                 Text("Their messages, typing and alerts are hidden on this phone. You can unblock them from their profile.")
-            }
-            .confirmationDialog("Leave this conversation?", isPresented: $confirmLeave, titleVisibility: .visible) {
-                Button("Leave", role: .destructive) {
-                    hub.leaveGroupConversation()
-                    dismiss()
-                }
-            } message: {
-                Text("It disappears from this phone, and messages sent there stop arriving here.")
             }
         }
     }
@@ -226,12 +210,8 @@ struct MessagesDetailsScreen: View {
                     }
                 }
             }
-            if let room = officeRoom {
-                if room.canManage {
-                    Button(action: { adding = true }) { Label("Add People", systemImage: "person.badge.plus") }
-                }
-            } else if hub.extras.isPrivate(conversation) {
-                Button(action: { inviting = true }) { Label("Add People", systemImage: "person.badge.plus") }
+            if let room = officeRoom, room.canManage {
+                Button(action: { adding = true }) { Label("Add People", systemImage: "person.badge.plus") }
             }
         } header: {
             Text(members.count == 1 ? "1 Person" : "\(members.count) People")

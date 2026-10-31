@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # name: Deploy new version
-# description: Cut the next version, reset every platform's build number to 1, then run the Android, Linux, Windows and macOS deploy shortcuts so the homepage offers the new version everywhere.
+# description: Cut the next version, reset every platform's build number to 0, then run the Android, Linux, Windows and macOS deploy shortcuts so the homepage offers the new version everywhere.
 
 # step: Cut the new version
 set -euo pipefail
@@ -13,7 +13,7 @@ tag=$(printf '%s' "$reply" | python3 -c 'import json, sys; print(json.load(sys.s
 # step: Wait for the release candidate
 python3 -u tools/forkmesh-release-host.py --wait-candidate --tag "$tag"
 
-# step: Reset build numbers to 1
+# step: Reset build numbers to 0
 python3 -u tools/forkmesh-release-host.py --reset-builds --tag "$tag"
 
 # step: Deploy Android build

@@ -2,7 +2,12 @@ package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.control.LocalControlException
+import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
+import com.forkmesh.nativeapp.crypto.ChatNodeKey
+import com.forkmesh.nativeapp.crypto.ChatV3
 import com.forkmesh.nativeapp.crypto.RoomCrypto
+import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.MemorySecretStore
@@ -112,42 +117,51 @@ class OfficeChannelsTest {
             "room" to room, "passphrase" to "office-pass", "webSocketUrl" to "/api/chat/channels/$roomId/ws?ticket=abc",
         )
         val crypto = RoomCrypto.withPassphrase(room, "office-pass")
-        val earlier = crypto.encrypt(mapOf("type" to "chat", "id" to "old-1", "senderId" to "peer", "sender" to "Pat", "text" to "earlier", "ts" to 5L)) + ("recipients" to 2L)
+        val earlier = crypto.encrypt(mapOf("type" to "chat", "id" to "old-1", "senderId" to "webhook:ci", "sender" to "CI", "channel" to "#lobby", "text" to "earlier", "ts" to 5L)) +
+            mapOf("recipients" to 2L, "srv" to true)
+        val unmarked = crypto.encrypt(mapOf("type" to "chat", "id" to "old-2", "senderId" to "peer", "sender" to "Pat", "channel" to "#lobby", "text" to "unmarked", "ts" to 6L))
         api.replies["GET /api/chat/channels/$roomId/history"] = mapOf(
-            "room" to room, "passphrase" to "office-pass", "messages" to listOf(mapOf("ts" to 5L, "body" to Json.stringify(earlier))),
+            "room" to room, "passphrase" to "office-pass",
+            "messages" to listOf(mapOf("ts" to 5L, "body" to Json.stringify(earlier)), mapOf("ts" to 6L, "body" to Json.stringify(unmarked))),
         )
         val connector = FakeOfficeConnector()
-        val service = OfficeChannelService(api, connector, MemorySecretStore(), { "https://app.forkmesh.com" }, { "me-node" }, { "Me" })
+        val me = ChatNodeKey.generate()
+        val service = OfficeChannelService(api, connector, MemorySecretStore(), { "https://app.forkmesh.com" }, { me.node }, { "Me" }, nodeKey = { me })
         service.refresh()
         assertEq(listOf("#office/lobby"), service.conversations)
         service.loadHistory("#office/lobby")
-        assertEq(listOf("earlier"), service.messages("#office/lobby").map { it.text })
+        assertEq(listOf("earlier"), service.messages("#office/lobby").map { it.text }, "only server-marked frames may be unsealed")
+        assertEq("webhook:ci", service.messages("#office/lobby").first().senderId)
         assertEq(2, service.messages("#office/lobby").first().recipients)
-        expect(service.send("#office/lobby", "hi office"))
+        expect(service.open("#office/lobby"))
         assertEq("wss://app.forkmesh.com/api/chat/channels/$roomId/ws?ticket=abc", connector.urls.single())
         val socket = connector.last!!
-        expect(socket.sent.size >= 2)
-        val envelopes = socket.sent.map { Json.parseObject(it) }
-        val chatEnvelope = envelopes.first { crypto.decrypt(it)?.get("type") == "chat" }
-        val chat = crypto.decrypt(chatEnvelope)!!
+        val ownBundle = crypto.decrypt(Json.parseObject(socket.sent.first()))!!
+        expect(RoomSeal.isKeyFrame(ownBundle) && ChatV3.verifyNodeBinding(ownBundle, room), "the office bundle is bound to the node key")
+        val peer = RoomSeal.create(room, room, SealPolicy.OPEN, "pat", ChatDeviceKeys.fromSeed(ByteArray(32) { 9 }), nodeKey = ChatNodeKey.generate())
+        peer.acceptKeyFrame(ownBundle)
+        socket.onText(Json.stringify(crypto.encrypt(peer.keyFrame())))
+        expect(service.send("#office/lobby", "hi office"))
+        val chatText = socket.sent.first { RoomSeal.isSealedFrame(crypto.decrypt(Json.parseObject(it)).orEmpty()) }
+        val chatEnvelope = Json.parseObject(chatText)
+        val chat = peer.unseal(crypto.decrypt(chatEnvelope)!!)!!
         assertEq("hi office", chat["text"])
         assertEq("#lobby", chat["channel"])
+        assertEq(me.node, chat["senderId"])
         assertEq(true, chatEnvelope["persist"])
-        val chatText = socket.sent.first { crypto.decrypt(Json.parseObject(it))?.get("type") == "chat" }
+        expect(socket.sent.none { crypto.decrypt(Json.parseObject(it))?.get("type") == "chat" }, "a public office room is sealed too")
         assertEq(null, service.messages("#office/lobby").first { it.self }.recipients)
         val ownId = service.messages("#office/lobby").first { it.self }.id
         assertEq(ChatReceipt.SENDING, service.receipt(ownId))
         socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1L, "ref" to OfficeFrames.sentRef(chatText), "recipients" to 4L)))
         assertEq(4, service.messages("#office/lobby").first { it.self }.recipients)
         assertEq(null, service.receipt(ownId))
-        socket.onText(
-            Json.stringify(
-                crypto.encrypt(mapOf("type" to "chat", "id" to "live-1", "senderId" to "peer", "sender" to "Pat", "text" to "welcome", "ts" to 9_999_999_999_999L)) +
-                    ("recipients" to 3L),
-            ),
-        )
+        socket.onText(Json.stringify(crypto.encrypt(mapOf("type" to "chat", "id" to "live-0", "senderId" to "peer", "sender" to "Pat", "channel" to "#lobby", "text" to "forged", "ts" to 9_999_999_999_000L))))
+        val welcome = peer.seal(mapOf("type" to "chat", "id" to "live-1", "senderId" to peer.node, "sender" to "Pat", "channel" to "#lobby", "text" to "welcome", "ts" to System.currentTimeMillis()))
+        socket.onText(Json.stringify(crypto.encrypt(welcome) + ("recipients" to 3L)))
         assertEq(listOf("earlier", "hi office", "welcome"), service.messages("#office/lobby").map { it.text })
         assertEq(listOf(2, 4, 3), service.messages("#office/lobby").map { it.recipients })
+        assertEq(peer.node, service.messages("#office/lobby").last().senderId)
         expect(service.isConnected("#office/lobby"))
         service.closeAll()
         expect(socket.closed)
@@ -175,15 +189,22 @@ class OfficeChannelsTest {
         val noticesCrypto = RoomCrypto.withPassphrase(noticesRoom, "notices-pass")
         api.replies["GET /api/chat/channels/$noticesId/history"] = mapOf(
             "room" to noticesRoom, "passphrase" to "notices-pass",
-            "messages" to listOf(mapOf("ts" to 5L, "body" to Json.stringify(noticesCrypto.encrypt(note)))),
+            "messages" to listOf(mapOf("ts" to 5L, "body" to Json.stringify(noticesCrypto.encrypt(note) + ("srv" to true)))),
         )
         api.replies["GET /api/chat/channels/$noticesId/room-access"] = mapOf(
             "room" to noticesRoom, "passphrase" to "notices-pass", "webSocketUrl" to "/api/chat/channels/$noticesId/ws?ticket=n",
         )
         val secretCrypto = RoomCrypto.withPassphrase(secretRoom, "secret-pass")
+        val hook = mapOf(
+            "type" to "chat", "id" to "hook-1", "senderId" to "webhook:w1", "sender" to "Deploys",
+            "ts" to 5L, "text" to "build 42 passed", "webhook" to true, "serverVisible" to true,
+        )
         api.replies["GET /api/chat/channels/$roomId/history"] = mapOf(
             "room" to secretRoom, "passphrase" to "secret-pass",
-            "messages" to listOf(mapOf("ts" to 5L, "body" to Json.stringify(secretCrypto.encrypt(note)))),
+            "messages" to listOf(
+                mapOf("ts" to 5L, "body" to Json.stringify(secretCrypto.encrypt(hook) + ("srv" to true))),
+                mapOf("ts" to 6L, "body" to Json.stringify(secretCrypto.encrypt(hook + mapOf("id" to "hook-x", "text" to "unmarked")))),
+            ),
         )
         val connector = FakeOfficeConnector()
         val service = OfficeChannelService(api, connector, MemorySecretStore(), { "https://app.forkmesh.com" }, { "me-node" }, { "Me" })
@@ -194,9 +215,15 @@ class OfficeChannelsTest {
         service.loadHistory("#office/email-log")
         assertEq(listOf("2026-09-28 17:35:58Z · Verification · accepted"), service.messages("#office/email-log").map { it.text })
         service.loadHistory("#office/secret")
-        expect(service.messages("#office/secret").isEmpty())
+        val hooked = service.messages("#office/secret")
+        assertEq(listOf("build 42 passed"), hooked.map { it.text }, "a private channel's webhook shows; an unmarked unsealed frame does not")
+        assertEq("webhook:w1", hooked.single().senderId)
+        assertEq("Deploys", hooked.single().senderName)
+        expect(hooked.single().serverVisible, "marked server-visible")
+        expect(service.messages("#office/email-log").none { it.serverVisible }, "only frames that say so are marked")
         expect(service.open("#office/email-log"))
-        connector.last!!.onText(Json.stringify(noticesCrypto.encrypt(note + mapOf("id" to "note-2", "ts" to 6L, "text" to "delivered"))))
+        connector.last!!.onText(Json.stringify(noticesCrypto.encrypt(note + mapOf("id" to "note-x", "ts" to 6L, "text" to "unmarked"))))
+        connector.last!!.onText(Json.stringify(noticesCrypto.encrypt(note + mapOf("id" to "note-2", "ts" to 6L, "text" to "delivered")) + ("srv" to true)))
         assertEq(listOf("2026-09-28 17:35:58Z · Verification · accepted", "delivered"), service.messages("#office/email-log").map { it.text })
         val sentBefore = connector.last!!.sent.size
         expect(!service.send("#office/email-log", "hello"))

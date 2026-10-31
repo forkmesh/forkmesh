@@ -26,6 +26,7 @@ private:
     void showDiagnostics();
     void loadReport();
     void turnOff();
+    void closeToHeadless();
 
     std::function<void()> m_openSettings;
     forkmesh::background::RunnerDiagnostics m_diagnostics;

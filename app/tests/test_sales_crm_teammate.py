@@ -5,9 +5,11 @@ import json
 import re
 from pathlib import Path
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-SALES_CONFIG = PROJECT / ".forkmesh" / "teammates" / "sales.json"
+SALES_CONFIG = PROJECT / ".forkmesh" / "workflows" / "sales.json"
 SHORTCUT = PROJECT / ".forkmesh" / "shortcuts" / "work-the-crm-pipeline.md"
 TEAMMATE_STORE = PROJECT / "desktop" / "src" / "TeammateStore.cpp"
 AVATAR_SOURCE = PROJECT / "desktop" / "src" / "MainWindowInternal2.cpp"
@@ -25,10 +27,10 @@ def _load_without_duplicate_keys(path):
             result[key] = value
         return result
 
-    return json.loads(
+    return as_teammate(json.loads(
         path.read_text(encoding="utf-8"),
         object_pairs_hook=unique_object,
-    )
+    ))
 
 
 def _known_permissions():

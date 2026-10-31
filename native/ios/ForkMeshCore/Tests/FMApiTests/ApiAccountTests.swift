@@ -37,6 +37,18 @@ final class ApiAccountTests: XCTestCase {
         XCTAssertEqual(request.bodyText, #"{"deviceToken":"\#(token)","environment":"development"}"#)
     }
 
+    func testRegisteringSendsTheVoipTokenBesideTheAlertToken() async throws {
+        let http = FakeHTTPClient()
+        http.enqueue(status: 200, json: ["ok": true])
+        let api = ApiPortFixture.api(http)
+        let token = String(repeating: "a", count: 64)
+        let voip = String(repeating: "b", count: 64)
+        _ = await api.registerPushDevice(deviceToken: token, environment: "production", voipToken: voip)
+        let body = JSON.parseObject(try XCTUnwrap(http.requests.first).bodyText)
+        XCTAssertEqual(body["voipToken"]?.text, voip)
+        XCTAssertEqual(body["deviceToken"]?.text, token)
+    }
+
     func testRegistrationNeverThrows() async {
         let empty = FakeHTTPClient { _ in portJSON(["ok": true]) }
         let none = await ApiPortFixture.api(empty).registerPushDevice(deviceToken: "", environment: "production")

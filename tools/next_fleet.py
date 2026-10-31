@@ -18,8 +18,8 @@
     next_fleet.py destroy nN|rN   --yes [--execute] [--force]
     next_fleet.py replace-core nOLD --new nNEW [--execute]
     next_fleet.py enable-ipv6 nN|rN [--reboot] [--execute]
-    next_fleet.py add-core [--region R] [--plan P] [--snapshot ID] [--name nN] [--execute]
-    next_fleet.py add-core-options [--json]
+    next_fleet.py add-core [--region R] [--plan P] [--snapshot ID] [--name nN] [--replace nOLD] [--execute]
+    next_fleet.py add-core-options [--replace nOLD] [--json]
     next_fleet.py add-core-status  [--name nN] [--json]
     next_fleet.py remove-core nN [--destroy-instance] [--execute]
     next_fleet.py remove-core-plan nN [--destroy-instance] [--json]
@@ -97,16 +97,16 @@ RUNNER_APT_PACKAGES = (
 )
 # "daemon" (the Go daemon, role core/runner) runs after the first app deploy:
 # the daemon's catalog and lease calls need the App to answer.
-INSTALL_STEPS = ("base", "wireguard", "rqlite", "turn", "files", "caddy",
-                 "secrets", "start")
-RUNNER_STEPS = ("base", "files", "start")
-APP_STEPS = ("base", "wireguard", "ids", "rqlite", "turn", "files", "caddy",
-             "secrets", "start")
-BURST_STEPS = ("base", "ids", "files", "secrets", "start", "daemon")
+INSTALL_STEPS = ("base", "wireguard", "rqlite", "turn", "calls", "ssh-port",
+                 "files", "caddy", "secrets", "start")
+RUNNER_STEPS = ("base", "ssh-port", "files", "start")
+APP_STEPS = ("base", "wireguard", "ids", "rqlite", "turn", "ssh-port", "files",
+             "caddy", "secrets", "start")
+BURST_STEPS = ("base", "ids", "ssh-port", "files", "secrets", "start", "daemon")
 # "ids" generates the node's IDS signing key on the node (docs/IDS.md); run
 # it on every node before the files step that first renders the IDS.
 ALL_STEPS = INSTALL_STEPS + ("daemon", "ids", "caddy-debian", "logread")
-CORE_ONLY_STEPS = ("caddy", "caddy-debian", "turn")
+CORE_ONLY_STEPS = ("caddy", "caddy-debian", "turn", "calls")
 # Files the Go daemon runs next to itself (desktop MainWindowHostInstall.cpp).
 DAEMON_TOOLS = (
     "tools/mirror_gateway.py", "app/src/mirror_replica.py",
@@ -127,6 +127,7 @@ DEFAULT_SECRETS = {
     # (tools/next_ids.py node_key; each node gets only its own).
     "FMNEXT_IDS_MASTER": lambda: _secrets.token_urlsafe(48),
     "OFFICE_TURN_SECRET": lambda: _secrets.token_urlsafe(48),
+    "FORKMESH_CALLS_SECRET": lambda: _secrets.token_urlsafe(48),
 }
 IDS_MASTER = "FMNEXT_IDS_MASTER"
 CERTSYNC_SECRET = "FORKMESH_CERTSYNC_SECRET"
@@ -467,10 +468,12 @@ def create(kind, number, vultr, runner, os_id=None, plan_id=None,
 
 OPTIONAL_SECRETS_RE = re.compile(r"(?ms)^optional_secrets = \[.*?^\]$|^optional_secrets = \[\]$")
 VAULT_RES = (re.compile(r"(?m)^vault = (?:true|false)$"),
-             re.compile(r"(?m)^vault_peer_unseal = (?:true|false)$"))
+             re.compile(r"(?m)^vault_peer_unseal = (?:true|false)$"),
+             re.compile(r"(?m)^ssh_port = [0-9]+$"))
 # The [ids] table (fingerprints, allowlist, operator key) is this fleet's own.
 IDS_SECTION_RE = re.compile(r"(?ms)^\[ids\]\n.*?(?=^\[|\Z)")
 TURN_SECTION_RE = re.compile(r"(?ms)^\[turn\]\n.*?(?=^\[|\Z)")
+CALLS_SECTION_RE = re.compile(r"(?ms)^\[calls\]\n.*?(?=^\[|\Z)")
 PRODUCTION_SECTION_RE = re.compile(
     r"(?ms)^\[production\]\n.*?(?=^\[(?!production\.)|\Z)")
 HOSTED_SECTION_RE = re.compile(r"(?ms)^\[hosted\]\n.*?(?=^\[|\Z)")
@@ -578,6 +581,9 @@ def fleet_toml_text(instances, state=None, example=None, current=None):
     kept_turn = TURN_SECTION_RE.search(current or "")
     if kept_turn and TURN_SECTION_RE.search(header):
         header = TURN_SECTION_RE.sub(lambda _m: kept_turn.group(0), header, count=1)
+    kept_calls = CALLS_SECTION_RE.search(current or "")
+    if kept_calls and CALLS_SECTION_RE.search(header):
+        header = CALLS_SECTION_RE.sub(lambda _m: kept_calls.group(0), header, count=1)
     kept_production = PRODUCTION_SECTION_RE.search(current or "")
     if kept_production and not PRODUCTION_SECTION_RE.search(header):
         anchor = re.search(r"(?m)^\[dns\]$", header)
@@ -624,7 +630,8 @@ def shq(value):
 def base_script(role):
     users = ["forkmesh-node"]
     if role == "core":
-        users += ["rqlite", "forkmesh-app", "fmnext-certsync", "fmnext-build"]
+        users += ["rqlite", "forkmesh-app", "fmnext-certsync", "fmnext-build",
+                  "fmnext-calls"]
     else:
         users += [JOB_USER]
     lines = [
@@ -864,6 +871,9 @@ RQLITE_UNIT_DIGEST = ("{ cat /etc/systemd/system/rqlite.service "
 DAEMON_UNIT_DIGEST = ("{ cat /etc/systemd/system/forkmesh-mirror-node.service "
                       "/etc/systemd/system/forkmesh-mirror-node.service.d/*.conf 2>/dev/null "
                       "|| true; } | sha256sum")
+CALLS_UNIT_DIGEST = ("{ cat /etc/systemd/system/fmnext-calls.service "
+                     "/etc/systemd/system/fmnext-calls.service.d/*.conf 2>/dev/null "
+                     "|| true; } | sha256sum")
 
 
 def files_script(manifest, archive):
@@ -877,6 +887,9 @@ def files_script(manifest, archive):
     if is_core:
         lines.append("rqlite_unit_before=$(%s)" % RQLITE_UNIT_DIGEST)
     lines.append("daemon_unit_before=$(%s)" % DAEMON_UNIT_DIGEST)
+    calls = "/etc/systemd/system/fmnext-calls.service" in manifest["files"]
+    if calls:
+        lines.append("calls_unit_before=$(%s)" % CALLS_UNIT_DIGEST)
     for path, mode in sorted(manifest["files"].items()):
         lines.append("install -D -m %s \"$stage\"%s %s" % (
             mode.replace("0o", "0"), shq(path), shq(path)))
@@ -933,11 +946,15 @@ def files_script(manifest, archive):
     lines.append("if [ \"$daemon_unit_before\" != \"$(%s)\" ] && "
                  "systemctl is-active -q forkmesh-mirror-node.service; then "
                  "systemctl restart forkmesh-mirror-node.service; fi" % DAEMON_UNIT_DIGEST)
+    if calls:
+        lines.append("if [ \"$calls_unit_before\" != \"$(%s)\" ] && "
+                     "systemctl is-active -q fmnext-calls.service; then "
+                     "systemctl restart fmnext-calls.service; fi" % CALLS_UNIT_DIGEST)
     return "\n".join(lines)
 
 
 CADDY_INSTALL_WAIT = 180
-CADDY_INSTALL_MAX_TIME = 15
+CADDY_INSTALL_MAX_TIME = 35
 
 RESTART_FAIL2BAN = "systemctl try-restart fail2ban.service || true"
 
@@ -1216,6 +1233,124 @@ def rqlite_tarball(fleet):
     return version, rq.get("sha256", ""), path
 
 
+SSH_PORT_CONF = "/etc/ssh/sshd_config.d/05-fmnext-port.conf"
+SSH_PORT_STAGE = "/run/fmnext-ssh-port"
+SSH_PORT_ROLLBACK_UNIT = "fmnext-ssh-port-rollback"
+SSH_PORT_ROLLBACK_SECONDS = 180
+SSH_PORT_FILES = (("nftables", "/etc/nftables.conf"),
+                  ("ids", "/etc/forkmesh-next/ids.json"),
+                  ("fail2ban", "/etc/fail2ban/jail.d/fmnext-sshd.local"),
+                  ("port", SSH_PORT_CONF))
+NFT_MANAGED = "Managed by deploy/core/render.py"
+
+
+def ssh_port_files(fleet, name, replacement=False):
+    import render
+    files, _ = render_node(fleet, name, replacement)
+    subset = {path: files[path] for _key, path in SSH_PORT_FILES
+              if path in files}
+    subset[SSH_PORT_CONF] = ("Port %d\n" % render.ssh_port(fleet), 0o644)
+    return subset
+
+
+def ssh_port_image_script(fleet):
+    import render
+    port = render.ssh_port(fleet)
+    return "\n".join([
+        "install -d -m 0755 /etc/ssh/sshd_config.d",
+        "printf 'Port %d\\n' >%s" % (port, SSH_PORT_CONF),
+        "sshd -t",
+        "if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | "
+        "grep -q 'Status: active'; then ufw allow %d/tcp >/dev/null; fi" % port])
+
+
+def ssh_port_script(port, files, archive):
+    stage = SSH_PORT_STAGE
+    restore = []
+    for key, path in SSH_PORT_FILES:
+        restore.append("if [ -e %s/%s.bak ]; then cp -p %s/%s.bak %s; else rm -f %s; fi"
+                       % (stage, key, stage, key, shq(path), shq(path)))
+    rollback = "\n".join(restore + [
+        "if [ -e %s/nft ]; then nft -f /etc/nftables.conf || true; fi" % stage,
+        "if [ -e %s/ufw ]; then ufw delete allow %d/tcp >/dev/null || true; fi"
+        % (stage, port),
+        "systemctl reload ssh || true",
+        "systemctl try-restart fmnext-ids.service fail2ban.service || true",
+        "echo 'fmnext ssh-port: rolled back to the previous sshd and firewall'"])
+    lines = [
+        "if systemctl is-active -q ssh.socket; then echo 'ssh.socket is "
+        "active: sshd would ignore Port; nothing changed' >&2; exit 3; fi",
+        "systemctl stop %s.timer >/dev/null 2>&1 || true" % SSH_PORT_ROLLBACK_UNIT,
+        "install -d -m 0700 %s %s/new" % (stage, stage),
+        "rm -f %s/*.bak %s/nft %s/ufw" % (stage, stage, stage),
+        "tar -xzf %s -C %s/new" % (shq(archive), stage),
+        "rm -f %s" % shq(archive),
+    ]
+    for key, path in SSH_PORT_FILES:
+        lines.append("if [ -e %s ]; then cp -p %s %s/%s.bak; fi"
+                     % (shq(path), shq(path), stage, key))
+    lines += [
+        "cat >%s/rollback.sh <<'ROLLBACK'\n%s\nROLLBACK" % (stage, rollback),
+        "systemd-run --quiet --unit=%s --on-active=%d /bin/bash %s/rollback.sh"
+        % (SSH_PORT_ROLLBACK_UNIT, SSH_PORT_ROLLBACK_SECONDS, stage),
+    ]
+    for path, (_content, mode) in sorted(files.items()):
+        lines.append("install -D -m %04o %s/new%s %s" % (mode, stage, path, shq(path)))
+    lines += [
+        "if ! sshd -t; then bash %s/rollback.sh; exit 4; fi" % stage,
+        "ports=$(sshd -T | awk '$1 == \"port\" {print $2}' | sort -u | tr '\\n' ' ')",
+        "if [ \"$ports\" != '%d ' ]; then echo \"sshd would listen on $ports"
+        "(another Port line in /etc/ssh/sshd_config?)\" >&2; bash %s/rollback.sh; "
+        "exit 5; fi" % (port, stage),
+        "if grep -qF %s %s/nftables.bak 2>/dev/null && systemctl is-active -q "
+        "nftables.service; then nft -c -f /etc/nftables.conf && nft -f "
+        "/etc/nftables.conf && touch %s/nft; elif command -v ufw >/dev/null 2>&1 && "
+        "ufw status 2>/dev/null | grep -q 'Status: active'; then ufw allow %d/tcp "
+        ">/dev/null && touch %s/ufw; fi" % (shq(NFT_MANAGED), stage, stage, port, stage),
+        "systemctl reload ssh",
+        "systemctl try-restart fmnext-ids.service fail2ban.service || true",
+    ]
+    return "\n".join(lines)
+
+
+def ssh_port_disarm_script():
+    stage = SSH_PORT_STAGE
+    return "\n".join([
+        "systemctl stop %s.timer >/dev/null 2>&1 || true" % SSH_PORT_ROLLBACK_UNIT,
+        "rm -f %s/*.bak %s/nft %s/ufw %s/rollback.sh" % (stage, stage, stage, stage)])
+
+
+def install_ssh_port(fleet, name, ip, ssh, runner, replacement=False):
+    import render
+    port = render.ssh_port(fleet)
+    files = ssh_port_files(fleet, name, replacement)
+
+    def action():
+        current = ssh.port(ip)
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp, "ssh-port.tar.gz")
+            archive.write_bytes(tar_files(files))
+            ssh.put(ip, archive, "/tmp/fmnext-ssh-port.tar.gz")
+        ssh.run(ip, ssh_port_script(port, files, "/tmp/fmnext-ssh-port.tar.gz"))
+        ssh.use_port(ip, port)
+        completed = ssh.run_strict(ip, SSH_IDENTITY_SCRIPT)
+        lines = (completed.stdout or b"").decode("utf-8", "replace").split()
+        if completed.returncode != 0 or not lines or lines[0] not in (
+                "%s.%s" % (name, fleet.get("domain", "")), name,
+                parse_target(name)[2]):
+            ssh.use_port(ip, current)
+            raise ToolError(
+                "%s: no pinned answer on port %d (%s); the node puts its "
+                "previous sshd and firewall back within %d s" % (
+                    name, port, (completed.stderr or b"").decode(
+                        "utf-8", "replace").strip()[-300:],
+                    SSH_PORT_ROLLBACK_SECONDS))
+        ssh.run(ip, ssh_port_disarm_script())
+    runner.step("%s: move sshd to port %d (firewall, IDS and fail2ban too), "
+                "check it over a new connection, roll back by itself in %d s "
+                "otherwise" % (name, port, SSH_PORT_ROLLBACK_SECONDS), action)
+
+
 def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
             state_path=None, idle_guard=False):
     ip = node_ip(fleet, name)
@@ -1224,6 +1359,15 @@ def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
         verify_target(vultr, ssh, fleet, name, ip)
     role = "core" if is_core_like(name) else "runner"
     import next_ids
+    import render
+    if runner.execute and "files" in steps and "ssh-port" not in steps[
+            :steps.index("files")] and hasattr(ssh, "port") and ssh.port(
+            ip) != render.ssh_port(fleet):
+        runner.say("%s answers on SSH port %d, not %d: moving sshd before the "
+                   "files step closes the old port" % (
+                       name, ssh.port(ip), render.ssh_port(fleet)))
+        steps = list(steps)
+        steps.insert(steps.index("files"), "ssh-port")
     for step in steps:
         # Tell the node's IDS first, so the step's changes are expected
         # (a no-op until the IDS runs there; docs/IDS.md).
@@ -1232,6 +1376,8 @@ def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
             script = base_script(role)
             runner.step("%s: apt packages, users, dirs, swapfile, key-only sshd" % name,
                         lambda: ssh.run(ip, script))
+        elif step == "ssh-port":
+            install_ssh_port(fleet, name, ip, ssh, runner, replacement)
         elif step == "wireguard":
             def keygen():
                 out = ssh.run(ip, WIREGUARD_KEY_SCRIPT).stdout.decode().strip()
@@ -1278,6 +1424,10 @@ def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
             if not is_core_like(name):
                 raise ToolError("step turn is for core nodes only")
             install_turn(fleet, name, ip, ssh, runner)
+        elif step == "calls":
+            if not is_core_like(name):
+                raise ToolError("step calls is for core nodes only")
+            install_calls(fleet, name, ip, ssh, runner)
         elif step == "daemon":
             install_daemon(fleet, name, ip, ssh, runner, idle_guard=idle_guard)
         elif step == "ids":
@@ -1495,9 +1645,10 @@ def install_daemon(fleet, name, ip, ssh, runner, idle_guard=False):
                     name, "core" if name.startswith("n") else "runner"), action)
 
 
-ROLL_STEPS = ("daemon", "turn", "files", "start")
+ROLL_STEPS = ("daemon", "turn", "calls", "files", "start")
 ROLL_HEALTH_SECONDS = 90
 ROLL_READD_SECONDS = 600
+ROLL_DRAIN_MARGIN_SECONDS = 30
 
 
 ROLL_LOCK_WAIT_SECONDS = 30 * 60
@@ -1531,6 +1682,8 @@ def roll(fleet, names, ssh, runner, steps=ROLL_STEPS, mail=False, vultr=None,
     done = []
     if runner.execute and "turn" in steps:
         turn_payloads(fleet, common.read_env_file(secrets_path()))
+    if runner.execute and "calls" in steps:
+        calls_payloads(fleet, common.read_env_file(secrets_path()))
     for name in names:
         ip = node_ip(fleet, name)
         started = clock()
@@ -1539,8 +1692,14 @@ def roll(fleet, names, ssh, runner, steps=ROLL_STEPS, mail=False, vultr=None,
             if next_dns.main(extra + ["drain", name, "--execute"]) != 0:
                 raise ToolError("%s: drain refused; rolled %s" % (
                     name, ", ".join(done) or "nothing"))
+            drained = next_dns.TTL + ROLL_DRAIN_MARGIN_SECONDS
+            runner.say("%s: out of DNS; waiting %d s (TTL %d s + %d s) for "
+                       "resolvers to forget it before it restarts" % (
+                           name, drained, next_dns.TTL,
+                           ROLL_DRAIN_MARGIN_SECONDS))
+            sleep(drained)
         else:
-            runner.say("[dry-run] %s: drain from DNS" % name)
+            runner.say("[dry-run] %s: drain from DNS, wait out its TTL" % name)
         install(fleet, name, ssh, runner, steps, vultr=vultr)
         if mail:
             import next_mail
@@ -1672,6 +1831,8 @@ def required_secret_names(fleet):
         extras.append(IDS_MASTER)
     if render.turn_enabled(fleet):
         extras.append(render.TURN_SECRET_CREDENTIAL)
+    if render.calls_enabled(fleet):
+        extras.append(render.CALLS_SECRET_CREDENTIAL)
     for extra in extras:
         if extra not in names:
             names.append(extra)
@@ -1679,9 +1840,8 @@ def required_secret_names(fleet):
 
 
 def ids_payloads(fleet, name, values):
-    """The IDS credentials of one node or runner: its own expected-change
-    key (derived from the desktop-only master) and, with [ids] direct_mail,
-    the direct alert mail token and recipient."""
+    """The IDS credential of one node or runner: its own expected-change
+    key (derived from the desktop-only master)."""
     import render
     import next_ids
     if not render.ids_enabled(fleet):
@@ -1690,15 +1850,8 @@ def ids_payloads(fleet, name, values):
     if not master:
         raise ToolError("%s is missing from secrets.env (run init-secrets "
                         "--execute)" % IDS_MASTER)
-    payloads = {render.IDS_KEY_CREDENTIAL: next_ids.node_key(
+    return {render.IDS_KEY_CREDENTIAL: next_ids.node_key(
         master, name).encode()}
-    if render.ids_settings(fleet).get("direct_mail"):
-        for credential in render.IDS_MAIL_CREDENTIALS:
-            if not values.get(credential):
-                raise ToolError("%s is missing from secrets.env ([ids] "
-                                "direct_mail = true)" % credential)
-            payloads[credential] = values[credential].encode()
-    return payloads
 
 
 def router_keypair():
@@ -1795,6 +1948,8 @@ def credential_payloads(fleet, name, values):
                             % render.AUTOSCALE_CERTSYNC_CREDENTIAL)
         payloads[render.AUTOSCALE_CERTSYNC_CREDENTIAL] = replica.encode()
     payloads.update(turn_payloads(fleet, values))
+    if render.CALLS_SECRET_CREDENTIAL in node_local_credential_names(fleet, name):
+        payloads.update(calls_payloads(fleet, values))
     payloads.update(ids_payloads(fleet, name, values))
     return payloads
 
@@ -1836,6 +1991,8 @@ def node_local_credential_names(fleet, name):
         names.add(render.AUTOSCALE_CERTSYNC_CREDENTIAL)
     if render.turn_enabled(fleet) and is_core_like(name):
         names.add(render.TURN_SECRET_CREDENTIAL)
+    if render.calls_enabled(fleet) and name.startswith("n"):
+        names.add(render.CALLS_SECRET_CREDENTIAL)
     return names
 
 
@@ -1905,6 +2062,100 @@ def install_turn(fleet, name, ip, ssh, runner):
                        "%s runs it) and systemd-creds encrypt %s (value on "
                        "stdin only)" % (name, render.TURN_UNIT,
                                         render.TURN_SECRET_CREDENTIAL), action)
+
+
+def calls_payloads(fleet, values):
+    import render
+    if not render.calls_enabled(fleet):
+        return {}
+    name = render.CALLS_SECRET_CREDENTIAL
+    secret = values.get(name, "")
+    if len(secret) < 32 or not re.fullmatch(r"[A-Za-z0-9_-]+", secret):
+        raise ToolError("%s is missing from secrets.env or is not a 32+ "
+                        "character URL-safe value (run init-secrets --execute)"
+                        % name)
+    if secret in {v for k, v in values.items() if k != name}:
+        raise ToolError("%s must not reuse another secret's value" % name)
+    return {name: secret.encode()}
+
+
+CALLS_STAGE = "/tmp/fmnext-calls"
+CALLS_STAGE_SCRIPT = ("install -d -o root -g root -m 0700 %s && rm -f %s/forkmesh-calls"
+                      % (CALLS_STAGE, CALLS_STAGE))
+CALLS_INSTALL_SCRIPT = """
+set -eu
+umask 077
+user=%(user)s
+bin=%(bin)s
+unit=%(unit)s
+name=%(name)s
+creds=%(creds)s
+stage=%(stage)s
+running="/run/credentials/$unit/$name"
+id "$user" >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$user"
+secret=$(cat)
+restart=0
+test -s "$stage/forkmesh-calls"
+if ! cmp -s "$stage/forkmesh-calls" "$bin"; then
+  install -m 0755 "$stage/forkmesh-calls" "$bin"
+  restart=1
+fi
+rm -f "$stage/forkmesh-calls"
+rmdir "$stage" 2>/dev/null || true
+old=$(systemd-creds decrypt --name="$name" "$creds/$name.cred" - 2>/dev/null || true)
+if [ "$old" != "$secret" ]; then
+  install -d -m 0700 "$creds"
+  printf '%%s' "$secret" | systemd-creds encrypt --with-key=host --name="$name" - "$creds/$name.cred.new"
+  mv "$creds/$name.cred.new" "$creds/$name.cred"
+fi
+if systemctl is-active -q "$unit"; then
+  if [ -r "$running" ] && [ "$(cat "$running")" != "$secret" ]; then restart=1; fi
+  if [ "$restart" = 1 ]; then systemctl restart "$unit"; fi
+fi
+"""
+
+
+def calls_binary():
+    import next_deploy
+    return next_deploy.dist_dir() / "forkmesh-calls"
+
+
+def build_calls(binary):
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["go", "build", "-trimpath", "-o", str(binary),
+                    "./cmd/forkmesh-calls"], cwd=common.REPO / "server",
+                   check=True, env=dict(common.os.environ, CGO_ENABLED="0",
+                                        GOOS="linux", GOARCH="amd64"))
+
+
+def install_calls(fleet, name, ip, ssh, runner):
+    import render
+    if not render.calls_enabled(fleet):
+        return runner.step("%s: [calls] is off in the fleet file; nothing to "
+                           "install" % name, lambda: None)
+    if not name.startswith("n"):
+        return runner.step("%s: app replicas run no group-call server" % name,
+                           lambda: None)
+    binary = calls_binary()
+
+    def action():
+        payloads = calls_payloads(fleet, common.read_env_file(secrets_path()))
+        build_calls(binary)
+        ssh.run(ip, CALLS_STAGE_SCRIPT)
+        ssh.put(ip, binary, CALLS_STAGE + "/forkmesh-calls")
+        ssh.run(ip, CALLS_INSTALL_SCRIPT % {
+            "user": shq(render.CALLS_USER), "bin": shq(render.CALLS_BIN),
+            "unit": shq(render.CALLS_UNIT),
+            "name": shq(render.CALLS_SECRET_CREDENTIAL),
+            "creds": shq(render.fleet_paths(fleet)["creds"]),
+            "stage": shq(CALLS_STAGE)},
+            input_bytes=payloads[render.CALLS_SECRET_CREDENTIAL])
+    return runner.step("%s: build server/cmd/forkmesh-calls, install it as %s, "
+                       "systemd-creds encrypt %s (value on stdin only); restart "
+                       "%s only when the binary or its secret changed" % (
+                           name, render.CALLS_BIN,
+                           render.CALLS_SECRET_CREDENTIAL, render.CALLS_UNIT),
+                       action)
 
 
 def push_secrets(fleet, name, ssh, runner):
@@ -2425,6 +2676,9 @@ def main(argv=None, vultr=None, ssh=None) -> int:
     p.add_argument("--snapshot", help="boot from this keyless Vultr snapshot id")
     p.add_argument("--name", help="nN to add or resume (default: the next free "
                    "number, or the unfinished run)")
+    p.add_argument("--replace", metavar="nOLD", help="once the new core serves, "
+                   "take this core out of the fleet in the same run (its instance "
+                   "is kept) and commit both changes together")
     p.add_argument("--no-events", dest="events", action="store_false",
                    help="no FMNEXT-ADD-CORE progress lines")
     common.add_execute_flags(p)
@@ -2432,6 +2686,7 @@ def main(argv=None, vultr=None, ssh=None) -> int:
                        "for add-core (read-only)")
     p.add_argument("--provider", choices=next_cloud.PROVIDERS,
                    default=next_cloud.DEFAULT_PROVIDER)
+    p.add_argument("--replace", metavar="nOLD")
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("add-core-status", help="the last add-core run (read-only)")
     p.add_argument("--name")

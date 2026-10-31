@@ -292,6 +292,8 @@ def _durable_guestbook_method(state):
         "Date": DateStub,
         "PUBLIC_WORLD_GENERAL_ROOM_KEY": (
             "repo:mainnode/forkmesh:room:world-general"),
+        "CHAT_RELAY_OWNED_FIELDS": frozenset((
+            "historyReplay", "recipients", "recipientNames", "ref", "srv")),
         "_require_data_secret": lambda env: env.DATA_KEY,
         "chat_history_store": chat_history_store,
         "durable_object_traffic_flush": traffic_flush,
@@ -366,11 +368,13 @@ def test_durable_relay_requires_hmac_and_uses_only_the_public_room_key():
     assert accepted == {"status": 200, "data": {"ok": True, "delivered": 1}}
     assert len(state["stored"]) == 1
     stored_room, message_id, timestamp, stored_body = state["stored"][0]
+    marked = json.dumps(
+        {**json.loads(body), "srv": True}, separators=(",", ":"))
     assert stored_room == "repo:mainnode/forkmesh:room:world-general"
-    assert message_id == hashlib.sha256(body.encode()).hexdigest()[:40]
+    assert message_id == hashlib.sha256(marked.encode()).hexdigest()[:40]
     assert timestamp == 1_800_000_000_123
-    assert stored_body == body
-    assert room.peer.frames == [body]
+    assert stored_body == marked
+    assert room.peer.frames == [marked]
     assert state["flushed"] == 1
 
 
@@ -406,3 +410,63 @@ def test_homepage_advertises_the_guestbook_endpoint_without_hosting_the_form():
     assert '"agent_guestbook.py",' in footprint
     assert "GET /api/chat/agent-guestbook" in readme
     assert "messageForUser" in readme
+
+
+def _entry_function(name):
+    import ipaddress
+    entry = SRC / "entry.py"
+    tree = ast.parse(entry.read_text(encoding="utf-8"), filename=str(entry))
+    node = next(item for item in tree.body
+                if isinstance(item, ast.FunctionDef) and item.name == name)
+    namespace = {"ipaddress": ipaddress}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(entry), "exec"),
+         namespace)
+    return namespace[name]
+
+
+def test_one_ipv6_64_shares_one_guestbook_budget():
+    import importlib.util
+    from types import SimpleNamespace
+    import schema
+
+    spec = importlib.util.spec_from_file_location(
+        "guestbook_runtime_under_test", SRC / "guestbook_runtime.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    for sql in schema.SCHEMA_STATEMENTS:
+        if "agent_guestbook_rate" in sql:
+            db.execute(sql)
+
+    async def d1_first(_env, sql, *args):
+        row = db.execute(sql, args).fetchone()
+        db.commit()
+        return dict(row) if row else None
+
+    async def d1_run(_env, sql, *args):
+        db.execute(sql, args)
+        db.commit()
+
+    async def blind_index(_env, value):
+        return hashlib.sha256(str(value).encode()).hexdigest()
+
+    async def ensure_schema(_env):
+        return None
+
+    module._bind_runtime({
+        "d1_first": d1_first, "d1_run": d1_run, "blind_index": blind_index,
+        "ensure_schema": ensure_schema,
+        "Date": SimpleNamespace(now=lambda: 1_800_000_000_000),
+        "_client_source_bucket": _entry_function("_client_source_bucket"),
+    })
+
+    def reserve(address):
+        request = SimpleNamespace(headers={"cf-connecting-ip": address})
+        runtime = module._AgentGuestbookRuntime(object(), request)
+        return asyncio.run(runtime.reserve(2, 60 * 60 * 1000))
+
+    assert reserve("2001:db8:9:1::1") == 0
+    assert reserve("2001:db8:9:1::2") == 0
+    assert reserve("2001:db8:9:1:ffff::3") > 0
+    assert reserve("2001:db8:9:2::1") == 0

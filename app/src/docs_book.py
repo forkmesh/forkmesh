@@ -25,7 +25,8 @@ PATH_RE = re.compile(r"^docs/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\.md$")
 FILE_MODES = frozenset({"100644", "100755"})
 OBJECT_TYPES = {"commit": 1, "tree": 2, "blob": 3}
 
-_CACHE = {"commit": "", "at": 0, "docs": None}
+_CACHE = {"commit": "", "at": 0, "docs": None, "complete": False,
+          "files": [], "trees": {}}
 
 
 def _bind_runtime(runtime):
@@ -216,8 +217,18 @@ async def _tree(env, path, ref):
     return data
 
 
-async def _collect(env, commit, root_listing):
+def _tree_mark(entry):
+    oid = str(entry.get("oid") or "").lower()
+    change = str(entry.get("hash") or "").lower()
+    if OID_RE.match(oid) and change:
+        return oid + " " + change
+    return ""
+
+
+async def _collect(env, commit, root_listing, previous):
     files = []
+    trees = {}
+    complete = True
     pending = [(ROOT, root_listing)]
     seen = 0
     while pending:
@@ -227,10 +238,27 @@ async def _collect(env, commit, root_listing):
             name = str(entry.get("name") or "")
             path = directory + "/" + name
             if entry.get("type") == "tree":
-                if seen + len(pending) < MAX_DIRECTORIES:
-                    child = await _tree(env, path, commit)
-                    if child is not None:
-                        pending.append((path, child))
+                if seen + len(pending) >= MAX_DIRECTORIES:
+                    complete = False
+                    continue
+                mark = _tree_mark(entry)
+                if mark and previous.get("trees", {}).get(path) == mark:
+                    prefix = path + "/"
+                    trees.update(
+                        (key, value)
+                        for key, value in previous["trees"].items()
+                        if key == path or key.startswith(prefix))
+                    files.extend(
+                        dict(item) for item in previous.get("files") or []
+                        if item["path"].startswith(prefix))
+                    continue
+                child = await _tree(env, path, commit)
+                if child is None:
+                    complete = False
+                    continue
+                pending.append((path, child))
+                if mark:
+                    trees[path] = mark
             elif entry.get("type") == "blob" and valid_path(path):
                 files.append({
                     "path": path,
@@ -242,14 +270,31 @@ async def _collect(env, commit, root_listing):
                     "change": str(entry.get("hash") or ""),
                 })
     files.sort(key=lambda item: order_key(item["path"]))
-    return files[:MAX_DOCS]
+    return files, trees, complete
 
 
-async def _contents(env, commit, files):
+def _known_contents(docs):
+    known = {}
+    for item in docs or []:
+        oid = str(item.get("oid") or "").lower()
+        if OID_RE.match(oid) and isinstance(item.get("content"), str):
+            known[oid] = (item["content"], bool(item.get("truncated")))
+    return known
+
+
+async def _contents(env, commit, files, known):
+    complete = True
+    missing = []
+    for item in files:
+        found = known.get(str(item.get("oid") or "").lower())
+        if found is None:
+            missing.append(item)
+        else:
+            item["content"], item["truncated"] = found
     batches = []
     batch = []
     chars = 0
-    for item in files:
+    for item in missing:
         piece = "path=" + quote(item["path"], safe="")
         if batch and (len(batch) >= BLOB_BATCH
                       or chars + len(piece) > BLOB_QUERY_CHARS):
@@ -274,8 +319,10 @@ async def _contents(env, commit, files):
                 item["content"] = str(blob.get("content") or "")
                 item["truncated"] = bool(blob.get("truncated"))
             else:
+                complete = complete and isinstance(blob, dict)
                 item["content"] = None
                 item["truncated"] = False
+    return complete
 
 
 async def _can_edit(env, request):
@@ -296,13 +343,19 @@ async def _list(env, request):
             503)
     commit = str(head.get("commit") or "")
     now = int(time.time() * 1000)
-    docs = _CACHE["docs"] if (
-        _CACHE["commit"] == commit and now - _CACHE["at"] < CACHE_TTL_MS
+    docs = _CACHE["docs"] if _CACHE["commit"] == commit and (
+        _CACHE["complete"] or now - _CACHE["at"] < CACHE_TTL_MS
     ) else None
     if docs is None:
-        docs = await _collect(env, commit, head)
-        await _contents(env, commit, docs)
-        _CACHE.update({"commit": commit, "at": now, "docs": docs})
+        files, trees, complete = await _collect(env, commit, head, _CACHE)
+        docs = [dict(item) for item in files[:MAX_DOCS]]
+        complete = await _contents(
+            env, commit, docs, _known_contents(_CACHE["docs"])) and complete
+        _CACHE.update({
+            "commit": commit, "at": now, "docs": docs, "complete": complete,
+            "files": files if complete else [],
+            "trees": trees if complete else {},
+        })
     latest = head.get("latestCommit") or {}
     return json_response({
         "ok": True,
@@ -435,7 +488,7 @@ async def _save(env, request):
         await _push(env, request, actor, body)
     except DocsBookError as exc:
         return _error(exc.code, exc.message, exc.status)
-    _CACHE.update({"commit": "", "at": 0, "docs": None})
+    _CACHE.update({"commit": "", "at": 0})
     try:
         await _audit_sensitive_action(
             env, actor, "docs.edit", "repository", OWNER + "/" + REPO,

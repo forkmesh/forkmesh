@@ -45,6 +45,11 @@ A small subset of Jinja:
 - `{% if name %}…{% else %}…{% endif %}` tests whether a variable is set and
   non-empty.
 
+`changelog.html` holds no releases: `www/public/changelog.js` fetches
+`/changelog.json` and prints them in the browser
+([../changelog.md](../changelog.md)); edit `changelog/changelog.json`, not
+the page, to change a release.
+
 A line holding only one tag is dropped entirely. Names in `extends` and
 `include` are relative to `www/templates/` and cannot leave it.
 

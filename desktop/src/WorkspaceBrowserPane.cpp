@@ -1,34 +1,68 @@
 #include "WorkspaceBrowserPane.h"
 
+#include "AppPaths.h"
+#include "BrowserPrivacy.h"
+#include "WebEngine.h"
+
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPointer>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QVBoxLayout>
 
-#ifdef FORKMESH_HAVE_WEBENGINE
-#include <QWebEngineHistory>
-#include <QWebEnginePage>
-#include <QWebEngineSettings>
-#include <QWebEngineView>
-#endif
+#include <utility>
 
 namespace forkmesh::ui {
 
 namespace {
 
-#ifdef FORKMESH_HAVE_WEBENGINE
 bool headlessPlatform()
 {
     const QString platform = QGuiApplication::platformName();
     return platform == QLatin1String("offscreen") ||
            platform == QLatin1String("minimal");
 }
-#endif
+
+bool paneNavigationAllowed(const QUrl &url, bool, bool isMainFrame)
+{
+    const QString scheme = url.scheme().toLower();
+    if (scheme == QLatin1String("file"))
+        return false;
+    if (!isMainFrame)
+        return true;
+    return scheme == QLatin1String("http") || scheme == QLatin1String("https") ||
+           scheme == QLatin1String("about") || scheme == QLatin1String("data") ||
+           scheme == QLatin1String("blob");
+}
+
+QObject *ungoogledProfile()
+{
+    static QPointer<QObject> shared;
+    if (shared)
+        return shared;
+    web::ProfileOptions options;
+    options.storageName = QStringLiteral("forkmesh-browser");
+    options.storagePath =
+        paths::pluginDataDir(QStringLiteral("browser")) + QStringLiteral("/profile");
+    options.cachePath = paths::cacheRoot() + QStringLiteral("/browser");
+    options.persistentCookies = true;
+    options.ungoogled = true;
+    options.userAgent = [](const QString &agent) { return browser::ungoogledUserAgent(agent); };
+    options.requestAllowed = [](const QUrl &url) {
+        return !browser::isGoogleServiceHost(url.host());
+    };
+    options.downloadDirectory = [] {
+        return QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    };
+    shared = web::createProfile(options, QCoreApplication::instance());
+    return shared;
+}
 
 QPushButton *toolButton(const QString &name, const QString &tip)
 {
@@ -71,7 +105,7 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
     m_address = new QLineEdit;
     m_address->setObjectName(QStringLiteral("workspaceBrowserAddress"));
     m_address->setPlaceholderText(
-        QStringLiteral("Enter a URL, or a port such as 3000"));
+        QStringLiteral("Search DuckDuckGo, enter a URL, or a port such as 3000"));
     m_address->setClearButtonEnabled(true);
     row->addWidget(m_back);
     row->addWidget(m_forward);
@@ -100,10 +134,23 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
     m_placeholderOpen = new QPushButton(QStringLiteral("Open in your browser"));
     m_placeholderOpen->setObjectName(QStringLiteral("workspaceGhostButton"));
     m_placeholderOpen->setCursor(Qt::PointingHandCursor);
+    m_placeholderInstall = new QPushButton(QStringLiteral("Install embedded browser"));
+    m_placeholderInstall->setObjectName(QStringLiteral("workspaceGhostButton"));
+    m_placeholderInstall->setCursor(Qt::PointingHandCursor);
+    m_placeholderInstall->setToolTip(
+        QStringLiteral("Install Qt WebEngine with your package manager, then "
+                       "rebuild and restart ForkMesh so pages load here"));
+    m_placeholderInstall->hide();
+    auto *actions = new QHBoxLayout;
+    actions->setSpacing(8);
+    actions->addStretch(1);
+    actions->addWidget(m_placeholderInstall);
+    actions->addWidget(m_placeholderOpen);
+    actions->addStretch(1);
     holder->addWidget(m_placeholderTitle);
     holder->addWidget(m_placeholderBody);
     holder->addSpacing(4);
-    holder->addWidget(m_placeholderOpen, 0, Qt::AlignHCenter);
+    holder->addLayout(actions);
     holder->addStretch(1);
     m_stack->addWidget(m_placeholder);
 
@@ -115,70 +162,55 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
             [this] { openExternally(); });
     connect(m_placeholderOpen, &QPushButton::clicked, this,
             [this] { openExternally(); });
-#ifdef FORKMESH_HAVE_WEBENGINE
+    connect(m_placeholderInstall, &QPushButton::clicked, this, [this] {
+        if (m_installHandler)
+            m_installHandler();
+    });
     connect(m_back, &QPushButton::clicked, this, [this] {
-        if (auto *view = qobject_cast<QWebEngineView *>(m_view))
+        if (web::View *view = web::viewOf(m_view))
             view->back();
     });
     connect(m_forward, &QPushButton::clicked, this, [this] {
-        if (auto *view = qobject_cast<QWebEngineView *>(m_view))
+        if (web::View *view = web::viewOf(m_view))
             view->forward();
     });
     connect(m_reload, &QPushButton::clicked, this, [this] {
-        if (auto *view = qobject_cast<QWebEngineView *>(m_view))
+        if (web::View *view = web::viewOf(m_view))
             view->reload();
         else if (m_url.isValid())
             navigate(m_url.toString());
     });
-#else
-    connect(m_reload, &QPushButton::clicked, this, [this] {
-        if (m_url.isValid())
-            navigate(m_url.toString());
-    });
-#endif
 
     showPlaceholder(
         QStringLiteral("Preview a page"),
         embeddedAvailable()
-            ? QStringLiteral("Type an address above to load it here. A bare "
-                             "port such as 3000 opens http://localhost:3000.")
+            ? QStringLiteral("Type an address or a search above to load it "
+                             "here. A bare port such as 3000 opens "
+                             "http://localhost:3000. Google's background "
+                             "services are switched off.")
             : QStringLiteral("This build has no embedded browser. Type an "
                              "address above and it opens in your own browser."),
-        false);
+        false, embeddedInstallable());
     syncNavigation();
 }
 
 bool WorkspaceBrowserPane::embeddedAvailable()
 {
-#ifdef FORKMESH_HAVE_WEBENGINE
-    return !headlessPlatform();
+#ifdef FORKMESH_BROWSER_PANE_EMBEDS
+    return web::available() && !headlessPlatform();
 #else
     return false;
 #endif
 }
 
+bool WorkspaceBrowserPane::embeddedInstallable()
+{
+    return !web::built();
+}
+
 QUrl WorkspaceBrowserPane::urlFromInput(const QString &text)
 {
-    const QString trimmed = text.trimmed();
-    if (trimmed.isEmpty())
-        return QUrl();
-    static const QRegularExpression port(QStringLiteral("^:?(\\d{2,5})(/.*)?$"));
-    const QRegularExpressionMatch match = port.match(trimmed);
-    if (match.hasMatch())
-        return QUrl(QStringLiteral("http://localhost:%1%2")
-                        .arg(match.captured(1), match.captured(2)));
-    static const QRegularExpression local(
-        QStringLiteral("^(localhost|127\\.0\\.0\\.1|\\[::1\\])(:\\d+)?(/.*)?$"),
-        QRegularExpression::CaseInsensitiveOption);
-    if (local.match(trimmed).hasMatch())
-        return QUrl(QStringLiteral("http://") + trimmed);
-    const QUrl url = QUrl::fromUserInput(trimmed);
-    if (!url.isValid())
-        return QUrl();
-    const QString scheme = url.scheme().toLower();
-    if (scheme != QLatin1String("http") && scheme != QLatin1String("https"))
-        return QUrl();
-    return url;
+    return browser::urlFromInput(text);
 }
 
 void WorkspaceBrowserPane::navigate(const QString &text)
@@ -192,21 +224,19 @@ void WorkspaceBrowserPane::navigate(const QString &text)
     }
     m_url = url;
     m_address->setText(url.toString());
-#ifdef FORKMESH_HAVE_WEBENGINE
     if (embeddedAvailable()) {
         ensureView();
-        if (auto *view = qobject_cast<QWebEngineView *>(m_view)) {
-            m_stack->setCurrentWidget(view);
+        if (web::View *view = web::viewOf(m_view)) {
+            m_stack->setCurrentWidget(m_view);
             view->load(url);
             syncNavigation();
             return;
         }
     }
-#endif
     showPlaceholder(url.host().isEmpty() ? url.toString() : url.host(),
                     QStringLiteral("This build has no embedded browser, so the "
                                    "page opens in your own browser."),
-                    true);
+                    true, embeddedInstallable());
     syncNavigation();
 }
 
@@ -234,26 +264,32 @@ void WorkspaceBrowserPane::setIcons(const Icons &icons)
     m_external->setIcon(icons.external);
 }
 
+void WorkspaceBrowserPane::setInstallHandler(std::function<void()> handler)
+{
+    m_installHandler = std::move(handler);
+    syncInstallButton();
+}
+
 void WorkspaceBrowserPane::ensureView()
 {
-#ifdef FORKMESH_HAVE_WEBENGINE
     if (m_view)
         return;
-    auto *view = new QWebEngineView(m_stack);
-    view->setObjectName(QStringLiteral("workspaceBrowserView"));
-    view->settings()->setUnknownUrlSchemePolicy(
-        QWebEngineSettings::DisallowUnknownUrlSchemes);
-    m_view = view;
-    m_stack->addWidget(view);
-    connect(view, &QWebEngineView::urlChanged, this, [this](const QUrl &url) {
+    web::PageOptions options;
+    options.acceptNavigation = &paneNavigationAllowed;
+    options.newWindowsInPlace = true;
+    web::View *view = web::createView(ungoogledProfile(), options, m_stack);
+    if (!view)
+        return;
+    m_view = view->widget();
+    m_view->setObjectName(QStringLiteral("workspaceBrowserView"));
+    m_stack->addWidget(m_view);
+    view->onUrlChanged(this, [this](const QUrl &url) {
         m_url = url;
         if (!m_address->hasFocus())
             m_address->setText(url.toString());
         syncNavigation();
     });
-    connect(view, &QWebEngineView::loadFinished, this,
-            [this](bool) { syncNavigation(); });
-#endif
+    view->onLoadFinished(this, [this](bool) { syncNavigation(); });
 }
 
 void WorkspaceBrowserPane::openExternally()
@@ -269,24 +305,31 @@ void WorkspaceBrowserPane::openExternally()
 
 void WorkspaceBrowserPane::showPlaceholder(const QString &title,
                                            const QString &body,
-                                           bool offerExternal)
+                                           bool offerExternal,
+                                           bool offerInstall)
 {
     m_placeholderTitle->setText(title);
     m_placeholderBody->setText(body);
     m_placeholderOpen->setVisible(offerExternal);
+    m_placeholderOffersInstall = offerInstall;
+    syncInstallButton();
     m_stack->setCurrentWidget(m_placeholder);
+}
+
+void WorkspaceBrowserPane::syncInstallButton()
+{
+    m_placeholderInstall->setVisible(m_placeholderOffersInstall &&
+                                     static_cast<bool>(m_installHandler));
 }
 
 void WorkspaceBrowserPane::syncNavigation()
 {
     bool back = false;
     bool forward = false;
-#ifdef FORKMESH_HAVE_WEBENGINE
-    if (auto *view = qobject_cast<QWebEngineView *>(m_view)) {
-        back = view->history()->canGoBack();
-        forward = view->history()->canGoForward();
+    if (web::View *view = web::viewOf(m_view)) {
+        back = view->canGoBack();
+        forward = view->canGoForward();
     }
-#endif
     m_back->setEnabled(back);
     m_forward->setEnabled(forward);
     m_reload->setEnabled(m_url.isValid());

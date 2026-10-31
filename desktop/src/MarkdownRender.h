@@ -297,6 +297,108 @@ inline QString withHtmlFlattened(const QString &markdown)
     return kept.join(QLatin1Char('\n'));
 }
 
+namespace Detail {
+
+inline bool startsBlock(const QString &trimmed)
+{
+    static const QRegularExpression start(
+        QStringLiteral("^(?:#{1,6}(?:\\s|$)|>|```|~~~|[-*+](?:\\s|$)|\\d{1,9}[.)](?:\\s|$)|\\||"
+                       "(?:[-*_]\\s*){3,}$|=+$)"));
+    return start.match(trimmed).hasMatch();
+}
+
+inline int trailingBackslashes(const QString &line)
+{
+    int count = 0;
+    for (int i = line.size() - 1; i >= 0 && line.at(i) == QLatin1Char('\\'); --i)
+        ++count;
+    return count;
+}
+
+inline bool indentedCode(const QString &line)
+{
+    return line.startsWith(QLatin1Char('\t')) || line.startsWith(QLatin1String("    "));
+}
+
+} // namespace Detail
+
+inline QString withHardBreaksJoined(const QString &markdown)
+{
+    const QStringList lines = markdown.split(QLatin1Char('\n'));
+    QStringList out;
+    out.reserve(lines.size());
+    QString fence;
+    bool code = false;
+    bool joining = false;
+    for (int i = 0; i < lines.size(); ++i) {
+        QString line = lines.at(i);
+        const QString trimmed = line.trimmed();
+        if (!fence.isEmpty()) {
+            out.append(line);
+            if (trimmed.startsWith(fence))
+                fence.clear();
+            continue;
+        }
+        if (!joining && (trimmed.startsWith(QLatin1String("```")) ||
+                         trimmed.startsWith(QLatin1String("~~~")))) {
+            fence = trimmed.left(3);
+            out.append(line);
+            code = false;
+            continue;
+        }
+        const bool previousBlank = out.isEmpty() || out.last().trimmed().isEmpty();
+        if (!joining && Detail::indentedCode(line) && (previousBlank || code)) {
+            code = true;
+            out.append(line);
+            continue;
+        }
+        code = false;
+        if (trimmed == QLatin1String("\\")) {
+            if (joining && !out.isEmpty())
+                out.last().chop(1);
+            joining = false;
+            out.append(QString());
+            continue;
+        }
+        if (joining) {
+            int lead = 0;
+            while (lead < line.size() && line.at(lead).isSpace())
+                ++lead;
+            out.last() += line.mid(lead);
+        } else
+            out.append(line);
+        joining = false;
+        QString &current = out.last();
+        const bool table = trimmed.startsWith(QLatin1Char('|'));
+        int strip = 0;
+        if (Detail::trailingBackslashes(current) % 2 == 1)
+            strip = 1;
+        else if (current.endsWith(QLatin1String("  ")) && !current.trimmed().isEmpty()) {
+            int end = current.size();
+            while (end > 0 && current.at(end - 1).isSpace())
+                --end;
+            strip = current.size() - end;
+        }
+        if (strip == 0 || table)
+            continue;
+        const QString next = i + 1 < lines.size() ? lines.at(i + 1).trimmed() : QString();
+        current.chop(strip);
+        if (next.isEmpty() || Detail::startsBlock(next) || next == QLatin1String("\\"))
+            continue;
+        current += QChar(0x2028);
+        joining = true;
+    }
+    return out.join(QLatin1Char('\n'));
+}
+
+inline QString forPreview(const QString &markdown)
+{
+    QString source = markdown;
+    source.replace(QLatin1String("\r\n"), QLatin1String("\n"));
+    source.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    return withHardBreaksJoined(withHtmlFlattened(source));
+}
+
 // GitHub's heading anchor: "## 2. Add an independent mirror" is linked to as
 // "#2-add-an-independent-mirror".
 inline QString headingAnchor(const QString &heading)

@@ -5,6 +5,7 @@ import com.forkmesh.nativeapp.json.maps
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.json.strings
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.time.format.FormatStyle
@@ -13,13 +14,33 @@ import java.util.Locale
 data class AppChangelog(val entries: List<Entry> = emptyList()) {
     data class Section(val title: String, val items: List<String>)
 
-    data class Entry(val version: String, val build: String, val date: String = "", val sections: List<Section> = emptyList()) {
-        val heading: String get() = label(version, build)
+    data class Entry(
+        val version: String,
+        val build: String,
+        val date: String = "",
+        val sections: List<Section> = emptyList(),
+        val title: String = "",
+        val pitch: String = "",
+    ) {
+        val heading: String get() = when {
+            title.isNotEmpty() -> title
+            version.isNotEmpty() || build.isNotEmpty() -> label(version, build)
+            else -> formattedDate()
+        }
+
+        fun detail(locale: Locale = Locale.getDefault()): String = listOfNotNull(
+            label(version, build).takeIf { title.isNotEmpty() && version.isNotEmpty() },
+            formattedDate(locale).takeIf { date.isNotEmpty() && (title.isNotEmpty() || version.isNotEmpty() || build.isNotEmpty()) },
+        ).joinToString(" · ")
 
         fun formattedDate(locale: Locale = Locale.getDefault()): String = try {
             LocalDate.parse(date).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale))
         } catch (_: DateTimeParseException) {
-            date
+            try {
+                YearMonth.parse(date).format(DateTimeFormatter.ofPattern("LLLL yyyy", locale))
+            } catch (_: DateTimeParseException) {
+                date
+            }
         }
     }
 
@@ -28,7 +49,7 @@ data class AppChangelog(val entries: List<Entry> = emptyList()) {
         if (first != null && build.isNotEmpty() && first.build == build) {
             return copy(entries = listOf(first.copy(version = version.ifEmpty { first.version })) + entries.drop(1))
         }
-        return AppChangelog(listOf(Entry(version, build)) + entries.filter { it.build != build })
+        return if (entries.isEmpty()) AppChangelog(listOf(Entry(version, build))) else this
     }
 
     companion object {
@@ -46,6 +67,8 @@ data class AppChangelog(val entries: List<Entry> = emptyList()) {
                     version = entry.str("version"),
                     build = entry.str("build"),
                     date = entry.str("date"),
+                    title = entry.str("title"),
+                    pitch = entry.str("pitch"),
                     sections = entry.maps("sections")
                         .map { Section(it.str("title"), it.strings("items").filter(String::isNotBlank)) }
                         .filter { it.title.isNotEmpty() && it.items.isNotEmpty() },

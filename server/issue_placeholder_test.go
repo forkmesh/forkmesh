@@ -239,3 +239,21 @@ func TestIssueDivergenceFoldsSameIssueWithDifferentEvents(t *testing.T) {
 		t.Fatalf("events were not folded into one #729: %v", record)
 	}
 }
+
+func TestReplayedSignedEventUnderANewIDIsNotAppended(t *testing.T) {
+	_, bare := makeBareRepo(t)
+	repo := Repository{Owner: "forkmesh", Name: "forkmesh", GitDir: bare}
+	open := json.RawMessage(`{"id":1,"number":729,"titleIfNew":"Real title","event":{"type":"open","id":"open-real","title":"Real title","author":"kaif-key","authorName":"kaif","ts":1790617500000,"sig":"open-signature"},"meta":{}}`)
+	edit := json.RawMessage(`{"id":2,"number":729,"event":{"type":"edit","id":"edit-1","target":"open-real","body":"first","author":"kaif-key","authorName":"kaif","ts":1790617510000,"sig":"edit-signature"},"meta":{}}`)
+	replay := json.RawMessage(`{"id":3,"number":729,"event":{"type":"edit","id":"edit-replayed","target":"comment-2","body":"first","author":"kaif-key","authorName":"kaif","ts":1790617510000,"sig":"edit-signature"},"meta":{}}`)
+	ids, err := materializeIssueInbox(context.Background(), repo,
+		[]json.RawMessage{open, edit, replay}, "n2")
+	if err != nil || len(ids) != 3 {
+		t.Fatalf("all rows should be acknowledged: ids=%v err=%v", ids, err)
+	}
+	record := readMergedIssue(t, bare, "main", 729)
+	events, _ := record["events"].([]any)
+	if len(events) != 2 {
+		t.Fatalf("a replayed signature was appended again: %v", events)
+	}
+}

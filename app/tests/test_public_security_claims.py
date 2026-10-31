@@ -27,8 +27,9 @@ def test_protocol_states_actual_shared_key_derivation_and_retention():
     ).read_text(encoding="utf-8")
     normalized = " ".join(protocol.split())
     for claim in (
-        'SHA-256(DATA_KEY + ":room-chat-passphrase-v1")',
-        'SHA-256(DATA_KEY + ":room-chat-passphrase-v2:" + lower(owner + "/" + repo))',
+        'SHA-256(DATA_KEY + ":room-chat-passphrase-v2:mainnode/forkmesh:room:" + lower(room))',
+        'SHA-256(DATA_KEY + ":room-chat-passphrase-public-world-general-v1")',
+        "the public <code>world-*</code> spaces",
         "authorized for that repository",
         "PBKDF2-HMAC-SHA256",
         "210,000 rounds",
@@ -178,13 +179,13 @@ def test_marketing_copy_matches_guest_registration_and_bounded_availability():
 
 def test_retired_bounty_and_phone_mirror_advertising_stays_removed():
     readme = (PROJECT / "README.md").read_text(encoding="utf-8").lower()
-    changelog = (PUBLIC / "changelog.html").read_text(encoding="utf-8").lower()
+    changelog = (PROJECT / "changelog" / "changelog.json").read_text(encoding="utf-8").lower()
     assert "fund any issue with one click" not in readme
     assert "pays out to the contributor when their pr is merged" not in readme
     assert "on-chain bounties" not in readme
     assert "mirror on your phone" not in readme
     assert "mirror on your phone" not in changelog
-    assert "phones are access clients" in " ".join(readme.split())
+    assert "mirroring remains a desktop or headless-node job" in " ".join(readme.split())
     assert "access client; git mirroring remains a desktop/headless-node job" in changelog
     assert "legacy worker-custodied bounty deposits and automatic payouts are frozen" in readme
 

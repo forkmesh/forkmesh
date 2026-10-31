@@ -30,6 +30,12 @@ class AccountEventChannel(
             loop.onTopic = value
         }
 
+    var onEvent: ((String, Map<String, Any?>) -> Unit)?
+        get() = loop.onEvent
+        set(value) {
+            loop.onEvent = value
+        }
+
     var onConnected: (() -> Unit)?
         get() = loop.onConnected
         set(value) {
@@ -50,7 +56,7 @@ class AccountEventChannel(
             startedState.value = loop.started
         }
         lifecycleJob = scope.launch {
-            AppLifecycle.foreground.collect { foreground -> loop.setForeground(foreground) }
+            AppLifecycle.visible.collect { visible -> loop.setForeground(visible) }
         }
     }
 

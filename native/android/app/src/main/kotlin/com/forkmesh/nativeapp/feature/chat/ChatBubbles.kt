@@ -300,7 +300,7 @@ internal fun ChatBubbleRow(
     ) {
         if (bubble.showsSender) {
             Text(
-                message.senderName,
+                if (message.serverVisible) "${message.senderName} \u00b7 server-visible" else message.senderName,
                 modifier = Modifier.padding(start = 46.dp, top = 6.dp).openSenderProfile(row),
                 style = TextStyle(fontSize = 12.sp, color = colors.meta),
             )

@@ -53,6 +53,31 @@ final class RSSReaderStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.addFeed(url: "nonsense")) { XCTAssertEqual($0 as? RSSReaderError, .invalidAddress) }
     }
 
+    func testSyncLibraryDropsFetchStateAndRestoreReplacesSubscriptions() throws {
+        let phone = makeStore()
+        let folder = try phone.addFolder("Tech")
+        let kept = try phone.addFeed(url: "https://eng.example.org/feed.xml", folderId: folder.id)
+        _ = try phone.addFeed(url: "https://old.example.com/rss")
+        _ = fetched(phone, kept, parsed([(guid: "a", title: "A", published: 1)]))
+        let saved = phone.syncLibrary()
+        XCTAssertTrue(saved.activity.isEmpty)
+        XCTAssertTrue(saved.feeds.allSatisfy { $0.etag.isEmpty && $0.fetchedAt == 0 })
+
+        disk = RSSReaderMemoryDisk()
+        let other = makeStore()
+        let mine = try other.addFeed(url: "https://eng.example.org/feed.xml")
+        _ = try other.addFeed(url: "https://gone.example.net/rss")
+        var incoming = saved
+        incoming.feeds.removeAll { $0.url.contains("old.example.com") }
+        incoming.settings.groupByFeed = true
+        XCTAssertEqual(other.restoreLibrary(incoming), 1)
+        XCTAssertEqual(other.feeds.map(\.url), ["https://eng.example.org/feed.xml"])
+        XCTAssertEqual(other.feeds.first?.id, mine.id)
+        XCTAssertEqual(other.feeds.first?.folderId, folder.id)
+        XCTAssertEqual(other.folders.map(\.name), ["Tech"])
+        XCTAssertTrue(other.settings.groupByFeed)
+    }
+
     func testLimitsOnFeedsAndFolders() throws {
         let store = makeStore()
         for index in 0..<RSSReaderLimits.maxFeeds { _ = try store.addFeed(url: "https://f\(index).example.com/rss") }

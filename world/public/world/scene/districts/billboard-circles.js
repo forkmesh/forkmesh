@@ -1,240 +1,395 @@
 import { sharedGeometry, sharedMaterial } from "../../world-resource-cache.js";
 import {
-  BILLBOARD_CIRCLE_GAP,
   BILLBOARD_CIRCLE_GROUND_Y,
-  BILLBOARD_CIRCLE_RIM_WIDTH,
-  BILLBOARD_CIRCLE_SPECS,
   BILLBOARD_CIRCLE_SURFACE_Y,
+  BILLBOARD_RING,
 } from "../layout.js";
 import { districtGroundMaterial } from "../town.js";
 import * as resources from "../resources.js";
 
+const TAU = Math.PI * 2;
+const RIM_Y = BILLBOARD_CIRCLE_GROUND_Y + 0.01;
+const PAD_Y = BILLBOARD_CIRCLE_GROUND_Y + 0.02;
+const PAD_SEGMENTS = 24;
+const MIN_PAD_CAPACITY = 32;
+const DECAL = Object.freeze({
+  toneMapped: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -2,
+  polygonOffsetUnits: -4,
+});
+
 export function functions({
   THREE,
   ctx,
+  onBillboardNearby = () => {},
+  onBillboardAway = () => {},
 }) {
-  const billboardCircles = new Map();
-  // A board only fetches once somebody walks up to its circle, so each one
-  // carries the ring that says a refresh is in flight. They are keyed by feed
-  // because several boards (the three social banners) share one request.
-  const billboardFeedRecords = new Map();
-  let billboardPlacementSequence = 0;
+  const ring = {
+    group: null,
+    apron: null,
+    rim: null,
+    pads: null,
+    radius: 0,
+    records: [],
+    padded: [],
+    padReachMin: 0,
+    padReachMax: 0,
+  };
+  const feedRecords = new Map();
+  const loadingFeeds = new Set();
+  const spinnerHolders = new Map();
+  const spinning = new Set();
+  const bounds = new THREE.Box3();
+  const center = new THREE.Vector3();
+  const padMatrix = new THREE.Matrix4();
+  const padPosition = new THREE.Vector3();
+  const padRotation = new THREE.Quaternion();
+  const padYaw = new THREE.Quaternion();
+  const padFlat = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(1, 0, 0),
+    -Math.PI / 2,
+  );
+  const padScale = new THREE.Vector3(1, 1, 1);
+  const up = new THREE.Vector3(0, 1, 0);
+  const idlePadColor = new THREE.Color(BILLBOARD_RING.muted);
+  const activePadColor = new THREE.Color(BILLBOARD_RING.accent);
+  const padGeometry = resources.primitive(
+    THREE,
+    "CircleGeometry",
+    BILLBOARD_RING.padRadius,
+    PAD_SEGMENTS,
+    Math.PI,
+    Math.PI,
+  );
+  const padMaterial = resources.uniqueMaterial(THREE, DECAL, "MeshBasicMaterial");
+  let placementSequence = 0;
+  let activePad = null;
 
-  function billboardCircle(id) {
-    const spec =
-      BILLBOARD_CIRCLE_SPECS[id] || BILLBOARD_CIRCLE_SPECS.hub;
-    let circle = billboardCircles.get(spec.id);
-    if (circle) return circle;
+  function ensureRing() {
+    if (ring.group) return ring;
     const group = new THREE.Group();
-    group.name = `forkmesh-${spec.id}-billboard-circle`;
-    group.position.set(spec.x, 0, spec.z);
-    const groundMaterial = districtGroundMaterial(THREE, "leaderboards");
-    groundMaterial.color = new THREE.Color(spec.color);
-    const ground = new THREE.Mesh(
-      resources.primitive(THREE, "CircleGeometry", spec.minRing + spec.groundMargin, 96),
-      groundMaterial,
+    group.name = "forkmesh-billboard-ring";
+    const apronMaterial = districtGroundMaterial(THREE, "leaderboards");
+    apronMaterial.color.set(BILLBOARD_RING.color);
+    const apron = new THREE.Mesh(
+      resources.primitive(THREE, "CircleGeometry", 1, 96),
+      apronMaterial,
     );
-    ground.name = `forkmesh-${spec.id}-circle-ground`;
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = BILLBOARD_CIRCLE_GROUND_Y;
-    ground.receiveShadow = true;
-    ground.userData.ground = true;
-    group.add(ground);
+    apron.name = "forkmesh-billboard-ring-ground";
+    apron.rotation.x = -Math.PI / 2;
+    apron.position.y = BILLBOARD_CIRCLE_GROUND_Y;
+    apron.receiveShadow = true;
+    apron.userData.ground = true;
     const rim = new THREE.Mesh(
-      resources.primitive(
-        THREE,
-        "RingGeometry",
-        spec.minRing + spec.groundMargin - BILLBOARD_CIRCLE_RIM_WIDTH,
-        spec.minRing + spec.groundMargin,
-        96,
-      ),
-      resources.uniqueMaterial(THREE, { color: spec.accent, toneMapped: false }, "MeshBasicMaterial"),
+      rimGeometry(BILLBOARD_RING.minRadius),
+      sharedMaterial(THREE, "MeshBasicMaterial", {
+        ...DECAL,
+        color: BILLBOARD_RING.muted,
+      }),
     );
-    rim.name = `forkmesh-${spec.id}-circle-rim`;
+    rim.name = "forkmesh-billboard-ring-rim";
     rim.rotation.x = -Math.PI / 2;
-    rim.position.y = BILLBOARD_CIRCLE_GROUND_Y + 0.01;
-    group.add(rim);
+    rim.position.y = RIM_Y;
+    group.add(apron, rim);
     ctx.leaderboardInterior.add(group);
-    circle = { spec, group, ground, rim, objects: [], radius: spec.minRing };
-    billboardCircles.set(spec.id, circle);
-    return circle;
+    Object.assign(ring, { group, apron, rim });
+    sizeRing(BILLBOARD_RING.minRadius);
+    return ring;
   }
+
+  function sectionRank(section) {
+    return Math.max(0, BILLBOARD_RING.sections.indexOf(section));
+  }
+
+  function ringOrder(left, right) {
+    return left.rank - right.rank || left.order - right.order;
+  }
+
+  function rimGeometry(radius) {
+    const outer = radius + BILLBOARD_RING.groundMargin;
+    return resources.primitive(
+      THREE,
+      "RingGeometry",
+      outer - BILLBOARD_RING.rimWidth,
+      outer,
+      128,
+    );
+  }
+
+  function sizeRing(radius) {
+    if (radius === ring.radius) return;
+    ring.radius = radius;
+    const outer = radius + BILLBOARD_RING.groundMargin;
+    ring.apron.scale.set(outer, outer, 1);
+    ring.rim.geometry = rimGeometry(radius);
+  }
+
+  function ensurePadCapacity(count) {
+    if (ring.pads && ring.pads.instanceMatrix.count >= count) return;
+    const capacity = Math.max(
+      MIN_PAD_CAPACITY,
+      2 ** Math.ceil(Math.log2(Math.max(1, count))),
+    );
+    const pads = new THREE.InstancedMesh(padGeometry, padMaterial, capacity);
+    pads.name = "forkmesh-billboard-refresh-pads";
+    pads.count = 0;
+    if (ring.pads) {
+      ring.group.remove(ring.pads);
+      ring.pads.dispose();
+    }
+    ring.group.add(pads);
+    ring.pads = pads;
+  }
+
+  function paintPad(record) {
+    if (!ring.pads || record.padIndex < 0) return;
+    ring.pads.setColorAt(
+      record.padIndex,
+      record === activePad ? activePadColor : idlePadColor,
+    );
+    ring.pads.instanceColor.needsUpdate = true;
+  }
+
+  function writePads() {
+    ensurePadCapacity(ring.padded.length);
+    const pads = ring.pads;
+    for (const record of ring.padded) {
+      padPosition.set(record.padX, PAD_Y, record.padZ);
+      padYaw.setFromAxisAngle(up, record.object.rotation.y);
+      padRotation.multiplyQuaternions(padYaw, padFlat);
+      pads.setMatrixAt(
+        record.padIndex,
+        padMatrix.compose(padPosition, padRotation, padScale),
+      );
+      paintPad(record);
+    }
+    pads.count = ring.padded.length;
+    pads.instanceMatrix.needsUpdate = true;
+    pads.computeBoundingSphere();
+  }
+
+  function relayout() {
+    const records = ring.records.sort(ringOrder);
+    let span = 0;
+    let widest = 0;
+    for (const record of records) {
+      span += record.width + BILLBOARD_RING.gap;
+      widest = Math.max(widest, record.width);
+    }
+    const radius = Math.max(
+      BILLBOARD_RING.minRadius,
+      (span + BILLBOARD_RING.entryGap) / TAU,
+      widest * 0.75,
+    );
+    sizeRing(radius);
+    const entry = BILLBOARD_RING.entryGap / radius;
+    const step = span ? (TAU - entry) / span : 0;
+    let cursor = entry / 2;
+    ring.padded.length = 0;
+    ring.padReachMin = Infinity;
+    ring.padReachMax = 0;
+    for (const record of records) {
+      const slice = (record.width + BILLBOARD_RING.gap) * step;
+      const angle = cursor + slice / 2;
+      cursor += slice;
+      const outX = Math.cos(angle);
+      const outZ = Math.sin(angle);
+      const object = record.object;
+      object.position.set(
+        outX * radius,
+        BILLBOARD_CIRCLE_SURFACE_Y - record.baseY,
+        outZ * radius,
+      );
+      object.rotation.y = Math.atan2(-outX, -outZ);
+      record.padIndex = -1;
+      if (!record.feed) continue;
+      const reach = radius - record.frontZ - BILLBOARD_RING.padGap;
+      record.padX = outX * reach;
+      record.padZ = outZ * reach;
+      record.inX = -outX;
+      record.inZ = -outZ;
+      record.padIndex = ring.padded.push(record) - 1;
+      ring.padReachMin = Math.min(ring.padReachMin, reach);
+      ring.padReachMax = Math.max(ring.padReachMax, reach);
+    }
+    writePads();
+  }
+
+  function syncSpinners(feed) {
+    const loading = loadingFeeds.has(feed);
+    const holder = spinnerHolders.get(feed);
+    for (const record of feedRecords.get(feed) || []) {
+      const show = loading && (!holder || holder === record);
+      record.spinner.visible = show;
+      if (show) spinning.add(record.spinner);
+      else spinning.delete(record.spinner);
+    }
+  }
+
   function placeBillboardOnIsland(object, options = {}) {
     if (!object) return null;
-    const circle = billboardCircle(String(options.circle || "hub"));
+    ensureRing();
     object.parent?.remove(object);
-    circle.group.add(object);
-    // Measure the board square-on and unplaced: the circle owns its position
-    // and heading from here, and the local extents drive both the arc it is
-    // given and the height its spinner floats at.
     object.position.set(0, 0, 0);
     object.rotation.y = 0;
     object.updateMatrixWorld(true);
-    ctx.billboardIslandBounds.setFromObject(object);
-    circle.group.getWorldPosition(ctx.billboardCircleOrigin);
+    bounds.setFromObject(object);
+    const feed = String(options.feed || "");
+    const order = Number(options.order);
     const record = {
       object,
-      circle: circle.spec.id,
-      feed: String(options.feed || ""),
-      order: Number.isFinite(Number(options.order))
-        ? Number(options.order)
-        : billboardPlacementSequence++,
-      width: Math.max(
-        1,
-        ctx.billboardIslandBounds.max.x - ctx.billboardIslandBounds.min.x,
-      ),
-      baseY: ctx.billboardIslandBounds.min.y - ctx.billboardCircleOrigin.y,
-      topY: ctx.billboardIslandBounds.max.y - ctx.billboardCircleOrigin.y,
+      rank: sectionRank(String(options.circle || "")),
+      order: Number.isFinite(order) ? order : placementSequence++,
+      feed,
+      cooldownMs: Number(options.cooldownMs) || BILLBOARD_RING.cooldownMs,
+      refreshedAt: -Infinity,
+      width: Math.max(1, bounds.max.x - bounds.min.x),
+      baseY: bounds.min.y,
+      topY: bounds.max.y,
+      frontZ: Math.max(0, bounds.max.z),
+      padIndex: -1,
+      padX: 0,
+      padZ: 0,
+      inX: 0,
+      inZ: 0,
+      spinner: null,
     };
-    circle.objects.push(record);
-    if (record.feed) {
-      // Only a board that has a request of its own gets a ring. It rides just
-      // above the board's own top edge, in the board's local frame, so it
-      // stays put when the circle re-levels the board onto the apron.
+    ring.group.add(object);
+    ring.records.push(record);
+    if (feed) {
       const spinner = new THREE.Mesh(
         sharedGeometry(THREE, "TorusGeometry", 0.42, 0.1, 10, 30, Math.PI * 1.55),
         sharedMaterial(THREE, "MeshBasicMaterial", {
-          color: "#8ff1c3",
+          color: BILLBOARD_RING.accent,
           toneMapped: false,
         }),
       );
-      spinner.name = `forkmesh-billboard-refresh-spinner-${record.feed}-${circle.objects.length}`;
+      spinner.name = `forkmesh-billboard-refresh-spinner-${feed}-${ring.records.length}`;
       spinner.position.set(0, record.topY + 1.1, 0.4);
       spinner.visible = false;
       spinner.renderOrder = 46;
       object.add(spinner);
       record.spinner = spinner;
-      ctx.billboardSpinners.push(spinner);
-      const shared = billboardFeedRecords.get(record.feed) || [];
+      const shared = feedRecords.get(feed) || [];
       shared.push(record);
-      billboardFeedRecords.set(record.feed, shared);
+      feedRecords.set(feed, shared);
+      syncSpinners(feed);
     }
-    ctx.relayoutBillboardCircle(circle);
+    relayout();
     return record;
   }
+
   function removeBillboardFromIsland(record) {
-    if (!record) return false;
-    const circle = billboardCircles.get(record.circle);
-    if (!circle) return false;
-    const circleIndex = circle.objects.indexOf(record);
-    if (circleIndex < 0) return false;
-    circle.objects.splice(circleIndex, 1);
+    const index = ring.records.indexOf(record);
+    if (index < 0) return false;
+    ring.records.splice(index, 1);
+    if (record === activePad) leavePad();
     if (record.feed) {
-      const feedRecords = billboardFeedRecords.get(record.feed) || [];
-      const feedIndex = feedRecords.indexOf(record);
-      if (feedIndex >= 0) feedRecords.splice(feedIndex, 1);
-      if (feedRecords.length) {
-        billboardFeedRecords.set(record.feed, feedRecords);
-      } else {
-        billboardFeedRecords.delete(record.feed);
+      const shared = feedRecords.get(record.feed) || [];
+      shared.splice(shared.indexOf(record), 1);
+      if (!shared.length) feedRecords.delete(record.feed);
+      if (spinnerHolders.get(record.feed) === record) {
+        spinnerHolders.delete(record.feed);
       }
+      spinning.delete(record.spinner);
+      record.spinner.removeFromParent();
     }
-    if (record.spinner) {
-      record.spinner.visible = false;
-      const spinnerIndex = ctx.billboardSpinners.indexOf(record.spinner);
-      if (spinnerIndex >= 0) ctx.billboardSpinners.splice(spinnerIndex, 1);
-    }
-    record.object?.parent?.remove?.(record.object);
-    ctx.relayoutBillboardCircle(circle);
+    record.object.removeFromParent();
+    relayout();
     return true;
   }
-  // Called by the shell whenever a board's request starts or settles. Nothing
-  // else makes a spinner visible, so a spinning ring always means a live fetch
-  // that the visitor's own approach started.
+
   function setBillboardRefreshing(feed, loading) {
-    for (const record of billboardFeedRecords.get(String(feed || "")) || []) {
-      record.spinner.visible = loading === true;
+    const key = String(feed || "");
+    if (loading === true) {
+      loadingFeeds.add(key);
+    } else {
+      loadingFeeds.delete(key);
+      spinnerHolders.delete(key);
     }
+    syncSpinners(key);
+  }
+
+  function enterPad(record) {
+    activePad = record;
+    paintPad(record);
+    const now = performance.now();
+    const refetch = now - record.refreshedAt >= record.cooldownMs;
+    if (refetch) {
+      record.refreshedAt = now;
+      spinnerHolders.set(record.feed, record);
+      syncSpinners(record.feed);
+    }
+    onBillboardNearby({ feed: record.feed, refetch });
+  }
+
+  function leavePad() {
+    const record = activePad;
+    if (!record) return;
+    activePad = null;
+    paintPad(record);
+    onBillboardAway({ feed: record.feed });
+  }
+
+  function padUnderPlayer() {
+    if (ctx.officeSceneMode !== "town" || !ring.padded.length) return null;
+    ring.group.getWorldPosition(center);
+    const x = ctx.player.position.x - center.x;
+    const z = ctx.player.position.z - center.z;
+    const slack = BILLBOARD_RING.padRadius + BILLBOARD_RING.padExit;
+    const distance = Math.hypot(x, z);
+    if (
+      distance < ring.padReachMin - slack ||
+      distance > ring.padReachMax + slack
+    ) {
+      return null;
+    }
+    for (const record of ring.padded) {
+      const dx = x - record.padX;
+      const dz = z - record.padZ;
+      const reach = record === activePad ? slack : BILLBOARD_RING.padRadius;
+      if (
+        dx * dx + dz * dz <= reach * reach &&
+        dx * record.inX + dz * record.inZ >= -BILLBOARD_RING.padGap
+      ) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  function updateBillboardPads() {
+    const record = padUnderPlayer();
+    if (record === activePad) return;
+    leavePad();
+    if (record) enterPad(record);
+  }
+
+  function tickBillboardSpinners(time) {
+    for (const spinner of spinning) spinner.rotation.z = -time * 0.006;
   }
 
   return {
-    billboardCircle,
     placeBillboardOnIsland,
     removeBillboardFromIsland,
     setBillboardRefreshing,
+    tickBillboardSpinners,
+    updateBillboardPads,
   };
 }
 
 export function build({
-  THREE,
   animated,
-  ctx,
   placeBillboardOnIsland,
+  tickBillboardSpinners,
   worldBulletin,
   worldDiscordBoard,
   worldGeneralChatBoard,
 }) {
-  const billboardIslandBounds = new THREE.Box3();
-  ctx.billboardIslandBounds = billboardIslandBounds;
-  const billboardCircleOrigin = new THREE.Vector3();
-  ctx.billboardCircleOrigin = billboardCircleOrigin;
-  const billboardSpinners = [];
-  ctx.billboardSpinners = billboardSpinners;
-  // Boards are laid out by the arc each one actually needs rather than by an
-  // even split, so a wide assembly grows its circle instead of overlapping the
-  // board beside it, and a circle of narrow leaderboard cards stays compact.
-  const relayoutBillboardCircle = (circle) => {
-    const objects = circle.objects;
-    objects.sort((left, right) => left.order - right.order);
-    let widest = 0;
-    let span = 0;
-    for (const record of objects) {
-      widest = Math.max(widest, record.width);
-      span += record.width + BILLBOARD_CIRCLE_GAP;
-    }
-    // A single board also has to fit inside its own circle. The widest board
-    // is flat, so its ends reach sqrt(r² + (w/2)²) from the centre; holding the
-    // radius at 0.75w keeps those corners inside the apron's margin even when
-    // one wide assembly is the only thing on the circle.
-    const radius = Math.max(
-      circle.spec.minRing,
-      objects.length ? span / (Math.PI * 2) : 0,
-      widest * 0.75,
-    );
-    circle.radius = radius;
-    const groundRadius = radius + circle.spec.groundMargin;
-    circle.ground.geometry.dispose();
-    circle.ground.geometry = resources.primitive(THREE, "CircleGeometry", groundRadius, 96);
-    // Scaling would widen the band as well as move it, so the rim follows the
-    // apron by rebuilding — the same cheap 96-segment rebuild the apron does.
-    circle.rim.geometry.dispose();
-    circle.rim.geometry = resources.primitive(
-      THREE,
-      "RingGeometry",
-      groundRadius - BILLBOARD_CIRCLE_RIM_WIDTH,
-      groundRadius,
-      96,
-    );
-    let cursor = 0;
-    objects.forEach((record) => {
-      const object = record.object;
-      const slice = record.width + BILLBOARD_CIRCLE_GAP;
-      const angle = -Math.PI / 2 + ((cursor + slice / 2) / span) * Math.PI * 2;
-      cursor += slice;
-      object.position.set(
-        Math.cos(angle) * radius,
-        0,
-        Math.sin(angle) * radius,
-      );
-      object.rotation.y = Math.atan2(-object.position.x, -object.position.z);
-      // Board authors use different local origins (some at their center,
-      // others at their footings). Normalize from actual geometry so no
-      // frame, post, label, or base can be buried by the shared terrain.
-      object.position.y = BILLBOARD_CIRCLE_SURFACE_Y - record.baseY;
-    });
-  };
-  ctx.relayoutBillboardCircle = relayoutBillboardCircle;
-  animated.push((time) => {
-    for (const spinner of billboardSpinners) {
-      if (spinner.visible) spinner.rotation.z = -time * 0.006;
-    }
-  });
-  // The bulletin, the general-chat board, and the Discord board carry no
-  // request of their own — they are painted from data the page already holds —
-  // so they take a circle but no feed, and never show a spinner.
+  animated.push(tickBillboardSpinners);
   placeBillboardOnIsland(worldBulletin, { circle: "hub" });
   placeBillboardOnIsland(worldGeneralChatBoard, { circle: "hub" });
   placeBillboardOnIsland(worldDiscordBoard, { circle: "social" });
-  return {
-  };
+  return {};
 }

@@ -10,6 +10,7 @@ DELIVERY_EVENTS = ("delivery", "soft bounce", "bounce", "reject")
 SUPPRESS_EVENTS = {"bounce": "bounce", "unsubscribe": "unsubscribe",
                    "spam": "spam", "reject": "reject"}
 DSN_RE = re.compile(r"^[245]\.\d{1,3}\.\d{1,3}$")
+SENDER_AUTH_DSN_RE = re.compile(r"^5\.7\.(2[0-7]|515)$")
 RECIPIENT_MISSING_RE = re.compile(
     r"user unknown|unknown (user|recipient|mailbox)|"
     r"no such (user|mailbox|recipient|address)|"
@@ -37,6 +38,8 @@ def bounce_cause(event, code, reason):
         return ""
     if not dsn(code).startswith("5."):
         return ""
+    if SENDER_AUTH_DSN_RE.match(dsn(code)):
+        return "sender"
     text = REPLY_NOISE_RE.sub(" ", str(reason or "")[:600])
     if RECIPIENT_MISSING_RE.search(text) and not POLICY_WORDS_RE.search(text):
         return "recipient"

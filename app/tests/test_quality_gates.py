@@ -117,3 +117,54 @@ def test_all_gate_commands_are_argument_arrays_without_shell_execution():
         assert isinstance(gate["command"], list)
         assert gate["command"]
         assert all(isinstance(part, str) and part for part in gate["command"])
+
+
+def test_run_profile_runs_every_gate_and_annotates_each_failure(
+        monkeypatch, capsys):
+    module = _module()
+    config = {
+        "gates": [
+            {"id": "first", "command": ["{python}", "-c",
+                                        "print('boom: 50% done'); raise SystemExit(3)"]},
+            {"id": "second", "command": ["{python}", "-c", "print('fine')"]},
+            {"id": "third", "command": ["{python}", "-c",
+                                        "import sys; sys.stderr.write('bad\\n'); sys.exit(1)"]},
+        ],
+        "profiles": {"core": ["first", "second", "third"]},
+    }
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    with pytest.raises(module.GateError) as error:
+        module.run_profile(config, "core")
+    assert str(error.value) == (
+        "failed gates: first (exit code 3), third (exit code 1)")
+    out = capsys.readouterr().out
+    assert "fine" in out
+    assert "::error title=Quality gate first failed::boom: 50%25 done" in out
+    assert "::error title=Quality gate third failed::bad" in out
+
+
+def test_annotation_keeps_failure_lines_that_scrolled_out_of_the_tail(capsys):
+    module = _module()
+    script = (
+        "print('--- FAIL: TestCall (4.5s)')\n"
+        "for n in range(80): print(f'ok  pkg{n}')\n"
+        "raise SystemExit(1)")
+    returncode, tail = module._run_gate(["python3", "-c", script])
+    capsys.readouterr()
+    assert returncode == 1
+    assert tail[0] == "--- FAIL: TestCall (4.5s)"
+    assert tail[1] == "..."
+    assert tail[-1] == "ok  pkg79"
+    assert len(tail) == 2 + module.ANNOTATION_TAIL_LINES
+
+
+def test_github_annotation_escapes_newlines_and_keeps_the_tail():
+    module = _module()
+    line = module.github_annotation(
+        "go", 1, ["--- FAIL: TestCall", "x" * 5000, "FAIL\tpkg"])
+    assert line.startswith("::error title=Quality gate go failed::")
+    message = line[len("::error title=Quality gate go failed::"):]
+    assert "\n" not in line
+    assert message.endswith("%0AFAIL\tpkg")
+    assert len(message) <= module.ANNOTATION_MAX_CHARS + 10
+    assert module.github_annotation("go", 2, []).endswith("::exit code 2")

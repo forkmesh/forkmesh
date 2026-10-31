@@ -52,7 +52,8 @@ class _HostedRepos:
 
 
 def _visibility_ns(actor="alice", hosted=True, record=None, org_admin=False):
-    calls = {"catalog": [], "audits": [], "republished": []}
+    calls = {"catalog": [], "audits": [], "republished": [],
+             "tombstones": [], "fork_edges": []}
     hosted_repos = _HostedRepos(
         {"id": "r1", "data": {"organization": "garden-club" if org_admin else ""}}
         if hosted else None)
@@ -93,6 +94,11 @@ def _visibility_ns(actor="alice", hosted=True, record=None, org_admin=False):
         "schedule_public_catalog_republish": lambda _env, o, n: _value(calls["republished"].append((o, n))),
         "_notify_cores": lambda *_a: _value(None),
         "_audit_sensitive_action": audit,
+        "invalidate_public_catalog_snapshots": lambda _env, o, n: _value(
+            calls["tombstones"].append((o, n))),
+        "_index_repo_fork_edge": lambda _env, rec, prior, owner_bi, key_bi: _value(
+            calls["fork_edges"].append(
+                (prior.get("visibility"), rec["visibility"], key_bi))),
     }
     _lift(HOSTED, {"_change_visibility"}, ns)
     return ns, calls, hosted_repos
@@ -112,6 +118,18 @@ def test_the_owner_makes_a_hosted_repository_private():
     assert hosted.set == [("r1", "private")]
     assert calls["republished"] == [("alice", "garden")]
     assert calls["audits"][-1][1] == "success"
+    assert calls["tombstones"] == [("alice", "garden")]
+    assert calls["fork_edges"] == [("public", "private", "bi:alice/garden")]
+
+
+def test_making_a_hosted_repository_public_writes_no_tombstone():
+    ns, calls, _hosted = _visibility_ns(record={
+        "owner": "alice", "name": "garden", "visibility": "private"})
+    result = _run(ns["_change_visibility"](None, _Request(
+        {"owner": "alice", "name": "garden", "visibility": "public"})))
+    assert result["data"]["changed"] is True
+    assert calls["tombstones"] == []
+    assert calls["fork_edges"] == [("private", "public", "bi:alice/garden")]
 
 
 def test_strangers_and_node_held_repositories_are_refused():

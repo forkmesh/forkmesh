@@ -26,5 +26,6 @@ def test_native_node_owns_restart_and_endpoint_renewal():
     assert "Restart=on-failure" in service
     assert "RestartSec=5s" in service
     assert "EndpointPublisher" in daemon
-    assert "endpoint.Publish(" in daemon
+    assert "d.publishEndpoint(ctx, endpoint)" in daemon
+    assert "return publisher.Publish(ctx)" in daemon
     assert "lastEndpointAt" in daemon

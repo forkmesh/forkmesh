@@ -294,10 +294,10 @@ def test_web_and_desktop_surfaces_expose_all_calendar_views_and_defaults():
         assert contract in script
     assert "/api/calendar" in script
 
-    desktop = (ROOT.parent / "desktop" / "src" /
-               "MainWindowCalendar.cpp").read_text(encoding="utf-8")
-    desktop_repository_calendar = (ROOT.parent / "desktop" / "src" /
-                                   "RepositoryCalendar.cpp").read_text(encoding="utf-8")
+    plugin = ROOT.parent / "marketplace" / "packages" / "calendar" / "content" / "desktop"
+    desktop = (plugin / "CalendarPage.cpp").read_text(encoding="utf-8")
+    desktop_repository_calendar = (plugin / "RepositoryCalendar.cpp").read_text(
+        encoding="utf-8")
     for label in ("Month", "Week", "Day", "Agenda"):
         assert f'QStringLiteral("{label}")' in desktop
     for contract in (
@@ -305,7 +305,7 @@ def test_web_and_desktop_surfaces_expose_all_calendar_views_and_defaults():
             'QStringLiteral("/api/accounts/users")',
             'item.value(QStringLiteral("members")).toArray()',
             "calendarRequestProof(method, path, &resource)",
-            "agentModelMatchesProvider(",
+            "m_host.askAgentWith(",
             'setOcticon(add, "calendar", 14)',
             'calendar->addItem(QStringLiteral("My calendar · private")',
             "saveGuard->setEnabled(true)",

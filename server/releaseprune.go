@@ -27,6 +27,7 @@ var releaseShardPattern = regexp.MustCompile(`^[0-9a-f]{2}$`)
 
 type releasePruneResult struct {
 	Referenced int
+	Missing    int
 	Deleted    int
 	Bytes      int64
 }
@@ -88,8 +89,8 @@ func (d *Daemon) pruneReleaseStores(parent context.Context) {
 				labels[store], result.Deleted, result.Bytes, err)
 			continue
 		}
-		log.Printf("release store prune %s: deleted %d unreferenced blobs (%d bytes), %d referenced kept",
-			labels[store], result.Deleted, result.Bytes, result.Referenced)
+		log.Printf("release store prune %s: deleted %d unreferenced blobs (%d bytes), %d referenced kept, %d referenced not in the store",
+			labels[store], result.Deleted, result.Bytes, result.Referenced, result.Missing)
 	}
 }
 
@@ -207,7 +208,7 @@ func pruneReleaseStore(ctx context.Context, store string, gitDirs []string,
 	result.Referenced = len(referenced)
 	for digest := range referenced {
 		if !releaseBlobPresent(store, digest) {
-			return result, fmt.Errorf("referenced blob %s is missing from the store", digest)
+			result.Missing++
 		}
 	}
 	root := filepath.Join(store, "sha256")

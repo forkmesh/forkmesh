@@ -17,6 +17,12 @@ struct WhatsNewScreen: View {
                 let index: Int = pair.offset
                 let entry: AppChangelog.Entry = pair.element
                 Section {
+                    if !entry.pitch.isEmpty {
+                        Text(verbatim: entry.pitch)
+                            .fmText(.bodyMedium, color: fm.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, FmSpace.x1)
+                    }
                     if entry.sections.isEmpty {
                         Text(index == 0 ? "No notes were written for this build." : "No notes for this build.")
                             .fmText(.bodyMedium, color: fm.textSecondary)
@@ -26,7 +32,7 @@ struct WhatsNewScreen: View {
                         sectionRow(section)
                     }
                 } header: {
-                    header(entry, current: index == 0)
+                    header(entry, current: index == 0 && !entry.build.isEmpty)
                 }
             }
         }
@@ -49,8 +55,9 @@ struct WhatsNewScreen: View {
                         .background(Capsule().fill(fm.accentSubtle))
                 }
             }
-            if !entry.date.isEmpty {
-                Text(verbatim: entry.formattedDate())
+            let detail: String = entry.detail()
+            if !detail.isEmpty {
+                Text(verbatim: detail)
                     .fmText(.bodySmall, color: fm.textSecondary)
             }
         }

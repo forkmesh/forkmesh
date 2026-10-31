@@ -437,6 +437,25 @@ func TestPullEventMarkdownCarriesPatchsetAnchor(t *testing.T) {
 	}
 }
 
+func TestPullRecordsKeepTheClaimedName(t *testing.T) {
+	record := pullMarkdown(7, map[string]any{"title": "Fix", "base": "main", "head": "fix",
+		"author": "key", "authorName": "", "authorClaimedName": "bob", "sig": "s", "ts": 1})
+	if !strings.Contains(record, "\nauthorName: \n") || !strings.Contains(record, "\nauthorClaimedName: bob\n") {
+		t.Fatalf("claimed name missing from pull.md:\n%s", record)
+	}
+	event := pullEventMarkdown(map[string]any{
+		"type": "comment", "id": "ev-3", "author": "key", "authorClaimedName": "bob", "ts": 1, "body": "hi", "sig": "s",
+	})
+	if !strings.Contains(event, "\nauthorClaimedName: bob\n") {
+		t.Fatalf("claimed name missing from the event:\n%s", event)
+	}
+	verified := pullMarkdown(8, map[string]any{"title": "Fix", "base": "main", "head": "fix",
+		"author": "key", "authorName": "bob", "sig": "s", "ts": 1})
+	if strings.Contains(verified, "authorClaimedName") {
+		t.Fatalf("verified pull grew a claimed name:\n%s", verified)
+	}
+}
+
 func TestBranchReviewItemWritesLedgerOnce(t *testing.T) {
 	root := t.TempDir()
 	item := collaborationItem{

@@ -9,7 +9,10 @@ logs stay on the desktop.
 
 The desktop opens one SSH session per node with a dedicated reader key
 (`next_logread_ed25519`, created by `tools/next_fleet.py logread-key`), not the
-fleet key. On each node it is a forced command:
+fleet key. It connects on the fleet's `ssh_port`, read from
+`~/projects/forkmesh/src/deploy/fleet.toml`. Every other retry after a failure
+uses 22, for a node that has not moved yet ([deploy/ssh-port.md](deploy/ssh-port.md)).
+On each node it is a forced command:
 
 ```
 restrict,command="/usr/bin/python3 -I /opt/forkmesh-next/bin/fmnext-logread" ssh-ed25519 ... fmnext-logread
@@ -51,6 +54,28 @@ edge visitor fields (`cf_*`, `edge_*`) only when the TCP peer is in
 Cloudflare's published ranges, the `expected_degraded` response header,
 credential query parameters redacted, `/readyz` and `/health` skipped. The app
 never sees the `Cf-*` headers.
+
+The redacted query keys are `ACCESS_LOG_QUERY_KEYS` in `deploy/core/render.py`.
+`ticket` (chat room, call and event-socket tickets on socket URLs) and `node`
+(the account a desktop's signed reads name) were added on 2026-10-22: both
+were written to the journal in full; a ticket is a short-lived socket
+credential and `node` ties each signed read to an account.
+
+Bearer tokens no longer travel in a path. Chat invite tokens go in the
+request body (`POST /api/chat/invites/preview|accept`) and webhook tokens in
+the `token` query key or the `x-forkmesh-webhook-token` header
+(`/api/chat/webhooks?token=<token>`); the old `/api/chat/invites/<token>` and
+`/api/chat/webhooks/<token>` paths answer `410` (2026-10-22,
+[app/chat-private-rooms.md](app/chat-private-rooms.md#invite-links)). Caddy
+applies one filter per log field and `request>uri` already uses the `query`
+filter, so redacting a path would mean replacing it with hand-written regular
+expressions over the whole URI, and there is no Caddy binary here to validate
+such a config before it ships; moving the tokens was the safer fix. A client
+that still calls an old path is logged once, gets the `410`, and the owner
+rotates the token. The app's own error and Sentry logs replace both old paths
+with `[token]` (`_privacy_safe_log_path` in `app/src/entry.py`). Tests:
+`deploy/tests/test_render.py`, `app/tests/test_sentry_worker.py`,
+`app/tests/test_chat_relay_hardening.py`.
 
 ## Rolling it out
 

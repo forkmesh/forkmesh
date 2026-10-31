@@ -317,8 +317,10 @@ final class PromptDictation {
     private func startEngine(_ tap: @escaping AVAudioNodeTapBlock) throws {
         let session: AVAudioSession = AVAudioSession.sharedInstance()
         let options: AVAudioSession.CategoryOptions = ambient ? [.mixWithOthers, .defaultToSpeaker] : OtherAppCall.duckingOptions.union(.defaultToSpeaker)
-        try session.setCategory(.playAndRecord, mode: .measurement, options: options)
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        if !OtherAppCall.ownCall {
+            try session.setCategory(.playAndRecord, mode: .measurement, options: options)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        }
         guard session.isInputAvailable else {
             throw PromptDictationError.noMicrophone
         }
@@ -387,7 +389,7 @@ final class PromptDictation {
         let cancelAnalysis: (() -> Void)? = self.cancelAnalysis
         self.cancelAnalysis = nil
         cancelAnalysis?()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        OtherAppCall.deactivateSession()
         if listening {
             if ambient {
                 Self.isOverhearing = false

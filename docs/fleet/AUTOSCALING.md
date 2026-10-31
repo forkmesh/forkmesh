@@ -73,6 +73,12 @@ load per CPU (`host_metrics.py`) and upserts it into `host_metrics` every 30 s.
 The tick owner aggregates rows fresher than 2 minutes (max of p95 and lag,
 mean of load and RPS). No fresh metrics means hold.
 
+The same row carries `cpuPct`, `memPct` and `diskPct` (CPU busy share between
+samples at least 5 s apart, memory in use, root file system in use). The
+autoscaler does not read them; `/api/status` shows them as each core's
+`resources` and the iPhone draws them as tiny bars on the core node lights
+(`docs/native/NAVIGATION.md`).
+
 ## Cloud credential
 
 The provider API key lives only in the vault and in unsealed core memory.

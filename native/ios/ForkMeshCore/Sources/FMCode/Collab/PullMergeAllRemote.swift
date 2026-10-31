@@ -1,3 +1,4 @@
+import FMApi
 import FMBase
 import FMChat
 import FMControl
@@ -34,6 +35,10 @@ public enum PullMergeAllRules {
     public static let title = "Merge all with AI"
     public static let maxSkipped = 50
     public static let unpaired = "Pair this phone with your desktop to merge every pull request with AI."
+
+    public static func owner(of repo: Repository) -> String {
+        repo.displayOwner
+    }
 
     public static func params(owner: String, name: String) -> JSONObject {
         ["owner": .string(owner), "name": .string(name), "action": .string(action)]

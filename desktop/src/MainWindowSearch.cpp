@@ -7,7 +7,6 @@
 #include "ForkMeshPackageRegistry.h"
 #include "GlobalSearchMatch.h"
 #include "SearchHitDelegate.h"
-#include "TimersFeature.h"
 
 #include <QFocusFrame>
 #include <QHeaderView>
@@ -1180,7 +1179,7 @@ void MainWindow::runGlobalSearch(const QString &rawQuery)
     const QList<AgentSession> sessions = m_agentSessions;
     const QHash<int, AgentDiffStat> diffStats = m_agentDiffStats;
     const QList<ActionRun> runs = m_actionRuns;
-    const QStringList networkLog = m_networkLog;
+    const auto networkLogShare = std::make_shared<QStringList>(m_networkLog);
     const QVector<GlobalSearchGitRepo> gitRepos = globalSearchGitRepos();
 
     auto deliver = [this, gen, query](const QVector<GlobalSearchHit> &hits) {
@@ -1211,6 +1210,8 @@ void MainWindow::runGlobalSearch(const QString &rawQuery)
 
     runOffThread<QVector<GlobalSearchHit>>(
         [=]() -> QVector<GlobalSearchHit> {
+            QStringList networkLog = std::move(*networkLogShare);
+            networkLog.detach();
             HitBag bag;
 
             for (const RepoBrief &repo : repos) {
@@ -1587,37 +1588,9 @@ void MainWindow::activateGlobalSearchHit(const GlobalSearchHit &hit)
 // --- Packages the desktop hosts itself --------------------------------------
 //
 // A marketplace package with its own page answers the top search box through
-// NativePackageWidget::searchHits. Notes, Tasks, Calendar and Timers are
-// packages too, but their pages are part of the window, so the window answers
-// for them here from the records those pages already hold. Packages that only
-// add a launcher (Ledger, Capture, ...) are found by their name instead.
-
-namespace {
-
-QString packageRecordText(const QJsonObject &record, const char *field)
-{
-    return record.value(QLatin1String(field)).toString().trimmed();
-}
-
-// The first of `fields` holding the query, or -1.
-int packageRecordMatch(const QJsonObject &record, const QString &query,
-                       std::initializer_list<const char *> fields)
-{
-    int index = 0;
-    for (const char *field : fields) {
-        if (containsFold(record.value(QLatin1String(field)).toString(), query))
-            return index;
-        ++index;
-    }
-    return -1;
-}
-
-} // namespace
-
-bool MainWindow::builtinPackageSearchable(const QString &packageId) const
-{
-    return packageSurfaceShown(packageId);
-}
+// NativePackageWidget::searchHits, and a top-bar widget the same way below.
+// Packages that only add a launcher (Ledger, Capture, ...) are found by their
+// name instead.
 
 QList<MainWindow::BuiltinPackageSearchHit>
 MainWindow::builtinPackageSearchHits(const QString &rawQuery,
@@ -1629,123 +1602,26 @@ MainWindow::builtinPackageSearchHits(const QString &rawQuery,
         return hits;
     const QString dot = QString::fromUtf8("  \xC2\xB7  ");
 
-    if (builtinPackageSearchable(QStringLiteral("notes"))) {
-        int found = 0;
-        QSet<QString> mirrored; // cloud copies of a local note list once
-        for (const QJsonValue &value : m_localNotes)
-            mirrored.insert(packageRecordText(value.toObject(), "cloudId"));
-        for (const bool local : {true, false}) {
-            for (const QJsonValue &value : local ? m_localNotes : m_cloudNotes) {
-                if (found >= limitPerPackage)
-                    break;
-                const QJsonObject note = value.toObject();
-                const QString id = packageRecordText(note, "id");
-                if (id.isEmpty() || (!local && mirrored.contains(id)))
-                    continue;
-                const int field =
-                    packageRecordMatch(note, query, {"title", "markdown"});
-                if (field < 0)
-                    continue;
-                QString label = packageRecordText(note, "title");
-                if (label.isEmpty())
-                    label = QStringLiteral("Untitled note");
-                if (field == 1)
-                    label += dot + snippetAround(
-                        note.value(QStringLiteral("markdown")).toString(), query);
-                hits.append({QStringLiteral("notes"), QStringLiteral("Notes"),
-                             QStringLiteral("note"), label,
-                             (local ? QStringLiteral("local:")
-                                    : QStringLiteral("cloud:")) + id});
-                ++found;
-            }
-        }
-    }
-
-    if (builtinPackageSearchable(QStringLiteral("tasks"))) {
-        int found = 0;
-        for (const QJsonValue &value : m_organizationTasks) {
-            if (found >= limitPerPackage)
-                break;
-            const QJsonObject task = value.toObject();
-            const QString id = packageRecordText(task, "id");
-            if (id.isEmpty())
-                continue;
-            int field = packageRecordMatch(
-                task, query,
-                {"title", "details", "assignee", "repository", "completionNote",
-                 "department", "status", "id"});
-            if (field < 0 &&
-                containsFold(task.value(QStringLiteral("qa"))
-                                 .toObject()
-                                 .value(QStringLiteral("howToTest"))
-                                 .toString(),
-                             query))
-                field = 8;
-            if (field < 0)
-                continue;
-            QString label = packageRecordText(task, "title");
-            if (label.isEmpty())
-                label = id;
-            if (field == 1 || field == 4)
-                label += dot + snippetAround(
-                    task.value(QLatin1String(field == 1 ? "details"
-                                                        : "completionNote"))
-                        .toString(), query);
-            const QString status = packageRecordText(task, "status");
-            if (!status.isEmpty())
-                label += dot + status;
-            hits.append({QStringLiteral("tasks"), QStringLiteral("Tasks"),
-                         QStringLiteral("list-unordered"), label, id});
-            ++found;
-        }
-    }
-
-    if (builtinPackageSearchable(QStringLiteral("calendar"))) {
-        int found = 0;
-        for (const QJsonValue &value : m_calendarEvents) {
-            if (found >= limitPerPackage)
-                break;
-            const QJsonObject event = value.toObject();
-            const QString id = packageRecordText(event, "id");
-            if (id.isEmpty() ||
-                packageRecordMatch(event, query,
-                                   {"title", "location", "description"}) < 0)
-                continue;
-            QString label = packageRecordText(event, "title");
-            if (label.isEmpty())
-                label = QStringLiteral("Untitled event");
-            const qint64 startAt = qint64(
-                event.value(QStringLiteral("startAt")).toDouble());
-            if (startAt > 0)
-                label += dot + QLocale().toString(
-                    QDateTime::fromMSecsSinceEpoch(startAt).toLocalTime(),
-                    QLocale::ShortFormat);
-            const QString location = packageRecordText(event, "location");
-            if (!location.isEmpty())
-                label += dot + location;
-            hits.append({QStringLiteral("calendar"), QStringLiteral("Calendar"),
-                         QStringLiteral("calendar"), label, id});
-            ++found;
-        }
-    }
-
-    if (m_timersFeature) {
-        const qint64 now = timersNowMs();
-        int found = 0;
-        for (const forkmesh::timers::Timer &timer : m_timersFeature->ordered(now)) {
-            if (found >= limitPerPackage)
-                break;
-            const QString kind =
-                forkmesh::timers::TimersFeature::kindName(timer.kind);
-            if (!containsFold(timer.label, query) && !containsFold(kind, query))
-                continue;
-            hits.append({QStringLiteral("timers"), QStringLiteral("Timers"),
-                         QStringLiteral("stopwatch"),
-                         (timer.label.isEmpty() ? kind : timer.label) + dot +
-                             forkmesh::timers::TimersFeature::spokenStatus(timer,
-                                                                          now),
-                         timer.id});
-            ++found;
+    for (const NativePackageChrome &chrome : m_nativePackageChrome) {
+        if (!chrome.widget)
+            continue;
+        const forkmesh::market::PackageManifest *manifest =
+            m_packageRegistry ? m_packageRegistry->package(chrome.id) : nullptr;
+        const forkmesh::market::NativePackageContribution *contribution =
+            forkmesh::market::nativePackageContribution(
+                chrome.entrypoint, manifest ? manifest->type : QString());
+        for (const forkmesh::market::NativePackageSearchHit &hit :
+             chrome.widget->searchHits(query, limitPerPackage)) {
+            QString label = hit.title;
+            if (!hit.detail.isEmpty())
+                label += dot + hit.detail;
+            hits.append({chrome.id,
+                         manifest && !manifest->name.isEmpty()
+                             ? manifest->name
+                             : chrome.id,
+                         contribution ? contribution->navigationIcon
+                                      : QStringLiteral("plug"),
+                         label, hit.id});
         }
     }
 
@@ -1776,34 +1652,11 @@ MainWindow::builtinPackageSearchHits(const QString &rawQuery,
 void MainWindow::activateBuiltinPackageSearchHit(const QString &packageId,
                                                  const QString &hitId)
 {
-    if (!hitId.isEmpty() && packageId == QLatin1String("notes")) {
-        const int colon = hitId.indexOf(QLatin1Char(':'));
-        openNoteFromSearch(hitId.mid(colon + 1), hitId.left(colon));
-        return;
-    }
-    if (!hitId.isEmpty() && packageId == QLatin1String("tasks")) {
-        openOrganizationTask(hitId);
-        return;
-    }
-    if (!hitId.isEmpty() && packageId == QLatin1String("calendar")) {
-        showSection(kCalendarSectionIndex);
-        openCalendarEventDialog(hitId, QDate());
-        return;
-    }
-    if (!hitId.isEmpty() && packageId == QLatin1String("timers")) {
-        // The chip's own menu is where a timer is paused, restarted or
-        // dropped, so the hit opens it under the chip.
-        const QList<QPushButton *> chips =
-            m_timersNavStrip ? m_timersNavStrip->findChildren<QPushButton *>()
-                             : QList<QPushButton *>();
-        for (QPushButton *chip : chips) {
-            if (chip->property("timerId").toString() == hitId) {
-                showTimerChipMenu(
-                    hitId, chip->mapToGlobal(QPoint(0, chip->height())));
-                return;
-            }
+    for (const NativePackageChrome &chrome : std::as_const(m_nativePackageChrome)) {
+        if (chrome.id == packageId && chrome.widget) {
+            chrome.widget->activateSearchHit(hitId);
+            return;
         }
-        return;
     }
 
     // A package found by name: its page if it has one, else where it lives.
@@ -1816,42 +1669,10 @@ void MainWindow::activateBuiltinPackageSearchHit(const QString &packageId,
     const forkmesh::market::PackageManifest *manifest =
         m_packageRegistry ? m_packageRegistry->package(packageId) : nullptr;
     const QString entrypoint = manifest ? manifest->desktopEntrypoint : QString();
-    if (entrypoint == QLatin1String("builtin:notes"))
-        showSection(kNotesSectionIndex);
-    else if (entrypoint == QLatin1String("builtin:tasks"))
-        showSection(kOrganizationTasksSectionIndex);
-    else if (entrypoint == QLatin1String("builtin:calendar"))
-        showSection(kCalendarSectionIndex);
-    else if (entrypoint == QLatin1String("builtin:ledger") && m_ledgerFeature)
+    if (entrypoint == QLatin1String("builtin:ledger") && m_ledgerFeature)
         showSection(kLedgerSectionIndex);
-    else if (entrypoint == QLatin1String("builtin:timers") && m_timersClockButton)
-        showTimersClockMenu();
+    else if (activateNativePackageChrome(packageId))
+        return;
     else
         showPackageSettings(packageId);
-}
-
-void MainWindow::prepareBuiltinPackageSearch()
-{
-    if (m_builtinPackageSearchPrepared)
-        return;
-    m_builtinPackageSearchPrepared = true;
-    // Off the keystroke: a page that was never opened is built here, and its
-    // load callback redraws the dropdown through nativePackageSearchIndexChanged.
-    QTimer::singleShot(0, this, [this] {
-        if (builtinPackageSearchable(QStringLiteral("notes")) &&
-            m_localNotes.isEmpty() && m_cloudNotes.isEmpty()) {
-            ensureSectionBuilt(kNotesSectionIndex);
-            refreshNotes();
-        }
-        if (builtinPackageSearchable(QStringLiteral("tasks")) &&
-            !m_organizationTasksLoaded) {
-            ensureSectionBuilt(kOrganizationTasksSectionIndex);
-            refreshOrganizationTasks();
-        }
-        if (builtinPackageSearchable(QStringLiteral("calendar")) &&
-            m_calendarEvents.isEmpty()) {
-            ensureSectionBuilt(kCalendarSectionIndex);
-            refreshCalendar();
-        }
-    });
 }

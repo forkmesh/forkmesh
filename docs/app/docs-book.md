@@ -22,9 +22,33 @@ white-label instance the page is the `developer-docs` plugin, off unless
 `GET /api/docs-book` answers `{commit, latest, canEdit, docs: [{path, oid,
 updated, author, subject, change, content, truncated}]}`. It reads through the
 App's public repository routes (`tree` pinned to one commit, `blobs` in
-batches of 40) and caches the result for 30 s per commit. Files over the
-gateway's 2 MB blob cap arrive `truncated` and cannot be edited. Files are
-ordered by directory with `README.md` first.
+batches of 40). Files over the gateway's 2 MB blob cap arrive `truncated` and
+cannot be edited. Files are ordered by directory with `README.md` first.
+
+### Cache
+
+Each request reads `tree?path=docs&ref=main` to learn the commit. The rest
+comes from a per-process cache (`_CACHE` in `docs_book.py`):
+
+- Same commit as the cached build: the cached list is served with no other
+  read. A build where a read failed is kept only 30 s, then rebuilt.
+- `main` moved: the walk starts from the new `docs` listing. A subdirectory
+  whose tree `oid` and last-change `hash` both match the previous build is
+  taken from the cache without reading it (an unchanged last change means no
+  commit in between touched anything under it, so its files' dates and
+  subjects are the same). File text is reused by blob `oid`; only new blobs
+  go to `blobs`. The answer is the same bytes a cold build would give.
+- A save clears only the commit, so the next load rebuilds the same way.
+
+The cache holds one build (about 4 MB of text plus file metadata) per App
+process, so one per core.
+
+Until 2026-10-21 the cache was dropped every 30 s and on every move of
+`main`, and each rebuild made 23 `tree` reads and 7 `blobs` reads one after
+another, each a round trip through the public origin. On the served stack
+that made most loads take 3 to 16 s (once over 30 s), on all three cores.
+Now a load after a merge that does not touch `docs/` makes one read, and an
+edit to one file makes three.
 
 ## Editing
 

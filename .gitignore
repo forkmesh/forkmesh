@@ -27,6 +27,7 @@ app/python_modules/
 .git-rewrite/
 tools/__pycache__/
 __pycache__/
+.pytest_cache/
 *.py[cod]
 # Match the directory *and* the symlink form: agent worktrees link
 # node_modules at the primary checkout's install rather than reinstalling

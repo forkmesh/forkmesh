@@ -4,9 +4,11 @@
 import json
 from pathlib import Path
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-COO_CONFIG = PROJECT / ".forkmesh" / "teammates" / "coo.json"
+COO_CONFIG = PROJECT / ".forkmesh" / "workflows" / "coo.json"
 PROMPT_BUILDER = PROJECT / "desktop" / "src" / "MainWindowTeammates.cpp"
 
 
@@ -18,10 +20,10 @@ def _load_without_duplicate_keys(path):
             result[key] = value
         return result
 
-    return json.loads(
+    return as_teammate(json.loads(
         path.read_text(encoding="utf-8"),
         object_pairs_hook=unique_object,
-    )
+    ))
 
 
 def test_coo_decides_routine_operational_tradeoffs_without_owner_input():

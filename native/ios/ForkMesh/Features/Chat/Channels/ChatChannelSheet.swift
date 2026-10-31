@@ -41,13 +41,12 @@ struct ChatChannelSheet: View {
     let onInsert: (String) -> Void
     let onRoute: (Route) -> Void
     @State private var path: [ChatChannelPage] = []
-    @State private var inviting: Bool = false
     @State private var moving: Bool = false
     @State private var leaving: Bool = false
     @State private var explainAdd: Bool = false
 
     private var office: OfficeRoom? { hub.office?.room(for: conversation) }
-    private var locked: Bool { office?.isPrivate ?? hub.extras.isPrivate(conversation) }
+    private var locked: Bool { office?.isPrivate ?? false }
     private var name: String {
         let label: String = hub.conversationLabel(conversation)
         return label.hasPrefix("#") ? String(label.dropFirst()) : label
@@ -79,7 +78,6 @@ struct ChatChannelSheet: View {
         .presentationDragIndicator(.visible)
         .presentationBackground(.ultraThinMaterial)
         .presentationCornerRadius(30)
-        .sheet(isPresented: $inviting) { InviteToChannelSheet(hub: hub, channel: conversation) }
         .sheet(isPresented: $moving) { ChatMoveChannelSheet(hub: hub, channel: conversation) }
         .confirmationDialog("Leave \(hub.conversationLabel(conversation))?", isPresented: $leaving, titleVisibility: .visible) {
             Button("Leave channel", role: .destructive, action: leave)
@@ -202,11 +200,7 @@ struct ChatChannelSheet: View {
             }
             return
         }
-        if hub.extras.isPrivate(conversation) {
-            inviting = true
-        } else {
-            explainAdd = true
-        }
+        explainAdd = true
     }
 
     private func actionButton(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
@@ -310,11 +304,7 @@ struct ChatChannelSheet: View {
                 onProfile: { (person: String) in close { onRoute(.profile(name: person)) } },
                 onMessage: { (person: ChatChannelMember) in
                     close {
-                        if !person.peerId.isEmpty && person.online && !person.peerId.hasPrefix("app:") {
-                            hub.select("@\(person.peerId)")
-                        } else {
-                            onInsert("@\(person.account.isEmpty ? person.name : person.account) ")
-                        }
+                        Task { _ = await hub.message(person) }
                     }
                 })
         case .apps:

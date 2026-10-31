@@ -26,10 +26,7 @@ extension ChatHub {
     public var directoryChannels: [ChatDirectoryChannel] {
         var out: [ChatDirectoryChannel] = []
         for channel in channels where channel != meshConversation {
-            let isPrivate = extras.isPrivate(channel)
-            out.append(
-                ChatDirectoryChannel(
-                    conversation: channel, name: channel, detail: isPrivate ? "Private channel" : "Channel", isPrivate: isPrivate))
+            out.append(ChatDirectoryChannel(conversation: channel, name: channel, detail: "Channel", isPrivate: false))
         }
         for room in office?.rooms ?? [] {
             let detail = room.members.isEmpty
@@ -99,22 +96,54 @@ extension ChatHub {
             onGuestBlocked?("send direct messages")
             return nil
         }
-        if DirectMessageFrames.isDirect(person.conversation) || person.conversation.hasPrefix("@") { return person.conversation }
-        let account = person.handle.lowercased()
-        if let direct {
-            if let record = direct.records.first(where: { $0.otherUser == account }) { return record.conversation }
-            do {
-                return try await direct.start(username: account).conversation
-            } catch {
-                if person.peerId.isEmpty {
-                    post("\(error)")
-                    return nil
-                }
-            }
+        if DirectMessageFrames.isDirect(person.conversation) { return person.conversation }
+        let account = ChatNodeOwners.normalized(person.account)
+        if account.isEmpty {
+            post("\(person.name.isEmpty ? "This person" : person.name) is a guest without an account, so there is no direct message to open.")
+            return nil
         }
-        if !person.peerId.isEmpty { return "@\(person.peerId)" }
-        post("\(person.name) is not online. Sign in to send messages that wait for them.")
-        return nil
+        guard let direct else {
+            post("Sign in to send direct messages.")
+            return nil
+        }
+        if let record = direct.records.first(where: { $0.otherUser == account }) { return record.conversation }
+        do {
+            return try await direct.start(username: account).conversation
+        } catch {
+            post("\(error)")
+            return nil
+        }
+    }
+
+    nonisolated public static func coveInviteText(inviterName: String, coveName: String, shareUrl: String) -> String {
+        let who = inviterName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cove = coveName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(who.isEmpty ? "Someone" : "@" + who) invited you to the cove \u{201C}\(cove.isEmpty ? "untitled" : cove)\u{201D}: \(shareUrl)"
+    }
+
+    @discardableResult
+    public func sendDirectNote(to account: String, text: String) async -> Bool {
+        let name = ChatNodeOwners.normalized(account)
+        guard let direct, !name.isEmpty, !isGuest(), !text.dartTrimmed.isEmpty else { return false }
+        let conversation: String
+        if let record = direct.records.first(where: { $0.otherUser == name }) {
+            conversation = record.conversation
+        } else {
+            guard let started = try? await direct.start(username: name) else { return false }
+            conversation = started.conversation
+        }
+        return await direct.send(conversation, text: text)
+    }
+
+    public func canMessage(_ member: ChatChannelMember) -> Bool {
+        !member.isSelf && !member.account.isEmpty && !ChatFrameText.isIntegration(member.peerId) && !isGuest()
+    }
+
+    @discardableResult
+    public func message(_ member: ChatChannelMember) async -> Bool {
+        guard canMessage(member) else { return false }
+        return await openPerson(
+            ChatRecipient(kind: .person, name: member.name, account: member.account, peerId: member.peerId, online: member.online))
     }
 
     func accountRecipient(_ conversation: String) -> ChatRecipient? {
@@ -122,7 +151,11 @@ extension ChatHub {
         let name = String(conversation.dropFirst()).trimmingCharacters(in: .whitespaces)
         if name.isEmpty { return nil }
         let others = relay.roster().filter { !$0.isSelf }
-        if others.contains(where: { $0.id == name }) { return nil }
+        if let member = others.first(where: { $0.id == name }) {
+            if member.owner.isEmpty { return ChatRecipient(kind: .person, name: member.name, peerId: member.id, online: member.online) }
+            return ChatRecipient(
+                kind: .person, name: member.name, account: member.owner.lowercased(), peerId: member.id, online: member.online)
+        }
         let folded = name.lowercased()
         let matches = others.filter {
             $0.owner.lowercased() == folded || $0.name.lowercased() == folded || $0.nodeName.lowercased() == folded
@@ -220,8 +253,6 @@ extension ChatHub {
             if let name = relay.messages(conversation).first(where: { !$0.isSelf })?.senderName { return "@\(name)" }
             return "@direct message"
         }
-        let named = extras.look(for: conversation).name
-        if extras.isPrivate(conversation), !named.isEmpty { return named }
         return conversation
     }
 
@@ -300,31 +331,24 @@ extension ChatHub {
     public var directRows: [ChatDirectRow] {
         var out: [ChatDirectRow] = []
         let roster = relay.roster()
+        let groups = memberGroups.filter { !$0.isSelf }
         for record in direct?.records ?? [] where !workspace.isBlocked(record.otherUser) {
-            let online = peerPresence(record.conversation) != .offline
+            let online = peerPresence(record.conversation, groups: groups, roster: roster) != .offline
             let last = direct?.messages(record.conversation).last?.timestamp
                 ?? (record.updatedAt > 0 ? Date(epochMillis: record.updatedAt) : nil)
             if workspace.isRemoved(record.conversation, lastActivity: last) { continue }
             out.append(
                 ChatDirectRow(conversation: record.conversation, name: record.otherUser, online: online, unread: record.unreadCount, lastAt: last))
         }
-        for conversation in relay.conversationsWithHistory where conversation.hasPrefix("@") {
-            let id = String(conversation.dropFirst())
-            let member = roster.first { $0.id == id }
-            let label = conversationLabel(conversation)
-            let last = relay.messages(conversation).last?.timestamp
-            if workspace.isRemoved(conversation, lastActivity: last) { continue }
-            if workspace.isBlocked(member?.owner ?? "") || workspace.isBlocked(String(label.dropFirst())) { continue }
-            out.append(
-                ChatDirectRow(
-                    conversation: conversation, name: String(label.dropFirst()), online: peerPresence(conversation) != .offline,
-                    unread: relay.unreadCountFor(conversation), lastAt: last))
-        }
         out.sort { ($0.lastAt ?? .distantPast) > ($1.lastAt ?? .distantPast) }
         return out
     }
 
     public func recentConversations(limit: Int = 5) -> [String] {
+        recentConversations(limit: limit, directRows: directRows)
+    }
+
+    public func recentConversations(limit: Int, directRows: [ChatDirectRow]) -> [String] {
         var stamped: [(conversation: String, at: Date)] = []
         var listed = Set<String>()
         for row in directRows where listed.insert(row.conversation).inserted {
@@ -371,6 +395,7 @@ extension ChatHub {
         let key = ChatWorkspace.blockKey(handle)
         if key.isEmpty || workspace.isBlocked(key) == on { return }
         workspace.setBlocked(key, on)
+        pushBlocks()
         if on {
             for row in directRowsIncludingBlocked where ChatWorkspace.blockKey(conversationHandle(row)) == key {
                 if relay.currentConversation == row { select(generalConversation) }
@@ -382,8 +407,27 @@ extension ChatHub {
         }
     }
 
-    var directRowsIncludingBlocked: [String] {
-        (direct?.conversations ?? []) + relay.conversationsWithHistory.filter { $0.hasPrefix("@") }
+    var directRowsIncludingBlocked: [String] { direct?.conversations ?? [] }
+
+    nonisolated public static let blocksPath = "/api/chat/blocks"
+
+    func pushBlocks() {
+        guard let accountApi, !isGuest() else { return }
+        let accounts = Array(workspace.blocked.suffix(ChatWorkspace.maxBlocked))
+        let previous = blocksTask
+        blocksTask = Task { @MainActor in
+            await previous?.value
+            _ = try? await accountApi.accountApiCall("PUT", ChatHub.blocksPath, ["accounts": JSONValue(accounts)])
+        }
+    }
+
+    public func syncBlocks() async {
+        guard let accountApi, !isGuest() else { return }
+        guard let answer = try? await accountApi.accountApiCall("GET", ChatHub.blocksPath, nil) else { return }
+        let server = (answer["accounts"]?.strings ?? []).map(ChatWorkspace.blockKey).filter { !$0.isEmpty }
+        workspace.replaceBlocked(server + workspace.blocked.filter { !server.contains($0) })
+        if Set(workspace.blocked) != Set(server) { pushBlocks() }
+        await blocksTask?.value
     }
 
     func blockedSenderIds() -> Set<String> {

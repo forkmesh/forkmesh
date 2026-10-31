@@ -2,11 +2,14 @@ package com.forkmesh.nativeapp.settings
 
 object AppearanceKeys {
     const val THEME_MODE = "appearance/themeMode"
+    const val LAYOUT_MODE = "appearance/layoutMode"
     const val ACCENT = "appearance/accent"
     const val ACCENT_CUSTOM = "appearance/accentCustom"
     const val SURFACE = "appearance/surface"
     const val READABLE_COLORS = "appearance/readableColors"
     const val THEME_COLORS = "appearance/themeColors"
+    const val MATCH_INSTANCE_THEME = "appearance/matchInstanceTheme"
+    const val INSTANCE_THEME_COLORS = "appearance/instanceThemeColors"
     const val BACKGROUND_IMAGE = "appearance/backgroundImage"
     const val BACKGROUND_DIM = "appearance/backgroundDim"
 }
@@ -24,6 +27,17 @@ enum class ThemeModeChoice(val label: String) {
 
     companion object {
         fun fromName(name: String?): ThemeModeChoice = entries.firstOrNull { it.name == name } ?: system
+    }
+}
+
+enum class LayoutModeChoice(val label: String, val note: String) {
+    controlTower("Control Tower", "Compact, every control in view"),
+    focus("Focus", "Roomier, one thing at a time");
+
+    val dense: Boolean get() = this == controlTower
+
+    companion object {
+        fun fromName(name: String?): LayoutModeChoice = entries.firstOrNull { it.name == name } ?: controlTower
     }
 }
 
@@ -62,8 +76,13 @@ data class Appearance(
     val themeMode: ThemeModeChoice = ThemeModeChoice.system,
     val theme: AppTheme = AppTheme.standard,
     val wallpaper: Wallpaper = Wallpaper(),
+    val matchInstanceTheme: Boolean = false,
+    val instanceThemeColors: String = "",
+    val layoutMode: LayoutModeChoice = LayoutModeChoice.controlTower,
 ) {
     val accent: AccentChoice get() = theme.accent
+
+    val effectiveTheme: AppTheme get() = InstanceTheme.effective(theme, matchInstanceTheme, instanceThemeColors)
 
     fun isDark(systemDark: Boolean): Boolean = themeMode.isDark(systemDark)
 
@@ -77,6 +96,9 @@ data class Appearance(
                 ThemeModeChoice.fromName(get(AppearanceKeys.THEME_MODE)),
                 readTheme(get, getBool),
                 Wallpaper.read(get, getDouble),
+                getBool(AppearanceKeys.MATCH_INSTANCE_THEME) == true,
+                get(AppearanceKeys.INSTANCE_THEME_COLORS).orEmpty(),
+                LayoutModeChoice.fromName(get(AppearanceKeys.LAYOUT_MODE)),
             )
 
         fun readTheme(get: (String) -> String?, getBool: (String) -> Boolean?): AppTheme {

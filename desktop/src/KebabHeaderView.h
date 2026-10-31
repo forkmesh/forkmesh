@@ -51,6 +51,9 @@ protected:
     bool event(QEvent *event) override;
 
 private:
+    bool flatNext() const;
+    void paintFlatNextSection(QPainter *painter, const QRect &rect,
+                              int logicalIndex) const;
     QRect kebabRect(const QRect &sectionRect, int logicalIndex) const;
     void showColumnMenu(int logicalIndex, const QPoint &globalPos);
     void carrySortSlot(int section);

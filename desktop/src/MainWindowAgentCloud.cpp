@@ -1920,7 +1920,6 @@ void MainWindow::renderCloudAgentTranscript(int sessionId)
                         m_renderedExternalSession == sessionId;
     ++m_agentTranscriptRenderGeneration;
     m_agentTranscriptRenderSession = -1;
-    m_agentTranscriptRenderEvents.clear();
     ++m_externalTranscriptRenderGeneration;
     m_externalTranscriptRenderSession = -1;
     m_externalTranscriptRenderEvents.clear();

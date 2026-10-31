@@ -118,9 +118,15 @@ export function functions({
   function walkableGroundSurfaces() {
     if (ctx.worldBuilt && ctx.groundSurfaces?.length) return ctx.groundSurfaces;
     ctx.groundSurfaces = [];
-    ctx.world.traverse((child) => {
+    const pending = [ctx.world];
+    while (pending.length) {
+      const child = pending.pop();
+      if (child.userData.groundStandby === true) continue;
       if (child.isMesh && child.userData.ground) ctx.groundSurfaces.push(child);
-    });
+      for (let index = child.children.length - 1; index >= 0; index -= 1) {
+        pending.push(child.children[index]);
+      }
+    }
     return ctx.groundSurfaces;
   }
 

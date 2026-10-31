@@ -17,7 +17,15 @@ CATALOG = json.loads((REPO / "marketplace" / "catalog.json").read_text(encoding=
 PAGE = (WEB / "page.js").read_text(encoding="utf-8")
 VIEW = (WEB / "view.html").read_text(encoding="utf-8")
 STUDIO = (PUBLIC / "call-studio.js").read_text(encoding="utf-8")
-LINK = (DESKTOP / "FaceChangerLink.cpp").read_text(encoding="utf-8")
+FEATURE = (DESKTOP / "FaceChangerFeature.cpp").read_text(encoding="utf-8")
+FEATURE_HEADER = (DESKTOP / "FaceChangerFeature.h").read_text(encoding="utf-8")
+CAMERA = (DESKTOP / "FaceCamera.cpp").read_text(encoding="utf-8")
+CAMERA_HEADER = (DESKTOP / "FaceCamera.h").read_text(encoding="utf-8")
+ENGINE_PAGE = (DESKTOP / "FaceStudioPage.cpp").read_text(encoding="utf-8")
+CAMERA_TEST = (DESKTOP / "tests" / "test_face_camera.cpp").read_text(encoding="utf-8")
+DESKTOP_SOURCES = (FEATURE, FEATURE_HEADER, CAMERA, CAMERA_HEADER, ENGINE_PAGE,
+                   (DESKTOP / "FaceStudioPage.h").read_text(encoding="utf-8"))
+CXX = shutil.which("g++")
 BUILD = json.loads((DESKTOP / "build.json").read_text(encoding="utf-8"))
 NODE = shutil.which("node")
 BRANDS = (
@@ -85,13 +93,94 @@ def test_dashboard_page_asks_for_the_camera_and_microphone():
     assert 'data-view="face-changer"' in VIEW
 
 
-def test_desktop_rail_link_opens_the_page():
-    assert BUILD["sources"] == ["FaceChangerLink.cpp"] and BUILD["mocHeaders"] == []
-    assert 'QStringLiteral("builtin:face-changer")' in LINK
-    assert 'QStringLiteral("%s")' % MANIFEST["contributions"][0]["config"]["route"] in LINK
+def test_desktop_page_is_a_native_rail_page():
+    assert BUILD["sources"] == [
+        "FaceCamera.h", "FaceCamera.cpp", "FaceStudioPage.h", "FaceStudioPage.cpp",
+        "FaceChangerFeature.h", "FaceChangerFeature.cpp",
+    ]
+    assert BUILD["mocHeaders"] == []
+    assert BUILD["testSources"] == ["tests/test_face_camera.cpp", "FaceCamera.h", "FaceCamera.cpp"]
+    assert "Q_OBJECT" not in "".join(DESKTOP_SOURCES)
+    assert not (DESKTOP / "FaceChangerLink.cpp").exists()
+    assert "NativePackageRegistration faceChangerRegistration" in FEATURE
+    assert 'QStringLiteral("builtin:face-changer")' in FEATURE
+    assert "new forkmesh::facechanger::FaceChangerFeature(host, parent)" in FEATURE
     assert MANIFEST["entrypoints"]["desktop"] == "builtin:face-changer"
+    assert 'm_openWebPage(QStringLiteral("%s"))' % MANIFEST["contributions"][0]["config"]["route"] in FEATURE
     icons = (REPO / "desktop" / "resources" / "icons.qrc").read_text(encoding="utf-8")
     assert 'alias="person.svg"' in icons
+
+
+def test_desktop_page_runs_the_app_engine_on_the_active_host():
+    host = (REPO / "desktop" / "src" / "NativePackageExtension.h").read_text(encoding="utf-8")
+    assert "std::function<QString(const QString &)> webPageUrl;" in host
+    market = (REPO / "desktop" / "src" / "MainWindowMarket.cpp").read_text(encoding="utf-8")
+    assert "host.webPageUrl = [this]" in market
+    assert "host.webPageUrl(QStringLiteral(\"/\"))" in FEATURE
+    assert "page->setHtml(faceStudioPage(), m_origin)" in FEATURE
+    for module in ("/chat-call-faces.js", "/call-studio.js", "/chat-call-backgrounds.js",
+                   "/chat-call-outfits.js", "/chat-call-face-custom.js"):
+        assert 'import("%s")' % module in ENGINE_PAGE
+    assert "faces.createFaceStage({" in ENGINE_PAGE and "manual: true" in ENGINE_PAGE
+    assert "stage.processFrame(cam)" in ENGINE_PAGE
+    assert "audio: false" in ENGINE_PAGE
+
+
+def test_desktop_page_only_grants_the_camera_to_its_own_host():
+    assert "PermissionType::MediaVideoCapture" in FEATURE
+    assert "QWebEnginePage::MediaVideoCapture" in FEATURE
+    assert FEATURE.count("permission.deny()") == 1
+    assert "PermissionDeniedByUser" in FEATURE
+    assert "createWindow(WebWindowType) override { return nullptr; }" in FEATURE
+    assert "NavigationTypeLinkClicked" in FEATURE
+
+
+def test_desktop_page_never_feeds_its_own_virtual_camera_back_in():
+    assert "const SKIP = /forkmesh|dummy video|loopback|virtual/i;" in ENGINE_PAGE
+    assert "OnlyVirtual" in ENGINE_PAGE
+
+
+def test_virtual_camera_is_a_v4l2loopback_device_on_linux():
+    assert "V4L2_BUF_TYPE_VIDEO_OUTPUT" in CAMERA and "V4L2_PIX_FMT_YUYV" in CAMERA
+    assert "#ifdef Q_OS_LINUX" in CAMERA
+    assert '"exclusive_caps=1"' in CAMERA and '"pkexec"' in CAMERA
+    assert 'QStringLiteral("ForkMesh Camera")' in CAMERA
+    labels = {item["id"]: item["label"] for item in MANIFEST["permissions"]}
+    assert "ForkMesh Camera" in labels["device.video.virtual"]
+    assert "v4l2loopback" in labels["device.process.video"]
+
+
+def test_settings_live_under_the_package_data_prefix_the_host_removes():
+    assert 'QStringLiteral("market/packages/%1/data/face.%2")' in FEATURE
+
+
+@pytest.mark.skipif(CXX is None or not shutil.which("pkg-config"), reason="g++ or pkg-config missing")
+def test_virtual_camera_frames_and_discovery(tmp_path):
+    flags = subprocess.run(["pkg-config", "--cflags", "--libs", "Qt6Gui"], capture_output=True, text=True)
+    if flags.returncode != 0:
+        pytest.skip("Qt6Gui is not installed")
+    binary = tmp_path / "test_face_camera"
+    build = subprocess.run(
+        [CXX, "-std=c++17", "-fPIC", "-O2", "-I", str(DESKTOP), "-o", str(binary),
+         str(DESKTOP / "tests" / "test_face_camera.cpp"), str(DESKTOP / "FaceCamera.cpp"),
+         *flags.stdout.split()],
+        capture_output=True, text=True)
+    assert build.returncode == 0, build.stderr
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "QT_QPA_PLATFORM": "offscreen",
+           "XDG_DATA_HOME": str(tmp_path), "XDG_CONFIG_HOME": str(tmp_path),
+           "XDG_CACHE_HOME": str(tmp_path), "TMPDIR": str(tmp_path)}
+    result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60, env=env)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "all checks passed" in result.stdout
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_engine_page_script_parses(tmp_path):
+    script = ENGINE_PAGE.split('<script type="module">', 1)[1].split("</script>", 1)[0]
+    module = tmp_path / "engine.mjs"
+    module.write_text(script, encoding="utf-8")
+    result = subprocess.run([NODE, "--check", str(module)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
 
 
 def test_page_uses_the_call_engine_from_the_app_and_copies_none_of_it():
@@ -140,7 +229,7 @@ def test_page_stops_everything_and_uploads_nothing():
 
 
 def test_sources_are_code_only():
-    for text in (PAGE, STUDIO, LINK):
+    for text in (PAGE, STUDIO, *DESKTOP_SOURCES, CAMERA_TEST):
         assert not re.search(r"^\s*//", text, re.M)
         assert "/*" not in text
 

@@ -4,9 +4,11 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONFIG = PROJECT / ".forkmesh" / "teammates" / "hearth.json"
+CONFIG = PROJECT / ".forkmesh" / "workflows" / "hearth.json"
 SHORTCUTS = PROJECT / ".forkmesh" / "shortcuts"
 SKILLS = PROJECT / ".forkmesh" / "skills"
 CHARTER = PROJECT / "docs" / "community" / "hearth.md"
@@ -24,7 +26,7 @@ def _hearth():
             result[key] = value
         return result
 
-    return json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    return as_teammate(json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object))
 
 
 def _tool():

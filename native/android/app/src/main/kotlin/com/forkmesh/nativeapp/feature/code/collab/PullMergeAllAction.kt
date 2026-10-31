@@ -13,12 +13,13 @@ import kotlinx.coroutines.withContext
 
 internal suspend fun CollabEnv.mergeAllPullsWithAi(repo: Repository) {
     val remote = runCatching { CodeServices.pullMergeAll() }.getOrNull()
+    val owner = PullMergeAllRules.owner(repo)
     if (remote == null || !CodeServices.desktopPaired()) {
         status.error(PullMergeAllRules.UNPAIRED)
         return
     }
     val confirmation: PullMergeAllConfirmation = try {
-        withContext(Dispatchers.IO) { remote.prepare(repo.owner, repo.name) }
+        withContext(Dispatchers.IO) { remote.prepare(owner, repo.name) }
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -29,7 +30,7 @@ internal suspend fun CollabEnv.mergeAllPullsWithAi(repo: Repository) {
     if (!confirmed) return
     status.show("Asking the desktop to start the merge agent…")
     val result: PullMergeAllResult = try {
-        withContext(Dispatchers.IO) { remote.run(repo.owner, repo.name, confirmation.token) }
+        withContext(Dispatchers.IO) { remote.run(owner, repo.name, confirmation.token) }
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {

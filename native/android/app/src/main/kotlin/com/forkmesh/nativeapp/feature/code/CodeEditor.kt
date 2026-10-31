@@ -349,8 +349,8 @@ internal fun CodeKeyBar(state: CodeEditorState) {
         ) {
             items(CodeKeys.symbols) { symbol -> CodeKey(label = symbol) { state.insert(symbol) } }
         }
-        FmIconButton("undo", "Undo", onPressed = if (state.canUndo) state::undo else null, iconSize = 20.dp)
-        FmIconButton("redo", "Redo", onPressed = if (state.canRedo) state::redo else null, iconSize = 20.dp)
+        FmIconButton("undo", "Undo", onPressed = if (state.canUndo) state::undo else null, iconSize = 20.dp, busy = false)
+        FmIconButton("redo", "Redo", onPressed = if (state.canRedo) state::redo else null, iconSize = 20.dp, busy = false)
         FmIconButton("keyboard_hide_outlined", "Hide keyboard", onPressed = { focusManager.clearFocus() }, iconSize = 20.dp)
     }
 }

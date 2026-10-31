@@ -142,6 +142,29 @@ export function functions({
     if (district?.roots.delete(root)) district.boundsDirty = true;
   }
 
+  function moveCompactDistrictsWithin(moved, dx, dz) {
+    if (!ctx.compactRenderer || !moved) return 0;
+    let count = 0;
+    ctx.compactDistricts.forEach((district) => {
+      let inside = false;
+      district.roots.forEach((root) => {
+        for (let node = root; node && !inside; node = node.parent) {
+          if (node === moved) inside = true;
+        }
+      });
+      if (!inside) return;
+      district.x += dx;
+      district.z += dz;
+      district.boundsDirty = true;
+      count += 1;
+    });
+    if (count) {
+      updateCompactDistrictResidency();
+      updateCompactDistrictView();
+    }
+    return count;
+  }
+
   function compactDistrictBounds(district) {
     if (!district.boundsDirty) return district.bounds;
     district.boundsDirty = false;
@@ -487,6 +510,7 @@ export function functions({
     districtWalkSurfaceContains,
     registerCompactDistrictRoot,
     unregisterCompactDistrictRoot,
+    moveCompactDistrictsWithin,
     updateCompactDistrictResidency,
     updateCompactDistrictView,
     syncEnclosureSceneVisibility,

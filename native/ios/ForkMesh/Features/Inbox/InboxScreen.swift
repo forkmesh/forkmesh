@@ -43,7 +43,7 @@ struct InboxScreen: View {
                         model: model, onNotice: { (next: FmNotice) in notice = next },
                         onOpenSettings: { showingSettings = true },
                         onDeleteAll: { deleteAll(model) }))
-                    .navigationDestination(item: $opened) { (item: InboxItem) in
+                    .shellDetail(item: $opened) { (item: InboxItem) in
                         InboxItemScreen(model: model, item: item)
                             .shellPageClearance()
                     }
@@ -67,7 +67,7 @@ struct InboxScreen: View {
         .background(fm.canvas)
         .navigationTitle("Inbox")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(isPresented: $showingSettings) {
+        .shellDetail(isPresented: $showingSettings) {
             RouteDestinationView(route: .pingSettings)
                 .shellPageClearance()
         }
@@ -397,14 +397,9 @@ struct InboxRowLink: View {
                 Rectangle().fill(fm.border).frame(height: 0.5)
             }
             .contentShape(Rectangle())
-            .background {
-                NavigationLink {
-                    InboxItemScreen(model: model, item: item)
-                        .shellPageClearance()
-                } label: {
-                    EmptyView()
-                }
-                .opacity(0)
+            .shellPaneRowLink(id: AnyHashable("inbox-\(item.id)")) {
+                InboxItemScreen(model: model, item: item)
+                    .shellPageClearance()
             }
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
@@ -430,7 +425,12 @@ struct InboxRowLink: View {
 
 struct InboxRow: View {
     @Environment(\.fmPalette) private var fm
+    @State private var settings: SettingsService? = Services.get(SettingsService.self)
     let item: InboxItem
+
+    private var instance: RelayProfile? {
+        item.source == .local ? nil : settings?.project
+    }
 
     private var tint: Color {
         switch item.tone {
@@ -445,8 +445,14 @@ struct InboxRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            FmIcon(item.icon, size: 18, color: tint)
-                .frame(width: 22, height: 22)
+            VStack(spacing: FmSpace.x1) {
+                FmIcon(item.icon, size: 18, color: tint)
+                    .frame(width: 22, height: 22)
+                if let instance {
+                    ProjectIcon(project: instance, size: 16)
+                        .accessibilityIdentifier("inbox-row-instance-logo")
+                }
+            }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(item.kindLabel).font(.caption.weight(.semibold)).foregroundStyle(item.unread ? tint : fm.textTertiary)
@@ -475,6 +481,6 @@ struct InboxRow: View {
                 .padding(.top, 5)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.unread ? "Unread" : "Read"). \(item.kindLabel). \(item.title)")
+        .accessibilityLabel("\(item.unread ? "Unread" : "Read"). \(item.kindLabel). \(item.title)\(instance.map { ". From \($0.label)" } ?? "")")
     }
 }

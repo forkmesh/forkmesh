@@ -70,6 +70,16 @@ class WalkDetector {
         movingSince = null
     }
 
+    fun paced(stepping: Boolean, at: Instant): WalkEvent? {
+        if (walking) return null
+        if (!stepping) {
+            movingSince = null
+        } else if (movingSince == null) {
+            movingSince = at
+        }
+        return tick(at)
+    }
+
     fun tick(now: Instant): WalkEvent? {
         if (walking) {
             val still = stillSince ?: return null
@@ -77,8 +87,13 @@ class WalkDetector {
             clear()
             return WalkEvent.Ended(still)
         }
+        return begin(now, START_AFTER)
+    }
+
+    fun begin(now: Instant, after: Double): WalkEvent? {
+        if (walking) return null
         val moving = movingSince ?: return null
-        if (secondsBetween(moving, now) < START_AFTER) return null
+        if (secondsBetween(moving, now) < after) return null
         walkStartedAt = moving
         movingSince = null
         stillSince = null
@@ -101,6 +116,7 @@ class WalkDetector {
     companion object {
         const val START_AFTER = 30.0
         const val END_AFTER = 3 * 60.0
+        const val LEAVE_START_AFTER = 10.0
     }
 }
 

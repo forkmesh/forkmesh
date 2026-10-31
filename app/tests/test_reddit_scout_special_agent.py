@@ -6,9 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONFIG = PROJECT / ".forkmesh" / "teammates" / "reddit-agent.json"
+CONFIG = PROJECT / ".forkmesh" / "workflows" / "reddit-agent.json"
 SHORTCUTS = PROJECT / ".forkmesh" / "shortcuts"
 SKILLS = PROJECT / ".forkmesh" / "skills"
 CHARTER = PROJECT / "docs" / "community" / "reddit.md"
@@ -26,7 +28,7 @@ def _agent():
             result[key] = value
         return result
 
-    return json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    return as_teammate(json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object))
 
 
 def _tool():

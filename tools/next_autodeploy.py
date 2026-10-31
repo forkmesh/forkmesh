@@ -31,11 +31,16 @@ MAIN_REF = "refs/heads/main"
 RESULT_MARK = "::node-deploy-result::"
 SINK_NAME = "node-deploy.log"
 RUN_DIR_RE = re.compile(r"^forkmesh-run-(\d+)-(\d+)$")
+TMP_DISK_LABEL = "TMP"
+TMP_DISK_LABEL_DIR = "/dev/disk/by-label"
+TMP_DISK_MOUNTS = "/proc/self/mounts"
+TMP_DISK_ROOT = "ForkMesh"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REV_RE = re.compile(r"^[0-9a-f]{7,40}$")
 DEBOUNCE_SECONDS = 3
 SETTLE_SECONDS = 2
 MAX_WAIT_SECONDS = 600
+DEPLOY_COOLDOWN_SECONDS = 300
 POLL_SECONDS = 3
 LOCK_WAIT_SECONDS = 3600
 VERIFY_SECONDS = 120
@@ -45,6 +50,15 @@ HISTORY_LIMIT = 4000
 UNIT_NAME = "forkmesh-node-deploy.service"
 INSTALLED_FILES = ("next_autodeploy.py", "next_common.py", "forkmesh_paths.py")
 INSTALLED_DEPLOY_FILES = ("render.py", "caddy_routes.py")
+PREVIOUS_DIR_NAME = "node-deploy.previous"
+SELF_CHECK_MARK = "next_autodeploy self-check ok"
+SELF_CHECK_TIMEOUT = 120
+SELF_INSTALL_TIMEOUT = 300
+SELF_UPDATE_CONFIRM_SECONDS = 180
+SELF_UPDATE_RETRY_SECONDS = 60
+WATCH_UNIT_PREFIX = "forkmesh-node-deploy-watch-"
+WATCH_ENV = ("FMNEXT_CONFIG_DIR", "FMNEXT_LOGS_DIR", "FORKMESH_HOME",
+             "FORKMESH_PROJECTS_DIR")
 ALERT_PATH = "/api/accounts/admin-operator-alert"
 ALERT_PROOF = "forkmesh-admin-operator-alert-v1"
 
@@ -58,6 +72,8 @@ ROLL_FILES = ("tools/mirror_gateway.py",)
 RUNNER_ROLL_PREFIXES = ("server/",)
 RUNNER_ROLL_RETRY_SECONDS = 600
 RUNNERS_BUSY_EXIT = 3
+CATCH_UP_SECONDS = 300
+DEPLOY_SKIP_ENV = "FMNEXT_DEPLOY_SKIP"
 TEST_DIRS = frozenset({"tests", "tests_rqlite", "tests_cluster", "browser_tests"})
 
 MUST_PASS = (
@@ -83,6 +99,32 @@ MUST_PASS = (
     "app/tests/test_forkbot.py::test_ai_agent_caps_the_output_tokens_a_client_may_request",
     "app/tests/test_forkbot.py::test_forkbot_denies_agent_start_for_non_owner",
     "app/tests/test_forkbot.py::test_forkbot_rejects_agent_start_on_unknown_issue",
+    "app/tests/host/test_repo_fastpath.py::test_raw_active_content_is_a_sandboxed_download",
+    "app/tests/host/test_repo_fastpath.py::test_every_fast_path_answer_carries_the_sandbox_policy",
+    "app/tests/host/test_repo_fastpath.py::test_memory_hit_after_the_repository_went_private_falls_through",
+    "app/tests/test_mirror_gateway.py::test_raw_active_media_types_are_attachments",
+    "app/tests/test_mirror_gateway.py::test_reads_refuse_commit_reachable_only_from_hidden_refs",
+    "app/tests/test_mobile_node_devices.py::test_revoking_the_primary_desktop_takes_its_key_off_the_account",
+    "app/tests/test_mobile_node_devices.py::test_a_primary_key_with_a_revoked_device_row_never_signs",
+    "app/tests/test_admin_totp_required.py::test_signed_admin_requests_refuse_a_revoked_device_key",
+    "app/tests/test_users_nodes_claim_link.py::test_claim_password_checks_spend_the_login_budget_and_honour_the_lock",
+    "app/tests/test_users_nodes_claim_link.py::test_claim_endpoints_need_the_code_of_a_totp_account",
+    "app/tests/test_mail_budget.py::test_package_smtp_mail_is_capped_per_account_and_per_organization",
+    "app/tests/test_patreon_runtime.py::test_webhook_email_fallback_ignores_an_unconfirmed_email",
+    "app/tests/test_microjobs.py::test_a_fork_copy_of_a_paid_pull_is_the_same_claim",
+    "app/tests/test_microjobs.py::test_the_daily_caps_hold_even_when_the_precheck_is_raced",
+    "world/tests/test_world_office_tasks.py::test_guests_get_no_tasks_and_auditors_cannot_write",
+    "app/tests/test_https_mirror_routing_integration.py::test_two_outside_mirrors_cannot_serve_or_pin_the_flagship",
+    "app/tests/test_https_mirror_routing_integration.py::test_flagship_serving_nodes_are_the_fleet_cores_only",
+    "app/tests/test_repository_file_edits.py::test_core_held_save_needs_an_organization_owner",
+    "app/tests/test_repository_releases.py::test_a_maintainer_cannot_tag_a_core_held_repository",
+    "app/tests/test_key_rotation.py::test_rotate_requires_the_new_key_to_sign_the_acceptance",
+    "app/tests/test_key_rotation.py::test_rotate_refuses_a_key_registered_as_another_accounts_device",
+    "app/tests/test_installer_release.py::test_signed_manifest_must_be_for_the_wanted_channel",
+    "app/tests/test_installer_release.py::test_signed_manifest_older_than_the_installer_minimum_is_refused",
+    "app/tests/test_release_host_completion.py::test_candidate_manifests_without_a_valid_signature_are_ignored",
+    "app/tests/test_instance_directory.py::test_a_launch_never_removes_or_rewrites_an_entry",
+    "app/tests/test_login_key_binding.py::test_every_address_budget_in_the_worker_folds_ipv6_to_a_slash_64",
 )
 GO_TEST_MODULES = ("server",)
 COMPARE_SUITE = ("app/tests/host",)
@@ -387,10 +429,11 @@ UNREACHABLE_WAIT_SECONDS = 300
 
 
 def curl(host, ip, path, run=subprocess.run, timeout=10, attempts=CURL_ATTEMPTS,
-         sleep=time.sleep):
+         sleep=time.sleep, route=None):
     if not HOST_RE.match(host) or not IP_RE.match(ip):
         raise GuardError("bad host %r or address %r" % (host, ip))
-    address = common.route_address(ip) if run is subprocess.run else ip
+    routed = (run is subprocess.run) if route is None else route
+    address = common.route_address(ip) if routed else ip
     target = "[%s]" % address if ":" in address else address
     for attempt in range(attempts):
         if attempt:
@@ -441,9 +484,40 @@ def reask_silent(hosts, answers, run=subprocess.run, say=None, sleep=time.sleep,
         answers = [fresh.get(name, (name, code, rev)) for name, code, rev in answers]
 
 
-def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
-              clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
-              unreachable_wait=UNREACHABLE_WAIT_SECONDS) -> dict:
+FLEET_BRANCH_RE = re.compile(r"^refs/heads/(fleet/(add|remove)-core-(n[0-9]{1,2}))$")
+
+
+def unmerged_fleet_branches(git, main) -> list:
+    import tomllib
+    listed = git.call("for-each-ref", "--format=%(refname)", "refs/heads/fleet/")
+    shown = git.call("show", "%s:deploy/fleet.toml" % main) if main else None
+    if listed.returncode != 0 or shown is None or shown.returncode != 0:
+        return []
+    try:
+        fleet = tomllib.loads(shown.stdout)
+    except tomllib.TOMLDecodeError:
+        return []
+    cores = {n.get("name") for n in fleet.get("nodes") or [] if n.get("role", "core") == "core"}
+    retired = set((fleet.get("hosted") or {}).get("retired_cores") or [])
+    pending = []
+    for ref in listed.stdout.split():
+        match = FLEET_BRANCH_RE.match(ref)
+        if not match:
+            continue
+        kind, name = match.group(2), match.group(3)
+        if (kind == "remove" and name in cores) or (
+                kind == "add" and name not in cores and name not in retired):
+            pending.append(match.group(1))
+    return sorted(pending)
+
+
+def live_fleet(hosts, run=subprocess.run, say=None, sleep=time.sleep,
+               clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
+               unreachable_wait=UNREACHABLE_WAIT_SECONDS, dns=None, skip=True):
+    dns = (common.dns_health_nodes() if dns is None else dns) if skip else {}
+    drained = {n["name"]: common.out_of_dns(dns.get(n["name"]))
+               for n in hosts["nodes"]}
+    drained = {name: why for name, why in drained.items() if why}
     deadline = clock() + offline_wait
     announced = False
     while True:
@@ -463,15 +537,36 @@ def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
         sleep(OFFLINE_POLL_SECONDS)
     if announced and say:
         say("gate 1: the network is back")
-    answers = reask_silent(hosts, answers, run=run, say=say, sleep=sleep, clock=clock,
-                           wait=unreachable_wait)
-    revs = {}
-    for name, code, rev in answers:
-        if not rev:
+    asked = [answer for answer in answers if answer[0] not in drained]
+    asked = reask_silent(dict(hosts, nodes=[n for n in hosts["nodes"]
+                                            if n["name"] not in drained]),
+                         asked, run=run, say=say, sleep=sleep, clock=clock,
+                         wait=unreachable_wait)
+    revs, skipped = {}, dict(drained)
+    for name, code, rev in asked:
+        if rev:
+            revs[name] = rev
+        elif skip and not code:
+            skipped[name] = "no answer to /api/version for %d min" % (
+                unreachable_wait // 60)
+        else:
             raise GuardError("%s did not answer /api/version (HTTP %s); the fleet "
                              "must be healthy before a deploy" % (name, code))
-        revs[name] = rev
-    return revs
+    need = common.deploy_quorum(len(hosts["nodes"]))
+    if skipped and len(revs) < need:
+        raise GuardError(
+            "only %d of %d cores are healthy (%s); a deploy needs %d, so no core "
+            "is skipped" % (len(revs), len(hosts["nodes"]), ", ".join(
+                "%s %s" % kv for kv in sorted(skipped.items())), need))
+    return revs, skipped
+
+
+def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
+              clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
+              unreachable_wait=UNREACHABLE_WAIT_SECONDS) -> dict:
+    return live_fleet(hosts, run=run, say=say, sleep=sleep, clock=clock,
+                      offline_wait=offline_wait, unreachable_wait=unreachable_wait,
+                      skip=False)[0]
 
 
 def verify_once(hosts, rev, run=subprocess.run) -> list:
@@ -610,13 +705,49 @@ def actions_root(layout=None) -> Path:
     return (layout or forkmesh_paths.resolve()).data_path("actions")
 
 
-def running_runs(root: Path) -> list:
-    sandbox = root / "sandbox"
-    runs = []
+def unescape_mount_field(value: str) -> str:
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), value)
+
+
+def tmp_disk_mount(label_dir=None, mounts_file=None) -> Path | None:
+    link = Path(label_dir or TMP_DISK_LABEL_DIR) / TMP_DISK_LABEL
     try:
-        entries = list(os.scandir(sandbox))
-    except FileNotFoundError:
-        return runs
+        device = link.resolve(strict=True)
+        text = Path(mounts_file or TMP_DISK_MOUNTS).read_text("utf-8", "replace")
+    except (OSError, RuntimeError):
+        return None
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        try:
+            source = Path(unescape_mount_field(fields[0])).resolve()
+        except (OSError, RuntimeError):
+            continue
+        target = unescape_mount_field(fields[1])
+        if source == device and target != "/" and os.path.isdir(target):
+            return Path(os.path.normpath(target))
+    return None
+
+
+def sandbox_dirs(root: Path, label_dir=None, mounts_file=None) -> list:
+    dirs = [Path(root) / "sandbox"]
+    mount = tmp_disk_mount(label_dir, mounts_file)
+    if mount is not None:
+        fast = mount / TMP_DISK_ROOT / "actions" / "sandbox"
+        if fast not in dirs:
+            dirs.append(fast)
+    return dirs
+
+
+def running_runs(root: Path, sandboxes=None) -> list:
+    runs = []
+    entries = []
+    for sandbox in sandbox_dirs(root) if sandboxes is None else sandboxes:
+        try:
+            entries.extend(os.scandir(sandbox))
+        except (FileNotFoundError, NotADirectoryError, PermissionError):
+            continue
     newest = {}
     for entry in entries:
         match = RUN_DIR_RE.match(entry.name)
@@ -821,6 +952,7 @@ class Pipeline:
         self.state_dir = state_dir
         self.lock_wait = lock_wait
         self.sleep = sleep
+        self.skip_env = ""
 
     def say(self, message):
         self.log.say(message)
@@ -918,6 +1050,17 @@ class Pipeline:
                 module, code, time.monotonic() - started))
         return results
 
+    def go_rerun(self, work: Path, venv: Path, module: str, failures: set):
+        root = go_root()
+        names = sorted({item.split("::", 1)[1].split("/", 1)[0] for item in failures})
+        lines = []
+        argv = [str(root / "bin" / "go"), "test", "-C", module, "-count=1", "-p", "1",
+                "-run", "^(%s)$" % "|".join(names), "./..."]
+        code = stream(sandbox_command(work, venv, work / "data" / "bin", argv,
+                                      binds=(root,), env=go_test_env(work, venv, root)),
+                      lines.append, timeout=TEST_TIMEOUT, popen=self.popen)
+        return code, failing_go_ids(module, lines), lines
+
     def pytest_many(self, work: Path, venv: Path, files: list, label: str):
         from concurrent.futures import ThreadPoolExecutor
         started = time.monotonic()
@@ -952,6 +1095,13 @@ class Pipeline:
                 go_results = go_future.result()
             broken = []
             for module, (code, failures, lines) in sorted(go_results.items()):
+                if code != 0 and failures:
+                    code, again, rerun = self.go_rerun(work, venv, module, failures)
+                    if code == 0:
+                        self.say("tests: go test %s: %s failed beside the other suites and "
+                                 "passed when rerun alone" % (module, ", ".join(sorted(failures))))
+                    else:
+                        failures, lines = again, lines + rerun
                 if code != 0:
                     broken += sorted(failures) or ["go test %s exit %d" % (module, code)]
                     for line in lines[-40:]:
@@ -1021,7 +1171,8 @@ class Pipeline:
             if line.startswith("next_deploy: "):
                 causes.append(line[len("next_deploy: "):].strip())
             self.say(line)
-        code = stream(command, say, cwd=worktree, env=lock.child_env(),
+        env = dict(lock.child_env(), **{DEPLOY_SKIP_ENV: self.skip_env})
+        code = stream(command, say, cwd=worktree, env=env,
                       timeout=timeout, pass_fds=(lock.fd,), popen=self.popen)
         if code != 0:
             raise ToolError("next_deploy %s exited %d%s" % (
@@ -1057,16 +1208,23 @@ class Pipeline:
                  "time" % target[:12])
         for path in result["roll"][:20]:
             self.say("  %s" % path)
+        names = list(result.get("deployedNodes") or []) if result.get("skipped") else []
+        if names:
+            self.say("roll: only %s; %s catch up when they are back" % (
+                ", ".join(names), ", ".join(sorted(result["skipped"]))))
         try:
             worktree = self.worktree(target)
-            self.say("$ python3 tools/next_fleet.py roll --execute")
-            code = stream([sys.executable, "tools/next_fleet.py", "roll", "--execute"],
+            self.say("$ python3 tools/next_fleet.py roll %s--execute" % "".join(
+                name + " " for name in names))
+            code = stream([sys.executable, "tools/next_fleet.py", "roll", *names,
+                           "--execute"],
                           self.say, cwd=worktree, env=lock.child_env(),
                           timeout=ROLL_TIMEOUT, pass_fds=(lock.fd,), popen=self.popen)
         except (ToolError, OSError, subprocess.SubprocessError) as error:
             code = str(error)
         if code == 0:
             result["rolled"] = True
+            result["rolledNodes"] = names or list(result.get("deployedNodes") or [])
             result["message"] += "; cores rolled"
             self.say("roll: every core rolled and back in DNS")
             if runner_roll_needed(result["roll"]):
@@ -1106,6 +1264,78 @@ class Pipeline:
         else:
             result["runnerRollError"] = "next_fleet roll-runners exited %s" % code
             self.say("roll: runners FAILED: %s" % result["runnerRollError"])
+
+    def catch_up(self, behind, lock, dns=None):
+        nodes, roll = set(behind.get("nodes") or []), set(behind.get("roll") or [])
+        names = nodes | roll
+        main = self.git.rev(MAIN_REF)
+        hosts = self.hosts(main)
+        known = {n["name"]: n for n in hosts["nodes"]}
+        gone = names - set(known)
+        outcome = {"released": sorted(gone & nodes), "rolled": sorted(gone & roll),
+                   "errors": {}, "rev": ""}
+        dns = common.dns_health_nodes() if dns is None else dns
+        answers = read_revs(hosts, run=self.run, sleep=self.sleep)
+        serving = sorted({rev for name, _code, rev in answers if name not in names and rev})
+        if len(serving) != 1:
+            self.say("catch-up: the other cores run %s; waiting for one revision" % (
+                ", ".join(serving) or "nothing that answers"))
+            return outcome
+        rev = outcome["rev"] = serving[0]
+        ready = [(name, node_rev) for name, _code, node_rev in answers
+                 if name in names and node_rev and not (dns.get(name) or {}).get("held")]
+        if not ready:
+            return outcome
+        try:
+            commit = resolve_commit(self.git, rev)
+        except ToolError as error:
+            outcome["errors"] = {name: str(error) for name, _rev in ready}
+            return outcome
+        manifest = common.load_manifest()
+        worktree = None
+        for name, node_rev in ready:
+            try:
+                if name in nodes and node_rev != rev:
+                    kind, _found = locate(node_rev, manifest, self.git, commit, main)
+                    if kind != "ancestor":
+                        raise GuardError("%s runs %s, which is not behind %s; catch it "
+                                         "up by hand" % (name, node_rev, rev))
+                    self.say("catch-up: %s answers again with %s; bringing it to %s"
+                             % (name, node_rev, rev))
+                    worktree = worktree or self.worktree(commit)
+                    if not tarball_path(rev).is_file():
+                        self.tool(worktree, lock, ["build", "--execute"], BUILD_TIMEOUT)
+                    self.tool(worktree, lock, ["upload", name, "--rev", rev, "--execute"],
+                              DEPLOY_TIMEOUT)
+                    self.tool(worktree, lock, ["restart", name, "--rev", rev,
+                                               "--execute"], DEPLOY_TIMEOUT)
+                rolled = False
+                if name in roll and auto_roll_enabled(self.state_dir):
+                    worktree = worktree or self.worktree(commit)
+                    self.say("$ python3 tools/next_fleet.py roll %s --execute" % name)
+                    code = stream([sys.executable, "tools/next_fleet.py", "roll", name,
+                                   "--execute"], self.say, cwd=worktree,
+                                  env=lock.child_env(), timeout=ROLL_TIMEOUT,
+                                  pass_fds=(lock.fd,), popen=self.popen)
+                    if code != 0:
+                        raise ToolError("next_fleet roll %s exited %s" % (name, code))
+                    rolled = True
+                elif name in roll:
+                    self.say("catch-up: manual-roll is set; %s still needs a node roll"
+                             % name)
+                if not verify(dict(hosts, nodes=[{"name": name,
+                                                  "ip": known[name]["ip"]}]),
+                              rev, self.say, run=self.run, sleep=self.sleep):
+                    raise ToolError("%s failed verification after catching up" % name)
+                if name in nodes:
+                    outcome["released"].append(name)
+                if rolled:
+                    outcome["rolled"].append(name)
+                self.say("catch-up: %s runs %s like the other cores" % (name, rev))
+            except (ToolError, OSError, subprocess.SubprocessError) as error:
+                outcome["errors"][name] = str(error)
+                self.say("catch-up: %s: FAILED: %s" % (name, error))
+        return outcome
 
     def website(self, target, result):
         try:
@@ -1159,8 +1389,30 @@ class Pipeline:
         main = self.git.rev(MAIN_REF)
         hosts = self.hosts(target)
         self.say("gate 1: %s must be on main and fast-forward what the cores run" % rev)
-        live = live_revs(hosts, run=self.run, say=self.say, sleep=self.sleep)
+        try:
+            live, skipped = live_fleet(hosts, run=self.run, say=self.say,
+                                       sleep=self.sleep)
+        except GuardError as error:
+            pending = unmerged_fleet_branches(self.git, main)
+            if not pending:
+                raise
+            raise GuardError("%s; main's deploy/fleet.toml is behind the fleet: %s not "
+                             "merged into main (next_fleet add-core/remove-core), merge "
+                             "it and push main again" % (error, ", ".join(pending))
+                             ) from error
         self.say("gate 1: live %s" % ", ".join("%s %s" % kv for kv in sorted(live.items())))
+        result["skipped"] = dict(skipped)
+        result["deployedNodes"] = sorted(live)
+        if skipped:
+            if DEPLOY_SKIP_ENV not in self.git.show(target, "tools/next_deploy.py"):
+                raise GuardError("%s is down and the next_deploy of %s cannot skip a "
+                                 "core; bring it back or run next_fleet remove-core" % (
+                                     ", ".join(sorted(skipped)), rev))
+            for name, why in sorted(skipped.items()):
+                self.say("gate 1: skipping %s (%s); it catches up when it is back"
+                         % (name, why))
+            hosts = dict(hosts, nodes=[n for n in hosts["nodes"] if n["name"] in live])
+        self.skip_env = ",".join(sorted(skipped))
         manifest = common.load_manifest()
         gate = fast_forward_gate(live, manifest, self.git, target, main, mode=self.mode)
         for note in gate["notes"]:
@@ -1173,7 +1425,8 @@ class Pipeline:
             changed = {"release": ["(unknown base)"], "roll": []}
         result["roll"] = changed["roll"]
         if all(r == rev for r in live.values()):
-            result.update(ok=True, message="%s already runs on every node" % rev)
+            result.update(ok=True, message="%s already runs on every %snode" % (
+                rev, "reachable " if skipped else ""))
             self.say("gate 1: " + result["message"])
             return result
         if not changed["release"] and self.mode == "auto":
@@ -1201,15 +1454,18 @@ class Pipeline:
         if tests_error is not None:
             raise tests_error
         self.say("gate 2: passed")
-        self.say("gate 4: next_deploy migrate, restart (one core first, chosen per release, then the rest)")
+        result["tested"] = not self.skip_tests
+        self.say("gate 4: next_deploy migrate, restart (one core at a time, the first chosen per release)")
         self.tool(worktree, lock, ["migrate", "--execute"], DEPLOY_TIMEOUT)
         result["deployed"] = True
         self.tool(worktree, lock, ["restart", "--rev", rev, "--execute"], DEPLOY_TIMEOUT)
         self.say("gate 5: post-deploy verification")
         if not verify(hosts, rev, self.say, run=self.run, sleep=self.sleep):
             raise ToolError("post-deploy verification failed for %s" % rev)
-        result.update(ok=True, message="deployed %s to %s" % (
-            rev, ", ".join(n["name"] for n in hosts["nodes"])))
+        result.update(ok=True, message="deployed %s to %s%s" % (
+            rev, ", ".join(n["name"] for n in hosts["nodes"]),
+            "; skipped %s" % ", ".join("%s (%s)" % kv for kv in sorted(skipped.items()))
+            if skipped else ""))
         return result
 
 
@@ -1222,6 +1478,9 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
         if result.get("deployed"):
             state["last"] = {"rev": rev, "commit": result.get("target"), "mode": mode,
                              "at": time.time()}
+        if result.get("tested") and mode != "rollback" and result.get("target"):
+            state["tested"] = {"rev": rev, "commit": result["target"], "mode": mode,
+                               "at": time.time()}
     else:
         state["failures"] = int(state.get("failures") or 0) + 1
         state["lastFailure"] = {"rev": rev, "message": result.get("message", ""),
@@ -1235,9 +1494,20 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
     elif roll and result.get("nodesOk", result.get("ok")):
         state["roll"] = {"since": rev, "paths": roll[:50], "at": time.time(),
                          "error": result.get("rollError", "")}
+    if result.get("nodesOk", result.get("ok")) and "skipped" in result:
+        note_behind(state, result)
     save_state(state, state_dir)
     if notifier is None:
         return state
+    if result.get("nodesOk", result.get("ok")) and result.get("skipped"):
+        notifier.send("Deploy of %s skipped %s" % (rev, ", ".join(sorted(result["skipped"]))),
+                      "%s\n\nThe skipped core is caught up when it answers again and is "
+                      "not held out of DNS: the agent checks every %d s, rolls only that "
+                      "core to what the others run and Pings when it is done "
+                      "(docs/deploy/auto-deploy.md, \"Skipped cores\")." % (
+                          "\n".join("%s: %s" % kv for kv in sorted(result["skipped"].items())),
+                          CATCH_UP_SECONDS),
+                      "deploy-skipped:%s" % rev)
     if not result.get("ok"):
         email = state["failures"] >= EMAIL_AFTER_FAILURES and not state.get("emailed")
         notifier.send("Deploy of %s failed" % rev,
@@ -1272,6 +1542,81 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "docs/deploy/auto-deploy.md)." % (rev, "\n".join(roll[:20])),
                       "node-roll:%s" % rev)
     return state
+
+
+def note_behind(state, result):
+    behind = state.get("behind") or {}
+    skipped = sorted(result.get("skipped") or {})
+    roll = set(behind.get("roll") or []) - set(result.get("rolledNodes") or [])
+    if result.get("rolled"):
+        roll |= set(skipped)
+    if not skipped and not roll:
+        state.pop("behind", None)
+        return
+    state["behind"] = {"nodes": skipped, "roll": sorted(roll), "at": time.time(),
+                       "notified": behind.get("notified") or {}}
+
+
+def tarball_path(rev) -> Path:
+    directory = os.environ.get("FMNEXT_DIST_DIR") or common.data_dir() / "dist"
+    return Path(directory) / ("fmnext-%s.tar.gz" % rev)
+
+
+def catch_up(repo, log, state_dir=None, notifier=None, layout=None,
+             pipeline_class=None, run=subprocess.run, dns=None):
+    behind = load_state(state_dir).get("behind") or {}
+    if not (behind.get("nodes") or behind.get("roll")):
+        return None
+    if switch_state(state_dir)[0] != "armed":
+        return None
+    lock = common.DeployLock(what="next_autodeploy catch-up %s" % ",".join(
+        sorted(set(behind.get("nodes") or []) | set(behind.get("roll") or []))))
+    try:
+        lock.acquire(wait=0)
+    except common.LockBusy:
+        return None
+    try:
+        pipeline = (pipeline_class or Pipeline)(repo, log, run=run, state_dir=state_dir,
+                                                notifier=notifier, layout=layout)
+        outcome = pipeline.catch_up(behind, lock, dns=dns)
+        state = load_state(state_dir)
+        current = state.get("behind") or {}
+        released, rolled = set(outcome["released"]), set(outcome["rolled"])
+        current["nodes"] = sorted(set(current.get("nodes") or []) - released)
+        current["roll"] = sorted(set(current.get("roll") or []) - rolled)
+        notified = dict(current.get("notified") or {})
+        fresh = {name: text for name, text in outcome["errors"].items()
+                 if notified.get(name) != text}
+        notified.update(fresh)
+        for name in released | rolled:
+            if name not in outcome["errors"]:
+                notified.pop(name, None)
+        current["notified"] = notified
+        if current["nodes"] or current["roll"]:
+            state["behind"] = current
+        else:
+            state.pop("behind", None)
+        save_state(state, state_dir)
+    finally:
+        lock.release()
+    if notifier is not None:
+        for name in sorted(released | rolled):
+            notifier.send("%s caught up" % name,
+                          "%s was skipped by a deploy while it was down and now runs %s "
+                          "like the other cores%s." % (
+                              name, outcome.get("rev", ""),
+                              " (node roll included)" if name in rolled else ""),
+                          "core-caught-up:%s:%s" % (name, outcome.get("rev", "")))
+        for name, text in sorted(fresh.items()):
+            notifier.send("%s cannot catch up" % name,
+                          "%s was skipped by a deploy and could not be brought to what "
+                          "the other cores run: %s\n\nThe agent tries again every %d s. "
+                          "By hand: python3 tools/next_deploy.py upload %s --rev <rev> "
+                          "--execute, then restart %s --rev <rev> --execute "
+                          "(docs/deploy/auto-deploy.md)." % (
+                              name, text, CATCH_UP_SECONDS, name, name),
+                          "core-catch-up-failed:%s" % name, email=True)
+    return outcome
 
 
 def note_runner_roll(state, result):
@@ -1359,7 +1704,8 @@ def run_pipeline(repo, target, mode, log, skip_tests=False, notifier=None,
 
 class Agent:
     def __init__(self, repo, root, layout=None, clock=time.time, notifier=None,
-                 state_dir=None, pipeline=run_pipeline, logs=None):
+                 state_dir=None, pipeline=run_pipeline, logs=None, run=subprocess.run,
+                 self_updater=None):
         self.git = Git(repo)
         self.repo = Path(repo)
         self.root = Path(root)
@@ -1376,11 +1722,19 @@ class Agent:
         self.last_request_at = None
         self.main_tip = ""
         self.main_changed_at = clock()
+        self.quiet_until = None
         self.worker = None
         self.current = None
         self.idle_log = Log(echo=True, clock=clock)
         self.runner_worker = None
         self.runner_retry_at = clock() + RUNNER_ROLL_RETRY_SECONDS
+        self.catch_up_worker = None
+        self.catch_up_at = clock()
+        self.run = run
+        self.self_updater = self_updater or self_update
+        self.self_update_seen = ""
+        self.self_update_retry_at = 0.0
+        self.restarting = False
 
     def say(self, message):
         (self.current["log"] if self.current else self.idle_log).say(message)
@@ -1415,8 +1769,12 @@ class Agent:
             sink.write("a deploy of %s is in progress; following it\n" % self.current["rev"])
             self.current["log"].attach(sink)
         else:
-            sink.write("queued: waiting for main to settle (%d s debounce)%s\n" % (
-                DEBOUNCE_SECONDS, "" if state == "armed" else
+            quiet = (self.quiet_until or 0) - now
+            sink.write("queued: waiting for main to settle (%d s debounce)%s%s\n" % (
+                DEBOUNCE_SECONDS,
+                "; %d s left of the pause after the last deploy" % quiet
+                if quiet > 0 else "",
+                "" if state == "armed" else
                 "; auto-deploy is %s (%s)" % (state, reason)))
 
     def finish_run(self, run_id, ok, message):
@@ -1427,6 +1785,8 @@ class Agent:
             sink.finish(ok, message)
 
     def tick(self):
+        if self.restarting:
+            return
         tip = self.git.rev(MAIN_REF)
         if tip and tip != self.main_tip:
             self.main_tip = tip
@@ -1450,6 +1810,8 @@ class Agent:
             self.complete()
         if not self.pending:
             self.maybe_retry_runner_roll()
+            self.maybe_catch_up()
+            self.maybe_self_update()
             return
         state, reason = switch_state(self.state_dir)
         if state != "armed":
@@ -1459,6 +1821,8 @@ class Agent:
                                     state, reason))
             self.pending.clear()
             self.first_request_at = self.last_request_at = None
+            return
+        if self.quiet_until is not None and self.clock() < self.quiet_until:
             return
         if ready_to_start(self.clock(), self.first_request_at, self.last_request_at,
                           self.main_changed_at):
@@ -1497,6 +1861,8 @@ class Agent:
                                 "%s (covers %s)" % (result["message"], commit[:12]))
                 del self.pending[run_id]
         current["log"].close()
+        if result.get("deployed"):
+            self.quiet_until = self.clock() + DEPLOY_COOLDOWN_SECONDS
         if self.pending:
             self.first_request_at = self.last_request_at = self.clock()
         else:
@@ -1520,9 +1886,69 @@ class Agent:
         self.runner_worker = threading.Thread(target=work, name="runner-roll", daemon=True)
         self.runner_worker.start()
 
+    def maybe_catch_up(self):
+        for worker in (self.catch_up_worker, self.runner_worker):
+            if worker is not None and worker.is_alive():
+                return
+        if self.clock() < self.catch_up_at:
+            return
+        self.catch_up_at = self.clock() + CATCH_UP_SECONDS
+        behind = load_state(self.state_dir).get("behind") or {}
+        if not (behind.get("nodes") or behind.get("roll")):
+            return
+
+        def work():
+            try:
+                catch_up(self.repo, self.idle_log, state_dir=self.state_dir,
+                         notifier=self.notifier, layout=self.layout)
+            except (ToolError, OSError, subprocess.SubprocessError, KeyError,
+                    ValueError) as error:
+                self.idle_log.say("catch-up failed: %s" % error)
+        self.catch_up_worker = threading.Thread(target=work, name="catch-up", daemon=True)
+        self.catch_up_worker.start()
+
+    def maybe_self_update(self):
+        if self.layout is None or self.worker is not None:
+            return
+        for worker in (self.runner_worker, self.catch_up_worker):
+            if worker is not None and worker.is_alive():
+                return
+        if self.clock() < self.self_update_retry_at:
+            return
+        candidate = (load_state(self.state_dir).get("tested") or {}).get("commit") or ""
+        if not SHA_RE.match(candidate) or candidate == self.self_update_seen:
+            return
+        if switch_state(self.state_dir)[0] != "armed":
+            return
+        self.self_update_seen = candidate
+        try:
+            outcome = self.self_updater(self.repo, candidate, self.layout, self.idle_log,
+                                        state_dir=self.state_dir, notifier=self.notifier,
+                                        run=self.run)
+        except (ToolError, OSError, subprocess.SubprocessError) as error:
+            self.idle_log.say("self-update: check of %s failed: %s" % (candidate[:12], error))
+            outcome = {"status": "busy"}
+        if outcome.get("status") == "busy":
+            self.self_update_seen = ""
+            self.self_update_retry_at = self.clock() + SELF_UPDATE_RETRY_SECONDS
+        elif outcome.get("status") == "restarting":
+            self.restarting = True
+
+    def confirm_self_update(self):
+        if self.layout is None:
+            return None
+        try:
+            return confirm_self_update(self.repo, self.layout, self.idle_log.say,
+                                       state_dir=self.state_dir, notifier=self.notifier,
+                                       run=self.run)
+        except (ToolError, OSError, subprocess.SubprocessError) as error:
+            self.idle_log.say("self-update: confirmation failed: %s" % error)
+            return None
+
     def serve(self, sleep=time.sleep, once=False):
         self.idle_log.say("node deploy agent: watching %s for %s runs" % (
             self.root, WORKFLOW_PATH))
+        self.confirm_self_update()
         while True:
             try:
                 self.tick()
@@ -1531,6 +1957,273 @@ class Agent:
             if once:
                 return
             sleep(POLL_SECONDS)
+
+
+def installed_sources() -> list:
+    return ([("tools/" + name, name) for name in INSTALLED_FILES]
+            + [("deploy/core/" + name, name) for name in INSTALLED_DEPLOY_FILES])
+
+
+def installed_mode(name) -> int:
+    return 0o755 if name == "next_autodeploy.py" else 0o644
+
+
+def copy_atomic(source: Path, destination: Path, mode: int):
+    temporary = destination.with_name(destination.name + ".new")
+    shutil.copyfile(source, temporary)
+    os.chmod(temporary, mode)
+    os.replace(temporary, destination)
+
+
+def revision_blobs(git, commit) -> dict:
+    blobs = {}
+    for source, name in installed_sources():
+        blobs[name] = git.call("rev-parse", "--verify", "-q",
+                               "%s:%s" % (commit, source)).stdout.strip()
+    return blobs
+
+
+def installed_blobs(git, directory: Path) -> dict:
+    names = [name for _source, name in installed_sources()]
+    present = [name for name in names if (Path(directory) / name).is_file()]
+    blobs = dict.fromkeys(names, "")
+    if present:
+        completed = git.call("hash-object", "--no-filters", "--",
+                             *[str(Path(directory) / name) for name in present], check=True)
+        blobs.update(zip(present, completed.stdout.split()))
+    return blobs
+
+
+def blobs_digest(blobs) -> str:
+    text = "\n".join("%s %s" % item for item in sorted(blobs.items()))
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def previous_dir(layout) -> Path:
+    return Path(layout.node_deploy_bin).with_name(PREVIOUS_DIR_NAME)
+
+
+def snapshot_installed(layout) -> list:
+    previous = previous_dir(layout)
+    previous.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for _source, name in installed_sources():
+        path = Path(layout.node_deploy_bin) / name
+        if path.is_file():
+            copy_atomic(path, previous / name, installed_mode(name))
+            saved.append(name)
+    unit = Path(layout.systemd_units) / UNIT_NAME
+    if unit.is_file():
+        copy_atomic(unit, previous / UNIT_NAME, 0o644)
+        saved.append(UNIT_NAME)
+    return saved
+
+
+def restore_installed(layout, source: Path) -> list:
+    source = Path(source)
+    restored = []
+    for _source, name in installed_sources():
+        if (source / name).is_file():
+            copy_atomic(source / name, Path(layout.node_deploy_bin) / name, installed_mode(name))
+            restored.append(name)
+    if (source / UNIT_NAME).is_file():
+        copy_atomic(source / UNIT_NAME, Path(layout.systemd_units) / UNIT_NAME, 0o644)
+        restored.append(UNIT_NAME)
+    return restored
+
+
+def _call(run, command, cwd=None, timeout=60):
+    try:
+        completed = run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                        check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        return 1, str(error)
+    output = ((completed.stdout or "") + (completed.stderr or "")).strip()
+    return completed.returncode, output
+
+
+def watch_command(layout, digest) -> list:
+    command = ["systemd-run", "--user", "--unit", WATCH_UNIT_PREFIX + digest[:12],
+               "--on-active=%d" % SELF_UPDATE_CONFIRM_SECONDS,
+               "--timer-property=AccuracySec=5s", "--setenv=PYTHONDONTWRITEBYTECODE=1"]
+    command += ["--setenv=%s=%s" % (name, os.environ[name]) for name in WATCH_ENV
+                if os.environ.get(name)]
+    return command + [sys.executable, str(previous_dir(layout) / "next_autodeploy.py"),
+                      "self-update-watch", "--digest", digest]
+
+
+def self_update(repo, commit, layout, log, state_dir=None, notifier=None,
+                run=subprocess.run):
+    say = log.say
+    git = Git(repo, run=run)
+    rev = commit[:12]
+    wanted = revision_blobs(git, commit)
+    missing = sorted(name for name, blob in wanted.items() if not blob)
+    if missing:
+        say("self-update: %s has no %s; the agent stays as installed" % (
+            rev, ", ".join(missing)))
+        return {"status": "skipped"}
+    have = installed_blobs(git, layout.node_deploy_bin)
+    changed = sorted(name for name, blob in wanted.items() if have.get(name) != blob)
+    if not changed:
+        return {"status": "current"}
+    digest = blobs_digest(wanted)
+    tried = load_state(state_dir).get("selfUpdate") or {}
+    if tried.get("digest") == digest:
+        say("self-update: the agent files of %s were already tried (%s, %s); not again. "
+            "Fix them on main or run python3 tools/next_autodeploy.py install by hand" % (
+                rev, tried.get("rev"), tried.get("status")))
+        return {"status": "tried"}
+    lock = common.DeployLock(what="next_autodeploy self-update %s" % rev)
+    try:
+        lock.acquire(wait=0)
+    except common.LockBusy:
+        return {"status": "busy"}
+    record = {"commit": commit, "rev": rev, "digest": digest, "files": changed,
+              "at": time.time(), "status": "checking", "message": ""}
+    touched = []
+
+    def keep(status, message=""):
+        record.update(status=status, message=message)
+        state = load_state(state_dir)
+        state["selfUpdate"] = dict(record)
+        save_state(state, state_dir)
+
+    def fail(message, restore=False):
+        if restore:
+            restored = restore_installed(layout, previous_dir(layout))
+            _call(run, ["systemctl", "--user", "daemon-reload"])
+            message += "; the previous agent files are back (%s)" % ", ".join(restored)
+        keep("failed", message)
+        say("self-update: FAILED for %s: %s" % (rev, message))
+        if notifier is not None:
+            notifier.send("Node deploy agent update to %s failed" % rev,
+                          "The deploy agent did not update itself to %s: %s\n\nIt keeps "
+                          "running its installed copy and will not try these files again. "
+                          "Fix them on main or run python3 tools/next_autodeploy.py install "
+                          "(docs/deploy/auto-deploy.md)." % (rev, message),
+                          "agent-update-failed:%s" % rev, email=True)
+        return {"status": "failed", "message": message}
+
+    try:
+        keep("checking")
+        say("self-update: %s changes the installed agent (%s); updating it" % (
+            rev, ", ".join(changed)))
+        worktree = Pipeline(repo, log, run=run, layout=layout,
+                            state_dir=state_dir).runner_worktree(commit)
+        script = str(Path(worktree) / "tools" / "next_autodeploy.py")
+        stage = Path(layout.cache) / "node-deploy" / "agent-stage"
+        code, output = _call(run, [sys.executable, script, "install", "--stage", str(stage)],
+                             cwd=worktree, timeout=SELF_INSTALL_TIMEOUT)
+        if code != 0:
+            return fail("staging the agent of %s exited %d: %s" % (rev, code, output[-400:]))
+        code, output = _call(run, [sys.executable, str(stage / "next_autodeploy.py"),
+                                   "self-check"], cwd=stage, timeout=SELF_CHECK_TIMEOUT)
+        if code != 0 or SELF_CHECK_MARK not in output:
+            return fail("the agent of %s failed its start-up check (exit %d): %s" % (
+                rev, code, output[-400:]))
+        say("self-update: the staged agent of %s starts" % rev)
+        snapshot_installed(layout)
+        touched.append(True)
+        code, output = _call(run, [sys.executable, script, "install", "--no-restart"],
+                             cwd=worktree, timeout=SELF_INSTALL_TIMEOUT)
+        if code != 0:
+            return fail("install --no-restart of %s exited %d: %s" % (
+                rev, code, output[-400:]), restore=True)
+        now = installed_blobs(git, layout.node_deploy_bin)
+        if any(now.get(name) != blob for name, blob in wanted.items()):
+            return fail("the installed files do not match %s after install" % rev,
+                        restore=True)
+        keep("restarting")
+        code, output = _call(run, watch_command(layout, digest))
+        if code != 0:
+            return fail("systemd-run could not arm the start-up watch: %s" % output[-400:],
+                        restore=True)
+        say("self-update: installed %s; restarting %s (a watch restores the previous "
+            "agent if the new one has not confirmed in %d s)" % (
+                rev, UNIT_NAME, SELF_UPDATE_CONFIRM_SECONDS))
+    except (ToolError, OSError, subprocess.SubprocessError) as error:
+        return fail(str(error), restore=bool(touched))
+    finally:
+        lock.release()
+    code, output = _call(run, ["systemctl", "--user", "restart", "--no-block", UNIT_NAME])
+    if code != 0:
+        _call(run, ["systemctl", "--user", "stop", WATCH_UNIT_PREFIX + digest[:12] + ".timer"])
+        return fail("systemctl restart exited %d: %s" % (code, output[-400:]), restore=True)
+    return {"status": "restarting", "digest": digest}
+
+
+def confirm_self_update(repo, layout, say, state_dir=None, notifier=None,
+                        run=subprocess.run):
+    state = load_state(state_dir)
+    record = state.get("selfUpdate") or {}
+    if record.get("status") != "restarting":
+        return None
+    have = blobs_digest(installed_blobs(Git(repo, run=run), layout.node_deploy_bin))
+    if have != record.get("digest"):
+        record.update(status="replaced", message="the installed files changed again "
+                      "before the new agent started")
+        state["selfUpdate"] = record
+        save_state(state, state_dir)
+        say("self-update: %s" % record["message"])
+        return record
+    record.update(status="ok", confirmedAt=time.time())
+    state["selfUpdate"] = record
+    state["agent"] = {"commit": record.get("commit"), "rev": record.get("rev"),
+                      "digest": have, "at": time.time()}
+    save_state(state, state_dir)
+    say("self-update: the agent now runs the files of %s (%s)" % (
+        record.get("rev"), ", ".join(record.get("files") or [])))
+    if notifier is not None:
+        notifier.send("Node deploy agent updated to %s" % record.get("rev"),
+                      "The deploy agent installed and restarted itself with the files of "
+                      "%s: %s." % (record.get("rev"), ", ".join(record.get("files") or [])),
+                      "agent-updated:%s" % record.get("rev"))
+    return record
+
+
+def watch_self_update(digest, layout, state_dir=None, notifier=None, run=subprocess.run,
+                      say=print, source=None):
+    state = load_state(state_dir)
+    record = state.get("selfUpdate") or {}
+    if record.get("digest") != digest or record.get("status") != "restarting":
+        return 0
+    source = Path(source or Path(__file__).resolve().parent)
+    message = "the agent of %s did not start and confirm within %d s" % (
+        record.get("rev"), SELF_UPDATE_CONFIRM_SECONDS)
+    if source.resolve() == Path(layout.node_deploy_bin).resolve():
+        message += "; no previous copy to restore, it is left as installed"
+    else:
+        restored = restore_installed(layout, source)
+        message += "; the previous agent is back (%s)" % ", ".join(restored)
+        for command in (["systemctl", "--user", "daemon-reload"],
+                        ["systemctl", "--user", "restart", UNIT_NAME]):
+            code, output = _call(run, command)
+            if code != 0:
+                message += "; %s exited %d: %s" % (" ".join(command), code, output[-200:])
+    record.update(status="failed", message=message)
+    state["selfUpdate"] = record
+    save_state(state, state_dir)
+    say("self-update: FAILED: %s" % message)
+    if notifier is not None:
+        notifier.send("Node deploy agent update to %s failed" % record.get("rev"),
+                      "%s. These files are not tried again; fix them on main or run "
+                      "python3 tools/next_autodeploy.py install (docs/deploy/auto-deploy.md)."
+                      % message, "agent-update-failed:%s" % record.get("rev"), email=True)
+    return 1
+
+
+def self_check(layout=None) -> int:
+    layout = layout or forkmesh_paths.resolve()
+    import caddy_routes  # noqa: F401
+    import render  # noqa: F401
+    agent = Agent(layout.source, actions_root(layout), layout=layout,
+                  notifier=notifier_for(layout.source, print, layout))
+    load_state(agent.state_dir)
+    switch_state(agent.state_dir)
+    render_unit(Path(__file__).resolve().parent)
+    print(SELF_CHECK_MARK)
+    return 0
 
 
 def render_unit(bin_dir: Path, python="/usr/bin/python3") -> str:
@@ -1550,18 +2243,17 @@ def render_unit(bin_dir: Path, python="/usr/bin/python3") -> str:
             "WantedBy=default.target\n" % (python, bin_dir / "next_autodeploy.py"))
 
 
-def install(layout=None, run=subprocess.run, user_units=None, enable=True, say=print) -> int:
+def install(layout=None, run=subprocess.run, user_units=None, enable=True, say=print,
+            stage=None, restart=True) -> int:
     layout = layout or forkmesh_paths.resolve()
-    here = Path(__file__).resolve().parent
-    target = layout.node_deploy_bin
+    root = Path(__file__).resolve().parent.parent
+    target = Path(stage) if stage else layout.node_deploy_bin
     target.mkdir(parents=True, exist_ok=True)
-    sources = [(here / name, name) for name in INSTALLED_FILES]
-    sources += [(here.parent / "deploy" / "core" / name, name) for name in INSTALLED_DEPLOY_FILES]
-    for source, name in sources:
-        temporary = target / (name + ".new")
-        shutil.copyfile(source, temporary)
-        os.chmod(temporary, 0o755 if name == "next_autodeploy.py" else 0o644)
-        os.replace(temporary, target / name)
+    for source, name in installed_sources():
+        copy_atomic(root / source, target / name, installed_mode(name))
+    if stage:
+        say("staged the agent in %s" % target)
+        return 0
     units = layout.systemd_units
     units.mkdir(parents=True, exist_ok=True)
     unit = units / UNIT_NAME
@@ -1578,15 +2270,17 @@ def install(layout=None, run=subprocess.run, user_units=None, enable=True, say=p
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not enable:
         return 0
-    for command in (["systemctl", "--user", "daemon-reload"],
-                    ["systemctl", "--user", "enable", UNIT_NAME],
-                    ["systemctl", "--user", "restart", UNIT_NAME]):
+    commands = [["systemctl", "--user", "daemon-reload"],
+                ["systemctl", "--user", "enable", UNIT_NAME]]
+    if restart:
+        commands.append(["systemctl", "--user", "restart", UNIT_NAME])
+    for command in commands:
         completed = run(command, capture_output=True, text=True, timeout=60, check=False)
         if completed.returncode != 0:
             say("%s: %s" % (" ".join(command), completed.stderr.strip()))
             return 1
-    say("installed %s and %s (auto-deploy is %s)" % (
-        target, UNIT_NAME, switch_state()[0]))
+    say("installed %s and %s (auto-deploy is %s%s)" % (
+        target, UNIT_NAME, switch_state()[0], "" if restart else "; not restarted"))
     return 0
 
 
@@ -1617,7 +2311,9 @@ def status_report(repo, layout=None) -> dict:
               "state": load_state(), "main": git.rev(MAIN_REF)[:12]}
     try:
         hosts = fleet_hosts(git.show(MAIN_REF, "deploy/fleet.toml"))
-        report["live"] = live_revs(hosts, offline_wait=0, unreachable_wait=0)
+        report["live"], skipped = live_fleet(hosts, offline_wait=0, unreachable_wait=0)
+        if skipped:
+            report["wouldSkip"] = skipped
     except (ToolError, ValueError, KeyError) as error:
         report["live"] = {"error": str(error)}
     return report
@@ -1645,6 +2341,11 @@ def main(argv=None) -> int:
     sub.add_parser("workflow-paths")
     p = sub.add_parser("install")
     p.add_argument("--no-enable", action="store_true")
+    p.add_argument("--no-restart", action="store_true")
+    p.add_argument("--stage")
+    sub.add_parser("self-check")
+    p = sub.add_parser("self-update-watch")
+    p.add_argument("--digest", required=True)
     args = parser.parse_args(argv)
     layout = forkmesh_paths.resolve()
     repo = layout.source
@@ -1678,7 +2379,13 @@ def main(argv=None) -> int:
             print(json.dumps(status_report(repo, layout), indent=2, sort_keys=True))
             return 0
         if args.command == "install":
-            return install(layout, enable=not args.no_enable)
+            return install(layout, enable=not args.no_enable, stage=args.stage,
+                           restart=not args.no_restart)
+        if args.command == "self-check":
+            return self_check(layout)
+        if args.command == "self-update-watch":
+            return watch_self_update(args.digest, layout,
+                                     notifier=notifier_for(repo, print, layout))
         if args.command == "serve":
             agent = Agent(repo, actions_root(layout), layout=layout,
                           notifier=notifier_for(repo, print, layout))

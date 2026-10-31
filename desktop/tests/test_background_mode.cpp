@@ -277,6 +277,57 @@ void testBootSleepPermission()
           "an unresolved account cannot install a permission");
 }
 
+void testRestartPermission()
+{
+    QTemporaryDir home;
+    Recorder recorder;
+    bg::StartManager m = manager(home.path(), &recorder);
+    int prompts = 0;
+    bool approve = false;
+    m.run = [&](const QString &program, const QStringList &arguments) {
+        if (program != QLatin1String("pkexec"))
+            return recorder.run(program, arguments);
+        ++prompts;
+        if (!approve)
+            return bg::CommandResult{false, "authentication dismissed"};
+        const QString target = arguments.size() == 7 ? arguments.value(5) : arguments.value(4);
+        check(target.startsWith(home.path()), "the restart policy file is inside the test home");
+        if (!target.startsWith(home.path()))
+            return bg::CommandResult{};
+        QProcess process;
+        process.start(arguments.first(), arguments.mid(1));
+        const bool finished = process.waitForFinished(5000);
+        return bg::CommandResult{finished && process.exitCode() == 0, process.readAllStandardError()};
+    };
+    check(!m.restartAllowed(), "an absent policy does not allow restarts");
+    check(m.allowRestart(false) && prompts == 0, "taking back an absent permission never prompts");
+    QString error;
+    check(!m.allowRestart(true, &error) && error.contains(QLatin1String("authentication")),
+          "dismissed authentication reports why the restart stays refused");
+    check(!m.restartAllowed(), "dismissed authentication installs no policy");
+    approve = true;
+    check(m.allowRestart(true) && m.restartAllowed() &&
+              m.status(QStringLiteral("forkmesh")).restartAllowed,
+          "approved authentication installs the restart permission");
+    check(manager(home.path(), &recorder).restartAllowed(), "the permission survives a restart");
+    check(m.allowRestart(true) && prompts == 2, "an installed policy never prompts again");
+    check(read(m.restartPolicyPath()) == m.restartPolicy(), "the policy text is installed unchanged");
+    check(m.restartPolicyPath() != m.bootSleepPolicyPath(), "restart and sleep policies are separate files");
+    check(m.restartPolicy().contains(QLatin1String("subject.user === \"forkmesh-test\"")) &&
+              m.restartPolicy().count(QLatin1String("action.id")) == 2 &&
+              m.restartPolicy().contains(QLatin1String("\"org.freedesktop.login1.reboot\"")) &&
+              m.restartPolicy().contains(QLatin1String("\"org.freedesktop.login1.reboot-multiple-sessions\"")) &&
+              !m.restartPolicy().contains(QLatin1String("power-off")) &&
+              !m.restartPolicy().contains(QLatin1String("ignore-inhibit")),
+          "only this account may restart, and nothing else is granted");
+    check(m.allowRestart(false) && !QFileInfo::exists(m.restartPolicyPath()) && !m.restartAllowed(),
+          "turning it off removes the policy");
+    m.uid = 502;
+    check(!m.restartAllowed(), "the permission does not apply to another account");
+    m.account.clear();
+    check(!m.allowRestart(true) && prompts == 3, "an unresolved account cannot install a permission");
+}
+
 void testRefreshUnit()
 {
     QTemporaryDir home;
@@ -365,6 +416,8 @@ void testDiagnostics()
     const bg::StartManager m = manager(home.path(), &recorder);
     const QString project = QStringLiteral("forkmesh");
     check(!bg::runnerBadge(m.diagnose(project)).visible, "no badge while nothing is registered");
+    check(!bg::canCloseToHeadless(m.diagnose(project)),
+          "no close-to-background offer while nothing is registered");
     check(!bg::runnerReport(m.diagnose(project)).isEmpty(), "an unregistered report still explains");
     QString error;
     check(m.enable(fakeBinary(home.path()), project, &error), "enable succeeds");
@@ -380,6 +433,7 @@ void testDiagnostics()
     check(badge.visible && badge.text == QStringLiteral("Background: Ready") &&
               badge.severity == QStringLiteral("ok"),
           "an enabled unit standing by is ready");
+    check(bg::canCloseToHeadless(ready), "a ready unit offers to close the window into it");
 
     recorder.unitShow = "UnitFileState=enabled\nActiveState=active\nSubState=running\n"
                         "MainPID=4242\nNRestarts=2\n";
@@ -389,6 +443,7 @@ void testDiagnostics()
               badge.text == QStringLiteral("Background: Running") &&
               badge.toolTip.contains(QStringLiteral("4242")),
           "an active unit shows as running with its pid");
+    check(!bg::canCloseToHeadless(running), "a running unit does not offer a second hand-over");
 
     recorder.unitShow = "UnitFileState=enabled\nActiveState=failed\nSubState=failed\n"
                         "Result=exit-code\nExecMainStatus=3\n";
@@ -569,6 +624,7 @@ int main(int argc, char **argv)
     testShuttingDown();
     testSleepDisabled();
     testBootSleepPermission();
+    testRestartPermission();
     testRefreshUnit();
 #if defined(Q_OS_LINUX)
     testLegacyEngine();

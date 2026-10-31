@@ -716,3 +716,39 @@ bool ForkMeshIdentity::verifyRotation(const QJsonObject &record)
         ("forkmesh-rotate-v1\n" + oldPub + "\n" + newPub + "\n" + ts).toUtf8();
     return verifySignature(oldPub, sig, canonical);
 }
+
+static QByteArray rotationAcceptanceCanonical(const QJsonObject &record)
+{
+    return ("forkmesh-rotate-accept-v1\n" + record.value("nodeName").toString() +
+            "\n" + record.value("oldPubkey").toString() + "\n" +
+            record.value("newPubkey").toString() + "\n" +
+            record.value("ts").toString())
+        .toUtf8();
+}
+
+QJsonObject ForkMeshIdentity::acceptRotation(const QJsonObject &record,
+                                             const QString &nodeName) const
+{
+    const QString name = nodeName.trimmed().toLower();
+    if (!m_key || m_publicKey.isEmpty() || name.isEmpty() ||
+        record.value("newPubkey").toString() != m_publicKey ||
+        !verifyRotation(record))
+        return {};
+    QJsonObject accepted = record;
+    accepted.insert("nodeName", name);
+    const QString sig = signData(rotationAcceptanceCanonical(accepted));
+    if (sig.isEmpty())
+        return {};
+    accepted.insert("newSig", sig);
+    return accepted;
+}
+
+bool ForkMeshIdentity::verifyRotationAcceptance(const QJsonObject &record)
+{
+    const QString newPub = record.value("newPubkey").toString();
+    const QString sig = record.value("newSig").toString();
+    if (!verifyRotation(record) || newPub.isEmpty() || sig.isEmpty() ||
+        record.value("nodeName").toString().isEmpty())
+        return false;
+    return verifySignature(newPub, sig, rotationAcceptanceCanonical(record));
+}

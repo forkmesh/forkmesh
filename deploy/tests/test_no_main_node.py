@@ -134,3 +134,17 @@ def test_retired_cores_must_be_core_names(tmp_path):
         "[[nodes]]", '[hosted]\nretired_cores = ["r1"]\n\n[[nodes]]', 1)
     with pytest.raises(render.RenderError):
         load(tmp_path, text, "bad")
+
+
+def test_fleet_runner_addresses_are_never_probe_banned(tmp_path):
+    text = EXAMPLE.read_text().replace(
+        'name = "r1"\npublic_ipv4 = "203.0.113.21"',
+        'name = "r1"\npublic_ipv4 = "203.0.113.21"\n'
+        'public_ipv6 = "2a01:4f8:21:7::5"')
+    fleet = load(tmp_path, text, "runners")
+    env = render.core_role_settings(fleet)
+    assert ("FORKMESH_VAR_FORKMESH_PROBE_BAN_ALLOW="
+            "203.0.113.21/32,2a01:4f8:21:7::/64") in env
+    fleet["runners"] = []
+    assert "FORKMESH_VAR_FORKMESH_PROBE_BAN_ALLOW=\n" in \
+        render.core_role_settings(fleet) + "\n"

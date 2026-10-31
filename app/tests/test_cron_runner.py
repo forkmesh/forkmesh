@@ -402,6 +402,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("usage-budget")
         if minute % 10 == 4:
             phases.append("discord-bugs")
+        if minute % 5 == 1:
+            phases.append("github-actions")
         if minute % 5 == 2:
             phases.append("snapshot-catalog")
         if minute % 5 == 4:
@@ -415,13 +417,15 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
                 "reward-chain", "reward-contributions", "reward-sweeps",
                 "direct-unread-email"))
         elif minute % 5 == 2:
-            phases.append("federation")
+            phases.extend(("federation", "tip-verify"))
         elif minute % 5 == 3:
             phases.extend((
                 "notification-digest", "chat-digest",
                 "channel-unread-email"))
         elif minute % 5 == 4:
             phases.extend(("webhook-outbox", "app-events", "provider-mirror"))
+        if minute % 5 == 3:
+            phases.append("mirror-quota")
         if minute % 10 == 8:
             phases.append("ap-digest")
         if minute % 20 == 12:
@@ -444,6 +448,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("workflow-schedules")
         if minute % 15 == 6:
             phases.append("member-activity")
+        if minute % 5 == 0:
+            phases.append("ai-review")
         hourly = minute % 60
         if hourly == 7:
             phases.append("microjob-payouts")
@@ -469,6 +475,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("attribution-clone-snapshot")
         if minute % 5 == 0:
             phases.append("probe-bans")
+        if minute % 2 == 0:
+            phases.append("pull-attention")
         return tuple(phases)
 
     for minute in range(360):

@@ -132,7 +132,6 @@ def test_the_running_build_and_the_update_status_are_read_safely(tmp_path):
     assert server_update.freshness(current, {"commit": "abcdef123456" + "0" * 28}) == "current"
     assert server_update.freshness(current, {"commit": "f" * 40}) == "behind"
     assert server_update.freshness(current, {}) == "unknown"
-    # A check from before the last deploy names an older commit: not behind.
     built = {"commit": "abcdef123456", "time": 200}
     assert server_update.freshness(built, {"commit": "f" * 40, "time": 100}) == "current"
     assert server_update.freshness(built, {"commit": "f" * 40, "time": 300}) == "behind"

@@ -98,6 +98,7 @@ export class WorldMeshLinks {
     onPeersChanged = () => {},
     onPeerMoved = () => {},
     onVisitChanged = () => {},
+    onVisitAdmitted = () => {},
     requestVisa = async () => "",
     presenceFrame = () => null,
     moveIntervalMs = 1000,
@@ -106,6 +107,7 @@ export class WorldMeshLinks {
     this.onPeersChanged = onPeersChanged;
     this.onPeerMoved = onPeerMoved;
     this.onVisitChanged = onVisitChanged;
+    this.onVisitAdmitted = onVisitAdmitted;
     this.requestVisa = requestVisa;
     this.presenceFrame = presenceFrame;
     this.moveIntervalMs = moveIntervalMs;
@@ -113,6 +115,7 @@ export class WorldMeshLinks {
     this.neighbors = new Map();
     this.links = new Map();
     this.visitId = "";
+    this.admittedId = "";
     this.pendingMove = null;
     this.moveTimer = 0;
     this.lastMoveAt = 0;
@@ -158,6 +161,7 @@ export class WorldMeshLinks {
     if (this.visitId === id) return;
     const previous = this.neighbors.get(this.visitId) || null;
     this.visitId = id;
+    this.admittedId = "";
     this.pendingMove = null;
     window.clearTimeout(this.moveTimer);
     this.moveTimer = 0;
@@ -166,6 +170,12 @@ export class WorldMeshLinks {
 
   get visiting() {
     return this.neighbors.get(this.visitId) || null;
+  }
+
+  setAdmitted(id) {
+    if (this.admittedId === id) return;
+    this.admittedId = id;
+    this.onVisitAdmitted(this.neighbors.get(id) || null);
   }
 
   ensureLink(id, mode) {
@@ -248,6 +258,7 @@ export class WorldMeshLinks {
       if (link.socket !== socket) return;
       link.socket = null;
       link.selfId = "";
+      if (this.admittedId === link.id) this.setAdmitted("");
       window.clearInterval(link.pingTimer);
       link.pingTimer = 0;
       if (this.links.get(link.id) === link && !this.destroyed) this.scheduleRetry(link);
@@ -270,6 +281,7 @@ export class WorldMeshLinks {
       link.peers = new Map();
       message.peers.slice(0, MAX_PEERS_PER_WORLD).forEach((peer) => this.storePeer(link, peer));
       this.onPeersChanged();
+      if (link.mode === "visit" && link.id === this.visitId) this.setAdmitted(link.id);
       return;
     }
     if ((message.type === "join" || message.type === "presence") && message.peer) {
@@ -383,6 +395,7 @@ export class WorldMeshLinks {
     link.socket = null;
     link.selfId = "";
     link.generation += 1;
+    if (this.admittedId === link.id) this.setAdmitted("");
     window.clearInterval(link.pingTimer);
     window.clearTimeout(link.retryTimer);
     link.pingTimer = 0;

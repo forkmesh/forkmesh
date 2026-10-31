@@ -103,7 +103,7 @@ class ChatV3VectorsTest {
         assertEq(null, bob.acceptKeyFrame(bundle("injectedOutsider"), now), "an account outside the DM is dropped")
         assertEq(TrustState.PENDING, bob.acceptKeyFrame(bundle("injectedAsBob"), now)?.state, "a new device for bob waits")
         val open = RoomSeal.create(room, "open-scope", SealPolicy.OPEN, "bob", bob.keys, clock = { now })
-        assertEq(TrustState.APPROVED, open.acceptKeyFrame(bundle("injectedOutsider"), now)?.state)
+        assertEq(null, open.acceptKeyFrame(bundle("injectedOutsider"), now), "an open room needs the node signature")
     }
 
     fun testOpenRelaySequence() {

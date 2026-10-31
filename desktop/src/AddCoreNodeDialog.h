@@ -41,6 +41,9 @@ public:
     QStringList lastArguments() const { return m_lastArguments; }
     QString provider() const { return m_provider; }
     void setProvider(const QString &provider);
+    QString replaceTarget() const { return m_replace; }
+    void setReplaceTarget(const QString &name);
+    QString activeReplaceTarget() const;
 
     void loadOptions();
     void loadStatus();
@@ -82,6 +85,7 @@ private:
     bool m_reloadOptions = false;
     bool m_statusLoaded = false;
     QString m_provider = QStringLiteral("vultr");
+    QString m_replace;
 };
 
 class AddCoreNodeDialog : public QDialog {
@@ -105,10 +109,12 @@ private:
     void refreshPlans();
     void refreshEstimate();
     void refreshRun();
+    void refreshTitle();
     void appendLog(const QString &text);
 
     QPointer<AddCoreNodeController> m_controller;
     QStackedWidget *m_pages = nullptr;
+    QLabel *m_chooseTitle = nullptr;
     QLabel *m_chooseIntro = nullptr;
     QComboBox *m_provider = nullptr;
     QComboBox *m_region = nullptr;

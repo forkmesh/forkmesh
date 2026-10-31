@@ -32,7 +32,17 @@ account, and workflows such as `/assign` trusted it.
   with `403 author_mismatch`.
 - Without a session, a bound key names its account.
 - Otherwise the submission is anonymous: `authorName` is empty, never a
-  username, and readers fall back to the key.
+  username. The name the client sent, if it is a valid account name, is kept
+  separately as `authorClaimedName`. A pull request sent from another
+  instance (`docs/app/remote-forks.md`) always lands here, because the browser
+  posts it without credentials, and showing only the key hid who sent it.
+  `server/intake.go` writes the claim into `pull.md` and the pull event files.
+  The pull pages show it as `name (unverified)` with no profile link
+  (`recordAuthorName` in `app/public/dashboard/js/02-helpers.js`,
+  `_record_author` in `app/host/forkmesh_host/repo_views.py`). Nothing else
+  reads it: notifications, permissions and workflows use only `authorName`.
+  The server drops `authorClaimedName` whenever it binds a verified name.
+  Pulls stored before this change have no claim and still show the key.
 - `authorVerified` is set to `true` when a name was bound this way and
   `false` otherwise, overwriting anything the client sent. It travels with the
   event into the ledger.

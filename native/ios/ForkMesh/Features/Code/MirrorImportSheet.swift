@@ -1,4 +1,4 @@
-// Import external repository metadata from GitHub, GitLab or Codeberg. The
+// Import external repository metadata from GitHub, GitLab, Codeberg or Gitea. The
 // logic is FMCode's MirrorImportModel. `onDone` receives the notice to show
 // (nil on Cancel) and the presenter dismisses.
 

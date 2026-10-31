@@ -8,6 +8,7 @@
 #include <QHash>
 #include <QList>
 #include <QString>
+#include <QStringList>
 #include <QtGlobal>
 
 namespace forkmesh {
@@ -31,6 +32,63 @@ struct Process {
     bool self = false;
 };
 
+struct Core {
+    int cpu = -1;
+    int coreId = -1;
+    int package = 0;
+    QString kind;
+    double busy = -1.0;
+    qint64 curKhz = -1;
+    qint64 maxKhz = -1;
+    double tempC = -1.0;
+    QString tempPath;
+};
+
+struct SwapDevice {
+    QString type;
+    qint64 sizeBytes = 0;
+    qint64 usedBytes = 0;
+};
+
+struct Machine {
+    bool valid = false;
+    QString cpuModel;
+    int physicalCores = 0;
+    qint64 cacheL3Bytes = -1;
+    QList<Core> cores;
+    QString governor;
+    QStringList governors;
+    QString driver;
+    QString driverStatus;
+    QString energyPreference;
+    qint64 baseKhz = -1;
+    qint64 minKhz = -1;
+    qint64 maxKhz = -1;
+    int turbo = -1;
+    QString smt;
+    double packageTempC = -1.0;
+    QString packageTempPath;
+    double pressureCpu = -1.0;
+    double pressureMemory = -1.0;
+    double pressureIo = -1.0;
+    QString hugePages;
+    QString hugePagesDefrag;
+    int swappiness = -1;
+    int overcommit = -1;
+    int dirtyRatio = -1;
+    int dirtyBackgroundRatio = -1;
+    int cachePressure = -1;
+    QString zswap;
+    QList<SwapDevice> swaps;
+    QString kernel;
+    int numaNodes = 0;
+};
+
+struct CpuTicks {
+    qint64 busy = 0;
+    qint64 total = 0;
+};
+
 struct Snapshot {
     bool valid = false;
     QString reason;
@@ -42,6 +100,7 @@ struct Snapshot {
     int forkmeshCount = 0;
     double forkmeshCpu = 0.0;
     qint64 forkmeshRss = 0;
+    Machine machine;
 };
 
 Process parseStatLine(const QByteArray &line, qint64 pageBytes);
@@ -49,6 +108,16 @@ QString stateWord(QChar state);
 QString descriptionFor(const Process &process);
 QString detailTextFor(const Process &process);
 void markTree(QList<Process> &processes, qint64 rootPid);
+QList<int> parseCpuList(const QString &text);
+QHash<int, CpuTicks> parsePerCpuTicks(const QByteArray &procStat);
+QString selectedChoice(const QString &text);
+double pressureSome(const QByteArray &text);
+QString shortCpuModel(const QString &model);
+QList<SwapDevice> parseSwaps(const QByteArray &text);
+Machine readMachine(const QString &root);
+void refreshMachine(Machine &machine, const QString &root);
+void applyCpuTicks(Machine &machine, const QHash<int, CpuTicks> &previous,
+                   const QHash<int, CpuTicks> &current);
 
 class Sampler
 {
@@ -68,6 +137,8 @@ private:
     qint64 m_lastElapsedMs = -1;
     double m_lastBusy = -1.0;
     double m_lastTotal = -1.0;
+    Machine m_machine;
+    QHash<int, CpuTicks> m_lastCpuTicks;
 };
 
 } // namespace desktopprocs

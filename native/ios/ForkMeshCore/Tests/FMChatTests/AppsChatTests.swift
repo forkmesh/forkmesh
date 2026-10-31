@@ -74,6 +74,8 @@ final class AppsChatTests: XCTestCase {
 
     func testUnknownCommandsAreSentAsText() async throws {
         let (hub, h, api) = try await hub()
+        _ = try await h.peer("remote-node")
+        try await Task.sleep(nanoseconds: 100_000_000)
         let sent = await hub.sendChatText("/wave okay")
         XCTAssertTrue(sent)
         XCTAssertTrue(apiCalls(api, "/api/apps/commands/run").isEmpty)
@@ -117,13 +119,13 @@ final class AppsChatTests: XCTestCase {
         let connection = try XCTUnwrap(ws.lastConnection)
         let crypto = await Task.detached { RoomCrypto.withPassphrase(room, "office-pass") }.value
         let messageId = String(repeating: "f", count: 32)
-        connection.receive(text: JSON.encode(try crypto.encrypt([
+        connection.receive(text: JSON.encode(try serverEnvelope([
             "type": "chat", "id": .string(messageId), "senderId": "app:hello-app", "sender": "Hello App (app)",
             "text": "Pick one", "ts": 9_999_999_999_999, "appMessageId": .string(messageId),
             "app": ["name": "Hello App", "slug": "hello-app"],
             "blocks": [["type": "actions", "elements": [["type": "static_select", "action_id": "size",
                                                          "options": [["text": "Large", "value": "l"]]]]]],
-        ])))
+        ], crypto: crypto)))
         let arrived = await waitUntil { hub.rows.last?.message.app != nil }
         XCTAssertTrue(arrived)
         let bot = try XCTUnwrap(hub.rows.last?.message)

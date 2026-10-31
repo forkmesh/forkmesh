@@ -293,6 +293,7 @@ private fun DjDeckSheet(model: DjStudioModel, deck: DjDeck) {
                 if (deck.bpm > 0) FmToneButton("Clear", { model.clearBpm(deck.side) })
             }
             DjLabeled("8-second loop") { FmSwitch(deck.loop, { model.toggleLoop(deck.side) }, enabled = deck.loaded) }
+            DjLabeled("Repeat song") { FmSwitch(deck.repeats, { model.toggleRepeat(deck.side) }, enabled = deck.loaded) }
             DjSection("Cue")
             DjRow("Set cue at ${DjStudio.clock(deck.position())}", icon = "flag") { model.setCue(deck.side) }
             DjRow("Jump to cue at ${DjStudio.clock(deck.cue)}", icon = "replay") { model.jumpToCue(deck.side) }

@@ -1,4 +1,5 @@
 import { LANDMARKS, WORLD_REGIONS, landmarkById } from "../../world-data.js";
+import { territoryWalkActive } from "../movement.js";
 import {
   OFFICE_FRONT_Z,
   nextOfficeZoneState,
@@ -64,10 +65,9 @@ export function functions({
       ctx.player.position.y - ctx.currentFloorY,
       ctx.player.position.z - (office.position[2] + OFFICE_FRONT_Z),
     );
-    const nextOfficeState = nextOfficeZoneState(
-      ctx.officeZoneState,
-      officeEntranceDistance,
-    );
+    const nextOfficeState = territoryWalkActive()
+      ? "distant"
+      : nextOfficeZoneState(ctx.officeZoneState, officeEntranceDistance);
     if (nextOfficeState !== ctx.officeZoneState) {
       ctx.officeZoneState = nextOfficeState;
       if (ctx.officeZoneState === "nearby") fns.loadOfficeTableLogoTexture();

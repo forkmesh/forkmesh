@@ -76,6 +76,28 @@ final class DiagnosticsBundleTests: XCTestCase {
         XCTAssertTrue(clean.contains("2026-10-13 19:20:15 took 420 ms"))
     }
 
+    func testScrubsConversationAndRoomNames() {
+        let raw = """
+            relay.send.edit {"type":"edit","conversation":"#layoffs-plan","to":"node-9"}
+            stall conversation=#layoffs-plan room=secret-room channel=@pat took 300 ms
+            """
+        let clean = DiagnosticsBundle.scrub(raw)
+        for leaked in ["layoffs-plan", "secret-room", "@pat", "node-9"] {
+            XCTAssertFalse(clean.contains(leaked), leaked)
+        }
+        XCTAssertTrue(clean.contains("took 300 ms"))
+    }
+
+    @MainActor func testThePerformanceReportIsScrubbed() async {
+        let telemetry = AppTelemetry(log: AppLog(), rssMegabytes: { 1 })
+        let text = PerformanceReport.text(
+            telemetry: telemetry, context: [("screen", "chat conversation=#layoffs-plan")],
+            stallLog: "stall token=abc123def from pat@example.com")
+        for leaked in ["layoffs-plan", "abc123def", "pat@example.com"] {
+            XCTAssertFalse(text.contains(leaked), leaked)
+        }
+    }
+
     func testLogsCanBeLeftOut() {
         let report = "# report\nheader\n\n## Metrics (5m | 1h)\nfps 60\n\n## App log, last 10 lines\nsecret line\n\n## stalls.log tail\nstall\n\n## Log volume\n12"
         let without = DiagnosticsBundle.prompt(reason: "The app froze for 0.4 s", report: report, includeLogs: false, limit: 8000)

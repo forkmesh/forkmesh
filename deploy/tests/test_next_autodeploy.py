@@ -55,6 +55,11 @@ def commit(repo, files, message):
     return git(repo, "rev-parse", "HEAD")
 
 
+@pytest.fixture(autouse=True)
+def no_tmp_disk(tmp_path, monkeypatch):
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(tmp_path / "no-labels"))
+
+
 @pytest.fixture
 def repo(tmp_path):
     path = tmp_path / "src"
@@ -392,6 +397,57 @@ def test_a_run_requeued_after_a_desktop_restart_follows_its_new_workspace(repo, 
     assert [run["workspace"] for run in auto.running_runs(tmp_path / "actions")] == [second]
 
 
+def tmp_disk(tmp_path, monkeypatch, target=None):
+    labels, device = tmp_path / "labels", tmp_path / "dev" / "sdz1"
+    labels.mkdir()
+    device.parent.mkdir()
+    device.write_text("")
+    (labels / "TMP").symlink_to(device)
+    mount = target or tmp_path / "media" / "TMP"
+    mount.mkdir(parents=True)
+    mounts = tmp_path / "mounts"
+    mounts.write_text("/dev/root / ext4 rw 0 0\n%s %s ext4 rw 0 0\n" % (
+        device, str(mount).replace(" ", "\\040")))
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(labels))
+    monkeypatch.setattr(auto, "TMP_DISK_MOUNTS", str(mounts))
+    return mount
+
+
+def test_tmp_disk_mount_matches_the_labelled_device_and_unescapes_spaces(tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch, tmp_path / "media" / "T M P")
+    assert auto.tmp_disk_mount() == mount
+    assert auto.sandbox_dirs(tmp_path / "actions") == [
+        tmp_path / "actions" / "sandbox", mount / "ForkMesh" / "actions" / "sandbox"]
+
+
+def test_no_tmp_disk_leaves_only_the_data_sandbox(tmp_path):
+    assert auto.tmp_disk_mount() is None
+    assert auto.sandbox_dirs(tmp_path / "actions") == [tmp_path / "actions" / "sandbox"]
+
+
+def test_a_tmp_disk_that_is_labelled_but_not_mounted_is_ignored(tmp_path, monkeypatch):
+    tmp_disk(tmp_path, monkeypatch)
+    (tmp_path / "mounts").write_text("/dev/root / ext4 rw 0 0\n")
+    assert auto.tmp_disk_mount() is None
+
+
+def test_a_run_whose_sandbox_is_on_the_tmp_disk_is_deployed(repo, tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch)
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    head = commit(repo, {"app/a.py": "tmp disk\n"}, "tmp disk")
+    legacy = make_run(tmp_path / "actions", 7903, head)
+    fast = (mount / "ForkMesh" / "actions" / "sandbox" / "forkmesh-run-7903-1790000099999"
+            / "workspace")
+    fast.mkdir(parents=True)
+    agent.tick()
+    assert agent.attached[7903] is not None
+    settle(agent, clock)
+    assert calls == [(head, "auto")]
+    assert result_line(fast).startswith(auto.RESULT_MARK + " ok deployed ")
+    assert not (legacy / auto.SINK_NAME).exists()
+
+
 def test_paused_or_disarmed_agent_answers_without_deploying(repo, tmp_path):
     clock, calls = Clock(), []
     agent = agent_for(repo, tmp_path, clock, calls, armed=False)
@@ -435,8 +491,48 @@ def test_a_push_during_a_deploy_waits_for_the_next_one(repo, tmp_path):
     assert result_line(late) == ""
     assert list(agent.pending.values()) == [second]
     settle(agent, clock)
+    assert calls == [(first, "auto")]
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
     assert calls == [(first, "auto"), (second, "auto")]
     assert "deployed %s" % second[:12] in result_line(late)
+
+
+def test_pushes_after_a_deploy_wait_out_the_pause_as_one_deploy(repo, tmp_path):
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    root = tmp_path / "actions"
+    first = commit(repo, {"app/a.py": "1\n"}, "1")
+    make_run(root, 1, first)
+    agent.tick()
+    settle(agent, clock)
+    assert calls == [(first, "auto")]
+    later, workspaces = [], []
+    for index in range(3):
+        later.append(commit(repo, {"app/a.py": "late %d\n" % index}, "late %d" % index))
+        workspaces.append(make_run(root, 2 + index, later[-1]))
+        settle(agent, clock, 60)
+    assert calls == [(first, "auto")]
+    assert "left of the pause after the last deploy" in sink_text(workspaces[0])
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
+    assert calls == [(first, "auto"), (later[-1], "auto")]
+
+
+def test_a_failed_deploy_does_not_pause_the_next_one(repo, tmp_path):
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    agent.pipeline = lambda repo_path, target, mode, log, **kwargs: calls.append(
+        (target, mode)) or {"ok": False, "target": target, "rev": target[:12],
+                            "deployed": False, "message": "tests failed"}
+    root = tmp_path / "actions"
+    first = commit(repo, {"app/a.py": "1\n"}, "1")
+    make_run(root, 1, first)
+    agent.tick()
+    settle(agent, clock)
+    second = commit(repo, {"app/a.py": "2\n"}, "2")
+    make_run(root, 2, second)
+    agent.tick()
+    settle(agent, clock)
+    assert [target for target, _ in calls] == [first, second]
 
 
 def test_run_sink_never_follows_a_planted_file_or_link(tmp_path):
@@ -659,9 +755,59 @@ def test_a_failing_go_test_fails_the_gate_with_its_output(tmp_path, monkeypatch)
     lines = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted", "FAIL"]
     monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
         "server": (1, auto.failing_go_ids("server", lines), lines)})
+    again = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted again",
+             "FAIL"]
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        1, auto.failing_go_ids(module, again), again))
     with pytest.raises(auto.ToolError, match="server::TestAgentWork"):
         pipeline.test_gate("target", "base")
-    assert "key folder accepted" in "\n".join(log.lines)
+    assert "key folder accepted again" in "\n".join(log.lines)
+
+
+def test_a_go_test_that_only_fails_under_load_passes_when_rerun_alone(tmp_path, monkeypatch):
+    log = auto.Log(echo=False)
+    pipeline = auto.Pipeline(tmp_path, log, state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    monkeypatch.setattr(pipeline, "archive", lambda commit, work: None)
+    monkeypatch.setattr(pipeline, "venv", lambda src: tmp_path / "venv")
+    monkeypatch.setattr(pipeline, "prestage", lambda work, venv: None)
+    monkeypatch.setattr(pipeline, "test_files", lambda src: [])
+    lines = ["--- FAIL: TestCoreDeath (6.97s)", "    --- FAIL: TestCoreDeath/silent (3.56s)",
+             "        call_test.go:161: audio came back after 543ms, target 500 ms", "FAIL"]
+    monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
+        "server": (1, auto.failing_go_ids("server", lines), lines)})
+    reruns = []
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        reruns.append((module, sorted(failures))) or (0, set(), ["ok"])))
+    pipeline.test_gate("target", None)
+    assert reruns == [("server", ["server::TestCoreDeath", "server::TestCoreDeath/silent"])]
+    assert "passed when rerun alone" in "\n".join(log.lines)
+
+
+def test_a_go_rerun_runs_only_the_failed_top_level_tests_one_package_at_a_time(tmp_path,
+                                                                               monkeypatch):
+    root = tmp_path / "goroot"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "go").write_text("")
+    monkeypatch.setattr(auto.shutil, "which",
+                        lambda name: str(root / "bin" / "go") if name == "go" else "/usr/bin/" + name)
+    seen = []
+
+    def fake_stream(command, say, **_kwargs):
+        seen.append(command)
+        say("--- FAIL: TestMultipath (1.0s)")
+        return 1
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    code, failures, _lines = pipeline.go_rerun(
+        tmp_path / "work", tmp_path / "venv", "server",
+        {"server::TestMultipath/blackhole", "server::TestMultipath", "server::TestCoreDeath"})
+    assert (code, failures) == (1, {"server::TestMultipath"})
+    assert seen[0][-10:] == [str(root.resolve() / "bin" / "go"), "test", "-C", "server",
+                             "-count=1", "-p", "1", "-run", "^(TestCoreDeath|TestMultipath)$",
+                             "./..."]
+    assert "--unshare-all" in seen[0]
 
 
 def test_go_tests_run_offline_in_the_sandbox_with_the_host_toolchain(tmp_path, monkeypatch):
@@ -1071,3 +1217,631 @@ def test_gate_one_fails_at_once_when_a_node_answers_with_an_error():
 def test_the_busy_exit_code_matches_next_fleet():
     import next_fleet
     assert auto.RUNNERS_BUSY_EXIT == next_fleet.RUNNERS_BUSY_EXIT
+
+
+def agent_files(version):
+    return {source: "%s %s\n" % (name, version) for source, name in auto.installed_sources()}
+
+
+def agent_layout(tmp_path, repo):
+    return SimpleNamespace(node_deploy_bin=tmp_path / "bin" / "node-deploy",
+                           node_deploy_worktree=tmp_path / "worktrees" / "node-deploy",
+                           cache=tmp_path / "cache", systemd_units=tmp_path / "units",
+                           source=repo)
+
+
+def install_files(directory, files):
+    directory.mkdir(parents=True, exist_ok=True)
+    for source, name in auto.installed_sources():
+        (directory / name).write_text(files[source])
+
+
+class FakeSelfRun:
+    def __init__(self, layout, check_code=0, restart_code=0, watch_code=0):
+        self.layout = layout
+        self.check_code = check_code
+        self.restart_code = restart_code
+        self.watch_code = watch_code
+        self.commands = []
+
+    def __call__(self, command, cwd=None, **kwargs):
+        if command[0] == "git":
+            return subprocess.run(command, cwd=cwd, **kwargs)
+        self.commands.append(command)
+        code = 0
+        if command[0] == "systemd-run":
+            code = self.watch_code
+        elif command[:4] == ["systemctl", "--user", "restart", "--no-block"]:
+            code = self.restart_code
+        elif "self-check" in command:
+            code = self.check_code
+            out = "" if code else auto.SELF_CHECK_MARK
+            return subprocess.CompletedProcess(command, code, out, "boom" if code else "")
+        elif "install" in command:
+            target = (Path(command[command.index("--stage") + 1]) if "--stage" in command
+                      else self.layout.node_deploy_bin)
+            target.mkdir(parents=True, exist_ok=True)
+            for source, name in auto.installed_sources():
+                (target / name).write_bytes((Path(cwd) / source).read_bytes())
+            if "--stage" not in command:
+                self.layout.systemd_units.mkdir(parents=True, exist_ok=True)
+                (self.layout.systemd_units / auto.UNIT_NAME).write_text("new unit\n")
+        return subprocess.CompletedProcess(command, code, "", "")
+
+    def kinds(self):
+        names = []
+        for command in self.commands:
+            if command[0] == "systemd-run":
+                names.append("systemd-run")
+            elif command[0] == "systemctl":
+                names.append(" ".join(c for c in command[:4] if not c.startswith("--user")))
+            else:
+                names.append(next(c for c in ("--stage", "self-check", "--no-restart")
+                                  if c in command))
+        return names
+
+
+def self_update_setup(repo, tmp_path):
+    base = commit(repo, agent_files("v1"), "agent v1")
+    layout = agent_layout(tmp_path, repo)
+    install_files(layout.node_deploy_bin, agent_files("v1"))
+    layout.systemd_units.mkdir(parents=True)
+    (layout.systemd_units / auto.UNIT_NAME).write_text("old unit\n")
+    return base, layout
+
+
+def test_self_update_reinstalls_when_the_agent_file_changed(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    files = dict(agent_files("v1"), **{"tools/next_autodeploy.py": "next_autodeploy.py v2\n"})
+    target = commit(repo, files, "agent v2")
+    run, notifier, state_dir = FakeSelfRun(layout), FakeNotifier(), tmp_path / "state"
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=state_dir, notifier=notifier, run=run)
+    assert outcome["status"] == "restarting"
+    assert run.kinds() == ["--stage", "self-check", "--no-restart", "systemd-run",
+                           "systemctl restart --no-block"]
+    assert (layout.node_deploy_bin / "next_autodeploy.py").read_text() == "next_autodeploy.py v2\n"
+    previous = auto.previous_dir(layout)
+    assert (previous / "next_autodeploy.py").read_text() == "next_autodeploy.py v1\n"
+    assert (previous / auto.UNIT_NAME).read_text() == "old unit\n"
+    watch = run.commands[3]
+    assert watch[-4:] == [str(previous / "next_autodeploy.py"), "self-update-watch",
+                          "--digest", outcome["digest"]]
+    record = auto.load_state(state_dir)["selfUpdate"]
+    assert record["status"] == "restarting" and record["files"] == ["next_autodeploy.py"]
+    confirmed = auto.confirm_self_update(repo, layout, print, state_dir=state_dir,
+                                         notifier=notifier, run=run)
+    assert confirmed["status"] == "ok"
+    assert auto.load_state(state_dir)["agent"]["commit"] == target
+    assert notifier.sent == [("Node deploy agent updated to %s" % target[:12],
+                              "agent-updated:%s" % target[:12], False)]
+    assert auto.watch_self_update(outcome["digest"], layout, state_dir=state_dir,
+                                  run=run, source=previous) == 0
+    assert (layout.node_deploy_bin / "next_autodeploy.py").read_text() == "next_autodeploy.py v2\n"
+    again = FakeSelfRun(layout)
+    assert auto.self_update(repo, target, layout, auto.Log(echo=False), state_dir=state_dir,
+                            run=again)["status"] == "current"
+    assert again.commands == []
+
+
+def test_self_update_leaves_the_agent_alone_when_its_files_are_unchanged(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"app/a.py": "changed\n", "tools/next_deploy.py": "d\n"}, "app")
+    run = FakeSelfRun(layout)
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=tmp_path / "state", run=run)
+    assert outcome == {"status": "current"} and run.commands == []
+    assert not auto.previous_dir(layout).exists()
+    assert "selfUpdate" not in auto.load_state(tmp_path / "state")
+
+
+def test_self_update_tries_each_set_of_agent_files_once(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    broken = commit(repo, {"deploy/core/render.py": "render.py broken\n"}, "broken render")
+    run, notifier, state_dir = FakeSelfRun(layout, check_code=1), FakeNotifier(), tmp_path / "s"
+    outcome = auto.self_update(repo, broken, layout, auto.Log(echo=False),
+                               state_dir=state_dir, notifier=notifier, run=run)
+    assert outcome["status"] == "failed" and "start-up check" in outcome["message"]
+    assert run.kinds() == ["--stage", "self-check"]
+    assert (layout.node_deploy_bin / "render.py").read_text() == "render.py v1\n"
+    assert notifier.sent == [("Node deploy agent update to %s failed" % broken[:12],
+                              "agent-update-failed:%s" % broken[:12], True)]
+    later = commit(repo, {"app/a.py": "later\n"}, "app on top of the broken agent")
+    for target in (broken, later):
+        retry = FakeSelfRun(layout)
+        assert auto.self_update(repo, target, layout, auto.Log(echo=False),
+                                state_dir=state_dir, notifier=notifier,
+                                run=retry)["status"] == "tried"
+        assert retry.commands == []
+    assert len(notifier.sent) == 1
+    fixed = commit(repo, {"deploy/core/render.py": "render.py fixed\n"}, "fixed render")
+    run = FakeSelfRun(layout)
+    assert auto.self_update(repo, fixed, layout, auto.Log(echo=False), state_dir=state_dir,
+                            run=run)["status"] == "restarting"
+    assert (layout.node_deploy_bin / "render.py").read_text() == "render.py fixed\n"
+
+
+def test_a_new_agent_that_never_confirms_is_replaced_by_the_previous_one(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"tools/next_common.py": "next_common.py v2\n"}, "common v2")
+    run, notifier, state_dir = FakeSelfRun(layout), FakeNotifier(), tmp_path / "state"
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=state_dir, run=run)
+    assert outcome["status"] == "restarting"
+    watch = FakeSelfRun(layout)
+    assert auto.watch_self_update(outcome["digest"], layout, state_dir=state_dir,
+                                  notifier=notifier, run=watch,
+                                  source=auto.previous_dir(layout)) == 1
+    assert (layout.node_deploy_bin / "next_common.py").read_text() == "next_common.py v1\n"
+    assert (layout.systemd_units / auto.UNIT_NAME).read_text() == "old unit\n"
+    assert watch.kinds() == ["systemctl daemon-reload", "systemctl restart forkmesh-node-deploy.service"]
+    assert auto.load_state(state_dir)["selfUpdate"]["status"] == "failed"
+    assert notifier.sent[-1][1:] == ("agent-update-failed:%s" % target[:12], True)
+    assert auto.confirm_self_update(repo, layout, print, state_dir=state_dir, run=run) is None
+    retry = FakeSelfRun(layout)
+    assert auto.self_update(repo, target, layout, auto.Log(echo=False), state_dir=state_dir,
+                            run=retry)["status"] == "tried"
+    assert retry.commands == []
+
+
+def test_a_failed_restart_puts_the_previous_agent_files_back(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"tools/forkmesh_paths.py": "forkmesh_paths.py v2\n"}, "paths v2")
+    run = FakeSelfRun(layout, restart_code=1)
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=tmp_path / "state", notifier=FakeNotifier(), run=run)
+    assert outcome["status"] == "failed"
+    assert (layout.node_deploy_bin / "forkmesh_paths.py").read_text() == "forkmesh_paths.py v1\n"
+    assert run.kinds()[-2:] == ["systemctl stop " + auto.WATCH_UNIT_PREFIX
+                                + auto.load_state(tmp_path / "state")["selfUpdate"]["digest"][:12]
+                                + ".timer", "systemctl daemon-reload"]
+
+
+def test_self_update_waits_for_the_deploy_lock(repo, tmp_path, monkeypatch):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"tools/next_autodeploy.py": "next_autodeploy.py v2\n"}, "v2")
+
+    class Busy:
+        def __init__(self, what=""):
+            pass
+
+        def acquire(self, wait=0, **kwargs):
+            raise common.LockBusy({"what": "next_deploy restart"})
+    monkeypatch.setattr(auto.common, "DeployLock", Busy)
+    run = FakeSelfRun(layout)
+    assert auto.self_update(repo, target, layout, auto.Log(echo=False),
+                            state_dir=tmp_path / "state", run=run) == {"status": "busy"}
+    assert run.commands == [] and "selfUpdate" not in auto.load_state(tmp_path / "state")
+
+
+def test_only_tested_forward_deploys_offer_the_agent_an_update(tmp_path):
+    ok = {"ok": True, "rev": "a" * 12, "target": "a" * 40, "deployed": True, "roll": []}
+    auto.record_outcome(dict(ok), None, print, state_dir=tmp_path)
+    assert "tested" not in auto.load_state(tmp_path)
+    auto.record_outcome(dict(ok, tested=True), None, print, state_dir=tmp_path,
+                        mode="rollback")
+    assert "tested" not in auto.load_state(tmp_path)
+    auto.record_outcome(dict(ok, tested=True, ok=False), None, print, state_dir=tmp_path)
+    assert "tested" not in auto.load_state(tmp_path)
+    auto.record_outcome(dict(ok, tested=True), None, print, state_dir=tmp_path)
+    assert auto.load_state(tmp_path)["tested"]["commit"] == "a" * 40
+
+
+def test_the_agent_updates_itself_only_once_idle_and_once_per_revision(repo, tmp_path):
+    clock, calls, updates = Clock(), [], []
+    gate = __import__("threading").Event()
+    agent = agent_for(repo, tmp_path, clock, calls)
+    agent.layout = agent_layout(tmp_path, repo)
+
+    def pipeline(repo_path, target, mode, log, notifier=None, state_dir=None):
+        gate.wait(5)
+        calls.append(target)
+        result = {"ok": True, "target": target, "rev": target[:12], "deployed": True,
+                  "tested": True, "roll": [], "message": "deployed %s" % target[:12]}
+        auto.record_outcome(result, None, log.say, state_dir=state_dir)
+        return result
+
+    def updater(repo_path, target, layout, log, **kwargs):
+        assert agent.worker is None and not agent.pending
+        updates.append(target)
+        return {"status": "restarting"}
+    agent.pipeline, agent.self_updater = pipeline, updater
+    root = tmp_path / "actions"
+    first = commit(repo, {"tools/next_autodeploy.py": "v2\n"}, "agent v2")
+    make_run(root, 1, first)
+    agent.tick()
+    clock.now += auto.DEBOUNCE_SECONDS + 1
+    agent.tick()
+    assert agent.worker is not None
+    second = commit(repo, {"app/a.py": "2\n"}, "2")
+    make_run(root, 2, second)
+    for _ in range(3):
+        agent.tick()
+    assert updates == []
+    gate.set()
+    agent.worker.join(5)
+    agent.tick()
+    assert calls == [first] and list(agent.pending.values()) == [second]
+    assert updates == []
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
+    assert calls == [first, second] and agent.pending == {}
+    assert updates == [second] and agent.restarting
+    third = commit(repo, {"app/a.py": "3\n"}, "3")
+    late = make_run(root, 3, third)
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
+    assert calls == [first, second] and updates == [second]
+    assert not (late / auto.SINK_NAME).exists()
+
+
+def test_the_agent_retries_a_busy_lock_but_not_a_finished_attempt(repo, tmp_path):
+    clock, calls, updates = Clock(), [], []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    agent.layout = agent_layout(tmp_path, repo)
+    statuses = ["busy", "failed"]
+
+    def updater(repo_path, target, layout, log, **kwargs):
+        updates.append(target)
+        return {"status": statuses.pop(0)}
+    agent.self_updater = updater
+    auto.save_state({"tested": {"commit": "b" * 40}}, tmp_path / "switch")
+    agent.tick()
+    agent.tick()
+    assert updates == ["b" * 40]
+    clock.now += auto.SELF_UPDATE_RETRY_SECONDS + 1
+    agent.tick()
+    clock.now += auto.SELF_UPDATE_RETRY_SECONDS + 1
+    agent.tick()
+    assert updates == ["b" * 40, "b" * 40] and not agent.restarting
+    auto.pause("hold", tmp_path / "switch")
+    auto.save_state({"tested": {"commit": "c" * 40}}, tmp_path / "switch")
+    agent.tick()
+    assert updates == ["b" * 40, "b" * 40]
+
+
+def test_install_can_stage_or_skip_the_restart(tmp_path, monkeypatch):
+    layout = SimpleNamespace(node_deploy_bin=tmp_path / "bin", systemd_units=tmp_path / "units")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(common, "autodeploy_dir", lambda: tmp_path / "autodeploy")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+    stage = tmp_path / "stage"
+    assert auto.install(layout=layout, run=run, stage=stage, say=lambda m: None) == 0
+    assert sorted(p.name for p in stage.iterdir()) == sorted(
+        name for _source, name in auto.installed_sources())
+    assert calls == [] and not layout.node_deploy_bin.exists()
+    assert auto.install(layout=layout, run=run, restart=False, say=lambda m: None) == 0
+    assert calls == [["systemctl", "--user", "daemon-reload"],
+                     ["systemctl", "--user", "enable", auto.UNIT_NAME]]
+    assert (layout.systemd_units / auto.UNIT_NAME).is_file()
+
+
+def test_the_staged_agent_passes_its_own_start_up_check(tmp_path):
+    import forkmesh_paths
+    layout = forkmesh_paths.resolve()
+    assert Path(layout.source).resolve().is_relative_to(tmp_path.resolve())
+    source = Path(layout.source)
+    source.mkdir(parents=True)
+    git(source, "init", "-q", "-b", "main")
+    git(source, "config", "user.email", "t@example.com")
+    git(source, "config", "user.name", "t")
+    commit(source, {"deploy/fleet.toml": FLEET_TOML}, "fleet")
+    stage = tmp_path / "stage"
+    assert auto.install(stage=stage, say=lambda m: None) == 0
+    done = subprocess.run([sys.executable, str(stage / "next_autodeploy.py"), "self-check"],
+                          cwd=stage, capture_output=True, text=True, timeout=120, check=False)
+    assert done.returncode == 0, done.stderr
+    assert auto.SELF_CHECK_MARK in done.stdout
+
+
+def test_caddy_settings_reach_the_cores_through_the_automatic_roll():
+    import next_fleet
+    for path in ("deploy/core/render.py", "deploy/core/caddy_routes.py",
+                 "deploy/core/templates/caddy-dropin.conf"):
+        assert auto.roll_path(path), path
+    assert {"files", "start"} <= set(next_fleet.ROLL_STEPS)
+
+
+def test_version_probe_brackets_an_ipv6_route(monkeypatch):
+    monkeypatch.setattr(auto.common, "route_address", lambda ip: "2001:db8::10")
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0, '{"rev":"abc"}\n200', "")
+    code, body = auto.curl("app.forkmesh.com", "198.51.100.10", "/api/version", run=run,
+                           route=True)
+    assert code == 200 and "app.forkmesh.com:443:[2001:db8::10]" in seen[0]
+    seen.clear()
+    auto.curl("app.forkmesh.com", "198.51.100.10", "/api/version", run=run)
+    assert "app.forkmesh.com:443:198.51.100.10" in seen[0]
+
+
+def test_fleet_branches_main_does_not_reflect_are_pending(repo):
+    main = git(repo, "rev-parse", "main")
+    git(repo, "branch", "fleet/remove-core-n2")
+    git(repo, "branch", "fleet/add-core-n3")
+    git(repo, "branch", "fleet/add-core-n1")
+    git(repo, "branch", "fleet/remove-core-n7")
+    git(repo, "branch", "fleet/other")
+    assert auto.unmerged_fleet_branches(auto.Git(repo), main) == [
+        "fleet/add-core-n3", "fleet/remove-core-n2"]
+    retired = FLEET_TOML.replace('[[nodes]]\nname = "n2"\nrole = "core"\n'
+                                 'public_ipv4 = "203.0.113.12"\n\n', "")
+    later = commit(repo, {"deploy/fleet.toml": retired + '\n[hosted]\nretired_cores = ["n3"]\n'},
+                   "fleet change landed by another commit")
+    assert auto.unmerged_fleet_branches(auto.Git(repo), later) == []
+
+
+def test_gate_one_names_the_fleet_branch_main_is_missing(repo, monkeypatch):
+    git(repo, "branch", "fleet/remove-core-n2")
+    pipeline = auto.Pipeline(repo, auto.Log(echo=False))
+
+    def silent(hosts, **kwargs):
+        raise GuardError("n2 did not answer /api/version (HTTP 0); the fleet must be "
+                         "healthy before a deploy")
+    monkeypatch.setattr(auto, "live_fleet", silent)
+    target = git(repo, "rev-parse", "main")
+    with pytest.raises(GuardError, match=r"n2 did not answer .*fleet/remove-core-n2 not "
+                                         r"merged into main"):
+        pipeline._execute(target, target[:12], None, {})
+    git(repo, "branch", "-m", "fleet/remove-core-n2", "fleet/remove-core-n9")
+    with pytest.raises(GuardError, match=r"healthy before a deploy$"):
+        pipeline._execute(target, target[:12], None, {})
+
+
+def answering(down=(), errors=(), rev="abc1234", revs=None):
+    def run(command, **kwargs):
+        if command[0] != "curl":
+            return subprocess.run(command, **kwargs)
+        target = command[command.index("--resolve") + 1]
+        ip = target.rsplit(":", 1)[1]
+        if ip in down:
+            return subprocess.CompletedProcess(command, 7, "\n000", "")
+        if ip in errors:
+            return subprocess.CompletedProcess(command, 0, "bad\n503", "")
+        body = json.dumps({"rev": (revs or {}).get(ip, rev)})
+        return subprocess.CompletedProcess(command, 0, body + "\n200", "")
+    return run
+
+
+def test_gate_one_skips_a_core_that_stays_silent_when_a_majority_answers():
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+    said = []
+    revs, skipped = auto.live_fleet(offline_hosts(), run=answering(down=("203.0.113.11",)),
+                                    say=said.append, sleep=sleep, clock=lambda: now[0],
+                                    dns={})
+    assert revs == {"n2": "abc1234", "n3": "abc1234"}
+    assert skipped == {"n1": "no answer to /api/version for 5 min"}
+    assert now[0] >= auto.UNREACHABLE_WAIT_SECONDS, "a blip is asked again first"
+
+
+def test_gate_one_skips_a_drained_core_without_waiting_for_it():
+    dns = {"n1": {"in_dns": True}, "n2": {"in_dns": False, "held": True},
+           "n3": {"in_dns": True}}
+    slept = []
+    revs, skipped = auto.live_fleet(offline_hosts(), run=answering(down=("203.0.113.12",)),
+                                    sleep=slept.append, clock=lambda: 0.0, dns=dns)
+    assert revs == {"n1": "abc1234", "n3": "abc1234"}
+    assert skipped == {"n2": "held out of DNS"}
+    assert slept == [auto.CURL_RETRY_SECONDS] * (auto.CURL_ATTEMPTS - 1)
+    dns["n2"] = {"in_dns": False}
+    revs, skipped = auto.live_fleet(offline_hosts(), run=answering(), sleep=slept.append,
+                                    clock=lambda: 0.0, dns=dns)
+    assert skipped == {"n2": "out of DNS"} and "n2" not in revs
+
+
+def test_gate_one_never_skips_below_two_healthy_cores():
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+    dns = {"n2": {"in_dns": False, "held": True}}
+    with pytest.raises(GuardError, match=r"only 1 of 3 cores are healthy .* needs 2"):
+        auto.live_fleet(offline_hosts(), run=answering(down=("203.0.113.11",)),
+                        sleep=sleep, clock=lambda: now[0], dns=dns)
+
+
+def test_gate_one_still_fails_on_an_error_from_a_core_in_dns():
+    with pytest.raises(GuardError, match=r"n1 did not answer /api/version \(HTTP 503\)"):
+        auto.live_fleet(offline_hosts(), run=answering(errors=("203.0.113.11",)),
+                        sleep=lambda s: None, clock=lambda: 0.0, dns={})
+    revs, skipped = auto.live_fleet(
+        offline_hosts(), run=answering(errors=("203.0.113.11",)), sleep=lambda s: None,
+        clock=lambda: 0.0, dns={"n1": {"in_dns": False}})
+    assert skipped == {"n1": "out of DNS"}
+
+
+def skip_repo(repo, supported=True):
+    base = git(repo, "rev-parse", "HEAD")
+    text = 'SKIP_ENV = "FMNEXT_DEPLOY_SKIP"\n' if supported else "old = 1\n"
+    target = commit(repo, {"app/a.py": "b\n", "tools/next_deploy.py": text}, "change")
+    return base, target
+
+
+def skip_pipeline(repo, tmp_path, monkeypatch, live, skipped):
+    pipeline = auto.Pipeline(repo, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"),
+                             skip_tests=True)
+    calls = {"tool": [], "verify": []}
+    monkeypatch.setattr(auto, "live_fleet", lambda hosts, **kwargs: (dict(live),
+                                                                     dict(skipped)))
+    monkeypatch.setattr(pipeline, "worktree", lambda target: tmp_path / "wt")
+    monkeypatch.setattr(pipeline, "tool", lambda worktree, lock, args, timeout: calls[
+        "tool"].append((args, pipeline.skip_env)))
+    monkeypatch.setattr(auto, "verify", lambda hosts, rev, say, **kwargs: calls[
+        "verify"].append([n["name"] for n in hosts["nodes"]]) or True)
+    return pipeline, calls
+
+
+def test_a_deploy_with_a_core_down_ships_to_the_others_and_names_it(
+        repo, tmp_path, monkeypatch):
+    base, target = skip_repo(repo)
+    pipeline, calls = skip_pipeline(repo, tmp_path, monkeypatch, {"n1": base[:12]},
+                                    {"n2": "no answer to /api/version for 5 min"})
+    result = pipeline._execute(target, target[:12], _RollLock(),
+                               {"roll": [], "rev": target[:12], "target": target})
+    assert result["ok"] and result["skipped"] == {
+        "n2": "no answer to /api/version for 5 min"}
+    assert result["deployedNodes"] == ["n1"]
+    assert "skipped n2 (no answer" in result["message"]
+    assert [args[0] for args, _env in calls["tool"]] == ["build", "upload", "migrate",
+                                                         "restart"]
+    assert {env for _args, env in calls["tool"]} == {"n2"}
+    assert calls["verify"] == [["n1"]]
+    notifier = FakeNotifier()
+    result["nodesOk"] = True
+    state = auto.record_outcome(result, notifier, print, state_dir=tmp_path / "state")
+    assert state["behind"]["nodes"] == ["n2"] and state["behind"]["roll"] == []
+    assert notifier.sent[-1][1] == "deploy-skipped:%s" % target[:12]
+
+
+def test_a_deploy_without_skips_tells_next_deploy_to_skip_nothing(
+        repo, tmp_path, monkeypatch):
+    base, target = skip_repo(repo)
+    pipeline, calls = skip_pipeline(repo, tmp_path, monkeypatch,
+                                    {"n1": base[:12], "n2": base[:12]}, {})
+    result = pipeline._execute(target, target[:12], _RollLock(), {"roll": []})
+    assert result["ok"] and result["skipped"] == {}
+    assert {env for _args, env in calls["tool"]} == {""}
+    auto.save_state({"behind": {"nodes": ["n2"], "roll": []}}, tmp_path / "state")
+    state = auto.record_outcome(dict(result, nodesOk=True), None, print,
+                                state_dir=tmp_path / "state")
+    assert "behind" not in state
+
+
+def test_a_skip_is_refused_when_the_target_next_deploy_cannot_skip(
+        repo, tmp_path, monkeypatch):
+    base, target = skip_repo(repo, supported=False)
+    pipeline, calls = skip_pipeline(repo, tmp_path, monkeypatch, {"n1": base[:12]},
+                                    {"n2": "held out of DNS"})
+    with pytest.raises(GuardError, match="cannot skip a core"):
+        pipeline._execute(target, target[:12], _RollLock(), {"roll": []})
+    assert calls["tool"] == []
+
+
+def test_a_roll_with_a_skipped_core_rolls_the_others_and_remembers_it(
+        tmp_path, monkeypatch):
+    pipeline, commands = _roll_pipeline(tmp_path, monkeypatch, 0)
+    monkeypatch.setattr(pipeline, "_execute", lambda target, rev, lock, result: dict(
+        result, ok=True, deployed=True, roll=["deploy/core/ids.py"], message="deployed",
+        skipped={"n2": "held out of DNS"}, deployedNodes=["n1", "n3"]))
+    result = pipeline.execute("f" * 40)
+    assert commands[0][0] == [sys.executable, "tools/next_fleet.py", "roll", "n1", "n3",
+                              "--execute"]
+    assert result["rolledNodes"] == ["n1", "n3"]
+    state = auto.record_outcome(result, FakeNotifier(), print,
+                                state_dir=tmp_path / "state")
+    assert state["behind"] == dict(state["behind"], nodes=["n2"], roll=["n2"])
+    later = dict(result, skipped={}, rolled=False, rolledNodes=[], roll=[])
+    state = auto.record_outcome(later, None, print, state_dir=tmp_path / "state")
+    assert state["behind"]["nodes"] == [] and state["behind"]["roll"] == ["n2"], (
+        "a later deploy that reached n2 does not give it the missed roll")
+
+
+def catch_up_setup(repo, tmp_path, monkeypatch, node_rev, behind, held=False,
+                   roll_code=0):
+    base = git(repo, "rev-parse", "HEAD")
+    target = commit(repo, {"app/a.py": "c\n"}, "deployed")
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "armed").write_text("")
+    auto.save_state({"behind": behind}, state_dir)
+    revs = {"203.0.113.11": target[:12],
+            "203.0.113.12": {"base": base[:12], "target": target[:12]}.get(node_rev,
+                                                                          node_rev)}
+    calls = []
+
+    class CatchUpPipeline(auto.Pipeline):
+        def worktree(self, commit_):
+            calls.append(("worktree", commit_))
+            return tmp_path / "wt"
+
+        def tool(self, worktree, lock, args, timeout):
+            calls.append(tuple(args))
+
+    def fake_stream(command, say, **kwargs):
+        calls.append(tuple(command[1:]))
+        return roll_code
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    monkeypatch.setattr(auto.common, "DeployLock", lambda what: _RollLock())
+    monkeypatch.setattr(auto, "verify", lambda hosts, rev, say, **kwargs: calls.append(
+        ("verify", [n["name"] for n in hosts["nodes"]], rev)) or True)
+    monkeypatch.setenv("FMNEXT_DIST_DIR", str(tmp_path / "dist"))
+    dns = {"n2": {"in_dns": False, "held": held}}
+    notifier = FakeNotifier()
+    outcome = auto.catch_up(repo, auto.Log(echo=False), state_dir=state_dir,
+                            notifier=notifier, pipeline_class=CatchUpPipeline,
+                            run=answering(revs=revs), dns=dns)
+    return target, calls, outcome, auto.load_state(state_dir), notifier
+
+
+def test_a_skipped_core_that_returns_is_brought_to_what_the_others_run(
+        repo, tmp_path, monkeypatch):
+    target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "base", {"nodes": ["n2"], "roll": ["n2"]})
+    rev = target[:12]
+    assert outcome["released"] == ["n2"] and outcome["rolled"] == ["n2"]
+    assert calls == [("worktree", target), ("build", "--execute"),
+                     ("upload", "n2", "--rev", rev, "--execute"),
+                     ("restart", "n2", "--rev", rev, "--execute"),
+                     ("tools/next_fleet.py", "roll", "n2", "--execute"),
+                     ("verify", ["n2"], rev)]
+    assert "behind" not in state
+    assert notifier.sent == [("n2 caught up", "core-caught-up:n2:%s" % rev, False)]
+
+
+def test_a_returned_core_already_on_the_release_only_gets_its_roll(
+        repo, tmp_path, monkeypatch):
+    target, calls, outcome, state, _ = catch_up_setup(
+        repo, tmp_path, monkeypatch, "target", {"nodes": [], "roll": ["n2"]})
+    assert [c[0] for c in calls] == ["worktree", "tools/next_fleet.py", "verify"]
+    assert "behind" not in state
+
+
+def test_a_held_core_is_left_alone_until_it_is_released(repo, tmp_path, monkeypatch):
+    _target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "base", {"nodes": ["n2"], "roll": []}, held=True)
+    assert calls == [] and outcome["released"] == []
+    assert state["behind"]["nodes"] == ["n2"] and notifier.sent == []
+
+
+def test_a_core_ahead_of_the_others_is_not_rolled_back(repo, tmp_path, monkeypatch):
+    _target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "fedcba987654", {"nodes": ["n2"], "roll": []})
+    assert calls == [] and "catch it up by hand" in outcome["errors"]["n2"]
+    assert state["behind"]["nodes"] == ["n2"]
+    assert notifier.sent == [("n2 cannot catch up", "core-catch-up-failed:n2", True)]
+
+
+def test_a_failed_catch_up_roll_is_reported_once_and_tried_again(
+        repo, tmp_path, monkeypatch):
+    _target, calls, outcome, state, notifier = catch_up_setup(
+        repo, tmp_path, monkeypatch, "target", {"nodes": [], "roll": ["n2"]},
+        roll_code=1)
+    assert outcome["errors"]["n2"] == "next_fleet roll n2 exited 1"
+    assert state["behind"]["roll"] == ["n2"]
+    assert state["behind"]["notified"] == {"n2": "next_fleet roll n2 exited 1"}
+    assert notifier.sent[-1][1] == "core-catch-up-failed:n2"
+
+
+def test_the_agent_checks_skipped_cores_on_its_idle_ticks(tmp_path, monkeypatch):
+    started = []
+    monkeypatch.setattr(auto, "catch_up", lambda *a, **k: started.append(k["state_dir"]))
+    now = [1000.0]
+    agent = auto.Agent(tmp_path, tmp_path / "runs", clock=lambda: now[0],
+                       state_dir=tmp_path / "state")
+    agent.maybe_catch_up()
+    assert agent.catch_up_worker is None, "nothing behind: no thread"
+    auto.save_state({"behind": {"nodes": ["n2"], "roll": []}}, tmp_path / "state")
+    agent.maybe_catch_up()
+    assert agent.catch_up_worker is None, "the next check waits CATCH_UP_SECONDS"
+    now[0] += auto.CATCH_UP_SECONDS
+    agent.maybe_catch_up()
+    agent.catch_up_worker.join(5)
+    assert started == [tmp_path / "state"]

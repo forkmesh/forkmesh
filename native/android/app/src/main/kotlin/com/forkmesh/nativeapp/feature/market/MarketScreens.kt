@@ -131,6 +131,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "marketing" -> Route.Marketing(null)
     "analytics" -> Route.Analytics(null)
     "competitors" -> Route.Competitors
+    "invoices" -> Route.Invoices(null, null)
     "ledger" -> Route.Ledger(null)
     "vault" -> Route.Vault(null)
     "calories" -> Route.Calories
@@ -140,6 +141,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "sugarBreak" -> Route.SugarBreak
     "stretch" -> Route.Stretch
     "foodGuide" -> Route.FoodGuide
+    "speech" -> Route.Speech
     "glassesAlert" -> Route.GlassesAlert
     "phoneSecurity" -> Route.PhoneSecurity
     "ember" -> Route.Ember(null)
@@ -152,9 +154,10 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "usage" -> Route.Usage
     "rssReader" -> Route.RssReader
     "videoMixDjStudio" -> Route.VideoMixDjStudio
+    "poker" -> Route.Poker(null)
     "instanceFeed" -> Route.InstanceFeed(null)
     "secureDrive" -> Route.SecureDrive
-    "files" -> Route.Files
+    "files", "fileExplorer" -> Route.Files
     "workflows" -> Route.Workflows
     "people" -> Route.People
     "docs" -> Route.Docs
@@ -164,9 +167,9 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "timers" -> Route.Timers
     "tour" -> Route.Tour
     "status" -> Route.Status
-    "agents" -> Route.Agents(AgentFilter.All)
-    "inbox" -> Route.Inbox(InboxFilter.All)
-    "chat" -> Route.Chat
+    "agents", "Agents" -> Route.Agents(AgentFilter.All)
+    "inbox", "Inbox" -> Route.Inbox(InboxFilter.All)
+    "chat", "Chat" -> Route.Chat
     "desktops" -> Route.Desktops
     "teammates" -> Route.Teammates
     "shortcuts" -> Route.Shortcuts(null)
@@ -175,6 +178,8 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "coves" -> Route.Coves(null)
     "localAI" -> Route.LocalAI
     "activity" -> Route.Activity
+    "logs" -> Route.Logs
+    "diagnostics" -> Route.Diagnostics
     "stats" -> Route.Stats
     "orgs" -> Route.Orgs
     else -> null

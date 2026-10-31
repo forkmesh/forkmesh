@@ -582,24 +582,6 @@ public final class NewIssueModel {
     }
 }
 
-/// `showNewPullDialog`'s fields.
-@MainActor
-@Observable
-public final class NewPullModel {
-    public let repo: Repository
-    public var title = ""
-    public var base: String
-    public var head = ""
-    public var patch = ""
-
-    public init(repo: Repository) {
-        self.repo = repo
-        self.base = repo.defaultBranch
-    }
-
-    public var ready: Bool { NewPullComposer.ready(title: title, patch: patch) }
-}
-
 /// `showNewDiscussionDialog`'s fields.
 @MainActor
 @Observable
@@ -647,6 +629,8 @@ public final class PullMergeModel {
 
     /// The card is shown for an open pull, and stays to say it merged.
     public var visible: Bool { isOpen || merged }
+
+    public var state: PullState { merged ? .merged : PullState(pull) }
 
     public var canMerge: Bool { !busy && plan?.isReady == true }
 

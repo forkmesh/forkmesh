@@ -5,16 +5,18 @@ import json
 import re
 from pathlib import Path
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONFIG = PROJECT / ".forkmesh" / "teammates" / "genie.json"
+CONFIG = PROJECT / ".forkmesh" / "workflows" / "genie.json"
 TEAMMATE_STORE = PROJECT / "desktop" / "src" / "TeammateStore.cpp"
 GENIE_VITALS = PROJECT / "desktop" / "src" / "GenieVitals.h"
 GENIE_WINDOW = PROJECT / "desktop" / "src" / "MainWindowGenie.cpp"
 
 
 def _config():
-    return json.loads(CONFIG.read_text(encoding="utf-8"))
+    return as_teammate(json.loads(CONFIG.read_text(encoding="utf-8")))
 
 
 def _known_permissions():

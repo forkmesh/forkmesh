@@ -3,8 +3,7 @@ import {
   buildTemplate,
   canonicalShape,
   clampValue,
-  createPointSmoother,
-  faceFrame,
+  createLandmarkSmoother,
   fitTemplate,
   headLayout,
   headModel,
@@ -20,7 +19,7 @@ import { sharedSegmentModels, decodeBase64 } from "./chat-call-segment.js";
 import { callBackgroundById, callBackgroundImageUrl, isPortraitFrame } from "./chat-call-backgrounds.js";
 import { callOutfitById, createOutfitSmoother, drawCallOutfit, outfitFrame } from "./chat-call-outfits.js";
 
-const FRAME_RATE = 24;
+const FRAME_RATE = 30;
 const FRAME_MS = Math.round(1000 / FRAME_RATE);
 const MAX_SIDE = 960;
 const HOST_SIDE = 480;
@@ -374,7 +373,7 @@ export function createFaceStage({
   let expression = null;
   let customImage = String(faceImage || "");
   const anchorSmoother = createAnchorSmoother();
-  const pointSmoother = createPointSmoother(68, 1.5, 1.5);
+  const pointSmoother = createLandmarkSmoother();
   let hostLocate = landmarkHost?.landmarks ? createHostLocator(landmarkHost, documentRef) : null;
   let hostFailures = 0;
   let hostMasks = Boolean(hostLocate);
@@ -395,6 +394,7 @@ export function createFaceStage({
   let shown = 0;
   let inFlight = 0;
   let stopped = false;
+  let frameAt = -Infinity;
   const modelsRequested = new Set();
   let cost = 0;
   let level = 0;
@@ -426,7 +426,7 @@ export function createFaceStage({
 
   function presetResult(reply, scale, time) {
     const found = hostResult(reply, scale, wantsPoints());
-    const points = found.points ? pointSmoother.smooth(found.points, time, faceFrame(found.points).span) : null;
+    const points = found.points ? pointSmoother.smooth(found.points, time) : null;
     return { points, mask: found.mask, pupils: found.pupils, lids: true };
   }
 
@@ -440,7 +440,7 @@ export function createFaceStage({
           if (reply.mask) hostMaskMisses = 0;
           else if (++hostMaskMisses >= HOST_MASK_MISSES) hostMasks = false;
         }
-        const points = reply.points ? pointSmoother.smooth(reply.points, time, faceFrame(reply.points).span) : null;
+        const points = reply.points ? pointSmoother.smooth(reply.points, time) : null;
         return { points, mask: reply.mask, pupils: reply.pupils || null, lids: true };
       } catch (_) {
         hostFailures += 1;
@@ -455,7 +455,7 @@ export function createFaceStage({
     if (renderer.faceMesh) {
       const found = renderer.trackFace(frame, w, h);
       if (!found) return { points: null, mask: null, uploaded: true };
-      return { points: pointSmoother.smooth(found.points, time, faceFrame(found.points).span), mask: null, uploaded: true, lids: true };
+      return { points: pointSmoother.smooth(found.points, time), mask: null, uploaded: true, lids: true };
     }
     const anchors = tracker.track(frame, w, h);
     if (!anchors) return { points: null, mask: null };
@@ -579,8 +579,16 @@ export function createFaceStage({
   function tick() {
     if (stopped) return;
     if (cameraTrack && video.paused) video.play?.()?.catch?.(() => {});
+    if (now() - frameAt < FRAME_MS * 3) return;
     if (!video.videoWidth || (video.readyState ?? 4) < 2) return;
     process(video, video.videoWidth, video.videoHeight, now());
+  }
+
+  function onCameraFrame() {
+    if (stopped) return;
+    frameAt = now();
+    if (video.videoWidth) process(video, video.videoWidth, video.videoHeight, frameAt);
+    video.requestVideoFrameCallback(onCameraFrame);
   }
 
   function wait(ms) {
@@ -705,6 +713,7 @@ export function createFaceStage({
   loadBackground(backgroundId, backgroundImage);
   loadOutfit(outfitId);
   const timer = manual ? null : setIntervalImpl(tick, FRAME_MS);
+  if (!manual && cameraTrack && typeof video.requestVideoFrameCallback === "function") video.requestVideoFrameCallback(onCameraFrame);
 
   return {
     track,

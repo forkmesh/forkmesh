@@ -16,6 +16,9 @@ RULES_DIR = Path("/etc/opensnitchd/rules")
 PREFIX = "000-forkmesh-"
 PROGRAM_PATTERN = r"(?i)^(/home/[^/]+|/root|/opt|/usr/local|/tmp/\.mount_[^/]+)/(.*/)?[^/]*forkmesh[^/]*$"
 LOOPBACK_PATTERN = r"^(127\.[0-9]+\.[0-9]+\.[0-9]+|::1)$"
+AGENT_CLI_PATHS = (r"/\.local/share/claude/versions/[^/]+$",
+                   r"/\.config/Claude/claude-code/[^/]+/[^/]+/claude$",
+                   r"/\.codex/packages/standalone/[^/]+/bin/codex$")
 
 
 def operator(kind: str, operand: str, data: str) -> dict:
@@ -34,8 +37,12 @@ def rule(name: str, description: str, op: dict, stamp: str) -> dict:
             "action": "allow", "duration": "always", "operator": op}
 
 
+def agent_cli_pattern(home: Path) -> str:
+    return "|".join("^" + re.escape(str(home)) + path for path in AGENT_CLI_PATHS)
+
+
 def build_rules(uid: int, home: Path, loopback: bool = True,
-                dev_trees: bool | None = None) -> list[dict]:
+                dev_trees: bool | None = None, agent_clis: bool = True) -> list[dict]:
     stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     user = operator("simple", "user.id", str(uid))
     rules = [rule("programs",
@@ -49,6 +56,11 @@ def build_rules(uid: int, home: Path, loopback: bool = True,
         rules.append(rule("dev-trees",
                           "Programs built in the ForkMesh checkout, its worktrees and the agents' ~/.cache/fm* build folders",
                           all_of(user, operator("regexp", "process.path", trees)), stamp))
+    if agent_clis:
+        rules.append(rule("agent-clis",
+                          "The agents' Claude Code and Codex programs, whose path changes with every update",
+                          all_of(user, operator("regexp", "process.path", agent_cli_pattern(home))),
+                          stamp))
     if loopback:
         rules.append(rule("loopback",
                           "Connections to this machine (127.0.0.0/8, ::1): the desktop's local services, deploy tunnels and publishers",
@@ -77,8 +89,8 @@ def target_user(name: str | None) -> pwd.struct_passwd:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Allow ForkMesh's network connections in OpenSnitch, so new ForkMesh builds and "
-                    "test programs never raise a firewall prompt (or time out into a deny rule).")
+        description="Allow ForkMesh's network connections in OpenSnitch, so new ForkMesh builds, "
+                    "updated agent programs and test programs never raise a firewall prompt (or time out into a deny rule).")
     parser.add_argument("command", choices=["print", "write", "install"],
                         help="print the rules, write them to --out, or install them into "
                              f"{RULES_DIR} (run with sudo)")
@@ -92,10 +104,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-dev-trees", action="store_true",
                         help="do not allow every program built under ~/projects/forkmesh "
                              "and ~/.cache/fm*")
+    parser.add_argument("--no-agent-clis", action="store_true",
+                        help="do not allow every version of Claude Code and Codex")
     args = parser.parse_args(argv)
     account = target_user(args.user)
     rules = build_rules(account.pw_uid, Path(account.pw_dir), loopback=not args.no_loopback,
-                        dev_trees=False if args.no_dev_trees else None)
+                        dev_trees=False if args.no_dev_trees else None,
+                        agent_clis=not args.no_agent_clis)
     if args.command == "print":
         print(json.dumps(rules, indent=2))
         return 0

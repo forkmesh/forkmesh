@@ -2,6 +2,7 @@
 
 #include "AgentGuardrails.h"
 #include "DesignTokens.h"
+#include "FontSizing.h"
 
 #include <QDateTime>
 #include <QFontMetrics>
@@ -397,7 +398,7 @@ void AgentGuardrailBoard::paintTile(QPainter &painter, const Tile &tile) const
     const int trendWidth = hasTrend ? qMin(72, inner.width() / 3) : 0;
     const int textWidth = inner.width() - trendWidth - (hasTrend ? 8 : 0);
     QFont valueFont = font();
-    valueFont.setPointSizeF(valueFont.pointSizeF() + 5.0);
+    valueFont = forkmesh::resizedFont(valueFont, 5.0);
     valueFont.setWeight(QFont::DemiBold);
     painter.setFont(valueFont);
     painter.setPen(colors.color(QPalette::Text));
@@ -469,7 +470,7 @@ void AgentGuardrailBoard::paintCard(QPainter &painter, const Card &card,
                          titleRect.width()));
 
     QFont headlineFont = font();
-    headlineFont.setPointSizeF(headlineFont.pointSizeF() + 1.5);
+    headlineFont = forkmesh::resizedFont(headlineFont, 1.5);
     headlineFont.setWeight(QFont::DemiBold);
     painter.setFont(headlineFont);
     painter.setPen(card.policy.enabled ? text : muted);

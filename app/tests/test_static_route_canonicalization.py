@@ -144,13 +144,14 @@ def test_app_dynamic_routes_run_before_static_assets():
         "/dashboard",
         "/dashboard/repos",
         "/dashboard/network",
-        "/dashboard/chat",
         "/dashboard/settings",
         "/dashboard/profile",
         "/dashboard/profile/repositories",
     ):
         assert "!" + asset_page in run_worker_first
         assert "!" + asset_page + "/" in run_worker_first
+    assert "!/dashboard/chat" not in run_worker_first
+    assert "!/dashboard/chat/" not in run_worker_first
     # Marketplace-owned dashboard pages are resolved through the generated
     # plugin registry, so they must reach the Worker instead of bypassing it as
     # authored static assets.

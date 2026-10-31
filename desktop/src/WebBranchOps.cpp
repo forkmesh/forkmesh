@@ -1,5 +1,7 @@
 #include "WebBranchOps.h"
 
+#include "AgentScratch.h"
+
 #include <QDir>
 #include <QJsonObject>
 #include <QProcess>
@@ -461,6 +463,7 @@ Outcome cleanUpMergedBranch(const QString &checkoutPath,
                     nullptr, &error))
             return kept(QStringLiteral("its worktree has local changes"));
         removedWorktree = true;
+        forkmesh::agentscratch::removeAll(worktree);
     }
     const QString tip =
         objectIdOf(checkoutPath, QStringLiteral("refs/heads/") + branch);

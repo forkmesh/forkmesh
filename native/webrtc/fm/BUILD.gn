@@ -1,0 +1,18 @@
+import("../webrtc.gni")
+
+rtc_library("fm_frame_crypto") {
+  visibility = [ "*" ]
+  sources = [
+    "fm_frame_crypto.cc",
+    "fm_frame_crypto.h",
+    "fm_frame_cryptor.cc",
+    "fm_frame_cryptor.h",
+  ]
+  deps = [
+    "../api:make_ref_counted",
+    "../api:rtp_parameters",
+    "../api/crypto:frame_decryptor_interface",
+    "../api/crypto:frame_encryptor_interface",
+    "//third_party/boringssl",
+  ]
+}

@@ -45,6 +45,7 @@ data class ChatMessage(
     val blocks: List<AppBlock> = emptyList(),
     val appMessageId: String = "",
     val ephemeral: Boolean = false,
+    val serverVisible: Boolean = false,
 )
 
 enum class ChatReceipt(val label: String) {

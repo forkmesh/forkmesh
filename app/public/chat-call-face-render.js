@@ -446,6 +446,8 @@ function target(gl, width, height, type, depth = false) {
   return ok ? { texture: handle, framebuffer, width, height, depth: Boolean(renderbuffer) } : null;
 }
 
+export const FACE_WARP = Object.freeze({ vertex: WARP_VERTEX, fragment: WARP_FRAGMENT, compile, texture, target });
+
 export function faceWebGL(canvas) {
   try {
     return canvas?.getContext?.("webgl", {

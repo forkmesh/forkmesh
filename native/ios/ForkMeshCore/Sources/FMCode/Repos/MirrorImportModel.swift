@@ -1,5 +1,5 @@
 // The mirror import logic: import
-// external repository metadata from GitHub, GitLab or Codeberg
+// external repository metadata from GitHub, GitLab, Codeberg or Gitea
 // (`POST /api/repository-imports`, mode "import"). The entry is never routed,
 // cloned or described as mirrored until a ForkMesh mirror is linked to it.
 // A provider token is used for that one request and never stored.
@@ -15,9 +15,9 @@ import Observation
 @Observable
 public final class MirrorImportModel {
     /// Canonical provider hosts the Worker accepts.
-    public static let providers = ["github.com", "gitlab.com", "codeberg.org"]
+    public static let providers = ["github.com", "gitlab.com", "codeberg.org", "gitea.com"]
 
-    public static let title = "Mirror from GitHub/GitLab/Codeberg"
+    public static let title = "Mirror from GitHub/GitLab/Codeberg/Gitea"
     public static let metadataNote =
         "Imports metadata only — issues, branches, releases and the like. ForkMesh does not own or control the source repository, and the entry is not a mirror until one is published and verified."
     public static let tokenHelper = "Used for this request only; never stored."
@@ -88,7 +88,7 @@ public final class MirrorImportModel {
         case "github_owner_and_repository_required":
             return "Use the full https://github.com/owner/repository URL."
         case "unsupported_provider":
-            return "Only GitHub, GitLab, and Codeberg repositories can be imported."
+            return "Only GitHub, GitLab, Codeberg, and Gitea repositories can be imported."
         case "provider_request_failed":
             return "The provider did not answer. Try again in a moment."
         case "rate_limited":

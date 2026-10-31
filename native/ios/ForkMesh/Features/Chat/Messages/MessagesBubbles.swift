@@ -595,7 +595,7 @@ struct MessagesBubbleText: View {
     }
 
     private var attributed: AttributedString {
-        chatRichAttributed(referenceChatSegments(parseChatText(text), repo: ReferenceLinks.chatRepo))
+        ChatTextCache.attributed(text, repo: ReferenceLinks.chatRepo)
     }
 }
 

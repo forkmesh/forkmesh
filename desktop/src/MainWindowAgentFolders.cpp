@@ -46,7 +46,7 @@ void MainWindow::applyAgentFolderRowCells(
     const bool collapsed = folder.collapsed && !filtering;
     const QString tip =
         QStringLiteral("Folder %1: %2. Click to %3, drag to reorder, "
-                       "right-click to rename or delete.")
+                       "right-click to start, stop, rename or delete.")
             .arg(folder.name, summaryText,
                  collapsed ? QStringLiteral("expand") : QStringLiteral("collapse"));
     for (const int column : {kAgentIdColumn, kAgentIssueColumn}) {
@@ -265,6 +265,64 @@ void MainWindow::dropAgentFolder(const QString &folderId,
         saveAgentFolders();
 }
 
+QList<int> MainWindow::agentFolderSessionIds(const QString &folderId,
+                                             const QList<int> &candidates) const
+{
+    const QString repo = agentFolderRepo();
+    QList<int> ids;
+    if (repo.isEmpty() || !m_agentFolders.folder(repo, folderId))
+        return ids;
+    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+        if (!candidates.contains(session.id) ||
+            AgentFolders::repoKey(session.owner, session.name) != repo)
+            continue;
+        const QString key = agentReadKey(session);
+        if (!key.isEmpty() && m_agentFolders.folderOf(repo, key) == folderId)
+            ids << session.id;
+    }
+    return ids;
+}
+
+void MainWindow::startAgentFolderSessions(const QString &folderId)
+{
+    const AgentFolder *folder =
+        m_agentFolders.folder(agentFolderRepo(), folderId);
+    if (!folder)
+        return;
+    const QString name = folder->name;
+    const QList<int> ids =
+        agentFolderSessionIds(folderId, startableAgentSessionIds());
+    if (ids.isEmpty()) {
+        flashMessage(QStringLiteral("No stopped agents in %1.").arg(name));
+        return;
+    }
+    startAgentSessions(ids);
+    flashMessage(QStringLiteral("Started %1 agent session%2 in %3.")
+                     .arg(ids.size())
+                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s"),
+                          name));
+}
+
+void MainWindow::stopAgentFolderSessions(const QString &folderId)
+{
+    const AgentFolder *folder =
+        m_agentFolders.folder(agentFolderRepo(), folderId);
+    if (!folder)
+        return;
+    const QString name = folder->name;
+    const QList<int> ids =
+        agentFolderSessionIds(folderId, stoppableAgentSessionIds());
+    if (ids.isEmpty()) {
+        flashMessage(QStringLiteral("No agents are running in %1.").arg(name));
+        return;
+    }
+    stopAgentSessions(ids);
+    flashMessage(QStringLiteral("Stopped %1 agent session%2 in %3.")
+                     .arg(ids.size())
+                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s"),
+                          name));
+}
+
 QMenu *MainWindow::buildAgentFolderContextMenu(const QString &folderId,
                                                QWidget *parent)
 {
@@ -291,6 +349,16 @@ QMenu *MainWindow::buildAgentFolderContextMenu(const QString &folderId,
     add(QStringLiteral("Select agents in folder"),
         QStringLiteral("agentFolderSelectAction"),
         [this, folderId] { selectAgentFolderSessions(folderId); });
+    add(QStringLiteral("Start all in folder"),
+        QStringLiteral("agentFolderStartAllAction"),
+        [this, folderId] { startAgentFolderSessions(folderId); })
+        ->setEnabled(
+            !agentFolderSessionIds(folderId, startableAgentSessionIds()).isEmpty());
+    add(QStringLiteral("Stop all in folder"),
+        QStringLiteral("agentFolderStopAllAction"),
+        [this, folderId] { stopAgentFolderSessions(folderId); })
+        ->setEnabled(
+            !agentFolderSessionIds(folderId, stoppableAgentSessionIds()).isEmpty());
     menu->addSeparator();
     add(QStringLiteral("Rename folder…"), QStringLiteral("agentFolderRenameAction"),
         [this, folderId] { promptRenameAgentFolder(folderId); });

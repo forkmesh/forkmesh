@@ -73,6 +73,7 @@ class NotificationsLogicTest {
             "hackathon_reward" to "card_giftcard_outlined",
             "badge" to "emoji_events_outlined",
             "package_review" to "rate_review_outlined",
+            "pull_attention" to "rate_review_outlined",
         )
         for ((kind, icon) in expected) assertEq(icon, notificationIconForKind(kind), kind)
         assertEq("alternate_email_rounded", notificationIconForKind(" Mention "))

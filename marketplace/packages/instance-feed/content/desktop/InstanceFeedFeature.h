@@ -46,6 +46,7 @@ public:
     static bool validAuthor(const QString &name);
     static QString timelinePath(View view, const QString &author, const QString &before);
     static bool exportHasData(const QJsonObject &payload);
+    QString publicPostUrl(const QString &postId) const;
 
 private:
     void request(const QByteArray &method, const QString &path,
@@ -70,6 +71,7 @@ private:
     bool dark() const;
 
     Request m_request;
+    std::function<QString(const QString &)> m_publicPageUrl;
     QLabel *m_status = nullptr;
     QLabel *m_notInstalled = nullptr;
     QWidget *m_content = nullptr;

@@ -33,7 +33,9 @@ the Swift surface. v2 frames are ignored.
   standard base64) and its signed prekeys (`chat/e2ee/prekeysV3`, a JSON list of
   `{id, xPriv, x, pqSeed, pq, ts, exp}`). `ChatKeyring.shared(store)` is one instance per
   `SecureStore` (rebuilt if the stored identity changes, as on a project switch), so every room
-  sees the same prekeys and counters. `load(store, create: false)` never creates keys (the
+  sees the same prekeys and counters. A new identity is `derivedSeed(nodeSeed:)` of the store's
+  `identity/ed25519Seed` when there is one (random otherwise), with a counter floor at
+  `chat/e2ee/ctrFloorV3`, so a reinstall that restores the node key keeps its safety numbers. `load(store, create: false)` never creates keys (the
   notification extension). `rotateIfNeeded(now:)` adds a prekey once the newest is 24 h old,
   wipes private halves past `exp` and keeps at most 10; `wipeExpired(now:)`. Counters
   (`chat/e2ee/ctrV3/<b64u(room)>`) and the 1024-wide seen window per sender

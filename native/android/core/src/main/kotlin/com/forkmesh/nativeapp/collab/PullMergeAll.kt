@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.collab
 import com.forkmesh.nativeapp.control.LocalControlException
 import com.forkmesh.nativeapp.json.int
 import com.forkmesh.nativeapp.json.str
+import com.forkmesh.nativeapp.model.Repository
 
 data class PullMergeAllConfirmation(val token: String, val summary: String, val expiresInMs: Int) {
     companion object {
@@ -27,6 +28,8 @@ object PullMergeAllRules {
     const val TITLE = "Merge all with AI"
     const val MAX_SKIPPED = 50
     const val UNPAIRED = "Pair this phone with your desktop to merge every pull request with AI."
+
+    fun owner(repo: Repository): String = repo.displayOwner
 
     fun params(owner: String, name: String): Map<String, Any?> =
         linkedMapOf("owner" to owner, "name" to name, "action" to ACTION)

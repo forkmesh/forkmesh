@@ -34,7 +34,8 @@ def test_about_page_leaves_the_dark_only_mesh_theme():
 
 def test_changelog_releases_use_a_timeline_without_green_dots():
     html = read(WWW / "changelog.html")
-    assert html.count('<div class="release-meta">') == 6
-    assert html.count('<div class="release-body">') == 6
+    script = read(WWW / "changelog.js")
+    assert 'data-source="/changelog.json"' in html
+    assert '<div class="release-meta">' in script and '<div class="release-body">' in script
     assert "var(--accent-bright)" not in html
     assert ".release::before" not in html

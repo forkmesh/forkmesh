@@ -234,7 +234,7 @@ How the merged tree is built:
    opening event (`sig:<signature>` or `unsigned:<author>:<ts>:<title>`). A
    legacy placeholder (sig `relay-placeholder`, or an unsigned untitled
    opening) has no identity. An unreadable record (missing, unparsable, over
-   2 MiB, no valid opening) is kept at its path and its number is never
+   16 MiB, no valid opening) is kept at its path and its number is never
    reused.
 3. **Numbers.** Each identity has a *claim* (`intakeNumber` when a merge moved
    it, else its number; lowest over copies) and a *floor* (highest number any

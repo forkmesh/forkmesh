@@ -1,5 +1,7 @@
 #include "CaloriesFeature.h"
+#include "DesignTokens.h"
 
+#include <QAction>
 #include <QBuffer>
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,8 +12,10 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QFormLayout>
 #include <QHash>
 #include <QHBoxLayout>
@@ -25,6 +29,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
@@ -42,11 +47,14 @@
 #include <QSet>
 #include <QSpinBox>
 #include <QStandardItemModel>
+#include <QStyledItemDelegate>
+#include <QSvgRenderer>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTimeEdit>
 #include <QSplitter>
 #include <QTimer>
+#include <QToolButton>
 #include <QToolTip>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -365,6 +373,293 @@ QString aiError(const QJsonObject &payload, const QString &error, const QString 
     return QStringLiteral("%1: %2").arg(what, error);
 }
 
+constexpr int kGroupHeadingRole = Qt::UserRole + 10;
+constexpr int kGroupKcalRole = Qt::UserRole + 11;
+constexpr int kNextGroupBand = 36;
+constexpr int kNextEntryRow = 40;
+
+QFont caloriesFont(const QFont &base, int pixelSize, QFont::Weight weight)
+{
+    QFont font(base);
+    font.setPixelSize(pixelSize);
+    font.setWeight(weight);
+    return font;
+}
+
+QIcon caloriesOcticon(const QString &name, const QColor &color, int side)
+{
+    QString path = QStringLiteral(":/icons/octicons/%1.svg").arg(name);
+    if (!QFile::exists(path))
+        path = QStringLiteral(":/icons/codicons/%1.svg").arg(name);
+    QSvgRenderer renderer(path);
+    QIcon icon;
+    for (const qreal scale : {1.0, 2.0}) {
+        QPixmap pixmap(QSize(side, side) * scale);
+        pixmap.setDevicePixelRatio(scale);
+        pixmap.fill(Qt::transparent);
+        if (renderer.isValid()) {
+            QPainter painter(&pixmap);
+            painter.setRenderHint(QPainter::Antialiasing);
+            renderer.render(&painter, QRectF(0, 0, side, side));
+            painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            painter.fillRect(QRectF(0, 0, side, side), color);
+        }
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
+
+QIcon caloriesGlyph(const QString &kind, const QColor &color, int side)
+{
+    QIcon icon;
+    for (const qreal scale : {1.0, 2.0}) {
+        QPixmap pixmap(QSize(side, side) * scale);
+        pixmap.setDevicePixelRatio(scale);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.scale(side / 16.0, side / 16.0);
+        painter.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+        if (kind == QLatin1String("camera")) {
+            QPainterPath body;
+            body.moveTo(5.2, 4.2);
+            body.lineTo(6.2, 2.6);
+            body.lineTo(9.8, 2.6);
+            body.lineTo(10.8, 4.2);
+            body.lineTo(13, 4.2);
+            body.quadTo(14.4, 4.2, 14.4, 5.6);
+            body.lineTo(14.4, 12);
+            body.quadTo(14.4, 13.4, 13, 13.4);
+            body.lineTo(3, 13.4);
+            body.quadTo(1.6, 13.4, 1.6, 12);
+            body.lineTo(1.6, 5.6);
+            body.quadTo(1.6, 4.2, 3, 4.2);
+            body.closeSubpath();
+            painter.drawPath(body);
+            painter.drawEllipse(QPointF(8, 8.6), 2.5, 2.5);
+        } else if (kind == QLatin1String("barcode")) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(color);
+            const qreal bars[][2] = {{2, 1.2}, {4.2, 0.7}, {5.8, 1.6}, {8.4, 0.7}, {10, 1.3}, {12.3, 0.7}, {13.6, 1.2}};
+            for (const auto &bar : bars)
+                painter.drawRect(QRectF(bar[0], 3, bar[1], 10));
+        } else if (kind == QLatin1String("scale")) {
+            painter.drawLine(QPointF(8, 2.4), QPointF(8, 13.6));
+            painter.drawLine(QPointF(5, 13.6), QPointF(11, 13.6));
+            painter.drawLine(QPointF(2.6, 4.4), QPointF(13.4, 4.4));
+            for (const qreal centre : {3.2, 12.8}) {
+                QPainterPath pan;
+                pan.moveTo(centre, 4.4);
+                pan.lineTo(centre - 2.2, 9.6);
+                pan.quadTo(centre, 11.6, centre + 2.2, 9.6);
+                pan.lineTo(centre, 4.4);
+                painter.drawPath(pan);
+            }
+        }
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
+
+int firstVisibleColumn(const QTableView *view)
+{
+    const QHeaderView *header = view->horizontalHeader();
+    for (int visual = 0; visual < header->count(); ++visual) {
+        const int logical = header->logicalIndex(visual);
+        if (!header->isSectionHidden(logical))
+            return logical;
+    }
+    return 0;
+}
+
+bool rowUnderCursor(const QAbstractItemView *view, const QModelIndex &index)
+{
+    QWidget *viewport = view ? view->viewport() : nullptr;
+    if (!viewport || !viewport->underMouse())
+        return false;
+    const QModelIndex hovered = view->indexAt(viewport->mapFromGlobal(QCursor::pos()));
+    return hovered.isValid() && hovered.row() == index.row() && hovered.parent() == index.parent();
+}
+
+class CaloriesHoverRepaint final : public QObject
+{
+public:
+    explicit CaloriesHoverRepaint(QAbstractItemView *view) : QObject(view), m_view(view)
+    {
+        view->viewport()->setAttribute(Qt::WA_Hover, true);
+        view->viewport()->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        const QEvent::Type type = event->type();
+        if (Theme::isNext() && (type == QEvent::MouseMove || type == QEvent::Leave ||
+                                type == QEvent::HoverMove || type == QEvent::HoverLeave)) {
+            const QModelIndex hovered =
+                m_view->indexAt(m_view->viewport()->mapFromGlobal(QCursor::pos()));
+            const int row = type == QEvent::Leave || type == QEvent::HoverLeave || !hovered.isValid()
+                                ? -1 : hovered.row();
+            if (row != m_row) {
+                m_row = row;
+                m_view->viewport()->update();
+            }
+        }
+        return false;
+    }
+
+private:
+    QAbstractItemView *m_view;
+    int m_row = -1;
+};
+
+class CaloriesEntryDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        const auto *view = qobject_cast<const QTableView *>(option.widget);
+        if (!Theme::isNext() || !view) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        painter->save();
+        QRect row = option.rect;
+        const QColor line = Theme::color(Theme::Role::Border);
+        const QString heading = index.data(kGroupHeadingRole).toString();
+        if (!heading.isEmpty()) {
+            const QRect band(row.left(), row.top(), row.width(), kNextGroupBand);
+            if (index.row() > 0)
+                painter->fillRect(QRect(band.left(), band.top(), band.width(), 1), line);
+            painter->fillRect(QRect(band.left(), band.bottom(), band.width(), 1), line);
+            if (index.column() == firstVisibleColumn(view)) {
+                const QFont headingFont = caloriesFont(option.font, 12, QFont::Medium);
+                const QFont sumFont = caloriesFont(option.font, 12, QFont::Normal);
+                const int left = band.left() + 16;
+                const int width = QFontMetrics(headingFont).horizontalAdvance(heading);
+                painter->setFont(headingFont);
+                painter->setPen(Theme::color(Theme::Role::Fg));
+                painter->drawText(QRect(left, band.top(), width + 1, band.height()),
+                                  Qt::AlignLeft | Qt::AlignVCenter, heading);
+                const QString sum = index.data(kGroupKcalRole).toString();
+                const int room = band.right() - (left + width + 8);
+                if (!sum.isEmpty() && room > 8) {
+                    painter->setFont(sumFont);
+                    painter->setPen(Theme::color(Theme::Role::FgSubtle));
+                    painter->drawText(QRect(left + width + 8, band.top(), room, band.height()),
+                                      Qt::AlignLeft | Qt::AlignVCenter,
+                                      QFontMetrics(sumFont).elidedText(sum, Qt::ElideRight, room));
+                }
+            }
+            row.setTop(band.bottom() + 1);
+        }
+        const bool selected = option.state.testFlag(QStyle::State_Selected);
+        if (selected)
+            painter->fillRect(row, Theme::color(Theme::Role::AccentSubtle));
+        else if (rowUnderCursor(view, index))
+            painter->fillRect(row, Theme::color(Theme::Role::SurfaceRaised));
+        if (index.row() < index.model()->rowCount() - 1 &&
+            index.model()->index(index.row() + 1, 0).data(kGroupHeadingRole).toString().isEmpty())
+            painter->fillRect(QRect(row.left(), row.bottom(), row.width(), 1), line);
+        const int column = index.column();
+        const bool food = column == 1;
+        const bool source = column == 7;
+        const bool numeric = column >= 3 && column <= 6;
+        const QFont font = caloriesFont(option.font, source ? 12 : 13, QFont::Normal);
+        QRect textRect = row.adjusted(food ? 32 : source ? 24 : 12, 0, numeric ? -12 : -8, 0);
+        const QString value = index.data(Qt::DisplayRole).toString();
+        painter->setFont(font);
+        painter->setPen(Theme::color(food || column == 3 ? Theme::Role::Fg : Theme::Role::FgMuted));
+        painter->drawText(textRect, (numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter,
+                          QFontMetrics(font).elidedText(value, Qt::ElideRight, textRect.width()));
+        painter->restore();
+    }
+};
+
+class CaloriesQuickDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        if (!Theme::isNext())
+            return QStyledItemDelegate::sizeHint(option, index);
+        if (!index.siblingAtColumn(0).data(kQuickListRole).toString().isEmpty())
+            return QSize(0, 32);
+        if (headingRow(index))
+            return QSize(0, 30);
+        const auto *view = qobject_cast<const QAbstractItemView *>(option.widget);
+        const int width = qMax(80, (view ? view->viewport()->width() : 240) - 24);
+        const QFont font = caloriesFont(option.font, 12, QFont::Normal);
+        const QRect bounds = QFontMetrics(font).boundingRect(
+            QRect(0, 0, width, 1000), Qt::TextWordWrap, index.data(Qt::DisplayRole).toString());
+        return QSize(0, bounds.height() + 10);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        const auto *view = qobject_cast<const QAbstractItemView *>(option.widget);
+        if (!Theme::isNext() || !view) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        const QRect cell = option.rect;
+        const QString value = index.data(Qt::DisplayRole).toString();
+        const bool food = !index.siblingAtColumn(0).data(kQuickListRole).toString().isEmpty();
+        if (!food) {
+            if (index.column() == 0) {
+                const QRect text = QRect(cell.left() + 10, cell.top(), view->viewport()->width() - 20,
+                                         cell.height());
+                if (headingRow(index)) {
+                    QFont font = caloriesFont(option.font, 11, QFont::Medium);
+                    font.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+                    painter->setFont(font);
+                    painter->setPen(Theme::color(Theme::Role::FgSubtle));
+                    painter->drawText(text.adjusted(0, 0, 0, -4), Qt::AlignLeft | Qt::AlignBottom, value);
+                } else {
+                    painter->setFont(caloriesFont(option.font, 12, QFont::Normal));
+                    painter->setPen(Theme::color(Theme::Role::FgMuted));
+                    painter->drawText(text.adjusted(0, 2, 0, 0), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                                      value);
+                }
+            }
+            painter->restore();
+            return;
+        }
+        const bool selected = option.state.testFlag(QStyle::State_Selected);
+        const bool hovered = rowUnderCursor(view, index);
+        if (index.column() == 0 && (selected || hovered)) {
+            const QRect band(cell.left(), cell.top(), view->viewport()->width() - cell.left(), cell.height());
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(selected ? Theme::Role::AccentSubtle : Theme::Role::SurfaceRaised));
+            painter->drawRoundedRect(QRectF(band).adjusted(0, 1, 0, -1), 6, 6);
+        }
+        const bool name = index.column() == 0;
+        const QFont font = caloriesFont(option.font, name ? 13 : 12, QFont::Normal);
+        const QRect text = cell.adjusted(name ? 10 : 4, 0, name ? -4 : -10, 0);
+        painter->setFont(font);
+        painter->setPen(Theme::color(name ? Theme::Role::Fg : Theme::Role::FgMuted));
+        painter->drawText(text, (name ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter,
+                          QFontMetrics(font).elidedText(value, Qt::ElideRight, text.width()));
+        painter->restore();
+    }
+
+private:
+    static bool headingRow(const QModelIndex &index)
+    {
+        return index.siblingAtColumn(0).data(Qt::FontRole).value<QFont>().bold();
+    }
+};
+
 } // namespace
 
 // Calories per day for the last 30 days against the daily goal.
@@ -606,6 +901,55 @@ private:
     bool m_imperial = false;
 };
 
+class CaloriesRing final : public QWidget
+{
+public:
+    explicit CaloriesRing(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setFixedSize(132, 132);
+    }
+
+    void setValues(double calories, int goal)
+    {
+        m_calories = calories;
+        m_goal = goal;
+        setAccessibleName(goal > 0 ? QStringLiteral("%1 of %2 kcal today").arg(kcal(calories), kcal(goal))
+                                   : QStringLiteral("%1 kcal today").arg(kcal(calories)));
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const qreal stroke = 10;
+        const QRectF box = QRectF(rect()).adjusted(stroke / 2, stroke / 2, -stroke / 2, -stroke / 2);
+        painter.setPen(QPen(Theme::color(Theme::Role::SurfaceActive), stroke));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(box);
+        const double fraction = m_goal > 0 ? qBound(0.0, m_calories / m_goal, 1.0) : 0.0;
+        if (fraction > 0) {
+            painter.setPen(QPen(Theme::color(m_calories > m_goal ? Theme::Role::Warning : Theme::Role::Accent),
+                                stroke, Qt::SolidLine, Qt::RoundCap));
+            painter.drawArc(box, 90 * 16, -qRound(fraction * 360 * 16));
+        }
+        const qreal mid = height() / 2.0;
+        painter.setFont(caloriesFont(font(), 24, QFont::DemiBold));
+        painter.setPen(Theme::color(Theme::Role::Fg));
+        painter.drawText(QRectF(0, mid - 22, width(), 30), Qt::AlignCenter, kcal(m_calories));
+        painter.setFont(caloriesFont(font(), 11, QFont::Normal));
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        painter.drawText(QRectF(0, mid + 8, width(), 16), Qt::AlignCenter,
+                         m_goal > 0 ? QStringLiteral("of %1 kcal").arg(kcal(m_goal))
+                                    : QStringLiteral("kcal today"));
+    }
+
+private:
+    double m_calories = 0;
+    int m_goal = 0;
+};
+
 CaloriesFeature::CaloriesFeature(
     const forkmesh::market::NativePackageHost &host, QWidget *parent)
     : forkmesh::market::NativePackageWidget(parent), m_request(host.request),
@@ -613,6 +957,7 @@ CaloriesFeature::CaloriesFeature(
       m_promptTargetChanged(host.promptTargetChanged)
 {
     setObjectName(QStringLiteral("caloriesSection"));
+    const bool next = Theme::isNext();
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(20, 18, 20, 20);
     outer->setSpacing(10);
@@ -621,7 +966,8 @@ CaloriesFeature::CaloriesFeature(
     auto *title = new QLabel(QStringLiteral("Calorie Counter"));
     title->setObjectName(QStringLiteral("pageTitle"));
     heading->addWidget(title);
-    heading->addWidget(mutedLabel(QStringLiteral("Your private food diary, goals, reminders, and challenges with friends")));
+    QLabel *lede = mutedLabel(QStringLiteral("Your private food diary, goals, reminders, and challenges with friends"));
+    heading->addWidget(lede);
     heading->addStretch();
     auto *refreshButton = new QPushButton(QStringLiteral("Refresh"));
     m_exportButton = new QPushButton(QStringLiteral("Export my data"));
@@ -640,6 +986,8 @@ CaloriesFeature::CaloriesFeature(
     m_installPanel = new QWidget;
     auto *installLayout = new QVBoxLayout(m_installPanel);
     installLayout->setContentsMargins(8, 36, 8, 8);
+    if (next)
+        installLayout->setContentsMargins(24, 48, 24, 24);
     m_installNote = new QLabel(QStringLiteral(
         "Calorie Counter is private to your ForkMesh account. Install it once and the same diary "
         "appears on the web dashboard, this desktop app, and the mobile app. Every entry, weigh-in, "
@@ -666,16 +1014,20 @@ CaloriesFeature::CaloriesFeature(
     auto *diaryColumn = new QWidget;
     auto *diaryLayout = new QVBoxLayout(diaryColumn);
     diaryLayout->setContentsMargins(8, 10, 8, 8);
+    if (next) {
+        diaryPage->setProperty("caloriesRole", QStringLiteral("diary"));
+        diaryPage->setHandleWidth(1);
+        diaryLayout->setContentsMargins(24, 20, 20, 16);
+        diaryLayout->setSpacing(16);
+    }
     auto *toolbar = new QHBoxLayout;
-    toolbar->addWidget(mutedLabel(QStringLiteral("Log to")));
     m_day = new QDateEdit(QDate::currentDate());
     m_day->setToolTip(QStringLiteral("The day a photo, barcode, search, or new food is logged to"));
     m_day->setCalendarPopup(true);
     m_day->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
-    toolbar->addWidget(m_day);
     auto *todayButton = new QPushButton(QStringLiteral("Today"));
     todayButton->setObjectName(QStringLiteral("ghostButton"));
-    toolbar->addWidget(todayButton);
+    m_todayButton = todayButton;
     m_foodSearch = lineEdit();
     m_foodSearch->setObjectName(QStringLiteral("caloriesFoodSearch"));
     m_foodSearch->setPlaceholderText(QStringLiteral("Search foods: trader joes buffalo chicken wrap…"));
@@ -690,7 +1042,6 @@ CaloriesFeature::CaloriesFeature(
     m_foodTimer = new QTimer(this);
     m_foodTimer->setSingleShot(true);
     m_foodTimer->setInterval(250);
-    toolbar->addWidget(m_foodSearch, 1);
     auto *photoButton = new QPushButton(QStringLiteral("Photo…"));
     photoButton->setObjectName(QStringLiteral("primaryButton"));
     photoButton->setToolTip(QStringLiteral("Pick a meal photo; the host AI model estimates its calories"));
@@ -700,50 +1051,220 @@ CaloriesFeature::CaloriesFeature(
     auto *weighButton = new QPushButton(QStringLiteral("Weigh in"));
     for (QPushButton *button : {describeButton, barcodeButton, addButton, weighButton})
         button->setObjectName(QStringLiteral("ghostButton"));
-    for (QPushButton *button : {photoButton, describeButton, barcodeButton, addButton, weighButton})
-        toolbar->addWidget(button);
+    QToolButton *earlierDay = nullptr;
+    QToolButton *laterDay = nullptr;
+    if (next) {
+        toolbar->setSpacing(8);
+        m_day->setProperty("caloriesRole", QStringLiteral("day"));
+        todayButton->setProperty("caloriesRole", QStringLiteral("outline"));
+        auto *stepper = new QFrame;
+        stepper->setObjectName(QStringLiteral("caloriesDayStepper"));
+        auto *stepperLayout = new QHBoxLayout(stepper);
+        stepperLayout->setContentsMargins(0, 0, 0, 0);
+        stepperLayout->setSpacing(0);
+        earlierDay = new QToolButton;
+        earlierDay->setToolTip(QStringLiteral("Log to the day before"));
+        earlierDay->setAccessibleName(QStringLiteral("Previous day"));
+        earlierDay->setIcon(caloriesOcticon(QStringLiteral("chevron-left"), Theme::color(Theme::Role::FgMuted), 14));
+        laterDay = new QToolButton;
+        laterDay->setToolTip(QStringLiteral("Log to the day after"));
+        laterDay->setAccessibleName(QStringLiteral("Next day"));
+        laterDay->setIcon(caloriesOcticon(QStringLiteral("chevron-right"), Theme::color(Theme::Role::FgMuted), 14));
+        for (QToolButton *step : {earlierDay, laterDay}) {
+            step->setCursor(Qt::PointingHandCursor);
+            step->setIconSize(QSize(14, 14));
+            step->setAutoRaise(true);
+        }
+        stepperLayout->addWidget(earlierDay);
+        stepperLayout->addWidget(m_day);
+        stepperLayout->addWidget(laterDay);
+        m_foodSearch->setPlaceholderText(QStringLiteral("Search foods, e.g. trader joe's buffalo chicken"));
+        m_foodSearch->setMinimumWidth(240);
+        m_foodSearch->addAction(caloriesOcticon(QStringLiteral("search"), Theme::color(Theme::Role::FgSubtle), 14),
+                                QLineEdit::LeadingPosition);
+        auto *tools = new QFrame;
+        tools->setObjectName(QStringLiteral("caloriesToolGroup"));
+        auto *toolsLayout = new QHBoxLayout(tools);
+        toolsLayout->setContentsMargins(2, 2, 2, 2);
+        toolsLayout->setSpacing(2);
+        const QColor glyph = Theme::color(Theme::Role::FgMuted);
+        const struct { QPushButton *button; QIcon icon; QString tip; } tooled[] = {
+            {photoButton, caloriesGlyph(QStringLiteral("camera"), glyph, 16), QString()},
+            {describeButton, caloriesOcticon(QStringLiteral("comment"), glyph, 16),
+             QStringLiteral("Describe a meal; the host AI model estimates its calories")},
+            {barcodeButton, caloriesGlyph(QStringLiteral("barcode"), glyph, 16),
+             QStringLiteral("Look up a packaged food by its barcode")},
+            {weighButton, caloriesGlyph(QStringLiteral("scale"), glyph, 16),
+             QStringLiteral("Record a weigh-in")},
+        };
+        for (const auto &tool : tooled) {
+            tool.button->setAccessibleName(tool.button->text());
+            if (!tool.tip.isEmpty())
+                tool.button->setToolTip(tool.tip);
+            tool.button->setText(QString());
+            tool.button->setIcon(tool.icon);
+            tool.button->setIconSize(QSize(16, 16));
+            tool.button->setProperty("caloriesRole", QStringLiteral("tool"));
+            tool.button->setCursor(Qt::PointingHandCursor);
+            toolsLayout->addWidget(tool.button);
+        }
+        addButton->setProperty("caloriesRole", QStringLiteral("create"));
+        addButton->setIcon(caloriesOcticon(QStringLiteral("plus"), Theme::color(Theme::Role::Bg), 14));
+        addButton->setIconSize(QSize(14, 14));
+        addButton->setCursor(Qt::PointingHandCursor);
+        toolbar->addWidget(todayButton);
+        toolbar->addWidget(stepper);
+        toolbar->addWidget(m_foodSearch, 1);
+        toolbar->addWidget(tools);
+        toolbar->addWidget(addButton);
+    } else {
+        toolbar->addWidget(mutedLabel(QStringLiteral("Log to")));
+        toolbar->addWidget(m_day);
+        toolbar->addWidget(todayButton);
+        toolbar->addWidget(m_foodSearch, 1);
+        for (QPushButton *button : {photoButton, describeButton, barcodeButton, addButton, weighButton})
+            toolbar->addWidget(button);
+    }
     diaryLayout->addLayout(toolbar);
 
-    auto *stats = new QHBoxLayout;
-    auto *caloriesCard = new QVBoxLayout;
-    caloriesCard->addWidget(mutedLabel(QStringLiteral("CALORIES")));
     m_caloriesLabel = new QLabel(QStringLiteral("0"));
     m_caloriesLabel->setObjectName(QStringLiteral("pageTitle"));
-    caloriesCard->addWidget(m_caloriesLabel);
     m_caloriesBar = goalBar();
-    caloriesCard->addWidget(m_caloriesBar);
     m_caloriesCaption = mutedLabel(QString());
-    caloriesCard->addWidget(m_caloriesCaption);
-    stats->addLayout(caloriesCard, 2);
-    auto *macros = new QFormLayout;
     m_proteinBar = goalBar();
     m_carbsBar = goalBar();
     m_fatBar = goalBar();
     m_proteinLabel = mutedLabel(QString());
     m_carbsLabel = mutedLabel(QString());
     m_fatLabel = mutedLabel(QString());
-    for (auto [label, bar, caption] : {
-             std::make_tuple(QStringLiteral("Protein"), m_proteinBar, m_proteinLabel),
-             std::make_tuple(QStringLiteral("Carbs"), m_carbsBar, m_carbsLabel),
-             std::make_tuple(QStringLiteral("Fat"), m_fatBar, m_fatLabel)}) {
-        auto *row = new QVBoxLayout;
-        row->addWidget(bar);
-        row->addWidget(caption);
-        macros->addRow(label, row);
-    }
-    stats->addLayout(macros, 3);
-    auto *streakCard = new QVBoxLayout;
-    streakCard->addWidget(mutedLabel(QStringLiteral("STREAKS")));
     m_streakLabel = new QLabel;
     m_streakLabel->setWordWrap(true);
-    streakCard->addWidget(m_streakLabel);
-    streakCard->addWidget(mutedLabel(QStringLiteral("WEIGHT")));
     m_weightLabel = new QLabel;
     m_weightLabel->setWordWrap(true);
-    streakCard->addWidget(m_weightLabel);
-    streakCard->addStretch();
-    stats->addLayout(streakCard, 2);
-    diaryLayout->addLayout(stats);
+    if (next) {
+        const auto card = [] {
+            auto *frame = new QFrame;
+            frame->setProperty("caloriesRole", QStringLiteral("card"));
+            return frame;
+        };
+        const auto roleLabel = [](const QString &value, const char *role) {
+            auto *label = new QLabel(value);
+            label->setProperty("caloriesRole", QLatin1String(role));
+            return label;
+        };
+        auto *stats = new QHBoxLayout;
+        stats->setSpacing(12);
+        QFrame *ringCard = card();
+        auto *ringLayout = new QHBoxLayout(ringCard);
+        ringLayout->setContentsMargins(20, 18, 24, 18);
+        ringLayout->setSpacing(20);
+        m_ring = new CaloriesRing;
+        ringLayout->addWidget(m_ring, 0, Qt::AlignVCenter);
+        auto *ringCopy = new QVBoxLayout;
+        ringCopy->setSpacing(2);
+        ringCopy->addStretch();
+        m_remainingTitle = roleLabel(QStringLiteral("Remaining"), "caption");
+        m_remainingLabel = roleLabel(QString(), "value");
+        m_entriesTodayLabel = roleLabel(QString(), "faint");
+        ringCopy->addWidget(m_remainingTitle);
+        ringCopy->addWidget(m_remainingLabel);
+        ringCopy->addWidget(m_entriesTodayLabel);
+        ringCopy->addStretch();
+        ringLayout->addLayout(ringCopy);
+        stats->addWidget(ringCard);
+
+        QFrame *macroCard = card();
+        auto *macroLayout = new QVBoxLayout(macroCard);
+        macroLayout->setContentsMargins(20, 18, 20, 18);
+        macroLayout->setSpacing(14);
+        macroLayout->addStretch();
+        for (auto [label, bar, caption] : {
+                 std::make_tuple(QStringLiteral("Protein"), m_proteinBar, m_proteinLabel),
+                 std::make_tuple(QStringLiteral("Carbs"), m_carbsBar, m_carbsLabel),
+                 std::make_tuple(QStringLiteral("Fat"), m_fatBar, m_fatLabel)}) {
+            auto *row = new QHBoxLayout;
+            row->setSpacing(8);
+            row->addWidget(roleLabel(label, "macro"));
+            row->addStretch();
+            caption->setWordWrap(false);
+            caption->setTextFormat(Qt::RichText);
+            caption->setProperty("caloriesRole", QStringLiteral("macroValue"));
+            row->addWidget(caption);
+            auto *block = new QVBoxLayout;
+            block->setSpacing(6);
+            block->addLayout(row);
+            bar->setFixedHeight(6);
+            bar->setProperty("caloriesRole", QStringLiteral("macro"));
+            block->addWidget(bar);
+            macroLayout->addLayout(block);
+        }
+        macroLayout->addStretch();
+        stats->addWidget(macroCard, 1);
+
+        auto *side = new QVBoxLayout;
+        side->setSpacing(12);
+        const auto smallCard = [&](const QIcon &icon, QLabel **value, QLabel **caption) {
+            QFrame *frame = card();
+            auto *layout = new QHBoxLayout(frame);
+            layout->setContentsMargins(16, 12, 16, 12);
+            layout->setSpacing(12);
+            auto *glyph = new QLabel;
+            glyph->setPixmap(icon.pixmap(QSize(16, 16), devicePixelRatioF()));
+            glyph->setProperty("caloriesRole", QStringLiteral("glyph"));
+            layout->addWidget(glyph, 0, Qt::AlignVCenter);
+            auto *copy = new QVBoxLayout;
+            copy->setSpacing(0);
+            *value = roleLabel(QString(), "value");
+            *caption = roleLabel(QString(), "caption");
+            (*caption)->setWordWrap(true);
+            copy->addWidget(*value);
+            copy->addWidget(*caption);
+            layout->addLayout(copy, 1);
+            side->addWidget(frame, 1);
+        };
+        smallCard(caloriesOcticon(QStringLiteral("flame"), Theme::color(Theme::Role::FgMuted), 16),
+                  &m_streakValue, &m_streakCaption);
+        smallCard(caloriesGlyph(QStringLiteral("scale"), Theme::color(Theme::Role::FgMuted), 16),
+                  &m_weightValue, &m_weightCaption);
+        auto *sideHost = new QWidget;
+        sideHost->setFixedWidth(240);
+        sideHost->setLayout(side);
+        side->setContentsMargins(0, 0, 0, 0);
+        stats->addWidget(sideHost);
+        diaryLayout->addLayout(stats);
+        for (QWidget *spare : std::initializer_list<QWidget *>{m_caloriesLabel, m_caloriesBar, m_caloriesCaption,
+                                                               m_streakLabel, m_weightLabel}) {
+            spare->setParent(diaryColumn);
+            spare->hide();
+        }
+    } else {
+        auto *stats = new QHBoxLayout;
+        auto *caloriesCard = new QVBoxLayout;
+        caloriesCard->addWidget(mutedLabel(QStringLiteral("CALORIES")));
+        caloriesCard->addWidget(m_caloriesLabel);
+        caloriesCard->addWidget(m_caloriesBar);
+        caloriesCard->addWidget(m_caloriesCaption);
+        stats->addLayout(caloriesCard, 2);
+        auto *macros = new QFormLayout;
+        for (auto [label, bar, caption] : {
+                 std::make_tuple(QStringLiteral("Protein"), m_proteinBar, m_proteinLabel),
+                 std::make_tuple(QStringLiteral("Carbs"), m_carbsBar, m_carbsLabel),
+                 std::make_tuple(QStringLiteral("Fat"), m_fatBar, m_fatLabel)}) {
+            auto *row = new QVBoxLayout;
+            row->addWidget(bar);
+            row->addWidget(caption);
+            macros->addRow(label, row);
+        }
+        stats->addLayout(macros, 3);
+        auto *streakCard = new QVBoxLayout;
+        streakCard->addWidget(mutedLabel(QStringLiteral("STREAKS")));
+        streakCard->addWidget(m_streakLabel);
+        streakCard->addWidget(mutedLabel(QStringLiteral("WEIGHT")));
+        streakCard->addWidget(m_weightLabel);
+        streakCard->addStretch();
+        stats->addLayout(streakCard, 2);
+        diaryLayout->addLayout(stats);
+    }
 
     m_entriesTable = new QTableWidget(0, 8);
     m_entriesTable->setObjectName(QStringLiteral("caloriesEntriesTable"));
@@ -756,6 +1277,31 @@ CaloriesFeature::CaloriesFeature(
     m_entriesTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_entriesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_entriesTable->setAlternatingRowColors(true);
+    if (next) {
+        m_entriesTable->setHorizontalHeaderLabels(
+            {QStringLiteral("Day"), QStringLiteral("Food"), QStringLiteral("Meal"),
+             QStringLiteral("kcal"), QStringLiteral("Protein"), QStringLiteral("Carbs"),
+             QStringLiteral("Fat"), QStringLiteral("Source")});
+        for (int column = 3; column < 7; ++column)
+            m_entriesTable->horizontalHeaderItem(column)->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_entriesTable->setAlternatingRowColors(false);
+        m_entriesTable->setShowGrid(false);
+        m_entriesTable->setWordWrap(false);
+        m_entriesTable->setFrameShape(QFrame::NoFrame);
+        m_entriesTable->verticalHeader()->hide();
+        m_entriesTable->verticalHeader()->setDefaultSectionSize(kNextEntryRow);
+        m_entriesTable->horizontalHeader()->setHighlightSections(false);
+        m_entriesTable->horizontalHeader()->setFixedHeight(36);
+        m_entriesTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+        m_entriesTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+        for (const auto &[column, width] : {std::pair{3, 80}, std::pair{4, 84}, std::pair{5, 84},
+                                            std::pair{6, 72}, std::pair{7, 140}})
+            m_entriesTable->setColumnWidth(column, width);
+        m_entriesTable->setColumnHidden(0, true);
+        m_entriesTable->setColumnHidden(2, true);
+        m_entriesTable->setItemDelegate(new CaloriesEntryDelegate(m_entriesTable));
+        new CaloriesHoverRepaint(m_entriesTable);
+    }
     diaryLayout->addWidget(m_entriesTable, 1);
     m_entriesEmpty = mutedLabel(QStringLiteral("Nothing logged yet. Pick a photo, scan a barcode, search, or add a meal."));
     m_entriesEmpty->setAlignment(Qt::AlignHCenter);
@@ -768,6 +1314,13 @@ CaloriesFeature::CaloriesFeature(
     auto *editButton = new QPushButton(QStringLiteral("Edit"));
     auto *deleteButton = new QPushButton(QStringLiteral("Delete"));
     deleteButton->setObjectName(QStringLiteral("dangerButton"));
+    if (next) {
+        entryActions->setSpacing(6);
+        editButton->setProperty("caloriesRole", QStringLiteral("small"));
+        deleteButton->setProperty("caloriesRole", QStringLiteral("small"));
+        editButton->setToolTip(QStringLiteral("Edit the selected entry (or double-click it)"));
+        deleteButton->setToolTip(QStringLiteral("Delete the selected entry"));
+    }
     entryActions->addWidget(editButton);
     entryActions->addWidget(deleteButton);
     diaryLayout->addLayout(entryActions);
@@ -787,7 +1340,6 @@ CaloriesFeature::CaloriesFeature(
     receiptButton->setObjectName(QStringLiteral("ghostButton"));
     receiptButton->setToolTip(QStringLiteral("Pick a photo of a grocery or restaurant receipt; its foods join My foods"));
     quickHeading->addWidget(receiptButton);
-    quickLayout->addLayout(quickHeading);
     auto *quickControls = new QHBoxLayout;
     m_quickMeal = mealCombo(guessMeal());
     m_quickMeal->setToolTip(QStringLiteral("The meal a quick-added food is logged to"));
@@ -796,7 +1348,27 @@ CaloriesFeature::CaloriesFeature(
     m_quickFilter->setClearButtonEnabled(true);
     quickControls->addWidget(m_quickMeal);
     quickControls->addWidget(m_quickFilter, 1);
-    quickLayout->addLayout(quickControls);
+    QVBoxLayout *quickTop = quickLayout;
+    if (next) {
+        quickPanel->setAttribute(Qt::WA_StyledBackground, true);
+        quickPanel->setMinimumWidth(280);
+        quickLayout->setContentsMargins(0, 0, 0, 0);
+        quickLayout->setSpacing(0);
+        auto *quickHead = new QWidget;
+        quickHead->setProperty("caloriesRole", QStringLiteral("quickHead"));
+        quickHead->setAttribute(Qt::WA_StyledBackground, true);
+        quickTop = new QVBoxLayout(quickHead);
+        quickTop->setContentsMargins(12, 12, 12, 12);
+        quickTop->setSpacing(8);
+        quickHeading->setContentsMargins(4, 0, 0, 0);
+        quickControls->setSpacing(6);
+        quickTitle->setProperty("caloriesRole", QStringLiteral("quickTitle"));
+        receiptButton->setText(QStringLiteral("Scan receipt"));
+        receiptButton->setProperty("caloriesRole", QStringLiteral("headerAction"));
+        quickLayout->addWidget(quickHead);
+    }
+    quickTop->addLayout(quickHeading);
+    quickTop->addLayout(quickControls);
     m_quickTree = new QTreeWidget;
     m_quickTree->setObjectName(QStringLiteral("caloriesQuickTree"));
     m_quickTree->setColumnCount(2);
@@ -806,6 +1378,13 @@ CaloriesFeature::CaloriesFeature(
     m_quickTree->header()->setStretchLastSection(false);
     m_quickTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_quickTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    if (next) {
+        m_quickTree->setUniformRowHeights(false);
+        m_quickTree->setIndentation(0);
+        m_quickTree->setFrameShape(QFrame::NoFrame);
+        m_quickTree->setItemDelegate(new CaloriesQuickDelegate(m_quickTree));
+        new CaloriesHoverRepaint(m_quickTree);
+    }
     quickLayout->addWidget(m_quickTree, 1);
     auto *quickActions = new QHBoxLayout;
     m_quickLogButton = new QPushButton(QStringLiteral("Log"));
@@ -821,9 +1400,22 @@ CaloriesFeature::CaloriesFeature(
     quickActions->addWidget(m_quickStarButton);
     quickActions->addWidget(m_quickRemoveButton);
     quickActions->addStretch();
-    quickLayout->addLayout(quickActions);
     m_quickStatus = mutedLabel(QStringLiteral("Type what you ate in the prompt box below, or pick a food here."));
     m_quickStatus->setWordWrap(true);
+    if (next) {
+        quickActions->setContentsMargins(12, 8, 12, 8);
+        quickActions->setSpacing(6);
+        m_quickLogButton->setIcon(caloriesOcticon(QStringLiteral("plus"), Theme::color(Theme::Role::OnAccent), 12));
+        m_quickStarButton->setText(QStringLiteral("Save"));
+        m_quickStarButton->setIcon(caloriesOcticon(QStringLiteral("star"), Theme::color(Theme::Role::FgMuted), 12));
+        for (QPushButton *button : {m_quickLogButton, m_quickStarButton, m_quickRemoveButton}) {
+            button->setProperty("caloriesRole", QStringLiteral("small"));
+            button->setIconSize(QSize(12, 12));
+        }
+        m_quickStatus->setText(QStringLiteral("Or type what you ate in the prompt box; an agent logs it for you."));
+        m_quickStatus->setProperty("caloriesRole", QStringLiteral("quickFooter"));
+    }
+    quickLayout->addLayout(quickActions);
     quickLayout->addWidget(m_quickStatus);
     diaryPage->addWidget(quickPanel);
     diaryPage->setStretchFactor(0, 3);
@@ -834,14 +1426,38 @@ CaloriesFeature::CaloriesFeature(
     auto *trendsPage = new QWidget;
     auto *trendsLayout = new QVBoxLayout(trendsPage);
     trendsLayout->setContentsMargins(8, 10, 8, 8);
-    trendsLayout->addWidget(mutedLabel(QStringLiteral("Calories · last 30 days (blue within goal, orange over, dashed goal line)")));
+    QLabel *dayChartTitle = mutedLabel(QStringLiteral("Calories · last 30 days (blue within goal, orange over, dashed goal line)"));
     m_dayChart = new DayChart;
-    trendsLayout->addWidget(m_dayChart, 3);
     m_trendsSummary = mutedLabel(QString());
-    trendsLayout->addWidget(m_trendsSummary);
-    trendsLayout->addWidget(mutedLabel(QStringLiteral("Weight · last 180 days")));
+    QLabel *weightChartTitle = mutedLabel(QStringLiteral("Weight · last 180 days"));
     m_weightChart = new WeightChart;
-    trendsLayout->addWidget(m_weightChart, 2);
+    if (next) {
+        trendsLayout->setContentsMargins(24, 20, 24, 24);
+        trendsLayout->setSpacing(16);
+        const auto chartCard = [&trendsLayout](QLabel *heading, QWidget *chart, QLabel *summary, int stretch) {
+            auto *frame = new QFrame;
+            frame->setProperty("caloriesRole", QStringLiteral("card"));
+            auto *layout = new QVBoxLayout(frame);
+            layout->setContentsMargins(16, 14, 16, 14);
+            layout->setSpacing(10);
+            heading->setProperty("caloriesRole", QStringLiteral("cardTitle"));
+            layout->addWidget(heading);
+            layout->addWidget(chart, 1);
+            if (summary) {
+                summary->setProperty("caloriesRole", QStringLiteral("caption"));
+                layout->addWidget(summary);
+            }
+            trendsLayout->addWidget(frame, stretch);
+        };
+        chartCard(dayChartTitle, m_dayChart, m_trendsSummary, 3);
+        chartCard(weightChartTitle, m_weightChart, nullptr, 2);
+    } else {
+        trendsLayout->addWidget(dayChartTitle);
+        trendsLayout->addWidget(m_dayChart, 3);
+        trendsLayout->addWidget(m_trendsSummary);
+        trendsLayout->addWidget(weightChartTitle);
+        trendsLayout->addWidget(m_weightChart, 2);
+    }
     m_tabs->addTab(trendsPage, QStringLiteral("Trends"));
 
     // --- Goals & reminders ---------------------------------------------
@@ -911,6 +1527,15 @@ CaloriesFeature::CaloriesFeature(
     auto *goalsColumn = new QWidget;
     goalsColumn->setLayout(goalsForm);
     goalsLayout->addWidget(goalsColumn, 1);
+    if (next) {
+        goalsLayout->setContentsMargins(24, 20, 24, 24);
+        goalsLayout->setSpacing(16);
+        goalsColumn->setProperty("caloriesRole", QStringLiteral("card"));
+        goalsColumn->setAttribute(Qt::WA_StyledBackground, true);
+        goalsForm->setContentsMargins(20, 18, 20, 18);
+        goalsForm->setHorizontalSpacing(16);
+        goalsForm->setVerticalSpacing(10);
+    }
 
     auto *remindersColumn = new QVBoxLayout;
     auto *remindersHeading = new QHBoxLayout;
@@ -934,8 +1559,19 @@ CaloriesFeature::CaloriesFeature(
     m_remindersTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_remindersTable->setSelectionMode(QAbstractItemView::SingleSelection);
     remindersColumn->addWidget(m_remindersTable, 1);
-    goalsLayout->addLayout(remindersColumn, 1);
-    m_tabs->addTab(goalsPage, QStringLiteral("Goals & reminders"));
+    if (next) {
+        auto *remindersCard = new QWidget;
+        remindersCard->setProperty("caloriesRole", QStringLiteral("card"));
+        remindersCard->setAttribute(Qt::WA_StyledBackground, true);
+        remindersCard->setLayout(remindersColumn);
+        remindersColumn->setContentsMargins(20, 18, 20, 18);
+        remindersColumn->setSpacing(10);
+        m_remindersTable->setProperty("dataTable", true);
+        goalsLayout->addWidget(remindersCard, 1);
+    } else {
+        goalsLayout->addLayout(remindersColumn, 1);
+    }
+    m_tabs->addTab(goalsPage, next ? QStringLiteral("Goals and reminders") : QStringLiteral("Goals & reminders"));
 
     // --- Challenges ----------------------------------------------------
     auto *challengesPage = new QWidget;
@@ -966,7 +1602,17 @@ CaloriesFeature::CaloriesFeature(
     m_challengesEmpty = mutedLabel(QStringLiteral("No challenges yet. Start one and invite your friends."));
     m_challengesEmpty->setAlignment(Qt::AlignHCenter);
     challengesLayout->addWidget(m_challengesEmpty);
+    if (next) {
+        challengesLayout->setContentsMargins(24, 20, 24, 24);
+        challengesLayout->setSpacing(12);
+        challengesHeading->setSpacing(8);
+        m_challengesTable->setProperty("dataTable", true);
+        for (QPushButton *button : {openChallenge, newChallenge})
+            button->setProperty("caloriesRole", QStringLiteral("small"));
+    }
     m_tabs->addTab(challengesPage, QStringLiteral("Challenges"));
+    if (next)
+        m_tabs->setDocumentMode(true);
     outer->addWidget(m_tabs, 1);
 
     connect(refreshButton, &QPushButton::clicked, this, [this] { load(); });
@@ -1047,6 +1693,14 @@ CaloriesFeature::CaloriesFeature(
     });
     for (QPushButton *button : {m_quickLogButton, m_quickStarButton, m_quickRemoveButton})
         button->setEnabled(false);
+    if (next) {
+        connect(earlierDay, &QToolButton::clicked, this, [this] { m_day->setDate(m_day->date().addDays(-1)); });
+        connect(laterDay, &QToolButton::clicked, this, [this] { m_day->setDate(m_day->date().addDays(1)); });
+        connect(m_day, &QDateEdit::dateChanged, this, [this] { syncNextDay(); });
+        syncNextDay();
+        arrangeNextHeader(heading, title, lede, refreshButton);
+    }
+    applyNextStyle();
     applyInstallState();
 }
 
@@ -1351,6 +2005,8 @@ void CaloriesFeature::renderDiary()
               .arg(m_entries.size())
         : QString());
     m_entriesMore->setVisible(truncated);
+    if (Theme::isNext())
+        renderNextDiary();
 }
 
 void CaloriesFeature::renderTrends()
@@ -2151,6 +2807,13 @@ void CaloriesFeature::renderQuick()
         section(QStringLiteral("You log often"), QStringLiteral("frequent"), m_frequentFoods, QStringLiteral("No match."));
     section(QStringLiteral("Common foods"), QStringLiteral("common"), m_overview.value(QStringLiteral("commonFoods")).toArray(),
             QStringLiteral("No match."));
+    if (Theme::isNext()) {
+        for (int index = 0; index < m_quickTree->topLevelItemCount(); ++index) {
+            QTreeWidgetItem *item = m_quickTree->topLevelItem(index);
+            if (item->data(0, kQuickListRole).toString().isEmpty())
+                item->setFirstColumnSpanned(true);
+        }
+    }
     m_quickTree->setCurrentItem(reselect);
     if (!reselect) {
         for (QPushButton *button : {m_quickLogButton, m_quickStarButton, m_quickRemoveButton})
@@ -2586,6 +3249,254 @@ void CaloriesFeature::uninstallPlugin()
             setStatus(QStringLiteral("Calorie Counter uninstalled from your account. Install it again at any time."));
         });
     });
+}
+
+void CaloriesFeature::syncNextDay()
+{
+    if (!Theme::isNext() || !m_day)
+        return;
+    const QDate day = m_day->date();
+    const QDate today = QDate::currentDate();
+    const QString format = day == today ? QStringLiteral("'Today, 'MMM d")
+                           : day.year() == today.year() ? QStringLiteral("ddd, MMM d")
+                                                        : QStringLiteral("ddd, MMM d, yyyy");
+    if (m_day->displayFormat() != format)
+        m_day->setDisplayFormat(format);
+    if (m_todayButton)
+        m_todayButton->setVisible(day != today);
+}
+
+void CaloriesFeature::renderNextDiary()
+{
+    if (!m_ring)
+        return;
+    const QJsonObject profile = m_overview.value(QStringLiteral("profile")).toObject();
+    const QJsonObject totals = m_overview.value(QStringLiteral("todayTotals")).toObject();
+    const int goal = profile.value(QStringLiteral("dailyCalories")).toInt();
+    const double calories = number(totals, "calories");
+    const QString today = text(m_overview, "today");
+    m_ring->setValues(calories, goal);
+    m_remainingTitle->setText(goal > 0 && calories > goal ? QStringLiteral("Over goal") : QStringLiteral("Remaining"));
+    m_remainingLabel->setText(goal > 0 ? QStringLiteral("%1 kcal").arg(kcal(std::fabs(goal - calories)))
+                                       : QStringLiteral("No goal"));
+    int todayCount = 0;
+    for (const QJsonValue &value : m_entries) {
+        if (text(value.toObject(), "day") == today)
+            ++todayCount;
+    }
+    m_entriesTodayLabel->setText(goal <= 0 ? QStringLiteral("Set one on Goals and reminders")
+                                 : QStringLiteral("%1 entr%2 today").arg(todayCount)
+                                       .arg(todayCount == 1 ? QStringLiteral("y") : QStringLiteral("ies")));
+    const QString strong = Theme::hex(Theme::Role::Fg);
+    const struct { QLabel *label; const char *key; } macros[] = {
+        {m_proteinLabel, "proteinG"}, {m_carbsLabel, "carbsG"}, {m_fatLabel, "fatG"}};
+    for (const auto &macro : macros) {
+        macro.label->setText(QStringLiteral("<span style=\"color:%1\">%2 g</span> of %3 g")
+                                 .arg(strong, grams(number(totals, macro.key)),
+                                      grams(number(profile, macro.key))));
+    }
+    const QJsonObject streaks = m_overview.value(QStringLiteral("streaks")).toObject();
+    const int logged = streaks.value(QStringLiteral("logged")).toInt();
+    m_streakValue->setText(QStringLiteral("%1 day%2").arg(logged).arg(logged == 1 ? QString() : QStringLiteral("s")));
+    m_streakCaption->setText(QStringLiteral("logged in a row · %1 within goal")
+                                 .arg(streaks.value(QStringLiteral("onGoal")).toInt()));
+    const QJsonObject latest = m_overview.value(QStringLiteral("latestWeight")).toObject();
+    const double target = number(profile, "targetWeightKg");
+    const double latestKg = number(latest, "weightKg");
+    m_weightValue->setText(weightText(latestKg));
+    QString weight = latestKg > 0 ? dayLabel(text(latest, "day")) : QStringLiteral("No weigh-in yet");
+    if (latestKg > 0 && target > 0)
+        weight += QStringLiteral(" · %1 %2").arg(weightText(std::fabs(latestKg - target)),
+                                                 latestKg > target ? QStringLiteral("to go") : QStringLiteral("below target"));
+    m_weightCaption->setText(weight);
+
+    QHash<QString, double> sums;
+    const auto groupKey = [](const QJsonObject &entry) {
+        return text(entry, "day") + QLatin1Char('|') + mealLabel(text(entry, "meal"));
+    };
+    for (const QJsonValue &value : m_entries)
+        sums[groupKey(value.toObject())] += number(value.toObject(), "calories");
+    QString previous;
+    for (int row = 0; row < m_entriesTable->rowCount() && row < m_entries.size(); ++row) {
+        const QJsonObject entry = m_entries.at(row).toObject();
+        const QString key = groupKey(entry);
+        const bool starts = row == 0 || key != previous;
+        previous = key;
+        const QString day = text(entry, "day");
+        const QString heading = !starts ? QString()
+                                : day == today ? mealLabel(text(entry, "meal"))
+                                               : mealLabel(text(entry, "meal")) + QStringLiteral(" · ") + dayLabel(day);
+        const QString sum = starts ? QStringLiteral("%1 kcal").arg(kcal(sums.value(key))) : QString();
+        for (int column = 0; column < m_entriesTable->columnCount(); ++column) {
+            QTableWidgetItem *item = m_entriesTable->item(row, column);
+            if (!item)
+                continue;
+            item->setData(kGroupHeadingRole, heading);
+            item->setData(kGroupKcalRole, sum);
+            if (column >= 4 && column <= 6)
+                item->setText(item->text() + QStringLiteral(" g"));
+        }
+        m_entriesTable->setRowHeight(row, starts ? kNextEntryRow + kNextGroupBand : kNextEntryRow);
+    }
+}
+
+void CaloriesFeature::arrangeNextHeader(QHBoxLayout *heading, QLabel *title, QLabel *lede,
+                                        QPushButton *refreshButton)
+{
+    auto *outer = qobject_cast<QVBoxLayout *>(layout());
+    if (!outer || !heading)
+        return;
+    while (QLayoutItem *item = heading->takeAt(0))
+        delete item;
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    heading->setContentsMargins(24, 14, 18, 8);
+    heading->setSpacing(4);
+    title->setText(QStringLiteral("Calorie counter"));
+    title->setProperty("caloriesRole", QStringLiteral("title"));
+    lede->setText(QStringLiteral("Your private food diary, goals, reminders and challenges with friends"));
+    lede->setProperty("caloriesRole", QStringLiteral("lede"));
+    lede->setWordWrap(false);
+    lede->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    auto *titleColumn = new QVBoxLayout;
+    titleColumn->setContentsMargins(0, 0, 0, 0);
+    titleColumn->setSpacing(2);
+    titleColumn->addWidget(title);
+    titleColumn->addWidget(lede);
+    heading->addLayout(titleColumn, 1);
+    outer->removeWidget(m_status);
+    m_status->setProperty("caloriesRole", QStringLiteral("status"));
+    m_status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_status->setMaximumWidth(360);
+    heading->addWidget(m_status, 0, Qt::AlignVCenter);
+    heading->addSpacing(8);
+    m_exportButton->setProperty("caloriesRole", QStringLiteral("headerAction"));
+    m_exportButton->setIcon(caloriesOcticon(QStringLiteral("download"), Theme::color(Theme::Role::FgMuted), 14));
+    m_exportButton->setIconSize(QSize(14, 14));
+    m_exportButton->setCursor(Qt::PointingHandCursor);
+    heading->addWidget(m_exportButton, 0, Qt::AlignVCenter);
+
+    m_menuHolder = new QWidget(this);
+    m_menuHolder->setObjectName(QStringLiteral("caloriesMenuHolder"));
+    m_menuHolder->hide();
+    auto *holderLayout = new QHBoxLayout(m_menuHolder);
+    const QList<QPushButton *> menuButtons{refreshButton, m_uninstallButton};
+    for (QPushButton *button : menuButtons) {
+        const bool shown = !(button->testAttribute(Qt::WA_WState_ExplicitShowHide) && button->isHidden());
+        holderLayout->addWidget(button);
+        button->setVisible(shown);
+    }
+    auto *more = new QToolButton;
+    more->setObjectName(QStringLiteral("caloriesMoreButton"));
+    more->setProperty("caloriesRole", QStringLiteral("icon"));
+    more->setToolTip(QStringLiteral("Refresh, or uninstall Calorie Counter"));
+    more->setAccessibleName(QStringLiteral("More actions"));
+    more->setCursor(Qt::PointingHandCursor);
+    more->setPopupMode(QToolButton::InstantPopup);
+    more->setIcon(caloriesOcticon(QStringLiteral("kebab-horizontal"), Theme::color(Theme::Role::FgMuted), 16));
+    more->setIconSize(QSize(16, 16));
+    auto *menu = new QMenu(more);
+    menu->setToolTipsVisible(true);
+    connect(menu, &QMenu::aboutToShow, this, [menu, menuButtons] {
+        menu->clear();
+        for (QPushButton *button : menuButtons) {
+            if (button->testAttribute(Qt::WA_WState_ExplicitShowHide) && button->isHidden())
+                continue;
+            QAction *action = menu->addAction(button->text());
+            action->setToolTip(button->toolTip());
+            action->setEnabled(button->isEnabled());
+            QObject::connect(action, &QAction::triggered, button, &QPushButton::click);
+        }
+    });
+    more->setMenu(menu);
+    heading->addWidget(more, 0, Qt::AlignVCenter);
+}
+
+void CaloriesFeature::applyNextStyle()
+{
+    if (!Theme::isNext())
+        return;
+    const QString sheet = Theme::expandTokens(QStringLiteral(
+        "QLabel#pageTitle[caloriesRole=\"title\"] { color: @fg; font-size: 15px; font-weight: 600; background: transparent; }"
+        "QLabel#mutedLabel[caloriesRole=\"lede\"] { color: @fgMuted; font-size: 12px; background: transparent; }"
+        "QLabel#mutedLabel[caloriesRole=\"status\"] { color: @fgSubtle; font-size: 12px; background: transparent; }"
+        "QLabel#errorLabel[caloriesRole=\"status\"] { color: @danger; }"
+        "QPushButton[caloriesRole=\"headerAction\"] { background: transparent; border: none; border-radius: 6px;"
+        " color: @fgMuted; padding: 0px 8px; min-height: 28px; max-height: 28px; font-size: 12px; font-weight: 500; }"
+        "QPushButton[caloriesRole=\"headerAction\"]:hover { background-color: @surfaceRaised; color: @fg; }"
+        "QPushButton[caloriesRole=\"headerAction\"]:pressed { background-color: @surfaceActive; }"
+        "QToolButton[caloriesRole=\"icon\"] { background: transparent; border: none; border-radius: 6px; padding: 0px;"
+        " min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; }"
+        "QToolButton[caloriesRole=\"icon\"]:hover { background-color: @surfaceRaised; }"
+        "QToolButton[caloriesRole=\"icon\"]:pressed { background-color: @surfaceActive; }"
+        "QToolButton[caloriesRole=\"icon\"]::menu-indicator { image: none; width: 0px; }"
+        "QTabWidget#caloriesTabs::pane { border: none; border-top: 1px solid @border; background: transparent; top: -1px; }"
+        "QTabWidget#caloriesTabs::tab-bar { left: 24px; }"
+        "QTabWidget#caloriesTabs > QTabBar { background: transparent; border: none; }"
+        "QTabWidget#caloriesTabs > QTabBar::tab { background: transparent; border: none;"
+        " border-bottom: 2px solid transparent; border-radius: 0px; color: @fgMuted; padding: 0px 10px;"
+        " margin: 0px 4px 0px 0px; min-height: 34px; font-size: 13px; font-weight: 500; }"
+        "QTabWidget#caloriesTabs > QTabBar::tab:hover { color: @fg; }"
+        "QTabWidget#caloriesTabs > QTabBar::tab:selected { color: @fg; border-bottom: 2px solid @fg; }"
+        "QFrame#caloriesDayStepper { background-color: @surface; border: 1px solid @border; border-radius: 8px; }"
+        "QFrame#caloriesDayStepper QToolButton { background: transparent; border: none; border-radius: 6px;"
+        " min-width: 28px; max-width: 28px; min-height: 30px; max-height: 30px; padding: 0px; }"
+        "QFrame#caloriesDayStepper QToolButton:hover { background-color: @surfaceRaised; }"
+        "QDateEdit[caloriesRole=\"day\"] { background: transparent; border: none; color: @fg; font-size: 13px;"
+        " font-weight: 500; padding: 0px 2px; min-height: 30px; max-height: 30px; }"
+        "QDateEdit[caloriesRole=\"day\"]::drop-down { width: 14px; border: none; background: transparent; }"
+        "QPushButton[caloriesRole=\"outline\"] { background-color: @surface; border: 1px solid @border;"
+        " border-radius: 8px; color: @fg; padding: 0px 12px; min-height: 32px; max-height: 32px;"
+        " font-size: 12px; font-weight: 500; }"
+        "QPushButton[caloriesRole=\"outline\"]:hover { background-color: @surfaceRaised; }"
+        "QLineEdit#caloriesFoodSearch { background-color: @surface; border: 1px solid @border; border-radius: 8px;"
+        " min-height: 30px; max-height: 32px; padding: 0px 8px 0px 2px; font-size: 13px; color: @fg; }"
+        "QLineEdit#caloriesFoodSearch:focus { border-color: @accent; }"
+        "QFrame#caloriesToolGroup { background-color: @surface; border: 1px solid @border; border-radius: 8px; }"
+        "QPushButton[caloriesRole=\"tool\"] { background: transparent; border: none; border-radius: 6px; padding: 0px;"
+        " min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; }"
+        "QPushButton[caloriesRole=\"tool\"]:hover { background-color: @surfaceRaised; }"
+        "QPushButton[caloriesRole=\"tool\"]:pressed { background-color: @surfaceActive; }"
+        "QPushButton[caloriesRole=\"create\"] { background-color: @fg; color: @bg; border: none; border-radius: 8px;"
+        " padding: 0px 12px 0px 10px; min-height: 32px; max-height: 32px; font-size: 13px; font-weight: 500; }"
+        "QPushButton[caloriesRole=\"create\"]:hover { background-color: @fgSecondary; }"
+        "QPushButton[caloriesRole=\"create\"]:pressed { background-color: @fgMuted; }"
+        "QPushButton[caloriesRole=\"small\"] { min-height: 26px; max-height: 28px; padding: 0px 10px;"
+        " border-radius: 6px; font-size: 12px; font-weight: 500; }"
+        "QFrame[caloriesRole=\"card\"], QWidget[caloriesRole=\"card\"] { background-color: @surface;"
+        " border: 1px solid @border; border-radius: 12px; }"
+        "QFrame[caloriesRole=\"card\"] QLabel, QWidget[caloriesRole=\"card\"] QLabel { background: transparent; border: none; }"
+        "QLabel[caloriesRole=\"value\"] { color: @fg; font-size: 18px; font-weight: 600; }"
+        "QLabel[caloriesRole=\"caption\"], QLabel#mutedLabel[caloriesRole=\"caption\"] { color: @fgMuted; font-size: 12px; }"
+        "QLabel[caloriesRole=\"faint\"] { color: @fgSubtle; font-size: 12px; }"
+        "QLabel[caloriesRole=\"macro\"] { color: @fg; font-size: 13px; }"
+        "QLabel#mutedLabel[caloriesRole=\"macroValue\"] { color: @fgMuted; font-size: 13px; }"
+        "QLabel#mutedLabel[caloriesRole=\"cardTitle\"] { color: @fg; font-size: 13px; font-weight: 500; }"
+        "QProgressBar[caloriesRole=\"macro\"] { background-color: @surfaceActive; border: none; border-radius: 3px;"
+        " min-height: 6px; max-height: 6px; }"
+        "QProgressBar[caloriesRole=\"macro\"]::chunk { background-color: @accent; border-radius: 3px; }"
+        "QTableWidget#caloriesEntriesTable { background-color: @bg; border: 1px solid @border; border-radius: 12px;"
+        " outline: none; padding: 0px; }"
+        "QTableWidget#caloriesEntriesTable QHeaderView { background: transparent; border: none; }"
+        "QTableWidget#caloriesEntriesTable QHeaderView::section { background: transparent; border: none;"
+        " border-bottom: 1px solid @border; color: @fgSubtle; font-size: 12px; font-weight: 400;"
+        " padding: 0px 12px; }"
+        "QTableWidget#caloriesEntriesTable QHeaderView::section:first { padding-left: 16px; }"
+        "QSplitter[caloriesRole=\"diary\"]::handle { background-color: @border; }"
+        "QWidget#caloriesQuickAdd { background-color: @bg; }"
+        "QWidget[caloriesRole=\"quickHead\"] { background: transparent; border: none; border-bottom: 1px solid @border; }"
+        "QLabel#sectionTitle[caloriesRole=\"quickTitle\"] { color: @fg; font-size: 13px; font-weight: 500; }"
+        "QWidget[caloriesRole=\"quickHead\"] QComboBox, QWidget[caloriesRole=\"quickHead\"] QLineEdit {"
+        " min-height: 30px; max-height: 32px; border-radius: 8px; font-size: 13px; }"
+        "QTreeWidget#caloriesQuickTree { background: transparent; border: none; outline: none; padding: 6px; }"
+        "QTreeWidget#caloriesQuickTree::item, QTreeWidget#caloriesQuickTree::item:hover,"
+        " QTreeWidget#caloriesQuickTree::item:selected { background: transparent; border: none; }"
+        "QTreeWidget#caloriesQuickTree::branch { background: transparent; border: none; }"
+        "QLabel#mutedLabel[caloriesRole=\"quickFooter\"] { color: @fgSubtle; font-size: 12px;"
+        " border-top: 1px solid @border; padding: 12px; background: transparent; }"),
+        Theme::Design::Next, Theme::activeDark());
+    if (styleSheet() != sheet)
+        setStyleSheet(sheet);
 }
 
 void CaloriesFeature::setStatus(const QString &value, bool error)

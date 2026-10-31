@@ -180,6 +180,11 @@ def _harness(accounts, data_key="a-real-secret-data-key"):
         "MAX_NODE_NAME": 63,
         "MAX_ROOM_NAME": 80,
         "PUBLIC_WORLD_GENERAL_ROOM": "world-general",
+        "CHAT_RELAY_OWNER": "mainnode",
+        "CHAT_RELAY_REPO": "forkmesh",
+        "CHAT_RELAY_ROOMS": frozenset({
+            "world-general", "general", "world-space-station"}),
+        "CHAT_ROOM_KEY_VERSION": 2,
         "NODE_NAME_RE": re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"),
         "ADMIN_SESSION_TTL_MS": 12 * 60 * 60 * 1000,
     })
@@ -217,24 +222,32 @@ def test_guest_gets_only_the_public_world_general_passphrase():
         b"super-secret-data-key:room-chat-passphrase-public-world-general-v1"
     ).hexdigest()
 
-    for url in (
-        "https://forkmesh.test/api/chat/room-key",
+    for url, status in (
+        ("https://forkmesh.test/api/chat/room-key", 401),
         (
             "https://forkmesh.test/api/chat/room-key"
-            "?owner=mainnode&repo=forkmesh&room=general"
+            "?owner=mainnode&repo=forkmesh&room=general",
+            401,
         ),
         (
             "https://forkmesh.test/api/chat/room-key"
-            "?owner=mainnode&repo=forkmesh&room=space-station"
+            "?owner=mainnode&repo=forkmesh&room=world-space-station",
+            401,
         ),
         (
             "https://forkmesh.test/api/chat/room-key"
-            "?owner=alice&repo=secret&room=world-general"
+            "?owner=mainnode&repo=forkmesh&room=space-station",
+            404,
+        ),
+        (
+            "https://forkmesh.test/api/chat/room-key"
+            "?owner=alice&repo=secret&room=world-general",
+            404,
         ),
     ):
         denied = asyncio.run(ns["chat_room_key_handler"](
             env, _Request(url=url)))
-        assert denied["status"] == 401
+        assert denied["status"] == status
         assert "passphrase" not in denied["data"]
 
 
@@ -257,7 +270,7 @@ def test_public_world_socket_bypasses_only_the_exact_repository_acl_gate():
         "room.get('key') == PUBLIC_WORLD_GENERAL_ROOM_KEY"
         in gate
     )
-    assert "and (not public_world_general)" in gate
+    assert "if not public_world_general and await _repository_access_context" in gate
     assert "_repository_access_context" in gate
 
 
@@ -298,30 +311,39 @@ def test_passphrase_is_deterministic_and_key_derived_not_raw_data_key():
     assert a != "super-secret-data-key"
     assert "super-secret-data-key" not in a
     expected = hashlib.sha256(
-        b"super-secret-data-key:room-chat-passphrase-v1").hexdigest()
+        b"super-secret-data-key:room-chat-passphrase-v2:"
+        b"mainnode/forkmesh:room:general").hexdigest()
     assert a == expected
 
 
-def test_non_default_repository_passphrase_is_scoped():
+def test_room_keys_are_per_room_and_only_for_relay_rooms():
     ns, env = _harness({"alice": _user()}, data_key="super-secret-data-key")
     token = ns["_account_session_token"](env, "alice")
     headers = {"authorization": "Bearer " + token}
-    public = asyncio.run(ns["chat_room_key_handler"](
+    general = asyncio.run(ns["chat_room_key_handler"](
         env, _Request(headers=headers)))["data"]
-    scoped = asyncio.run(ns["chat_room_key_handler"](
+    space = asyncio.run(ns["chat_room_key_handler"](
+        env,
+        _Request(
+            url=("https://forkmesh.test/api/chat/room-key"
+                 "?owner=mainnode&repo=forkmesh&room=world-space-station"),
+            headers=headers,
+        ),
+    ))["data"]
+    assert general["version"] == 2 and space["version"] == 2
+    assert space["passphrase"] != general["passphrase"]
+    assert space["passphrase"] == hashlib.sha256(
+        b"super-secret-data-key:room-chat-passphrase-v2:"
+        b"mainnode/forkmesh:room:world-space-station").hexdigest()
+    other = asyncio.run(ns["chat_room_key_handler"](
         env,
         _Request(
             url=("https://forkmesh.test/api/chat/room-key"
                  "?owner=alice&repo=secret"),
             headers=headers,
         ),
-    ))["data"]
-    assert public["scope"] == "mainnode/forkmesh"
-    assert scoped["scope"] == "alice/secret"
-    assert scoped["passphrase"] != public["passphrase"]
-    assert scoped["passphrase"] == hashlib.sha256(
-        b"super-secret-data-key:room-chat-passphrase-v2:alice/secret"
-    ).hexdigest()
+    ))
+    assert other == {"status": 404, "data": {"error": "not_found"}}
 
 
 def test_qt_signature_binds_the_requested_repository_scope():

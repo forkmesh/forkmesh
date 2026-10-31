@@ -29,7 +29,7 @@ final class ChatPingsTests: XCTestCase {
     func testARelayMessageFromSomeoneElseLandsInPings() async throws {
         let (hub, h, log, _) = try await hub()
         h.relay.switchConversation("#random")
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "m-live", "senderId": "pat-node", "sender": "Pat", "channel": "#general",
             "text": "lunch?", "ts": .int(Date().epochMillis),
         ])

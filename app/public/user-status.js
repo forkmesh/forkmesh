@@ -369,6 +369,7 @@
       location.href = "/login?next=" + encodeURIComponent(location.pathname);
       return;
     }
+    const opener = document.activeElement;
     injectStyles();
     const existing = mine();
     const emojiInput = el("input", {
@@ -458,7 +459,12 @@
       className: "fm-user-status-dialog", "aria-label": "Set a status",
     }, [form]);
     document.body.append(dialog);
-    dialog.addEventListener("close", () => dialog.remove());
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      window.requestAnimationFrame(() => {
+        if (opener?.isConnected) opener.focus();
+      });
+    });
     cancel.addEventListener("click", () => dialog.close());
     close.addEventListener("click", () => dialog.close());
 

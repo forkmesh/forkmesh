@@ -652,6 +652,131 @@ def test_report_is_privacy_safe_and_markdown_names_conflicts(tmp_path, forge, sy
     assert result["status"]["schema"] == "forkmesh-sync-status-v1"
 
 
+def test_mirror_mode_imports_every_issue_verbatim_in_any_language(tmp_path, forge, sync_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    long_body = ("Отчёт о блокировке. 关于封锁的报告。 گزارش فیلترینگ. " * 2000).strip()
+    forge.add_issue(1, title="ایران: اختلال گسترده در اینترنت", body=long_body, author="روزبه")
+    forge.add_issue(2, title="GFW 封锁 TLS 1.3 ESNI", body="闭合问题\r\n  缩进 ✓", state="closed",
+                    labels=["China", "Censorship-Measurement", "a", "b", "c", "d", "e", "f", "g"])
+    forge.add_comment(1, "שלום עולם 🌍 " * 900, author="alice")
+    forge.add_comment(2, "Türkmenistan: ähli VPN petiklendi", author="bob")
+    run(checkout, forge, sync_key)
+
+    one, two = record(checkout, 1), record(checkout, 2)
+    assert one["title"] == "ایران: اختلال گسترده در اینترنت" and fs.fold(one)["body"] == long_body
+    assert fs.fold(one)["authorName"] == f"{forge.kind}:روزبه"
+    assert [c["body"] for c in fs.fold(one)["comments"].values()] == ["שלום עולם 🌍 " * 900]
+    assert two["status"] == "closed" and fs.fold(two)["body"] == "闭合问题\n  缩进 ✓"
+    assert len(fs.fold(two)["labels"]) == 9
+    assert all(verifies(1, ev) for ev in one["events"])
+    assert forge.writes() == []
+
+
+def test_mirror_mode_never_writes_to_the_provider_and_the_provider_always_wins(
+        tmp_path, forge, sync_key, native_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(3)
+    kept = forge.add_comment(3, "original")
+    gone = forge.add_comment(3, "to be removed")
+    run(checkout, forge, sync_key)
+
+    opener = fs.fold(record(checkout, 3))["openerId"]
+    cid = f"forge-{forge.kind}-comment-{kept['id']}"
+    local_edit(checkout, 3, native_key, "edit", "native-edit", forge.tick(),
+               target=opener, body="local rewrite", attachments=[])
+    local_edit(checkout, 3, native_key, "edit", "native-cedit", forge.tick(),
+               target=f"forge-{forge.kind}-comment-{gone['id']}", body="local", attachments=[])
+    local_edit(checkout, 3, native_key, "comment", "native-c", forge.tick(), body="hi", attachments=[])
+    local_issue(checkout, 40, native_key, ts=forge.tick())
+    forge.edit_issue(3, body="edited upstream", state="closed")
+    forge.comments[kept["id"]]["body"] = "edited comment"
+    forge.comments[kept["id"]]["updated_at"] = forge.tick()
+    del forge.comments[gone["id"]]
+    result = run(checkout, forge, sync_key)
+
+    rec = fs.fold(record(checkout, 3))
+    assert rec["body"] == "edited upstream" and rec["status"] == "closed"
+    assert rec["comments"][cid]["body"] == "edited comment"
+    assert f"forge-{forge.kind}-comment-{gone['id']}" not in rec["comments"]
+    assert "native-c" in rec["comments"]
+    assert result["conflicts"] == [] and forge.writes() == []
+    assert run(checkout, forge, sync_key)["conflicts"] == [] and forge.writes() == []
+
+
+def test_mirror_mode_ignores_markers_that_claim_forkmesh_records(tmp_path, forge, sync_key, native_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    local_issue(checkout, 7, native_key, title="Native title", body="Native body",
+                ts=forge.tick(), comments=["native comment"])
+    forge.add_issue(8, title="hijack", body=fs.with_marker("forged", "mallory", issue=7))
+    forge.add_comment(8, fs.with_marker("forged comment", "mallory", issue=7, event="c-7-0"))
+    run(checkout, forge, sync_key)
+
+    native = fs.fold(record(checkout, 7))
+    assert native["title"] == "Native title" and native["body"] == "Native body"
+    assert native["comments"]["c-7-0"]["body"] == "native comment"
+    mirrored = fs.fold(record(checkout, 8))
+    assert mirrored["body"] == "forged"
+    assert [c["body"] for c in mirrored["comments"].values()] == ["forged comment"]
+    assert forge.writes() == []
+
+
+def test_mirror_mode_refuses_provider_writes_even_if_called():
+    guard = fs.ReadOnlyProvider(object())
+    for name in fs.PROVIDER_WRITES:
+        with pytest.raises(fs.SyncError):
+            getattr(guard, name)
+
+
+def test_cli_connect_mirror_switches_the_ledger_mode(tmp_path):
+    assert fs.main(["--checkout", str(tmp_path), "connect", "--provider", "github",
+                    "--repository", REPO, "--mirror"]) == 0
+    assert fs.load_ledger(tmp_path)["mode"] == "mirror"
+    assert fs.main(["--checkout", str(tmp_path), "connect", "--provider", "github",
+                    "--repository", REPO]) == 0
+    assert fs.load_ledger(tmp_path)["mode"] == "mirror"
+    assert fs.main(["--checkout", str(tmp_path), "connect", "--provider", "github",
+                    "--repository", REPO, "--two-way"]) == 0
+    assert fs.load_ledger(tmp_path)["mode"] == "sync"
+
+
+def test_ledger_can_live_outside_the_checkout_and_the_repo_gets_only_the_source(
+        tmp_path, forge, sync_key, monkeypatch):
+    outside = tmp_path / "state" / "forge-sync.json"
+    monkeypatch.setenv(fs.LEDGER_ENV, str(outside))
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(7)
+    forge.add_issue(9)
+    run(checkout, forge, sync_key)
+
+    assert outside.is_file() and not (checkout / fs.LEDGER_REL).exists()
+    source = json.loads((checkout / fs.SOURCE_REL).read_text(encoding="utf-8"))
+    assert source["schema"] == fs.SOURCE_SCHEMA and source["provider"] == forge.kind
+    assert source["repository"] == REPO and source["renumbered"] == {}
+    assert source["issueUrl"].endswith(f"{REPO}/issues/{{number}}")
+    before = snapshot(checkout)
+    run(checkout, forge, sync_key)
+    assert snapshot(checkout) == before
+
+
+def test_source_lists_only_issues_whose_number_differs():
+    ledger = {"provider": "github", "repository": REPO, "issues": {
+        "5": {"remoteNumber": 5}, "12": {"remoteNumber": 3}, "40": {"origin": "forkmesh"}}}
+    record = fs.source_record(ledger)
+    assert record["renumbered"] == {"12": 3}
+    assert record["issueUrl"] == f"https://github.com/{REPO}/issues/{{number}}"
+    assert fs.source_record({"provider": "gitea", "repository": REPO, "issues": {}}) is None
+
+
+def test_cli_ledger_flag_keeps_the_ledger_out_of_the_checkout(tmp_path, monkeypatch):
+    monkeypatch.delenv(fs.LEDGER_ENV, raising=False)
+    outside = tmp_path / "srv" / "ledger.json"
+    checkout = tmp_path / "repo"
+    checkout.mkdir()
+    assert fs.main(["--checkout", str(checkout), "--ledger", str(outside), "connect",
+                    "--provider", "github", "--repository", REPO, "--mirror"]) == 0
+    assert outside.is_file() and not (checkout / fs.LEDGER_REL).exists()
+
+
 def test_cli_rejects_unknown_resolution_and_unconnected_checkout(tmp_path, capsys):
     assert fs.main(["--checkout", str(tmp_path), "status"]) == 2
     assert "connect" in capsys.readouterr().err
@@ -660,6 +785,180 @@ def test_cli_rejects_unknown_resolution_and_unconnected_checkout(tmp_path, capsy
 def test_documentation_covers_the_engine_and_is_indexed():
     doc = (ROOT / "www/docs/forge-sync.md").read_text(encoding="utf-8")
     for phrase in ("forge-sync.json", "sourceOfTruth", "resolve", "pause", "Gitea", "SLO",
-                   "rate limit", "identities"):
+                   "rate limit", "identities", "--mirror", "--ledger", "forge-source.json"):
         assert phrase in doc, phrase
     assert "(forge-sync.md)" in (ROOT / "www/docs/README.md").read_text(encoding="utf-8")
+
+
+# ---- avatars ----------------------------------------------------------------------
+
+
+def _png(size=8):
+    try:
+        from PIL import Image
+    except ImportError:
+        return fs.PNG_MAGIC + b"\x00" * 32
+    out = io.BytesIO()
+    Image.new("RGB", (size, size), (200, 30, 30)).save(out, "PNG")
+    return out.getvalue()
+
+
+class AvatarHost:
+    def __init__(self, answer=None):
+        self.calls = []
+        self.answer = _png() if answer is None else answer
+
+    def __call__(self, url, hosts):
+        self.calls.append((url, hosts))
+        return self.answer
+
+
+def test_mirror_pass_imports_author_avatars_once_and_writes_a_roster(tmp_path, sync_key):
+    forge = FakeForge("github")
+    checkout = connected(tmp_path, forge, mode="mirror")
+    issue = forge.add_issue(5, author="Alice")
+    issue["user"]["avatar_url"] = "https://avatars.githubusercontent.com/u/11?v=4"
+    comment = forge.add_comment(5, "same here", author="bob")
+    comment["user"]["avatar_url"] = "https://avatars.githubusercontent.com/u/22?v=4"
+    host = AvatarHost()
+    clock = Clock(forge)
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=clock, avatars=host).run()
+    assert sorted(url for url, _ in host.calls) == [
+        "https://avatars.githubusercontent.com/u/11?v=4&s=96",
+        "https://avatars.githubusercontent.com/u/22?v=4&s=96"]
+    assert all(hosts == ("avatars.githubusercontent.com",) for _, hosts in host.calls)
+    folder = checkout / ".forkmesh" / "contributors"
+    assert (folder / "github-alice.png").read_bytes().startswith(fs.PNG_MAGIC)
+    roster = json.loads((folder / "contributors.json").read_text())
+    assert roster["count"] == 2
+    assert roster["contributors"][0] == {
+        "slug": "github-alice", "name": "Alice", "github": "Alice",
+        "profile": "https://github.com/Alice",
+        "avatar": ".forkmesh/contributors/github-alice.png"}
+    assert forge.writes() == []
+    settled = {path: data for path, data in snapshot(checkout).items()
+               if "contributors" in path}
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=clock, avatars=host).run()
+    assert len(host.calls) == 2
+    assert {path: data for path, data in snapshot(checkout).items()
+            if "contributors" in path} == settled
+    forge.now += fs.AVATAR_REFRESH_MS
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=clock, avatars=host).run()
+    assert len(host.calls) == 4
+
+
+def test_a_failed_avatar_keeps_the_initial_and_waits_a_day(tmp_path, sync_key):
+    forge = FakeForge("github")
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(1, author="carol")
+    host = AvatarHost(answer=b"<html>not a picture</html>")
+    clock = Clock(forge)
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=clock, avatars=host).run()
+    assert host.calls[0][0] == "https://avatars.githubusercontent.com/carol?s=96"
+    folder = checkout / ".forkmesh" / "contributors"
+    assert not (folder / "github-carol.png").exists()
+    row = json.loads((folder / "contributors.json").read_text())["contributors"][0]
+    assert "avatar" not in row and row["github"] == "carol"
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=clock, avatars=host).run()
+    assert len(host.calls) == 1
+    forge.now += fs.AVATAR_RETRY_MS
+    host.answer = _png()
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=clock, avatars=host).run()
+    assert (folder / "github-carol.png").is_file()
+
+
+def test_without_the_avatar_option_a_pass_fetches_and_writes_none(tmp_path, forge, sync_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(1)
+    run(checkout, forge, sync_key)
+    assert not (checkout / ".forkmesh" / "contributors").exists()
+
+
+def test_a_hand_written_roster_keeps_its_own_rows(tmp_path, sync_key):
+    forge = FakeForge("github")
+    checkout = connected(tmp_path, forge, mode="mirror")
+    folder = checkout / ".forkmesh" / "contributors"
+    folder.mkdir(parents=True)
+    (folder / "contributors.json").write_text(json.dumps({"count": 40, "contributors": [
+        {"slug": "maintainer", "name": "Maintainer", "commits": 9}]}))
+    forge.add_issue(1, author="dave")
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=Clock(forge),
+              avatars=AvatarHost()).run()
+    roster = json.loads((folder / "contributors.json").read_text())
+    assert roster["count"] == 40
+    assert [row["slug"] for row in roster["contributors"]] == ["maintainer", "github-dave"]
+    (folder / "contributors.json").write_text("{broken")
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=Clock(forge),
+              avatars=AvatarHost()).run()
+    assert (folder / "contributors.json").read_text() == "{broken"
+
+
+def test_avatar_downloads_only_reach_the_provider_picture_host(monkeypatch):
+    hosts = fs.avatar_hosts({"provider": "github"})
+    assert hosts == ("avatars.githubusercontent.com",)
+    assert fs.avatar_hosts({"provider": "gitea", "baseUrl": "https://codeberg.org"}) == (
+        "codeberg.org",)
+    assert fs.avatar_hosts({"provider": "gitea", "baseUrl": "http://x.example"}) == ()
+    for url in ("http://avatars.githubusercontent.com/u/1", "https://evil.example/u/1",
+                "https://user@avatars.githubusercontent.com/u/1",
+                "https://avatars.githubusercontent.com:8443/u/1"):
+        assert not fs.avatar_url_allowed(url, hosts)
+        assert fs.fetch_avatar(url, hosts) is None
+    assert fs.avatar_url_allowed("https://avatars.githubusercontent.com/u/1?v=4", hosts)
+
+
+def test_pictures_are_checked_and_made_small(monkeypatch):
+    assert fs.normalize_avatar(b"GIF89a....") is None
+    assert fs.normalize_avatar(fs.PNG_MAGIC + b"\x00" * fs.AVATAR_MAX_BYTES) is None
+    assert fs.normalize_avatar(None) is None
+    picture = fs.normalize_avatar(_png(300))
+    assert picture.startswith(fs.PNG_MAGIC)
+    try:
+        from PIL import Image
+    except ImportError:
+        pass
+    else:
+        with Image.open(io.BytesIO(picture)) as image:
+            assert image.size == (fs.AVATAR_PIXELS, fs.AVATAR_PIXELS)
+        assert fs.normalize_avatar(fs.PNG_MAGIC + b"garbage") is None
+    monkeypatch.setitem(sys.modules, "PIL", None)
+    raw = fs.JPEG_MAGIC + b"\x00" * 64
+    assert fs.normalize_avatar(raw) == raw
+
+
+# ---- attachments ------------------------------------------------------------------
+
+
+def test_a_mirror_pass_hands_every_record_to_the_attachment_mirror(tmp_path, sync_key):
+    forge = FakeForge("github")
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(3, body="![shot](https://github.com/user-attachments/assets/"
+                            "46d2bdf0-a7d0-4ae8-bc7b-323f7e73b588)")
+    seen = []
+
+    def mirror(path, records, now):
+        seen.append((path, sorted(records), now))
+        return {"stored": 1}
+
+    result = fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=Clock(forge),
+                       attachments=mirror).run()
+    assert seen == [(checkout, [3], forge.now)]
+    assert result["attachments"] == {"stored": 1}
+    assert forge.writes() == []
+
+
+def test_the_attachment_mirror_is_github_only_and_can_be_switched_off(tmp_path, sync_key, monkeypatch):
+    forge = FakeForge("gitea")
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(1)
+    calls = []
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=Clock(forge),
+              attachments=lambda *args: calls.append(args)).run()
+    assert calls == []
+    parser_args = lambda **kw: type("A", (), dict(  # noqa: E731
+        {"attachments": True, "attachment_files": 5, "attachment_megabytes": 1}, **kw))()
+    assert fs.attachment_mirror(parser_args(attachments=False)) is None
+    monkeypatch.setenv("FORKMESH_FORGE_ATTACHMENTS", "off")
+    assert fs.attachment_mirror(parser_args()) is None
+    monkeypatch.delenv("FORKMESH_FORGE_ATTACHMENTS")
+    assert callable(fs.attachment_mirror(parser_args()))

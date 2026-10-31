@@ -118,7 +118,8 @@ object AgentsFeature {
         val localControl: LocalControlService? by localControlLazy
 
         private val hubLazy = lazy {
-            DesktopControlHub(localControl, relayOpener(epoch), accountDesktopsLoader = accountDesktopsLoader(epoch)).also { hub ->
+            val prefs = Services.get<PrefStore>()?.let { base -> Services.get<ProjectScope>()?.prefs(base) ?: base }
+            DesktopControlHub(localControl, relayOpener(epoch), accountDesktopsLoader = accountDesktopsLoader(epoch), prefs = prefs).also { hub ->
                 ProjectLifecycle.scope.launch {
                     AppLifecycle.foreground.collect { if (current(epoch)) hub.keepWarm = it }
                 }
@@ -128,6 +129,8 @@ object AgentsFeature {
 
         private val controlLazy = lazy { AgentControlCenter(hub, queue) }
         val control: AgentControlCenter by controlLazy
+
+        val tokens: com.forkmesh.nativeapp.control.DesktopTokenFeed by lazy { com.forkmesh.nativeapp.control.DesktopTokenFeed(hub) }
 
         fun dispose() {
             if (controlLazy.isInitialized()) runCatching { control.dispose() }
@@ -168,6 +171,8 @@ object AgentsFeature {
     val hub: DesktopControlHub get() = runtime().hub
 
     val control: AgentControlCenter get() = runtime().control
+
+    val tokens: com.forkmesh.nativeapp.control.DesktopTokenFeed get() = runtime().tokens
 
     val sentPhotos: AgentSentPhotos get() = AgentSentPhotos.shared
 

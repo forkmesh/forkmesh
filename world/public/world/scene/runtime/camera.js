@@ -227,6 +227,7 @@ export function functions({
       return;
     }
     if (ctx.cameraMode === "first-person") {
+      if (ctx.coasterRide && fns.placeCoasterEye(ctx.camera)) return;
       const firstPersonAvatar = officeAvatar || ctx.player;
       firstPersonAvatar.getWorldPosition(ctx.cameraEye);
       ctx.cameraEye.y += FIRST_PERSON_EYE_HEIGHT;

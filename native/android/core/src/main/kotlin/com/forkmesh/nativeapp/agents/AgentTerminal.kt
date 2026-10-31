@@ -582,9 +582,9 @@ class TerminalScreen(val rows: Int, val cols: Int) {
 
 enum class TerminalKey { Enter, Backspace, Tab, Escape, Up, Down, Right, Left, Home, End, PageUp, PageDown, Delete, CtrlC }
 
-fun terminalKeyBytes(key: TerminalKey, appCursorKeys: Boolean = false): String {
+fun terminalKeyBytes(key: TerminalKey, appCursorKeys: Boolean = false, control: Boolean = false): String {
     val esc = "\u001b"
-    fun cursor(letter: String) = esc + (if (appCursorKeys) "O" else "[") + letter
+    fun cursor(letter: String) = if (control) "$esc[1;5$letter" else esc + (if (appCursorKeys) "O" else "[") + letter
     return when (key) {
         TerminalKey.Enter -> "\r"
         TerminalKey.Backspace -> "\u007f"
@@ -601,6 +601,13 @@ fun terminalKeyBytes(key: TerminalKey, appCursorKeys: Boolean = false): String {
         TerminalKey.Delete -> "$esc[3~"
         TerminalKey.CtrlC -> "\u0003"
     }
+}
+
+fun terminalChordTyped(old: String, new: String): Char? {
+    for (index in new.indices) {
+        if (index >= old.length || old[index] != new[index]) return new[index]
+    }
+    return null
 }
 
 fun terminalControlBytes(character: String): String {

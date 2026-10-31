@@ -48,6 +48,7 @@
         <div class="grid gap-2">
           <div class="flex flex-wrap items-center gap-2">
             <button type="button" data-repo-issue-attach-image class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="paperclip" class="h-3.5 w-3.5"></i>Attach images</button>
+            ${markdownVideoButtonHtml()}
             <span data-repo-issue-attach-hint class="text-[11px] text-muted-foreground"></span>
           </div>
           <input type="file" data-repo-issue-file-input multiple accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />
@@ -296,6 +297,7 @@
   function webIssueSubmitErrorText(error) {
     const code = String(error?.message || "");
     const status = Number(error?.status) || 0;
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "inbox_full") return "Issue delivery is temporarily full. Try again later.";
     if (code === "author_quota") return "You've reached the submission limit for this repository.";
     if (code === "issue_too_large" || code === "attachment_too_large"
@@ -429,6 +431,15 @@
       const result = await submitWebIssue(
         repo, title, body, assignAgent, agentModel, agentProvider,
         { milestone, project }, updateSubmissionProgress);
+      if (result?.pending === "review") {
+        if (titleInput) titleInput.value = "";
+        if (bodyInput) bodyInput.value = "";
+        images.length = 0;
+        form.querySelector("[data-repo-issue-attachments]")?.replaceChildren();
+        setSubmitBusy(submit, false);
+        setHint(moderationPendingMessage(result), "good");
+        return;
+      }
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) {
         throw new Error("number_unavailable");
@@ -659,6 +670,10 @@
             priority: it.priority,
             assignees: it.assignees,
           });
+        if (result?.pending === "review") {
+          ok++;
+          continue;
+        }
         const number = Number(result.number || 0);
         if (!Number.isInteger(number) || number <= 0) {
           throw new Error("number_unavailable");
@@ -781,6 +796,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex min-w-0 flex-col gap-1">
             ${composeIdentityHtml(state.session, "Filing")}
+            <span>${markdownVideoButtonHtml()}</span>
             <span data-repo-pull-hint class="text-[11px] text-muted-foreground">${parent ? `Submitting from your fork to ${escapeHtml(targetLabel)}.` : "Eligible online mirrors commit accepted pull requests directly."}</span>
           </div>
           <button type="submit" data-repo-pull-submit title="Create pull request (Ctrl+Enter / ⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter" class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Create pull request</button>
@@ -1122,6 +1138,9 @@
       }
       navigateHistory(detailUrl);
       await loadRepoRecordDetail(targetRepo, "pulls", number);
+      if (result.refusedBy) {
+        showErrorNotice(`${repoDisplayName(result.refusedBy)} is a read-only mirror here, so it cannot take pull requests. #${number} was opened on your fork instead. To send it upstream, open the pull request where ${repoDisplayName(result.refusedBy)} is hosted.`);
+      }
     } catch (error) {
       setSubmitBusy(submit, false);
       console.error("[forkmesh] pull request submission failed", error);
@@ -1141,17 +1160,29 @@
     // The catalog already knows when the whole mirror group is offline. Paint
     // that terminal state immediately, while still trying the live route in
     // case a host recovered after the catalog snapshot was built.
-    container.innerHTML = repoIsLive(repo)
-      ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading commits from the live mirror...")}</div>`
-      : REPO_COMMITS_UNAVAILABLE_HTML;
+    const historyPath = String(state.repoHistoryPath || "");
+    state.repoHistoryPath = "";
+    const viewKey = repoViewKey(repo, `commits/${historyPath}`);
+    const staleMark = repoStaleReadMark();
+    const reconnect = {
+      key: viewKey,
+      container,
+      retry: () => {
+        state.repoHistoryPath = historyPath;
+        return loadRepoCommits(repo);
+      },
+    };
+    if (!repoReconnectActive(viewKey)) {
+      container.innerHTML = repoIsLive(repo)
+        ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading commits from the live mirror...")}</div>`
+        : REPO_COMMITS_UNAVAILABLE_HTML;
+    }
     const controller = new AbortController();
     const timer = window.setTimeout(
       () => controller.abort(),
       REPO_COMMITS_FETCH_TIMEOUT_MS,
     );
     try {
-      const historyPath = String(state.repoHistoryPath || "");
-      state.repoHistoryPath = "";
       const data = await fetchRepoJson(
         repoLiveUrl(repo, "history", historyPath ? { path: historyPath } : {}),
         { signal: controller.signal },
@@ -1161,6 +1192,7 @@
         container.innerHTML = historyPath
           ? `<div class="px-4 py-3 text-sm text-muted-foreground">No commits touch ${escapeHtml(historyPath)} on this branch.</div>`
           : '<div class="px-4 py-3 text-sm text-muted-foreground">No commits are available from this live mirror yet.</div>';
+        finishRepoRead(staleMark, reconnect);
         return;
       }
       const historyScope = historyPath
@@ -1173,7 +1205,7 @@
         <div data-dashboard-commit-row class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 border-t border-border hover:bg-secondary/30 transition-colors">
           <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" class="min-w-0 px-4 py-3 text-left">
             <span class="block truncate text-sm font-medium text-foreground">${escapeHtml(commit.subject || "Commit")}</span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${issuePersonNameHtml(commit.author || "unknown", "", { inLink: true, git: true })} committed ${escapeHtml(commit.date || "")}</span>
           </button>
           <div class="flex items-center justify-end gap-2 px-4 py-3">
             <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>
@@ -1184,8 +1216,9 @@
           </div>
         </div>`;
       }).join("");
-    } catch (_) {
-      container.innerHTML = REPO_COMMITS_UNAVAILABLE_HTML;
+      finishRepoRead(staleMark, reconnect);
+    } catch (error) {
+      if (!handleRepoReadFailure(error, reconnect)) container.innerHTML = REPO_COMMITS_UNAVAILABLE_HTML;
     } finally {
       window.clearTimeout(timer);
       window.lucide?.createIcons();
@@ -1224,7 +1257,7 @@
             <span class="hidden font-mono text-xs text-muted-foreground sm:inline">${escapeHtml(hash.slice(0, 12))}</span>
           </div>
           <p class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            <span><span class="font-semibold text-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")}</span> committed ${escapeHtml(commit.date || "")}</span>
+            <span>${issuePersonNameHtml(commit.author || "unknown", "font-semibold text-foreground", { git: true })} committed ${escapeHtml(commit.date || "")}</span>
             <span class="font-mono">${parents.length ? `parent ${parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ")}` : "root commit"}</span>
             <span class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</span>
           </p>
@@ -1725,6 +1758,43 @@
     container.innerHTML = online.length
       ? online.map((mirror) => renderMirrorRow(mirror, servedBy, refMirror)).join("")
       : '<div class="px-2 py-1 text-xs text-muted-foreground">No nodes online right now.</div>';
+    renderRepoExternalMirrors(state.selectedRepo);
+  }
+
+  function repoExternalMirrorPath(url) {
+    try {
+      return new URL(url).pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function renderRepoExternalMirrorRow(link) {
+    const url = String(link?.url || "");
+    if (!/^https:\/\/[^\s"'<>]+$/i.test(url)) return "";
+    const label = String(link.label || "");
+    const path = repoExternalMirrorPath(url) || url.replace(/^https:\/\//i, "");
+    const mark = String(REPO_FORGE_MIRROR_MARKS[link.provider] || "").replace('class="h-5 w-5"', 'class="h-3.5 w-3.5"')
+      || '<i data-lucide="git-branch" class="h-3.5 w-3.5"></i>';
+    const upstream = link.role === "upstream";
+    const title = `${upstream ? "Upstream" : "Mirror"} on ${label || "the web"}: ${url}`;
+    return `
+        <a data-repo-external-mirror="${escapeHtml(String(link.provider || ""))}" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}" class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-secondary/60">
+          <span class="flex min-w-0 flex-1 items-center gap-1.5">
+            <span class="inline-flex shrink-0 text-muted-foreground">${mark}</span>
+            <span class="block min-w-0 truncate font-mono text-xs font-medium text-foreground">${escapeHtml(path)}</span>
+            ${upstream ? '<span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">upstream</span>' : ""}
+          </span>
+          <span class="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-muted-foreground">${escapeHtml(label)}</span>
+          <i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+        </a>`;
+  }
+
+  function renderRepoExternalMirrors(repo) {
+    const links = Array.isArray(repo?.externalMirrors) ? repo.externalMirrors : [];
+    const rows = links.map(renderRepoExternalMirrorRow).join("");
+    $$("[data-repo-external-mirror-list]").forEach((list) => { list.innerHTML = rows; });
+    $$("[data-repo-external-mirrors]").forEach((wrap) => { wrap.hidden = !rows; });
   }
 
   // A repository that has been around collects far more retired desktops than
@@ -2001,7 +2071,7 @@
           availability.classList.add("text-primary");
         }
       }
-      updateRepoLiveCounts(repo, { mirrors: mirrorCount });
+      updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });
       setRepoTabCount("mirrors", mirrorCount);
       state.repoMirrors = mirrors;
       // Where the repository has reached, in the forkmesh-sync-status-v1
@@ -2251,14 +2321,14 @@
           <p class="text-[11px] leading-5 text-muted-foreground">Accounts that can read this private repository and take part in its issues, pull requests and discussions.</p>
           <ul data-repo-collaborators class="grid gap-1 text-xs"><li class="text-muted-foreground">Loading…</li></ul>
           <form data-repo-collaborator-form class="flex flex-wrap items-center gap-2">
-            <input data-repo-collaborator-name required maxlength="63" autocomplete="off" spellcheck="false" placeholder="username" aria-label="Collaborator username" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-accent" />
+            <input data-repo-collaborator-name data-username-autocomplete="single" required maxlength="63" autocomplete="off" spellcheck="false" placeholder="Type a username" aria-label="Collaborator username" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-accent" />
             <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="user-plus" class="h-3.5 w-3.5"></i>Add</button>
           </form>
           <span data-repo-collaborator-status role="status" class="text-[11px] text-muted-foreground"></span>
         </div>` : "";
     if (!visibility && !collaborators) return "";
     return `
-      <div data-repo-settings-access class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+      <div data-repo-settings-access id="settings-access" data-repo-settings-section="Access" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
         <div class="border-b border-border bg-secondary/50 px-4 py-3">
           <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield" class="h-3.5 w-3.5 text-muted-foreground"></i>Access</span>
         </div>
@@ -2290,6 +2360,8 @@
   function renderRepoCollaboratorList(names) {
     const list = $("[data-repo-collaborators]");
     if (!list) return;
+    const field = $("[data-repo-collaborator-name]");
+    if (field) field.dataset.usernameExclude = names.join(",");
     list.innerHTML = names.length
       ? names.map((name) => `<li class="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5"><span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}<span class="truncate font-medium text-foreground">${escapeHtml(name)}</span></span><button type="button" data-repo-collaborator-remove="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-destructive hover:bg-secondary"><i data-lucide="x" class="h-3 w-3"></i>Remove</button></li>`).join("")
       : '<li class="text-muted-foreground">Nobody else can read this repository yet.</li>';
@@ -2554,7 +2626,7 @@
       await releaseEditRequest(repo, { op: "asset-delete", tag, name, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -2564,7 +2636,7 @@
       await releaseEditRequest(repo, { op: "delete", tag, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -2581,7 +2653,12 @@
         window.lucide?.createIcons();
       }
     });
-    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading releases from the live mirror...")}</div>`;
+    const viewKey = repoViewKey(repo, "releases");
+    const staleMark = repoStaleReadMark();
+    const reconnect = { key: viewKey, container, retry: () => loadRepoReleases(repo) };
+    if (!repoReconnectActive(viewKey)) {
+      container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading releases from the live mirror...")}</div>`;
+    }
     const empty = '<div class="px-4 py-3 text-sm text-muted-foreground">No releases have been published to this mirror yet.</div>';
     try {
       // Release manifests live in the git tree at .forkmesh/releases/<channel>/release.json
@@ -2630,8 +2707,11 @@
       state.repoReleaseList = releases;
       state.repoReleaseDownloads = downloads;
       container.innerHTML = releases.map((release) => renderRepoRelease(repo, release, downloads)).join("");
-    } catch (_) {
-      container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Releases are unavailable until a reachable mirror host serves the .forkmesh/releases/ folder.</div>';
+      finishRepoRead(staleMark, reconnect);
+    } catch (error) {
+      if (!handleRepoReadFailure(error, reconnect)) {
+        container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Releases could not be loaded from the repository host.</div>';
+      }
     } finally {
       window.lucide?.createIcons();
     }
@@ -2716,65 +2796,6 @@
     return `<div title="${formatCount(total)} commits in the last 32 weeks" aria-label="${formatCount(total)} commits in the last 32 weeks" class="flex h-8 min-w-[12rem] items-end gap-px">${bars}</div>`;
   }
 
-  // Git identities ForkMesh itself writes carry the ForkMesh handle as the git
-  // author NAME: the desktop commits as `user.name = <account>` and the mirror
-  // intake as `user.name = <node>`, so a contributor row resolves to a profile
-  // exactly when its author name is an account that exists. An identity some
-  // other git config produced ("ForkMesh Deploy", a person's full name, an
-  // imported GitHub author) has no account behind it and stays inert text
-  // rather than guessing at a profile that belongs to someone else (#636).
-  const CONTRIBUTOR_HANDLE_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-  // handle -> resolved profile name ("" when the lookup answered "no profile").
-  const contributorProfileNames = new Map();
-
-  async function resolveContributorProfile(author) {
-    const handle = String(author || "").trim().toLowerCase();
-    // Most author names never reach the network: only a name that is already
-    // shaped like a handle can name an account.
-    if (!CONTRIBUTOR_HANDLE_RE.test(handle)) return "";
-    if (contributorProfileNames.has(handle)) return contributorProfileNames.get(handle);
-    let account;
-    try {
-      account = await fetchJson(`/api/accounts/${encodeURIComponent(handle)}`);
-    } catch (_) {
-      return ""; // a failed lookup is not an answer, so it is not remembered
-    }
-    // `exists` alone still covers a name that is merely reserved and a
-    // quarantined account (which answers without a kind), and a private
-    // profile has no public page to send a reader to.
-    const resolved = account?.exists && account.available === false &&
-      !account.profilePrivate &&
-      (account.kind === "user" || account.kind === "node")
-      ? String(account.name || handle).trim().toLowerCase()
-      : "";
-    contributorProfileNames.set(handle, resolved);
-    return resolved;
-  }
-
-  // Contributor rows render as plain text and are upgraded to profile links
-  // afterwards, so the tab never waits on the lookups. Keep profile discovery
-  // bounded even though the table itself shows every contributor returned by
-  // the mirror; names beyond this point remain accurate, inert git identities.
-  async function linkRepoInsightsContributors(container) {
-    const rows = container
-      ? [...container.querySelectorAll("[data-repo-insights-contributor]")]
-          .slice(0, 50)
-      : [];
-    for (const row of rows) {
-      const author = row.getAttribute("data-repo-insights-contributor") || "";
-      const handle = await resolveContributorProfile(author);
-      // The panel is replaced wholesale on every repo/branch switch, so a
-      // detached row belongs to a view the reader already left.
-      if (!handle || !row.isConnected) continue;
-      const link = document.createElement("a");
-      link.className = "dashboard-accent-link hover:underline";
-      link.href = publicProfileUrl(handle);
-      link.title = `${platformName()} profile @${handle}`;
-      link.textContent = author;
-      row.replaceChildren(link);
-    }
-  }
-
   function repoTrafficDayLabel(day) {
     const date = new Date(`${day}T00:00:00Z`);
     if (Number.isNaN(date.getTime())) return String(day || "");
@@ -2851,7 +2872,7 @@
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate">${issuePersonNameHtml(item.author, "font-medium text-foreground", { git: true })}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>
@@ -2991,11 +3012,14 @@
     }
   }
 
-  function updateRepoLiveCounts(repo, counts) {
+  function updateRepoLiveCounts(repo, counts, options = {}) {
     if (!counts || typeof counts !== "object") return;
+    const mirrorsListed = options.mirrorList !== true
+      && repoMirrorLoadedKey === repoKey(repo).toLowerCase();
     (["commits", "issues", "pulls", "discussions", "mirrors"]).forEach((key) => {
       const value = Number(counts[key]);
       if (!Number.isFinite(value) || value < 0) return;
+      if (key === "mirrors" && mirrorsListed) return;
       repo[key] = value;
       $$(`[data-dashboard-repo-count="${key}"]`).forEach((badge) => {
         badge.textContent = formatCount(value);
@@ -4808,13 +4832,18 @@
     const cached = !refresh && state.repoBranches[key]?.loaded;
     if (!cached) {
       setRepoBranchesStatus("");
-      container.innerHTML = repoIsLive(repo)
-        ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading branches from the live mirror...")}</div>`
-        : REPO_BRANCHES_UNAVAILABLE_HTML;
+      const viewKey = repoViewKey(repo, "branches");
+      if (!repoReconnectActive(viewKey)) {
+        container.innerHTML = repoIsLive(repo)
+          ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading branches from the live mirror...")}</div>`
+          : REPO_BRANCHES_UNAVAILABLE_HTML;
+      }
       try {
         await fetchRepoBranches(repo, { refresh });
-      } catch (_) {
-        container.innerHTML = REPO_BRANCHES_UNAVAILABLE_HTML;
+        settleRepoReconnect(viewKey);
+      } catch (error) {
+        const reconnect = { key: viewKey, container, retry: () => loadRepoBranches(repo, { refresh }) };
+        if (!handleRepoReadFailure(error, reconnect)) container.innerHTML = REPO_BRANCHES_UNAVAILABLE_HTML;
         window.lucide?.createIcons();
         return;
       }
@@ -4854,17 +4883,40 @@
       </label>`;
   }
 
-  function issueContributionTipStorageKey(repo) {
-    return `forkmesh.issue-contribution-tip.v1:${repoKey(repo)}`;
+  function contributionTipKeys(kind, repo) {
+    const name = String(repo?.name || "").trim();
+    const owners = [repo?.owner, ...repoLogicalOwners(repo).map((value) => value.owner)]
+      .map((owner) => String(owner || "").trim())
+      .filter(Boolean);
+    const known = new Set(owners.map((owner) => owner.toLowerCase()));
+    (state.repositories || []).forEach((row) => {
+      if (String(row?.name || "").trim().toLowerCase() !== name.toLowerCase()) return;
+      if (!repoLogicalOwners(row).some((value) => known.has(value.owner.toLowerCase()))) return;
+      const owner = String(row?.owner || "").trim();
+      if (owner) owners.push(owner);
+    });
+    return [...new Set(owners)].map((owner) => `forkmesh.${kind}-contribution-tip.v1:${owner}/${name}`);
+  }
+
+  function contributionTipDismissed(kind, repo) {
+    try {
+      return contributionTipKeys(kind, repo).some((key) => localStorage.getItem(key) === "1");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function dismissContributionTip(kind, repo) {
+    try {
+      contributionTipKeys(kind, repo).forEach((key) => localStorage.setItem(key, "1"));
+    } catch (_) {}
   }
 
   function issueContributionTipDismissed(repo) {
     try {
-      return localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1"
-        || localStorage.getItem(issueContributionTipStorageKey(repo)) === "1";
-    } catch (_) {
-      return false;
-    }
+      if (localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1") return true;
+    } catch (_) {}
+    return contributionTipDismissed("issue", repo);
   }
 
   function renderIssueContributionTip(repo) {
@@ -4877,13 +4929,15 @@
           <span class="fm-flash-title">Want to contribute to ${escapeHtml(repository)}?</span>
           <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
-        <details class="fm-flash-actions relative text-left">
-          <summary class="fm-btn fm-btn-sm inline-flex list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
-          <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
-            <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
-            <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
-          </div>
-        </details>
+        <div class="fm-flash-actions relative inline-flex text-left">
+          <button type="button" data-repo-issue-contribution-dismiss="repository" title="Dismiss for this repository" class="fm-btn fm-btn-sm" style="border-top-right-radius:0;border-bottom-right-radius:0">Dismiss</button>
+          <details class="relative">
+            <summary aria-label="More ways to dismiss" class="fm-btn fm-btn-sm inline-flex list-none" style="margin-left:-1px;padding:0 6px;border-top-left-radius:0;border-bottom-left-radius:0"><i data-lucide="chevron-down"></i></summary>
+            <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
+              <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
+            </div>
+          </details>
+        </div>
       </aside>`;
   }
 
@@ -4990,9 +5044,5 @@
   }
 
   function pullContributionTipDismissed(repo) {
-    try {
-      return localStorage.getItem(`forkmesh.pull-contribution-tip.v1:${repoKey(repo)}`) === "1";
-    } catch (_) {
-      return false;
-    }
+    return contributionTipDismissed("pull", repo);
   }

@@ -42,8 +42,6 @@ QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {
 QTextEdit, QPlainTextEdit, QTextBrowser {
     selection-background-color: @selection; selection-color: @fg;
 }
-QCheckBox#promptVibeCheck::indicator:checked,
-QCheckBox#promptWorktreeCheck::indicator:checked,
 QCheckBox#quickAddAgentCheck::indicator:checked,
 QCheckBox#quickAddCreateIssueCheck::indicator:checked,
 QCheckBox#slashToggle::indicator:checked { image: none; }
@@ -111,13 +109,13 @@ QPushButton#repoAction {
 QPushButton#repoAction:hover { background-color: @surfaceActive; }
 
 QScrollBar::handle:vertical {
-    background: @borderStrong; border-radius: 3px; min-height: 30px; margin: 2px;
+    background: @surfaceActive; border-radius: 3px; min-height: 30px; margin: 2px;
 }
-QScrollBar::handle:vertical:hover { background: @fgSubtle; }
+QScrollBar::handle:vertical:hover { background: @borderStrong; }
 QScrollBar::handle:horizontal {
-    background: @borderStrong; border-radius: 3px; min-width: 30px; margin: 2px;
+    background: @surfaceActive; border-radius: 3px; min-width: 30px; margin: 2px;
 }
-QScrollBar::handle:horizontal:hover { background: @fgSubtle; }
+QScrollBar::handle:horizontal:hover { background: @borderStrong; }
 
 QSplitter::handle:horizontal {
     width: 9px;
@@ -166,10 +164,10 @@ QMenu::item:checked { color: @fg; }
 QMenu::right-arrow { image: url(@chevronRightIcon); width: 12px; height: 12px; right: 8px; }
 QMenu::separator { height: 1px; background: @border; margin: 5px 4px; }
 
-QHeaderView { background-color: transparent; }
+QHeaderView { background-color: transparent; border: none; }
 QHeaderView::section {
-    background-color: @bg; color: @fgMuted; border: none;
-    border-bottom: 1px solid @border; padding: 7px 10px;
+    background-color: transparent; color: @fgMuted; border: none;
+    border-bottom: 1px solid @border; padding: 8px 12px;
     font-size: 12px; font-weight: 500;
 }
 QHeaderView::section:vertical {
@@ -182,10 +180,11 @@ QTableCornerButton::section {
 }
 QTableView, QTableWidget {
     gridline-color: @border; alternate-background-color: @bgSubtle;
-    selection-background-color: @surfaceActive; selection-color: @fg;
+    selection-background-color: @accentSubtle; selection-color: @fg;
+    outline: none;
 }
 QTableView::item:selected, QTableWidget::item:selected {
-    background-color: @surfaceActive; color: @fg;
+    background-color: @accentSubtle; color: @fg;
 }
 
 QTableView[dataTable="true"] {
@@ -196,8 +195,12 @@ QTableView[dataTable="true"]::item {
     padding: 0px 12px; border: none; border-bottom: 1px solid @border;
     color: @fgSecondary;
 }
-QTableView[dataTable="true"]::item:selected {
-    background-color: @surfaceActive; color: @fg;
+QTableView[dataTable="true"]::item:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+QTableView[dataTable="true"]::item:selected,
+QTableView[dataTable="true"]::item:selected:hover {
+    background-color: @accentSubtle; color: @fg;
 }
 QTableView[dataTable="true"] QHeaderView::section {
     background-color: transparent; color: @fgMuted; border: none;
@@ -250,7 +253,7 @@ QSlider::handle:horizontal:hover { border-color: @accentHover; }
 #settingsRowTitle { color: @fg; font-size: 14px; font-weight: 500; }
 #settingsRowDescription { color: @fgMuted; font-size: 12px; }
 #groupHeading { color: @fgSecondary; font-size: 14px; font-weight: 500; background: transparent; }
-#pageTitle { color: @fg; font-size: 20px; font-weight: 600; background: transparent; }
+#pageTitle { color: @fg; font-size: 15px; font-weight: 600; background: transparent; }
 #pageLede { color: @fgMuted; font-size: 14px; background: transparent; }
 #fieldLabel { color: @fg; font-size: 13px; font-weight: 500; background: transparent; }
 #fieldHint { color: @fgMuted; font-size: 12px; background: transparent; }

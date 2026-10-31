@@ -5,14 +5,17 @@ import Observation
 
 public struct InstanceFeedAPI {
     public var call: ToolsApiCall
+    public var origin: String
 
-    public init(call: @escaping ToolsApiCall) {
+    public init(call: @escaping ToolsApiCall, origin: String = "") {
         self.call = call
+        self.origin = origin
     }
 
     @MainActor
     public init(api: ApiService) {
         call = { method, suffix, body in try await api.instanceFeedApi(method, suffix, body) }
+        origin = api.gitOrigin
     }
 }
 
@@ -129,6 +132,8 @@ public enum InstanceFeed {
     public static let packageId = "instance-feed"
     public static let defaultMaxLength = 500
     public static let maxSpoiler = 100
+    public static let publicSite = "https://forkmesh.com"
+    public static let officialHosts: Set<String> = [AppEnv.prodHost, "world.forkmesh.com"]
 
     public static func validPostId(_ value: String) -> Bool {
         value.count == 32 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
@@ -136,6 +141,17 @@ public enum InstanceFeed {
 
     public static func validAuthor(_ value: String) -> Bool {
         value.range(of: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", options: .regularExpression) != nil
+    }
+
+    public static func siteOrigin(_ origin: String) -> String {
+        let trimmed = origin.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard let host = URL(string: trimmed)?.host?.lowercased(), !host.isEmpty else { return publicSite }
+        return officialHosts.contains(host) || AppEnv.isProdAlias(host) ? publicSite : trimmed
+    }
+
+    public static func publicURL(postId: String, origin: String) -> URL? {
+        guard validPostId(postId) else { return nil }
+        return URL(string: siteOrigin(origin) + "/feed?post=" + postId)
     }
 
     public static func timelineSuffix(author: String?, before: String?) -> String {
@@ -184,7 +200,7 @@ public final class InstanceFeedModel {
     public static let title = "Feed"
     public static let notInstalledTitle = "Install Feed"
     public static let notInstalledMessage =
-        "Read and write short posts with the people on this instance: reply, favourite, boost, and add a content warning when a post needs one. What you post is visible to everyone here who uses the feed."
+        "Read and write short posts with the people on this instance: reply, favourite, boost, and add a content warning when a post needs one. What you post is visible to everyone here who uses the feed and to anyone you share a post's public link with."
     public static let unavailableTitle = "The feed is unavailable"
 
     @ObservationIgnored public let api: InstanceFeedAPI
@@ -213,6 +229,12 @@ public final class InstanceFeedModel {
     }
 
     public var remaining: Int { maxLength - text.count }
+    public func publicURL(_ post: InstanceFeedPost) -> URL? {
+        InstanceFeed.publicURL(postId: post.id, origin: api.origin)
+    }
+
+    public func linkCopied() { show("Link copied") }
+
     public var canPost: Bool {
         !posting && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.count <= maxLength
     }

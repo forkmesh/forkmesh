@@ -69,6 +69,7 @@ signals:
     void clicked();
     void menuRequested(const QPoint &globalPos);
     void moved();
+    void placed();
     void escaped(const QPoint &grab);
 
 protected:
@@ -138,6 +139,7 @@ private:
     bool m_held = false;
     bool m_dragged = false;
     bool m_thrown = false;
+    bool m_placing = false;
     bool m_escapes = false;
     bool m_roams = false;
     QList<QPair<double, QPointF>> m_trail;

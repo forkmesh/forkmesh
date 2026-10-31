@@ -44,6 +44,39 @@ public struct StatusMinute: Equatable, Sendable, Identifiable {
     public var id: Int64 { ts }
 }
 
+public struct NodeResources: Equatable, Sendable {
+    public var cpu: Double?
+    public var memory: Double?
+    public var disk: Double?
+
+    public init(cpu: Double?, memory: Double?, disk: Double?) {
+        self.cpu = cpu
+        self.memory = memory
+        self.disk = disk
+    }
+
+    public init?(json: JSONObject) {
+        func reading(_ key: String) -> Double? {
+            guard let value = json[key]?.doubleValue, value.isFinite, value >= 0 else { return nil }
+            return min(value, 100)
+        }
+        cpu = reading("cpu")
+        memory = reading("memory")
+        disk = reading("disk")
+        if cpu == nil && memory == nil && disk == nil { return nil }
+    }
+
+    public var values: [Double?] { [cpu, memory, disk] }
+
+    public var label: String {
+        func percent(_ value: Double?) -> String {
+            guard let value else { return "unknown" }
+            return "\(Int(value.rounded()))%"
+        }
+        return "CPU \(percent(cpu)), memory \(percent(memory)), disk \(percent(disk))"
+    }
+}
+
 public struct StatusSystem: Equatable, Sendable, Identifiable {
     public var id: String
     public var label: String
@@ -57,6 +90,7 @@ public struct StatusSystem: Equatable, Sendable, Identifiable {
     public var reasonTs: Int64
     public var observedAt: Int64
     public var minutes: [StatusMinute]
+    public var resources: NodeResources?
 
     public init(json: JSONObject) {
         id = json.str("id")
@@ -73,6 +107,7 @@ public struct StatusSystem: Equatable, Sendable, Identifiable {
         minutes = json.maps("minutes").suffix(60).map {
             StatusMinute(ts: $0.int64("minuteTs"), state: ServiceState(raw: $0.str("status")))
         }
+        resources = NodeResources(json: json.obj("resources"))
     }
 
     public var isMirror: Bool { id.hasPrefix("mirror:") }

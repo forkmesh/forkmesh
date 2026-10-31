@@ -111,8 +111,12 @@ jobs:
           start = time.time()
           while not os.path.exists(path):
               if time.time() - start > 180:
-                  print("The node deploy agent did not pick up this run within 3 minutes.")
-                  print("On the source node: systemctl --user status forkmesh-node-deploy")
+                  print("FAILED:The node deploy agent did not pick up this run within 3 minutes."
+                        " Fix: on the source node, check systemctl --user status"
+                        " forkmesh-node-deploy; if it is running, its installed copy in"
+                        " ~/projects/forkmesh/bin/node-deploy may predate a fix it needs"
+                        " (an agent that sees no runs cannot update itself): run"
+                        " python3 tools/next_autodeploy.py install, then re-run Deploy nodes.")
                   sys.exit(1)
               time.sleep(2)
           offset = 0

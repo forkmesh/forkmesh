@@ -1,5 +1,7 @@
 import FMApi
 import FMBase
+import FMChat
+import FMControl
 import FMNet
 import Foundation
 import Observation
@@ -15,6 +17,9 @@ public enum WorkflowsText {
     public static let phoneRunNote =
         "Runs on this phone use JavaScriptCore and the credentials saved on this phone. Runs on ForkMesh use your account's credentials."
     public static let phoneEngineMissing = "This phone cannot run workflows itself. Run it on ForkMesh instead."
+    public static let desktopRunNote =
+        "These steps run on your desktop, in its forkmesh/forkmesh checkout. Only ForkMesh leftovers that nothing uses are deleted."
+    public static let desktopMissing = "Pair this iPhone with your desktop to run these steps."
 
     static let errors: [String: String] = [
         "plugin_not_installed": "Install the Workflows plugin from the Market to use workflows.",
@@ -120,6 +125,7 @@ public final class WorkflowsStore {
     @ObservationIgnored private let clock: Clock
     @ObservationIgnored private var engineCache: WorkflowEngine?
     @ObservationIgnored private var engineTried = false
+    @ObservationIgnored public var desktopChannel: DesktopControlCalling?
 
     public private(set) var workflows: [WorkflowSummary] = []
     public private(set) var templates: [WorkflowTemplate] = []
@@ -129,6 +135,8 @@ public final class WorkflowsStore {
     public private(set) var error = ""
     public private(set) var phoneRuns: [String: [WorkflowRun]] = [:]
     public private(set) var phoneCredentialIds: Set<String> = []
+    public private(set) var desktopLive: [String: String] = [:]
+    public private(set) var desktopRunning = ""
 
     public init(
         call: @escaping WorkflowsApiCall,
@@ -268,6 +276,104 @@ public final class WorkflowsStore {
         let key = draft.id.isEmpty ? "draft" : draft.id
         phoneRuns[key] = Array(([run] + (phoneRuns[key] ?? [])).prefix(Self.phoneRunsKept))
         return run
+    }
+
+    public var canRunOnDesktop: Bool { desktopChannel != nil }
+
+    public func runOnDesktop(_ draft: WorkflowDraft) async -> WorkflowRun {
+        let started = clock.nowMillis
+        guard let channel = desktopChannel else {
+            return WorkflowRun(json: ["status": "error", "error": .string(WorkflowsText.desktopMissing)], place: .desktop,
+                               id: "desktop-\(started)", startedAt: started, finishedAt: started)
+        }
+        let family = DesktopControlFamily(.diagnostics, channel: channel)
+        desktopRunning = draft.id
+        desktopLive = [:]
+        defer {
+            desktopRunning = ""
+            desktopLive = [:]
+        }
+        var report = JSONObject()
+        var failed = ""
+        var freed: Int64 = 0
+        var free: Int64?
+        var total: Int64?
+        let passed: JSONObject = ["status": "success", "ms": 0, "outputs": ["main": ["count": 1, "items": [[:]]]]]
+        for node in draft.ordered {
+            let stepStarted = clock.nowMillis
+            if node.isTrigger {
+                report[node.id] = .object(passed)
+                desktopLive[node.id] = "success"
+                continue
+            }
+            let fed = draft.inputs(of: node.id).contains { report[$0.from]?.objectValue?.str("status") == "success" }
+            if !failed.isEmpty || !fed {
+                report[node.id] = .object(["status": "skipped"])
+                desktopLive[node.id] = "skipped"
+                continue
+            }
+            guard !node.disabled, let step = WorkflowDesktopSteps.step(node.type) else {
+                report[node.id] = .object(passed)
+                desktopLive[node.id] = "success"
+                continue
+            }
+            desktopLive[node.id] = "running"
+            do {
+                let prepared = try await family.call("prepare", ["action": "freeDiskSpace", "step": .string(step)], timeout: 30)
+                let result = try await family.call(
+                    "run", ["action": "freeDiskSpace", "step": .string(step), "token": .string(prepared.str("token"))],
+                    timeout: WorkflowDesktopSteps.stepTimeout)
+                let stepFreed = result["freedBytes"]?.int64Value ?? 0
+                let stepFree = result["freeBytes"]?.int64Value ?? 0
+                freed += stepFreed
+                if let stepTotal = result["totalBytes"]?.int64Value, stepTotal > 0 {
+                    free = stepFree
+                    total = stepTotal
+                }
+                let item: JSONObject = [
+                    "step": .string(step), "freedBytes": .int(stepFreed), "freed": .string(WorkflowDesktopSteps.bytes(stepFreed)),
+                    "items": .int(result["items"]?.int64Value ?? 0), "freeBytes": .int(stepFree),
+                    "free": .string(WorkflowDesktopSteps.bytes(stepFree)),
+                ]
+                report[node.id] = .object([
+                    "status": "success", "ms": .int(clock.nowMillis - stepStarted),
+                    "outputs": ["main": ["count": 1, "items": [.object(item)]]],
+                    "logs": .array(result.list("lines").map { .string($0.text) }),
+                ])
+                desktopLive[node.id] = "success"
+            } catch {
+                let text = DesktopWorkflowsText.describe(error)
+                failed = "\(node.name): \(text)"
+                report[node.id] = .object(["status": "error", "ms": .int(clock.nowMillis - stepStarted), "error": .string(text)])
+                desktopLive[node.id] = "error"
+            }
+        }
+        let finished = clock.nowMillis
+        var output: JSONObject = ["freedBytes": .int(freed)]
+        if let free, let total {
+            output["freeBytes"] = .int(free)
+            output["totalBytes"] = .int(total)
+        }
+        let local = WorkflowRun(
+            json: ["status": .string(failed.isEmpty ? "success" : "error"), "error": .string(failed), "nodes": .object(report),
+                   "trigger": "desktop"],
+            place: .desktop, id: "desktop-\(started)", startedAt: started, finishedAt: finished)
+        guard !draft.id.isEmpty else { return local }
+        do {
+            let body: JSONObject = [
+                "startedAt": .int(started), "finishedAt": .int(finished), "nodes": .object(report), "output": .object(output),
+            ]
+            let run = WorkflowRun(json: try await call("POST", "/\(draft.id)/record", body).obj("run"), place: .desktop)
+            if let index = workflows.firstIndex(where: { $0.id == draft.id }) {
+                workflows[index].lastStatus = run.status
+                workflows[index].lastRunAt = run.startedAt
+            }
+            return run
+        } catch {
+            var unsaved = local
+            unsaved.error = [failed, "The run finished but ForkMesh could not save it."].filter { !$0.isEmpty }.joined(separator: " ")
+            return unsaved
+        }
     }
 
     public func linkedWorkflows(_ draft: WorkflowDraft, depth: Int) async -> [WorkflowDraft] {

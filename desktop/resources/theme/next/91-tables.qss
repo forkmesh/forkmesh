@@ -1,0 +1,24 @@
+QTableView::corner, QTreeView::corner { background: transparent; border: none; }
+QTableView QScrollBar:vertical, QTreeView QScrollBar:vertical {
+    background: transparent; width: 8px; margin: 0px;
+}
+QTableView QScrollBar:horizontal, QTreeView QScrollBar:horizontal {
+    background: transparent; height: 8px; margin: 0px;
+}
+QTableView QScrollBar::handle:vertical, QTreeView QScrollBar::handle:vertical {
+    background: @borderStrong; border-radius: 3px; min-height: 28px; margin: 1px;
+}
+QTableView QScrollBar::handle:horizontal, QTreeView QScrollBar::handle:horizontal {
+    background: @borderStrong; border-radius: 3px; min-width: 28px; margin: 1px;
+}
+QTableView QScrollBar::handle:hover, QTreeView QScrollBar::handle:hover {
+    background: @fgSubtle;
+}
+QTableView QScrollBar::add-line, QTableView QScrollBar::sub-line,
+QTreeView QScrollBar::add-line, QTreeView QScrollBar::sub-line {
+    width: 0px; height: 0px;
+}
+QTableView QScrollBar::add-page, QTableView QScrollBar::sub-page,
+QTreeView QScrollBar::add-page, QTreeView QScrollBar::sub-page {
+    background: none;
+}

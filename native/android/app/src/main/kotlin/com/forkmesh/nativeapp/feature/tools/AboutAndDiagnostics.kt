@@ -32,7 +32,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -216,9 +215,7 @@ fun HubVersionRow(onWhatsNew: () -> Unit, onDiagnostics: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(c.bgElevated)
-            .padding(horizontal = FmSpace.x2, vertical = FmSpace.x2),
+            .padding(horizontal = FmSpace.x1),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
@@ -243,12 +240,12 @@ fun HubVersionRow(onWhatsNew: () -> Unit, onDiagnostics: () -> Unit) {
 @Composable
 private fun DiagnosticsButton(alert: PerformanceAlert, onClick: () -> Unit) {
     val c = Fm.colors
-    val tint = if (alert.detected) Color.White else c.textSecondary
+    val tint = if (alert.detected) c.danger else c.textSecondary
     Row(
         Modifier
             .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(50))
-            .background(if (alert.detected) c.danger else c.bgOverlay)
+            .background(if (alert.detected) c.danger.copy(alpha = if (c.dark) 0.2f else 0.1f) else c.bgOverlay)
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
@@ -298,7 +295,7 @@ fun WhatsNewPage(onBack: () -> Unit) {
                     Column(Modifier.padding(top = FmSpace.x4, bottom = FmSpace.x2).semantics(mergeDescendants = true) { heading() }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(entry.heading, style = Fm.text.titleSmall)
-                            if (index == 0) {
+                            if (index == 0 && entry.build.isNotEmpty()) {
                                 Spacer(Modifier.width(FmSpace.x2))
                                 Text(
                                     "Installed",
@@ -307,7 +304,8 @@ fun WhatsNewPage(onBack: () -> Unit) {
                                 )
                             }
                         }
-                        if (entry.date.isNotEmpty()) Text(entry.formattedDate(), style = Fm.text.bodySmall.copy(color = c.textSecondary))
+                        val detail = entry.detail()
+                        if (detail.isNotEmpty()) Text(detail, style = Fm.text.bodySmall.copy(color = c.textSecondary))
                     }
                 }
                 item(key = "body:${entry.build}:$index") {
@@ -315,6 +313,7 @@ fun WhatsNewPage(onBack: () -> Unit) {
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(FmRadius.md)).background(c.bgOverlay).padding(FmSpace.x3),
                         verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
                     ) {
+                        if (entry.pitch.isNotEmpty()) Text(entry.pitch, style = Fm.text.bodyMedium.copy(color = c.textSecondary))
                         if (entry.sections.isEmpty()) {
                             Text(
                                 if (index == 0) "No notes were written for this build." else "No notes for this build.",
@@ -377,6 +376,7 @@ fun DiagnosticsSendPage(onBack: () -> Unit, onSent: () -> Unit) {
                     }
                 },
                 enabled = !sending && preview.isNotEmpty(),
+                busy = sending,
             ) { Text(if (sending) "Sending…" else "Send") }
         }
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x6)) {

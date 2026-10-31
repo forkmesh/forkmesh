@@ -256,11 +256,9 @@ QList<Finding> evaluate(const Inputs &in)
                               .arg(in.logErrors)
                               .arg(in.logErrors == 1 ? "" : "s")
                               .arg(window);
-        const QString sample = in.logErrorSample.trimmed();
-        if (!sample.isEmpty())
-            message += QStringLiteral(": ") + sample;
         add(out, QStringLiteral("log-errors"),
             in.logErrors >= kLogErrorWarning ? Warning : Info, message);
+        out.last().detail = in.logErrorSample.trimmed();
     }
 
     if (in.uiStalls >= kStallInfo) {
@@ -360,8 +358,11 @@ QString detailText(const QList<Finding> &findings)
 {
     QStringList lines;
     for (const Finding &f : findings) {
+        const QString message =
+            f.detail.isEmpty() ? f.message
+                               : f.message + QStringLiteral(": ") + f.detail;
         lines << QStringLiteral("%1 [%2]: %3\nNext: %4")
-                     .arg(severityName(f.severity), f.id, f.message,
+                     .arg(severityName(f.severity), f.id, message,
                           remediationFor(f.id));
     }
     return lines.join(QStringLiteral("\n\n"));

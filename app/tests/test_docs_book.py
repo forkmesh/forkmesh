@@ -96,12 +96,15 @@ class FakeRequest:
 
 
 def harness(bare, admin=True, gateway_oids=True):
-    calls = {"pushes": [], "audits": []}
+    calls = {"pushes": [], "audits": [], "reads": [], "down": set()}
 
     async def js_fetch_with_timeout(url, init, timeout):
         parsed = urlparse(url)
         action = parsed.path.rsplit("/", 1)[1]
         query = parse_qs(parsed.query)
+        calls["reads"].append((action, query.get("path", [""])))
+        if action in calls["down"]:
+            return FakeResponse(503)
         ref = query.get("ref", ["main"])[0]
         commit = git(bare, "rev-parse", ref + "^{commit}").decode().strip()
         if action == "tree":
@@ -164,7 +167,8 @@ def harness(bare, admin=True, gateway_oids=True):
     }
     for name, value in runtime.items():
         setattr(docs_book, name, value)
-    docs_book._CACHE.update({"commit": "", "at": 0, "docs": None})
+    docs_book._CACHE.update({"commit": "", "at": 0, "docs": None,
+                             "complete": False, "files": [], "trees": {}})
     return calls
 
 
@@ -185,6 +189,70 @@ def test_lists_every_markdown_file_in_order_with_dates(repo):
     assert first["updated"] and first["subject"] == "seed"
     assert len(first["oid"]) == 40
     assert data["canEdit"] is True
+
+
+def commit_file(bare, tmp_path, path, text):
+    work = tmp_path / ("edit-%d" % len(list(tmp_path.iterdir())))
+    git(tmp_path, "clone", "-q", str(bare), str(work))
+    target = work / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "-m", "edit " + path)
+    git(work, "push", "-q", "origin", "main")
+
+
+def cold_listing(bare):
+    harness(bare)
+    return run("/api/docs-book", FakeRequest())["data"]
+
+
+def test_listing_is_kept_until_main_moves(repo):
+    calls = harness(repo)
+    first = run("/api/docs-book", FakeRequest())["data"]
+    calls["reads"].clear()
+    docs_book._CACHE["at"] -= docs_book.CACHE_TTL_MS * 10
+    again = run("/api/docs-book", FakeRequest())["data"]
+    assert calls["reads"] == [("tree", ["docs"])]
+    assert again == first
+
+
+def test_main_moving_outside_docs_reads_nothing_new(repo, tmp_path):
+    calls = harness(repo)
+    run("/api/docs-book", FakeRequest())
+    commit_file(repo, tmp_path, "a.txt", "b\n")
+    calls["reads"].clear()
+    listed = run("/api/docs-book", FakeRequest())["data"]
+    assert calls["reads"] == [("tree", ["docs"])]
+    assert listed == cold_listing(repo)
+
+
+def test_an_edit_rereads_only_its_directory_and_blob(repo, tmp_path):
+    calls = harness(repo)
+    run("/api/docs-book", FakeRequest())
+    commit_file(repo, tmp_path, "docs/app/notes.md", "# Notes\n\nNew.\n")
+    calls["reads"].clear()
+    listed = run("/api/docs-book", FakeRequest())["data"]
+    assert calls["reads"] == [("tree", ["docs"]), ("tree", ["docs/app"]),
+                              ("blobs", ["docs/app/notes.md"])]
+    assert listed == cold_listing(repo)
+    notes = next(doc for doc in listed["docs"]
+                 if doc["path"] == "docs/app/notes.md")
+    assert notes["content"] == "# Notes\n\nNew.\n"
+    assert notes["subject"] == "edit docs/app/notes.md"
+
+
+def test_failed_reads_are_retried_after_the_window(repo):
+    calls = harness(repo)
+    calls["down"].update({"blobs", "blob"})
+    broken = run("/api/docs-book", FakeRequest())["data"]
+    assert all(doc["content"] is None for doc in broken["docs"])
+    calls["down"].clear()
+    assert run("/api/docs-book", FakeRequest())["data"] == broken
+    docs_book._CACHE["at"] -= docs_book.CACHE_TTL_MS + 1
+    healed = run("/api/docs-book", FakeRequest())["data"]
+    assert healed == cold_listing(repo)
+    assert healed["docs"][0]["content"] == "# Docs\n\nIndex.\n"
 
 
 def test_non_admin_cannot_save(repo):

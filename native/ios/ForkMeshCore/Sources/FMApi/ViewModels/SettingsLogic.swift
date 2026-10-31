@@ -306,7 +306,9 @@ public func pushRelayLabel(_ relayConfigured: Bool?) -> String {
     }
 }
 
-public func pushCanEnable(token: String, permission: String) -> Bool { token.isEmpty && permission != "denied" }
+public func pushCanEnable(token: String, permission: String) -> Bool {
+    permission != "denied" && (token.isEmpty || permission == "notDetermined")
+}
 
 public func pushSendLabel(sending: Bool) -> String { sending ? "Sending…" : "Send test notification" }
 

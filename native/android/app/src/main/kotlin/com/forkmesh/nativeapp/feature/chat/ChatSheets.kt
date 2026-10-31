@@ -144,45 +144,6 @@ suspend fun newChannelFlow(messenger: FmMessenger, hub: ChatHub?): String? {
     }
 }
 
-suspend fun inviteFlow(messenger: FmMessenger, channel: String) {
-    val chat = ChatDepth.hub ?: return
-    val people = withContext(Dispatchers.IO) {
-        chat.relay.roster().filter { !it.self && it.online && !ChatVisitorPresence.isTransientVisitor(name = it.name) }
-    }
-    messenger.showModalBottomSheet<Unit>(isScrollControlled = true) { close ->
-        var invited by remember { mutableStateOf(setOf<String>()) }
-        val scope = rememberCoroutineScope()
-        Text("Invite to $channel", modifier = Modifier.padding(FmSpace.x4), style = Fm.text.titleMedium)
-        if (people.isEmpty()) {
-            Text(
-                "Nobody else is online right now. Invitations go to devices that are connected.",
-                modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),
-                style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
-            )
-        }
-        LazyColumn {
-            for (member in people) {
-                item(key = member.id) {
-                    FmListRow(
-                        title = member.owner.ifEmpty { member.name },
-                        subtitle = member.nodeName.ifEmpty { null },
-                        trailing = if (member.id in invited) ({ FmIcon("check", size = 18.dp, tint = Fm.colors.success) }) else null,
-                        showChevron = false,
-                        onTap = if (member.id in invited) null else ({
-                            scope.launch {
-                                val ok = withContext(Dispatchers.IO) { chat.extras.invite(member.id, channel) }
-                                if (ok) invited = invited + member.id
-                            }
-                        }),
-                    )
-                }
-            }
-        }
-        FmListRow(title = "Done", onTap = { close(Unit) }, showChevron = false)
-        Spacer(Modifier.height(FmSpace.x2))
-    }
-}
-
 suspend fun pickReaction(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
     Text("React", modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x4, bottom = FmSpace.x1), style = Fm.text.titleMedium)
     ChatReactionPicker(Modifier.weight(1f, fill = false)) { close(it) }

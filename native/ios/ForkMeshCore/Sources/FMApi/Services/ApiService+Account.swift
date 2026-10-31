@@ -53,7 +53,7 @@ extension ApiService {
     /// its own app's apns-topic, and a token sent under another app's is refused by Apple
     /// (DeviceTokenNotForTopic) and pruned. Omitted when empty. Never throws.
     public func registerPushDevice(
-        deviceToken: String, environment: String, bundleId: String = ""
+        deviceToken: String, environment: String, bundleId: String = "", voipToken: String = ""
     ) async -> PushRegistration {
         if deviceToken.isEmpty { return PushRegistration(ok: false) }
         do {
@@ -61,6 +61,7 @@ extension ApiService {
                 "deviceToken": .string(deviceToken), "environment": .string(environment),
             ]
             if !bundleId.isEmpty { body["bundleId"] = .string(bundleId) }
+            if !voipToken.isEmpty { body["voipToken"] = .string(voipToken) }
             let result = try await postJsonResult(url("/api/accounts/register-device"), body)
             return PushRegistration(
                 ok: result.ok, statusCode: result.statusCode, relayConfigured: result.body["pushConfigured"]?.boolValue)

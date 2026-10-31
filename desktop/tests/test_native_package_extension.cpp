@@ -227,6 +227,16 @@ int main(int argc, char **argv)
               !nativePackageWebPageUrl(QUrl(QStringLiteral("file:///tmp")),
                                        QStringLiteral("/dashboard")).isValid(),
           "a package web page stays on the active web host");
+    check(nativePackagePublicPageUrl(
+              QUrl(QStringLiteral("https://app.forkmesh.com/api/repositories")),
+              QStringLiteral("/feed?post=abc")).toString() ==
+              QStringLiteral("https://forkmesh.com/feed?post=abc") &&
+              nativePackagePublicPageUrl(
+                  QUrl(QStringLiteral("http://localhost:8787/api/repositories")),
+                  QStringLiteral("/feed?post=abc")).toString() ==
+              QStringLiteral("http://localhost:8787/feed?post=abc") &&
+              !nativePackagePublicPageUrl(webBase, QStringLiteral("//evil.invalid/x")).isValid(),
+          "a public page names forkmesh.com for the official hosts and the instance otherwise");
 
     NativePackageRailTile tile;
     tile.id = QStringLiteral("youtube");

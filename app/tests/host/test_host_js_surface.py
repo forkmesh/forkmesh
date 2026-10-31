@@ -228,9 +228,11 @@ def test_every_env_binding_chain_resolves(inventory, host_env):
             failures[chain] = problem
     assert not failures, failures
     # Every binding name the app reads must be bound (vars are optional).
+    called = {chain.split(".")[1].split("(")[0]
+              for chain in inventory["env_chains"]}
     bindings = [n for n in inventory["env_names"]
                 if n in ("DB", "ASSETS", "REPOSITORY_METADATA")
-                or n.startswith("FORKMESH_")]
+                or n in called]
     missing = [n for n in bindings if not hasattr(env, n)]
     assert not missing
 

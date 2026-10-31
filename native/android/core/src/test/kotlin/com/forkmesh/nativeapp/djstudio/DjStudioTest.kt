@@ -230,7 +230,7 @@ class DjStudioTest {
     }
 
     fun testSavedStateIsSanitised() {
-        val text = """{"a":{"videoId":"dQw4w9WgXcQ","cue":-4,"level":7,"rate":9,"bpm":"x","loop":true},"b":{"videoId":"nope"},"crossfader":3,"samplerLevel":-1,"sections":[{"deck":"b","start":12,"duration":90},null,null,null,{"deck":"a","start":1,"duration":2}]}"""
+        val text = """{"a":{"videoId":"dQw4w9WgXcQ","cue":-4,"level":7,"rate":9,"bpm":"x","loop":true,"repeats":true},"b":{"videoId":"nope","repeats":"x"},"crossfader":3,"samplerLevel":-1,"sections":[{"deck":"b","start":12,"duration":90},null,null,null,{"deck":"a","start":1,"duration":2}]}"""
         val saved = DjSaved.decode(text)
         assertEq("dQw4w9WgXcQ", saved.a.videoId)
         assertEq(0.0, saved.a.cue)
@@ -238,7 +238,9 @@ class DjStudioTest {
         assertEq(1 + DjStudio.PITCH_RANGE, saved.a.rate)
         assertEq(0.0, saved.a.bpm)
         expect(saved.a.loop)
+        expect(saved.a.repeats)
         assertEq("", saved.b.videoId)
+        expect(!saved.b.repeats)
         assertEq(1.0, saved.crossfader)
         assertEq(0.0, saved.samplerLevel)
         assertEq(DjStudio.SECTION_COUNT, saved.sections.size)

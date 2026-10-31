@@ -51,6 +51,11 @@ folder under the node key's folder on macOS).
 | Shell | `fm_safe_rm_tree <parent> <target>...` in `tools/forkmesh-safe-rm.sh`; returns 64 on refusal | `FM_SAFE_RM_WORKTREE=1` | `mv` to a stamped sibling |
 | Go (`server/`) | `removeTreeUnder(parent, target)` in `server/safedelete.go` | `removeOwnWorktreeUnder`, `removeOwnCloneUnder` | `moveAside(target, label)` |
 
+The Python helper also runs on Windows (the GitHub Windows jobs import it):
+`pwd` is optional there, so the account home falls back to the `HOME` paths it
+already checks, and paths are compared with forward slashes, a bare drive
+root counting as `/`.
+
 `www/public/install.sh` and `uninstall.sh` run as `curl | bash`, so they carry
 a byte-identical copy of `fm_safe_rm_tree`. Standalone server tools whose few
 deletes cannot import a helper bound them in place and are allow-listed.

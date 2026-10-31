@@ -3,6 +3,7 @@
 #include "MainWindowInternal.h"
 #include "SystemPressure.h"
 #include "SystemStats.h"
+#include "FontSizing.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -273,7 +274,7 @@ QWidget *MainWindow::buildGovernorSection()
         layout->addWidget(name);
         auto *value = new QLabel(QString::fromUtf8("\xE2\x80\x94"));
         QFont big = value->font();
-        big.setPointSizeF(big.pointSizeF() * 1.6);
+        big = forkmesh::scaledFont(big, 1.6);
         big.setBold(true);
         value->setFont(big);
         layout->addWidget(value);

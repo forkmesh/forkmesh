@@ -112,6 +112,10 @@ paper, never from the kit), that every listed file matches with no extras or
 symlinks, that the runbook validates against the kit's own tools and guides and
 matches its digest and printable copy, and that the roster verifies.
 
+A key that starts with `-` must be joined to its flag:
+`--trusted-key=-Ab…`. Written as two words, the tool reads the key as an
+unknown option and exits with code 2.
+
 | State | Exit code | Meaning |
 | --- | --- | --- |
 | `verified` | `0` | Everything checked, and the kit is before its review date. |

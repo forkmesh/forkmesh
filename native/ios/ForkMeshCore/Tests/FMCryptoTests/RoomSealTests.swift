@@ -96,7 +96,7 @@ final class RoomSealVectorTests: XCTestCase {
         XCTAssertNil(bob.acceptBundle(bundle("injectedOutsider"), now: now), "a DM bundle must name a participant")
         XCTAssertEqual(bob.acceptBundle(bundle("injectedAsBob"), now: now)?.state, .pending)
         let open = try RoomSeal(room: room, scope: "open-scope", policy: .open, acct: "bob", node: node("bob"), keyring: try device("bob"))
-        XCTAssertEqual(open.acceptBundle(bundle("injectedOutsider"), now: now)?.state, .approved)
+        XCTAssertNil(open.acceptBundle(bundle("injectedOutsider"), now: now), "an open room drops a bundle with no node signature")
     }
 
     func testTheRelaySequenceOpensAsTheReferenceDoes() throws {
@@ -294,8 +294,10 @@ final class RoomSealRoundTripTests: XCTestCase {
     let now: Int64 = 1_790_000_000_000
 
     func seal(_ store: SecureStore, acct: String, node: String? = nil, policy: ChatTrustPolicy = .strict) throws -> RoomSeal {
-        try RoomSeal.loadOrCreate(
-            room, scope: scope, policy: policy, acct: acct, node: node ?? "\(acct)-node", secureStore: store, now: now)
+        let key = policy == .open ? try Identity.fromSeed(Ed25519.generateSeed()) : nil
+        return try RoomSeal.loadOrCreate(
+            room, scope: scope, policy: policy, acct: acct, node: key?.nodeId ?? node ?? "\(acct)-node", secureStore: store,
+            nodeIdentity: key, now: now)
     }
 
     func testDevicesExchangeBundlesSealAndOpen() throws {
@@ -331,35 +333,73 @@ final class RoomSealRoundTripTests: XCTestCase {
         XCTAssertEqual(bob.open(try alice.seal(["type": "chat", "id": "m4"], now: now), now: now).senderAcct, "alice")
     }
 
-    func testRelayDirectMessagesGoOnlyToTheRecipient() throws {
+    func testAddressedFramesGoOnlyToTheRecipient() throws {
         let room = "world-general"
         func member(_ name: String) throws -> RoomSeal {
-            try RoomSeal.loadOrCreate(
-                room, policy: .open, acct: name, node: "\(name)-node", secureStore: InMemorySecureStore(), now: now)
+            let key = try Identity.fromSeed(Ed25519.generateSeed())
+            return try RoomSeal.loadOrCreate(
+                room, policy: .open, acct: name, node: key.nodeId, secureStore: InMemorySecureStore(), nodeIdentity: key,
+                now: now)
         }
         let alice = try member("alice")
         let bob = try member("bob")
         let carol = try member("carol")
         for peer in [bob, carol] {
-            alice.acceptBundle(peer.keyFrame(now: now), now: now)
-            peer.acceptBundle(alice.keyFrame(now: now), now: now)
+            XCTAssertNotNil(alice.acceptBundle(peer.keyFrame(now: now), now: now))
+            XCTAssertNotNil(peer.acceptBundle(alice.keyFrame(now: now), now: now))
         }
-        let dm = try alice.seal(["type": "dm", "to": "bob-node", "senderId": "alice-node", "text": "psst"], forNodes: ["bob-node"], now: now)
-        XCTAssertEqual(Set(RoomSeal.wrappedKeyIds(dm)), [alice.keyId, bob.keyId])
-        XCTAssertEqual(bob.open(dm, now: now).plain?["text"], "psst")
-        XCTAssertEqual(carol.open(dm, now: now), .notForMe)
+        let bobNode = try XCTUnwrap(bob.node)
+        let reply = try alice.seal(
+            ["type": "hello", "to": .string(bobNode), "senderId": .string(alice.node ?? ""), "text": "psst"],
+            forNodes: [bobNode], now: now)
+        XCTAssertEqual(Set(RoomSeal.wrappedKeyIds(reply)), [alice.keyId, bob.keyId])
+        XCTAssertEqual(bob.open(reply, now: now).plain?["text"], "psst")
+        XCTAssertEqual(carol.open(reply, now: now), .notForMe)
+    }
+
+    func testAnOpenRoomBundleMustBeSignedByItsNodeKey() throws {
+        let room = "world-general"
+        let key = try Identity.fromSeed(Ed25519.generateSeed())
+        let other = try Identity.fromSeed(Ed25519.generateSeed())
+        let me = try RoomSeal.loadOrCreate(
+            room, policy: .open, acct: "me", node: key.nodeId, secureStore: InMemorySecureStore(), nodeIdentity: key, now: now)
+        let peer = try ChatKeyring.fromSecrets(identitySeed: Ed25519.generateSeed())
+        peer.addPrekey(try ChatPrekeySecret(xPriv: X25519.generatePrivateKey(), pqSeed: CryptoBytes.random(64), ts: now))
+        let prekey = try XCTUnwrap(peer.newestPrekey())
+        let unsigned = try RoomSeal.bundle(room: room, acct: "peer", node: other.nodeId, keyring: peer, prekey: prekey)
+        XCTAssertNil(me.acceptBundle(unsigned, now: now), "no nsig")
+        XCTAssertThrowsError(
+            try RoomSeal.bundle(room: room, acct: "peer", node: other.nodeId, keyring: peer, prekey: prekey, nodeIdentity: key))
+        var stolen = try RoomSeal.bundle(room: room, acct: "peer", node: key.nodeId, keyring: peer, prekey: prekey, nodeIdentity: key)
+        stolen["node"] = .string(other.nodeId)
+        XCTAssertNil(me.acceptBundle(stolen, now: now), "an nsig by another node key")
+        let signed = try RoomSeal.bundle(room: room, acct: "peer", node: other.nodeId, keyring: peer, prekey: prekey, nodeIdentity: other)
+        XCTAssertEqual(me.acceptBundle(signed, now: now)?.state, .approved)
+        let thief = try Identity.fromSeed(Ed25519.generateSeed())
+        let moved = try RoomSeal.bundle(room: room, acct: "peer", node: thief.nodeId, keyring: peer, prekey: prekey, nodeIdentity: thief)
+        XCTAssertNil(me.acceptBundle(moved, now: now), "a stored kid keeps its node")
+        let unbound = try RoomSeal.loadOrCreate(
+            room, policy: .open, acct: "x", node: "not-a-key", secureStore: InMemorySecureStore(), now: now)
+        XCTAssertTrue(unbound.keyFrame(now: now).isEmpty, "an open room bundle needs the node key")
+        let strict = try RoomSeal.loadOrCreate(
+            "chat-direct:x:v1", policy: .strict, acct: "x", node: "x-node", secureStore: InMemorySecureStore(), now: now)
+        XCTAssertNil(strict.keyFrame(now: now)["nsig"], "strict rooms keep the v3 bundle")
+        XCTAssertNotNil(me.keyFrame(now: now)["nsig"])
     }
 
     func testAnOpenRoomOverSixtyFourDevicesKeepsTheMostRecentlySeen() throws {
         let room = "busy-room"
-        let me = try RoomSeal.loadOrCreate(room, policy: .open, acct: "me", node: "me-node", secureStore: InMemorySecureStore(), now: now)
+        let key = try Identity.fromSeed(Ed25519.generateSeed())
+        let me = try RoomSeal.loadOrCreate(
+            room, policy: .open, acct: "me", node: key.nodeId, secureStore: InMemorySecureStore(), nodeIdentity: key, now: now)
         var kids: [String] = []
         for index in 0..<70 {
             let peer = try ChatKeyring.fromSecrets(identitySeed: Ed25519.generateSeed())
             peer.addPrekey(try ChatPrekeySecret(xPriv: X25519.generatePrivateKey(), pqSeed: CryptoBytes.random(64), ts: now))
+            let peerKey = try Identity.fromSeed(Ed25519.generateSeed())
             let bundle = try RoomSeal.bundle(
-                room: room, acct: "peer-\(index)", node: "peer-\(index)-node", keyring: peer,
-                prekey: try XCTUnwrap(peer.newestPrekey()))
+                room: room, acct: "peer-\(index)", node: peerKey.nodeId, keyring: peer,
+                prekey: try XCTUnwrap(peer.newestPrekey()), nodeIdentity: peerKey)
             XCTAssertEqual(me.acceptBundle(bundle, now: now + Int64(index))?.state, .approved)
             kids.append(peer.kid)
         }
@@ -376,7 +416,7 @@ final class RoomSealRoundTripTests: XCTestCase {
         let bob = try seal(InMemorySecureStore(), acct: "bob", policy: .open)
         alice.acceptBundle(bob.keyFrame(now: now), now: now)
         bob.acceptBundle(alice.keyFrame(now: now), now: now)
-        let frame = try alice.seal(["type": "chat", "id": "h1", "senderId": "alice-node", "text": "x"], now: now)
+        let frame = try alice.seal(["type": "chat", "id": "h1", "senderId": .string(alice.node ?? ""), "text": "x"], now: now)
         XCTAssertEqual(bob.open(frame, now: now).name, "opened")
         XCTAssertEqual(bob.open(frame, now: now), .replay)
         XCTAssertEqual(bob.open(frame, now: now, history: true).name, "opened")
@@ -409,8 +449,11 @@ final class RoomSealRoundTripTests: XCTestCase {
         bob.approve(alicePhone.keyId)
         XCTAssertEqual(bob.reopenHeld(now: now).first?.plain?["text"], "new phone")
         let open = try seal(InMemorySecureStore(), acct: "bob", policy: .open)
-        open.acceptBundle(alice.keyFrame(now: now), now: now)
-        XCTAssertEqual(open.acceptBundle(alicePhone.keyFrame(now: now), now: now)?.state, .approved, "open rooms approve")
+        let openAlice = try seal(InMemorySecureStore(), acct: "alice", policy: .open)
+        let openPhone = try seal(InMemorySecureStore(), acct: "alice", policy: .open)
+        XCTAssertNil(open.acceptBundle(alice.keyFrame(now: now), now: now), "a strict bundle has no node signature")
+        XCTAssertEqual(open.acceptBundle(openAlice.keyFrame(now: now), now: now)?.state, .approved)
+        XCTAssertEqual(open.acceptBundle(openPhone.keyFrame(now: now), now: now)?.state, .approved, "open rooms approve")
     }
 
     func testStateSurvivesAReload() throws {
@@ -502,5 +545,54 @@ final class RoomSealRoundTripTests: XCTestCase {
         }
         XCTAssertFalse(RoomSeal.isSealedFrame(["type": "chat", "text": "plaintext"]))
         XCTAssertFalse(RoomSeal.isSealedFrame(["type": "sealed", "v": 2, "kid": "short"]))
+    }
+}
+
+final class RoomSealNodeBindingVectorTests: XCTestCase {
+    func vectors() throws -> JSONObject {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { root.deleteLastPathComponent() }
+        let data = try Data(contentsOf: root.appendingPathComponent("conformance/chat/v3/node-binding.json"))
+        return try XCTUnwrap(try JSON.parse(data).objectValue)
+    }
+
+    func testTheNodeSignatureMatchesTheVector() throws {
+        let v = try vectors()
+        let node = try Identity.fromSeed(try XCTUnwrap(ChatV3.unb64(v.str("nodeSeed"))))
+        XCTAssertEqual(node.nodeId, v.str("node"))
+        let keyring = try ChatKeyring.fromSecrets(identitySeed: try XCTUnwrap(ChatV3.unb64(v.str("identitySeed"))))
+        XCTAssertEqual(keyring.idk, v.str("idk"))
+        let message = RoomSeal.nodeBindingMessage(v.str("room"), keyring.kid, keyring.idk, v.str("acct"))
+        XCTAssertEqual(String(decoding: message, as: UTF8.self), v.str("message"))
+        XCTAssertEqual(node.sign(message), v.str("nsig"))
+        let bundle: JSONObject = [
+            "kid": .string(keyring.kid), "idk": .string(keyring.idk), "acct": .string(v.str("acct")),
+            "node": .string(v.str("node")), "nsig": .string(v.str("nsig")),
+        ]
+        XCTAssertTrue(RoomSeal.verifyNodeBinding(bundle, room: v.str("room")))
+        for reject in v.maps("rejects") {
+            var bad = bundle
+            bad["node"] = .string(reject.str("node"))
+            bad["nsig"] = .string(reject.str("nsig"))
+            XCTAssertFalse(RoomSeal.verifyNodeBinding(bad, room: reject.str("room")), reject.str("why"))
+        }
+        keyring.addPrekey(try ChatPrekeySecret(xPriv: X25519.generatePrivateKey(), pqSeed: CryptoBytes.random(64), ts: 1_790_000_000_000))
+        let built = try RoomSeal.bundle(
+            room: v.str("room"), acct: v.str("acct"), node: node.nodeId, keyring: keyring,
+            prekey: try XCTUnwrap(keyring.newestPrekey()), nodeIdentity: node)
+        XCTAssertEqual(built["nsig"]?.stringValue, v.str("nsig"))
+        let receiver = try RoomSeal(
+            room: v.str("room"), policy: .open, acct: "bob", node: nil,
+            keyring: try ChatKeyring.fromSecrets(identitySeed: Ed25519.generateSeed()))
+        XCTAssertEqual(receiver.acceptBundle(built, now: 1_790_000_000_000)?.state, .approved)
+        for reject in v.maps("rejects") {
+            var bad = built
+            bad["node"] = .string(reject.str("node"))
+            bad["nsig"] = .string(reject.str("nsig"))
+            let other = try RoomSeal(
+                room: reject.str("room"), policy: .open, acct: "bob", node: nil,
+                keyring: try ChatKeyring.fromSecrets(identitySeed: Ed25519.generateSeed()))
+            XCTAssertNil(other.acceptBundle(bad, now: 1_790_000_000_000), reject.str("why"))
+        }
     }
 }

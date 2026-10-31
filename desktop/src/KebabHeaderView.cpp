@@ -1,5 +1,7 @@
 #include "KebabHeaderView.h"
 
+#include "DesignTokens.h"
+
 #include <QAction>
 #include <QEvent>
 #include <QHelpEvent>
@@ -20,6 +22,18 @@ constexpr int kStackedIconSize = 14;
 constexpr int kStackedHorizontalPadding = 3;
 constexpr int kStackedVerticalPadding = 2;
 constexpr int kStackedIconTextGap = 1;
+constexpr int kNextOptionsInset = 4;
+constexpr int kNextLabelGap = 6;
+constexpr int kNextSortSlot = 14;
+constexpr int kNextHeaderFontPx = 12;
+
+QFont nextHeaderFont(const QFont &base)
+{
+    QFont font = base;
+    font.setPixelSize(kNextHeaderFontPx);
+    font.setWeight(QFont::Medium);
+    return font;
+}
 } // namespace
 
 KebabHeaderView::KebabHeaderView(Qt::Orientation orientation, QWidget *parent)
@@ -52,6 +66,8 @@ int KebabHeaderView::sortSlotWidth(int logicalIndex) const
     // height and cannot be recomputed by hand from the stylesheet.
     if (!isSortIndicatorShown())
         return 0;
+    if (flatNext())
+        return kNextSortSlot;
     QStyleOptionHeader opt;
     initStyleOptionForIndex(&opt, logicalIndex);
     QFont bold = font();
@@ -128,6 +144,84 @@ void KebabHeaderView::carrySortSlot(int section)
         resizeSection(section, sectionSize(section) + sortSlotWidth(section));
 }
 
+bool KebabHeaderView::flatNext() const
+{
+    return !m_stackedIconLabels && Theme::isNext();
+}
+
+void KebabHeaderView::paintFlatNextSection(QPainter *painter, const QRect &rect,
+                                           int logicalIndex) const
+{
+    if (!rect.isValid())
+        return;
+    QStyleOptionHeaderV2 opt;
+    initStyleOptionForIndex(&opt, logicalIndex);
+    opt.rect = rect;
+    opt.sortIndicator = QStyleOptionHeader::None;
+    opt.textElideMode = Qt::ElideRight;
+    opt.fontMetrics = QFontMetrics(nextHeaderFont(font()));
+
+    const QRect zone = kebabRect(rect, logicalIndex);
+    int limit = zone.left() - kNextLabelGap;
+    if (sectionShowsSortArrow(logicalIndex))
+        limit -= kNextSortSlot;
+
+    painter->save();
+    painter->setClipRect(rect, Qt::IntersectClip);
+    style()->drawControl(QStyle::CE_HeaderSection, &opt, painter, this);
+    QStyleOptionHeaderV2 label(opt);
+    label.rect = style()->subElementRect(QStyle::SE_HeaderLabel, &opt, this);
+    label.rect.setRight(qMin(label.rect.right(), limit));
+    int textWidth = label.rect.width();
+    if (!label.icon.isNull())
+        textWidth -= style()->pixelMetric(QStyle::PM_SmallIconSize, &opt, this) +
+                     style()->pixelMetric(QStyle::PM_HeaderMargin, &opt, this);
+    label.text = opt.fontMetrics.elidedText(label.text, Qt::ElideRight, qMax(0, textWidth));
+    if (label.rect.width() > 0 && (!label.text.isEmpty() || !label.icon.isNull())) {
+        painter->setClipRect(QRect(rect.left(), rect.top(), limit - rect.left() + 1,
+                                   rect.height()),
+                             Qt::IntersectClip);
+        style()->drawControl(QStyle::CE_HeaderLabel, &label, painter, this);
+    }
+    painter->restore();
+
+    const bool sorted = isSortIndicatorShown() && sortIndicatorSection() == logicalIndex;
+    if (sorted && sectionShowsSortArrow(logicalIndex) && limit > rect.left()) {
+        const QRect slot(zone.left() - kNextSortSlot, rect.top(), kNextSortSlot,
+                         rect.height());
+        const qreal cx = slot.center().x() + 0.5;
+        const qreal cy = slot.center().y() + 0.5;
+        const qreal direction = sortIndicatorOrder() == Qt::AscendingOrder ? -1.0 : 1.0;
+        const QPointF tip(cx, cy + 4.0 * direction);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->setPen(QPen(Theme::color(Theme::Role::FgSecondary), 1.35,
+                             Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter->drawLine(QPointF(cx, cy - 4.0 * direction), tip);
+        painter->drawLine(tip, QPointF(cx - 3.0, tip.y() - 3.0 * direction));
+        painter->drawLine(tip, QPointF(cx + 3.0, tip.y() - 3.0 * direction));
+        painter->restore();
+    }
+
+    if (logicalIndex != m_hoverSection || rect.width() <= optionsButtonWidth() * 2)
+        return;
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    if (m_hoverOptions) {
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(Theme::color(Theme::Role::SurfaceActive));
+        painter->drawRoundedRect(QRectF(zone).adjusted(0.5, 2.5, -0.5, -2.5), 4, 4);
+    }
+    painter->setPen(QPen(Theme::color(m_hoverOptions ? Theme::Role::Fg
+                                                     : Theme::Role::FgMuted),
+                         1.35, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    const int cx = zone.center().x();
+    const int cy = zone.center().y();
+    painter->drawLine(QPoint(cx - 3, cy - 1), QPoint(cx, cy + 2));
+    painter->drawLine(QPoint(cx, cy + 2), QPoint(cx + 3, cy - 1));
+    painter->restore();
+}
+
 QRect KebabHeaderView::kebabRect(const QRect &sectionRect,
                                  int logicalIndex) const
 {
@@ -137,7 +231,9 @@ QRect KebabHeaderView::kebabRect(const QRect &sectionRect,
     // footprint, which is why it is measured from the rect rather than from
     // sortSlotWidth()'s content-based reserve.
     int right = sectionRect.right();
-    if (sectionShowsSortArrow(logicalIndex)) {
+    if (flatNext())
+        right -= kNextOptionsInset;
+    else if (sectionShowsSortArrow(logicalIndex)) {
         right -= m_stackedIconLabels
                      ? sortSlotWidth(logicalIndex)
                      : sectionRect.height() +
@@ -173,6 +269,11 @@ QSize KebabHeaderView::sectionSizeFromContents(int logicalIndex) const
                          metrics.height());
     }
     QSize size = QHeaderView::sectionSizeFromContents(logicalIndex);
+    if (flatNext()) {
+        size.setWidth(size.width() + optionsButtonWidth() + kNextOptionsInset +
+                      (sectionShowsSortArrow(logicalIndex) ? kNextSortSlot : 0));
+        return size;
+    }
     size.setWidth(size.width() + optionsButtonWidth());
     if (!sectionShowsSortArrow(logicalIndex))
         size.setWidth(qMax(1, size.width() - sortSlotWidth(logicalIndex)));
@@ -182,6 +283,10 @@ QSize KebabHeaderView::sectionSizeFromContents(int logicalIndex) const
 void KebabHeaderView::paintSection(QPainter *painter, const QRect &rect,
                                    int logicalIndex) const
 {
+    if (flatNext()) {
+        paintFlatNextSection(painter, rect, logicalIndex);
+        return;
+    }
     if (!m_stackedIconLabels) {
         QHeaderView::paintSection(painter, rect, logicalIndex);
     } else {

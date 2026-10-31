@@ -264,10 +264,24 @@ final class ChatNewMessageTests: XCTestCase {
 
         let (third, h3) = try await hub()
         third.workspace = ChatWorkspace(store: store, scope: "next")
-        third.switchConversation("@peer-9")
+        let dm = "direct:\(ChatNewMessageTests.conversationId)"
+        third.switchConversation(dm)
         third.restoreLastConversation()
-        XCTAssertEqual(third.currentConversation, "@peer-9", "a conversation opened from a notification wins")
+        XCTAssertEqual(third.currentConversation, dm, "a conversation opened from a notification wins")
         await h3.close()
+
+        let (fourth, h4) = try await hub()
+        let saved = ChatWorkspace(store: store, scope: "next")
+        saved.setLastConversation("@peer-9")
+        saved.setStarred("@peer-9", true)
+        saved.setDraft("psst", for: "@peer-9")
+        fourth.workspace = ChatWorkspace(store: store, scope: "next")
+        XCTAssertEqual(fourth.workspace.lastConversation, "", "a relay @peer conversation is forgotten")
+        XCTAssertFalse(fourth.workspace.isStarred("@peer-9"))
+        XCTAssertFalse(fourth.workspace.hasDraft("@peer-9"))
+        fourth.restoreLastConversation()
+        XCTAssertEqual(fourth.currentConversation, "#general")
+        await h4.close()
     }
 
     func testANotificationOpenAsksTheScreenToRevealTheConversation() async throws {
@@ -278,30 +292,49 @@ final class ChatNewMessageTests: XCTestCase {
         XCTAssertEqual(hub.revealRequests, 0, "picking a room inside Chat reveals nothing")
         hub.switchConversation("#ops")
         XCTAssertEqual(hub.revealRequests, 1, "the same room tapped from a notification still closes what covers it")
-        hub.switchConversation("@peer-9")
+        let dm = "direct:\(ChatNewMessageTests.conversationId)"
+        hub.switchConversation(dm)
         XCTAssertEqual(hub.revealRequests, 2)
-        XCTAssertEqual(hub.currentConversation, "@peer-9")
+        XCTAssertEqual(hub.currentConversation, dm)
+        hub.switchConversation("@peer-9")
+        XCTAssertNotEqual(hub.currentConversation, "@peer-9", "a relay @peer conversation never opens")
         await h.close()
     }
 
-    func testWithoutAnAccountAnOnlinePeerGetsARelayDirectMessage() async throws {
+    func testAnOnlinePeerIsMessagedThroughTheirAccountAndAGuestNotAtAll() async throws {
         let (hub, h) = try await hub()
         try await h.sendProtected([
             "type": "presence", "id": "p1", "senderId": "peer-1", "sender": "Pat Smith", "ownerUser": "pat",
             "ts": .int(Date().epochMillis),
         ])
-        let known = await waitUntil { h.relay.roster().count > 1 }
+        try await h.sendProtected(
+            ["type": "presence", "id": "p2", "senderId": "guest-1", "sender": "Zed", "ts": .int(Date().epochMillis)],
+            signedIn: false)
+        let known = await waitUntil { h.relay.roster().count > 2 }
         XCTAssertTrue(known)
         let suggestion = try XCTUnwrap(hub.recipientSuggestions("pat").first)
-        XCTAssertEqual(suggestion.peerId, "peer-1")
+        XCTAssertEqual(suggestion.peerId, h.node("peer-1"))
         XCTAssertEqual(suggestion.detail, "Online")
-        let sent = await hub.sendNewMessage(to: [suggestion], text: "hi :wave:")
-        XCTAssertTrue(sent)
-        XCTAssertEqual(hub.currentConversation, "@peer-1")
-        XCTAssertEqual(hub.rows.last?.text, "hi \u{1F44B}")
-        XCTAssertEqual(hub.directRows.map(\.conversation), ["@peer-1"])
-        XCTAssertEqual(hub.searchMessages("from:zed hi").count, 0)
-        XCTAssertEqual(hub.searchMessages("hi in:pat").map(\.place), ["@Pat Smith"])
+        let withoutAccount = await hub.sendNewMessage(to: [suggestion], text: "hi :wave:")
+        XCTAssertFalse(withoutAccount, "signed out, there is no direct message to send")
+        XCTAssertEqual(hub.currentConversation, "#general")
+        XCTAssertTrue(hub.directRows.isEmpty)
+        let api = FakeAccountApi()
+        api.replies["POST /api/chat/direct-messages"] = [
+            "conversation": ["id": .string(ChatNewMessageTests.conversationId), "otherUser": "pat"]
+        ]
+        hub.direct = directService(api)
+        let opened = await hub.sendNewMessage(to: [suggestion], text: "")
+        XCTAssertTrue(opened)
+        XCTAssertEqual(hub.currentConversation, "direct:\(ChatNewMessageTests.conversationId)")
+        XCTAssertEqual(api.calls.first { $0.0 == "POST" }?.2?["username"]?.text, "pat")
+        let guest = ChatHub.recipient(for: try XCTUnwrap(hub.memberGroups.first { $0.id == h.node("guest-1") }))
+        XCTAssertEqual(guest.account, "")
+        api.calls = []
+        let toGuest = await hub.sendNewMessage(to: [guest], text: "hello")
+        XCTAssertFalse(toGuest)
+        XCTAssertTrue(api.calls.isEmpty, "a guest is never looked up as an account")
+        XCTAssertFalse(h.openFrames().contains { $0["type"]?.text == "dm" })
         await h.close()
     }
 
@@ -333,14 +366,14 @@ final class ChatNewMessageTests: XCTestCase {
         let r6 = await hub.sendChatText("/msg nobody hello")
         XCTAssertFalse(r6)
         XCTAssertEqual(hub.currentConversation, "#ops")
-        XCTAssertEqual(hub.notice?.text, "nobody is not online. Sign in to send messages that wait for them.")
+        XCTAssertEqual(hub.notice?.text, "Sign in to send direct messages.")
         await h.close()
     }
 
     func testSavingSharingAndMentions() async throws {
         let (hub, h) = try await hub()
         hub.select("#ops")
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "m-peer", "senderId": "peer-1", "sender": "Pat", "channel": "#ops",
             "text": "@Mobile Tester can you check the deploy?", "ts": .int(Date().epochMillis),
         ])

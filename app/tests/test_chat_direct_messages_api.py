@@ -36,6 +36,12 @@ class FakeRuntime:
             (ROOT / "migrations" / "0084_chat_direct_message_limits.sql")
             .read_text(encoding="utf-8")
         )
+        self.db.execute(
+            "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+        self.db.executescript(
+            (ROOT / "migrations" / "0286_chat_blocks.sql")
+            .read_text(encoding="utf-8")
+        )
         self.actor = ""
         self.request_method = "GET"
         self.request_data = {}

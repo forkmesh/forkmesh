@@ -11,6 +11,9 @@ import sqlite3
 
 ENTRY = Path(__file__).resolve().parents[1] / "src" / "entry.py"
 SOURCE = ENTRY.read_text(encoding="utf-8")
+ENTRY_OWNED_FIELDS = SOURCE[
+    SOURCE.index("CHAT_RELAY_OWNED_FIELDS = frozenset("):
+    SOURCE.index("ROOM_SOCKETS_PER_ADDRESS = ")]
 
 
 def _history_helpers(db):
@@ -308,9 +311,10 @@ def test_replayed_cipher_is_transport_marked_and_terminated():
     )
     source = ast.unparse(socket_message)
     assert "envelope.get('kind') != 'cipher'" in source
-    assert "envelope.pop('historyReplay', None)" in source
-    assert source.index("envelope.pop('historyReplay', None)") < source.index(
+    assert "key not in CHAT_RELAY_OWNED_FIELDS" in source
+    assert source.index("key not in CHAT_RELAY_OWNED_FIELDS") < source.index(
         "peer.send(message)")
+    assert '"historyReplay"' in ENTRY_OWNED_FIELDS
 
 
 def _direct_history(db, clock):

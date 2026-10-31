@@ -1,5 +1,6 @@
 #include "SavedSearchStore.h"
 #include "AppPaths.h"
+#include "BackgroundFileWriter.h"
 
 #include <algorithm>
 #include <QCryptographicHash>
@@ -334,10 +335,8 @@ bool SavedSearchStore::load()
     return true;
 }
 
-bool SavedSearchStore::save() const
+QByteArray SavedSearchStore::serialized() const
 {
-    if (m_path.isEmpty())
-        return false;
     QJsonArray rows;
     for (const SavedSearch &search : m_searches) {
         QJsonObject counts;
@@ -366,12 +365,19 @@ bool SavedSearchStore::save() const
              search.acknowledgedFingerprint},
         });
     }
-    QDir().mkpath(QFileInfo(m_path).absolutePath());
-    QSaveFile file(m_path);
-    if (!file.open(QIODevice::WriteOnly))
+    return QJsonDocument(QJsonObject{{QStringLiteral("version"), 1},
+                                     {QStringLiteral("searches"), rows}})
+        .toJson(QJsonDocument::Compact);
+}
+
+bool SavedSearchStore::save() const
+{
+    if (m_path.isEmpty())
         return false;
-    file.write(QJsonDocument(QJsonObject{{QStringLiteral("version"), 1},
-                                         {QStringLiteral("searches"), rows}})
-                   .toJson(QJsonDocument::Compact));
-    return file.commit();
+    return forkmesh::diskwrite::writeNow(m_path, serialized());
+}
+
+void SavedSearchStore::saveLater() const
+{
+    forkmesh::diskwrite::writeLater(m_path, serialized());
 }

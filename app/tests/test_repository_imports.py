@@ -182,6 +182,16 @@ def test_provider_url_parser_is_canonical_and_not_an_ssrf_surface():
     assert codeberg["owner"] == "m33"
     assert codeberg["name"] == "tootbot-py"
     assert codeberg["metadataPath"] == "/repos/m33/tootbot-py"
+    gitea = imports.parse_provider_source("https://www.gitea.com/gitea/tea.git")
+    assert gitea == {
+        "provider": "gitea",
+        "host": "gitea.com",
+        "owner": "gitea",
+        "name": "tea",
+        "fullName": "gitea/tea",
+        "canonicalUrl": "https://gitea.com/gitea/tea",
+        "metadataPath": "/repos/gitea/tea",
+    }
 
     rejected = (
         "http://github.com/octo/widget",
@@ -192,6 +202,10 @@ def test_provider_url_parser_is_canonical_and_not_an_ssrf_surface():
         "https://github.com:444/octo/widget",
         "https://127.0.0.1/octo/widget",
         "https://github.com:bogus/octo/widget",
+        "https://gitea.com/gitea/tea/issues",
+        "https://gitea.com/api/v1/repos/gitea/tea",
+        "https://gitea.example.com/gitea/tea",
+        "https://gitea.com.evil.test/gitea/tea",
     )
     for value in rejected:
         with pytest.raises(imports.ProviderSourceError):
@@ -203,6 +217,8 @@ def test_namespace_parser_accepts_only_canonical_organization_urls():
         "provider": "codeberg", "namespace": "m33"}
     assert imports.parse_provider_namespace("codeberg.org/m33/") == {
         "provider": "codeberg", "namespace": "m33"}
+    assert imports.parse_provider_namespace("https://gitea.com/gitea") == {
+        "provider": "gitea", "namespace": "gitea"}
     assert imports.parse_provider_namespace("https://gitlab.com/acme") == {
         "provider": "gitlab", "namespace": "acme"}
     # A GitLab organization nests subgroups, so a deeper path is a namespace
@@ -217,7 +233,8 @@ def test_namespace_parser_accepts_only_canonical_organization_urls():
             "https://gitlab.com/acme?tab=projects",
             "https://gitlab.com/",
             "https://github.com/m33",
-            "http://codeberg.org/m33"):
+            "http://codeberg.org/m33",
+            "https://gitea.com/gitea/tea"):
         with pytest.raises(imports.ProviderSourceError):
             imports.parse_provider_namespace(value)
 
@@ -249,6 +266,29 @@ def test_provider_fetch_plan_is_metadata_only():
     for forbidden in ("/contents", "/archive", "/tarball", "/zipball", "/raw/"):
         assert forbidden not in joined
 
+
+def test_gitea_record_uses_the_gitea_api_and_names_gitea_in_attribution():
+    source = imports.parse_provider_source("https://gitea.com/octo/widget")
+    assert imports.provider_api_origin("gitea") == "https://gitea.com/api/v1"
+    paths = imports.provider_extra_paths(source, github_root())
+    assert paths["branches"] == "/repos/octo/widget/branches?limit=100"
+    assert paths["issues"] == \
+        "/repos/octo/widget/issues?state=all&limit=50&type=issues"
+    assert imports.namespace_discovery_paths("gitea", "octo", 2) == [
+        "/users/octo/repos?limit=50&page=2"]
+    root = dict(github_root(), html_url="https://gitea.com/octo/widget")
+    record = imports.build_repository_record(
+        source, root, github_extras(), "alice", "import", 1_700_000_000_000)
+    assert record["provider"] == "gitea"
+    assert record["providerHost"] == "gitea.com"
+    assert record["originalUrl"] == "https://gitea.com/octo/widget"
+    assert record["attribution"]["provider"] == "Gitea"
+    assert record["attribution"]["api"] == "https://gitea.com/api/v1"
+    assert record["attribution"]["termsUrl"] == \
+        "https://about.gitea.com/terms-of-service/"
+    assert record["id"] != imports.build_repository_record(
+        imports.parse_provider_source("https://codeberg.org/octo/widget"),
+        root, github_extras(), "alice", "import", 1_700_000_000_000)["id"]
 
 def test_provider_snapshot_stops_immediately_when_rate_budget_is_exhausted():
     calls = []
@@ -1413,6 +1453,33 @@ def test_codeberg_namespace_discovery_paginates_and_filters_provider_urls():
         "/users/m33/repos?limit=50&page=2",
     ]
 
+
+def test_gitea_namespace_discovery_lists_one_gitea_profile():
+    harness = ServiceHarness()
+    calls = []
+
+    async def provider_fetch(env, provider, path, token):
+        calls.append((provider, path, token))
+        return {
+            "status": 200,
+            "data": [
+                {"html_url": "https://gitea.com/gitea/tea", "private": False},
+                {"html_url": "https://gitea.com/other/tool", "private": False},
+                {"html_url": "https://codeberg.org/gitea/tea",
+                 "private": False},
+            ],
+            "headers": {},
+        }
+
+    harness.service.d["provider_fetch"] = provider_fetch
+    response = harness.call(Request(
+        "POST",
+        {"sourceUrl": "https://gitea.com/gitea", "sessionToken": "alice"},
+        actor="alice",
+    ), "/api/repository-imports/discover")
+    assert response["status"] == 200
+    assert response["data"]["repositories"] == ["https://gitea.com/gitea/tea"]
+    assert calls == [("gitea", "/users/gitea/repos?limit=50&page=1", "")]
 
 def test_gitlab_group_discovery_includes_subgroups_and_skips_outsiders():
     harness = ServiceHarness()

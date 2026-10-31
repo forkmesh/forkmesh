@@ -9,7 +9,7 @@ lifecycle is in [README.md](README.md); access rules in
 
 | Where the agent runs | Runtime | Tools it gets | What limits them |
 | --- | --- | --- | --- |
-| Desktop, Claude Code provider | `claude` stream-json (`ClaudeStreamSession.cpp`) | Claude Code built-ins; MCP servers from `.mcp.json` and the user's config; the IDE bridge | Permission mode, tool families, folder lock, gate hook, optional allowlist |
+| Desktop, Claude Code provider | `claude` stream-json (`ClaudeStreamSession.cpp`) | Claude Code built-ins; the ForkMesh MCP server (`--mcp-config`), `.mcp.json` once approved and the user's config; the IDE bridge | Permission mode, tool families, folder lock, gate hook, optional allowlist |
 | Desktop, Codex provider | `codex app-server` (`CodexAppServerSession.cpp`) | Codex built-ins (shell, apply_patch, web search, view_image) | Approval policy `never`, folder lock, tool families Codex can switch off |
 | Desktop, legacy `claude` (API) provider | `ClaudeAgentScript.h` | One `bash` tool | Landlock, jail, gate, 60 turns |
 | Desktop, `local-llama` and `cloudflare-ai` | `tools/forkmesh_coding_agent.py` | 18 ForkMesh coding tools | Landlock, gate, tool families, path guardrails |
@@ -18,7 +18,7 @@ lifecycle is in [README.md](README.md); access rules in
 | iOS and Android coding agent | `FMAgents/CodingAgent.swift`, `AgentTools.kt` | 7 file and Git tools, no shell | Plan mode refuses edits; 24 turns |
 | iOS Genie and on-device chat | `FMAssistant/` | Genie tools and ForkMesh account tools | Approval on start, message, stop and delete |
 | Desktop teammates | Claude Code or Codex desktop runs | The provider's tools plus their CLIs | Teammate permissions ([access-rules.md](access-rules.md#teammates)) |
-| Any MCP client | `tools/forkmesh_mcp_server.py` | ForkMesh MCP tools | Connector token for writes, CRM and tasks; desktop socket for agents, windows and releases |
+| Any MCP client | `tools/forkmesh_mcp_server.py` | ForkMesh MCP tools | Connector token for writes, CRM, tasks, windows and agent tools; desktop socket for agents, windows, widgets, runners and releases |
 | Remote MCP client | `app/src/remote_mcp.py` at `/mcp` | 3 organization task tools | Org bot bearer scopes |
 
 ## Desktop: Claude Code runs
@@ -30,6 +30,12 @@ Launch: `claude --output-format stream-json --input-format stream-json
   `--dangerously-skip-permissions`, Plan `--permission-mode plan`, Edit
   `acceptEdits`, Ask `default`. Mid-run changes use a `set_permission_mode`
   control request; a run not launched in Auto cannot be raised to it.
+  The CLI does not tell the model about such a switch, and a run launched
+  in Auto keeps "bypass permissions mode is active" in its system prompt,
+  so the next message after a switch starts with a `[ForkMesh: permission
+  mode changed. ...]` line naming the old and new mode and what the new
+  one asks approval for (`permissionModeChangeNotice`). It is sent once;
+  a restart drops it, since the new launch's flags say the mode.
 - `--model`, `--effort`, `--fallback-model`, `--resume`.
 - `--disallowedTools` for families turned off under Tool efficiency
   (`agents/disabledToolFamilies`, `AgentToolPolicy.cpp`):
@@ -58,7 +64,7 @@ Launch: `claude --output-format stream-json --input-format stream-json
   workspace.
 - `--tools` only when the global tool allowlist is on.
 
-Never passed: `--allowedTools`, `--mcp-config`, `--strict-mcp-config`,
+Never passed: `--allowedTools`, `--strict-mcp-config`,
 `--append-system-prompt`, `--add-dir`.
 
 Tool guidance reaches the agent through the prompt:
@@ -66,6 +72,25 @@ Tool guidance reaches the agent through the prompt:
 searches, reading long files by range and docs by headings, anchored edits,
 background waits instead of foreground sleeps, test output piped through
 `tail`), and the guardrail wording names the folders the lock allows.
+
+**Read guard.** `agentrules::claudeSettingsWithReadGuard` adds a
+`PreToolUse` hook on `Read` to every Claude Code launch, with or without the
+network gate. It refuses a Read with no `offset`, `limit` or `pages` of a text
+file over 32 KB (`kReadGuardBytes`, about 8K tokens) and tells the agent the
+file's line count, to Grep first and read a range, and that `offset 1` with a
+`limit` reads it all. Whole-file Reads were the largest Claude Code cost in
+the improvement log (about 1M tokens a week, mostly 4-13K token Swift, Kotlin
+and docs files) although the prompt already asked for ranges. Images, PDFs,
+notebooks, binary files and missing paths pass. The improvement log files the
+refusal as "whole-file read refused".
+
+Codex has no hook here, and its oversized shell results (about 2.3M tokens a
+week) were mostly chained `sed -n` reads of several files and `git diff` /
+`git log --stat` over whole branches. The prompt now says a chain or loop
+shares one output budget (`{ ...; } | head -n 300`) and how to read history
+(`--oneline`, `--stat` first, one path, default context), and the improvement
+log files those results as "chained reads" and "git history" with matching
+suggestions.
 
 The tool efficiency ledger (`AgentToolImprovementLog.cpp`) classifies every tool result into
 outcomes, empty probes, oversized results and known refusals, each with a
@@ -79,11 +104,19 @@ IDE bridge port are added off the VM.
 
 ### MCP servers
 
-The desktop does not hand an MCP config to its runs. Claude Code loads the
-checked-in `.mcp.json` (one server, `forkmesh`, run as
-`python3 tools/forkmesh_mcp_server.py`) and whatever the user registered,
-for example with the `claude mcp add forkmesh --scope user …` command
-Settings > MCP copies.
+Every run gets `--mcp-config <data>/core/agent-mcp/session-<id>.json`
+(mode 0600, rewritten on each launch by `MainWindow::addAgentRunMcpConfig`):
+the `forkmesh` server (`forkmesh::mcp::configJson`, the same file the
+terminal tabs get) with the run's `FORKMESH_AGENT_INTAKE` and
+`FORKMESH_AGENT_INTAKE_TOKEN` in its `env`. Without it a run had no ForkMesh
+tools at all: a non-interactive `claude` skips a checked-in `.mcp.json` until
+the user approves it in an interactive session (`enabledMcpjsonServers`), and
+other repositories have no `.mcp.json`. So the terminal, window, browser and
+hub tools ([../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md))
+reach every run, as Claude Code's desktop app gives its sessions their panes.
+The flag adds to the user's own servers (no `--strict-mcp-config`), and a run
+with guardrails gets the config file and the server's folder as read-only
+paths. Runs in the KVM workspace, which have no intake socket, get no file.
 
 ### IDE bridge
 
@@ -157,6 +190,17 @@ read-only. CRM tools and `list_tasks`/`get_task` need the token even to read.
 Agent, window and release tools need the desktop's intake socket
 (`FORKMESH_AGENT_INTAKE`).
 
+The issue, milestone, project and pull stores (`.forkmesh/issues`,
+`.forkmesh/projects`, `.forkmesh/pulls`) are read and written in the working
+tree, so every path goes through `checked_store_path`. It refuses a path
+with a symlink at any component below the repository root, the same rule
+`notes_root` applies to notes. Listings (`search_issues`,
+`existing_pr_for_head`) skip such entries. Without this check a repository
+author could commit `.forkmesh/pulls/<n>/changes.patch` as a link to
+`/proc/self/environ` or the identity key, and `get_pr_diff` returned the
+target's bytes. A symlinked `milestones.json` or issue record was also
+written through to wherever it pointed.
+
 | Group | Tools | Notes |
 | --- | --- | --- |
 | Identity and code | `whoami`, `list_repos`, `list_repositories`, `list_files`, `read_file`, `search_code` | Local Git reads; `read_file` up to 1 MiB, `search_code` up to 200 hits |
@@ -170,10 +214,13 @@ Agent, window and release tools need the desktop's intake socket
 | Releases | `list_releases`, `create_release`, `publish_release` | Desktop socket; 6 per 10 minutes |
 | Ledger | `record_expense` | Signed `POST /api/ledger/expenses`; the signed-in account must be an administrator with two-factor sign-in ([../finance/cfo.md](../finance/cfo.md#recording-expenses)) |
 | Email | `send_email` | Sends through the local Zoho Mail account set up with `tools/zoho_mail.py`, no confirmation step, then logs outside recipients in the CRM's Initiatives list ([../tools/zoho-mail.md](../tools/zoho-mail.md)) |
-| Windows | `show_window`, `read_window`, `close_window`, `open_browser_window`, `read_browser_page` | Desktop socket; the user can stop a page being shared |
+| Windows | `show_window`, `read_window`, `close_window`, `open_browser_window`, `read_browser_page`, `browser_action`, `show_widget`, `suggest_session` | Desktop socket; the user can stop a page being shared; widgets run sandboxed with no network; a suggested session starts only when the user presses Start session |
+| Agents and runners | `list_agents`, `send_agent_message`, `list_runners`, `notify_user` | Desktop socket; messages only reach desktop agents whose mode allows no more than the sender's; 30 messages and 10 notifications per 10 minutes |
 
 Details: [../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
 [../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md),
+[../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md)
+(how these map to Claude Code desktop's own tools),
 [../tools/mcp-releases.md](../tools/mcp-releases.md).
 
 ## Remote MCP
@@ -185,8 +232,10 @@ POST only), authenticated by an organization bot bearer token:
 
 ## Teammates
 
-Teammates (`.forkmesh/teammates/*.json`) are desktop Claude Code or Codex
-runs and get that provider's tools; the JSON has no tool list. Permissions
+Teammates (special agents: the Special agent step of a
+`.forkmesh/workflows/*.json` workflow, or a legacy `.forkmesh/teammates/*.json`
+file) are desktop Claude Code or Codex runs and get that provider's tools; the
+JSON has no tool list. Permissions
 and modes are enforced as in [access-rules.md](access-rules.md#teammates).
 Some teammates use repository CLIs through the shell (for example
 `tools/discord_community.py`, which posts only with `--send`, and

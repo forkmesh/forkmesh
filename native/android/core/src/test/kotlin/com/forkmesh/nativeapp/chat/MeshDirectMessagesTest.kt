@@ -154,6 +154,8 @@ class MeshDirectMessagesTest {
             ann.screenFocus(channel)
             pat.screenFocus(channel)
             expect(waitUntil { annMesh.peerFocused(patKid, channel) }, "pat's focus reaches ann over the link")
+            expect(waitUntil { patMesh.peerFocused(annKid, channel) })
+            expect(!eveMesh.peerFocused(annKid, channel) && !eveMesh.peerFocused(patKid, channel), "a phone outside the conversation is not told who is looking at it")
             assertEq(DirectMessageFrames.ROUTE_DIRECT_ONLY, ann.routeLabel(channel))
             val before = relay.sent.size
             expect(ann.send(channel, "only between us"))
@@ -206,7 +208,7 @@ class MeshDirectMessagesTest {
 
             override fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean = error("nothing is linked")
 
-            override fun setFocus(channel: String, on: Boolean) {}
+            override fun setFocus(channel: String, on: Boolean, kids: Set<String>) {}
         }
         expect(!dm.send(channel, "hello?"), "nothing reached anyone")
         expect(asked > 0)

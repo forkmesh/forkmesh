@@ -153,6 +153,7 @@ val PING_KIND_FALLBACK_CATALOG: List<PingKindGroup> = listOf(
         listOf(
             PingKind("issue_opened", "New issues", true),
             PingKind("pull_submitted", "New pull requests", true),
+            PingKind("pull_attention", "Reviews and conflicts on your pull requests", true),
             PingKind("issue_assigned", "Issue assignments", true),
             PingKind("pending_inbox", "Inbox updates", true),
             PingKind("repo_activity", "Pushes and merges", false),

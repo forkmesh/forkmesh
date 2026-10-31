@@ -151,7 +151,7 @@ struct RunnerSignInSheet: View {
                     .onSubmit { Task { await model.submitCode() } }
                     .accessibilityIdentifier("runner-signin-code")
                 FmToneButton(
-                    label: "Send", tone: .accent, filled: true,
+                    label: "Send", tone: .accent, filled: true, busy: model.sending,
                     onPressed: sendAction)
             }
             if !model.inputError.isEmpty {

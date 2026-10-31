@@ -11,7 +11,7 @@ site or the code.
 
 | Part | File |
 | --- | --- |
-| Special agent | `.forkmesh/teammates/site-crawler.json` (id `site-crawler`, name Crawler, avatar `crawler`) |
+| Special agent | `.forkmesh/workflows/site-crawler.json` (id `site-crawler`, name Crawler, avatar `crawler`) |
 | Playbook | `.forkmesh/shortcuts/crawl-the-website.md` |
 | Skill | `.forkmesh/skills/website-inspection.skill` |
 | Crawler | `tools/site_crawler.py` (standard library only) |

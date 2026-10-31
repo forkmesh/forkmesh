@@ -52,6 +52,18 @@ function(forkmesh_package_modules_partition)
             endforeach()
         endforeach()
     endif()
+    set(_app_include_dirs "")
+    foreach(_id IN LISTS FORKMESH_CORE_LINKED_PLUGINS)
+        forkmesh_package_variable_id(_variable "${_id}")
+        list(APPEND _app_include_dirs ${FORKMESH_PACKAGE_${_variable}_INCLUDE_DIRS})
+    endforeach()
+    foreach(_id IN LISTS FORKMESH_PLUGIN_MODULE_CANDIDATES)
+        forkmesh_package_variable_id(_variable "${_id}")
+        if(DEFINED FORKMESH_PACKAGE_${_variable}_SOURCES)
+            set_source_files_properties(${FORKMESH_PACKAGE_${_variable}_SOURCES} PROPERTIES
+                INCLUDE_DIRECTORIES "${FORKMESH_PACKAGE_${_variable}_INCLUDE_DIRS}")
+        endif()
+    endforeach()
     set(_app_sources ${FORKMESH_APP_SOURCES})
     set(_app_headers ${FORKMESH_MARKETPLACE_MOC_HEADERS})
     if(_module_sources)
@@ -63,6 +75,7 @@ function(forkmesh_package_modules_partition)
     set(FORKMESH_BUILT_PACKAGE_MODULES "${_modules}" PARENT_SCOPE)
     set(FORKMESH_APP_EXECUTABLE_SOURCES "${_app_sources}" PARENT_SCOPE)
     set(FORKMESH_APP_MARKETPLACE_MOC_HEADERS "${_app_headers}" PARENT_SCOPE)
+    set(FORKMESH_APP_MARKETPLACE_INCLUDE_DIRS "${_app_include_dirs}" PARENT_SCOPE)
 endfunction()
 
 function(forkmesh_package_module_abi out)
@@ -82,7 +95,7 @@ function(forkmesh_add_package_modules)
     file(GLOB _existing "${_output}/*.json" "${_output}/*${CMAKE_SHARED_MODULE_SUFFIX}")
     foreach(_file IN LISTS _existing)
         get_filename_component(_stem "${_file}" NAME_WE)
-        if(NOT _stem IN_LIST FORKMESH_BUILT_PACKAGE_MODULES)
+        if(NOT _stem IN_LIST FORKMESH_BUILT_PACKAGE_MODULES AND NOT _stem STREQUAL "web-engine")
             file(REMOVE "${_file}")
         endif()
     endforeach()
@@ -138,7 +151,7 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
             AUTOMOC OFF
             JOB_POOL_COMPILE forkmesh_heavy)
         target_include_directories(${_target} PRIVATE
-            "$<TARGET_PROPERTY:forkmesh,INCLUDE_DIRECTORIES>")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_compile_definitions(${_target} PRIVATE
             "$<TARGET_PROPERTY:forkmesh,COMPILE_DEFINITIONS>")
         target_compile_options(${_target} PRIVATE
@@ -146,6 +159,7 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
         target_link_libraries(${_target} PRIVATE
             Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent OpenSSL::Crypto)
         forkmesh_link_multimedia(${_target})
+        forkmesh_link_webengine(${_target})
         forkmesh_link_opengl(${_target})
         forkmesh_link_webp(${_target})
         add_dependencies(${_target} forkmesh-version-header)
@@ -163,6 +177,59 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
     message(STATUS "ForkMesh package modules: ${FORKMESH_BUILT_PACKAGE_MODULES}")
 endfunction()
 
+function(forkmesh_add_web_engine_module)
+    set(_output "${CMAKE_CURRENT_BINARY_DIR}/packages")
+    set(_built OFF)
+    if(TARGET Qt6::WebEngineWidgets)
+        target_compile_definitions(forkmesh PRIVATE FORKMESH_WEB_ENGINE_BUILT)
+        if(FORKMESH_PACKAGE_MODULES)
+            set(_built ON)
+        else()
+            forkmesh_embed_web_engine(forkmesh)
+        endif()
+    endif()
+    if(NOT _built)
+        file(REMOVE "${_output}/web-engine.json" "${_output}/web-engine${CMAKE_SHARED_MODULE_SUFFIX}")
+        return()
+    endif()
+    forkmesh_package_module_abi(_abi)
+    include(GNUInstallDirs)
+    set(_generated "${CMAKE_CURRENT_BINARY_DIR}/generated/package-modules/web-engine")
+    file(MAKE_DIRECTORY "${_output}" "${_generated}")
+    file(WRITE "${_generated}/module.cpp.in"
+"extern \"C\" __attribute__((visibility(\"default\"))) int forkmesh_package_module_api() { return ${FORKMESH_PACKAGE_MODULE_API}; }
+extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_package_module_abi() { return \"${_abi}\"; }
+extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_package_module_id() { return \"web-engine\"; }
+")
+    configure_file("${_generated}/module.cpp.in" "${_generated}/module.cpp" COPYONLY)
+    add_library(forkmesh-web-engine MODULE
+        src/WebEngine.h
+        src/WebEngineQt.cpp
+        "${_generated}/module.cpp")
+    set_target_properties(forkmesh-web-engine PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "web-engine"
+        LIBRARY_OUTPUT_DIRECTORY "${_output}"
+        AUTOMOC OFF)
+    target_include_directories(forkmesh-web-engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(forkmesh-web-engine PRIVATE
+        "$<TARGET_PROPERTY:forkmesh,COMPILE_DEFINITIONS>")
+    target_compile_options(forkmesh-web-engine PRIVATE
+        "$<TARGET_PROPERTY:forkmesh,COMPILE_OPTIONS>")
+    target_link_libraries(forkmesh-web-engine PRIVATE Qt6::Widgets Qt6::WebEngineWidgets)
+    add_dependencies(forkmesh forkmesh-web-engine)
+    file(WRITE "${_output}/web-engine.json"
+        "{\"api\":${FORKMESH_PACKAGE_MODULE_API},\"abi\":\"${_abi}\",\"package\":\"web-engine\",\"file\":\"web-engine${CMAKE_SHARED_MODULE_SUFFIX}\",\"entrypoints\":[\"core:web-engine\"]}\n")
+    if(APPLE)
+        install(TARGETS forkmesh-web-engine LIBRARY DESTINATION "ForkMesh.app/Contents/PlugIns/forkmesh-packages")
+        install(FILES "${_output}/web-engine.json" DESTINATION "ForkMesh.app/Contents/PlugIns/forkmesh-packages")
+    else()
+        install(TARGETS forkmesh-web-engine LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/forkmesh/packages")
+        install(FILES "${_output}/web-engine.json" DESTINATION "${CMAKE_INSTALL_LIBDIR}/forkmesh/packages")
+    endif()
+    message(STATUS "Qt WebEngine: built as the web-engine module, loaded the first time a page opens")
+endfunction()
+
 function(forkmesh_add_package_module_tests)
     if(NOT FORKMESH_BUILT_PACKAGE_MODULES OR NOT UNIX OR APPLE)
         return()
@@ -170,4 +237,8 @@ function(forkmesh_add_package_module_tests)
     add_test(NAME forkmesh-package-modules-resolve
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_package_modules.py"
                 "$<TARGET_FILE_DIR:forkmesh>")
+    add_test(NAME forkmesh-plugin-build-isolation
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_plugin_build_isolation.py"
+                "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../marketplace/packages"
+                "${CMAKE_MAKE_PROGRAM}")
 endfunction()

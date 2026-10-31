@@ -50,7 +50,7 @@ public enum PerformanceReport {
             Part("Log volume", logVolume(telemetry.log), rank: 0),
         ]
         let budget = min(maxChars, max(minChars, limit))
-        return fit(shrink(parts, budget), budget)
+        return DiagnosticsBundle.scrub(fit(shrink(parts, budget), budget))
     }
 
     static let headerRank = Int.max

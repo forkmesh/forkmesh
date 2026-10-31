@@ -111,7 +111,8 @@ def test_elements_tab_is_available_to_everyone_device_local_and_wired_to_the_sce
         "data-world-element-toggle",
         'const DISABLED_ELEMENTS_KEY = "forkmesh.world.disabledElements.v1";',
         "function storedDisabledWorldElements()",
-        "initialDisabledElements: this.disabledWorldElements,",
+        "initialDisabledElements: territoryDisabledElements(\n"
+        "          this.disabledWorldElements,",
     ):
         assert contract in APP
     # Every visitor can flip switches, and choices persist on this device only

@@ -1,0 +1,205 @@
+:root,
+[data-dashboard-theme="dark"] {
+  --dashboard-control-radius: 16px;
+  --google-selected: #004a77;
+  --google-on-selected: #c2e7ff;
+}
+
+[data-dashboard-theme="light"] {
+  --google-selected: #c2e7ff;
+  --google-on-selected: #001d35;
+}
+
+:root,
+[data-dashboard-theme="dark"] {
+  --google-avatar: #1a73e8;
+  --google-blue: #8ab4f8;
+  --google-red: #f28b82;
+  --google-yellow: #fdd663;
+  --google-green: #81c995;
+}
+
+[data-dashboard-theme="light"] {
+  --google-blue: #1a73e8;
+  --google-red: #d93025;
+  --google-yellow: #e37400;
+  --google-green: #188038;
+}
+
+body {
+  font-family: "Google Sans", "Google Sans Text", "Product Sans", Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+
+::selection {
+  background: rgb(var(--dashboard-primary-rgb) / 0.35);
+}
+
+h1,
+h2 {
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+h3 {
+  font-weight: 500;
+}
+
+.rounded-md {
+  border-radius: 12px;
+}
+
+.rounded-lg {
+  border-radius: 16px;
+}
+
+.rounded-xl {
+  border-radius: 24px;
+}
+
+.fm-btn {
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.fm-btn:not(.fm-btn-icon, .fm-btn-sm) {
+  padding: 0 16px;
+}
+
+.fm-btn-cta,
+.bg-cta {
+  font-weight: 500;
+}
+
+.fm-btn-cta {
+  border-color: transparent;
+}
+
+.fm-label {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+[data-settings-section-link][aria-current="page"],
+:is(nav, aside) a[aria-current="page"]:not(.dashboard-nav-workspace a, [data-plugin-navigation] a) {
+  border-radius: 999px !important;
+  background-color: var(--google-selected) !important;
+  color: var(--google-on-selected) !important;
+  font-weight: 600 !important;
+}
+
+.dashboard-nav-workspace a[aria-current="page"] {
+  border-color: transparent !important;
+  background-color: var(--google-selected) !important;
+  color: var(--google-on-selected) !important;
+}
+
+[data-plugin-navigation] a[aria-current="page"] .dashboard-nav-icon {
+  border-color: transparent !important;
+  background-color: var(--google-selected) !important;
+}
+
+:is([data-settings-section-link], .dashboard-nav-workspace a, [data-plugin-navigation] a)[aria-current="page"] :is(svg, i, .dashboard-nav-icon) {
+  color: var(--google-on-selected) !important;
+}
+
+.fm-popover {
+  border-color: transparent;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+.fm-menu {
+  padding: 8px 0;
+}
+
+.fm-menu-item {
+  height: 40px;
+  gap: 16px;
+  padding: 0 16px;
+  border-radius: 0;
+  font-size: 14px;
+}
+
+.fm-menu-item svg,
+.fm-menu-item i {
+  width: 20px;
+  height: 20px;
+  color: rgb(var(--dashboard-foreground-rgb) / 0.8);
+}
+
+.fm-menu-divider {
+  margin: 8px 0;
+  background: rgb(var(--dashboard-border-rgb));
+}
+
+.fm-menu-heading {
+  padding: 8px 16px 4px;
+}
+
+.fm-label {
+  border-color: transparent;
+}
+
+.fm-label-accent {
+  background: rgb(var(--dashboard-primary-rgb) / 0.16);
+}
+
+.fm-label-success {
+  background: rgb(var(--dashboard-success-rgb) / 0.16);
+}
+
+.fm-label-attention {
+  background: rgb(var(--dashboard-attention-rgb) / 0.16);
+}
+
+.fm-label-danger {
+  background: rgb(var(--dashboard-destructive-rgb) / 0.16);
+}
+
+[data-settings-active-indicator] {
+  display: none !important;
+}
+
+input[type="search"],
+[role="search"] input {
+  border-radius: 999px;
+}
+
+:is(input, textarea, select):focus-visible {
+  border-color: rgb(var(--dashboard-primary-rgb)) !important;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: rgb(var(--dashboard-primary-rgb));
+}
+
+.fm-menu-item-danger svg,
+.fm-menu-item-danger i {
+  color: rgb(var(--dashboard-destructive-rgb));
+}
+
+:is([data-profile-page-avatar], [data-dashboard-profile-avatar], [data-org-profile-avatar], :has(> [data-avatar-initial])) {
+  border-color: transparent !important;
+  background-color: var(--google-avatar) !important;
+  color: #ffffff !important;
+}
+
+[data-profile-badge-medal] {
+  --google-medal: var(--google-blue);
+  border-color: transparent !important;
+  background-color: color-mix(in srgb, var(--google-medal) 18%, transparent) !important;
+  color: var(--google-medal) !important;
+}
+
+li:nth-child(4n + 2) > [data-profile-badge-medal] {
+  --google-medal: var(--google-red);
+}
+
+li:nth-child(4n + 3) > [data-profile-badge-medal] {
+  --google-medal: var(--google-yellow);
+}
+
+li:nth-child(4n + 4) > [data-profile-badge-medal] {
+  --google-medal: var(--google-green);
+}

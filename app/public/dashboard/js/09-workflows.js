@@ -1334,6 +1334,7 @@
       shortcut: "Blocks are joined in connection order into the script or prompt, separated by a blank line.",
       skill: "Instruction blocks are joined in connection order, separated by a blank line.",
       agent: "Triggers on the left start the agent; the playbook, skill files, native workflow and relay channel on the right are what it uses. Only steps connected to the agent are saved.",
+      workflow: "The desktop runs these steps in connection order: special agents, shortcuts, desktop steps and Save output. Each step gets the output of the steps before it, and every run keeps a Markdown output file on the desktop.",
     };
     return `<h2>${escapeHtml(kind.label || "File")}: ${escapeHtml(current.path)}</h2>
       <p class="wf-help">${escapeHtml(kind.description || "")}</p>
@@ -1468,7 +1469,7 @@
     if (failed) {
       const step = wfCore(failed.type)?.desktopStep;
       if (step) {
-        lines.push("", `"${failed.name}" is a desktop step. The ForkMesh desktop app (MainWindow::runLocalControlFreeDiskSpace) runs \`python3 -u <checkout>/tools/free_disk_space.py --execute --step ${step} --repo <checkout> --json\` and reports the last line it printed as the error. \`python3 tools/free_disk_space.py --step ${step}\` repeats it as a dry run that deletes nothing. See docs/tools/free-disk-space.md and docs/app/workflows.md.`);
+        lines.push("", `"${failed.name}" is a desktop step. The ${desktopBrand()}desktop app (MainWindow::runLocalControlFreeDiskSpace) runs \`python3 -u <checkout>/tools/free_disk_space.py --execute --step ${step} --repo <checkout> --json\` and reports the last line it printed as the error. \`python3 tools/free_disk_space.py --step ${step}\` repeats it as a dry run that deletes nothing. See docs/tools/free-disk-space.md and docs/app/workflows.md.`);
       } else {
         lines.push("", `Settings of "${failed.name}": ${wfShort(JSON.stringify(wfRedactParams(failed.params || {})), WF_FAILURE_PARAMS_MAX)}`, "See docs/app/workflows.md for how steps run.");
       }

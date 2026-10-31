@@ -51,6 +51,8 @@ final class NotificationService: UNNotificationServiceExtension {
     private static let renderedMemory = 20
     static let roomKeys = PushRoomKeys(
         store: KeychainSharedItemStore(service: PushCredentialStore.service, accessGroup: PushCredentialStore.accessGroup))
+    static let names = PushVerifiedNames(
+        store: KeychainSharedItemStore(service: PushCredentialStore.service, accessGroup: PushCredentialStore.accessGroup))
 
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var fallback: UNNotificationContent?
@@ -67,6 +69,10 @@ final class NotificationService: UNNotificationServiceExtension {
         guard
             let content = request.content.mutableCopy() as? UNMutableNotificationContent
         else {
+            deliver(request.content)
+            return
+        }
+        if (request.content.userInfo["topic"] as? String) == "calls" {
             deliver(request.content)
             return
         }
@@ -206,7 +212,7 @@ final class NotificationService: UNNotificationServiceExtension {
         _ opened: PushChatOpened, chat: PushChatRequest, mode: PushPreviewMode, content: UNMutableNotificationContent,
         origin: String
     ) {
-        if let preview = PushPreviewText.preview(opened, request: chat, mode: mode) {
+        if let preview = PushPreviewText.preview(opened, request: chat, mode: mode, names: Self.names) {
             content.title = preview.title
             content.subtitle = ""
             content.body = preview.body
@@ -218,7 +224,8 @@ final class NotificationService: UNNotificationServiceExtension {
         var info = content.userInfo
         info["messageId"] = message.id
         content.userInfo = info
-        attachPortrait(to: content, origin: origin, sender: message.sender)
+        let verified: String? = message.bot.isEmpty ? PushPreviewText.verifiedAccount(message, request: chat, names: Self.names) : nil
+        attachPortrait(to: content, origin: origin, sender: verified)
     }
 
     private func sendDeliveryReceipt(_ chat: PushChatRequest?, credentials: PushCredentials?) {

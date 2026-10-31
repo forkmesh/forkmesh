@@ -228,3 +228,69 @@ def test_the_ride_is_wired_into_movement_input_and_the_scene():
     assert "getCoasterState: () => fns.coasterState()" in core
     rides = (SCENE / "runtime" / "rides.js").read_text()
     assert rides.count('ctx.officeSceneMode !== "town" || ctx.coasterRide') == 3
+
+
+def test_the_first_person_eye_turns_over_with_the_seat_and_keeps_a_glance():
+    script = """
+      const THREE = await import(%s);
+      const runtime = await import(%s);
+      const coaster = await import(%s);
+      const player = new THREE.Group();
+      player.userData = { leftArm: new THREE.Object3D(), rightArm: new THREE.Object3D() };
+      const ctx = {
+        officeSceneMode: "town", cameraYaw: 0.3, firstPersonPitch: 0,
+        cameraMode: "first-person", player, lastPosition: new THREE.Vector3(),
+        lastMovementEmit: 0, currentSpace: "town-square", currentFloorY: 0,
+        coaster: {
+          train: { parent: {} }, hint: {},
+          stationDistance: coaster.coasterStationDistance(),
+        },
+      };
+      const fns = new Proxy({ decayedPointerEnergy: () => 0 }, {
+        get: (target, key) => target[key] || (() => {}),
+      });
+      Object.assign(fns, runtime.functions({
+        THREE, labelLayer: null, reducedMotion: false, ctx, fns,
+      }));
+      fns.rideCoaster();
+      const camera = new THREE.PerspectiveCamera();
+      const forward = new THREE.Vector3();
+      const up = new THREE.Vector3();
+      const sample = {};
+      const out = { lowestUp: 1, worstGlance: 0, worstRoll: 0, frames: 0 };
+      while (ctx.coasterRide && out.frames < 20000) {
+        if (out.frames === 50) ctx.cameraYaw += 0.4;
+        fns.updateCoasterRide({}, 1 / 60, out.frames * 16);
+        if (!ctx.coasterRide) break;
+        fns.placeCoasterEye(camera);
+        coaster.coasterSample(ctx.coasterRide.distance, sample);
+        camera.getWorldDirection(forward);
+        up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        const tangent = new THREE.Vector3(sample.tx, sample.ty, sample.tz).normalize();
+        const trackUp = new THREE.Vector3(sample.ux, sample.uy, sample.uz).normalize();
+        const glance = out.frames >= 50 ? 0.4 : 0;
+        out.worstGlance = Math.max(
+          out.worstGlance,
+          Math.abs(Math.acos(Math.min(1, forward.dot(tangent))) - glance),
+        );
+        out.worstRoll = Math.max(out.worstRoll, 1 - up.dot(trackUp));
+        out.lowestUp = Math.min(out.lowestUp, up.y);
+        out.frames += 1;
+      }
+      console.log(JSON.stringify(out));
+    """ % (
+        json.dumps((WORLD / "vendor" / "three-0.184.0" / "three.module.min.js").as_uri()),
+        json.dumps((SCENE / "runtime" / "coaster.js").as_uri()),
+        json.dumps(TRACK.as_uri()),
+    )
+    result = subprocess.run(
+        [NODE, "--input-type=module", "-e", script],
+        check=True, capture_output=True, text=True, timeout=120,
+    )
+    out = json.loads(result.stdout)
+    assert out["frames"] > 1000
+    assert out["lowestUp"] < -0.9
+    assert out["worstGlance"] < 1e-6
+    assert out["worstRoll"] < 0.01
+    camera = (SCENE / "runtime" / "camera.js").read_text()
+    assert "if (ctx.coasterRide && fns.placeCoasterEye(ctx.camera)) return;" in camera

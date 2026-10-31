@@ -233,7 +233,7 @@ final class DjStudioTests: XCTestCase {
     }
 
     func testSavedStateIsSanitised() throws {
-        let data = Data(#"{"a":{"videoId":"dQw4w9WgXcQ","cue":-4,"level":7,"rate":9,"bpm":"x","loop":true},"b":{"videoId":"nope"},"crossfader":3,"samplerLevel":-1,"sections":[{"deck":"b","start":12,"duration":90},null,null,null,{"deck":"a","start":1,"duration":2}]}"#.utf8)
+        let data = Data(#"{"a":{"videoId":"dQw4w9WgXcQ","cue":-4,"level":7,"rate":9,"bpm":"x","loop":true,"repeats":true},"b":{"videoId":"nope","repeats":"x"},"crossfader":3,"samplerLevel":-1,"sections":[{"deck":"b","start":12,"duration":90},null,null,null,{"deck":"a","start":1,"duration":2}]}"#.utf8)
         let saved = DjSaved.decode(data)
         XCTAssertEqual(saved.a.videoId, "dQw4w9WgXcQ")
         XCTAssertEqual(saved.a.cue, 0)
@@ -241,7 +241,9 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(saved.a.rate, 1 + DjStudio.pitchRange)
         XCTAssertEqual(saved.a.bpm, 0)
         XCTAssertTrue(saved.a.loop)
+        XCTAssertTrue(saved.a.repeats)
         XCTAssertEqual(saved.b.videoId, "")
+        XCTAssertFalse(saved.b.repeats)
         XCTAssertEqual(saved.crossfader, 1)
         XCTAssertEqual(saved.samplerLevel, 0)
         XCTAssertEqual(saved.sections.count, DjStudio.sectionCount)

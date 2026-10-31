@@ -25,6 +25,9 @@
 #include <cstdio>
 
 #ifndef Q_OS_WIN
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <sys/resource.h>
 #include <unistd.h>
 #endif
@@ -209,11 +212,34 @@ RunResult runWorkflow(const QString &repository, const QString &commit,
     return result;
 }
 
+#ifndef Q_OS_WIN
+int holdTreeLock(const QString &path)
+{
+    const int fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd >= 0 && ::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+bool treeLockedByAnother(const QString &path)
+{
+    const int fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0)
+        return false;
+    const bool held = ::flock(fd, LOCK_SH | LOCK_NB) != 0 && errno == EWOULDBLOCK;
+    ::close(fd);
+    return held;
+}
+#endif
+
 bool destroyWorkflowDuringCheckout(const QString &repository,
                                    const QString &commit,
                                    const QString &content,
                                    ActionStore *store, int runId,
-                                   const ActionSandboxLimits &limits)
+                                   const ActionSandboxLimits &limits,
+                                   bool *lockedWhileRunning = nullptr)
 {
     ActionRun run;
     run.id = runId;
@@ -238,6 +264,18 @@ bool destroyWorkflowDuringCheckout(const QString &repository,
     runner.setSandboxLimitsForTesting(limits);
     runner.start(run, workflow, repository, QString(),
                  QMap<QString, QString>{});
+    if (lockedWhileRunning) {
+        const QDir base(store->sandboxDir());
+        const QStringList trees =
+            base.entryList({QStringLiteral("forkmesh-run-%1-*").arg(runId)},
+                           QDir::Dirs | QDir::NoDotAndDotDot);
+#ifndef Q_OS_WIN
+        *lockedWhileRunning =
+            trees.size() == 1 && treeLockedByAnother(base.absoluteFilePath(trees.first()));
+#else
+        *lockedWhileRunning = trees.size() == 1;
+#endif
+    }
     // Returning destroys the runner immediately while its asynchronous checkout
     // QProcess is still Starting/Running. The destructor must disconnect, stop,
     // reap, and delete that child without dispatching an output callback.
@@ -262,6 +300,19 @@ int main(int argc, char **argv)
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
                        temp.filePath(QStringLiteral("settings")));
     QSettings().clear();
+
+    {
+        ActionStore burstStore(temp.filePath(QStringLiteral("burst-actions")));
+        ActionRunner burstRunner(&burstStore);
+        for (int chunk = 0; chunk < 500; ++chunk)
+            burstRunner.feedProcessOutputForTesting(
+                QByteArray("[ 40%] Building CXX object chunk ") +
+                QByteArray::number(chunk) + '\n');
+        check(burstRunner.crashContextUpdatesForTesting() == 0 &&
+                  burstRunner.crashContextRefreshPendingForTesting(),
+              "a burst of step output refreshes the crash context once on a "
+              "timer, not on every chunk");
+    }
 
     check(ActionRunner::checkoutLostWorktreeRace(QStringLiteral(
               "Preparing worktree (detached HEAD 825125e4bf)\n"
@@ -449,6 +500,40 @@ int main(int argc, char **argv)
         third = cacheStore.createRun(third);
         check(third.id == second.id + 1,
               "deleting a run does not recycle its id within the process");
+
+        QString expected;
+        for (int i = 0; i < 200; ++i) {
+            const QString line = QStringLiteral("line %1").arg(i);
+            cacheStore.appendLog(third, line);
+            expected += line + QLatin1Char('\n');
+            if (i % 50 == 0)
+                check(cacheStore.readLog(third) == expected,
+                      "a log read while appends are queued sees every line in order");
+        }
+        third.status = ActionStatus::Success;
+        cacheStore.saveRun(third);
+        ActionStore::flushWrites();
+        QFile writtenLog(cacheStore.logPath(third));
+        check(writtenLog.open(QIODevice::ReadOnly) &&
+                  QString::fromUtf8(writtenLog.readAll()) == expected,
+              "queued log appends reach log.txt in order once flushed");
+        QFile writtenMeta(QFileInfo(cacheStore.logPath(third)).absolutePath() +
+                          QStringLiteral("/meta.json"));
+        check(writtenMeta.open(QIODevice::ReadOnly) &&
+                  ActionRun::fromJson(QJsonDocument::fromJson(writtenMeta.readAll()).object())
+                          .status == ActionStatus::Success,
+              "the last queued meta.json write is the one on disk");
+
+        ActionRun fourth = first;
+        fourth.name = QStringLiteral("four");
+        fourth = cacheStore.createRun(fourth);
+        const QString fourthDir = QFileInfo(cacheStore.logPath(fourth)).absolutePath();
+        for (int i = 0; i < 50; ++i)
+            cacheStore.appendLog(fourth, QStringLiteral("doomed %1").arg(i));
+        check(cacheStore.deleteRun(fourth), "a run with queued writes deletes");
+        ActionStore::flushWrites();
+        check(!QFileInfo::exists(fourthDir),
+              "queued writes for a deleted run do not recreate its directory");
     }
 
     const QString repository = temp.filePath(QStringLiteral("repository"));
@@ -659,6 +744,26 @@ int main(int argc, char **argv)
         check(!automatic.valid && automatic.error.contains(QStringLiteral("workflow_dispatch")),
               "sandbox: false is refused with any trigger besides workflow_dispatch");
     }
+    const ActionWorkflow stepTimeout = ActionFile::parse(
+        QStringLiteral(".forkmesh/long.yml"),
+        QStringLiteral("on: push\njobs:\n  build:\n    steps:\n"
+                       "      - name: long\n        timeout-minutes: 220\n"
+                       "        run: echo hi\n      - run: echo done\n"));
+    check(stepTimeout.valid && stepTimeout.steps.size() == 2 &&
+              stepTimeout.steps.at(0).timeoutMinutes == 220 &&
+              stepTimeout.steps.at(1).timeoutMinutes == 0,
+          "a step's timeout-minutes is read and other steps keep the default");
+    for (const QString &minutes :
+         {QStringLiteral("0"), QStringLiteral("1441"), QStringLiteral("ninety"),
+          QStringLiteral("1.5")}) {
+        const ActionWorkflow badTimeout = ActionFile::parse(
+            QStringLiteral(".forkmesh/long.yml"),
+            QStringLiteral("on: push\nsteps:\n  - timeout-minutes: %1\n    run: echo hi\n")
+                .arg(minutes));
+        check(!badTimeout.valid &&
+                  badTimeout.error.contains(QStringLiteral("timeout-minutes")),
+              "a timeout-minutes that is not 1 to 1440 whole minutes is refused");
+    }
     QString sandboxReason;
     if (!ActionRunner::sandboxAvailable(&sandboxReason)) {
         std::printf("  SKIP sandbox integration: %s\n",
@@ -837,6 +942,22 @@ int main(int argc, char **argv)
                   timed.persisted.status == ActionStatus::Failed &&
                   timed.log.contains(QStringLiteral("time limit")),
               "stale workflow processes are killed at the configured deadline");
+
+        const QString longStepWorkflow = QStringLiteral(
+            "name: Long step\non: push\nsteps:\n"
+            "  - name: outlives the default step limit\n"
+            "    timeout-minutes: 1\n"
+            "    run: sleep 1\n");
+        check(writeFile(workflowPath, longStepWorkflow.toUtf8()),
+              "long-step workflow fixture is written");
+        const QString longStepCommit =
+            commitAll(repository, QStringLiteral("long step workflow"));
+        const RunResult longStep =
+            runWorkflow(repository, longStepCommit, longStepWorkflow,
+                        &store, 178, timeoutLimits);
+        check(longStep.finished && longStep.signalOk &&
+                  longStep.persisted.status == ActionStatus::Success,
+              "a step's timeout-minutes replaces the node's default step limit");
 
         const QString diskWorkflow = QStringLiteral(
             "name: Disk quota\non: push\nsteps:\n"
@@ -1355,10 +1476,14 @@ int main(int argc, char **argv)
                   reentrant.terminalRefreshCompleted &&
                   reentrant.log.contains(QStringLiteral("final process output")),
               "terminal pull-check refresh cannot outlive the finished process");
+        bool lockedWhileRunning = false;
         check(destroyWorkflowDuringCheckout(
                   repository, reentrantCommit, reentrantWorkflow,
-                  &store, 110, limits),
+                  &store, 110, limits, &lockedWhileRunning),
               "destroying a runner safely reaps an in-flight checkout process");
+        check(lockedWhileRunning,
+              "a running Action holds a lock on its sandbox tree that other "
+              "ForkMesh processes can see");
         // A node restarted or killed mid-run destroys its runners without ever
         // reaching cleanupWorktree(), so the tree survives the process. The
         // destructor drops the claim, which is what lets the next sweep take
@@ -1378,6 +1503,26 @@ int main(int argc, char **argv)
                       .isEmpty(),
               "the tree a destroyed runner abandoned is reclaimed, and the "
               "sweep reports the room left on the node");
+#ifndef Q_OS_WIN
+        const QString otherProcessTree = sandboxBase.absoluteFilePath(
+            QStringLiteral("forkmesh-run-904-%1").arg(nowMs - 60 * 60 * 1000LL));
+        check(QDir().mkpath(otherProcessTree + QStringLiteral("/tmp")),
+              "a sandbox tree another node process is running in is staged");
+        const int otherProcessLock = holdTreeLock(otherProcessTree);
+        check(otherProcessLock >= 0, "the staged tree is locked like a live run's");
+        ActionRunner::reclaimSandboxes(store.sandboxDir(), 0);
+        check(QDir(otherProcessTree + QStringLiteral("/tmp")).exists(),
+              "the sweep leaves a tree a run in another process still holds");
+        check(!ActionRunner::removeUnclaimedSandbox(store.sandboxDir(), otherProcessTree)
+                   .isEmpty() &&
+                  QDir(otherProcessTree).exists(),
+              "Cleanup refuses to remove a tree a run in another process holds");
+        if (otherProcessLock >= 0)
+            ::close(otherProcessLock);
+        ActionRunner::reclaimSandboxes(store.sandboxDir(), 0);
+        check(!QDir(otherProcessTree).exists(),
+              "the tree is reclaimed once that run lets go of it");
+#endif
         QDir(liveTree).removeRecursively();
 
         const QString interruptWorkflow = QStringLiteral(

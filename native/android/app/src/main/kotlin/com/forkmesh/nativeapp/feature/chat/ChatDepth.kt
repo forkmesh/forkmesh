@@ -9,9 +9,13 @@ import com.forkmesh.nativeapp.apps.AppsApi
 import com.forkmesh.nativeapp.apps.ChatApps
 import com.forkmesh.nativeapp.chat.ChannelGroupsStore
 import com.forkmesh.nativeapp.chat.ChatAccountCalling
+import com.forkmesh.nativeapp.chat.ChatBlocks
+import com.forkmesh.nativeapp.chat.NodeOwners
 import com.forkmesh.nativeapp.chat.ChatHistoryCodec
 import com.forkmesh.nativeapp.chat.ChatHistoryStore
 import com.forkmesh.nativeapp.chat.ChatHub
+import com.forkmesh.nativeapp.chat.ChatLinkPreviewService
+import com.forkmesh.nativeapp.chat.ChatLinkUrlConnectionHttp
 import com.forkmesh.nativeapp.chat.ChatReadMarks
 import com.forkmesh.nativeapp.chat.ChatWelcomeAnnouncer
 import com.forkmesh.nativeapp.chat.DirectMeshLinks
@@ -37,6 +41,7 @@ import com.forkmesh.nativeapp.feature.account.SettingsService
 import com.forkmesh.nativeapp.feature.account.projects.AppFiles
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
+import com.forkmesh.nativeapp.push.CallRings
 import com.forkmesh.nativeapp.push.DIRECT_MESSAGES_TOPIC
 import com.forkmesh.nativeapp.security.SecretStore
 import java.io.File
@@ -92,6 +97,10 @@ object ChatDepth {
 
     @Volatile
     var apps: ChatApps? = null
+        private set
+
+    @Volatile
+    var linkPreviews: ChatLinkPreviewService? = null
         private set
 
     @Volatile
@@ -176,6 +185,20 @@ object ChatDepth {
         val historyDir = File(AppFiles.projectSupportDir(app, scopeInfo), "chat-history")
         chat.attachHistory(ChatHistoryStore(historyDir), formerScopes, historyScope)
         room.addListener { scheduleSave() }
+        val previewProject = scopeInfo.projectId.ifEmpty { settings.core.serverUrl }
+        val previews = ChatLinkPreviewService(
+            http = ChatLinkUrlConnectionHttp(),
+            prefs = prefs,
+            fileSource = { File(app.cacheDir, ChatLinkPreviewService.fileName(previewProject)) },
+            saveLater = { task ->
+                ProjectLifecycle.scope.launch(Dispatchers.IO) {
+                    delay(SAVE_DELAY_MS)
+                    task.run()
+                }
+            },
+        )
+        ChatLinkPreviewUi.bind(previews)
+        linkPreviews = previews
         if (prefs != null) groups = ChannelGroupsStore.forProject(prefs, scopeInfo.projectId, settings.core.serverUrl, settings.core.room)
 
         if (api != null && secrets != null) {
@@ -188,6 +211,8 @@ object ChatDepth {
                 selfId = { room.selfId },
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
                 account = { room.persona.ownerUser },
+                nodeKey = { room.nodeKey },
+                owners = { room.owners },
             )
             service.addListener {
                 bump()
@@ -195,6 +220,7 @@ object ChatDepth {
             }
             office = service
             chat.office = service
+            GroupCallFeature.install(app, service) { auth?.session?.value?.nodeName.orEmpty() }
             val directService = DirectMessageService(
                 api = calling,
                 connector = WebSocketOfficeConnector,
@@ -217,8 +243,8 @@ object ChatDepth {
 
                 override fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean = room()?.sendDirect(kid, frame) == true
 
-                override fun setFocus(channel: String, on: Boolean) {
-                    room()?.setFocus(channel, on)
+                override fun setFocus(channel: String, on: Boolean, kids: Set<String>) {
+                    room()?.setFocus(channel, on, kids)
                 }
             }
             direct = directService
@@ -239,7 +265,15 @@ object ChatDepth {
                     if (topic == DIRECT_MESSAGES_TOPIC && direct === directService) {
                         ProjectLifecycle.scope.launch(Dispatchers.IO) { directService.refresh() }
                     } else if (topic == ChatReadMarks.TOPIC && hub === chat) {
-                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks() }
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks(force = true) }
+                    }
+                }
+                val previousEvent = channel.onEvent
+                channel.onEvent = { topic, frame ->
+                    previousEvent?.invoke(topic, frame)
+                    val ringing = CallRings.conversation(frame)
+                    if (ringing != null && direct === directService) {
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { runCatching { directService.openRinging(ringing) } }
                     }
                 }
                 val previousConnected = channel.onConnected
@@ -249,6 +283,15 @@ object ChatDepth {
                 }
             }
             chat.forkbot = calling
+            val owners = NodeOwners(calling)
+            owners.addListener {
+                chat.extras.relabelBots()
+                service.relabelBots()
+            }
+            room.owners = owners
+            val blocks = ChatBlocks(calling, prefs)
+            blocks.onChange = { bump() }
+            chat.blocks = blocks
             val appsService = ChatApps(AppsApi(api))
             appsService.onChange = { bump() }
             appsService.onNotice = { post(it) }
@@ -265,8 +308,12 @@ object ChatDepth {
                 office?.closeAll()
                 direct?.closeAll()
                 discordBridge?.stopWatching()
+                previews.leaveProject()
             }
+            if (linkPreviews === previews) linkPreviews = null
+            ChatLinkPreviewUi.clear()
             room.frameObserver = null
+            room.owners = null
             chat.calls = null
             if (hub === chat) hub = null
             office = null
@@ -298,7 +345,9 @@ object ChatDepth {
                                 it.refresh()
                             }
                         }
-                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks()
+                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks(force = true)
+                        room.owners?.clear()
+                        chat.blocks?.let { if (token.isEmpty()) it.clear() else it.signedIn() }
                     }
                 }
             }

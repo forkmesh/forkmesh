@@ -343,8 +343,11 @@ def test_chat_page_has_preview_and_background_picker():
     assert ".chat-call-backgrounds[hidden] { display: none; }" in CSS
     assert ".chat-call-panel.is-preview #chat-call-local" in CSS
     assert 'id="chat-call-preview"' not in HTML
-    assert 'callAudioBtn?.addEventListener("click", () => previewDirectCall("audio"));' in CHAT
-    assert 'callVideoBtn?.addEventListener("click", () => previewDirectCall("video"));' in CHAT
+    assert 'callAudioBtn?.addEventListener("click", () => startCall("audio"));' in CHAT
+    assert 'callVideoBtn?.addEventListener("click", () => startCall("video"));' in CHAT
+    start = CHAT[CHAT.index("function startCall(media) {"):]
+    start = start[:start.index("\n}\n")]
+    assert "if (directMessageForKey(activeChannel)) {\n    previewDirectCall(media);" in start
 
 
 def test_android_wires_backgrounds_and_the_preview():

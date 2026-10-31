@@ -95,7 +95,6 @@ struct Beacon {
     qint64 timestampMs = 0;
     bool reply = false;
     bool control = false;
-    QString node;
 };
 QJsonObject beaconObject(const Beacon &beacon);
 bool parseBeacon(const QJsonObject &object, Beacon *out);
@@ -170,7 +169,9 @@ public:
         const QString &kid, const QString &channel, const QJsonObject &frame)>;
     void setDirectHandler(DirectHandler handler);
     void setChatDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device);
-    void setControlNode(const QString &nodeKey);
+    void setNodeSigner(RoomSeal::NodeSigner signer);
+    QString nodeId() const { return m_nodeId; }
+    QString beaconId() const { return m_beaconId; }
     // True while a message this device wrote has not reached any device yet.
     bool isQueued(const QString &messageId) const
     {
@@ -270,6 +271,14 @@ private:
         QSet<QString> focus;
     };
 
+    struct Heard {
+        QHostAddress address;
+        quint16 port = 0;
+        qint64 lastSeenMs = 0;
+        qint64 unlinkedSinceMs = 0;
+        QString kid;
+    };
+
     struct Peer {
         QString nodeId;
         QString name;
@@ -332,6 +341,9 @@ private:
     bool openNetwork();
     void refreshNetwork();
     void redialPeer(const QString &peerId);
+    void renewBeaconId();
+    void bindHeard(const QHostAddress &address, quint16 port, const QString &kid);
+    const Heard *heardFor(const QString &kid) const;
     // Writes one discovery datagram and counts it under `counter`, or as a
     // send error with the socket's reason.
     bool writeDiscovery(const QByteArray &datagram, const QHostAddress &to,
@@ -376,6 +388,7 @@ private:
     QJsonObject makeMessage(const QString &type) const;
     bool writeRaw(Link &link, const QJsonObject &frame);
     bool writeLink(Link &link, const QJsonObject &frame);
+    bool writeLinkBytes(Link &link, const QByteArray &plain);
     bool writeSealedTo(Link &link, const QJsonObject &plain);
     void sendToAll(const QJsonObject &plain, bool store = false);
     QStringList sessionKeyIds() const;
@@ -422,6 +435,7 @@ private:
     RoomCrypto m_crypto;
     RoomSeal m_seal;
     std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
+    forkmesh::chatv3::SendGate m_sendGate{this};
     int m_deviceToken = 0;
     QHash<QString, QJsonObject> m_bundles;
     QStringList m_bundleOrder;
@@ -430,7 +444,9 @@ private:
     QHash<QString, QJsonObject> m_historyFrames;
     QSet<QString> m_ownFocus;
     DirectHandler m_directHandler;
-    QString m_controlNode;
+    RoomSeal::NodeSigner m_nodeSigner;
+    QString m_beaconId;
+    QHash<QString, Heard> m_heard;
 
     QTcpServer *m_server = nullptr;
     QUdpSocket *m_discovery = nullptr;

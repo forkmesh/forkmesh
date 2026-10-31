@@ -154,6 +154,7 @@ public:
     explicit Store(QString rootDirectory);
 
     QString rootDirectory() const { return m_rootDirectory; }
+    QStringList directories() const;
     QString pathFor(const QString &id) const;
     LoadResult load() const;
     bool save(Config *config, QString *error = nullptr) const;

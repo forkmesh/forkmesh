@@ -37,6 +37,7 @@ import {
   WORLD_HEX_TILES,
   WORLD_MESH_FLOWER_REACH,
   WORLD_RADIUS,
+  WORLD_ROAD_BEND_WALK_REACH,
   WORLD_ROAD_JUNCTIONS,
   WORLD_ROAD_JUNCTION_WALK_RADIUS,
   WORLD_ROAD_WIDTH,
@@ -177,6 +178,8 @@ export const WORLD_MESH_SPACE = "world-mesh";
 let worldMeshFlowers = [];
 let worldMeshHexes = [];
 let worldMeshJunctions = [];
+let territoryTiles = null;
+let territoryJunctions = [];
 let worldMeshPetals = new Set();
 
 export function hexCorners(center) {
@@ -208,6 +211,27 @@ export function worldMeshReplacedPetals() {
   return [...worldMeshPetals].map((index) => index - 1);
 }
 
+export function setTerritoryTiles(tiles = null) {
+  if (!Array.isArray(tiles) || !tiles.length) {
+    territoryTiles = null;
+    territoryJunctions = [];
+    return;
+  }
+  territoryTiles = tiles.filter(Boolean);
+  territoryJunctions = hexCorners(territoryTiles[0]);
+}
+
+export function territoryWalkActive() {
+  return territoryTiles !== null;
+}
+
+function territoryWalkSurfaceContains(px, pz, margin) {
+  for (let index = 0; index < territoryTiles.length; index += 1) {
+    if (grownHexContains(px, pz, territoryTiles[index], margin)) return true;
+  }
+  return junctionContains(px, pz, territoryJunctions, margin);
+}
+
 function grownHexContains(px, pz, tile, margin) {
   return roundedHexagonContains(
     px,
@@ -226,6 +250,38 @@ function junctionContains(px, pz, junctions, margin) {
     if (
       Math.hypot(px - junction.x, pz - junction.z) <=
       WORLD_ROAD_JUNCTION_WALK_RADIUS - margin
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function roadBendContains(px, pz, margin) {
+  for (let index = 0; index < WORLD_ROAD_JUNCTIONS.length; index += 1) {
+    const junction = WORLD_ROAD_JUNCTIONS[index];
+    const bend = junction.bend;
+    if (!bend) continue;
+    if (Math.hypot(px - junction.x, pz - junction.z) > WORLD_ROAD_BEND_WALK_REACH) continue;
+    if (
+      roundedHexagonContains(
+        px,
+        pz,
+        bend.x,
+        bend.z,
+        CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
+        CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
+        margin,
+      ) &&
+      !roundedHexagonContains(
+        px,
+        pz,
+        bend.x,
+        bend.z,
+        CONTINUOUS_CITY_RADIUS,
+        CONTINUOUS_CITY_CORNER_RADIUS,
+        -margin,
+      )
     ) {
       return true;
     }
@@ -281,12 +337,14 @@ export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
   const pz = Number(z);
   const margin = Math.max(0, Number(radius) || 0);
   if (!Number.isFinite(px) || !Number.isFinite(pz)) return false;
+  if (territoryTiles) return territoryWalkSurfaceContains(px, pz, margin);
   const bound = WORLD_RADIUS - margin;
   if (Math.abs(px) <= bound && Math.abs(pz) <= bound) {
     for (let index = 0; index < WORLD_HEX_TILES.length; index += 1) {
       if (grownHexContains(px, pz, WORLD_HEX_TILES[index], margin)) return true;
     }
     if (junctionContains(px, pz, WORLD_ROAD_JUNCTIONS, margin)) return true;
+    if (roadBendContains(px, pz, margin)) return true;
   }
   for (let index = 0; index < worldMeshHexes.length; index += 1) {
     if (grownHexContains(px, pz, worldMeshHexes[index], margin)) return true;
@@ -295,6 +353,7 @@ export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
 }
 
 export function beachWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
+  if (territoryTiles) return false;
   const px = Number(x);
   const pz = Number(z);
   const margin = Math.max(0, Number(radius) || 0);

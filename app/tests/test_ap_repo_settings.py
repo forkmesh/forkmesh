@@ -255,12 +255,21 @@ def test_about_get_returns_followers_list_and_settings():
             return "mirror2"
         return ""
 
+    github_mirror = {"provider": "github", "label": "GitHub",
+                     "url": "https://github.com/octo/proj", "role": "mirror"}
+
+    async def _public_about_link(env, owner, repo):
+        assert (owner, repo) == ("mirror2", "proj")
+        return github_mirror
+
     ns = _load("_repo_about_public", "_ap_repo_settings_get",
                "_ap_repo_settings_bi", "_repo_alert_settings_get",
                "_repo_alert_settings_bi", "_repo_features_get",
                "_repo_features_bi", "_read_only_mirror_fields",
                extra_globals={
                    "_read_only_mirrors": read_only_mirrors,
+                   "_repository_provider_mirror": SimpleNamespace(
+                       public_about_link=_public_about_link),
                    "_instance_solo_flagship_node": lambda env: "",
                    "REPO_FEATURE_DEFAULTS": REPO_FEATURE_DEFAULTS,
                    "REPO_ALERT_SETTING_DEFAULTS":
@@ -333,6 +342,7 @@ def test_about_get_returns_followers_list_and_settings():
         "issues": True, "pulls": False, "discussions": True,
         "actions": True, "protectDefaultBranch": False}
     assert resp["data"]["mirrorOf"] == "" and resp["data"]["readOnly"] is False
+    assert resp["data"]["externalMirrors"] == [github_mirror]
     # Platform operational-alert state is not exposed from a public repo API.
     assert "alerts" not in resp["data"]
 

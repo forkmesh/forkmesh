@@ -2,23 +2,23 @@
 
 ForkMesh marketing is run by special agents:
 
-- **Marketing** (`.forkmesh/teammates/marketing.json`) is the marketing
+- **Marketing** (`.forkmesh/workflows/marketing.json`) is the marketing
   manager: positioning, the funnel and its north-star metric, campaigns and
   launches, channels, the content calendar, the experiment backlog, the Ads
   manager, website and onboarding conversion, and the weekly marketing
   report. It directs the other outward-facing special agents instead of
   doing their work.
-- **Blogger** (`.forkmesh/teammates/blogger.json`) owns the blog and its
+- **Blogger** (`.forkmesh/workflows/blogger.json`) owns the blog and its
   changelog posts.
 
 | Piece | Path |
 | --- | --- |
-| Marketing definition | `.forkmesh/teammates/marketing.json` |
+| Marketing definition | `.forkmesh/workflows/marketing.json` |
 | Marketing playbook | [`.forkmesh/shortcuts/run-the-marketing-program.md`](../../.forkmesh/shortcuts/run-the-marketing-program.md) |
 | Marketing skill | `.forkmesh/skills/marketing-management.skill` |
 | Living marketing plan (written by Marketing) | [`docs/marketing/plan.md`](plan.md) |
 | Campaign briefs | `docs/marketing/campaigns/` |
-| Blogger definition | `.forkmesh/teammates/blogger.json` |
+| Blogger definition | `.forkmesh/workflows/blogger.json` |
 | Blogger playbook | [`.forkmesh/shortcuts/write-changelog-blog-post.md`](../../.forkmesh/shortcuts/write-changelog-blog-post.md) |
 | Blogger portrait | `desktop/resources/agent-ui/icons/teammate-blogger.png` (avatar key `blogger`) |
 | Acquisition data | `/admin/acquisition`, [../attribution.md](../attribution.md) |

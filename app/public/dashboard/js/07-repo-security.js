@@ -232,12 +232,12 @@
         : "";
     const privateItems = Array.isArray(data.private) ? data.private : [];
     const privateSection = data.maintainer || privateItems.length ? `
-      <section data-security-private class="overflow-hidden rounded-md border border-border">
+      <section data-security-private id="security-private" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
         <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="lock" class="h-4 w-4 text-muted-foreground"></i>${data.maintainer ? "Reports and drafts" : "Your private reports"}<span class="fm-counter">${privateItems.length}</span><span class="ml-auto text-[12px] font-normal text-muted-foreground">Only visible to you${data.maintainer ? ", the reporters and collaborators" : " and the maintainers"}</span></div>
         ${securityList(repo, privateItems, "No reports are waiting for triage.")}
       </section>` : "";
     const settings = data.admin ? `
-      <section data-security-settings class="flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
+      <section data-security-settings id="security-settings" class="scroll-mt-4 flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
         <i data-lucide="settings" class="h-4 w-4 text-muted-foreground"></i>
         <div class="min-w-0 flex-1">
           <p class="text-[14px] font-semibold text-foreground">Private vulnerability reporting</p>
@@ -245,8 +245,17 @@
         </div>
         <button type="button" data-security-action="reporting" data-enable="${data.reportingEnabled ? "0" : "1"}" class="inline-flex h-8 items-center rounded-md border border-border px-3 text-[14px] text-foreground hover:bg-secondary">${data.reportingEnabled ? "Turn off" : "Turn on"}</button>
       </section>` : "";
+    const railItem = (target, icon, label, count = null) => `<li><button type="button" data-repo-rail-jump="${target}" class="fm-rail-item"><i data-lucide="${icon}"></i><span class="min-w-0 truncate">${escapeHtml(label)}</span>${count === null ? "" : `<span class="fm-counter">${formatCount(count)}</span>`}</button></li>`;
+    const rail = [
+      railItem("security-policy", "shield", "Security policy"),
+      railItem("security-published", "shield-check", "Advisories", (data.published || []).length),
+      privateSection ? railItem("security-private", "lock", data.maintainer ? "Reports" : "Your reports", privateItems.length) : "",
+      settings ? railItem("security-settings", "settings", "Settings") : "",
+    ].join("");
     container.innerHTML = `
-      <div data-security-overview class="grid gap-5 py-2">
+      <div data-security-overview data-repo-rail-layout class="grid gap-5 py-2">
+        <nav data-repo-rail aria-label="Security sections" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Security</h2><ul class="fm-rail-list">${rail}</ul></div></nav>
+        <div data-repo-rail-main class="grid min-w-0 content-start gap-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <h2 class="text-xl font-semibold text-foreground">Security</h2>
@@ -254,16 +263,17 @@
           </div>
           <div class="flex flex-wrap gap-2">${reportButton}</div>
         </div>
-        <section class="overflow-hidden rounded-md border border-border">
+        <section id="security-policy" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield" class="h-4 w-4 text-muted-foreground"></i>Security policy<span data-security-policy-source class="ml-auto font-mono text-[12px] font-normal text-muted-foreground"></span></div>
           <div data-security-policy class="px-4 py-4 text-sm text-muted-foreground">${loadingHtml("Reading SECURITY.md...")}</div>
         </section>
-        <section data-security-published class="overflow-hidden rounded-md border border-border">
+        <section data-security-published id="security-published" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>Published advisories<span class="fm-counter">${(data.published || []).length}</span><a href="/advisories" class="ml-auto text-[12px] font-normal text-primary hover:underline">All advisories on this site</a></div>
           ${securityList(repo, data.published || [], "There are no published security advisories.")}
         </section>
         ${privateSection}
         ${settings}
+        </div>
       </div>`;
   }
 
@@ -472,9 +482,9 @@
       ? `<div data-security-credit-banner class="flex flex-wrap items-center gap-3 rounded-md border border-primary px-4 py-3 text-[14px]"><i data-lucide="award" class="h-4 w-4 text-primary"></i><span class="min-w-0 flex-1">You are credited as <strong>${escapeHtml(securityCreditLabel(credit.type))}</strong> on this advisory. Accepted credits appear on your profile and in the security researchers ranking.</span>${button("credit-decision", "Accept credit", "bg-primary text-primary-foreground hover:bg-primary/90", " data-decision=\"accept\"")}${button("credit-decision", "Decline", "", " data-decision=\"decline\"")}</div>` : "";
     const affected = (advisory.affected || []).map((entry) => `<li class="py-1"><span class="font-semibold">${escapeHtml(entry.package || entry.path || "Repository")}</span>${entry.ecosystem ? ` <span class="text-muted-foreground">(${escapeHtml(entry.ecosystem)})</span>` : ""}${entry.path && entry.package ? ` <span class="font-mono text-[12px] text-muted-foreground">${escapeHtml(entry.path)}</span>` : ""}<div class="text-[12px] text-muted-foreground">Affected: ${escapeHtml(entry.vulnerable || "all versions")} · Patched: ${escapeHtml(entry.patched || "none yet")}</div></li>`).join("");
     const credits = (detail.credits || []).map((item) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(item.user, item.user, "h-5 w-5")}${issuePersonNameHtml(item.user, "font-semibold")}<span class="text-[12px] text-muted-foreground">${escapeHtml(securityCreditLabel(item.type))}${member && item.state !== "accepted" ? ` · ${escapeHtml(item.state)}` : ""}</span>${perms.manage ? `<button type="button" data-security-action="credit-remove" data-user="${escapeHtml(item.user)}" aria-label="Remove credit" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
-    const creditForm = perms.manage ? `<form data-security-inline="credit" class="mt-2 grid gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" /><select name="type" class="${securityFieldClass()}">${SECURITY_CREDIT_TYPES.map(([key, label]) => `<option value="${key}">${label}</option>`).join("")}</select>${button("credit-add", "Add credit")}</form>` : "";
+    const creditForm = perms.manage ? `<form data-security-inline="credit" class="mt-2 grid gap-1.5"><input name="user" data-username-autocomplete="single" placeholder="Type a username" aria-label="Username to credit" class="${securityFieldClass()}" /><select name="type" class="${securityFieldClass()}">${SECURITY_CREDIT_TYPES.map(([key, label]) => `<option value="${key}">${label}</option>`).join("")}</select>${button("credit-add", "Add credit")}</form>` : "";
     const collaborators = (advisory.collaborators || []).map((name) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "")}${perms.manage ? `<button type="button" data-security-action="collaborator-remove" data-user="${escapeHtml(name)}" aria-label="Remove collaborator" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
-    const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
+    const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" data-username-autocomplete="single" data-username-exclude="${escapeHtml((advisory.collaborators || []).join(","))}" placeholder="Type a username" aria-label="Collaborator username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
     const fixLinks = [
       fix.branch ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(repoLinkUrl(repo, "tree", "") + "?branch=" + encodeURIComponent(fix.branch))}">${escapeHtml(fix.branch)}</a>` : "",
       fix.pull ? `<a class="text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "pulls", fix.pull))}">#${escapeHtml(String(fix.pull))}</a>` : "",

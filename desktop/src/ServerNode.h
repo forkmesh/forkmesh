@@ -6,6 +6,7 @@
 
 #include <QHash>
 #include <QJsonObject>
+#include <QPointer>
 #include <QQueue>
 #include <QSet>
 #include <QTcpSocket>
@@ -23,6 +24,7 @@ inline const QString kReportDiagnostics = QStringLiteral("nodes/reportDiagnostic
 } // namespace TelemetrySettings
 
 class QTimer;
+class ChatNodeOwners;
 
 class ServerNode : public ChatBackend
 {
@@ -43,6 +45,14 @@ public:
     void setDirectRoom(bool direct);
     void setConnectionAuthorizer(std::function<bool(const QUrl &)> authorizer);
     void setNetworkAvailable(bool available) override;
+    void setNodeSigner(RoomSeal::NodeSigner signer);
+    void setSharedRoom(bool shared) { m_sharedRoom = shared; }
+    bool isSharedRoom() const { return m_sharedRoom; }
+    void setTipAddress(const QString &address);
+    void setOwnerVerifier(ChatNodeOwners *owners);
+    static bool relayForbidden(const QJsonObject &plain, bool sharedRoom);
+    static bool serverFrameFromPlain(const QJsonObject &plain, QJsonObject *out,
+                                     bool sharedRoom = true);
 
 #ifdef FORKMESH_SERVER_NODE_TESTS
     void setTransportLimitsForTests(int connectTimeoutMs,
@@ -127,13 +137,6 @@ public:
     void addChannel(const QString &channel) override;
     void removeChannel(const QString &channel) override;
     void createPrivateChannel(const QString &channel) override;
-    void notifyCoveOpened(const QString &creatorKey, const QString &coveId,
-                          const QString &coveName, const QString &openerKey,
-                          const QString &openerName, qint64 ts,
-                          const QString &signature) override;
-    void notifyCoveInvited(const QString &inviteeAccount, const QString &coveId,
-                           const QString &coveName, const QString &inviterName,
-                           const QString &shareUrl, qint64 ts) override;
     QList<QJsonObject> networkDiagnostics() const override;
     void shutdown() override;
     QString modeName() const override { return "Mainnode"; }
@@ -196,11 +199,10 @@ private:
     void sendTextFrame(const QByteArray &payload, const QString &type = QString(),
                        const QString &scope = QString(),
                        const QString &peer = QString());
+    void writeTextFrame(const QByteArray &payload, const QString &type,
+                        const QString &scope, const QString &peer);
     void sendControlFrame(int opcode, const QByteArray &payload = QByteArray());
-    // Public #channels intentionally use controller-readable application
-    // frames so integrations can participate. Private channels, DMs, and
-    // control traffic remain recipient-sealed.
-    bool isControllerReadableFrame(const QJsonObject &plain) const;
+    void handleServerFrame(const QJsonObject &plain, const QJsonObject &envelope);
     void sendEncrypted(const QJsonObject &plain, bool showActivity = false,
                        bool resend = false);
     struct OutboxEntry {
@@ -231,8 +233,6 @@ private:
                      const QStringList &envelopeRecipientNames = {});
     void emitChat(const QJsonObject &message, int recipients = -1,
                   const QStringList &recipientNames = {});
-    void emitDm(const QJsonObject &message, const QString &conversationPeer,
-                int recipients = -1, const QStringList &recipientNames = {});
     void rememberRecipientRef(const QByteArray &frame, const QString &messageId);
     void handleRecipientsAck(const QJsonObject &envelope);
     void rememberSentRef(const QString &ref, const QString &messageId);
@@ -269,6 +269,9 @@ private:
     QJsonObject makeMessage(const QString &type) const;
 
     QString m_userName;
+    RoomSeal::NodeSigner m_nodeSigner;
+    bool m_sharedRoom = true;
+    QPointer<ChatNodeOwners> m_owners;
     QString m_accountKind = QStringLiteral("node");
     QString m_nodeName;
     QString m_ownerUser;
@@ -293,6 +296,7 @@ private:
     QString m_rosterStorageKey;
     RoomCrypto m_crypto;
     RoomSeal m_seal;
+    forkmesh::chatv3::SendGate m_sendGate{this};
     int m_deviceToken = 0;
     QString m_chatAccount;
     QStringList m_directParticipants;

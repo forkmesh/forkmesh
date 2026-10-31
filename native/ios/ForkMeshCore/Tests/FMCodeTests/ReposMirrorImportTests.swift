@@ -16,6 +16,7 @@ final class ReposMirrorImportTests: XCTestCase {
             "https://github.com/owner/repository",
             "https://gitlab.com/owner/repository",
             "https://codeberg.org/owner/repository",
+            "https://gitea.com/owner/repository",
             // A subgroup path still names an owner and a repository.
             "https://gitlab.com/group/subgroup/repository",
         ] {
@@ -54,7 +55,7 @@ final class ReposMirrorImportTests: XCTestCase {
     }
 
     func testAdvertisesExactlyTheThreeDocumentedProviders() {
-        XCTAssertEqual(MirrorImportModel.providers, ["github.com", "gitlab.com", "codeberg.org"])
+        XCTAssertEqual(MirrorImportModel.providers, ["github.com", "gitlab.com", "codeberg.org", "gitea.com"])
     }
 
     // MARK: The sheet
@@ -81,7 +82,7 @@ final class ReposMirrorImportTests: XCTestCase {
     }
 
     func testPostsGitlabAndCodebergURLsUnchanged() async {
-        for url in ["https://gitlab.com/owner/repository", "https://codeberg.org/owner/repository"] {
+        for url in ["https://gitlab.com/owner/repository", "https://codeberg.org/owner/repository", "https://gitea.com/owner/repository"] {
             let client = FakeRepoClient()
             let sheet = model(client)
             sheet.url = url
@@ -180,6 +181,6 @@ final class ReposMirrorImportTests: XCTestCase {
     func testSaysTheEntryIsMetadataOnly() {
         XCTAssertTrue(MirrorImportModel.metadataNote.contains("Imports metadata only"))
         XCTAssertTrue(MirrorImportModel.metadataNote.contains("does not own or control the source repository"))
-        XCTAssertEqual(MirrorImportModel.title, "Mirror from GitHub/GitLab/Codeberg")
+        XCTAssertEqual(MirrorImportModel.title, "Mirror from GitHub/GitLab/Codeberg/Gitea")
     }
 }

@@ -177,6 +177,36 @@ def test_mentions_notify_installed_accounts_only():
     assert runtime.notes[0][2] == "Alice mentioned you"
 
 
+def test_public_post_reads_without_a_session():
+    runtime = Runtime()
+    root = post(runtime, "Hello, world", spoiler="greeting")
+    reply = post(runtime, "Hi back", actor="bob", replyTo=root["id"])
+    call(runtime.use("POST", actor="bob", body={}),
+         "/api/instance-feed/posts/" + root["id"] + "/favourite")
+    response = call(runtime.use("GET", actor="mallory"), "/api/instance-feed/public/" + root["id"])
+    assert response["status"] == 200
+    data = response["data"]
+    assert data["post"]["text"] == "Hello, world" and data["post"]["spoiler"] == "greeting"
+    assert data["post"]["authorName"] == "Alice" and data["post"]["favourites"] == 1
+    assert [item["id"] for item in data["replies"]] == [reply["id"]]
+    assert not set(instance_feed.VIEWER_FIELDS) & set(data["post"])
+    boost = call(runtime.use("POST", actor="bob", body={}),
+                 "/api/instance-feed/posts/" + reply["id"] + "/boost")
+    assert boost["status"] == 200
+    boost_id = runtime.db.execute(
+        "SELECT post_id FROM instance_feed_posts WHERE boost_of=?", (reply["id"],)).fetchone()[0]
+    via_boost = call(runtime.use("GET", actor="mallory"), "/api/instance-feed/public/" + boost_id)
+    assert via_boost["data"]["post"]["id"] == reply["id"]
+    assert [item["id"] for item in via_boost["data"]["ancestors"]] == [root["id"]]
+    assert call(runtime.use("GET", actor="mallory"),
+                "/api/instance-feed/public/" + "f" * 32)["status"] == 404
+    assert call(runtime.use("GET", actor="mallory"),
+                "/api/instance-feed/public/nope")["status"] == 404
+    assert call(runtime.use("POST", actor="alice"),
+                "/api/instance-feed/public/" + root["id"])["status"] == 405
+    assert call(runtime.use("GET", actor="mallory"), "/api/instance-feed/public")["status"] == 404
+
+
 def test_favourites_and_boosts():
     runtime = Runtime()
     original = post(runtime, "Boost me", actor="bob")

@@ -43,6 +43,7 @@ export function functions({
           Math.cos(ctx.player.rotation.y),
         );
       }
+      if (ctx.coasterRide) ctx.coasterRide.lookYaw = 0;
       ctx.player.visible = false;
       if (ctx.officeSceneMode === "meeting") {
         const localParticipant =

@@ -74,6 +74,30 @@ int main(int argc, char **argv)
     check(prompt.contains(QStringLiteral("`.forkmesh/`")), "prompt keeps the ledger off limits");
     check(prompt.contains(QStringLiteral("uncommitted changes")), "prompt stops on a dirty checkout");
 
+    Draft draft;
+    draft.run.owner = QStringLiteral("acme");
+    draft.run.name = QStringLiteral("app");
+    draft.run.targets = {target(3, QStringLiteral("feature/a"))};
+    draft.prompt = prompt;
+    check(draftMatches(draft, QStringLiteral("acme"), QStringLiteral("app"), prompt),
+          "the drafted prompt sent as is starts the run");
+    check(draftMatches(draft, QStringLiteral("acme"), QStringLiteral("app"),
+                       prompt.section(QLatin1Char('\n'), 0, 0) +
+                           QStringLiteral("\nOnly the first one, please.")),
+          "an edited draft that keeps its heading still starts the run");
+    check(!draftMatches(draft, QStringLiteral("acme"), QStringLiteral("app"),
+                        QStringLiteral("Fix the login page")),
+          "an unrelated prompt does not start the run");
+    check(!draftMatches(draft, QStringLiteral("acme"), QStringLiteral("other"), prompt),
+          "the draft only starts its own repository's run");
+    Draft emptyDraft = draft;
+    emptyDraft.run.targets.clear();
+    check(!draftMatches(emptyDraft, QStringLiteral("acme"), QStringLiteral("app"), prompt),
+          "a draft without pull requests starts nothing");
+    check(draftMessage(2, {QStringLiteral("#9 (gone)")}).contains(QStringLiteral("2 pull request(s)")) &&
+              draftMessage(2, {QStringLiteral("#9 (gone)")}).contains(QStringLiteral("Left out: #9 (gone)")),
+          "the draft notice counts the pull requests and names the ones left out");
+
     QHash<int, Run> runs;
     Run run;
     run.owner = QStringLiteral("acme");
@@ -143,6 +167,35 @@ int main(int argc, char **argv)
           "a busy refusal explains itself");
     check(errorMessage(QStringLiteral("weird")).contains(QStringLiteral("weird")),
           "an unknown code is still named");
+
+    check(trackedPullBranchRefs(7) ==
+              QStringList({QStringLiteral("refs/remotes/origin/pr/7"),
+                           QStringLiteral("refs/remotes/forkmesh-mesh/pr/7")}),
+          "a pull's cloud copies are looked for under both synced namespaces");
+    check(trackedPullBranchRefs(0).isEmpty(), "an unnumbered pull has no cloud copy");
+    check(servedPullBranchRefs({7, 0, 7, 12}) ==
+              QStringList({QStringLiteral("refs/heads/pr/7"),
+                           QStringLiteral("refs/heads/pr/12")}),
+          "the cloud is asked once for each numbered branch");
+    const QString sha(40, QLatin1Char('a'));
+    const QByteArray listing =
+        (sha + QStringLiteral("\trefs/heads/pr/7\n") + QString(40, QLatin1Char('b')) +
+         QStringLiteral("\trefs/heads/pr/9\n") + QStringLiteral("zz\trefs/heads/pr/12\n") +
+         QString(40, QLatin1Char('c')) + QStringLiteral("\trefs/heads/pr/12/../x\n"))
+            .toUtf8();
+    const QHash<int, QString> tips = servedPullBranchTips(listing, {7, 12});
+    check(tips.size() == 1 && tips.value(7) == sha,
+          "only wanted numbers with a real commit id are taken from the cloud listing");
+    check(missingCodeReason(false, QStringLiteral("noname:pr/04-issues"),
+                            QStringLiteral("main"))
+              .contains(QStringLiteral("does not apply to `main`")),
+          "a patch pull that cannot be rebuilt says its patch does not apply");
+    check(missingCodeReason(true, QStringLiteral("fork:topic/x"), QStringLiteral("main"))
+              .contains(QStringLiteral("`topic/x` is neither on this node nor in the cloud")),
+          "a branch pull names the branch that is missing");
+    check(!missingCodeReason(true, QStringLiteral("x`rm`"), QStringLiteral("main"))
+               .contains(QLatin1Char('`') + QStringLiteral("x")),
+          "an unsafe branch name is never quoted back");
 
     if (failures)
         std::cerr << failures << " check(s) failed\n";

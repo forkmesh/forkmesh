@@ -117,6 +117,14 @@ switches named in `HealthPrefs` (`health.steps.enabled`, `health.water.enabled`,
     Activity (`WalkActivityAttributes`, `ForkMeshWidgets/WalkLiveActivity.swift`), catches up from
     Core Motion history when HealthKit wakes the app, and keeps a live pace (`WalkPace`) that
     drives the top bar's walking chip.
+  - Walk Live Activity start: Core Motion's classifier often lags the pedometer, so the top bar
+    could say "Walking" while the Dynamic Island stayed empty, and a walk confirmed after the app
+    left the screen was never shown until it reopened. The pace now counts as movement too
+    (`WalkDetector.paced`: 30 s of steps starts a walk, a lapse cancels a pending start, a walk in
+    progress is left to Core Motion), and when the app goes inactive while the user is stepping
+    and has been moving for 10 s (`leaveStartAfter`, `begin`) the walk starts there, so locking
+    the phone mid-walk keeps it in the Dynamic Island. ActivityKit accepts a request while the
+    app is inactive, so `showActivity` only skips the background.
   - Heart rate by tapping (`HeartTapModel`): at least 5 taps, a 2.5 s pause restarts, the last 12
     intervals kept, intervals more than 30% off the median dropped, 30–220 bpm accepted; saved to
     Health only (`HKMetadataKeyWasUserEntered`), never sent to the account.
@@ -146,11 +154,16 @@ switches named in `HealthPrefs` (`health.steps.enabled`, `health.water.enabled`,
 
 ### Glasses Alert (`GlassesWatchModels.swift`, package `glasses-alert`)
 
-Detects Meta smart glasses from Bluetooth advertisements; no API.
+Detects smart glasses and cameras from Bluetooth advertisements; no API.
 
-- `GlassesSignatures.match` keeps adverts whose manufacturer data starts with company ID
-  `0x01AB`/`0x058E` (Meta) or `0x0D53` (Luxottica), or whose name has a glasses keyword, and whose
-  RSSI clears the `GlassesRange` floor (near -65, room -75, wide -90 dBm). `GlassesTracker` alarms
+- `GlassesSignatures.match` keeps adverts whose manufacturer data starts with the company ID of a
+  `GlassesMaker` (Meta, Luxottica, Vuzix and camera makers such as GoPro, Insta360, DJI, Canon,
+  Nikon), that list a maker's 16-bit service UUID (GoPro, Insta360, Snap, Axon, 70mai), or whose name
+  has a glasses or camera keyword, and whose RSSI clears the `GlassesRange` floor (near -65, room -75,
+  wide -90 dBm). Each sighting carries a `SightingKind` (glasses or camera) for the alarm title and
+  icon; a camera match whose name is a printer's (`PIXMA`, `SELPHY`, `instax Link`) is dropped. The
+  package README lists every ID and why makers with mixed product lines (Sony, Panasonic) are matched
+  by name only. `GlassesTracker` alarms
   once per new identifier with a 30 s cooldown and forgets devices after 120 s.
 - `GlassesWatcher` (app) scans with `CBCentralManager` (foreground only; the screen keeps the
   device awake while watching). The alarm loops a sound in the `.playback` category with haptics,

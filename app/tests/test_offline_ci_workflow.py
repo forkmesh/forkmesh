@@ -336,3 +336,105 @@ def test_security_guards_and_go_tests_run_in_ci_and_the_quality_gate():
     runner = CRITICAL_RUNNER.read_text(encoding="utf-8")
     assert '"test", "-C", "server", "./..."' in runner
     assert 'GOPROXY="off"' in runner and 'GOTOOLCHAIN="local"' in runner
+
+
+def test_go_suite_caps_gomaxprocs_to_the_actions_cpu_quota(monkeypatch):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("run_critical_tests", CRITICAL_RUNNER)
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+
+    monkeypatch.delenv("GOMAXPROCS", raising=False)
+    monkeypatch.setenv("FORKMESH_ACTIONS_CPUS", "8")
+    assert runner.go_environment()["GOMAXPROCS"] == "8"
+
+    monkeypatch.setenv("GOMAXPROCS", "3")
+    assert runner.go_environment()["GOMAXPROCS"] == "3"
+
+    monkeypatch.delenv("GOMAXPROCS")
+    for unusable in ("", "0", "eight"):
+        monkeypatch.setenv("FORKMESH_ACTIONS_CPUS", unusable)
+        assert "GOMAXPROCS" not in runner.go_environment()
+
+
+def load_critical_runner():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("run_critical_tests", CRITICAL_RUNNER)
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    return runner
+
+
+def test_go_suite_retries_only_tests_that_failed_on_a_timeout():
+    runner = load_critical_runner()
+    dial = "\n".join([
+        "ok  \tforkmesh.com/mirror-node/cmd/forkmesh-calls\t0.015s",
+        "2026/10/22 09:58:22 runner: repository cache fetch failed, cloning from the core",
+        "--- FAIL: TestRunnerClaimsOnlyWithAProviderAndFreeSlots (30.04s)",
+        '    runner_test.go:420: Post "http://127.0.0.1:45719/api/runners/poll": '
+        "dial tcp 127.0.0.1:45719: i/o timeout",
+        "2026/10/22 09:58:52 runner: claude-code login is ok",
+        "FAIL",
+        "FAIL\tforkmesh.com/mirror-node\t95.525s",
+        "ok  \tforkmesh.com/mirror-node/rtc/quic\t39.752s",
+        "?   \tforkmesh.com/mirror-node/rtc/h3\t[no test files]",
+        "FAIL",
+    ])
+    assert runner.go_timeout_failures(dial) == {
+        "forkmesh.com/mirror-node": ["TestRunnerClaimsOnlyWithAProviderAndFreeSlots"]}
+
+    headers = "\n".join([
+        "--- FAIL: TestRegisterNodeAccountReservesAndFinalizesLinkCode (20.02s)",
+        '    account_test.go:39: Post "http://127.0.0.1:41287/api/accounts/reserve": '
+        "context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+        "--- FAIL: TestNested (1.00s)",
+        "    --- FAIL: TestNested/case (1.00s)",
+        "        nested_test.go:9: wait: context deadline exceeded",
+        "FAIL",
+        "FAIL\tforkmesh.com/mirror-node\t83.300s",
+    ])
+    assert runner.go_timeout_failures(headers) == {
+        "forkmesh.com/mirror-node": ["TestRegisterNodeAccountReservesAndFinalizesLinkCode", "TestNested"]}
+
+    window = "\n".join([
+        "--- FAIL: TestDatagramLossExemptKeepsTheWindowOpen (2.00s)",
+        "    datagram_loss_test.go:80: plain window regrew to 3600 B",
+        "FAIL",
+        "FAIL\tforkmesh.com/mirror-node/rtc/quic\t39.000s",
+    ])
+    assert runner.go_timeout_failures(dial + "\n" + window) is None
+
+    panicked = "\n".join([
+        "--- FAIL: TestSlow (30.00s)",
+        "    slow_test.go:5: dial tcp 127.0.0.1:1: i/o timeout",
+        "panic: runtime error: invalid memory address",
+        "FAIL\tforkmesh.com/mirror-node\t30.100s",
+    ])
+    assert runner.go_timeout_failures(panicked) is None
+    assert runner.go_timeout_failures("FAIL\tforkmesh.com/mirror-node [build failed]\nFAIL") is None
+    assert runner.go_timeout_failures("FAIL\tforkmesh.com/mirror-node\t0.100s\nFAIL") is None
+
+    call = "\n".join([
+        "--- FAIL: TestThreePeopleHoldACallThroughImpairedLinks (4.55s)",
+        "    call_test.go:58: p1 heard only 7 of 150 audio frames from p0",
+        "    call_test.go:63: p2 received 0 video frames",
+        "FAIL",
+        "FAIL\tforkmesh.com/mirror-node/rtc/fmmserver\t69.024s",
+    ])
+    assert runner.go_timeout_failures(call) == {
+        "forkmesh.com/mirror-node/rtc/fmmserver": ["TestThreePeopleHoldACallThroughImpairedLinks"]}
+    assert runner.go_timeout_failures(call + "\n" + window) is None
+
+    many = "\n".join(
+        [f"--- FAIL: TestAgent{n} (30.00s)\n    agents_test.go:1: context deadline exceeded" for n in range(4)]
+        + ["FAIL", "FAIL\tforkmesh.com/mirror-node\t180.000s"])
+    assert runner.go_timeout_failures(many) is None
+
+
+def test_go_suite_retry_runs_only_the_failed_tests_of_one_package(monkeypatch):
+    runner = load_critical_runner()
+    monkeypatch.setattr(runner, "go_binary", lambda: "go")
+    assert runner.go_retry_command("forkmesh.com/mirror-node", ["TestA", "TestB"]) == [
+        "go", "test", "-C", "server", "-count=1", "-run", "^(TestA|TestB)$", "forkmesh.com/mirror-node"]

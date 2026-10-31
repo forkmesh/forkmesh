@@ -140,7 +140,7 @@ def test_qt_replayed_backlog_repaints_the_transcript_once():
 def test_world_embedded_chat_renders_and_sends_threads_without_top_level_bubbles():
     # World opens /dashboard/chat in its in-world panel, so this controller is
     # the actual World chat implementation as well as the dashboard one.
-    assert 'this.openWorldChat("/dashboard/chat")' in WORLD
+    assert 'this.openWorldChat("/chat")' in WORLD
     assert "function ensureThreadDialog()" in DASHBOARD_CHAT
     assert "function renderThreadEntry(" in DASHBOARD_CHAT
     assert 'messageActionButton("Reply", () => openThread(record)' in DASHBOARD_CHAT

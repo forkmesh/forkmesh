@@ -88,7 +88,13 @@ async function mockRepoPage(page) {
         });
       }
     } else if (url.pathname === "/api/repo/acme/widgets/tree") {
-      body = { ok: true, commit: PULL_COMMIT, entries: [] };
+      body = {
+        ok: true,
+        commit: PULL_COMMIT,
+        entries: blobPath === ".forkmesh/pulls/94"
+          ? [{ name: "pull.md", type: "blob" }, { name: "changes.patch", type: "blob" }]
+          : [],
+      };
     }
     return route.fulfill({
       status: 200,
@@ -181,7 +187,11 @@ test("tapping line numbers opens the composer and a second tap extends the range
 test("tapping a file in the explorer lands on that file's diff", async ({ page }) => {
   const files = await openFiles(page);
   const target = "src/module_10.js";
+  await expect(files.locator("[data-repo-diff-explorer]")).toBeHidden();
+  await files.locator(".fm-diff-explorer-show").first().tap();
+  await expect(files.locator("[data-repo-diff-explorer]")).toBeVisible();
   await files.locator(`[data-repo-pull-file="${target}"]`).tap();
+  await expect(files.locator("[data-repo-diff-explorer]")).toBeHidden();
 
   const block = files.locator(`[data-repo-pull-diff-file="${target}"]`);
   await expect.poll(async () => {
@@ -206,6 +216,8 @@ test.describe("on a desktop mouse", () => {
 
   test("split stays available and gutter drags still select a range", async ({ page }) => {
     const files = await openFiles(page);
+    await expect(files.locator("[data-repo-diff-explorer]")).toBeVisible();
+    await files.locator("[data-repo-diff-settings] > summary").click();
     await expect(files.locator("[data-repo-pull-diff-mode-group]")).toBeVisible();
     expect(await files.locator('[data-repo-pull-diff-grid="split"]').count()).toBeGreaterThan(0);
     await files.locator('[data-repo-pull-diff-mode="unified"]').click();

@@ -168,7 +168,7 @@
         <a href="/status" data-status-entry>Status</a>
         <a href="/ledger" data-plugin-entry="ledger">Financial ledger</a>
       </div>
-      <div class="fm-nav-group">
+      <div class="fm-nav-group" data-instance-plugin="website">
         <span class="fm-nav-group-title">Company</span>
         <a href="/about">About</a>
         <a href="/careers">Careers</a>

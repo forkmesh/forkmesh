@@ -45,7 +45,6 @@ object ChatShare {
                 hub.officeChannels,
                 hub.directConversations,
                 hub.relay.rosterGroups(),
-                channels.filter { hub.extras.isPrivate(it) }.toSet(),
             )
         }.getOrDefault(emptyList())
     }
@@ -63,7 +62,7 @@ object ChatShare {
         guestComposeBlocked(guest, target.guestProbe)?.let { return ChatSendResult.NeedsAccount(it) }
         return withContext(Dispatchers.IO) {
             val hub = ChatDepth.hub ?: return@withContext ChatSendResult.Failed("Chat is not available.")
-            val conversation = if (target.kind == ChatShareKind.USER) {
+            val conversation = if (target.kind == ChatShareKind.USER || target.kind == ChatShareKind.PERSON) {
                 val direct = hub.direct ?: return@withContext ChatSendResult.Failed("Direct messages are not available.")
                 try {
                     direct.start(target.user).conversation

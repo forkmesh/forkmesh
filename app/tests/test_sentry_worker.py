@@ -819,3 +819,18 @@ def test_internal_log_labels_are_not_mistaken_for_repository_routes():
         assert asyncio.run(redact(None, label)) == label
     assert asyncio.run(redact(None, "/forkbot/ai")) == (
         "/private-or-unpublished-repository/[page]")
+
+
+def test_chat_bearer_tokens_in_paths_are_redacted_from_logs():
+    import asyncio
+
+    source = ENTRY_TEXT.split("async def _privacy_safe_log_path", 1)[1].split(
+        "async def capture_worker_exception", 1)[0]
+    namespace = {}
+    exec("async def _privacy_safe_log_path" + source, namespace)
+    redact = namespace["_privacy_safe_log_path"]
+    token = "ab" * 32
+    assert asyncio.run(redact(None, "/api/chat/webhooks/" + token)) == (
+        "/api/chat/webhooks/[token]")
+    assert asyncio.run(redact(None, "/api/chat/invites/" + token)) == (
+        "/api/chat/invites/[token]")

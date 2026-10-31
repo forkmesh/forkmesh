@@ -58,6 +58,7 @@ DATA_SCHEMA_DOWN = [
 ]
 
 POST_COLUMNS = "post_id,author_bi,author_name,created_at,reply_to,boost_of,data"
+VIEWER_FIELDS = ("boosted", "favourited", "mine", "canDelete")
 
 _SCHEMA_READY = False
 
@@ -110,6 +111,8 @@ def _allowed_methods(parts):
         return ("GET",)
     head = parts[0]
     if head == "export" and len(parts) == 1:
+        return ("GET",)
+    if head == "public" and len(parts) == 2:
         return ("GET",)
     if head != "posts":
         return ()
@@ -496,6 +499,26 @@ def _thread_order(root_id, rows):
     return ordered
 
 
+def _public_entry(entry):
+    return {key: value for key, value in entry.items() if key not in VIEWER_FIELDS}
+
+
+async def _public_post(runtime, post_id):
+    await _ensure_tables(runtime)
+    row = await _row(runtime, post_id) if ID_RE.fullmatch(post_id) else None
+    if row and row.get("boost_of"):
+        row = await _row(runtime, str(row["boost_of"]))
+    if not row:
+        return _response(runtime, {"error": "post_not_found"}, 404)
+    thread = await _thread(runtime, row, "", False)
+    return _response(runtime, {
+        "ok": True,
+        "post": _public_entry(thread["post"]),
+        "ancestors": [_public_entry(item) for item in thread["ancestors"]],
+        "replies": [_public_entry(item) for item in thread["replies"]],
+    })
+
+
 async def _delete_post(runtime, row, actor):
     post_id = str(row["post_id"])
     await runtime.d1_run(
@@ -639,6 +662,8 @@ async def handle(runtime, path):
             return _response(runtime, {"error": error},
                              413 if error == "payload_too_large" else 400)
     await runtime.ensure_schema()
+    if parts[0:1] == ("public",):
+        return await _public_post(runtime, parts[1])
     account_bi, actor, display = await _actor(runtime, data)
     if not account_bi or not actor:
         return _response(runtime, {"error": "invalid_session"}, 401)

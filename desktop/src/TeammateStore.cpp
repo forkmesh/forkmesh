@@ -1,5 +1,7 @@
 #include "TeammateStore.h"
 
+#include "RepoWorkflow.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -599,11 +601,26 @@ QString Store::safeId(const QString &value)
     return result;
 }
 
+QStringList Store::directories() const
+{
+    if (m_rootDirectory.isEmpty())
+        return {};
+    const QFileInfo info(m_rootDirectory);
+    const QDir parent = info.dir();
+    if (info.fileName() == QLatin1String("workflows"))
+        return {m_rootDirectory, QDir::cleanPath(parent.filePath(QStringLiteral("teammates")))};
+    if (info.fileName() == QLatin1String("teammates"))
+        return {QDir::cleanPath(parent.filePath(QStringLiteral("workflows"))), m_rootDirectory};
+    return {m_rootDirectory};
+}
+
 QString Store::pathFor(const QString &id) const
 {
     const QString clean = safeId(id);
-    return clean.isEmpty() || m_rootDirectory.isEmpty() ? QString()
-                           : QDir(m_rootDirectory).filePath(clean + QStringLiteral(".json"));
+    const QStringList folders = directories();
+    return clean.isEmpty() || folders.isEmpty()
+               ? QString()
+               : QDir(folders.first()).filePath(clean + QStringLiteral(".json"));
 }
 
 namespace {
@@ -633,7 +650,27 @@ QHash<QString, LoadMemo> &loadMemos()
 void forgetLoadMemo(const QString &rootDirectory)
 {
     const QMutexLocker lock(&loadMemoMutex());
-    loadMemos().remove(rootDirectory);
+    Q_UNUSED(rootDirectory);
+    loadMemos().clear();
+}
+
+bool readJsonObject(const QString &path, QJsonObject *object, QString *error)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error)
+            *error = QStringLiteral("%1 could not be read").arg(QFileInfo(path).fileName());
+        return false;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        if (error)
+            *error = QStringLiteral("%1 is not valid special agent JSON").arg(QFileInfo(path).fileName());
+        return false;
+    }
+    *object = document.object();
+    return true;
 }
 
 } // namespace
@@ -641,18 +678,22 @@ void forgetLoadMemo(const QString &rootDirectory)
 LoadResult Store::load() const
 {
     LoadResult result;
-    if (m_rootDirectory.isEmpty())
+    const QStringList folders = directories();
+    if (folders.isEmpty())
         return result;
-    const QFileInfoList files = QDir(m_rootDirectory).entryInfoList(
-        {QStringLiteral("*.json")}, QDir::Files | QDir::Readable, QDir::Name);
-    // Name, size and modification time of every file: an edit from outside the
-    // app (a checkout, an agent's write) changes the listing and so the key.
+    QList<QFileInfoList> listings;
     QString signature;
-    for (const QFileInfo &info : files) {
-        signature += info.fileName() + QLatin1Char('\x1f') +
-                     QString::number(info.size()) + QLatin1Char('\x1f') +
-                     QString::number(info.lastModified().toMSecsSinceEpoch()) +
-                     QLatin1Char('\x1e');
+    for (const QString &folder : folders) {
+        const QFileInfoList files = QDir(folder).entryInfoList(
+            {QStringLiteral("*.json")}, QDir::Files | QDir::Readable, QDir::Name);
+        listings.append(files);
+        signature += folder + QLatin1Char('\x1d');
+        for (const QFileInfo &info : files) {
+            signature += info.fileName() + QLatin1Char('\x1f') +
+                         QString::number(info.size()) + QLatin1Char('\x1f') +
+                         QString::number(info.lastModified().toMSecsSinceEpoch()) +
+                         QLatin1Char('\x1e');
+        }
     }
     {
         const QMutexLocker lock(&loadMemoMutex());
@@ -661,32 +702,48 @@ LoadResult Store::load() const
             return memo->result;
     }
     QSet<QString> ids;
-    for (const QFileInfo &info : files) {
-        QFile file(info.absoluteFilePath());
-        if (!file.open(QIODevice::ReadOnly)) {
-            result.errors.append(QStringLiteral("%1 could not be read").arg(info.fileName()));
-            continue;
+    for (int folderIndex = 0; folderIndex < listings.size(); ++folderIndex) {
+        QSet<QString> idsHere;
+        for (const QFileInfo &info : listings.at(folderIndex)) {
+            QJsonObject object;
+            QString error;
+            if (!readJsonObject(info.absoluteFilePath(), &object, &error)) {
+                result.errors.append(error);
+                continue;
+            }
+            Config config;
+            if (forkmesh::repoworkflows::looksLikeWorkflowFile(object)) {
+                QString workflowError;
+                const forkmesh::repoworkflows::Workflow workflow =
+                    forkmesh::repoworkflows::Workflow::fromJson(object, &workflowError);
+                if (!workflowError.isEmpty()) {
+                    result.errors.append(QStringLiteral("%1: %2").arg(
+                        info.fileName(), forkmesh::repoworkflows::errorText(workflowError)));
+                    continue;
+                }
+                if (!forkmesh::repoworkflows::toTeammate(workflow, &config, &error)) {
+                    if (!error.isEmpty())
+                        result.errors.append(QStringLiteral("%1: %2").arg(info.fileName(), error));
+                    continue;
+                }
+            } else {
+                config = Config::fromJson(object, &error);
+                if (!error.isEmpty()) {
+                    result.errors.append(QStringLiteral("%1: %2").arg(info.fileName(), error));
+                    continue;
+                }
+            }
+            if (idsHere.contains(config.id)) {
+                result.errors.append(QStringLiteral("%1 duplicates special agent id %2")
+                                         .arg(info.fileName(), config.id));
+                continue;
+            }
+            idsHere.insert(config.id);
+            if (ids.contains(config.id))
+                continue;
+            ids.insert(config.id);
+            result.teammates.append(config);
         }
-        QJsonParseError parseError;
-        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
-        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-            result.errors.append(QStringLiteral("%1 is not valid special agent JSON")
-                                     .arg(info.fileName()));
-            continue;
-        }
-        QString error;
-        Config config = Config::fromJson(document.object(), &error);
-        if (!error.isEmpty()) {
-            result.errors.append(QStringLiteral("%1: %2").arg(info.fileName(), error));
-            continue;
-        }
-        if (ids.contains(config.id)) {
-            result.errors.append(QStringLiteral("%1 duplicates special agent id %2")
-                                     .arg(info.fileName(), config.id));
-            continue;
-        }
-        ids.insert(config.id);
-        result.teammates.append(config);
     }
     {
         const QMutexLocker lock(&loadMemoMutex());
@@ -713,29 +770,47 @@ bool Store::save(Config *config, QString *error) const
         return false;
     }
     const QString path = pathFor(normalized.id);
-    if (path.isEmpty() || !QDir().mkpath(m_rootDirectory)) {
+    if (path.isEmpty() || !QDir().mkpath(QFileInfo(path).absolutePath())) {
         if (error)
-            *error = QStringLiteral("Could not create the special agents folder.");
+            *error = QStringLiteral("Could not create the workflows folder.");
         return false;
     }
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (normalized.createdAtMs <= 0)
         normalized.createdAtMs = now;
     normalized.updatedAtMs = now;
+    forkmesh::repoworkflows::Workflow workflow;
+    QJsonObject existing;
+    if (QFileInfo::exists(path) && readJsonObject(path, &existing, nullptr) &&
+        forkmesh::repoworkflows::looksLikeWorkflowFile(existing))
+        workflow = forkmesh::repoworkflows::Workflow::fromJson(existing);
+    forkmesh::repoworkflows::applyTeammate(&workflow, normalized);
+    const QString workflowError = forkmesh::repoworkflows::validate(workflow);
+    if (!workflowError.isEmpty()) {
+        if (error)
+            *error = forkmesh::repoworkflows::errorText(workflowError);
+        return false;
+    }
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         if (error)
             *error = QStringLiteral("Could not write %1.").arg(QFileInfo(path).fileName());
         return false;
     }
-    file.write(QJsonDocument(normalized.toJson()).toJson(QJsonDocument::Indented));
+    file.write(QJsonDocument(workflow.toJson()).toJson(QJsonDocument::Indented));
     if (!file.commit()) {
         if (error)
             *error = QStringLiteral("Could not finish saving %1.")
                          .arg(QFileInfo(path).fileName());
         return false;
     }
-    forgetLoadMemo(m_rootDirectory); // a same-size rewrite inside one mtime tick
+    const QStringList folders = directories();
+    for (int index = 1; index < folders.size(); ++index) {
+        const QString legacy = QDir(folders.at(index)).filePath(normalized.id + QStringLiteral(".json"));
+        if (legacy != path && QFileInfo(legacy).isFile())
+            QFile::remove(legacy);
+    }
+    forgetLoadMemo(m_rootDirectory);
     if (error)
         error->clear();
     *config = std::move(normalized);
@@ -744,15 +819,24 @@ bool Store::save(Config *config, QString *error) const
 
 bool Store::remove(const QString &id, QString *error) const
 {
-    const QString path = pathFor(id);
-    if (path.isEmpty() || !QFileInfo::exists(path)) {
+    const QString clean = safeId(id);
+    bool found = false;
+    for (const QString &folder : directories()) {
+        if (clean.isEmpty())
+            break;
+        const QString path = QDir(folder).filePath(clean + QStringLiteral(".json"));
+        if (!QFileInfo::exists(path))
+            continue;
+        found = true;
+        if (!QFile::remove(path)) {
+            if (error)
+                *error = QStringLiteral("Could not delete %1.").arg(QFileInfo(path).fileName());
+            return false;
+        }
+    }
+    if (!found) {
         if (error)
             *error = QStringLiteral("That special agent no longer exists.");
-        return false;
-    }
-    if (!QFile::remove(path)) {
-        if (error)
-            *error = QStringLiteral("Could not delete %1.").arg(QFileInfo(path).fileName());
         return false;
     }
     forgetLoadMemo(m_rootDirectory);

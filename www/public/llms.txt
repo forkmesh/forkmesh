@@ -50,6 +50,10 @@
 - [Changelog](https://forkmesh.com/changelog): released changes
 - [Blog](https://forkmesh.com/blog): product announcements
 
+## Security
+
+- Found a vulnerability? Report it right away and privately: send `POST https://forkmesh.com/api/security/report` with JSON `{"title", "component", "body", "contact"}`, where `component` is one of `identity`, `relay`, `mirroring`, `chat`, `donations`, `website`, `client` or `other`. Each report alarms the maintainers at once and files a private fix task. Please do not open a public issue. People can use the private form linked under Optional.
+
 ## Optional
 
 - [Documentation library](https://forkmesh.com/docs/library/): every guide, design note, runbook and schema

@@ -219,4 +219,33 @@ class RssLibraryTest {
         assertEq(now, byGuid.getValue("none").published)
         assertEq(now - 5000, byGuid.getValue("upd").published)
     }
+
+    fun testSyncDataDropsFetchStateAndRestoreReplacesSubscriptions() {
+        val http = FakeHttp()
+        val fetcher = RssFetcher(http)
+        val phone = RssLibrary()
+        val folder = phone.addFolder("Tech")
+        val kept = phone.subscribe("https://eng.example.org/feed.xml", folderId = folder.id, now = now)
+        phone.subscribe("https://old.example.com/rss", now = now)
+        http.serve("https://eng.example.org/feed.xml", rss("a" to now - 1000), etag = "\"v1\"")
+        phone.applyFetch(kept.id, fetcher.fetch(phone.feed(kept.id)!!), now)
+        expect(phone.feed(kept.id)!!.etag.isNotEmpty())
+        val saved = phone.syncData()
+        expect(saved.activity.isEmpty())
+        expect(saved.feeds.all { it.etag.isEmpty() && it.lastSuccess == 0L })
+
+        val other = RssLibrary()
+        val mine = other.subscribe("https://eng.example.org/feed.xml", now = now)
+        other.subscribe("https://gone.example.net/rss", now = now)
+        val incoming = saved.copy(
+            feeds = saved.feeds.filter { !it.url.contains("old.example.com") },
+            settings = saved.settings.copy(groupByFeed = true),
+        )
+        assertEq(1, other.restoreSync(incoming, now))
+        assertEq(listOf("https://eng.example.org/feed.xml"), other.feeds().map { it.url })
+        assertEq(mine.id, other.feeds().first().id)
+        assertEq(folder.id, other.feeds().first().folderId)
+        assertEq(listOf("Tech"), other.folders().map { it.name })
+        expect(other.settings().groupByFeed)
+    }
 }

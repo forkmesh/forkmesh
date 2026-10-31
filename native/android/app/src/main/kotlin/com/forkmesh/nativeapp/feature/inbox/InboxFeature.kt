@@ -35,6 +35,7 @@ import com.forkmesh.nativeapp.model.ForkNotification
 import com.forkmesh.nativeapp.navigation.InboxFilter
 import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.platform.AppLifecycle
+import com.forkmesh.nativeapp.platform.IntentTokens
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import kotlinx.coroutines.Dispatchers
@@ -260,7 +261,7 @@ object InboxFeature {
         intent.putExtra(EXTRA_NOTIFICATION_TAG, tag)
         intent.putExtra(EXTRA_NOTIFICATION_ID, id)
         payload.fields(kind).forEach { (key, value) -> intent.putExtra("fm.$key", value) }
-        return intent
+        return IntentTokens.stamp(context, intent)
     }
 
     private fun payloadFrom(intent: Intent): NotificationPayload =
@@ -268,6 +269,11 @@ object InboxFeature {
 
     fun onIntent(intent: Intent?): Boolean {
         if (intent?.action != ACTION_NOTIFICATION) return false
+        if (!IntentTokens.carries(appRef, intent)) {
+            intent.action = null
+            return true
+        }
+        IntentTokens.strip(intent)
         val payload = payloadFrom(intent)
         val command = NotificationActionRouter.command(intent.getStringExtra(EXTRA_ACTION), payload, null)
         cancel(intent)
@@ -344,6 +350,7 @@ private object OpsApprovals : AgentApprovalDecider {
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != InboxFeature.ACTION_NOTIFICATION) return
+        if (!IntentTokens.carries(context, intent)) return
         val payload = InboxFeature.payloadFromIntent(intent)
         val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(InboxFeature.REMOTE_INPUT_KEY)?.toString()
         val command = NotificationActionRouter.command(intent.getStringExtra(InboxFeature.EXTRA_ACTION), payload, text)

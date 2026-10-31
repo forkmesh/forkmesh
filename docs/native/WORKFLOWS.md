@@ -34,6 +34,70 @@ both apps (`Route.workflows`), and a phone can run a workflow itself.
   nesting limit, and passes them to the engine as `workflows` with the phone
   credentials their steps use. The draft being edited stands in for itself.
 
+## The desktop's workflows
+
+The user asked (2026-10-28) for every workflow the desktop shows to appear on
+the phone too, for them to run from the phone, and for Free disk space to run
+from the phone and clean the desktop. Before, the phone listed only the
+account's workflows (`/api/workflows`), so the desktop's special agents and
+repository workflows (`.forkmesh/workflows/*.json`,
+[../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents))
+were missing, and Free disk space could only run from the browser or the
+desktop.
+
+- **One list, two sections.** The Workflows screen shows **On ForkMesh** (the
+  account's workflows, as before) and **On your desktop**, which
+  `DesktopWorkflowsStore` (`FMWorkflows/DesktopWorkflows.swift`) fills from
+  the desktop's `workflows.list`. Each row names its kind (Special agent or
+  Desktop workflow), repository, state and last run, with a play button.
+  Tapping a row opens `DesktopWorkflowScreen`: its facts, Run on the desktop
+  (with an optional assignment) or Stop while it runs, its steps with the
+  latest run's results, and its last ten runs, each opening the steps' output,
+  error and last log lines. The list and an open screen reload on the
+  desktop's `workflows.changed` bell, which fires whenever the desktop's
+  Workflows page would redraw (`notifyRepoWorkflowsChanged`).
+- **The `workflows.` family** (`desktop/src/MainWindowLocalControlWorkflows.cpp`,
+  pure half `LocalControlWorkflows.{h,cpp}`, test
+  `forkmesh-local-control-workflows-tests`), owner-only like every family:
+  `list` (the Workflows page's `nativePackageRepositoryWorkflows()`, without
+  portraits, local paths or runs; at most 200 rows), `get` (`repo`, `id`: the
+  steps' ids, types and names and the last ten runs, bounded, without the
+  assignment or output file path), `prepare` and `run` for the actions `run`
+  and `stop`. `run` needs the token `prepare` issued to the same device for
+  the same `repo|id`, like `teammates.`, then calls the page's own
+  `runNativePackageRepositoryWorkflowAction`, so a phone run is the same as
+  pressing Run on the desktop (trigger "By hand · <phone>"). Editing and
+  deleting these workflows stays on the desktop. A phone `run` of a
+  repository workflow needs the workflow file's approval on the desktop
+  (`approval_required` otherwise), and fails closed with `unknown_workflow`
+  when the desktop cannot find the repository or the workflow file, so no
+  lookup gap skips the approval check (guard:
+  `desktop/tests/validate_repo_workflow_approval.py`).
+- **Free disk space from the phone.** An account workflow with desktop steps
+  (`desktop.*`, `WorkflowDesktopSteps`, checked against `workflow-spec.json`
+  in `DesktopWorkflowsTests`) shows **Run on your desktop** instead of the
+  phone and ForkMesh buttons, which refuse those steps. After a confirmation
+  naming the steps, `WorkflowsStore.runOnDesktop` does what the web's
+  `wfRunOnDesktop` does: steps in graph order, each desktop step through
+  `diag.prepare` and `diag.run` with action `freeDiskSpace` (20 minutes a
+  step), a failure skips the rest, and the report goes to
+  `POST /api/workflows/<id>/record`, so the run joins the workflow's history
+  as a desktop run. The step list shows each step's progress live
+  (`desktopLive`). The desktop runs `tools/free_disk_space.py` in its own
+  forkmesh/forkmesh checkout; nothing new runs on the desktop for this.
+- **Run on your desktop from the list.** The user asked (2026-10-28) for
+  Free disk space to have a button that runs it on the desktop, and for every
+  workflow to show on the phone. The button sat only inside the editor, and
+  Android had none of this section (S147 was still pending), so an Android
+  phone listed only the account's workflows and Free disk space failed when
+  run there. Now the server's list marks a workflow with desktop steps
+  `runsOn: "desktop"` (`WorkflowSummary.runsOnDesktop`), and its row on both
+  phones shows a play button instead of the Active badge: it opens the
+  workflow, asks with the steps named (`WorkflowDesktopSteps.confirmation`),
+  and runs it with `runOnDesktop`, a spinner on the row while it goes. Without
+  a paired desktop it says so instead. Android has the On your desktop section,
+  its detail screen and the editor's Run on your desktop as on iOS.
+
 ## One engine, three runtimes
 
 | Runtime | Code | How it is checked |
@@ -107,6 +171,7 @@ shows up as a failing phone case.
 | --- | --- | --- |
 | Engine host / port | `ForkMeshCore/Sources/FMWorkflows/WorkflowScript.swift`, `WorkflowEngine.swift` | `core/.../workflows/WorkflowEngine.kt`, `WorkflowPy.kt` |
 | Models, API, phone credentials | `WorkflowModels.swift`, `WorkflowsStore.swift` | `core/.../workflows/Workflows.kt` |
+| Desktop workflows, desktop steps | `DesktopWorkflows.swift`; screens `DesktopWorkflowScreens.swift` | `core/.../workflows/DesktopWorkflows.kt`; screens `feature/workflows/DesktopWorkflowScreens.kt` |
 | Screens | `ForkMesh/Features/Workflows/` | `app/.../feature/workflows/` |
 | Route | `Route.workflows`, `RouteFallbacks.swift` | `Route.Workflows`, `WorkflowsFeature` |
 

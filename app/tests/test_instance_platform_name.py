@@ -53,7 +53,9 @@ KEPT = {
     "07-repo-compose-branch.js": ["runs a ForkMesh version"],
     "07-repo-pull-batch.js": ["runs a ForkMesh version"],
     "08-repo-detail-network.js": ["other ForkMesh instances"],
-    "09-workflows.js": ["an n8n or ForkMesh workflow file", "The ForkMesh desktop app (MainWindow::"],
+    "09-workflows.js": ["an n8n or ForkMesh workflow file"],
+    "09-apps.js": ["Open Market in the ForkMesh desktop or phone app"],
+    "09-mirror-quota.js": ["start your own ForkMesh instance"],
 }
 
 
@@ -145,7 +147,7 @@ def test_switched_off_plugins_are_not_requested_or_shown():
 
 def test_content_page_partials_mark_the_platform_name():
     partials = DASHBOARD / "partials"
-    for relative in ("views/profile-overview.html", "views/repos.html", "views/chat.html", "main.html"):
+    for relative in ("views/profile-overview.html", "views/repos.html", "main.html"):
         text = (partials / relative).read_text(encoding="utf-8")
         text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
         text = text.replace("<span data-platform-name>ForkMesh</span>", "")
@@ -355,6 +357,7 @@ PAGE_KEPT = (
     "forkmesh-profile=username",
     "demo@forkmesh.local",
     "forkmesh-demo",
+    ".forkmesh/pulls.json",
 )
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
         "source", "track", "wbr"}
@@ -433,8 +436,10 @@ def test_the_instance_git_node_is_shown_as_the_instance_in_commits():
     assert "return Boolean(value) && dashboardOnInstance() && value === instanceGitNode;" in helpers
     assert "void instanceInfo();" in (JS / "10-boot.js").read_text(encoding="utf-8")
     compose = (JS / "07-repo-compose-branch.js").read_text(encoding="utf-8")
-    assert compose.count("shownAccountName(commit.author)") == 3
-    assert "${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}" in compose
+    assert compose.count("shownAccountName(commit.author)") == 1
+    assert compose.count('issuePersonNameHtml(commit.author || "unknown"') == 2
+    assert "const shown = system ? escapeHtml(shownAccountName(label)) : userNameHtml(label);" in helpers
+    assert 'issuePersonNameHtml(item.author, "font-medium text-foreground", { git: true })' in compose
     content = (JS / "06-repo-content.js").read_text(encoding="utf-8")
     assert "const platform = platformAccount(contributor?.name);" in content
     assert "shownAccountName(commit.author)" in content

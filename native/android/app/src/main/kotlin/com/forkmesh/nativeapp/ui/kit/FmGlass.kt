@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -285,13 +286,23 @@ fun FmNavBar(
     }
 }
 
+internal object FmNavActionsRoom {
+    const val MIN_ROOM = 184
+    const val RESERVED = 52
+
+    fun maxWidth(barWidth: Int, minRoom: Int, reserved: Int): Int =
+        if (barWidth == androidx.compose.ui.unit.Constraints.Infinity) barWidth else maxOf(minRoom, barWidth - reserved).coerceAtMost(barWidth)
+}
+
 @Composable
 private fun FmNavActions(modifier: Modifier, actions: @Composable RowScope.() -> Unit) {
+    val scroll = androidx.compose.foundation.rememberScrollState(Int.MAX_VALUE)
     Layout(
-        content = { Row(verticalAlignment = Alignment.CenterVertically, content = actions) },
+        content = { Row(Modifier.horizontalScroll(scroll), verticalAlignment = Alignment.CenterVertically, content = actions) },
         modifier = modifier,
     ) { measurables, constraints ->
-        val row = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+        val room = FmNavActionsRoom.maxWidth(constraints.maxWidth, FmNavActionsRoom.MIN_ROOM.dp.roundToPx(), FmNavActionsRoom.RESERVED.dp.roundToPx())
+        val row = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0, maxWidth = room))
         if (row.width == 0) {
             layout(0, 0) {}
         } else {

@@ -26,6 +26,7 @@ object ChatV3 {
     private const val SEALED_LABEL = "forkmesh-chat-e2ee-sealed-v3"
     private const val SALT_PREFIX = "ForkMesh chat e2ee salt v3:"
     private const val SAFETY_LABEL = "forkmesh-safety-v3"
+    private const val NODE_LABEL = "forkmesh-chat-e2ee-node-v1"
 
     private val URL_CHARS = Regex("[A-Za-z0-9_-]*")
     private val STANDARD_CHARS = Regex("[A-Za-z0-9+/]*={0,2}")
@@ -177,6 +178,29 @@ object ChatV3 {
             val sig = unb64u(bundle["sig"]) ?: return false
             if (sig.size != SIGNATURE_BYTES) return false
             Ed25519.verify(idkBytes, bundleMessage(room, kid, idk, acct, node, spk), sig)
+        } catch (_: RuntimeException) {
+            false
+        }
+    }
+
+    fun nodeMessage(room: String, kid: String, idk: String, acct: String): ByteArray =
+        Utf8.encode("$NODE_LABEL\n$room\n$kid\n$idk\n$acct")
+
+    fun nodeKeyBytes(node: Any?): ByteArray? {
+        val bytes = unb64u(node) ?: return null
+        if (bytes.size != Ed25519.PUBLIC_KEY_BYTES || b64u(bytes) != node) return null
+        return bytes
+    }
+
+    fun verifyNodeBinding(bundle: Map<String, Any?>, room: String): Boolean {
+        return try {
+            val kid = bundle["kid"] as? String ?: return false
+            val idk = bundle["idk"] as? String ?: return false
+            val acct = bundle["acct"] as? String ?: return false
+            val node = nodeKeyBytes(bundle["node"]) ?: return false
+            val nsig = unb64u(bundle["nsig"]) ?: return false
+            if (nsig.size != SIGNATURE_BYTES) return false
+            Ed25519.verify(node, nodeMessage(room, kid, idk, acct), nsig)
         } catch (_: RuntimeException) {
             false
         }

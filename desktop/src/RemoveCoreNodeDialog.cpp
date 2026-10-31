@@ -2,6 +2,7 @@
 #include "ProcessReaper.h"
 
 #include "FleetAutoscaleModel.h"
+#include "FontSizing.h"
 
 #include <QCheckBox>
 #include <QColor>
@@ -46,7 +47,7 @@ QLabel *titleLabel(const QString &text)
     auto *label = new QLabel(text);
     QFont font = label->font();
     font.setBold(true);
-    font.setPointSizeF(font.pointSizeF() * 1.2);
+    font = forkmesh::scaledFont(font, 1.2);
     label->setFont(font);
     return label;
 }
@@ -592,10 +593,9 @@ void RemoveCoreNodeDialog::refreshRun()
     }
     const bool running = m_controller->isRunning();
     QString headline = run.headline();
-    if (run.state() == AddCoreRun::State::Succeeded && !run.commit().isEmpty())
-        headline += QStringLiteral("\nMerge %1 (%2) into main so autodeploy and roll leave it "
-                                   "out.")
-                        .arg(run.branch(), run.commit().left(12));
+    const QString landing = fleetLandingText(run, QStringLiteral("leave it out"));
+    if (!landing.isEmpty())
+        headline += QLatin1Char('\n') + landing;
     m_headline->setText(headline);
     QString color = QStringLiteral("inherit");
     if (run.state() == AddCoreRun::State::Succeeded)

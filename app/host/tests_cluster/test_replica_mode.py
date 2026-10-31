@@ -169,6 +169,41 @@ def test_host_metrics_window_percentiles_and_load():
     assert percentile([], 0.9) is None
 
 
+def test_host_metrics_cpu_memory_and_disk_percentages():
+    class Stat:
+        f_blocks, f_bfree, f_bavail, f_frsize = 1000, 300, 200, 4096
+
+    clock = [1000.0]
+    ticks = [(1000, 800)]
+    metrics = HostMetrics(clock=lambda: clock[0], loadavg=lambda: (0.0,),
+                          cpu_count=lambda: 1,
+                          proc_stat=lambda: ticks[0],
+                          meminfo=lambda: {"MemTotal": 1000,
+                                           "MemAvailable": 250},
+                          statvfs=lambda _path: Stat)
+    snap = metrics.snapshot()
+    assert snap["cpuPct"] is None
+    assert snap["memPct"] == 75.0
+    assert snap["diskPct"] == 77.8
+    ticks[0] = (1200, 850)
+    clock[0] += 1
+    assert metrics.snapshot()["cpuPct"] is None
+    clock[0] += 30
+    assert metrics.snapshot()["cpuPct"] == 75.0
+    ticks[0] = (1400, 1050)
+    clock[0] += 2
+    assert metrics.snapshot()["cpuPct"] == 75.0
+
+    def broken(*_args):
+        raise OSError("no proc")
+
+    bare = HostMetrics(loadavg=lambda: (0.0,), cpu_count=lambda: 1,
+                       proc_stat=broken, meminfo=broken, statvfs=broken)
+    snap = bare.snapshot()
+    assert (snap["cpuPct"], snap["memPct"], snap["diskPct"]) == (
+        None, None, None)
+
+
 def test_readyz_metrics_need_a_mesh_signature():
     from forkmesh_host.asgi import HostASGI
 

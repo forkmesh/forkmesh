@@ -47,6 +47,19 @@ public final class RSSReaderModel {
         store.flush()
     }
 
+    public func syncSnapshot() -> RSSReaderLibrary? {
+        let library = store.syncLibrary()
+        return library.feeds.isEmpty && library.folders.isEmpty ? nil : library
+    }
+
+    @discardableResult
+    public func restoreSync(_ library: RSSReaderLibrary) -> Int {
+        let count = store.restoreLibrary(library)
+        changed(save: false)
+        saveNow()
+        return count
+    }
+
     public var settings: RSSReaderSettings {
         _ = revision
         return store.settings

@@ -97,7 +97,8 @@ def test_members_share_the_queue_and_decks():
     api(runtime, "POST", "/jams/" + jam_id + "/join", actor="bob")
     queued = api(runtime, "POST", "/jams/" + jam_id + "/queue", actor="bob",
                  body={"videoId": SONG, "title": "  Never   Gonna ", "author": "Rick"})["data"]["jam"]
-    assert queued["queue"] == [{"id": queued["queue"][0]["id"], "videoId": SONG, "title": "Never Gonna", "author": "Rick", "addedBy": "bob"}]
+    assert queued["queue"] == [{"id": queued["queue"][0]["id"], "videoId": SONG, "title": "Never Gonna", "author": "Rick", "addedBy": "bob", "addedAt": runtime.db.execute("SELECT added_at FROM vmdj_jam_queue").fetchone()[0]}]
+    assert queued["queue"][0]["addedAt"] > 0
     assert api(runtime, "POST", "/jams/" + jam_id + "/queue", actor="bob", body={"videoId": "nope"})["data"]["error"] == "invalid_video"
     api(runtime, "POST", "/jams/" + jam_id + "/queue", body={"videoId": OTHER})
     deck = api(runtime, "PUT", "/jams/" + jam_id + "/decks/a", body={

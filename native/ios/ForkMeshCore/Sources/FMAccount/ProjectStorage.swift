@@ -17,6 +17,7 @@ public enum ProjectKeyPolicy {
         "node/catalogNodeId",
         "agent/branch-records-v1",
         "localControl/pairedDesktops",
+        "inbox/local-pings.v1",
     ]
 
     /// Secrets an older build left in plaintext preferences. They predate projects, so they belong

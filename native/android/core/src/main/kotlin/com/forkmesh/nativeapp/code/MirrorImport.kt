@@ -13,9 +13,9 @@ sealed class MirrorImportOutcome {
 }
 
 object MirrorImport {
-    val providers: List<String> = listOf("github.com", "gitlab.com", "codeberg.org")
+    val providers: List<String> = listOf("github.com", "gitlab.com", "codeberg.org", "gitea.com")
 
-    const val TITLE = "Mirror from GitHub/GitLab/Codeberg"
+    const val TITLE = "Mirror from GitHub/GitLab/Codeberg/Gitea"
     const val URL_LABEL = "Repository URL"
     const val URL_HINT = "https://github.com/owner/repository"
     const val TOKEN_LABEL = "Provider token (private repositories only)"
@@ -75,7 +75,7 @@ object MirrorImport {
         "source_url_required", "https_provider_url_required", "invalid_provider_url", "invalid_repository_path" ->
             "That does not look like a canonical repository URL."
         "github_owner_and_repository_required" -> "Use the full https://github.com/owner/repository URL."
-        "unsupported_provider" -> "Only GitHub, GitLab, and Codeberg repositories can be imported."
+        "unsupported_provider" -> "Only GitHub, GitLab, Codeberg, and Gitea repositories can be imported."
         "provider_request_failed" -> "The provider did not answer. Try again in a moment."
         "rate_limited" -> "The provider is rate-limiting; try again later."
         "" -> "Import failed (HTTP ${answer.statusCode})."

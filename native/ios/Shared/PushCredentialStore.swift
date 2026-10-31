@@ -15,33 +15,8 @@ struct PushCredentials {
     var preview: String = ""
 }
 
-/// The one place the app and its notification extension exchange a session.
-///
-/// They are separate processes in separate sandboxes, so the extension cannot
-/// see the app's keychain items at all. A shared keychain group is the narrow
-/// bridge between them — narrow deliberately: one item, holding the same
-/// session token the app already sends as a bearer header, and nothing else.
-///
-/// Two details matter and neither is obvious.
-///
-/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` is required, not preferred. A push
-/// routinely arrives while the phone is sitting locked on a desk, and the
-/// extension runs right then; the default `WhenUnlocked` class would make
-/// every one of those reads fail with `errSecInteractionNotAllowed` and the
-/// banner would silently fall back to the generic text — the exact symptom
-/// this whole feature exists to remove.
-///
-/// The access group must name the team prefix explicitly. Without it each
-/// target defaults to a group derived from its own bundle id
-/// (`com.forkmesh.forkmesh` versus `com.forkmesh.forkmesh.NotificationService`)
-/// and the two would write to, and read from, different keychains while every
-/// call still returned `errSecSuccess`.
 enum PushCredentialStore {
-    /// Matches `keychain-access-groups` in both targets' entitlements, where it
-    /// is written as `$(AppIdentifierPrefix)com.forkmesh.forkmesh`. The prefix
-    /// is the Apple team id, the same `TEAM_ID` tools/generate_project.rb signs
-    /// with.
-    static let accessGroup = "742ZANCB57.com.forkmesh.forkmesh"
+    static let accessGroup = "742ZANCB57.com.forkmesh.forkmesh.push"
     static let service = "com.forkmesh.forkmesh.push"
     static let account = "session"
     static let secureService = "com.forkmesh.forkmesh.secure"
@@ -174,6 +149,7 @@ enum PushCredentialStore {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: secureService,
             kSecAttrAccount as String: name,
+            kSecAttrAccessGroup as String: accessGroup,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -200,6 +176,7 @@ enum PushCredentialStore {
     static func clear() {
         SecItemDelete(query() as CFDictionary)
         SecItemDelete(query(item: PushRoomKeys.item) as CFDictionary)
+        SecItemDelete(query(item: PushVerifiedNames.item) as CFDictionary)
     }
 
     private static func query(item: String = account) -> [String: Any] {

@@ -34,6 +34,7 @@ struct Finding {
     QString id;               // stable check id, e.g. "disk-trend"
     int severity = Info;      // Severity
     QString message;          // one-line human summary, already formatted
+    QString detail;
 };
 
 struct DiskSample {

@@ -1,6 +1,7 @@
 """tools/next_deploy.py: dry-run default, rollout order, gate, rollback."""
 
 import gzip
+import io
 import json
 import os
 import subprocess
@@ -74,9 +75,7 @@ def _no_settle(monkeypatch):
     monkeypatch.setattr(next_deploy, "SETTLE_SECONDS", 0)
 
 
-@pytest.mark.parametrize("parallel", [False, True])
-def test_restart_lets_the_cluster_see_a_node_before_the_next_drains(
-        tmp_path, monkeypatch, parallel):
+def test_restart_takes_one_node_down_at_a_time(tmp_path, monkeypatch):
     monkeypatch.setattr(next_deploy, "SETTLE_SECONDS", 3)
     events = []
 
@@ -89,14 +88,12 @@ def test_restart_lets_the_cluster_see_a_node_before_the_next_drains(
                    state_answer(states)])
     data = fleet(tmp_path)
     first, second, third = ips_in_order(data)
-    next_deploy.restart(data, REV, ssh, Runner(execute=True),
-                        parallel=parallel,
+    out = io.StringIO()
+    next_deploy.restart(data, REV, ssh, Runner(execute=True, out=out),
                         settle=lambda seconds: events.append(seconds))
-    assert events[:2] == [first, 3]
-    if parallel:
-        assert sorted(events[2:]) == sorted([second, third])
-    else:
-        assert events[2:] == [second, 3, third]
+    assert events == [first, 3, second, 3, third]
+    assert "(one node at a time)" in out.getvalue()
+    assert "together" not in out.getvalue()
 
 
 def test_restart_executes_in_order_and_stops_at_first_failed_gate(tmp_path):
@@ -930,3 +927,106 @@ def test_prune_dist_keeps_newest_releases_and_the_named_one(tmp_path):
     assert not (tmp_path / ("fmnext-%s.sha256" % names[1])).exists()
     assert (tmp_path / ("fmnext-%s.sha256" % names[0])).exists()
     assert (tmp_path / "forkmesh-mirror-node").exists() and (tmp_path / "wheelhouse").is_dir()
+
+
+def dns_state(**entries):
+    return {name: dict({"in_dns": True, "held": False}, **entry)
+            for name, entry in entries.items()}
+
+
+def test_cores_out_of_dns_or_unreachable_are_skipped(tmp_path, monkeypatch):
+    monkeypatch.delenv(next_deploy.SKIP_ENV, raising=False)
+    data = fleet(tmp_path)
+    out = io.StringIO()
+    held = dns_state(n1={"held": True, "in_dns": False}, n2={}, n3={})
+    assert next_deploy.skipped_cores(data, FakeSsh(), Runner(out=out), dns=held) == {
+        "n1": "held out of DNS"}
+    assert "n1: skipped (held out of DNS)" in out.getvalue()
+    removed = dns_state(n1={}, n2={"in_dns": False}, n3={})
+    assert next_deploy.skipped_cores(data, FakeSsh(), Runner(out=io.StringIO()),
+                                     dns=removed) == {"n2": "out of DNS"}
+    silent = FakeSsh([(lambda host, script: host == "203.0.113.13",
+                       subprocess.CompletedProcess(["ssh"], 255, b"", b"timeout"))])
+    assert next_deploy.skipped_cores(
+        data, silent, Runner(execute=True, out=io.StringIO()),
+        dns=dns_state(n1={}, n2={}, n3={})) == {"n3": "SSH does not answer"}
+    dry = FakeSsh()
+    assert next_deploy.skipped_cores(data, dry, Runner(out=io.StringIO()), dns={}) == {}
+    assert dry.runs == []
+
+
+def test_a_skip_that_leaves_fewer_than_two_cores_is_refused(tmp_path, monkeypatch):
+    monkeypatch.delenv(next_deploy.SKIP_ENV, raising=False)
+    data = fleet(tmp_path)
+    two_down = dns_state(n1={"held": True}, n2={"in_dns": False}, n3={})
+    with pytest.raises(GuardError, match="only 1 of 3 cores .* needs 2 healthy"):
+        next_deploy.skipped_cores(data, FakeSsh(), Runner(out=io.StringIO()),
+                                  dns=two_down)
+    with pytest.raises(GuardError, match="only core nodes"):
+        next_deploy.skipped_cores(data, FakeSsh(), Runner(out=io.StringIO()),
+                                  explicit=["r1"])
+    assert next_common.deploy_quorum(3) == 2
+    assert next_common.deploy_quorum(5) == 3
+    assert next_common.deploy_quorum(2) == 2
+
+
+def test_an_explicit_or_agent_skip_list_replaces_detection(tmp_path):
+    data = fleet(tmp_path)
+    down = dns_state(n1={"held": True}, n2={}, n3={})
+    ssh = FakeSsh()
+    runner = Runner(execute=True, out=io.StringIO())
+    assert next_deploy.skipped_cores(data, ssh, runner, explicit=["n2"],
+                                     dns=down) == {"n2": "--skip"}
+    with pytest.raises(GuardError, match="refusing to skip n2 .*, n3"):
+        next_deploy.skipped_cores(data, ssh, runner, explicit=["n2,n3"], dns=down)
+    assert next_deploy.skipped_cores(data, ssh, runner, dns=down,
+                                     environ={next_deploy.SKIP_ENV: ""}) == {}
+    assert next_deploy.skipped_cores(data, ssh, runner, dns=down,
+                                     environ={next_deploy.SKIP_ENV: "n3"}) == {
+        "n3": "skipped by next_autodeploy gate 1"}
+    assert next_deploy.skipped_cores(data, ssh, runner, dns=down, environ={},
+                                     detect=False) == {}
+    assert ssh.runs == []
+
+
+def test_restart_and_upload_leave_a_skipped_core_alone(tmp_path):
+    data = fleet(tmp_path)
+    runner = Runner(execute=False, out=io.StringIO())
+    next_deploy.restart(data, REV, FakeSsh(), runner, skip={"n2": "held out of DNS"})
+    assert len(runner.skipped) == 2
+    assert not any("n2:" in step for step in runner.skipped)
+    runner = Runner(execute=False, out=io.StringIO())
+    next_deploy.upload(data, REV, tmp_path / "x.tar.gz", FakeSsh(), runner,
+                       skip={"n2": "held out of DNS"})
+    assert [step.split(":")[0] for step in runner.skipped] == ["n1", "n3"]
+
+
+def test_a_skipping_deploy_records_the_skip_and_the_catch_up_clears_it(
+        tmp_path, sandbox, monkeypatch):
+    monkeypatch.delenv(next_deploy.SKIP_ENV, raising=False)
+    (sandbox / "dns-health.json").write_text(json.dumps({"nodes": dns_state(
+        n1={}, n2={"held": True, "in_dns": False}, n3={})}))
+    ssh = FakeSsh([healthy_from("n1"),
+                   (lambda host, script: "/db/execute" in script,
+                    json.dumps({"results": [{}]}).encode())])
+    seen = {}
+
+    def restart(fleet_, rev, ssh_, runner, names=None, settle=None, skip=()):
+        seen["skip"] = dict(skip)
+        return [n["name"] for n in next_deploy.serving_nodes(fleet_)
+                if n["name"] not in skip and (not names or n["name"] in names)]
+    monkeypatch.setattr(next_deploy, "restart", restart)
+    monkeypatch.setattr(next_deploy, "record_release",
+                        lambda rev, run=None, skipped=(): next_common.record_deploy(
+                            rev, commit="c" * 40, by="next_deploy", skipped=skipped))
+    assert next_deploy.main(["--fleet", str(FLEET), "restart", "--rev", REV,
+                             "--execute"], ssh=ssh) == 0
+    assert seen["skip"] == {"n2": "held out of DNS"}
+    entry = next_common.load_manifest()["releases"][REV]
+    assert entry["skipped"] == ["n2"]
+    assert [row[1] for row in world_rows(ssh)] == ["deploying", "ready"]
+    assert next_deploy.main(["--fleet", str(FLEET), "restart", "n2", "--rev", REV,
+                             "--execute"], ssh=ssh) == 0
+    assert seen["skip"] == {}
+    entry = next_common.load_manifest()["releases"][REV]
+    assert "skipped" not in entry and set(entry["caughtUp"]) == {"n2"}

@@ -7,6 +7,12 @@ Build, test and release steps are in `native/android/README.md`.
 Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
 `C/` is `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/`.
 
+Ids such as S010 name rows of the iOS → Android sync ledger, which listed
+every iOS change Android still had to match. It was retired on 2026-10-28
+once Android had every iOS feature; it stays in history
+(`git show 63e84567bb:docs/native/SYNC.md`). Since then a phone change lands
+in both apps in the same pull request.
+
 ## 1. Toolchain and dependencies
 
 - Gradle wrapper, Android Gradle Plugin with built-in Kotlin (do not apply
@@ -30,6 +36,13 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
   in-tree runner registered as `coreTest`:
   `./gradlew :core:coreTest -Pfilter=Json` runs classes whose name contains
   `Json`.
+- **Build memory.** `gradle.properties` caps the Gradle daemon at 2 GB heap
+  (768 MB metaspace) and the Kotlin compile daemon at 1.5 GB, and stops an
+  idle Gradle daemon after 15 minutes. With the old 4 GB cap the two daemons
+  held about 6.5 GB after a build; next to the emulator (about 7 GB) and the
+  iOS Simulator that starved a 16 GB Mac until it hit a watchdog panic
+  (2026-10-23). `./gradlew --stop` frees the Gradle daemon at once. Raise the
+  caps only if a build fails with `OutOfMemoryError` or `Metaspace`.
 - `res/xml/network_security_config.xml` refuses cleartext except `10.0.2.2`,
   `localhost` and `127.0.0.1`.
 
@@ -69,7 +82,15 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
 - **Per-project isolation.** The original project owns the un-prefixed
   namespace; others use `p/<projectId>/`; sessions live under
   `auth/session/<projectId>`. `Services.get<SecretStore>()` returns the active
-  project's view.
+  project's view. The Inbox's local chat pings (`inbox/local-pings.v1`) live
+  in the project's preferences and are rebuilt on a switch, as on iOS.
+  Removing a project erases its chat history files first
+  (`ChatHistoryStore.eraseAll`, `ProjectsService.eraseProject`), file by
+  file, so the original project, whose files are not under `projects/`,
+  loses its history too (2026-10-22, iOS `ChatHistoryStore.eraseProject`).
+  Every performance report is scrubbed (`DiagnosticsBundle.report`, not
+  only the prompt), and the scrub also hides conversation, channel, room
+  and query names in JSON and `name=value` form.
 - **Node identity** (`C/security/Identity.kt`): the Ed25519 public key
   (base64url, no padding) is the node id. Stored as padded base64 of the
   32-byte seed under `identity/ed25519Seed`. A corrupt value throws rather than
@@ -145,6 +166,9 @@ signed with the v3 key (`native/android/README.md`); the default application id
   ####" (SHA-256 of the base64url node key, first four bytes big-endian,
   1000 + value % 9000).
 - **Appearance** (`appearance/themeMode`, `appearance/accent`) is global.
+  `appearance/layoutMode` (`controlTower` or `focus`, default Control
+  Tower) is the phone's copy of the desktop's two layout modes; iOS reads it
+  for the CRM's density and shows it under Theme in Settings > Appearance.
 
 ## 6. Network, events and push
 
@@ -244,6 +268,14 @@ signed with the v3 key (`native/android/README.md`); the default application id
     lock-screen version "New message". The "Notification content" setting
     (`notifications/content`) chooses name and message, name only, or neither.
     Any failure falls back to a generic notification.
+  - every notification that can carry someone's words is `VISIBILITY_PRIVATE`
+    with a generic public version ("ForkMesh" and "New message", or "New
+    notification" for pings and desktop alarms), so a locked phone shows
+    neither who wrote nor what (2026-10-22; before, only the decrypted DM
+    preview had one). Nearby `#mesh` alerts (`PingNotifier.postMesh`) follow
+    the same "Notification content" setting through `MeshAlert.shown`: name
+    only drops the text, neither shows "ForkMesh" / "New message"; before,
+    they always showed the sender and the text.
   - every `direct-messages` frame, foreground or not, first posts
     `/api/chat/direct-messages/<id>/delivered?ref=<ref>`
     (`DirectMessagePreviews.confirmDelivery`), so the sender sees Delivered
@@ -251,11 +283,17 @@ signed with the v3 key (`native/android/README.md`); the default application id
     ([chat-private-rooms.md](../app/chat-private-rooms.md#delivery-ticks)).
 - **Relay room** (`C/chat/RelayRoom.kt`): every frame encrypted twice
   (`RoomCrypto` room key and a v3 `RoomSeal`, open trust, scope = room name),
-  except public `#channel` chat. `@peer` DMs are sealed to the devices whose
-  bundle `node` is the recipient plus this account's own devices. v2 frames
-  are ignored. Dial timeout 15 s; ping every 25 s; reconnect 1, 2, 4, 8,
-  16, then 30 s; presence every 60 s, peers dropped after 180 s. Envelope
-  `version` matches iOS.
+  public `#channel` chat included, and the bundle carries `nsig` by the node
+  key (section 35). A frame with a non-empty `to` other than `hello` is
+  sealed to the devices whose bundle `node` is the recipient plus this
+  account's own devices (`RelayRoom.sealRecipients`). The relay carries no
+  DMs, private channels or invites (section 35). The `hello` and its replies
+  list only `RelayRoom.advertisedChannels` (no hidden or `#office/` channel),
+  and a peer's `hello` adds only `#` channels that are neither `#office/` nor
+  hidden; a chat frame or restored history no longer brings a hidden channel
+  back. v2 frames are ignored. Dial timeout 15 s; ping every 25 s; reconnect
+  1, 2, 4, 8, 16, then 30 s; presence every 60 s, peers dropped after 180 s.
+  Envelope `version` matches iOS.
 - **RoomCrypto**: AES-256-GCM, key PBKDF2-HMAC-SHA256(passphrase or app key,
   salt SHA-256("ForkMesh room:" + room)[0..16], 210000 rounds), cached per
   (room, secret).
@@ -294,8 +332,9 @@ signed with the v3 key (`native/android/README.md`); the default application id
   reordering, old chains, simultaneous starts, reset, `commit = false`,
   limits and reload from the store.
 - **Local mesh** (`C/chat/LocalMeshRoom.kt`): mesh links v3. Encrypted
-  multicast beacon (TTL 1) carrying only `{t, v:3, id: kid, port, ts,
-  reply, control, node}`, direct TCP links, local-address checks before any
+  multicast beacon (TTL 1) carrying only `{t, v:3, id, port, ts, reply}`,
+  `id` a random value made at start and whenever the address set changes
+  (section 35), direct TCP links, local-address checks before any
   socket, subnet broadcast and a paced /24 sweep where multicast is filtered,
   Bluetooth RFCOMM, and a BLE scan for the iPhone's GATT service
   (`C/chat/MeshBle.kt`, wire format in
@@ -305,12 +344,11 @@ signed with the v3 key (`native/android/README.md`); the default application id
   with per-direction counters; a bad frame closes the link. Peers are keyed
   by the authenticated kid; names travel in the sealed mesh `hello`. The
   phone forwards every new `#mesh` bundle to its other links and relays
-  sealed frames it cannot open to links whose device is addressed, and when
-  it learns a device it has no link to it re-seals its own history to that
-  device: without that a late joiner two hops away could never read anything,
-  because a v3 frame can only be opened by the devices it was sealed to. The
-  history file (v2) keeps each received message's original sealed frame for
-  backfill. The same links carry `direct-sealed`, `direct-ack` and `focus`.
+  sealed frames it cannot open to links whose device is addressed. It no
+  longer re-seals its earlier messages to a device it learns about later
+  (section 35): a late joiner gets only frames already sealed to it. The
+  history file (v2) keeps each message's original sealed frame, its own
+  included, and backfill resends only those. The same links carry `direct-sealed`, `direct-ack` and `focus`.
 - **Bluetooth stays off the air during calls** (`C/net/RadioPolicy.kt`,
   `A/platform/AudioActivityProbe.kt`). The mesh search pass (paired devices,
   classic inquiry up to 15 s, a 15 s BLE scan, every 2 minutes) and Glasses
@@ -456,13 +494,33 @@ signed with the v3 key (`native/android/README.md`); the default application id
 
 ## 10. Platform choices
 
+- **Notification intent token** (`C/security/IntentToken.kt`,
+  `platform/IntentTokens.kt`, 2026-10-22). `MainActivity` is exported, so any
+  app could send it `com.forkmesh.inbox.ACTION` (Deny, Retry, Continue run and
+  Mark read ran without a prompt) or `com.forkmesh.call.ACCEPT`. Every
+  PendingIntent the app builds for these (Inbox notification actions, the
+  call notification's show, accept and decline) now carries
+  `com.forkmesh.intent.TOKEN`, 32 random bytes made once per install and kept
+  in the private `forkmesh.intents` preferences. `InboxFeature.onIntent`,
+  `NotificationActionReceiver`, `DirectCallFeature.onIntent` and
+  `CallActionReceiver` compare it in constant time and drop an intent without
+  it. The ping tap (`com.forkmesh.push.OPEN`, `PingNotifier.openIntent`,
+  call rings included) carries it too since 2026-10-28: `PushFeature.onIntent`
+  builds its target through `PushTarget.fromIntent`, which opens nothing
+  without the token, so another app can no longer plant a ping row, switch
+  project or mark pings read. Even with the token the row carried in the
+  intent is only shown, never written to the inbox cache
+  (`PushTarget.cachedRow` looks the ping up in the cache and snapshots only).
+  Guard: `core/.../security/PushIntentTrustTest.kt`.
 - **Haptics** map to `VIRTUAL_KEY`, `KEYBOARD_TAP`, `CONTEXT_CLICK`, all
   suppressed under reduced motion.
 - **Timers** ring through `AlarmManager` (`TimerAlarmReceiver`, rescheduled
   after boot) with `SCHEDULE_EXACT_ALARM`; they are device-wide.
 - **Glasses Alert** (`feature/glasses/`, core `glasses/`) scans in a
-  `connectedDevice` foreground service with manufacturer-data filters (Android
-  pauses unfiltered scans with the screen off). The alarm uses `USAGE_ALARM`,
+  `connectedDevice` foreground service with manufacturer-data filters for every
+  watched company ID and service-UUID and service-data filters for every watched
+  16-bit service (Android pauses unfiltered scans with the screen off); camera
+  and glasses matches by name alone come from the foreground census scan. The alarm uses `USAGE_ALARM`,
   raises `STREAM_ALARM` while ringing and, with notification-policy access,
   allows alarms through DND. In the foreground an unfiltered census scan feeds
   the device grid (`GlassesCensus`); `GlassesHoming` and `GlassesCompass` drive
@@ -528,6 +586,35 @@ signed with the v3 key (`native/android/README.md`); the default application id
 - The prompt composer has no mic button; dictation is `/dictate`, and a quiet
   stop after words sends the prompt (`SpeechDictation` `onQuiet`).
 
+iOS features Android does not have, because they need an Apple-only API:
+
+- **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
+- **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
+  new dependency.
+- **App Store update gate** (S052): Android is distributed directly and has
+  its own update notice.
+- **On-device Gemma** (S053): MLX runs on Apple silicon only.
+- **The system call screen** (S083, S138): CallKit and PushKit; Android rings
+  through its own `CallStyle` notification, in China too.
+- **The native call engine** (S085, S086, S089): Android one-to-one calls run
+  in the WebView call page, which has the voice changer, call backgrounds
+  and the face changer; group calls run on FM Media in the same page.
+- **3D face tracking in the face changer** (S087): blend shapes and depth
+  edges need TrueDepth. The call page runs the hair network and the edge
+  matte iOS moved to Metal.
+- **Dictation during a call**: Android's `SpeechRecognizer` opens a second
+  microphone capture that can take the microphone from the call, so it is
+  off while a call runs.
+- **The build Mac light and per-runner agent counts by the clock** (S119):
+  Android has no data for either, and the desktop light hides on a phone
+  that never paired a desktop instead of blinking red.
+- **The "face filter is slow" call diagnosis** (S128): the call page sends
+  no face-filter timings.
+- **A face stream for the phone's own weak uplink** (S139): the shared web
+  engine `fmm-call.js` has no separate face stream, so Android switches to a
+  face stream when the server asks for viewers on weak links but not for its
+  own uplink. Closing it means changing the web engine for every client.
+
 ## 12. Shell prompt targets
 
 - The shell prompt is an overlay over the tab stack and `TabStack` composes
@@ -560,8 +647,9 @@ default in new projects except the chosen starter pack
   `PackageGate.STARTER`: agents, chat, inbox, code, tour; `EVERYTHING` = every
   gated package except the organization packages) sits beside `STARTER` in
   `C/market/PackageGate.kt`. A new project with no `packages/starterPack` in
-  its prefs shows `A/feature/market/StarterPackScreen.kt` once ("Choose how to
-  start", Standard preselected, Continue) from `Features.Root`, driven by
+  its prefs shows `StarterPackPage` (`A/feature/market/StarterPackScreen.kt`)
+  once as a step of `A/feature/account/OnboardingFlow.kt` ("Choose how to
+  start", Standard preselected, "Start with <pack>") from `Features.Root`, driven by
   `PackageGateFeature.starterPackPending`; Continue stores the pack id
   (`PackageGateFeature.chooseStarterPack`) and republishes the gate. Unset
   reads as `STANDARD`; legacy projects are never asked. `MarketModel.starterPack`
@@ -758,6 +846,22 @@ default in new projects except the chosen starter pack
   desktop, iOS and web already accept and show as text (up to 16 code points).
 - **Stickers** (`StickerCatalog`, `ChatStickers`): tilted badges on a message's
   top-end corner, sent as reaction frames; see [chat-stickers.md](../app/chat-stickers.md#android).
+- **Brief inactive steps** (2026-10-22, iOS `AppReturnGate`, sync ledger
+  S095). `AppLifecycle.foreground` follows `onResume`/`onPause`, so a
+  permission prompt, the biometric sheet, a share sheet or a system dialog
+  used to close and reopen the account event socket and the node sync
+  socket, rerun the relay room's resume and read marks, and drop the direct
+  message focus and live sharing. `MainActivity` now also reports
+  `AppLifecycle.visibility` (`C/core/AppReturnGate.kt`: `RESUMED` on
+  resume, `INACTIVE` on start and pause, `HIDDEN` on stop) and `visible`.
+  The account event socket (`AccountEventChannel`), node sync, DM focus and
+  live sharing follow `visible`; `ChatFeature` runs `RelayRoom.onResumed`
+  and the mesh announce only on a resume after `HIDDEN` (the first resume
+  after an install counts, as before). `ChatHub.applyReadMarks` skips a
+  fetch while one runs or within 5 s of the last (`force` for the read
+  marks push and a sign-in), and `DirectMessageService.refresh` shows
+  `loading` only while the list is empty and notifies listeners only when
+  records, cursor or error changed. Other features keep `foreground`.
 - **Chat list** (`A/feature/chat/ChatChannelList.kt`): server DMs listed newest
   first with unread pills and avatars; each row has a last-line preview built
   only from messages on the phone (`C/chat/ChatListPreview.kt`).
@@ -794,6 +898,74 @@ default in new projects except the chosen starter pack
     `DirectCallFeature` calls `endPreview("precall")`, which leaves a Face
     Changer screen preview alone. `FaceChangerFeature` skips face and
     background updates for an audio preview.
+  - **Live quality widget (2026-10-22).** `direct-call.html` posts a
+    `quality` event about once a second (the web meter in
+    `app/public/call-quality-meter.js`). `WebCallPeer` parses it with
+    `C/chat/CallQuality.kt`, which mirrors the web thresholds (RTT
+    150/300/500 ms, loss 1/3/8 %, jitter 30/60/100 ms), labels and text,
+    and `WebCallPeers.quality` keeps a `CallQualityHistory` for the current
+    preview or live peer: the last 50 voice levels (5 s) and the last 60
+    live stat samples (1 min). It resets when a new peer opens and when no
+    peer is left; a preview handed to the call keeps its levels.
+    `A/feature/chat/CallQualityWidget.kt` draws a small dark translucent pill
+    at the top start of the call screen, under the name and state lines,
+    away from the self-view in the bottom-right corner and the buttons: four
+    signal bars in the grade colour (on-dark success, warning, danger), a
+    20-sample mirrored waveform (your mic up in accent blue, the other side
+    down in grey) and the RTT. Tapping it opens a card with Voice, Network
+    (RTT line, amber loss ticks from 1 %, red from 8 %) and, on video
+    calls, Video in and Video out rows; the open state is the
+    `fm.call.qualityOpen` pref, shared with the web key name. Before the call
+    connects, and on the pre-call screen, the page sends `live:false`, so the
+    pill shows only the mic waveform. The pre-call screen hides it while a
+    test clip plays. The Face Changer studio (`FaceChangerScreen.kt`) shows
+    the same mic-only pill under its hint line while the preview is ready or
+    recording, because it captures audio and video too. Android has no
+    group-call screen. Tests:
+    `C/chat/CallQualityTest.kt`.
+  - **Call screen layout (2026-10-22, iOS `DraggableCallPreview`).** The
+    self view is drawn by `direct-call.html`, under the native controls, so
+    `DraggableSelfView` lays a transparent 110x160 dp box over it and moves
+    the page's `#local` with `window.fmCallPlaceLocal(x, y, w, h, settle)`
+    (CSS px equal dp at `width=device-width`; `body.placed` styles it, and
+    `settle` adds the spring-like transition). On release it snaps to the
+    nearest of four corners after the fling's last 0.15 s
+    (`C/chat/CallScreenLayout.kt`, `CallPreviewLayout.settle`), clear of the
+    measured header above and the controls below, and keeps the corner in
+    the `fm.call.previewCorner` pref, iOS's `@AppStorage` key. It shows only
+    in a live video call with the camera on; the pre-call check still fills
+    the screen. The page function is inert until called, so iOS's WebView
+    fallback is unchanged. The buttons follow iOS's `ViewThatFits`
+    (`CallControlsLayout.arrange`): one row with 16 dp gaps, then 8 dp, then
+    two rows, face, background and voice above (24 dp gaps) and mute,
+    camera and a 64 dp hang up below (32 dp).
+  - **Group calls** (2026-10-23, sync ledger S084; protocol in
+    `docs/app/chat-group-calls.md`). Android has no native WebRTC engine
+    (libwebrtc is not brought back; FM Media replaces it), so it runs the
+    browser's `chat-group-calls.js` and its frame-encryption worker in a
+    WebView, as direct calls run `direct-call.html`. `GroupCallPage` loads
+    `https://appassets.androidplatform.net/group-call/index.html` and serves
+    only `assets/group-call/` through `shouldInterceptRequest`; the copies of
+    `chat-group-calls.js`, `chat-group-call-crypto.js` (started from a blob
+    URL), `chat-call-e2ee.js`, `chat-mlkem.js`, `call-quality-meter.js` and
+    `fmm/fmm-call.js`/`fmm-e2ee.js` are kept byte-identical by
+    `app/tools/sync_android_group_call.py` (`--check` in
+    `app/tests/test_android_group_call_page.py`, which also joins in headless
+    Chromium); `index.html` and `group-call-host.js` are hand-written. The
+    page draws the tile grid (iOS sizes: 150 px minimum columns, 6 px gaps,
+    3:4 tiles, name capsule, initial avatar without video, mirrored "You");
+    `GroupCallViews.kt` draws the title, state line, quality pill ("Others"),
+    the encryption note and Mute, Camera and Leave. Native code does what
+    the browser's `chat.js` does: `OfficeChannelService.sendLiveFrame` seals
+    `group-call-*` frames into the private channel's room without
+    `persist`/`notify` (fields like `sender` or `id` from the page are
+    ignored), incoming ones go to `onLiveFrame` instead of the history, and
+    `callTicket` asks for the ticket. `GroupCallFeature` keeps a
+    `GroupCallRoster` for the header's "Join · N" capsule and the last
+    minute of call frames (`GroupCallFrameBuffer`) to replay into the page
+    before it joins, so names and keys are known at once. The page runs
+    FM Media when the WebView can (section 27, "Group calls on FM Media"). Header buttons show for private, writable channels; a
+    direct call and a group call refuse each other.
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays
     `ToneGenerator(STREAM_VOICE_CALL, 80)` `TONE_SUP_RINGTONE` and stops it on
@@ -811,8 +983,8 @@ default in new projects except the chosen starter pack
     full-screen intent to `MainActivity` (`com.forkmesh.call.SHOW`), and
     Accept (`com.forkmesh.call.ACCEPT`, an activity intent routed through
     `Features.onIntent` to `DirectCallFeature.onIntent`) and Decline (the
-    manifest receiver `CallActionReceiver`). Both carry the call id and act
-    only on that invite; Accept from the notification accepts at once only
+    manifest receiver `CallActionReceiver`). Both carry the call id and the
+    install's intent token (section 10) and act only on that invite; Accept from the notification accepts at once only
     when the microphone (and camera) permissions are already granted,
     otherwise it opens the in-app incoming screen. On API 31+ the
     notification uses `Notification.CallStyle.forIncomingCall` and falls back
@@ -843,14 +1015,49 @@ default in new projects except the chosen starter pack
     status line reads "Connected · end-to-end encrypted" (relayed media is
     still encrypted end to end). The pre-call layer says "Calls go directly
     between your devices when possible."
-  - **Limits.** Calls ring only while the app is running and the room
-    socket is connected: the invite arrives over the DM socket, and there is
-    no call push yet, so a killed or long-backgrounded app does not ring.
-    Ringing a killed app needs a server-sent push that starts the
-    notification (server work). The ringback tone follows the voice-call
+  - **Call rings** (since 2026-10-21; protocol in
+    `docs/app/chat-direct-calls.md`). `DirectMessageService.sendCallFrame`
+    marks every `call-invite` envelope `ring: true`, and the relay sends the
+    callee a `calls` account event naming the conversation
+    (`CallRings.conversation`, `C/push/CallRing.kt`). In the foreground
+    `ChatDepth` hears it through `AccountEventChannel.onEvent` and calls
+    `DirectMessageService.openRinging`, which reloads the list if the
+    conversation is unknown and opens its room socket, so the next resent
+    invite (every 3 s) brings up the incoming screen. In the background
+    `BackgroundLinkService.ringCall` handles it: when the ringing project is
+    the active one and `DirectCallFeature.wake` opens the DM, the normal
+    ringer and call notification take over, and if no invite has shown up
+    after 6 s (`CallRings.WAKE_WAIT_MS`) it falls back to
+    `IncomingCallNotifier.postRing`. When the call engine is not running (the
+    process was started for the background link only, or another project is
+    active) it posts that notification at once. It goes on the "Incoming call
+    alerts" channel (`incoming-call-rings`: the default ringtone and a
+    vibration pattern, `IMPORTANCE_HIGH`), `CATEGORY_CALL`,
+    `FLAG_INSISTENT` so the ringtone repeats, `setTimeoutAfter(45 s)`, a
+    full-screen intent and an Answer action that open the DM through the
+    same `PushTarget` a DM notification uses (`/chat/direct-messages/<id>`).
+    The caller's name comes from `ApiService.directMessagePartner`.
+    `CallRinger` cancels it as soon as an invite or call exists or the app is
+    in front.
+  - **Notifications turned off** (2026-10-22, iOS `registerForCalls`).
+    Until then `LinkPlan.of` returned `OFF` without the notification
+    permission, so a phone with notifications off kept no background
+    connection and calls never rang it. It now keeps the connection for the
+    enabled projects as a calls-only plan (`LinkPlan.callsOnly`, title
+    "Listening for calls"): no #mesh listening, and `deliver` and
+    `deliverDirectMessage` return at once, so ping and message alerts that
+    could not be shown are not marked delivered. A `calls` event still wakes
+    the call engine of the active project, and `CallRinger` plays the
+    ringtone and vibration, which need no notification permission; the
+    incoming screen shows when the app is opened. Redialling right after a
+    decline rings at once because the relay no longer coalesces `calls`
+    events (`docs/app/chat-direct-calls.md`).
+  - **Limits.** A ring needs the background connection to be on and
+    connected (it is paused by Doze and network loss; there is no FCM), so a
+    force-stopped app does not ring. The ringback tone follows the voice-call
     stream, so it is quiet through the earpiece on some phones.
 
-### Chat rows ported from iOS (SYNC.md S022 to S027)
+### Chat rows ported from iOS (ledger S022 to S027)
 
 - **Chat history file (S024).** The file is
   `chat-history/relay-<scope>.json` in the project's support folder, and its
@@ -914,24 +1121,25 @@ default in new projects except the chosen starter pack
   different conversation (the scope between `forkmesh-safety:3:` and the
   last `:` differs), or a mismatch.
 - **Message from People opens the account's DM (S027).** People's Message
-  button opens `Route.Dm(name)`, which reached chat as "@name" and became a
-  relay "@peer" chat. `ChatHub.switchConversation` now treats "@name" that is
-  not a roster peer id as an account, as iOS does (a matching roster peer
-  gives its owner account): it selects that account's existing direct
-  conversation, or starts one with `POST /api/chat/direct-messages`. An
-  exact peer id, or no direct-message service (signed out), keeps the relay
-  path. `Route.Dm` also accepts a `direct:<id>` conversation unchanged.
+  button opens `Route.Dm(name)`, which reaches chat as "@name".
+  `ChatHub.switchConversation` treats "@name" as an account, as iOS does (a
+  matching roster peer gives its verified owner account, section 35): it
+  selects that account's existing direct conversation, or starts one with
+  `POST /api/chat/direct-messages`. A guest, or no direct-message service
+  (signed out), opens nothing and shows a notice; there is no relay `@peer`
+  path any more. `Route.Dm` also accepts a `direct:<id>` conversation
+  unchanged.
 - **Direct messages across a sign-out (S024).** `ChatHub.directSessionChanged`
   mirrors iOS: on sign-out the hub holds the service's DMs and receipts
   before `DirectMessageService.clear()` empties it, a save while signed out
   keeps them, and the next sign-in restores them only for the same account
   (compared trimmed and lower-cased); another account drops them.
 
-### Message bubbles (SYNC.md S011)
+### Message bubbles (ledger S011)
 
-- **Which rooms.** `ChatHub.isConversation` is iOS's rule: relay DMs
-  (`@<peer>`), server DMs (`direct:<id>`), relay private channels and private
-  office rooms that are neither server-visible nor read-only. Those draw as
+- **Which rooms.** `ChatHub.isConversation` is iOS's rule: server DMs
+  (`direct:<id>`) and private office rooms that are neither server-visible
+  nor read-only (relay DMs and relay private channels are gone, section 35). Those draw as
   bubbles (`ChatConversationList.kt`, `ChatBubbles.kt`); public channels,
   office channels and `#mesh` keep the Slack-style rows.
 - **Layout.** `ChatConversationLayout` (core) ports iOS's: a bold time line
@@ -971,7 +1179,7 @@ default in new projects except the chosen starter pack
   "Delivered/Read" line under the last own message work as before. The typing
   line becomes a received bubble with three pulsing dots.
 
-### Live touch in direct messages (SYNC.md S023)
+### Live touch in direct messages (ledger S023)
 
 - **Wire format.** `DirectLiveEngine` and `DirectLiveFrames` (core
   `DirectLive.kt`) port iOS's: sealed `type: "live"` frames with `taps`
@@ -1068,6 +1276,10 @@ bottom bar.
   shadow. Below API 31, or with high-contrast text on, glass is a near-opaque
   fill (the iOS Reduce Transparency fallback). `Modifier.blur` is not used: it
   blurs the element itself, not what is behind it. No dependency is added.
+- **Bar look** (`A/shell/ShellBottomBar.kt`). Filled icons and the Lens
+  selection by default, as iOS: a colourless `ShellBarLens` slides behind the
+  cells, `barSheen` and `barBevel` round the bar's surface in place of an
+  outline, and `ShellBar.lensMargin` insets it.
 - **Tab bar** (`GlassTabBar`, `A/shell/HomeShell.kt`). One glass capsule:
   12 dp side margin, 60 dp tall, radius 30, 52 dp cells, 24 dp icons (an SF
   Symbol at 20 pt draws about that size), 10 sp labels. The selected cell is an
@@ -1391,7 +1603,7 @@ Press response and merging neighbouring glass pieces are not ported.
 
 ## 25. Area parity with iOS (ledger rows)
 
-Rows of [SYNC.md](SYNC.md) ported to Android area by area. Each follows the
+Ledger rows ported to Android area by area. Each follows the
 cited iOS commit; wire and storage formats are unchanged.
 
 - **Market navigation line (S029).** `A/feature/market/MarketNavBar.kt` draws
@@ -1450,6 +1662,25 @@ cited iOS commit; wire and storage formats are unchanged.
   `CrmZohoCode.of(status)` prefills the client ID and data centre; the secret
   field reads "Saved secret (leave blank to keep)" and may stay empty while
   the client ID is the saved one (`usesSavedSecret`), as iOS `CrmZohoCode`.
+- **CRM contact paging (CRM 1.46.0).** Both phones open the CRM with
+  `GET /api/crm/<org>?contacts=250` (iOS `PackagesClient.crmFirstContacts`,
+  Android `CRM_FIRST_CONTACTS`), show those contacts, then read the rest
+  1000 at a time (`crmContactsPage`, following `next`) in the background and
+  append them, skipping ids already shown; the header reads "Loading
+  contacts, N of M" meanwhile. The summary leaves out `customers` when it
+  pages, so `CrmOrganizationData` counts stage `customer` itself
+  (`countsCustomers`). Every `load()` bumps a generation (iOS also cancels
+  `contactsTask`), so a refresh or an organization switch drops an older
+  load's pages. A failed page stops the load, shows "Some contacts did not
+  load" and clears the revision, because the summary's `since` would
+  otherwise answer unchanged while contacts are missing. The in-memory
+  organization cache is written only once every page is in. iOS runs the
+  pages in a main-actor `Task`; Android in a background thread
+  (`CrmModel.background`) that calls `onContactsChanged` after each page,
+  which the app posts to the main thread as `CrmRevision.bump()`. Callers
+  outside the CRM screen (Genie, the toolbox, navigator counts) still read
+  every contact in one summary. Tests: iOS `CrmPagingTests`, Android
+  `CrmPagingTest`.
 - **App Store Status desktop fallback (S035).** `AppStoreStatusLoader.load`
   in `C/market/AppStoreStatus.kt` is iOS `AppStoreStatusModel.load`: it asks
   the paired desktop (`stats.appStoreStatus`, 120 s, through
@@ -1526,7 +1757,7 @@ names it instead of `FontFamily.Monospace` (Droid Sans Mono).
 
 ## 27. Feature parity, second round (ledger rows)
 
-Rows of [SYNC.md](SYNC.md) ported on `android-feature-round2`. Each follows
+Ledger rows ported on `android-feature-round2`. Each follows
 the cited iOS commit.
 
 - **Stalls in their own sections (S043).** `DiagnosticsBundle.report` adds
@@ -1578,8 +1809,572 @@ the cited iOS commit.
 - **Other apps' calls (S038).** See [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md#android):
   `OtherAppCall` (app `platform/`) with its pure state in
   `core/.../net/OtherAppCallState.kt` quietens interface sounds, Agent Watch
-  and the Glasses Alert ring during another app's call; ForkMesh's own calls
-  do not count.
+  and the Glasses Alert ring during another app's call; since S130 ForkMesh's
+  own calls count too (see "Calls" below).
+
+### Calls (ledger S125 to S133)
+
+Ported from iOS 407a9d2c6f and a53238311c. Android calls still run in the
+`direct-call.html` WebView, which already carries the web resilience code;
+the native side turns it on and draws the iOS chrome.
+
+- **Reconnect and give up (S125).** `WebCallPeers` calls `setup` with
+  `{resilient: true, staged: true}`. The page then posts `connection`
+  (connected, disconnected, failed, stalled after 4 s without inbound audio
+  packets) instead of `closed`, and `restart` returns an ICE-restart offer.
+  `DirectCallEngine` follows iOS `DirectCalls.swift` line for line: the
+  callee resends its accept every 2 s (8 times) until an offer arrives, the
+  caller resends an unanswered offer every 3 s (5 times) and resends it on
+  a repeated accept, a repeated offer gets the stored answer and a new one
+  renegotiates, ICE is held while a restart is negotiated, the caller
+  restarts after 2 s on a drop (at once on failed or silent audio) and every
+  6 s after, the status reads "Reconnecting…", and the call ends with
+  `DirectCallEngine.DROPPED` after 30 s without recovery or
+  `CONNECT_FAILED` when it never connects within 30 s. `DirectCallFeature`
+  posts the ending's message as a chat notice. The page re-acquires an
+  ended microphone; if it cannot, `micLost` shows iOS's notice on the call
+  screen. Tests: `C/chat/DirectCallResilienceTest.kt` (manual clock).
+- **Mini window (S126).** Back (system back or the chevron at the top
+  start) calls `DirectCallFeature.minimize()`; `DirectCallOverlay` then
+  draws `DirectCallMiniWindow` instead of the call screen: an in-app
+  floating tile over the app's content (116x164 dp for video, 156x96 dp for
+  voice, 12 dp margin, 14 dp corners), which hosts the call WebView so the
+  page stays attached and keeps playing; the page's `layout("mini")` hides
+  the self view. It shows the other person's video when it is on, otherwise
+  their initial, name, a call timer or "Reconnecting…", plus Mute and Hang
+  up. A drag snaps to the nearer side edge at the released height (corners
+  within 12 %), kept in `fm.call.miniSide` / `fm.call.miniY` like iOS
+  `@AppStorage` (`C/chat/CallScreenLayout.kt`, `CallMiniLayout`). A tap
+  reopens the call. Picture-in-picture was not used: it would move the
+  whole activity out of the app, while iOS keeps the chat usable under the
+  tile.
+- **Staged video (S127, S132).** With `staged` the page fills the screen
+  with your camera (`body.staged.waiting`) until it has decoded the other
+  side's frames, and hides their video again when the track mutes or stops
+  delivering frames; it posts `remote-video`, which feeds
+  `WebCallPeers.remoteVideo`. The call screen shows the avatar and name
+  over your camera until then, and the draggable self view only once their
+  video shows. The switch happens on the page's first stats tick with
+  decoded frames (1 s). Video calls go to the loudspeaker when no headset
+  is connected (`CallSpeaker`: `setCommunicationDevice(builtin speaker)` on
+  API 31+, `isSpeakerphoneOn` below), released when the call ends.
+- **Diagnose (S128).** `C/chat/CallDiagnostics.kt` ports iOS
+  `CallDiagnostics.swift`; `CallDiagnosticsTest` checks it against the
+  shared `call-diagnostics-parity.json` (the Android copy is kept equal by
+  `app/tests/test_call_diagnostics_native_parity.py`). Numbers use JS
+  `toFixed` rounding so detail and prompt text match the web and iPhone.
+  The Diagnose dot beside the quality pill turns red on a problem; its
+  sheet lists issues, ranked fixes, a copyable prompt for an AI assistant
+  and a LESSON field, saved under `fm.call.diagnostics`. A pending fix
+  counts as worked when its problem clears and as failed when the call ends
+  (`DirectCallAudio`), not when the screen shrinks to the mini window.
+- **Microphone test (S129, S133).** The pre-call layer already records a
+  10 s test clip and plays it back (section 14, "Pre-call check"). Playback
+  now uses media audio attributes and holds `CallSpeaker`, so a clip
+  recorded while the WebView keeps the phone in communication mode plays on
+  the loudspeaker rather than the earpiece; media audio is not muted by
+  silent mode.
+- **Audio during a call (S130).** `DirectCallAudio` holds audio focus
+  (`AUDIOFOCUS_GAIN`, voice-communication attributes) while a call has a
+  phase. When focus comes back after a loss (a phone call, another app) or
+  the app returns to the foreground, it calls the page's `wake`, which
+  replays the media elements and re-acquires a dead microphone, and
+  re-applies the speaker route. Our own call now counts in
+  `OtherAppCall` (`OtherAppCallState` takes `ownCall`, which includes group
+  calls), so interface sounds, Agent Watch and alarm rings step back as
+  during other apps' calls. Dictation (`SpeechDictation`) does not start
+  during our call and a running voice session does not restart, because
+  `SpeechRecognizer` opens a second capture that can take the microphone
+  from the call; it says so instead.
+- **Answering (S131).** The accept permission prompt lives in
+  `DirectCallOverlay`, not the incoming screen, so its result is not lost
+  when the invite screen goes away. Before asking, `holdInvite()` keeps the
+  invite from going stale while the prompt is open. `DirectCallFeature.answer`
+  declines with iOS's message when the permission is refused, and says "The
+  call ended before it could be answered." or "Hang up the current call to
+  answer this one." when it can no longer be answered; the notification's
+  Answer action says the same.
+
+### Diagnostics lights by the clock and several desktops (ledger S113, S115, S119, S141)
+
+- **Where it sits.** Android has no Dynamic Island, so `ShellIsland.layout`
+  (`core/.../shell/ShellIsland.kt`) maps the iOS ears onto the status bar
+  and the top display cutout (`View.rootWindowInsets.displayCutout`, API 28
+  and later; a cutout counts as the island only when it is near the middle
+  and starts above the bottom of the status bar). The ears are the status
+  bar beside the cutout (126 dp in the middle when there is none). When
+  the room above a 16 dp clock line is at least 13 dp (most phones with a
+  punch hole), the lights sit there 24 dp in from the left corner and the
+  app charts sit in the right ear above the battery, and the top bar drops
+  its own chart strip (`rememberShellIslandEars`). The status dots sit in
+  the gap above a punch hole, under the status bar for a notch. On a short
+  status bar nothing fits beside the clock, so the lights and dots share
+  one 12 dp row just under the status bar and the charts stay in the top
+  bar. `ShellIslandStatus` (`A/shell/ShellIslandStatus.kt`) replaces the
+  S093 strip, shows only while Diagnostics is on, as iOS, takes no touches
+  and is offset by its window position so the rail layout lines up too.
+- **What it shows.** The service dots (`StatusDotRow.services`, without the
+  `core:`/`runner:` systems), then the desktop light, the other desktops
+  stacked 4 dp over each other with their presence dot, the core nodes
+  stacked the same way and the runners (`StatusDotRow.fleet`,
+  `FleetLight.lights`, following the installed status checks and "only
+  problems"). Cores carry tiny CPU, memory and disk bars from `/api/status`
+  `resources` (`NodeResources`, clamped to 0 to 100, amber from 75, red from
+  90). Android has no desktop vitals stream, so the desktop light's bars
+  and its busy/strained colour come from the desktop's `diag.health`
+  (`DiagnosticsStore`), read while a desktop link is open, every 15 minutes
+  when healthy and every 2 when not. Unlike iOS the desktop light hides
+  when no desktop was ever paired or seen, so a phone without one does not
+  blink red. Android has no build Mac light and no per-runner agent count,
+  so those are left out. The charts are filled at 35 %, in the top bar too.
+- **Several desktops (S141).** `DesktopControlHub` keeps the chosen desktop
+  (`desktop/preferred-key` in the project preferences), its `choices` with
+  each desktop's presence (Running, Not running or not reachable,
+  Checking…), and `checkDesktops`, which opens and closes a relay session to
+  each desktop that is not connected (forced on the Desktops page, at most
+  every 5 minutes after a warm link when there are several). A chosen
+  desktop is the only one dialled, and a link to another one is closed and
+  not used; a choice whose desktop is gone from the account falls back to
+  any. The Desktops page lists the other desktops with their status and a
+  Use button; Runs on in the prompt sheet lists every desktop and sending to
+  one picks it (`QuickLaunchBackend.desktopNames`/`chooseDesktop`).
+
+### CRM layout and reliable adds (ledger S149, S150, S151)
+
+Ported from iOS 1ed74360c2.
+
+- **Layout setting (S150).** `LayoutModeChoice` (`core/.../settings/Appearance.kt`)
+  is stored by name in `appearance/layoutMode` (`controlTower` or `focus`;
+  anything else reads as Control Tower), the same key and values as iOS
+  `LayoutMode`. Settings > Appearance shows it as a second segment track under
+  Theme (`LayoutModeTrack`, tags `appearance-layout-*`) with the mode's note.
+  `crmDense()` reads it from `AppearanceStore`, so the CRM redraws as soon as
+  the mode changes. The CRM's top bar has a layout button (layout and theme in
+  one menu) and its More tab repeats both tracks under CRM settings.
+- **Sections (S149).** `CrmSection` (`core/.../market/CrmDashboard.kt`) is
+  Home, Contacts, Pipeline, Activity, More; `CrmModel.show` picks a matching
+  tab (Contacts leaves the activity tabs, Activity leaves the contact tabs,
+  Pipeline picks the first pipeline). `CrmSectionBar` is a glass capsule under
+  the top bar; Contacts and Activity add their chips. Home (`CrmHomePane`)
+  shows a greeting, the Zoho alert, four KPI tiles from `CrmDashboard`, the
+  busiest pipeline's stage bar, the two "up next" picks across every contact
+  (`nextContact(mode, everyone = true)`) and recent emails; Control Tower puts
+  the KPIs first in filled tiles, Focus puts the picks first on plain cards.
+  Pipeline offers Board or Stages (collapsible stage groups with a chip that
+  moves a contact on, Android's stand-in for the iOS swipe); Control Tower
+  opens on the board. More holds what the old overflow menu had: CRM
+  settings, mail, lists and pipelines, CSV import and export, and the plugin
+  options. Opening the CRM on a pipeline route starts on Pipeline. The next
+  contact cards left the contact list, as on iOS. Contact rows, the contact
+  header, detail lines and action buttons are tighter in Control Tower.
+- **Contact page (S149).** A segment track switches Overview (details,
+  pipeline, lists), Activity (timeline, invoices, duplicates) and Notes
+  (notes, custom fields, added and updated lines).
+- **Shorter add form and reliable adds (S151).** The editor keeps Contact,
+  Pipeline and Notes open and folds owner, source, tags, last contacted,
+  profiles and custom fields into "More details" with a filled count. A new
+  contact sends a `requestId` made once per form (`CrmModel.newRequestId`),
+  and `save` retries a dropped connection or a 408, 425 or 5xx twice (0.4 s,
+  then 1.5 s) only when it has one, so a retry cannot add the contact twice.
+  A `contact_email_exists` reply names the contact (`PackagesException.from`
+  copies `contact` into `contactId`, `contactName`, `contactEmail`); the form
+  then shows them at the top with Open and "Add these details", which sends
+  `CrmContactEdit.additions`: only fields their record lacks, notes appended,
+  new tags as `addTags`, and the list as `views` (the server merges lists).
+  The editor saves on its own coroutine rather than `CrmRunner`, so the error
+  shows once, at the top of the form.
+
+### Agents (ledger S116, S118, S142, S143, S145, S146, S152)
+
+- **Image tile (S116, S142).** `feature/agents/AgentEagleTile.kt` follows iOS
+  `AgentEagleTile` as it stands after S142: the 32 dp tile's border is the
+  token ring (`AgentTokenRing.kt`), the churn moved to a 0.75 dp outline on the
+  file-count pill, then up to four tiny badges (`AgentLineBadge.of` in
+  `AgentLineChips.kt`, most urgent first), then a green `done` bar for a
+  finished agent or thin background-task lines (ten, or seven and `+n`). The
+  status dot sits on the top right with a ring of the tile colour. S116's
+  turning churn ring was replaced on iOS by S142; the token ring is what moves
+  while the agent works and stops when it is done, so S116 is covered by it.
+- **Token ring and charts (S143, S145).** `core/.../agents/AgentTokenFlow.kt`
+  ports `AgentTokenPace`, `AgentTokenSampler`, `AgentTokenSeries` and the
+  tile's phase clock. The ring reads the row's `tokensIn` / `tokensOut`
+  (`agents.list`, falling back to the session's stored counts) and, for the
+  desktop in use, the per-session live pair from `diag.vitals`
+  (`control/DesktopTokenFeed.kt`), samples once a second while the agent is
+  active and settles after 10 s without growth; lanes are 1 dp dashes
+  (2.5/2 dp) moving in opposite directions, still under reduced motion.
+  `AgentTokenChartsOverlay` (`AgentTokenCharts.kt`) is Android's place for
+  the charts that hang under the Dynamic Island: two 12 dp charts, 126 dp
+  together, just under the status bar and centred on the top camera cutout
+  when the display reports one (screen centre otherwise). They show with
+  Diagnostics (`showTelemetryStrip`) and the Agents package, tick every second
+  over 60 s, and ignore touches. HomeShell only adds one line next to
+  `StatusPageFeature.TopStrip`. `DesktopTokenFeed` is reference-counted (the
+  charts and the Agents screen hold it while the app is in the foreground),
+  sends `diag.watch` on the link in use and `diag.unwatch` when the last
+  holder leaves; the desktop keeps one watcher per connection, so a future
+  Android vitals store should share this feed rather than unwatch on its own.
+- **Set aside and merge (S118).** `agentops.merge` always sends
+  `offerSetAside: true`; a `checkout_dirty` refusal sets
+  `MergeCleanupModel.canSetAside`, and the merge dialog's button becomes
+  **Set aside and merge** (with the iOS explanation), which merges again with
+  `setAside: true`. The desktop's `setAside` note is appended to the merge
+  message and shown on the Merged dialog.
+- **Every desktop in one list (S146).** The hub gains `activeKey`,
+  `otherDesktops`, `link(desktopKey)` / `request(..., desktopKey)`,
+  `openLink`, per-desktop event taps and `channel(desktopKey)`; a desktop
+  that is not the one in use is reached over its own relay channel kept in
+  `DesktopSideLinks` (new file, so the hub's own dialling is untouched).
+  `AgentControlCenter` loads up to four other desktops after each full
+  refresh and again when one of them rings `agents.changed`; their rows carry
+  `desktopKey`, `elsewhere` and ids prefixed with the key, are labelled with
+  the desktop's name (host chip, badge, detail line, "On your desktops"), and
+  an unreachable one adds "<name>: Not reachable". Stop, prompt, continue,
+  transcript, the live stream, conflict fixes and agent ops (diff, merge,
+  delete, swipe delete through `AgentOpsFeature.client(desktopKey)`) go to
+  the row's desktop. Such rows never match the desktop in use's sessions,
+  queue, read marks, approvals or Agent Watch numbers. The terminal
+  (`DesktopAgentTerminal(desktopKey = ...)`, as iOS `terminalChannel(for:)`)
+  and Worktrees (Android only) follow the row's desktop too. The LAN link
+  forwards its events to that desktop's taps even when another desktop is
+  the one chosen, so a LAN desktop that is not in use still streams.
+  Choosing another desktop (`choose`) keeps the old relay channel as a side
+  link instead of closing it, and `link()` takes over the chosen desktop's
+  side link when one is open, so switching back and forth dials nothing new;
+  a side link counts as Online in `presenceOf`.
+- **Agent alert page (S152).** `AgentRouteScreen` looks the id up with
+  `AgentControlCenter.row(forRoute)` (another desktop's `<key>:desktop:<n>`
+  when only one desktop has that number, a relay run by its session id, or a
+  relay run the desktop took over), waits while the list or the other
+  desktops are still loading, shows a skeleton shaped like the agent page,
+  and offers Try again when nothing matches. Relay runs are published as soon
+  as they land instead of after the desktop answers.
+
+### DJ Studio queue (ledger S120, S123)
+
+- `DjQueueThumb` (`A/feature/djstudio/DjQueue.kt`) reads its own pointer
+  gesture instead of `detectDragGesturesAfterLongPress`: a tap or a 350 ms
+  hold (no movement past touch slop) opens the menu; a move past touch slop
+  that heads across the queue (sideways in the vertical queue, up or down in
+  the horizontal one) lifts the song onto a deck at once; a move along the
+  queue is left unconsumed so the queue still scrolls. The thumb shrinks to
+  0.94 while pressed. TalkBack gets Load on Deck A/B and Remove from Queue as
+  custom actions.
+- `DjAutomix.playNow` is iOS's: a song added (`enqueue`, `enqueueAll`) while
+  no deck plays, nothing is scratched and no fade runs is loaded and started
+  on the deck the crossfader favours, or on the empty one when the
+  crossfader sits near the middle; the rest of a batch is queued.
+- `DjQueueItem.addedAt` (ms, from the jam's `addedAt` or set when queued
+  locally, saved with the queue) gives `addedStamp` (time today, else
+  "Oct 23, 3:45 PM") under the adder's name on a jam thumbnail, and
+  `addedLine` ("Added by bob on Oct 23, 2026 at 3:45 PM") in the menu and
+  the TalkBack label. Formats use `java.time` localized short times.
+
+### Inbox instance logo (ledger S122)
+
+`SwipeRow` in `A/feature/inbox/InboxScreen.kt` stacks the active project's
+`ProjectIcon` (16 dp) under the ping's icon for every ping that is not a
+local one, and adds "From <project>" to the row's TalkBack label, as iOS
+`InboxRow`.
+
+### Code: failed run handoff and pull requests (ledger S144, S153)
+
+- S144: the run page already sent `CiPrompts.fixFailedRun` from its Send to
+  an agent button. The log card now also carries `FmMessageTools` on a
+  failed or rejected run, and its send button opens the composer with
+  `CiPrompt.composeTarget` (workflow, run, commit, failed steps and the
+  excerpt around the last failure line) instead of the first 4000
+  characters of the log. `FmMessageTools` takes an optional `handoff`.
+- S153: `PublishedPull` now carries `author`, `authorName`, `createdMs`,
+  `mergedMs` and `mergedBy` from `pull.md`. `PullState` (core
+  `collab/PullThread.kt`) gives the Open/Merged/Closed pill, the summary
+  line and the done copy; `PullTimeline.events` adds the Merged entry by
+  time (`epochMs` takes seconds or milliseconds). `PullDetailScreen` follows
+  iOS's order: header (pill, number, summary, branches), changed files and
+  patch, the Conversation card (the description as the opening comment, then
+  the events), federated replies, `PullWorkflowCards` (where `PullDoneCard`
+  replaces the merge card once the pull is merged or closed, keeping Review
+  files), then Review (Approve and Request changes only while open) and the
+  desktop requests. `ApiService.pullCommits` reads the pull's
+  `commits.mbox` beside `pull.md` (ledger ref, then `forkmesh/pull/<n>`, as
+  iOS `pullPayload`), so the summary and the changed files card say
+  "N commits"; only an empty list falls back to "changes". iOS lists the
+  commits in a tab of its changes page; Android's changes pages
+  (`PullReviewScreen`, `PatchFilesScreen`) have no tabs, so a Commits card
+  under the changed files lists them newest first, each opening
+  `PatchCommitScreen`.
+- The New pull request dialog (`A/feature/code/collab/NewPullDialog.kt`,
+  logic in core `collab/PullCompose.kt`) compares two branch menus on the
+  mirror, fills the title from the head branch, and keeps "Paste a patch
+  instead". When `remote-forks` lists forks on other instances, a Send to
+  menu offers them; `InboxService.openRemotePull` signs for the target's
+  owner and name with head `<this host>/<owner>/<repo>:<branch>` and posts
+  `{owner, repo, pull}` to the target's `/pulls` with no session, as iOS and
+  the website do. Errors stay in the dialog.
+
+### Stats release tiles (ledger S155)
+
+`LiveReleases.platformTile` shows "build N" from build 1, since every
+version now starts at build 0.
+
+### Docs library (iOS 00b40c1ee9)
+
+Nothing to port: `bundleDocsLibrary` in `app/build.gradle.kts` copies
+`native/ios/ForkMesh/Resources/DocsLibrary.json` into the APK's assets at
+build time, so Android always ships the same library as iOS.
+
+### Chat and files (ledger S100, S114, S121, S124, iOS 22473e237a)
+
+- **Link previews (S100).** `core/.../chat/ChatLinkPreview.kt`,
+  `ChatLinkSites.kt` and `ChatLinkPreviewService.kt` port iOS
+  `ChatLinkPreview`, `ChatLinkSites` and `ChatLinkPreviewService` (site
+  catalog, oEmbed and Open Graph, browser retry, cache per project in
+  `cacheDir/chat-link-previews-<scope>.json`, dropped by `leaveProject`).
+  `ChatLinkPreviewPolicy.autoLoads` is iOS `autoLoadsLinkPreviews`: your own
+  links, direct messages and private office rooms (not `general`, `random`,
+  `welcome`) load at once; every shared room shows the iOS "Show preview of
+  host" button, because a fetch tells the site this phone's address. Every
+  fetch, each redirect hop and every image goes through `ChatLinkGuardedHttp`
+  (`ChatLinkAddresses.kt`): the host must resolve only to public addresses
+  (`ChatLinkAddresses.isPublic`: no private, loopback, link-local, CGNAT,
+  multicast, documentation, ULA, site-local or v4-mapped/NAT64/6to4 forms of
+  them), redirects are followed by hand, and `ChatLinkPublicSocketFactory`
+  checks the address the socket actually connected to, so a DNS answer that
+  changes between the check and the connect is refused too. Cards
+  (`feature/chat/ChatLinkPreviewCard.kt`) follow iOS `ChatLinkPreviewCard`;
+  Settings > Chat has the on/off switch. Guards: `ChatLinkAddressesTest`,
+  `ChatLinkPreviewTest`.
+- **Guest lines renamed (S114).** Android shows the sender name a person's
+  line carries, so the line that reads "Guest" is the bot line ("forkbot ·
+  via Guest 1234") and the roster owner. `NodeOwners` now keeps a "no owner"
+  answer one minute (`RETRY_MS`) instead of an hour, and `watch(node, claim)`
+  (called by `RelayRoom` and `OfficeChannelService` for `chat` and
+  `thread-reply` lines whose claim is not confirmed) asks the server again
+  every 61 s, at most ten times and 256 nodes, until it names the claimed
+  account; the owners listener then relabels the lines and the roster. An
+  answer naming another account leaves them as guests. Guard:
+  `NodeOwnersTest`.
+- **One banner for several devices (S121).** `DirectTrustNotices.pending`
+  returns one notice with every waiting device (`kids`), worded as iOS
+  ("2 new devices for pat want to join this chat…"); `PendingDeviceBanner`
+  approves or blocks all of them, and Block asks first ("Block these 2
+  devices?"). The conversation's system line folds the same way:
+  `DirectMessageService.notePendingDevice` rewrites the still-waiting line
+  instead of adding one per device.
+- **Chat key kept through a reinstall (S124).** `ChatDeviceKeys.forStore`
+  makes a missing chat identity key from the node seed
+  (`identity/ed25519Seed`, same HKDF as iOS) and writes
+  `chat/e2ee/ctrFloorV3`, which `RoomCounters` starts above; a stored key is
+  kept. `DataFolderIdentity.restoreSeed` removes the stored chat key when the
+  restored node key differs, so after the restart the old install's chat key,
+  kid and safety numbers come back. Guard: `ChatKeyReinstallTest`.
+- **Local file names (22473e237a).** Chat media go to
+  `cacheDir/chat-media/<first 24 hex of SHA-256(message id)>-<name>`
+  (`ChatMediaFile`; it was a 32-bit `String.hashCode`, which another sender
+  could collide with to show their file in place of yours) and the path must
+  stay inside the folder. Files open/share copies use
+  `FilesModel.localTarget`: the last part of the server-listed name, `.`,
+  `..` and empty names refused with "That file name cannot be saved on this
+  phone." `OfficeChannelService.onRoomOpened` was already ported in that
+  commit; Android has no native group call, so that part does not apply.
+  Guards: `ChatMediaFileTest`, `FilesModelTest`.
+
+### Shell: the tour and first-launch permissions (ledger S134, S135)
+
+- **Tour tracks and live stops (S134).** The catalog is plain Kotlin in
+  `core/.../navigation/TourCatalog.kt` (`TourTrack`, `TourScene`, `TourStop`,
+  `TourJump`, `TourPlace`, `TourProgress`; `TourCatalogTest` ports the iOS
+  cases and adds the progress store). The words follow iOS except where iOS
+  names Apple surfaces: the palette shortcut is Ctrl-K, the system stop names
+  the Agents and Inbox widgets, the running-agents notification and the New
+  agent Quick Settings tile instead of Siri, the Live Activity and Control
+  Center, and Timers count "in the notification shade". Progress keeps the
+  old seen key (`nav/tour.v1`) and adds `nav/tour.done.v1` and
+  `nav/tour.place.v1` in the device prefs. `TourScreen`
+  (`A/feature/navigation/TourScreen.kt`) is the chooser (hero, three track
+  cards with stop count, minutes and the stops' icons, "Pick up where you left
+  off", the finished card, "Not now") and the player (header with the track,
+  "n of m", close and tappable segments; a `HorizontalPager` of stops; Back,
+  Show me and Next/Finish). Back from the player returns to the chooser.
+  `TourStage.kt` holds the 330 dp rounded stage, the 1.9 s autoplay that a
+  touch pauses for 6 s, the pulsing `tourTarget` ring and the mock pieces
+  (top bar with the sparkle button and `AvatarWithDot`, `ShellBarRows` for the
+  bottom bar, rows, pills); `TourScenes.kt` has the 18 scenes and uses
+  `ShellHomeTile` for Home, Market and Looks. With animations off the ring,
+  ripples and sparkle spin stop and steps still advance. Show me pops the
+  tour and, 300 ms later, calls the shell (`select`, `selectHome`, `openHub`,
+  `openPrompt`, `openPalette`, `ProjectDrawer.open`) or
+  `NavigationFeature.open(route)`. The Tour icon on Home counts the tracks
+  not done (`ShellTour.left`).
+- **No permission prompt at launch (S135).** `PermissionPacing`
+  (`core/.../account`, `PermissionPacingTest`) holds the intro text and the
+  `permissions/intro` and `permissions/nearby-opened` keys in the device
+  prefs. `PermissionsIntro.install` runs after the package gate with
+  `freshInstall = needsStarterPack()`, so an install that predates this build
+  never sees the screen and keeps its mesh starting at launch.
+  `PermissionsIntroPage` is the step before the starter pack in
+  `OnboardingFlow` (`docs/native/ONBOARDING.md`). Android asked at
+  launch in two places: `PushFeature.PermissionPrompt` asked for
+  `POST_NOTIFICATIONS` as soon as a session existed, and `ChatFeature`
+  started the `#mesh` room at install, whose transport asked for
+  `BLUETOOTH_CONNECT`/`BLUETOOTH_SCAN` at once. Now the notification ask is
+  `PushFeature.askWhenUseful`, called after the first chat message is sent
+  (and still when a nearby `#mesh` peer appears); `LocalMeshRoom.waitsForRoom`
+  keeps `start` off until `roomOpened`, which `ChatFeature.setMeshOnScreen`
+  calls the first time `#mesh` is on screen. Android has no local-network
+  prompt for the mesh's Wi-Fi sockets, so nearby devices is the only prompt
+  that moment brings.
+
+### Group calls on FM Media (ledger S140, S139, S087)
+
+- **FM Media and the compare code (S140).** The group call page now runs
+  the browser's FM Media engine (`fmm/*.js`: worker, playout worklet,
+  transport, FEC, jitter, frame sealing) and its call key exchange
+  (`fmm-e2ee.js`) instead of only WebRTC; iOS built a native engine, Android
+  reuses the web one because it already runs calls in a WebView.
+  `app/tools/sync_android_group_call.py` keeps every module byte-identical
+  to `app/public`. `group-call-host.js` passes the worker, worklet and
+  face-stream URLs inside `group-call/`, asks for `engines: ["fmm",
+  "webrtc"]`, and falls back to WebRTC when the WebView lacks WebTransport or
+  WebCodecs (`fmmSupported`) or the ticket has no FM Media block. The CSP
+  adds `https:` to `connect-src` (WebTransport) and `blob:` to `img-src`.
+  The call key is the room seal's identity key, as iOS
+  `OfficeChannelService.callIdentity`: `callIdentity` (core) returns the
+  seal's room name, account, kid and public key, and the private key never
+  enters the page. The page signs through the synchronous
+  `FmGroupBridge.sign(call, base64)`, which signs only messages that start
+  with `forkmesh-call-e2ee-`, are under 64 KB and name the current room
+  (`GroupCallIdentity.sign`). The identity goes to the page on join and
+  again with every `rekeyed`. `OfficeChannelService.accept` adds
+  `sealKid`/`sealAcct` from the opened seal to incoming `group-call-*`
+  frames and drops claimed copies from every other frame
+  (`GroupCallE2ee.annotate`, iOS `GroupCallE2ee.annotate`), so the page's
+  `requireSealed` check works. The page reports `engine` and the
+  verification view (emoji, names, digits, waiting and new names, verified,
+  mismatch) in its `state` event; `GroupCallVerify` (core) reads it and
+  holds iOS's `GroupCallVerifyText` wording and `summary` order. On FM Media
+  `GroupCallViews.kt` shows iOS's capsule under the state line ("Verify",
+  "Compare the code", "Verified"; `shield` or `verified_user` icon) that
+  opens a bottom sheet with the summary, the 40 sp emoji with names, "Or
+  compare numbers", and "They don't match" / "They match" (the page's
+  `confirm` op, `confirmCode`). After a mismatch the sheet shows the warning
+  and "Leave the call". Tiles show iOS's top-left note when a sender's media
+  signature is missing (orange) or forged (red); the page draws them.
+- **Face stream on weak links (S139).** The face-stream module
+  (`chat-call-facestream.js` and the face-changer modules it imports) is in
+  the page, so when the server sends a tile's face stream instead of video
+  (`representation: face`), `fmm-call.js` renders the moving face into the
+  tile and the page adds the "Face stream" badge above the name.
+- **Look, voice and sending a face stream in group calls (S139, as iOS).**
+  iOS group calls run the camera through the shared call look filter (the
+  face and background chosen for calls) and the chosen voice, with no picker
+  on the group screen, and send a face stream whenever the server asks,
+  from landmarks found on the camera (`FmmVideoSender.face`). Android does
+  the same: `GroupCallFeature` passes `GroupCallLook.page(FaceChangerFeature.look)`
+  (face, custom face photo, background, custom background photo and
+  `effectiveVoice`; face and background only on video calls) in `join`, and
+  the page's `prepareLocal` (the same shape as the browser's
+  `fmm/fmm-local.js`) builds `createFaceStage` for a face or background and
+  `createVoiceStage` (`chat-call-voice.js`, its worklet) for a voice. The
+  stand-in photos, backgrounds and networks are not copied a second time:
+  `GroupCallPage` serves `group-call/call-data/{face-photos,backgrounds,models}.js`
+  by cutting the `fm-call-face-photos`, `fm-call-backgrounds` and
+  `fm-call-models` script blocks out of the bundled `direct-call.html`
+  (`GroupCallPageData`), and the page loads them only when a look is chosen
+  or a face stream is due. The stage handed to `fmm-call.js` is wrapped
+  (`createFaceFeed`): when no stand-in face is drawn (no look, or only a
+  background) its `landmarks()` runs the browser's face mesh network
+  (`createFaceRenderer(...).trackFace`) on the camera at 15 fps, as iOS's
+  face sender, with the landmark smoother, so `fmm-call.js` sends face frames
+  and reference pictures whenever the server switches the sender to the face
+  stream. Reference pictures come from the stage canvas when a background is
+  chosen, so the real room is never sent, and from the camera otherwise.
+  The tracker starts only when the first face frame is due and stops with
+  the call. Still different from iOS: the web engine publishes no separate
+  face stream (`fmm-call.js` sets `face: false`), so Android switches to
+  the face stream when the server asks for it because viewers' links are
+  weak, but not on its own weak uplink, which iOS's extra face stream
+  covers; a look changed during a group call applies from the next call.
+- **Face changer hair and edges (S087).** Already on Android: the call
+  page's face changer (`direct-call.html`, built by
+  `app/tools/sync_native_call_faces.py`) runs the browser's `hair-192`
+  network and guided-filter person matte, the code iOS ported to Metal. The
+  TrueDepth parts (ARKit 3D mesh pose, blend shapes, depth-firmed edges)
+  need a depth front camera and ARKit; Android has neither as a first-party
+  API, so they are not built. `direct-call.html` already matches iOS's copy
+  byte for byte, including commit ac9cab0530 (World voice and camera).
+
+### Speech playground, Logs and Diagnostics (gaps older than the ledger)
+
+- **Speech.** `Route.Speech` (`/dashboard/speech`, package `speech`, You hub
+  Personal after Food Guide) opens `A/feature/tools/SpeechScreen.kt`, iOS
+  `SpeechScreen`: the text card with the spoken word highlighted, the four
+  samples, Speak / Pause / Resume with Stop and Save audio, the voice card and
+  voice sheet with previews, and the Speed and Pitch sliders (0.5 to 2, 0.05
+  steps). `SpeechPlaygroundModel` and its helpers live in
+  `core/.../tools/SpeechModels.kt` with `SpeechTest` (the iOS cases plus the
+  Android-only pieces below); the iOS screen does no recognition, so neither
+  does this one. `AndroidSpeechEngine` speaks through `TextToSpeech`:
+  - Speed goes to `setSpeechRate` as is (1.0 is normal there; iOS maps it to
+    the AVSpeech scale).
+  - Quality comes from `Voice.getQuality`: 500 is Premium, 400 Enhanced, the
+    rest Standard. Voices still to download are left out, and network voices
+    get an Online badge and lose ties to local ones. Google voice ids such as
+    `en-us-x-iol-local` show as "Voice IOL".
+  - Android has no Personal Voice, so that card and its request are not
+    built. The no-natural-voice hint names the Android settings path and has
+    a Get more voices button (`ACTION_INSTALL_TTS_DATA`, falling back to the
+    TTS settings).
+  - `TextToSpeech` takes at most `getMaxSpeechInputLength()` characters (4,000)
+    a call and cannot pause. `SpeechText.chunks` splits the text at sentence
+    ends, then spaces, and never inside a surrogate pair. Each piece is queued
+    with a `SpeechUtterance` id (session, offset, last), so `onRangeStart`
+    positions map back to the whole text and callbacks from a stopped session
+    are dropped. Pause stops the engine; Resume speaks again from the last
+    word started, or from the next piece when the engine sends no ranges.
+  - Save audio renders each piece with `synthesizeToFile`. The WAV parts are
+    joined into one file under `cache/speech-share/` by streaming their data
+    after one `SpeechWav.header`, so the whole recording is never held in
+    memory. The file is shared as `audio/wav` (iOS shares an `.m4a`).
+  - The manifest declares the `TTS_SERVICE` intent in `<queries>`. Without it,
+    Android 11 and later hide the speech engine from apps that target them,
+    which also affected Stretch Break and the Genie.
+- **Logs and Diagnostics.** `Route.Logs` and `Route.Diagnostics` (packages
+  `logs` and `diagnostics`, You hub Operate after Network) open the existing
+  `TelemetryScreen`, as iOS `.logs` / `.diagnostics`: Logs on the Logs tab
+  (`showLogs`), Diagnostics on Stats. iOS parses no link for them, so Android
+  does not either.
+- **Package destinations.** `routeFor` in `A/feature/market/MarketScreens.kt`
+  also accepts the iOS destination names `fileExplorer` (Files), `speech`,
+  `logs`, `diagnostics` and the capitalised `Agents`, `Inbox` and `Chat`, so a
+  catalog row written for iOS opens the same screen on Android.
+
+### Shell: the list beside the detail on a foldable (iOS iPhone Duo)
+
+iOS shows lists on the left and the open item on the right on iPhone Duo's
+inner display (`docs/native/NAVIGATION.md` 7.1). Android does the same on a
+foldable's inner display or any window at least 600 dp wide and 480 dp tall.
+
+- `ShellPanes` (`C/navigation/ShellPanes.kt`) holds the same thresholds and
+  list width as iOS: 40% of the content width, kept between 280 and 380 dp.
+  The cover screen, a landscape phone and split screen keep the phone stack.
+  Guard: `ShellPanesTest`.
+- `TabPanes` in `A/shell/HomeShell.kt` draws the tab's root screen in the list
+  column, a hairline, then the tab's stack in the detail column. With nothing
+  open the detail shows a glass placeholder. Chat keeps its own channel
+  sidebar at full width.
+- The list column gets a `PaneListNavigator`: a push from the list goes
+  through `Navigator.pick`, which replaces the detail instead of stacking on
+  it, as on the desktop. Pushes inside the detail stack as usual, and back
+  returns to the placeholder.
+- The row whose item is open on the right stays highlighted
+  (`shellPaneSelected` in `A/ui/navigation/ShellPaneSelection.kt`). The list
+  column gets the detail's first screen as `LocalShellPaneOpen`; the
+  repository lists compare it with their rows.
+- Hub pages open in the detail column. iOS moves list pages such as Tasks or
+  Settings into the list column; Android keeps the tab's list there.
+- From 760 dp wide the existing navigation rail replaces the bottom bar, as
+  iOS's side rail does on a Duo held sideways.
 
 ## 28. NEXUS network inspection (sync ledger S046)
 
@@ -1710,6 +2505,38 @@ from. When several run it follows the one expected to finish last. The cell
 reads "Running, N percent" to TalkBack. The bar reads
 `TeammatesFeature.startedShortcuts`, so it never starts the shortcuts store
 itself; it looks for it every 2 s until something opens Shortcuts.
+
+### Busy ring on buttons and the side rail
+
+`ui/kit/FmBusyRing.kt` draws the halo's turning arc without the glow: a
+faint accent track with a 70 % sweep that turns once every 1.6 s
+(`ShellActivityHalo` takes its turn time and arc from `FmBusyRing`). It only
+draws, so it takes no touches and TalkBack does not see it; with reduced
+motion the arc stands still. The rule matches the desktop and iOS: a button
+that turns disabled within 1 s of being tapped is working, and the ring turns
+around its icon until the button is enabled again, or for 60 s at most. A
+button with no icon gets the sweep around its rounded outline instead. The
+kit buttons (`FmIconButton`, `FmToneButton`, `FmTextButton`,
+`FmElevatedButton`, `FmPillButton`, and `FmFilledButton`/`FmOutlinedButton`
+in `feature/code/RepoCommon.kt`) record the tap time and watch `enabled`
+(`rememberFmBusyTap`), so screens that write `enabled = !busy` or
+`onPressed = if (busy) null else ...` get the ring with no change. Each also
+takes `busy: Boolean?`: left at `null` the tap guess decides, and `true` or
+`false` replaces the guess. A button can also turn disabled right after a tap
+for another reason: a send button whose field the send empties, a stepper
+that reaches its limit, Move up on the first row, Undo with nothing left to
+undo, a choice button that turns itself off once chosen. A condition such as
+`enabled = !sending && text.isNotBlank()` stays false after the send ends, so
+the guess would spin for the full 60 s. Those call sites pass the real flag
+(`busy = sending`), or `busy = false` when the tap starts no work.
+`FmExtendedFloatingActionButton` is always enabled, so it shows the ring only
+when its `busy` is set. Material buttons draw the sweep as their border
+(`fmBusyBorder`), so it follows the visible shape inside the 48 dp touch
+target; the drawn kit buttons use `Modifier.fmBusyRing`. Nothing animates
+while no button is busy. On a tablet or in landscape the side rail draws the same ring around
+the icon of an active item: Agents while agents run (the bar's `active`), and
+Home while a hub page the bar would mark active (a timer, a running shortcut)
+is running, since those pages are not rail items.
 
 ### Home search, custom order and drag (S010, S012)
 
@@ -2178,3 +3005,302 @@ their own.
   no setting; and NEXUS counts `10.0.0.0/8` and `100.64.0.0/10` as the local
   network without asking for confirmation, which on mobile data covers the
   carrier's network (`IPv4Addr.isLocalScope`, as iOS `IPAddress`).
+
+## 35. Chat relay hardening (2026-10-22)
+
+Android's side of [chat-relay-hardening.md](../app/chat-relay-hardening.md)
+(R1 to R7). Shared rooms are joined by every device of an instance, guests
+included, so the relay now carries only public content and nobody can speak,
+edit or delete as somebody else. Nothing here talks to older builds.
+
+- **R1, bundles bound to the node key.** The node id was already the `b64u`
+  Ed25519 public key of `Identity` (`DeviceIdentity.nodeId`), so it did not
+  change. `ChatNodeKey` (`C/crypto/ChatNodeKey.kt`) signs with that key;
+  `RoomSeal.nodeKey` adds `nsig` over
+  `forkmesh-chat-e2ee-node-v1\n<room>\n<kid>\n<idk>\n<acct>` to every
+  open-room bundle (relay, office rooms, `#mesh`), and an open room drops a
+  bundle whose `node` is not a canonical 32-byte key or whose `nsig` fails
+  (`ChatV3.verifyNodeBinding`). Strict rooms keep the v3 bundle.
+  `ChatNodeBindingTest` replays `conformance/chat/v3/node-binding.json`
+  (copy in test resources) including its three rejects.
+- **R2, nothing private on the relay.** `RelayFrames.isPrivate` (`dm`,
+  `invite`, `cove-invite`, `cove-open`, `private: true`, a conversation
+  starting with `@`) is refused by `RelayRoom.send` and dropped on receipt
+  before the history, the roster hooks or `ChatExtras` see it. `ChatExtras`
+  lost its relay private channels and invites; private channels are office
+  rooms created with `POST /api/chat/channels` (the existing New channel
+  sheet). Message on a person, a reply to "@name", and share targets for
+  people go through the person's server DM; a guest has no Message action.
+  `ChatHub.withoutRelayPrivate` drops `@peer` conversations and relay private
+  channels, with their replies, reactions, stickers, edits and receipts, from
+  saved history every time it is loaded, so the first start with these rules
+  purges them and later starts find nothing to purge. `#mesh` keeps its own
+  frames. Android never sent cove invites over the relay (an invite is a
+  server cove grant, `CovesModel.invite`), so there was nothing to move.
+- **R3, only authenticated frames act for a person.** Every person frame is
+  sealed, public channel chat included (it used to go in the clear).
+  `RelayFrames.authenticated` fills a missing `senderId` with the sealed
+  sender's stored node (RoomSeal already rejects a different one). An
+  unsealed frame is accepted only when the envelope has `srv: true`, only as
+  `chat` in a `#` channel, with its sender id prefixed `srv:` unless it
+  already names an integration (`webhook:`, `app:`, `system:`), account
+  claims removed and `accountKind: integration`; it never reaches the roster,
+  and edits, deletes, reactions and thread frames are never taken from it. A
+  delete for a message whose author is unknown is ignored. Office rooms do
+  the same (`OfficeChannelService.accept`) in every server channel room,
+  public or private, the `#email-log` notices channel included, live or from
+  the HTTP history; DM rooms never take an unsealed frame. A server frame
+  with `serverVisible: true` (webhooks) is marked "server-visible" next to
+  its sender name (`ChatMessage.serverVisible`, kept in saved history as
+  `sv`). Android has no channel webhook settings, so creating or rotating a
+  webhook stays on the web and desktop. ForkBot replies posted by this
+  phone keep its own `senderId` and name the bot in `bot`. Since any sealed
+  sender, a guest too, can set `bot`, a bot line shows as
+  "<bot> · via <verified account or Guest ####>" (`RelayFrames.botLabel`)
+  in the transcript, thread replies, office rooms, list previews and pings;
+  its sender id is `bot:<node>:<bot>`, and labels are redrawn when
+  `NodeOwners` confirms the account (`relabelBots`). A ping filed before
+  the answer keeps the guest label.
+- **R4, accounts checked with the server.** `NodeOwners` asks
+  `GET /api/chat/node-owner?node=` once per node and hour (a failure is
+  retried after a minute); the roster shows a peer's `ownerUser` only when it
+  matches, otherwise the peer is a guest. Sign-in already binds the node key
+  (`AuthController.bindLogin` sends `publicKeyB64url`).
+- **R5, blocks kept by the server.** Android had no account blocks.
+  `ChatBlocks` keeps the list (prefs `chat/blockedAccounts`), pushes it with
+  `PUT /api/chat/blocks` on every change, and at sign-in reads it with `GET`,
+  unless a push failed, in which case it pushes first. `ChatHub` hides a
+  blocked account's messages and DM. A DM tile's long press offers Block;
+  the channel list shows a Blocked section with Unblock.
+- **R7, less about you.** Relay frames never had a time zone, host name or
+  `dg`; the Solana address now goes out only with "Accept tips in chat"
+  (Settings, Funding and payouts, `AccountSettings.chatTipsEnabled`, off by
+  default). `#mesh`: bundles use the node id as `acct`, frames carry no
+  `ownerUser` (and a received one is ignored), `resealOwnHistory` is gone and
+  backfill resends only frames already sealed to that device, the beacon id
+  is random (new at start and on a network change; a beacon is matched to a
+  linked peer by address), `setFocus` goes only to links of the DM partner's
+  approved devices (`DirectMessageService.partnerKids`), and the `#mesh`
+  header and info sheet say "Anyone nearby with ForkMesh open can read
+  #mesh." Android has no setting that turns the mesh off, so it still starts
+  with chat.
+
+## 36. Sync ledger, third round (2026-10-22)
+
+- **Agent page actions (S074).** `FmNavBar` gives its trailing actions the bar
+  width less 52 dp for the Back button (never under 184 dp,
+  `FmNavActionsRoom`) in a horizontal scroller that starts at the trailing
+  end, so a page with many actions scrolls them instead of drawing the first
+  one under the Back button. The unified agent page's action row does the
+  same: its buttons scroll inside the width left after the badges.
+- **Pinned last prompt (S079, S102).** `AgentPromptDeck`
+  (`A/feature/agents/AgentPromptDeck.kt`) pins what you last wrote above the
+  transcript of the unified agent page, the desktop session page, the queued
+  session page and the phone's own agent. `PromptDeck` (`C/control`, tested
+  as on iOS) holds the prompts newest first: `Prompt` blocks and steers from
+  you (`Steer.fromYou`), a queued run's user turns, or `AgentUserMessage`
+  events. The card is one line (tap for up to eight), with `3/5` when there is
+  more than one; up to two edges peek out below it, drawn with
+  `matchParentSize` behind the card so they never stretch past it (the empty
+  box of S102). Swipe right for an earlier prompt and left for a later one;
+  the card follows the finger, tilts 0.04° per dp and resists past either
+  end. Long press offers Copy prompt and Back to the latest. A new prompt
+  drops in on top and returns the deck to it. TalkBack reads it as one item
+  with Earlier prompt and Later prompt actions; reduced motion fades between
+  cards without the tilt.
+- **Terminal keys and scrollback (S106).** `AgentTerminalPane` (every phone
+  terminal: desktop, runner, host and sign-in) puts its keys in two rows of
+  equal-width keys (`TerminalKeyBar`: Esc, Tab, Ctrl, ^C, ⌫, Paste; ←, ↑, ↓,
+  →, Enter at double width), so none hides behind a sideways scroll. Ctrl is a
+  one-shot modifier: it focuses the input, and the next typed letter is sent
+  as its control byte (`terminalChordTyped`, `terminalControlBytes`) or the
+  next arrow as `ESC [1;5` + letter (`terminalKeyBytes(control = true)`). The
+  grid follows new output only while it is scrolled to the bottom; scrolled
+  up, it stays put and shows a round jump-to-newest button.
+- **Match the instance's theme (S110).** Settings, Appearance has the switch
+  (`appearance/matchInstanceTheme`). While it is on, `HomeShell` asks
+  `AppearanceStore.refreshInstanceTheme` for the active project's
+  `GET /api/instance` at launch, on return to the foreground and on a project
+  switch; `InstanceTheme` (`C/settings`, the iOS mapping and tests) maps
+  `themeColors` (or an older server's `theme.dark`/`theme.light`) onto the 13
+  tokens and the result is kept in `appearance/instanceThemeColors`, so the
+  next launch starts in it. `Appearance.effectiveTheme` is what
+  `MainActivity` paints with; the readable switch still applies. A project
+  without an instance or an instance on the default look clears the colours,
+  a failed read keeps them, and turning the switch off drops them.
+- **Home loading (S065, S105).** Home has no loading bar any more. While a
+  count is read, a small spinner (`ShellHomeCountSpinner`) sits where the
+  count pill goes: the repository section icons and Code while the current
+  repository's counts load, Tasks while the task board loads, and RSS Reader
+  while it refreshes (`ShellBadges.pending`); an unread badge still wins, and
+  TalkBack reads "Loading". The current repository's counts are saved per
+  repository (`shell/repoCounts/<owner>/<repo>`, `ShellRepoCounts.encode`)
+  and shown at once, then read again once a session. **Refresh everything**
+  in the Home background, section and tile menus re-reads the tasks, bug
+  reports, the repository counts and pulls, the organisation packages, the
+  account packages and status checks, the inbox and the RSS feeds
+  (`ShellBadges.refreshEverything`). The tile grid was already fitted to the
+  measured height in the first frame, and the organisation packages were
+  already saved per project, so nothing else resized on load. The count pill
+  now hangs from the glyph's top-right corner and rises at most 2 dp above
+  the icon box (`ShellHomeMetrics.anchorRise`), so it no longer covers the
+  name of the icon above, and it draws over the update dot, which is 6 dp.
+- **Status dots on every screen (S093).** Android has no Dynamic Island
+  strip, so while Status Page is installed `StatusPageFeature.TopStrip`
+  draws the same service dots (5 dp, troubled ones blinking) in a 7 dp strip
+  just under the status bar, over every tab and pushed page. It is drawn over
+  the content without taking layout height and does not take touches.
+  `ShellIslandStatus` replaced it for S113 (section 27): the dots now show
+  only while Diagnostics is on and move above a punch hole when there is
+  room.
+- **Account data (S101).** Settings > Data follows iOS ([account-data.md](../app/account-data.md)).
+  `AccountSyncService` (`C/settings/AccountSync.kt`) saves three items to
+  `/api/accounts/data/store/<key>`: `android.home` (layout: `shell/*` and the
+  Insights layout keys), `android.rss` (the RSS library from
+  `RssLibrary.syncData`, without articles, activity or fetch state) and
+  `android.settings` (every other preference). The keys differ from iOS's
+  `ios.*` because the two apps encode settings differently
+  (`DataFolder.exportSettings` writes typed `forkmesh.android-settings`
+  values), so neither phone overwrites the other's copy. Preferences under
+  `AccountSyncKeys.skippedPrefixes` never leave the phone: project-scoped keys
+  (`p/`), sign-in, identity, owner keys, chat keys and history, server and relay
+  addresses, caches, read state, recents and counters; secrets live in
+  `SecureStore` and are never preferences. A value over 32 KiB is skipped.
+  Saving is off until "Save my settings to ForkMesh" is switched on; then
+  `AccountSyncSetup` saves on every foreground change, only items whose
+  SHA-256 differs from the last copy saved for the account
+  (`accountSync/hash/<account>/<key>`). Restore asks first, writes the
+  preferences directly (Appearance reloads at once, the rest on the next
+  launch) and replaces the RSS subscriptions with `RssLibrary.restoreSync`,
+  which keeps a local feed's id, articles and fetch state when its address
+  matches. `AccountDataBrowser` (`C/settings/AccountDataInventory.kt`) lists
+  the inventory by subject, category and table, pages rows 50 at a time,
+  removes a row only where the server marks it `deletable`, and deletes one or
+  all saved items; the export button downloads `/api/accounts/export`.
+- **DJ Studio (S063, S104, S109).** AUTO DJ is a round sparkle button in the
+  utility row next to AUTOMIX (`DjAutoDjButton`, `DjStudioAutoDj.kt`). While
+  on it turns AUTOMIX on (and off again if it switched it on), reads the
+  playing song's Invidious recommendations (`invidiousData`, falling back to a
+  search for the song), keeps songs only and puts the artist's own, Topic,
+  VEVO, official or remastered uploads first, drops the seed, anything on a
+  deck, played this session or already heard under another upload, checks the
+  like counts of the first six (`/api/v1/videos/<id>?fields=likeCount,viewCount`)
+  and ranks by likes and relatedness (`DjAutoDj`, core, the iOS rules and
+  tests). `preload` takes the next pick before the replay pool, and shake
+  loads a new pick instead of the song just mixed out of. The state is saved
+  with AUTOMIX (`DjSaved.autoDj`, only kept with `automix`). Android had no
+  false end reports to filter (its own decoder knows the length), so iOS's
+  `DjEnd` was not needed. **Repeat** is a lit `repeat` round button by
+  each deck's clock (`DjRepeatButton`) and "Repeat song" in the deck sheet;
+  it is saved with the deck (`DjSavedDeck.repeats`), cleared by Reset All, and
+  AUTOMIX never mixes out of a repeating deck (`DjAutomixDeck.repeats`). The
+  deck wraps from where the sound ends back to where it starts, skipping the
+  waveform's quiet head and tail (`DjRepeat.span`, `step`: the studio tick
+  wraps at the end or schedules the wrap when it is under 0.6 s away), and a
+  decoder end on a repeating deck restarts from that point too.
+- **CRM email reading report (S059).** `CrmActivity` decodes the CRM worker's
+  `automated`, `opens`, `clicks`, `readSeconds`, `scrollDepth` (capped at
+  100), `slideCount`, `slideReached` (capped at the slide count), `slideTitle`,
+  `mailClient` and `readingReported`; counts are read as longs and clamped to
+  0..Int.MAX_VALUE so a hostile payload cannot overflow. `engagementLine`
+  ("2 opens · read 4 min+ · reached slide 9/14 · Market · iPhone · Apple
+  Mail", or "Gmail doesn't report read time") sits under each sent email in
+  the contact's activity list (`CrmEmailRowView`), and `CrmEmailScreen` adds a
+  Reading card (Opens, Clicks, Read for, Scrolled or Reached, Mail app) with
+  the note on which mail apps report it, shown whenever that line is not
+  empty. `CrmReadingReportTest` ports the iOS tests.
+- **Genie auto-send asks the desktop (S066).** `GenieFeature.outreachWriters`
+  ends with `desktopWriter()`: when a desktop is paired it sends the whole
+  prompt to `agents.write` over `AgentsFeature.hub` (LAN or relay, 300 s,
+  `GenieOutreach.DESKTOP_TIMEOUT`) and the desktop's default agent, Claude Code
+  or Codex, writes the email (`GenieDesktopWriter`). Android has no on-device
+  model, so the order is the saved agent API key, then the desktop. With no
+  writer at all and a server without a model, auto-send pauses with
+  `GenieAutoSend.NO_WRITER`, which says what to set up; with writers that all
+  failed it says `UNWRITTEN`.
+- **Ping banners lead with who and where (S078).** The server change
+  (`docs/app/content-first-pings.md`) reaches Android only through the inbox
+  rows, so `PingNotifier.post` builds the banner with `PingLead.of`: a ping
+  with an actor reads "bob · acme/widgets #42" over the text (the event label
+  when there is no text); a ping without one keeps its label, with "#42" in
+  front, over the body. The label drops a trailing "for/in/on owner/repo" or
+  a leading "owner/repo" the way `_notification_digest_title` does. The
+  project suffix for several signed-in projects still follows the body.
+  `PingLeadTest` covers it.
+- **New project: instance logo and the ForkMesh directory (S068).** Once
+  "Check instance" passes, `AddProjectDialog` fetches the instance's logo at
+  once and shows it as the project image (a spinner sits in the logo box while
+  it loads); the user can still change or remove it. The candidates are
+  `InstanceDirectory.logoCandidates` (core `account/projects`): the `logo` from
+  `/api/instance`, the instance's logo in the ForkMesh directory, then the two
+  favicons, left out for a branded instance. A picked logo is never replaced;
+  one taken from the instance goes when the host is edited. Under the form,
+  "Instances on ForkMesh" lists ForkMesh plus every `listed` https entry of
+  `GET https://app.forkmesh.com/api/start/instances` (directory logos only in
+  the `/api/start/instances/<32 hex>/logo?v=<n>` shape); Add fills the
+  instance in, checks it, loads its logo and creates the project in one tap,
+  and a project that already exists shows "Added". An unreadable directory
+  lists only ForkMesh. The dialog's content now scrolls. `InstanceDirectoryTest`
+  ports the iOS cases.
+- **A walk as a live notification (S108).** Android's answer to the Dynamic
+  Island and Lock Screen Live Activity is an ongoing notification held by
+  `WalkLiveService`, a foreground service of type `health`
+  (`FOREGROUND_SERVICE_HEALTH`; the runtime permission it needs on Android 14+
+  is the `ACTIVITY_RECOGNITION` that steps already require). It appears as soon
+  as `WalkDetector` starts a walk and shows "Walking · N steps", the distance,
+  today's steps and a running clock from the walk's start
+  (`setUsesChronometer`), on the lock screen too (public visibility). The pace
+  already counted as movement on Android (`WalkActivity.publish` feeds the
+  live cadence to the detector), so the iOS `paced` change only adds
+  `WalkDetector.paced` and `begin` to core for parity. When the app leaves the
+  screen while the user is stepping and has been moving for 10 s
+  (`LEAVE_START_AFTER`), the walk starts there; a walk under way keeps the step
+  counter and the detector running in the background (the accelerometer
+  stops), so locking the phone mid-walk keeps it in the notification until
+  three minutes of stillness end it. Coming back to the app restarts the full
+  pace sensors. `WalkDetectorTest` ports the four new iOS cases.
+- **Eagle rows (S112).** `AgentEagleRow` has no status dot on the left any
+  more: the title and the dialog ticker start at the row's edge, and a 32 dp
+  tile (`AgentEagleTile`) sits on the right. Android rows carry no image
+  thumbnail, so the tile is a plain `bgOverlay` rounded square. Its border is
+  the churn: one continuous 2 dp stroke around the rounded rectangle, green
+  for the added share (`AgentLineChips.churnShare`) and red for the rest, or a
+  hairline with no churn. A pill on the top right (`AgentTilePill`) holds the
+  file count and a status dot (accent running, warning waiting, success done,
+  `#a371f7` merged, danger failed, tertiary otherwise); the bottom left shows
+  one dot per open background task, up to three then `+n` (`AgentTileTasks`),
+  blinking on a 1.4 s cosine while the agent runs or waits and still under
+  Reduce Motion; the unread dot sits on the top left. `backgroundTasks` is read
+  from the desktop's `agents.list` rows (`LocalAgentRow`, clamped at 0) into
+  `UnifiedAgentRow` and `AgentChipFacts`, and the row's spoken summary
+  (`AgentLineChips.eagleSummary`) ends with "N background tasks". Repository
+  desktop-session rows built from `AgentSession` alone carry no task count.
+- **Usage reset clocks (S061).** Already on Android since c0ee86dab1: Refresh
+  and pull to refresh send `agentops.usage` with `refresh: true`, opening the
+  screen is a plain read, and each meter shows `UsageFormat.resetClock`
+  ("Resets 3:45 PM", "Resets Tue 9:00 AM", "Resets Oct 26, 10:00 AM";
+  `UsageResetClockTest`).
+- **NEXUS in the You hub, scan range from the phone's address (S067).** Already
+  on Android with the NEXUS port (62f90e0718, sync row S046):
+  `HubCatalog.workspace` lists `Route.Nexus`, `/dashboard/nexus` opens it, and
+  the Scan tab fills an empty target from `LocalNetwork.current()` with a
+  "Use this network" row (`NexusTest.testLocalNetworkSuggestion`).
+
+## 37. Pinned Settings headings (2026-10-31)
+
+The user asked for the Settings header and the heading of the section being
+read to stay in view on every platform.
+
+- **iPhone.** `SettingsScreen` already keeps "Settings" in the navigation bar;
+  the search field now stays under it (`navigationBarDrawer(displayMode:
+  .always)`). Each `SettingsSection` reports its frame
+  (`settingsSectionFrame`, `SettingsSectionFramesKey`), and the page's scroll
+  view draws the heading of the section crossing its top edge over the page
+  (`settingsPinnedHeaders`, `SettingsPinnedHeader.swift`). The next section's
+  heading pushes it up and out (`SettingsPinnedSection.pick`). The pinned copy
+  is hidden from VoiceOver, which reads the real heading.
+- **Android.** `SettingsScreen` builds each section with
+  `LazyListScope.section`: the heading is a `stickyHeader` on the canvas
+  colour (`settings-section-header`) and the body an item after it, so Compose
+  pins and pushes it. The hub's search field (`SettingsHubScreen`) is a
+  `stickyHeader` too; the app bar sits outside the list and never scrolled.

@@ -444,6 +444,7 @@ function $(selector) {
   return container;
 }
 function repoIsLive(repo) { return Boolean(repo.cloneOnline); }
+function repoKey(repo) { return "acme/site"; }
 function repoLiveUrl() { return "/history"; }
 function loadingHtml(text) { return text; }
 function escapeHtml(value) { return String(value); }
@@ -526,6 +527,11 @@ function loadingHtml(value) { return value; }
 function escapeHtml(value) { return String(value); }
 function setRepoTabCount(tab, count) { tabCounts.push([tab, count]); }
 async function primeRepoViewReads() {}
+function repoViewKey(repo, view) { return view; }
+function repoStaleReadMark() { return 0; }
+function repoReconnectActive() { return false; }
+function finishRepoRead() {}
+function handleRepoReadFailure() { return false; }
 function setRepoCollectionCounts() {}
 function renderRepoCollection() { container.innerHTML = "rendered discussions"; }
 function setRepoRecordOpen() {}

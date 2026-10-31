@@ -1,5 +1,6 @@
 #pragma once
 
+#include "FastScratchDisk.h"
 #include "SafeDelete.h"
 
 #include <QDir>
@@ -26,35 +27,107 @@ inline bool isAgentRoot(const QString &dir)
            file.readLine().startsWith("# ForkMesh agent worktrees");
 }
 
-inline QString rootFolder(const QString &worktreeRoot)
+inline QString markerText()
+{
+    return QStringLiteral("# ForkMesh agent worktrees. Never part of the project.\n*\n");
+}
+
+inline QString legacyRootFolder(const QString &worktreeRoot)
 {
     return QDir(worktreeRoot).filePath(QStringLiteral(".scratch"));
 }
 
-inline QString folderFor(const QString &worktreePath)
+inline QString fastRootFolder(const QString &worktreeRoot)
+{
+    const QString parent = fastdisk::scratchParent(fastdisk::activeRoot(), worktreeRoot);
+    return parent.isEmpty() ? QString() : parent + QStringLiteral("/.scratch");
+}
+
+inline QString rootFolder(const QString &worktreeRoot)
+{
+    const QString fast = fastRootFolder(worktreeRoot);
+    return fast.isEmpty() ? legacyRootFolder(worktreeRoot) : fast;
+}
+
+inline QStringList rootFolders(const QString &worktreeRoot)
+{
+    QStringList roots;
+    const QString fast = fastRootFolder(worktreeRoot);
+    if (!fast.isEmpty())
+        roots << fast;
+    roots << legacyRootFolder(worktreeRoot);
+    return roots;
+}
+
+inline bool prepareFastParent(const QString &folder, const QString &worktreeRoot)
+{
+    const QString active = fastdisk::activeRoot();
+    if (active.isEmpty() || worktreeRoot.isEmpty() ||
+        !folder.startsWith(fastdisk::scratchBase(active) + QLatin1Char('/')))
+        return true;
+    const QString parent = QFileInfo(QFileInfo(folder).absolutePath()).absolutePath();
+    if (!QDir().mkpath(parent))
+        return false;
+    const auto writeIfMissing = [](const QString &path, const QString &text) {
+        if (QFileInfo::exists(path))
+            return true;
+        QFile file(path);
+        return file.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+               file.write(text.toUtf8()) >= 0;
+    };
+    return writeIfMissing(QDir(parent).filePath(QStringLiteral(".gitignore")), markerText()) &&
+           writeIfMissing(QDir(parent).filePath(fastdisk::ownerFileName()),
+                          QDir::cleanPath(QDir(worktreeRoot).absolutePath()) +
+                              QLatin1Char('\n'));
+}
+
+inline QStringList foldersFor(const QString &worktreePath)
 {
     const QString trimmed = worktreePath.trimmed();
     if (trimmed.isEmpty())
-        return QString();
+        return {};
     const QFileInfo info(QDir::cleanPath(QDir(trimmed).absolutePath()));
     const QString name = info.fileName();
     if (name.isEmpty() || name.startsWith(QLatin1Char('.')) ||
         QFileInfo(info.filePath() + QStringLiteral("/.git")).isDir() ||
         !isAgentRoot(info.absolutePath()))
-        return QString();
-    return QDir(rootFolder(info.absolutePath())).filePath(name);
+        return {};
+    QStringList folders;
+    for (const QString &root : rootFolders(info.absolutePath()))
+        folders << QDir(root).filePath(name);
+    return folders;
 }
 
-inline QStringList environment(const QString &folder)
+inline QString folderFor(const QString &worktreePath)
+{
+    const QStringList folders = foldersFor(worktreePath);
+    return folders.isEmpty() ? QString() : folders.first();
+}
+
+inline QStringList environment(const QString &folder, const QString &worktreePath = QString())
 {
     if (folder.isEmpty())
+        return {};
+    const QString worktreeRoot =
+        worktreePath.trimmed().isEmpty()
+            ? QString()
+            : QFileInfo(QDir::cleanPath(QDir(worktreePath).absolutePath())).absolutePath();
+    if (!prepareFastParent(folder, worktreeRoot))
         return {};
     const QString tmp = folder + QStringLiteral("/tmp");
     if (!QDir().mkpath(tmp))
         return {};
-    return {QStringLiteral("FORKMESH_AGENT_SCRATCH=") + folder,
-            QStringLiteral("TMPDIR=") + tmp, QStringLiteral("TMP=") + tmp,
-            QStringLiteral("TEMP=") + tmp};
+    QStringList env{QStringLiteral("FORKMESH_AGENT_SCRATCH=") + folder,
+                    QStringLiteral("TMPDIR=") + tmp, QStringLiteral("TMP=") + tmp,
+                    QStringLiteral("TEMP=") + tmp};
+    const QString active = fastdisk::activeRoot();
+    if (!active.isEmpty() && folder.startsWith(active + QLatin1Char('/'))) {
+        const QString ccache = fastdisk::ccacheDir(active);
+        if (QDir().mkpath(ccache))
+            env << QStringLiteral("CCACHE_DIR=") + ccache
+                << QStringLiteral("CCACHE_MAXSIZE=40G");
+    }
+    return env;
 }
 
 inline bool remove(const QString &folder)
@@ -67,17 +140,27 @@ inline bool remove(const QString &folder)
     return safedelete::removeTree(folder, info.absolutePath());
 }
 
+inline bool removeAll(const QString &worktreePath)
+{
+    bool ok = true;
+    for (const QString &folder : foldersFor(worktreePath))
+        ok = remove(folder) && ok;
+    return ok;
+}
+
 inline QStringList orphans(const QString &worktreeRoot)
 {
     QStringList found;
     if (!isAgentRoot(worktreeRoot))
         return found;
-    const QDir root(rootFolder(worktreeRoot));
-    for (const QString &name :
-         root.entryList(QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot)) {
-        const QFileInfo worktree(QDir(worktreeRoot).filePath(name));
-        if (!worktree.exists() && !worktree.isSymLink())
-            found << root.filePath(name);
+    for (const QString &rootPath : rootFolders(worktreeRoot)) {
+        const QDir root(rootPath);
+        for (const QString &name :
+             root.entryList(QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot)) {
+            const QFileInfo worktree(QDir(worktreeRoot).filePath(name));
+            if (!worktree.exists() && !worktree.isSymLink())
+                found << root.filePath(name);
+        }
     }
     return found;
 }

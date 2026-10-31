@@ -97,6 +97,44 @@ final class RemoteViewModelsTests: XCTestCase {
             AgentOpsClient.describe(code: "merge_failed"))
     }
 
+    @MainActor func testADirtyCheckoutOffersToSetAsideAndMerge() async {
+        let channel = FakeAgentOpsChannel()
+        channel.reply("agentops.prepare", confirmationJSON("merge", typeToConfirm: "agent/fix"))
+        channel.failures["agentops.merge"] = LocalControlException(
+            "checkout_dirty", message: "Can't merge agent/fix yet: notes.txt has uncommitted changes.")
+        let model = MergeCleanupModel(client: AgentOpsClient(channel: channel), sessionId: 7)
+        let refused = await model.mergeNow()
+        XCTAssertFalse(refused)
+        XCTAssertTrue(model.canSetAside)
+        XCTAssertFalse(model.conflicted)
+        XCTAssertEqual(
+            model.errorText, "The merge did not finish. Can't merge agent/fix yet: notes.txt has uncommitted changes.")
+        XCTAssertEqual(channel.params("agentops.merge")?["offerSetAside"], .bool(true))
+        XCTAssertNil(channel.params("agentops.merge")?["setAside"], "a plain merge never sets anything aside")
+
+        channel.failures["agentops.merge"] = nil
+        channel.reply(
+            "agentops.merge",
+            ["branch": "agent/fix", "merged": true, "setAside": "A copy of all uncommitted work is on branch wip/x."])
+        let ok = await model.mergeNow(setAside: true)
+        XCTAssertTrue(ok)
+        XCTAssertEqual(channel.params("agentops.merge")?["setAside"], .bool(true))
+        XCTAssertFalse(model.canSetAside)
+        XCTAssertEqual(model.setAsideNote, "A copy of all uncommitted work is on branch wip/x.")
+        XCTAssertEqual(
+            model.outcome.message(),
+            "Merged agent/fix and cleaned up. A copy of all uncommitted work is on branch wip/x.")
+    }
+
+    @MainActor func testOtherFailuresDoNotOfferToSetAside() async {
+        let channel = FakeAgentOpsChannel()
+        channel.reply("agentops.prepare", confirmationJSON("merge", typeToConfirm: "agent/fix"))
+        channel.failures["agentops.merge"] = LocalControlException("merge_failed", message: "main is on another branch")
+        let model = MergeCleanupModel(client: AgentOpsClient(channel: channel), sessionId: 7)
+        _ = await model.mergeNow()
+        XCTAssertFalse(model.canSetAside)
+    }
+
     @MainActor func testConflictFixSendsOnceAndExplainsAFailure() async {
         let fix = ConflictFixModel()
         let failed = await fix.send { throw FakeControlError(code: "not_connected") }

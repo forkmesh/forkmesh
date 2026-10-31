@@ -1,13 +1,13 @@
 # Reddit, the Reddit scout special agent
 
-The Reddit special agent (`.forkmesh/teammates/reddit-agent.json`) finds Reddit
+The Reddit special agent (`.forkmesh/workflows/reddit-agent.json`) finds Reddit
 threads where ForkMesh can honestly help someone and hands the operator a
 short brief. The operator writes and posts every word. This page is the
 agent's charter: its rules, its tools and the research behind them.
 
 | Piece | Path |
 | --- | --- |
-| Special agent definition | `.forkmesh/teammates/reddit-agent.json` |
+| Special agent definition | `.forkmesh/workflows/reddit-agent.json` |
 | Run playbook | `.forkmesh/shortcuts/scout-reddit-for-users.md` |
 | Skill | `.forkmesh/skills/reddit-engagement.skill` |
 | Reddit tool (read-only) | `tools/reddit_scout.py` |

@@ -65,10 +65,14 @@ def write_certsync_includes(root: Path, node, modes):
 
 
 @needs_caddy
+@pytest.mark.parametrize("calls", [False, True])
 @pytest.mark.parametrize("node", ["n1", "n2", "n3"])
 @pytest.mark.parametrize("modes", ["files", "acme", "internal", "mixed"])
-def test_rendered_caddyfile_adapts(tmp_path, node, modes):
+def test_rendered_caddyfile_adapts(tmp_path, node, modes, calls):
     fleet = render.load_fleet(FLEET, state_path=tmp_path / "none.json")
+    if calls:
+        fleet["calls"] = {"enabled": True}
+        fleet["app"]["optional_secrets"] = ["FORKMESH_CALLS_SECRET"]
     files, _ = render.render_core(fleet, node)
     render.write_tree(files, {}, tmp_path)
     if modes == "mixed":
@@ -92,6 +96,7 @@ def test_rendered_caddyfile_adapts(tmp_path, node, modes):
         assert '"127.0.0.1:8794"' in text
     else:
         assert "127.0.0.1:8794" not in text
+    assert ('"127.0.0.1:7881"' in text) is calls
 
 
 # --------------------------------------------------------------------------

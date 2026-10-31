@@ -754,6 +754,41 @@ def test_a_push_makes_the_others_fetch_but_not_the_pusher():
     assert [tuple(r) for r in rows] == [(pusher, 10), (other, 10)]
 
 
+def test_a_forced_push_names_the_forced_tips_for_every_replica():
+    world = World()
+    module = install(world)
+    repo_id = _created(world, module, {"readme": False})
+    pusher, other = CORES[1], CORES[2]
+    runtime = module._ReplicaRuntime(Env())
+    forced = [
+        {"ref": "refs/heads/feature", "old": "a" * 40, "new": "b" * 40},
+        {"ref": "refs/heads/forkmesh/pull/1", "old": "a" * 40,
+         "new": "c" * 40},
+        {"ref": "refs/heads/bad name", "old": "a" * 40, "new": "c" * 40},
+    ]
+    asyncio.run(hosted_repos.note_push(runtime, repo_id, pusher, NOW, forced))
+    row = world.db.execute(
+        "SELECT pushed_at,pushed_by FROM hosted_repos WHERE id=?",
+        (repo_id,)).fetchone()
+    assert tuple(row) == (NOW, pusher)
+    state = {repo_id: {"pushedAt": 5, "empty": False,
+                       "routingDigest": "b" * 64, "sizeBytes": 10}}
+    item = signed_replicas(module, other, state).data["repositories"][0]
+    assert item["forced"] == {"refs/heads/feature": "b" * 40}
+    assert item["sources"][0]["node"] == pusher
+
+
+def test_forced_tips_expire_and_stay_bounded():
+    keep = hosted_repos.FORCED_KEEP_MS
+    updates = [{"ref": "refs/heads/b%02d" % index, "old": "a" * 40,
+                "new": "%040x" % (index + 1)} for index in range(40)]
+    merged = hosted_repos.merge_forced({}, updates, NOW)
+    assert len(merged) == hosted_repos.FORCED_MAX
+    assert hosted_repos.forced_tips({"forced": merged}, NOW + keep) == {}
+    later = hosted_repos.merge_forced(merged, [updates[0]], NOW + 1)
+    assert later["refs/heads/b00"]["at"] == NOW + 1
+
+
 def _stats(commit, count, weeks=None):
     return {"commit": commit, "commitCount": count,
             "mergeCount": 2, "activityWeeks": weeks or [0] * 51 + [5],

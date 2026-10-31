@@ -1,4 +1,4 @@
-# Checks the special agents, shortcuts, skills and actions in .forkmesh on
+# Checks the workflows, special agents, shortcuts, skills and actions in .forkmesh on
 # every push that touches them. Added from the Workflows plug-in.
 name: Check ForkMesh files
 on:
@@ -15,6 +15,13 @@ jobs:
           for file in .forkmesh/teammates/*.json; do
             [ -e "$file" ] || continue
             python3 -c 'import json, sys, pathlib; p = pathlib.Path(sys.argv[1]); d = json.loads(p.read_text()); assert d.get("id") == p.stem, "id does not match the file name"; assert d.get("name") and d.get("specialty"), "name and specialty are required"' "$file"
+          done
+      - name: Check workflows
+        run: |
+          set -eu
+          for file in .forkmesh/workflows/*.json; do
+            [ -e "$file" ] || continue
+            python3 -c 'import json, sys, pathlib; p = pathlib.Path(sys.argv[1]); d = json.loads(p.read_text()); assert d.get("id") == p.stem, "id does not match the file name"; assert d.get("name"), "a workflow needs a name"; assert isinstance(d.get("nodes"), list), "a workflow needs a nodes list"; [a for a in d["nodes"] if a.get("type") == "agent.run" and not (a.get("params") or {}).get("specialty") and sys.exit(str(p) + ": a special agent step needs a specialty")]' "$file"
           done
       - name: Check shortcut and skill headers
         run: |

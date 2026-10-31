@@ -76,7 +76,7 @@ bool preferDarkSplash()
                           QStringLiteral("system")).toString();
     if (pref == QLatin1String("light"))
         return false;
-    if (pref == QLatin1String("dark"))
+    if (pref == QLatin1String("dark") || pref == QLatin1String("halloween"))
         return true;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (QGuiApplication::styleHints())
@@ -377,7 +377,8 @@ void StartupSplash::pump(bool force)
 {
     if (!isVisible())
         return;
-    if (m_hostPainting) {
+    if (m_hostPainting ||
+        (m_host && m_host->testAttribute(Qt::WA_WState_InPaintEvent))) {
         update(damageRect());
         return;
     }

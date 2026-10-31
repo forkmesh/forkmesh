@@ -20,7 +20,7 @@ public enum AuthCopy {
     public static let networkError = "Network error - please try again."
     public static let revokedDetail =
         "Your local repositories were kept. Sign in again to register this phone as a new node."
-    public static let welcomeHeadline = "Build open, sync easy"
+    public static let welcomeLines = ["Welcome to", "ForkMesh"]
     public static let welcomeBody =
         "Private relay chat, repository mirrors, and signed collaboration from your phone."
     public static let loginTitle = "Welcome back"

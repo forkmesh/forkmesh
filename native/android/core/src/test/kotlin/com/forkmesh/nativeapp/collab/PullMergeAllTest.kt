@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.collab
 
 import com.forkmesh.nativeapp.control.DesktopControlFamilyName
 import com.forkmesh.nativeapp.control.LocalControlException
+import com.forkmesh.nativeapp.model.Repository
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.assertFails
 import com.forkmesh.nativeapp.testing.expect
@@ -39,5 +40,10 @@ class PullMergeAllTest {
         expect(PullMergeAllRemote.message(LocalControlException("unknown_method")).contains("Update ForkMesh"))
         assertEq("An agent is already merging this repository's pull requests.", PullMergeAllRules.errorMessage("busy"))
         assertEq(DesktopControlFamilyName.Pulls, DesktopControlFamilyName.owning("pulls.prepare"))
+    }
+
+    fun testMirrorRowAsksForThePublicOwner() {
+        assertEq("forkmesh", PullMergeAllRules.owner(Repository("fmnext-n1", "forkmesh", publicOwner = "forkmesh")))
+        assertEq("alice", PullMergeAllRules.owner(Repository("alice", "tool")))
     }
 }

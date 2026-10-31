@@ -8,9 +8,6 @@ ROOT = Path(__file__).resolve().parents[2] / "app"
 WORLD = (ROOT.parent / "world/public/world/world.js").read_text(encoding="utf-8")
 CSS = (ROOT.parent / "world/public/world/world.css").read_text(encoding="utf-8")
 CHAT = (ROOT / "public/dashboard-chat.js").read_text(encoding="utf-8")
-CHAT_VIEW = (
-    ROOT / "public/dashboard/partials/views/chat.html"
-).read_text(encoding="utf-8")
 SCENE = world_scene_source()
 BUILD_BOARD = (ROOT.parent / "world" / "src" / "world_build_board.py").read_text(encoding="utf-8")
 
@@ -213,13 +210,8 @@ def test_todo_actions_are_bridged_into_the_chat_transcript():
     assert "notify: (message, options) => this.notice(message, options)," in WORLD
 
 
-def test_world_embed_has_separate_chat_and_task_buttons_and_routing_step():
-    assert 'id="fullChatSend"' in CHAT_VIEW
-    assert 'id="fullChatTaskSend"' in CHAT_VIEW
-    assert "data-dashboard-task-routing" in CHAT_VIEW
-    assert "data-dashboard-task-department" in CHAT_VIEW
-    assert "data-dashboard-task-team" in CHAT_VIEW
-    assert "data-dashboard-task-assignee" in CHAT_VIEW
+def test_world_chat_has_separate_chat_and_task_paths_and_routing_step():
+    assert 'id="fullChatSend"' in WORLD
     assert "wireTaskSend()" in CHAT
     assert 'fullAction.value = "task"' in CHAT
     assert "Choose a team, then assign this task to a person or an agent." in CHAT

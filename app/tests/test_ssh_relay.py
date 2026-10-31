@@ -435,7 +435,7 @@ def test_owner_push_sends_only_new_objects_and_is_bookkept(relay):
     assert _rev(relay["bare"], "refs/heads/topic") == new
     packs = list(front.received_packs)
     deleted = git(ALICE, "push", "origin", ":topic", cwd=work)
-    assert "deletion prohibited" in deleted.stderr
+    assert "a push does not delete branches" in deleted.stderr
     assert front.received_packs == packs
 
 

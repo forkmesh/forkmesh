@@ -588,6 +588,7 @@ export function functions({
     clearNeighbourFootprints();
     ctx.desertPlots?.userData?.replacePetals?.(worldMeshReplacedPetals());
     ctx.world.add(layer);
+    fns.registerWorldElement("instance-hexes", "Neighbour hexagons", "Districts", layer);
     ctx.world.userData.instanceHexLayer = layer;
     ctx.world.userData.instanceHexKey = key;
     ctx.groundSurfaces = null;

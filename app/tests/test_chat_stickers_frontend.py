@@ -15,10 +15,6 @@ SPEC = (REPO / "docs" / "app" / "chat-stickers.md").read_text(encoding="utf-8")
 CHAT = (PUBLIC / "chat.js").read_text(encoding="utf-8")
 DASHBOARD = (PUBLIC / "dashboard-chat.js").read_text(encoding="utf-8")
 CHAT_CSS = (PUBLIC / "chat.css").read_text(encoding="utf-8")
-PARTIAL = (PUBLIC / "dashboard" / "partials" / "views" / "chat.html").read_text(
-    encoding="utf-8")
-CHAT_PAGE = (PUBLIC / "dashboard" / "chat" / "index.html").read_text(
-    encoding="utf-8")
 WORLD_CSS = (REPO / "world" / "public" / "world" / "world.css").read_text(
     encoding="utf-8")
 
@@ -162,6 +158,9 @@ def _scenario(client):
       const runWhenConnected = (fn) => fn();
       const send = (plain) => sent.push(plain);
       const renderReactions = () => {};
+      const FRAME_AUTH = "frameAuth";
+      const frameAuth = { frameAuth: (plain) => plain?.frameAuth || null };
+      const sealedBy = (node) => ({ frameAuth: { sealed: true, node, acct: node, kid: "k".repeat(16), self: false } });
     """ + helpers + """
       const record = {
         id: "m1", channel: "#general", el: new El("div"),
@@ -169,9 +168,9 @@ def _scenario(client):
       };
       rows.set("m1", record);
       const frame = (extra) => ({ target: "m1", added: true, ...extra });
-      applyReaction(frame({ emoji: "\\u{1F389}", reactorId: "p1", reactorName: "Pat" }));
-      applyReaction(frame({ emoji: "\\u{1F389}", sticker: "party", reactorId: "p1", reactorName: "Pat" }));
-      applyReaction(frame({ emoji: "\\u2705", sticker: "lgtm", reactorId: "p2", reactorName: "Ana" }));
+      applyReaction(frame({ emoji: "\\u{1F389}", reactorId: "p1", sender: "Pat", reactorName: "Forged", ...sealedBy("p1") }));
+      applyReaction(frame({ emoji: "\\u{1F389}", sticker: "party", reactorId: "p1", sender: "Pat", reactorName: "Forged", ...sealedBy("p1") }));
+      applyReaction(frame({ emoji: "\\u2705", sticker: "lgtm", reactorId: "p2", sender: "Ana", reactorName: "Mallory", ...sealedBy("p2") }));
       applyReaction(frame({ emoji: "\\u2705", sticker: "lgtm", reactorId: "me", reactorName: "Me" }));
       applyReaction(frame({ emoji: "\\u{1F984}", sticker: "unicorn-from-the-future", reactorId: "p3", reactorName: "Kim" }));
       const badges = () => record.stickersEl.children.map((badge) => ({
@@ -274,9 +273,9 @@ def test_dashboard_chat_offers_add_sticker_only_on_forkmesh_messages():
 
 
 def test_sticker_styles_ship_with_every_web_surface():
-    for source in (CHAT_CSS, PARTIAL, CHAT_PAGE, WORLD_CSS):
+    for source in (CHAT_CSS, WORLD_CSS):
         assert ".chat-stickers" in source
         assert ".chat-sticker-picker" in source
         assert "rotate(var(--chat-sticker-tilt, 0deg))" in source
     assert ".chat-msg.has-stickers .chat-message-actions" in CHAT_CSS
-    assert ".chat-message-row.has-stickers" in CHAT_PAGE
+    assert ".chat-message-row.has-stickers" in WORLD_CSS

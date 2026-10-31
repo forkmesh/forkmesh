@@ -144,6 +144,51 @@ open class InboxService(
         return (answer["number"] as? Number)?.toInt() ?: 0
     }
 
+    open fun openRemotePull(
+        fork: com.forkmesh.nativeapp.model.RemoteFork,
+        title: String,
+        base: String,
+        head: String,
+        patch: String,
+        commits: String = "",
+        description: String = "",
+        authorName: String = "",
+    ): Int {
+        val url = fork.pullsUrl ?: throw DartException("invalid_remote_fork")
+        val identity = signer()
+        val author = identity.publicKeyB64url
+        val ts = clock()
+        val contentHash = sha256Hex(listOf(title, base, head, patch, commits).joinToString(NUL))
+        val canonical = eventSigningPrefix("pull-event", fork.owner, fork.name) + "$author\n$ts\n$contentHash"
+        val sig = identity.sign(canonical.toByteArray(Charsets.UTF_8))
+        val body = linkedMapOf(
+            "owner" to fork.owner,
+            "repo" to fork.name,
+            "pull" to linkedMapOf(
+                "title" to title,
+                "base" to base,
+                "head" to head,
+                "patch" to patch,
+                "commits" to commits,
+                "description" to description,
+                "author" to author,
+                "authorName" to authorName,
+                "ts" to ts,
+                "sig" to sig,
+            ),
+        )
+        val answer = try {
+            post(url, body)
+        } catch (error: DartException) {
+            throw error
+        } catch (error: InterruptedException) {
+            throw error
+        } catch (_: Exception) {
+            throw DartException("remote_unreachable")
+        }
+        return (answer["number"] as? Number)?.toInt() ?: 0
+    }
+
     private fun pullCommentAnchorFields(ev: Map<String, Any?>): List<String> {
         val patchset = jsonText(ev["patchset"])
         val anchorLines = jsonText(ev["anchorLines"])

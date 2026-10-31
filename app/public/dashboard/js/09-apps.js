@@ -683,6 +683,27 @@
     await installAllAppsPlugins();
   }
 
+  async function runAppsInstallRequest() {
+    const params = new URLSearchParams(location.search);
+    const id = params.get("install");
+    if (!id || appsPlugins.error) return;
+    params.delete("install");
+    const query = params.toString();
+    history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+    const row = appsPluginRows().find((item) => item.id === id);
+    if (!row) {
+      setAppsNotice("[data-apps-plugins-notice]", `${id} can't be installed for your account here. Open Market in the ForkMesh desktop or phone app.`, true);
+      return;
+    }
+    const name = row.name || row.id;
+    if (appsPlugins.installed.get(row.id) === true) {
+      setAppsNotice("[data-apps-plugins-notice]", `${name} is already installed.`);
+      return;
+    }
+    if (!window.confirm(`Install ${name} for your account? It shows on the web, the desktop app and the mobile app, and you can remove it later.`)) return;
+    await setAppsPlugin(row, true);
+  }
+
   async function loadAppsPlugins() {
     if (!$("[data-apps-plugins]")) return;
     try {
@@ -747,7 +768,7 @@
         renderAppsPlugins();
       });
     }
-    void loadAppsPlugins().then(runAppsInstallAllRequest);
+    void loadAppsPlugins().then(runAppsInstallAllRequest).then(runAppsInstallRequest);
     void loadInstalledApps();
     void loadAppDirectory();
     void loadAppReviewQueue().then(() => {

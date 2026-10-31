@@ -18,6 +18,7 @@ struct AgentLoginTerminalScreen: View {
     let provider: String
     @State private var terminal: AgentLoginTerminal?
     @State private var input: String = ""
+    @State private var ctrl: Bool = false
     @State private var notice: FmNotice?
 
     init(node: String, provider: String) {
@@ -92,7 +93,7 @@ struct AgentLoginTerminalScreen: View {
                 }
                 TerminalGridView(terminal: terminal)
                     .id(ObjectIdentifier(terminal))
-                TerminalKeyBar(terminal: terminal, onPaste: {
+                TerminalKeyBar(terminal: terminal, ctrl: $ctrl, onPaste: {
                     if let text = UIPasteboard.general.string, !text.isEmpty {
                         terminal.paste(text)
                     }
@@ -133,6 +134,7 @@ struct AgentLoginTerminalScreen: View {
                 .fmMono(size: FmType.small, color: fm.textPrimary)
                 .submitLabel(.send)
                 .onSubmit { submitLine() }
+                .terminalChords(text: $input, ctrl: $ctrl, terminal: terminal)
             Button {
                 submitLine()
             } label: {
@@ -264,26 +266,119 @@ struct TerminalLinkBar: View {
 
 /// The keys a phone keyboard does not have.
 struct TerminalKeyBar: View {
+    @Environment(\.fmPalette) private var fm
     let terminal: any StreamedTerminal
+    @Binding var ctrl: Bool
     let onPaste: () -> Void
 
-    private static let keys: [(String, TerminalKey)] = [
-        ("Esc", .escape), ("Tab", .tab), ("↑", .up), ("↓", .down), ("←", .left), ("→", .right),
-        ("Enter", .enter), ("⌫", .backspace), ("Ctrl-C", .ctrlC),
-    ]
-
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: FmSpace.x2) {
-                ForEach(Array(TerminalKeyBar.keys.indices), id: \.self) { (index: Int) in
-                    let entry: (String, TerminalKey) = TerminalKeyBar.keys[index]
-                    FmToneButton(label: entry.0, onPressed: terminal.closed ? nil : { terminal.key(entry.1) })
+        Grid(horizontalSpacing: FmSpace.x1, verticalSpacing: FmSpace.x1) {
+            GridRow {
+                button("Esc") { send(.escape) }
+                button("Tab") { send(.tab) }
+                button("Ctrl", spoken: "Control", latched: ctrl) { ctrl.toggle() }
+                button("^C", spoken: "Control-C") { send(.ctrlC) }
+                button("⌫", spoken: "Backspace") { send(.backspace) }
+                button("", icon: "content_paste", spoken: "Paste") {
+                    ctrl = false
+                    onPaste()
                 }
-                FmToneButton(label: "Paste", icon: "content_paste", onPressed: terminal.closed ? nil : onPaste)
             }
-            .padding(.horizontal, FmSpace.x3)
-            .padding(.vertical, FmSpace.x2)
+            GridRow {
+                button("←", spoken: "Left") { send(.left) }
+                button("↑", spoken: "Up") { send(.up) }
+                button("↓", spoken: "Down") { send(.down) }
+                button("→", spoken: "Right") { send(.right) }
+                button("Enter") { send(.enter) }
+                    .gridCellColumns(2)
+            }
         }
+        .padding(.horizontal, FmSpace.x3)
+        .padding(.vertical, FmSpace.x2)
+        .accessibilityIdentifier("terminal-key-bar")
+    }
+
+    private func send(_ key: TerminalKey) {
+        if ctrl {
+            ctrl = false
+            terminal.input(terminalKeyBytes(key, appCursorKeys: terminal.screen.appCursorKeys, control: true))
+        } else {
+            terminal.key(key)
+        }
+    }
+
+    private func button(
+        _ label: String, icon: String? = nil, spoken: String? = nil, latched: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        let color: Color = latched ? Color.white : fm.textSecondary
+        return Button {
+            FmHaptics.tap()
+            action()
+        } label: {
+            Group {
+                if let icon = icon {
+                    FmIcon(icon, size: 18, color: color)
+                } else {
+                    Text(label)
+                        .fmText(.labelMedium, color: color, height: 1)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .background(latched ? fm.accent : fm.bgOverlay)
+            .clipShape(FmRoundedShape(radius: FmRadius.md))
+        }
+        .buttonStyle(FmPressStyle(highlight: color.opacity(0.12), cornerRadius: FmRadius.md))
+        .disabled(terminal.closed)
+        .opacity(terminal.closed ? 0.45 : 1)
+        .accessibilityLabel(Text(spoken ?? label))
+        .accessibilityAddTraits(latched ? .isSelected : [])
+    }
+}
+
+struct TerminalChordInput: ViewModifier {
+    @Binding var text: String
+    @Binding var ctrl: Bool
+    let terminal: (any StreamedTerminal)?
+    @FocusState private var focused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focused($focused)
+            .onChange(of: ctrl) { (_: Bool, on: Bool) in
+                if on {
+                    focused = true
+                }
+            }
+            .onChange(of: text) { (old: String, new: String) in
+                guard ctrl, new.count > old.count, let typed = TerminalChordInput.typed(old, new) else {
+                    return
+                }
+                ctrl = false
+                let bytes: String = terminalControlBytes(String(typed))
+                if bytes.isEmpty {
+                    return
+                }
+                text = old
+                terminal?.input(bytes)
+            }
+    }
+
+    static func typed(_ old: String, _ new: String) -> Character? {
+        let before: [Character] = Array(old)
+        let after: [Character] = Array(new)
+        for index in after.indices where index >= before.count || before[index] != after[index] {
+            return after[index]
+        }
+        return nil
+    }
+}
+
+extension View {
+    func terminalChords(text: Binding<String>, ctrl: Binding<Bool>, terminal: (any StreamedTerminal)?) -> some View {
+        modifier(TerminalChordInput(text: text, ctrl: ctrl, terminal: terminal))
     }
 }
 
@@ -339,6 +434,9 @@ struct TerminalGridView: View {
     let terminal: any StreamedTerminal
     @State private var resizeTask: Task<Void, Never>?
     @State private var pitch: CGFloat = TerminalGridView.cellWidth
+    @State private var bottomRow: Int?
+    @State private var following: Bool = true
+    @State private var jump: Int = 0
 
     private static let fontSize: CGFloat = FmType.meta
     private static let lineHeight: CGFloat = (FmType.meta * 1.25).rounded(.up)
@@ -399,14 +497,39 @@ struct TerminalGridView: View {
                             .id(index)
                     }
                 }
+                .scrollTargetLayout()
                 .frame(width: width, alignment: .leading)
                 .padding(FmSpace.x2)
             }
-            .onChange(of: all.count) { (_: Int, count: Int) in
-                reader.scrollTo(count - 1, anchor: .bottom)
+            .defaultScrollAnchor(.bottom)
+            .scrollPosition(id: $bottomRow, anchor: .bottom)
+            .onChange(of: bottomRow) { (_: Int?, row: Int?) in
+                following = row.map { $0 >= all.count - 2 } ?? true
             }
             .onChange(of: terminal.revision) { (_: Int, _: Int) in
+                if following {
+                    reader.scrollTo(all.count - 1, anchor: .bottom)
+                }
+            }
+            .onChange(of: jump) { (_: Int, _: Int) in
+                following = true
                 reader.scrollTo(all.count - 1, anchor: .bottom)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !following {
+                    Button {
+                        FmHaptics.tap()
+                        jump += 1
+                    } label: {
+                        FmIcon("arrow_downward", size: 20, color: Color.white)
+                            .frame(width: 40, height: 40)
+                            .background(Circle().fill(fm.accent))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(FmSpace.x3)
+                    .accessibilityLabel(Text("Scroll to the newest output"))
+                    .accessibilityIdentifier("terminal-scroll-to-bottom")
+                }
             }
         }
     }

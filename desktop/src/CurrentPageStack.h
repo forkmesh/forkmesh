@@ -6,6 +6,7 @@
 #include <QSizePolicy>
 #include <QStackedWidget>
 #include <QVariant>
+#include <QVector>
 #include <QWidget>
 
 // A QStackedWidget that takes the size of the page it is showing.
@@ -64,18 +65,36 @@ protected:
     {
         // Pages are added after construction, and a page's own contents can
         // change what it wants; re-apply on both.
-        if (e->type() == QEvent::ChildAdded || e->type() == QEvent::LayoutRequest)
+        if (e->type() == QEvent::ChildAdded ||
+            (e->type() == QEvent::LayoutRequest && !pagePoliciesInSync()))
             syncPagePolicies();
         return QStackedWidget::event(e);
     }
 
 private:
+    bool pagePoliciesInSync() const
+    {
+        if (currentIndex() != m_syncedCurrent || count() != m_syncedPages.size())
+            return false;
+        for (int i = 0; i < m_syncedPages.size(); ++i) {
+            QWidget *page = widget(i);
+            if (page != m_syncedPages.at(i) ||
+                (page && page->sizePolicy() != m_syncedPolicies.at(i)))
+                return false;
+        }
+        return true;
+    }
+
     void syncPagePolicies()
     {
         static const char *kSaved = "forkmeshStackPagePolicy";
         const int current = currentIndex();
+        m_syncedCurrent = current;
+        m_syncedPages.resize(count());
+        m_syncedPolicies.resize(count());
         for (int i = 0; i < count(); ++i) {
             QWidget *page = widget(i);
+            m_syncedPages[i] = page;
             if (!page)
                 continue;
             QVariant saved = page->property(kSaved);
@@ -87,6 +106,11 @@ private:
                                     ? saved.value<QSizePolicy>()
                                     : QSizePolicy(QSizePolicy::Ignored,
                                                   QSizePolicy::Ignored));
+            m_syncedPolicies[i] = page->sizePolicy();
         }
     }
+
+    int m_syncedCurrent = -2;
+    QVector<QWidget *> m_syncedPages;
+    QVector<QSizePolicy> m_syncedPolicies;
 };

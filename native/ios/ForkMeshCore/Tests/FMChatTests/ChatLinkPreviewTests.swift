@@ -5,6 +5,8 @@ import XCTest
 
 @testable import FMChat
 
+let publicDNS: ChatHostResolver = { _ in [[93, 184, 216, 34]] }
+
 final class ChatLinkPreviewTests: XCTestCase {
     func testCatalogCoversFiftySitesWithDistinctKeys() {
         XCTAssertGreaterThanOrEqual(ChatLinkSites.all.count, 50)
@@ -108,7 +110,7 @@ final class ChatLinkPreviewTests: XCTestCase {
     func testYouTubeUsesOEmbedAndThumbnail() async {
         let http = FakeHTTPClient()
         http.on(path: "/oembed", json: .object(["title": "Example Video", "author_name": "Example Channel"]))
-        let service = ChatLinkPreviewService(http: http, clock: FixedClock(Date(timeIntervalSince1970: 1_000)))
+        let service = ChatLinkPreviewService(http: http, clock: FixedClock(Date(timeIntervalSince1970: 1_000)), resolver: publicDNS)
         let url = URL(string: "https://www.youtube.com/watch?v=aBcDeFgHi12&t=462s")!
         await service.load(url)
         let preview = service.preview(for: url)
@@ -137,7 +139,7 @@ final class ChatLinkPreviewTests: XCTestCase {
         http.on(where: { $0.url.host == "evil.example.com" }) { _ in
             HTTPResponse(status: 302, headers: ["location": "http://192.168.1.1/admin"], text: "")
         }
-        let service = ChatLinkPreviewService(http: http)
+        let service = ChatLinkPreviewService(http: http, resolver: publicDNS)
         let short = URL(string: "https://short.example.com/x")!
         await service.load(short)
         XCTAssertEqual(service.preview(for: short)?.title, "A post")
@@ -160,7 +162,7 @@ final class ChatLinkPreviewTests: XCTestCase {
             "title": "Git", "extract": "Git is a distributed version control system.", "description": "Version control software",
             "thumbnail": .object(["source": "https://upload.wikimedia.org/git.png"]),
         ]))
-        let service = ChatLinkPreviewService(http: http)
+        let service = ChatLinkPreviewService(http: http, resolver: publicDNS)
         let track = URL(string: "https://open.spotify.com/track/123")!
         await service.load(track)
         XCTAssertEqual(service.preview(for: track)?.title, "Track")
@@ -178,11 +180,11 @@ final class ChatLinkPreviewTests: XCTestCase {
         http.on(where: { _ in true }) { _ in
             HTTPResponse(status: 200, headers: ["content-type": "image/png"], body: Data(count: ChatLinkPreviewService.maxImageBytes + 1))
         }
-        let service = ChatLinkPreviewService(http: http)
+        let service = ChatLinkPreviewService(http: http, resolver: publicDNS)
         let data = await service.imageData("https://img.example.com/huge.png")
         XCTAssertNil(data)
         let store = InMemoryKeyValueStore()
-        let off = ChatLinkPreviewService(http: http, store: store)
+        let off = ChatLinkPreviewService(http: http, store: store, resolver: publicDNS)
         off.setEnabled(false)
         XCTAssertEqual(store.bool(forKey: ChatLinkPreviewService.enabledKey), false)
         let before = http.requests.count
@@ -205,7 +207,7 @@ final class ChatLinkPreviewTests: XCTestCase {
                 "is_answered": true, "owner": .object(["display_name": "GManNickG"]),
             ])]),
         ]))
-        let service = ChatLinkPreviewService(http: http)
+        let service = ChatLinkPreviewService(http: http, resolver: publicDNS)
         let shy = URL(string: "https://shy.example.com/post")!
         await service.load(shy)
         XCTAssertEqual(service.preview(for: shy)?.title, "Late tags")
@@ -218,6 +220,117 @@ final class ChatLinkPreviewTests: XCTestCase {
         XCTAssertEqual(http.requests.last?.url.query, "site=stackoverflow&filter=default")
         XCTAssertEqual(
             ChatLinkPreviewParsing.stackExchangeQuestion(URL(string: "https://unix.stackexchange.com/questions/4/x")!)?.site, "unix")
+    }
+
+    func testResolvedAddressesMustAllBePublic() {
+        func v6(_ text: String) -> [UInt8] { MeshAddress(text)!.rawAddress }
+        XCTAssertTrue(ChatLinkAddresses.isPublic([93, 184, 216, 34]))
+        for privateV4: [UInt8] in [[10, 0, 0, 1], [127, 0, 0, 1], [169, 254, 169, 254], [192, 168, 1, 1], [172, 16, 0, 1],
+            [100, 64, 0, 1], [0, 0, 0, 0], [224, 0, 0, 1], [255, 255, 255, 255]]
+        {
+            XCTAssertFalse(ChatLinkAddresses.isPublic(privateV4), "\(privateV4)")
+        }
+        XCTAssertTrue(ChatLinkAddresses.isPublic(v6("2606:4700::1111")))
+        for text in ["::1", "::", "fe80::1", "fd00::1", "fc00::1", "ff02::1", "fec0::1", "2001:db8::1", "::ffff:10.0.0.1",
+            "64:ff9b::a00:1", "2002:0a00:0001::1", "2001::1"]
+        {
+            XCTAssertFalse(ChatLinkAddresses.isPublic(v6(text)), text)
+        }
+        XCTAssertTrue(ChatLinkAddresses.isPublic(v6("::ffff:93.184.216.34")))
+        XCTAssertTrue(ChatLinkAddresses.isPublic(v6("64:ff9b::5db8:d822")))
+        XCTAssertFalse(ChatLinkAddresses.allPublic([]), "a name that does not resolve is refused")
+        XCTAssertFalse(ChatLinkAddresses.allPublic([[93, 184, 216, 34], [10, 0, 0, 1]]), "one private answer is enough to refuse")
+        XCTAssertFalse(ChatLinkAddresses.isPublic([1, 2, 3]))
+    }
+
+    @MainActor
+    func testANameThatResolvesPrivatelyIsNeverFetchedNorRedirectedTo() async {
+        let http = FakeHTTPClient()
+        http.on(where: { _ in true }) { request in
+            if request.url.host == "jump.example.com" {
+                return HTTPResponse(status: 302, headers: ["location": "https://rebind.example.com/admin"], text: "")
+            }
+            return HTTPResponse(
+                status: 200, headers: ["content-type": "text/html"], text: "<head><meta property=og:title content=\"Inside\"></head>")
+        }
+        let addresses: [String: [[UInt8]]] = [
+            "intranet.example.com": [[10, 0, 0, 5]],
+            "rebind.example.com": [[127, 0, 0, 1]],
+            "jump.example.com": [[93, 184, 216, 34]],
+            "v6local.example.com": [MeshAddress("fe80::1")!.rawAddress],
+            "mixed.example.com": [[93, 184, 216, 34], MeshAddress("::1")!.rawAddress],
+            "public.example.com": [MeshAddress("2606:4700::1111")!.rawAddress],
+        ]
+        let service = ChatLinkPreviewService(http: http, resolver: { host in addresses[host] ?? [] })
+        for host in ["intranet", "v6local", "mixed", "unknown"] {
+            let url = URL(string: "https://\(host).example.com/")!
+            await service.load(url)
+            XCTAssertEqual(service.state(for: url), .none, host)
+        }
+        let jump = URL(string: "https://jump.example.com/go")!
+        await service.load(jump)
+        XCTAssertEqual(service.state(for: jump), .none)
+        XCTAssertTrue(http.requests.contains { $0.url.host == "jump.example.com" })
+        XCTAssertFalse(
+            http.requests.contains { ["intranet.example.com", "rebind.example.com", "v6local.example.com", "mixed.example.com"].contains($0.url.host ?? "") },
+            "\(http.requests.map(\.url))")
+        let fine = URL(string: "https://public.example.com/")!
+        await service.load(fine)
+        XCTAssertEqual(service.preview(for: fine)?.title, "Inside")
+        let image = await service.imageData("https://intranet.example.com/a.png")
+        XCTAssertNil(image)
+    }
+
+    @MainActor
+    func testThePreviewCacheBelongsToOneProject() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fm-link-projects-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let http = FakeHTTPClient()
+        http.on(where: { _ in true }) { _ in
+            HTTPResponse(status: 200, headers: ["content-type": "text/html"], text: "<head><meta property=og:title content=\"Alpha\"></head>")
+        }
+        var project = "alpha"
+        let service = ChatLinkPreviewService(
+            http: http, file: { dir.appendingPathComponent(ChatLinkPreviewService.fileName(project: project)) },
+            resolver: publicDNS)
+        let url = URL(string: "https://example.org/post")!
+        await service.load(url)
+        XCTAssertEqual(service.preview(for: url)?.title, "Alpha")
+        service.leaveProject()
+        let alphaFile = dir.appendingPathComponent(ChatLinkPreviewService.fileName(project: "alpha"))
+        let saved = await waitUntil { FileManager.default.fileExists(atPath: alphaFile.path) }
+        XCTAssertTrue(saved)
+
+        project = "beta"
+        service.warm()
+        XCTAssertEqual(service.state(for: url), .idle, "beta never sees what alpha looked at")
+        service.leaveProject()
+        project = "alpha"
+        service.warm()
+        XCTAssertEqual(service.preview(for: url)?.title, "Alpha")
+        XCTAssertNotEqual(ChatLinkPreviewService.fileName(project: "alpha"), ChatLinkPreviewService.fileName(project: "beta"))
+    }
+
+    @MainActor
+    func testOnlyOwnAndPrivateMessagesFetchPreviewsByThemselves() async throws {
+        let h = try await RelayHarness.start()
+        let hub = ChatHub(relay: h.relay, mesh: makeMesh(h.device))
+        let office = OfficeChannelService(
+            api: FakeAccountApi(), connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.forkmesh.com") }, selfId: { "me-node" }, displayName: { "Me" })
+        office.restore([
+            "channels": [
+                ["id": .string(String(repeating: "a", count: 32)), "name": "town", "visibility": "public"],
+                ["id": .string(String(repeating: "b", count: 32)), "name": "team", "visibility": "private"],
+            ]
+        ])
+        hub.office = office
+        XCTAssertFalse(hub.autoLoadsLinkPreviews(in: "#general", fromSelf: false), "world-general is everyone's")
+        XCTAssertFalse(hub.autoLoadsLinkPreviews(in: meshConversation, fromSelf: false))
+        XCTAssertFalse(hub.autoLoadsLinkPreviews(in: "#office/town", fromSelf: false), "a public channel")
+        XCTAssertTrue(hub.autoLoadsLinkPreviews(in: "#office/team", fromSelf: false))
+        XCTAssertTrue(hub.autoLoadsLinkPreviews(in: "direct:" + String(repeating: "c", count: 32), fromSelf: false))
+        XCTAssertTrue(hub.autoLoadsLinkPreviews(in: "#general", fromSelf: true), "your own links load as before")
     }
 
     func testCacheRoundTrip() throws {

@@ -282,6 +282,28 @@ public final class ChatWorkspace {
         store?.set(blocked, forKey: key("blocked"))
     }
 
+    public func replaceBlocked(_ names: [String]) {
+        var next: [String] = []
+        for raw in names {
+            let name = ChatWorkspace.blockKey(raw)
+            if !name.isEmpty && !next.contains(name) { next.append(name) }
+        }
+        next = Array(next.suffix(ChatWorkspace.maxBlocked))
+        if next == blocked { return }
+        blocked = next
+        store?.set(blocked, forKey: key("blocked"))
+    }
+
+    public func purgeConversations(where isPurged: (String) -> Bool) {
+        let named = Set(starred).union(drafts.keys).union(muted).union(mentionsOnly).union(bookmarks.keys).union(canvases.keys)
+        for conversation in named where isPurged(conversation) { forget(conversation: conversation) }
+        for item in saved where isPurged(item.conversation) { unsave(item.id) }
+        if !lastConversation.isEmpty && isPurged(lastConversation) {
+            lastConversation = ""
+            store?.set("", forKey: key("lastConversation"))
+        }
+    }
+
     public func removeConversation(_ conversation: String, at date: Date) {
         if conversation.isEmpty { return }
         removedConversations[conversation] = date

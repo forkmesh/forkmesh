@@ -1,13 +1,19 @@
 #include "DesktopProcessView.h"
 
 #include "FleetVisualizer.h"
+#include "FontSizing.h"
 
 #include <QDateTime>
 #include <QFontMetricsF>
 #include <QLocale>
+#include <QMap>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QResizeEvent>
+#include <QSet>
+#include <QSignalBlocker>
+#include <QSlider>
 #include <QTimer>
 #include <QToolTip>
 
@@ -22,6 +28,10 @@ constexpr qreal kMargin = 12.0;
 constexpr qreal kGap = 10.0;
 constexpr qreal kHeaderHeight = 44.0;
 constexpr qreal kGaugesHeight = 84.0;
+constexpr qreal kGovernanceHeight = 58.0;
+constexpr qreal kSliderHeight = 20.0;
+constexpr int kGovernanceCommitMs = 500;
+constexpr qreal kMachineHeight = 132.0;
 constexpr qreal kSharesHeight = 76.0;
 constexpr qreal kTableRow = 36.0;
 constexpr int kHistory = 60;
@@ -39,6 +49,27 @@ QString percentText(double value)
     if (value >= 10.0)
         return QStringLiteral("%1%").arg(qRound(value));
     return QStringLiteral("%1%").arg(value, 0, 'f', 1);
+}
+
+QString ghzText(double khz)
+{
+    if (khz <= 0)
+        return QStringLiteral("-");
+    return QStringLiteral("%1 GHz").arg(khz / 1e6, 0, 'f', 1);
+}
+
+QString tempText(double celsius)
+{
+    return QStringLiteral("%1 \u00b0C").arg(qRound(celsius));
+}
+
+QString kindName(const QString &kind)
+{
+    if (kind == QLatin1String("P"))
+        return QStringLiteral("performance");
+    if (kind == QLatin1String("E"))
+        return QStringLiteral("efficiency");
+    return QString();
 }
 
 QString ageText(qint64 seconds)
@@ -105,13 +136,49 @@ DesktopProcessView::DesktopProcessView(QWidget *parent) : QWidget(parent)
     m_timer = new QTimer(this);
     m_timer->setInterval(kSampleMs);
     connect(m_timer, &QTimer::timeout, this, [this] { sampleNow(); });
+    auto makeSlider = [this](const QString &name, const QString &label,
+                             const QString &tip) {
+        auto *slider = new QSlider(Qt::Horizontal, this);
+        slider->setObjectName(name);
+        slider->setAccessibleName(label);
+        slider->setToolTip(tip);
+        slider->setSingleStep(1);
+        slider->setPageStep(5);
+        slider->setCursor(Qt::PointingHandCursor);
+        slider->hide();
+        connect(slider, &QSlider::valueChanged, this, [this] { previewGovernance(); });
+        connect(slider, &QSlider::sliderReleased, this, [this] { commitGovernance(); });
+        return slider;
+    };
+    m_cpuSlider = makeSlider(
+        QStringLiteral("desktopCpuGovernanceSlider"), QStringLiteral("Agent CPU limit"),
+        QStringLiteral("Drag to set how much of this computer's CPU agents, their "
+                       "builds and tests may use. The rest is kept for the desktop "
+                       "and your other programs, and the governor lowers the agents' "
+                       "cap further while other programs are busy."));
+    m_memorySlider = makeSlider(
+        QStringLiteral("desktopMemoryGovernanceSlider"),
+        QStringLiteral("Agent memory limit"),
+        QStringLiteral("Drag to set how much memory agents may use before they are "
+                       "slowed down. The rest is kept for the desktop and your other "
+                       "programs; under a memory stall the newest build is paused "
+                       "until it clears."));
+    m_governanceCommit = new QTimer(this);
+    m_governanceCommit->setSingleShot(true);
+    m_governanceCommit->setInterval(kGovernanceCommitMs);
+    connect(m_governanceCommit, &QTimer::timeout, this, [this] {
+        if (!m_cpuSlider->isSliderDown() && !m_memorySlider->isSliderDown())
+            commitGovernance();
+    });
     setMinimumHeight(sizeHint().height());
 }
 
 QSize DesktopProcessView::sizeHint() const
 {
-    const qreal height = 2 * kMargin + kHeaderHeight + kGaugesHeight +
-                         kSharesHeight + 22 + kTableRow * (kRows + 1) + 3 * kGap;
+    qreal height = 2 * kMargin + kHeaderHeight + kGaugesHeight + kMachineHeight +
+                   kSharesHeight + 22 + kTableRow * (kRows + 1) + 4 * kGap;
+    if (governanceShown())
+        height += kGovernanceHeight + kGap;
     return QSize(900, int(std::ceil(height)));
 }
 
@@ -136,6 +203,14 @@ void DesktopProcessView::hideEvent(QHideEvent *event)
 {
     QWidget::hideEvent(event);
     m_timer->stop();
+    if (m_governanceCommit->isActive())
+        commitGovernance();
+}
+
+void DesktopProcessView::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    placeGovernanceSliders();
 }
 
 void DesktopProcessView::sampleNow()
@@ -143,6 +218,7 @@ void DesktopProcessView::sampleNow()
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     desktopprocs::Snapshot snapshot =
         sampleSource ? sampleSource(now) : m_sampler.sample(now);
+    refreshGovernance();
     setSnapshot(snapshot);
     if (sampleSource)
         return;
@@ -169,7 +245,124 @@ void DesktopProcessView::setSnapshot(const desktopprocs::Snapshot &snapshot)
         if (memory >= 0.0)
             pushHistory(m_memHistory, memory);
     }
+    placeGovernanceSliders();
     update();
+}
+
+bool DesktopProcessView::governanceShown() const
+{
+    return governanceSource && m_governance.available;
+}
+
+qreal DesktopProcessView::gaugeWidth(qreal areaWidth) const
+{
+    return (areaWidth - 4 * kGap) / 5;
+}
+
+QRectF DesktopProcessView::governanceArea() const
+{
+    const QRectF inner = QRectF(rect()).adjusted(kMargin, kMargin, -kMargin, -kMargin);
+    return QRectF(inner.left(), inner.top() + kHeaderHeight + kGap + kGaugesHeight + kGap,
+                  inner.width(), kGovernanceHeight);
+}
+
+void DesktopProcessView::refreshGovernance()
+{
+    if (m_governanceCommit->isActive() || m_cpuSlider->isSliderDown() ||
+        m_memorySlider->isSliderDown())
+        return;
+    m_governance = governanceSource ? governanceSource(-1, -1) : Governance();
+    {
+        const QSignalBlocker cpuBlocker(m_cpuSlider);
+        const QSignalBlocker memoryBlocker(m_memorySlider);
+        for (QSlider *slider : {m_cpuSlider, m_memorySlider})
+            slider->setRange(100 - m_governance.maxReservePercent,
+                             100 - m_governance.minReservePercent);
+        m_cpuSlider->setValue(100 - m_governance.cpuReservePercent);
+        m_memorySlider->setValue(100 - m_governance.memoryReservePercent);
+    }
+    setMinimumHeight(sizeHint().height());
+    placeGovernanceSliders();
+    update();
+}
+
+void DesktopProcessView::placeGovernanceSliders()
+{
+    const bool shown = governanceShown() && m_snapshot.valid;
+    m_cpuSlider->setVisible(shown);
+    m_memorySlider->setVisible(shown);
+    if (!shown)
+        return;
+    const QRectF area = governanceArea();
+    const qreal width = gaugeWidth(area.width());
+    const qreal top = area.top() + QFontMetricsF(font()).height() + 2;
+    m_cpuSlider->setGeometry(
+        QRectF(area.left() + 10, top, width - 20, kSliderHeight).toRect());
+    m_memorySlider->setGeometry(
+        QRectF(area.left() + width + kGap + 10, top, width - 20, kSliderHeight).toRect());
+}
+
+void DesktopProcessView::previewGovernance()
+{
+    if (!governanceSource)
+        return;
+    m_governance = governanceSource(100 - m_memorySlider->value(),
+                                    100 - m_cpuSlider->value());
+    m_governanceCommit->start();
+    update();
+}
+
+void DesktopProcessView::commitGovernance()
+{
+    m_governanceCommit->stop();
+    if (!governanceSource)
+        return;
+    const int memory = 100 - m_memorySlider->value();
+    const int cpu = 100 - m_cpuSlider->value();
+    const Governance saved = governanceSource(-1, -1);
+    if (onGovernanceChanged &&
+        (memory != saved.memoryReservePercent || cpu != saved.cpuReservePercent))
+        onGovernanceChanged(memory, cpu);
+    refreshGovernance();
+}
+
+void DesktopProcessView::paintGovernance(QPainter &p, const QRectF &area)
+{
+    const QFontMetricsF metrics(font());
+    QFont small = forkmesh::scaledFont(font(), 0.85);
+    const QFontMetricsF smallMetrics(small);
+    const qreal width = gaugeWidth(area.width());
+    auto cell = [&](int index, const QString &label, const QSlider *slider,
+                    const QString &text) {
+        const QRectF box(area.left() + index * (width + kGap) + 10, area.top(),
+                         width - 20, area.height());
+        const QRectF line(box.left(), box.top(), box.width(), metrics.height());
+        p.setFont(font());
+        p.setPen(ink(170));
+        p.drawText(line, Qt::AlignLeft | Qt::AlignVCenter, label);
+        QFont bold = font();
+        bold.setBold(true);
+        p.setFont(bold);
+        p.setPen(ink());
+        p.drawText(line, Qt::AlignRight | Qt::AlignVCenter,
+                   QStringLiteral("%1%").arg(slider->value()));
+        p.setFont(small);
+        p.setPen(ink(160));
+        const qreal top = line.bottom() + 2 + kSliderHeight + 2;
+        p.drawText(QRectF(box.left(), top, box.width(), smallMetrics.height()),
+                   Qt::AlignLeft | Qt::AlignTop,
+                   smallMetrics.elidedText(text, Qt::ElideRight, box.width()));
+        m_hits.append({box, slider->toolTip() + QStringLiteral("\n\n") + text});
+    };
+    cell(0, QStringLiteral("Agent CPU limit"), m_cpuSlider, m_governance.cpuText);
+    cell(1, QStringLiteral("Agent memory limit"), m_memorySlider, m_governance.memoryText);
+    const QRectF note(area.left() + 2 * (width + kGap) + 10, area.top(),
+                      area.width() - 2 * (width + kGap) - 10, area.height());
+    p.setFont(small);
+    p.setPen(ink(150));
+    p.drawText(note, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, m_governance.note);
+    m_hits.append({note, m_governance.note});
+    p.setFont(font());
 }
 
 void DesktopProcessView::setSortColumn(SortColumn column)
@@ -272,6 +465,18 @@ void DesktopProcessView::paintEvent(QPaintEvent *)
     }
     paintGauges(p, QRectF(inner.left(), y, inner.width(), kGaugesHeight));
     y += kGaugesHeight + kGap;
+    if (governanceShown()) {
+        paintGovernance(p, QRectF(inner.left(), y, inner.width(), kGovernanceHeight));
+        y += kGovernanceHeight + kGap;
+    }
+    if (m_snapshot.machine.valid) {
+        const qreal unit = (inner.width() - 4 * kGap) / 5;
+        const qreal coresWidth = 3 * unit + 2 * kGap;
+        paintCores(p, QRectF(inner.left(), y, coresWidth, kMachineHeight));
+        paintTuning(p, QRectF(inner.left() + coresWidth + kGap, y,
+                              inner.width() - coresWidth - kGap, kMachineHeight));
+    }
+    y += kMachineHeight + kGap;
     paintShares(p, QRectF(inner.left(), y, inner.width(), kSharesHeight));
     y += kSharesHeight + kGap;
     paintTable(p, QRectF(inner.left(), y, inner.width(), inner.bottom() - y));
@@ -280,7 +485,7 @@ void DesktopProcessView::paintEvent(QPaintEvent *)
 void DesktopProcessView::paintHeader(QPainter &p, const QRectF &area)
 {
     QFont title = font();
-    title.setPointSizeF(title.pointSizeF() * 1.25);
+    title = forkmesh::scaledFont(title, 1.25);
     title.setBold(true);
     p.setFont(title);
     p.setPen(ink());
@@ -336,17 +541,13 @@ void DesktopProcessView::paintGauges(QPainter &p, const QRectF &area)
     const corelogs::NodeVitals &v = m_snapshot.vitals;
     const QFontMetricsF metrics(font());
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.85);
+    small = forkmesh::scaledFont(small, 0.85);
     const QFontMetricsF smallMetrics(small);
     const int gauges = 5;
     const qreal width = (area.width() - (gauges - 1) * kGap) / gauges;
     auto card = [&](int index) {
-        const QRectF box(area.left() + index * (width + kGap), area.top(), width,
-                         area.height());
-        p.setPen(QPen(ink(40), 1.0));
-        p.setBrush(ink(isDark ? 10 : 6));
-        p.drawRoundedRect(box, 8, 8);
-        return box.adjusted(10, 8, -10, -8);
+        return paintCard(p, QRectF(area.left() + index * (width + kGap), area.top(), width,
+                                   area.height()));
     };
     auto title = [&](const QRectF &box, const QString &text, const QString &value) {
         p.setFont(font());
@@ -465,11 +666,336 @@ void DesktopProcessView::paintGauges(QPainter &p, const QRectF &area)
     p.setFont(font());
 }
 
+QRectF DesktopProcessView::paintCard(QPainter &p, const QRectF &box)
+{
+    p.setPen(QPen(ink(40), 1.0));
+    p.setBrush(ink(dark() ? 10 : 6));
+    p.drawRoundedRect(box, 8, 8);
+    return box.adjusted(10, 8, -10, -8);
+}
+
+void DesktopProcessView::paintCores(QPainter &p, const QRectF &area)
+{
+    const bool isDark = dark();
+    const desktopprocs::Machine &m = m_snapshot.machine;
+    const QFontMetricsF metrics(font());
+    QFont small = forkmesh::scaledFont(font(), 0.85);
+    const QFontMetricsF smallMetrics(small);
+    QFont bold = font();
+    bold.setBold(true);
+    const QRectF box = paintCard(p, area);
+
+    double khzSum = 0.0;
+    int khzCount = 0;
+    double hottest = -1.0;
+    for (const desktopprocs::Core &core : m.cores) {
+        if (core.curKhz > 0) {
+            khzSum += core.curKhz;
+            ++khzCount;
+        }
+        hottest = qMax(hottest, core.tempC);
+    }
+    QStringList headline;
+    if (khzCount > 0)
+        headline.append(ghzText(khzSum / khzCount) + QStringLiteral(" avg"));
+    const double temp = m.packageTempC >= 0.0 ? m.packageTempC : hottest;
+    if (temp >= 0.0)
+        headline.append(tempText(temp));
+    const QString value = headline.join(QStringLiteral(" · "));
+    p.setFont(bold);
+    const qreal valueWidth = QFontMetricsF(bold).horizontalAdvance(value);
+    p.setPen(temp >= 90.0 ? statusColour(1.0) : ink());
+    p.drawText(QRectF(box.left(), box.top(), box.width(), metrics.height()),
+               Qt::AlignRight | Qt::AlignVCenter, value);
+    p.setFont(font());
+    p.setPen(ink(170));
+    p.drawText(QRectF(box.left(), box.top(), box.width() - valueWidth - 12, metrics.height()),
+               Qt::AlignLeft | Qt::AlignVCenter,
+               metrics.elidedText(m.cpuModel.isEmpty() ? QStringLiteral("Processor")
+                                                       : m.cpuModel,
+                                  Qt::ElideRight, box.width() - valueWidth - 12));
+    m_hits.append({QRectF(box.left(), box.top(), box.width(), metrics.height()),
+                   temp >= 0.0
+                       ? QStringLiteral("Average clock across all threads now; %1 is the "
+                                        "processor package temperature")
+                             .arg(tempText(temp))
+                       : QStringLiteral("Average clock across all threads now")});
+
+    QMap<QString, QSet<QPair<int, int>>> physicalByKind;
+    for (const desktopprocs::Core &core : m.cores)
+        physicalByKind[core.kind].insert({core.package, core.coreId});
+    QStringList facts;
+    facts.append(QStringLiteral("%1 cores · %2 threads").arg(m.physicalCores).arg(m.cores.size()));
+    if (physicalByKind.size() > 1 && physicalByKind.contains(QStringLiteral("P")))
+        facts.append(QStringLiteral("%1 P + %2 E")
+                         .arg(physicalByKind.value(QStringLiteral("P")).size())
+                         .arg(physicalByKind.value(QStringLiteral("E")).size()));
+    if (m.cacheL3Bytes > 0)
+        facts.append(QStringLiteral("L3 %1").arg(corelogs::compactByteSize(m.cacheL3Bytes)));
+    if (m.baseKhz > 0)
+        facts.append(QStringLiteral("base %1").arg(ghzText(m.baseKhz)));
+    qint64 peak = -1;
+    for (const desktopprocs::Core &core : m.cores)
+        peak = qMax(peak, core.maxKhz);
+    if (peak > 0)
+        facts.append(QStringLiteral("max %1").arg(ghzText(peak)));
+    p.setFont(small);
+    p.setPen(ink(150));
+    const qreal factsTop = box.top() + metrics.height() + 2;
+    p.drawText(QRectF(box.left(), factsTop, box.width(), smallMetrics.height()),
+               Qt::AlignLeft | Qt::AlignVCenter,
+               smallMetrics.elidedText(facts.join(QStringLiteral(" · ")), Qt::ElideRight,
+                                       box.width()));
+
+    if (m.cores.isEmpty())
+        return;
+    QList<QPair<QString, QList<int>>> groups;
+    for (int i = 0; i < m.cores.size(); ++i) {
+        const QString &kind = m.cores.at(i).kind;
+        if (groups.isEmpty() || groups.last().first != kind)
+            groups.append({kind, {}});
+        groups.last().second.append(i);
+    }
+    bool anyTemp = false;
+    for (const desktopprocs::Core &core : m.cores)
+        anyTemp |= core.tempC >= 0.0;
+    const qreal labelHeight = smallMetrics.height();
+    const qreal barsTop = factsTop + smallMetrics.height() + 6;
+    const qreal barsBottom = box.bottom() - labelHeight - (anyTemp ? 7 : 2);
+    const int count = m.cores.size();
+    const qreal groupGap = 10.0;
+    qreal gap = 2.0;
+    qreal barWidth = (box.width() - groupGap * (groups.size() - 1) - gap * (count - 1)) / count;
+    if (barWidth < 4.0) {
+        gap = 1.0;
+        barWidth = (box.width() - groupGap * (groups.size() - 1) - gap * (count - 1)) / count;
+    }
+    const QColor accent = FleetVisualizer::verbColour(QStringLiteral("SELECT"), isDark);
+    qreal x = box.left();
+    for (const auto &group : groups) {
+        const qreal groupLeft = x;
+        double groupKhz = 0.0;
+        int groupKhzCount = 0;
+        double groupBusy = 0.0;
+        int groupBusyCount = 0;
+        double groupHot = -1.0;
+        for (const int index : group.second) {
+            const desktopprocs::Core &core = m.cores.at(index);
+            const QRectF track(x, barsTop, barWidth, barsBottom - barsTop);
+            p.setPen(Qt::NoPen);
+            p.setBrush(ink(18));
+            p.drawRoundedRect(track, 2, 2);
+            if (core.busy > 0.0) {
+                const qreal height = qMax<qreal>(1.5, track.height() * core.busy / 100.0);
+                p.setBrush(accent);
+                p.drawRoundedRect(QRectF(track.left(), track.bottom() - height, track.width(),
+                                         height),
+                                  2, 2);
+            }
+            if (core.tempC >= 0.0) {
+                p.setBrush(statusColour(core.tempC / 100.0));
+                p.drawRoundedRect(QRectF(track.left(), track.bottom() + 3, track.width(), 3),
+                                  1.5, 1.5);
+            }
+            QStringList tip{QStringLiteral("CPU %1").arg(core.cpu)};
+            const QString kind = kindName(core.kind);
+            tip.last() += kind.isEmpty()
+                              ? QStringLiteral(" · core %1").arg(core.coreId)
+                              : QStringLiteral(" · %1 core %2").arg(kind).arg(core.coreId);
+            QStringList now;
+            if (core.busy >= 0.0)
+                now.append(QStringLiteral("%1 busy").arg(percentText(core.busy)));
+            if (core.curKhz > 0)
+                now.append(core.maxKhz > 0 ? QStringLiteral("%1 of %2").arg(ghzText(core.curKhz),
+                                                                             ghzText(core.maxKhz))
+                                           : ghzText(core.curKhz));
+            if (core.tempC >= 0.0)
+                now.append(tempText(core.tempC));
+            if (!now.isEmpty())
+                tip.append(now.join(QStringLiteral(" · ")));
+            m_hits.append({QRectF(x, barsTop, barWidth + gap, box.bottom() - barsTop - labelHeight),
+                           tip.join(QLatin1Char('\n'))});
+            if (core.curKhz > 0) {
+                groupKhz += core.curKhz;
+                ++groupKhzCount;
+            }
+            if (core.busy >= 0.0) {
+                groupBusy += core.busy;
+                ++groupBusyCount;
+            }
+            groupHot = qMax(groupHot, core.tempC);
+            x += barWidth + gap;
+        }
+        const qreal groupRight = x - gap;
+        QStringList label;
+        if (!group.first.isEmpty())
+            label.append(QStringLiteral("%1-cores").arg(group.first));
+        else
+            label.append(QStringLiteral("%1 threads").arg(group.second.size()));
+        if (groupBusyCount > 0)
+            label.append(percentText(groupBusy / groupBusyCount));
+        if (groupKhzCount > 0)
+            label.append(ghzText(groupKhz / groupKhzCount));
+        if (groupHot >= 0.0)
+            label.append(QStringLiteral("up to ") + tempText(groupHot));
+        p.setFont(small);
+        p.setPen(ink(150));
+        p.drawText(QRectF(groupLeft, box.bottom() - labelHeight, groupRight - groupLeft,
+                          labelHeight),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   smallMetrics.elidedText(label.join(QStringLiteral(" · ")), Qt::ElideRight,
+                                           groupRight - groupLeft));
+        x += groupGap - gap;
+    }
+    p.setFont(font());
+}
+
+void DesktopProcessView::paintTuning(QPainter &p, const QRectF &area)
+{
+    const desktopprocs::Machine &m = m_snapshot.machine;
+    const QFontMetricsF metrics(font());
+    QFont small = forkmesh::scaledFont(font(), 0.85);
+    const QFontMetricsF smallMetrics(small);
+    const QRectF box = paintCard(p, area);
+    p.setFont(font());
+    p.setPen(ink(170));
+    p.drawText(QRectF(box.left(), box.top(), box.width(), metrics.height()),
+               Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("CPU and memory settings"));
+
+    struct Entry {
+        QString key;
+        QString value;
+        QString tip;
+        bool warn = false;
+    };
+    QList<Entry> entries;
+    auto join = [](const QStringList &parts) {
+        QStringList kept;
+        for (const QString &part : parts)
+            if (!part.isEmpty())
+                kept.append(part);
+        return kept.join(QStringLiteral(" · "));
+    };
+    const QString driver = m.driver.isEmpty()
+                               ? QString()
+                               : m.driverStatus.isEmpty()
+                                   ? m.driver
+                                   : QStringLiteral("%1 %2").arg(m.driver, m.driverStatus);
+    entries.append({QStringLiteral("Governor"), join({m.governor, driver}),
+                    QStringLiteral("CPU frequency governor and the driver applying it.%1")
+                        .arg(m.governors.isEmpty()
+                                 ? QString()
+                                 : QStringLiteral("\nAvailable: %1")
+                                       .arg(m.governors.join(QStringLiteral(", "))))});
+    entries.append({QStringLiteral("Energy pref"), m.energyPreference,
+                    QStringLiteral("Energy-performance preference (EPP): the hint the "
+                                   "processor uses to trade speed for power")});
+    QString clocks;
+    if (m.minKhz > 0 && m.maxKhz > 0)
+        clocks = QStringLiteral("%1–%2").arg(QString::number(m.minKhz / 1e6, 'f', 1),
+                                                  ghzText(m.maxKhz));
+    entries.append({QStringLiteral("Clocks"),
+                    join({clocks, m.turbo < 0 ? QString()
+                                  : m.turbo ? QStringLiteral("turbo on")
+                                            : QStringLiteral("turbo off")}),
+                    QStringLiteral("The range the governor may pick from, and whether "
+                                   "turbo/boost clocks are allowed"),
+                    m.turbo == 0});
+    QStringList pressure;
+    if (m.pressureCpu >= 0.0)
+        pressure.append(QStringLiteral("CPU %1").arg(percentText(m.pressureCpu)));
+    if (m.pressureMemory >= 0.0)
+        pressure.append(QStringLiteral("memory %1").arg(percentText(m.pressureMemory)));
+    if (m.pressureIo >= 0.0)
+        pressure.append(QStringLiteral("I/O %1").arg(percentText(m.pressureIo)));
+    entries.append({QStringLiteral("Stalled"), join(pressure),
+                    QStringLiteral("Pressure stall information: the share of the last 10 s "
+                                   "in which some task waited for CPU, memory or I/O"),
+                    qMax(m.pressureMemory, m.pressureIo) >= 10.0 || m.pressureCpu >= 50.0});
+    entries.append({QStringLiteral("Huge pages"),
+                    join({m.hugePages, m.hugePagesDefrag.isEmpty()
+                                           ? QString()
+                                           : QStringLiteral("defrag ") + m.hugePagesDefrag}),
+                    QStringLiteral("Transparent huge pages: when the kernel backs memory with "
+                                   "2 MB pages, and when it compacts memory to make them")});
+    QStringList swap;
+    if (m.swappiness >= 0)
+        swap.append(QStringLiteral("swappiness %1").arg(m.swappiness));
+    if (!m.zswap.isEmpty())
+        swap.append(QStringLiteral("zswap ") + m.zswap);
+    for (const desktopprocs::SwapDevice &device : m.swaps)
+        swap.append(QStringLiteral("%1 %2").arg(device.type,
+                                                corelogs::compactByteSize(device.sizeBytes)));
+    if (m.swaps.isEmpty() && m.swappiness >= 0)
+        swap.append(QStringLiteral("no swap"));
+    entries.append({QStringLiteral("Swap"), join(swap),
+                    QStringLiteral("How eagerly memory is swapped out (0–200), whether "
+                                   "compressed swap is on, and each swap device")});
+    QStringList memory;
+    if (m.overcommit >= 0)
+        memory.append(QStringLiteral("overcommit %1")
+                          .arg(m.overcommit == 0   ? QStringLiteral("heuristic")
+                               : m.overcommit == 1 ? QStringLiteral("always")
+                                                   : QStringLiteral("strict")));
+    if (m.dirtyRatio >= 0 && m.dirtyBackgroundRatio >= 0)
+        memory.append(QStringLiteral("dirty %1/%2%").arg(m.dirtyRatio).arg(m.dirtyBackgroundRatio));
+    if (m.cachePressure >= 0)
+        memory.append(QStringLiteral("cache pressure %1").arg(m.cachePressure));
+    entries.append({QStringLiteral("Memory"), join(memory),
+                    QStringLiteral("vm.overcommit_memory, the dirty page limits (writer "
+                                   "blocks / background flush) and vfs_cache_pressure")});
+    QStringList system;
+    if (!m.kernel.isEmpty())
+        system.append(QStringLiteral("Linux ") + m.kernel);
+    if (m_snapshot.vitals.uptimeSeconds >= 0)
+        system.append(QStringLiteral("up ") + ageText(m_snapshot.vitals.uptimeSeconds));
+    if (!m.smt.isEmpty())
+        system.append(QStringLiteral("SMT ") + m.smt);
+    if (m.numaNodes > 1)
+        system.append(QStringLiteral("%1 NUMA nodes").arg(m.numaNodes));
+    entries.append({QStringLiteral("System"), join(system),
+                    QStringLiteral("Kernel release, time since boot and whether "
+                                   "hyper-threading (SMT) is enabled")});
+    QList<Entry> shown;
+    for (const Entry &entry : std::as_const(entries))
+        if (!entry.value.isEmpty())
+            shown.append(entry);
+
+    const int columns = box.width() >= 440 ? 2 : 1;
+    const int rowsPerColumn = int(std::ceil(double(shown.size()) / columns));
+    const qreal top = box.top() + metrics.height() + 4;
+    const qreal rowHeight = rowsPerColumn > 0 ? (box.bottom() - top) / rowsPerColumn : 0.0;
+    const qreal columnWidth = (box.width() - (columns - 1) * 14) / columns;
+    const qreal keyWidth = qMin<qreal>(84.0, columnWidth * 0.4);
+    p.setFont(small);
+    for (int i = 0; i < shown.size(); ++i) {
+        const int column = i / qMax(1, rowsPerColumn);
+        const int row = i % qMax(1, rowsPerColumn);
+        if (column >= columns || top + (row + 1) * rowHeight > box.bottom() + 1)
+            continue;
+        const QRectF cell(box.left() + column * (columnWidth + 14), top + row * rowHeight,
+                          columnWidth, rowHeight);
+        p.setPen(ink(140));
+        p.drawText(QRectF(cell.left(), cell.top(), keyWidth, cell.height()),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   smallMetrics.elidedText(shown.at(i).key, Qt::ElideRight, keyWidth - 4));
+        p.setPen(shown.at(i).warn ? statusColour(0.8) : ink(225));
+        p.drawText(QRectF(cell.left() + keyWidth, cell.top(), cell.width() - keyWidth,
+                          cell.height()),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   smallMetrics.elidedText(shown.at(i).value, Qt::ElideRight,
+                                           cell.width() - keyWidth));
+        m_hits.append({cell, QStringLiteral("%1: %2\n%3").arg(shown.at(i).key, shown.at(i).value,
+                                                             shown.at(i).tip)});
+    }
+    p.setFont(font());
+}
+
 void DesktopProcessView::paintShares(QPainter &p, const QRectF &area)
 {
     const bool isDark = dark();
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.85);
+    small = forkmesh::scaledFont(small, 0.85);
     const QFontMetricsF smallMetrics(small);
     QHash<QString, double> cpu;
     QHash<QString, double> memory;
@@ -551,7 +1077,7 @@ void DesktopProcessView::paintTable(QPainter &p, const QRectF &area)
     QFont bold = font();
     bold.setBold(true);
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.9);
+    small = forkmesh::scaledFont(small, 0.9);
     const QFontMetricsF metrics(font());
     const QFontMetricsF smallMetrics(small);
     p.setFont(bold);

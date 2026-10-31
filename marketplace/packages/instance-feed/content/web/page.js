@@ -1,4 +1,4 @@
-window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: $$, session, escapeHtml, relativeTimeLabel }) => {
+window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: $$, session, escapeHtml, relativeTimeLabel, publicSiteOrigin }) => {
   const PACKAGE = "instance-feed";
   const API = "/api/instance-feed";
   const MAX_LENGTH = 500;
@@ -18,6 +18,9 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
     if (view.kind === "thread") url.searchParams.set("post", view.post);
     if (view.kind === "profile") url.searchParams.set("author", view.author);
     return url.pathname + url.search;
+  }
+  function publicUrl(id) {
+    return `${publicSiteOrigin?.() || location.origin}/feed?post=${encodeURIComponent(id)}`;
   }
   function message(kind, value = "") {
     const node = $(`[data-ifeed-${kind}]`); if (!node) return;
@@ -81,7 +84,11 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
       action("reply", post, "reply", "Reply", post.replies, false, ""),
       action("boost", post, "repeat-2", post.boosted ? "Undo boost" : "Boost", post.boosts, post.boosted, "text-accent"),
       action("favourite", post, "star", post.favourited ? "Remove favourite" : "Favourite", post.favourites, post.favourited, "text-attention"),
-      post.canDelete ? `<button type="button" data-ifeed-action="delete" data-ifeed-id="${escapeHtml(post.id)}" class="fm-btn fm-btn-sm fm-btn-invisible ml-auto text-muted-foreground hover:text-destructive" aria-label="Delete post" title="Delete post"><i data-lucide="trash-2"></i></button>` : "",
+      `<span class="ml-auto flex items-center gap-1">`,
+      `<a href="${escapeHtml(publicUrl(post.id))}" target="_blank" rel="noopener" class="fm-btn fm-btn-sm fm-btn-invisible text-muted-foreground" aria-label="View on the website" title="View on the website"><i data-lucide="globe"></i></a>`,
+      `<button type="button" data-ifeed-action="copy" data-ifeed-id="${escapeHtml(post.id)}" class="fm-btn fm-btn-sm fm-btn-invisible text-muted-foreground" aria-label="Copy link" title="Copy link"><i data-lucide="link"></i></button>`,
+      post.canDelete ? `<button type="button" data-ifeed-action="delete" data-ifeed-id="${escapeHtml(post.id)}" class="fm-btn fm-btn-sm fm-btn-invisible text-muted-foreground hover:text-destructive" aria-label="Delete post" title="Delete post"><i data-lucide="trash-2"></i></button>` : "",
+      "</span>",
     ].join("");
     return `<article class="px-4 py-3 ${focused ? "bg-subtle" : ""}" data-ifeed-post="${escapeHtml(post.id)}">${banner}<div class="flex gap-2">
       <a href="${profileHref}" data-ifeed-author="${escapeHtml(post.author)}" class="shrink-0">${avatar(post.authorName || post.author, focused)}</a>
@@ -223,6 +230,21 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
       if (button) button.disabled = false;
     }
   }
+  async function copyLink(button, id) {
+    try {
+      await navigator.clipboard.writeText(publicUrl(id));
+    } catch (error) {
+      return message("error", "Could not copy the link.");
+    }
+    button.innerHTML = '<i data-lucide="check"></i>';
+    button.title = "Copied";
+    window.lucide?.createIcons?.();
+    setTimeout(() => {
+      button.innerHTML = '<i data-lucide="link"></i>';
+      button.title = "Copy link";
+      window.lucide?.createIcons?.();
+    }, 1500);
+  }
   async function act(kind, id) {
     const post = findPost(id); if (!post) return;
     if (kind === "reply") {
@@ -301,6 +323,7 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
     });
     $("[data-ifeed-list]")?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-ifeed-action]");
+      if (button?.dataset.ifeedAction === "copy") { event.preventDefault(); return void copyLink(button, button.dataset.ifeedId); }
       if (button) { event.preventDefault(); return void act(button.dataset.ifeedAction, button.dataset.ifeedId); }
       const reveal = event.target.closest("[data-ifeed-reveal]");
       if (reveal) {

@@ -74,11 +74,22 @@ data class UnifiedAgentRow(
     val terminal: String = "",
     val finishedAtMs: Long = 0,
     val unread: Boolean? = null,
+    val backgroundTasks: Int = 0,
+    val tokensIn: Int = 0,
+    val tokensOut: Int = 0,
+    val ahead: Int = -1,
+    val desktopKey: String = "",
+    val elsewhere: Boolean = false,
 ) {
     val repoLabel: String get() = if (repoOwner.isEmpty()) repoName else "$repoOwner/$repoName"
     val isDesktop: Boolean get() = badge != AgentTransportBadge.Node && badge != AgentTransportBadge.Runner
     val isRunner: Boolean get() = badge == AgentTransportBadge.Runner
-    val badgeLabel: String get() = if (isRunner && runner.isNotEmpty()) "Runner \u00B7 $runner" else badge.label
+    val badgeLabel: String
+        get() = when {
+            isRunner && runner.isNotEmpty() -> "Runner \u00B7 $runner"
+            elsewhere && node.isNotEmpty() -> node + " \u00B7 " + if (badge == AgentTransportBadge.DesktopLan) "LAN" else "relay"
+            else -> badge.label
+        }
     val hasBranchOps: Boolean get() = !isDesktop && cloudSessionId.isNotEmpty() && branchName.isNotEmpty()
     val canMergeBranch: Boolean get() = hasBranchOps && !isActive && !merged
     val canCreatePull: Boolean get() = hasBranchOps && canOpenPull && prNumber <= 0 && !isActive && !merged
@@ -173,6 +184,10 @@ data class UnifiedAgentRow(
                 conflicted = session.conflicted && !session.merged,
                 finishedAtMs = if (session.isActive) 0 else session.finishedAtMs,
                 unread = row.unread,
+                backgroundTasks = row.backgroundTasks,
+                tokensIn = row.tokensIn,
+                tokensOut = row.tokensOut,
+                ahead = session.ahead,
             )
         }
 
@@ -235,6 +250,7 @@ data class UnifiedAgentRow(
                 linesAdded = if (stats.known) stats.added else -1,
                 linesRemoved = if (stats.known) stats.removed else -1,
                 behind = if (stats.known) stats.behind else -1,
+                ahead = if (stats.known) stats.ahead else -1,
                 conflicted = stats.conflicted || session.merge.isConflict,
                 canMerge = session.canMerge,
                 canOpenPull = session.canOpenPull,
@@ -290,15 +306,47 @@ data class DesktopTerminalInfo(
 fun agentRouteRowId(id: String): String {
     val clean = id.trim()
     if (clean.startsWith("desktop:") || clean.startsWith("node:") || clean.startsWith("outside:")) return clean
+    if (clean.contains(":desktop:") || clean.contains(":outside:")) return clean
     if (clean.toIntOrNull() != null) return "desktop:$clean"
     return "node:$clean"
 }
 
+fun agentRowForRoute(id: String, rows: List<UnifiedAgentRow>): UnifiedAgentRow? {
+    rows.firstOrNull { it.id == id }?.let { return it }
+    if (id.startsWith("node:")) {
+        val session = id.removePrefix("node:")
+        if (session.isEmpty()) return null
+        return rows.firstOrNull { !it.isDesktop && !it.outside && it.cloudSessionId == session }
+    }
+    if (!id.startsWith("desktop:")) return null
+    val elsewhere = rows.filter { it.elsewhere && it.id.endsWith(":$id") }
+    return elsewhere.singleOrNull()
+}
+
+data class OtherDesktopAgents(val key: String, val name: String, val rows: List<UnifiedAgentRow>, val note: String = "") {
+    val running: Int get() = rows.count { it.isActive }
+
+    companion object {
+        const val LIMIT = 4
+        const val UNREACHABLE = "Not reachable"
+
+        fun listed(snapshot: LocalAgentsSnapshot, key: String, name: String, transport: ControlTransport): OtherDesktopAgents {
+            val rows = (
+                snapshot.sessions.map { UnifiedAgentRow.fromDesktop(it, transport, name) } +
+                    snapshot.outside.map { UnifiedAgentRow.fromOutside(it, transport, name) }
+                ).map { it.copy(id = "$key:${it.id}", desktopKey = key, elsewhere = true) }
+                .sortedWith(compareBy<UnifiedAgentRow>({ !it.isActive }, { -it.updatedAtMs }, { it.id }))
+            return OtherDesktopAgents(key, name, rows)
+        }
+    }
+}
+
 fun mergeAgentRows(desktop: List<UnifiedAgentRow>, cloud: List<UnifiedAgentRow>, desktopName: String): List<UnifiedAgentRow> {
-    val desktopIds = desktop.map { it.localId }.toSet()
     val name = desktopName.lowercase()
+    val held = desktop.map { "${it.node.lowercase()}#${it.localId}" }.toMutableSet()
+    if (name.isNotEmpty()) held += desktop.filter { !it.elsewhere }.map { "$name#${it.localId}" }
     val others = cloud.filter { row ->
-        !(row.localId > 0 && name.isNotEmpty() && row.node.lowercase() == name && row.localId in desktopIds)
+        !(row.localId > 0 && row.node.isNotEmpty() && "${row.node.lowercase()}#${row.localId}" in held)
     }
     return (desktop + others).sortedWith(
         compareBy<UnifiedAgentRow>({ !it.isActive }, { -it.updatedAtMs }, { it.id }),
@@ -343,14 +391,16 @@ data class DesktopListCover(val oldestCreatedAtMs: Long = 0) {
 fun desktopAgents(rows: List<UnifiedAgentRow>, shown: List<Pair<String, Int>>, idle: Int = 20): List<UnifiedAgentRow> {
     val known = shown.map { (repo, id) -> "${repo.lowercase()}#$id" }.toSet()
     val listed = rows.filter { row ->
-        row.isDesktop && (row.outside || "${row.repoName.lowercase()}#${row.localId}" !in known)
+        row.isDesktop && (row.outside || row.elsewhere || "${row.repoName.lowercase()}#${row.localId}" !in known)
     }
     val recent = listed.filter { !it.isActive }.sortedByDescending { it.updatedAtMs }.take(maxOf(0, idle))
     return listed.filter { it.isActive } + recent
 }
 
 fun liveDesktopRow(rows: List<UnifiedAgentRow>, repoName: String, sessionId: Int): UnifiedAgentRow? =
-    rows.firstOrNull { it.isDesktop && !it.outside && it.localId == sessionId && it.repoName.equals(repoName, ignoreCase = true) }
+    rows.firstOrNull {
+        it.isDesktop && !it.outside && !it.elsewhere && it.localId == sessionId && it.repoName.equals(repoName, ignoreCase = true)
+    }
 
 fun AgentControlling.desktopAttachments(repoName: String, sessionId: Int): List<AgentAttachmentRef>? {
     val row = liveDesktopRow(rows, repoName, sessionId) ?: return null
@@ -460,7 +510,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         }
 
     fun queuePosition(row: UnifiedAgentRow): Int {
-        if (!row.isDesktop || row.outside || row.localId <= 0) return -1
+        if (!row.isDesktop || row.outside || row.elsewhere || row.localId <= 0) return -1
         return queue?.position(row.localId) ?: -1
     }
 
@@ -475,6 +525,26 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
     @Volatile
     var cloudNote = ""
         private set
+
+    @Volatile
+    var otherDesktops: List<OtherDesktopAgents> = emptyList()
+        private set
+
+    val otherDesktopNotes: List<String>
+        get() = otherDesktops.filter { it.note.isNotEmpty() }.map { "${it.name}: ${it.note}" }
+
+    @Volatile
+    private var deskRows: List<UnifiedAgentRow> = emptyList()
+
+    @Volatile
+    private var nodeRows: List<UnifiedAgentRow> = emptyList()
+    private val otherReader = Executors.newFixedThreadPool(OtherDesktopAgents.LIMIT) { Thread(it, "AgentControlOthers").apply { isDaemon = true } }
+    private val othersWorker = Executors.newSingleThreadExecutor { Thread(it, "AgentControlOtherList").apply { isDaemon = true } }
+    private val otherTaps = HashMap<String, Any>()
+    @Volatile
+    var othersLoading = false
+        private set
+    private var othersAgain = false
 
     fun addListener(listener: () -> Unit) = listeners.add(listener)
 
@@ -503,8 +573,102 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         onDelta: (AgentTranscriptDelta) -> Unit,
     ): DesktopTranscriptStream? {
         if (!row.isDesktop || row.localId == 0) return null
-        return DesktopTranscriptStream(hub, row.localId, since, onEnded = onEnded, onDelta = onDelta)
+        return DesktopTranscriptStream(hub, row.localId, since, onEnded = onEnded, desktopKey = row.desktopKey, onDelta = onDelta)
     }
+
+    fun row(forRoute: String): UnifiedAgentRow? {
+        val current = rows
+        agentRowForRoute(forRoute, current)?.let { return it }
+        if (!forRoute.startsWith("node:")) return null
+        val session = forRoute.removePrefix("node:")
+        val claimed = cloudSessions.firstOrNull { it.sessionId == session }?.let(UnifiedAgentRow::fromCloud) ?: return null
+        if (claimed.localId <= 0) return null
+        val node = claimed.node.lowercase()
+        val desktop = hub.currentLink?.desktopName.orEmpty().lowercase()
+        return current.firstOrNull { row ->
+            row.isDesktop && !row.outside && row.localId == claimed.localId &&
+                (row.node.lowercase() == node || (!row.elsewhere && desktop.isNotEmpty() && desktop == node))
+        }
+    }
+
+    private fun publish(desk: List<UnifiedAgentRow>, nodes: List<UnifiedAgentRow>) {
+        synchronized(lock) {
+            deskRows = desk
+            nodeRows = nodes
+        }
+        republish()
+    }
+
+    private fun republish() {
+        val active = hub.activeKey
+        val desktopName = hub.currentLink?.desktopName ?: ""
+        val merged = synchronized(lock) {
+            val desk = deskRows + otherDesktops.filter { it.key != active }.flatMap { it.rows }
+            mergeAgentRows(desk, nodeRows, desktopName)
+        }
+        if (merged != rows) rows = merged
+        notifyListeners()
+    }
+
+    private fun refreshOtherDesktops() {
+        synchronized(lock) {
+            if (othersLoading) {
+                othersAgain = true
+                return
+            }
+            othersLoading = true
+        }
+        val queued = runCatching {
+            othersWorker.execute {
+                try {
+                    while (true) {
+                        synchronized(lock) { othersAgain = false }
+                        loadOtherDesktops()
+                        if (!synchronized(lock) { othersAgain }) break
+                    }
+                } finally {
+                    synchronized(lock) { othersLoading = false }
+                    notifyListeners()
+                }
+            }
+        }
+        if (queued.isFailure) synchronized(lock) { othersLoading = false }
+    }
+
+    private fun listenToOtherDesktops(keys: List<String>) {
+        synchronized(lock) {
+            val gone = otherTaps.keys.filter { it !in keys }
+            for (key in gone) otherTaps.remove(key)?.let(hub::removeEventTap)
+            for (key in keys) {
+                if (otherTaps.containsKey(key)) continue
+                otherTaps[key] = hub.addEventTap(key) { event ->
+                    if (event.event == "agents.changed" && key != hub.activeKey) refreshOtherDesktops()
+                }
+            }
+        }
+    }
+
+    private fun loadOtherDesktops() {
+        val targets = hub.otherDesktops.take(OtherDesktopAgents.LIMIT)
+        listenToOtherDesktops(targets.map { it.key })
+        val loads = targets.map { target ->
+            otherReader.submit(Callable<OtherDesktopAgents> {
+                try {
+                    val link = hub.link(target.key)
+                    val listed = link.request("agents.list", emptyMap(), 15_000)
+                    val name = link.desktopName.ifEmpty { target.name }
+                    OtherDesktopAgents.listed(LocalAgentsSnapshot.fromJson(listed), target.key, name, link.transport)
+                } catch (_: Throwable) {
+                    OtherDesktopAgents(target.key, target.name, emptyList(), OtherDesktopAgents.UNREACHABLE)
+                }
+            })
+        }
+        val out = loads.mapNotNull { pending -> runCatching { pending.get() }.getOrNull() }
+        val active = hub.activeKey
+        otherDesktops = out.filter { it.key != active }
+        republish()
+    }
+
 
     private fun reload(cloud: Boolean) {
         synchronized(lock) {
@@ -526,10 +690,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
                 } ?: break
                 val cloudRows = if (withCloud) cloudReader.submit(Callable { loadCloud() }) else null
                 val desk = loadDesktop()
-                if (cloudRows != null) {
-                    rows = mergeAgentRows(desk, cloudSessions.map(UnifiedAgentRow::fromCloud), hub.currentLink?.desktopName ?: "")
-                    notifyListeners()
-                }
+                if (cloudRows != null) publish(desk, cloudSessions.map(UnifiedAgentRow::fromCloud))
                 val nodes = cloudRows?.let { pending ->
                     try {
                         pending.get()
@@ -537,8 +698,8 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
                         cloudSessions.map(UnifiedAgentRow::fromCloud)
                     }
                 } ?: cloudSessions.map(UnifiedAgentRow::fromCloud)
-                rows = mergeAgentRows(desk, nodes, hub.currentLink?.desktopName ?: "")
-                notifyListeners()
+                publish(desk, nodes)
+                if (withCloud) refreshOtherDesktops()
             }
         } finally {
             synchronized(lock) { refreshing = false }
@@ -559,8 +720,11 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
             val snapshot = LocalAgentsSnapshot.fromJson(link.request("agents.list", emptyMap()))
             desktopSnapshot = snapshot
             desktopNote = ""
-            snapshot.sessions.map { UnifiedAgentRow.fromDesktop(it, link.transport, link.desktopName) } +
-                snapshot.outside.map { UnifiedAgentRow.fromOutside(it, link.transport, link.desktopName) }
+            val key = hub.linkKey(link)
+            (
+                snapshot.sessions.map { UnifiedAgentRow.fromDesktop(it, link.transport, link.desktopName) } +
+                    snapshot.outside.map { UnifiedAgentRow.fromOutside(it, link.transport, link.desktopName) }
+                ).map { it.copy(desktopKey = key) }
         } catch (error: Throwable) {
             desktopNote = ControlErrorText.describe(error)
             emptyList()
@@ -578,13 +742,15 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         } catch (error: Throwable) {
             cloudNote = error.message ?: error.toString()
         }
-        return cloudSessions.map(UnifiedAgentRow::fromCloud)
+        val nodes = cloudSessions.map(UnifiedAgentRow::fromCloud)
+        publish(deskRows, nodes)
+        return nodes
     }
 
     override fun stop(row: UnifiedAgentRow) {
         if (row.outside && !row.canStop) throw LocalControlException("outside_stop_unsupported")
         if (row.isDesktop) {
-            hub.request("agents.stop", mapOf("id" to row.localId))
+            hub.request("agents.stop", mapOf("id" to row.localId), 20_000, row.desktopKey)
         } else {
             val api = cloud ?: throw LocalControlException("not_connected")
             api.stop(row.repoOwner, row.repoName, row.cloudSessionId, row.orgScope)
@@ -601,7 +767,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
     }
 
     fun moveQueued(row: UnifiedAgentRow, to: Int): LocalAgentQueue {
-        if (!row.isDesktop || row.outside || row.localId <= 0) throw LocalControlException("not_queued")
+        if (!row.isDesktop || row.outside || row.elsewhere || row.localId <= 0) throw LocalControlException("not_queued")
         val answer = LocalAgentQueue.fromJson(
             hub.request("agents.queue.move", mapOf("id" to row.localId, "to" to maxOf(0, to))),
         )
@@ -638,7 +804,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
             if (images.isNotEmpty()) throw LocalControlException("outside_images_unsupported")
             val message = text.trim()
             if (message.isEmpty()) return
-            val answer = hub.request("agents.prompt", mapOf("id" to row.localId, "text" to message), 30_000)
+            val answer = hub.request("agents.prompt", mapOf("id" to row.localId, "text" to message), 30_000, row.desktopKey)
             when (answer["status"]) {
                 "typed" -> promptNotice = TYPED_NOTICE
                 "held_for_approval" -> promptNotice = ControlErrorText.describe("held_for_approval")
@@ -649,7 +815,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         val trimmed = promptOrPhotoNote(text, images)
         if (trimmed.isEmpty()) return
         if (row.isDesktop) {
-            val link = hub.link()
+            val link = hub.link(row.desktopKey)
             val params = DesktopPromptImages.params(mapOf("id" to row.localId, "text" to trimmed), images, link)
             link.request("agents.prompt", params, 30_000)
         } else {
@@ -659,13 +825,31 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         refresh()
     }
 
+    fun questions(row: UnifiedAgentRow): List<AgentQuestion> {
+        if (!row.isDesktop || row.outside || row.localId <= 0) return emptyList()
+        return AgentQuestion.listFromJson(hub.request("agents.questions", mapOf("id" to row.localId), 20_000, row.desktopKey))
+    }
+
+    fun answer(row: UnifiedAgentRow, question: AgentQuestion, text: String) {
+        if (!row.isDesktop || row.outside || row.localId <= 0) throw LocalControlException("unsupported")
+        val answer = text.trim()
+        if (answer.isEmpty()) return
+        hub.request(
+            "agents.answer",
+            mapOf("id" to row.localId, "question" to question.id, "answer" to answer),
+            30_000,
+            row.desktopKey,
+        )
+        refresh()
+    }
+
     fun fixConflicts(row: UnifiedAgentRow, files: List<String> = emptyList()) {
         if (row.outside) throw LocalControlException("unsupported")
         prompt(row, ConflictResolution.sessionPrompt(row.baseBranch, files))
     }
 
-    fun fixDesktopConflicts(localId: Int, base: String) {
-        hub.request("agents.prompt", mapOf("id" to localId, "text" to ConflictResolution.sessionPrompt(base)), 30_000)
+    fun fixDesktopConflicts(localId: Int, base: String, desktopKey: String = "") {
+        hub.request("agents.prompt", mapOf("id" to localId, "text" to ConflictResolution.sessionPrompt(base)), 30_000, desktopKey)
         refresh()
     }
 
@@ -677,7 +861,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
             refresh()
             return
         }
-        hub.request("agents.continue", mapOf("id" to row.localId))
+        hub.request("agents.continue", mapOf("id" to row.localId), 20_000, row.desktopKey)
         refresh()
     }
 
@@ -752,7 +936,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
             val params = linkedMapOf<String, Any?>("id" to row.localId)
             if (since > 0) params["since"] = since
             return try {
-                AgentTranscriptDelta.fromDesktop(hub.request("agents.transcript", params), since)
+                AgentTranscriptDelta.fromDesktop(hub.request("agents.transcript", params, 20_000, row.desktopKey), since)
             } catch (refusal: LocalControlException) {
                 if (refusal.code !in OUTSIDE_TRANSCRIPT_MISSING) throw refusal
                 if (since > 0 && refusal.code == "unknown_session") {
@@ -766,7 +950,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         if (row.isDesktop) {
             val params = linkedMapOf<String, Any?>("id" to row.localId)
             if (since > 0) params["since"] = since
-            return AgentTranscriptDelta.fromDesktop(hub.request("agents.transcript", params), since, row.localId)
+            return AgentTranscriptDelta.fromDesktop(hub.request("agents.transcript", params, 20_000, row.desktopKey), since, row.localId)
         }
         return cloudTranscriptDelta(row, cloudSession(row))
     }
@@ -801,5 +985,11 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         hub.removeEventTap(tap)
         worker.shutdown()
         cloudReader.shutdown()
+        othersWorker.shutdown()
+        otherReader.shutdown()
+        synchronized(lock) {
+            for (token in otherTaps.values) hub.removeEventTap(token)
+            otherTaps.clear()
+        }
     }
 }

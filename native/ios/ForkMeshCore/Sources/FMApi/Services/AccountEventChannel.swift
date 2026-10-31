@@ -47,6 +47,7 @@ public final class AccountEventChannel {
 
     /// Fired with the topic of each event frame.
     @ObservationIgnored public var onTopic: (@MainActor (String) -> Void)?
+    @ObservationIgnored public var onEvent: (@MainActor (String, JSONObject) -> Void)?
     /// Fired with every other frame the relay delivers (the `hello` capability frame, `terminal`
     /// frames), for callers that speak more than topics.
     @ObservationIgnored public var onFrame: (@MainActor (JSONObject) -> Void)?
@@ -245,6 +246,7 @@ public final class AccountEventChannel {
         }
         let topic = frame.str("topic")
         if topic.isEmpty { return }
+        onEvent?(topic, frame)
         onTopic?(topic)
     }
 

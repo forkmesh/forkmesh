@@ -158,8 +158,8 @@ QString removeCoreSummaryText(const RemoveCorePlan &plan, bool destroyInstance)
                             "WireGuard peer and firewall allowances;")
                  .arg(name);
     lines << QStringLiteral("• delete its own DNS name and forget it in the DNS health loop;");
-    lines << QStringLiteral("• commit deploy/fleet.toml to fleet/remove-core-%1 for you to merge "
-                            "(nothing is pushed);")
+    lines << QStringLiteral("• commit deploy/fleet.toml to fleet/remove-core-%1 and merge it "
+                            "into main;")
                  .arg(name);
     if (destroyInstance)
         lines << QStringLiteral("• DELETE the %1 instance %2 (%3). Everything on it is gone and "

@@ -5,6 +5,8 @@
 // sent. Between them, pressing "add" on such a session queued a prompt nobody
 // would ever read and restarted into the same silence (adhoc #1618).
 #include "../src/ClaudeStreamSession.h"
+#include "../src/ClaudeControlProtocol.h"
+#include "../src/TranscriptCoverage.h"
 #include "../src/AgentGuardrails.h"
 #include "../src/AgentGuardrailLedger.h"
 #include "../src/AgentJail.h"
@@ -306,6 +308,22 @@ void runOrderedWriterTest()
     check(loaded.size() == 1 &&
               loaded.first().value(QStringLiteral("seq")).toInt() == 4,
           "clear and subsequent append keep queue order");
+
+    const QString filler(400, QLatin1Char('x'));
+    for (int seq = 5; seq <= 40; ++seq)
+        first.appendEvent(saved, QJsonObject{{QStringLiteral("seq"), seq},
+                                             {QStringLiteral("pad"), filler}});
+    AgentStore::flushTranscriptWrites();
+    const QList<QJsonObject> all = first.loadEvents(saved);
+    const QList<QJsonObject> recent = first.loadRecentEvents(saved, 2048);
+    bool recentWhole = !recent.isEmpty() && recent.size() < all.size();
+    for (int i = 0; i < recent.size(); ++i)
+        recentWhole = recentWhole &&
+                      recent.at(i) == all.at(all.size() - recent.size() + i);
+    check(recentWhole && recent.last().value(QStringLiteral("seq")).toInt() == 40,
+          "recent events read only the file's tail, whole lines in order");
+    check(first.loadRecentEvents(saved, 1 << 30).size() == all.size(),
+          "a tail larger than the file reads every event");
 }
 
 void runPendingPromptPersistenceTest()
@@ -939,6 +957,223 @@ void runLockedLaunchFindsUserInstalledCliTest()
 #endif
 }
 
+
+void runHostControlProtocolTest()
+{
+#ifdef Q_OS_LINUX
+    QTemporaryDir home;
+    QTemporaryDir worktree;
+    check(home.isValid() && worktree.isValid(), "host-control fixtures are valid");
+    QDir(home.path()).mkpath(QStringLiteral(".local/bin"));
+    QFile profile(home.filePath(QStringLiteral(".profile")));
+    check(profile.open(QIODevice::WriteOnly) &&
+              profile.write("PATH=\"$HOME/.local/bin:$PATH\"\n") > 0,
+          "the fixture's login profile puts ~/.local/bin on PATH");
+    profile.close();
+    const QString argsFile = home.filePath(QStringLiteral("args.txt"));
+    const QString stdinFile = home.filePath(QStringLiteral("stdin.jsonl"));
+    QFile cli(home.filePath(QStringLiteral(".local/bin/claude")));
+    const QByteArray script =
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$@\" > \"$FM_ARGS\"\n"
+        "printf '{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"cli-7\"}\\n'\n"
+        "printf '{\"type\":\"control_request\",\"request_id\":\"r1\",\"request\":{\"subtype\":"
+        "\"can_use_tool\",\"tool_name\":\"Write\",\"input\":{\"file_path\":\"/w/a.txt\","
+        "\"content\":\"hi\"},\"tool_use_id\":\"tu1\",\"permission_suggestions\":[{\"type\":"
+        "\"setMode\",\"mode\":\"acceptEdits\",\"destination\":\"session\"}]}}\\n'\n"
+        "printf '{\"type\":\"control_request\",\"request_id\":\"r2\",\"request\":{\"subtype\":"
+        "\"hook_callback\",\"callback_id\":\"x\"}}\\n'\n"
+        "printf '{\"type\":\"control_request\",\"request_id\":\"r3\",\"request\":{\"subtype\":"
+        "\"request_user_dialog\",\"dialog_kind\":\"lsp_recommendation\",\"payload\":{}}}\\n'\n"
+        "printf '{\"type\":\"control_request\",\"request_id\":\"r4\",\"request\":{\"subtype\":"
+        "\"elicitation\",\"mcp_server_name\":\"t\",\"message\":\"m\"}}\\n'\n"
+        "printf '{\"type\":\"control_cancel_request\",\"request_id\":\"r4\"}\\n'\n"
+        "printf 'a plain stdout line\\n'\n"
+        "while IFS= read -r line; do\n"
+        "  printf '%s\\n' \"$line\" >> \"$FM_STDIN\"\n"
+        "  case \"$line\" in *generate_session_title*)\n"
+        "    id=$(printf '%s' \"$line\" | sed 's/.*\"request_id\":\"\\([^\"]*\\)\".*/\\1/')\n"
+        "    printf '{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\","
+        "\"request_id\":\"%s\",\"response\":{\"title\":\"Fix the login bug\"}}}\\n' \"$id\";;\n"
+        "  esac\n"
+        "done\n";
+    check(cli.open(QIODevice::WriteOnly) && cli.write(script) > 0,
+          "a scripted claude is installed under ~/.local/bin");
+    cli.close();
+    cli.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                       QFileDevice::ExeOwner);
+
+    const QByteArray savedHome = qgetenv("HOME");
+    const QByteArray savedPath = qgetenv("PATH");
+    qputenv("HOME", home.path().toUtf8());
+    qputenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin");
+
+    ClaudeStreamSession session;
+    QList<QJsonObject> events;
+    QString stderrSeen;
+    QObject::connect(&session, &ClaudeStreamSession::event,
+                     [&events](const QJsonObject &event) { events.append(event); });
+    QObject::connect(&session, &ClaudeStreamSession::stderrText,
+                     [&stderrSeen](const QString &text) { stderrSeen += text; });
+    AgentRuntimeLaunch launch;
+    launch.workingDirectory = worktree.path();
+    launch.environment = {QStringLiteral("FM_ARGS=") + argsFile,
+                          QStringLiteral("FM_STDIN=") + stdinFile};
+    launch.initialPrompt = QStringLiteral("Fix the login bug");
+    launch.permissionMode = QStringLiteral("default");
+    launch.options.insert(QStringLiteral("hostControl"), true);
+    const QString mcpConfig = home.filePath(QStringLiteral("mcp-session.json"));
+    launch.options.insert(QStringLiteral("mcpConfig"), mcpConfig);
+    session.startRuntime(launch);
+
+    const auto keyed = [&events](const QString &key) {
+        int seen = 0;
+        for (const QJsonObject &event : events)
+            if (event.value(forkmesh::claudecontrol::kPromptKeyField).toString() == key)
+                ++seen;
+        return seen;
+    };
+    const bool prompted = pump([&] { return keyed(QStringLiteral("claude-input-r4")) >= 2; }, 10000);
+    check(prompted, qPrintable(QStringLiteral("the permission prompt, elicitation and its "
+                                              "cancel reach the owner (%1 events) %2")
+                                   .arg(events.size())
+                                   .arg(stderrSeen.trimmed().left(400))));
+    check(keyed(QStringLiteral("claude-approval-r1")) == 1 &&
+              session.hasPendingPrompt(QStringLiteral("claude-approval-r1")),
+          "a permission request waits under its card id");
+    check(!session.hasPendingPrompt(QStringLiteral("claude-input-r4")),
+          "a cancelled request is no longer pending");
+    bool requestLeaked = false;
+    for (const QJsonObject &event : events) {
+        const QString id = event.value(QStringLiteral("request_id")).toString();
+        if (id == QLatin1String("r2") || id == QLatin1String("r3"))
+            requestLeaked = true;
+    }
+    check(!requestLeaked, "requests nobody renders never mark the session as waiting");
+    const auto droppedCount = [&events] {
+        int seen = 0;
+        for (const QJsonObject &event : events)
+            if (event.value(QStringLiteral("type")).toString() ==
+                QLatin1String("_local_raw_line"))
+                ++seen;
+        return seen;
+    };
+    pump([&] { return droppedCount() >= 3; }, 5000);
+    QStringList droppedKinds;
+    for (const QJsonObject &event : events) {
+        if (event.value(QStringLiteral("type")).toString() == QLatin1String("_local_raw_line"))
+            droppedKinds << forkmesh::transcriptcoverage::eventGaps(event);
+    }
+    check(droppedKinds.contains(QStringLiteral("claude-line:control_request/hook_callback")) &&
+              droppedKinds.contains(QStringLiteral(
+                  "claude-line:control_request/request_user_dialog/lsp_recommendation")) &&
+              droppedKinds.contains(QStringLiteral("claude-line:(plain text)")) &&
+              droppedKinds.size() == 3,
+          qPrintable(QStringLiteral("only the refused and unanswerable requests and the plain "
+                                    "stdout line are recorded "
+                                    "as output the transcript never shows (got %1)")
+                         .arg(droppedKinds.join(QStringLiteral(", ")))));
+    check(session.cliSessionId() == QLatin1String("cli-7"), "the CLI's session id is learned");
+
+    AgentRuntimeCommand answer{1, AgentRuntimeCommandTypes::RequestRespond,
+                               QStringLiteral("claude-approval-r1"), 0,
+                               {{QStringLiteral("answer"),
+                                 forkmesh::claudecontrol::kAllowAndRemember}}};
+    check(session.sendCommand(answer), "the card's answer is delivered");
+    check(session.permissionMode() == QLatin1String("acceptEdits"),
+          "remembering a mode switch updates the session's mode");
+    check(!session.hasPendingPrompt(QStringLiteral("claude-approval-r1")),
+          "an answered request is no longer pending");
+    check(!session.sendCommand(answer),
+          "a second click on an answered approval card is refused, not sent as a tool result");
+
+    QString title;
+    check(session.generateSessionTitle(QStringLiteral("Fix the login bug"),
+                                       [&title](const QString &named) { title = named; }),
+          "a title request is sent");
+    check(pump([&title] { return !title.isEmpty(); }, 5000) &&
+              title == QLatin1String("Fix the login bug"),
+          "Claude Code's session name comes back");
+    check(session.setPermissionMode(QStringLiteral("default")) &&
+              session.sendUserText(QStringLiteral("Keep going")) &&
+              session.sendUserText(QStringLiteral("And the tests")),
+          "a mid-run switch to Ask and two follow-ups are sent");
+    check(session.renameSession(QStringLiteral("Login fix")), "a rename is sent");
+
+    QList<QJsonObject> written;
+    pump([&] {
+        written.clear();
+        QFile in(stdinFile);
+        if (!in.open(QIODevice::ReadOnly))
+            return false;
+        for (const QByteArray &line : in.readAll().split('\n'))
+            if (!line.trimmed().isEmpty())
+                written.append(QJsonDocument::fromJson(line).object());
+        for (const QJsonObject &line : written)
+            if (line.value(QStringLiteral("request")).toObject().value(QStringLiteral("subtype")) ==
+                QLatin1String("rename_session"))
+                return true;
+        return false;
+    }, 5000);
+    session.stop();
+    qputenv("HOME", savedHome);
+    qputenv("PATH", savedPath);
+
+    check(!written.isEmpty() &&
+              written.first().value(QStringLiteral("request")).toObject()
+                      .value(QStringLiteral("subtype")).toString() == QLatin1String("initialize"),
+          "the handshake is the first line Claude Code reads");
+    check(written.size() > 1 && written.at(1).value(QStringLiteral("type")).toString() ==
+                                    QLatin1String("user"),
+          "the task follows the handshake");
+    bool refusedHook = false;
+    bool answeredDialog = false;
+    bool allowed = false;
+    bool renamed = false;
+    for (const QJsonObject &line : written) {
+        const QJsonObject response = line.value(QStringLiteral("response")).toObject();
+        const QString id = response.value(QStringLiteral("request_id")).toString();
+        if (id == QLatin1String("r2"))
+            refusedHook = response.value(QStringLiteral("subtype")).toString() == QLatin1String("error");
+        if (id == QLatin1String("r3"))
+            answeredDialog = true;
+        if (id == QLatin1String("r1"))
+            allowed = response.value(QStringLiteral("response")).toObject()
+                          .value(QStringLiteral("updatedPermissions")).toArray().size() == 1;
+        const QJsonObject request = line.value(QStringLiteral("request")).toObject();
+        if (request.value(QStringLiteral("subtype")) == QLatin1String("rename_session"))
+            renamed = request.value(QStringLiteral("session_id")).toString() == QLatin1String("cli-7") &&
+                      request.value(QStringLiteral("source")).toString() == QLatin1String("host");
+    }
+    QStringList userTexts;
+    for (const QJsonObject &line : written)
+        if (line.value(QStringLiteral("type")).toString() == QLatin1String("user"))
+            userTexts.append(line.value(QStringLiteral("message")).toObject()
+                                 .value(QStringLiteral("content")).toString());
+    int keepGoing = -1;
+    for (int i = 0; i < userTexts.size() && keepGoing < 0; ++i)
+        if (userTexts.at(i).endsWith(QStringLiteral("Keep going")))
+            keepGoing = i;
+    check(keepGoing > 0 &&
+              userTexts.at(keepGoing).startsWith(QStringLiteral("[ForkMesh: permission mode changed.")) &&
+              userTexts.at(keepGoing).contains(QStringLiteral("from Edit mode (acceptEdits) to Ask mode (default)")),
+          qPrintable(QStringLiteral("the first message after a mode switch tells the agent the new mode: %1")
+                         .arg(userTexts.join(QStringLiteral(" | ")).left(600))));
+    check(userTexts.contains(QStringLiteral("And the tests")),
+          "the agent is told about a switch once, not on every message");
+    check(refusedHook, "an unsupported request is refused instead of left hanging");
+    check(!answeredDialog, "an undeclared dialog kind is never answered");
+    check(allowed, "the approval carries Claude's suggested permission update");
+    check(renamed, "a rename names the CLI session and says the host chose it");
+    QFile args(argsFile);
+    const QString argv = args.open(QIODevice::ReadOnly) ? QString::fromUtf8(args.readAll()) : QString();
+    check(argv.contains(QStringLiteral("--permission-prompt-tool\nstdio")),
+          "host control routes permission prompts over stdio");
+    check(argv.contains(QStringLiteral("--mcp-config\n") + mcpConfig + QLatin1Char('\n')),
+          "the run gets the desktop's ForkMesh MCP config");
+#endif
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -957,6 +1192,7 @@ int main(int argc, char *argv[])
     runDeletedSessionStaysDeletedTest();
     runRepositoryGuardrailTest();
     runLockedLaunchFindsUserInstalledCliTest();
+    runHostControlProtocolTest();
     runProviderNeutralRuntimePersistenceTest();
     runGuardrailLedgerTest();
     if (failures == 0)

@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import collections
 import datetime as dt
 import json
+import os
 import re
 import subprocess
 import sys
@@ -15,6 +17,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "www" / "docs" / "engineering" / "quality-gates.json"
+ANNOTATION_TAIL_LINES = 40
+ANNOTATION_MAX_CHARS = 3500
+ANNOTATION_MARKED_LINES = 12
+FAILURE_MARKERS = ("--- FAIL", "FAILED ", "FAIL\t", "ERROR ", "panic: ", "Error: ")
 
 
 class GateError(RuntimeError):
@@ -327,15 +333,53 @@ def run_profile(config: dict, profile: str) -> None:
     except KeyError as exc:
         raise GateError(f"unknown profile: {profile}") from exc
     gates = {gate["id"]: gate for gate in config["gates"]}
+    failed = []
     for gate_id in selected:
         command = [
             sys.executable if part == "{python}" else part
             for part in gates[gate_id]["command"]
         ]
         print(f"[quality-gate] {gate_id}: {' '.join(command)}", flush=True)
-        result = subprocess.run(command, cwd=ROOT, check=False)
-        if result.returncode:
-            raise GateError(f"{gate_id} failed with exit code {result.returncode}")
+        returncode, tail = _run_gate(command)
+        if returncode:
+            failed.append(f"{gate_id} (exit code {returncode})")
+            print(f"[quality-gate] {gate_id} failed with exit code {returncode}",
+                  flush=True)
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                print(github_annotation(gate_id, returncode, tail), flush=True)
+    if failed:
+        raise GateError("failed gates: " + ", ".join(failed))
+
+
+def _run_gate(command: list[str]) -> tuple[int, list[str]]:
+    tail: collections.deque[str] = collections.deque(maxlen=ANNOTATION_TAIL_LINES)
+    marked: list[str] = []
+    process = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        if line.strip():
+            tail.append(line.rstrip())
+            if line.lstrip().startswith(FAILURE_MARKERS) and len(marked) < ANNOTATION_MARKED_LINES:
+                marked.append(line.strip())
+    returncode = process.wait()
+    kept = [line for line in marked if line not in tail]
+    return returncode, kept + (["..."] if kept else []) + list(tail)
+
+
+def github_annotation(gate_id: str, returncode: int, tail: list[str]) -> str:
+    message = "\n".join(tail)[-ANNOTATION_MAX_CHARS:] or f"exit code {returncode}"
+    escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    title = f"Quality gate {gate_id} failed".replace("%", "%25").replace(",", "%2C").replace(":", "%3A")
+    return f"::error title={title}::{escaped}"
 
 
 def _parser() -> argparse.ArgumentParser:

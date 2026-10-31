@@ -235,6 +235,7 @@ struct DjDeckSheet: View {
                     }
                 }
                 Toggle("8-second loop", isOn: Binding(get: { deck.loop }, set: { _ in model.toggleLoop(deck.side) }))
+                Toggle("Repeat song", isOn: Binding(get: { deck.repeats }, set: { _ in model.toggleRepeat(deck.side) }))
             }
             .disabled(!deck.loaded)
             Section("Cue") {

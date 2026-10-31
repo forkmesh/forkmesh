@@ -6,7 +6,7 @@ an image, for a person to copy or post.
 
 | Piece | Path |
 | --- | --- |
-| Herald definition | `.forkmesh/teammates/herald.json` |
+| Herald definition | `.forkmesh/workflows/herald.json` |
 | Herald playbook | `.forkmesh/shortcuts/keep-an-x-post-ready.md` |
 | Herald portrait | `desktop/resources/agent-ui/icons/teammate-herald.png` (avatar key `herald`), phone faces `teammate_faces/herald.jpg` and `teammate-face-herald.imageset` |
 | Stored ready post, `GET`/`PUT`/`PATCH /ready-post` | `marketplace/packages/marketing/content/worker/marketing.py` ([package README](../../marketplace/packages/marketing/README.md#ready-x-post)) |
@@ -31,7 +31,12 @@ an image, for a person to copy or post.
    **Post on X**; on a phone that is the system share sheet.
 4. **The next one starts.** The post closes on Mark posted or Skip, a
    completed iOS share, `POST /x-post` with the same text, or a synced X post
-   with the same text. The desktop then starts Herald again.
+   with the same text. The desktop then starts Herald again. Every surface
+   has an optional **Link to the post** field next to Mark posted: the link
+   goes in the `url` of the `PATCH` and is kept in the closed post's history,
+   so the "Last post" line can open it and Herald can see what went out. Skip
+   never sends it. The worker checks the link like any posted link
+   (`invalid_post_url`) and saves X links as `https://x.com/<user>/status/<id>`.
 
 ## Rules
 

@@ -16,7 +16,10 @@
 #include "MemoryUsageChart.h"
 #include "ProcessMemory.h"
 #include "SystemStats.h"
+#include "FontSizing.h"
+#include "DesignTokens.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
@@ -28,6 +31,8 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QPixmapCache>
 #include <QPointer>
@@ -135,9 +140,10 @@ void setDelta(QTreeWidgetItem *item, int column, qint64 delta, double seconds)
     item->setData(column, kSortRole, delta);
     item->setTextAlignment(column, Qt::AlignRight | Qt::AlignVCenter);
     // Growth is the thing being watched for; shrinking is good news.
-    item->setForeground(column, delta > 0   ? QBrush(QColor("#e5534b"))
-                                : delta < 0 ? QBrush(QColor("#3fb950"))
-                                            : QBrush());
+    item->setForeground(column,
+                        delta > 0   ? QBrush(Theme::nextOr(Theme::Role::Warning, QColor("#e5534b")))
+                        : delta < 0 ? QBrush(Theme::nextOr(Theme::Role::Success, QColor("#3fb950")))
+                                    : QBrush());
     if (delta != 0 && seconds > 0) {
         item->setToolTip(column,
                          QStringLiteral("%1 per second since the last sample")
@@ -352,17 +358,129 @@ QTreeWidget *makeTree(const QStringList &headers)
     return tree;
 }
 
+constexpr int kMemoryNextChartHeight = 244;
+constexpr int kMemoryClassicChartHeight = 180;
+constexpr int kMemoryNextGutter = 24;
+
+class MemoryLookHook : public QObject
+{
+public:
+    MemoryLookHook(QWidget *page, std::function<void()> apply)
+        : QObject(page), m_page(page), m_apply(std::move(apply))
+    {
+        page->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_page && (event->type() == QEvent::Polish ||
+                                  event->type() == QEvent::StyleChange ||
+                                  event->type() == QEvent::PaletteChange))
+            m_apply();
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QWidget *m_page = nullptr;
+    std::function<void()> m_apply;
+};
+
+QIcon memoryPlaybackIcon(bool play, const QColor &color)
+{
+    const qreal ratio = qMax<qreal>(2.0, qApp ? qApp->devicePixelRatio() : 1.0);
+    const int px = 16;
+    QPixmap pixmap(qRound(px * ratio), qRound(px * ratio));
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color, 1.4);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    if (play) {
+        QPainterPath path;
+        path.moveTo(5.0, 3.2);
+        path.lineTo(12.6, 8.0);
+        path.lineTo(5.0, 12.8);
+        path.closeSubpath();
+        painter.drawPath(path);
+    } else {
+        painter.drawRoundedRect(QRectF(4.0, 3.0, 2.6, 10.0), 0.8, 0.8);
+        painter.drawRoundedRect(QRectF(9.4, 3.0, 2.6, 10.0), 0.8, 0.8);
+    }
+    return QIcon(pixmap);
+}
+
+QIcon memorySearchIcon(const QColor &color)
+{
+    return themedOcticon(QStringLiteral("search"), color, 14);
+}
+
+void applyMemoryChartLook(MemoryUsageChart *chart, bool next)
+{
+    if (!chart)
+        return;
+    const struct {
+        const char *name;
+        Theme::Role role;
+    } kChartRoles[] = {
+        {"nextFg", Theme::Role::Fg},
+        {"nextMuted", Theme::Role::FgMuted},
+        {"nextSubtle", Theme::Role::FgSubtle},
+        {"nextBorder", Theme::Role::Border},
+        {"nextBorderStrong", Theme::Role::BorderStrong},
+        {"nextSurface", Theme::Role::Surface},
+        {"nextBg", Theme::Role::Bg},
+        {"nextAccent", Theme::Role::Accent},
+    };
+    for (const auto &entry : kChartRoles)
+        chart->setProperty(entry.name, next ? QVariant(Theme::color(entry.role)) : QVariant());
+    chart->setFixedHeight(next ? kMemoryNextChartHeight : kMemoryClassicChartHeight);
+    chart->update();
+}
+
+void applyMemoryTreeLook(QTreeWidget *tree, int firstText, bool next)
+{
+    if (!tree)
+        return;
+    tree->setAlternatingRowColors(!next);
+    QTreeWidgetItem *header = tree->headerItem();
+    for (int c = 1; c < tree->columnCount(); ++c) {
+        if (c == firstText)
+            continue;
+        header->setData(c, Qt::TextAlignmentRole,
+                        next ? QVariant(int(Qt::AlignRight | Qt::AlignVCenter)) : QVariant());
+    }
+}
+
 } // namespace
 
 QWidget *MainWindow::buildMemorySection()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("memorySection"));
+    const bool next = Theme::isNext();
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(20, 18, 20, 20);
     outer->setSpacing(10);
+    if (next) {
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->setSpacing(0);
+    }
 
     auto *heading = new QHBoxLayout;
+    QVBoxLayout *titleColumn = nullptr;
+    if (next) {
+        heading->setContentsMargins(kMemoryNextGutter, 12, kMemoryNextGutter, 12);
+        heading->setSpacing(6);
+        titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        heading->addLayout(titleColumn);
+    }
     auto *title = new QLabel(QStringLiteral("Memory"));
     title->setObjectName(QStringLiteral("pageTitle"));
     title->setToolTip(QStringLiteral(
@@ -371,18 +489,31 @@ QWidget *MainWindow::buildMemorySection()
         "allocator's in-use and held-but-free split, and the app's own counts "
         "for the caches and buffers it keeps. Sampling runs only while this "
         "page is open."));
-    heading->addWidget(title);
+    if (titleColumn)
+        titleColumn->addWidget(title);
+    else
+        heading->addWidget(title);
 
     m_memoryStatus = new QLabel;
     m_memoryStatus->setObjectName(QStringLiteral("mutedLabel"));
     m_memoryStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    heading->addWidget(m_memoryStatus);
-    heading->addStretch();
+    if (titleColumn) {
+        m_memoryStatus->setProperty("memoryRole", QStringLiteral("summary"));
+        titleColumn->addWidget(m_memoryStatus);
+        heading->addStretch(1);
+    } else {
+        heading->addWidget(m_memoryStatus);
+        heading->addStretch();
+    }
 
     m_memoryFilter = new QLineEdit;
     m_memoryFilter->setPlaceholderText(QStringLiteral("Filter…"));
     m_memoryFilter->setClearButtonEnabled(true);
-    m_memoryFilter->setFixedWidth(180);
+    m_memoryFilter->setFixedWidth(next ? 160 : 180);
+    QAction *filterIcon = nullptr;
+    if (next)
+        filterIcon = m_memoryFilter->addAction(
+            memorySearchIcon(Theme::color(Theme::Role::FgSubtle)), QLineEdit::LeadingPosition);
     m_memoryFilter->setToolTip(QStringLiteral(
         "Show only groups, mappings and app items whose name or path contains "
         "this text"));
@@ -415,6 +546,14 @@ QWidget *MainWindow::buildMemorySection()
     m_memoryPause->setCheckable(true);
     m_memoryPause->setToolTip(QStringLiteral(
         "Freeze the numbers where they are, to read or copy them"));
+    if (next) {
+        m_memoryPause->setIcon(memoryPlaybackIcon(false, Theme::color(Theme::Role::FgMuted)));
+        m_memoryPause->setIconSize(QSize(16, 16));
+        connect(m_memoryPause, &QPushButton::toggled, m_memoryPause, [this](bool paused) {
+            m_memoryPause->setIcon(
+                memoryPlaybackIcon(paused, Theme::color(Theme::Role::FgMuted)));
+        });
+    }
     connect(m_memoryPause, &QPushButton::toggled, this, [this](bool paused) {
         m_memoryPause->setText(paused ? QStringLiteral("Resume")
                                       : QStringLiteral("Pause"));
@@ -455,7 +594,9 @@ QWidget *MainWindow::buildMemorySection()
     copy->setToolTip(QStringLiteral(
         "Copy the latest sample as plain text: totals, every group and its "
         "largest mappings, the allocator and the app's own counts"));
-    setOcticon(copy, "copy", 14);
+    if (next)
+        copy->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    setOcticon(copy, "copy", next ? 16 : 14);
     connect(copy, &QPushButton::clicked, this, [this] {
         if (m_memoryLastReport.isEmpty())
             return;
@@ -471,7 +612,9 @@ QWidget *MainWindow::buildMemorySection()
         "The agent memory governor: the shared budget agents run in, its "
         "freeze and thaw thresholds, the units it watches and what it has "
         "done"));
-    setOcticon(governor, "shield-check", 14);
+    if (next)
+        governor->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    setOcticon(governor, "shield-check", next ? 16 : 14);
     connect(governor, &QPushButton::clicked, this,
             [this] { showSection(kGovernorSectionIndex); });
 
@@ -481,16 +624,30 @@ QWidget *MainWindow::buildMemorySection()
     memoryMap->setToolTip(QStringLiteral(
         "Every mapping as a treemap sized by its bytes, like the code map: "
         "groups as folders, mappings inside them, in 2D or 3D"));
-    setOcticon(memoryMap, "graph", 14);
+    if (next)
+        memoryMap->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    setOcticon(memoryMap, "graph", next ? 16 : 14);
     connect(memoryMap, &QPushButton::clicked, this, [this] { openMemoryMap(); });
     heading->addWidget(memoryMap);
     heading->addWidget(governor);
     outer->addLayout(heading);
+    QVBoxLayout *content = outer;
+    if (next) {
+        auto *rule = new QFrame(page);
+        rule->setProperty("memoryRule", true);
+        rule->setFrameShape(QFrame::NoFrame);
+        rule->setFixedHeight(1);
+        outer->addWidget(rule);
+        content = new QVBoxLayout;
+        content->setContentsMargins(kMemoryNextGutter, 20, kMemoryNextGutter, 20);
+        content->setSpacing(20);
+        outer->addLayout(content, 1);
+    }
 
     // Headline tiles. Each is a value and a line under it saying what moved.
     auto *tiles = new QGridLayout;
-    tiles->setHorizontalSpacing(10);
-    tiles->setVerticalSpacing(10);
+    tiles->setHorizontalSpacing(next ? 12 : 10);
+    tiles->setVerticalSpacing(next ? 12 : 10);
     struct TileSpec {
         const char *id;
         const char *title;
@@ -524,24 +681,39 @@ QWidget *MainWindow::buildMemorySection()
         auto *layout = new QVBoxLayout(frame);
         layout->setContentsMargins(12, 8, 12, 8);
         layout->setSpacing(2);
+        if (next) {
+            layout->setContentsMargins(16, 12, 16, 12);
+            layout->setSpacing(4);
+        }
         auto *name = new QLabel(QString::fromUtf8(spec.title));
         name->setObjectName(QStringLiteral("mutedLabel"));
         layout->addWidget(name);
         auto *value = new QLabel(QStringLiteral("—"));
         QFont big = value->font();
-        big.setPointSizeF(big.pointSizeF() * 1.6);
+        big = forkmesh::scaledFont(big, 1.6);
         big.setBold(true);
         value->setFont(big);
         layout->addWidget(value);
         auto *note = new QLabel;
         note->setObjectName(QStringLiteral("mutedLabel"));
         layout->addWidget(note);
+        if (next) {
+            name->setProperty("memoryRole", QStringLiteral("tileName"));
+            value->setProperty("memoryRole", QStringLiteral("tileValue"));
+            note->setProperty("memoryRole", QStringLiteral("tileNote"));
+            for (QLabel *label : {name, value, note})
+                label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        }
         m_memoryTiles.insert(QString::fromLatin1(spec.id), value);
         m_memoryTileNotes.insert(QString::fromLatin1(spec.id), note);
         tiles->addWidget(frame, tileIndex / 4, tileIndex % 4);
         ++tileIndex;
     }
-    outer->addLayout(tiles);
+    if (next) {
+        for (int column = 0; column < 4; ++column)
+            tiles->setColumnStretch(column, 1);
+    }
+    content->addLayout(tiles);
 
     m_memoryChart = new MemoryUsageChart;
     QVector<MemoryUsageChart::Band> bands;
@@ -549,9 +721,13 @@ QWidget *MainWindow::buildMemorySection()
         bands.append({groupTitle(MappingGroup(g)), colorFor(MappingGroup(g))});
     m_memoryChart->setBands(bands);
     m_memoryChart->setToolTip(QString());
-    outer->addWidget(m_memoryChart);
+    m_memoryChart->setProperty(
+        "nextTitle", QStringLiteral("Resident memory \u00b7 last 5 minutes"));
+    content->addWidget(m_memoryChart);
 
     auto *tabs = new QTabWidget;
+    if (next)
+        tabs->setDocumentMode(true);
     m_memoryTree = makeTree({QStringLiteral("Mapping"), QStringLiteral("Resident"),
                              QStringLiteral("Change"), QStringLiteral("Private"),
                              QStringLiteral("Shared"),
@@ -575,7 +751,30 @@ QWidget *MainWindow::buildMemorySection()
                                                     QHeaderView::ResizeToContents);
     m_memoryAppTree->sortByColumn(AppSize, Qt::DescendingOrder);
     tabs->addTab(m_memoryAppTree, QStringLiteral("Inside the app"));
-    outer->addWidget(tabs, 1);
+    content->addWidget(tabs, 1);
+
+    if (next) {
+        const QPointer<MemoryUsageChart> chart(m_memoryChart);
+        const QPointer<QTreeWidget> mappingTree(m_memoryTree);
+        const QPointer<QTreeWidget> appTree(m_memoryAppTree);
+        const QPointer<QPushButton> pause(m_memoryPause);
+        const QPointer<QLineEdit> filter(m_memoryFilter);
+        const auto applyLook = [chart, mappingTree, appTree, pause, filter, filterIcon] {
+            const bool nextNow = Theme::isNext();
+            applyMemoryChartLook(chart, nextNow);
+            applyMemoryTreeLook(mappingTree, -1, nextNow);
+            applyMemoryTreeLook(appTree, AppDetail, nextNow);
+            if (pause)
+                pause->setIcon(nextNow ? memoryPlaybackIcon(pause->isChecked(),
+                                                            Theme::color(Theme::Role::FgMuted))
+                                       : QIcon());
+            if (filter && filterIcon)
+                filterIcon->setIcon(nextNow ? memorySearchIcon(Theme::color(Theme::Role::FgSubtle))
+                                            : QIcon());
+        };
+        applyLook();
+        new MemoryLookHook(page, applyLook);
+    }
 
     m_memoryTimer = new QTimer(page);
     m_memoryTimer->setInterval(1000);

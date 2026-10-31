@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "description": "Node binding for e2ee-key bundles: nsig is Ed25519 by the node key (node = senderId = b64u of the 32-byte Ed25519 public key) over message.",
+  "room": "world-general",
+  "acct": "alice",
+  "nodeSeed": "u8/KTGEnmphGhjwayrLntw8ebq0+SwtRbEE/vFWJv7A=",
+  "node": "SFwW-WvQ09TamVzphDQEF1oi-53Q5kae5TYaXmQquDE",
+  "identitySeed": "/JKeT6w9Nxw60BalUf6sLFap8QbAa8qR7+zRWCcd6KY=",
+  "idk": "nBTyTFdSVqVqbY8oq_W48RFMPzBEI_q06aw0j8cXDR0",
+  "message": "forkmesh-chat-e2ee-node-v1\nworld-general\nhKRED57ZS_zzKNNq\nnBTyTFdSVqVqbY8oq_W48RFMPzBEI_q06aw0j8cXDR0\nalice",
+  "nsig": "Nx3W0yXTys2TOzM5cxZTx85s_nZU7QO7S3hMyX_X5HXDINt3Pb2-WypvEB_AEBCdVluwW0wtFp-PpQvIWkyXBQ",
+  "rejects": [
+    {
+      "why": "signed by another node key",
+      "node": "SFwW-WvQ09TamVzphDQEF1oi-53Q5kae5TYaXmQquDE",
+      "room": "world-general",
+      "nsig": "P6phZGeDSEj8-qSCn90v7BRMBVQv15n3Kx0oXgMFfPg98ebU2JthXFTn7LQ9BeKz1YU3uz26JXMfouuX06FgAQ"
+    },
+    {
+      "why": "signature for another room",
+      "node": "SFwW-WvQ09TamVzphDQEF1oi-53Q5kae5TYaXmQquDE",
+      "room": "general",
+      "nsig": "Nx3W0yXTys2TOzM5cxZTx85s_nZU7QO7S3hMyX_X5HXDINt3Pb2-WypvEB_AEBCdVluwW0wtFp-PpQvIWkyXBQ"
+    },
+    {
+      "why": "node is not an Ed25519 public key",
+      "node": "node-alice-phone",
+      "room": "world-general",
+      "nsig": "Nx3W0yXTys2TOzM5cxZTx85s_nZU7QO7S3hMyX_X5HXDINt3Pb2-WypvEB_AEBCdVluwW0wtFp-PpQvIWkyXBQ"
+    }
+  ]
+}

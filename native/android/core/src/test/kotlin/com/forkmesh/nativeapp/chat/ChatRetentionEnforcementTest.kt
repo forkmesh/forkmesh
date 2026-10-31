@@ -120,7 +120,7 @@ class ChatRetentionEnforcementTest {
         val crypto = RoomCrypto.withPassphrase(room, "pass")
         fun entry(id: String, ts: Long) = mapOf(
             "ts" to ts,
-            "body" to Json.stringify(crypto.encrypt(mapOf("type" to "chat", "id" to id, "senderId" to "peer", "sender" to "Pat", "text" to id, "ts" to ts))),
+            "body" to Json.stringify(crypto.encrypt(mapOf("type" to "chat", "id" to id, "senderId" to "peer", "sender" to "Pat", "channel" to "#design", "text" to id, "ts" to ts)) + ("srv" to true)),
         )
         api.replies["GET /api/chat/channels/$roomId/history"] = mapOf(
             "room" to room, "passphrase" to "pass", "messages" to listOf(entry("stale", clock - 2 * hour), entry("fresh", clock - 60_000L)),

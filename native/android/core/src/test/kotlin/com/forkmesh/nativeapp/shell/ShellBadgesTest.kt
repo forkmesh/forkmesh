@@ -128,4 +128,17 @@ class ShellBadgesTest {
         assertEq(null, other.of(repo, RepoHubSection.Issues))
         expect(other.knows(RepoRef("ACME", "other")))
     }
+
+    fun testSavedRepoCountsComeBackForTheirRepositoryOnly() {
+        val repo = RepoRef("Acme", "Repo")
+        val saved = ShellRepoCounts.encode(mapOf(RepoHubSection.Pulls to 3, RepoHubSection.Issues to 12))
+        assertEq("Issues:12,Pulls:3", saved)
+        assertEq("shell/repoCounts/acme/repo", ShellRepoCounts.key(repo))
+        val restored = ShellRepoCounts().restored(repo, saved)
+        assertEq(12, restored.of(RepoRef("acme", "repo"), RepoHubSection.Issues))
+        assertEq(mapOf(RepoHubSection.Pulls to 3), ShellRepoCounts.decode("Pulls:3,Bogus:1,Issues:x,"))
+        val live = ShellRepoCounts().adopt(repo, mapOf(RepoHubSection.Pulls to 7))
+        assertEq(7, live.restored(repo, saved).of(repo, RepoHubSection.Pulls))
+        assertEq(ShellRepoCounts(), ShellRepoCounts().restored(repo, ""))
+    }
 }

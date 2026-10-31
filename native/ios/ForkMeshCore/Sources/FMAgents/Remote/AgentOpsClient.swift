@@ -49,10 +49,15 @@ public final class AgentOpsClient {
         try await prepare(.merge, ["id": .int(Int64(sessionId))])
     }
 
-    public func merge(sessionId: Int, token: String, typed: String) async throws -> MergeOutcome {
-        let reply = try await family.call(
-            "merge", ["id": .int(Int64(sessionId)), "token": .string(token), "typed": .string(typed)],
-            timeout: 180)
+    public func merge(sessionId: Int, token: String, typed: String, setAside: Bool = false) async throws
+        -> MergeOutcome
+    {
+        var params: JSONObject = [
+            "id": .int(Int64(sessionId)), "token": .string(token), "typed": .string(typed),
+            "offerSetAside": .bool(true),
+        ]
+        if setAside { params["setAside"] = .bool(true) }
+        let reply = try await family.call("merge", params, timeout: 180)
         return MergeOutcome(json: reply)
     }
 
@@ -218,7 +223,7 @@ public final class AgentOpsClient {
 
     public nonisolated static func describe(_ error: Error) -> String {
         guard let code = errorCode(error) else { return String(describing: error) }
-        if code == "merge_failed", let control = error as? LocalControlException,
+        if code == "merge_failed" || code == "checkout_dirty", let control = error as? LocalControlException,
             !control.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {
             return ControlErrorText.withReason("The merge did not finish.", control)
@@ -238,6 +243,7 @@ public final class AgentOpsClient {
         case "conflict_check_unavailable": return "The desktop's Git is too old to check for conflicts first. Merge on the desktop."
         case "no_base_branch": return "The desktop could not find the branch to merge into."
         case "merge_failed": return "The merge did not finish. The desktop's repository page says why."
+        case "checkout_dirty": return "The merge did not finish: the desktop's checkout has uncommitted changes in files this merge touches."
         case "repo_unavailable": return "The desktop could not open that repository."
         case "name_mismatch": return "The typed name does not match the branch."
         case "branch_gone": return "The agent's branch and worktree are gone from the desktop."

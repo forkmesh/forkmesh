@@ -70,7 +70,7 @@ def test_share_images_exist():
 def test_app_pages_load_the_spider():
     for path in sorted(APP_PUBLIC.rglob("*.html")):
         relative = path.relative_to(APP_PUBLIC).as_posix()
-        if "/partials/" in relative or relative in ("dashboard/shell.html", "dashboard/chat/index.html"):
+        if "/partials/" in relative or relative == "dashboard/shell.html":
             continue
         text = path.read_text(encoding="utf-8")
         if relative in APP_PAGES_WITHOUT_SPIDER:
@@ -79,9 +79,8 @@ def test_app_pages_load_the_spider():
             assert SPIDER in text, relative
 
 
-def test_dashboard_chat_leaves_the_spider_out():
+def test_dashboard_pages_load_the_spider():
     read = lambda rel: (APP_PUBLIC / rel).read_text(encoding="utf-8")
-    assert SPIDER not in dashboard_shell.compose_page_from_reader(read, "chat")
     assert SPIDER in dashboard_shell.compose_page_from_reader(read, "agents")
 
 

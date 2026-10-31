@@ -11,6 +11,7 @@ import SwiftUI
 @MainActor
 struct AccountInstaller: AppServicesInstaller {
     func install(into services: AppServices) {
+        AccountSyncSetup.install()
         services.routes.register(.settings, by: "WS18") { route in
             guard case let .settings(section) = route else {
                 return AnyView(SettingsScreen())

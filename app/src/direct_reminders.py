@@ -9,7 +9,6 @@ DIRECT_UNREAD_KIND = "direct_unread"
 REMINDER_DELAY_MS = 24 * 60 * 60 * 1000
 REMINDER_MAX_ROWS = 32
 REMINDER_MAX_RECIPIENTS = 4
-REMINDER_MAX_LISTED = 10
 CANDIDATES_SQL = (
     "SELECT p.conversation_id,p.participant_bi,COUNT(*) AS stored,"
     "MIN(h.ts) AS first_ts "
@@ -73,75 +72,47 @@ async def _sender_name(env, conversation_id, recipient_name):
     return names[1] if names[0] == recipient_name else names[0]
 
 
-def reminder_email(name, senders):
-    senders = list(senders)[:REMINDER_MAX_LISTED]
-    total = sum(count for _sender, count in senders)
+REMINDER_SUBJECT = "You have unread messages on ForkMesh"
+
+
+def reminder_email(name, counts):
+    total = sum(int(count) for count in counts)
     greeting = name or "there"
     chat_url = FORKMESH_SITE_URL + "chat"
-    if len(senders) == 1:
-        subject = "ForkMesh: %s from %s waiting on the server" % (
-            _plural(total, "unread direct message"), senders[0][0])
-    else:
-        subject = "ForkMesh: %s from %d people waiting on the server" % (
-            _plural(total, "unread direct message"), len(senders))
-    lines = ["%s: %s" % (sender, _plural(count, "message"))
-             for sender, count in senders]
+    summary = (
+        "You have %s that have been waiting on the server for more than a "
+        "day." % _plural(total, "unread direct message"))
     text = (
-        "Hi " + greeting + ",\n\n"
-        "You have direct messages that have been waiting for more than a "
-        "day:\n\n"
-        + "\n".join("- " + line for line in lines) + "\n\n"
+        "Hi " + greeting + ",\n\n" + summary + "\n\n"
         "ForkMesh keeps an encrypted copy of a direct message on the server "
         "only until one of your devices receives it. Open ForkMesh chat to "
         "read them so they are deleted from the server: " + chat_url
         + "\n\n"
-        "Messages are end-to-end encrypted, so their contents are not sent "
-        "over email. Unread messages are deleted from the server after 7 "
-        "days.\n"
+        "Messages are end-to-end encrypted, so neither their contents nor "
+        "their senders are named over email. Unread messages are deleted "
+        "from the server after 7 days.\n"
         "To stop these emails, turn off \"Unread direct messages\" in your "
         "notification settings."
     )
-    rows = "".join(
-        "<tr><td style=\"padding:10px 14px;" + (
-            "border-top:1px solid #d0d7de;" if index else "")
-        + "font-size:15px;font-weight:700\"><a href=\""
-        + _html_escape(chat_url) + "\" style=\"color:#24292f;"
-        "text-decoration:none\">" + _html_escape(sender) + "</a></td>"
-        "<td align=\"right\" style=\"padding:10px 14px;" + (
-            "border-top:1px solid #d0d7de;" if index else "")
-        + "white-space:nowrap\"><span style=\"display:inline-block;"
-        "border-radius:999px;background:#ddf4ff;color:#0969da;"
-        "padding:2px 9px;font-size:12px;font-weight:700\">"
-        + _html_escape(_plural(count, "message")) + "</span></td></tr>"
-        for index, (sender, count) in enumerate(senders)
-    )
-    items = (
-        "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" "
-        "cellspacing=\"0\" style=\"border:1px solid #d0d7de;"
-        "border-radius:8px;border-collapse:separate;background:#ffffff;"
-        "margin:0 0 14px\">" + rows + "</table>"
-    )
     html = _forkmesh_email_card_html(
-        _html_escape(_plural(total, "unread direct message")),
+        _html_escape(REMINDER_SUBJECT),
         "Hi <strong class=\"fm-strong\" style=\"color:#f5f5f5\">"
-        + _html_escape(greeting)
-        + "</strong>, you have direct messages that have been waiting for "
-        "more than a day.",
-        items
-        + "<p class=\"fm-text\" style=\"margin:8px 0 0;color:#d4d4d8;"
+        + _html_escape(greeting) + "</strong>. " + _html_escape(summary),
+        "<p class=\"fm-text\" style=\"margin:8px 0 0;color:#d4d4d8;"
         "font-size:14px\">ForkMesh keeps an encrypted copy of a direct "
         "message on the server only until one of your devices receives it. "
         "Open ForkMesh chat to read them so they are deleted from the "
         "server.</p>",
         "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;"
-        "font-size:12px\">Messages are end-to-end encrypted, so their "
-        "contents are not sent over email. Unread messages are deleted from "
-        "the server after 7 days. To stop these emails, turn off \"Unread "
-        "direct messages\" in your notification settings.</p>",
+        "font-size:12px\">Messages are end-to-end encrypted, so neither "
+        "their contents nor their senders are named over email. Unread "
+        "messages are deleted from the server after 7 days. To stop these "
+        "emails, turn off \"Unread direct messages\" in your notification "
+        "settings.</p>",
         action_label="Open chat",
         action_url=chat_url,
     )
-    return subject, text, html
+    return REMINDER_SUBJECT, text, html
 
 
 async def _remind(env, account_bi, conversations, now):
@@ -156,14 +127,14 @@ async def _remind(env, account_bi, conversations, now):
     if not notification_email_enabled(email_rec, DIRECT_UNREAD_KIND):
         return False
     name = clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
-    senders = []
+    counts = []
     for conversation_id, stored in conversations:
         sender = await _sender_name(env, conversation_id, name)
-        if sender:
-            senders.append((sender, stored))
-    if not senders:
+        if sender and not await _chat_blocked_by(env, name, sender):
+            counts.append(stored)
+    if not counts:
         return False
-    subject, text, html = reminder_email(name, senders)
+    subject, text, html = reminder_email(name, counts)
     ok = await _send_email(
         env, email, subject, text, html, email_kind=DIRECT_UNREAD_KIND)
     _stamp_account_email(email_rec, DIRECT_UNREAD_KIND, ok, now)

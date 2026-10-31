@@ -85,6 +85,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.forkmesh.nativeapp.control.PromptDeck
 
 internal class AgentScreen(
     private val record: LocalRepoRecord,
@@ -219,6 +220,10 @@ internal class AgentScreen(
                         }))
                     }
                 }
+                AgentPromptDeck(
+                    remember(events.size) { PromptDeck.said(events.filterIsInstance<AgentUserMessage>().map { it.text }) },
+                    Modifier.padding(horizontal = FmSpace.x4).padding(top = FmSpace.x2),
+                )
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when {
                         loading -> Text("Loading session…", Modifier.padding(FmSpace.x5), style = Fm.text.bodyMedium.copy(color = c.textSecondary))

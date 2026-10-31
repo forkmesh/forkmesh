@@ -101,7 +101,7 @@ def test_action_buttons_are_small_but_keep_a_tall_touch_target():
 def test_island_is_centered_compact_and_respects_safe_areas_and_keyboard():
     island = _between(CSS, ".fm-world .world-hud-island {", "\n}")
     assert "left: 50%;" in island
-    assert "transform: translateX(-50%);" in island
+    assert "transform: translate(calc(-50% + var(--world-hud-island-x, 0px)), var(--world-hud-island-y, 0px));" in island
     assert "width: min(540px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));" in island
     assert "bottom: calc(var(--world-hud-island-gap) + var(--world-chat-covered-bottom, 0px));" in island
     assert "--world-hud-island-gap: max(12px, env(safe-area-inset-bottom));" in CSS
@@ -115,8 +115,8 @@ def test_island_is_centered_compact_and_respects_safe_areas_and_keyboard():
 
 
 def test_feed_collapses_to_two_lines_and_expands_on_demand():
-    collapsed = _between(CSS, ".fm-world .world-hud-island-feed #fullChatMessages {", "\n}")
-    assert "max-height: 46px;" in collapsed
+    collapsed = _between(CSS, ".fm-world .world-hud-island .world-hud-island-feed #fullChatMessages {", "\n}")
+    assert "max-height: 48px;" in collapsed
     assert "overflow: hidden;" in collapsed
     expanded = _between(
         CSS,
@@ -131,6 +131,38 @@ def test_feed_collapses_to_two_lines_and_expands_on_demand():
     assert "handleQuickChatEscape" in APP
     assert '!event.target.closest("[data-world-hud-island]")' in APP
 
+
+
+def test_feed_rows_beat_the_roomier_native_chat_rules():
+    row = _between(CSS, ".fm-world .world-hud-island .world-hud-island-feed .chat-message-row {", "\n}")
+    assert "grid-template-columns: 20px minmax(0, 1fr);" in row
+    assert "padding: 2px 4px;" in row
+    avatar = _between(CSS, ".fm-world .world-hud-island .world-hud-island-feed .chat-message-avatar {", "\n}")
+    assert "width: 20px;" in avatar and "height: 20px;" in avatar
+    text = _between(CSS, ".fm-world .world-hud-island .world-hud-island-feed .chat-message-bubble p {", "\n}")
+    assert "font: 400 13px/20px var(--font-sans);" in text
+    assert ".fm-world .world-hud-island-feed .chat-message-row {" not in CSS
+    assert CSS.index(".fm-world .world-native-chat .chat-message-row {") > CSS.index(
+        ".fm-world .world-hud-island .world-hud-island-feed .chat-message-row {"
+    )
+
+
+def test_island_can_be_dragged_nudged_and_put_back():
+    assert ISLAND.index("data-world-island-grip") < ISLAND.index("data-world-avatar-actions")
+    assert 'const WORLD_HUD_ISLAND_OFFSET_KEY = "forkmesh.world.hudIslandOffset.v1";' in APP
+    drag = _between(APP, "  bindHudIslandDrag(island) {", "\n  setHudIslandExpanded(")
+    assert "island.setPointerCapture?.(pointerId);" in drag
+    assert "ArrowUp: [0, -WORLD_HUD_ISLAND_STEP]," in drag
+    assert 'event.key === "Home"' in drag
+    assert 'island.addEventListener("dblclick"' in drag
+    assert "this.hudIslandBoundsObserver.observe(bounds);" in drag
+    apply = _between(APP, "  applyHudIslandOffset(wanted = this.hudIslandOffset) {", "\n  setHudIslandOffset(")
+    assert 'island.style.setProperty("--world-hud-island-x", `${x}px`);' in apply
+    assert 'island.dataset.placement = placement;' in apply
+    assert "this.hudIslandBoundsObserver?.disconnect();" in APP
+    assert '.fm-world .world-hud-island[data-placement="top"] :is(.world-hud-channel-menu, .world-hud-model-menu, .world-hud-runners) {' in CSS
+    phone = _between(CSS, "@media (max-width: 600px) {\n  .fm-world {\n    --world-hud-island-gap", "\n}\n")
+    assert ".fm-world .world-hud-island-grip {\n    display: none;" in phone
 
 def test_status_pill_keeps_only_the_online_count():
     assert 'aria-label="Who is online"' in STATUS

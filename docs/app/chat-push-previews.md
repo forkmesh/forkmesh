@@ -127,4 +127,16 @@ Limits: a direct-message frame too long for the push (every v3 frame) whose
 row is already gone, frames not sealed for the phone, frames from a pending
 device, and frames from an older key version show the fallback banner.
 
+## Which rooms wake phones
+
+A retained room frame marked `notify: true` wakes phones through
+`push_chat_room_apns` only for a channel room (the socket carries a
+`channel_id`: a private channel's members, or every registered phone for a
+public channel) or the public world room (`PUBLIC_WORLD_GENERAL_ROOM_KEY`).
+Every other room key, such as `legacy:room:<name>` or
+`repo:<owner>/<repo>:room:<name>`, wakes nobody and is not entered in the
+per-room coalescing memo. Before 2026-10-22 any room without a channel id
+woke every registered phone, and legacy rooms take sockets without signing
+in, so anyone could buzz every phone once per coalescing window per room name.
+
 Tests: `app/tests/test_apns_push.py`, `app/tests/test_chat_pending_routes.py`.

@@ -88,6 +88,7 @@ import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 private class HomeTileModel(
     val key: String,
@@ -99,6 +100,7 @@ private class HomeTileModel(
     val running: Boolean,
     val desktopOffline: Boolean,
     val kind: Route.Kind? = null,
+    val loading: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -146,6 +148,19 @@ internal fun ShellHomeGrid(
     val packagesVersion by StatusPageFeature.version.collectAsState()
     val packages = StatusPageFeature.store
     val haptics = FmHaptics.current
+    val pending by ShellBadges.pending.collectAsState()
+    val rss = remember { runCatching { com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.service }.getOrNull() }
+    val rssRefreshing = rss?.refreshing?.collectAsState()?.value == true
+    fun loadingFor(id: String, kind: Route.Kind?): Boolean = when {
+        ShellBadges.REPO in pending && (id == "code" || id.startsWith("repo-")) -> true
+        ShellBadges.TASKS in pending && kind == Route.Kind.Tasks -> true
+        rssRefreshing && kind == Route.Kind.RssReader -> true
+        else -> false
+    }
+    fun refreshEverything() {
+        haptics.success()
+        scope.launch { ShellBadges.refreshEverything(surfaces.showsRoute(Route.RssReader)) }
+    }
     var settings by remember { mutableStateOf(false) }
     var barSettings by remember { mutableStateOf(false) }
     var backgroundMenu by remember { mutableStateOf(false) }
@@ -154,13 +169,13 @@ internal fun ShellHomeGrid(
     val tiles = LinkedHashMap<String, HomeTileModel>()
     val sections = ArrayList<ShellHomeSection>()
     val mainTiles = main.map { entry ->
-        HomeTileModel("main:${entry.id}", entry.id, entry.title, entry.icon, entry.badge, entry.selected, entry.running, desktopOffline && PackageGate.reliesOnDesktop(entry.id), onClick = entry.onClick)
+        HomeTileModel("main:${entry.id}", entry.id, entry.title, entry.icon, entry.badge, entry.selected, entry.running, desktopOffline && PackageGate.reliesOnDesktop(entry.id), loading = loadingFor(entry.id, null), onClick = entry.onClick)
     }
     sections += ShellHomeSection("main", "Go to", mainTiles.map { ShellHomeEntry(it.id, it.title, it.badge, active = it.running) })
     mainTiles.forEach { tiles.putIfAbsent(it.id, it) }
     if (repoGroup != null) {
         val models = repoGroup.entries.map { entry ->
-            HomeTileModel("repo:${entry.id}", entry.id, entry.title, entry.icon, entry.badge, entry.selected, entry.running, false, onClick = entry.onClick)
+            HomeTileModel("repo:${entry.id}", entry.id, entry.title, entry.icon, entry.badge, entry.selected, entry.running, false, loading = loadingFor(entry.id, null), onClick = entry.onClick)
         }
         models.forEach { tiles.putIfAbsent(it.id, it) }
         sections += ShellHomeSection("repo", repoGroup.title, models.map { ShellHomeEntry(it.id, it.title, it.badge, active = it.running) })
@@ -178,6 +193,7 @@ internal fun ShellHomeGrid(
                 badge?.running == true,
                 desktopOffline && PackageGate.reliesOnDesktop(item.id, item.route?.kind),
                 item.route?.kind,
+                loadingFor(item.id, item.route?.kind),
             ) { runHubItem(item) }
         }
         models.forEach { tiles.putIfAbsent(it.id, it) }
@@ -294,6 +310,10 @@ internal fun ShellHomeGrid(
                                 Box(Modifier.weight(1f).height(1.dp).background(Fm.colors.border))
                             }
                             FmDropdownMenu(expanded = hideMenu == section.id, onDismissRequest = { hideMenu = null }, offset = DpOffset(FmSpace.x3, 0.dp)) {
+                                FmDropdownMenuItem("Refresh everything", onClick = {
+                                    hideMenu = null
+                                    refreshEverything()
+                                }, icon = "refresh")
                                 FmDropdownMenuItem("Hide ${section.title}", onClick = {
                                     hideMenu = null
                                     ShellBarStore.editHome { setShown(section.id, false) }
@@ -351,6 +371,7 @@ internal fun ShellHomeGrid(
                         heat = if (style.highlightFrequent) ShellBarOrder.heat(tile.id, uses, most) else 0.0,
                         tileHeight = fitted,
                         updated = packagesVersion >= 0 && packages?.isUpdated(tile.id, tile.kind) == true,
+                        loading = tile.loading,
                         onLongClick = {
                             haptics.palette()
                             if (barCell != null) {
@@ -368,6 +389,10 @@ internal fun ShellHomeGrid(
                     if (barCell != null) {
                         FmDropdownMenu(expanded = tileMenu == tile.key, onDismissRequest = { tileMenu = null }) {
                             ShellBarItemMenu(barCell, barCells, onSettings = { barSettings = true }, inBarMenu = false) { tileMenu = null }
+                            FmDropdownMenuItem("Refresh everything", onClick = {
+                                tileMenu = null
+                                refreshEverything()
+                            }, icon = "refresh")
                             FmDropdownMenuItem("Home settings…", onClick = {
                                 tileMenu = null
                                 settings = true
@@ -387,6 +412,10 @@ internal fun ShellHomeGrid(
         val left = (anchorX - menuWidth / 2).coerceIn(FmSpace.x3, (maxWidth - menuWidth - FmSpace.x3).coerceAtLeast(FmSpace.x3))
         Box(Modifier.align(Alignment.TopStart).offset(x = left, y = anchorY)) {
             FmActionMenu(expanded = backgroundMenu, onDismissRequest = { backgroundMenu = false }) {
+                FmActionMenuButton("Refresh everything", onClick = {
+                    backgroundMenu = false
+                    refreshEverything()
+                })
                 if (packages != null && packages.canShowUpdates) {
                     FmActionMenuButton("Show all update dots", onClick = {
                         backgroundMenu = false

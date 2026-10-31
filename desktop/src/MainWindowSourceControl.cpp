@@ -1,11 +1,14 @@
 
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "DiffChangeBlock.h"
 #include "SecretDiffBanner.h"
 #include "FlowLayout.h"
 #include "HeaderWrapLayout.h"
 #include "RepoStatsStore.h"
 #include "KebabHeaderView.h"
+#include "FontSizing.h"
+#include "GitLayout.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QCheckBox>
@@ -35,6 +38,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QWidgetAction>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -46,15 +50,42 @@
 using namespace forkmesh::ui;
 
 namespace {
-constexpr int kScmNextRowHeight = 28;
+constexpr int kScmNextRowHeight = 32;
 constexpr int kScmNextRowRadius = 6;
-constexpr int kScmNextCommitRowHeight = 28;
+constexpr int kScmNextCommitRowHeight = 36;
+constexpr int kGitNextSideWidth = 240;
+constexpr int kGitNextSideRowHeight = 28;
+constexpr int kGitNextSideDetailRowHeight = 44;
+constexpr int kGitNextFieldHeight = 34;
+constexpr int kGitNextDescriptionHeight = 76;
 constexpr int kScmClassicCommitRowHeight = 24;
 constexpr int kScmNextComposeButton = 28;
 constexpr int kScmClassicComposeButtonWidth = 30;
 constexpr int kScmNextCardRadius = 12;
 constexpr int kScmNextChipRadius = 4;
 const char kScmDiffCardName[] = "scmDiffCard";
+
+void scmSetShown(QWidget *widget, bool shown)
+{
+    if (!widget)
+        return;
+    if (!shown) {
+        widget->hide();
+        return;
+    }
+    if (widget->isHidden() && widget->testAttribute(Qt::WA_WState_ExplicitShowHide))
+        widget->show();
+}
+
+struct ScmRowParts {
+    QLabel *icon = nullptr;
+    QLabel *name = nullptr;
+    QLabel *directory = nullptr;
+    QString directoryText;
+    QLabel *status = nullptr;
+    QCheckBox *check = nullptr;
+    QWidget *actions = nullptr;
+};
 
 class ScmFileRow : public QWidget
 {
@@ -84,7 +115,18 @@ public:
 
     bool isSelected() const { return m_selected; }
 
-    void refreshStyle() { applyStyle(); }
+    void setParts(const ScmRowParts &parts)
+    {
+        m_parts = parts;
+        m_arranged = -1;
+        arrange();
+    }
+
+    void refreshStyle()
+    {
+        arrange();
+        applyStyle();
+    }
 
     std::function<void()> onClicked;
 
@@ -134,6 +176,54 @@ protected:
     }
 
 private:
+    void arrange()
+    {
+        auto *box = qobject_cast<QHBoxLayout *>(layout());
+        if (!box || !m_parts.name || !m_parts.status || !m_parts.actions)
+            return;
+        const bool next = Theme::isNext();
+        if (m_arranged == int(next))
+            return;
+        m_arranged = int(next);
+        while (QLayoutItem *item = box->takeAt(0))
+            delete item;
+        if (m_parts.icon)
+            scmSetShown(m_parts.icon, !next);
+        if (m_parts.check)
+            m_parts.check->setVisible(next);
+        if (next) {
+            box->setContentsMargins(8, 0, 6, 0);
+            box->setSpacing(8);
+            if (m_parts.check)
+                box->addWidget(m_parts.check);
+            box->addWidget(m_parts.status);
+            auto *path = new QHBoxLayout;
+            path->setContentsMargins(0, 0, 0, 0);
+            path->setSpacing(0);
+            if (m_parts.directory) {
+                m_parts.directory->setText(m_parts.directoryText + QLatin1Char('/'));
+                path->addWidget(m_parts.directory);
+            }
+            path->addWidget(m_parts.name);
+            box->addLayout(path);
+            box->addStretch();
+            box->addWidget(m_parts.actions);
+            return;
+        }
+        box->setContentsMargins(4, 1, 6, 1);
+        box->setSpacing(5);
+        if (m_parts.icon)
+            box->addWidget(m_parts.icon);
+        box->addWidget(m_parts.name);
+        if (m_parts.directory) {
+            m_parts.directory->setText(m_parts.directoryText);
+            box->addWidget(m_parts.directory);
+        }
+        box->addStretch();
+        box->addWidget(m_parts.status);
+        box->addWidget(m_parts.actions);
+    }
+
     void applyStyle()
     {
         if (Theme::isNext()) {
@@ -161,8 +251,63 @@ private:
     }
 
     QWidget *m_actions = nullptr;
+    ScmRowParts m_parts;
+    int m_arranged = -1;
     bool m_hovered = false;
     bool m_selected = false;
+};
+
+class ScmGroupRow : public QWidget
+{
+public:
+    explicit ScmGroupRow(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("scmGroupRow"));
+    }
+
+    void setParts(QLabel *label, const QString &classicText, const QString &nextText,
+                  const QList<QWidget *> &classicOnly,
+                  const QList<QWidget *> &nextOnly)
+    {
+        m_label = label;
+        m_classicText = classicText;
+        m_nextText = nextText;
+        m_classicOnly = classicOnly;
+        m_nextOnly = nextOnly;
+        m_arranged = -1;
+        arrange();
+    }
+
+    void arrange()
+    {
+        const bool next = Theme::isNext();
+        if (!m_label || m_arranged == int(next))
+            return;
+        m_arranged = int(next);
+        m_label->setText(next ? m_nextText : m_classicText);
+        QFont font = m_label->font();
+        font.setBold(!next);
+        if (next)
+            font.setWeight(QFont::Medium);
+        if (next || font.letterSpacing() != 0.0)
+            font.setLetterSpacing(QFont::AbsoluteSpacing, next ? 0.6 : 0.0);
+        m_label->setFont(font);
+        for (QWidget *widget : std::as_const(m_classicOnly))
+            scmSetShown(widget, !next);
+        for (QWidget *widget : std::as_const(m_nextOnly))
+            widget->setVisible(next);
+        if (layout())
+            layout()->setContentsMargins(next ? QMargins(8, 0, 4, 0)
+                                              : QMargins(0, 0, 6, 0));
+    }
+
+private:
+    QLabel *m_label = nullptr;
+    QString m_classicText;
+    QString m_nextText;
+    QList<QWidget *> m_classicOnly;
+    QList<QWidget *> m_nextOnly;
+    int m_arranged = -1;
 };
 
 void scmTagRowLabels(QLabel *name, QLabel *status, QChar code)
@@ -445,6 +590,36 @@ public:
                               Qt::AlignVCenter | Qt::AlignRight, mark);
             rightEdge -= mw + 8;
         }
+        if (kind == 0 && rightEdge - x > 240) {
+            const QString age =
+                index.model()->index(index.row(), 1).data(Qt::DisplayRole).toString();
+            QString hash = index.model()
+                               ->index(index.row(), kCommitHashCol)
+                               .data(Qt::DisplayRole)
+                               .toString();
+            hash.remove(QString::fromUtf8("\xE2\x96\xB2 "));
+            if (!age.isEmpty()) {
+                const int ageW = qMax(metaFm.horizontalAdvance(age), 40);
+                painter->setFont(metaFont);
+                painter->setPen(Theme::color(Theme::Role::FgMuted));
+                painter->drawText(QRect(rightEdge - ageW, r.top(), ageW, r.height()),
+                                  Qt::AlignVCenter | Qt::AlignRight, age);
+                rightEdge -= ageW + 12;
+            }
+            if (!hash.isEmpty()) {
+                QFont monoFont = metaFont;
+                const QString mono = Theme::monoFontFamily();
+                if (!mono.isEmpty())
+                    monoFont.setFamily(mono);
+                const QFontMetrics monoFm(monoFont);
+                const int hashW = monoFm.horizontalAdvance(hash);
+                painter->setFont(monoFont);
+                painter->setPen(Theme::color(Theme::Role::FgSubtle));
+                painter->drawText(QRect(rightEdge - hashW, r.top(), hashW, r.height()),
+                                  Qt::AlignVCenter | Qt::AlignLeft, hash);
+                rightEdge -= hashW + 12;
+            }
+        }
         const QStringList refs = index.data(kCommitRefsRole).toStringList();
         const QStringList refKinds =
             index.data(kCommitRefKindsRole).toStringList();
@@ -641,6 +816,313 @@ private:
     bool m_running = false;
     bool m_queued = false;
 };
+
+struct GitSideItem {
+    enum class Kind { Heading, Entry, Link };
+    Kind kind = Kind::Entry;
+    QString icon;
+    QString title;
+    QString detail;
+    QString toolTip;
+    int count = -1;
+    bool open = true;
+    bool current = false;
+    bool strong = false;
+    std::function<void()> activate;
+};
+
+class GitSideRow : public QWidget
+{
+public:
+    GitSideRow(const GitSideItem &item, QObject *context, QWidget *parent)
+        : QWidget(parent), m_item(item), m_context(context)
+    {
+        setObjectName(QStringLiteral("gitNextSideRow"));
+        setAttribute(Qt::WA_Hover);
+        setCursor(Qt::PointingHandCursor);
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        setFixedHeight(item.kind == GitSideItem::Kind::Entry && !item.detail.isEmpty()
+                           ? kGitNextSideDetailRowHeight
+                           : kGitNextSideRowHeight);
+        QString tip = item.toolTip;
+        if (tip.isEmpty() && item.kind == GitSideItem::Kind::Entry)
+            tip = item.detail.isEmpty() ? item.title
+                                        : item.title + QLatin1Char('\n') + item.detail;
+        setToolTip(tip);
+    }
+
+protected:
+    void enterEvent(QEnterEvent *event) override
+    {
+        QWidget::enterEvent(event);
+        m_hovered = true;
+        update();
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QWidget::leaveEvent(event);
+        m_hovered = false;
+        update();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        QWidget::mouseReleaseEvent(event);
+        if (event->button() != Qt::LeftButton ||
+            !rect().contains(event->position().toPoint()) || !m_item.activate)
+            return;
+        const std::function<void()> activate = m_item.activate;
+        QTimer::singleShot(0, m_context ? m_context.data() : this, activate);
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const QRectF frame = QRectF(rect()).adjusted(0, 1, 0, -1);
+        if (m_item.current || m_hovered) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(Theme::color(m_item.current ? Theme::Role::AccentSubtle
+                                                         : Theme::Role::SurfaceRaised));
+            painter.drawRoundedRect(frame, kScmNextRowRadius, kScmNextRowRadius);
+        }
+        QFont base = font();
+        const int lineHeight = kGitNextSideRowHeight;
+        if (m_item.kind == GitSideItem::Kind::Heading) {
+            painter.drawPixmap(
+                QRect(6, (height() - 12) / 2, 12, 12),
+                tintedOcticonPixmap(m_item.open ? QStringLiteral("chevron-down")
+                                                : QStringLiteral("chevron-right"),
+                                    Theme::color(Theme::Role::FgSubtle), 12));
+            QFont caption = base;
+            caption.setPixelSize(11);
+            caption.setWeight(QFont::Medium);
+            caption.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+            painter.setFont(caption);
+            painter.setPen(Theme::color(Theme::Role::FgSubtle));
+            const QFontMetrics fm(caption);
+            QString count;
+            if (m_item.count >= 0)
+                count = QLocale().toString(m_item.count);
+            const int countW = count.isEmpty() ? 0 : fm.horizontalAdvance(count);
+            if (!count.isEmpty())
+                painter.drawText(QRect(width() - 8 - countW, 0, countW, height()),
+                                 Qt::AlignVCenter | Qt::AlignRight, count);
+            const int textW = qMax(0, width() - 24 - countW - 16);
+            painter.drawText(QRect(24, 0, textW, height()),
+                             Qt::AlignVCenter | Qt::AlignLeft,
+                             fm.elidedText(m_item.title.toUpper(), Qt::ElideRight, textW));
+            return;
+        }
+        QFont title = base;
+        title.setPixelSize(13);
+        if (m_item.kind == GitSideItem::Kind::Link) {
+            title.setPixelSize(12);
+            painter.setFont(title);
+            painter.setPen(Theme::color(Theme::Role::AccentFg));
+            const QFontMetrics fm(title);
+            const int textW = qMax(0, width() - 30 - 8);
+            painter.drawText(QRect(30, 0, textW, height()),
+                             Qt::AlignVCenter | Qt::AlignLeft,
+                             fm.elidedText(m_item.title, Qt::ElideRight, textW));
+            return;
+        }
+        if (!m_item.icon.isEmpty())
+            painter.drawPixmap(
+                QRect(8, (lineHeight - 14) / 2, 14, 14),
+                tintedOcticonPixmap(m_item.icon, Theme::color(Theme::Role::FgMuted), 14));
+        int right = width() - 8;
+        if (m_item.current) {
+            painter.drawPixmap(
+                QRect(right - 14, (lineHeight - 14) / 2, 14, 14),
+                tintedOcticonPixmap(QStringLiteral("check"),
+                                    Theme::color(Theme::Role::AccentFg), 14));
+            right -= 22;
+        }
+        if (m_item.current || m_item.strong)
+            title.setWeight(QFont::Medium);
+        painter.setFont(title);
+        painter.setPen(Theme::color(m_item.current || m_item.strong
+                                        ? Theme::Role::Fg
+                                        : Theme::Role::FgMuted));
+        const QFontMetrics fm(title);
+        const int textW = qMax(0, right - 30);
+        painter.drawText(QRect(30, 0, textW, lineHeight),
+                         Qt::AlignVCenter | Qt::AlignLeft,
+                         fm.elidedText(m_item.title, Qt::ElideRight, textW));
+        if (m_item.detail.isEmpty())
+            return;
+        QFont detail = base;
+        const QString mono = Theme::monoFontFamily();
+        if (!mono.isEmpty())
+            detail.setFamily(mono);
+        detail.setPixelSize(11);
+        painter.setFont(detail);
+        painter.setPen(Theme::color(Theme::Role::FgSubtle));
+        const QFontMetrics dfm(detail);
+        const int detailW = qMax(0, width() - 30 - 8);
+        painter.drawText(QRect(30, lineHeight - 6, detailW, height() - lineHeight + 4),
+                         Qt::AlignTop | Qt::AlignLeft,
+                         dfm.elidedText(m_item.detail, Qt::ElideRight, detailW));
+    }
+
+private:
+    GitSideItem m_item;
+    QPointer<QObject> m_context;
+    bool m_hovered = false;
+};
+
+class GitSidePanel : public QFrame
+{
+public:
+    explicit GitSidePanel(QWidget *parent) : QFrame(parent)
+    {
+        setObjectName(QStringLiteral("gitNextSide"));
+        setFixedWidth(kGitNextSideWidth);
+        auto *outer = new QVBoxLayout(this);
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->setSpacing(0);
+        m_scroll = new QScrollArea(this);
+        m_scroll->setObjectName(QStringLiteral("gitNextSideScroll"));
+        m_scroll->setFrameShape(QFrame::NoFrame);
+        m_scroll->setWidgetResizable(true);
+        m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_content = new QWidget;
+        m_content->setObjectName(QStringLiteral("gitNextSideContent"));
+        m_rows = new QVBoxLayout(m_content);
+        m_rows->setContentsMargins(8, 8, 8, 8);
+        m_rows->setSpacing(1);
+        m_rows->addStretch(1);
+        m_scroll->setWidget(m_content);
+        outer->addWidget(m_scroll);
+    }
+
+    void setItems(const QList<GitSideItem> &items, const QString &signature)
+    {
+        if (signature == m_signature)
+            return;
+        m_signature = signature;
+        while (QLayoutItem *item = m_rows->takeAt(0))
+            delete item;
+        for (const QPointer<QWidget> &row : std::as_const(m_rowWidgets)) {
+            if (row) {
+                row->hide();
+                row->deleteLater();
+            }
+        }
+        m_rowWidgets.clear();
+        bool first = true;
+        for (const GitSideItem &item : items) {
+            if (item.kind == GitSideItem::Kind::Heading && !first)
+                m_rows->addSpacing(6);
+            first = false;
+            auto *row = new GitSideRow(item, this, m_content);
+            m_rows->addWidget(row);
+            m_rowWidgets.append(row);
+        }
+        m_rows->addStretch(1);
+    }
+
+private:
+    QScrollArea *m_scroll = nullptr;
+    QWidget *m_content = nullptr;
+    QVBoxLayout *m_rows = nullptr;
+    QList<QPointer<QWidget>> m_rowWidgets;
+    QString m_signature;
+};
+
+class ScmNextChrome : public QObject
+{
+public:
+    explicit ScmNextChrome(QObject *parent) : QObject(parent)
+    {
+        setObjectName(QStringLiteral("scmNextChrome"));
+        m_timer.setSingleShot(true);
+        m_timer.setInterval(0);
+        connect(&m_timer, &QTimer::timeout, this, [this] {
+            if (sync)
+                sync();
+        });
+        open.insert(QStringLiteral("branches"), true);
+        open.insert(QStringLiteral("remotes"), false);
+        open.insert(QStringLiteral("worktrees"), true);
+        open.insert(QStringLiteral("tags"), false);
+    }
+
+    ~ScmNextChrome() override
+    {
+        if (commitLayout && !commitLayout->parent())
+            delete commitLayout;
+    }
+
+    void watch(QObject *object)
+    {
+        if (object && !m_watched.contains(object)) {
+            m_watched.append(object);
+            object->installEventFilter(this);
+        }
+    }
+
+    void schedule() { m_timer.start(); }
+
+    std::function<void()> sync;
+    std::function<void()> mirrorEnabled;
+    std::function<void()> relayout;
+    QPointer<QWidget> header;
+    QPointer<GitSidePanel> side;
+    QPointer<QWidget> branchPair;
+    QPointer<QWidget> historyHeader;
+    QPointer<QLabel> summary;
+    QPointer<QPushButton> changesTab;
+    QPointer<QPushButton> historyTab;
+    QPointer<QPushButton> pushButton;
+    QPointer<QPushButton> commitMore;
+    QPointer<QHBoxLayout> actions;
+    QPointer<QVBoxLayout> commitLayout;
+    QHash<QString, bool> open;
+    bool installed = false;
+    bool syncingMessage = false;
+    int tab = 0;
+    int arranged = -1;
+    int pageArranged = -1;
+    int filesFloor = -1;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        switch (event->type()) {
+        case QEvent::ChildAdded:
+        case QEvent::Show:
+            schedule();
+            break;
+        case QEvent::EnabledChange:
+            if (mirrorEnabled)
+                mirrorEnabled();
+            break;
+        default:
+            break;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QTimer m_timer;
+    QList<QPointer<QObject>> m_watched;
+};
+
+ScmNextChrome *scmNextChrome(QWidget *panel)
+{
+    return panel ? dynamic_cast<ScmNextChrome *>(panel->findChild<QObject *>(
+                       QStringLiteral("scmNextChrome"), Qt::FindDirectChildrenOnly))
+                 : nullptr;
+}
+
+void scmNextChromeSync(QWidget *panel)
+{
+    if (ScmNextChrome *chrome = scmNextChrome(panel))
+        chrome->schedule();
+}
 
 struct ScmOutgoingProbe {
     bool branchResolved = false;
@@ -1563,6 +2045,7 @@ QWidget *MainWindow::buildSourceControlPanel()
     m_scmEmptyNote =
         new QLabel("No working tree on this node \xE2\x80\x94 changes are read-only here.");
     m_scmEmptyNote->setObjectName("statusLine");
+    m_scmEmptyNote->setProperty("scmEmpty", true);
     m_scmEmptyNote->setAlignment(Qt::AlignCenter);
     m_scmEmptyNote->hide();
     root->addWidget(m_scmEmptyNote);
@@ -1577,9 +2060,633 @@ QWidget *MainWindow::buildSourceControlPanel()
         if (previous)
             previous->deleteLater();
     }
+
+    auto *chrome = new ScmNextChrome(panel);
+    chrome->commitLayout = new QVBoxLayout;
+    chrome->commitLayout->setContentsMargins(12, 12, 12, 12);
+    chrome->commitLayout->setSpacing(8);
+
+    auto *summaryField = new QLineEdit(panel);
+    summaryField->setObjectName(QStringLiteral("scmSummaryInput"));
+    summaryField->setPlaceholderText(QStringLiteral("Summary (required)"));
+    summaryField->hide();
+    auto *descriptionField = new QPlainTextEdit(panel);
+    descriptionField->setObjectName(QStringLiteral("scmDescriptionInput"));
+    descriptionField->setPlaceholderText(QStringLiteral("Description"));
+    descriptionField->setTabChangesFocus(true);
+    descriptionField->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    descriptionField->hide();
+    composeRow->insertWidget(0, summaryField, 1);
+    for (QWidget *field : {static_cast<QWidget *>(summaryField),
+                           static_cast<QWidget *>(descriptionField)}) {
+        auto *shortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return), field);
+        shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(shortcut, &QShortcut::activated, this, &MainWindow::scmCommit);
+    }
+    const auto messageToFields = [this, chrome, summaryField, descriptionField] {
+        if (chrome->syncingMessage || chrome->arranged != 1 || !m_scmMessage)
+            return;
+        const QString text = m_scmMessage->toPlainText();
+        const int newline = text.indexOf(QLatin1Char('\n'));
+        const QString first = newline < 0 ? text : text.left(newline);
+        QString rest = newline < 0 ? QString() : text.mid(newline + 1);
+        while (rest.startsWith(QLatin1Char('\n')))
+            rest.remove(0, 1);
+        chrome->syncingMessage = true;
+        if (summaryField->text() != first)
+            summaryField->setText(first);
+        if (descriptionField->toPlainText() != rest)
+            descriptionField->setPlainText(rest);
+        chrome->syncingMessage = false;
+    };
+    const auto fieldsToMessage = [this, chrome, summaryField, descriptionField] {
+        if (chrome->syncingMessage || !m_scmMessage)
+            return;
+        const QString description = descriptionField->toPlainText();
+        const QString message =
+            description.trimmed().isEmpty()
+                ? summaryField->text()
+                : summaryField->text() + QStringLiteral("\n\n") + description;
+        if (m_scmMessage->toPlainText() == message)
+            return;
+        chrome->syncingMessage = true;
+        m_scmMessage->setPlainText(message);
+        chrome->syncingMessage = false;
+    };
+    connect(m_scmMessage, &QPlainTextEdit::textChanged, chrome, messageToFields);
+    connect(summaryField, &QLineEdit::textEdited, chrome, fieldsToMessage);
+    connect(descriptionField, &QPlainTextEdit::textChanged, chrome, fieldsToMessage);
+
+    auto *commitRule = new QFrame(panel);
+    commitRule->setObjectName(QStringLiteral("scmNextCommitRule"));
+    commitRule->setFrameShape(QFrame::NoFrame);
+    commitRule->setFixedHeight(1);
+    commitRule->hide();
+
+    auto *commitMore = new QPushButton(m_scmControlsPanel);
+    commitMore->setObjectName(QStringLiteral("scmNextCommitMore"));
+    commitMore->setCursor(Qt::PointingHandCursor);
+    commitMore->setToolTip(QStringLiteral("More ways to commit"));
+    commitMore->hide();
+    chrome->commitMore = commitMore;
+    auto *commitMenu = new QMenu(commitMore);
+    commitMenu->setObjectName(QStringLiteral("scmNextCommitMenu"));
+    commitMenu->setToolTipsVisible(true);
+    commitMore->setMenu(commitMenu);
+    connect(commitMenu, &QMenu::aboutToShow, commitMenu, [this, commitMenu] {
+        commitMenu->clear();
+        const auto mirror = [commitMenu](QPushButton *button, const QString &label) {
+            if (!button)
+                return;
+            QAction *action = commitMenu->addAction(label);
+            action->setEnabled(button->isEnabled());
+            action->setToolTip(button->toolTip());
+            QPointer<QPushButton> target(button);
+            QObject::connect(action, &QAction::triggered, commitMenu, [target] {
+                if (target)
+                    target->click();
+            });
+        };
+        mirror(m_scmCommitButton,
+               m_scmCommitButton ? m_scmCommitButton->text() : QString());
+        mirror(m_scmCommitPushButton, QStringLiteral("Commit and push"));
+        mirror(m_scmStageCommitPushButton,
+               QStringLiteral("Stage all, commit and push"));
+    });
+
+    chrome->mirrorEnabled = [this, summaryField, descriptionField, commitMore] {
+        if (m_scmMessage) {
+            summaryField->setEnabled(m_scmMessage->isEnabled());
+            descriptionField->setEnabled(m_scmMessage->isEnabled());
+        }
+        if (m_scmCommitButton)
+            commitMore->setEnabled(m_scmCommitButton->isEnabled());
+    };
+    chrome->watch(m_scmMessage);
+    chrome->watch(m_scmCommitButton);
+
+    connect(m_scmTreeModeButton, &QPushButton::toggled, chrome, [this, chrome](bool nested) {
+        if (chrome->arranged == 1 && m_scmTree)
+            m_scmTree->setIndentation(nested ? 14 : 0);
+    });
+
+    const auto arrangePanel = [this, chrome, root, composeRow, header, title,
+                               headerHost, summaryField, descriptionField,
+                               commitRule, commitMore, generationMenuButton,
+                               messageToFields](bool next) {
+        while (QLayoutItem *item = chrome->commitLayout->takeAt(0)) {
+            if (!item->layout())
+                delete item;
+        }
+        while (QLayoutItem *item = root->takeAt(0)) {
+            if (!item->layout())
+                delete item;
+        }
+        if (QLayout *old = m_scmControlsPanel->layout()) {
+            while (QLayoutItem *item = old->takeAt(0))
+                delete item;
+            delete old;
+        }
+        if (next) {
+            root->setContentsMargins(0, 0, 0, 0);
+            root->setSpacing(0);
+            root->addWidget(headerHost);
+            root->addWidget(m_scmTree, 1);
+            root->addWidget(m_scmEmptyNote);
+            root->addWidget(commitRule);
+            chrome->commitLayout->addLayout(composeRow);
+            chrome->commitLayout->addWidget(descriptionField);
+            chrome->commitLayout->addWidget(m_scmControlsPanel);
+            root->addLayout(chrome->commitLayout);
+            auto *controls = new QHBoxLayout(m_scmControlsPanel);
+            controls->setContentsMargins(0, 0, 0, 0);
+            controls->setSpacing(0);
+            controls->addWidget(m_scmCommitButton, 1);
+            controls->addWidget(commitMore);
+            controls->addWidget(m_scmCommitPushButton);
+            controls->addWidget(m_scmStageCommitPushButton);
+            controls->addWidget(m_scmSyncRow, 1);
+        } else {
+            root->setContentsMargins(6, 10, 6, 4);
+            root->setSpacing(6);
+            root->addLayout(composeRow);
+            root->addWidget(m_scmControlsPanel);
+            root->addWidget(headerHost);
+            root->addWidget(m_scmTree, 1);
+            root->addWidget(m_scmEmptyNote);
+            auto *controls = new FlowLayout(m_scmControlsPanel, 0, 6, 6);
+            controls->addWidget(m_scmCommitButton);
+            controls->addWidget(m_scmCommitPushButton);
+            controls->addWidget(m_scmStageCommitPushButton);
+            controls->addWidget(m_scmSyncRow);
+        }
+        header->setContentsMargins(next ? QMargins(10, 8, 8, 4) : QMargins(0, 0, 0, 0));
+        scmSetShown(title, !next || gitLayoutCompact());
+        scmSetShown(m_scmCountLabel, !next || gitLayoutCompact());
+        scmSetShown(m_scmMessage, !next);
+        summaryField->setVisible(next);
+        descriptionField->setVisible(next);
+        commitRule->setVisible(next);
+        if (!next)
+            commitMore->hide();
+        for (QWidget *button :
+             {static_cast<QWidget *>(m_scmGenerateIconButton),
+              static_cast<QWidget *>(generationMenuButton)})
+            composeRow->setAlignment(button, next ? Qt::AlignVCenter : Qt::AlignTop);
+        if (next) {
+            summaryField->setFixedHeight(kGitNextFieldHeight);
+            descriptionField->setFixedHeight(kGitNextDescriptionHeight);
+            m_scmCommitButton->setIcon(
+                themedOcticon(QStringLiteral("git-commit"),
+                              Theme::color(Theme::Role::OnAccent), 14));
+            commitMore->setIcon(themedOcticon(QStringLiteral("chevron-down"),
+                                              Theme::color(Theme::Role::OnAccent), 14));
+        } else {
+            m_scmCommitButton->setIcon(QIcon());
+            m_scmCommitButton->setText(QStringLiteral("Commit"));
+        }
+        m_scmTree->setRootIsDecorated(!next);
+        m_scmTree->setIndentation(next ? (m_scmTreeFolders ? 14 : 0) : 10);
+        updateScmCommitControlVisibility();
+        if (chrome->mirrorEnabled)
+            chrome->mirrorEnabled();
+        if (next)
+            messageToFields();
+    };
+
+    const auto applyTab = [this, chrome](bool next) {
+        const bool changes = !next || chrome->tab == 0;
+        const bool history = !next || chrome->tab == 1;
+        if (m_gitFilesSlot)
+            scmSetShown(m_gitFilesSlot, changes);
+        if (m_gitHistorySlot)
+            scmSetShown(m_gitHistorySlot, history);
+        if (chrome->changesTab)
+            chrome->changesTab->setChecked(chrome->tab == 0);
+        if (chrome->historyTab)
+            chrome->historyTab->setChecked(chrome->tab == 1);
+    };
+
+    const auto arrangePage = [this, chrome, applyTab](bool next) {
+        if (!chrome->installed || !chrome->actions)
+            return;
+        auto *history = chrome->historyHeader
+                            ? dynamic_cast<HeaderWrapLayout *>(
+                                  chrome->historyHeader->layout())
+                            : nullptr;
+        if (chrome->header)
+            chrome->header->setVisible(next);
+        if (chrome->side)
+            chrome->side->setVisible(next);
+        while (QLayoutItem *item = chrome->actions->takeAt(0))
+            delete item;
+        const QList<QPushButton *> moved{m_commitsFetchButton, m_commitsPullButton,
+                                         m_scmRefreshButton};
+        if (m_commitsBranchButton)
+            m_commitsBranchButton->setMinimumWidth(next ? 112 : 0);
+        if (next) {
+            if (chrome->branchPair)
+                chrome->actions->addWidget(chrome->branchPair);
+            for (QPushButton *button : {m_commitsFetchButton, m_commitsPullButton,
+                                        chrome->pushButton.data(), m_scmRefreshButton}) {
+                if (button)
+                    chrome->actions->addWidget(button);
+            }
+            for (QPushButton *button : moved)
+                scmTintButtonIcon(button, Theme::Role::FgMuted);
+            if (chrome->pushButton)
+                scmTintButtonIcon(chrome->pushButton, Theme::Role::FgMuted);
+        } else if (history) {
+            for (int i = history->count() - 1; i >= 0; --i)
+                delete history->takeAt(i);
+            if (chrome->branchPair)
+                history->setTitle(chrome->branchPair);
+            for (QPushButton *button : {m_commitsFetchButton, m_commitsPullButton,
+                                        m_commitsLeaderboardButton, m_scmRefreshButton})
+                history->addAction(button);
+            for (QPushButton *button : moved)
+                applyStoredOcticon(button);
+        }
+        applyTab(next);
+    };
+
+    const auto buildSide = [this, chrome] {
+        if (!chrome->side)
+            return;
+        QList<GitSideItem> items;
+        QString signature;
+        const auto addHeading = [&](const QString &key, const QString &caption,
+                                    int count) {
+            const bool isOpen = chrome->open.value(key, true);
+            GitSideItem item;
+            item.kind = GitSideItem::Kind::Heading;
+            item.title = caption;
+            item.count = count;
+            item.open = isOpen;
+            item.toolTip = isOpen ? QStringLiteral("Fold %1").arg(caption.toLower())
+                                  : QStringLiteral("Show %1").arg(caption.toLower());
+            QPointer<ScmNextChrome> owner(chrome);
+            item.activate = [owner, key] {
+                if (!owner)
+                    return;
+                owner->open[key] = !owner->open.value(key, true);
+                owner->schedule();
+            };
+            signature += QStringLiteral("H|%1|%2|%3\x1e").arg(key).arg(count).arg(int(isOpen));
+            items.append(item);
+            return isOpen;
+        };
+        const auto addItem = [&](const GitSideItem &item) {
+            signature += QStringLiteral("E|%1|%2|%3|%4|%5\x1e")
+                             .arg(item.title, item.detail, item.toolTip)
+                             .arg(int(item.current))
+                             .arg(int(item.kind));
+            items.append(item);
+        };
+        const auto addLink = [&](const QString &caption, QPushButton *button) {
+            GitSideItem link;
+            link.kind = GitSideItem::Kind::Link;
+            link.title = caption;
+            link.toolTip = button ? button->toolTip() : QString();
+            QPointer<QPushButton> target(button);
+            link.activate = [target] {
+                if (target)
+                    target->click();
+            };
+            addItem(link);
+        };
+
+        QList<QAction *> branches;
+        if (QMenu *menu = m_commitsBranchButton ? m_commitsBranchButton->menu() : nullptr) {
+            for (QAction *action : menu->actions()) {
+                if (action->isCheckable())
+                    branches.append(action);
+            }
+        }
+        if (addHeading(QStringLiteral("branches"), QStringLiteral("Branches"),
+                       branches.size())) {
+            for (QAction *action : std::as_const(branches)) {
+                GitSideItem item;
+                item.icon = QStringLiteral("git-branch");
+                item.title = action->text();
+                item.current = action->isChecked();
+                item.toolTip = QString::fromUtf8(
+                                   "%1 \xE2\x80\x94 open its history here and its "
+                                   "diff against the base")
+                                   .arg(item.title);
+                QPointer<QAction> target(action);
+                item.activate = [target] {
+                    if (target)
+                        target->trigger();
+                };
+                addItem(item);
+            }
+        }
+
+        if (QMenu *menu = m_remotesButton ? m_remotesButton->menu() : nullptr) {
+            QList<QAction *> remotes;
+            for (QAction *action : menu->actions()) {
+                if (action->isSeparator())
+                    break;
+                if (action->isEnabled())
+                    remotes.append(action);
+            }
+            if (addHeading(QStringLiteral("remotes"), QStringLiteral("Remotes"),
+                           remotes.size())) {
+                for (QAction *action : std::as_const(remotes)) {
+                    GitSideItem item;
+                    item.icon = QStringLiteral("cloud");
+                    item.title = action->text().section(
+                        QString::fromUtf8(" \xE2\x80\x94 "), 0, 0);
+                    item.toolTip = QStringLiteral("Copy the %1 URL\n%2")
+                                       .arg(item.title, action->toolTip());
+                    QPointer<QAction> target(action);
+                    item.activate = [target] {
+                        if (target)
+                            target->trigger();
+                    };
+                    addItem(item);
+                }
+            }
+        }
+
+        if (auto *worktrees = dynamic_cast<VerticalIconButton *>(m_worktreesButton)) {
+            const QString localPath =
+                m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()
+                    ? m_repositories.at(m_repoDetailIndex).localPath
+                    : QString();
+            QList<GitSideItem> rows;
+            bool listed = false;
+            if (m_worktreesTable && !localPath.isEmpty()) {
+                const QString mainPath = QDir(localPath).absolutePath();
+                const QString home = QDir::homePath();
+                for (int row = 0; row < m_worktreesTable->rowCount(); ++row) {
+                    QTableWidgetItem *name = m_worktreesTable->item(row, 0);
+                    QTableWidgetItem *path = m_worktreesTable->item(row, 1);
+                    if (!name || !path)
+                        continue;
+                    if (QDir(path->text()).absolutePath() == mainPath)
+                        listed = true;
+                    GitSideItem item;
+                    item.icon = QStringLiteral("file-directory");
+                    item.title = name->text();
+                    QString shown = path->text();
+                    if (!home.isEmpty() && shown.startsWith(home + QLatin1Char('/')))
+                        shown = QLatin1Char('~') + shown.mid(home.size());
+                    item.detail = QDir::toNativeSeparators(shown);
+                    item.strong = true;
+                    const QString branch = name->data(Qt::UserRole).toString();
+                    item.activate = [this, branch] { switchToWorktree(branch); };
+                    rows.append(item);
+                }
+            }
+            const int count = listed ? int(rows.size()) : int(worktrees->badgeCount());
+            if (addHeading(QStringLiteral("worktrees"), QStringLiteral("Worktrees"),
+                           count)) {
+                if (listed) {
+                    for (const GitSideItem &item : std::as_const(rows))
+                        addItem(item);
+                } else {
+                    addLink(QStringLiteral("Open the worktree list"), m_worktreesButton);
+                }
+            }
+        }
+
+        if (auto *tags = dynamic_cast<VerticalIconButton *>(m_tagsButton)) {
+            if (addHeading(QStringLiteral("tags"), QStringLiteral("Tags"),
+                           int(tags->badgeCount())))
+                addLink(QStringLiteral("Open tags and releases"), m_tagsButton);
+        }
+        chrome->side->setItems(items, signature);
+    };
+
+    chrome->sync = [this, chrome, buildSide] {
+        if (!chrome->installed || chrome->arranged != 1)
+            return;
+        const int index = m_repoDetailIndex;
+        const bool haveRepo = index >= 0 && index < m_repositories.size();
+        const QString localPath = haveRepo ? m_repositories.at(index).localPath : QString();
+        const bool probed = haveRepo && m_scmOutgoingProbeHaveResult &&
+                            m_scmOutgoingProbeBranchResolved &&
+                            m_scmOutgoingProbeRepoPath == localPath;
+        const int ahead = probed ? m_scmOutgoingProbePendingCount : 0;
+        QStringList parts;
+        if (haveRepo && !m_repositories.at(index).name.isEmpty())
+            parts << m_repositories.at(index).name;
+        if (probed)
+            parts << QStringLiteral("%1 ahead").arg(ahead);
+        if (chrome->summary)
+            chrome->summary->setText(parts.join(QString::fromUtf8(" \xC2\xB7 ")));
+        if (chrome->changesTab) {
+            const QString count =
+                m_scmCountLabel ? m_scmCountLabel->text().trimmed() : QString();
+            chrome->changesTab->setText(count.isEmpty()
+                                            ? QStringLiteral("Changes")
+                                            : QStringLiteral("Changes (%1)").arg(count));
+        }
+        if (chrome->pushButton) {
+            const bool busy = haveRepo && (m_pushingRepos.contains(index) ||
+                                           m_syncingRepos.contains(index));
+            chrome->pushButton->setText(
+                probed ? QString::fromUtf8("Push  \xE2\x86\x91%1").arg(ahead)
+                       : QStringLiteral("Push"));
+            chrome->pushButton->setEnabled(repoHasWorkingTree() && !busy &&
+                                           (!probed || ahead > 0));
+        }
+        if (m_scmCommitButton) {
+            QString branch = headBranchFromFile(sourceControlGitDir());
+            if (branch.isEmpty() && probed)
+                branch = m_scmOutgoingProbeBranch;
+            branch.replace(QLatin1Char('&'), QStringLiteral("&&"));
+            const QString label = branch.isEmpty()
+                                      ? QStringLiteral("Commit")
+                                      : QStringLiteral("Commit to %1").arg(branch);
+            if (m_scmCommitButton->text() != label)
+                m_scmCommitButton->setText(label);
+        }
+        buildSide();
+    };
+
+    const auto installPage = [this, chrome, applyTab]() {
+        if (chrome->installed)
+            return true;
+        if (!m_gitWorkspaceStack || !m_commitsBranchButton || !m_commitsStack)
+            return false;
+        QWidget *page = m_gitWorkspaceStack->parentWidget();
+        auto *outer = page ? qobject_cast<QVBoxLayout *>(page->layout()) : nullptr;
+        QWidget *pair = m_commitsBranchButton->parentWidget();
+        QWidget *history = pair ? pair->parentWidget() : nullptr;
+        if (!outer || outer->indexOf(m_gitWorkspaceStack) < 0 || !history ||
+            history->objectName() != QLatin1String("gitHistoryHeader") ||
+            !dynamic_cast<HeaderWrapLayout *>(history->layout()))
+            return false;
+        chrome->installed = true;
+        chrome->branchPair = pair;
+        chrome->historyHeader = history;
+
+        auto *bar = new QFrame(page);
+        bar->setObjectName(QStringLiteral("gitNextHeader"));
+        bar->hide();
+        auto *barLayout = new QVBoxLayout(bar);
+        barLayout->setContentsMargins(20, 14, 20, 0);
+        barLayout->setSpacing(10);
+        auto *top = new QHBoxLayout;
+        top->setContentsMargins(0, 0, 0, 0);
+        top->setSpacing(12);
+        auto *titles = new QVBoxLayout;
+        titles->setContentsMargins(0, 0, 0, 0);
+        titles->setSpacing(2);
+        auto *pageTitle = new QLabel(QStringLiteral("Git"), bar);
+        pageTitle->setObjectName(QStringLiteral("gitNextTitle"));
+        auto *summary = new QLabel(bar);
+        summary->setObjectName(QStringLiteral("gitNextSummary"));
+        summary->setTextFormat(Qt::PlainText);
+        summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        titles->addWidget(pageTitle);
+        titles->addWidget(summary);
+        top->addLayout(titles, 1);
+        auto *actions = new QHBoxLayout;
+        actions->setContentsMargins(0, 0, 0, 0);
+        actions->setSpacing(6);
+        top->addLayout(actions);
+        barLayout->addLayout(top);
+        auto *tabs = new QHBoxLayout;
+        tabs->setContentsMargins(0, 0, 0, 0);
+        tabs->setSpacing(18);
+        auto *changesTab = new QPushButton(QStringLiteral("Changes"), bar);
+        auto *historyTab = new QPushButton(QStringLiteral("History"), bar);
+        changesTab->setToolTip(QStringLiteral("Working-tree changes and the commit box"));
+        historyTab->setToolTip(QStringLiteral("The commit history of the branch shown"));
+        for (QPushButton *tab : {changesTab, historyTab}) {
+            tab->setObjectName(QStringLiteral("gitNextTab"));
+            tab->setCheckable(true);
+            tab->setCursor(Qt::PointingHandCursor);
+            tabs->addWidget(tab);
+        }
+        tabs->addStretch(1);
+        barLayout->addLayout(tabs);
+
+        auto *push = new QPushButton(QStringLiteral("Push"), bar);
+        push->setObjectName(QStringLiteral("ghostButton"));
+        push->setCursor(Qt::PointingHandCursor);
+        push->setToolTip(m_scmSyncButton ? m_scmSyncButton->toolTip() : QString());
+        setOcticon(push, QStringLiteral("upload"), 14);
+        connect(push, &QPushButton::clicked, this, &MainWindow::pushCurrentRepoUpstream);
+
+        auto *side = new GitSidePanel(page);
+        side->hide();
+
+        const int at = outer->indexOf(m_gitWorkspaceStack);
+        outer->removeWidget(m_gitWorkspaceStack);
+        auto *body = new QHBoxLayout;
+        body->setContentsMargins(0, 0, 0, 0);
+        body->setSpacing(0);
+        outer->insertWidget(at, bar);
+        outer->insertLayout(at + 1, body, 1);
+        outer->setSpacing(0);
+        body->addWidget(side);
+        body->addWidget(m_gitWorkspaceStack, 1);
+
+        chrome->header = bar;
+        chrome->side = side;
+        chrome->summary = summary;
+        chrome->changesTab = changesTab;
+        chrome->historyTab = historyTab;
+        chrome->pushButton = push;
+        chrome->actions = actions;
+        chrome->tab = m_commitsStack->currentIndex() == kCommitWorkspaceCommitPage ? 1 : 0;
+
+        connect(changesTab, &QPushButton::clicked, chrome, [this, chrome, applyTab] {
+            chrome->tab = 0;
+            applyTab(chrome->pageArranged == 1);
+            if (m_commitsStack &&
+                m_commitsStack->currentIndex() == kCommitWorkspaceCommitPage)
+                setCommitWorkspacePage(kCommitWorkspaceChangesPage);
+            refreshSourceControl();
+            chrome->schedule();
+        });
+        connect(historyTab, &QPushButton::clicked, chrome, [this, chrome, applyTab] {
+            chrome->tab = 1;
+            applyTab(chrome->pageArranged == 1);
+            refreshCommitMarkersIfStale();
+            if (m_commitsStack && m_commitsTable && !m_currentCommitHash.isEmpty() &&
+                m_commitsStack->currentIndex() == kCommitWorkspaceChangesPage) {
+                for (int row = 0; row < m_commitsTable->rowCount(); ++row) {
+                    QTableWidgetItem *item = m_commitsTable->item(row, kCommitSummaryCol);
+                    if (!item || item->data(kCommitRowKindRole).toInt() != 0)
+                        continue;
+                    const QString hash = item->data(Qt::UserRole).toString();
+                    if (!hash.isEmpty() && (hash.startsWith(m_currentCommitHash) ||
+                                            m_currentCommitHash.startsWith(hash))) {
+                        setCommitWorkspacePage(kCommitWorkspaceCommitPage);
+                        break;
+                    }
+                }
+            }
+            chrome->schedule();
+        });
+        connect(m_commitsStack, &QStackedWidget::currentChanged, chrome,
+                [chrome, applyTab](int index) {
+                    if (chrome->pageArranged != 1)
+                        return;
+                    const int tab = index == kCommitWorkspaceCommitPage ? 1 : 0;
+                    if (chrome->tab == tab)
+                        return;
+                    chrome->tab = tab;
+                    applyTab(true);
+                });
+        chrome->watch(m_commitsBranchButton);
+        chrome->watch(m_remotesButton);
+        chrome->watch(bar);
+        chrome->watch(side);
+        return true;
+    };
+
+    const auto applyPage = [this, chrome, title, arrangePage, installPage] {
+        const bool next = chrome->arranged == 1 && !gitLayoutCompact();
+        if (chrome->arranged == 1) {
+            scmSetShown(title, !next);
+            scmSetShown(m_scmCountLabel, !next);
+        }
+        const bool compact = chrome->arranged == 1 && !next;
+        if (m_scmTree)
+            m_scmTree->setMinimumHeight(compact ? 3 * kScmNextRowHeight : 0);
+        if (m_gitFilesSlot && m_scmPanel) {
+            if (chrome->filesFloor < 0)
+                chrome->filesFloor = m_gitFilesSlot->minimumHeight();
+            m_gitFilesSlot->setMinimumHeight(
+                compact ? qMax(chrome->filesFloor,
+                               m_scmPanel->minimumSizeHint().height())
+                        : chrome->filesFloor);
+        }
+        if (next && !chrome->installed && !installPage())
+            return;
+        if (chrome->pageArranged == int(next))
+            return;
+        chrome->pageArranged = int(next);
+        if (next && m_commitsStack)
+            chrome->tab =
+                m_commitsStack->currentIndex() == kCommitWorkspaceCommitPage ? 1 : 0;
+        arrangePage(next);
+        chrome->schedule();
+    };
+    chrome->relayout = applyPage;
+
+    const auto applyNextLayout = [chrome, arrangePanel, applyPage](bool next) {
+        if (chrome->arranged != int(next)) {
+            const bool first = chrome->arranged == -1;
+            chrome->arranged = int(next);
+            if (!first || next)
+                arrangePanel(next);
+        }
+        QTimer::singleShot(0, chrome, applyPage);
+    };
+
     auto *designHook = new ScmDesignHook(
-        panel, ScmDesignHook::Events::Design, [this, generationMenuButton](bool) {
+        panel, ScmDesignHook::Events::Design,
+        [this, generationMenuButton, applyNextLayout](bool) {
             const bool next = Theme::isNext();
+            applyNextLayout(next);
             const QString design =
                 next ? QStringLiteral("next") : QStringLiteral("classic");
             if (m_scmMessage) {
@@ -1616,6 +2723,13 @@ QWidget *MainWindow::buildSourceControlPanel()
                         for (QWidget *widget : rows) {
                             if (auto *row = dynamic_cast<ScmFileRow *>(widget))
                                 row->refreshStyle();
+                        }
+                        const QList<QWidget *> groups =
+                            m_scmTree->findChildren<QWidget *>(
+                                QStringLiteral("scmGroupRow"));
+                        for (QWidget *widget : groups) {
+                            if (auto *group = dynamic_cast<ScmGroupRow *>(widget))
+                                group->arrange();
                         }
                         m_scmTree->doItemsLayout();
                     }
@@ -1946,6 +3060,7 @@ void MainWindow::clearRangeFilesInSourceControl()
         m_scmCountLabel->clear();
     if (m_scmViewedLabel)
         m_scmViewedLabel->clear();
+    scmNextChromeSync(m_scmPanel);
 }
 
 // The review counter beside the range's file tree. Split out of the tree build
@@ -2010,7 +3125,7 @@ void MainWindow::showRangeFilesInSourceControl(const QStringList &paths,
         auto *group = new QTreeWidgetItem(m_scmTree);
         group->setFirstColumnSpanned(true);
         group->setData(0, Qt::UserRole + 6, rowsKey);
-        auto *groupWidget = new QWidget;
+        auto *groupWidget = new ScmGroupRow;
         auto *groupLayout = new QHBoxLayout(groupWidget);
         groupLayout->setContentsMargins(0, 0, 6, 0);
         auto *label = new QLabel(
@@ -2034,6 +3149,11 @@ void MainWindow::showRangeFilesInSourceControl(const QStringList &paths,
                 scrollBranchDiffToFile(paths.first());
         });
         groupLayout->addWidget(openAll);
+        groupWidget->setParts(label, label->text(),
+                              QStringLiteral("AGAINST %1 %2")
+                                  .arg(branchCompareBase())
+                                  .arg(paths.size()),
+                              {}, {});
         m_scmTree->setItemWidget(group, 0, groupWidget);
 
         QFont statusFont = m_scmTree->font();
@@ -2056,14 +3176,13 @@ void MainWindow::showRangeFilesInSourceControl(const QStringList &paths,
             item->setData(0, Qt::UserRole + 3, true); // branch-range row
 
             auto *row = new ScmFileRow;
-            auto *layout = new QHBoxLayout(row);
-            layout->setContentsMargins(4, 1, 6, 1);
-            layout->setSpacing(5);
+            new QHBoxLayout(row);
+            ScmRowParts parts;
             auto *fileIcon = new QLabel(row);
             fileIcon->setPixmap(iconForFile(path.section('/', -1)).pixmap(14, 14));
             fileIcon->setFixedSize(14, 14);
             fileIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
-            layout->addWidget(fileIcon);
+            parts.icon = fileIcon;
 
             const QString fileName = path.section('/', -1);
             QString directory = path.left(path.size() - fileName.size());
@@ -2071,19 +3190,19 @@ void MainWindow::showRangeFilesInSourceControl(const QStringList &paths,
                 directory.chop(1);
             auto *fileLabel = new QLabel(fileName, row);
             fileLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-            layout->addWidget(fileLabel);
+            parts.name = fileLabel;
             if (!directory.isEmpty()) {
                 auto *directoryLabel = new QLabel(directory, row);
                 directoryLabel->setObjectName(QStringLiteral("statusLine"));
                 directoryLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-                layout->addWidget(directoryLabel);
+                parts.directory = directoryLabel;
+                parts.directoryText = directory;
             }
-            layout->addStretch();
 
             auto *statusLabel = new QLabel(QString(statusCode), row);
             statusLabel->setToolTip(scmStatusTip(statusCode));
             statusLabel->setFont(statusFont); // bold, resolved once above
-            layout->addWidget(statusLabel);
+            parts.status = statusLabel;
             scmTagRowLabels(fileLabel, statusLabel, statusCode);
 
             auto *actions = new QWidget(row);
@@ -2097,8 +3216,9 @@ void MainWindow::showRangeFilesInSourceControl(const QStringList &paths,
             connect(open, &QToolButton::clicked, this,
                     [this, path] { openRepoFile(path); });
             actionsLayout->addWidget(open);
-            layout->addWidget(actions);
             row->setActionsWidget(actions);
+            parts.actions = actions;
+            row->setParts(parts);
             row->onClicked = [this, item, path] {
                 m_scmTree->setCurrentItem(item);
                 scrollBranchDiffToFile(path, /*moveFocus=*/false);
@@ -2178,6 +3298,7 @@ void MainWindow::showRangeFilesInSourceControl(const QStringList &paths,
     if (m_scmCountLabel)
         m_scmCountLabel->setText(paths.isEmpty() ? QString()
                                                   : QString::number(paths.size()));
+    scmNextChromeSync(m_scmPanel);
     updateRangeViewedLabel(paths);
 
     // The commit buttons follow the working tree's dirtiness. That used to be
@@ -2391,6 +3512,7 @@ void MainWindow::refreshSourceControl(bool force)
             m_scmCountLabel->clear();
         if (m_scmViewedLabel)
             m_scmViewedLabel->clear();
+        scmNextChromeSync(m_scmPanel);
         if (m_railGitButton)
             m_railGitButton->setBadgeCount(0);
         m_scmPendingChangeCount = 0;
@@ -2469,7 +3591,7 @@ void MainWindow::refreshSourceControl(bool force)
         auto *group = new QTreeWidgetItem(m_scmTree);
         group->setFirstColumnSpanned(true);
 
-        auto *gw = new QWidget;
+        auto *gw = new ScmGroupRow;
         auto *gh = new QHBoxLayout(gw);
         gh->setContentsMargins(0, 0, 6, 0);
         gh->setSpacing(0);
@@ -2489,6 +3611,16 @@ void MainWindow::refreshSourceControl(bool force)
             b->setCursor(Qt::PointingHandCursor);
             return b;
         };
+        auto groupTextBtn = [&](const QString &text, const QString &tip) {
+            auto *b = new QPushButton(text, gw);
+            b->setObjectName(QStringLiteral("scmGroupAction"));
+            b->setToolTip(tip);
+            b->setFlat(true);
+            b->setCursor(Qt::PointingHandCursor);
+            b->setFocusPolicy(Qt::NoFocus);
+            b->hide();
+            return b;
+        };
         auto *openAll = new QToolButton(gw);
         openAll->setIcon(themedOcticon("diff", Theme::remapColor(QColor("#8b949e")), 14));
         openAll->setToolTip("Open all changes");
@@ -2497,11 +3629,19 @@ void MainWindow::refreshSourceControl(bool force)
         connect(openAll, &QToolButton::clicked, this,
                 [this, stagedGroup] { showScmDiffAll(stagedGroup); });
         gh->addWidget(openAll);
+        QList<QWidget *> classicOnly;
+        QList<QWidget *> nextOnly;
         if (stagedGroup) {
             auto *u =
                 groupBtn(QString::fromUtf8("\xE2\x88\x92"), "Unstage all changes");
             connect(u, &QToolButton::clicked, this, &MainWindow::scmUnstageAll);
             gh->addWidget(u);
+            auto *unstageAll =
+                groupTextBtn(QStringLiteral("Unstage all"), "Unstage all changes");
+            connect(unstageAll, &QPushButton::clicked, this, &MainWindow::scmUnstageAll);
+            gh->addWidget(unstageAll);
+            classicOnly << u;
+            nextOnly << unstageAll;
         } else {
             auto *d =
                 groupBtn(QString::fromUtf8("\xE2\x86\xBA"), "Discard all changes");
@@ -2510,7 +3650,19 @@ void MainWindow::refreshSourceControl(bool force)
             connect(s, &QToolButton::clicked, this, &MainWindow::scmStageAll);
             gh->addWidget(d);
             gh->addWidget(s);
+            auto *stageAll =
+                groupTextBtn(QStringLiteral("Stage all"), "Stage all changes");
+            connect(stageAll, &QPushButton::clicked, this, &MainWindow::scmStageAll);
+            gh->addWidget(stageAll);
+            classicOnly << s;
+            nextOnly << stageAll;
         }
+        gw->setParts(gl, QStringLiteral("%1 (%2)").arg(name).arg(rows.size()),
+                     QStringLiteral("%1 %2")
+                         .arg(stagedGroup ? QStringLiteral("STAGED")
+                                          : QStringLiteral("UNSTAGED"))
+                         .arg(rows.size()),
+                     classicOnly, nextOnly);
         m_scmTree->setItemWidget(group, 0, gw);
 
         QHash<QString, QTreeWidgetItem *> folders;
@@ -2543,16 +3695,15 @@ void MainWindow::refreshSourceControl(bool force)
             item->setData(0, Qt::UserRole + 2, r.untracked);
 
             auto *w = new ScmFileRow;
-            auto *h = new QHBoxLayout(w);
-            h->setContentsMargins(4, 1, 6, 1);
-            h->setSpacing(5);
+            new QHBoxLayout(w);
+            ScmRowParts parts;
 
             auto *fileIcon = new QLabel(w);
             fileIcon->setPixmap(
                 iconForFile(r.path.section('/', -1)).pixmap(14, 14));
             fileIcon->setFixedSize(14, 14);
             fileIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
-            h->addWidget(fileIcon);
+            parts.icon = fileIcon;
 
             const QString fileName = r.path.section('/', -1);
             QString directory = r.path.left(r.path.size() - fileName.size());
@@ -2560,22 +3711,40 @@ void MainWindow::refreshSourceControl(bool force)
                 directory.chop(1);
             auto *fileLabel = new QLabel(fileName, w);
             fileLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-            h->addWidget(fileLabel);
+            parts.name = fileLabel;
             if (!directory.isEmpty()) {
                 auto *directoryLabel = new QLabel(directory, w);
                 directoryLabel->setObjectName("statusLine");
                 directoryLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-                h->addWidget(directoryLabel);
+                parts.directory = directoryLabel;
+                parts.directoryText = directory;
             }
-            h->addStretch();
 
             auto *statusLabel = new QLabel(QString(r.status), w);
             statusLabel->setToolTip(scmStatusTip(r.status));
             QFont sf = statusLabel->font();
             sf.setBold(true);
             statusLabel->setFont(sf);
-            h->addWidget(statusLabel);
+            parts.status = statusLabel;
             scmTagRowLabels(fileLabel, statusLabel, r.status);
+            if (Theme::isNext()) {
+                auto *check = new QCheckBox(w);
+                check->setObjectName(QStringLiteral("scmStageCheck"));
+                check->setChecked(r.staged);
+                check->setFocusPolicy(Qt::NoFocus);
+                check->setCursor(Qt::PointingHandCursor);
+                check->setToolTip(r.staged ? QStringLiteral("Unstage")
+                                           : QStringLiteral("Stage"));
+                const QString checkPath = r.path;
+                const bool checkStaged = r.staged;
+                connect(check, &QCheckBox::clicked, this, [this, checkPath, checkStaged] {
+                    if (checkStaged)
+                        scmUnstagePath(checkPath);
+                    else
+                        scmStagePath(checkPath);
+                });
+                parts.check = check;
+            }
 
             auto *actions = new QWidget(w);
             auto *actionsLayout = new QHBoxLayout(actions);
@@ -2614,8 +3783,9 @@ void MainWindow::refreshSourceControl(bool force)
             connect(open, &QToolButton::clicked, this,
                     [this, path] { openRepoFile(path); });
             actionsLayout->addWidget(open);
-            h->addWidget(actions);
             w->setActionsWidget(actions);
+            parts.actions = actions;
+            w->setParts(parts);
             const bool staged = r.staged;
             w->onClicked = [this, item, path, staged, untracked] {
                 m_scmTree->setCurrentItem(item);
@@ -2633,6 +3803,7 @@ void MainWindow::refreshSourceControl(bool force)
     const int total = staged.size() + changes.size();
     if (m_scmCountLabel)
         m_scmCountLabel->setText(total ? QString::number(total) : QString());
+    scmNextChromeSync(m_scmPanel);
     if (m_railGitButton)
         m_railGitButton->setBadgeCount(total);
     const bool anything = total > 0;
@@ -2667,14 +3838,51 @@ void MainWindow::refreshSourceControl(bool force)
         });
 }
 
+void MainWindow::applyGitLayout()
+{
+    if (ScmNextChrome *chrome = scmNextChrome(m_scmPanel); chrome && chrome->relayout)
+        chrome->relayout();
+}
+
+#ifdef FORKMESH_WINDOW_TESTS
+QString MainWindow::testGitLayoutState() const
+{
+    const auto shown = [](const QWidget *widget) {
+        return widget && !widget->isHidden() ? 1 : 0;
+    };
+    const QWidget *pair =
+        m_commitsBranchButton ? m_commitsBranchButton->parentWidget() : nullptr;
+    const QWidget *host = pair ? pair->parentWidget() : nullptr;
+    const bool rows =
+        m_scmTree && m_scmTree->viewport()->height() >= kScmNextRowHeight;
+    const bool commit =
+        m_scmCommitButton && m_scmPanel && m_scmCommitButton->isVisibleTo(m_scmPanel) &&
+        m_scmCommitButton->mapTo(m_scmPanel, QPoint(0, m_scmCommitButton->height()))
+                .y() <= m_scmPanel->height();
+    return QStringLiteral(
+               "header=%1 side=%2 files=%3 history=%4 rows=%5 commit=%6 branch=%7")
+        .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextHeader"))))
+        .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextSide"))))
+        .arg(shown(m_gitFilesSlot))
+        .arg(shown(m_gitHistorySlot))
+        .arg(rows ? 1 : 0)
+        .arg(commit ? 1 : 0)
+        .arg(host ? host->objectName() : QString());
+}
+#endif
+
 void MainWindow::updateScmCommitControlVisibility()
 {
     const bool showCommit = !m_scmOutgoingBlocking || m_scmPendingChangeCount > 0;
+    ScmNextChrome *chrome = scmNextChrome(m_scmPanel);
+    const bool next = chrome && chrome->arranged == 1;
     for (QPushButton *button : {m_scmCommitButton, m_scmCommitPushButton,
                                 m_scmStageCommitPushButton}) {
         if (button)
-            button->setVisible(showCommit);
+            button->setVisible(showCommit && (!next || button == m_scmCommitButton));
     }
+    if (next && chrome->commitMore)
+        chrome->commitMore->setVisible(showCommit);
     if (m_scmSyncRow)
         m_scmSyncRow->setVisible(m_scmOutgoingBlocking);
     else if (m_scmSyncButton)
@@ -2783,6 +3991,7 @@ void MainWindow::refreshSourceControlOutgoing()
             m_scmOutgoingProbeBranch = result.branch;
             m_scmOutgoingProbePendingCount = result.pending;
             const bool rerun = std::exchange(m_scmOutgoingProbePending, false);
+            scmNextChromeSync(m_scmPanel);
             const auto scheduleRerun = [this, rerun] {
                 if (rerun) {
                     QTimer::singleShot(
@@ -3321,9 +4530,12 @@ void MainWindow::renderScmCombinedDiff()
         !m_scmDiffRenderKey.isEmpty())
         return;
 
-    const QString html =
-        renderDiffHtml(m_scmCombinedPatch, files, dir, QString(), QString(),
-                       QString(), QHash<QString, QString>(), viewed, expanded);
+    DiffRenderAppearance appearance = currentDiffRenderAppearance();
+    appearance.changeArrows = true;
+    appearance.changeArrowsStagedFiles = m_scmCombinedStagedFiles;
+    const QString html = renderDiffHtmlSplit(
+        diffSplitPref(), m_scmCombinedPatch, files, dir, QString(), QString(),
+        QString(), QHash<QString, QString>(), viewed, expanded, appearance);
     QString body = html;
     if (cleanTree) {
         const quint64 statusGeneration = m_scmStatusGeneration;
@@ -4058,8 +5270,72 @@ bool MainWindow::testScmAutoViewedRoundTrip()
 }
 #endif
 
+void MainWindow::applyScmChangeBlock(const QUrl &url)
+{
+    if (sourceControlShowsRange() || !m_scmPatchValid)
+        return;
+    const QString dir = sourceControlGitDir();
+    const QUrlQuery query(url);
+    const QString path = url.path(QUrl::FullyDecoded);
+    const bool staged = query.queryItemValue(QStringLiteral("s")) == QLatin1String("1");
+    const bool toNew = query.queryItemValue(QStringLiteral("d")) == QLatin1String("new");
+    bool oldOk = false;
+    bool newOk = false;
+    const int oldStart = query.queryItemValue(QStringLiteral("o")).toInt(&oldOk);
+    const int newStart = query.queryItemValue(QStringLiteral("n")).toInt(&newOk);
+    if (dir.isEmpty() || path.isEmpty() || !oldOk || !newOk || (staged && toNew))
+        return;
+
+    const QStringList sections =
+        forkmesh::diffblock::splitFilePatches(m_scmCombinedPatch);
+    QString blockPatch;
+    for (int i = 0; i < sections.size() && blockPatch.isEmpty(); ++i) {
+        if ((i < m_scmCombinedStagedFiles) != staged ||
+            forkmesh::diffblock::filePatchPath(sections.at(i)) != path)
+            continue;
+        blockPatch = forkmesh::diffblock::changeBlockPatch(sections.at(i), oldStart,
+                                                           newStart);
+    }
+    if (blockPatch.isEmpty()) {
+        flashMessage(QStringLiteral("That change has moved; refreshing the diff."));
+        refreshSourceControl();
+        return;
+    }
+
+    QStringList args{QStringLiteral("apply"), QStringLiteral("--unidiff-zero"),
+                     QStringLiteral("--whitespace=nowarn")};
+    if (staged || toNew)
+        args << QStringLiteral("--cached");
+    if (!toNew)
+        args << QStringLiteral("-R");
+    const QString title = staged  ? QStringLiteral("Unstage change")
+                          : toNew ? QStringLiteral("Stage change")
+                                  : QStringLiteral("Revert change");
+    queueScmMutation(
+        QStringLiteral("block|") + dir + QLatin1Char('|') + path + QLatin1Char('|') +
+            url.query(),
+        [dir, args, input = blockPatch.toUtf8()] {
+            ScmMutationResult result;
+            result.ok = runGitCaptureInput(dir, args, input, &result.out,
+                                           &result.error);
+            return result;
+        },
+        [this, title](const ScmMutationResult &result) {
+            if (!result.ok)
+                QMessageBox::warning(this, title,
+                                     result.error.isEmpty()
+                                         ? QStringLiteral("git apply failed.")
+                                         : result.error);
+            refreshSourceControl();
+        });
+}
+
 void MainWindow::onScmDiffAnchorClicked(const QUrl &url)
 {
+    if (url.scheme() == QLatin1String("scmblock")) {
+        applyScmChangeBlock(url);
+        return;
+    }
     if (url.scheme() == QLatin1String("fmmergerange")) {
         m_mergeRange = mergeRangeIndexForKey(url.path());
         renderScmCombinedDiff(); // the pane memo is keyed by range
@@ -7133,8 +8409,9 @@ void MainWindow::showSizeMapScanProgress(
         auto *line = new QLabel(QStringLiteral("…"), m_sizeMapWorkersBox);
         line->setObjectName("statusLine");
         line->setTextFormat(Qt::PlainText);
-        QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-        mono.setPointSizeF(m_sizeMapStatus->font().pointSizeF());
+        const QFont mono = forkmesh::fontSizedLike(
+            QFontDatabase::systemFont(QFontDatabase::FixedFont),
+            m_sizeMapStatus->font());
         line->setFont(mono);
         line->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
         col->addWidget(line);

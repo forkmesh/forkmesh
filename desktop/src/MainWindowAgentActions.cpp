@@ -16,6 +16,7 @@
 #include "AgentPromptImages.h"
 #include "AgentToolCatalog.h"
 #include "AgentToolEfficiencyBoard.h"
+#include "AgentPerformanceCharts.h"
 #include "AgentRunTable.h"
 #include "AgentToolUsageTable.h"
 #include "AgentGuardrailBoard.h"
@@ -29,9 +30,11 @@
 #include "CodexAppServerSession.h"
 #include "NodeEventSocket.h"
 #include "PromptFlightOverlay.h"
+#include "SystemStats.h"
 #include "UsageLimitCalendar.h"
 
 #include <QActionGroup>
+#include <QThread>
 #include <QComboBox>
 #include <QDebug>
 #include <QScrollArea>
@@ -100,8 +103,21 @@ void MainWindow::setAgentCodeMode(bool code)
     const bool firstShow = m_agentCodeSplit && !m_agentCodePage->isVisible();
     m_agentCodePage->show();
     const int total = m_agentCodeSplit ? m_agentCodeSplit->width() : 0;
-    if (firstShow && total > 0)
-        m_agentCodeSplit->setSizes({total / 2, total - total / 2});
+    if (firstShow && total > 0) {
+        QList<int> sizes = m_agentCodeSplit->sizes();
+        const int transcript = m_agentCodeSplit->indexOf(m_agentOutputStack);
+        const int code = m_agentCodeSplit->indexOf(m_agentCodePage);
+        int rest = total;
+        for (int at = 0; at < sizes.size(); ++at)
+            if (at != transcript && at != code)
+                rest -= sizes.at(at);
+        rest = qMax(0, rest);
+        if (transcript >= 0 && code >= 0) {
+            sizes[transcript] = rest / 2;
+            sizes[code] = rest - rest / 2;
+            m_agentCodeSplit->setSizes(sizes);
+        }
+    }
     refreshAgentFilesPanel(m_selectedAgentSessionId);
     if (m_agentCodePollTimer)
         m_agentCodePollTimer->start();
@@ -1016,10 +1032,14 @@ void MainWindow::updateQuickAddEnterTarget()
         }
         if (m_issueQuickAdd)
             m_issueQuickAdd->setPlaceholderText(prompt.placeholder);
+        for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton})
+            tintComposerActionButton(button);
+        refreshQuickAddSendToChannelButton();
         return;
     }
     const int target = quickAddFollowUpAgentSessionId();
-    const bool toAgent = target >= 0 && m_quickAddSendToAgentButton;
+    const bool room = !promptChatRoom().isEmpty();
+    const bool toAgent = target >= 0 && !room && m_quickAddSendToAgentButton;
     QString pullBranch;
     const AgentSession *pullAgent = quickAddPullDetailAgent(&pullBranch);
     const bool targetingPullAgent = pullAgent && pullAgent->id == target &&
@@ -1070,9 +1090,12 @@ void MainWindow::updateQuickAddEnterTarget()
                            .arg(target))
               : QStringLiteral(
                     "Send to the agent open above, as a follow-up message"));
-    apply(m_quickAddSendButton, !toAgent, newPromptTooltip);
+    apply(m_quickAddSendButton, !toAgent && !room, newPromptTooltip);
+    refreshQuickAddSendToChannelButton();
     if (m_quickAddSendButton)
         m_quickAddSendButton->setAccessibleName(newPromptTooltip);
+    for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton})
+        tintComposerActionButton(button);
     updateQuickAddTargetAgentLabel();
 }
 
@@ -1092,6 +1115,11 @@ void MainWindow::updateQuickAddTargetAgentLabel()
                 ? QStringLiteral("enter follow-up for the cloud agent")
                 : QStringLiteral("enter follow-up for the cloud agent on %1")
                       .arg(node));
+        return;
+    }
+    if (const QString room = promptChatRoom(); !room.isEmpty()) {
+        m_issueQuickAdd->setPlaceholderText(
+            QStringLiteral("Message %1").arg(chatConversationLabel(room).left(120)));
         return;
     }
     const int target = quickAddFollowUpAgentSessionId();
@@ -1205,6 +1233,64 @@ void MainWindow::sendAgentToolImprovementsToAgent()
                  false, QString(), forkmesh::kLocalOperationNoticeKind);
 }
 
+void MainWindow::startTranscriptCoverageAgent()
+{
+    if (!m_agentTranscript)
+        return;
+    QVector<forkmesh::transcriptcoverage::Gap> gaps;
+    int busyAgent = 0;
+    for (const forkmesh::transcriptcoverage::Gap &gap : m_agentTranscript->coverageGaps()) {
+        const int handedTo = m_transcriptCoverageAgents.value(gap.key);
+        if (handedTo > 0 && findAgentSession(handedTo)) {
+            busyAgent = handedTo;
+            continue;
+        }
+        gaps.append(gap);
+    }
+    if (gaps.isEmpty()) {
+        if (busyAgent > 0) {
+            flashMessage(QStringLiteral("Agent #%1 is already adding these entries "
+                                        "to the transcript.")
+                             .arg(busyAgent),
+                         false, QString(), forkmesh::kLocalOperationNoticeKind);
+            showAgentSession(busyAgent);
+        }
+        return;
+    }
+    const int repoIndex = stallReportRepoIndex();
+    if (repoIndex < 0) {
+        flashMessage(QStringLiteral("No ForkMesh checkout is available to run an "
+                                    "agent in."),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    const QString provider = defaultAgentProvider();
+    const QString model =
+        provider == QLatin1String("claude-code")
+            ? QSettings().value(kClaudeCodeModelSetting).toString()
+            : (agentIsCodexProvider(provider)
+                   ? codexChatGptModelId(
+                         QSettings().value(kCodexModelSetting).toString())
+                   : QString());
+    QString sessionLabel = QStringLiteral("agent session #%1").arg(m_selectedAgentSessionId);
+    if (const AgentSession *shown = findAgentSession(m_selectedAgentSessionId))
+        sessionLabel += QStringLiteral(" (%1)").arg(agentProviderName(shown->provider));
+    const int sessionId = startAdHocAgentForRepo(
+        repoIndex, forkmesh::transcriptcoverage::agentPrompt(gaps, sessionLabel),
+        provider, /*createPr=*/false, model,
+        QStringLiteral("Show missing raw log entries in the transcript"));
+    if (sessionId <= 0)
+        return;
+    for (const forkmesh::transcriptcoverage::Gap &gap : std::as_const(gaps))
+        m_transcriptCoverageAgents.insert(gap.key, sessionId);
+    flashMessage(QStringLiteral("Started a %1 agent to add %2 missing kind%3 of "
+                                "entries to the transcript.")
+                     .arg(agentProviderName(provider))
+                     .arg(gaps.size())
+                     .arg(gaps.size() == 1 ? QString() : QStringLiteral("s")),
+                 false, QString(), forkmesh::kLocalOperationNoticeKind);
+}
+
 QWidget *MainWindow::buildAgentEfficiencyPage()
 {
     auto *page = new QWidget;
@@ -1292,7 +1378,7 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     clear->setCursor(Qt::PointingHandCursor);
     clear->setToolTip(QStringLiteral(
         "Forget every recorded tool call and improvement signal. Session "
-        "transcripts are untouched."));
+        "transcripts and the Trends history are untouched."));
     connect(clear, &QPushButton::clicked, this, [this] {
         if (!m_agentToolLedger)
             return;
@@ -1318,8 +1404,13 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     runsView->setToolTip(QStringLiteral(
         "Every agent run with its model tokens, tool calls and efficiency, "
         "compared with and without tool families switched off"));
+    auto *trendsView = new QPushButton(QStringLiteral("Trends"));
+    trendsView->setObjectName(QStringLiteral("agentEfficiencyTrendsView"));
+    trendsView->setToolTip(QStringLiteral(
+        "Charts of agent and tool performance over the last hour, 24 hours, "
+        "7 days and 30 days, each against the period before"));
     auto *viewGroup = new QButtonGroup(header);
-    for (QPushButton *button : {familiesView, toolsView, runsView}) {
+    for (QPushButton *button : {familiesView, toolsView, runsView, trendsView}) {
         button->setCheckable(true);
         button->setFlat(true);
         button->setCursor(Qt::PointingHandCursor);
@@ -1332,6 +1423,9 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
             [this] { showAgentToolUsageTable(true); });
     connect(runsView, &QPushButton::clicked, this,
             [this] { showAgentEfficiencyView(2); });
+    connect(trendsView, &QPushButton::clicked, this,
+            [this] { showAgentEfficiencyView(3); });
+    m_agentEfficiencyTrendsViewButton = trendsView;
     m_agentEfficiencyToolsViewButton = toolsView;
     m_agentEfficiencyRunsViewButton = runsView;
     m_agentEfficiencyFamiliesViewButton = familiesView;
@@ -1340,6 +1434,7 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     headerLayout->addWidget(familiesView);
     headerLayout->addWidget(toolsView);
     headerLayout->addWidget(runsView);
+    headerLayout->addWidget(trendsView);
     headerLayout->addWidget(subtitle, 1);
     headerLayout->addWidget(m_agentEfficiencyLive);
     headerLayout->addWidget(copyImprovements);
@@ -1451,6 +1546,55 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     m_agentEfficiencyViewStack->addWidget(toolsPane); // Tools
     m_agentEfficiencyViewStack->addWidget(runsPane);  // Runs
 
+    auto *trendsPane = new QWidget;
+    auto *trendsLayout = new QVBoxLayout(trendsPane);
+    trendsLayout->setContentsMargins(16, 6, 16, 0);
+    trendsLayout->setSpacing(4);
+    auto *trendsActions = new QHBoxLayout;
+    trendsActions->setContentsMargins(0, 0, 0, 0);
+    trendsActions->setSpacing(4);
+    auto *periodGroup = new QButtonGroup(trendsPane);
+    for (int period = 0; period < AgentPerformanceHistory::kPeriodCount; ++period) {
+        auto *button = new QPushButton(AgentPerformanceHistory::periodShortLabel(period));
+        button->setObjectName(QStringLiteral("agentPerformancePeriod%1").arg(period));
+        button->setCheckable(true);
+        button->setFlat(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setToolTip(QStringLiteral("Show the last %1 against the %1 before it")
+                               .arg(AgentPerformanceHistory::periodLabel(period)));
+        button->setChecked(period == AgentPerformanceHistory::Day);
+        periodGroup->addButton(button, period);
+        trendsActions->addWidget(button);
+    }
+    auto *copyTrends = new QPushButton(QStringLiteral("Copy summary"));
+    copyTrends->setObjectName(QStringLiteral("agentPerformanceCopySummary"));
+    copyTrends->setFlat(true);
+    copyTrends->setCursor(Qt::PointingHandCursor);
+    copyTrends->setToolTip(QStringLiteral(
+        "Copy every metric for the shown period and the period before as a markdown table"));
+    trendsActions->addStretch(1);
+    trendsActions->addWidget(copyTrends);
+    m_agentPerformanceCharts = new AgentPerformanceCharts;
+    m_agentPerformanceCharts->setHistory(m_agentPerformance.get());
+    connect(periodGroup, &QButtonGroup::idClicked, this, [this](int period) {
+        if (m_agentPerformanceCharts)
+            m_agentPerformanceCharts->setPeriod(period);
+    });
+    connect(copyTrends, &QPushButton::clicked, this, [this] {
+        if (m_agentPerformance && m_agentPerformanceCharts)
+            QGuiApplication::clipboard()->setText(
+                m_agentPerformance->summaryMarkdown(m_agentPerformanceCharts->period()));
+    });
+    auto *trendsScroll = new QScrollArea;
+    trendsScroll->setObjectName(QStringLiteral("agentPerformanceScroll"));
+    trendsScroll->setWidgetResizable(true);
+    trendsScroll->setFrameShape(QFrame::NoFrame);
+    trendsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    trendsScroll->setWidget(m_agentPerformanceCharts);
+    trendsLayout->addLayout(trendsActions);
+    trendsLayout->addWidget(trendsScroll, 1);
+    m_agentEfficiencyViewStack->addWidget(trendsPane); // Trends
+
     auto *split = new QSplitter(Qt::Horizontal);
     split->setObjectName(QStringLiteral("agentEfficiencySplit"));
     split->setChildrenCollapsible(false);
@@ -1466,10 +1610,25 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     return page;
 }
 
+void MainWindow::ensureAgentEfficiencyPage()
+{
+    if (!m_agentPageStack || !m_agentEfficiencyPlaceholder)
+        return;
+    QWidget *placeholder = m_agentEfficiencyPlaceholder;
+    m_agentEfficiencyPlaceholder = nullptr;
+    const int index = m_agentPageStack->indexOf(placeholder);
+    QWidget *page = buildAgentEfficiencyPage();
+    m_agentPageStack->insertWidget(index < 0 ? 1 : index, page);
+    m_agentPageStack->removeWidget(placeholder);
+    placeholder->deleteLater();
+}
+
 void MainWindow::setAgentPageTab(int index)
 {
     if (!m_agentPageStack || index < 0 || index >= m_agentPageStack->count())
         return;
+    if (index == 1)
+        ensureAgentEfficiencyPage();
     m_agentPageStack->setCurrentIndex(index);
     if (index == 1)
         refreshAgentEfficiencyBoard();
@@ -1497,10 +1656,54 @@ void MainWindow::showAgentEfficiencyView(int index)
         m_agentEfficiencyToolsViewButton->setChecked(index == 1);
     if (m_agentEfficiencyRunsViewButton)
         m_agentEfficiencyRunsViewButton->setChecked(index == 2);
+    if (m_agentEfficiencyTrendsViewButton)
+        m_agentEfficiencyTrendsViewButton->setChecked(index == 3);
     if (index == 1 && m_agentToolUsageTable)
         m_agentToolUsageTable->refresh(m_agentToolLedger.get());
     if (index == 2 && m_agentRunTable)
         m_agentRunTable->refresh(m_agentRunLog.get());
+    if (index == 3 && m_agentPerformanceCharts)
+        m_agentPerformanceCharts->refresh();
+}
+
+#ifndef FORKMESH_VERSION
+#define FORKMESH_VERSION "dev"
+#endif
+
+void MainWindow::sampleAgentPerformance()
+{
+    if (!m_agentPerformance)
+        return;
+    AgentPerformanceHistory::SystemSample sample;
+    sample.runningAgents = runningAgentCount();
+    sample.agentLimit = maxRunningAgents();
+    const qint64 total = SystemStats::totalMemoryBytes();
+    const qint64 available = SystemStats::availableMemoryBytes();
+    if (total > 0 && available > 0 && available <= total) {
+        sample.memoryTotalBytes = total;
+        sample.memoryPercent = 100.0 * double(total - available) / double(total);
+    }
+    sample.cpuPercent = SystemStats::hostCpuPercent();
+    sample.cpuCount = QThread::idealThreadCount();
+    sample.build = QStringLiteral(FORKMESH_VERSION);
+    m_agentPerformance->recordSample(sample);
+    if (m_agentPerformanceCharts && m_agentPerformanceCharts->isVisible())
+        m_agentPerformanceCharts->refresh();
+}
+
+void MainWindow::scheduleAgentPerformanceSave()
+{
+    if (!m_agentPerformanceSaveTimer) {
+        m_agentPerformanceSaveTimer = new QTimer(this);
+        m_agentPerformanceSaveTimer->setSingleShot(true);
+        m_agentPerformanceSaveTimer->setInterval(30 * 1000);
+        connect(m_agentPerformanceSaveTimer, &QTimer::timeout, this, [this] {
+            if (m_agentPerformance)
+                m_agentPerformance->saveLater();
+        });
+    }
+    if (!m_agentPerformanceSaveTimer->isActive())
+        m_agentPerformanceSaveTimer->start();
 }
 
 void MainWindow::showAgentToolFamilyDetails(const QString &family)
@@ -1552,8 +1755,10 @@ void MainWindow::recordAgentToolEfficiency(int sessionId, const QJsonObject &ev)
                         ? session->prompt.section(QLatin1Char('\n'), 0, 0).left(80)
                         : session->issueTitle;
     }
-    run.disabledFamilies =
-        m_agentRunDisabledFamilies.value(sessionId, disabledAgentToolFamilies());
+    const auto runFamilies = m_agentRunDisabledFamilies.constFind(sessionId);
+    run.disabledFamilies = runFamilies != m_agentRunDisabledFamilies.cend()
+                               ? *runFamilies
+                               : disabledAgentToolFamilies();
     if (type == QLatin1String("result") ||
         type == QLatin1String("_codex_agent_complete")) {
         // The turn is over: any tool call still waiting for its result will
@@ -1620,6 +1825,8 @@ void MainWindow::refreshAgentEfficiencyBoard()
         m_agentToolUsageTable->refresh(m_agentToolLedger.get());
     if (m_agentRunTable && m_agentRunTable->isVisible())
         m_agentRunTable->refresh(m_agentRunLog.get());
+    if (m_agentPerformanceCharts && m_agentPerformanceCharts->isVisible())
+        m_agentPerformanceCharts->refresh();
     refreshAgentToolFamilyDetails();
     if (m_agentEfficiencyLive) {
         const AgentToolLedgerTotals totals =
@@ -1827,8 +2034,12 @@ void MainWindow::noteAgentRunToolConfig(int sessionId, const QJsonObject &launch
 
 QStringList MainWindow::disabledAgentToolFamilies() const
 {
-    return AgentToolPolicy::normalizeDisabledFamilies(
-        QSettings().value(AgentToolPolicy::DisabledFamiliesSetting).toStringList());
+    if (!m_disabledAgentToolFamiliesLoaded) {
+        m_disabledAgentToolFamilies = AgentToolPolicy::normalizeDisabledFamilies(
+            QSettings().value(AgentToolPolicy::DisabledFamiliesSetting).toStringList());
+        m_disabledAgentToolFamiliesLoaded = true;
+    }
+    return m_disabledAgentToolFamilies;
 }
 
 QJsonObject MainWindow::agentRuntimeLaunchOptions() const
@@ -1858,6 +2069,8 @@ void MainWindow::setAgentToolFamilyEnabled(const QString &family, bool enabled)
         else
             settings.setValue(AgentToolPolicy::DisabledFamiliesSetting, disabled);
     }
+    m_disabledAgentToolFamilies = disabled;
+    m_disabledAgentToolFamiliesLoaded = true;
     const QSet<QString> set(disabled.cbegin(), disabled.cend());
     if (m_agentToolLedger)
         m_agentToolLedger->setDisabledFamilies(set);

@@ -2,6 +2,8 @@ package com.forkmesh.nativeapp.shell
 
 import com.forkmesh.nativeapp.App
 import com.forkmesh.nativeapp.api.ApiService
+import com.forkmesh.nativeapp.api.PrefStore
+import com.forkmesh.nativeapp.account.projects.ProjectScope
 import com.forkmesh.nativeapp.ci.ApiCiClient
 import com.forkmesh.nativeapp.code.ApiRepoOverviewClient
 import com.forkmesh.nativeapp.code.RepoHubSection
@@ -26,10 +28,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 object ShellBadges {
     val repoSections: List<RepoHubSection> = listOf(
@@ -45,8 +47,8 @@ object ShellBadges {
     private val countsState = MutableStateFlow(ShellBadgeCounts())
     private val repoState = MutableStateFlow(ShellRepoCounts())
     private val rssState = MutableStateFlow(0)
-    private val loadingState = MutableStateFlow(false)
-    private val busy = AtomicInteger(0)
+    private val pendingState = MutableStateFlow<Set<String>>(emptySet())
+    private val freshRepos = java.util.Collections.synchronizedSet(HashSet<String>())
     private val tasksLoading = AtomicBoolean(false)
     private var rssJob: Job? = null
 
@@ -56,11 +58,17 @@ object ShellBadges {
 
     val rssUnread: StateFlow<Int> = rssState.asStateFlow()
 
-    val loading: StateFlow<Boolean> = loadingState.asStateFlow()
+    const val REPO = "repo"
+    const val TASKS = "tasks"
+
+    val pending: StateFlow<Set<String>> = pendingState.asStateFlow()
 
     fun install(app: App) {
         countsState.value = ShellBadgeCounts()
         repoState.value = ShellRepoCounts()
+        pendingState.value = emptySet()
+        freshRepos.clear()
+        CodeFeature.currentRepo.value?.let(::restoreRepoCounts)
         rssState.value = 0
         ShellPullsWatch.reset()
         rssJob?.cancel()
@@ -93,16 +101,26 @@ object ShellBadges {
     }
 
     fun adoptRepoCounts(repo: RepoRef, counts: Map<RepoHubSection, Int>) {
-        repoState.update { it.adopt(repo, counts) }
+        val next = repoState.updateAndGet { it.adopt(repo, counts) }
+        if (next.knows(repo)) prefs()?.putString(ShellRepoCounts.key(repo), ShellRepoCounts.encode(next.counts))
     }
 
-    private suspend fun tracked(block: suspend () -> Unit) {
-        busy.incrementAndGet()
-        loadingState.value = true
+    private fun prefs(): PrefStore? {
+        val base = Services.get<PrefStore>() ?: return null
+        return Services.get<ProjectScope>()?.prefs(base) ?: base
+    }
+
+    private fun restoreRepoCounts(repo: RepoRef) {
+        val saved = prefs()?.getString(ShellRepoCounts.key(repo)) ?: return
+        repoState.update { it.restored(repo, saved) }
+    }
+
+    private suspend fun tracked(key: String, block: suspend () -> Unit) {
+        pendingState.update { it + key }
         try {
             block()
         } finally {
-            if (busy.decrementAndGet() == 0) loadingState.value = false
+            pendingState.update { it - key }
         }
     }
 
@@ -115,8 +133,10 @@ object ShellBadges {
         val api = Services.get<ApiService>() ?: return
         if (!signedIn() || !tasksLoading.compareAndSet(false, true)) return
         try {
-            val board = withContext(Dispatchers.IO) { runCatching { TasksApi(api).board() }.getOrNull() } ?: return
-            adoptTasks(board)
+            tracked(TASKS) {
+                val board = withContext(Dispatchers.IO) { runCatching { TasksApi(api).board() }.getOrNull() } ?: return@tracked
+                adoptTasks(board)
+            }
         } finally {
             tasksLoading.set(false)
         }
@@ -129,38 +149,52 @@ object ShellBadges {
         if (inbox.ok) adoptBugReports(inbox.counts)
     }
 
-    suspend fun refreshRepoCounts() {
+    suspend fun refreshRepoCounts(force: Boolean = false) {
         val repo = CodeFeature.currentRepo.value ?: return
         val api = Services.get<ApiService>() ?: return
-        tracked {
-            if (!repoState.value.knows(repo)) {
-                val overview = RepoOverviewModel(Repository(repo.owner, repo.name), ApiRepoOverviewClient(api))
-                val found = coroutineScope {
-                    RepoHubSection.counted.map { section -> async(Dispatchers.IO) { section to overview.count(section) } }.awaitAll()
-                }.mapNotNull { (section, count) -> count?.let { section to it } }.toMap()
-                if (CodeFeature.currentRepo.value == repo) adoptRepoCounts(repo, found)
+        restoreRepoCounts(repo)
+        val slug = repo.slug.lowercase()
+        if (force) freshRepos.remove(slug)
+        if (slug in freshRepos) return
+        tracked(REPO) {
+            val overview = RepoOverviewModel(Repository(repo.owner, repo.name), ApiRepoOverviewClient(api))
+            val found = coroutineScope {
+                RepoHubSection.counted.map { section -> async(Dispatchers.IO) { section to overview.count(section) } }.awaitAll()
+            }.mapNotNull { (section, count) -> count?.let { section to it } }.toMap()
+            if (CodeFeature.currentRepo.value != repo) return@tracked
+            if (found.isNotEmpty()) {
+                adoptRepoCounts(repo, found)
+                freshRepos.add(slug)
             }
-            val known = repoState.value
-            if (known.of(repo, RepoHubSection.Actions) == null || known.of(repo, RepoHubSection.Discussions) == null) {
-                val more = coroutineScope {
-                    val runs = async(Dispatchers.IO) {
-                        runCatching { ApiCiClient(api).actionsRuns(com.forkmesh.nativeapp.ci.RepoRef(repo.owner, repo.name)).runs.size }.getOrNull()
-                    }
-                    val discussions = async(Dispatchers.IO) { runCatching { api.publishedDiscussions(repo.owner, repo.name).size }.getOrNull() }
-                    listOfNotNull(runs.await()?.let { RepoHubSection.Actions to it }, discussions.await()?.let { RepoHubSection.Discussions to it }).toMap()
+            val more = coroutineScope {
+                val runs = async(Dispatchers.IO) {
+                    runCatching { ApiCiClient(api).actionsRuns(com.forkmesh.nativeapp.ci.RepoRef(repo.owner, repo.name)).runs.size }.getOrNull()
                 }
-                if (CodeFeature.currentRepo.value == repo) adoptRepoCounts(repo, more)
+                val discussions = async(Dispatchers.IO) { runCatching { api.publishedDiscussions(repo.owner, repo.name).size }.getOrNull() }
+                listOfNotNull(runs.await()?.let { RepoHubSection.Actions to it }, discussions.await()?.let { RepoHubSection.Discussions to it }).toMap()
             }
+            if (CodeFeature.currentRepo.value == repo) adoptRepoCounts(repo, more)
         }
     }
 
     suspend fun refreshHome(rssShown: Boolean) {
-        tracked {
-            coroutineScope {
-                launch { refreshTasks() }
-                launch { refreshBugReports() }
-                if (rssShown) runCatching { RssReaderFeature.service.open() }
-            }
+        coroutineScope {
+            launch { refreshTasks() }
+            launch { refreshBugReports() }
+            if (rssShown) runCatching { RssReaderFeature.service.open() }
+        }
+    }
+
+    suspend fun refreshEverything(rssShown: Boolean) {
+        coroutineScope {
+            launch { refreshTasks() }
+            launch { refreshBugReports() }
+            launch { refreshRepoCounts(force = true) }
+            launch { ShellPullsWatch.refresh() }
+            launch { com.forkmesh.nativeapp.feature.market.PackageGateFeature.refreshOrganizations() }
+            launch { com.forkmesh.nativeapp.feature.insights.StatusPageFeature.refreshAccount() }
+            launch { runCatching { com.forkmesh.nativeapp.feature.inbox.InboxFeature.refresh() } }
+            if (rssShown) runCatching { RssReaderFeature.service.refresh(force = true) }
         }
     }
 }

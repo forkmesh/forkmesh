@@ -370,7 +370,7 @@ QString treeIconsDir()
         cached = kResourceDir;
         return cached;
     }
-    const QString src = QStringLiteral(FORKMESH_SOURCE_DIR);
+    const QString src = forkmesh::sourceDir();
     if (!src.isEmpty()) {
         const QString candidate = QDir(src).absoluteFilePath(QStringLiteral("icons"));
         if (QDir(candidate).exists()) {

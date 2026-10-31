@@ -1,6 +1,6 @@
 # CFO: financial review and payouts
 
-The CFO special agent (`.forkmesh/teammates/cfo.json`) has two jobs on every
+The CFO special agent (`.forkmesh/workflows/cfo.json`) has two jobs on every
 run:
 
 1. **Financial review** (`.forkmesh/skills/cfo-financial-review.skill`): a

@@ -676,6 +676,26 @@ final class DirectMessagesTests: XCTestCase {
         await service.closeAll()
     }
 
+    @MainActor func testAQuickInactiveStepKeepsDirectRoomsOpen() async throws {
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws)
+        await service.refresh()
+        let conversation = service.conversations[0]
+        _ = await service.open(conversation)
+        XCTAssertEqual(ws.connections.count, 1)
+
+        service.appLifecycleChanged(.inactive)
+        service.appLifecycleChanged(.resumed)
+        service.appLifecycleChanged(.resumed)
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(ws.connections.count, 1, "closing Control Center does not reopen the rooms")
+        XCTAssertTrue(service.isConnected(conversation))
+        XCTAssertEqual(api.calls.filter { $0.1.hasSuffix("/room-access") }.count, 1)
+        await service.closeAll()
+    }
+
     @MainActor func testStartAndReadMarksUseTheServerContract() async throws {
         let api = FakeAccountApi()
         api.replies["POST /api/chat/direct-messages"] = [

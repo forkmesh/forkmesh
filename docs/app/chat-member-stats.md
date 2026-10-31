@@ -1,6 +1,6 @@
 # Chat member activity line
 
-The web chat's member list (`/dashboard/chat`, [web-chat-layout.md](web-chat-layout.md))
+The web chat's people pane (`/chat`, [web-chat-layout.md](web-chat-layout.md))
 shows one muted line under each person's name with up to five figures for the
 past year: pull requests opened, commits, issues opened, reviews, and how long
 ago their last contribution was. Hovering the line shows the full sentence
@@ -28,10 +28,11 @@ stays one line high.
 - At most 50 names per request (`400 too_many_names`); names are lowercased,
   de-duplicated, and anything that is not a valid account name is dropped.
   Any other query parameter is `400 invalid_query`.
-- Only members of the room are answered. The dashboard chat is the public
-  room every active account belongs to, so a member is an account that passes
+- Only members of the public roster are answered: an account that passes
   `_is_public_roster_member` (a user account, active, profile not private), the
-  same rule as the member count and `/api/accounts/users`. Unknown names,
+  same rule as the member count and `/api/accounts/users`. The figures are
+  public, so `/chat` asks for the account rows of whichever channel is open,
+  private channels and direct messages included. Unknown names,
   private profiles, suspended accounts and node identities are left out of
   `members`, not reported as zero.
 - Humans only: bots, AI agents, platform service names and mirror nodes are
@@ -104,11 +105,12 @@ counts from either source.
 ## Cost and caching
 
 - One request covers every row the reader can see: rows register with an
-  `IntersectionObserver` on the member pane (160px margin) and are flushed
+  `IntersectionObserver` on the people list (160px margin) and are flushed
   after 120 ms as one sorted batch of up to 50 names; another batch follows
   only if more rows scrolled into view meanwhile. Results are kept in the page
-  for 5 minutes (1 minute after a failed request), so the list's re-render
-  every minute and every presence change reuse them without a request.
+  for 5 minutes (1 minute after a failed request), so the list's re-render on
+  every presence change, search keystroke and channel switch reuses them
+  without a request.
 - On the server a batch costs at most two D1 statements, whatever its size:
   one `users` read by blind index (`user_bi IN (...)`) and one read of both
   sources (`UNION ALL`): the grouped contribution rows
@@ -131,13 +133,18 @@ counts from either source.
 
 The name and the activity line sit in a column next to the avatar; the line
 is 11px muted text with 11px stroke icons (lucide `git-pull-request`,
-`git-commit-horizontal`, `circle-dot`, `message-square`, `clock`), drawn inline
-because World also loads `dashboard-chat.js` without the icon library. The line
-is one 14px-high wrapping flex row with its overflow hidden, so a figure that
-does not fit whole drops out of sight instead of being cut in half (the
-tooltip still lists it), and a row is never more than two lines.
-Rows grew from a fixed 40px to a 40px minimum with 4px padding. Colours are the
-`--dc-muted` token, so the line follows the light and dark themes.
+`git-commit-horizontal`, `circle-dot`, `message-square`, `clock`), built as
+SVG nodes in `chat.js` because the page loads no icon library. The line is one
+14px-high wrapping flex row with its overflow hidden, so a figure that does
+not fit whole drops out of sight instead of being cut in half (the tooltip
+still lists it), and a row is never more than two lines. Bots, agents and
+mirrors (`forkbot`, `claude`, `codex`, `agent`, `*-bot`, `*-agent`,
+`*-mirror`) get no line and are never asked for. Colours are the `--muted`
+token, so the line follows the light and dark themes.
+
+The line moved here from the retired `/dashboard/chat` member list on
+2026-10-23. `dashboard-chat.js` still carries that list's copy, which runs
+only where its `[data-dashboard-chat-members]` markup exists (nowhere now).
 
 | Path | Responsibility |
 | --- | --- |
@@ -146,7 +153,7 @@ Rows grew from a fixed 40px to a 40px minimum with 4px padding. Colours are the
 | `app/src/entry.py` | `member-activity` cron phase |
 | `app/migrations/0281_member_repo_activity.sql` | `member_repo_activity`, `member_activity_repos` |
 | `app/src/app_runtime.py` | Routes `/api/chat/member-stats` |
-| `app/public/dashboard-chat.js` | Batching, page cache, row rendering, phone drawer |
-| `app/public/dashboard/partials/views/chat.html` | Row and drawer styles |
+| `app/public/chat.js` | Batching, page cache, row rendering (`renderPeople`, `fillMemberStats`) |
+| `app/public/chat.css` | `.chat-person-text`, `.chat-person-stats` row styles |
 | `app/tests/test_chat_member_stats.py` | API shape, privacy, sources, sweep, caching, frontend contract |
 | `app/tests/test_mirror_gateway_pulse.py` | The people view |

@@ -18,6 +18,7 @@ extension DjStudioModel {
     var pendingInvites: Int { jams.filter(\.invited).count }
 
     func enqueue(id: String, title: String, author: String) {
+        if playNow(id: id, title: title, author: author) { return }
         if let jam, jam.joined {
             show(title.isEmpty ? "Added to the jam queue." : "Queued for the jam: \(title)")
             Task {
@@ -32,14 +33,18 @@ extension DjStudioModel {
             show("The queue is full. Play or remove a video first.")
             return
         }
-        queue.append(DjQueueItem(id: UUID().uuidString, videoId: id, title: title, author: author))
+        queue.append(DjQueueItem(id: UUID().uuidString, videoId: id, title: title, author: author, addedAt: Int64(Date().timeIntervalSince1970 * 1000)))
         show(title.isEmpty ? "Added to the queue." : "Queued: \(title)")
         save()
     }
 
     func enqueueAll(_ songs: [DjTrack]) {
-        guard !songs.isEmpty else {
+        guard let first = songs.first else {
             show("There are no songs to queue.")
+            return
+        }
+        if playNow(id: first.id, title: first.title, author: first.author) {
+            if songs.count > 1 { enqueueAll(Array(songs.dropFirst())) }
             return
         }
         if let jam, jam.joined {
@@ -58,11 +63,21 @@ extension DjStudioModel {
             return
         }
         let room = max(0, DjStudio.queueLimit - queue.count)
-        let added = songs.prefix(room).map { DjQueueItem(id: UUID().uuidString, videoId: $0.id, title: $0.title, author: $0.author) }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let added = songs.prefix(room).map { DjQueueItem(id: UUID().uuidString, videoId: $0.id, title: $0.title, author: $0.author, addedAt: now) }
         queue += added
         show(added.isEmpty ? "The queue is full. Play or remove a video first."
             : added.count < songs.count ? "Queued \(added.count) songs: the queue is full." : added.count == 1 ? "Queued 1 song." : "Queued \(added.count) songs.")
         save()
+    }
+
+    private func playNow(id: String, title: String, author: String) -> Bool {
+        guard !automixing, !a.scratching, !b.scratching, !a.keepsPlaying, !b.keepsPlaying,
+            let side = DjAutomix.playNow(a: snapshot(a), b: snapshot(b), crossfader: crossfader)
+        else { return false }
+        load(side, id: id, title: title, author: author)
+        play(deck(side))
+        return true
     }
 
     func playFromQueue(_ item: DjQueueItem, on side: DjDeckSide) {

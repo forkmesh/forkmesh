@@ -5,7 +5,12 @@ import com.forkmesh.nativeapp.settings.AccentChoice
 import com.forkmesh.nativeapp.settings.AppTheme
 import com.forkmesh.nativeapp.settings.Appearance
 import com.forkmesh.nativeapp.settings.AppearanceKeys
+import com.forkmesh.nativeapp.settings.InstanceTheme
+import com.forkmesh.nativeapp.settings.LayoutModeChoice
 import com.forkmesh.nativeapp.settings.ThemeColor
+import com.forkmesh.nativeapp.api.HttpTransport
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.forkmesh.nativeapp.settings.ThemeModeChoice
 import com.forkmesh.nativeapp.settings.ThemeSurface
 import com.forkmesh.nativeapp.settings.Wallpaper
@@ -51,9 +56,42 @@ object AppearanceStore {
         state.value = state.value.copy(wallpaper = state.value.wallpaper.withDim(clamped))
     }
 
+    fun setMatchInstanceTheme(on: Boolean) {
+        prefs?.let { p ->
+            if (on) {
+                p.putBool(AppearanceKeys.MATCH_INSTANCE_THEME, true)
+            } else {
+                p.putString(AppearanceKeys.MATCH_INSTANCE_THEME, null)
+                p.putString(AppearanceKeys.INSTANCE_THEME_COLORS, null)
+            }
+        }
+        state.value = state.value.copy(matchInstanceTheme = on, instanceThemeColors = if (on) state.value.instanceThemeColors else "")
+    }
+
+    fun setInstanceThemeColors(json: String) {
+        if (state.value.instanceThemeColors == json) return
+        prefs?.putString(AppearanceKeys.INSTANCE_THEME_COLORS, json.ifEmpty { null })
+        state.value = state.value.copy(instanceThemeColors = json)
+    }
+
+    suspend fun refreshInstanceTheme(origin: String?) {
+        if (!state.value.matchInstanceTheme || origin == null) return
+        if (origin.isEmpty()) {
+            setInstanceThemeColors("")
+            return
+        }
+        val colors = withContext(Dispatchers.IO) { InstanceTheme.fetch(HttpTransport.DEFAULT, origin) } ?: return
+        if (state.value.matchInstanceTheme) setInstanceThemeColors(colors)
+    }
+
     fun setThemeMode(mode: ThemeModeChoice) {
         prefs?.putString(AppearanceKeys.THEME_MODE, mode.name)
         state.value = state.value.copy(themeMode = mode)
+    }
+
+    fun setLayoutMode(mode: LayoutModeChoice) {
+        prefs?.putString(AppearanceKeys.LAYOUT_MODE, mode.name)
+        state.value = state.value.copy(layoutMode = mode)
     }
 
     fun setAccent(accent: AccentChoice) {

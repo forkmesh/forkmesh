@@ -5,14 +5,16 @@ from pathlib import Path
 
 import pytest
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONFIG = PROJECT / ".forkmesh" / "teammates" / "site-crawler.json"
+CONFIG = PROJECT / ".forkmesh" / "workflows" / "site-crawler.json"
 SHORTCUTS = PROJECT / ".forkmesh" / "shortcuts"
 SKILLS = PROJECT / ".forkmesh" / "skills"
 CHARTER = PROJECT / "docs" / "www" / "site-crawler.md"
 TOOL = PROJECT / "tools" / "site_crawler.py"
-TEAMMATES = PROJECT / ".forkmesh" / "teammates"
+TEAMMATES = PROJECT / ".forkmesh" / "workflows"
 TEAMMATE_STORE = PROJECT / "desktop" / "src" / "TeammateStore.cpp"
 SECURE = {
     "content-type": "text/html; charset=utf-8",
@@ -31,7 +33,7 @@ def _agent():
             result[key] = value
         return result
 
-    return json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    return as_teammate(json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object))
 
 
 @pytest.fixture(scope="module")
@@ -190,7 +192,7 @@ def test_crawler_links_its_shortcut_skill_tool_docs_and_portrait():
 def test_crawler_instructions_keep_it_read_only_and_evidence_backed():
     agent = _agent()
     instructions = agent["instructions"]
-    names = {json.loads(path.read_text(encoding="utf-8"))["name"] for path in TEAMMATES.glob("*.json")}
+    names = {as_teammate(json.loads(path.read_text(encoding="utf-8")))["name"] for path in TEAMMATES.glob("*.json")}
 
     for phrase in (
         "never raise its rate",

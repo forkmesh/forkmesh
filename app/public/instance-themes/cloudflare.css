@@ -1,0 +1,77 @@
+:root {
+  --dashboard-control-radius: 6px;
+}
+
+::selection {
+  background: rgb(var(--dashboard-primary-rgb) / 0.3);
+}
+
+h1,
+h2 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+h3 {
+  font-weight: 600;
+}
+
+.rounded-md {
+  border-radius: 6px;
+}
+
+.rounded-lg {
+  border-radius: 8px;
+}
+
+.rounded-xl {
+  border-radius: 10px;
+}
+
+.fm-btn {
+  font-weight: 500;
+  background: transparent;
+}
+
+.fm-btn:hover {
+  background: rgb(var(--dashboard-foreground-rgb) / 0.06);
+}
+
+.fm-btn-cta,
+.bg-cta {
+  font-weight: 500;
+}
+
+.fm-btn-cta {
+  background: rgb(var(--dashboard-cta-rgb));
+  border-color: transparent;
+}
+
+.fm-btn-cta:hover {
+  background: rgb(var(--dashboard-cta-rgb) / 0.88);
+}
+
+.fm-label {
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+[data-settings-section-link][aria-current="page"],
+:is(nav, aside) a[aria-current="page"] {
+  background-color: rgb(var(--dashboard-foreground-rgb) / 0.08) !important;
+  color: rgb(var(--dashboard-foreground-rgb)) !important;
+  font-weight: 500 !important;
+}
+
+[data-settings-active-indicator] {
+  display: none !important;
+}
+
+:is(input, textarea, select):focus-visible {
+  border-color: rgb(var(--dashboard-foreground-rgb) / 0.55) !important;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: rgb(var(--dashboard-primary-rgb));
+}

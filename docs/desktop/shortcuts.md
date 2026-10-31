@@ -15,6 +15,54 @@ Code: `desktop/src/MainWindowShortcuts.cpp` (page, runs, queue),
 `native/android/core/.../teammates/ShortcutsStore.kt` and
 `native/android/app/.../feature/teammates/ShortcutsScreen.kt`.
 
+## Starter shortcuts
+
+Shortcuts live in each repository, so someone else's repository shows none
+until it has its own `.forkmesh/shortcuts/` folder. Users asked on 2026-10-29
+why the shortcuts did not show for another user, so the Shortcuts package now
+ships five general-purpose prompt shortcuts that work in any repository:
+
+| File | Name |
+| --- | --- |
+| `review-changes.md` | Review my changes |
+| `audit-user-experience.md` | Audit and improve user experience |
+| `clean-up-stale-code.md` | Retire stale code and performance debt |
+| `refresh-documentation.md` | Refresh the documentation |
+| `propose-feature-removal.md` | Propose a feature to retire |
+
+They are cleaned-up versions of this repository's own prompts: no ForkMesh
+paths, teammates or pinned `# agent:`/`# model:` lines, so they run with the
+user's default agent. The source is
+`marketplace/packages/shortcuts/content/shortcuts/`, and two surfaces offer
+it:
+
+- **Desktop.** The files are embedded as `:/starter-shortcuts/<file>`
+  (`desktop/resources/icons.qrc`). When the selected repository has a working
+  tree and its `.forkmesh/shortcuts/` folder is empty or missing, the page
+  header shows **Add starter shortcuts**. It copies every starter file that is
+  not already there and leaves existing files alone, then says to commit them
+  so everyone who uses the repository gets them. It is hidden on read-only
+  mirrors and in repositories that already have shortcuts, so a repository
+  with its own versions (like this one) does not get near-duplicates. Code:
+  `missingStarterShortcuts` and `addStarterShortcuts` in
+  `desktop/src/MainWindowShortcuts.cpp`.
+- **Web.** The package declares each file as a `content.shortcut`
+  contribution, so the Workflows Repository view lists them for accounts with
+  the Shortcuts package installed and adds one as a commit after review
+  ([../marketplace/README.md](../marketplace/README.md#protocols-and-interfaces)).
+  Because the package now has a `content/` folder, it is a selectable plugin
+  and is listed in `marketplace/plugins.json`.
+
+The phones list whatever the desktop's folder holds, so the starters show on
+both phones once added. `test_shortcuts_plugin_ships_starter_shortcuts_the_desktop_embeds`
+in `app/tests/test_workflows.py` checks that every file parses without
+warnings, has a `# name:` matching the manifest, mentions no ForkMesh
+specifics, and is embedded by the desktop.
+
+`.forkmesh/shortcuts/code-review.md` had no header and asked the user to
+paste code, which a one-tap run cannot do; it now holds the same text as
+`review-changes.md`.
+
 ## One tap from the list
 
 Every platform runs a shortcut straight from its list:
@@ -34,6 +82,24 @@ The phones still use the desktop's two-step `insights.prepare` /
 They just send both steps in one tap and skip the sheet. The user asked for
 one-tap runs, and the list already shows what each row does. The detail page
 on iPhone keeps its **Run** button with the sheet.
+
+A run started from a paired phone counts as the user's approval of that
+file. The desktop records the approval for the file as it is now, the same
+store its **Allow repository workflows?** window writes, logs "approved on
+this desktop by a run from <phone>" and runs it. The same goes for running a
+workflow from the phone (`workflows.run`). The user asked for this on
+2026-10-29: the phone is their own device and should not depend on someone
+clicking Allow at the desktop. Unattended runs (schedules, repository events,
+special-agent schedules) still wait for an approval, and a later change to
+the file asks again (S-44 and S-70 in
+[../security/findings.md](../security/findings.md)). An older desktop still
+answers `approval_required`; the phones then say to update ForkMesh on the
+desktop.
+
+A workflow's **Run shortcut** step runs a script or prompt shortcut too,
+waits for it and hands its output to the next step, so a shortcut can run on a
+schedule, after a special agent or from a button pinned to any rail
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 
 ## The queue
 
@@ -95,7 +161,7 @@ rules:
   `# description:` line.
 
 ```sh
-# step: Reset build numbers to 1
+# step: Reset build numbers to 0
 python3 -u tools/forkmesh-release-host.py --reset-builds --tag "$tag"
 
 # step: Deploy Android build
@@ -163,7 +229,7 @@ Code: `shortcutStepMarker` and `trackShortcutStep` in
 in `desktop/src/MainWindowShortcuts.cpp`.
 
 **Phones.** Each `insights.shortcuts` entry with at least one step carries
-`"steps": [{"name": "Reset build numbers to 1"}, {"name": "Deploy Android build",
+`"steps": [{"name": "Reset build numbers to 0"}, {"name": "Deploy Android build",
 "shortcut": "deploy-build-android.sh"}]`. `shortcut` is present only on a
 linked step and names a file in the same repository and scope as the entry.
 Entries without steps have no `steps` key.

@@ -14,6 +14,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+import repo_workflows as repo_wf  # noqa: E402
 import workflow_files as files  # noqa: E402
 
 FORKMESH = PROJECT / ".forkmesh"
@@ -85,9 +86,30 @@ def test_every_shortcut_and_skill_round_trips():
         assert collapse(out) == collapse(text), relative
 
 
+def _legacy_agents():
+    agents = []
+    for path in sorted(FORKMESH.glob("workflows/*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        teammate = repo_wf.workflow_to_teammate(data)
+        if teammate is not None:
+            agents.append((".forkmesh/teammates/" + path.name, teammate))
+    return agents
+
+
 def test_every_special_agent_keeps_its_data():
-    paths = sorted(FORKMESH.glob("teammates/*.json"))
-    assert paths
+    agents = _legacy_agents()
+    assert len(agents) >= 20
+    for relative, data in agents:
+        document, _ = files.parse_file(relative, files.qt_json(data) + "\n")
+        out, warnings = files.render_file(json.loads(json.dumps(document)),
+                                          data.get("updatedAtMs") or 1)
+        assert json.loads(out) == data, relative
+        assert warnings == []
+
+
+def test_every_workflow_file_round_trips():
+    paths = sorted(FORKMESH.glob("workflows/*.json"))
+    assert len(paths) >= 20
     identical = 0
     for path in paths:
         relative = path.relative_to(PROJECT).as_posix()
@@ -97,7 +119,46 @@ def test_every_special_agent_keeps_its_data():
         assert json.loads(out) == data, relative
         assert warnings == []
         identical += out == text
-    assert identical >= len(paths) - 1
+    assert identical == len(paths)
+
+
+def test_a_special_agent_becomes_a_workflow_and_back():
+    for _relative, teammate in _legacy_agents():
+        workflow = repo_wf.teammate_to_workflow(teammate)
+        assert repo_wf.workflow_to_teammate(workflow) == teammate
+        types = [n["type"] for n in workflow["nodes"]]
+        assert types.count(repo_wf.AGENT) == 1
+        assert repo_wf.SCHEDULE in types and repo_wf.OUTPUT in types
+        assert workflow["icon"] == teammate["avatar"]
+
+
+def test_a_desktop_workflow_runs_shortcuts_and_saves_output():
+    document, _ = files.new_document("workflow", ".forkmesh/workflows/ship.json")
+    assert document["kind"] == "workflow"
+    document["nodes"].append({"id": "deploy", "type": repo_wf.SHORTCUT,
+                              "name": "Deploy", "x": 288, "y": 120,
+                              "params": {"file": "deploy-new-version.sh"}})
+    document["connections"].append({"from": "run", "to": "deploy"})
+    out, warnings = files.render_file(document, 5)
+    data = json.loads(out)
+    assert warnings == []
+    deploy = next(n for n in data["nodes"] if n["id"] == "deploy")
+    assert deploy["params"] == {"allowEdits": False,
+                                "file": "deploy-new-version.sh",
+                                "wait": True}
+    assert data["kind"] == repo_wf.FILE_KIND and data["updatedAtMs"] == 5
+    document["connections"].append({"from": "deploy", "to": "run"})
+    out, warnings = files.render_file(document, 5)
+    assert any("triggers start a workflow" in w for w in warnings)
+    output = next(n for n in document["nodes"] if n["id"] == "output")
+    output["params"]["path"] = "../escape.md"
+    with pytest.raises(files.FileError):
+        files.render_file(document, 5)
+    output["params"]["path"] = "docs/reports/ship.md"
+    deploy_node = next(n for n in document["nodes"] if n["id"] == "deploy")
+    deploy_node["params"]["file"] = "../../etc/passwd"
+    with pytest.raises(files.FileError):
+        files.render_file(document, 5)
 
 
 def test_action_graph_order_follows_connections():
@@ -287,8 +348,9 @@ def test_shortcut_without_final_newline_keeps_it_off():
 
 
 def test_special_agent_graph_controls_triggers_and_uses():
-    text = (FORKMESH / "teammates" / "hearth.json").read_text(
-        encoding="utf-8")
+    text = files.qt_json(repo_wf.as_teammate(json.loads(
+        (FORKMESH / "workflows" / "hearth.json").read_text(
+            encoding="utf-8")))) + "\n"
     document, _ = files.parse_file(".forkmesh/teammates/hearth.json", text)
     types = [n["type"] for n in document["nodes"]]
     assert types.count("agent.profile") == 1
@@ -367,10 +429,27 @@ def test_paths_and_kinds():
     with pytest.raises(files.FileError):
         files.parse_file("README.md", "x")
     catalog = files.catalog()
-    assert set(catalog["kinds"]) == {"action", "shortcut", "skill", "agent"}
+    assert set(catalog["kinds"]) == {"action", "shortcut", "skill", "agent",
+                                     "workflow"}
+    assert files.kind_for_path(".forkmesh/workflows/a-b.json") == "workflow"
     for node in catalog["nodes"]:
         assert node["kind"] in catalog["kinds"]
         for field in node["fields"]:
             assert field["type"] in ("string", "text", "code", "number",
                                      "boolean", "select", "list", "checks",
                                      "json")
+
+
+def test_the_desktop_and_the_web_know_the_same_workflow_steps():
+    header = (PROJECT / "desktop" / "src" / "RepoWorkflow.h").read_text(
+        encoding="utf-8")
+    source = (PROJECT / "desktop" / "src" / "RepoWorkflow.cpp").read_text(
+        encoding="utf-8")
+    declared = set(re.findall(
+        r'inline const QString k(?:Manual|Schedule|Monitor|Agent|Shortcut|'
+        r'Output|Note) = QStringLiteral\("([^"]+)"\)', header))
+    declared |= set(re.findall(r'\{"(desktop\.[A-Za-z]+)", "', source))
+    assert len(declared) == 13
+    assert declared == set(repo_wf.NODES)
+    assert repo_wf.FILE_KIND in header
+    assert repo_wf.FOLDER in header and repo_wf.LEGACY_FOLDER in header

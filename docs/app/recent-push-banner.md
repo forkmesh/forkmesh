@@ -34,7 +34,12 @@ compare page (`/<you>/<fork>/compare/<parent default>...<branch>`), because a
 compare read needs both branches on one repository, and the new pull request
 form there already sends to the parent (`pullRequestParent`). When the parent
 is a read-only mirror, the pull request is opened on the fork, as the form
-does.
+does. When the browser did not know the parent was a read-only mirror (on a
+self-hosted instance the flag can come only from the server's
+`INSTANCE_UPSTREAM`), the form tried the parent, fell back to the fork without
+a word, and contributors reported their pull request as having disappeared.
+`submitWebPullOpen` now returns `refusedBy` on that fallback and the form shows
+a notice naming the mirror and saying the pull request was opened on the fork.
 
 ## Where it shows
 

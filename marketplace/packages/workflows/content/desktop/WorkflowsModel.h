@@ -15,6 +15,7 @@ constexpr int kRow = 120;
 constexpr int kMaxNodes = 60;
 constexpr int kMaxWorkflows = 50;
 constexpr qint64 kDesktopStepTimeoutMs = 20 * 60 * 1000;
+inline constexpr char kAccountRepo[] = "@account/workflows";
 
 struct Stats {
     int workflows = 0;
@@ -45,6 +46,12 @@ QString humanBytes(double bytes);
 QString runOutputText(const QJsonObject &run);
 QJsonArray mergeRuns(const QHash<QString, QJsonArray> &byWorkflow,
                      const QHash<QString, QString> &names, int limit);
+QJsonArray unifiedWorkflows(const QJsonArray &account, const QHash<QString, QJsonArray> &runsByWorkflow,
+                            const QJsonArray &local, const QJsonArray &pins);
+bool workflowMatches(const QJsonObject &entry, const QString &needle, const QString &scope);
+void sortWorkflows(QJsonArray &entries, const QString &order);
+QJsonArray statsWorkflows(const QJsonArray &entries);
+QString workflowStateText(const QJsonObject &entry);
 
 class Catalog
 {
@@ -80,6 +87,12 @@ class Draft
 public:
     static Draft blank();
     static Draft fromJson(const QJsonObject &workflow);
+    static Draft fromLocal(const QJsonObject &workflow, const QString &repo);
+    QJsonObject localJson() const;
+    bool isLocal() const { return !repo.isEmpty(); }
+    QString addTrigger(const Catalog &catalog, const QString &type);
+    void retype(const Catalog &catalog, const QString &nodeId, const QString &type);
+    bool hasAgentStep() const;
 
     QJsonObject graph() const;
     QJsonObject body() const;
@@ -113,7 +126,14 @@ public:
     QJsonArray nodes;
     QJsonArray connections;
     QString hookPath;
+    QString repo;
+    QString icon;
+    QString description;
+    qint64 createdAtMs = 0;
 };
+
+QString localWorkflowId(const QString &name);
+QString localStatusLabel(const QString &status);
 
 QStringList freeDiskSpaceArguments(const QString &checkout, const QString &step);
 QJsonObject freeDiskSpaceReply(const QString &step, const QByteArray &output, qint64 ms);

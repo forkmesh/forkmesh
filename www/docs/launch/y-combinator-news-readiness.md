@@ -4,8 +4,11 @@ Verdict: **blocked**
 
 Evidence refreshed: **2026-09-30 America/New_York** (probes 23:12–23:16 UTC)
 
-Signed `latest` at this refresh: `v1.2.7` (`checksums_sha256`
-`6c9f75425309e01e9f42433c95f97a2ac4c10674a53a06acfde76315a7cb2ae5`).
+Signed `latest` at the 2026-10-31 release refresh: `v1.5.0`
+(`checksums_sha256`
+`61872afbc33560807e531bf9e650141d9424c5e2c9f417d72b24decd1167fb9f`). Only the
+release facts in this table and section 3 were re-measured then; everything
+else is from the 2026-09-30 refresh.
 
 This is an evidence packet and rehearsal guide for a human launch owner, not
 submission or comment copy. Hacker News says not to post generated or
@@ -18,7 +21,7 @@ every reply.
 | --- | --- | --- |
 | Serving topology | The flagship is served by the three core nodes | `git ls-remote https://forkmesh.com/forkmesh/forkmesh` redirects to a core node; the mirrors payload lists the three cores |
 | Preservation proof | Below quorum | `forkmesh_availability_proof.py explain`: 3 of 3 copies verified by 1 independent operator (target 2), risk 45 of 100, exit 3 |
-| Published release | `v1.2.7` is `latest` | Manifest bytes match the repository copy; signature, four blob hashes and Authenticode verified |
+| Published release | `v1.5.0` is `latest` | Manifest bytes match the repository copy; signature, four blob hashes and Authenticode verified on 2026-10-31 |
 | macOS DMG names | The DMG is universal | Both macOS names label one `x86_64` + `arm64` image; Gatekeeper and notarization unmeasured |
 | HN rules | Tightened | Show HN warns against quickly-generated one-offs; generated text is banned in submissions too |
 | Launch goals | Replaced by four launch gates | User, issue and task counts became tracked metrics (section 10) |
@@ -171,15 +174,22 @@ clone the same URL again with the same `HEAD`, and verify a signed event.
 
 | State | Evidence | Meaning |
 | --- | --- | --- |
-| Published `latest` | `v1.2.7`; `tag_commit` and `build_commit` `6c906106f00c26a4bfd5e715efb837969c0ece8c` | The only release that may be called published |
-| Stale candidate | `v0.7.95`; tag commit `6a38fef538359aac5a57349d4e66723a04cfbf91`; build commit `ccbd7af4c957799d28c77eedd2c2491328424d03` | Superseded; do not cite |
-| Human-gated continual loop | `96c5e6391` | Ancestor of the v1.2.7 build commit |
+| Published `latest` | `v1.5.0`; `tag_commit` and `build_commit` `510b0448b7452371d97d1e49bb3a38b1f5b35283`; the tag peels to `0193ce5d3e88071358667e17653650dca062f9c4`; `checksums_sha256` `61872afbc33560807e531bf9e650141d9424c5e2c9f417d72b24decd1167fb9f` | The only release that may be called published |
+| Stale candidate | `v1.2.8`; `tag_commit` and `build_commit` `0118d9996fb5287e02e08dd9f7bf5e8382099eac` (`.forkmesh/releases/candidate-1.2.8`) | Superseded by v1.5.0; do not cite |
+| Human-gated continual loop | Continual mode in `desktop/src/MainWindowTeammates.cpp` and [qt-client.md](../qt-client.md) at the v1.5.0 build commit | Shipped in v1.5.0 (the earlier id `96c5e6391` predates the history rewrite and no longer resolves) |
 
-**Measured fact:** the manifest, signature and `SHASUMS256.txt` from the
-homepage's manifest URL are byte-identical to the repository copies; the
-Ed25519 signature verifies with the key in `install.sh`; `sha256(SHASUMS256.txt)`
-equals `checksums_sha256`. Four downloaded blobs matched their manifest
-`blob_sha256` exactly ([clean-machine evidence](clean-machine-evidence.md#v127-release-checks)).
+`tag_commit` is the commit the tag pointed to at signing; the release host
+then moves the tag onto the publish commit, so the peeled tag is a descendant,
+not an equal. The single definition is in
+[docs/release/README.md](../../../docs/release/README.md#protocols).
+
+**Measured fact (2026-10-31, v1.5.0):** the manifest, signature and
+`SHASUMS256.txt` from the `/desktop` page's manifest URL are byte-identical to
+the repository copies; the Ed25519 signature verifies with the key in
+`install.sh`; `sha256(SHASUMS256.txt)` equals `checksums_sha256`;
+`git merge-base --is-ancestor 510b0448b745 v1.5.0` succeeds (105 commits).
+Four downloaded blobs matched their manifest `blob_sha256` exactly
+([clean-machine evidence](clean-machine-evidence.md#v150-release-checks)).
 
 - **Measured fact:** the manifest publishes Linux x86_64, Windows x86_64,
   macOS and Android assets. There is no Linux arm64 or Windows arm64 asset.

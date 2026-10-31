@@ -53,6 +53,9 @@ static void testCauses()
           "missing command is missing-tool");
     check(causeOf(QStringLiteral("Cause: write failed: No space left on device")) == Cause::Disk,
           "full disk is disk");
+    check(causeOf(QStringLiteral("Cause: Not enough free disk space on this node: 1.5 GiB "
+                                 "available where a run needs 2.0 GiB.")) == Cause::Disk,
+          "the runner's free-space check is disk");
     check(causeOf(QStringLiteral("Cause: src/a.cpp:3: error: expected ';'")) == Cause::Build,
           "compiler error is build");
     check(causeOf(QString()) == Cause::None, "empty is none");

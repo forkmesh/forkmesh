@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import html
 import json
+import posixpath
+import re
 import sys
 from pathlib import Path
 
+import docs_markdown
 import site_templates
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "marketplace" / "tools"))
@@ -38,8 +41,13 @@ ONBOARDING_START = (
 ONBOARDING_END = "<!-- market:onboarding:end -->"
 INDENT = " " * 8
 APP_URL = "https://app.forkmesh.com"
-SOURCE_URL = APP_URL + "/forkmesh/forkmesh/tree/main/marketplace"
-SHARE_URL = "https://forkmesh.com/market"
+REPOSITORY_URL = APP_URL + "/forkmesh/forkmesh/tree/main"
+SOURCE_URL = REPOSITORY_URL + "/marketplace"
+SITE_URL = "https://forkmesh.com"
+SHARE_URL = SITE_URL + "/market"
+PACKAGE_LAYOUT = "layouts/market-package.html"
+INSTALL_URL = APP_URL + "/dashboard/apps?install="
+RELATED_LIMIT = 6
 
 # The desktop Market groups the manifest's package type into one of its
 # category tabs (MainWindowMarket.cpp). The landing page shows the same
@@ -75,14 +83,27 @@ LICENSE_LABELS = {
 
 ENTRYPOINT_LABELS = {
     "desktop": "Desktop app",
-    "world": "World",
-    "web": "Web",
-    "mobile": "Mobile app",
-    "ide": "IDE",
     "theme": "Desktop app",
+    "web": "Web",
+    "dashboard-view": "Web",
+    "dashboard-script": "Web",
+    "www-page": "Web",
+    "sdk": "Web",
+    "mobile": "Mobile app",
+    "ios": "iPhone",
+    "android": "Android",
+    "world": "World",
+    "ide": "IDE",
+    "browser-extension": "Browser",
     "agent": "ForkMesh agent",
-    "settings": "Settings",
+    "worker": "Server",
+    "monitor": "Status Page",
+    "pack": "Workflows",
 }
+HOST_ORDER = (
+    "Desktop app", "Web", "Mobile app", "iPhone", "Android", "World", "IDE",
+    "Browser", "ForkMesh agent", "Status Page", "Workflows", "Server",
+)
 
 PLACE_LABELS = (("mobile", "Phone"), ("desktop", "Desktop"), ("web", "Web"))
 
@@ -113,10 +134,12 @@ def price_label(manifest: dict) -> str:
 
 
 def runs_in(manifest: dict) -> str:
-    hosts = [
-        ENTRYPOINT_LABELS.get(key, key.title())
-        for key in sorted(manifest.get("entrypoints") or {})
-    ]
+    found = {
+        ENTRYPOINT_LABELS[key]
+        for key in manifest.get("entrypoints") or {}
+        if key in ENTRYPOINT_LABELS
+    }
+    hosts = [host for host in HOST_ORDER if host in found]
     return escape(", ".join(hosts)) if hosts else "—"
 
 
@@ -155,6 +178,10 @@ MARKET_PREVIEW_ROOT = "/market/previews"
 
 def share_url(package_id: str) -> str:
     return f"{SHARE_URL}/{package_id}"
+
+
+def page_url(package_id: str) -> str:
+    return f"/market/{package_id}"
 
 
 def render_share(manifest: dict) -> list[str]:
@@ -207,8 +234,10 @@ def render_nested(children: list[dict]) -> list[str]:
         directory = child["_path"].rsplit("/", 1)[0]
         lines.extend(
             [
-                f'      <li class="market-nested-item" data-market-package="{escape(child["id"])}">',
-                f"        <strong>{escape(child['name'])}</strong>",
+                f'      <li class="market-nested-item" id="package-{escape(child["id"])}"'
+                f' data-market-package="{escape(child["id"])}">',
+                f'        <strong><a class="market-item-link" href="{page_url(child["id"])}">'
+                f"{escape(child['name'])}</a></strong>",
                 f'        <span class="market-version">v{escape(child["version"])}</span>',
                 f'        <p class="market-summary">{escape(child["summary"])}</p>',
                 f'        <a class="market-repository" href="{SOURCE_URL}/{escape(directory)}">'
@@ -234,10 +263,12 @@ def render_card(manifest: dict, children: list[dict] | None = None) -> list[str]
     directory = manifest["_path"].rsplit("/", 1)[0]
 
     lines = [
-        f'<article class="market-item" data-market-package="{escape(package_id)}"'
+        f'<article class="market-item" id="package-{escape(package_id)}"'
+        f' data-market-package="{escape(package_id)}"'
         f' data-market-shelf="{escape(shelf)}" data-market-name="{escape(manifest['name'])}">',
         '  <header class="market-item-head">',
-        f"    <h3>{escape(manifest['name'])}</h3>",
+        f'    <h3><a class="market-item-link" href="{page_url(package_id)}">'
+        f"{escape(manifest['name'])}</a></h3>",
         f'    <span class="market-version">v{escape(manifest["version"])}</span>',
         "  </header>",
         '  <p class="market-badges">',
@@ -329,6 +360,8 @@ def render_card(manifest: dict, children: list[dict] | None = None) -> list[str]
     lines.extend(render_share(manifest))
     lines.extend(
         [
+            f'  <a class="market-details" href="{page_url(package_id)}">'
+            f'Package page<span class="visually-hidden"> for {escape(manifest["name"])}</span> &rarr;</a>',
             f'  <a class="market-repository" href="{SOURCE_URL}/{escape(directory)}">'
             "View public repository &nearr;</a>",
             f'  <a class="market-source" href="{SOURCE_URL}/{escape(directory)}/manifest.json">'
@@ -459,6 +492,421 @@ def rewrite(source: str) -> str:
     start = source.index(ONBOARDING_START) - len(INDENT)
     end = source.index(ONBOARDING_END) + len(ONBOARDING_END)
     return source[:start] + render_onboarding() + source[end:]
+
+
+HEADING_TAG_RE = re.compile(r"<(/?)h([1-6])\b")
+LEADING_TITLE_RE = re.compile(r"\A\s*#\s+[^\n]*\n")
+EXTERNAL_LINK_RE = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//|#)", re.I)
+
+
+def readme_link(directory: str, target: str, is_image: bool) -> str:
+    if not target or EXTERNAL_LINK_RE.match(target):
+        return target
+    path, _, fragment = target.partition("#")
+    if path.startswith("/"):
+        resolved = path.lstrip("/")
+    else:
+        resolved = posixpath.normpath(posixpath.join("marketplace", directory, path))
+    if resolved.startswith("../") or resolved == "..":
+        return f"{REPOSITORY_URL}"
+    preview = f"marketplace/{directory}/preview/"
+    if is_image and resolved.startswith(preview):
+        return screenshot_url(directory, resolved[len(f"marketplace/{directory}/"):])
+    return f"{REPOSITORY_URL}/{resolved}" + (f"#{fragment}" if fragment else "")
+
+
+def readme_html(manifest: dict) -> str:
+    directory = manifest["_path"].rsplit("/", 1)[0]
+    readme = MARKETPLACE / directory / "README.md"
+    if not readme.is_file():
+        return ""
+    text = LEADING_TITLE_RE.sub("", readme.read_text(encoding="utf-8"), count=1)
+    rendered = docs_markdown.render(
+        text, link_rewriter=lambda target, image: readme_link(directory, target, image))
+    return HEADING_TAG_RE.sub(
+        lambda match: f"<{match.group(1)}h{min(6, int(match.group(2)) + 1)}",
+        rendered.html)
+
+
+def install_place(manifest: dict) -> str:
+    install = manifest.get("install") or {}
+    entrypoints = manifest.get("entrypoints") or {}
+    if manifest["type"] in ("agent", "theme"):
+        return "desktop"
+    if (manifest.get("dataLifecycle") or {}).get("scope") == "organization":
+        return "organization"
+    if install.get("sync") == "account":
+        return "account"
+    if manifest["type"] == "extension.vscode":
+        return "editor"
+    if manifest["type"].startswith("virtual."):
+        return "world"
+    if "desktop" in entrypoints:
+        return "desktop"
+    if "ios" in entrypoints or "android" in entrypoints:
+        return "phone"
+    return "web"
+
+
+def install_block(manifest: dict) -> list[str]:
+    install = manifest.get("install") or {}
+    name = escape(manifest["name"])
+    package_id = escape(manifest["id"])
+    place = install_place(manifest)
+    apps = f'{APP_URL}/dashboard/apps'
+    buttons = {
+        "account": [
+            f'<a class="primary-button" href="{INSTALL_URL}{package_id}"'
+            f' aria-label="Install {name} on the web">Install on the web</a>',
+            '<a class="secondary-button" href="/desktop">Get the desktop app</a>',
+        ],
+        "organization": [
+            f'<a class="primary-button" href="{apps}">Open Apps on the web</a>',
+            '<a class="secondary-button" href="/desktop">Get the desktop app</a>',
+        ],
+        "web": [f'<a class="primary-button" href="{apps}">Open Apps on the web</a>'],
+        "phone": ['<a class="primary-button" href="/mobile">Get the phone app</a>'],
+    }.get(place, ['<a class="primary-button" href="/desktop">Get the desktop app</a>'])
+    notes = {
+        "account": (
+            f"Installing {name} follows your ForkMesh account to every device. In the "
+            "desktop, iPhone and Android apps, open <strong>Market</strong> and search "
+            f"for <strong>{name}</strong>."),
+        "organization": (
+            f"{name} is installed for an organization: an owner or admin adds it from "
+            "<strong>Apps</strong> on the web or <strong>Market</strong> in the desktop app."),
+        "web": f"Add {name} from <strong>Apps</strong> on the web.",
+        "phone": (
+            f"Open <strong>Market</strong> in the ForkMesh iPhone or Android app and search "
+            f"for <strong>{name}</strong>. It is a switch on each phone."),
+        "editor": (
+            "Open <strong>Market</strong> in the ForkMesh desktop app, or install it into a "
+            "VS Code-compatible editor."),
+        "world": (
+            f"Open <strong>Market</strong> in the ForkMesh desktop app and search for "
+            f"<strong>{name}</strong>; it appears in the World."),
+        "desktop": (
+            f"Open <strong>Market</strong> in the ForkMesh desktop app and search for "
+            f"<strong>{name}</strong>."),
+    }[place]
+    lines = ['<div class="mp-install">']
+    lines.extend("  " + button for button in buttons)
+    lines.extend(["</div>", f'<p class="mp-install-note">{notes}</p>'])
+    if install.get("default"):
+        lines.append(
+            f'<p class="mp-install-note">The desktop app installs {name} on first run; '
+            "you can remove it from the Market.</p>")
+    return lines
+
+
+def link_list(title: str, manifests: list[dict]) -> list[str]:
+    if not manifests:
+        return []
+    lines = [f'<h2 class="mp-side-title">{escape(title)}</h2>', '<ul class="mp-links">']
+    lines.extend(
+        f'  <li><a href="{page_url(item["id"])}">{escape(item["name"])}</a></li>'
+        for item in manifests
+    )
+    lines.append("</ul>")
+    return lines
+
+
+def package_facts(manifest: dict) -> list[str]:
+    creator = manifest.get("creator") or {}
+    license_block = manifest.get("license") or {}
+    model = LICENSE_LABELS.get(license_block.get("model", ""), "Licensed")
+    spdx = license_block.get("spdx")
+    lines = [
+        '<dl class="market-facts">',
+        "  <dt>Version</dt>",
+        f"  <dd>{escape(manifest['version'])}</dd>",
+        "  <dt>Creator</dt>",
+        f'  <dd><a href="/@{escape(creator.get("handle", ""))}">'
+        f"{escape(creator.get('displayName', ''))}</a></dd>",
+        "  <dt>Licence</dt>",
+        f"  <dd>{model}{f' · {escape(spdx)}' if spdx else ''}</dd>",
+        "  <dt>Price</dt>",
+        f"  <dd>{price_label(manifest)}</dd>",
+        "  <dt>Runs in</dt>",
+        f"  <dd>{runs_in(manifest)}</dd>",
+    ]
+    places = shows_on(manifest)
+    if places:
+        lines.extend(["  <dt>Shows on</dt>", f"  <dd>{escape(places)}</dd>"])
+    if manifest.get("category"):
+        lines.extend(["  <dt>Category</dt>", f"  <dd>{escape(manifest['category'])}</dd>"])
+    lines.append("</dl>")
+    return lines
+
+
+def package_permissions(manifest: dict) -> list[str]:
+    permissions = manifest.get("permissions") or []
+    if not permissions:
+        return ['<h2 class="mp-side-title">Asks for</h2>', '<p class="mp-muted">No permissions.</p>']
+    lines = ['<h2 class="mp-side-title">Asks for</h2>', '<ul class="market-perms">']
+    lines.extend(
+        f'  <li data-risk="{escape(permission["risk"])}">{escape(permission["label"])}'
+        f'<span class="market-risk">{escape(permission["risk"])}</span></li>'
+        for permission in permissions
+    )
+    lines.append("</ul>")
+    return lines
+
+
+def package_rating(manifest: dict) -> list[str]:
+    package_id = escape(manifest["id"])
+    name = escape(manifest["name"])
+    return [
+        f'<div class="market-rating" data-market-rating="{package_id}">',
+        '  <span class="market-rating-stars" role="img" aria-label="No ratings yet" data-market-rating-stars>',
+        '    <span class="market-rating-track" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</span>',
+        '    <span class="market-rating-fill" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</span>',
+        "  </span>",
+        '  <span class="market-rating-summary" data-market-rating-summary>No ratings yet</span>',
+        f'  <a class="market-rating-link" data-market-rating-link href="{APP_URL}'
+        f'/market-reviews?market=forkmesh&amp;package={package_id}">'
+        f'Rate &amp; review<span class="visually-hidden"> {name}</span></a>',
+        "</div>",
+        f'<p class="market-stats" data-market-stats="{package_id}" hidden>',
+        '  <span class="market-stat" hidden><strong data-market-downloads>0</strong> downloads</span>',
+        '  <span class="market-stat" hidden><strong data-market-installs>0</strong> installs</span>',
+        '  <span class="market-stat" hidden><strong data-market-people>0</strong> people use it</span>',
+        '  <span class="market-stat" hidden><strong data-market-opens>0</strong> opens</span>',
+        "</p>",
+    ]
+
+
+def package_structured_data(manifest: dict) -> str:
+    data = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": manifest["name"],
+        "description": manifest["summary"],
+        "url": share_url(manifest["id"]),
+        "softwareVersion": manifest["version"],
+        "applicationCategory": manifest.get("category") or "Extensions",
+        "operatingSystem": "Linux, macOS, Windows, iOS, Android, Web",
+        "author": {"@type": "Person", "name": (manifest.get("creator") or {}).get("displayName", "")},
+        "offers": {
+            "@type": "Offer",
+            "price": f"{((manifest.get('price') or {}).get('amount') or 0):.2f}",
+            "priceCurrency": str((manifest.get("price") or {}).get("currency") or "USD"),
+        },
+    }
+    text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return text.replace("<", "\\u003c")
+
+
+def package_meta(manifest: dict) -> str:
+    title = escape(f"{manifest['name']} — ForkMesh Market")
+    summary = escape(manifest["summary"])
+    url = escape(share_url(manifest["id"]))
+    lines = [
+        "    <meta",
+        '      name="description"',
+        f'      content="{summary}"',
+        "    />",
+        f'    <link rel="canonical" href="{url}" />',
+        '    <meta property="og:type" content="website" />',
+        f'    <meta property="og:url" content="{url}" />',
+        '    <meta property="og:site_name" content="ForkMesh" />',
+        f'    <meta property="og:title" content="{title}" />',
+        f'    <meta property="og:description" content="{summary}" />',
+    ]
+    screenshots = manifest.get("screenshots") or []
+    raster = [shot for shot in screenshots if not shot["path"].lower().endswith(".svg")]
+    if raster:
+        directory = manifest["_path"].rsplit("/", 1)[0]
+        image = SITE_URL + screenshot_url(directory, raster[0]["path"])
+        lines.append(f'    <meta property="og:image" content="{escape(image)}" />')
+    lines.append(f'    <script type="application/ld+json">{package_structured_data(manifest)}</script>')
+    return "\n".join(lines)
+
+
+def package_body(manifest: dict, context: dict) -> str:
+    package_id = manifest["id"]
+    name = escape(manifest["name"])
+    type_label, shelf = TYPE_LABELS.get(manifest["type"], (manifest["type"], "Extensions"))
+    directory = manifest["_path"].rsplit("/", 1)[0]
+    by_id = context["by_id"]
+    parent_id = market_parent(manifest, set(by_id))
+    children = context["children"].get(package_id, [])
+    needs = [
+        by_id[item["id"]] for item in manifest.get("dependencies") or []
+        if item.get("id") in by_id and item.get("id") != parent_id
+    ]
+    used_by = [
+        item for item in context["packages"]
+        if item["id"] != package_id and market_parent(item, set(by_id)) != package_id
+        and any(dep.get("id") == package_id for dep in item.get("dependencies") or [])
+    ]
+    packs = [pack for pack in context["packs"] if package_id in context["pack_members"][pack["id"]]]
+    related = [
+        item for item in context["packages"]
+        if item["id"] != package_id and item.get("category") == manifest.get("category")
+        and not market_parent(item, set(by_id))
+    ][:RELATED_LIMIT]
+
+    lines = [
+        '<nav class="mp-crumbs" aria-label="Breadcrumb">',
+        '  <a href="/market">Market</a><span aria-hidden="true">/</span>',
+    ]
+    if parent_id:
+        lines.append(
+            f'  <a href="{page_url(parent_id)}">{escape(by_id[parent_id]["name"])}</a>'
+            '<span aria-hidden="true">/</span>')
+    lines.extend([
+        f'  <span aria-current="page">{name}</span>',
+        "</nav>",
+        '<header class="mp-hero">',
+        '  <p class="market-badges">',
+        f'    <span class="market-badge">{escape(type_label)}</span>',
+        f'    <span class="market-badge market-badge-shelf">{escape(shelf)}</span>',
+    ])
+    if manifest.get("category") and manifest["category"] != shelf:
+        lines.append(f'    <span class="market-badge">{escape(manifest["category"])}</span>')
+    lines.extend([
+        f'    <span class="market-badge market-badge-price">{price_label(manifest)}</span>',
+        "  </p>",
+        f'  <h1>{name} <span class="market-version">v{escape(manifest["version"])}</span></h1>',
+        f'  <p class="mp-lede">{escape(manifest["summary"])}</p>',
+    ])
+    lines.extend("  " + line for line in package_rating(manifest))
+    lines.extend("  " + line for line in install_block(manifest))
+    lines.extend(render_share(manifest))
+    lines.append("</header>")
+
+    screenshots = manifest.get("screenshots") or []
+    if screenshots:
+        lines.append('<div class="mp-screenshots">')
+        for screenshot in screenshots:
+            lines.append(
+                f'  <img class="market-screenshot" src="{escape(screenshot_url(directory, screenshot["path"]))}"'
+                f' alt="{escape(screenshot["alt"])}" loading="lazy" decoding="async" />')
+        lines.append("</div>")
+
+    readme = readme_html(manifest)
+    solo = not readme and not children
+    lines.append('<div class="mp-layout mp-layout-solo">' if solo else '<div class="mp-layout">')
+    if not solo:
+        lines.append('  <div class="mp-main">')
+    if children:
+        lines.append('    <section class="mp-section">')
+        lines.append(
+            f"      <h2>Includes {len(children)} package{'' if len(children) == 1 else 's'}</h2>")
+        lines.append(f'      <p class="mp-muted">Added and removed with {name}.</p>')
+        lines.append('      <ul class="mp-cards">')
+        for child in children:
+            lines.extend([
+                "        <li>",
+                f'          <a href="{page_url(child["id"])}">{escape(child["name"])}</a>',
+                f'          <p>{escape(child["summary"])}</p>',
+                "        </li>",
+            ])
+        lines.extend(["      </ul>", "    </section>"])
+    if readme:
+        lines.extend([
+            '    <section class="mp-section mp-readme" aria-labelledby="mp-readme-title">',
+            '      <h2 id="mp-readme-title">README</h2>',
+            readme,
+            "    </section>",
+        ])
+    if not solo:
+        lines.append("  </div>")
+    lines.append('  <aside class="mp-side" aria-label="Package details">')
+    side = ['<h2 class="mp-side-title">Details</h2>']
+    side.extend(package_facts(manifest))
+    side.extend(package_permissions(manifest))
+    badges = trust_badges(manifest)
+    if badges:
+        side.append('<p class="market-trust">')
+        side.extend(f"  <span>{escape(badge)}</span>" for badge in badges)
+        side.append("</p>")
+    if parent_id:
+        side.extend(link_list("Part of", [by_id[parent_id]]))
+    side.extend(link_list("Needs", needs))
+    side.extend(link_list("Needed by", used_by))
+    if packs:
+        side.append('<h2 class="mp-side-title">In packs</h2>')
+        side.append('<ul class="mp-links">')
+        side.extend(
+            f'  <li><a href="/market#packs">{escape(pack["name"])}</a></li>' for pack in packs)
+        side.append("</ul>")
+    side.extend([
+        '<p class="mp-source">',
+        f'  <a class="market-repository" href="{SOURCE_URL}/{escape(directory)}">View public repository &nearr;</a>',
+        f'  <a class="market-source" href="{SOURCE_URL}/{escape(directory)}/manifest.json">Read the manifest &rarr;</a>',
+        "</p>",
+    ])
+    lines.extend("    " + line for line in side)
+    lines.append("  </aside>")
+    lines.append("</div>")
+
+    if related:
+        category = escape(manifest.get("category") or shelf)
+        lines.extend([
+            '<section class="mp-section mp-related">',
+            f"  <h2>More in {category}</h2>",
+            '  <ul class="mp-cards">',
+        ])
+        for item in related:
+            lines.extend([
+                "    <li>",
+                f'      <a href="{page_url(item["id"])}">{escape(item["name"])}</a>',
+                f'      <p>{escape(item["summary"])}</p>',
+                "    </li>",
+            ])
+        lines.extend(["  </ul>", "</section>"])
+    lines.append('<p class="mp-back"><a href="/market#catalog">&larr; Every package in the Market</a></p>')
+    return "\n".join("      " + line if line else line for line in lines)
+
+
+def page_context(packages: list[dict]) -> dict:
+    by_id = {manifest["id"]: manifest for manifest in packages}
+    children = {parent["id"]: kids for parent, kids in nest_packages(packages)}
+    catalog = marketplace_lib.load_catalog(CATALOG, validate_packages=False)
+    packs, _ = marketplace_lib.load_onboarding(catalog)
+    members = {pack["id"]: {item["id"] for item in pack_members(pack, packages)} for pack in packs}
+    return {
+        "packages": packages,
+        "by_id": by_id,
+        "children": children,
+        "packs": packs,
+        "pack_members": members,
+    }
+
+
+def render_package_page(manifest: dict, context: dict,
+                        environment: site_templates.Environment | None = None) -> str:
+    environment = environment or site_templates.Environment()
+    return environment.render(PACKAGE_LAYOUT, {
+        "package_id": escape(manifest["id"]),
+        "package_title": escape(f"{manifest['name']} — ForkMesh Market"),
+        "package_meta": package_meta(manifest),
+        "package_body": package_body(manifest, context),
+    })
+
+
+def package_pages() -> dict[str, str]:
+    packages = load_packages()
+    context = page_context(packages)
+    environment = site_templates.Environment()
+    return {
+        manifest["id"]: render_package_page(manifest, context, environment)
+        for manifest in packages
+    }
+
+
+def stage_package_pages(destination: Path) -> list[Path]:
+    written = []
+    for package_id, text in package_pages().items():
+        target = destination / "market" / f"{package_id}.html"
+        if target.exists():
+            raise RuntimeError(f"market package page {package_id} would overwrite {target}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        written.append(target)
+    return written
 
 
 def main(arguments: list[str]) -> int:

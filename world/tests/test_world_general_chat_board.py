@@ -70,4 +70,4 @@ def test_physical_chat_board_is_beside_events_and_opens_full_chat():
     ):
         assert contract in SCENE
     assert 'onWorldGeneralChatSelect: () => {' in WORLD
-    assert 'this.openWorldChat("/dashboard/chat")' in WORLD
+    assert 'this.openWorldChat("/chat")' in WORLD

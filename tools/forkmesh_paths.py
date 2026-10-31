@@ -228,6 +228,10 @@ class Layout:
         return self.fanout_hosts.parent / "gateways"
 
     @property
+    def fanout_github(self) -> Path:
+        return self.fanout_hosts.parent / "github"
+
+    @property
     def release_seed_hosts(self) -> Path:
         return self.fanout_hosts.parent / "release-hosts"
 
@@ -416,6 +420,7 @@ def main(argv: list[str]) -> int:
         ("fan-out hosts", layout.fanout_hosts), ("tool state", layout.tool_state),
         ("secrets", layout.secrets),
         ("bare mirror", layout.bare_mirror), ("gateways", layout.fanout_gateways),
+        ("github mirrors", layout.fanout_github),
         ("publisher", layout.publisher_state), ("fleet config", layout.fleet_config),
         ("fleet ssh key", layout.fleet_ssh_key), ("fleet data", layout.fleet_data),
         ("fleet logs", layout.fleet_logs),

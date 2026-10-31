@@ -126,6 +126,10 @@ class GenieAutoSendPace(private val store: PrefStore?, private val zone: () -> Z
 
 object GenieAutoSend {
     val skipped: Set<String> = setOf("contact_has_no_email", "contact_closed", "recently_emailed", "contact_not_found")
+    const val UNWRITTEN =
+        "Nothing could write the email: the server has no AI model, and no agent API key, on-device model or desktop running Claude Code or Codex gave a usable draft."
+    const val NO_WRITER =
+        "Nothing can write the email: the server has no AI model and this phone has no writer. Open ForkMesh on a desktop signed in to this account with Claude Code or Codex as its default agent, or save an agent API key in Settings."
 
     fun outcome(reply: ApiJsonResult, pick: GenieOutreachPick): GenieAutoSendOutcome {
         if (reply.ok) return GenieAutoSendOutcome.Sent(GenieAutoSendReceipt.of(reply.body, pick))
@@ -135,8 +139,7 @@ object GenieAutoSend {
         val reason = when (code) {
             "daily_limit_reached" -> "The CRM's limit of ${reply.body.int("dailyLimit", GenieAutoSendPace.PER_DAY)} emails a day is reached."
             "outreach_forbidden" -> "Only owners, admins and the outreach team of ${pick.organization} can send outreach."
-            "ai_unavailable", "draft_unusable" ->
-                "Nothing could write the email: the server has no AI model and no writer on this phone gave a usable draft."
+            "ai_unavailable", "draft_unusable" -> UNWRITTEN
             "rate_limited" -> "The AI model is busy. Trying again in a while."
             else -> detail.ifEmpty { PackagesException.sentence(code, reply.statusCode) }
         }

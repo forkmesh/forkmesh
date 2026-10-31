@@ -134,7 +134,7 @@ extension ChatHub {
     public func listFallback(_ conversation: String) -> String {
         let room = office?.room(for: conversation)
         return ChatListPreviews.fallback(
-            topic: room?.topic ?? "", isPrivate: room?.isPrivate ?? extras.isPrivate(conversation),
+            topic: room?.topic ?? "", isPrivate: room?.isPrivate ?? false,
             members: room?.members.count ?? 0, mesh: conversation == meshConversation,
             direct: conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation))
     }

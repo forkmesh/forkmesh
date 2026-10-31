@@ -44,10 +44,11 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 | Service | Kind | Needed | Components | Observes |
 | --- | --- | --- | --- | --- |
-| [Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge](#cloudflare) | hosting, dns, certificates, cdn-edge, ai-provider, telemetry | Mandatory for the hosted service | app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools | Every request to forkmesh.com, app.forkmesh.com, and world.forkmesh.com terminates here: client IP address, TLS SNI, headers including User-Agent, request path, and timing. D1, KV, Durable Objects, and Queues hold the hosted service's account, catalog, collaboration, presence, and health data; sensitive fields are encrypted under DATA_KEY before storage. Workers AI receives ForkBot prompts, bug-report text, and usernames sent for moderation. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code. |
+| [Cloudflare DNS, the forkmesh.com website Worker, DNS over HTTPS, and Web Analytics](#cloudflare) | hosting, dns, certificates, cdn-edge, telemetry | Mandatory for the hosted service | app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools | Requests to forkmesh.com and www.forkmesh.com end at the forkmesh-www Worker: client IP address, TLS SNI, headers including User-Agent, request path, and timing. The Worker serves the homepage, blog, docs, and static pages and passes app paths on to app.forkmesh.com. app.forkmesh.com and world.forkmesh.com are unproxied DNS records that point at the core nodes, so Cloudflare answers the DNS lookups for them but never sees their requests. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code. |
 | [ACME certificate authorities for direct-HTTPS mirrors](#acme-certificate-authority) | certificates | Degrades one feature | mirror-node | The mirror's public hostname and the host's IP address during certificate issuance and renewal. Issued certificates are published in public Certificate Transparency logs. |
 | [GitHub source and release downloads](#github-downloads) | forge-api, package-registry | Degrades one feature | desktop, installer, mirror-node, operator-tools, ci | The downloading host's IP address and the release or repository requested: desktop self-update clones of forkmesh/forkmesh when no source checkout exists, the age binary for the macOS installer, the pinned cloudflared release, and build toolchains. |
-| [GitHub, GitLab, and Codeberg APIs for imports, GitHub sync and repository mirrors](#forge-apis) | forge-api | Optional, off unless enabled | app-worker, desktop, operator-tools, ci | The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. |
+| [GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors](#forge-apis) | forge-api | Optional, off unless enabled | app-worker, desktop, operator-tools, ci | The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. The relay's GitHub Actions watcher reads the public workflow runs, jobs and annotations of forkmesh/forkmesh every 5 minutes, with an optional read-only GITHUB_ACTIONS_WATCH_TOKEN. |
+| [Internet Archive public repository backups](#internet-archive) | hosting | Optional, off unless enabled | app-worker | The public repository identifier, the ForkMesh worker egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh. |
 | [GitHub Actions hosted runners](#github-actions) | hosted-runner | Build and release only | ci | The full public repository source, test output, and uploaded evidence artifacts for every run on ubuntu-latest, macos-latest, and windows-latest. Workflows check out with persist-credentials: false. |
 | [Package registries and distribution mirrors](#package-registries) | package-registry | Build and release only | ci, operator-tools | The build host's IP address and the exact package names and versions requested. |
 | [Code-signing timestamp authorities](#code-signing-timestamps) | certificates | Build and release only | ci | A hash of the Windows installer being signed and the release host's IP address. |
@@ -63,24 +64,37 @@ proves this for clone. Every optional service stays off until its secret is set.
 | [World social feeds (X, Reddit, Mastodon)](#social-feeds) | social | Degrades one feature | world-worker, world-browser | The World Worker's egress IP when it reads the public ForkMesh X and Reddit feeds. Visitors' browsers look up the public ForkMesh Mastodon account directly on mastodon.social, which exposes the visitor's IP address. |
 | [CRM contact pictures and their accounts' public posts](#crm-contact-accounts) | social, forge-api | Optional, off unless enabled | app-browser, desktop, marketplace-package | The reading device's IP address and which account was asked about. A CRM page reads a picture for each contact whose record names a GitHub, Bluesky or Mastodon account, a contact's detail card reads that account's newest public posts, and the Reach out card reads the newest Mastodon post of up to 40 never-contacted contacts to order them. The desktop CRM also asks Gravatar for a picture by the SHA-256 hash of each contact's email address when the contact has no ForkMesh or account picture. The Mastodon instance is whichever one the contact's handle names, so it is not a fixed host. |
 | [CelesTrak satellite orbital elements](#celestrak) | infrastructure | Degrades one feature | world-worker | The Worker's egress IP on a cron refresh. Visitors never contact CelesTrak. |
-| [ActivityPub peer servers](#fediverse-peers) | social | Optional, off unless enabled | app-worker | Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address. |
+| [ActivityPub peer servers](#fediverse-peers) | social | Optional, off unless enabled | app-worker, marketplace-package | Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address. |
 | [Hosted AI model providers (user-supplied keys)](#ai-providers) | ai-provider | Optional, off unless enabled | desktop, mobile | Prompts the user chooses to send, including issue threads, pull request diffs, and repository context, with the user's own API key; usage and cost queries for that key. Agent CLI install scripts are downloaded from claude.ai and chatgpt.com when the user installs them on a node. |
-| [Vultr server provisioning](#vultr) | infrastructure | Optional, off unless enabled | app-worker, desktop | The user's own Vultr API key and the instance they create, including cloud-init data with the Cloudflare token and payout address they supplied. |
+| [Vultr virtual machines for the core nodes and runners, and one-click mirror hosts](#vultr) | hosting, infrastructure | Mandatory for the hosted service | app-worker, world-worker, operator-tools, desktop | Vultr runs the machines that serve app.forkmesh.com and world.forkmesh.com: three core nodes (currently n3, n4, and n5) and the runner r1, all in its ewr region. As the hosting provider it has physical and hypervisor access to their disks, memory, and network traffic, which hold the replicated rqlite database (accounts, sessions, the catalog, collaboration, presence, and health data; sensitive fields encrypted under DATA_KEY, which the cores hold only in memory), repositories hosted on the cores, and the HTTPS traffic Caddy terminates. The Vultr API sees the operator's key and the instances the fleet tools and the core autoscaler create. Separately, a user who chooses one-click mirror hosting sends their own Vultr API key and the instance's cloud-init data, including the Cloudflare token and payout address they supplied. |
 | [Zoho Mail for the CRM marketplace package](#crm-package-providers) | email, identity | Optional, off unless enabled | marketplace-package, app-worker | For users who install the CRM package and connect Zoho Mail: OAuth tokens and the mail they choose to sync. |
 | [RDAP whois for CRM email open pings](#crm-whois-rdap) | infrastructure | Optional, off unless enabled | marketplace-package, app-worker | The App's egress IP and the public IP address that first opened or clicked a tracked CRM email (often the mail provider's image proxy). |
 | [ipify public IP lookup in the installer](#ipify) | infrastructure | Operator tooling only | installer | The installing host's public IP address. |
 | [OSV vulnerability database](#osv) | package-registry | Operator tooling only | operator-tools | Package names and versions being checked, and the operator's IP address. |
 | [Repository webhook endpoints owners register](#repository-webhook-endpoints) | hosted-runner | Optional, off unless enabled | app-worker | Each registered endpoint receives one signed JSON event per subscribed repository change: the repository's owner and name, its public URLs, the moved refs (branch, before/after commit, refs digest), merged pull numbers and the merging account, released tags and their notes, plus the relay's outbound IP address. Only public repositories emit events. api.codemagic.io is the one endpoint ForkMesh itself registers, for its own repository's mobile builds. |
 | [Git remotes, plugin endpoints, and pages users choose](#user-chosen-remotes) | forge-api | Optional, off unless enabled | app-worker, mirror-node, desktop | Requests to Git upstreams a mirror is configured to follow, marketplace manifests and plugin-declared endpoints a user installs, and public pages a microjob reads. Each receives the requesting server's IP address and only the request needed. |
+| [Cloudflare Turnstile on the signup and password-reset forms](#cloudflare-turnstile) | identity | Degrades one feature | app-browser, app-worker | The visitor's IP address, User-Agent and browser signals while the widget runs on /signup and /forgot-password; the app sends Cloudflare the widget token and the client IP to verify it. |
+| [SendGrid and Mailgun as alternative mail providers](#mail-provider-alternatives) | email | Optional, off unless enabled | app-worker | When an operator selects SendGrid or Mailgun instead of Mailtrap: recipient addresses and the content of transactional and marketing mail. |
+| [Third-party APIs called by workflow integration steps](#workflow-integrations) | forge-api, email, payments, ai-provider, social, infrastructure | Optional, off unless enabled | app-worker | Only for a user who adds an integration step to a workflow: the credential they paste and whatever data the step sends or reads. Importing a workflow by URL fetches it from GitHub, a gist or the n8n template API. |
+| [Open Food Facts and USDA FoodData Central for the Calories package](#nutrition-data) | infrastructure | Optional, off unless enabled | marketplace-package | For users of the Calories package: the food names and barcodes they look up. |
+| [oEmbed and public APIs for chat link previews](#link-previews) | media-embed, social | Optional, off unless enabled | mobile, app-worker | The link a user posted in chat and the device's IP address, when a preview for that site is built. |
+| [GIPHY for GIFs in comments](#giphy) | media-embed, social | Optional, off unless enabled | app-browser, app-worker | The app sends GIPHY the trending and search requests a signed-in user makes in the GIF picker, with the administrator's key; every browser that shows a comment with a GIF loads it from GIPHY's media hosts, which see the viewer's IP address. |
+| [Invidious and YouTube thumbnails for Video Mix DJ Studio](#video-mix-sources) | media-embed | Optional, off unless enabled | marketplace-package, mobile | For users of the package: video searches, the device's IP address and the thumbnails it loads. |
+| [Apple iTunes lookup for the current App Store version](#app-store-lookup) | package-registry | Optional, off unless enabled | mobile, marketplace-package | The device's IP address and the app id being looked up. |
+| [Hugging Face downloads for local voices and models](#hugging-face-models) | ai-provider | Optional, off unless enabled | desktop, mobile | The device's IP address and which voice or model file is downloaded. |
+| [DuckDuckGo HTML search for the phone assistant](#duckduckgo-web-research) | ai-provider | Optional, off unless enabled | mobile | The search query the assistant runs and the device's IP address. |
+| [Google Public DNS as the instance installer's second resolver](#google-public-dns) | dns | Operator tooling only | installer | The domain name the installer is checking and the server's IP address. |
+| [Sites the browser extension reads in the user's own browser](#browser-extension-sites) | social | Optional, off unless enabled | marketplace-package | Nothing beyond what the user's own signed-in browser sends: the extension reads subreddit rules pages and fills developer-portal setup forms the user opens. |
 
 ## When each service disappears
 
 | Service | What still works / what stops | Self-host or offline alternative | Drill |
 | --- | --- | --- | --- |
-| Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge | The hosted website, dashboard, API, accounts, chat, catalog, and clone routing through app.forkmesh.com stop. Direct mirror URLs keep serving Git clone, fetch, and SSH push; desktops keep local Git, signed records, and direct mirror access; the Go mirror node keeps publishing signed health locally. | Clone from any independent mirror node's direct HTTPS or SSH URL. A self-host deploys its own app Worker on its own Cloudflare account; no non-Cloudflare runtime for the app Worker exists yet. | tested |
+| Cloudflare DNS, the forkmesh.com website Worker, DNS over HTTPS, and Web Analytics | forkmesh.com and www.forkmesh.com stop, along with the app paths reached through them. When cached DNS answers expire (the app and world records have a 60-second TTL), app.forkmesh.com and world.forkmesh.com stop resolving, so new visitors cannot reach the dashboard, API, or Git over HTTPS even though the core nodes keep running. Mirrors reached by their own hostnames keep serving Git clone and fetch; desktops keep local Git, signed records, and direct mirror access. DNS-over-HTTPS checks of mirrors and profile domains report unavailable rather than rejected. | Clone from any independent mirror node's direct HTTPS or SSH URL. A self-hosted instance runs the same app on its own server behind Caddy and needs no Cloudflare account; putting Cloudflare in front of it is optional. | tested |
 | ACME certificate authorities for direct-HTTPS mirrors | Existing certificates keep serving until they expire, so clones continue. New direct-HTTPS mirrors cannot obtain a certificate, and a mirror whose renewal keeps failing stops serving HTTPS at expiry; its SSH gateway and other mirrors are unaffected. | Self-host operators may point Caddy at any ACME issuer or their own certificate, or run the mirror node in Cloudflare Tunnel mode. | **gap** |
 | GitHub source and release downloads | Desktop self-update without a local checkout, first-time macOS installs that need age, cloudflared installation, and toolchain bootstraps fail with a download error. Running desktops, mirrors, and the hosted service are unaffected. | Update from a local source checkout or a ForkMesh mirror clone; self-host operators can preinstall age and cloudflared from their distribution. | **gap** |
-| GitHub, GitLab, and Codeberg APIs for imports, GitHub sync and repository mirrors | New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. Imported repositories, clones, and collaboration keep working. | Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed. | tested |
+| GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors | New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. The GitHub Actions watcher sends no pings until GitHub answers again. Imported repositories, clones, and collaboration keep working. | Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed. | tested |
+| Internet Archive public repository backups | Owners cannot verify archive credentials or upload a scheduled or requested public backup. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available. | Self-host operators can retain Git bundles or mirror clones on their own storage; a public repository can be recovered from any ForkMesh mirror without the Internet Archive. | tested |
 | GitHub Actions hosted runners | GitHub-hosted conformance evidence stops. Deploys are gated by .forkmesh workflows on the ForkMesh Actions runner, which runs with network egress disabled. | Run tools/quality_gate.py run --profile core locally or on the self-hosted ForkMesh Actions runner. | tested |
 | Package registries and distribution mirrors | Fresh builds that need to download packages fail. Deployed services never contact registries, and the ForkMesh Actions critical suites use preinstalled packages. | Self-host builds may use a local package mirror or cache; the app Worker and mirror node need no third-party packages at runtime. | tested |
 | Code-signing timestamp authorities | Windows release signing falls through to the next timestamp server, and fails only if all three are down. Existing releases are unaffected. | Release without a timestamp and re-sign later, or use another RFC 3161 authority. | **gap** |
@@ -90,7 +104,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | Patreon memberships | New links, pledge reconciliation, and supporter badge updates pause; unconfigured deployments answer an expected-degraded 503. Repository access, identity, and collaboration never depend on it. | Self-host operators leave Patreon unset; paid plans are optional adapters. | **gap** |
 | Solana JSON-RPC providers | Tips, bounties, reward pool balances, and store purchase confirmation degrade across the fallback list and then show the last reading or a stale marker. Repository access, identity, contribution, and governance never read them. | Point SOLANA_RPC_URL at your own Solana node, or self-host with incentives unconfigured. | tested |
 | CoinGecko price API | Ledger fiat values show as unavailable (price 0). Balances in SOL and every other feature continue. | Show SOL amounts only; a self-host needs nothing. | **gap** |
-| Sentry error reporting | Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the D1 error log still records the event. | Leave SENTRY_DSN unset and read the D1 error log, or self-host Sentry. | tested |
+| Sentry error reporting | Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the relay's error log still records the event. | Leave SENTRY_DSN unset and read the relay's error log, or self-host Sentry. | tested |
 | jsDelivr CDN (lucide icons on dashboard pages) | Dashboard icons do not render; pages call window.lucide?.createIcons() and otherwise work. | Serving lucide from the app's own assets removes this dependency; self-host operators can block the CDN without losing function. | **gap** |
 | YouTube video embeds | The demo video does not appear; the page otherwise works. | Host the video file on ForkMesh assets, or use a local poster image and load the embed only on click. | **gap** |
 | World social feeds (X, Reddit, Mastodon) | World banners show their static sign and a named unavailable reason. The World and every other feature continue. | A self-host omits the World or leaves the feeds unconfigured. | tested |
@@ -98,35 +112,47 @@ proves this for clone. Every optional service stays off until its secret is set.
 | CelesTrak satellite orbital elements | World satellites keep the last good orbital snapshot and record a refresh status. | A self-host omits the World sky layer. | tested |
 | ActivityPub peer servers | Delivery to that peer is queued for retry; local posting and every other feature continue. | Disable federation; local posts remain. | tested |
 | Hosted AI model providers (user-supplied keys) | That agent run or assistant action fails with the provider's error. Manual work and local models are unaffected. | Use a local Ollama model or Workers AI; keys stay on the user's device. | **gap** |
-| Vultr server provisioning | One-click mirror host creation fails at that step; existing hosts keep running. | Install the mirror node on any Linux host with install.sh. | **gap** |
+| Vultr virtual machines for the core nodes and runners, and one-click mirror hosts | One core can fail: rqlite keeps quorum with the other two, and the operator box's DNS health loop takes the failed core out of the app and world records after three failed probes. Losing the region or the account stops app.forkmesh.com and world.forkmesh.com (dashboard, API, accounts, chat, catalog, and Git over HTTPS) and the runner's Actions and agent runs; the forkmesh.com pages on Cloudflare keep serving. Independent mirrors keep serving Git clone and fetch, and desktops keep local Git, signed records, and direct mirror access. One-click mirror host creation fails at that step; existing user hosts keep running. | A self-hosted instance runs the same app on any Linux server it owns, and the mirror node installs on any Linux host with install.sh. Moving the hosted service to another provider means provisioning new cores and restoring a backup; the fleet tools only create Vultr instances. | tested |
 | Zoho Mail for the CRM marketplace package | Mail sync fails inside the CRM package; the rest of ForkMesh is unaffected. | Uninstall the package or use the CRM without a mail connection. | **gap** |
 | RDAP whois for CRM email open pings | The open or click ping says the whois had no answer; tracking and the ping still work. | Remove the RDAP origins from the CRM manifest and the ping shows only the user agent. | **gap** |
 | ipify public IP lookup in the installer | Direct-mirror setup warns and stops at the public-address step. | Set FORKMESH_PUBLIC_ADDRESS so the installer never contacts ipify. | **gap** |
 | OSV vulnerability database | The manual security scan cannot query advisories. No workflow or runtime path depends on it. | Use an offline OSV database export. | **gap** |
 | Repository webhook endpoints owners register | Deliveries retry with capped backoff and are dropped after 6 attempts; the Settings tab shows the failure. Pushes, merges, and releases are unaffected because delivery is queued out of band. | Delete the webhook and poll the public catalog with tools/forkmesh_integration.py watch instead; nothing in ForkMesh depends on an endpoint answering. | tested |
 | Git remotes, plugin endpoints, and pages users choose | Only the affected mirror sync, plugin call, or page read fails; mirrors keep serving the last accepted refs. | Push directly to the mirror instead of following an upstream. | **gap** |
+| Cloudflare Turnstile on the signup and password-reset forms | On ForkMesh Next the gated forms fail closed with 503 turnstile_unavailable; signed-in use, desktop node registration and every other page keep working. | Leave the keys unset off the VPS platform, which selects Cloudflare's always-pass test pair. | tested |
+| SendGrid and Mailgun as alternative mail providers | Mail sends fail and are logged as skipped; account actions still complete. | Mailtrap, the default provider. | **gap** |
+| Third-party APIs called by workflow integration steps | The step fails and the run stops unless the step continues on failure; other workflows and ForkMesh itself are unaffected. | Use a webhook step to a service the user hosts, or leave the integration out. | tested |
+| Open Food Facts and USDA FoodData Central for the Calories package | Food search in the package returns nothing; logged entries are unaffected. | Enter foods by hand. | **gap** |
+| oEmbed and public APIs for chat link previews | The link shows without a rich preview. | Turn off link previews. | **gap** |
+| GIPHY for GIFs in comments | The GIF picker reports the failure and GIFs already in comments do not load; comments, stickers and reactions keep working. | Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance. | tested |
+| Invidious and YouTube thumbnails for Video Mix DJ Studio | Video search in the package fails; saved mixes are unaffected. | Add local videos. | **gap** |
+| Apple iTunes lookup for the current App Store version | The update prompt and the Marketing package's App Store figures are not refreshed. | None needed. | **gap** |
+| Hugging Face downloads for local voices and models | A voice or local model that is not yet downloaded cannot be used. | Use a voice or model already on the device. | **gap** |
+| DuckDuckGo HTML search for the phone assistant | The assistant answers without web results. | Ask without web research. | **gap** |
+| Google Public DNS as the instance installer's second resolver | The installer falls back to Cloudflare DNS over HTTPS. | Cloudflare DNS over HTTPS, tried first. | **gap** |
+| Sites the browser extension reads in the user's own browser | The Reddit walk or the setup helper stops; the rest of the extension works. | Do the setup by hand. | **gap** |
 
 ## Services in detail
 
 <a id="cloudflare"></a>
 
-### Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge
+### Cloudflare DNS, the forkmesh.com website Worker, DNS over HTTPS, and Web Analytics
 
 - **Needed:** Mandatory for the hosted service
-- **Kind:** hosting, dns, certificates, cdn-edge, ai-provider, telemetry
+- **Kind:** hosting, dns, certificates, cdn-edge, telemetry
 - **Components:** app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools
-- **Hosts:** `api.cloudflare.com`, `www.cloudflare.com`, `cloudflare-dns.com`, `static.cloudflareinsights.com`
+- **Hosts:** `api.cloudflare.com`, `www.cloudflare.com`, `cloudflare-dns.com`, `static.cloudflareinsights.com`, `cloudflare.com`
 - **Credentials:** `USAGE_ANALYTICS_API_TOKEN`, `WORKERS_OBSERVABILITY_ACCOUNT_ID`, `WORKERS_OBSERVABILITY_API_TOKEN`, `WORKERS_OBSERVABILITY_SERVICE`
-- **Observes:** Every request to forkmesh.com, app.forkmesh.com, and world.forkmesh.com terminates here: client IP address, TLS SNI, headers including User-Agent, request path, and timing. D1, KV, Durable Objects, and Queues hold the hosted service's account, catalog, collaboration, presence, and health data; sensitive fields are encrypted under DATA_KEY before storage. Workers AI receives ForkBot prompts, bug-report text, and usernames sent for moderation. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code.
-- **Retention:** D1 rows persist until the owning feature deletes them; persisted room frames last 7 days and at most 500 per room. Workers observability on forkmesh-www, the only Worker still deployed since the app and World Workers were deleted on 2026-09-27, samples 5% of logs and traces every request, kept for the Cloudflare plan's retention; relay data on the core nodes is covered by the relay data retention page. Edge caches expire by their Cache-Control lifetimes.
-- **Jurisdiction:** Cloudflare, Inc. (United States) on a global edge network; D1 data lives in the database's primary location chosen at creation.
-- **Canonical data:** Canonical for hosted accounts, sessions, device and SSH public keys, organization membership, the catalog, pull and issue inboxes, and routing health. Not canonical for Git objects and refs, which live on mirrors and desktops, or for signed .forkmesh records, which live in Git.
-- **When it is gone:** The hosted website, dashboard, API, accounts, chat, catalog, and clone routing through app.forkmesh.com stop. Direct mirror URLs keep serving Git clone, fetch, and SSH push; desktops keep local Git, signed records, and direct mirror access; the Go mirror node keeps publishing signed health locally.
-- **Recovery:** Service resumes when Cloudflare recovers; D1 point-in-time restore and the node backup runbook cover data loss. The router reverts to the last accepted signed refs pins.
-- **Alternative:** Clone from any independent mirror node's direct HTTPS or SSH URL. A self-host deploys its own app Worker on its own Cloudflare account; no non-Cloudflare runtime for the app Worker exists yet.
-- **Failure drills:** `app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising`, `app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected`, `app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum`, `app/tests/test_forkbot.py::test_forkbot_files_the_raw_request_when_ai_is_unreachable`, `app/tests/test_start_setup.py::test_rejected_cloudflare_token_fails_that_step_with_a_console_line`
-- **Known gap:** The app Worker has no non-Cloudflare runtime, so a self-host cannot leave Cloudflare for accounts, catalog, and realtime; only Git serving is provider-independent.
-- **Evidence:** `app/wrangler.toml`, `www/wrangler.toml`, `world/wrangler.toml`, `app/src/app_runtime.py`, `app/src/usage_reporting.py`, `app/src/entry.py`
+- **Observes:** Requests to forkmesh.com and www.forkmesh.com end at the forkmesh-www Worker: client IP address, TLS SNI, headers including User-Agent, request path, and timing. The Worker serves the homepage, blog, docs, and static pages and passes app paths on to app.forkmesh.com. app.forkmesh.com and world.forkmesh.com are unproxied DNS records that point at the core nodes, so Cloudflare answers the DNS lookups for them but never sees their requests. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code.
+- **Retention:** Workers observability on forkmesh-www, the only Worker still deployed since the app and World Workers were deleted on 2026-09-27, samples 5% of logs and traces every request, kept for the Cloudflare plan's retention. Edge caches expire by their Cache-Control lifetimes. Relay data on the core nodes is covered by the relay data retention page.
+- **Jurisdiction:** Cloudflare, Inc. (United States) on a global edge network.
+- **Canonical data:** Canonical only for the DNS records of ForkMesh domains. Accounts, sessions, keys, organizations, the catalog, and inboxes live on the core nodes (see Vultr); the website's pages are built from www/ in Git.
+- **When it is gone:** forkmesh.com and www.forkmesh.com stop, along with the app paths reached through them. When cached DNS answers expire (the app and world records have a 60-second TTL), app.forkmesh.com and world.forkmesh.com stop resolving, so new visitors cannot reach the dashboard, API, or Git over HTTPS even though the core nodes keep running. Mirrors reached by their own hostnames keep serving Git clone and fetch; desktops keep local Git, signed records, and direct mirror access. DNS-over-HTTPS checks of mirrors and profile domains report unavailable rather than rejected.
+- **Recovery:** Service resumes when Cloudflare recovers. No data is lost: it lives on the core nodes, which keep running.
+- **Alternative:** Clone from any independent mirror node's direct HTTPS or SSH URL. A self-hosted instance runs the same app on its own server behind Caddy and needs no Cloudflare account; putting Cloudflare in front of it is optional.
+- **Failure drills:** `app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected`, `app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum`
+- **Known gap:** Every ForkMesh domain uses Cloudflare DNS with no second provider, so a Cloudflare DNS outage takes app.forkmesh.com and world.forkmesh.com offline even while the core nodes are healthy.
+- **Evidence:** `www/worker.js`, `www/wrangler.production.toml`, `docs/PLAN.md`, `app/src/app_runtime.py`, `app/src/usage_reporting.py`, `app/src/entry.py`
 
 <a id="acme-certificate-authority"></a>
 
@@ -135,7 +161,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Degrades one feature
 - **Kind:** certificates
 - **Components:** mirror-node
-- **Hosts:** `acme-v02.api.letsencrypt.org`, `acme.zerossl.com`
+- **Hosts:** `acme-v02.api.letsencrypt.org`, `acme.zerossl.com`, `acme-staging-v02.api.letsencrypt.org`
 - **Observes:** The mirror's public hostname and the host's IP address during certificate issuance and renewal. Issued certificates are published in public Certificate Transparency logs.
 - **Retention:** Certificate Transparency entries are permanent and public.
 - **Jurisdiction:** Caddy's default issuers, Let's Encrypt (ISRG, United States) and ZeroSSL, unless the operator configures another ACME issuer.
@@ -166,21 +192,40 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 <a id="forge-apis"></a>
 
-### GitHub, GitLab, and Codeberg APIs for imports, GitHub sync and repository mirrors
+### GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors
 
 - **Needed:** Optional, off unless enabled
 - **Kind:** forge-api
 - **Components:** app-worker, desktop, operator-tools, ci
-- **Hosts:** `api.github.com`, `gitlab.com`, `codeberg.org`
-- **Observes:** The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases.
+- **Hosts:** `api.github.com`, `gitlab.com`, `codeberg.org`, `gitea.com`, `user-images.githubusercontent.com`
+- **Credentials:** `GITHUB_ACTIONS_WATCH_TOKEN`
+- **Observes:** The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. The relay's GitHub Actions watcher reads the public workflow runs, jobs and annotations of forkmesh/forkmesh every 5 minutes, with an optional read-only GITHUB_ACTIONS_WATCH_TOKEN.
 - **Retention:** Set by each forge's API log terms. ForkMesh never stores user-supplied import tokens. A mirror's access token is stored encrypted until the owner disconnects the mirror.
-- **Jurisdiction:** GitHub, Inc. (United States); GitLab Inc. (United States); Codeberg e.V. (Germany).
+- **Jurisdiction:** GitHub, Inc. (United States); GitLab Inc. (United States); Codeberg e.V. (Germany); CommitGo, Inc. (United States) for gitea.com.
 - **Canonical data:** The forge is canonical for its own repository until import; after import the ForkMesh repository and its signed records are canonical, and the stored external id only links the two.
-- **When it is gone:** New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. Imported repositories, clones, and collaboration keep working.
+- **When it is gone:** New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. The GitHub Actions watcher sends no pings until GitHub answers again. Imported repositories, clones, and collaboration keep working.
 - **Recovery:** Retry the import; the sync workflow resumes on its next schedule and is idempotent.
 - **Alternative:** Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed.
-- **Failure drills:** `app/tests/test_repository_imports.py::test_provider_snapshot_stops_immediately_when_rate_budget_is_exhausted`, `app/tests/test_repository_imports.py::test_worker_adapter_uses_primary_apis_and_never_logs_provider_exception`
-- **Evidence:** `app/src/repository_imports.py`, `app/src/repository_provider_mirror.py`, `server/hosted_push_mirror.go`, `tools/github_forkmesh_bridge.py`, `tools/github_issue_sync.py`
+- **Failure drills:** `app/tests/test_repository_imports.py::test_provider_snapshot_stops_immediately_when_rate_budget_is_exhausted`, `app/tests/test_repository_imports.py::test_worker_adapter_uses_primary_apis_and_never_logs_provider_exception`, `app/tests/test_github_actions_watch.py::test_github_errors_write_nothing`
+- **Evidence:** `app/src/repository_imports.py`, `app/src/repository_provider_mirror.py`, `server/hosted_push_mirror.go`, `tools/github_forkmesh_bridge.py`, `tools/github_issue_sync.py`, `app/src/github_actions_watch.py`, `tools/github_actions_status.py`
+
+<a id="internet-archive"></a>
+
+### Internet Archive public repository backups
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** hosting
+- **Components:** app-worker
+- **Hosts:** `archive.org`, `s3.us.archive.org`
+- **Observes:** The public repository identifier, the ForkMesh worker egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh.
+- **Retention:** The Internet Archive retains uploaded public repository bundles and metadata under the archive account's policy. ForkMesh retains the encrypted sync configuration and recent upload status until the owner disconnects it.
+- **Jurisdiction:** Internet Archive (United States).
+- **Canonical data:** None. The ForkMesh repository and its mirrors remain canonical; an Internet Archive item is an independently recoverable public backup copy.
+- **When it is gone:** Owners cannot verify archive credentials or upload a scheduled or requested public backup. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available.
+- **Recovery:** The next scheduled or requested sync retries after the Internet Archive is reachable; the owner can also download a bundle from a ForkMesh mirror and upload it independently.
+- **Alternative:** Self-host operators can retain Git bundles or mirror clones on their own storage; a public repository can be recovered from any ForkMesh mirror without the Internet Archive.
+- **Failure drills:** `app/tests/test_repository_archive_sync.py::test_bad_input_and_refused_keys_are_reported`, `app/tests/test_repository_archive_sync.py::test_paused_disconnected_or_private_repositories_send_nothing`
+- **Evidence:** `app/src/repository_archive_sync.py`, `app/tests/test_repository_archive_sync.py`
 
 <a id="github-actions"></a>
 
@@ -206,7 +251,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Build and release only
 - **Kind:** package-registry
 - **Components:** ci, operator-tools
-- **Hosts:** `registry.npmjs.org`, `dl.google.com`, `deb.debian.org`, `archive.ubuntu.com`, `pypi.org`, `files.pythonhosted.org`, `pub.dev`, `proxy.golang.org`
+- **Hosts:** `registry.npmjs.org`, `dl.google.com`, `deb.debian.org`, `archive.ubuntu.com`, `download.qt.io`, `snapshot.debian.org`, `auth.docker.io`, `storage.googleapis.com`, `cloud.debian.org`, `pypi.org`, `files.pythonhosted.org`, `pub.dev`, `proxy.golang.org`
 - **Observes:** The build host's IP address and the exact package names and versions requested.
 - **Retention:** Set by each registry's download-log terms.
 - **Jurisdiction:** npm (GitHub, United States); PyPI (Python Software Foundation, United States); Go module proxy (Google, United States); Debian and Ubuntu mirrors (various).
@@ -215,7 +260,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Recovery:** Retry the build, or build from a warm package cache.
 - **Alternative:** Self-host builds may use a local package mirror or cache; the app Worker and mirror node need no third-party packages at runtime.
 - **Failure drills:** `app/tests/test_offline_ci_workflow.py::test_deploy_fails_before_secrets_when_the_sandbox_has_no_egress`
-- **Evidence:** `tools/requirements-ci.txt`, `docs/dependency-security-audit-2026-09-13.md`, `tools/android-toolchain.sh`
+- **Evidence:** `tools/requirements-ci.txt`, `docs/dependency-security-audit-2026-09-13.md`, `tools/android-toolchain.sh`, `tools/package/linux-baseline/stage-qt.sh`, `tools/package/linux-baseline/stage-packages.sh`, `tools/package/linux-baseline/oci_rootfs.py`, `tools/package/macos_universal_on_mac.sh`, `tools/clean_machine_vm.py`
 
 <a id="code-signing-timestamps"></a>
 
@@ -247,7 +292,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Observes:** Recipient email address, subject and body of verification, password, invitation, and notice email, a ForkMesh send id, and delivery, bounce, and spam events. Open and click events only if the operator's plan enables tracking.
 - **Retention:** Mailtrap keeps email logs per the operator's plan. ForkMesh keeps send status rows keyed by account blind index and webhook event ids for replay rejection.
 - **Jurisdiction:** Mailtrap (Railsware); data region per the operator's Mailtrap account.
-- **Canonical data:** None. Account email addresses are canonical in D1, encrypted; Mailtrap message ids only settle delivery status.
+- **Canonical data:** None. Account email addresses are canonical in the relay database, encrypted; Mailtrap message ids only settle delivery status.
 - **When it is gone:** Verification, password, and notice email is not delivered and the status page's email system turns red. Signup falls back to the administrator verification queue; a failed notice never undoes the change it announces. Git, accounts, and collaboration continue.
 - **Recovery:** Resend from the account page or administrator console after Mailtrap recovers; delivery status settles from the next webhook or log lookup.
 - **Alternative:** A self-host may leave MAILTRAP_API_TOKEN unset and verify accounts from the administrator queue. No other email provider adapter exists yet.
@@ -358,12 +403,12 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Hosts:** `sentry.io`, `o000000.ingest.sentry.io`
 - **Credentials:** `SENTRY_DSN`, `SENTRY_CRON_CHECKIN_MARGIN_MINUTES`, `SENTRY_CRON_MAX_RUNTIME_MINUTES`, `SENTRY_CRON_MONITOR_SLUG`, `SENTRY_CRON_TIMEZONE`
 - **Observes:** A generalized, redacted route, method, status, service host, Cloudflare Ray id, coarse edge colo, transport versions, and code stack locations. No raw IP, country, User-Agent, cookies, authorization, or query strings; private-repository routes are replaced by a fixed redaction.
-- **Retention:** Set by the operator's Sentry organization; the D1 error log is kept separately.
+- **Retention:** Set by the operator's Sentry organization; the relay's own error log (the error_log table) is kept separately.
 - **Jurisdiction:** The host inside SENTRY_DSN: sentry.io (Functional Software, Inc., United States) or a self-hosted Sentry.
-- **Canonical data:** None. D1 error rows remain the operator's own record.
-- **When it is gone:** Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the D1 error log still records the event.
+- **Canonical data:** None. The relay's error_log rows remain the operator's own record.
+- **When it is gone:** Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the relay's error log still records the event.
 - **Recovery:** Nothing to replay; new errors report once Sentry recovers.
-- **Alternative:** Leave SENTRY_DSN unset and read the D1 error log, or self-host Sentry.
+- **Alternative:** Leave SENTRY_DSN unset and read the relay's error log, or self-host Sentry.
 - **Failure drills:** `app/tests/test_sentry_worker.py::test_worker_exception_capture_does_not_raise_from_reporting_failures`, `app/tests/test_leaderboards_partial_failure.py::test_telemetry_failure_cannot_sink_the_response`, `app/tests/test_d1_transient_errors.py::test_d1_outage_is_logged_to_d1_only_never_to_sentry`
 - **Evidence:** `app/src/entry.py`, `app/.env.production.example`
 
@@ -451,7 +496,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Observes:** The Worker's egress IP on a cron refresh. Visitors never contact CelesTrak.
 - **Retention:** Set by CelesTrak.
 - **Jurisdiction:** CelesTrak (United States).
-- **Canonical data:** None. The last good snapshot is kept in D1.
+- **Canonical data:** None. The last good snapshot is kept in the relay database.
 - **When it is gone:** World satellites keep the last good orbital snapshot and record a refresh status.
 - **Recovery:** The next cron refresh replaces the snapshot.
 - **Alternative:** A self-host omits the World sky layer.
@@ -464,16 +509,17 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 - **Needed:** Optional, off unless enabled
 - **Kind:** social
-- **Components:** app-worker
+- **Components:** app-worker, marketplace-package
+- **Hosts:** `mastodon.online`, `fosstodon.org`, `hachyderm.io`, `mas.to`, `infosec.exchange`
 - **Observes:** Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address.
 - **Retention:** Set by each remote server; deletes are federated but cannot be enforced.
 - **Jurisdiction:** Wherever each follower's server operates.
 - **Canonical data:** ForkMesh is canonical for its own actors and posts; remote actor records are cached copies of what peers publish.
 - **When it is gone:** Delivery to that peer is queued for retry; local posting and every other feature continue.
-- **Recovery:** Queued deliveries retry from the D1 outbox.
+- **Recovery:** Queued deliveries retry from the outbox in the relay database.
 - **Alternative:** Disable federation; local posts remain.
 - **Failure drills:** `app/tests/test_ap_post_delete.py::test_delete_drops_local_even_when_federation_disabled`
-- **Evidence:** `app/src/activitypub.py`, `app/src/fediverse_routes.py`
+- **Evidence:** `app/src/activitypub.py`, `app/src/fediverse_routes.py`, `marketplace/packages/crm/manifest.json`
 
 <a id="ai-providers"></a>
 
@@ -482,7 +528,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Optional, off unless enabled
 - **Kind:** ai-provider
 - **Components:** desktop, mobile
-- **Hosts:** `api.anthropic.com`, `api.openai.com`, `claude.ai`, `chatgpt.com`
+- **Hosts:** `api.anthropic.com`, `api.openai.com`, `claude.ai`, `chatgpt.com`, `auth.openai.com`
 - **Observes:** Prompts the user chooses to send, including issue threads, pull request diffs, and repository context, with the user's own API key; usage and cost queries for that key. Agent CLI install scripts are downloaded from claude.ai and chatgpt.com when the user installs them on a node.
 - **Retention:** Set by the provider for the user's own account.
 - **Jurisdiction:** Anthropic PBC (United States); OpenAI (United States).
@@ -495,21 +541,23 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 <a id="vultr"></a>
 
-### Vultr server provisioning
+### Vultr virtual machines for the core nodes and runners, and one-click mirror hosts
 
-- **Needed:** Optional, off unless enabled
-- **Kind:** infrastructure
-- **Components:** app-worker, desktop
+- **Needed:** Mandatory for the hosted service
+- **Kind:** hosting, infrastructure
+- **Components:** app-worker, world-worker, operator-tools, desktop
 - **Hosts:** `api.vultr.com`
-- **Observes:** The user's own Vultr API key and the instance they create, including cloud-init data with the Cloudflare token and payout address they supplied.
-- **Retention:** Set by Vultr for the user's account. ForkMesh does not store the key.
-- **Jurisdiction:** Vultr (The Constant Company, United States).
-- **Canonical data:** Vultr is canonical for the virtual machine only.
-- **When it is gone:** One-click mirror host creation fails at that step; existing hosts keep running.
-- **Recovery:** Retry provisioning.
-- **Alternative:** Install the mirror node on any Linux host with install.sh.
-- **Known gap:** No drill simulates a Vultr API outage during provisioning.
-- **Evidence:** `app/src/start_setup.py`, `desktop/src/MainWindowChat.cpp`
+- **Credentials:** `VULTR_API_KEY`
+- **Observes:** Vultr runs the machines that serve app.forkmesh.com and world.forkmesh.com: three core nodes (currently n3, n4, and n5) and the runner r1, all in its ewr region. As the hosting provider it has physical and hypervisor access to their disks, memory, and network traffic, which hold the replicated rqlite database (accounts, sessions, the catalog, collaboration, presence, and health data; sensitive fields encrypted under DATA_KEY, which the cores hold only in memory), repositories hosted on the cores, and the HTTPS traffic Caddy terminates. The Vultr API sees the operator's key and the instances the fleet tools and the core autoscaler create. Separately, a user who chooses one-click mirror hosting sends their own Vultr API key and the instance's cloud-init data, including the Cloudflare token and payout address they supplied.
+- **Retention:** Set by Vultr for the instances and their disks. Data on the cores is kept as the relay data retention page describes. Nightly rqlite backups are pulled off Vultr to the operator box, encrypted with age, and kept as 7 daily and 4 weekly copies. ForkMesh does not store a user's own Vultr key.
+- **Jurisdiction:** Vultr (The Constant Company, United States); the fleet runs in the ewr region (New Jersey).
+- **Canonical data:** The core nodes are canonical for hosted accounts, sessions, device and SSH public keys, organization membership, the catalog, pull and issue inboxes, routing health, and repositories hosted on the cores. The data is in rqlite, replicated across the three cores, and Cloudflare D1 and Durable Objects are emulated on top of it. Not canonical for repositories published from users' own nodes, which live on those nodes, mirrors, and desktops, or for signed .forkmesh records, which live in Git. For a user's mirror host, Vultr is canonical for the virtual machine only.
+- **When it is gone:** One core can fail: rqlite keeps quorum with the other two, and the operator box's DNS health loop takes the failed core out of the app and world records after three failed probes. Losing the region or the account stops app.forkmesh.com and world.forkmesh.com (dashboard, API, accounts, chat, catalog, and Git over HTTPS) and the runner's Actions and agent runs; the forkmesh.com pages on Cloudflare keep serving. Independent mirrors keep serving Git clone and fetch, and desktops keep local Git, signed records, and direct mirror access. One-click mirror host creation fails at that step; existing user hosts keep running.
+- **Recovery:** A failed core rejoins or is replaced from deploy/fleet.toml with tools/next_fleet.py. After data loss, decrypt the newest verified nightly backup with tools/next_backup.py restore and load it through the rqlite leader's /db/load. Retry a failed mirror host provisioning.
+- **Alternative:** A self-hosted instance runs the same app on any Linux server it owns, and the mirror node installs on any Linux host with install.sh. Moving the hosted service to another provider means provisioning new cores and restoring a backup; the fleet tools only create Vultr instances.
+- **Failure drills:** `deploy/tests/test_next_dns.py::test_production_failover_removes_from_both_names_and_readds`, `app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising`, `app/host/tests_unit/test_autoscale.py::test_boot_timeout_destroys_a_node_that_never_joined`
+- **Known gap:** All three cores and the runner are in one Vultr region, and no drill covers losing the region or the account.
+- **Evidence:** `deploy/fleet.toml`, `docs/OPERATIONS.md`, `tools/next_fleet.py`, `tools/next_backup.py`, `app/host/forkmesh_host/vultr_guard.py`, `app/host/forkmesh_host/d1_rqlite.py`, `app/host/forkmesh_host/durable.py`, `desktop/src/MainWindowChat.cpp`
 
 <a id="crm-package-providers"></a>
 
@@ -620,6 +668,226 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Known gap:** Failure is local to each chosen remote; no aggregate drill exists.
 - **Evidence:** `server/config.go`, `app/src/microjobs_runtime.py`, `app/src/marketplace_runtime.py`
 
+<a id="cloudflare-turnstile"></a>
+
+### Cloudflare Turnstile on the signup and password-reset forms
+
+- **Needed:** Degrades one feature
+- **Kind:** identity
+- **Components:** app-browser, app-worker
+- **Hosts:** `challenges.cloudflare.com`
+- **Credentials:** `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`
+- **Observes:** The visitor's IP address, User-Agent and browser signals while the widget runs on /signup and /forgot-password; the app sends Cloudflare the widget token and the client IP to verify it.
+- **Retention:** Set by Cloudflare.
+- **Jurisdiction:** Cloudflare, Inc. (United States).
+- **Canonical data:** None.
+- **When it is gone:** On ForkMesh Next the gated forms fail closed with 503 turnstile_unavailable; signed-in use, desktop node registration and every other page keep working.
+- **Recovery:** None required; the forms work again once siteverify answers.
+- **Alternative:** Leave the keys unset off the VPS platform, which selects Cloudflare's always-pass test pair.
+- **Failure drills:** `app/tests/test_turnstile.py::test_siteverify_failure_timeout_and_garbage_fail_closed`
+- **Known gap:** The privacy notice does not name Turnstile yet.
+- **Evidence:** `app/src/turnstile.py`, `app/public/signup.html`, `app/public/forgot-password.html`
+
+<a id="mail-provider-alternatives"></a>
+
+### SendGrid and Mailgun as alternative mail providers
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** email
+- **Components:** app-worker
+- **Hosts:** `api.sendgrid.com`, `api.mailgun.net`, `api.eu.mailgun.net`
+- **Credentials:** `MAILGUN_API_URL`, `SENDGRID_API_URL`
+- **Observes:** When an operator selects SendGrid or Mailgun instead of Mailtrap: recipient addresses and the content of transactional and marketing mail.
+- **Retention:** Set by the provider.
+- **Jurisdiction:** Twilio Inc. (SendGrid) or Sinch/Mailgun Technologies (United States or the EU region the operator picks).
+- **Canonical data:** None; the provider only relays mail.
+- **When it is gone:** Mail sends fail and are logged as skipped; account actions still complete.
+- **Recovery:** Retry, or switch the provider back to Mailtrap.
+- **Alternative:** Mailtrap, the default provider.
+- **Known gap:** No drill sends through SendGrid or Mailgun with the provider unreachable.
+- **Evidence:** `app/src/mail_providers.py`
+
+<a id="workflow-integrations"></a>
+
+### Third-party APIs called by workflow integration steps
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** forge-api, email, payments, ai-provider, social, infrastructure
+- **Components:** app-worker
+- **Hosts:** `api-free.deepl.com`, `api-inference.huggingface.co`, `api-m.paypal.com`, `api-ssl.bitly.com`, `api.airtable.com`, `api.attio.com`, `api.baserow.io`, `api.bitbucket.org`, `api.box.com`, `api.brevo.com`, `api.calendly.com`, `api.clickup.com`, `api.cohere.com`, `api.digitalocean.com`, `api.dropboxapi.com`, `api.groq.com`, `api.helpscout.net`, `api.hubapi.com`, `api.intercom.io`, `api.jotform.com`, `api.kit.com`, `api.lemonsqueezy.com`, `api.linear.app`, `api.linkedin.com`, `api.mistral.ai`, `api.mixpanel.com`, `api.monday.com`, `api.n8n.io`, `api.netlify.com`, `api.notion.com`, `api.openweathermap.org`, `api.opsgenie.com`, `api.paddle.com`, `api.perplexity.ai`, `api.pipedrive.com`, `api.postmarkapp.com`, `api.pushover.net`, `api.resend.com`, `api.segment.io`, `api.stripe.com`, `api.telegram.org`, `api.todoist.com`, `api.trello.com`, `api.twilio.com`, `api.typeform.com`, `api.vercel.com`, `api.webflow.com`, `api.zoom.us`, `api2.amplitude.com`, `app.asana.com`, `circleci.com`, `connect.mailerlite.com`, `connect.squareup.com`, `en.wikipedia.org`, `events.pagerduty.com`, `generativelanguage.googleapis.com`, `gist.githubusercontent.com`, `gmail.googleapis.com`, `graph.facebook.com`, `graph.microsoft.com`, `hooks.zapier.com`, `matrix.org`, `ntfy.sh`, `oauth.reddit.com`, `plausible.io`, `quickbooks.api.intuit.com`, `raw.githubusercontent.com`, `sheets.googleapis.com`, `slack.com`, `www.google-analytics.com`, `www.googleapis.com`, `www.zohoapis.com`, `abc.supabase.co`, `abc.upstash.io`, `your-org.my.salesforce.com`, `your-team.atlassian.net`, `project-default-rtdb.firebaseio.com`
+- **Observes:** Only for a user who adds an integration step to a workflow: the credential they paste and whatever data the step sends or reads. Importing a workflow by URL fetches it from GitHub, a gist or the n8n template API.
+- **Retention:** Set by each provider.
+- **Jurisdiction:** Each provider's own, chosen by the user who configures the step.
+- **Canonical data:** The provider is canonical for its own records; the workflow definition stays in ForkMesh.
+- **When it is gone:** The step fails and the run stops unless the step continues on failure; other workflows and ForkMesh itself are unaffected.
+- **Recovery:** Rerun the workflow.
+- **Alternative:** Use a webhook step to a service the user hosts, or leave the integration out.
+- **Failure drills:** `app/tests/test_workflows.py::test_http_errors_stop_the_run_unless_continue_on_fail`
+- **Evidence:** `app/src/workflow_integrations.py`, `app/src/workflow_templates.py`, `app/src/workflows_runtime.py`, `tools/reddit_scout.py`
+
+<a id="nutrition-data"></a>
+
+### Open Food Facts and USDA FoodData Central for the Calories package
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** infrastructure
+- **Components:** marketplace-package
+- **Hosts:** `world.openfoodfacts.org`, `search.openfoodfacts.org`, `api.nal.usda.gov`
+- **Observes:** For users of the Calories package: the food names and barcodes they look up.
+- **Retention:** Set by Open Food Facts and the USDA.
+- **Jurisdiction:** Open Food Facts (France) and the U.S. Department of Agriculture.
+- **Canonical data:** None; results are looked up on demand.
+- **When it is gone:** Food search in the package returns nothing; logged entries are unaffected.
+- **Recovery:** Search again.
+- **Alternative:** Enter foods by hand.
+- **Known gap:** No drill covers the food databases being unreachable.
+- **Evidence:** `marketplace/packages/calories/content/worker/calories.py`
+
+<a id="link-previews"></a>
+
+### oEmbed and public APIs for chat link previews
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** media-embed, social
+- **Components:** mobile, app-worker
+- **Hosts:** `vimeo.com`, `www.tiktok.com`, `www.dailymotion.com`, `www.loom.com`, `open.spotify.com`, `soundcloud.com`, `codepen.io`, `www.flickr.com`, `publish.twitter.com`, `hacker-news.firebaseio.com`, `crates.io`, `store.steampowered.com`, `api.stackexchange.com`, `xkcd.com`
+- **Observes:** The link a user posted in chat and the device's IP address, when a preview for that site is built.
+- **Retention:** Set by each site.
+- **Jurisdiction:** Each site's own.
+- **Canonical data:** None.
+- **When it is gone:** The link shows without a rich preview.
+- **Recovery:** None required.
+- **Alternative:** Turn off link previews.
+- **Known gap:** No drill builds a preview with the site unreachable.
+- **Evidence:** `native/ios/ForkMeshCore/Sources/FMChat/ViewModels/ChatLinkPreviewService.swift`, `native/ios/ForkMeshCore/Sources/FMChat/Threads/ChatLinkSites.swift`, `app/src/plugin_race.py`
+
+<a id="giphy"></a>
+
+### GIPHY for GIFs in comments
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** media-embed, social
+- **Components:** app-browser, app-worker
+- **Hosts:** `api.giphy.com`, `media.giphy.com`
+- **Observes:** The app sends GIPHY the trending and search requests a signed-in user makes in the GIF picker, with the administrator's key; every browser that shows a comment with a GIF loads it from GIPHY's media hosts, which see the viewer's IP address.
+- **Retention:** Set by GIPHY.
+- **Jurisdiction:** GIPHY, Inc. (United States), owned by Shutterstock.
+- **Canonical data:** None; a comment keeps only the GIF's media address.
+- **When it is gone:** The GIF picker reports the failure and GIFs already in comments do not load; comments, stickers and reactions keep working.
+- **Recovery:** None required; searches work again once GIPHY answers.
+- **Alternative:** Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance.
+- **Failure drills:** `app/tests/test_comment_gifs.py::test_results_are_cached_and_upstream_failures_are_reported`
+- **Known gap:** The privacy notice does not name GIPHY yet.
+- **Evidence:** `app/src/comment_gifs.py`, `app/public/dashboard/js/09-comment-gifs.js`, `docs/app/comment-gifs.md`
+
+<a id="video-mix-sources"></a>
+
+### Invidious and YouTube thumbnails for Video Mix DJ Studio
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** media-embed
+- **Components:** marketplace-package, mobile
+- **Hosts:** `api.invidious.io`, `i.ytimg.com`
+- **Observes:** For users of the package: video searches, the device's IP address and the thumbnails it loads.
+- **Retention:** Set by the Invidious instance and Google.
+- **Jurisdiction:** The chosen Invidious instance's operator; Google LLC (United States) for thumbnails.
+- **Canonical data:** None.
+- **When it is gone:** Video search in the package fails; saved mixes are unaffected.
+- **Recovery:** Search again or pick another instance.
+- **Alternative:** Add local videos.
+- **Known gap:** No drill covers the instance list being unreachable.
+- **Evidence:** `marketplace/packages/video-mix-dj-studio/content/web/page.js`
+
+<a id="app-store-lookup"></a>
+
+### Apple iTunes lookup for the current App Store version
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** package-registry
+- **Components:** mobile, marketplace-package
+- **Hosts:** `itunes.apple.com`
+- **Observes:** The device's IP address and the app id being looked up.
+- **Retention:** Set by Apple.
+- **Jurisdiction:** Apple Inc. (United States).
+- **Canonical data:** None.
+- **When it is gone:** The update prompt and the Marketing package's App Store figures are not refreshed.
+- **Recovery:** None required; the next check retries.
+- **Alternative:** None needed.
+- **Known gap:** No drill covers the lookup failing.
+- **Evidence:** `native/ios/ForkMeshCore/Sources/FMApi/Navigation/ClientVersionGate.swift`, `marketplace/packages/marketing/content/worker/marketing.py`
+
+<a id="hugging-face-models"></a>
+
+### Hugging Face downloads for local voices and models
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** ai-provider
+- **Components:** desktop, mobile
+- **Hosts:** `huggingface.co`
+- **Observes:** The device's IP address and which voice or model file is downloaded.
+- **Retention:** Set by Hugging Face.
+- **Jurisdiction:** Hugging Face, Inc. (United States).
+- **Canonical data:** None; files are cached on the device after download.
+- **When it is gone:** A voice or local model that is not yet downloaded cannot be used.
+- **Recovery:** Download again.
+- **Alternative:** Use a voice or model already on the device.
+- **Known gap:** No drill covers the download failing.
+- **Evidence:** `desktop/src/AgentAnnouncerVoice.cpp`, `native/ios/ForkMeshCore/Sources/FMLocalAI/HuggingFaceSnapshot.swift`
+
+<a id="duckduckgo-web-research"></a>
+
+### DuckDuckGo HTML search for the phone assistant
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** ai-provider
+- **Components:** mobile
+- **Hosts:** `html.duckduckgo.com`
+- **Observes:** The search query the assistant runs and the device's IP address.
+- **Retention:** Set by DuckDuckGo.
+- **Jurisdiction:** Duck Duck Go, Inc. (United States).
+- **Canonical data:** None.
+- **When it is gone:** The assistant answers without web results.
+- **Recovery:** None required.
+- **Alternative:** Ask without web research.
+- **Known gap:** No drill covers search being unreachable.
+- **Evidence:** `native/ios/ForkMeshCore/Sources/FMAssistant/WebResearch.swift`
+
+<a id="google-public-dns"></a>
+
+### Google Public DNS as the instance installer's second resolver
+
+- **Needed:** Operator tooling only
+- **Kind:** dns
+- **Components:** installer
+- **Hosts:** `dns.google`
+- **Observes:** The domain name the installer is checking and the server's IP address.
+- **Retention:** Set by Google.
+- **Jurisdiction:** Google LLC (United States).
+- **Canonical data:** None.
+- **When it is gone:** The installer falls back to Cloudflare DNS over HTTPS.
+- **Recovery:** None required.
+- **Alternative:** Cloudflare DNS over HTTPS, tried first.
+- **Known gap:** No drill runs the installer with both resolvers unreachable.
+- **Evidence:** `www/public/install-instance.sh`
+
+<a id="browser-extension-sites"></a>
+
+### Sites the browser extension reads in the user's own browser
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** social
+- **Components:** marketplace-package
+- **Hosts:** `old.reddit.com`, `console.x.com`, `developer.x.com`, `developer.twitter.com`, `api-console.zoho.com`, `api-console.zoho.eu`, `api-console.zoho.in`, `api-console.zoho.com.au`, `api-console.zoho.jp`, `api-console.zohocloud.ca`
+- **Observes:** Nothing beyond what the user's own signed-in browser sends: the extension reads subreddit rules pages and fills developer-portal setup forms the user opens.
+- **Retention:** Set by Reddit, X and Zoho.
+- **Jurisdiction:** Each site's own.
+- **Canonical data:** None.
+- **When it is gone:** The Reddit walk or the setup helper stops; the rest of the extension works.
+- **Recovery:** Run the step again.
+- **Alternative:** Do the setup by hand.
+- **Known gap:** No drill covers these pages being unreachable.
+- **Evidence:** `marketplace/packages/browser-extension/content/extension/background.js`, `marketplace/packages/browser-extension/content/extension/manifest.json`
+
 ## Stored third-party identifiers
 
 | Table | Column | Service | Protection |
@@ -680,10 +948,13 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `about.gitlab.com` | documentation | Import provider description. |
 | `docs.gitlab.com` | documentation | Import token guidance. |
 | `docs.codeberg.org` | documentation | Import token guidance. |
+| `about.gitea.com` | documentation | Import provider terms. |
+| `docs.gitea.com` | documentation | Import API usage guidance. |
 | `modelcontextprotocol.io` | documentation | MCP server docstring. |
 | `forkmesh.your-domain` | documentation | Self-host placeholder in the docs landing page. |
 | `www.w3.org` | namespace | XML, SVG, and ActivityStreams namespace identifiers. |
 | `schema.org` | namespace | JSON-LD structured data vocabulary. |
+| `www.ietf.org` | namespace | RTP transport-wide congestion control header-extension URI named in call SDP. |
 | `purl.org` | namespace | RSS content module namespace. |
 | `search.yahoo.com` | namespace | Media RSS namespace. |
 | `w3id.org` | namespace | ActivityPub security vocabulary. |
@@ -692,5 +963,78 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `schemas.android.com` | namespace | Android XML namespace. |
 | `www.apple.com` | namespace | Property list DTD identifier. |
 | `www.andymatuschak.org` | namespace | Sparkle appcast XML namespace. |
+| `ads.google.com` | link | Ad manager link in the Marketing package. |
+| `ads.microsoft.com` | link | Ad manager link in the Marketing package. |
+| `ads.nextdoor.com` | link | Ad manager link in the Marketing package. |
+| `ads.pinterest.com` | link | Ad manager link in the Marketing package. |
+| `ads.reddit.com` | link | Ad manager link in the Marketing package. |
+| `ads.snapchat.com` | link | Ad manager link in the Marketing package. |
+| `ads.spotify.com` | link | Ad manager link in the Marketing package. |
+| `ads.x.com` | link | Ad manager link in the Marketing package. |
+| `adsmanager.facebook.com` | link | Ad manager link in the Marketing package. |
+| `advertising.amazon.com` | link | Ad manager link in the Marketing package. |
+| `advertising.walmart.com` | link | Ad manager link in the Marketing package. |
+| `biz.yelp.com` | link | Ad manager link in the Marketing package. |
+| `searchads.apple.com` | link | Ad manager link in the Marketing package. |
+| `www.ebay.com` | link | Ad manager link in the Marketing package. |
+| `www.etsy.com` | link | Ad manager link in the Marketing package. |
+| `www.quora.com` | link | Ad manager link in the Marketing package. |
+| `www.tripadvisor.com` | link | Ad manager link in the Marketing package. |
+| `diabetesfoodhub.org` | link | Recipe source link in the phone food catalog. |
+| `diet.mayoclinic.org` | link | Recipe source link in the phone food catalog. |
+| `health.clevelandclinic.org` | link | Recipe source link in the phone food catalog. |
+| `huskynutritionsport.education.uconn.edu` | link | Recipe source link in the phone food catalog. |
+| `www.aldi.us` | link | Recipe source link in the phone food catalog. |
+| `www.diabetesaustralia.com.au` | link | Recipe source link in the phone food catalog. |
+| `www.healthyfood.com` | link | Recipe source link in the phone food catalog. |
+| `www.heartfoundation.org.au` | link | Recipe source link in the phone food catalog. |
+| `git-scm.com` | documentation | Manual page linked from the desktop's destructive command review. |
+| `cli.github.com` | documentation | Manual page linked from the desktop's destructive command review. |
+| `docs.python.org` | documentation | Manual page linked from the desktop's destructive command review. |
+| `docs.pytest.org` | documentation | Manual page linked from the desktop's destructive command review. |
+| `man7.org` | documentation | Manual page linked from the desktop's destructive command review. |
+| `www.sudo.ws` | documentation | Manual page linked from the desktop's destructive command review. |
+| `docs.aws.amazon.com` | documentation | Deploy guide linked from the marketplace page. |
+| `docs.netlify.com` | documentation | Deploy guide linked from the marketplace page. |
+| `fly.io` | documentation | Deploy guide linked from the marketplace page. |
+| `vercel.com` | documentation | Deploy guide linked from the marketplace page. |
+| `about.me` | link | Author website on the Docs package's Dependencies page. |
+| `alexgaynor.net` | link | Author website on the Docs package's Dependencies page. |
+| `baroquesoftware.com` | link | Author website on the Docs package's Dependencies page. |
+| `blog.ian.stapletoncordas.co` | link | Author website on the Docs package's Dependencies page. |
+| `davidism.com` | link | Author website on the Docs package's Dependencies page. |
+| `florimond.dev` | link | Author website on the Docs package's Dependencies page. |
+| `graingert.co.uk` | link | Author website on the Docs package's Dependencies page. |
+| `hugovk.dev` | link | Author website on the Docs package's Dependencies page. |
+| `karpetrosyan.dev` | link | Author website on the Docs package's Dependencies page. |
+| `kimdavies.com` | link | Author website on the Docs package's Dependencies page. |
+| `langui.sh` | link | Author website on the Docs package's Dependencies page. |
+| `lucumr.pocoo.org` | link | Author website on the Docs package's Dependencies page. |
+| `lukasa.co.uk` | link | Author website on the Docs package's Dependencies page. |
+| `pgjones.dev` | link | Author website on the Docs package's Dependencies page. |
+| `requires.io` | link | Author website on the Docs package's Dependencies page. |
+| `richard.levitte.org` | link | Author website on the Docs package's Dependencies page. |
+| `sethmlarson.dev` | link | Author website on the Docs package's Dependencies page. |
+| `vorpus.org` | link | Author website on the Docs package's Dependencies page. |
+| `wallstreet.io` | link | Author website on the Docs package's Dependencies page. |
+| `www.lovelydinosaur.com` | link | Author website on the Docs package's Dependencies page. |
+| `yohanboniface.me` | link | Author website on the Docs package's Dependencies page. |
+| `apps.apple.com` | link | App Store page links. |
+| `discord.gg` | link | Discord invite links. |
+| `www.google.com` | link | Site search link in the Marketing package. |
+| `fedi.directory` | link | Directory link in the Marketing package. |
+| `opencollective.com` | link | ForkMesh's Open Collective page. |
+| `git.owaspblt.org` | link | Homepage link to an instance. |
+| `netnewswire.com` | link | Credit link in the RSS Reader package. |
+| `musespark.ai` | documentation | Model documentation link in an agent package. |
+| `cwe.mitre.org` | documentation | CWE definitions linked from security findings. |
+| `unlicense.org` | documentation | Link inside the Unlicense license text. |
+| `flamerix.ai` | documentation | Copyright line in the MIT license header of the desktop's agent-summary preload script. |
+| `n8n.io` | link | Placeholder example in the workflow import field. |
+| `appstoreconnect.apple.com` | link | App Store Connect link printed by an operator tool. |
+| `codemagic.io` | link | Build link printed by an operator tool. |
+| `aus.social` | link | Example profile URL in the browser extension's Mastodon parser. |
+| `apache.org` | namespace | Xerces XML parser feature identifier. |
+| `www.sitemaps.org` | namespace | Sitemap XML namespace. |
 
 <!-- external-dependency-map:end -->

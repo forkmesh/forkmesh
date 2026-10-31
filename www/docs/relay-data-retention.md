@@ -32,7 +32,7 @@ signed header.
 | --- | --- | --- |
 | Accounts, devices, SSH keys, encryption keys | Until deleted; stale devices 60 days | Account delete |
 | Sessions | Expired and revoked sessions pruned on login | Sign out; account delete |
-| Repository catalog, health, inboxes, webhooks, provider mirrors | Until deleted; outboxes until delivered or retries exhausted | Repository or account delete |
+| Repository catalog, health, inboxes, webhooks, provider mirrors, Internet Archive backups | Until deleted; outboxes until delivered or retries exhausted | Repository or account delete |
 | Chat backlog (encrypted) | 7 days, ≤ 500 messages and 16 MiB per room; DMs removed on recipient ack | Sweep; message, room or account delete |
 | Notifications | 90 days, ≤ 500 per recipient | Account delete |
 | Email delivery records | 90 days | Expiry |

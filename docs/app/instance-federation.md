@@ -181,6 +181,12 @@ What "each World is connected" means in the code:
   layout, so walking through a portal lands next to the portal that leads
   back. A slot that has no hexagon is ignored and the visitor arrives as
   usual.
+- **Crossing the road.** Next to the portal boards, walking across the road
+  between an instance hexagon and the ForkMesh hexagons travels between the
+  two Worlds (`?from=`, `&slot=`, `&pos=`), and an instance's World is drawn
+  as its own hexagon with the ForkMesh World next door instead of a copy of
+  the ForkMesh town. See
+  [INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon).
 - The legacy relay federation (`/api/world/instances`, approved `relays`
   rows drawn as small towers in the Fediverse district) is separate and
   unchanged.

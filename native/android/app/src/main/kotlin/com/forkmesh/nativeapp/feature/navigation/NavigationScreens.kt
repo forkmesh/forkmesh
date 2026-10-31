@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.forkmesh.nativeapp.ui.kit.FmAvatar
+import com.forkmesh.nativeapp.ui.kit.FmMenuTile
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.draw.drawWithContent
@@ -284,70 +285,6 @@ class ApprovalRouteScreen(private val id: String) : Screen() {
                 }
             }
         }
-    }
-}
-
-class TourScreen : Screen() {
-    override val title: String get() = "Tour"
-    private var page by mutableStateOf(0)
-
-    private val pages = listOf(
-        Triple("auto_awesome", "Agents first", "Check on your agents, answer what needs you and start new runs from the Agents tab."),
-        Triple("inbox", "One Inbox", "Pings, review requests, assigned tasks, mentions and approvals land in one list."),
-        Triple("integration_instructions", "Code", "Browse, review and merge. Links from anywhere open the right repository, issue or pull request."),
-        Triple("forum", "Chat", "Channels, direct messages and the local mesh room stay one tap away."),
-        Triple("edit", "The prompt button", "It is always next to the tabs. It opens the composer aimed at whatever is on screen."),
-        Triple("account_circle", "You and search", "Everything else is in the You hub behind your avatar, in search, or in the command palette."),
-    )
-
-    @Composable
-    override fun Content(navigator: Navigator) {
-        val c = Fm.colors
-        val (icon, heading, body) = pages[page]
-        Column(
-            Modifier.fillMaxSize().background(c.bgBase).windowInsetsPadding(fmSafeAreaInsets()).padding(FmSpace.x5),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextAction("Skip", onClick = { finish(navigator) })
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                FmIcon(icon, size = 56.dp, tint = c.accent)
-                Spacer(Modifier.height(FmSpace.x4))
-                Text(heading, style = Fm.text.headlineSmall, modifier = Modifier.semantics { heading() })
-                Spacer(Modifier.height(FmSpace.x3))
-                Text(body, style = Fm.text.bodyLarge.copy(color = c.textSecondary))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("${page + 1} of ${pages.size}", style = Fm.text.bodySmall.copy(color = c.textTertiary))
-                Row {
-                    if (page > 0) TextAction("Back", onClick = { page-- })
-                    TextAction(if (page == pages.lastIndex) "Done" else "Next", onClick = {
-                        if (page == pages.lastIndex) finish(navigator) else page++
-                    })
-                }
-            }
-        }
-    }
-
-    private fun finish(navigator: Navigator) {
-        Services.get<PrefStore>()?.putBool(TOUR_KEY, true)
-        navigator.pop()
-    }
-
-    companion object {
-        const val TOUR_KEY = "nav/tour.v1"
-    }
-}
-
-@Composable
-fun ShellFirstRun(navigator: Navigator) {
-    LaunchedEffect(Unit) {
-        val prefs = Services.get<PrefStore>() ?: return@LaunchedEffect
-        if (prefs.getBool(TourScreen.TOUR_KEY) == true) return@LaunchedEffect
-        if (!PackageGateFeature.isInstalled(PackageGate.TOUR)) return@LaunchedEffect
-        prefs.putBool(TourScreen.TOUR_KEY, true)
-        navigator.push(TourScreen())
     }
 }
 
@@ -827,7 +764,7 @@ private fun YouHubContent(scope: CoroutineScope, onClose: () -> Unit, onWhatsNew
         if (status.message != null) FmInlineStatus(status)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
             Box {
-                FmAvatar(account.label.ifEmpty { "Guest" }, 40.dp, avatarPng = session?.avatarPng.orEmpty())
+                FmAvatar(account.label.ifEmpty { "Guest" }, 44.dp, avatarPng = session?.avatarPng.orEmpty())
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
@@ -838,42 +775,58 @@ private fun YouHubContent(scope: CoroutineScope, onClose: () -> Unit, onWhatsNew
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(if (guest) "Guest" else account.label.ifEmpty { "You" }, style = Fm.text.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (described.isNotEmpty()) Text(described, style = Fm.text.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val subtitle = if (guest) "Exploring as a guest" else described
+                if (subtitle.isNotEmpty()) Text(subtitle, style = Fm.text.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (setStatus != null) HubChip("mood", "Set a status") { activate(setStatus) }
         }
-        HubDivider()
-        com.forkmesh.nativeapp.feature.pocket.PocketModeRow(onClose)
-        com.forkmesh.nativeapp.feature.genie.SuggestionModeRow()
-        if (settings != null) {
-            val shown by settings.showTelemetryStrip.collectAsState()
-            HubToggleRow("monitor_heart", "Diagnostics", shown, settings::setShowTelemetryStrip)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(c.textPrimary.copy(alpha = 0.05f))
+                .padding(horizontal = FmSpace.x3),
+        ) {
+            com.forkmesh.nativeapp.feature.pocket.PocketModeRow(onClose)
+            HubRowDivider()
+            com.forkmesh.nativeapp.feature.genie.SuggestionModeRow(tiled = true)
+            if (settings != null) {
+                HubRowDivider()
+                val shown by settings.showTelemetryStrip.collectAsState()
+                HubToggleRow("monitor_heart", "Diagnostics", shown, settings::setShowTelemetryStrip)
+            }
         }
-        if (accountItems.isNotEmpty()) {
-            HubDivider()
+        if (accountItems.size in 1..2) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                accountItems.forEach { item ->
+                    HubChip(item.icon, item.title, destructive = item.action == HubItem.Action.SignOut, modifier = Modifier.weight(1f)) { activate(item) }
+                }
+            }
+        } else if (accountItems.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 accountItems.forEach { item ->
                     HubChip(item.icon, item.title, destructive = item.action == HubItem.Action.SignOut) { activate(item) }
                 }
             }
         }
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.border.copy(alpha = 0.7f)))
         HubVersionRow(onWhatsNew = onWhatsNew, onDiagnostics = onDiagnostics)
     }
 }
 
 @Composable
-private fun HubDivider() {
-    Box(Modifier.fillMaxWidth().height(0.5.dp).background(Fm.colors.textPrimary.copy(alpha = 0.12f)))
+private fun HubRowDivider() {
+    Box(Modifier.fillMaxWidth().padding(start = 40.dp).height(0.5.dp).background(Fm.colors.border.copy(alpha = 0.7f)))
 }
 
 @Composable
 private fun HubToggleRow(icon: String, title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     val c = Fm.colors
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 36.dp).semantics(mergeDescendants = true) {},
+        Modifier.fillMaxWidth().heightIn(min = 46.dp).semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FmIcon(icon, size = 20.dp, tint = c.accent, outlined = true)
+        FmMenuTile { FmIcon(icon, size = 16.dp, tint = c.accent, outlined = true) }
         Spacer(Modifier.width(FmSpace.x3))
         Text(title, Modifier.weight(1f), style = Fm.text.bodyLarge.copy(fontSize = Fm.text.bodyMedium.fontSize * 1.15f))
         FmSwitch(checked = checked, onCheckedChange = onChange)
@@ -881,18 +834,20 @@ private fun HubToggleRow(icon: String, title: String, checked: Boolean, onChange
 }
 
 @Composable
-private fun HubChip(icon: String, title: String, destructive: Boolean = false, onClick: () -> Unit) {
+private fun HubChip(icon: String, title: String, destructive: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val c = Fm.colors
     val tint = if (destructive) c.danger else c.textPrimary
+    val shape = RoundedCornerShape(12.dp)
     Row(
-        Modifier
-            .heightIn(min = 34.dp)
-            .clip(CircleShape)
-            .background(tint.copy(alpha = 0.12f))
+        modifier
+            .heightIn(min = 42.dp)
+            .clip(shape)
+            .background(tint.copy(alpha = 0.07f))
             .clickable(onClick = onClick)
             .padding(horizontal = FmSpace.x3)
             .semantics(mergeDescendants = true) { role = Role.Button },
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
         FmIcon(icon, size = 18.dp, tint = tint, outlined = true)
         Spacer(Modifier.width(FmSpace.x2))
@@ -1057,6 +1012,7 @@ object ShellHomeMetrics {
     val box = 39.dp
     val tileHeight = 66.dp
     val gap = 5.dp
+    val anchorRise = 2.dp
     const val ACROSS = 5
 }
 
@@ -1073,10 +1029,13 @@ internal fun ShellHomeTile(
     heat: Double = 0.0,
     tileHeight: Dp = ShellHomeMetrics.tileHeight,
     updated: Boolean = false,
+    loading: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val c = Fm.colors
+    val unreadBadge = badge > 0 && !running
+    val spinning = loading && !unreadBadge
     val lit = selected || running
     val accent = lit || iconStyle == ShellHomeIconStyle.accent
     val top = if (accent) c.accent else c.textPrimary
@@ -1095,7 +1054,8 @@ internal fun ShellHomeTile(
                 role = Role.Button
                 contentDescription = listOfNotNull(
                     title,
-                    if (badge > 0) "$badge ${if (running) "running" else "new"}" else null,
+                    if (spinning) "Loading" else null,
+                    if (badge > 0 && !spinning) "$badge ${if (running) "running" else "new"}" else null,
                     if (desktopOffline) "desktop offline" else null,
                 ).joinToString(", ")
             },
@@ -1155,23 +1115,26 @@ internal fun ShellHomeTile(
                     outlined = iconStyle != ShellHomeIconStyle.filled,
                 )
             }
-            if (badge > 0) {
-                ShellHomeCountMark(
-                    if (badge > 9999) "${badge / 1000}k" else "%,d".format(badge),
-                    unread = !running,
-                    modifier = Modifier.align(Alignment.TopStart).offset(
-                        x = if (tiled) box - minOf(12.dp, box * 0.28f) else box - inset - iconSize * 0.3f,
-                        y = (if (tiled) minOf(10.dp, box * 0.22f) else inset + 6.dp) - 21.dp,
-                    ),
-                )
-            }
             if (desktopOffline) {
                 val d = if (tiled) corner * 0.3f else inset
                 DesktopOfflineDot(Modifier.align(Alignment.TopStart).offset(x = d - 5.dp, y = box - d - 5.dp))
             }
             if (updated) {
                 val d = if (tiled) corner * 0.3f else inset
-                ShellHomeUpdateDot(Modifier.align(Alignment.TopStart).offset(x = box - d - 5.5.dp, y = box - d - 5.5.dp))
+                ShellHomeUpdateDot(Modifier.align(Alignment.TopStart).offset(x = box - d - 4.5.dp, y = box - d - 4.5.dp))
+            }
+            val anchor = Modifier.align(Alignment.TopStart).offset(
+                x = box - if (tiled) minOf(12.dp, box * 0.28f) else inset + iconSize * 0.12f,
+                y = -ShellHomeMetrics.anchorRise,
+            )
+            if (spinning) {
+                ShellHomeCountSpinner(anchor)
+            } else if (badge > 0) {
+                ShellHomeCountMark(
+                    if (badge > 9999) "${badge / 1000}k" else "%,d".format(badge),
+                    unread = !running,
+                    modifier = anchor,
+                )
             }
         }
         Spacer(Modifier.height(ShellHomeMetrics.gap))
@@ -1192,13 +1155,29 @@ internal fun ShellHomeTile(
 }
 
 @Composable
+fun ShellHomeCountSpinner(modifier: Modifier = Modifier) {
+    val c = Fm.colors
+    Box(
+        modifier
+            .background(c.bgBase, CircleShape)
+            .padding(1.5.dp)
+            .size(19.dp)
+            .background(if (c.dark) c.bgElevated else c.bgRaised, CircleShape)
+            .border(0.5.dp, c.count.copy(alpha = 0.3f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(Modifier.size(11.dp), color = c.count, strokeWidth = 1.5.dp)
+    }
+}
+
+@Composable
 fun ShellHomeUpdateDot(modifier: Modifier = Modifier) {
     val c = Fm.colors
     Box(
         modifier
             .background(c.bgBase, CircleShape)
             .padding(1.5.dp)
-            .size(8.dp)
+            .size(6.dp)
             .background(c.accent, CircleShape),
     )
 }

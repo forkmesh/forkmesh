@@ -72,9 +72,46 @@ FEATURES = (
      ("/start", "/api/start"), ()),
     ("website", "ForkMesh website pages",
      "forkmesh.com's own pages: about, careers, press, pricing, features, "
-     "the ecosystem, leaderboards, the blog and the changelog.",
+     "the ecosystem, leaderboards and the blog.",
      ("/about", "/careers", "/press", "/pricing", "/features", "/ecosystem",
-      "/leaderboards", "/blog", "/changelog", "/market"), ()),
+      "/leaderboards", "/blog", "/market"), ()),
+    ("issue-ai-prompt", "Issue AI prompt",
+     "The copyable \"Fix <issue>: read the issue, make the change\u2026\" "
+     "prompt under an open issue's title.",
+     (), ()),
+    ("fediverse-ui", "Fediverse panels",
+     "The Fediverse thread under issues, pull requests and discussions, and "
+     "the Watch on the fediverse menu of a repository.",
+     (), (r"^/api/repo/[^/]+/[^/]+/fedi-comments$",)),
+    ("changelog", "Changelog",
+     "Platform changelog: what changed in each platform version.",
+     ("/changelog",), ()),
+    ("read-surfaces", "Feeds and lite view",
+     "Atom feeds of a repository's issues, threads, labels and activity, a "
+     "no-JavaScript lite view of every thread, and the forum home page.",
+     (), ()),
+    ("mirror-quota", "Mirror goal",
+     "A Mirrors card on each repository page with a goal for independent "
+     "copies, their health, and a page that asks readers to run one.",
+     (), (r"^/api/repo/[^/]+/[^/]+/mirror-quota$",)),
+    ("mirrored-attachments", "No images from the source forge",
+     "Images hosted by the forge a repository mirrors (GitHub user "
+     "attachments) are shown from the instance's copy, or as a link when "
+     "there is none, so readers' browsers never load them from the forge.",
+     (), ()),
+    ("forum-list", "Forum-style issue lists",
+     "Issue lists open on Newest first, as on GitHub, and each row shows the "
+     "thread's last few commenters.",
+     (), ()),
+    ("post-translate", "Translate posts",
+     "A Translate bar under every post: the site's own machine translations "
+     "(made on the server, see tools/forge_translate.py), shown on hover or "
+     "at once, and the browser's on-device translator for other languages.",
+     (), ()),
+    ("community-translations", "Community translations",
+     "Signed translations that members attach to posts in issues, pull "
+     "requests and discussions, shown beside the original.",
+     (), (r"^/api/repo/[^/]+/[^/]+/translations$",)),
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
@@ -105,7 +142,31 @@ INSTANCE_NOTES = {
     "genie": "The spider at the bottom of each page that offers tips.",
     "developer-docs": "Shows the docs/ folder of this instance's read-only "
                       "forkmesh mirror in the dashboard.",
+    "read-surfaces": "Serves /<owner>/<repo>/issues.atom, /lite and the home "
+                     "page for readers on slow or filtered links and feed readers.",
+    "mirror-quota": "Lets maintainers set how many independent mirrors a "
+                    "repository should have and checks them.",
+    "post-translate": "Translates posts into the reader's language without "
+                      "sending them to a translation service.",
+    "mirrored-attachments": "Never makes readers' browsers fetch images from "
+                            "the forge a repository mirrors.",
+    "forum-list": "Lists a repository's issues newest first and shows who "
+                  "commented last, like a forum.",
+    "issue-ai-prompt": "Offers readers a prompt to paste into a coding agent "
+                       "on each open issue.",
+    "fediverse-ui": "Shows replies from the fediverse beside a thread and "
+                    "how to follow a repository from Mastodon. Off, the "
+                    "replies endpoint answers 404 too.",
+    "changelog": "The changelog of the platform version this instance runs, "
+                 "at /changelog. On unless turned off.",
+    "community-translations": "Lets signed-in members attach a translation "
+                              "to any post; readers see it next to the "
+                              "original. The on-device Translate button "
+                              "works either way.",
 }
+DEFAULT_ON = frozenset({"changelog", "issue-ai-prompt", "fediverse-ui"})
+OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota", "mirrored-attachments",
+                    "post-translate", "community-translations"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
@@ -128,12 +189,13 @@ def branded(env):
 
 PLATFORM = "ForkMesh"
 _RENAME_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
-_REMEMBERED = {"name": "", "origin": ""}
+_REMEMBERED = {"name": "", "origin": "", "env": None}
 
 
 def remember_instance(env):
     if not branded(env):
         return
+    _REMEMBERED["env"] = env
     origin = (_setting(env, "PUBLIC_BASE_URL") or _setting(env, "APP_ORIGIN")).rstrip("/")
     _REMEMBERED["name"] = display_name(env)
     _REMEMBERED["origin"] = origin if origin.startswith("https://") else ""
@@ -172,12 +234,20 @@ def installed_ids(env):
     if raw == "all":
         return set(IDS)
     chosen = {item.strip() for item in raw.split(",")}
-    return {item for item in chosen if _ID_RE.fullmatch(item) and item in IDS}
+    refused = {item[1:] for item in chosen if item.startswith("-")}
+    return {item for item in chosen if _ID_RE.fullmatch(item) and item in IDS} \
+        | (DEFAULT_ON - refused)
+
+
+def core_ids(env):
+    raw = _setting(env, "FORKMESH_CORE_PLUGINS").lower()
+    chosen = {item.strip() for item in raw.split(",")}
+    return (set(IDS) - OPT_IN) | {item for item in chosen if item in OPT_IN}
 
 
 def enabled_ids(env):
     if not branded(env):
-        return set(IDS)
+        return core_ids(env)
     if _cache["loaded"] and _cache["value"] is not None:
         return set(_cache["value"])
     return installed_ids(env)
@@ -190,13 +260,19 @@ def parse(doc):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("enabled"), list):
         return None
+    refused = data.get("disabled")
+    refused = {item for item in refused if isinstance(item, str)} \
+        if isinstance(refused, list) else set()
     return {item for item in data["enabled"]
-            if isinstance(item, str) and item in IDS}
+            if isinstance(item, str) and item in IDS} | (DEFAULT_ON - refused)
 
 
 def dump(ids):
-    return json.dumps({"enabled": sorted(set(ids) & set(IDS))},
-                      separators=(",", ":"))
+    chosen = set(ids) & set(IDS)
+    doc = {"enabled": sorted(chosen)}
+    if DEFAULT_ON - chosen:
+        doc["disabled"] = sorted(DEFAULT_ON - chosen)
+    return json.dumps(doc, separators=(",", ":"))
 
 
 def choose(current, chosen):
@@ -252,6 +328,15 @@ def blocked(env, path):
     return feature if feature and feature not in enabled_ids(env) else ""
 
 
+def switched_off(env=None):
+    env = _REMEMBERED["env"] if env is None else env
+    if env is None:
+        return frozenset(OPT_IN)
+    if not branded(env):
+        return frozenset(set(IDS) - core_ids(env))
+    return frozenset(set(IDS) - enabled_ids(env))
+
+
 def describe(env):
     on = enabled_ids(env)
     return [{
@@ -293,3 +378,52 @@ def rename_error_body(env, body):
         return body
     text = json.dumps(payload, separators=(",", ":"))
     return text.encode("utf-8") if isinstance(body, bytes) else text
+
+
+CHROME = ":is(header, nav, aside, footer)"
+PLUGIN_ELEMENTS = {
+    "genie": ".fm-genie, .fm-genie-bubble, .fm-genie-fx, genie-spider",
+    "issue-ai-prompt": "[data-repo-issue-ai-prompt]",
+    "fediverse-ui": "[data-repo-federated-thread], [data-repo-watch-wrap]",
+    "community-translations": "[data-post-translations]",
+}
+OFFSITE_PAGES = {"/world": "https://world.forkmesh.com"}
+
+
+def _css_string(value):
+    return '"%s"' % value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+OFFSITE_CHROME = (
+    'a[href^="https://forkmesh.com/"]:not([href="https://forkmesh.com/"])',
+    'a[href^="https://www.forkmesh.com/"]', 'a[href^="https://app.forkmesh.com/"]',
+    'a[href^="https://www.patreon.com/"]', "a[data-forkmesh-membership]")
+
+
+def chrome_css(env):
+    on = enabled_ids(env)
+    rules = [":root{--instance-plugins:ready}"]
+    if branded(env) and _setting(env, "INSTANCE_WHITE_LABEL") == "1":
+        rules.append("%s{display:none !important}" % ",".join(
+            "%s %s:not([data-instance-powered-by] a)" % (CHROME, item)
+            for item in OFFSITE_CHROME))
+    for feature in FEATURES:
+        if feature[0] in on or not branded(env):
+            continue
+        selectors = ['[data-instance-plugin~=%s]' % _css_string(feature[0])]
+        items = []
+        if feature[0] in PLUGIN_ELEMENTS:
+            selectors.append(PLUGIN_ELEMENTS[feature[0]])
+        for path in feature[3]:
+            if path.startswith("/api/") or not path.startswith("/"):
+                continue
+            exact, below = _css_string(path), _css_string(path.rstrip("/") + "/")
+            items.append("%s li:has(> a[href=%s])" % (CHROME, exact))
+            selectors.append("%s a[href=%s]" % (CHROME, exact))
+            selectors.append("%s a[href^=%s]" % (CHROME, below))
+            if path in OFFSITE_PAGES:
+                selectors.append("%s a[href^=%s]" % (CHROME, _css_string(OFFSITE_PAGES[path])))
+        rules.append("%s{display:none !important}" % ",".join(selectors))
+        if items:
+            rules.append("%s{display:none !important}" % ",".join(items))
+    return "\n".join(rules) + "\n"

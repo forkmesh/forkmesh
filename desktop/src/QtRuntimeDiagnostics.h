@@ -8,6 +8,8 @@
 #include <QString>
 #include <QVector>
 
+#include <QPointer>
+
 #include <array>
 #include <functional>
 
@@ -88,6 +90,18 @@ public:
         appendSnapshot(snapshot);
     }
     void refreshStructureForTest() { refreshStructure(); }
+    int walkStructureInSlicesForTest(const std::function<void(int)> &between)
+    {
+        beginStructureWalk(true);
+        int slices = 1;
+        while (!advanceStructureWalk(m_clock.nsecsElapsed())) {
+            if (between)
+                between(slices);
+            ++slices;
+        }
+        finishStructureWalk();
+        return slices;
+    }
 #endif
 
     // Produces an immediate one-second-style snapshot. Public so tests and the
@@ -111,13 +125,71 @@ protected:
 
 private:
     friend class QtEventDeliveryProbe;
+
+    struct PaintKey {
+        const QMetaObject *meta = nullptr;
+        QString objectName;
+        bool self = false;
+        friend bool operator==(const PaintKey &a, const PaintKey &b)
+        {
+            return a.meta == b.meta && a.self == b.self
+                && a.objectName == b.objectName;
+        }
+        friend size_t qHash(const PaintKey &key, size_t seed = 0)
+        {
+            return qHashMulti(seed, key.meta, key.self, key.objectName);
+        }
+    };
+
+    struct SlowestReceiver {
+        std::array<char, 96> name{};
+        int length = 0;
+        bool dirty = false;
+    };
+
+    struct WalkFrame {
+        QObject *object = nullptr;
+        int next = 0;
+    };
+
+    struct StructureWalk {
+        bool active = false;
+        bool countObjects = false;
+        QVector<QPointer<QObject>> roots;
+        QVector<bool> rootIncluded;
+        int nextRoot = 0;
+        QVector<WalkFrame> frames;
+        QVector<QPointer<QObject>> savedFrames;
+        QVector<int> savedNext;
+        int widgets = 0;
+        int visibleWidgets = 0;
+        int objects = 0;
+        int timers = 0;
+        int activeTimers = 0;
+    };
+
     void heartbeat();
     void refreshStructure();
+    void refreshCheapStructure();
+    void beginStructureWalk(bool countObjects);
+    bool advanceStructureWalk(qint64 deadlineNs);
+    void finishStructureWalk();
+    void cancelStructureWalk();
+    void continueStructureWalkSlice();
     void connectDispatcher();
     void disconnectDispatcher();
     void noteDelivery(const char *receiverClass, int receiverClassLength,
                       QEvent::Type eventType, qint64 elapsedUs,
                       const QString &paintReceiver);
+    void noteProbeDelivery(const char *receiverClass, int receiverClassLength,
+                           QEvent::Type eventType, qint64 elapsedUs,
+                           int paintSlot, quint32 paintGeneration);
+    void noteEventTiming(const char *receiverClass, int receiverClassLength,
+                         QEvent::Type eventType, qint64 elapsedUs);
+    int paintSlotFor(QObject *receiver);
+    int paintSlotForName(const QString &name);
+    void tallyPaint(int slot, qint64 elapsedUs);
+    void publishSlowestReceivers();
     QVector<PaintReceiver> topPaintReceivers() const;
     void appendSnapshot(const Snapshot &snapshot);
     static qint64 percentile95(QVector<qint64> values);
@@ -142,7 +214,15 @@ private:
     Snapshot m_snapshot;
     std::array<EventStats, EventGroupCount> m_intervalEvents{};
     std::array<EventStats, EventGroupCount> m_sessionEvents{};
-    QHash<QString, PaintReceiver> m_paintReceivers;
+    std::array<SlowestReceiver, EventGroupCount> m_intervalSlowest{};
+    std::array<SlowestReceiver, EventGroupCount> m_sessionSlowest{};
+    QVector<PaintReceiver> m_paintTallies;
+    QHash<PaintKey, int> m_paintSlots;
+    QHash<QString, int> m_paintNamedSlots;
+    int m_otherPaintSlot = -1;
+    quint32 m_paintGeneration = 0;
+    StructureWalk m_walk;
+    QTimer *m_walkTimer = nullptr;
     QMetaObject::Connection m_awakeConnection;
     QMetaObject::Connection m_blockConnection;
 };
@@ -161,7 +241,8 @@ private:
     std::array<char, 96> m_receiverClass{};
     int m_receiverClassLength = 0;
     QEvent::Type m_eventType = QEvent::None;
-    QString m_paintReceiver;
+    int m_paintSlot = -1;
+    quint32 m_paintGeneration = 0;
     QElapsedTimer m_elapsed;
     bool m_active = false;
 };

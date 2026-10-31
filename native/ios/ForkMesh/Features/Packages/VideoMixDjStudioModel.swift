@@ -55,6 +55,7 @@ final class DjDeck {
     var bend: Double = 0
     var bpm: Double = 0
     var loop = false
+    var repeats = false
     var scratching = false
     var brake: Double = 0
     var sample: DjSampleStep = .idle
@@ -80,6 +81,7 @@ final class DjDeck {
     @ObservationIgnored var brakeStart: CFTimeInterval = 0
     @ObservationIgnored var spin = DjSpin()
     @ObservationIgnored var coastTask: Task<Void, Never>?
+    @ObservationIgnored var repeatTask: Task<Void, Never>?
     @ObservationIgnored let player: DjDeckPlayer
 
     init(side: DjDeckSide, host: DjPlayerHost) {
@@ -291,6 +293,7 @@ final class DjStudioModel {
             deck.level = stored.level
             deck.rate = stored.rate
             deck.bpm = stored.bpm
+            deck.repeats = stored.repeats
             if !stored.videoId.isEmpty {
                 prepare(deck, id: stored.videoId, title: stored.title, author: stored.author, start: stored.position, keepSettings: true)
                 deck.keepsPlaying = stored.playing
@@ -484,6 +487,7 @@ final class DjStudioModel {
             deck.bend = 0
             deck.bpm = fresh[deck.side].bpm
             deck.loop = false
+            deck.repeats = false
             deck.sample = .idle
             deck.showsRemaining = false
             deck.tapTempo = DjTapTempo()
@@ -507,7 +511,7 @@ final class DjStudioModel {
     }
 
     private func claimAudio() {
-        guard !audioClaimed else { return }
+        guard !audioClaimed, !OtherAppCall.ownCall else { return }
         audioClaimed = true
         let session = AVAudioSession.sharedInstance()
         previousCategory = session.category
@@ -638,6 +642,7 @@ final class DjStudioModel {
             guard believes(state, deck, reported: duration) else { return }
             if duration > 0, abs(duration - deck.duration) > 0.5 { deck.duration = duration }
             guard !deck.scratching else { return }
+            if state == 0, replay(deck) { return }
             let now = CACurrentMediaTime()
             let side = deck.side
             if now < deck.settleUntil {
@@ -658,10 +663,13 @@ final class DjStudioModel {
                 deck.time = deck.cue
                 deck.tickDate = now
                 deck.settle(now)
+            } else {
+                aimRepeat(deck, at: now)
             }
             if deck.playing, now - savedAt > 5 { save(now: true) }
         case let .state(state):
             guard believes(state, deck, reported: 0) else { return }
+            if state == 0, replay(deck) { return }
             apply(state, deck)
             if state == 1 { advance(true, deck) }
         case let .meta(title, author):
@@ -702,6 +710,38 @@ final class DjStudioModel {
         deck.doubtedEnd = nil
         if deck.loaded { unplayable.insert(deck.videoId) }
         advance(false, deck)
+    }
+
+    private func replay(_ deck: DjDeck) -> Bool {
+        guard deck.repeats, deck.keepsPlaying, deck.loaded, !deck.failed, !deck.scratching else { return false }
+        DjDiagnostics.mark("Deck \(deck.side.label) repeats after its end")
+        sectionTasks[deck.side]?.cancel()
+        rewind(deck, to: DjRepeat.span(deck.waveform, duration: deck.duration)?.start ?? 0)
+        play(deck)
+        return true
+    }
+
+    private func aimRepeat(_ deck: DjDeck, at now: CFTimeInterval) {
+        deck.repeatTask?.cancel()
+        deck.repeatTask = nil
+        guard deck.repeats, !deck.loop, deck.playing, deck.keepsPlaying, deck.advancing, !deck.scratching, !deck.failed, now >= deck.settleUntil,
+              let span = DjRepeat.span(deck.waveform, duration: deck.duration) else { return }
+        switch DjRepeat.step(position: deck.position(at: now), span: span, rate: deck.effectiveRate) {
+        case .wait:
+            return
+        case .wrap:
+            DjDiagnostics.mark("Deck \(deck.side.label) repeats from \(String(format: "%.1f", span.start)) s at \(String(format: "%.1f", deck.position(at: now))) s")
+            sectionTasks[deck.side]?.cancel()
+            rewind(deck, to: span.start)
+            count(deck)
+        case let .after(seconds):
+            let id = deck.videoId
+            deck.repeatTask = Task { [weak self, weak deck] in
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled, let self, let deck, deck.videoId == id else { return }
+                self.aimRepeat(deck, at: CACurrentMediaTime())
+            }
+        }
     }
 
     private func believes(_ state: Int, _ deck: DjDeck, reported: Double) -> Bool {
@@ -788,10 +828,12 @@ final class DjStudioModel {
         if !deck.playing { play(deck) }
     }
 
-    private func rewind(_ deck: DjDeck) {
+    private func rewind(_ deck: DjDeck, to start: Double = 0) {
+        deck.repeatTask?.cancel()
+        deck.repeatTask = nil
         deck.counted = false
-        deck.player.seek(0)
-        deck.time = 0
+        deck.player.seek(start)
+        deck.time = start
         deck.tickDate = CACurrentMediaTime()
         deck.settle()
         share(deck.side)
@@ -1062,6 +1104,13 @@ final class DjStudioModel {
             deck.cue = deck.position()
         }
         show(deck.loop ? "Deck \(side.label) loops 8 seconds from \(DjStudio.clock(deck.cue))." : "Deck \(side.label) loop off.")
+        save()
+    }
+
+    func toggleRepeat(_ side: DjDeckSide) {
+        let deck = deck(side)
+        deck.repeats.toggle()
+        show(deck.repeats ? "Deck \(side.label) repeats its song." : "Deck \(side.label) repeat off.")
         save()
     }
 
@@ -1410,9 +1459,10 @@ final class DjStudioModel {
         }
     }
 
-    private func snapshot(_ deck: DjDeck) -> DjAutomixDeck {
+    func snapshot(_ deck: DjDeck) -> DjAutomixDeck {
         DjAutomixDeck(
-            loaded: deck.loaded && !deck.failed, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate)
+            loaded: deck.loaded && !deck.failed, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate,
+            repeats: deck.repeats)
     }
 
     func mixNow() {
@@ -1648,6 +1698,7 @@ final class DjStudioModel {
             stored.rate = deck.rate
             stored.bpm = deck.bpm
             stored.loop = deck.loop
+            stored.repeats = deck.repeats
             stored.position = deck.position()
             stored.playing = deck.keepsPlaying && deck.loaded
             saved[deck.side] = stored

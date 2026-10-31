@@ -74,6 +74,7 @@
 		<string>audio</string>
 		<string>bluetooth-central</string>
 		<string>bluetooth-peripheral</string>
+		<string>voip</string>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
 	<string>ForkMesh reads your steps, walking distance, floors, water, and sleep from Apple Health so Pedometer, Water Intake, and Sleep can show them on your account across web, desktop, and mobile, and reads the dietary sugar logged in Health so Sugar Break can show it beside each day of your sugar break, and reads the Flexibility and Mind and Body workouts in Health so Stretch Break can show this week's workout minutes beside your Stretch Break workouts, and reads the nutrition other apps logged in Health over the last two weeks, such as iron, fiber and calcium, so Food Guide can suggest meals that fill what you have been missing.</string>
@@ -114,6 +115,8 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

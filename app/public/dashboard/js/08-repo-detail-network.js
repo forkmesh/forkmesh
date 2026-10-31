@@ -70,7 +70,7 @@
       query: "",
       filters: {
         author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
-        mentions: "", involves: "", type: "", sort: "recently_updated",
+        mentions: "", involves: "", type: "", sort: issueDefaultSort(),
       },
     };
     state.pullsView = { filter: "open", query: "" };
@@ -196,7 +196,20 @@
     const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `
       <section data-dashboard-repo-tab-panel="settings" class="hidden">
-        <div class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
+       <div data-repo-rail-layout data-repo-settings-layout class="grid min-w-0 gap-4">
+        <nav data-repo-rail aria-label="Settings sections" class="mt-4 min-w-0 rounded-lg border border-border p-3 lg:mt-0">
+          <div data-repo-rail-inner>
+            <h2 class="fm-rail-title">Settings</h2>
+            <label class="mb-2 flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 text-muted-foreground focus-within:border-[var(--dashboard-link)]">
+              <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
+              <input data-repo-settings-search type="search" autocomplete="off" spellcheck="false" placeholder="Search settings" aria-label="Search settings" class="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground" />
+            </label>
+            <ul data-repo-settings-nav class="fm-rail-list"></ul>
+            <p data-repo-settings-search-empty hidden class="px-2 py-1 text-[12px] text-muted-foreground">No settings match.</p>
+          </div>
+        </nav>
+        <div data-repo-rail-main class="min-w-0">
+        <div id="settings-general" data-repo-settings-section="General" class="scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="settings" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository settings</span>
           </div>
@@ -232,14 +245,14 @@
           </form>
         </div>
         ${renderRepoAccessSettings(repo)}
-        ${repo.isPrivate ? "" : `<div data-repo-settings-logo class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        ${repo.isPrivate ? "" : `<div data-repo-settings-logo id="settings-logo" data-repo-settings-section="Logo" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="image" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
             <span class="font-mono text-[10px] text-muted-foreground">PNG · up to 256 KB</span>
           </div>
           <div class="grid gap-4 p-4">
             <div class="flex items-start gap-3">
-              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16")}</span>
+              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16") || instanceLogoFrameMarkup("h-16 w-16")}</span>
               <p class="text-[11px] leading-5 text-muted-foreground">Shown on repository cards and as the repository's fediverse avatar. A logo uploaded here comes first. Without one, ${escapeHtml(platformName())} uses the <span class="font-mono">logo.png</span> committed at the root of the repository, then approved artwork below, and never invents artwork for a project.</p>
             </div>
             <form data-repo-settings-logo-form class="grid gap-2">
@@ -262,7 +275,7 @@
             </div>
           </div>
         </div>`}
-        <div data-repo-pull-rules-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-pull-rules-card id="settings-pull-rules" data-repo-settings-section="Pull request rules" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Pull request rules</span>
             <span class="font-mono text-[10px] text-muted-foreground">.forkmesh/pull-rules.json</span>
@@ -272,7 +285,7 @@
             <div data-repo-pull-rules-editor class="text-xs text-muted-foreground">Loading rules…</div>
           </div>
         </div>
-        <div data-repo-webhooks-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-webhooks-card id="settings-webhooks" data-repo-settings-section="Webhooks" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="webhook" class="h-3.5 w-3.5 text-muted-foreground"></i>Webhooks</span>
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
@@ -302,14 +315,14 @@
             </div>
           </div>
         </div>
-        <div data-repo-actions-secrets-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-actions-secrets-card id="settings-secrets" data-repo-settings-section="Actions secrets" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="key-round" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions secrets</span>
             <span class="font-mono text-[10px] text-muted-foreground">secrets.NAME</span>
           </div>
           <div data-actions-secrets data-actions-secrets-scope="repo" data-actions-secrets-base="${escapeHtml(`${repoApiBase(repo)}/actions/secrets`)}" class="p-4 text-xs text-muted-foreground"></div>
         </div>
-        <div data-repo-forge-mirror-card id="mirror" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-forge-mirror-card id="mirror" data-repo-settings-section="Mirror to GitHub or GitLab" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror to GitHub or GitLab</span>
             <span data-repo-forge-mirror-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
@@ -320,7 +333,18 @@
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-danger-zone class="mt-5 overflow-hidden rounded-lg border border-destructive/50 bg-background">
+        <div data-repo-archive-sync-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
+            <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
+          </div>
+          <div class="grid gap-4 p-4">
+            <p class="text-[11px] leading-5 text-muted-foreground">Upload a copy of this repository to archive.org every day, week or month with your own archive.org S3 keys. Each upload is a git bundle of every branch and tag that anyone can clone, and it is skipped when nothing has changed. Only public repositories can be archived.</p>
+            <div data-repo-archive-sync-body class="text-xs text-muted-foreground">Loading archive settings…</div>
+            <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
+          </div>
+        </div>
+        <div data-repo-danger-zone id="settings-danger" data-repo-settings-section="Danger zone" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-destructive/50 bg-background">
           <div class="border-b border-destructive/30 px-4 py-3">
             <h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
           </div>
@@ -333,12 +357,15 @@
             <button type="button" data-repo-delete class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-destructive/60 px-3 text-xs font-semibold text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete repository</button>
           </div>
         </div>
+        </div>
+       </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
-          <div class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
+          <div data-repo-tabs class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
             ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
               const isDiscussions = tab === "discussions";
@@ -349,8 +376,9 @@
               // offline; loadRepoCollection will restore the badge if its
               // recovery attempt reaches one.
               const hideDiscussionsBadge = isDiscussions && (
-                !repoIsLive(repo) || !Number.isFinite(discussionCount) || discussionCount <= 0
+                !Number.isFinite(discussionCount) || discussionCount <= 0
               );
+              const reserveDiscussionsBadge = isDiscussions && !hideDiscussionsBadge && !repoIsLive(repo);
               const iconAttr = tab === "issues"
                 ? 'data-lucide="circle-dot"'
                 : tab === "pulls"
@@ -365,7 +393,7 @@
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
               const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
-              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
+              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span data-repo-tab-label="${escapeHtml(meta.label)}">${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground tabular-nums${hideDiscussionsBadge ? " hidden" : reserveDiscussionsBadge ? " invisible" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
         </div>
@@ -418,7 +446,7 @@
 	                    <div data-repo-tree></div>
 	                  </div>
 	                  <div data-repo-blob class="hidden"></div>
-	                  <section data-repo-readme class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
+	                  <section data-repo-readme class="hidden mt-4 overflow-hidden rounded-lg border border-border bg-background">
 	                    <div data-repo-readme-filename class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5 text-muted-foreground"></i>README.md</div>
 	                    <div data-repo-readme-body class="p-4 text-sm leading-6 text-muted-foreground">
 	                      <p class="mt-1">${loadingHtml("Loading README...")}</p>
@@ -447,11 +475,11 @@
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
-            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
+            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div data-repo-actions class="mt-4 min-w-0 lg:mt-0"></div></section>
             <section data-dashboard-repo-tab-panel="insights" class="hidden"><div data-repo-insights class="min-w-0"></div></section>
             <section data-dashboard-repo-tab-panel="sizemap" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-pie" class="h-3.5 w-3.5 text-muted-foreground"></i>Size map</span><span class="font-mono text-[10px] text-muted-foreground">directory sizes · default branch</span></div><div data-repo-sizemap class="p-4"></div></div></section>
             <section data-dashboard-repo-tab-panel="mirrors" class="hidden"><div data-mirror-request hidden class="py-2"><label class="block text-[11px] font-medium text-foreground">Ask a node to mirror this repo</label><div class="flex items-center gap-2"><input data-mirror-request-target type="text" autocomplete="off" spellcheck="false" placeholder="node name" class="h-8 min-w-0 flex-1 rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" /><button type="button" data-mirror-request-send class="h-8 shrink-0 rounded-md bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70">Ask to mirror</button></div><p data-mirror-request-hint class="text-[11px] text-muted-foreground">They get a ping; if they accept, their node starts mirroring your repo.</p></div><div data-repo-mirrors></div></section>
-            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></section>` : ""}
+            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div data-repo-rail-layout class="grid min-w-0 gap-4"><nav data-repo-rail aria-label="Agent sessions" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Agents</h2><ul data-repo-agents-views class="fm-rail-list"></ul></div></nav><div data-repo-rail-main class="min-w-0"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background lg:mt-0"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></div></div></section>` : ""}
             ${settingsPanel}
           </div>
           <aside data-repo-about data-repo-about-rail class="min-w-0 self-start rounded-lg border border-border bg-background p-4">
@@ -461,7 +489,7 @@
                 ? `<button type="button" data-repo-about-edit aria-label="Edit About" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>`
                 : ""}
             </div>
-            <p data-repo-about-description class="mt-2 text-sm leading-6 text-foreground">${escapeHtml(repoDescriptionText(repo) || "No description published.")}</p>
+            <p data-repo-about-description class="mt-2 break-words text-sm leading-6 text-foreground">${repoAboutDescriptionHtml(repo)}</p>
             <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
               <a href="${escapeHtml(cloneUrl(repo))}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="link" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Open clean URL</span></a>
               <a href="${escapeHtml(readmeHref)}" data-repo-readme-link data-repo-readme-path="${escapeHtml(readmePath)}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5"></i><span>Readme</span></a>
@@ -490,7 +518,7 @@
             <div data-repo-about-actions aria-label="Repository details" class="-mx-2 mt-3 grid">
               <a data-repo-about-website href="#" target="_blank" rel="noopener noreferrer" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Website</span><span data-repo-about-website-label class="dashboard-accent-link min-w-0 truncate text-right"></span></a>
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/releases`)}" data-repo-about-release data-dashboard-releases-button data-plugin-entry="releases" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Release</span><span data-repo-about-release-body class="min-w-0 truncate text-right text-muted-foreground"></span></a>
-              <div data-repo-watch-wrap class="relative min-w-0">
+              ${instancePluginOff("fediverse-ui") ? "" : `<div data-repo-watch-wrap class="relative min-w-0">
                 <button type="button" data-repo-action-watch aria-label="Watch repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Watchers</span><span class="inline-flex items-center gap-1 justify-self-end text-foreground"><span data-repo-watch-count class="font-mono">–</span><i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></span></button>
                 <div data-repo-watch-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-64 max-w-[calc(100vw-2rem)] p-3 text-left">
                   <p class="text-xs font-semibold text-foreground">Watch on the fediverse</p>
@@ -504,7 +532,7 @@
                   <div data-repo-watch-list class="mt-2 hidden max-h-44 overflow-auto rounded-md border border-border bg-secondary/40 p-2"></div>
                   <a data-repo-mastodon-link href="${escapeHtml(mastodonUrl)}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link mt-2 inline-flex items-center gap-1.5 text-[11px] hover:underline"><i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0"></i>View on Mastodon</a>
                 </div>
-              </div>
+              </div>`}
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/mirrors`)}" data-dashboard-repo-tab="mirrors" aria-label="Show repository mirror status" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Mirrors</span><span data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors" class="min-w-0 truncate text-right font-mono text-foreground">${tabCountLabel(mirrorsCount)}</span></a>
               <div data-repo-about-files class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 text-muted-foreground">Files</span><span data-repo-about-files-count class="min-w-0 truncate text-right font-mono text-foreground">–</span></div>
               <div data-repo-about-sizemap>
@@ -526,13 +554,17 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5">${'<span class="h-7 w-7 rounded-full border-2 border-background bg-secondary"></span>'.repeat(8)}</div>
             </div>
-            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? `<div data-repo-external-mirrors hidden class="mt-3 border-t border-border pt-3">
+              <h4 class="text-xs font-semibold text-foreground">Mirrors</h4>
+              <div data-repo-external-mirror-list class="-mx-2 mt-2 grid"></div>
+            </div>` : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
+              <div data-repo-external-mirrors hidden><div data-repo-external-mirror-list class="-mx-2 grid"></div></div>
             </div>`}
             ${canEditAbout && !repo.isPrivate ? `
             <details data-repo-fedi-posts class="mt-4 border-t border-border pt-4">
@@ -540,6 +572,7 @@
               <p class="mt-2 text-[11px] leading-4 text-muted-foreground">Posts this repository published to its Mastodon followers. Deleting one sends a removal to every follower's server so it disappears from their timelines.</p>
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
+            ${repo.isPrivate ? "" : repoMirrorQuotaSection(repo)}
           </aside>
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
@@ -555,6 +588,9 @@
       ? "pulls"
       : repoTabRoutesFor(repo).includes(routeKind) ? routeKind : "code";
     setRepoTab(initialTab);
+    const tabStrip = detail.querySelector("[data-repo-tabs]");
+    if (tabStrip && tabStripScroll > 0) tabStrip.scrollLeft = tabStripScroll;
+    else keepRepoActiveTabVisible(tabStrip);
     window.lucide?.createIcons();
     // Only fetch code when Code is visible. Warming the tree/README behind an
     // Issues or Pulls deep link multiplied cold-cache mirror traffic and made
@@ -577,6 +613,7 @@
     if (initialTab === "security") void loadRepoSecurity(repo);
     hydrateNativeRepositoryLogos(detail.querySelector("[data-repo-title-row]"));
     if (initialTab === "settings") {
+      renderRepoSettingsRail();
       void loadRepoSettingsLogo(repo);
       void loadRepoCollaborators(repo);
     }
@@ -588,6 +625,7 @@
     const provenance = repoProvenanceHtml(repo, { forkButton: false });
     const websiteForkAvailable = !repo.isPrivate;
     const logo = nativeRepositoryLogoMarkup(repo, "h-6 w-6")
+      || instanceLogoFrameMarkup("h-6 w-6")
       || `<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">${escapeHtml(String(repo.owner || "F").slice(0, 1).toUpperCase())}</span>`;
     return `
         <div data-repo-title-row class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5">
@@ -630,6 +668,69 @@
           </div>
         </div>`;
   }
+
+  function renderRepoSettingsRail() {
+    const nav = $("[data-repo-settings-nav]");
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]"));
+    nav.innerHTML = sections.map((section) => `<li><button type="button" data-repo-rail-jump="${escapeHtml(section.id)}" class="fm-rail-item"><span class="min-w-0 truncate">${escapeHtml(section.dataset.repoSettingsSection || "")}</span></button></li>`).join("");
+    filterRepoSettings($("[data-repo-settings-search]")?.value || "");
+    markRepoRailSection();
+  }
+
+  function filterRepoSettings(query) {
+    const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]").forEach((section) => {
+      const text = `${section.dataset.repoSettingsSection} ${section.textContent} ${Array.from(section.querySelectorAll("input[placeholder]")).map((input) => input.placeholder).join(" ")}`.toLowerCase();
+      const match = words.every((word) => text.includes(word));
+      section.style.display = match ? "" : "none";
+      $(`[data-repo-settings-nav] [data-repo-rail-jump="${CSS.escape(section.id)}"]`)?.closest("li")?.toggleAttribute("hidden", !match);
+      if (match) shown += 1;
+    });
+    const empty = $("[data-repo-settings-search-empty]");
+    if (empty) empty.hidden = shown > 0;
+  }
+
+  function jumpToRepoRailSection(button) {
+    const target = document.getElementById(button.dataset.repoRailJump || "");
+    if (!target) return;
+    target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    button.closest("ul")?.querySelectorAll("[data-repo-rail-jump]").forEach((item) => {
+      if (item === button) item.setAttribute("aria-current", "true");
+      else item.removeAttribute("aria-current");
+    });
+  }
+
+  function markRepoRailSection() {
+    document.querySelectorAll("[data-dashboard-repo-tab-panel]:not(.hidden) [data-repo-rail]").forEach((rail) => {
+      const buttons = Array.from(rail.querySelectorAll("[data-repo-rail-jump]"));
+      if (!buttons.length) return;
+      let current = buttons[0];
+      buttons.forEach((button) => {
+        const target = document.getElementById(button.dataset.repoRailJump || "");
+        if (target && target.style.display !== "none" && target.getBoundingClientRect().top <= 140) current = button;
+      });
+      buttons.forEach((button) => {
+        if (button === current) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
+    });
+  }
+
+  let repoRailScrollFrame = 0;
+  document.addEventListener("scroll", () => {
+    if (repoRailScrollFrame) return;
+    repoRailScrollFrame = requestAnimationFrame(() => {
+      repoRailScrollFrame = 0;
+      markRepoRailSection();
+    });
+  }, { capture: true, passive: true });
+
+  document.addEventListener("input", (event) => {
+    const search = event.target.closest?.("[data-repo-settings-search]");
+    if (search) filterRepoSettings(search.value);
+  });
 
   function startRepoForkFromTitle(button) {
     const own = String(button?.dataset.repoForkOwnUrl || "");
@@ -1209,8 +1310,14 @@
       hackathon_reward: "gift",
       badge: "award",
       package_review: "star",
+      pull_attention: "git-pull-request-arrow",
     };
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
+  }
+
+  function notificationInstanceLogoHtml() {
+    const name = escapeHtml(platformName());
+    return `<img data-notification-instance-logo src="/assets/logo.svg" alt="${name}" title="${name}" class="h-4 w-4 shrink-0 rounded-sm object-contain" />`;
   }
 
   function notificationTimeLabel(ts) {
@@ -1238,19 +1345,48 @@
       list.innerHTML = '<div class="px-3 py-4 text-xs text-muted-foreground">No pings yet. Mentions, PRs, assignments, shares, bounties, releases, and host status changes will appear here.</div>';
       return;
     }
-    list.innerHTML = items.map((item) => `
-      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full px-3 py-2 text-left hover:bg-secondary transition-colors ${item.readAt ? "opacity-70" : ""}">
-        <div class="flex items-start gap-2">
-          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+    list.innerHTML = items.map((item) => {
+      const lead = notificationLead(item);
+      const unreadItem = !item.readAt;
+      const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+      const avatar = lead.actor
+        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(lead.actor.replace(/^@/, "")) ? botAvatarSvg(botAvatarKind(lead.actor.replace(/^@/, "")), "h-4 w-4") : escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+          <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
+        : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
+      return `
+      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
+        <div class="flex items-start gap-2.5">
+          <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${avatar}</span></span>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || `${platformName()} update`)}</p>
+            <div class="flex items-center gap-2">
+              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
+              <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
+              ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
+            </div>
+            <p class="mt-0.5 line-clamp-2 break-words text-xs leading-5 ${unreadItem ? "text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</p>
           </div>
-          <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
       </button>
-    `).join("");
+    `;
+    }).join("");
     window.lucide?.createIcons();
+  }
+
+  function notificationLead(item) {
+    const actor = String(item?.actor || "").trim();
+    const number = Number(item?.meta?.number) || 0;
+    const repo = item?.repo ? repoPublicKey(item.repo) : "";
+    const where = [repo, number > 0 ? `#${number}` : ""].filter(Boolean).join(" ");
+    const title = repoPublicText(item?.title) || "Ping";
+    const body = String(repoPublicText(item?.body) || "").replace(/\s+/g, " ").trim();
+    if (actor) return { actor, head: actor, where, text: body || title };
+    return { actor: "", head: title, where, text: body || `${platformName()} update` };
+  }
+
+  function notificationLeadHeadHtml(lead) {
+    return lead.actor
+      ? issuePersonNameHtml(lead.actor, "font-semibold text-foreground", { inLink: true })
+      : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
   function renderNotificationDetail(item) {
@@ -1274,7 +1410,7 @@
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(item.href))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
@@ -1463,6 +1599,7 @@
     state.selectedNotificationId = selected?.id || "";
     list.innerHTML = state.notifications.map((item) => {
       const active = item.id === state.selectedNotificationId;
+      const lead = notificationLead(item);
       const settingsTitle = pingKindLabel(item.kind)
         ? `${pingKindLabel(item.kind)}: ping settings`
         : "Ping settings";
@@ -1472,12 +1609,15 @@
         <div data-notification-row class="mb-1 flex items-stretch gap-1 rounded-md ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
           <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="min-w-0 flex-1 rounded-md px-3 py-2 text-left transition-colors">
             <span class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-                <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
+              <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">
+                ${notificationInstanceLogoHtml()}
+                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
+                  <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
+                </span>
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-xs font-medium">${escapeHtml(item.title || "Ping")}</span>
-                <span class="mt-1 block truncate text-[11px] font-mono">${escapeHtml(item.repo || item.kind || "forkmesh")}</span>
+                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
               </span>
             </span>
           </button>
@@ -1597,7 +1737,7 @@
     home: "/dashboard",
     repos: "/dashboard/repos",
     network: "/dashboard/network",
-    chat: "/dashboard/chat",
+    chat: "/chat",
     profile: "/dashboard/settings",
     "profile-overview": "/dashboard/profile",
     "profile-repositories": "/dashboard/profile/repositories",
@@ -1720,6 +1860,32 @@
     storeRepositoryCatalog(data.repositories);
     renderRepositories(data.repositories, state.session);
     recordInterfaceMetric("browse", startedAt, "remote");
+    if (!fresh) void refreshCatalogOnNewForks();
+  }
+
+  async function refreshCatalogOnNewForks() {
+    if (state.pinnedForkCountsChecked) return;
+    state.pinnedForkCountsChecked = true;
+    const groups = sidebarPinnedGroups(nestRepositoryForks(homeRepositoryEntries(), () => 0), () => []);
+    for (const group of groups) {
+      const repo = group.entry.repo;
+      if (!repo || repo.isPrivate) continue;
+      try {
+        const response = await fetch(`${repoApiBase(repo)}/forks`, { headers: { accept: "application/json" } });
+        const data = response.ok ? await response.json() : null;
+        const live = Number(data?.count) || 0;
+        const seenKey = `forkmesh.pinned-fork-count.v1:${repoKey(repo)}`;
+        let seen = 0;
+        try {
+          seen = Number(sessionStorage.getItem(seenKey)) || 0;
+          sessionStorage.setItem(seenKey, String(live));
+        } catch (_) {}
+        if (live > group.forks.length && live > seen) {
+          await loadRepositories({ fresh: true });
+          return;
+        }
+      } catch (_) {}
+    }
   }
 
   // Boot/shared-chrome loads take the cached path (browser + edge cache honor
@@ -1835,6 +2001,7 @@
       canonicalProfileReady = hydrateCanonicalProfile(session)
         .then((nextSession) => {
           if (bounceToVerification(nextSession)) return;
+          void backfillAdminUrl(nextSession);
           return loadNotifications();
         })
         .catch(() => {});
@@ -1869,10 +2036,6 @@
 
   function initNetworkPage() {
     renderNetwork();
-  }
-
-  function initChatPage() {
-    // dashboard-chat.js self-boots off the #fullChatMessages markup.
   }
 
   function initProfileOverviewPage() {
@@ -2715,6 +2878,7 @@
       }
 
       if (await handleRepoForgeMirrorClick(event)) return;
+      if (await handleRepoArchiveSyncClick(event)) return;
 
       const webhookRow = event.target.closest("[data-repo-webhook-row]");
       if (
@@ -3151,14 +3315,12 @@
         "[data-repo-issue-contribution-dismiss]",
       );
       if (contributionDismissButton && state.selectedRepo) {
-        const scope = contributionDismissButton.dataset.repoIssueContributionDismiss;
-        try {
-          const key = scope === "all"
-            ? "forkmesh.issue-contribution-tip.v1:all"
-            : issueContributionTipStorageKey(state.selectedRepo);
-          localStorage.setItem(key, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
+        if (contributionDismissButton.dataset.repoIssueContributionDismiss === "all") {
+          try {
+            localStorage.setItem("forkmesh.issue-contribution-tip.v1:all", "1");
+          } catch (_) {}
+        } else {
+          dismissContributionTip("issue", state.selectedRepo);
         }
         contributionDismissButton.closest("[data-repo-issue-contribution-tip]")?.remove();
         return;
@@ -3277,11 +3439,7 @@
 
       const pullTipDismiss = event.target.closest("[data-repo-pull-contribution-dismiss]");
       if (pullTipDismiss && state.selectedRepo) {
-        try {
-          localStorage.setItem(`forkmesh.pull-contribution-tip.v1:${repoKey(state.selectedRepo)}`, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
-        }
+        dismissContributionTip("pull", state.selectedRepo);
         pullTipDismiss.closest("[data-repo-pull-contribution-tip]")?.remove();
         return;
       }
@@ -3559,6 +3717,18 @@
         return;
       }
 
+      const pullCommentEditButton = event.target.closest("[data-repo-pull-comment-edit]");
+      if (pullCommentEditButton) {
+        void handleWebPullCommentAction("edit", pullCommentEditButton.dataset.repoPullCommentEdit || "");
+        return;
+      }
+
+      const pullCommentDeleteButton = event.target.closest("[data-repo-pull-comment-delete]");
+      if (pullCommentDeleteButton) {
+        void handleWebPullCommentAction("delete", pullCommentDeleteButton.dataset.repoPullCommentDelete || "");
+        return;
+      }
+
       const inlineThreadButton = event.target.closest("[data-repo-pull-inline-thread-toggle]");
       if (inlineThreadButton) {
         const key = inlineThreadButton.dataset.repoPullInlineThreadToggle || "";
@@ -3609,10 +3779,7 @@
 
       const pullViewedButton = event.target.closest("[data-repo-pull-viewed]");
       if (pullViewedButton && state.selectedRepo) {
-        keepPullDiffHeaderInPlace(pullViewedButton, () => toggleRepoPullViewed(
-          state.selectedRepo,
-          pullViewedButton.dataset.repoPullViewed || "",
-        ));
+        toggleRepoPullViewed(state.selectedRepo, pullViewedButton.dataset.repoPullViewed || "");
         return;
       }
 
@@ -3630,9 +3797,18 @@
         return;
       }
 
-      const diffExplorerToggle = event.target.closest("[data-repo-diff-explorer-toggle]");
-      if (diffExplorerToggle) {
-        setRepoDiffExplorerOpen(diffExplorerToggle.getAttribute("aria-pressed") !== "true");
+      if (event.target.closest("[data-repo-diff-explorer-toggle]")) {
+        toggleRepoDiffExplorer();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-explorer-scrim]")) {
+        setRepoDiffExplorerOpen(false);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-maximize]")) {
+        toggleRepoDiffMaximize();
         return;
       }
 
@@ -3642,36 +3818,14 @@
         return;
       }
 
-      const diffStepButton = event.target.closest("[data-repo-diff-step]");
-      if (diffStepButton) {
-        stepRepoDiffFile(Number(diffStepButton.dataset.repoDiffStep) || 1);
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-jump]")) {
-        jumpToRepoDiffFile(repoPullFilesSection()?.dataset.activeFile || "");
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-collapse]")) {
-        toggleRepoDiffCurrentCollapse();
-        return;
-      }
-
       if (event.target.closest("[data-repo-diff-collapse-all]")) {
         toggleRepoDiffCollapseAll();
         return;
       }
 
-      const diffCurrentViewed = event.target.closest("[data-repo-diff-current-viewed]");
-      if (diffCurrentViewed && state.selectedRepo) {
-        setRepoDiffCurrentViewed(state.selectedRepo, diffCurrentViewed.dataset.repoDiffCurrentViewed || "");
-        return;
-      }
-
-      const diffFlagButton = event.target.closest("[data-repo-diff-flag]");
-      if (diffFlagButton) {
-        jumpToRepoDiffFile(diffFlagButton.dataset.repoDiffFlag || "");
+      const diffMarkButton = event.target.closest("[data-repo-diff-mark-next]");
+      if (diffMarkButton) {
+        jumpToRepoDiffMark(diffMarkButton.dataset.repoDiffMarkNext || "", diffMarkButton.dataset.repoDiffMarkFile || "");
         return;
       }
 
@@ -3699,7 +3853,7 @@
         // Scroll-spy would otherwise fight the jump it just triggered.
         if (section) section.dataset.activeFile = path;
         setRepoPullActiveFile(path, { revealDiff: true });
-        if (window.matchMedia?.("(max-width: 1023px)")?.matches) setRepoDiffExplorerOpen(false);
+        if (pullExplorerIsDrawer()) setRepoDiffExplorerOpen(false);
         return;
       }
 
@@ -3709,9 +3863,66 @@
         return;
       }
 
+      const pullMergeOverrideButton = event.target.closest("[data-repo-pull-merge-override]");
+      if (pullMergeOverrideButton && state.selectedRepo) {
+        handleRepoPullMergeOverride(state.selectedRepo);
+        return;
+      }
+
+      const pullCheckRerunButton = event.target.closest("[data-repo-pull-check-rerun]");
+      if (pullCheckRerunButton && state.selectedRepo) {
+        handleRepoPullCheckRerun(state.selectedRepo, pullCheckRerunButton.dataset.repoPullCheckRerun);
+        return;
+      }
+
+      const quickReplyEdit = event.target.closest("[data-repo-pull-quick-reply-edit]");
+      if (quickReplyEdit && state.selectedRepo) {
+        openRepoPullQuickReplyEditor(state.selectedRepo, quickReplyEdit.dataset.repoPullQuickReplyEdit || "");
+        return;
+      }
+
+      const quickReplyCancel = event.target.closest("[data-repo-pull-quick-reply-cancel]");
+      if (quickReplyCancel && state.selectedRepo) {
+        closeRepoPullQuickReplyEditor(state.selectedRepo);
+        return;
+      }
+
+      const quickReplyButton = event.target.closest("[data-repo-pull-quick-reply]");
+      if (quickReplyButton && state.selectedRepo) {
+        const replyId = quickReplyButton.dataset.repoPullQuickReply || "";
+        if (!consumeRepoPullQuickReplyLongPress(replyId)) {
+          void sendRepoPullQuickReply(state.selectedRepo, replyId);
+        }
+        return;
+      }
+
+      const pullCheckDecision = event.target.closest("[data-repo-pull-check-approve], [data-repo-pull-check-trust], [data-repo-pull-check-untrust]");
+      if (pullCheckDecision && state.selectedRepo) {
+        const data = pullCheckDecision.dataset;
+        const [action, value] = data.repoPullCheckApprove !== undefined
+          ? ["approve", data.repoPullCheckApprove]
+          : data.repoPullCheckTrust !== undefined
+            ? ["trust", data.repoPullCheckTrust]
+            : ["untrust", data.repoPullCheckUntrust];
+        handleRepoPullCheckDecision(state.selectedRepo, action, value, pullCheckDecision);
+        return;
+      }
+
       const pullUpdateButton = event.target.closest("[data-repo-pull-update]");
       if (pullUpdateButton && state.selectedRepo) {
         handleRepoPullUpdate(state.selectedRepo);
+        return;
+      }
+
+      const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
+      if (reviewPromptToggle) {
+        togglePullReviewPrompt(reviewPromptToggle);
+        return;
+      }
+
+      const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
+      if (mergeStatusButton) {
+        showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
         return;
       }
 
@@ -3797,6 +4008,21 @@
       const contextMenuAction = event.target.closest("[data-repo-tree-context-action]");
       if (contextMenuAction) {
         await handleRepoTreeContextAction(contextMenuAction);
+        return;
+      }
+
+      const agentsViewButton = event.target.closest("[data-repo-agents-view]");
+      if (agentsViewButton) {
+        state.agentsView.statusView = agentsViewButton.dataset.repoAgentsView || "all";
+        state.agentsView.selectedAgentId = null;
+        if ($("[data-org-agent-sessions]")) renderOrgAgentSessions();
+        else renderRepoAgentsList(state.agentsView.agents);
+        return;
+      }
+
+      const railJump = event.target.closest("[data-repo-rail-jump]");
+      if (railJump) {
+        jumpToRepoRailSection(railJump);
         return;
       }
 
@@ -3923,7 +4149,18 @@
 
   document.addEventListener("submit", async (event) => {
     if (handleRepoActionsSubmit(event)) return;
+    const quickReplyForm = event.target.closest("[data-repo-pull-quick-reply-form]");
+    if (quickReplyForm && state.selectedRepo) {
+      event.preventDefault();
+      void sendRepoPullQuickReply(
+        state.selectedRepo,
+        quickReplyForm.dataset.repoPullQuickReplyForm || "",
+        quickReplyForm.querySelector("[data-repo-pull-quick-reply-draft]")?.value || "",
+      );
+      return;
+    }
     if (await handleRepoForgeMirrorSubmit(event)) return;
+    if (await handleRepoArchiveSyncSubmit(event)) return;
     const settingsLogoForm = event.target.closest("[data-repo-settings-logo-form]");
     if (settingsLogoForm && state.selectedRepo) {
       event.preventDefault();
@@ -4177,6 +4414,37 @@
   // the changed-file list already in memory - no mirror read behind it.
   document.addEventListener("input", (event) => {
     if (event.target.closest("[data-repo-pull-file-filter]")) refreshRepoPullExplorer();
+    const quickReplyDraft = event.target.closest("[data-repo-pull-quick-reply-draft]");
+    if (quickReplyDraft && state.repoRecordDetail?.kind === "pulls") {
+      const parsed = state.repoRecordDetail.parsed;
+      parsed.pullQuickReplyUi = { ...(parsed.pullQuickReplyUi || {}), draft: quickReplyDraft.value };
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    const quickReplyDraft = event.target.closest?.("[data-repo-pull-quick-reply-draft]");
+    if (!quickReplyDraft || !state.selectedRepo) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeRepoPullQuickReplyEditor(state.selectedRepo);
+    } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      quickReplyDraft.form?.requestSubmit();
+    }
+  });
+
+  document.addEventListener("pointerdown", (event) => {
+    const quickReplyButton = event.target.closest?.("[data-repo-pull-quick-reply]");
+    if (!quickReplyButton || quickReplyButton.disabled || !state.selectedRepo) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    startRepoPullQuickReplyPress(state.selectedRepo, quickReplyButton, event);
+  });
+  document.addEventListener("pointermove", moveRepoPullQuickReplyPress, { passive: true });
+  for (const type of ["pointerup", "pointercancel", "scroll"]) {
+    document.addEventListener(type, cancelRepoPullQuickReplyPress, { capture: true, passive: true });
+  }
+  document.addEventListener("contextmenu", (event) => {
+    if (event.target.closest?.("[data-repo-pull-quick-reply]")) event.preventDefault();
   });
 
   // GitHub-style range selection starts on a line-number gutter and extends
@@ -4245,6 +4513,10 @@
 
   // Rotating a phone (or resizing a window) across the split breakpoint
   // re-lays the diff in the layout that fits.
+  window.matchMedia?.(PULL_EXPLORER_DRAWER_QUERY)?.addEventListener?.("change", syncRepoDiffExplorerLayout);
+  document.addEventListener("fullscreenchange", syncRepoDiffMaximize);
+  window.addEventListener("resize", () => fitRepoDiffViewport(repoPullFilesSection()), { passive: true });
+
   window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.addEventListener?.("change", () => {
     const section = repoPullFilesSection();
     const list = section?.querySelector("[data-repo-pull-diff-list]");
@@ -4256,7 +4528,7 @@
   });
 
   document.addEventListener("click", (event) => {
-    document.querySelectorAll("[data-repo-diff-settings][open]").forEach((menu) => {
+    document.querySelectorAll("[data-repo-diff-settings][open], [data-repo-diff-health-pill][open]").forEach((menu) => {
       if (!menu.contains(event.target) || event.target.closest(".fm-menu-item")) menu.open = false;
     });
   });
@@ -4309,6 +4581,12 @@
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
   });
+  document.addEventListener("click", (event) => {
+    const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
+    if (!toggleRepositoryForks(toggle)) return;
+    if (toggle.closest("[data-home-top-repositories]")) renderHomeRepositories();
+    if (toggle.closest("[data-sidebar-repo-list]")) renderSidebarRepositories(state.session);
+  });
   $("[data-profile-repo-search]")?.addEventListener("input", () => {
     renderProfileRepositories();
   });
@@ -4335,6 +4613,9 @@
   });
   $$("[data-new-repo-source]").forEach((btn) => {
     btn.addEventListener("click", () => setNewRepoSource(btn.dataset.newRepoSource));
+  });
+  $$("[data-new-repo-visibility]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoVisibilityNote);
   });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -4571,6 +4852,15 @@
       event.preventDefault();
       return;
     }
+    if (!typingTarget && !event.metaKey && !event.ctrlKey && !event.altKey
+        && event.key === "v" && toggleRepoDiffCurrentViewed(state.selectedRepo)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape" && pullExplorerIsDrawer()
+        && repoPullFilesSection()?.dataset.explorerOpen === "true") {
+      setRepoDiffExplorerOpen(false);
+    }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();
       openRepoFileFinder(event.target);
@@ -4590,6 +4880,7 @@
     }
     if (page !== "repo") return;
     window.addEventListener("popstate", () => {
+      stopRepoReconnects();
       const requested = requestedRepoKey();
       const repo = requested ? findRepository(requested) : null;
       if (!repo) {

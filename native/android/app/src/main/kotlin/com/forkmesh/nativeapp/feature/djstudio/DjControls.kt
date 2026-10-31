@@ -108,9 +108,11 @@ internal fun DjDeckInfo(model: DjStudioModel, deck: DjDeck, mirrored: Boolean, u
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((12 * u).dp)) {
         if (mirrored) {
             DjTitles(model, deck, true, u, Modifier.weight(1f, false))
+            DjRepeatButton(model, deck, u)
             DjClock(deck, u, clock)
         } else {
             DjClock(deck, u, clock)
+            DjRepeatButton(model, deck, u)
             DjTitles(model, deck, false, u, Modifier.weight(1f, false))
         }
     }
@@ -543,7 +545,7 @@ internal fun DjAutomixButton(model: DjStudioModel, u: Float) {
 
 @Composable
 internal fun DjUtilityRow(model: DjStudioModel, u: Float, modifier: Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((14 * u).dp, Alignment.CenterHorizontally)) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((12 * u).dp, Alignment.CenterHorizontally)) {
         Box(Modifier.size((28 * u).dp).djPress("Track info") { model.sheet = DjSheet.Info }, contentAlignment = Alignment.Center) {
             Box(Modifier.size((17 * u).dp).clip(CircleShape).background(DjTheme.muted), contentAlignment = Alignment.Center) {
                 DjText("i", 12 * u, Color(0xFF23252A), FontWeight.Black)
@@ -552,6 +554,7 @@ internal fun DjUtilityRow(model: DjStudioModel, u: Float, modifier: Modifier) {
         DjRoundButton((26 * u).dp, "grid_view", "Sampler pads") { model.sheet = DjSheet.Pads }
         DjRoundButton((26 * u).dp, "queue_music", "Playlists", lit = model.crate.focus != DjFocus.Everything) { model.sheet = DjSheet.Crate }
         DjAutomixButton(model, u)
+        DjAutoDjButton(model, u)
         DjRoundButton((26 * u).dp, "mood", "Reactions", lit = model.reacting) { model.reacting = !model.reacting }
         Box(Modifier.size((28 * u).dp).djPress("Reset all") { model.confirmingReset = true }, contentAlignment = Alignment.Center) {
             FmIcon("restart_alt", size = (18 * u).dp, tint = DjTheme.muted)

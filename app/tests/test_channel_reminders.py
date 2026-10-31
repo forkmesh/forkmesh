@@ -174,8 +174,10 @@ def test_members_with_unread_messages_get_one_reminder_until_they_read():
     assert [mail["to"] for mail in env.sent] == ["bob@x.test"]
     mail = env.sent[0]
     assert mail["kind"] == "channel_unread"
-    assert mail["subject"] == "ForkMesh: 1 unread message in #design"
-    assert "#design: 1 unread message" in mail["text"]
+    assert mail["subject"] == "You have unread messages on ForkMesh"
+    assert "1 unread message " in mail["text"]
+    assert "design" not in mail["subject"]
+    assert "design" not in mail["text"] and "design" not in mail["html"]
     assert "https://forkmesh.com/chat" in mail["text"]
     assert "zz" not in mail["text"] and "zz" not in mail["html"]
     assert env.saved == [BOB]
@@ -193,7 +195,7 @@ def test_members_with_unread_messages_get_one_reminder_until_they_read():
     env.clock += 45 * MINUTE
     assert _run(module.send_reminders(env)) == 1
     assert [mail["to"] for mail in env.sent] == ["bob@x.test", "bob@x.test"]
-    assert env.sent[1]["subject"] == "ForkMesh: 1 unread message in #design"
+    assert env.sent[1]["subject"] == "You have unread messages on ForkMesh"
 
 
 def test_fresh_public_and_notice_messages_send_nothing():
@@ -226,7 +228,7 @@ def test_opted_out_members_are_marked_without_mail():
             if reminded == NOW} == {ALICE, BOB, CAROL, DAVE}
 
 
-def test_one_email_lists_every_channel_with_unread_messages():
+def test_one_email_counts_every_channel_without_naming_them():
     env = Env()
     module = _load(env)
     env.channel(CHANNEL, "alice", ["bob"])
@@ -239,9 +241,10 @@ def test_one_email_lists_every_channel_with_unread_messages():
 
     assert _run(module.send_reminders(env)) == 1
     mail = env.sent[0]
-    assert mail["subject"] == "ForkMesh: 4 unread messages in 2 channels"
-    assert "#design: 3 unread messages" in mail["text"]
-    assert "#bbbb: 1 unread message\n" in mail["text"]
+    assert mail["subject"] == "You have unread messages on ForkMesh"
+    assert "4 unread messages" in mail["text"]
+    for name in ("design", "bbbb"):
+        assert name not in mail["text"] and name not in mail["html"]
 
 
 def test_mark_read_only_moves_forward_and_ignores_bad_ids():

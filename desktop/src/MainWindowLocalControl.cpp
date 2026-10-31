@@ -20,7 +20,9 @@
 #include "MainWindowAgentsInternal.h"
 #include "MachineAgentScan.h"
 #include "MainWindowInternal.h"
+#include "MainWindowNextAccess.h"
 #include "NodeEventSocket.h"
+#include "SettingsSectionsView.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -158,7 +160,41 @@ QString localControlDefaultAgentMode(const QComboBox *selector)
         .trimmed();
 }
 
+constexpr char kRemoteControlSetting[] = "localControl/remoteControl";
+
 } // namespace
+
+bool MainWindow::remoteControlOn() const
+{
+    return QSettings().value(kRemoteControlSetting, true).toBool();
+}
+
+void MainWindow::setRemoteControlOn(bool on)
+{
+    QSettings().setValue(kRemoteControlSetting, on);
+    logSystem(on ? QStringLiteral("Remote control turned on: paired phones can steer this desktop.")
+                 : QStringLiteral("Remote control turned off: paired phones are refused."));
+    if (m_localControl)
+        m_localControl->setRemoteOff(!on);
+    if (on)
+        notifyLocalControlAgentsChanged();
+    refreshRemoteControlViews();
+}
+
+void MainWindow::refreshRemoteControlViews()
+{
+    refreshLocalControlTab();
+    refreshSessionsHeader();
+    refreshAgentTowerPanels();
+    forkmesh::ui::NextAccess::syncWorkspace(*this);
+}
+
+void MainWindow::openPhoneSettings()
+{
+    showSection(1);
+    if (m_settingsSections && m_phoneSettingsTabIndex >= 0)
+        m_settingsSections->setCurrentIndex(m_phoneSettingsTabIndex);
+}
 
 bool MainWindow::ensureLocalControlServer()
 {
@@ -203,7 +239,8 @@ bool MainWindow::ensureLocalControlServer()
             handleLocalControlRequest(connectionId, requestId, method, params);
         };
     registerLocalControlFamilies();
-    m_localControl->onDevicesChanged = [this] { refreshLocalControlTab(); };
+    m_localControl->setRemoteOff(!remoteControlOn());
+    m_localControl->onDevicesChanged = [this] { refreshRemoteControlViews(); };
     m_localControl->onConnectionClosed = [this](int connectionId) {
         closeLocalControlStreams(connectionId);
     };
@@ -331,7 +368,7 @@ void MainWindow::showLocalControlPairingPrompt(int connectionId,
 {
     const QString who = (name.isEmpty() ? QStringLiteral("A phone") : name) +
                         (user.isEmpty() ? QString()
-                                        : QStringLiteral(" (%1)").arg(user));
+                                        : QStringLiteral(" (says it is %1)").arg(user));
     const QString spaced = code.left(3) + QLatin1Char(' ') + code.mid(3);
     auto *box = new QMessageBox(this);
     box->setAttribute(Qt::WA_DeleteOnClose);
@@ -348,9 +385,12 @@ void MainWindow::showLocalControlPairingPrompt(int connectionId,
             .arg(spaced));
     QPushButton *allow = box->addButton(QStringLiteral("Allow"),
                                         QMessageBox::AcceptRole);
-    box->addButton(QStringLiteral("Deny"), QMessageBox::RejectRole);
-    box->setDefaultButton(allow);
+    QPushButton *deny =
+        box->addButton(QStringLiteral("Deny"), QMessageBox::RejectRole);
+    box->setDefaultButton(deny);
+    box->setEscapeButton(deny);
     box->setModal(false);
+    box->setAttribute(Qt::WA_ShowWithoutActivating);
     m_localControlPrompts.insert(connectionId, box);
     connect(box, &QMessageBox::finished, this, [this, box, allow, connectionId] {
         m_localControlPrompts.remove(connectionId);
@@ -362,7 +402,6 @@ void MainWindow::showLocalControlPairingPrompt(int connectionId,
             m_localControl->denyPairing(connectionId);
     });
     box->show();
-    box->raise();
     QApplication::alert(this);
     logSystem(QStringLiteral("%1 asked to control this desktop over the local "
                              "network (code %2).")
@@ -421,6 +460,13 @@ QJsonObject MainWindow::localControlAgentsPayload()
         if (s->awaitingStart())
             row.insert(QStringLiteral("held"), true);
         row.insert(QStringLiteral("unread"), agentSessionUnread(*s));
+        if (const auto tasks = m_agentCliTasks.constFind(s->id);
+            tasks != m_agentCliTasks.constEnd() && tasks->openBackground() > 0)
+            row.insert(QStringLiteral("backgroundTasks"), tasks->openBackground());
+        const QPair<qint64, qint64> flow = m_sessionTokenFlow.value(s->id);
+        row.insert(QStringLiteral("tokensIn"), double(qMax<qint64>(flow.first, s->promptTokens)));
+        row.insert(QStringLiteral("tokensOut"),
+                   double(qMax<qint64>(flow.second, s->completionTokens)));
         if (const QString terminal = localControlTerminalForRow(s->id); !terminal.isEmpty())
             row.insert(QStringLiteral("terminal"), terminal);
         const auto stat = m_agentDiffStats.constFind(s->id);

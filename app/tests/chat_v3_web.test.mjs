@@ -176,7 +176,7 @@ test("server-injected devices are refused in a DM or held when they claim a part
   assert.ok(!seal.recipientKeyIds().includes(asBob.kid));
   const open = await store.resolve("private:open", ROOM);
   assert.equal(open.policy, "open");
-  assert.equal((await acceptSealKey(bundles.injectedOutsider, open)).state, "approved");
+  assert.equal(await acceptSealKey(bundles.injectedOutsider, open), null);
 });
 
 test("a bundle the device made itself rebuilds the vector bundle", async () => {
@@ -372,8 +372,8 @@ test("two web devices seal and open each other's frames", async () => {
 test("open rooms approve every valid bundle and prekeys rotate after a day", async () => {
   const time = clock();
   const room = "chat-room-0123:v1";
-  const aliceStore = createRoomSealStore({ storage: memoryStorage(), acct: "anna", node: "node-a", now: time.now, wrappingKey: null });
-  const bobStore = createRoomSealStore({ storage: memoryStorage(), acct: "ben", node: "node-b", now: time.now, wrappingKey: null });
+  const aliceStore = createRoomSealStore({ storage: memoryStorage(), acct: "anna", now: time.now, wrappingKey: null });
+  const bobStore = createRoomSealStore({ storage: memoryStorage(), acct: "ben", now: time.now, wrappingKey: null });
   const alice = await aliceStore.resolve("private:0123", room);
   const bob = await bobStore.resolve("private:0123", room);
   assert.equal(alice.policy, "open");
@@ -386,7 +386,7 @@ test("open rooms approve every valid bundle and prekeys rotate after a day", asy
   assert.ok(alice.rotation > rotation);
   const refreshed = await acceptSealKey(second, bob);
   assert.equal(refreshed.refreshed, true);
-  const frame = await sealFrame({ type: "chat", id: "o1", senderId: "node-b", text: "open" }, bob);
+  const frame = await sealFrame({ type: "chat", id: "o1", senderId: bobStore.node, text: "open" }, bob);
   assert.equal(frame.keys.find((entry) => entry.kid === alice.keyId).spk, second.spk.id);
   assert.equal((await unsealFrame(frame, alice)).status, "held");
   const learned = await acceptSealKey(await sealKeyFrame(bob), alice);
@@ -399,10 +399,11 @@ test("relay @peer frames are sealed only to the recipient's devices and the send
   const time = clock();
   const room = "relay-room";
   const stores = ["me", "peer", "other"].map((name) =>
-    createRoomSealStore({ storage: memoryStorage(), acct: name, node: "node-" + name, now: time.now, wrappingKey: null }));
+    createRoomSealStore({ storage: memoryStorage(), acct: name, now: time.now, wrappingKey: null }));
   const [me, peer, other] = await Promise.all(stores.map((store) => store.resolve("#mesh-room", room)));
   for (const seal of [peer, other]) await acceptSealKey(await sealKeyFrame(seal), me);
-  const frame = await sealFrame({ type: "dm", id: "d1", senderId: "node-me", to: "node-peer", text: "psst" }, me, room, { to: "node-peer" });
+  const frame = await sealFrame(
+    { type: "hello", id: "d1", senderId: stores[0].node, to: stores[1].node }, me, room, { to: stores[1].node });
   assert.deepEqual(frame.keys.map((entry) => entry.kid), [me.keyId, peer.keyId].sort());
   assert.equal((await unsealFrame(frame, other)).status, "held");
 });
@@ -544,8 +545,8 @@ test("a reconnect replays history this device has already opened", async () => {
   const { derivePassphraseKey, encryptObject } = await import("../public/chat-crypto.js");
   const roomName = "chat-channel:beta:v1";
   const storage = memoryStorage();
-  const peer = await createRoomSealStore({ storage: memoryStorage(), acct: "peer", node: "node-peer", wrappingKey: null })
-    .resolve("private:beta", roomName);
+  const peerStore = createRoomSealStore({ storage: memoryStorage(), acct: "peer", wrappingKey: null });
+  const peer = await peerStore.resolve("private:beta", roomName);
   const key = await derivePassphraseKey("room secret", roomName);
   const bundle = await encryptObject(await sealKeyFrame(peer), key);
   const run = async (store, frames) => {
@@ -572,14 +573,14 @@ test("a reconnect replays history this device has already opened", async () => {
     transport.dispose();
     return { history, live };
   };
-  const me = createRoomSealStore({ storage, acct: "me", node: "node-me", wrappingKey: null });
+  const me = createRoomSealStore({ storage, acct: "me", wrappingKey: null });
   const myBundle = await sealKeyFrame(await me.resolve("private:beta", roomName));
   await acceptSealKey(myBundle, peer);
-  const frame = await encryptObject(await sealFrame({ type: "chat", id: "h1", senderId: "node-peer", text: "kept" }, peer), key);
+  const frame = await encryptObject(await sealFrame({ type: "chat", id: "h1", senderId: peerStore.node, text: "kept" }, peer), key);
   const first = await run(me, [frame]);
   assert.deepEqual(first.history.map((plain) => plain.id), ["h1"]);
   assert.deepEqual(first.live, []);
-  const reloaded = createRoomSealStore({ storage, acct: "me", node: "node-me", wrappingKey: null });
+  const reloaded = createRoomSealStore({ storage, acct: "me", wrappingKey: null });
   const second = await run(reloaded, [frame]);
   assert.deepEqual(second.history.map((plain) => plain.id), ["h1"]);
   assert.deepEqual(second.live, []);

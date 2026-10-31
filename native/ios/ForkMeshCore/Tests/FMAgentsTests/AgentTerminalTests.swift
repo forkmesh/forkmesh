@@ -127,6 +127,8 @@ final class TerminalScreenTests: XCTestCase {
     func testApplicationCursorModeChangesTheArrowKeys() {
         XCTAssertEqual(terminalKeyBytes(.up), "\u{1b}[A")
         XCTAssertEqual(terminalKeyBytes(.up, appCursorKeys: true), "\u{1b}OA")
+        XCTAssertEqual(terminalKeyBytes(.left, appCursorKeys: true, control: true), "\u{1b}[1;5D")
+        XCTAssertEqual(terminalKeyBytes(.tab, control: true), "\t")
         XCTAssertEqual(terminalControlBytes("c"), "\u{03}")
         XCTAssertEqual(terminalControlBytes("["), "\u{1b}")
         XCTAssertEqual(terminalControlBytes("1"), "")

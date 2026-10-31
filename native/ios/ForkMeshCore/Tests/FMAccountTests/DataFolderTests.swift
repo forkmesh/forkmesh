@@ -176,4 +176,27 @@ final class DataFolderTests: XCTestCase {
         let reloaded = try Identity.loadOrCreate(secureStore: ScopedSecureStore(base: keychain, prefix: "p/work/"))
         XCTAssertEqual(reloaded.publicKeyB64url, identity.publicKeyB64url)
     }
+
+    func testRestoringTheIdentityKeyBringsBackTheChatKey() throws {
+        let original = InMemorySecureStore()
+        let identity = try Identity.loadOrCreate(secureStore: original)
+        let chatKey = try XCTUnwrap(try ChatKeyring.load(original, create: true)).kid
+        let store = DataFolderStore(root: scratch.appendingPathComponent("ForkMesh projects"))
+        try DataFolderIdentity.saveKit(
+            identity: identity, passphrase: "correct horse battery", confirm: "correct horse battery",
+            slug: "forkmesh", store: store, prefs: InMemoryKeyValueStore(), nowMillis: 1)
+        let kit = try XCTUnwrap(store.readKit(slug: "forkmesh"))
+
+        let keychain = InMemorySecureStore()
+        let scoped = ScopedSecureStore(base: keychain, prefix: "p/work/")
+        _ = try Identity.loadOrCreate(secureStore: scoped)
+        XCTAssertNotEqual(try XCTUnwrap(try ChatKeyring.load(scoped, create: true)).kid, chatKey)
+        _ = try DataFolderIdentity.restoreSeed(
+            kit: kit, passphrase: "correct horse battery", namespace: "p/work/", secureStore: keychain)
+        XCTAssertEqual(try XCTUnwrap(try ChatKeyring.load(scoped, create: true)).kid, chatKey)
+
+        _ = try DataFolderIdentity.restoreSeed(
+            kit: kit, passphrase: "correct horse battery", namespace: "p/work/", secureStore: keychain)
+        XCTAssertNotNil(scoped.read(ChatKeyring.identityStoreKey), "restoring the same key keeps the chat key")
+    }
 }

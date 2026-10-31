@@ -2,9 +2,11 @@ import json
 import re
 from pathlib import Path
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONFIG = PROJECT / ".forkmesh" / "teammates" / "herald.json"
+CONFIG = PROJECT / ".forkmesh" / "workflows" / "herald.json"
 SHORTCUTS = PROJECT / ".forkmesh" / "shortcuts"
 CHARTER = PROJECT / "docs" / "marketing" / "x-ready-post.md"
 ICONS = PROJECT / "desktop" / "resources" / "agent-ui" / "icons"
@@ -20,7 +22,7 @@ def _herald():
             result[key] = value
         return result
 
-    return json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    return as_teammate(json.loads(CONFIG.read_text(encoding="utf-8"), object_pairs_hook=unique_object))
 
 
 def _known_permissions():

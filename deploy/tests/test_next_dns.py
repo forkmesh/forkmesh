@@ -541,3 +541,41 @@ def test_undrain_of_a_node_that_fails_a_probe_waits_for_the_loop(tmp_path):
                          path=state, prober=lambda ip, host: next(answers, True),
                          sleep=lambda s: None) is None
     assert zone.ips("app.forkmesh.com") == [V4["n2"], V4["n3"]]
+
+
+def test_read_only_cores_stay_while_no_core_is_ready(tmp_path):
+    zone = full_zone()
+    down = ["down"] * 30
+    decisions = run_rounds(tmp_path, zone, {"n1": ["read_only"] * 30,
+                                            "n2": down, "n3": down}, rounds=30)
+    changes = [d for d in decisions if d]
+    assert changes == [("remove", "n2"), ("remove", "n3")]
+    assert zone.ips("app.next.forkmesh.com") == ["203.0.113.11"]
+
+
+def test_a_read_only_core_leaves_while_another_core_is_ready(tmp_path):
+    zone = full_zone()
+    decisions = run_rounds(tmp_path, zone, {"n1": ["ready"] * 4,
+                                            "n2": ["read_only"] * 4,
+                                            "n3": [True] * 4}, rounds=4)
+    assert decisions == [None, None, ("remove", "n2"), None]
+
+
+def test_a_read_only_core_comes_back_once_the_others_are_gone(tmp_path):
+    zone = full_zone()
+    n1 = ["read_only"] * 40
+    gone = [True] * 4 + ["down"] * 36
+    decisions = run_rounds(tmp_path, zone, {"n1": n1, "n2": gone, "n3": gone},
+                           rounds=40)
+    changes = [d for d in decisions if d]
+    assert changes[0] == ("remove", "n1")
+    assert ("add", "n1") in changes
+    assert zone.ips("app.next.forkmesh.com") == ["203.0.113.11"]
+
+
+def test_undrain_needs_a_fully_ready_core(tmp_path):
+    data = fleet(tmp_path)
+    assert next_dns.healthy_now(data, "n1", lambda ip, host: "read_only",
+                                sleep=lambda s: None) is False
+    assert next_dns.healthy_now(data, "n1", lambda ip, host: "ready",
+                                sleep=lambda s: None) is True

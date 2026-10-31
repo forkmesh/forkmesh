@@ -711,6 +711,7 @@ def test_actions_install_job_tools_and_configure_the_app():
     assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
     assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
     assert '"plugins", "actions", "poweredBy", "platformUrl",' in writer
+    assert '"webFirewall", "whiteLabel", "privacyMode"]' in writer
     assert 'RUNNER_NAME=""' in TEXT
     assert "  resolve_runner_name\n" in writer
     assert '[ -n "$RUNNER_NAME" ] || resolve_runner_name' in function("setup_actions_runner")
@@ -763,6 +764,13 @@ def test_an_unclaimed_instance_also_removes_its_runner():
     baseline = function("capture_first_login_baseline")
     assert ': > "$CLEANUP_DIR/created-runner-root"' in baseline
     assert ': > "$CLEANUP_DIR/created-job-user"' in baseline
+
+
+def test_only_a_start_page_launch_arms_the_first_login_removal():
+    arm = function("arm_first_login_timeout")
+    assert '[ -n "${CFG_launchId:-}" ] || return 0' in arm
+    assert arm.index("CFG_launchId") < arm.index("INSTANCE_LOGIN_DEADLINE")
+    assert "Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST,$DOMAIN" in TEXT
 
 
 def test_the_first_login_cleanup_removes_only_what_the_install_created(tmp_path):
@@ -971,3 +979,80 @@ def test_an_update_rewrites_app_env_but_keeps_a_hand_set_admin_path(tmp_path):
     assert "ADMIN_PATH=" not in after
     after, _ = _write_settings(tmp_path, "file", "1", keys)
     assert re.search(r"^ADMIN_PATH=/admin-[a-z0-9]{20}$", after, re.M)
+
+
+def test_an_update_restarts_the_git_node_only_when_its_inputs_change(tmp_path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "mirror_gateway.py").write_text("print('v1')\n")
+    (tmp_path / "daemon").write_text("binary-1")
+    (tmp_path / "unit").write_text("[Service]\n")
+    gateway = tmp_path / "gateway.json"
+    node = tmp_path / "node.json"
+
+    def write(version="abc123", router="key-1", pin="a" * 64, tool="print('v1')\n", binary="binary-1"):
+        gateway.write_text(json.dumps({
+            "routerPublicKey": router, "publicOrigin": "https://code.example.com",
+            "repositories": [{"owner": "forkmesh", "name": "forkmesh", "gitDir": "/srv/f.git",
+                              "integrity": {"expectedRefsSha256": pin}}]}))
+        node.write_text(json.dumps({"version": version, "gatewayConfig": str(gateway), "role": "core"}))
+        (tools / "mirror_gateway.py").write_text(tool)
+        (tmp_path / "daemon").write_text(binary)
+
+    def digest():
+        body = ('DAEMON=%s\nDAEMON_UNIT=%s\nDAEMON_TOOLS=%s\nDAEMON_CONFIG=%s\ndaemon_digest\n'
+                % (tmp_path / "daemon", tmp_path / "unit", tools, node))
+        result = run_functions(tmp_path, ["daemon_digest"], body)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    write()
+    first = digest()
+    assert re.fullmatch(r"[0-9a-f]{64}", first)
+    write(version="def456", pin="b" * 64)
+    assert digest() == first
+    write(router="key-2")
+    assert digest() != first
+    write(tool="print('v2')\n")
+    assert digest() != first
+    write(binary="binary-2")
+    assert digest() != first
+
+
+def test_white_label_is_off_unless_the_settings_ask_for_it(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_whiteLabel"] == "0"
+    found = values(parse(tmp_path, settings(whiteLabel=True)).stdout)
+    assert found["CFG_whiteLabel"] == "1"
+    assert parse(tmp_path, settings(whiteLabel="yes")).returncode != 0
+    assert 'brand_args+=(--white-label)' in TEXT
+    assert 'echo "INSTANCE_WHITE_LABEL=${CFG_whiteLabel:-0}"' in TEXT
+
+
+def test_the_source_fetch_retries_while_the_forge_mirror_answers_503(tmp_path):
+    body = ('n=0; flaky() { n=$((n + 1)); [ "$n" -ge 3 ]; }\n'
+            'FORKMESH_SOURCE_RETRY_WAITS="0 0 0"\n'
+            'source_retry flaky; echo "ok after $n"\n'
+            'never() { return 1; }\n'
+            'if source_retry never; then echo bad; else echo "gave up"; fi\n')
+    result = run_functions(tmp_path, ["source_retry"], body)
+    assert result.returncode == 0, result.stderr
+    out = result.stdout.splitlines()
+    assert out[:3] == ["Could not reach the source; trying again in 0 s (attempt 2 of 4).",
+                       "Could not reach the source; trying again in 0 s (attempt 3 of 4).",
+                       "ok after 3"]
+    assert out[-1] == "gave up" and len(out) == 7
+    fetch = function("fetch_source")
+    assert "source_retry fetch_origin_ref ||" in fetch
+    assert 'source_retry clone_source "$stage" ||' in fetch
+
+
+def test_a_copy_that_only_follows_the_setup_does_not_roll_back(tmp_path):
+    assert TEXT.index("\nfollow_setup() {") < TEXT.index("\nrollback_source() {")
+    body = ('CURRENT_STEP=""; DETACHED="0"; progress() { :; }\n'
+            'trap on_exit EXIT\nexit 3\n')
+    result = run_functions(tmp_path, ["on_exit"], body)
+    assert result.returncode == 3
+    assert "command not found" not in result.stderr, result.stderr
+    result = run_functions(tmp_path, ["on_exit"], 'rollback_source() { echo rolled back; }\n' + body)
+    assert result.stdout.splitlines() == ["rolled back"]

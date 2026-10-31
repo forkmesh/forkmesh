@@ -34,6 +34,7 @@ public struct ChatRow: Equatable, Identifiable, Sendable {
     public var visitor = false
     public var receipt: ChatReceipt?
     public var mentionsYou = false
+    public var autoPreview = false
 
     public init(message: ChatMessage, continuesGroup: Bool, queued: Bool, deletable: Bool) {
         self.message = message
@@ -67,7 +68,12 @@ public final class ChatHub: ShellChatBridge {
     /// view shows the guest sheet.
     @ObservationIgnored public var onGuestBlocked: (@MainActor (String) -> Void)?
     public let extras: ChatExtras
-    public var workspace: ChatWorkspace
+    public var workspace: ChatWorkspace {
+        didSet { purgeRelayPrivateWorkspace() }
+    }
+    @ObservationIgnored var purgedChannels: Set<String> = []
+    @ObservationIgnored public var accountApi: ChatAccountCalling?
+    @ObservationIgnored var blocksTask: Task<Void, Never>?
     public var pendingSearch: String?
     public var pendingSaved = false
     public private(set) var revealRequests = 0
@@ -80,6 +86,10 @@ public final class ChatHub: ShellChatBridge {
             restoreOfficeHistory()
             office?.onFrame = { [weak self] frame, conversation in
                 guard let self, let office = self.office else { return }
+                if let type = frame["type"]?.text, GroupCallFrames.types.contains(type) {
+                    self.onGroupCallFrame?(frame, conversation)
+                    return
+                }
                 self.extras.applyRoomFrame(frame, conversation: conversation, selfId: office.currentSelfId)
             }
             office?.onMessage = { [weak self] message in
@@ -124,8 +134,11 @@ public final class ChatHub: ShellChatBridge {
         }
     }
     @ObservationIgnored public var readMarks: ChatReadMarks?
+    @ObservationIgnored private var readMarksTask: Task<Void, Never>?
+    @ObservationIgnored private var readMarksAt: Date?
     @ObservationIgnored public var onMessageRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var calls: DirectCallEngine?
+    @ObservationIgnored public var onGroupCallFrame: (@MainActor (JSONObject, String) -> Void)?
     @ObservationIgnored public var live: DirectLiveEngine?
     @ObservationIgnored public var pings: LocalPingLog? {
         didSet { purgePrivatePings() }
@@ -148,6 +161,8 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var historyScope: @MainActor () -> String = { "" }
     @ObservationIgnored public var historyFormerScopes: @MainActor () -> [String] = { [] }
     @ObservationIgnored private var loadedScope = ""
+    @ObservationIgnored private var loadingScope = ""
+    @ObservationIgnored private var historyLoad: Task<Void, Never>?
     @ObservationIgnored public private(set) var projectSuspended = false
     @ObservationIgnored private var historyToken: ListenerToken?
     @ObservationIgnored private var directRestore:
@@ -187,6 +202,7 @@ public final class ChatHub: ShellChatBridge {
             if self.relay.currentConversation == message.conversation { self.queueReadMark(message.conversation) }
         }
         relay.isReadElsewhere = { [weak self] message in self?.isReadElsewhere(message) ?? false }
+        relay.isHiddenChannel = { [weak extras] channel in extras?.hiddenChannels.contains(channel) ?? false }
         relay.isExpired = expiry
         mesh.isExpired = expiry
         extras.isExpired = expiry
@@ -247,12 +263,16 @@ public final class ChatHub: ShellChatBridge {
 
     public func attachHistory(
         _ store: ChatHistoryStore, scope: @escaping @MainActor () -> String,
-        formerScopes: @escaping @MainActor () -> [String] = { [] }
+        formerScopes: @escaping @MainActor () -> [String] = { [] }, inBackground: Bool = false
     ) {
         history = store
         historyScope = scope
         historyFormerScopes = formerScopes
-        restoreHistoryIfNeeded()
+        if inBackground {
+            loadHistoryInBackground()
+        } else {
+            restoreHistoryIfNeeded()
+        }
         extras.onChange = { [weak self] in self?.persistSoon() }
         if let token = historyToken { relay.removeListener(token) }
         historyToken = relay.addListener { [weak self] in
@@ -261,6 +281,9 @@ public final class ChatHub: ShellChatBridge {
     }
 
     public func leaveProject() async {
+        historyLoad?.cancel()
+        historyLoad = nil
+        loadingScope = ""
         if !projectSuspended, let history {
             history.cancelScheduledSave()
             if !loadedScope.isEmpty { history.save(historySnapshot(), scope: loadedScope) }
@@ -286,27 +309,56 @@ public final class ChatHub: ShellChatBridge {
         pendingSaved = false
         resetAppCommands(clearReplies: true)
         readMarks?.clear()
+        readMarksAt = nil
         extras.resetForProjectSwitch()
         workspace = ChatWorkspace()
         await office?.clear()
         await direct?.clear()
         live?.clear()
+        await mesh.leaveProject()
     }
 
     public func enterProject(workspace: ChatWorkspace) {
         self.workspace = workspace
         projectSuspended = false
         restoreHistoryIfNeeded()
+        let mesh = self.mesh
+        Task { await mesh.enterProject() }
+    }
+
+    public func historyLoaded() async {
+        await historyLoad?.value
+    }
+
+    private func loadHistoryInBackground() {
+        guard let history, !projectSuspended else { return }
+        let scope = historyScope()
+        if scope.isEmpty || scope == loadedScope || scope == loadingScope { return }
+        let former = historyFormerScopes()
+        loadingScope = scope
+        historyLoad = Task { [weak self] in
+            let load = await Task.detached(priority: .userInitiated) {
+                history.read(scope: scope, formerScopes: former)
+            }.value
+            guard let self, !Task.isCancelled, self.loadingScope == scope else { return }
+            self.loadingScope = ""
+            let restored = PerformanceMonitorService.section("chat.history.restore") {
+                self.restoreHistoryIfNeeded(preloaded: (scope, load))
+            }
+            if restored { self.persistSoon() }
+        }
     }
 
     @discardableResult
-    private func restoreHistoryIfNeeded() -> Bool {
+    private func restoreHistoryIfNeeded(preloaded: (scope: String, load: ChatHistoryLoad)? = nil) -> Bool {
         guard let history, !projectSuspended else { return false }
         let scope = historyScope()
         if scope.isEmpty { return false }
         if scope == loadedScope { return true }
+        let ready: ChatHistoryLoad? = preloaded?.scope == scope ? preloaded?.load : nil
+        if ready == nil && scope == loadingScope { return false }
         let snapshot: ChatHistorySnapshot
-        switch history.read(scope: scope, formerScopes: historyFormerScopes()) {
+        switch ready ?? history.read(scope: scope, formerScopes: historyFormerScopes()) {
         case .unreadable:
             return false
         case .missing:
@@ -314,9 +366,12 @@ public final class ChatHub: ShellChatBridge {
             return true
         case .loaded(let loaded):
             loadedScope = scope
-            snapshot = loaded
+            purgedChannels.formUnion(loaded.privateChannels)
+            snapshot = loaded.withoutRelayPrivate
+            if snapshot.itemCount != loaded.itemCount { persistSoon() }
         }
-        extras.restoreChannels(privateChannels: snapshot.privateChannels, hiddenChannels: snapshot.hiddenChannels)
+        purgeRelayPrivateWorkspace()
+        extras.restoreChannels(hiddenChannels: snapshot.hiddenChannels)
         purgePrivatePings()
         let shown = snapshot.messages.filter { !snapshot.hiddenChannels.contains($0.conversation) }
         relay.restoreHistory(
@@ -363,6 +418,7 @@ public final class ChatHub: ShellChatBridge {
         if !directAccount.isEmpty && directAccount != account { directRestore = nil }
         directAccount = account
         restoreDirectHistory()
+        Task { await syncBlocks() }
     }
 
     private func persistSoon() {
@@ -396,7 +452,6 @@ public final class ChatHub: ShellChatBridge {
         parts.reactionOrder = extras.snapshotReactionOrder()
         parts.stickers = extras.snapshotStickers()
         parts.edits = extras.snapshotEdits()
-        parts.privateChannels = extras.privateChannels
         parts.hiddenChannels = extras.hiddenChannels
         parts.hiddenMessages = extras.snapshotHiddenMessages()
         parts.removedMessages = extras.snapshotRemovedMessages()
@@ -462,9 +517,12 @@ public final class ChatHub: ShellChatBridge {
     }
     public func markBadgeSeen() { relay.markBadgeSeen() }
     public func switchConversation(_ conversation: String) {
-        if let person = accountRecipient(conversation), let direct {
+        if conversation.hasPrefix("@") {
+            guard let person = accountRecipient(conversation) else { return }
             revealRequests += 1
-            if let record = direct.records.first(where: { $0.otherUser == person.handle.lowercased() }) {
+            if let direct, !person.account.isEmpty,
+                let record = direct.records.first(where: { $0.otherUser == person.account.lowercased() })
+            {
                 select(record.conversation)
             } else {
                 Task { @MainActor in _ = await openPerson(person) }
@@ -564,10 +622,13 @@ public final class ChatHub: ShellChatBridge {
             }
             return true
         }
+        if !conversation.hasPrefix("#") {
+            notice = ChatNotice("Direct messages go through your account. Open the person to message them.")
+            return false
+        }
         extras.sendTyping(conversation: conversation, active: false)
-        let sent = extras.isPrivate(conversation)
-            ? extras.sendPrivateChat(conversation, text: text) : await relay.sendMessage(text, to: conversation)
-        if sent && conversation.hasPrefix("#") { await maybeAskForkbot(conversation: conversation, text: text) }
+        let sent = await relay.sendMessage(text, to: conversation)
+        if sent { await maybeAskForkbot(conversation: conversation, text: text) }
         if !sent {
             notice = ChatNotice("Chat is offline. Reconnecting...")
             Task { await relay.connect() }
@@ -761,9 +822,16 @@ public final class ChatHub: ShellChatBridge {
             row.visitor = !message.isSelf && ChatVisitorPresence.isTransientVisitor(name: message.senderName)
             row.receipt = receipt(for: message, queued: queued)
             row.mentionsYou = !message.isSelf && ChatSmartMentions.mentionsYou(row.text, own: own)
+            row.autoPreview = autoLoadsLinkPreviews(in: message.conversation, fromSelf: message.isSelf)
             out.append(row)
         }
         return out
+    }
+
+    public func autoLoadsLinkPreviews(in conversation: String, fromSelf: Bool) -> Bool {
+        if fromSelf || DirectMessageFrames.isDirect(conversation) { return true }
+        guard OfficeFrames.isOffice(conversation), let room = office?.room(for: conversation) else { return false }
+        return room.isPrivate && !room.everyone
     }
 
     public nonisolated static func hasThreads(_ conversation: String) -> Bool {
@@ -829,6 +897,7 @@ public final class ChatHub: ShellChatBridge {
             row.stickers = extras.stickers(for: message.id, selfId: roomSelfId(message.conversation))
             row.attachment = extras.attachment(for: message.id)
             row.receipt = receipt(for: message)
+            row.autoPreview = autoLoadsLinkPreviews(in: message.conversation, fromSelf: message.isSelf)
             out.append(row)
         }
         return out
@@ -991,7 +1060,12 @@ public final class ChatHub: ShellChatBridge {
     public func isPrivateConversation(_ conversation: String) -> Bool {
         if conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation) { return true }
         if let room = office?.room(for: conversation) { return room.isPrivate }
-        return extras.isPrivate(conversation)
+        return false
+    }
+
+    func purgeRelayPrivateWorkspace() {
+        let channels = purgedChannels
+        workspace.purgeConversations { ChatHistorySnapshot.isRelayPrivate($0, privateChannels: channels) }
     }
 
     func purgePrivatePings() {
@@ -1009,9 +1083,9 @@ public final class ChatHub: ShellChatBridge {
                 + "They are not end-to-end encrypted. Only you can see this channel, and nobody can post in it."
         }
         if !isPrivateRoom {
-            return "This channel is public and controller-readable. It still uses authenticated AES-256-GCM transport, "
-                + "while allowing ForkBot, MCP, and incoming webhooks to read and post messages.\n\n"
-                + "Private channels and direct messages add automatic device-to-device encryption beyond the controller key."
+            return "This channel is public: everyone in it can read it, guests included. Every message is signed and sealed "
+                + "to the devices in the room, so nobody can post, edit or delete as you. Integrations the server adds are "
+                + "marked as apps.\n\nFor anything private, use a direct message or a private channel."
         }
         return "Encryption is automatic. This device created a private X25519 key locally and sends only its public key. "
             + "Each message uses a fresh key wrapped for known room devices, so the controller's room key alone can forward "
@@ -1022,13 +1096,13 @@ public final class ChatHub: ShellChatBridge {
     public func canAskForkbot(_ conversation: String) -> Bool {
         if !conversation.hasPrefix("#") || conversation == meshConversation { return false }
         if let room = office?.room(for: conversation) { return !room.isPrivate }
-        return !extras.isPrivate(conversation)
+        return true
     }
 
     public func maybeAskForkbot(conversation: String, text: String, threadRootId: String = "") async {
         guard ChatComposerTools.mentionsForkbot(text), let forkbot else { return }
         if !canAskForkbot(conversation) {
-            notice = ChatNotice("ForkBot is available only in public, controller-readable channels.")
+            notice = ChatNotice("ForkBot is available only in public channels.")
             return
         }
         let history = OfficeFrames.isOffice(conversation) ? (office?.messages(conversation) ?? []) : relay.messages(conversation)
@@ -1162,6 +1236,8 @@ public final class ChatHub: ShellChatBridge {
 
     public var emptyTitle: String { "No messages yet" }
 
+    public var meshNotice: String { inMesh ? LocalMeshService.readableNotice : "" }
+
     public var emptyMessage: String {
         if !inMesh { return "Encrypted relay messages will appear here." }
         if mesh.localNetworkBlocked {
@@ -1235,7 +1311,26 @@ public final class ChatHub: ShellChatBridge {
         readMarks.queue(key, newest)
     }
 
-    public func applyReadMarks() async {
+    public static let readMarksInterval: TimeInterval = 5
+
+    public func applyReadMarks(force: Bool = false) async {
+        if let running = readMarksTask {
+            await running.value
+            if !force { return }
+            if let next = readMarksTask, next != running { return await next.value }
+        }
+        if !force, let at = readMarksAt, clock.now.timeIntervalSince(at) < ChatHub.readMarksInterval { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.fetchReadMarks()
+        }
+        readMarksTask = task
+        await task.value
+        if readMarksTask == task { readMarksTask = nil }
+        readMarksAt = clock.now
+    }
+
+    private func fetchReadMarks() async {
         guard let readMarks, await readMarks.fetch() else { return }
         for conversation in unreadConversations {
             guard let key = readMarkKey(conversation),
@@ -1286,6 +1381,10 @@ public final class ChatHub: ShellChatBridge {
     }
 
     public func select(_ conversation: String) {
+        if conversation.hasPrefix("@") {
+            switchConversation(conversation)
+            return
+        }
         conversationChosen = true
         if conversation != replyConversation { cancelReply() }
         if ChatHub.isPersonConversation(conversation) { workspace.restoreConversation(conversation) }

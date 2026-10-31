@@ -23,16 +23,38 @@ public struct AppChangelog: Codable, Equatable, Sendable {
         public var version: String
         public var build: String
         public var date: String
+        public var title: String
+        public var pitch: String
         public var sections: [Section]
 
-        public var id: String { "\(version)-\(build)" }
+        public var id: String { "\(version)-\(build)-\(date)-\(title)" }
 
-        public var heading: String { AppChangelog.label(version: version, build: build) }
+        public var heading: String {
+            if !title.isEmpty { return title }
+            if !version.isEmpty || !build.isEmpty { return AppChangelog.label(version: version, build: build) }
+            return formattedDate()
+        }
 
-        public init(version: String, build: String, date: String = "", sections: [Section] = []) {
+        public func detail(locale: Locale = .current) -> String {
+            var parts: [String] = []
+            if !title.isEmpty, !version.isEmpty {
+                parts.append(AppChangelog.label(version: version, build: build))
+            }
+            if !date.isEmpty, !title.isEmpty || !version.isEmpty || !build.isEmpty {
+                parts.append(formattedDate(locale: locale))
+            }
+            return parts.joined(separator: " · ")
+        }
+
+        public init(
+            version: String, build: String, date: String = "", sections: [Section] = [],
+            title: String = "", pitch: String = ""
+        ) {
             self.version = version
             self.build = build
             self.date = date
+            self.title = title
+            self.pitch = pitch
             self.sections = sections
         }
 
@@ -41,6 +63,8 @@ public struct AppChangelog: Codable, Equatable, Sendable {
             version = try container.decodeIfPresent(String.self, forKey: .version) ?? ""
             build = try container.decodeIfPresent(String.self, forKey: .build) ?? ""
             date = try container.decodeIfPresent(String.self, forKey: .date) ?? ""
+            title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+            pitch = try container.decodeIfPresent(String.self, forKey: .pitch) ?? ""
             sections = (try container.decodeIfPresent([Section].self, forKey: .sections) ?? [])
                 .filter { (section: Section) -> Bool in !section.title.isEmpty && !section.items.isEmpty }
         }
@@ -50,13 +74,18 @@ public struct AppChangelog: Codable, Equatable, Sendable {
             parser.locale = Locale(identifier: "en_US_POSIX")
             parser.timeZone = TimeZone(identifier: "UTC")
             parser.dateFormat = "yyyy-MM-dd"
-            guard let parsed: Date = parser.date(from: date) else { return date }
             let output: DateFormatter = DateFormatter()
             output.locale = locale
             output.timeZone = TimeZone(identifier: "UTC")
-            output.dateStyle = .long
-            output.timeStyle = .none
-            return output.string(from: parsed)
+            if let parsed: Date = parser.date(from: date) {
+                output.dateStyle = .long
+                output.timeStyle = .none
+                return output.string(from: parsed)
+            }
+            parser.dateFormat = "yyyy-MM"
+            guard date.count == 7, let month: Date = parser.date(from: date) else { return date }
+            output.setLocalizedDateFormatFromTemplate("MMMMyyyy")
+            return output.string(from: month)
         }
     }
 
@@ -95,8 +124,8 @@ public struct AppChangelog: Codable, Equatable, Sendable {
             copy.entries[0].version = version.isEmpty ? first.version : version
             return copy
         }
-        let older: [Entry] = entries.filter { (entry: Entry) -> Bool in entry.build != build }
-        return AppChangelog(schema: schema, entries: [Entry(version: version, build: build)] + older)
+        if !entries.isEmpty { return self }
+        return AppChangelog(schema: schema, entries: [Entry(version: version, build: build)])
     }
 
     public static func load(data: Data?, infoDictionary: [String: Any]?) -> AppChangelog {

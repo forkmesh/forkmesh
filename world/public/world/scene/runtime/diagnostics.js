@@ -288,15 +288,42 @@ export function functions({
     if (at - diagnosticsTopElementsAt >= DIAGNOSTICS_TOP_ELEMENTS_MS) {
       yield visited;
       diagnosticsTopElementsAt = at;
-      diagnosticsTopElements = fns.listWorldElements()
-        .filter((element) => element.enabled && element.triangles > 0)
+      const totals = [];
+      for (const element of [...ctx.worldElements.values()]) {
+        if (!fns.worldElementEnabled(element.id)) continue;
+        let triangles = 0;
+        let drawables = 0;
+        for (const root of [...element.roots]) {
+          if (!root?.parent) continue;
+          const stack = [root];
+          while (stack.length) {
+            const child = stack.pop();
+            for (let index = 0; index < child.children.length; index += 1) {
+              stack.push(child.children[index]);
+            }
+            visited += 1;
+            if (visited % SCENE_COMPLEXITY_SLICE_OBJECTS === 0) yield visited;
+            if (
+              !(child.isMesh || child.isPoints || child.isLine || child.isSprite) ||
+              child.userData?.raycastProxy === true
+            ) {
+              continue;
+            }
+            drawables += 1;
+            if (!child.isMesh) continue;
+            const geometry = child.geometry;
+            triangles += Math.floor(
+              (geometry?.index?.count ?? geometry?.attributes?.position?.count ?? 0) / 3,
+            );
+          }
+        }
+        if (triangles > 0) {
+          totals.push({ label: element.label, triangles, drawables });
+        }
+      }
+      diagnosticsTopElements = totals
         .sort((a, b) => b.triangles - a.triangles)
-        .slice(0, 3)
-        .map((element) => ({
-          label: element.label,
-          triangles: element.triangles,
-          drawables: element.drawables,
-        }));
+        .slice(0, 3);
     }
     stats.topElements = diagnosticsTopElements;
     return stats;

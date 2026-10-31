@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.market
 
+import com.forkmesh.nativeapp.account.projects.ProjectDefaults
 import com.forkmesh.nativeapp.json.JsonMap
 import com.forkmesh.nativeapp.json.bool
 import com.forkmesh.nativeapp.json.int
@@ -114,12 +115,24 @@ object InstanceFeed {
     const val API = "/api/instance-feed"
     const val MAX_LENGTH = 500
     const val MAX_SPOILER = 100
+    const val PUBLIC_SITE = "https://forkmesh.com"
+    private val OFFICIAL_HOSTS = ProjectDefaults.PROD_HOST_ALIASES + setOf("www.forkmesh.com", "world.forkmesh.com")
 
     private val AUTHOR = Regex("^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
     private val CURSOR = Regex("^\\d{1,15}-[0-9a-f]{32}$")
     private val SPANS = Regex("(https://[^\\s<>\"']+[^\\s<>\"'.,;:!?)\\]])|(^|[^A-Za-z0-9_@/])@([A-Za-z](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)\\b")
 
     fun isAuthor(value: String): Boolean = AUTHOR.matches(value)
+
+    fun siteOrigin(origin: String): String {
+        val trimmed = origin.trim().trimEnd('/')
+        val host = runCatching { java.net.URI(trimmed).host }.getOrNull()?.lowercase().orEmpty()
+        if (host.isEmpty() || host in OFFICIAL_HOSTS || ProjectDefaults.isNextHost(host)) return PUBLIC_SITE
+        return trimmed
+    }
+
+    fun publicUrl(postId: String, origin: String): String? =
+        if (PackagesText.isHexId(postId)) "${siteOrigin(origin)}/feed?post=$postId" else null
 
     fun timelineQuery(author: String?, before: String?): List<Pair<String, String>> = buildList {
         val name = author?.trim()?.removePrefix("@")?.lowercase().orEmpty()

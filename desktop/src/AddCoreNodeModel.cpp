@@ -71,6 +71,7 @@ AddCoreOptions parseAddCoreOptions(const QByteArray &json)
     options.region = object.value(QStringLiteral("region")).toString();
     options.plan = object.value(QStringLiteral("plan")).toString();
     options.rev = object.value(QStringLiteral("rev")).toString();
+    options.replaces = object.value(QStringLiteral("replaces")).toString();
     options.voter = object.value(QStringLiteral("voter")).toBool();
     options.voterReason = object.value(QStringLiteral("voter_reason")).toString();
     options.estimateSeconds = object.value(QStringLiteral("estimate_seconds")).toInt();
@@ -94,6 +95,7 @@ AddCoreOptions parseAddCoreOptions(const QByteArray &json)
         options.regions.prepend(options.region);
     const QJsonObject unfinished = object.value(QStringLiteral("unfinished")).toObject();
     options.unfinishedName = unfinished.value(QStringLiteral("name")).toString();
+    options.unfinishedReplaces = unfinished.value(QStringLiteral("replaces")).toString();
     const QJsonObject failed = unfinished.value(QStringLiteral("failed")).toObject();
     options.unfinishedFailedStep = failed.value(QStringLiteral("step")).toString();
     options.unfinishedError = failed.value(QStringLiteral("error")).toString();
@@ -216,13 +218,30 @@ QString confirmationText(const AddCoreOptions &options, const QString &region,
     lines << QStringLiteral("• put %1 into DNS (app and world) only after its health "
                             "probes pass;")
                  .arg(name);
-    lines << QStringLiteral("• commit deploy/fleet.toml to fleet/add-core-%1 for you "
-                            "to merge (nothing is pushed).")
-                 .arg(name);
+    if (!options.replaces.isEmpty()) {
+        lines << QStringLiteral("• then take %1 out of the fleet: promote %2 to an rqlite "
+                                "voter if needed, drain %1 from DNS, stop it, remove it "
+                                "from rqlite and update the other cores; its %3 instance "
+                                "is kept until you delete it with Remove…;")
+                     .arg(options.replaces, name, cloud);
+        lines << QStringLiteral("• commit deploy/fleet.toml with %1 added and %2 removed "
+                                "to fleet/add-core-%1 and merge it into main.")
+                     .arg(name, options.replaces);
+    } else {
+        lines << QStringLiteral("• commit deploy/fleet.toml to fleet/add-core-%1 and merge "
+                                "it into main.")
+                     .arg(name);
+    }
     lines << QString();
-    lines << QStringLiteral("Estimated time: %1. A failure leaves %2 out of DNS, and Retry "
-                            "resumes from the step that failed.")
-                 .arg(formatDuration(options.estimateSeconds), name);
+    if (!options.replaces.isEmpty())
+        lines << QStringLiteral("Estimated time: %1. A failure while adding leaves %2 out "
+                                "of DNS and %3 serving; a failure while removing %3 leaves "
+                                "%2 serving. Retry resumes from the step that failed.")
+                     .arg(formatDuration(options.estimateSeconds), name, options.replaces);
+    else
+        lines << QStringLiteral("Estimated time: %1. A failure leaves %2 out of DNS, and "
+                                "Retry resumes from the step that failed.")
+                     .arg(formatDuration(options.estimateSeconds), name);
     return lines.join(QLatin1Char('\n'));
 }
 
@@ -236,17 +255,20 @@ QString providerDisplayName(const QString &provider)
     return provider;
 }
 
-QStringList addCoreOptionsArguments(const QString &script, const QString &provider)
+QStringList addCoreOptionsArguments(const QString &script, const QString &provider,
+                                    const QString &replace)
 {
     QStringList arguments{script, QStringLiteral("add-core-options"), QStringLiteral("--json")};
     if (!provider.isEmpty() && provider != QLatin1String("vultr"))
         arguments << QStringLiteral("--provider") << provider;
+    if (!replace.isEmpty())
+        arguments << QStringLiteral("--replace") << replace;
     return arguments;
 }
 
 QStringList addCoreArguments(const QString &script, const QString &region,
                              const QString &plan, const QString &name, bool resume,
-                             const QString &provider)
+                             const QString &provider, const QString &replace)
 {
     QStringList arguments{script, QStringLiteral("add-core"), QStringLiteral("--execute")};
     if (resume) {
@@ -260,6 +282,8 @@ QStringList addCoreArguments(const QString &script, const QString &region,
         arguments << QStringLiteral("--region") << region;
     if (!plan.isEmpty())
         arguments << QStringLiteral("--plan") << plan;
+    if (!replace.isEmpty())
+        arguments << QStringLiteral("--replace") << replace;
     return arguments;
 }
 
@@ -410,6 +434,7 @@ bool AddCoreRun::handleEvent(const QString &line)
         if (!steps.isEmpty())
             m_steps = steps;
         m_name = event.value(QStringLiteral("name")).toString();
+        m_replaces = event.value(QStringLiteral("replaces")).toString();
         m_state = State::Running;
         m_resultSeen = false;
         m_summary.clear();
@@ -441,6 +466,8 @@ bool AddCoreRun::handleEvent(const QString &line)
             m_summary = event.value(QStringLiteral("summary")).toString();
             m_branch = event.value(QStringLiteral("branch")).toString();
             m_commit = event.value(QStringLiteral("commit")).toString();
+            m_merged = event.value(QStringLiteral("merged")).toString();
+            m_mergeError = event.value(QStringLiteral("merge_error")).toString();
         } else {
             m_state = State::Failed;
             m_failedStep = event.value(QStringLiteral("step")).toString();
@@ -484,6 +511,13 @@ bool AddCoreRun::loadStatus(const QByteArray &json)
     m_name = object.value(QStringLiteral("name")).toString();
     m_branch = object.value(QStringLiteral("branch")).toString();
     m_commit = object.value(QStringLiteral("commit")).toString();
+    m_replaces = object.value(QStringLiteral("replaces")).toString();
+    m_merged = object.value(QStringLiteral("merged")).toString();
+    m_mergeError = object.value(QStringLiteral("merge_error")).toString();
+    const QList<AddCoreStep> listed =
+        stepsFromArray(object.value(QStringLiteral("step_list")).toArray());
+    if (!listed.isEmpty())
+        m_steps = listed;
     const QJsonObject statuses = object.value(QStringLiteral("steps")).toObject();
     for (AddCoreStep &item : m_steps)
         item.status = statusFromText(statuses.value(item.id).toString());
@@ -558,6 +592,21 @@ QString AddCoreRun::headline() const
         return QStringLiteral("%1 %2…").arg(m_verb, name);
     }
     return {};
+}
+
+QString fleetLandingText(const AddCoreRun &run, const QString &effect)
+{
+    if (run.state() != AddCoreRun::State::Succeeded || run.commit().isEmpty())
+        return {};
+    if (!run.merged().isEmpty())
+        return QStringLiteral("%1 (%2) is merged into main (%3), so autodeploy and roll %4.")
+            .arg(run.branch(), run.commit().left(12), run.merged().left(12), effect);
+    QString text = QStringLiteral("%1 (%2) is not on main yet; merge it so autodeploy and "
+                                  "roll %3.")
+                       .arg(run.branch(), run.commit().left(12), effect);
+    if (!run.mergeError().isEmpty())
+        text += QStringLiteral(" (%1)").arg(run.mergeError());
+    return text;
 }
 
 } // namespace forkmesh::fleet

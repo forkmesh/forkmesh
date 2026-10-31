@@ -2,6 +2,7 @@ import { TILE as T, W, H, ZONES, ROOM_ANCHORS, LABELS, SCENES, sceneAt, isWalkab
 import { buildMapCanvas, buildOutskirts, OUTSKIRTS, nameTag, roomTag, drawLabels, COLORS } from './render.js';
 import { avatarSprite, palette, SPRITE_W, SPRITE_FOOT } from './sprite.js';
 import { Mesh } from './rtc.js';
+import { createCallQualityMeter, mountCallQualityWidget, rtcStatsReader } from '../../app/public/call-quality-meter.js';
 import { icon, hydrate } from './icons.js';
 import { html, esc, setHtml } from './html.js';
 import { setNote, noteLine, NOTE_MS } from './notes.js';
@@ -645,6 +646,7 @@ async function setMedia(kind, on) {
   sendStatus();
   renderMe();
   updateSelfTile();
+  syncQuality();
 }
 $('#mic').onclick = () => setMedia('audio', !local.audio);
 $('#cam').onclick = () => setMedia('video', !local.video);
@@ -886,8 +888,35 @@ $('#people').onclick = (e) => {
 function personActs(o) {
   return o ? hooks.personActions.flatMap((fn) => fn(o) || []) : [];
 }
+let quality = null;
+function meshPeers() {
+  return mesh ? [...mesh.peers.values()] : [];
+}
+function syncQuality() {
+  const host = $('#quality');
+  if (!host) return;
+  const live = meshPeers().length > 0;
+  const want = live || Boolean(local.audio);
+  if (quality && quality.live === live && want) return;
+  quality?.widget?.destroy();
+  quality?.meter.stop();
+  quality = null;
+  host.hidden = !want;
+  if (!want) return;
+  const meter = createCallQualityMeter({
+    readStats: live ? rtcStatsReader(() => meshPeers().map((p) => p.pc)) : null,
+    tracks: () => ({ mic: local.audio, peers: meshPeers().flatMap((p) => p.stream.getAudioTracks()) }),
+  });
+  const widget = mountCallQualityWidget(host, meter, {
+    video: () => Boolean(local.video) || meshPeers().some((p) => p.stream.getVideoTracks().length),
+    peerLabel: 'Nearby',
+  });
+  quality = { live, meter, widget };
+}
+
 let lastZoneKey = '';
 function updateZone() {
+  syncQuality();
   const z = ZONES[zoneAt(me.x, me.y)];
   const n = mesh.peers.size;
   const zoneKey = `${z?.name || ''}|${z?.private ? 1 : 0}|${n}`;

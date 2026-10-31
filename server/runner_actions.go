@@ -33,12 +33,14 @@ const (
 	runnerActionsPayloadMax = 1 << 20
 	runnerActionsSecretMax  = 48 << 10
 	runnerActionsReportMax  = 8<<20 - 64<<10
+	runnerActionsPullEvent  = "pull_request"
 )
 
 var (
 	runnerActionsEventPattern  = regexp.MustCompile(`^[a-z_]{1,40}$`)
 	runnerActionsSecretPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
 	runnerActionsZeroOID       = regexp.MustCompile(`^0+$`)
+	runnerActionsPullRef       = regexp.MustCompile(`^refs/pr/([1-9][0-9]{0,8})/head$`)
 )
 
 type runnerActionsJob struct {
@@ -69,7 +71,30 @@ type runnerActionsJob struct {
 	BotName      string            `json:"botName"`
 	BotEmail     string            `json:"botEmail"`
 
-	catalog []runnerActionsCatalogEntry
+	PullNumber          int    `json:"pullNumber"`
+	PullRef             string `json:"pullRef"`
+	BaseRef             string `json:"baseRef"`
+	BaseCommit          string `json:"baseCommit"`
+	GateWorkflowChanges bool   `json:"gateWorkflowChanges"`
+
+	catalog          []runnerActionsCatalogEntry
+	approvalRequired string
+	workflowSource   string
+}
+
+func (job runnerActionsJob) pull() bool {
+	return job.event() == runnerActionsPullEvent
+}
+
+func (job *runnerActionsJob) dropPrivileges() {
+	if !job.pull() {
+		return
+	}
+	job.Trusted = false
+	job.Secrets = nil
+	job.PushGrant, job.PushRef = "", ""
+	job.JobToken, job.APIURL = "", ""
+	job.BotName, job.BotEmail = "", ""
 }
 
 type runnerActionsCatalogEntry struct {
@@ -191,6 +216,9 @@ func (a *runnerActions) validate(job runnerActionsJob) string {
 	if problem := validRunnerActionsExtras(job); problem != "" {
 		return problem
 	}
+	if problem := validRunnerActionsPull(job); problem != "" {
+		return problem
+	}
 	organization := strings.ToLower(job.Organization)
 	if organization == "" {
 		organization = owner
@@ -251,6 +279,30 @@ func validRunnerActionsExtras(job runnerActionsJob) string {
 	return ""
 }
 
+func validRunnerActionsPull(job runnerActionsJob) string {
+	if !job.pull() {
+		if job.PullNumber != 0 || job.PullRef != "" || job.BaseRef != "" || job.BaseCommit != "" {
+			return "Malformed or unsafe Actions job."
+		}
+		return ""
+	}
+	if job.PullNumber <= 0 || job.Commit == "" || validPullBranch(job.BaseRef) == "" ||
+		(job.BaseCommit != "" && !runnerObjectID.MatchString(job.BaseCommit)) {
+		return "Malformed or unsafe pull request job."
+	}
+	if match := runnerActionsPullRef.FindStringSubmatch(job.PullRef); match != nil {
+		if match[1] != strconv.Itoa(job.PullNumber) {
+			return "Malformed or unsafe pull request job."
+		}
+		return ""
+	}
+	branch, ok := strings.CutPrefix(job.PullRef, "refs/heads/")
+	if !ok || validPullBranch(branch) == "" || strings.HasPrefix(branch, "-") {
+		return "Malformed or unsafe pull request job."
+	}
+	return ""
+}
+
 func (a *runnerActions) pushGrant(job runnerActionsJob) string {
 	if !job.Trusted || job.PushGrant == "" {
 		return ""
@@ -266,6 +318,7 @@ func (a *runnerActions) pushGrant(job runnerActionsJob) string {
 }
 
 func (a *runnerActions) execute(ctx context.Context, job runnerActionsJob) {
+	job.dropPrivileges()
 	if problem := a.validate(job); problem != "" {
 		a.report(ctx, job, "failed", nil, "", problem)
 		return
@@ -283,7 +336,13 @@ func (a *runnerActions) execute(ctx context.Context, job runnerActionsJob) {
 	}
 	lock := a.b.cacheLock(cache)
 	lock.Lock()
-	runs, commit, catalog, problem := a.plan(ctx, cache, job)
+	if job.pull() {
+		if _, err := a.b.daemonGit(ctx, "", job.ReadGrant, cloneURL, false, "--git-dir="+cache, "fetch",
+			"--quiet", "--no-write-fetch-head", "--", cloneURL, "+"+job.PullRef+":"+job.PullRef); err != nil {
+			log.Printf("runner actions: pull request %d head fetch failed: %v", job.PullNumber, err)
+		}
+	}
+	runs, commit, catalog, problem := a.planJob(ctx, cache, &job)
 	lock.Unlock()
 	job.catalog = catalog
 	if problem != "" {
@@ -453,14 +512,62 @@ func (a *runnerActions) changedPaths(ctx context.Context, cache, before, commit 
 	return paths, true
 }
 
+func (a *runnerActions) workflowCommit(ctx context.Context, cache string, job runnerActionsJob) string {
+	if job.BaseCommit != "" {
+		if out, err := a.git(ctx, cache, "rev-parse", "--verify", "-q", job.BaseCommit+"^{commit}"); err == nil && out == job.BaseCommit {
+			return job.BaseCommit
+		}
+	}
+	tip, err := a.git(ctx, cache, "rev-parse", "--verify", "-q", "refs/heads/"+job.BaseRef+"^{commit}")
+	if err != nil || !runnerObjectID.MatchString(tip) {
+		return ""
+	}
+	return tip
+}
+
+func (a *runnerActions) changesWorkflows(ctx context.Context, cache, base, commit string) (bool, error) {
+	mergeBase, err := a.git(ctx, cache, "merge-base", base, commit)
+	if err != nil || !runnerObjectID.MatchString(mergeBase) {
+		return true, err
+	}
+	out, err := a.git(ctx, cache, "diff", "--name-only", "--no-renames", mergeBase, commit, "--", ".forkmesh/")
+	if err != nil {
+		return true, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
 func (a *runnerActions) plan(ctx context.Context, cache string, job runnerActionsJob) ([]*runnerActionsRun, string, []runnerActionsCatalogEntry, string) {
+	return a.planJob(ctx, cache, &job)
+}
+
+func (a *runnerActions) planJob(ctx context.Context, cache string, job *runnerActionsJob) ([]*runnerActionsRun, string, []runnerActionsCatalogEntry, string) {
 	ref := "refs/heads/" + job.Branch
 	catalog := []runnerActionsCatalogEntry{}
-	commit, problem := a.resolveCommit(ctx, cache, job)
+	commit, problem := a.resolveCommit(ctx, cache, *job)
 	if problem != "" {
+		if job.pull() {
+			problem = "The pull request's head commit is not on the core yet."
+		}
 		return nil, commit, catalog, problem
 	}
-	out, err := a.git(ctx, cache, "ls-tree", "--name-only", commit, ".forkmesh/")
+	source := commit
+	if job.pull() {
+		ref = job.PullRef
+		source = a.workflowCommit(ctx, cache, *job)
+		if source == "" {
+			return nil, commit, catalog, "The base branch " + job.BaseRef + " is not on the core."
+		}
+		job.workflowSource = source
+		if job.GateWorkflowChanges {
+			changed, err := a.changesWorkflows(ctx, cache, source, commit)
+			if err != nil || changed {
+				job.approvalRequired = "workflows"
+				return nil, commit, catalog, "This pull request changes .forkmesh/; a maintainer has to approve the run."
+			}
+		}
+	}
+	out, err := a.git(ctx, cache, "ls-tree", "--name-only", source, ".forkmesh/")
 	if err != nil {
 		return nil, commit, catalog, "The workflows could not be listed."
 	}
@@ -484,7 +591,7 @@ func (a *runnerActions) plan(ctx context.Context, cache string, job runnerAction
 		if !workflowPathPattern.MatchString(name) {
 			continue
 		}
-		content, err := a.git(ctx, cache, "show", commit+":"+name)
+		content, err := a.git(ctx, cache, "show", source+":"+name)
 		if err != nil {
 			continue
 		}
@@ -498,7 +605,7 @@ func (a *runnerActions) plan(ctx context.Context, cache string, job runnerAction
 				Inputs: nonNilInputs(wf.Inputs)})
 		}
 		if len(runs) == runnerActionsMaxRuns || !wf.runsOnThisNode(a.labels()) ||
-			!workflowWantsEvent(wf, job, event, action, changed, changedKnown) {
+			!workflowWantsEvent(wf, *job, event, action, changed, changedKnown) {
 			continue
 		}
 		runs = append(runs, &runnerActionsRun{Workflow: wf.Name, Commit: commit, Ref: ref,
@@ -525,6 +632,8 @@ func workflowWantsEvent(wf *workflow, job runnerActionsJob, event, action string
 		return false
 	}
 	switch event {
+	case runnerActionsPullEvent:
+		return len(wf.PullBranches) == 0 || wf.matchesPullBranch(job.BaseRef)
 	case "issues":
 		return len(wf.IssueTypes) == 0 || containsString(wf.IssueTypes, action)
 	case "issue_comment":
@@ -730,6 +839,17 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 	} {
 		base.set(pair[0], pair[1])
 	}
+	if job.pull() {
+		for _, pair := range [][2]string{
+			{"FORKMESH_PULL_NUMBER", strconv.Itoa(job.PullNumber)},
+			{"FORKMESH_BASE_REF", job.BaseRef},
+			{"FORKMESH_BASE_SHA", job.workflowSource},
+			{"GITHUB_BASE_REF", job.BaseRef},
+			{"GITHUB_HEAD_REF", job.PullRef},
+		} {
+			base.set(pair[0], pair[1])
+		}
+	}
 	// A trusted job's token, or the one an untrusted issue or comment job
 	// carries for the job API (this repository's issues only).
 	if job.JobToken != "" {
@@ -771,7 +891,11 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 
 	fmt.Fprintf(sink, "==> %s at %s on %s (runner %s; event %s)\n", wf.Name,
 		boundedRunes(commit, 12), job.Branch, a.b.node, job.event())
-	if pushGrant != "" {
+	if job.pull() {
+		fmt.Fprintf(sink, "==> Pull request #%d into %s: the workflow comes from %s at %s, not from the pull request.\n",
+			job.PullNumber, job.BaseRef, job.BaseRef, boundedRunes(job.workflowSource, 12))
+		fmt.Fprintf(sink, "==> Sandbox: the runner's job user and limits; no secrets, no job token, no push access.\n")
+	} else if pushGrant != "" {
 		fmt.Fprintf(sink, "==> Sandbox: the runner's job user and limits; this checkout may push to %s.\n", job.Branch)
 	} else {
 		fmt.Fprintf(sink, "==> Sandbox: the runner's job user and limits, no Actions variables.\n")
@@ -1006,6 +1130,9 @@ func (a *runnerActions) reportBody(job runnerActionsJob, status string, runs []*
 	envelope := map[string]any{
 		"jobId": job.JobID, "leaseId": job.LeaseID, "status": status,
 		"commit": commit, "runs": wire, "message": message, "catalog": catalog,
+	}
+	if job.approvalRequired != "" {
+		envelope["approvalRequired"] = job.approvalRequired
 	}
 	base, err := json.Marshal(envelope)
 	if err != nil {

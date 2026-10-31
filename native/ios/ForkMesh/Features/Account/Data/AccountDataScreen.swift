@@ -8,24 +8,44 @@ import UniformTypeIdentifiers
 struct AccountDataScreen: View {
     @Environment(\.fmPalette) var fm
     @State var model: AccountDataModel?
+    @State var browser: AccountDataBrowser?
     @State var document: JSONTextDocument?
     @State var exporting: Bool = false
     @State var confirmClear: Bool = false
+    @State var confirmRestore: Bool = false
+    @State var confirmStore: AccountStoreItem?
+    @State var confirmStoreAll: Bool = false
     @State var exportNotice: FmNotice?
     @State var cacheNotice: FmNotice?
+    @State var syncNotice: FmNotice?
+    @State var storeNotice: FmNotice?
 
     private let auth: AuthService?
+    private let sync: AccountSyncService?
 
     init() {
         let api: ApiService? = Services.get(ApiService.self)
         auth = Services.get(AuthService.self)
+        sync = Services.get(AccountSyncService.self)
         _model = State(initialValue: api.map { AccountDataModel(client: $0) })
+        _browser = State(initialValue: api.map { AccountDataBrowser(client: $0) })
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                SettingsSection(title: "Export your account") {
+                if let sync = sync {
+                    SettingsSection(title: "Save to ForkMesh") {
+                        SettingsCardBox { syncCard(sync) }
+                    }
+                }
+                SettingsSection(title: "Everything ForkMesh has about you") {
+                    SettingsCardBox(padded: false) { inventoryCard }
+                }
+                SettingsSection(title: "Saved from your phone") {
+                    SettingsCardBox(padded: false) { storeCard }
+                }
+                SettingsSection(title: "Download your data") {
                     SettingsCardBox { exportCard }
                 }
                 SettingsSection(title: "This phone", last: true) {
@@ -34,6 +54,8 @@ struct AccountDataScreen: View {
             }
             .padding(FmSpace.x4)
         }
+        .fmRefreshable { [browser, auth] in await Self.refresh(browser, auth) }
+        .task { if browser?.inventory == nil, auth?.session != nil { await browser?.load() } }
         .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Data")
         .navigationBarTitleDisplayMode(.inline)
@@ -56,17 +78,216 @@ struct AccountDataScreen: View {
                     clearCaches()
                 })
         }
+        .fmDialog(isPresented: $confirmRestore) {
+            FmConfirmDialog(
+                title: "Restore saved data?",
+                message: "This phone's home screen layout, news reader subscriptions and app settings are replaced with the copy saved on ForkMesh.",
+                confirmLabel: "Restore",
+                onCancel: { confirmRestore = false },
+                onConfirm: {
+                    confirmRestore = false
+                    Task { @MainActor in
+                        guard let sync = sync else { return }
+                        let applied = await sync.restore()
+                        if sync.error.isEmpty {
+                            syncNotice = FmNotice(applied == 0
+                                ? "The saved copy matches this phone; nothing changed."
+                                : "Restored \(applied) \(applied == 1 ? "setting" : "settings and subscriptions"). Some appear after you reopen ForkMesh.")
+                        }
+                    }
+                })
+        }
+        .fmDialog(isPresented: storeShown) {
+            if let item = confirmStore {
+                FmConfirmDialog(
+                    title: "Delete \(item.title)?",
+                    message: "The copy saved on ForkMesh is deleted. This phone keeps its own settings, and saves them again while Save to ForkMesh is on.",
+                    confirmLabel: "Delete",
+                    destructive: true,
+                    onCancel: { confirmStore = nil },
+                    onConfirm: {
+                        confirmStore = nil
+                        Task { @MainActor in
+                            if await browser?.deleteStore(item.key) == true {
+                                sync?.forgetHashes()
+                                storeNotice = FmNotice("Deleted from ForkMesh")
+                            }
+                        }
+                    })
+            }
+        }
+        .fmDialog(isPresented: $confirmStoreAll) {
+            FmConfirmDialog(
+                title: "Delete everything saved from your phone?",
+                message: "Every copy saved on ForkMesh and its encryption key are deleted, and Save to ForkMesh is switched off. This phone keeps its own settings.",
+                confirmLabel: "Delete all",
+                destructive: true,
+                onCancel: { confirmStoreAll = false },
+                onConfirm: {
+                    confirmStoreAll = false
+                    Task { @MainActor in
+                        if await browser?.deleteStore(nil) == true {
+                            sync?.enabled = false
+                            storeNotice = FmNotice("Deleted everything saved from your phone")
+                        }
+                    }
+                })
+        }
+    }
+
+    private static func refresh(_ browser: AccountDataBrowser?, _ auth: AuthService?) async {
+        guard auth?.session != nil else { return }
+        await browser?.load(refresh: true)
+    }
+
+    private var storeShown: Binding<Bool> {
+        Binding<Bool>(get: { confirmStore != nil }, set: { (shown: Bool) in if !shown { confirmStore = nil } })
+    }
+
+    @ViewBuilder private func syncCard(_ sync: AccountSyncService) -> some View {
+        VStack(alignment: .leading, spacing: FmSpace.x3) {
+            Toggle(isOn: Binding<Bool>(get: { sync.enabled }, set: { (on: Bool) in
+                sync.enabled = on
+                if on {
+                    Task { @MainActor in
+                        await sync.saveNow()
+                        await browser?.load(refresh: true)
+                    }
+                }
+            })) {
+                Text("Save my settings to ForkMesh").fmText(.bodyMedium)
+            }
+            .tint(fm.accent)
+            .disabled(auth?.session == nil)
+            SettingsNote(text: "Your home screen layout, news reader subscriptions and app settings are saved to your account, so a new phone or a reinstall can get them back. They are encrypted with a key that belongs to your account alone, and that key is itself encrypted on the server. Sign-in keys, passwords and chat keys never leave this phone.")
+            FmKeyValueRow(label: "Last saved", value: AccountTime.label(sync.lastSavedAt, nowMillis: SystemClock().nowMillis))
+            if !sync.error.isEmpty {
+                SettingsNote(text: sync.error, color: fm.danger)
+                    .fmMessageTools(sync.error)
+            }
+            FmNoticeLine($syncNotice)
+            HStack(spacing: FmSpace.x2) {
+                FmFilledButton(sync.busy ? "Saving…" : "Save now", icon: "cloud_upload_outlined",
+                               onPressed: sync.busy || auth?.session == nil ? nil : {
+                    Task { @MainActor in
+                        let saved = await sync.saveNow()
+                        if sync.error.isEmpty {
+                            syncNotice = FmNotice(saved == 0 ? "Nothing to save yet" : saved == 1 ? "Saved 1 item" : "Saved \(saved) items")
+                            await browser?.load(refresh: true)
+                        }
+                    }
+                })
+                FmOutlinedButton("Restore", icon: "history",
+                                 onPressed: sync.busy || auth?.session == nil ? nil : { confirmRestore = true })
+            }
+        }
+    }
+
+    @ViewBuilder private var inventoryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsNote(text: "Every place ForkMesh keeps something about you: your account and linked nodes, the repositories you own, and each organization you belong to. Open a section to see each item, and remove the ones that can be removed on their own.")
+                .padding(.horizontal, FmSpace.x4)
+                .padding(.vertical, FmSpace.x3)
+            FmHairline()
+            if let browser = browser {
+                if browser.loading && browser.inventory == nil {
+                    FmSkeletonList(rows: 3, label: "Looking through your data")
+                } else if let inventory = browser.inventory, !inventory.subjects.isEmpty {
+                    ForEach(Array(inventory.subjects.enumerated()), id: \.element.id) { (index: Int, subject: AccountDataSubject) in
+                        if index > 0 { FmHairline() }
+                        NavigationLink {
+                            AccountDataSubjectScreen(browser: browser, subjectId: subject.id)
+                                .shellPageClearance()
+                        } label: {
+                            SettingsLinkRow(icon: icon(for: subject), title: subject.title, subtitle: subject.subtitle)
+                        }
+                        .buttonStyle(FmPressStyle(highlight: fm.accentSubtle))
+                    }
+                } else {
+                    SettingsEmptyNote(
+                        title: browser.error.isEmpty ? "Nothing to show" : "Your data is unavailable",
+                        text: browser.error.isEmpty ? "Sign in to see what ForkMesh has about you." : browser.error)
+                        .padding(FmSpace.x4)
+                }
+                if !browser.error.isEmpty && browser.inventory != nil {
+                    FmHairline()
+                    SettingsNote(text: browser.error, color: fm.danger)
+                        .fmMessageTools(browser.error)
+                        .padding(FmSpace.x4)
+                }
+                FmHairline()
+                SettingsRefreshControl(loading: browser.loading, label: "Check again", onRefresh: auth?.session == nil ? nil : {
+                    Task { @MainActor in await browser.load(refresh: true) }
+                })
+                .padding(.horizontal, FmSpace.x4)
+                .padding(.vertical, FmSpace.x2)
+            }
+        }
+    }
+
+    @ViewBuilder private var storeCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let items = browser?.inventory?.store, !items.isEmpty {
+                ForEach(Array(items.enumerated()), id: \.element.id) { (index: Int, item: AccountStoreItem) in
+                    if index > 0 { FmHairline() }
+                    FmListRow(
+                        title: item.title,
+                        subtitle: storeSubtitle(item),
+                        leading: FmIcon(storeIcon(item), size: 22, color: fm.textSecondary).fmAny,
+                        trailing: FmIconButton(icon: "delete_outline", label: "Delete \(item.title)", size: 20, color: fm.textTertiary,
+                                               onPressed: { confirmStore = item }).fmAny,
+                        showChevron: false)
+                }
+                FmHairline()
+                VStack(alignment: .leading, spacing: FmSpace.x2) {
+                    FmNoticeLine($storeNotice)
+                    FmTextButton("Delete everything saved from your phone", icon: "delete_sweep_outlined", onPressed: { confirmStoreAll = true })
+                }
+                .padding(.horizontal, FmSpace.x4)
+                .padding(.vertical, FmSpace.x3)
+            } else {
+                VStack(alignment: .leading, spacing: FmSpace.x2) {
+                    SettingsEmptyNote(title: "Nothing saved yet", text: "Switch on Save to ForkMesh to keep your layout, subscriptions and settings with your account.")
+                    FmNoticeLine($storeNotice)
+                }
+                .padding(FmSpace.x4)
+            }
+        }
+    }
+
+    private func storeSubtitle(_ item: AccountStoreItem) -> String {
+        var parts = [ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file)]
+        parts.append("saved " + AccountTime.label(item.updatedAt, nowMillis: SystemClock().nowMillis))
+        if !item.device.isEmpty { parts.append("from " + item.device) }
+        return parts.joined(separator: " · ")
+    }
+
+    private func storeIcon(_ item: AccountStoreItem) -> String {
+        switch item.kind {
+        case "layout": return "grid_view_outlined"
+        case "subscriptions": return "article_outlined"
+        default: return "tune"
+        }
+    }
+
+    private func icon(for subject: AccountDataSubject) -> String {
+        switch subject.kind {
+        case "account": return "person_outline"
+        case "repositories": return "folder_outlined"
+        case "organization": return "groups_outlined"
+        default: return "storage_outlined"
+        }
     }
 
     @ViewBuilder private var exportCard: some View {
         VStack(alignment: .leading, spacing: FmSpace.x3) {
-            SettingsNote(text: "Download what the server keeps about your account: profile, devices, SSH public keys and notification settings, as JSON. Password hashes and private keys are never included.")
+            SettingsNote(text: "Download everything listed above as one JSON file: your account, devices, SSH public keys, settings saved from your phone, and every item in every section. Password hashes, private keys and other credentials are never included.")
             if let model = model, !model.error.isEmpty {
                 SettingsNote(text: model.error, color: fm.danger)
                     .fmMessageTools(model.error)
             }
             FmNoticeLine($exportNotice)
-            FmFilledButton(model?.busy == true ? "Preparing…" : "Export account data", icon: "download_outlined",
+            FmFilledButton(model?.busy == true ? "Preparing…" : "Download all my data", icon: "download_outlined",
                            onPressed: model == nil || model?.busy == true || auth?.session == nil ? nil : {
                 exportNotice = nil
                 Task { @MainActor in

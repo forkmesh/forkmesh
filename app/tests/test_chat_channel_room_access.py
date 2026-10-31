@@ -5,6 +5,7 @@ import ast
 import asyncio
 import hashlib
 import hmac
+import ipaddress
 import re
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
@@ -74,6 +75,7 @@ def _helpers():
         "_to_js": lambda value: value,
         "hashlib": hashlib,
         "hmac": hmac,
+        "ipaddress": ipaddress,
         "js_crypto": _FakeCrypto(),
         "re": re,
     }
@@ -85,7 +87,7 @@ def _socket_harness(channel_version=1, member=True, admin=False,
                     visibility="private", account_status="active",
                     account_kind="user"):
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
-    names = FUNCTIONS | {"_chat_channel_socket_handler"}
+    names = FUNCTIONS | {"_chat_channel_socket_handler", "_chat_socket_address"}
     selected = [
         node for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -134,6 +136,7 @@ def _socket_harness(channel_version=1, member=True, admin=False,
         "ensure_schema": lambda _env: asyncio.sleep(0),
         "hashlib": hashlib,
         "hmac": hmac,
+        "ipaddress": ipaddress,
         "js_crypto": _FakeCrypto(),
         "json_response": lambda data, status=200: {
             "status": status, "data": data},

@@ -27,6 +27,7 @@ const APP_SUBRESOURCES = new Set([
   "/dashboard-composer.js",
   "/dashboard-plugin-host.js",
   "/user-status.js",
+  "/username-autocomplete.js",
   "/qr.js",
 ]);
 
@@ -712,9 +713,14 @@ export default {
     }
     if (MARKET_PACKAGE.test(path)) {
       const pageUrl = new URL(request.url);
-      pageUrl.pathname = "/market";
+      pageUrl.pathname = path.replace(/\/$/, "");
       pageUrl.search = "";
-      return captureAttribution(request, env, ctx, await asset(new Request(pageUrl, request), env));
+      let page = await env.ASSETS.fetch(new Request(pageUrl, request));
+      if (page.status === 404) {
+        pageUrl.pathname = "/market";
+        page = await asset(new Request(pageUrl, request), env);
+      }
+      return captureAttribution(request, env, ctx, page);
     }
     if (/^\/[^/]+\/[^/]+(?:\/.*)?$/.test(path) &&
         !WWW_PREFIXES.some((prefix) => path.startsWith(prefix))) {

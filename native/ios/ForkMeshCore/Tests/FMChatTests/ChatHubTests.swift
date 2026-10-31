@@ -42,8 +42,7 @@ final class ChatHubTests: XCTestCase {
         XCTAssertFalse(random)
         XCTAssertEqual(blocked, ["post in #random"])
 
-        hub.select("@someone")
-        XCTAssertEqual(hub.composeBlocked, "send direct messages")
+        XCTAssertEqual(hub.guestComposeBlocked(Self.zoeDirect), "send direct messages")
 
         hub.select(meshConversation)
         XCTAssertNil(hub.composeBlocked)
@@ -56,7 +55,7 @@ final class ChatHubTests: XCTestCase {
 
     func testASignedInUserCanPostAnywhere() async throws {
         let (hub, h, _) = try await hub()
-        for conversation in ["#random", "@someone", meshConversation] {
+        for conversation in ["#random", Self.zoeDirect, meshConversation] {
             hub.select(conversation)
             XCTAssertNil(hub.composeBlocked, conversation)
         }
@@ -90,15 +89,31 @@ final class ChatHubTests: XCTestCase {
         await h.close()
     }
 
+    static let zoeDirect = "direct:" + String(repeating: "a", count: 32)
+
+    private func zoe(_ hub: ChatHub) async {
+        let api = FakeAccountApi()
+        api.replies["GET /api/chat/direct-messages"] = [
+            "conversations": [["id": .string(String(repeating: "a", count: 32)), "otherUser": "zoe"]]
+        ]
+        let direct = DirectMessageService(
+            api: api, connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.forkmesh.com") }, selfId: { hub.relay.selfId }, displayName: { "Me" })
+        await direct.refresh()
+        hub.direct = direct
+    }
+
     func testADirectMessageTitleNamesThePeer() async throws {
         let (hub, h, _) = try await hub()
+        await zoe(hub)
         try await h.sendProtected(["type": "presence", "id": "p", "senderId": "node-z", "sender": "Zoe", "ts": .int(Date().epochMillis)])
         _ = await waitUntil(2) { h.relay.roster().count == 2 }
-        hub.select("@node-z")
-        XCTAssertEqual(hub.title, "@Zoe")
+        hub.select(Self.zoeDirect)
+        XCTAssertEqual(hub.title, "@zoe")
         XCTAssertEqual(hub.titleIcon, "alternate_email")
-        hub.select("@gone")
-        XCTAssertEqual(hub.title, "@direct message")
+        hub.select("#general")
+        hub.select("@\(h.node("node-z"))")
+        XCTAssertEqual(hub.currentConversation, Self.zoeDirect, "a person on the relay opens their server direct message")
         await h.close()
     }
 
@@ -111,10 +126,11 @@ final class ChatHubTests: XCTestCase {
         try await h.sendProtected(["type": "presence", "id": "p", "senderId": "node-z", "sender": "Zoe", "ts": .int(Date().epochMillis)])
         _ = await waitUntil(2) { h.relay.roster().count == 2 }
         XCTAssertEqual(hub.headerDetail, "2 members \u{2022} 2 tabs")
-        hub.select("@node-z")
-        XCTAssertEqual(hub.roomName, "Zoe")
+        await zoe(hub)
+        hub.select(Self.zoeDirect)
+        XCTAssertEqual(hub.roomName, "zoe")
         XCTAssertEqual(hub.headerDetail, "Direct message • end-to-end")
-        XCTAssertEqual(hub.introLine, "This is the very beginning of your direct messages with Zoe.")
+        XCTAssertEqual(hub.introLine, "This is the very beginning of your direct messages with zoe.")
         hub.select(meshConversation)
         XCTAssertEqual(hub.headerDetail, "local only")
         await h.close()

@@ -1,5 +1,6 @@
 import FMPackages
 import SwiftUI
+import UIKit
 
 extension DjStudioModel {
     func dragQueue(_ item: DjQueueItem, to point: CGPoint) {
@@ -119,50 +120,124 @@ struct DjQueueThumb: View {
     let u: CGFloat
     let vertical: Bool
     @State private var choosing = false
-    @GestureState private var held = false
+    @State private var pressed = false
+    @GestureState private var tracking = false
 
     var body: some View {
-        DjQueueArt(item: item, next: next, u: u, vertical: vertical, showsAdder: model.inJam)
-            .opacity(dragging ? 0.35 : 1)
-            .scaleEffect(held && !dragging ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.15), value: held)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                DjTheme.tick()
-                choosing = true
-            }
-            .gesture(
-                LongPressGesture(minimumDuration: 0.2)
-                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(DjStudioView.space)))
-                    .updating($held) { _, state, _ in state = true }
+        draggable(
+            DjQueueArt(item: item, next: next, u: u, vertical: vertical, showsAdder: model.inJam)
+                .opacity(dragging ? 0.35 : 1)
+                .scaleEffect(pressed && !dragging ? 0.94 : 1)
+                .animation(.easeOut(duration: 0.15), value: pressed)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    DjTheme.tick()
+                    choosing = true
+                }
+                .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 8) {
+                    DjTheme.tick()
+                    choosing = true
+                } onPressingChanged: { now in
+                    pressed = now
+                }
+        )
+        .onChange(of: tracking) { _, now in
+            if !now, model.draggedId == item.id { model.cancelQueueDrag() }
+        }
+        .confirmationDialog(item.title.isEmpty ? "YouTube video" : item.title, isPresented: $choosing, titleVisibility: .visible) {
+            Button("Load on Deck A") { model.playFromQueue(item, on: .a) }
+            Button("Load on Deck B") { model.playFromQueue(item, on: .b) }
+            Button("Tags and Playlists…") { model.editSong(item.videoId) }
+            Button("Remove from Queue", role: .destructive) { model.removeFromQueue(item) }
+        } message: {
+            Text([item.addedLine.map { $0 + "." }, "Or drag the thumbnail onto a deck."].compactMap { $0 }.joined(separator: "\n"))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([item.title.isEmpty ? "Queued video" : "Queued: \(item.title)", model.inJam ? item.addedLine : nil].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Load on Deck A") { model.playFromQueue(item, on: .a) }
+        .accessibilityAction(named: "Load on Deck B") { model.playFromQueue(item, on: .b) }
+        .accessibilityAction(named: "Remove from Queue") { model.removeFromQueue(item) }
+    }
+
+    private var across: Axis { vertical ? .horizontal : .vertical }
+
+    @ViewBuilder private func draggable<Content: View>(_ content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.gesture(DjQueuePan(across: across, moved: { model.dragQueue(item, to: $0) }, ended: { point in
+                guard model.draggedId == item.id else { return }
+                if let point { model.dropQueue(at: point) } else { model.cancelQueueDrag() }
+            }))
+        } else {
+            content.simultaneousGesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .named(DjStudioView.space))
+                    .updating($tracking) { _, state, _ in state = true }
                     .onChanged { value in
-                        guard case let .second(true, drag?) = value else { return }
-                        model.dragQueue(item, to: drag.location)
+                        if model.draggedId != item.id {
+                            guard model.queueDrag == nil, DjQueueLane.heads(across, value.translation), hypot(value.translation.width, value.translation.height) < 40 else { return }
+                        }
+                        model.dragQueue(item, to: value.location)
                     }
                     .onEnded { value in
-                        guard case let .second(true, drag?) = value else {
-                            model.cancelQueueDrag()
-                            return
-                        }
-                        model.dropQueue(at: drag.location)
+                        if model.draggedId == item.id { model.dropQueue(at: value.location) }
                     })
-            .onChange(of: held) { _, now in
-                if !now, model.draggedId == item.id { model.cancelQueueDrag() }
-            }
-            .confirmationDialog(item.title.isEmpty ? "YouTube video" : item.title, isPresented: $choosing, titleVisibility: .visible) {
-                Button("Load on Deck A") { model.playFromQueue(item, on: .a) }
-                Button("Load on Deck B") { model.playFromQueue(item, on: .b) }
-                Button("Tags and Playlists…") { model.editSong(item.videoId) }
-                Button("Remove from Queue", role: .destructive) { model.removeFromQueue(item) }
-            } message: {
-                Text("Or hold the thumbnail and drag it onto a deck.")
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(item.title.isEmpty ? "Queued video" : "Queued: \(item.title)")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction(named: "Load on Deck A") { model.playFromQueue(item, on: .a) }
-            .accessibilityAction(named: "Load on Deck B") { model.playFromQueue(item, on: .b) }
-            .accessibilityAction(named: "Remove from Queue") { model.removeFromQueue(item) }
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct DjQueuePan: UIGestureRecognizerRepresentable {
+    let across: Axis
+    let moved: (CGPoint) -> Void
+    let ended: (CGPoint?) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = context.coordinator
+        context.coordinator.across = across
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.across = across
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let point: CGPoint = context.converter.location(in: .named(DjStudioView.space))
+        switch recognizer.state {
+        case .began, .changed:
+            moved(point)
+        case .ended:
+            ended(point)
+        case .cancelled, .failed:
+            ended(nil)
+        default:
+            break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var across: Axis = .horizontal
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity: CGPoint = pan.velocity(in: pan.view)
+            let heading: CGPoint = velocity == .zero ? pan.translation(in: pan.view) : velocity
+            return DjQueueLane.heads(across, CGSize(width: heading.x, height: heading.y))
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            other.view is UIScrollView
+        }
+    }
+}
+
+private enum DjQueueLane {
+    static func heads(_ across: Axis, _ moved: CGSize) -> Bool {
+        across == .horizontal ? abs(moved.width) > abs(moved.height) : abs(moved.height) > abs(moved.width)
     }
 }
 
@@ -172,13 +247,17 @@ struct DjQueueArt: View {
     let u: CGFloat
     let vertical: Bool
     let showsAdder: Bool
+    @State private var loaded: UIImage?
 
     var body: some View {
-        AsyncImage(url: item.thumbnail) { image in
-            image.resizable().scaledToFill()
-        } placeholder: {
-            Color.white.opacity(0.08)
+        Group {
+            if let image = loaded ?? DjQueueThumbs.cached(item.thumbnail) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Color.white.opacity(0.08)
+            }
         }
+        .task(id: item.thumbnail) { loaded = await DjQueueThumbs.load(item.thumbnail) }
         .frame(maxWidth: vertical ? .infinity : nil)
         .frame(width: vertical ? nil : 72 * u, height: vertical ? nil : 44 * u)
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -186,16 +265,53 @@ struct DjQueueArt: View {
         .overlay(RoundedRectangle(cornerRadius: 4 * u, style: .continuous).strokeBorder(next ? DjTheme.active.opacity(0.8) : DjTheme.edge, lineWidth: next ? 1.5 : 1))
         .overlay(alignment: .bottomLeading) {
             if showsAdder, !item.addedBy.isEmpty {
-                Text(item.addedBy)
-                    .font(.system(size: 8 * u, weight: .semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 3 * u)
-                    .padding(.vertical, 1 * u)
-                    .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 2 * u))
-                    .foregroundStyle(DjTheme.ink)
-                    .padding(2 * u)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(item.addedBy)
+                        .font(.system(size: 8 * u, weight: .semibold))
+                    if let stamp = item.addedStamp {
+                        Text(stamp)
+                            .font(.system(size: 7 * u, weight: .medium).monospacedDigit())
+                            .opacity(0.8)
+                    }
+                }
+                .lineLimit(1)
+                .padding(.horizontal, 3 * u)
+                .padding(.vertical, 1 * u)
+                .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 2 * u))
+                .foregroundStyle(DjTheme.ink)
+                .padding(2 * u)
             }
         }
+    }
+}
+
+extension DjQueueItem {
+    var addedStamp: String? {
+        guard let date = addedDate else { return nil }
+        if Calendar.current.isDateInToday(date) { return date.formatted(date: .omitted, time: .shortened) }
+        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    }
+
+    var addedLine: String? {
+        let when = addedDate?.formatted(date: .abbreviated, time: .shortened)
+        if !addedBy.isEmpty, let when { return "Added by \(addedBy) on \(when)" }
+        if !addedBy.isEmpty { return "Added by \(addedBy)" }
+        if let when { return "Added on \(when)" }
+        return nil
+    }
+}
+
+@MainActor
+enum DjQueueThumbs {
+    private static let cache = NSCache<NSURL, UIImage>()
+
+    static func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
+
+    static func load(_ url: URL) async -> UIImage? {
+        if let hit = cached(url) { return hit }
+        guard let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: url as NSURL)
+        return image
     }
 }
 
@@ -218,8 +334,8 @@ struct DjQueueGhost: View {
                         .fixedSize()
                         .offset(y: 16)
                 }
-                .position(x: drag.location.x, y: drag.location.y - 40)
                 .animation(.easeOut(duration: 0.12), value: model.dropSide)
+                .position(x: drag.location.x, y: drag.location.y - 40)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }

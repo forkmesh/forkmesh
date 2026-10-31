@@ -99,6 +99,13 @@ A run active at quit stays Running on disk and is re-queued on the next start
 (`requeueAfterDesktopInterruption`). The reaper only ensures the step's sandbox
 and its scope are gone.
 
+Stopping or timing out a step sends `systemctl --user kill --kill-whom=all`
+to its `forkmesh-action-<pid>-<run>-<step>.scope` as well as signalling the
+process group. The step has often already left its scope by then, and
+systemctl then prints `Failed to kill unit ... not loaded`. Nothing is wrong
+in that case, so the kill runs through `processreaper::startReleasedQuietly`
+with its output sent to the null device (2026-10-25).
+
 ## Limits
 
 - A second stop signal, `SIGKILL` or a crash skips the sweep; registered scopes
@@ -257,6 +264,20 @@ An installed unit keeps its binary while that binary is still an executable
 file, so a worktree build started against the real profile does not point the
 unit at a build that is deleted with its worktree.
 
+At log-out GNOME also restarts the user D-Bus
+(`gnome-session-restart-dbus.service`). GLib's shared session-bus connection,
+which gvfs and other GIO modules open inside ForkMesh, defaults to
+exit-on-close: when the bus goes it raises SIGTERM in the process itself
+(signal code -6, sender ForkMesh's own pid in the shutdown record). The
+windowless instance that had just taken over then shut down with its agents,
+or (2026-10-22, 17:12) survived only because an action was running, after
+which `desktopStopping()` stayed true and nothing new started. Right after
+`QApplication` is built, `SessionBusGuard` (Linux, when GIO is found) takes
+that shared connection and turns exit-on-close off; when the bus closes it
+drops its reference and takes the new bus 5 s later, so a later restart is
+covered too. It does nothing when no session bus is set up (so GLib never
+autolaunches one).
+
 Limits: a desktop session without `graphical-session.target` (most window
 managers started without systemd) never stops the unit at log-out; the window
 dies with its display and the windowless instance starts only through
@@ -355,6 +376,10 @@ Three parts, code `desktop/src/KeepAwake.{h,cpp}` and
   lives in the readable application rules directory so an unprivileged
   desktop can verify its exact installed contents; it does not loosen the
   permissions on the administrator's `/etc/polkit-1/rules.d` directory.
+  **Let my phones restart this computer**, in the same box, installs a
+  second rule, `49-forkmesh-restart-<uid>.rules`, the same way; it grants
+  only `org.freedesktop.login1.reboot` and `reboot-multiple-sessions`
+  (`docs/native/DESKTOP_UPDATE.md`).
 - **Never let this computer go to sleep** (Settings → General → STARTUP).
   Runs `pkexec systemctl mask sleep.target suspend.target hibernate.target
   hybrid-sleep.target suspend-then-hibernate.target` (`unmask` to undo). A
@@ -411,7 +436,13 @@ switcher in the top-right corner), `StartManager::diagnose`, `turnOff`,
   (`activating`, systemd's back-off), *Failed*, *Not enabled* (the unit file
   is there but systemd does not report `enabled`), *Broken* (the program in
   `ExecStart` is gone) and *Unknown* (`systemctl --user` did not answer).
-- **Menu**: *Diagnostics…* opens a report (systemd state, main pid, restart
+- **Menu**: *Close window and keep running* (asked for on 2026-10-21) is
+  offered whenever the windowless instance is not already running, the usual
+  *Ready* case. One click closes the window and hands over to `--headless`
+  exactly as a close with *Keep running* on would (`startHeadless`, then the
+  tray), without turning that setting on: `requestHandOverOnClose` sets a
+  one-shot flag that `handOverAfterWindowClose` honours. `canCloseToHeadless`
+  decides whether the item shows. *Diagnostics…* opens a report (systemd state, main pid, restart
   count, last exit status, start and stop times, lingering, log-out
   hand-over, sleep protection and the last 20 lines of
   `journalctl --user-unit=<unit>`), with Refresh and Copy. *Startup

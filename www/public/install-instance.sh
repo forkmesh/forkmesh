@@ -97,7 +97,7 @@ on_exit() {
     progress "$CURRENT_STEP" failed
     printf 'Error: the step above stopped with status %s.\n' "$code"
   fi
-  if [ "$code" -ne 0 ]; then rollback_source || true; fi
+  if [ "$code" -ne 0 ] && declare -F rollback_source >/dev/null; then rollback_source || true; fi
   if [ "$DETACHED" = "1" ]; then printf '%s\n' "$code" > "$SETUP_RUN_DIR/status" 2>/dev/null || true; fi
 }
 trap on_exit EXIT
@@ -270,12 +270,20 @@ powered_by = c.get("poweredBy", True)
 if not isinstance(powered_by, bool):
     sys.exit("Setting poweredBy must be true or false.")
 values["poweredBy"] = "1" if powered_by else "0"
+white_label = c.get("whiteLabel", False)
+if not isinstance(white_label, bool):
+    sys.exit("Setting whiteLabel must be true or false.")
+values["whiteLabel"] = "1" if white_label else "0"
 single = c.get("singleOrganization", False)
 if not isinstance(single, bool):
     sys.exit("Setting singleOrganization must be true or false.")
 if single and values["ownerType"] != "org":
     sys.exit("Setting singleOrganization needs ownerType org.")
 values["singleOrganization"] = "1" if single else "0"
+privacy_mode = c.get("privacyMode", False)
+if not isinstance(privacy_mode, bool):
+    sys.exit("Setting privacyMode must be true or false.")
+values["privacyMode"] = "1" if privacy_mode else "0"
 values["logoType"] = values["logoData"] = ""
 logo = str(c.get("logo") or "").strip()
 if logo and not update:
@@ -361,6 +369,10 @@ if not isinstance(follow_owner, str) or (follow_owner and not re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", follow_owner)):
     sys.exit("Setting followOwner must be an account name.")
 values["followUrl"], values["followRef"], values["followOwner"] = follow_url, follow_ref, follow_owner
+onion = c.get("onionService", False)
+if not isinstance(onion, bool):
+    sys.exit("Setting onionService must be true or false.")
+values["onionService"] = "1" if onion else "0"
 for key, value in values.items():
     print("CFG_%s=%s" % (key, shlex.quote(value)))
 ' "$CONFIG_MODE"
@@ -380,6 +392,9 @@ if [ "$CONFIG_MODE" != "update" ]; then
 fi
 if [ "$CFG_actions" = "1" ]; then
   PACKAGES+=("${ACTIONS_PACKAGES[@]}")
+fi
+if [ "${CFG_onionService:-0}" = "1" ]; then
+  PACKAGES+=(tor)
 fi
 RUNNER_UNIT="forkmesh-runner@$CFG_ownerName.service"
 DOMAIN="$CFG_domain"
@@ -860,6 +875,24 @@ follow_source_url() {
   fi
 }
 
+source_retry() {
+  local attempt=1 waits=(${FORKMESH_SOURCE_RETRY_WAITS:-5 10 20 40 60})
+  while ! "$@"; do
+    [ "$attempt" -le "${#waits[@]}" ] || return 1
+    say "Could not reach the source; trying again in ${waits[$((attempt - 1))]} s (attempt $((attempt + 1)) of $(( ${#waits[@]} + 1 )))."
+    sleep "${waits[$((attempt - 1))]}"
+    attempt=$((attempt + 1))
+  done
+}
+
+fetch_origin_ref() {
+  source_git "$CFG_sourceUrl_effective" -C "$SRC" fetch --depth 1 origin "$CFG_sourceRef" 2>&1 | lines
+}
+
+clone_source() {
+  git clone --quiet --depth 1 --branch "$CFG_sourceRef" "$CFG_sourceUrl_effective" "$1"
+}
+
 fetch_source() {
   begin source "Downloading the ForkMesh source"
   local local_source="${FORKMESH_INSTANCE_SOURCE_DIR:-}"
@@ -872,7 +905,8 @@ fetch_source() {
   if [ -d "$SRC/.git" ]; then
     follow_source_url
     say "Fetching $CFG_sourceRef from $CFG_sourceUrl_effective"
-    source_git "$CFG_sourceUrl_effective" -C "$SRC" fetch --depth 1 origin "$CFG_sourceRef" 2>&1 | lines
+    source_retry fetch_origin_ref ||
+      die "Could not fetch $CFG_sourceRef from $CFG_sourceUrl_effective."
     TARGET_COMMIT="$(git -C "$SRC" rev-parse FETCH_HEAD)"
     if [ "$(git -C "$SRC" rev-parse HEAD)" = "$TARGET_COMMIT" ]; then
       say "The source is already at the latest $CFG_sourceRef."
@@ -883,7 +917,7 @@ fetch_source() {
     local stage="$OPT/src.partial"
     [ ! -e "$stage" ] || mv "$stage" "$OPT/src.partial.$(date +%s)"
     say "Cloning $CFG_sourceRef from $CFG_sourceUrl_effective"
-    git clone --quiet --depth 1 --branch "$CFG_sourceRef" "$CFG_sourceUrl_effective" "$stage" ||
+    source_retry clone_source "$stage" ||
       die "Could not download the ForkMesh source from $CFG_sourceUrl_effective."
     mv "$stage" "$SRC"
     TARGET_COMMIT="$(git -C "$SRC" rev-parse HEAD)"
@@ -1009,7 +1043,7 @@ save_logo() {
 build_stamp() {
   local tree="${1:-$SRC}"
   printf '%s\n' "$(git -C "$tree" rev-parse HEAD)" "$INSTANCE_INSTALLER_VERSION" "$EXCLUDED_PACKAGES" "$CFG_projectName" \
-    "$(files_digest "$tree/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}"
+    "$(files_digest "$tree/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}" "${CFG_whiteLabel:-0}"
 }
 
 release_version() {
@@ -1105,6 +1139,7 @@ build_app() {
   logo="$(logo_file)"
   if [ -n "$logo" ]; then brand_args+=(--logo "$logo"); fi
   if [ "$CFG_poweredBy" = "0" ]; then brand_args+=(--no-powered-by); fi
+  if [ "${CFG_whiteLabel:-0}" = "1" ]; then brand_args+=(--white-label); fi
   "$BUILD_VENV/bin/python" "$BUILD_SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
   chmod -R a+rX "$BUILD_SRC" "$BUILD_VENV"
   if [ "$BUILD_SRC" = "$SRC" ]; then
@@ -1259,6 +1294,8 @@ print(encode(seed), encode(public))
     echo "INSTANCE_OWNER=$CFG_ownerName"
     echo "INSTANCE_UPSTREAM=$(upstream_page)"
     echo "INSTANCE_POWERED_BY=$CFG_poweredBy"
+    echo "INSTANCE_WHITE_LABEL=${CFG_whiteLabel:-0}"
+    echo "INSTANCE_PRIVACY_MODE=${CFG_privacyMode:-0}"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
     echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
@@ -1277,7 +1314,7 @@ print(encode(seed), encode(public))
     echo "CORS_ALLOWED_ORIGINS=$ORIGIN"
     echo "NODE_NAME=$NODE_NAME"
     echo "HOSTED_GIT_CORE_NODES=$NODE_NAME"
-    echo "HOSTED_IMPORT_HOSTS=github.com,gitlab.com,codeberg.org,app.forkmesh.com"
+    echo "HOSTED_IMPORT_HOSTS=github.com,gitlab.com,codeberg.org,gitea.com,app.forkmesh.com"
     echo "HOSTED_REPO_MAX_BYTES=1073741824"
     if [ "$CFG_actions" = "1" ]; then
       echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"
@@ -1320,14 +1357,16 @@ import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
         "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl",
-        "webFirewall", "followUrl", "followRef", "followOwner"]
+        "webFirewall", "whiteLabel", "privacyMode", "followUrl", "followRef", "followOwner"]
 values = dict(zip(keys, sys.argv[1:]))
 for optional in ("platformUrl", "webFirewall", "followUrl", "followRef", "followOwner"):
     if not values[optional]:
         del values[optional]
 values["poweredBy"] = values["poweredBy"] == "1"
+values["whiteLabel"] = values["whiteLabel"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
+values["privacyMode"] = values["privacyMode"] == "1"
 values["plugins"] = [p for p in values["plugins"].split(",") if p]
 values["installerVersion"] = sys.argv[-1]
 print(json.dumps(values, indent=2, sort_keys=True))
@@ -1335,7 +1374,8 @@ print(json.dumps(values, indent=2, sort_keys=True))
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
     "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "${CFG_webFirewall:-}" \
-    "${CFG_followUrl:-}" "${CFG_followRef:-}" "${CFG_followOwner:-}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "${CFG_whiteLabel:-0}" "${CFG_privacyMode:-0}" "${CFG_followUrl:-}" "${CFG_followRef:-}" "${CFG_followOwner:-}" \
+    "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1379,9 +1419,10 @@ User=$APP_USER
 Group=$APP_USER
 WorkingDirectory=$SRC/app/host
 Environment=HOME=$VAR
-Environment=FORKMESH_PUBLIC_HOSTS=$DOMAIN
+Environment=FORKMESH_PUBLIC_HOSTS=$DOMAIN${ONION_HOST:+,$ONION_HOST}
+$( [ -n "$ONION_HOST" ] && printf 'Environment=FORKMESH_VAR_INSTANCE_ONION=%s\n' "$ONION_HOST" )
 Environment=FORKMESH_HOST_REPO_GATEWAY=http://127.0.0.1:$GATEWAY_PORT
-Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST
+Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST,$DOMAIN
 Environment=MALLOC_ARENA_MAX=2
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$VENV/bin/python -m forkmesh_host serve --no-build --host 127.0.0.1 --port $APP_PORT --env-file $APP_ENV --db sqlite:$VAR/app.db --data-dir $VAR/data
@@ -1501,6 +1542,27 @@ start_app() {
   die "The app did not start. The lines above show why."
 }
 
+JOURNALD_PRIVACY="/etc/systemd/journald.conf.d/forkmesh-privacy.conf"
+JOURNALD_PRIVACY_RETENTION="3day"
+
+write_journald_privacy() {
+  local before
+  before="$(files_digest "$JOURNALD_PRIVACY")"
+  if [ "${CFG_privacyMode:-0}" = "1" ]; then
+    install -d -m 0755 "$(dirname "$JOURNALD_PRIVACY")"
+    printf '%s\n' "# managed by install-instance.sh: privacyMode keeps logs for a short time only" \
+      "[Journal]" "MaxRetentionSec=$JOURNALD_PRIVACY_RETENTION" "MaxFileSec=1day" > "$JOURNALD_PRIVACY"
+  elif [ -f "$JOURNALD_PRIVACY" ] && grep -q 'managed by install-instance.sh' "$JOURNALD_PRIVACY"; then
+    rm -f "$JOURNALD_PRIVACY"
+  fi
+  if [ "$(files_digest "$JOURNALD_PRIVACY")" != "$before" ]; then
+    systemctl restart systemd-journald >/dev/null 2>&1 || warn "systemd-journald did not restart; the log retention applies after a reboot"
+  fi
+  if [ "${CFG_privacyMode:-0}" = "1" ]; then
+    say "Privacy mode: no request logs, and the system journal keeps $JOURNALD_PRIVACY_RETENTION of lines."
+  fi
+}
+
 write_caddyfile() {
   if [ -f /etc/caddy/Caddyfile ] && ! grep -q 'managed by install-instance.sh' /etc/caddy/Caddyfile; then
     cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-forkmesh.$(date +%s)"
@@ -1514,7 +1576,7 @@ write_caddyfile() {
 # Rewritten on every update; put local changes in /etc/caddy/conf.d/*.caddy
 # (top level) or /etc/caddy/site.d/*.caddy (inside the $DOMAIN site).
 {
-	email $CFG_adminEmail
+	email $CFG_adminEmail$( [ "${CFG_privacyMode:-0}" = "1" ] && printf '\n\tlog default {\n\t\texclude http.log.access http.log.error http.handlers.reverse_proxy http.stdlib\n\t}' )
 }
 
 import /etc/caddy/conf.d/*.caddy
@@ -1536,6 +1598,7 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 		reverse_proxy 127.0.0.1:$APP_PORT {
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 	handle {
@@ -1544,10 +1607,144 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 			header_up -Cf-Ipcountry
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 }
 EOF
+}
+
+ONION_DIR="/var/lib/tor/forkmesh-instance"
+ONION_PORT="8091"
+ONION_TORRC_DIR="/etc/tor/torrc.d"
+ONION_TORRC="$ONION_TORRC_DIR/forkmesh-instance.conf"
+TOR_CONFIG="/etc/tor/torrc"
+ONION_CADDY="/etc/caddy/conf.d/forkmesh-onion.caddy"
+ONION_HEADER="/etc/caddy/site.d/forkmesh-onion-location.caddy"
+ONION_WAIT_SECONDS="${FORKMESH_ONION_WAIT_SECONDS:-120}"
+ONION_HOST=""
+
+onion_torrc() {
+  cat <<EOF
+# managed by install-instance.sh: the Tor onion service of $DOMAIN
+HiddenServiceDir $ONION_DIR/
+HiddenServicePort 80 127.0.0.1:$ONION_PORT
+EOF
+}
+
+onion_caddy() {
+  cat <<EOF
+# managed by install-instance.sh: $DOMAIN as the Tor onion service $1
+http://$1:$ONION_PORT {
+	bind 127.0.0.1
+	encode zstd gzip
+	header {
+		defer
+		Content-Security-Policy "; upgrade-insecure-requests" ""
+		-Strict-Transport-Security
+	}
+	@gateway path /v1/* /health /forkmesh-mirror.json /.well-known/forkmesh-mirror.json
+	handle @gateway {
+		reverse_proxy 127.0.0.1:$GATEWAY_PORT
+	}
+	handle {
+		reverse_proxy 127.0.0.1:$APP_PORT {
+			header_up Host $1
+			header_up Cf-Connecting-Ip 100.64.0.1
+			header_up -Cf-Ipcountry
+			header_up -X-Forwarded-For
+			header_up -X-Forwarded-Host
+		}
+	}
+}
+EOF
+}
+
+onion_location() {
+  cat <<EOF
+# managed by install-instance.sh: tells Tor Browser about the onion address
+header Onion-Location "http://$1{uri}"
+EOF
+}
+
+remember_onion_setting() {
+  [ -f "$INSTANCE_JSON" ] || return 0
+  python3 - "$INSTANCE_JSON" "${CFG_onionService:-0}" <<'PY'
+import json, os, sys
+path, wanted = sys.argv[1], sys.argv[2] == "1"
+with open(path, encoding="utf-8") as handle:
+    doc = json.load(handle)
+before = dict(doc)
+if wanted:
+    doc["onionService"] = True
+else:
+    doc.pop("onionService", None)
+if doc != before:
+    with open(path + ".new", "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    os.chmod(path + ".new", os.stat(path).st_mode & 0o777)
+    os.replace(path + ".new", path)
+PY
+}
+
+reload_caddy_if_running() {
+  if systemctl is-active --quiet caddy; then
+    systemctl reload caddy >/dev/null 2>&1 || warn "Caddy did not reload its settings; the next setup run restarts it."
+  fi
+}
+
+remove_onion_service() {
+  local found=0 file
+  for file in "$ONION_CADDY" "$ONION_HEADER" "$ONION_TORRC"; do
+    if [ -e "$file" ]; then rm -f "$file"; found=1; fi
+  done
+  [ "$found" = "1" ] || return 0
+  reload_caddy_if_running
+  if systemctl is-active --quiet tor; then systemctl restart tor >/dev/null 2>&1 || true; fi
+  say "The onion service is off. Its key stays in $ONION_DIR, so turning it back on keeps the same address."
+}
+
+setup_onion() {
+  if [ "${CFG_onionService:-0}" != "1" ]; then
+    remove_onion_service
+    remember_onion_setting
+    return 0
+  fi
+  say "Setting up the Tor onion service."
+  command -v tor >/dev/null 2>&1 || die "Tor is not installed (apt-get install tor), so the onion service cannot start."
+  local torrc_before caddy_before waited=0
+  install -d -m 0755 "$ONION_TORRC_DIR"
+  torrc_before="$(files_digest "$ONION_TORRC" "$TOR_CONFIG")"
+  onion_torrc > "$ONION_TORRC.new"
+  mv "$ONION_TORRC.new" "$ONION_TORRC"
+  if ! grep -qE "^%include[[:space:]]+$ONION_TORRC_DIR(/|/\*\.conf)?[[:space:]]*$" "$TOR_CONFIG" 2>/dev/null; then
+    printf '\n%%include %s/*.conf\n' "$ONION_TORRC_DIR" >> "$TOR_CONFIG"
+  fi
+  systemctl enable tor >/dev/null 2>&1 || true
+  if [ "$(files_digest "$ONION_TORRC" "$TOR_CONFIG")" != "$torrc_before" ] || [ ! -s "$ONION_DIR/hostname" ] ||
+      ! systemctl is-active --quiet tor; then
+    systemctl restart tor
+  fi
+  while [ ! -s "$ONION_DIR/hostname" ]; do
+    if [ "$waited" -ge "$ONION_WAIT_SECONDS" ]; then
+      journalctl -u tor@default --no-pager -n 15 2>/dev/null | cut -c1-300 || true
+      die "Tor did not create the onion service in $ONION_DIR. The lines above show why."
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  ONION_HOST="$(tr -d '[:space:]' < "$ONION_DIR/hostname")"
+  [[ "$ONION_HOST" =~ ^[a-z2-7]{56}\.onion$ ]] || die "$ONION_DIR/hostname does not hold a v3 onion address."
+  install -d -m 0755 "$(dirname "$ONION_CADDY")" "$(dirname "$ONION_HEADER")"
+  caddy_before="$(files_digest "$ONION_CADDY" "$ONION_HEADER")"
+  onion_caddy "$ONION_HOST" > "$ONION_CADDY"
+  onion_location "$ONION_HOST" > "$ONION_HEADER"
+  if [ "$(files_digest "$ONION_CADDY" "$ONION_HEADER")" != "$caddy_before" ]; then
+    reload_caddy_if_running
+  fi
+  remember_onion_setting
+  say "Also reachable over Tor at http://$ONION_HOST"
+  say "The onion key is in $ONION_DIR: back up that folder to keep this address on a new server."
 }
 
 dns_record_type() {
@@ -1812,7 +2009,7 @@ Environment=HOME=/var/lib/forkmesh
 Environment=XDG_DATA_HOME=/var/lib/forkmesh/.local/share
 Environment=TMPDIR=/var/lib/forkmesh/tmp
 Environment="FORKMESH_COMMIT_NAME=$CFG_projectName"
-Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN
+Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN$( [ "${CFG_privacyMode:-0}" = "1" ] && printf '\nEnvironment=FORKMESH_PRIVACY_MODE=1' )
 ExecStartPre=$DAEMON --config $DAEMON_CONFIG --check
 ExecStart=$DAEMON --config $DAEMON_CONFIG
 Restart=on-failure
@@ -1844,11 +2041,25 @@ EOF
 }
 
 daemon_digest() {
-  local gateway=""
-  if [ -s "$DAEMON_CONFIG" ]; then
-    gateway="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("gatewayConfig") or "")' "$DAEMON_CONFIG" 2>/dev/null || true)"
-  fi
-  files_digest "$DAEMON" "$DAEMON_CONFIG" "$DAEMON_UNIT" ${gateway:+"$gateway"}
+  {
+    cat "$DAEMON" "$DAEMON_UNIT" "$DAEMON_TOOLS"/*.py 2>/dev/null || true
+    [ -s "$DAEMON_CONFIG" ] && python3 - "$DAEMON_CONFIG" <<'PY' 2>/dev/null || true
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+cfg.pop("version", None)
+print(json.dumps(cfg, sort_keys=True))
+gateway = cfg.get("gatewayConfig")
+if gateway:
+    doc = json.load(open(gateway))
+    dashboard = doc.get("dashboard") if isinstance(doc.get("dashboard"), dict) else {}
+    print(json.dumps([
+        doc.get("routerPublicKey"), doc.get("publicOrigin"), dashboard.get("canonicalOrigin"),
+        sorted([str(entry.get(key) or "") for key in ("owner", "name", "gitDir")]
+               for entry in doc.get("repositories") or []
+               if isinstance(entry, dict) and entry.get("name") == "forkmesh"),
+    ]))
+PY
+  } | sha256sum | cut -c1-64
 }
 
 # An SSH relay added by tools/install_ssh_relay.sh keeps its gateway and
@@ -1928,7 +2139,7 @@ cfg.update({
         "enabled": True,
         "root": "/var/lib/forkmesh/hosted",
         "maxRepositoryBytes": 1073741824,
-        "importHosts": ["github.com", "gitlab.com", "codeberg.org", "app.forkmesh.com"],
+        "importHosts": ["github.com", "gitlab.com", "codeberg.org", "gitea.com", "app.forkmesh.com"],
     },
 })
 gateway = cfg.get("gatewayConfig")
@@ -2213,6 +2424,7 @@ EOF
 
 arm_first_login_timeout() {
   [ "$NEW_INSTANCE" = "1" ] || return 0
+  [ -n "${CFG_launchId:-}" ] || return 0
   [ ! -e "$LOGIN_MARKER" ] || return 0
   [ -z "$(env_value INSTANCE_LOGIN_DEADLINE)" ] || return 0
   local deadline
@@ -2234,6 +2446,7 @@ finish() {
   say "$CFG_projectName is running at $ORIGIN"
   say "Sign in as @$CFG_adminUsername. Your repository: $REPO_URL"
   say_admin_path
+  if [ -n "$ONION_HOST" ]; then say "Over Tor: http://$ONION_HOST"; fi
   say "Update later with: bash install-instance.sh --update"
   printf 'FMI {"done":true,"url":"%s"}\n' "$REPO_URL"
 }
@@ -2244,7 +2457,9 @@ fetch_source
 build_app
 activate_source
 write_settings
+setup_onion
 migrate_database
+write_journald_privacy
 start_app
 SOURCE_COMMITTED="1"
 setup_https

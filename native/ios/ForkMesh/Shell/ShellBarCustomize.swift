@@ -478,7 +478,9 @@ struct ShellBarFolderCell: View {
         } label: {
             ShellBarFolderLabel(folder: folder, members: members, iconSize: iconSize, look: look)
                 .frame(width: cellWidth, height: cellHeight)
-                .shellBarSlotChrome(shape, style: look, selected: selected || open)
+                .shellBarSlotChrome(
+                    shape, style: look, selected: selected || open,
+                    slides: look.selection == .lens && !look.shape.separate)
                 .contentShape(shape)
         }
         .buttonStyle(ShellBarButtonStyle())

@@ -184,3 +184,14 @@ def test_settings_endpoints_use_the_shared_gate():
         runtime, re.S)
     rewrite = runtime.index("org_alias_rewrite(self.env, request, url)")
     assert rewrite < runtime.index('action == "viewer-permission"')
+
+
+def test_an_organization_repository_about_can_be_saved_from_the_web():
+    entry = (SRC / "entry.py").read_text(encoding="utf-8")
+    about = entry[entry.index("async def repo_about_handler"):]
+    about = about[:about.index("\nasync def ")]
+    gate = about[about.index("if not await _owner_pubkey(env, owner)"):]
+    gate = gate[:gate.index('return json_response({"error": "account_required"}')]
+    assert "FROM org_repos WHERE node_owner=? AND repo=?" in gate
+    assert about.index("_repo_admin_allowed(env, actor, owner, repo)") < \
+        about.index("if not await _owner_pubkey(env, owner)")

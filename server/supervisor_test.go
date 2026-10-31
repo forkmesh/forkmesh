@@ -211,3 +211,48 @@ while True: signal.pause()`},
 	}
 	t.Fatal("gateway did not receive the cache invalidation signal")
 }
+
+func TestSupervisorRestartsAChildKilledByItsControlSignalWithoutBackoff(t *testing.T) {
+	supervisor := NewSupervisor()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		supervisor.Run(ctx, []ProcessSpec{{
+			Name:    "gateway",
+			Program: "/usr/bin/python3",
+			Args: []string{"-c", `import signal,sys
+signal.signal(signal.SIGTERM,lambda *_:sys.exit(0))
+while True: signal.pause()`},
+		}})
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(6 * time.Second):
+			t.Error("supervisor did not stop its child")
+		}
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	requested := false
+	for time.Now().Before(deadline) {
+		if instance, running := supervisor.Instance("gateway"); running && instance == 1 && supervisor.Invalidate("gateway") {
+			requested = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !requested {
+		t.Fatal("cache invalidation signal was not accepted")
+	}
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if instance, running := supervisor.Instance("gateway"); running && instance == 2 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("a child killed by its control signal waited for the crash backoff")
+}

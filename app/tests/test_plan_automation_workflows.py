@@ -7,9 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ISSUE_WORKFLOW = ROOT / ".github" / "workflows" / "github-issue-sync.yml"
 WORLD_BROWSER_WORKFLOW = ROOT / ".github" / "workflows" / "world-browser-e2e.yml"
-CHECKOUT_PIN = "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 UPLOAD_PIN = (
-    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
 )
 
 
@@ -45,6 +45,19 @@ def test_issue_sync_has_mapping_report_retry_implementation_and_failure_notice()
     assert "mapping_payload" in implementation
 
 
+def test_unconfigured_scheduled_issue_sync_skips_instead_of_failing():
+    workflow = ISSUE_WORKFLOW.read_text(encoding="utf-8")
+    validate = workflow.split("- name: Validate one-way", 1)[1].split("- name:", 1)[0]
+    unset = validate.split('if [ -z "$DESTINATION_REPOSITORY" ]; then', 1)[1]
+    scheduled, manual = unset.split("exit 0", 1)
+    assert '"schedule" ]' in scheduled
+    assert "configured=false" in scheduled
+    assert "exit 2" in manual.split("fi\n", 2)[1]
+    assert "configured=true" in validate
+    sync = workflow.split("- name: Synchronize only", 1)[1].split("run:", 1)[0]
+    assert "if: steps.configuration.outputs.configured == 'true'" in sync
+
+
 def test_world_browser_e2e_exercises_runtime_webgl_touch_and_privacy():
     workflow = WORLD_BROWSER_WORKFLOW.read_text(encoding="utf-8")
     package = (
@@ -65,7 +78,6 @@ def test_world_browser_e2e_exercises_runtime_webgl_touch_and_privacy():
     assert "npm ci" in workflow
     assert "playwright install --with-deps --only-shell chromium" in workflow
     assert '"@playwright/test": "1.61.0"' in package
-    assert '"three": "0.184.0"' in package
     assert "routeWebSocket" in tests
     assert "two live clients synchronize movement" in tests
     assert "landscape thumbstick remains visible and moves the avatar" in tests

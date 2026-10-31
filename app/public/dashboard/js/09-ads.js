@@ -17,9 +17,8 @@
   const ADS_POLICY_DOC_URL = "https://forkmesh.com/docs/operations/ad-network/";
   const ADS_HIDE_KEY = "forkmesh.ads.hiddenUntil";
   const ADS_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
-  // The ads page previews ads already, and the chat document gives its whole
-  // height to the transcript and composer.
-  const ADS_SLOT_SKIPPED_PAGES = new Set(["ads", "chat"]);
+  // The ads page previews ads already.
+  const ADS_SLOT_SKIPPED_PAGES = new Set(["ads"]);
   const ADS_ID_RE = /^[a-f0-9]{32}$/;
   // policy.reportReasons, fixed by the client contract. Hard-coded so the slot
   // never spends a second request on the policy document.

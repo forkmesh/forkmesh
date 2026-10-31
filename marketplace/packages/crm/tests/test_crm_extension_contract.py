@@ -39,7 +39,7 @@ def test_worker_link_endpoint_keeps_the_provider_message_on_the_record():
 
 def test_dashboard_has_the_import_tab_shared_tabs_and_email_chips():
     assert "data-crm-tab-import" in WEB_VIEW
-    assert ">Import contacts</button>" in WEB_VIEW.replace("\n", "")
+    assert '<span class="crm-side-label">Import CSV list</span></button>' in WEB_VIEW
     assert '$(`[data-crm-tab-import]`)?.addEventListener("click", () => crmPickCsv(""))' in WEB_SCRIPT
     assert "data-crm-sheet-users" in WEB_VIEW
     assert "data-crm-shared-banner" in WEB_VIEW

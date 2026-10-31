@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Extensions",
-  "version": "1.1.0",
-  "summary": "The first-run welcome and a guided tour of every ForkMesh workspace, replayable from Tour in the rail. Remove it once you know your way around.",
+  "version": "1.2.0",
+  "summary": "The first-run welcome and a guided tour in three depths, Essentials, Advanced and The whole shebang, on the desktop and the phone. Replay it from Tour; remove it once you know your way around.",
   "license": {
     "model": "free-open-source",
     "spdx": "MIT",

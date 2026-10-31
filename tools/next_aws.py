@@ -359,21 +359,26 @@ def fleet_ports(fleet=None):
             tcp, udp = list(turn_tcp), list(turn_udp)
             low, _, high = relay_text.partition("-")
             relay = (int(low), int(high))
+        udp += render.calls_ports(fleet)[1]
     else:
         defaults = render.TURN_DEFAULTS
-        tcp, udp = [defaults["port"]], [defaults["port"]]
+        tcp, udp = [defaults["port"]], [defaults["port"],
+                                        render.CALLS_DEFAULTS["udp_port"]]
         relay = (defaults["relay_min_port"], defaults["relay_max_port"])
     return wg_port, tcp, udp, relay
 
 
 def ingress_rules(role, fleet=None, ssh_sources=("0.0.0.0/0",)):
+    import render
     rules = set()
     for cidr in ssh_sources:
         try:
             network = ipaddress.IPv4Network(str(cidr), strict=False)
         except ValueError:
             raise ToolError("--ssh-from %r is not an IPv4 address or CIDR" % cidr) from None
-        rules.add(("tcp", 22, 22, str(network)))
+        for port in sorted({render.ssh_port(fleet) if fleet else
+                            common.fleet_ssh_port(), common.LEGACY_SSH_PORT}):
+            rules.add(("tcp", port, port, str(network)))
     if role == "core":
         wg_port, turn_tcp, turn_udp, relay = fleet_ports(fleet)
         for port in [80, 443] + turn_tcp:

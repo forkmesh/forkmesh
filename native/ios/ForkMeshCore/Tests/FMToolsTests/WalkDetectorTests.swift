@@ -63,6 +63,44 @@ final class WalkDetectorTests: XCTestCase {
         XCTAssertEqual(walking.tick(at(300 + WalkDetector.endAfter)), .ended(at(300)))
     }
 
+    func testSustainedPaceStartsAWalk() {
+        var detector = WalkDetector()
+        XCTAssertNil(detector.paced(true, at: at(0)))
+        XCTAssertNil(detector.paced(true, at: at(10)))
+        XCTAssertEqual(detector.nextCheck, at(WalkDetector.startAfter))
+        XCTAssertEqual(detector.paced(true, at: at(WalkDetector.startAfter)), .started(t0))
+        XCTAssertTrue(detector.walking)
+    }
+
+    func testPaceStopCancelsAPendingStart() {
+        var detector = WalkDetector()
+        _ = detector.observe(sample(.walking, 0), now: at(0))
+        XCTAssertNil(detector.paced(false, at: at(15)))
+        XCTAssertNil(detector.nextCheck)
+        XCTAssertNil(detector.tick(at(600)))
+        XCTAssertFalse(detector.walking)
+    }
+
+    func testPaceLeavesAWalkInProgressAlone() {
+        var detector = WalkDetector()
+        _ = detector.observe(sample(.walking, 0), now: at(60))
+        _ = detector.observe(sample(.still, 300), now: at(300))
+        XCTAssertNil(detector.paced(true, at: at(310)))
+        XCTAssertNil(detector.paced(false, at: at(320)))
+        XCTAssertEqual(detector.nextCheck, at(300 + WalkDetector.endAfter))
+        XCTAssertEqual(detector.walkStartedAt, t0)
+    }
+
+    func testBeginStartsEarlyOnceMovingLongEnough() {
+        var detector = WalkDetector()
+        XCTAssertNil(detector.begin(at(0), after: WalkDetector.leaveStartAfter))
+        _ = detector.paced(true, at: at(0))
+        XCTAssertNil(detector.begin(at(WalkDetector.leaveStartAfter - 1), after: WalkDetector.leaveStartAfter))
+        XCTAssertEqual(detector.begin(at(WalkDetector.leaveStartAfter), after: WalkDetector.leaveStartAfter), .started(t0))
+        XCTAssertTrue(detector.walking)
+        XCTAssertNil(detector.begin(at(600), after: WalkDetector.leaveStartAfter))
+    }
+
     func testBriefStopKeepsTheWalk() {
         var detector = WalkDetector()
         _ = detector.observe(sample(.walking, 0), now: at(60))

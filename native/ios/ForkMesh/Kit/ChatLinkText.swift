@@ -48,7 +48,7 @@ struct ChatLinkText: View {
         text: String, repo: RepoRef? = ReferenceLinks.chatRepo, profiles: Bool = true, onOpen: ((String) -> Void)? = nil
     ) {
         self.text = text
-        self.segments = referenceChatSegments(parseChatText(text), repo: repo)
+        self.segments = ChatTextCache.segments(text, repo: repo)
         self.profiles = profiles
         self.onOpen = onOpen
     }
@@ -84,6 +84,50 @@ struct ChatLinkText: View {
         } else {
             Text(text)
         }
+    }
+}
+
+enum ChatTextCache {
+    private final class Box<Value> {
+        let value: Value
+
+        init(_ value: Value) {
+            self.value = value
+        }
+    }
+
+    static let countLimit: Int = 1024
+
+    private static let segmentCache: NSCache<NSString, Box<[ChatTextSegment]>> = {
+        let cache: NSCache<NSString, Box<[ChatTextSegment]>> = NSCache<NSString, Box<[ChatTextSegment]>>()
+        cache.countLimit = countLimit
+        return cache
+    }()
+
+    private static let attributedCache: NSCache<NSString, Box<AttributedString>> = {
+        let cache: NSCache<NSString, Box<AttributedString>> = NSCache<NSString, Box<AttributedString>>()
+        cache.countLimit = countLimit
+        return cache
+    }()
+
+    private static func key(_ text: String, repo: RepoRef?) -> NSString {
+        ((repo.map { "\($0.owner)/\($0.name)" } ?? "") + "\u{0}" + text) as NSString
+    }
+
+    static func segments(_ text: String, repo: RepoRef?) -> [ChatTextSegment] {
+        let cacheKey: NSString = key(text, repo: repo)
+        if let hit = segmentCache.object(forKey: cacheKey) { return hit.value }
+        let value: [ChatTextSegment] = referenceChatSegments(parseChatText(text), repo: repo)
+        segmentCache.setObject(Box(value), forKey: cacheKey)
+        return value
+    }
+
+    static func attributed(_ text: String, repo: RepoRef?) -> AttributedString {
+        let cacheKey: NSString = key(text, repo: repo)
+        if let hit = attributedCache.object(forKey: cacheKey) { return hit.value }
+        let value: AttributedString = chatRichAttributed(segments(text, repo: repo))
+        attributedCache.setObject(Box(value), forKey: cacheKey)
+        return value
     }
 }
 

@@ -5,11 +5,13 @@ import Foundation
 @MainActor
 final class RoomSealCache {
     private let secureStore: SecureStore
+    private let nodeIdentity: DeviceIdentity?
     private var loaded: [String: RoomSeal] = [:]
     private var loading: [String: Task<RoomSeal, Error>] = [:]
 
-    init(secureStore: SecureStore) {
+    init(secureStore: SecureStore, nodeIdentity: DeviceIdentity? = nil) {
         self.secureStore = secureStore
+        self.nodeIdentity = nodeIdentity
     }
 
     subscript(room: String) -> RoomSeal? { loaded[room.dartTrimmed] }
@@ -29,9 +31,11 @@ final class RoomSealCache {
         }
         if let pending = loading[key] { return try await pending.value }
         let store = secureStore
+        let nodeKey = policy == .open ? nodeIdentity : nil
         let task = Task.detached(priority: .userInitiated) {
             try RoomSeal.loadOrCreate(
-                name, scope: scope, policy: policy, acct: acct, node: node, participants: participants, secureStore: store)
+                name, scope: scope, policy: policy, acct: acct, node: node, participants: participants, secureStore: store,
+                nodeIdentity: nodeKey)
         }
         loading[key] = task
         defer { loading.removeValue(forKey: key) }

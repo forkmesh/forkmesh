@@ -1,7 +1,10 @@
 # Fleet operations runbook
 
 How to bring up, deploy, check and tear down the fleet: three core nodes
-(`n1..n3`) and a runner (`r1`) on Vultr, DNS on Cloudflare. The design is in
+(currently `n3`, `n4` and `n5`; `n1` and `n2` are retired, `retired_cores` in
+`deploy/fleet.toml`) and a runner (`r1`) on Vultr, DNS on Cloudflare. The
+commands below use the current names; take them from `[[nodes]]` in
+`deploy/fleet.toml` when the fleet changes. The design is in
 [PLAN.md](PLAN.md); node files are rendered by `deploy/core/render.py` from
 `deploy/fleet.toml`.
 
@@ -41,16 +44,16 @@ for n in 1 2 3; do python3 tools/next_fleet.py create-core $n --execute; done
 python3 tools/next_fleet.py create-runner 1 --execute
 python3 tools/next_fleet.py fleet-toml --execute
 python3 tools/next_fleet.py init-secrets --execute
-for n in n1 n2 n3; do python3 tools/next_fleet.py install $n --steps base,wireguard --execute; done
+for n in n3 n4 n5; do python3 tools/next_fleet.py install $n --steps base,wireguard --execute; done
 python3 tools/next_fleet.py fleet-toml --execute      # adds WireGuard public keys; commit it
-for n in n1 n2 n3; do python3 tools/next_fleet.py install $n --steps rqlite,files,secrets,start --execute; done
+for n in n3 n4 n5; do python3 tools/next_fleet.py install $n --steps rqlite,turn,calls,files,secrets,start --execute; done
 python3 tools/next_dns.py ensure --execute
 python3 tools/next_deploy.py build --execute
 python3 tools/next_deploy.py upload --execute
 python3 tools/next_deploy.py migrate --execute
 python3 tools/next_vault.py sync --execute
 python3 tools/next_deploy.py restart --execute
-for n in n1 n2 n3; do python3 tools/next_fleet.py install $n --steps daemon --execute; done
+for n in n3 n4 n5; do python3 tools/next_fleet.py install $n --steps daemon --execute; done
 python3 tools/next_fleet.py install r1 --execute
 python3 tools/next_fleet.py install r1 --steps daemon --execute
 ```
@@ -69,9 +72,9 @@ The homepage Worker deploys from `www/wrangler.production.toml`
 ```sh
 ssh -i $K root@<core> "curl -fsS -K /etc/forkmesh-next/rqlite.curlrc 'http://127.0.0.1:4001/nodes?nonvoters'"
 curl -fsS --resolve app.forkmesh.com:443:<ip> https://app.forkmesh.com/readyz
-curl -fsS https://n1.next.forkmesh.com/readyz
+curl -fsS https://n3.next.forkmesh.com/readyz
 python3 tools/next_dns.py status
-python3 tools/next_ids.py status n1 n2 n3 r1
+python3 tools/next_ids.py status n3 n4 n5 r1
 ```
 
 ## 4. Routine operations
@@ -105,6 +108,14 @@ python3 tools/next_ids.py status n1 n2 n3 r1
 - **Cron** is leaderless: the per-minute coordinator rotates across live
   nodes and hands over 45 s into each minute; `host_cron_runs` records who ran
   which minute. Keep node clocks in sync.
+- **TURN relay and group calls.** Every core runs the office TURN relay
+  (`fmnext-turn`, [office/README.md](office/README.md)) and the group-call
+  server (`fmnext-calls`, [deploy/calls.md](deploy/calls.md)). Their shared
+  secrets (`OFFICE_TURN_SECRET`, `FORKMESH_CALLS_SECRET`) come from
+  `init-secrets`, reach the app through `next_vault.py sync`, and reach each
+  core as an encrypted credential through the `turn` and `calls` steps of a
+  roll. Check calls with
+  `curl -fsS https://nN.next.forkmesh.com/calls/health`.
 - **Node DNS reconciler** (`app/host/forkmesh_host/dns_reconciler.py`): every
   unsealed node probes every core and votes in `dns_health_votes`. It acts
   only with a DNS token in the vault and a majority of voters; without one
@@ -118,7 +129,10 @@ user unit on the operator box and manages `app.forkmesh.com`,
 for members with IPv6).
 
 - Every 30 s it sends a TLS-verified `GET /readyz` to each core. A sealed,
-  quarantined or locked-down node fails.
+  quarantined or locked-down node fails. A read-only core (no rqlite leader,
+  503 with `"readOnly": true`) counts as healthy only while no core is fully
+  ready, so a lone survivor stays in DNS and serves reads
+  ([PLAN.md](PLAN.md#read-only-mode)).
 - A node leaves every name after 3 failed probes and returns after 2 minutes
   healthy. At most one change per 5 minutes. A set is never emptied.
 - A round in which every core fails is treated as an operator-box outage and
@@ -139,7 +153,10 @@ for members with IPv6).
   cores or three healthy voters; a non-voter is promoted first. The removed
   core is listed in `[hosted] retired_cores` so repositories its node account
   owns still take pushes ([CORE_PUSH.md](CORE_PUSH.md)).
-- **Replace:** add one, then remove the old one.
+- **Replace:** `next_fleet.py add-core --replace nOLD --execute` or the
+  desktop's **Replace…** on a core row. One run adds the new core, removes the
+  old one (its instance is kept) and commits both on `fleet/add-core-nNEW`
+  ([deploy/README.md](deploy/README.md#replacing-a-core-node)).
 - **IPv6:** drain, `next_fleet.py enable-ipv6 nN --reboot --execute`,
   `fleet-toml --execute`, `next_dns.py ensure --execute`, undrain.
 
@@ -229,8 +246,6 @@ no object storage. Burst runners are billed hourly on top.
 ## 8. Known gaps
 
 - Country lookup: Caddy sets no country header on direct requests.
-- Old releases under `/opt/forkmesh-next/app/releases/` are pruned by hand,
-  by name.
 - The restore drill into a throwaway instance is not automated.
 - Runner CLIs are installed and signed in through the relayed login
   ([RUNNERS.md](RUNNERS.md)).

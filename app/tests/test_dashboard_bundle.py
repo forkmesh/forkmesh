@@ -199,6 +199,20 @@ def test_composed_bundle_is_the_single_iife():
         assert marker in js
 
 
+def test_composed_bundle_and_chunks_parse(tmp_path):
+    import shutil
+    import subprocess
+    if shutil.which("node") is None:
+        return
+    core, chunks = _split()
+    for name, text in {"dashboard.js": core, **chunks}.items():
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        result = subprocess.run(["node", "--check", str(path)],
+                                capture_output=True, text=True)
+        assert result.returncode == 0, "%s: %s" % (name, result.stderr[-2000:])
+
+
 def test_composition_matches_on_disk_fragments():
     expected = dashboard_bundle.assemble_bundle(
         (JS_DIR / name).read_text(encoding="utf-8")

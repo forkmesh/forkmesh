@@ -83,6 +83,7 @@ object ChatHistoryCodec {
         )
         if (message.self) out["self"] = true
         if (message.fileName.isNotEmpty()) out["f"] = message.fileName
+        if (message.serverVisible) out["sv"] = true
         return out
     }
 
@@ -99,6 +100,7 @@ object ChatHistoryCodec {
             timestamp = jsonLong(map["ts"]),
             self = map["self"] == true,
             fileName = jsonText(map["f"]).take(ChatLimits.MAX_FILE_NAME_CHARS),
+            serverVisible = map["sv"] == true,
         )
     }
 
@@ -355,5 +357,13 @@ class ChatHistoryStore(val directory: File) {
         val target = file(scope)
         written.remove(target.path)
         target.delete()
+    }
+
+    @Synchronized
+    fun eraseAll(): Int {
+        val files = directory.listFiles { file -> file.isFile && file.name.startsWith("relay-") } ?: return 0
+        written.clear()
+        blocked.clear()
+        return files.count { it.delete() }
     }
 }

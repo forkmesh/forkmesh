@@ -126,3 +126,36 @@ def test_an_upstream_too_far_ahead_is_refused_before_git_cherry(
         "base": oids["upstream"], "head": oids["pending"], "cherry": "up/stream"},
         "cherry_fits_00001")
     assert status == 200
+
+
+def test_counts_report_how_far_a_fork_is_ahead_and_behind(repositories):
+    app, oids = repositories
+    status, counts = _cherry(app, {
+        "base": oids["upstream"], "head": oids["stacked"], "cherry": "up/stream",
+        "counts": "1"}, "counts_stacked_01")
+    assert status == 200
+    assert counts == {"ok": True, "baseOid": oids["upstream"],
+                      "headOid": oids["stacked"], "ahead": 2, "behind": 2}
+    status, level = _cherry(app, {
+        "base": oids["upstream"], "head": oids["root"], "cherry": "up/stream",
+        "counts": "1"}, "counts_root_0001")
+    assert status == 200
+    assert (level["ahead"], level["behind"]) == (0, 2)
+    assert "commits" not in level and "patch" not in level
+
+
+def test_counts_take_only_commit_ids_and_a_served_upstream(repositories):
+    app, oids = repositories
+    for index, query in enumerate((
+        {"base": oids["upstream"], "head": oids["stacked"], "cherry": "up/stream",
+         "counts": "2"},
+        {"base": oids["upstream"], "head": oids["stacked"], "cherry": "up/stream",
+         "counts": "1", "limit": oids["root"]},
+        {"base": oids["upstream"], "head": oids["stacked"], "counts": "1"},
+        {"base": "main", "head": oids["stacked"], "cherry": "up/stream",
+         "counts": "1"},
+        {"base": oids["upstream"], "head": oids["stacked"], "cherry": "nobody/here",
+         "counts": "1"},
+    )):
+        status, _ = _cherry(app, query, "counts_refused_%02d" % index)
+        assert status == 404

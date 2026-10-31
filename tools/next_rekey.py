@@ -92,10 +92,15 @@ DROP_TABLES = {
     "login_attempts": "failed-login counters keyed by IP-derived blind indexes",
     "signup_rate": "signup throttle keyed by IP blind index",
     "recent_pushes": "24-hour pushed-branch banners keyed by blind indexes of prefixed branch and nested pull keys (no plaintext to recompute)",
+    "pull_merge_watch": "open pull requests watched for merge conflicts, keyed by blind indexes of prefixed branch and commit-pair keys: rows come back with the next push, pull submission or pull page view",
+    "pull_quick_replies": "quick review reply dedupe keyed by a blind index of the reviewer: a reply already sent on a head commit can be sent once more after a re-key",
     "ai_ask_rate": "rate counter",
     "comment_reaction_rate": "reaction rate counter keyed by the account blind index",
+    "moderation_post_counts": "new-account daily post counters keyed by the account blind index",
     "member_repo_activity": "chat member activity cache keyed by repository and account blind indexes; the member-activity cron rebuilds it",
     "member_activity_repos": "refresh times of that cache, keyed by repository blind index",
+    "comment_extras_rate": "custom reaction, GIF search and tip rate counters keyed by account blind indexes",
+    "ai_review_budget": "AI review daily counters keyed by repository, author and maintainer blind indexes",
     "agent_guestbook_rate": "rate counter keyed by an IP-derived blind index",
     "catalog_rate": "rate counter",
     "contributor_invitation_rate": "daily send counter",
@@ -120,6 +125,8 @@ BI_COLUMNS = {
     "account_sessions": ("account_bi", "device_bi"),
     "account_signup_intents": ("account_bi",),
     "account_ssh_keys": ("account_bi", "key_bi"),
+    "account_store": ("account_bi",),
+    "account_store_keys": ("account_bi",),
     "ad_network_ads": ("account_bi",),
     "ad_network_reports": ("account_bi",),
     "ad_network_reviews": ("reviewer_bi",),
@@ -160,6 +167,7 @@ BI_COLUMNS = {
     "calendar_events": ("owner_bi", "org_bi"),
     "calendar_reminder_deliveries": ("recipient_bi",),
     "catalog_rate": ("owner_bi",),
+    "chat_blocks": ("account_bi",),
     "chat_channel_invites": ("token_bi", "created_by_bi"),
     "chat_channel_members": ("member_bi", "invited_by_bi"),
     "chat_channel_reads": ("account_bi",),
@@ -175,9 +183,11 @@ BI_COLUMNS = {
     "clone_sticky": ("repo_bi",),
     "comment_reaction_rate": ("account_bi",),
     "comment_reactions": ("repo_bi", "account_bi"),
+    "post_translations": ("repo_bi", "account_bi"),
     "member_activity_repos": ("repo_bi",),
     "member_repo_activity": ("repo_bi", "user_bi"),
-    "commit_inbox": ("repo_bi",),
+    "repo_uploads": ("repo_bi", "uploader_bi"),
+    "comment_tips": ("repo_bi", "tipper_bi", "recipient_bi"),
     "community_ad_instance_policy": ("updated_by_bi",),
     "community_ad_moderation": ("actor_bi",),
     "community_ad_proposals": ("proposer_bi",),
@@ -210,12 +220,13 @@ BI_COLUMNS = {
     "hackathon_team_members": ("account_bi",),
     "hackathon_teams": ("captain_bi",),
     "hackathon_votes": ("voter_bi",),
-    "host_presence": ("repo_bi",),
     "hosted_repos": ("key_bi", "owner_bi", "creator_bi"),
     "inbox_drain_log": ("repo_bi",),
     "issue_bounty": ("bounty_bi",),
     "issue_inbox": ("repo_bi", "claimed_by_bi", "mirrored_by_bi"),
     "issue_seq": ("repo_bi",),
+    "issue_view_totals": ("repo_bi",),
+    "issue_views": ("repo_bi",),
     "ledger_backfill_sources": ("subject_repo_bi",),
     "link_codes": ("code_bi",),
     "login_attempts": ("id_bi",),
@@ -249,7 +260,16 @@ BI_COLUMNS = {
     "microjob_claims": ("account_bi", "subject_bi"),
     "mirror_https_endpoints": ("node_bi",),
     "mirror_repository_integrity": ("repo_bi", "node_bi"),
+    "moderation_blocks": ("scope_bi", "account_bi"),
+    "moderation_flags": ("repo_bi",),
+    "moderation_log": ("scope_bi",),
+    "moderation_post_counts": ("account_bi",),
+    "moderation_queue": ("repo_bi", "scope_bi", "author_bi"),
+    "moderation_roles": ("scope_bi", "account_bi"),
     "nodes": ("node_bi", "user_bi"),
+    "note_comments": ("author_bi", "resolved_bi"),
+    "note_page_shares": ("principal_bi", "added_by_bi"),
+    "note_pages": ("owner_bi",),
     "note_events": ("actor_bi",),
     "note_shares": ("principal_bi", "added_by_bi"),
     "note_versions": ("author_bi",),
@@ -266,6 +286,7 @@ BI_COLUMNS = {
     "org_pull_rules": ("org_bi",),
     "org_repos": ("org_bi",),
     "org_succession_approvals": ("approver_bi",),
+    "org_succession_case_approvers": ("approver_bi",),
     "org_succession_cases": ("org_bi", "owner_bi", "successor_bi"),
     "org_succession_events": ("org_bi", "actor_bi"),
     "org_succession_policies": ("org_bi", "owner_bi", "successor_bi"),
@@ -300,7 +321,10 @@ BI_COLUMNS = {
     "profile_follows": ("follower_bi", "target_bi"),
     "pull_inbox": ("repo_bi", "claimed_by_bi", "mirrored_by_bi", "submission_bi"),
     "pull_review_ledger": ("repo_bi",),
+    "pull_ai_reviews": ("repo_bi", "head_bi"),
     "pull_batch_sent": ("repo_bi", "target_bi"),
+    "pull_merge_watch": ("repo_bi", "base_bi", "head_bi", "trial_bi", "notified_bi"),
+    "pull_quick_replies": ("repo_bi", "reviewer_bi"),
     "pull_submission_receipts": ("repo_bi", "submission_bi"),
     "quarantined_nodes": ("node_bi", "user_bi", "quarantined_user_bi"),
     "recent_pushes": ("account_bi", "repo_bi", "branch_bi", "pull_bi"),
@@ -323,10 +347,13 @@ BI_COLUMNS = {
     "repo_forks": ("parent_bi", "fork_bi", "account_bi"),
     "repo_media": ("repo_bi",),
     "repo_merge_jobs": ("repo_bi", "actor_bi"),
+    "repo_mirror_quota": ("repo_bi",),
+    "repo_mirror_registry": ("repo_bi", "added_by_bi"),
     "repo_privacy_policy": ("repo_bi", "owner_bi"),
     "repo_provider_mirror_links": ("repo_bi",),
     "repo_provider_mirror_outbox": ("repo_bi",),
     "repo_provider_mirrors": ("repo_bi",),
+    "repo_archive_syncs": ("repo_bi",),
     "repo_remote_forks": ("repo_bi", "url_bi"),
     "repo_security_scan_leases": ("repo_bi", "lease_token_bi"),
     "repo_security_scan_reviews": ("repo_bi", "reviewer_bi"),
@@ -407,6 +434,7 @@ TOKEN_COLUMNS = {
     "attribution_ip_hourly": ("ip_hash",),      # "attribution-ip-v1:<day>:<ip>"
     "note_views": ("viewer_key",),              # "note-view-v1\n<note>\n<ip>\n<ua>"
     "blog_post_view_seen": ("viewer_key",),     # "blog-post-unique-v1:..."
+    "issue_views": ("viewer_key",),
     "repo_views": ("viewer_key",),              # "repo-view-v1\n<owner/repo>\n<account|visitor>..."
     "sensitive_audit_log": ("target_token",),   # "audit:<type>:<target>"
     "world_manual_blocks": ("subject_token",),  # "world-manual-{ip,agent}-v1:<day>:..."
@@ -424,19 +452,25 @@ CIPHER_COLUMNS = {
         "ap_objects", "ap_org_digest_settings", "ap_outbox",
         "ap_repo_settings", "ap_service_keys", "apns_device_tokens",
         "branch_delete_jobs", "branch_op_inbox", "branch_op_results",
-        "bug_reports", "calendar_events",
+        "bug_reports", "calendar_events", "chat_blocks",
         "chat_channel_invites", "chat_channel_members",
         "chat_channel_webhooks", "chat_channels",
         "chat_direct_conversations", "chat_direct_media",
         "chat_direct_media_parts", "chat_direct_participants",
-        "comment_reactions", "contributor_invitation_abuse",
+        "comment_reactions", "comment_tips", "contributor_invitation_abuse",
+        "custom_reactions", "repo_uploads", "repo_mirror_quota",
+        "repo_mirror_registry", "post_translations",
         "contributor_invitation_provenance",
         "contributor_invitations", "discord_bug_reports", "discussion_inbox",
         "email_footers",
         "hosted_repos",
         "issue_bounty", "issue_inbox", "link_codes",
         "marketing_email_campaigns", "microjob_claims",
-        "nodes", "note_versions", "notes", "notifications", "org_agent_jobs",
+        "moderation_blocks", "moderation_flags", "moderation_log",
+        "moderation_queue", "moderation_roles",
+        "nodes", "note_comments", "note_pages", "note_versions", "notes",
+        "notifications",
+        "org_agent_jobs",
         "org_agent_sessions", "org_bot_tokens",
         "organization_discord_connectors",
         "organization_discord_oauth_grants",
@@ -447,12 +481,14 @@ CIPHER_COLUMNS = {
         "patreon_oauth_states", "pending_verifications",
         "plugin_race_entrants", "plugin_race_plugins",
         "profile_contribution_days", "profile_contribution_projects",
-        "public_catalog_snapshot", "pull_inbox", "pull_submission_receipts",
+        "public_catalog_snapshot", "pull_ai_reviews", "pull_inbox",
+        "pull_submission_receipts",
         "quarantined_nodes",
         "quarantined_users", "referral_attributions", "referral_click_audit",
         "relay_self", "repo_action_jobs", "repo_agents", "repo_alert_settings",
         "repo_device_mirrors", "repo_media", "repo_provider_mirror_outbox",
-        "repo_provider_mirrors", "repo_security_scan_leases",
+        "repo_provider_mirrors", "repo_archive_syncs",
+        "repo_security_scan_leases",
         "repo_security_scan_reviews", "repo_security_scans", "repo_shares",
         "repo_source_authorities", "repo_terms_flags", "repo_webhook_outbox",
         "repo_webhooks", "repositories", "repository_fork_jobs",
@@ -471,6 +507,7 @@ CIPHER_COLUMNS["ad_network_ads"] = ("owner_sealed",)
 CIPHER_COLUMNS["world_element_purchases"] = ("deposit_secret",)
 CIPHER_COLUMNS["not_found_paths"] = ("last_client",)
 CIPHER_COLUMNS["probe_bans"] = ("client",)
+CIPHER_COLUMNS["account_store_keys"] = ("wrapped",)
 
 # Client-sealed chat envelopes under DATA_KEY-derived room passphrases.
 CHAT_TABLE = ("chat_history", "body")
@@ -500,7 +537,7 @@ REPO_PREFIXES = ("", "repo-alert-settings:", "repo-feature-settings:", "ap-repo-
 NESTED_PREFIXES = (
     "password-change-v1\n", "password-reset-account-v1\n", "login-source:",
 )
-BI_CONSTANTS = ("", "bug-reporter:anonymous")
+BI_CONSTANTS = ("", "bug-reporter:anonymous", "moderation-scope:instance")
 
 OWNER_KEYS = ("owner", "owner_name", "ownerName", "node", "node_owner",
               "nodeOwner", "repo_owner", "repoOwner", "fork_owner",
@@ -607,7 +644,8 @@ class Keyset:
         if scope == "mainnode/forkmesh" and room.lower() == PUBLIC_WORLD_GENERAL_ROOM:
             suffix = ":room-chat-passphrase-public-world-general-v1"
         elif scope == "mainnode/forkmesh":
-            suffix = ":room-chat-passphrase-v1"
+            suffix = (":room-chat-passphrase-v2:mainnode/forkmesh:room:"
+                      + room.lower())
         else:
             suffix = ":room-chat-passphrase-v2:" + scope
         return self._passphrase(suffix)

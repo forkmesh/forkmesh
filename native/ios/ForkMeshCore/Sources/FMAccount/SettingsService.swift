@@ -12,6 +12,19 @@ public enum ThemeMode: String, CaseIterable, Sendable {
     case dark
 }
 
+public enum LayoutMode: String, CaseIterable, Sendable, Identifiable {
+    case controlTower
+    case focus
+
+    public var id: String { rawValue }
+
+    public var label: String { self == .controlTower ? "Control Tower" : "Focus" }
+
+    public var note: String {
+        self == .controlTower ? "Compact, every control in view" : "Roomier, one thing at a time"
+    }
+}
+
 /// The accent colour picked in Settings, stored by name
 /// (`appearance/accent`). `AccentChoice.rgb` holds the colours; `AppTheme` resolves them.
 public enum AccentChoice: String, CaseIterable, Sendable {
@@ -79,11 +92,14 @@ public final class SettingsService {
     nonisolated public static let bugButtonAnchorKey = "bugReport/anchor"
     nonisolated public static let bugButtonLeftKey = "bugReport/onLeft"
     nonisolated public static let themeModeKey = "appearance/themeMode"
+    nonisolated public static let layoutModeKey = "appearance/layoutMode"
     nonisolated public static let accentKey = "appearance/accent"
     nonisolated public static let accentCustomKey = "appearance/accentCustom"
     nonisolated public static let surfaceKey = "appearance/surface"
     nonisolated public static let readableColorsKey = "appearance/readableColors"
     nonisolated public static let themeColorsKey = "appearance/themeColors"
+    nonisolated public static let matchInstanceThemeKey = "appearance/matchInstanceTheme"
+    nonisolated public static let instanceThemeColorsKey = "appearance/instanceThemeColors"
     nonisolated public static let backgroundImageKey = "appearance/backgroundImage"
     nonisolated public static let backgroundDimKey = "appearance/backgroundDim"
     nonisolated public static let defaultBackgroundDim: Double = 0.4
@@ -442,6 +458,13 @@ public final class SettingsService {
 
     public func setThemeMode(_ mode: ThemeMode) { set(SettingsService.themeModeKey, mode.rawValue) }
 
+    public var layoutMode: LayoutMode {
+        track()
+        return prefs.string(forKey: SettingsService.layoutModeKey).flatMap(LayoutMode.init(rawValue:)) ?? .controlTower
+    }
+
+    public func setLayoutMode(_ mode: LayoutMode) { set(SettingsService.layoutModeKey, mode.rawValue) }
+
     /// The accent colour picked in Settings. Defaults to blue.
     public var accent: AccentChoice {
         track()
@@ -484,6 +507,45 @@ public final class SettingsService {
         let json: String = theme.colorsJSON()
         prefs.set(json.isEmpty ? nil : json, forKey: SettingsService.themeColorsKey)
         notifyListeners()
+    }
+
+    public var matchesInstanceTheme: Bool {
+        track()
+        return prefs.bool(forKey: SettingsService.matchInstanceThemeKey) ?? false
+    }
+
+    public func setMatchesInstanceTheme(_ on: Bool) {
+        if on {
+            prefs.set(true, forKey: SettingsService.matchInstanceThemeKey)
+        } else {
+            prefs.remove(SettingsService.matchInstanceThemeKey)
+            prefs.remove(SettingsService.instanceThemeColorsKey)
+        }
+        notifyListeners()
+    }
+
+    public var instanceThemeColors: String {
+        track()
+        return prefs.string(forKey: SettingsService.instanceThemeColorsKey) ?? ""
+    }
+
+    public func setInstanceThemeColors(_ json: String) {
+        let current: String = prefs.string(forKey: SettingsService.instanceThemeColorsKey) ?? ""
+        if current == json { return }
+        if json.isEmpty {
+            prefs.remove(SettingsService.instanceThemeColorsKey)
+        } else {
+            prefs.set(json, forKey: SettingsService.instanceThemeColorsKey)
+        }
+        notifyListeners()
+    }
+
+    public var effectiveTheme: AppTheme {
+        let theme: AppTheme = self.theme
+        guard matchesInstanceTheme else { return theme }
+        let colors = AppTheme.parseColors(instanceThemeColors)
+        guard !colors.light.isEmpty || !colors.dark.isEmpty else { return theme }
+        return AppTheme(readable: theme.readable, lightColors: colors.light, darkColors: colors.dark)
     }
 
     public var backgroundImage: String {
@@ -617,6 +679,20 @@ public final class SettingsService {
 
     public func setStarterPack(_ name: String) {
         prefs.set(name, forKey: scope.key(SettingsService.starterPackKey))
+        notifyListeners()
+    }
+
+    public func settlePermissionPacing() {
+        PermissionPacing.settle(prefs, freshInstall: needsStarterPack)
+    }
+
+    public var needsPermissionsIntro: Bool {
+        track()
+        return PermissionPacing.needsIntro(prefs)
+    }
+
+    public func finishPermissionsIntro() {
+        PermissionPacing.finishIntro(prefs)
         notifyListeners()
     }
 

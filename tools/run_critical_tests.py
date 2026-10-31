@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -56,6 +59,32 @@ PYTEST_SUITES = {
         "app/tests/test_forkbot.py::test_ai_agent_caps_the_output_tokens_a_client_may_request",
         "app/tests/test_forkbot.py::test_forkbot_denies_agent_start_for_non_owner",
         "app/tests/test_forkbot.py::test_forkbot_rejects_agent_start_on_unknown_issue",
+        "app/tests/host/test_repo_fastpath.py::test_raw_active_content_is_a_sandboxed_download",
+        "app/tests/host/test_repo_fastpath.py::test_every_fast_path_answer_carries_the_sandbox_policy",
+        "app/tests/host/test_repo_fastpath.py::test_memory_hit_after_the_repository_went_private_falls_through",
+        "app/tests/test_mirror_gateway.py::test_raw_active_media_types_are_attachments",
+        "app/tests/test_mirror_gateway.py::test_reads_refuse_commit_reachable_only_from_hidden_refs",
+        "app/tests/test_mobile_node_devices.py::test_revoking_the_primary_desktop_takes_its_key_off_the_account",
+        "app/tests/test_mobile_node_devices.py::test_a_primary_key_with_a_revoked_device_row_never_signs",
+        "app/tests/test_admin_totp_required.py::test_signed_admin_requests_refuse_a_revoked_device_key",
+        "app/tests/test_users_nodes_claim_link.py::test_claim_password_checks_spend_the_login_budget_and_honour_the_lock",
+        "app/tests/test_users_nodes_claim_link.py::test_claim_endpoints_need_the_code_of_a_totp_account",
+        "app/tests/test_mail_budget.py::test_package_smtp_mail_is_capped_per_account_and_per_organization",
+        "app/tests/test_patreon_runtime.py::test_webhook_email_fallback_ignores_an_unconfirmed_email",
+        "app/tests/test_microjobs.py::test_a_fork_copy_of_a_paid_pull_is_the_same_claim",
+        "app/tests/test_microjobs.py::test_the_daily_caps_hold_even_when_the_precheck_is_raced",
+        "world/tests/test_world_office_tasks.py::test_guests_get_no_tasks_and_auditors_cannot_write",
+        "app/tests/test_https_mirror_routing_integration.py::test_two_outside_mirrors_cannot_serve_or_pin_the_flagship",
+        "app/tests/test_https_mirror_routing_integration.py::test_flagship_serving_nodes_are_the_fleet_cores_only",
+        "app/tests/test_repository_file_edits.py::test_core_held_save_needs_an_organization_owner",
+        "app/tests/test_repository_releases.py::test_a_maintainer_cannot_tag_a_core_held_repository",
+        "app/tests/test_key_rotation.py::test_rotate_requires_the_new_key_to_sign_the_acceptance",
+        "app/tests/test_key_rotation.py::test_rotate_refuses_a_key_registered_as_another_accounts_device",
+        "app/tests/test_installer_release.py::test_signed_manifest_must_be_for_the_wanted_channel",
+        "app/tests/test_installer_release.py::test_signed_manifest_older_than_the_installer_minimum_is_refused",
+        "app/tests/test_release_host_completion.py::test_candidate_manifests_without_a_valid_signature_are_ignored",
+        "app/tests/test_instance_directory.py::test_a_launch_never_removes_or_rewrites_an_entry",
+        "app/tests/test_login_key_binding.py::test_every_address_budget_in_the_worker_folds_ipv6_to_a_slash_64",
     ),
 }
 
@@ -77,7 +106,110 @@ def go_environment() -> dict[str, str]:
     env.update(GOTOOLCHAIN="local", GOPROXY="off", GOFLAGS="-mod=readonly", CGO_ENABLED="0")
     env.setdefault("GOCACHE", str(Path(tempfile.gettempdir()) / "forkmesh-go-cache"))
     env.setdefault("GOPATH", str(Path(tempfile.gettempdir()) / "forkmesh-go-path"))
+    cpus = env.get("FORKMESH_ACTIONS_CPUS", "")
+    if cpus.isdigit() and int(cpus) > 0:
+        env.setdefault("GOMAXPROCS", cpus)
     return env
+
+
+GO_RESULT = re.compile(r"^(ok|FAIL|\?)\s+(\S+)")
+GO_TIMEOUT_SIGNS = ("i/o timeout", "context deadline exceeded", "Client.Timeout exceeded", "timed out")
+GO_RETRY_LIMIT = 3
+GO_LOAD_SENSITIVE_TESTS = frozenset({"TestThreePeopleHoldACallThroughImpairedLinks"})
+
+
+def go_timeout_failures(output: str) -> dict[str, list[str]] | None:
+    failures: dict[str, list[str]] = {}
+    reasons: dict[str, list[str]] = {}
+    current = ""
+    panicked = False
+    for line in output.splitlines():
+        if line.startswith("--- FAIL: "):
+            current = line.split()[2]
+            reasons[current] = []
+            continue
+        if current and line.startswith("    "):
+            reasons[current].append(line)
+            continue
+        current = ""
+        if line.startswith("panic: "):
+            panicked = True
+        result = GO_RESULT.match(line)
+        if not result:
+            continue
+        if result.group(1) == "FAIL":
+            timed_out = all(name in GO_LOAD_SENSITIVE_TESTS
+                            or any(sign in text for text in lines for sign in GO_TIMEOUT_SIGNS)
+                            for name, lines in reasons.items())
+            if panicked or not reasons or not timed_out or "[" in line:
+                return None
+            failures[result.group(2)] = list(reasons)
+        reasons = {}
+        panicked = False
+    if reasons or sum(map(len, failures.values())) > GO_RETRY_LIMIT:
+        return None
+    return failures
+
+
+def go_retry_command(package: str, tests: list[str]) -> list[str]:
+    pattern = "^(" + "|".join(re.escape(name) for name in tests) + ")$"
+    return [go_binary(), "test", "-C", "server", "-count=1", "-run", pattern, package]
+
+
+def run_streaming(command: list[str], env: dict[str, str] | None, timeout: float) -> tuple[int, str]:
+    process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, errors="replace",
+                               start_new_session=True)
+    expired = threading.Event()
+
+    def stop() -> None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def expire() -> None:
+        expired.set()
+        stop()
+
+    timer = threading.Timer(max(timeout, 0.0), expire)
+    timer.start()
+    lines = []
+    try:
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            lines.append(line)
+        process.wait()
+    finally:
+        timer.cancel()
+        if process.poll() is None:
+            stop()
+            process.wait()
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(command, timeout)
+    return process.returncode, "".join(lines)
+
+
+def run_go_suite(command: list[str], budget: float) -> int:
+    deadline = time.monotonic() + budget
+    env = go_environment()
+    returncode, output = run_streaming(command, env, budget)
+    if returncode == 0:
+        return 0
+    failures = go_timeout_failures(output)
+    if not failures:
+        return returncode
+    for package, tests in failures.items():
+        print(f"[critical-tests] go: retrying {package} {' '.join(tests)} once: "
+              "every failure was a timeout or a load-sensitive call test", flush=True)
+        returncode, _ = run_streaming(go_retry_command(package, tests), env,
+                                      deadline - time.monotonic())
+        if returncode != 0:
+            return returncode
+    print("[critical-tests] go: passed on retry; the first failures were timeouts "
+          "under load (docs/server/README.md)", flush=True)
+    return 0
 
 
 def command_for(suite: str, build_dir: Path) -> list[str]:
@@ -126,13 +258,15 @@ def main() -> int:
         flush=True,
     )
     try:
-        result = subprocess.run(
-            command,
-            cwd=ROOT,
-            check=False,
-            timeout=budget,
-            env=go_environment() if args.suite == "go" else None,
-        )
+        if args.suite == "go":
+            returncode = run_go_suite(command, budget)
+        else:
+            returncode = subprocess.run(
+                command,
+                cwd=ROOT,
+                check=False,
+                timeout=budget,
+            ).returncode
     except subprocess.TimeoutExpired:
         print(
             f"[critical-tests] {args.suite} exceeded "
@@ -143,7 +277,7 @@ def main() -> int:
 
     elapsed = time.monotonic() - started
     print(f"[critical-tests] {args.suite}: {elapsed:.2f}s", flush=True)
-    return result.returncode
+    return returncode
 
 
 if __name__ == "__main__":

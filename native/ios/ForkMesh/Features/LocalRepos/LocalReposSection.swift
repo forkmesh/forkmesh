@@ -162,7 +162,7 @@ private struct LocalReposSectionContent: View {
                 }
                 FmToneButton(label: "New repository", icon: "add", tone: .accent, onPressed: model.isBusy ? nil : { startCreate() })
                 FmToneButton(label: "Import from Files", icon: "drive_folder_upload_outlined", onPressed: model.isBusy ? nil : { startImport() })
-                FmToneButton(label: "Mirror from GitHub/GitLab/Codeberg", icon: "cloud_sync_outlined", onPressed: model.isBusy ? nil : { startMirror() })
+                FmToneButton(label: "Mirror from GitHub/GitLab/Codeberg/Gitea", icon: "cloud_sync_outlined", onPressed: model.isBusy ? nil : { startMirror() })
             }
             .padding(EdgeInsets(top: FmSpace.x2, leading: FmSpace.x4, bottom: FmSpace.x3, trailing: FmSpace.x4))
         }

@@ -26,6 +26,29 @@ dashboard and World read it. Code: `app/src/account_users.py`
   private profile before it consults `_account_lookup_cached`, so a warm entry
   cannot outlive a privacy toggle
   (`app/tests/test_security_controls.py::test_private_profiles_and_repo_pages_revoke_cached_public_metadata`).
+- Account search (`_WorldCommunityRuntime.search_accounts`, behind
+  `GET /api/chat/direct-messages/users?query=` and the notes share picker)
+  uses the same `_is_public_roster_member` test. Before 2026-10-22 it checked
+  only active `user`, so a prefix search listed private profiles the roster
+  hides. Tests: `app/tests/test_account_search_private_profiles.py`.
+- The follow state in `GET /api/accounts/<name>?viewer=<name>` comes only
+  from the caller's own session (`_account_lookup_viewer`): a `viewer` that is
+  not the signed-in account gets `isFollowing: false`. A bare query value used
+  to answer the real `profile_follows` row for any pair, which let anyone
+  rebuild the follow graph. Tests: `app/tests/test_boot_endpoint_caches.py`.
+- Referral surfaces use the same `_is_public_roster_member` test: the
+  `referredUsers` names on a profile and on the referral leaderboard, the
+  leaderboard rows themselves, and the directory's `referredBy` leave out
+  private, inactive and missing accounts (`_public_referral_bis`). The
+  referral preview page and `/api/referrals/<name>/card.png` refuse a private
+  profile (`_referral_account(..., public=True)`); the `/r/<name>` redirect and
+  the credit path still work for it. A profile edit and an admin profile save
+  purge `REFERRAL_LEADERBOARD_CACHE_KEY`. Tests: `app/tests/test_referrals.py`.
+- `GET /api/badges/<name>` answers 404 for a private profile unless the
+  caller's session is the account or owns the node, and that answer is
+  `private, no-store` (`app/tests/test_badges.py`).
+- The network contributors board labels a private profile's row "Private
+  contributor" (`app/tests/test_leaderboards_hub.py`).
 - Thumbnails (`_avatar_render_thumbnail`, Pillow) refuse sources over
   4096×4096 and are cached in a 512-entry LRU keyed by content hash.
 - The host cache is per process; cross-core lag is bounded by the cache TTLs.

@@ -33,8 +33,16 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
 
     fun prepareMerge(sessionId: Int): AgentOpsConfirmation = prepare(AgentOpsAction.Merge, linkedMapOf("id" to sessionId.toLong()))
 
-    fun merge(sessionId: Int, token: String, typed: String): MergeOutcome =
-        MergeOutcome.from(family.call("merge", linkedMapOf("id" to sessionId.toLong(), "token" to token, "typed" to typed), 180_000))
+    fun merge(sessionId: Int, token: String, typed: String, setAside: Boolean = false): MergeOutcome {
+        val params = linkedMapOf<String, Any?>(
+            "id" to sessionId.toLong(),
+            "token" to token,
+            "typed" to typed,
+            "offerSetAside" to true,
+        )
+        if (setAside) params["setAside"] = true
+        return MergeOutcome.from(family.call("merge", params, 180_000))
+    }
 
     fun mergeStats(sessionId: Int? = null): MergeLeaderboard {
         val params = linkedMapOf<String, Any?>()
@@ -149,7 +157,7 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
 
         fun describe(error: Throwable): String {
             val code = errorCode(error) ?: return error.message ?: error.toString()
-            if (code == "merge_failed" && error is LocalControlException && error.reason.isNotBlank()) {
+            if ((code == "merge_failed" || code == "checkout_dirty") && error is LocalControlException && error.reason.isNotBlank()) {
                 return ControlErrorText.withReason("The merge did not finish.", error)
             }
             return describe(code)
@@ -166,6 +174,7 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
             "conflict_check_unavailable" -> "The desktop's Git is too old to check for conflicts first. Merge on the desktop."
             "no_base_branch" -> "The desktop could not find the branch to merge into."
             "merge_failed" -> "The merge did not finish. The desktop's repository page says why."
+            "checkout_dirty" -> "The merge did not finish: the desktop's checkout has uncommitted changes in files this merge touches."
             "repo_unavailable" -> "The desktop could not open that repository."
             "name_mismatch" -> "The typed name does not match the branch."
             "branch_gone" -> "The agent's branch and worktree are gone from the desktop."

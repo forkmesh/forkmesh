@@ -28,7 +28,9 @@ def test_plugin_share_links_open_the_market_document():
     assert static_routes.external_site_route("/market/crm") == "www"
     assert static_routes.external_site_route(
         "/market/nemotron-3.5-lightning/") == "www"
-    assert static_routes.site_document_asset_path("/market/crm/") == "/market"
+    assert static_routes.site_document_asset_path("/market/crm/") == "/market/crm"
+    assert static_routes.site_document_asset_path(
+        "/market/nemotron-3.5-lightning") == "/market/nemotron-3.5-lightning"
     assert static_routes.site_document_asset_path("/market") == "/market"
     for path in ("/market/Crm", "/market/crm/settings", "/market/previews",
                  "/market/previews/packages/notes/preview/market.webp"):

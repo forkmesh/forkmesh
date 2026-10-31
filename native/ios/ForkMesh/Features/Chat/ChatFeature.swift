@@ -58,19 +58,17 @@ enum ChatFeature {
 
         let meshTransport: CoreBluetoothMeshTransport = CoreBluetoothMeshTransport()
         OtherAppCall.shared.onChange { [weak meshTransport] (inCall: Bool) in meshTransport?.setCallInProgress(inCall) }
+        let meshProject: @MainActor () -> String = {
+            let project: String = settings.relays.activeId
+            return project.isEmpty ? settings.serverUrl : project
+        }
         let mesh = LocalMeshService(
             settings: settings, identity: identity, secureStore: secure, transport: meshTransport,
-            historyFile: { defaultMeshHistoryFile() })
+            historyFile: { defaultMeshHistoryFile(project: meshProject()) })
         mesh.accountProvider = { auth.session?.nodeName ?? "" }
-        mesh.wakeTokenProvider = {
-            if (auth.session?.sessionToken ?? "").isEmpty { return "" }
-            let minted = try? await api.accountApiCall("POST", "/api/push/mesh-wake", [:])
-            return minted?["token"]?.text ?? ""
-        }
-        mesh.wakeSender = { (tokens: [String]) in
-            if (auth.session?.sessionToken ?? "").isEmpty { return }
-            _ = try? await api.accountApiCall("POST", "/api/push/mesh", ["tokens": JSONValue(tokens)])
-        }
+        mesh.projectScope = meshProject
+        mesh.waitsForRoom = !PermissionPacing.nearbyAllowed(prefs)
+        mesh.onFirstRoomOpen = { PermissionPacing.markNearbyOpened(prefs) }
         let control = LocalControlService(
             mesh: mesh, identity: identity, prefs: prefs, userName: { auth.session?.nodeName ?? "" })
         control.inferenceProvider = { Services.get(LocalInferenceService.self) }
@@ -131,7 +129,7 @@ enum ChatFeature {
         Services.put(nodeSync)
         Services.put(
             ChatLinkPreviewService(
-                http: URLSessionHTTPClient(), store: prefs, file: ChatLinkPreviewService.defaultFile))
+                http: URLSessionHTTPClient(), store: prefs, file: { ChatLinkPreviewService.defaultFile(project: meshProject()) }))
         let privacy: ChatPrivacy = ChatPrivacy(store: prefs)
         Services.put(privacy)
         ChatPrivacyShield.shared.install(enabled: { privacy.coversAppSwitcher })

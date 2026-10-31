@@ -174,6 +174,7 @@ bool MainWindow::ensureStreamEventsLoadedAsync(int sessionId)
                        !m_streamSessions.contains(sessionId) &&
                        !m_codexStreams.contains(sessionId)) {
                 m_streamEvents[sessionId] = std::move(out.events);
+                m_agentTaskTrackers.remove(sessionId);
                 m_streamRaw[sessionId] = std::move(out.raw);
                 m_streamFiles[sessionId] = std::move(out.files);
             }
@@ -201,14 +202,13 @@ void MainWindow::renderTranscriptForSession(int sessionId)
     m_agentTranscriptScrollRestoreSession = -1;
     const quint64 generation = ++m_agentTranscriptRenderGeneration;
     m_agentTranscriptRenderSession = sessionId;
-    m_agentTranscriptRenderEvents = m_streamEvents.value(sessionId);
     m_agentTranscriptRenderCursor = 0;
     constexpr int kTranscriptRenderTail = 300;
     const int renderLimit = qMax(
         kTranscriptRenderTail,
         m_agentTranscriptRenderLimits.value(sessionId, kTranscriptRenderTail));
     m_agentTranscriptRenderSkipped =
-        qMax(0, int(m_agentTranscriptRenderEvents.size()) - renderLimit);
+        qMax(0, int(m_streamEvents.value(sessionId).size()) - renderLimit);
     m_agentTranscriptSkippedNoticeAdded = false;
 
     // Protect the bottom-follow latch before clear() collapses the old
@@ -248,12 +248,10 @@ bool MainWindow::renderTranscriptTail(int sessionId)
         m_renderedTranscriptSession != sessionId ||
         m_renderedTranscriptCount < 0)
         return false;
-    const QList<QJsonObject> events = m_streamEvents.value(sessionId);
-    if (events.size() <= m_renderedTranscriptCount)
+    if (m_streamEvents.value(sessionId).size() <= m_renderedTranscriptCount)
         return false; // shrank, or nothing new: not an append
     const quint64 generation = ++m_agentTranscriptRenderGeneration;
     m_agentTranscriptRenderSession = sessionId;
-    m_agentTranscriptRenderEvents = events;
     m_agentTranscriptRenderCursor = m_renderedTranscriptCount;
     // The cursor already starts past every hidden event, so nothing takes the
     // stats-only path; carrying the count keeps the "load earlier" notice's
@@ -274,18 +272,18 @@ void MainWindow::renderTranscriptSlice(quint64 generation)
     if (sessionId < 0 || sessionId != m_selectedAgentSessionId) {
         m_agentTranscript->setBulkPopulate(false);
         m_agentTranscriptRenderSession = -1;
-        m_agentTranscriptRenderEvents.clear();
         return;
     }
 
+    const QList<QJsonObject> events = m_streamEvents.value(sessionId);
     QElapsedTimer budget;
     budget.start();
     bool handled = false;
-    while (m_agentTranscriptRenderCursor < m_agentTranscriptRenderEvents.size() &&
+    while (m_agentTranscriptRenderCursor < events.size() &&
            (!handled || budget.elapsed() < 8)) {
         if (m_agentTranscriptRenderCursor < m_agentTranscriptRenderSkipped) {
             m_agentTranscript->accumulateStatsOnly(
-                m_agentTranscriptRenderEvents.at(m_agentTranscriptRenderCursor));
+                events.at(m_agentTranscriptRenderCursor));
         } else {
             if (!m_agentTranscriptSkippedNoticeAdded) {
                 m_agentTranscriptSkippedNoticeAdded = true;
@@ -293,8 +291,7 @@ void MainWindow::renderTranscriptSlice(quint64 generation)
                     m_agentTranscript->addSkippedNotice(
                         m_agentTranscriptRenderSkipped);
             }
-            const QJsonObject &ev = m_agentTranscriptRenderEvents.at(
-                m_agentTranscriptRenderCursor);
+            const QJsonObject &ev = events.at(m_agentTranscriptRenderCursor);
             if (ev.value(QStringLiteral("type")).toString() ==
                 QLatin1String("_local_user")) {
                 m_agentTranscript->addUserTurn(
@@ -308,7 +305,7 @@ void MainWindow::renderTranscriptSlice(quint64 generation)
         handled = true;
     }
 
-    if (m_agentTranscriptRenderCursor < m_agentTranscriptRenderEvents.size()) {
+    if (m_agentTranscriptRenderCursor < events.size()) {
         QTimer::singleShot(0, this,
                            [this, generation] { renderTranscriptSlice(generation); });
         return;
@@ -316,10 +313,9 @@ void MainWindow::renderTranscriptSlice(quint64 generation)
 
     m_agentTranscript->setBulkPopulate(false);
     m_renderedTranscriptSession = sessionId;
-    m_renderedTranscriptCount = m_agentTranscriptRenderEvents.size();
+    m_renderedTranscriptCount = events.size();
     m_transcriptSkipped = m_agentTranscriptRenderSkipped;
     m_agentTranscriptRenderSession = -1;
-    m_agentTranscriptRenderEvents.clear();
     // A rebuild replays the events, so the closing "Done" row comes back as the
     // CLI wrote it: re-mark it if this session is still finishing background work.
     m_agentTranscript->setBackgroundWorkNote(agentBackgroundWorkNote(sessionId));

@@ -577,6 +577,48 @@ def test_publishing_failure_pings_with_a_fix_and_deduplicates_until_recovery(box
     assert len(requests) == 2
 
 
+def test_a_refused_pull_ledger_waits_for_the_desktop_before_it_pings(box):
+    write_key(box.identity_key)
+    box.settings_file.parent.mkdir(parents=True, exist_ok=True)
+    box.settings_file.write_text("nodeName=forkmesh\n")
+    box.fanout_gateways.parent.mkdir(parents=True, exist_ok=True)
+    box.fanout_gateways.write_text("cores https://app.example.invalid/forkmesh/forkmesh.git\n")
+    requests = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"pings":1}'
+
+    def opener(request, timeout):
+        requests.append(request)
+        return Response()
+
+    now = [1000.0]
+    ledger = {"ok": False, "fanout": {"ok": True}, "gateways": [{
+        "ok": False, "rejected": [
+            {"ref": "refs/heads/forkmesh/pulls", "reason": "fetch first"},
+            {"ref": "refs/heads/old-branch", "reason": "non-fast-forward"}]}]}
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    now[0] += sp.LEDGER_GRACE_SECONDS - 1
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    assert requests == []
+    now[0] += 2
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    assert len(requests) == 1
+    assert "refs/heads/forkmesh/pulls" in json.loads(requests[0].data)["body"]
+    sp.notify_publish_failure(box, {"ok": True}, opener=opener, clock=lambda: now[0])
+    main = {"ok": False, "fanout": {"ok": True}, "gateways": [{
+        "ok": False, "rejected": [{"ref": "refs/heads/main", "reason": "fetch first"}]}]}
+    sp.notify_publish_failure(box, main, opener=opener, clock=lambda: now[0])
+    assert len(requests) == 2
+
+
 def test_git_timing_out_on_the_proxy_port_is_reported_as_blocked_loopback(box):
     write_key(box.identity_key)
     calls = []
@@ -1068,6 +1110,46 @@ def test_a_real_ledger_divergence_still_fails(box, monkeypatch):
     assert any("DIVERGED" in line and "forkmesh/pulls" in line for line in logs)
 
 
+def test_a_ledger_read_from_a_lagging_core_is_read_again(box, monkeypatch):
+    reads, waits = iter([False, True]), []
+    monkeypatch.setattr(sp, "run_fanout", lambda script, run=None: {"ok": True, "code": 0})
+    monkeypatch.setattr(sp, "read_gateways", lambda path, key: [{"name": "cores"}])
+    monkeypatch.setattr(sp, "push_gateway", lambda bare, gateway, run=None:
+                        _diverged_gateway("refs/heads/forkmesh/pulls"))
+    monkeypatch.setattr(sp, "cores_ref_contained", lambda source, url, name, pushed: next(reads))
+    logs = []
+    code = sp.publish(box, run=systemctl_fake(), sleep=waits.append, log=logs.append)
+    assert code == 0
+    assert sp.GATEWAY_RETRY_SECONDS in waits
+    assert not any("FAILED" in line or "DIVERGED" in line for line in logs)
+
+
+def test_a_main_read_from_a_lagging_core_is_read_again(box, monkeypatch):
+    behind = sh("rev-parse", "main", cwd=box.source)
+    commit(box.source, "merge one core has not replicated yet")
+    caught_up = sh("rev-parse", "main", cwd=box.source)
+    reads = iter([{"absorbed": False, "reason": "already contained", "cores": behind},
+                  {"absorbed": False, "reason": "already contained", "cores": caught_up}])
+    monkeypatch.setattr(sp, "run_fanout", lambda script, run=None: {"ok": True, "code": 0})
+    monkeypatch.setattr(sp, "read_gateways", lambda path, key: [{"name": "cores"}])
+    monkeypatch.setattr(sp, "push_gateway", lambda bare, gateway, run=None: _diverged_gateway())
+    monkeypatch.setattr(sp, "absorb_cores", lambda source, url: next(reads))
+    logs = []
+    code = sp.publish(box, run=systemctl_fake(), sleep=lambda s: None, log=logs.append)
+    assert code == 0
+    assert any("already past this pass" in line for line in logs)
+
+
+def test_a_failure_ping_names_the_refused_ref_not_the_git_output():
+    gateway = _diverged_gateway("refs/heads/forkmesh/pulls")
+    gateway["stale"] = ["refs/heads/old"]
+    gateway["rejected"].append({"ref": "refs/heads/old", "reason": "non-fast-forward"})
+    gateway["error"] = "t you pushed in some\nremote: other way."
+    cause = sp.gateway_failure_cause(gateway)
+    assert cause == "the cores refused refs/heads/forkmesh/pulls (non-fast-forward)"
+    assert sp.gateway_failure_cause({"error": "loopback blocked"}) == "loopback blocked"
+
+
 def test_cores_ref_contained_reads_the_cores_value(box, tmp_path):
     served = tmp_path / "cores.git"
     sh("clone", "-q", "--bare", str(box.source), str(served))
@@ -1358,3 +1440,131 @@ def test_a_second_branch_delete_run_leaves_the_first_alone(box, monkeypatch):
     assert inline == [] and len(logs) == 1
     assert sp.delete_branches(box, log=logs.append) == 0
     assert len(inline) == 1
+
+
+def github_fake(outcomes, calls):
+    def run(command, **kwargs):
+        if command[0] == "git" and "push" in command and "https://github.com/" in command[-3]:
+            calls.append((command, kwargs["env"]))
+            code, stdout, stderr = outcomes.pop(0) if outcomes else (0, "", "")
+            return subprocess.CompletedProcess(command, code, stdout, stderr)
+        return systemctl_fake()(command, **kwargs)
+    return run
+
+
+def test_github_mirrors_read_only_github_https_lines(box):
+    box.fanout_github.parent.mkdir(parents=True, exist_ok=True)
+    box.fanout_github.write_text(
+        "# mirrors\n"
+        "github https://github.com/forkmesh/forkmesh.git\n"
+        "plain http://github.com/forkmesh/forkmesh.git\n"
+        "other https://gitlab.com/forkmesh/forkmesh.git\n"
+        "named https://github.com/forkmesh/other.git ~/token\n")
+    mirrors = sp.read_github_mirrors(box.fanout_github)
+    assert [item["name"] for item in mirrors] == ["github", "named"]
+    assert mirrors[0]["key"] == box.fanout_github.parent / "github-token"
+    assert mirrors[1]["key"] == Path(os.path.expanduser("~/token"))
+
+
+def test_github_push_sends_main_and_tags_with_the_token_out_of_argv(box):
+    token = box.home_dir / "github-token"
+    token.write_text("ghp_secret\n")
+    calls = []
+    run = github_fake([(0, "To github\n*\trefs/heads/main:refs/heads/main\t[new branch]\nDone\n",
+                        "")], calls)
+    result = sp.push_github(box.bare_mirror, {
+        "name": "github", "url": "https://github.com/forkmesh/forkmesh.git",
+        "key": token}, run=run)
+    assert result["ok"] and result["updated"] == ["refs/heads/main"]
+    command, env = calls[0]
+    assert command[-2:] == list(sp.GITHUB_REFSPECS)
+    assert not any(arg.startswith("+") or arg in ("--force", "--mirror") for arg in command)
+    assert "ghp_secret" not in " ".join(command)
+    assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
+    assert env["GIT_CONFIG_VALUE_0"] == "Authorization: Basic " + base64.b64encode(
+        b"x-access-token:ghp_secret").decode()
+
+
+def test_github_push_reports_a_rejection_without_the_token(box):
+    token = box.home_dir / "github-token"
+    token.write_text("ghp_secret")
+    run = github_fake([(1, "!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)\n",
+                        "error: failed to push to https://ghp_secret@github.com\n")], [])
+    result = sp.push_github(box.bare_mirror, {
+        "name": "github", "url": "https://github.com/forkmesh/forkmesh.git",
+        "key": token}, run=run)
+    assert not result["ok"]
+    assert result["rejected"][0]["ref"] == "refs/heads/main"
+    assert "ghp_secret" not in result["error"]
+
+
+def test_github_push_without_a_token_does_not_run_git(box):
+    calls = []
+    result = sp.push_github(box.bare_mirror, {
+        "name": "github", "url": "https://github.com/forkmesh/forkmesh.git",
+        "key": box.home_dir / "missing"}, run=github_fake([], calls))
+    assert not result["ok"] and result["error"].startswith("token:")
+    assert calls == []
+
+
+def test_publish_retries_a_failed_github_push_on_the_next_pass(box):
+    box.fanout_github.parent.mkdir(parents=True, exist_ok=True)
+    box.fanout_github.write_text("github https://github.com/forkmesh/forkmesh.git\n")
+    (box.fanout_github.parent / "github-token").write_text("ghp_secret")
+    calls, logs = [], []
+    run = github_fake([(128, "", "fatal: unable to access\n"), (0, "", "")], calls)
+    assert sp.publish(box, run=run, sleep=lambda s: None, log=logs.append) == 0
+    status = json.loads((box.publisher_state / "status.json").read_text())
+    assert status["github"][0]["ok"] is False
+    assert any(line.startswith("github github: FAILED") for line in logs)
+    sp.publish(box, if_changed=True, run=run, sleep=lambda s: None, log=logs.append)
+    assert len(calls) == 2
+    status = json.loads((box.publisher_state / "status.json").read_text())
+    assert status["github"][0]["ok"] is True
+    sp.publish(box, if_changed=True, run=run, sleep=lambda s: None, log=logs.append)
+    assert len(calls) == 2
+    assert sp.status_report(box, run=run)["github"] == [
+        {"name": "github", "ok": True, "rejected": []}]
+
+
+def _three_cores(monkeypatch, mains):
+    urls = [{"name": "core %s" % name, "url": "https://%s.example/forkmesh/forkmesh.git" % name}
+            for name in mains]
+    monkeypatch.setattr(sp, "core_read_urls", lambda source: urls)
+    monkeypatch.setattr(sp, "cores_main", lambda url: mains[url.split("//")[1].split(".")[0]])
+
+
+def test_absorb_takes_main_only_when_a_second_core_serves_it(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "one-core-only")
+    before = sh("rev-parse", "main", cwd=box.source)
+    _three_cores(monkeypatch, {"n3": pushed, "n4": before, "n5": before})
+    refused = sp.absorb_cores(box.source, str(cores))
+    assert not refused["absorbed"] and refused["unconfirmed"]
+    assert "only 1 of 3 reachable cores" in refused["reason"]
+    assert sh("rev-parse", "main", cwd=box.source) == before
+    _three_cores(monkeypatch, {"n3": pushed, "n4": pushed, "n5": before})
+    outcome = sp.absorb_cores(box.source, str(cores))
+    assert outcome["absorbed"] and sh("rev-parse", "main", cwd=box.source) == pushed
+
+
+def test_absorb_accepts_the_only_reachable_core(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "lone-core")
+    _three_cores(monkeypatch, {"n3": pushed, "n4": "", "n5": ""})
+    assert sp.absorb_cores(box.source, str(cores))["absorbed"]
+    _, other = _cores_with(box, tmp_path / "again", "nobody-answers")
+    _three_cores(monkeypatch, {"n3": "", "n4": "", "n5": ""})
+    assert not sp.cores_agreement(box.source, other)[0]
+
+
+def test_watch_waits_for_a_second_core_before_taking_main(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "lagging-peers")
+    before = sh("rev-parse", "main", cwd=box.source)
+    _three_cores(monkeypatch, {"n3": pushed, "n4": before, "n5": before})
+    monkeypatch.setattr(sp, "read_gateways", lambda path, key: [])
+    passes = []
+    monkeypatch.setattr(sp, "publish", lambda paths, run=None, log=None: passes.append(1) or 0)
+    logs = []
+    assert sp.watch_cores(box, run=systemctl_fake(), log=logs.append) == 0
+    assert passes == [] and sh("rev-parse", "main", cwd=box.source) == before
+    assert any("not taking it: only 1 of 3 reachable cores" in line for line in logs)
+    assert not (box.publisher_state / "cores-watch.json").exists()

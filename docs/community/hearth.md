@@ -1,13 +1,13 @@
 # Hearth, the Discord community special agent
 
-Hearth (`.forkmesh/teammates/hearth.json`) keeps the ForkMesh Discord server
+Hearth (`.forkmesh/workflows/hearth.json`) keeps the ForkMesh Discord server
 warm and useful: it answers open loops, welcomes newcomers and sparks
 conversation when the server is quiet. This page is its charter, research and
 voice.
 
 | Piece | Path |
 | --- | --- |
-| Special agent definition | `.forkmesh/teammates/hearth.json` |
+| Special agent definition | `.forkmesh/workflows/hearth.json` |
 | Run playbook | `.forkmesh/shortcuts/tend-the-discord-community.md` |
 | Skill | `.forkmesh/skills/community-engagement.skill` |
 | Discord tool | `tools/discord_community.py` |

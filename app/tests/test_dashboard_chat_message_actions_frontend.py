@@ -19,7 +19,6 @@ from pathlib import Path
 PUBLIC = Path(__file__).resolve().parents[1] / "public"
 CHAT = (PUBLIC / "dashboard-chat.js").read_text(encoding="utf-8")
 SHELL = (PUBLIC / "dashboard" / "shell.html").read_text(encoding="utf-8")
-CHAT_PAGE = (PUBLIC / "dashboard" / "chat" / "index.html").read_text(encoding="utf-8")
 
 
 def _region(start, end):
@@ -63,10 +62,9 @@ def test_dashboard_reactions_use_the_shared_durable_protocol():
     assert "reactorName: displayName()" in reaction
     assert "added: !mine" in reaction
     assert '"reaction"' in CHAT[CHAT.index("const DURABLE_TYPES"):][:200]
-    for source in (SHELL, CHAT_PAGE):
-        assert ".chat-reactions {" in source
-        assert ".chat-reaction-chip" in source
-        assert ".chat-reaction-picker" in source
+    assert ".chat-reactions {" in SHELL
+    assert ".chat-reaction-chip" in SHELL
+    assert ".chat-reaction-picker" in SHELL
 
 
 def test_edit_frame_targets_the_message_and_is_durable():
@@ -113,13 +111,11 @@ def test_edited_messages_are_marked_for_readers():
 
 def test_actions_are_hidden_until_the_row_is_hovered_or_focused():
     # The pre-built dashboard/tailwind.css carries no group-hover variant, so
-    # the reveal has to be hand-written CSS in the shell (and therefore in the
-    # built pages too).
+    # the reveal has to be hand-written CSS in the shell.
     assert "group-hover:opacity-100" not in CHAT
-    for source in (SHELL, CHAT_PAGE):
-        assert ".chat-message-actions {" in source
-        assert ".group:hover > .chat-message-actions," in source
-        assert ".chat-message-actions:focus-within {" in source
+    assert ".chat-message-actions {" in SHELL
+    assert ".group:hover > .chat-message-actions," in SHELL
+    assert ".chat-message-actions:focus-within {" in SHELL
 
 
 def test_hidden_controls_toggle_display_not_the_hidden_attribute():

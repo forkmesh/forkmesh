@@ -1,0 +1,74 @@
+:root {
+  --dashboard-control-radius: 8px;
+}
+
+::selection {
+  background: rgb(var(--dashboard-primary-rgb) / 0.3);
+}
+
+h1,
+h2 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.rounded-md {
+  border-radius: 8px;
+}
+
+.rounded-lg {
+  border-radius: 12px;
+}
+
+.rounded-xl {
+  border-radius: 16px;
+}
+
+.fm-btn {
+  font-weight: 600;
+}
+
+.fm-btn-cta,
+.bg-cta {
+  font-weight: 700;
+}
+
+.fm-label {
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.fm-label-success {
+  background: rgb(var(--dashboard-success-rgb) / 0.12);
+}
+
+.fm-label-attention {
+  background: rgb(var(--dashboard-attention-rgb) / 0.12);
+}
+
+.fm-label-danger {
+  background: rgb(var(--dashboard-destructive-rgb) / 0.12);
+}
+
+.fm-label-accent {
+  background: rgb(var(--dashboard-primary-rgb) / 0.12);
+}
+
+[data-settings-section-link][aria-current="page"],
+:is(nav, aside) a[aria-current="page"] {
+  background-color: rgb(var(--dashboard-primary-rgb) / 0.12) !important;
+  color: rgb(var(--dashboard-accent-rgb)) !important;
+}
+
+[data-settings-active-indicator] {
+  display: none !important;
+}
+
+:is(input, textarea, select):focus-visible {
+  border-color: rgb(var(--dashboard-primary-rgb)) !important;
+}

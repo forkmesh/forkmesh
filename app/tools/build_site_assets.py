@@ -20,6 +20,7 @@ from xml.sax.saxutils import escape
 REPOSITORY = Path(__file__).resolve().parents[2]
 APP = REPOSITORY / "app"
 WWW = REPOSITORY / "www"
+CHANGELOG = REPOSITORY / "changelog" / "changelog.json"
 WORLD = REPOSITORY / "world"
 WORLD_TOOLS = WORLD / "tools"
 OFFICE = REPOSITORY / "office"
@@ -35,6 +36,7 @@ import forkmesh_safe_delete  # noqa: E402
 import docs_site  # noqa: E402
 import dashboard_shell  # noqa: E402
 import build_app_plugins  # noqa: E402
+import build_market_catalog  # noqa: E402
 import build_dashboard_assets  # noqa: E402
 import precompress_assets  # noqa: E402
 import site_templates  # noqa: E402
@@ -82,6 +84,8 @@ WWW_APP_PAGES = (
 
 BACKEND_ASSETS = (
     "blog.html",
+    "changelog.html",
+    "changelog.js",
     "index.html",
     "install.sh",
     "uninstall.sh",
@@ -360,10 +364,12 @@ def stage_www() -> Path:
     destination = WWW / "dist"
     reset(destination)
     copy_tree(WWW / "public", destination)
+    copy_file(CHANGELOG, destination / "changelog.json")
     for name in WWW_APP_MODULES + WWW_APP_PAGES:
         copy_file(APP / "public" / name, destination / name)
     build_www_feeds(destination)
     stage_market_previews(destination)
+    build_market_catalog.stage_package_pages(destination)
     build_app_plugins.stage_www_pages(destination)
     docs_site.stage_docs(destination)
     stamp_canonical_links(destination)
@@ -378,6 +384,7 @@ def stage_app() -> Path:
     shared_assets(destination, include_video=True)
     for name in BACKEND_ASSETS:
         copy_file(WWW / "public" / name, destination / name)
+    copy_file(CHANGELOG, destination / "changelog.json")
     # The dependency-free QR generator the World already ships. The hackathon
     # share kit loads it on demand from this origin (script-src 'self'), so it
     # is staged here rather than duplicated into app/public.
@@ -456,8 +463,11 @@ def stage_cutover() -> Path:
     shared_assets(destination, include_video=True)
     for name in BACKEND_ASSETS:
         copy_file(WWW / "public" / name, destination / name)
+    copy_file(CHANGELOG, destination / "changelog.json")
     shutil.copytree(WWW / "public", destination, dirs_exist_ok=True)
     shutil.copytree(WORLD / "public", destination, dirs_exist_ok=True)
+    stage_market_previews(destination)
+    build_market_catalog.stage_package_pages(destination)
     docs_site.stage_docs(destination)
     world_marketplace_packages(destination)
     build_app_plugins.stage_web(destination)

@@ -171,7 +171,7 @@ public enum InboxRoutes {
         }
         if let ref = RepoRef(slug: repo) {
             switch kind {
-            case "pull_submitted":
+            case "pull_submitted", "pull_attention":
                 return number > 0 ? .pull(ref, number: number, tab: .conversation) : .repo(ref, section: .pulls)
             case "issue_assigned", "issue_opened", "mention":
                 return number > 0 ? .issue(ref, number: number) : .repo(ref, section: .issues)

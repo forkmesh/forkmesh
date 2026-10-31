@@ -10,6 +10,8 @@ public enum DiagnosticsBundle {
         (#"(?i)\b(authorization|bearer|token|access_token|refresh_token|secret|password|passwd|api[_-]?key|cookie|session(?:_?id)?|signature|sig)\b(["']?\s*[:=]\s*["']?)[^\s"',;&]+"#, "$1$2[redacted]"),
         (#"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*"#, "[token]"),
         (#"(?i)"(text|body|message|content|prompt|title|note|subject)"\s*:\s*"(?:[^"\\]|\\.)*""#, #""$1":"[redacted]""#),
+        (#"(?i)"(conversation|channel|room|query|to|target)"\s*:\s*"(?:[^"\\]|\\.)*""#, #""$1":"[redacted]""#),
+        (#"(?i)\b(conversation|channel|room|query|q)=[^\s&"',;]+"#, "$1=[redacted]"),
         (#"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#, "[email]"),
         (#"(https?://[^\s?#"]+)\?[^\s"]*"#, "$1?[query]"),
         (#"\+\d[\d ()-]{8,}\d"#, "[number]"),

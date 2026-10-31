@@ -343,7 +343,7 @@ public final class CovesModel {
         let link = shareLink(coveId)
         let notice = CoveInviteNotice(
             inviteeAccount: grantee, coveId: cove.id, coveName: cove.name, inviterName: me, shareUrl: link, ts: nowMs)
-        if let notifier, notifier.invite(notice) { return .relayed }
+        if let notifier, await notifier.invite(notice) { return .relayed }
         return .shareLink(link)
     }
 

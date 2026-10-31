@@ -208,21 +208,28 @@ func TestPruneReleaseStoreKeepsEverythingWhenHeadIsStale(t *testing.T) {
 	}
 }
 
-func TestPruneReleaseStoreKeepsEverythingWhenReferencedBlobMissing(t *testing.T) {
+func TestPruneReleaseStorePrunesOldBlobsWhileReferencedBlobsAreMissing(t *testing.T) {
 	f := newReleasePruneFixture(t)
 	present := strings.Repeat("a", 64)
 	missing := strings.Repeat("b", 64)
 	f.commit(t, map[string]string{
 		".forkmesh/releases/latest/release.json": releaseManifest(t, present, missing),
 	})
-	f.put(t, present, releasePruneOld)
+	kept := f.put(t, present, releasePruneOld)
 	stale := f.put(t, strings.Repeat("c", 64), releasePruneOld)
+	landing := f.put(t, strings.Repeat("d", 64), time.Hour)
 	result, err := f.prune(t, releasePruneLimit)
-	if err == nil || !strings.Contains(err.Error(), "missing") {
-		t.Fatalf("err = %v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if result.Deleted != 0 || !releasePruneExists(stale) {
-		t.Fatalf("pruned with a referenced blob missing: %+v", result)
+	if result.Deleted != 1 || result.Missing != 1 || result.Referenced != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+	if releasePruneExists(stale) {
+		t.Fatal("an old unreferenced blob survived because another blob was missing")
+	}
+	if !releasePruneExists(kept) || !releasePruneExists(landing) {
+		t.Fatal("a referenced or recently landed blob was deleted")
 	}
 }
 

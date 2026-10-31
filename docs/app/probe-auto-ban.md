@@ -22,21 +22,28 @@ banned from every site the cores serve. See
 `probe_ban.classify(path)` percent-decodes the path (twice when it was
 double-encoded, as in `status%252ephp`), lower-cases it, checks the whole path
 against product signatures and then each segment; the path takes the heaviest
-class it earns.
+class it earns. A path that spelled a dot as `%2e` (`/CHANGELOG%2emd`,
+`/%2eeslintrc`) is a `script` probe whatever it names: no browser or link
+writes a dot that way, and in the October 2026 log every such path came from a
+scanner.
 
 | Class | Weight | Examples |
 | --- | --- | --- |
-| `secret` | 3 | `.env*`, `.git`, `.svn`, `.aws`, `.ssh`, `.npmrc`, `.htpasswd`, `id_rsa`, `wp-config.php*`, credential/key files (`*-key.txt`, `*_token.txt`, `creds.json`, `<provider>.json` for mail, payment, auth, database and AI providers), `*.pem`/`*.key`, AI-agent configs; a last segment named like a credential variable (`MAILGUN_API_KEY`, `MAIL_PASSWORD`, `aws_keys`, `*-credentials`, `service-accounts`); cloud metadata (`/latest/meta-data`, `/computeMetadata/v1`, `/metadata/identity`), Vault `/v1/sys/`, Rails `config/{environments,initializers}/*.rb`, Magento `app/etc/local.xml` |
-| `script` | 2 | `.php*`, `.asp(x)`, `.jsp`, `.cgi`, `.cfm`, `.rsp`, `phpinfo*`, `cgi-bin`, `/api/<x>.php`, `..` traversal (also double-encoded), invalid UTF-8 (`%c0`), Windows drive paths |
-| `cms` | 2 | `wp-*`, `xmlrpc`, `phpmyadmin`, `adminer*`, `actuator` (also under `/api/`), `solr`, `server-status`; first-segment products (`jenkins`, `grafana`, `kibana`, `rabbitmq`, `airflow`, `jupyter`, `administrator`, debug toolbars, `fpm-status`); infrastructure APIs: pprof, Consul `/v1/{agent,catalog,status,health}/`, etcd `/v3/kv/`, Docker `/v1.NN/`, Elasticsearch `/_cat`, `/_search`, ..., Sentry `/api/0/`, GitLab `/api/v4/ci/`, `/rails/` |
-| `backup` | 2 | last segment ending `.sql`, `.bak`, `.old`, `.swp`/`.swn`, `~`, `.zip`, `.tar.gz`, `.db`, `.log`, `.log.N`; `db`/`database`/`dump`/`backup`/`users` `.csv`/`.json`/`.xml`; anything under `/var/log/` |
-| `config` | 1 | `.yml`, `.ini`, `.conf`, `.toml`, `config*`, `appsettings*`, `Dockerfile`, `web.config`, build and dependency files (`go.sum`, `requirements.txt`, `Makefile`, `pom.xml`, `manage.py`, ...), `node_modules`, `venv`, API-doc discovery (`swagger*`, `api-docs`, `openapi.json`, `graphiql`), other dot-segments |
+| `secret` | 3 | `.env*`, `.git`, `.svn`, `.aws`, `.ssh`, `.npmrc`, `.htpasswd`, `_netrc`, `_environment`, `wgetrc`, shell and database `*_history`, `id_rsa`, `wp-config.php*`, `sftp-config.json`, `*.tfvars`, `GoogleService-Info.plist`, `google-services.json`, credential/key files (`*-key.txt`, `*_token.txt`, `creds.json`, `<provider>.json` for mail, payment, auth, database, cloud, chat and AI providers), `*.pem`/`*.key`, AI-agent configs; database dumps (`*.sql`, `*.sqlite`, `*.db`, `*.dump`, also compressed); a last segment named like a credential variable (`MAILGUN_API_KEY`, `MAIL_PASSWORD`, `aws_keys`, `*-credentials`, `service-accounts`); a last segment written as an environment variable (`MAIL_HOST`, `SES_REGION`, `ADM_SESSIONID`) in a path of one segment or three or more; a `.git/`, `.svn/`, `.hg/` or `.bzr/` directory anywhere, also under `/api/`; `/v1/secrets`, cloud metadata (`/latest/meta-data`, `/computeMetadata/v1`, `/metadata/identity`), Vault `/v1/sys/`, Rails `config/{environments,initializers}/*.rb`, Magento `app/etc/local.xml` |
+| `script` | 3 | `.php*` (also `index.php.txt`), `.asp(x)`, `.jsp`, `.do`, `.action`, `.cgi`, `.cfm`, `.rsp`, `phpinfo*`, `cgi-bin`, `/api/<x>.php`, a `%2e` dot, `..` traversal (also double-encoded), invalid UTF-8 (`%c0`), Windows drive paths; WordPress and PHP admin tools as the first segment (`wp`, `wp-*`, `wordpress`, `xmlrpc`, `phpmyadmin`, `pma`, `adminer`, `_profiler`, `_ignition`, `boaform`, `hnap1`) |
+| `cms` | 2 | `wp-*`, `xmlrpc`, `phpmyadmin`, `adminer*` deeper in a path, `actuator` (also under `/api/`), `solr`, `server-status`; first-segment products (`jenkins`, `grafana`, `kibana`, `rabbitmq`, `airflow`, `jupyter`, `administrator`, `elmah`, `nacos`, `zabbix`, `webmin`, `portainer`, debug toolbars, `fpm-status`); infrastructure APIs: pprof, Consul `/v1/{agent,catalog,status,health}/`, etcd `/v3/kv/`, Docker `/v1.NN/`, Elasticsearch `/_cat`, `/_search`, ..., Sentry `/api/0/`, GitLab `/api/v4/ci/`, `/rails/`, Metabase `api/session/properties` (also under `/metabase/`, `/bi/`, ...), XWiki `/bin/{get,view}/Main/`, Atlassian `/rest/api/1.0/`, Joomla `/media/system/js/`, Strapi `/api/users-permissions`, CKAN `/api/action/datastore_search*`, SQL endpoints `/api/{db,data,rds}/{query,execute}`, Tomcat `/manager/html`, LLM proxies (`bedrock-runtime`, `/v1/models`) |
+| `backup` | 2 | last segment ending `.bak`, `.old`, `.swp`/`.swn`, `~`, `.zip`, `.tar.gz`, `.tbz2`, `.zst`, `.war`, `.log`, `.log.N`; `db`/`database`/`dump`/`backup`/`users` `.csv`/`.json`/`.xml`; anything under `/var/log/` |
+| `config` | 1 | `.yml`, `.ini`, `.conf`, `.toml`, `config*`, `appsettings*`, `Dockerfile`, `Jenkinsfile`, `web.config`, `vercel.json`, build and dependency files (`go.sum`, `requirements.txt`, `Makefile`, `CMakeLists.txt`, `build.sh`, `pom.xml`, `manage.py`, ...), `node_modules`, `venv`, API-doc discovery (`swagger*`, `api-docs`, `openapi.json`, `graphiql`, `graphql`, `redoc`, `altair`), other dot-segments |
+| `recon` | 1 | First segment only: directory guesses (`backup/`, `db/`, `keys`, `secrets`, `certs/`, `mysql`, `redis`, `kafka`, `console`, `debug`, `shell`, `terminal`, `proxy`, `fetch`, `render`, `screenshot`, `metrics`, `whoami`, `vendor/`, `uploads/`, `themes/`, `_next/`, `terraform/`, `ansible/`, ...), mail-provider names (`mailgun`, `sendgrid`, `ses`, `smtp`, ...), version files (`README.md`, `CHANGELOG.txt`, `LICENSE.txt`, `version.json`, `build-info`, `MANIFEST.in`), `reconx-*` canaries |
 
-Product names count only as the first segment and credential-variable names
-only as the last, so a marketplace package or repository called `jenkins` or
-`aws-credentials` is never a probe. Repository routes win over signatures
-(`/rails/rails/blob/...` is a repository). Generic words (`/admin`, `/mail`,
-`/redis`, `/secrets`) stay unclassified.
+Product names and recon words count only as the first segment and
+credential-variable names only as the last, so a marketplace package or
+repository called `jenkins`, `kafka` or `aws-credentials` is never a probe, and
+an `/owner/MY_REPO` path is never read as an environment variable. Repository
+routes win over signatures (`/rails/rails/blob/...` is a repository). Words a
+person types (`/admin`, `/login`, `/settings`, `/contact`, `/mail`, `/security`)
+stay unclassified. A recon word weighs 1, so it bans only alongside two more
+probe paths.
 
 Never classified: `/.well-known/…`, `/docs/…`, `/_host/…`, the redacted
 private-repository path, repository routes (`blob`, `tree`, `raw`, ...),
@@ -48,11 +55,20 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
 - The visitor is the address in `cf-connecting-ip` (the TCP peer, or the
   verified edge visitor), IPv4 or the IPv6 `/64`, stored only as
   `blind_index("probe-visitor:" + address)`.
-- Each **distinct** probe path adds its weight within a one-hour window;
+- Each **distinct** probe path adds its weight within a one-day window;
   repeats add nothing.
-- At **4 points** the visitor is banned. The heaviest path weighs 3, so a
-  ban always needs at least two distinct probe paths, since one address can be
-  a shared NAT or VPN exit.
+- At **3 points** the visitor is banned, so one direct secret or server-script
+  probe (`/.env`, `/xmlrpc.php`, `/wp-json/`) bans on its own; a CMS or backup
+  path needs one more probe path, a config or recon path two more.
+- Until 2026-10-22 the line was 4 points within an hour, scripts weighed 2,
+  and a ban lasted a day (a week for a repeat). The 404 log then held 4,109
+  paths: 1,226 matched no class, and 66 visitors had scored without a ban,
+  almost all with one direct `/.env`, `/xmlrpc.php`, `/wp-login.php`,
+  `/wp-json/...` or `.sql` probe. Only a scanner sends those (a page cannot,
+  see Safety rules), so the line moved to 3, scripts to 3, database dumps to
+  `secret`, the window to a day, and the `recon` class and the rest of the
+  table's new entries were added from those 1,226 paths. Replayed against the
+  stored visitors, 62 of the 66 are now banned.
 - The threshold was 6 until 2026-10-16. That week production had 39 bans but
   32 visitors left below 6, most of them two-path WordPress scans
   (`//xmlrpc.php` + `//wordpress/` = 4) and paired `.php` probes. A
@@ -61,7 +77,7 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
   scanner paths (credential-variable names, cloud metadata, pprof, Consul,
   Vault, Elasticsearch, Jenkins, double-encoded files) that matched no class;
   the table above now covers them.
-- A ban lasts a day, or a week for a repeat within 30 days. It writes
+- A ban lasts a week, or 30 days for a repeat within 90 days. It writes
   `probe_bans` and a `request_block_rules` row
   `auto-probe-<first 32 hex of the blind index>` (`ip` or `cidr`, priority 0),
   `ON CONFLICT DO NOTHING` so operator rules are untouched.
@@ -79,7 +95,13 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
 - **Never banned:** non-routable addresses (loopback, private, link-local,
   carrier NAT, documentation, the mesh range) and every edge-provider range
   (a copy of `CLOUDFLARE_RANGES` in `deploy/core/render.py`, kept equal by a
-  test). `FORKMESH_PROBE_BAN_ALLOW` adds more.
+  test). `FORKMESH_PROBE_BAN_ALLOW` adds more. `deploy/core/render.py`
+  writes it into each core's `app.env` with every `[[runners]]` address from
+  `deploy/fleet.toml` (the IPv4 address and the IPv6 /64): a job on a shared
+  runner can reach the public App, and one probe from it would otherwise ban
+  the runner's address, cutting off its own claims and every other owner's
+  jobs. Autoscaled pool runners and user-run mirrors are not in the fleet
+  file and are not covered.
 - Bans block the App, World and proxied site routes, not static files served
   by the edge.
 
@@ -100,7 +122,7 @@ Outside `ban`, the next sweep deletes every `auto-probe-*` rule.
 
 Cron phase `probe-bans`, every 5 minutes: delete `auto-probe-*` rules without
 an active enforced ban; delete `probe_bans` rows expired over 7 days ago;
-delete `probe_visitors` unseen for 30 days and not banned; prune the memory
+delete `probe_visitors` unseen for 90 days and not banned; prune the memory
 table.
 
 ## Admin page

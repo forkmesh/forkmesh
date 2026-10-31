@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QProgressBar>
 #include <QPushButton>
@@ -397,6 +398,52 @@ int main(int argc, char *argv[])
             if (!saveFloating(&menu, base + QStringLiteral("-menu.png")))
                 ++failures;
             menu.hide();
+        }
+        {
+            struct Alert {
+                QMessageBox::Icon icon;
+                const char *title;
+                const char *text;
+                const char *informative;
+                QMessageBox::StandardButtons buttons;
+                const char *suffix;
+            };
+            const Alert alerts[] = {
+                {QMessageBox::Question, "Delete permanently",
+                 "Permanently delete all 52 deleted agent session(s) of this repository? "
+                 "This cannot be undone.",
+                 "", QMessageBox::Yes | QMessageBox::No, "-alert-question"},
+                {QMessageBox::Warning, "Remove folder",
+                 "Remove the folder?",
+                 "The working copy and every local branch in it are deleted from this "
+                 "computer. Pushed work stays on the instance.",
+                 QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+                 "-alert-three"},
+                {QMessageBox::Information, "Saved", "Saved.", "",
+                 QMessageBox::Ok, "-alert-short"},
+                {QMessageBox::Warning, "Merge all", "Merge all open pull requests?",
+                 "These pull requests are merged in order:\n\n#12 Fix the login page\n"
+                 "#14 Add the calendar export\n#15 Update the docs",
+                 QMessageBox::Ok | QMessageBox::Cancel, "-alert-list"},
+            };
+            for (const Alert &alert : alerts) {
+                auto *box = new QMessageBox(alert.icon, QString::fromUtf8(alert.title),
+                                            QString::fromUtf8(alert.text), alert.buttons,
+                                            page);
+                if (*alert.informative)
+                    box->setInformativeText(QString::fromUtf8(alert.informative));
+                if (alert.buttons & QMessageBox::Save)
+                    box->setCheckBox(new QCheckBox(QStringLiteral("Do not ask again")));
+                box->setWindowModality(Qt::NonModal);
+                box->show();
+                QApplication::processEvents();
+                QApplication::processEvents();
+                if (!saveFloating(box, base + QString::fromLatin1(alert.suffix) +
+                                           QStringLiteral(".png")))
+                    ++failures;
+                box->hide();
+                delete box;
+            }
         }
         delete page;
     }

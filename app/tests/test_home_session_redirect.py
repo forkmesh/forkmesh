@@ -13,7 +13,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from static_routes import dashboard_section_redirect  # noqa: E402
+from static_routes import (  # noqa: E402
+    DASHBOARD_PAGE_ASSETS, dashboard_section_redirect, legacy_page_redirect)
 
 WRANGLER = tomllib.loads((ROOT / "wrangler.toml").read_text(encoding="utf-8"))
 ENTRY_TEXT = (SRC / "app_runtime.py").read_text(encoding="utf-8")
@@ -89,7 +90,7 @@ def test_presence_cookie_lifecycle_is_complete():
 def test_legacy_section_urls_redirect_permanently():
     assert dashboard_section_redirect("/dashboard", "section=repos") == "/dashboard/repos"
     assert dashboard_section_redirect("/dashboard", "section=network") == "/dashboard/network"
-    assert dashboard_section_redirect("/dashboard", "section=chat") == "/dashboard/chat"
+    assert dashboard_section_redirect("/dashboard", "section=chat") == "/chat"
     assert dashboard_section_redirect("/dashboard", "section=home") == "/dashboard"
     assert dashboard_section_redirect("/dashboard", "section=profile") == "/dashboard/settings"
     assert dashboard_section_redirect("/dashboard", "section=profile-overview") == "/dashboard/profile"
@@ -114,3 +115,11 @@ def test_desktop_link_grant_urls_still_reach_the_nodes_panel():
     js = _read("dashboard.js")
     assert 'location.replace("/dashboard/settings" + location.search)' in js
     assert "pendingLinkGrant()" in js
+
+
+def test_dashboard_chat_moved_to_the_single_chat_page():
+    assert "/dashboard/chat" not in DASHBOARD_PAGE_ASSETS
+    assert legacy_page_redirect("/dashboard/chat", "") == "/chat"
+    assert legacy_page_redirect("/dashboard/chat/", "") == "/chat"
+    assert legacy_page_redirect("/dashboard/chat", "dm=bob") == "/chat?dm=bob"
+    assert legacy_page_redirect("/chat", "") is None

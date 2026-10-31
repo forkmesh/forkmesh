@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,9 +63,23 @@ import com.forkmesh.nativeapp.agentwatch.ControlWatchFeeds
 import com.forkmesh.nativeapp.control.UnifiedAgentRow
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmType
-import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.cos
+import kotlin.math.PI
+import com.forkmesh.nativeapp.agents.AgentLineStatus
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
 
 internal sealed class AgentEagleSource {
     abstract val moving: Boolean
@@ -158,37 +171,25 @@ internal fun AgentEagleRow(
                 drawLine(rule, Offset(0f, size.height), Offset(size.width, size.height), stroke)
             }
             .clickable(onClick = onTap)
-            .semantics { if (unread == true) stateDescription = AgentReadState.UNREAD_LABEL }
+            .semantics {
+                if (unread == true) stateDescription = AgentReadState.UNREAD_LABEL
+                contentDescription = listOf(title, AgentLineChips.eagleSummary(facts)).filter { it.isNotEmpty() }.joinToString(", ")
+            }
             .padding(horizontal = 7.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
-            AgentStatusGlyph(facts.status, 13.dp)
-            if (unread == true) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 2.dp, y = (-2).dp)
-                        .size(8.dp)
-                        .background(c.accent, RoundedCornerShape(50)),
-                )
-            }
-        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    title,
-                    Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.bodyMedium.copy(color = c.textPrimary, fontWeight = FmType.emphasis),
-                )
-                AgentEagleStats(facts)
-            }
+            Text(
+                title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = Fm.text.bodyMedium.copy(color = c.textPrimary, fontWeight = FmType.emphasis),
+            )
             Box(Modifier.fillMaxWidth().height(12.dp)) { AgentEagleLine(eagle) }
         }
         trailing?.invoke()
+        AgentEagleTile(facts, unread == true)
     }
 }
 
@@ -201,47 +202,6 @@ private fun AgentEagleLine(source: AgentEagleSource?) {
     }
     LaunchedEffect(source, source.moving) { state.recall(source) }
     AgentEagleStrip(state.text(source), moving = source.moving)
-}
-
-@Composable
-private fun AgentEagleStats(facts: AgentChipFacts) {
-    val c = Fm.colors
-    val churned = facts.linesAdded > 0 || facts.linesRemoved > 0
-    if (facts.filesChanged < 0 && !churned) return
-    Row(
-        Modifier.height(10.dp).padding(top = 1.dp),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        if (facts.filesChanged >= 0) {
-            Text(
-                AgentLineChips.compactCount(facts.filesChanged),
-                maxLines = 1,
-                style = TextStyle(
-                    fontSize = 8.5.sp,
-                    lineHeight = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = c.textSecondary,
-                    fontFeatureSettings = "tnum",
-                ),
-            )
-        }
-        if (churned) AgentEagleChurnBars(facts.linesAdded, facts.linesRemoved)
-    }
-}
-
-@Composable
-private fun AgentEagleChurnBars(added: Int, removed: Int) {
-    val c = Fm.colors
-    fun height(n: Int): Float = if (n <= 0) 0f else min(10f, max(2f, (ln(1.0 + n) / ln(801.0)).toFloat() * 10f)) * 0.8f
-    Row(
-        Modifier.height(8.dp).semantics { contentDescription = "$added added, $removed removed" },
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(1.2.dp),
-    ) {
-        Box(Modifier.width(2.dp).height(height(added).dp).background(c.success, RoundedCornerShape(50)))
-        Box(Modifier.width(2.dp).height(height(removed).dp).background(c.danger, RoundedCornerShape(50)))
-    }
 }
 
 private object EagleStrip {

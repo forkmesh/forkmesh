@@ -90,6 +90,11 @@ class AgentTerminalTest {
     fun testKeysAndControlBytes() {
         assertEq("\u001b[A", terminalKeyBytes(TerminalKey.Up))
         assertEq("\u001bOA", terminalKeyBytes(TerminalKey.Up, appCursorKeys = true))
+        assertEq("\u001b[1;5D", terminalKeyBytes(TerminalKey.Left, appCursorKeys = true, control = true))
+        assertEq("\t", terminalKeyBytes(TerminalKey.Tab, control = true))
+        assertEq('x', terminalChordTyped("ab", "axb"))
+        assertEq('s', terminalChordTyped("ab", "abs"))
+        assertEq(null, terminalChordTyped("ab", "ab"))
         assertEq("\u0003", terminalControlBytes("c"))
         assertEq("\u001d", terminalControlBytes("]"))
         assertEq("", terminalControlBytes("ab"))

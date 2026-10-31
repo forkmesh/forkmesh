@@ -7,6 +7,7 @@ import FMAgents
 import FMApi
 import FMBase
 import FMCode
+import FMControl
 import FMLocalAI
 import SwiftUI
 
@@ -51,6 +52,8 @@ struct AgentScreen: View {
                 FmNoticeLine($notice)
                     .padding(EdgeInsets.fmLTRB(FmSpace.x4, FmSpace.x2, FmSpace.x4, 0))
             }
+            AgentPromptDeck(deck: PromptDeck(said: model.events.compactMap(\.userText)), accessibilityPrefix: "agent-prompt-deck")
+                .padding(EdgeInsets.fmLTRB(FmSpace.x4, FmSpace.x2, FmSpace.x4, 0))
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if let handle = model.prCandidate {

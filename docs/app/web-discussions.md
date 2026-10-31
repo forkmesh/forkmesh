@@ -51,7 +51,10 @@ key web issue events use). The canonical string is
 | `delete` | the discussion | `target` | `target`: the reply's event id, or `#discussion` for the whole discussion |
 
 `status` and `delete` are new with the web flow; the desktop, mirror gateway,
-relay and Go mirror all know them. Event ids carry a random suffix
+relay and Go mirror all know them. The Go mirror removes a whole discussion's
+folder with `removeDiscussionFolder` in `server/intake.go`. It deletes plain
+files one by one and refuses a folder holding anything else, so there is no
+recursive delete. Event ids carry a random suffix
 (`comment-web-<ts>-<rand>`) because materializers skip an id they already hold.
 The opening event's `ts` is in milliseconds, like the desktop's; replies keep
 seconds, as before.

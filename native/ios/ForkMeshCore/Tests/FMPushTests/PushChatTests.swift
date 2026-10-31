@@ -114,9 +114,16 @@ final class PushChatTests: XCTestCase {
             PushChatOpener.open(unsealed, request: request, secureStore: keysPair.store, keys: keys), .unavailable,
             "a direct message must be sealed")
         XCTAssertEqual(
-            PushPreviewText.preview(opened, request: request, mode: .nameAndMessage), PushPreview(title: "Pat", body: "see you at 6"))
+            PushPreviewText.preview(opened, request: request, mode: .nameAndMessage),
+            PushPreview(title: "New message", body: "see you at 6"), "a name the app never verified is not shown")
+        let names = PushVerifiedNames(store: InMemorySharedItemStore())
+        names.remember(node: opened.senderId, account: "Pat")
         XCTAssertEqual(
-            PushPreviewText.preview(opened, request: request, mode: .nameOnly), PushPreview(title: "Pat", body: "New message"))
+            PushPreviewText.preview(opened, request: request, mode: .nameAndMessage, names: names),
+            PushPreview(title: "pat", body: "see you at 6"))
+        XCTAssertEqual(
+            PushPreviewText.preview(opened, request: request, mode: .nameOnly, names: names),
+            PushPreview(title: "pat", body: "New message"))
         XCTAssertEqual(
             PushPreviewText.preview(opened, request: request, mode: .hidden), PushPreview(title: "ForkMesh", body: "New message"))
         XCTAssertNil(PushPreviewText.preview(nil as PushChatMessage?, request: request, mode: .nameOnly), "the server names no one")
@@ -173,8 +180,11 @@ final class PushChatTests: XCTestCase {
         let merged = PushChatOpener.withPushedFrame(gone, pushed: payload)
         let opened = try XCTUnwrap(PushChatOpener.open(merged, request: request, secureStore: keysPair.store, keys: keys).message)
         XCTAssertEqual(opened.text, "running late")
+        let names = PushVerifiedNames(store: InMemorySharedItemStore())
+        names.rememberDirect([(conversation: "direct:\(PushChatTests.directId)", account: "pat")])
         XCTAssertEqual(
-            PushPreviewText.preview(opened, request: request, mode: .nameAndMessage), PushPreview(title: "Pat", body: "running late"))
+            PushPreviewText.preview(opened, request: request, mode: .nameAndMessage, names: names),
+            PushPreview(title: "pat", body: "running late"), "the conversation's other account, as the server listed it")
         var stored = gone
         stored["frame"] = .string(JSON.encode(envelope))
         XCTAssertEqual(PushChatOpener.withPushedFrame(stored, pushed: directPayload(["frame": ["kind": "other"]])), stored)
@@ -212,6 +222,32 @@ final class PushChatTests: XCTestCase {
         XCTAssertFalse(raw.contains(PushChatTests.directId), "the room is stored only as a hash")
     }
 
+    func testAChannelPushNamesOnlyAVerifiedSenderAndABotThroughWhoeverPostedIt() throws {
+        let request = try XCTUnwrap(
+            PushChatRequest.parse(["topic": "chat", "channelId": .string(PushChatTests.channelId), "ref": .string(PushChatTests.ref)]))
+        let claimed = try XCTUnwrap(PushChatOpener.message(
+            ["type": "chat", "id": "m1", "senderId": "mallory-node", "sender": "Alice", "channel": "#team", "text": "hi"],
+            request: request))
+        let names = PushVerifiedNames(store: InMemorySharedItemStore())
+        XCTAssertEqual(
+            PushPreviewText.preview(claimed, request: request, mode: .nameAndMessage, names: names),
+            PushPreview(title: "#team", body: "hi"), "the frame's own name is a claim")
+        names.remember(node: "mallory-node", account: "mallory")
+        XCTAssertEqual(
+            PushPreviewText.preview(claimed, request: request, mode: .nameAndMessage, names: names),
+            PushPreview(title: "mallory in #team", body: "hi"))
+        let bot = try XCTUnwrap(PushChatOpener.message(
+            ["type": "chat", "id": "m2", "senderId": "mallory-node", "sender": "forkbot", "bot": "forkbot", "channel": "#team",
+             "text": "I am ForkBot"],
+            request: request))
+        XCTAssertEqual(
+            PushPreviewText.preview(bot, request: request, mode: .nameAndMessage, names: names)?.title,
+            "forkbot \u{00B7} via mallory in #team")
+        names.remember(node: "mallory-node", account: "")
+        XCTAssertNil(names.account(node: "mallory-node"))
+        XCTAssertEqual(PushPreviewText.preview(bot, request: request, mode: .nameAndMessage, names: names)?.title, "#team")
+    }
+
     func testPhotosVoiceAndViewOnceMessagesSayWhatArrived() throws {
         let request = try XCTUnwrap(PushChatRequest.parse(directPayload()))
         let channel = JSONValue.string("direct:\(PushChatTests.directId)")
@@ -229,14 +265,16 @@ final class PushChatTests: XCTestCase {
         XCTAssertNil(PushChatOpener.message(["type": "chat", "id": "m", "channel": channel, "viewOnce": ["kind": "x"]], request: request))
     }
 
-    func testAPublicChannelFrameIsPlainInsideTheRoomCipher() throws {
+    func testAnUnsealedChannelFrameOpensOnlyWhenTheServerMarkedItAndShowsTheIntegration() throws {
         let key = RoomCrypto.derivedKey(PushChatTests.channelRoom, passphrase: PushChatTests.passphrase)
         let crypto = try XCTUnwrap(RoomCrypto.withKey(key))
         let reply: JSONObject = [
             "type": "thread-reply", "id": "r-1", "senderId": "ann-node", "sender": "Ann", "channel": "#design",
             "rootId": "root-1", "text": "", "fileName": "mock.png", "ts": 2,
         ]
-        let pending: JSONObject = [
+        var marked = try crypto.encrypt(reply)
+        marked["srv"] = true
+        var pending: JSONObject = [
             "channel": .string(PushChatTests.channelId), "room": .string(PushChatTests.channelRoom), "keyVersion": 1,
             "passphrase": .string(PushChatTests.passphrase), "frame": .object(try crypto.encrypt(reply)),
         ]
@@ -244,13 +282,22 @@ final class PushChatTests: XCTestCase {
         keys.remember(key, room: PushChatTests.channelRoom, passphrase: PushChatTests.passphrase)
         let request = try XCTUnwrap(
             PushChatRequest.parse(["topic": "chat", "channelId": .string(PushChatTests.channelId), "ref": .string(PushChatTests.ref)]))
+        XCTAssertEqual(
+            PushChatOpener.open(pending, request: request, secureStore: nil, keys: keys), .unavailable,
+            "a person's frame is sealed, so an unsealed one is not shown")
+        pending["frame"] = .object(marked)
         let opened = try XCTUnwrap(PushChatOpener.open(pending, request: request, secureStore: nil, keys: keys).message)
         XCTAssertTrue(opened.isReply)
+        XCTAssertEqual(opened.senderId, "app:Ann")
         XCTAssertEqual(
             PushPreviewText.preview(opened, request: request, mode: .nameAndMessage),
             PushPreview(title: "Ann in #design", body: "\u{1F4CE} mock.png"))
         var keyFrame = pending
-        let bundle = try RoomSeal.loadOrCreate(PushChatTests.channelRoom, acct: "ann", node: "ann-node", secureStore: InMemorySecureStore()).keyFrame()
+        let annKey = try Identity.fromSeed(Ed25519.generateSeed())
+        let bundle = try RoomSeal.loadOrCreate(
+            PushChatTests.channelRoom, acct: "ann", node: annKey.nodeId, secureStore: InMemorySecureStore(), nodeIdentity: annKey
+        ).keyFrame()
+        XCTAssertFalse(bundle.isEmpty)
         keyFrame["frame"] = .object(try crypto.encrypt(bundle))
         XCTAssertEqual(PushChatOpener.open(keyFrame, request: request, secureStore: nil, keys: keys), .unavailable)
         var otherChannel = pending

@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.chat.ChatConversationLayout
 import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.chat.DirectMessageFrames
+import com.forkmesh.nativeapp.chat.ChatHub
 import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
 import com.forkmesh.nativeapp.chat.MeshSnapshot
 import com.forkmesh.nativeapp.chat.OfficeFrames
@@ -182,6 +183,7 @@ class ChatScreen : Screen() {
         val relay by ChatFeature.relaySnapshot.collectAsState()
         val mesh by ChatFeature.meshSnapshot.collectAsState()
         val foreground by AppLifecycle.foreground.collectAsState()
+        val visible by AppLifecycle.visible.collectAsState()
         FmQuietSounds()
         val messenger = LocalFmMessenger.current
         val pendingIssue by ChatDepth.pendingIssue.collectAsState()
@@ -205,11 +207,6 @@ class ChatScreen : Screen() {
         }
         val sessionToken = Services.get<AuthService>()?.session?.collectAsState()?.value?.sessionToken.orEmpty()
         LaunchedEffect(sessionToken) { if (sessionToken.isNotEmpty()) ChatDepth.loadAppCommands() }
-        LaunchedEffect(revision) {
-            val notice = ChatDepth.hub?.extras?.inviteNotice ?: return@LaunchedEffect
-            ChatDepth.hub?.extras?.clearInviteNotice()
-            status.show(notice)
-        }
         val lockOn by ChatPrivacy.lockEnabled.collectAsState()
         val locked by ChatPrivacy.chatLocked.collectAsState()
         if (lockOn && locked) {
@@ -220,13 +217,13 @@ class ChatScreen : Screen() {
             FmEmptyState(icon = "chat_bubble_outline", title = "Chat is starting", message = "Connecting to the relay room.")
             return
         }
-        val focusedConversation = if (foreground && !channelsOpen && DirectMessageFrames.isDirect(snapshot.currentConversation)) {
+        val focusedConversation = if (visible && !channelsOpen && DirectMessageFrames.isDirect(snapshot.currentConversation)) {
             snapshot.currentConversation
         } else {
             ""
         }
         LaunchedEffect(focusedConversation) { withContext(Dispatchers.IO) { ChatDepth.direct?.screenFocus(focusedConversation) } }
-        val liveConversation = if (foreground && DirectMessageFrames.isDirect(snapshot.currentConversation)) snapshot.currentConversation else ""
+        val liveConversation = if (visible && DirectMessageFrames.isDirect(snapshot.currentConversation)) snapshot.currentConversation else ""
         DisposableEffect(liveConversation) {
             if (liveConversation.isNotEmpty()) DirectLiveFeature.startSharing(liveConversation)
             onDispose { if (liveConversation.isNotEmpty()) DirectLiveFeature.stopSharing(liveConversation) }
@@ -521,6 +518,7 @@ class ChatScreen : Screen() {
                         }
                     }
                     DirectCallButtons(conversation)
+                    GroupCallButtons(conversation)
                 }
                 if (liveHere) {
                     DirectLivePartnerPhone(
@@ -567,7 +565,16 @@ class ChatScreen : Screen() {
                             style = Fm.text.bodySmall.copy(color = colors.textTertiary),
                         )
                     }
-                    if (inMesh) MeshDebugBar()
+                    if (inMesh) {
+                        Text(
+                            ChatHub.MESH_SEAL_SUMMARY,
+                            modifier = Modifier.fillMaxWidth().background(colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x1),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.bodySmall.copy(color = colors.textTertiary),
+                        )
+                        MeshDebugBar()
+                    }
                     if (inDirect) PendingDeviceBanner(conversation, revision)
                     if (!inMesh && relay.totalUnread > 0) {
                         UnreadBanner(relay.totalUnread) {
@@ -685,6 +692,7 @@ class ChatScreen : Screen() {
                                                 scope.launch(Dispatchers.IO) { ChatDepth.hub?.toggleSticker(message, slug) }
                                             }),
                                         )
+                                        ChatRowLinkPreviews(row)
                                         if (message.id == lastOwn) {
                                             val receiptText = remember(row.receipt, revision) {
                                                 val times = ChatDepth.hub?.receiptTimes(message) ?: com.forkmesh.nativeapp.model.ChatReceiptTimes()
@@ -755,6 +763,7 @@ class ChatScreen : Screen() {
         val blocked = guestComposeBlocked(guest, conversation)
         val requireAccount = AccountFeature.rememberRequireAccount()
         val scope = rememberCoroutineScope()
+        val context = LocalContext.current
         if (blocked != null) {
             FmBottomActionBar(padding = PaddingValues(FmSpace.x3)) {
                 GuestComposeNotice(action = blocked, onLogIn = { scope.launch { requireAccount(blocked) } })
@@ -785,7 +794,10 @@ class ChatScreen : Screen() {
                 status.clear()
                 scope.launch {
                     when (val result = ChatFeature.sendChatText(text)) {
-                        ChatSendResult.Sent -> draft = ""
+                        ChatSendResult.Sent -> {
+                            draft = ""
+                            com.forkmesh.nativeapp.feature.push.PushFeature.askWhenUseful(context)
+                        }
                         ChatSendResult.Empty -> {}
                         is ChatSendResult.NeedsAccount -> requireAccount(result.action)
                         is ChatSendResult.Failed -> if (result.message.isNotEmpty()) status.error(result.message)

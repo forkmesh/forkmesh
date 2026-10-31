@@ -88,7 +88,7 @@ def test_create_form_supports_private_public_and_initial_members():
     assert 'id="chat-channel-visibility-badge"' in HTML
     assert 'visibility === "private"' in _function_source("createChannel")
     assert "channelInviteeNames()" in _function_source("createChannel")
-    assert '.split(",")' in _function_source("channelInviteeNames")
+    assert '.split(/[\\s,]+/)' in _function_source("channelInviteeNames")
     assert "registeredUsers" in CHAT
 
 

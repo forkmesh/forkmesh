@@ -85,6 +85,12 @@ be seen.
 | iPhone | `native/ios/ForkMeshCore/Sources/FMBase/HiddenUnicode.swift`, `native/ios/ForkMesh/Platform/HiddenUnicodeInputGuard.swift`, installed by `AppDelegate` | every `UITextField` and `UITextView` text change, SwiftUI fields included |
 | Android | `native/android/core/.../security/HiddenUnicode.kt`, `app/.../ui/kit/FmSafeInput.kt` | `FmTextField`, `AccountFilledField`, every raw `BasicTextField` / `OutlinedTextField`, and an `InputFilter` on the two `EditText`s |
 
+The desktop guard runs from an application-wide filter on every widget's
+`Polish` event, so `guardWidget` checks the widget's type before reading its
+`forkmeshHiddenUnicodeGuard` property: a dynamic-property read is a string
+search through the class's properties, and it used to run for every label,
+button and frame created.
+
 ### Exactness exceptions
 
 Some text has to stay byte for byte:
@@ -103,6 +109,15 @@ Some text has to stay byte for byte:
   `PasswordVisualTransformation`). A password is hashed and never shown, and
   rewriting it would lock out anyone whose saved password already contains
   such a character.
+- **Signed source text.** Values under the keys `patch`, `commits`,
+  `suggestionPatch` and `anchorLines` stay exact on the server. They are git
+  patches, commit mboxes and code lines: their author signs them byte for
+  byte and the owner replays them with git. Code may legitimately contain any
+  of these characters (a test that asserts U+2028 never appears does), and
+  rewriting it both breaks the signature (`bad_signature`) and corrupts the
+  patch. Hidden characters in code are a review concern, not a rewrite. Prose
+  fields of the same events (`title`, `body`) are still cleaned, so a signed
+  title or comment that carries hidden characters is refused.
 - **IME composition.** Text is cleaned only once composition ends, so CJK and
   other input methods are not disturbed.
 - **Read-only desktop views.** These show text exactly as received. Editable
@@ -138,3 +153,25 @@ Write invisible characters in source as numeric code points (`0x200B`,
 `chr(0x200B)`). Editing tools can turn a typed `\u200b` escape into the real
 invisible character. `test_new_sources_hold_no_literal_hidden_characters`
 fails if one slips into the policy files.
+
+## Signed code in pull requests
+
+A pull request's `patch` and `commits` are code and are signed byte for byte,
+so cleaning them broke every pull whose code holds a character on the list (a
+UTF-8 byte-order mark at the top of a Windows file, a zero-width space inside
+a string, a whitespace table written with literal characters) with
+`bad_signature`, and would otherwise have changed the code silently.
+`pulls_handler` reads the body once more without cleaning
+(`bounded_json_request_with_raw`), verifies the signature over the exact
+`patch` and `commits`, keeps them exact, and stores `hiddenUnicode: true` on
+the pull when either holds a character this policy removes, so a reviewer and
+an agent can be warned instead of the bytes being changed. Prose stays clean:
+when the signature only verifies over a title, base or head that cleaning
+changed, the server answers 400 `hidden_unicode` with the field names instead
+of `bad_signature`.
+The `MAX_PULL_BYTES` cap counts the exact `patch` and `commits`, kept
+characters included, and code holding a lone surrogate (valid JSON, not
+UTF-8) is refused with 400 `pull_invalid`, since it cannot be hashed for the
+signature check. Nothing reads `hiddenUnicode` yet: the review pages do not
+show the warning.
+

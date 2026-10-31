@@ -57,9 +57,16 @@ The desktop offers the same through Network, Hosts, Add core node. The order
 is: hold out of DNS, create the VM, fleet file and keys, re-render peers one
 at a time, rqlite join (non-voter while three voters exist), daemon and
 repository sync, activate and unseal, IDS baseline, health, DNS, commit the
-new `[[nodes]]` block on a `fleet/add-core-nN` branch. Run state is in
+new `[[nodes]]` block on a `fleet/add-core-nN` branch and merge it into
+`main` (`remove-core` does the same on `fleet/remove-core-nN`), so autodeploy
+deploys to the new set of cores. Run state is in
 `config/fleet/add-core/nN.json`, so a re-run resumes at the failed step.
 Details are in [deploy/README.md](deploy/README.md).
+
+To replace a core in one run, use `add-core --replace nOLD --execute` (the
+desktop's **Replace…** on a core row). It adds the new core, then removes
+`nOLD` and commits both changes on `fleet/add-core-nNEW`
+([deploy/README.md](deploy/README.md#replacing-a-core-node)).
 
 To abandon a new core: keep it out of DNS, `rqlite remove` it from a peer,
 `next_fleet.py destroy nN --yes --execute`, delete its `[[nodes]]` block, and

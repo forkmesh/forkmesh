@@ -1,3 +1,4 @@
+#include "SourceDir.h"
 #include "TeammateStore.h"
 
 #include <QCoreApplication>
@@ -41,7 +42,7 @@ int main(int argc, char **argv)
           "an empty store root never falls back to the process directory");
 
     const QString repositoryRoot =
-        QDir(QStringLiteral(FORKMESH_SOURCE_DIR)).absoluteFilePath(
+        QDir(forkmesh::sourceDir()).absoluteFilePath(
             QStringLiteral(".."));
     const LoadResult repositoryTeam =
         Store(QDir(repositoryRoot).filePath(
@@ -723,7 +724,7 @@ int main(int argc, char **argv)
                               return c.name == QLatin1String("Quality Renamed");
                           }),
               "a save shows in the very next load");
-        QFile outside(QDir(root).filePath(QStringLiteral("outside.json")));
+        QFile outside(store.pathFor(QStringLiteral("outside")));
         Config external = quality;
         external.id = QStringLiteral("outside");
         external.name = QStringLiteral("Outside");

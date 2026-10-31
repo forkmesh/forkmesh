@@ -83,13 +83,13 @@ def test_compare_page_renders_the_pull_review_files_pane():
         : DASHBOARD_JS.index("function repoPullFilesContext")
     ]
     assert "const reviewable = options.reviewable !== false;" in section
-    assert "renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs)" in section
+    assert "renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs, parsed)" in section
     # The comparison's renderer draws the same file blocks with review off.
     assert (
-        'function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = [])'
+        'function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = [], parsed = null)'
         in DASHBOARD_JS
     )
-    assert "renderDiffFiles(parseDiffFiles(patch), imageDiffs, viewed, mode, false)" in DASHBOARD_JS
+    assert "renderDiffFiles(parsed || parseDiffFiles(patch), imageDiffs, viewed, mode, false)" in DASHBOARD_JS
 
     # The toolbar handlers (layout toggles, filter, viewed, scroll-spy) all go
     # through repoPullFilesContext(), which now serves the comparison too.

@@ -395,7 +395,9 @@ def test_schema_migration_and_cleanup_are_registered():
     down = (ROOT / "migrations" / "down" / path.name).read_text("utf-8")
     entry = (ROOT / "src/entry.py").read_text("utf-8")
     fingerprint = re.search(r"schema_fingerprint:([0-9a-f]{64})", migration).group(1)
-    assert fingerprint in down and fingerprint in entry
+    # The newest migration's stamp is pinned to entry.py by
+    # test_local_migrations; this one only has to match its down file.
+    assert fingerprint in down
     assert '("comment_reactions", "repo_bi"),' in entry
     assert 'DELETE FROM comment_reactions WHERE account_bi=?' in entry
     assert 'DELETE FROM comment_reaction_rate WHERE account_bi=?' in entry

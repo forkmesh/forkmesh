@@ -147,7 +147,21 @@ def test_wrong_key_does_not_decrypt():
 def test_transport_holds_view_once_receipts_and_relays_media_states():
     result = _run(f"""
       import {{ createChatRoomTransport }} from {json.dumps(TRANSPORT.as_uri())};
-      import {{ derivePassphraseKey, encryptObject }} from {json.dumps(CRYPTO.as_uri())};
+      import {{ decryptObject, derivePassphraseKey, encryptObject }} from {json.dumps(CRYPTO.as_uri())};
+      import {{ acceptSealKey, createRoomSealStore, isSealKeyFrame, sealFrame, sealKeyFrame }}
+        from {json.dumps((PUBLIC / "chat-seal.js").as_uri())};
+      const memory = () => {{
+        const items = new Map();
+        return {{
+          getItem: (k) => (items.has(k) ? items.get(k) : null),
+          setItem: (k, v) => items.set(k, String(v)),
+          removeItem: (k) => items.delete(k),
+        }};
+      }};
+      const dm = {{ participants: ["me", "peer"] }};
+      const sealStore = createRoomSealStore({{ storage: memory(), acct: "me", wrappingKey: null }});
+      const peerSeal = await createRoomSealStore({{ storage: memory(), acct: "peer", wrappingKey: null }})
+        .resolve("direct:alpha", "direct-alpha", "", dm);
       class FakeWebSocket {{
         static OPEN = 1;
         static instances = [];
@@ -166,7 +180,7 @@ def test_transport_holds_view_once_receipts_and_relays_media_states():
       const transport = createChatRoomTransport({{
         authorize: async (room) => ({{ scope: room.scope, passphrase: "room secret",
           roomName: "direct-alpha", webSocketUrl: "/ws" }}),
-        allowsControllerAccess: () => true,
+        resolveSeal: (room, name) => sealStore.resolve(room.scope, name, "", dm),
         isDirectRoom: () => true,
         holdReceipt: (plain) => Boolean(plain.viewOnce),
         onMedia: (id, state, room) => media.push([id, state, room.scope]),
@@ -181,9 +195,18 @@ def test_transport_holds_view_once_receipts_and_relays_media_states():
         for (let i = 0; i < 20; i += 1) await new Promise((r) => setTimeout(r, 10));
       }};
       socket.emit("message", {{ data: JSON.stringify({{ kind: "forkmesh-history-end", v: 1 }}) }});
-      const held = await encryptObject({{ type: "chat", id: "vo", viewOnce: {{ v: 1 }} }}, key);
+      await settle();
+      const myBundle = (await Promise.all(socket.sent.map((raw) =>
+        decryptObject(JSON.parse(raw), key)))).find(isSealKeyFrame);
+      await acceptSealKey(myBundle, peerSeal);
+      socket.emit("message", {{ data: JSON.stringify(
+        await encryptObject(await sealKeyFrame(peerSeal), key)) }});
+      await settle();
+      const fromPeer = async (plain) =>
+        encryptObject(await sealFrame(plain, peerSeal, "direct-alpha"), key);
+      const held = await fromPeer({{ type: "chat", id: "vo", viewOnce: {{ v: 1 }} }});
       held.persist = true; held.ref = "a".repeat(40);
-      const normal = await encryptObject({{ type: "chat", id: "txt", text: "hi" }}, key);
+      const normal = await fromPeer({{ type: "chat", id: "txt", text: "hi" }});
       normal.persist = true; normal.ref = "b".repeat(40);
       socket.emit("message", {{ data: JSON.stringify(held) }});
       socket.emit("message", {{ data: JSON.stringify(normal) }});
