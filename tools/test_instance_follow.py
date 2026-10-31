@@ -148,3 +148,20 @@ def test_a_conflict_a_person_must_resolve_stops_without_publishing(repos):
         ["git", "-C", str(publish), "rev-parse", "--verify", "-q", "main"],
         env=env, capture_output=True).stdout
     assert not (tmp / "work" / ".git" / "MERGE_HEAD").exists()
+
+
+def test_a_folder_the_tool_did_not_make_is_never_reset(repos):
+    env, upstream, fork, publish, tmp = repos
+    plain = tmp / "plain"
+    plain.mkdir()
+    (plain / "keep.txt").write_text("keep\n")
+    code, result = follow(env, fork, upstream, plain, publish)
+    assert code == 1 and result["state"] == "failed"
+    assert sorted(p.name for p in plain.iterdir()) == ["keep.txt"]
+    (fork.path / "untracked.txt").write_text("keep\n")
+    head = fork.git("rev-parse", "HEAD")
+    code, result = follow(env, fork, upstream, fork.path, publish)
+    assert code == 1 and result["state"] == "failed"
+    assert (fork.path / "untracked.txt").read_text() == "keep\n"
+    assert fork.git("rev-parse", "HEAD") == head
+    assert not fork.git("for-each-ref", "refs/follow/")

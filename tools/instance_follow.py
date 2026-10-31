@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""Merge ForkMesh's branch into a self-hosted instance's source branch.
-
-An instance that builds from its own fork (sourceUrl in instance.json) stays
-current with ForkMesh by merging ForkMesh into that fork and then running the
-ordinary update. The merge happens in a private work tree, never in the
-running source. Conflicts that have one right answer are resolved here:
-
-- generated dashboard bundles are rebuilt from the merged fragments;
-- changelog entries added on both sides are kept, ours first;
-- a migration ForkMesh added gets the next number after the instance's own,
-  because the instance database already applied its numbering, and the
-  schema fingerprint is restamped for the merged schema.
-
-Any other conflict stops the merge, leaves the fork untouched and reports the
-files, so a person can sync by hand. On success the merge commit is pushed to
---publish (a bare repository the update script imports into the forge).
-
-Prints one JSON object: {"state": "current" | "merged" | "conflict" |
-"failed", ...}.
-"""
-
 import argparse
 import ast
 import hashlib
@@ -70,8 +49,13 @@ def git(work, *args, check=True, timeout=GIT_TIMEOUT):
 
 def prepare(work, args):
     if not (work / ".git").is_dir():
+        if work.exists() and any(work.iterdir()):
+            raise Stop("failed", "%s is not a follow work tree." % work)
         work.mkdir(parents=True, exist_ok=True)
         git(work, "init", "--quiet", "--initial-branch=main")
+    elif git(work, "for-each-ref", "--count=1").strip() and not git(
+            work, "for-each-ref", "--count=1", "refs/follow/").strip():
+        raise Stop("failed", "%s is not a follow work tree." % work)
     git(work, "config", "user.name", args.name)
     git(work, "config", "user.email", args.email)
     git(work, "config", "core.hooksPath", "/dev/null")
@@ -88,9 +72,9 @@ def prepare(work, args):
         if completed.returncode != 0:
             raise Stop("failed", "Could not fetch %s: %s" % (
                 url, completed.stderr.strip()[-200:]))
-    git(work, "checkout", "--quiet", "--force", "-B", "main",
+    git(work, "checkout", "--force", "--quiet", "-B", "main",
         "refs/follow/source")
-    git(work, "clean", "--quiet", "-fdx")
+    git(work, "clean", "-fdxq")
 
 
 def rev(work, name):
@@ -131,7 +115,6 @@ def union(work, path):
 
 
 def entry_only_fingerprint(work):
-    """The entry module conflicts only on the fingerprint literal."""
     file = work / ENTRY
     text = file.read_text(encoding="utf-8")
     blocks = CONFLICT.findall(text)
@@ -146,7 +129,6 @@ def entry_only_fingerprint(work):
 
 
 def latest_only(work):
-    """The migration test conflicts only on the newest migration's name."""
     file = work / MIGRATION_TEST
     text = file.read_text(encoding="utf-8")
     blocks = CONFLICT.findall(text)
@@ -194,7 +176,6 @@ def migration_files(work, tree):
 
 
 def renumber_migrations(work, ours_tree):
-    """Give ForkMesh's new migrations numbers after the instance's own."""
     ours = migration_files(work, ours_tree)
     top = max(ours.values(), default=0)
     current = {}
@@ -224,7 +205,7 @@ def renumber_migrations(work, ours_tree):
         renames[name[:-4]] = new[:-4]
     if renames:
         pattern = re.compile("|".join(map(re.escape, renames)))
-        for path in git(work, "grep", "-l", "-E", "|".join(
+        for path in git(work, "grep", "-I", "-l", "-E", "|".join(
                 map(re.escape, renames)), check=False).splitlines():
             if path.startswith(MIGRATIONS + "/"):
                 continue
@@ -361,6 +342,9 @@ def follow(args):
         git(work, "merge", "--abort", check=False)
         stop.result.update(base)
         raise
+    except (OSError, ValueError):
+        git(work, "merge", "--abort", check=False)
+        raise
     git(work, "commit", "--quiet", "--no-verify", "-m",
         "Merge ForkMesh %s into %s" % (upstream[:9], args.source_ref))
     commit = rev(work, "HEAD")
@@ -372,7 +356,9 @@ def follow(args):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(
+        description="Merge ForkMesh's branch into a self-hosted instance's "
+        "source branch.")
     parser.add_argument("--work", required=True)
     parser.add_argument("--source-url", required=True)
     parser.add_argument("--source-ref", default="main")
@@ -387,7 +373,7 @@ def main(argv=None):
         result = follow(args)
     except Stop as stop:
         result = stop.result
-    except (OSError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
         result = {"state": "failed", "message": str(exc)[:300]}
     print(json.dumps(result, sort_keys=True))
     return 0 if result["state"] in ("current", "merged") else 1

@@ -392,7 +392,20 @@ push, like the operator's) and the ordinary update deploys it.
 
 Following pushes ForkMesh's code to the protected branch without a pull
 request, so turn it on only when the instance means to run whatever
-ForkMesh ships.
+ForkMesh ships. Every follow also deploys whatever else is on the source
+branch, so the console refuses to turn following on while that branch is not
+protected, as it does for automatic updates; **Merge ForkMesh now**, like
+**Update**, is an admin's one-off and needs no protection. The check runs
+when following is turned on: unprotecting the branch later does not turn it
+off.
+
+The hourly tick runs as root but the request folder belongs to the app user,
+so it reads the `follow` flag without following links or blocking on a pipe,
+and writes its `follow` request through a fresh file opened with `O_EXCL` and
+`O_NOFOLLOW`: a link the app user planted at `request.new` is replaced, never
+written through. The follow tool resets and cleans only a work tree it made
+itself (one with `refs/follow/` refs, or an empty one) and refuses any other
+folder given as `--work`.
 
 ## Named themes
 
