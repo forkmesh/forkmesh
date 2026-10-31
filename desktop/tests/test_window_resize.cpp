@@ -41061,6 +41061,73 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       QStringLiteral("a pull whose code no local branch holds is "
                                      "marked as not on this machine (%1)")
                           .arg(awayTip));
+
+                window.testOpenPullDiffInGitView(codeAwayPr);
+                QElapsedTimer gitViewWait;
+                gitViewWait.start();
+                while (gitViewWait.elapsed() < 5000 &&
+                       !window.testBranchDiffText().contains(
+                           QStringLiteral("only-on-author.txt")))
+                    QApplication::processEvents(QEventLoop::AllEvents, 20);
+                const QString prBar = window.testBranchPullReviewBarText();
+                check(prBar.contains(
+                          QStringLiteral("Reviewing PR #%1").arg(codeAwayPr)) &&
+                          prBar.contains(QStringLiteral("Review changes")),
+                      QStringLiteral("a pull opened in the Git diff view shows "
+                                     "its review bar (bar = %1)")
+                          .arg(prBar));
+                const QString prTitle = window.testBranchDiffDragComment(
+                    QStringLiteral("only-on-author.txt"), 1, 1);
+                const bool queued = window.testQueueBranchPullInlineComment(
+                    QStringLiteral("Why does this line change?"));
+                const QString draftBar = window.testBranchPullReviewBarText();
+                check(prTitle.contains(QStringLiteral("line 1")) && queued &&
+                          draftBar.contains(QStringLiteral("1 draft comment")) &&
+                          draftBar.contains(QStringLiteral("Submit review (1)")) &&
+                          draftBar.contains(QStringLiteral("Discard drafts")),
+                      QStringLiteral("a line comment in the Git diff view joins "
+                                     "the pending review (title = %1, bar = %2)")
+                          .arg(prTitle, draftBar));
+                QString reviewError;
+                const bool approved = window.testFinishBranchPullReview(
+                    QStringLiteral("approved"), QStringLiteral("Looks good"),
+                    &reviewError);
+                bool postedThread = false;
+                bool postedApproval = false;
+                QList<PullEvent> reviewEvents;
+                for (const PullRequest &pr : pullBranchStore.loadAll())
+                    if (pr.number == codeAwayPr)
+                        reviewEvents = pr.events;
+                for (const PullEvent &ev : std::as_const(reviewEvents)) {
+                    if (ev.type == QLatin1String("thread-comment") &&
+                        ev.path == QLatin1String("only-on-author.txt") &&
+                        ev.body == QLatin1String("Why does this line change?"))
+                        postedThread = true;
+                    if (ev.type == QLatin1String("review") &&
+                        ev.state == QLatin1String("approved") &&
+                        ev.body == QLatin1String("Looks good"))
+                        postedApproval = true;
+                }
+                const QString afterBar = window.testBranchPullReviewBarText();
+                check(approved && postedThread && postedApproval &&
+                          afterBar.contains(QStringLiteral("Review changes")) &&
+                          !afterBar.contains(QStringLiteral("Discard drafts")),
+                      QStringLiteral("approving from the Git diff view posts the "
+                                     "draft thread and the approval (error = %1, "
+                                     "thread = %2, approval = %3, bar = %4)")
+                          .arg(reviewError)
+                          .arg(postedThread)
+                          .arg(postedApproval)
+                          .arg(afterBar));
+                QString emptyError;
+                check(!window.testFinishBranchPullReview(
+                          QStringLiteral("commented"), QString(), &emptyError) &&
+                          !emptyError.isEmpty(),
+                      QStringLiteral("an empty comment review is refused"));
+                window.testSwitchToBranchImmediateSelection(QStringLiteral("main"));
+                check(window.testBranchPullReviewBarText().isEmpty(),
+                      QStringLiteral("leaving the pull for a plain branch hides "
+                                     "the review bar"));
             }
         }
         // Both temporary directories go with this scope, so the linked

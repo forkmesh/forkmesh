@@ -2149,6 +2149,7 @@ void MainWindow::switchToBranch(const QString &branch, int agentSessionId)
         }
     }
     m_branchDiffPullNumber = -1; // plain branch mode
+    updateBranchPullReviewBar();
     showOverviewCommits();
     const QString base = branchCompareBase();
     const bool branchChanged = !target.isEmpty() && target != m_repoBranch;
@@ -2217,6 +2218,7 @@ void MainWindow::setBranchCompareBase(const QString &base)
     }
     setCommitWorkspacePage(kCommitWorkspaceRangePage);
     m_branchDiffPullNumber = -1; // a base change leaves PR mode
+    updateBranchPullReviewBar();
     showBranchDiff(branch, m_branchDiffAgentSessionId);
 }
 
@@ -5481,6 +5483,7 @@ QWidget *MainWindow::buildBranchRangePane()
     layout->setSpacing(8);
     layout->addWidget(detailHeader);
     layout->addWidget(m_branchDiffSummaryBar);
+    layout->addWidget(buildBranchPullReviewBar());
     layout->addWidget(m_branchSecretBanner);
     layout->addWidget(buildBranchDiffLogPanel());
     layout->addWidget(m_branchDiffSearchBar);
@@ -8305,6 +8308,8 @@ void MainWindow::applyBranchDetailActions(const QString &branch, const QString &
                     .arg(m_branchDiffPullNumber));
         }
     }
+
+    updateBranchPullReviewBar();
 
     refreshBranchAgentButton();
 
