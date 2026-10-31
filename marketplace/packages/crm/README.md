@@ -42,7 +42,39 @@ generic package sockets and generated registries.
   any member may save `tableViews`, every other setting is for owners and
   admins. Deleted built-in columns are recorded in `removedColumns`.
 
-## Adding a contact
+## Loading and paging
+
+Every contact is sealed, so the worker opens each row it returns; an
+organization with a few thousand contacts took 5 to 6 seconds to answer the
+whole list in one response (October 2026, 2,800 contacts, 600 KB gzipped).
+Paging keeps the first screen fast without moving list filters to the server,
+which cannot read sealed list memberships.
+
+- **Contacts API**: `GET /api/crm/<org>/contacts?limit=<n>&cursor=<c>` answers
+  up to `n` contacts (at most `CONTACT_PAGE_MAX`, 1000), newest edit first,
+  and `next`, the cursor for the following page (`<updated_at>.<contact id>`,
+  empty after the last page). Without `limit` it answers every contact, as
+  before, so older desktop and phone builds are unchanged.
+- **Summary**: `GET /api/crm/<org>?contacts=<n>` sends only the first `n`
+  contacts, with `contactsNext` (the cursor for the rest) and
+  `contactsTotal`. `summary.contacts` is the total; `summary.customers` is left
+  out because it would need every row, and the client counts it as pages
+  arrive. The revision also covers the count, latest and summed edit times of
+  all contacts, so a Refresh still notices a change on a page not yet sent.
+- **Web**: the page asks for the first 250 contacts, renders them, then reads
+  the rest 1000 at a time in the background (`crmLoadRemainingContacts`) and
+  re-renders after each page; the pager reads "loading contacts, N of M"
+  meanwhile. A newer read, or switching organization, drops an older load. A
+  failed page clears the revision so the next Refresh reads everything again.
+- **Row pager**: the table and the phone cards render one page of the filtered
+  rows (50, 100, 250 or 500, remembered in the browser as
+  `forkmesh.crm.rowPageSize`, 100 by default), with Previous and Next. Changing
+  the list, search, filters or sort returns to the first page. Selection,
+  **Select all** and bulk actions still cover every filtered row, not only the
+  page shown. The board and People layouts are not paged.
+- **Desktop and phones** still read the whole summary in one response.
+- Added in 1.46.0.
+
 
 `POST /api/crm/<org>/contacts` is safe to send again. Every client picks a
 `requestId` (32 hex characters) when its add form opens and sends it with the

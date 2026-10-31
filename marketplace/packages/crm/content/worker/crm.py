@@ -25,6 +25,8 @@ PREFIX = "/api/crm"
 REQUEST_PROOF = "forkmesh-crm-request-v1"
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_CONTACTS = 5000
+CONTACT_PAGE_MAX = 1000
+CONTACT_CURSOR_RE = re.compile(r"^([0-9]{1,16})\.([0-9a-f]{32})$")
 MAX_EMAILS = 1000
 MAX_MAIL_MESSAGES = 2000
 MAX_ZOHO_IMPORT = 200
@@ -1457,6 +1459,39 @@ async def _contacts(runtime, org_bi):
     return [await _contact_project(runtime, row) for row in rows or []]
 
 
+def _contact_page_limit(value):
+    return max(0, min(_integer(value), CONTACT_PAGE_MAX))
+
+
+async def _contact_page(runtime, org_bi, limit, cursor=""):
+    match = CONTACT_CURSOR_RE.fullmatch(str(cursor or ""))
+    where, args = "org_bi=?", [org_bi]
+    if match:
+        where += " AND (updated_at<? OR (updated_at=? AND contact_id>?))"
+        args += [int(match.group(1)), int(match.group(1)), match.group(2)]
+    rows = await runtime.d1_all(
+        "SELECT contact_id,org_bi,org_name,created_by_name,updated_by_name,"
+        "created_at,updated_at,data FROM crm_contacts WHERE " + where + " "
+        "ORDER BY updated_at DESC,contact_id LIMIT ?",
+        *args, limit + 1,
+    )
+    rows = list(rows or [])
+    more = len(rows) > limit
+    rows = rows[:limit]
+    following = ("%d.%s" % (_integer(rows[-1].get("updated_at")), rows[-1]["contact_id"])
+                 if more and rows else "")
+    return [await _contact_project(runtime, row) for row in rows], following
+
+
+async def _contact_totals(runtime, org_bi):
+    row = await runtime.d1_first(
+        "SELECT COUNT(*) AS total,COALESCE(MAX(updated_at),0) AS latest,"
+        "COALESCE(SUM(updated_at),0) AS stamp FROM crm_contacts WHERE org_bi=?",
+        org_bi,
+    ) or {}
+    return {key: _integer(row.get(key)) for key in ("total", "latest", "stamp")}
+
+
 EMAIL_SELECT = (
     "s.send_id,s.org_bi,s.org_name,s.contact_id,s.sender_name,s.transport,s.status,"
     "s.external_id,s.created_at,s.sent_at,s.status_at,s.data,"
@@ -2527,7 +2562,13 @@ async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
 
 async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
     await _backfill_contacted_stages(runtime, org_bi, account_bi, actor)
-    contacts = await _contacts(runtime, org_bi)
+    page_limit = _contact_page_limit(runtime.query_params().get("contacts"))
+    totals, following = None, ""
+    if page_limit:
+        contacts, following = await _contact_page(runtime, org_bi, page_limit)
+        totals = await _contact_totals(runtime, org_bi)
+    else:
+        contacts = await _contacts(runtime, org_bi)
     emails = await _emails(runtime, org_bi)
     mail = await _mail_messages(runtime, org_bi, account_bi)
     settings = await _settings(runtime, org_bi, account_bi)
@@ -2559,13 +2600,19 @@ async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
             "mailGroups": len({item["groupKey"] for item in mail}),
         },
     }
+    if totals is not None:
+        payload["contactsNext"] = following
+        payload["contactsTotal"] = totals["total"]
+        payload["summary"]["contacts"] = totals["total"]
+        payload["summary"].pop("customers")
     # This summary carries every contact, send and mail row, and a client only
     # asks for it when the page opens or its Refresh is pressed. It echoes the
     # revision it last applied as ?since=, so a Refresh on an unchanged
     # organization costs a few bytes on the wire and no re-render instead of
     # the whole CRM again.
     revision = hashlib.sha256(json.dumps(
-        payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
+        [payload, totals] if totals is not None else payload,
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
     if runtime.query_params().get("since") == revision:
         return _response(runtime, {"ok": True, "unchanged": True, "revision": revision})
     payload["revision"] = revision
@@ -8504,6 +8551,13 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
     if resource == "contacts":
         if not item:
             if method == "GET":
+                params = runtime.query_params()
+                page_limit = _contact_page_limit(params.get("limit"))
+                if page_limit:
+                    contacts, following = await _contact_page(
+                        runtime, org_bi, page_limit, params.get("cursor"))
+                    return _response(runtime, {"ok": True, "contacts": contacts,
+                                               "next": following})
                 return _response(runtime, {"ok": True, "contacts": await _contacts(runtime, org_bi)})
             return await _create_contact(runtime, org_bi, org_name, account_bi, actor, data)
         if item == "import":
