@@ -756,6 +756,22 @@ def test_the_tick_never_writes_through_a_planted_link(instance, tmp_path):
     assert instance.request.read_text() == "follow\n"
 
 
+def test_a_swapped_request_folder_is_never_used(instance, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "follow").write_text("on\n")
+    (tmp_path / "swapped").symlink_to(elsewhere)
+    env = dict(instance.env, FORKMESH_UPDATE_REQUEST=str(tmp_path / "swapped" / "request"))
+    assert tick(SimpleNamespace(env=env)).returncode == 0
+    assert sorted(path.name for path in elsewhere.iterdir()) == ["follow"]
+    (elsewhere / "request").write_text("update\n")
+    result = subprocess.run(["bash", str(HELPER)], env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert (elsewhere / "request").read_text() == "update\n"
+    assert not (instance.state / "status.json").exists()
+
+
 def test_a_follow_needs_a_source_on_this_instance_and_an_owner(instance):
     status = helper(instance, "follow")
     assert status["state"] == "failed" and status["trigger"] == "follow"

@@ -403,7 +403,12 @@ The hourly tick runs as root but the request folder belongs to the app user,
 so it reads the `follow` flag without following links or blocking on a pipe,
 and writes its `follow` request through a fresh file opened with `O_EXCL` and
 `O_NOFOLLOW`: a link the app user planted at `request.new` is replaced, never
-written through. The follow tool resets and cleans only a work tree it made
+written through. The app user also owns `/var/lib/forkmesh-instance`, so it
+could swap the `update` folder itself for a link; root therefore opens that
+folder once with `O_NOFOLLOW` and reads, writes, renames and removes the
+request (and reads the flag) relative to that handle, so nothing it does can
+land in another folder. The parent folder is root's, so the handle cannot be
+swapped in turn. The follow tool resets and cleans only a work tree it made
 itself (one with `refs/follow/` refs, or an empty one) and refuses any other
 folder given as `--work`.
 

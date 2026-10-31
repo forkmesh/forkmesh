@@ -62,14 +62,31 @@ print(str(doc.get(sys.argv[2]) or sys.argv[3]) if isinstance(doc, dict) else sys
 }
 
 read_request() {
-  local action=""
-  if [ -L "$REQUEST" ]; then
-    rm -f "$REQUEST"
-  elif [ -f "$REQUEST" ]; then
-    action="$(head -c 32 "$REQUEST" | tr -cd 'a-z')"
-    rm -f "$REQUEST"
-  fi
-  printf '%s' "$action"
+  python3 -I -c '
+import os, stat, sys
+path = sys.argv[1]
+try:
+    folder = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+except OSError:
+    sys.exit(0)
+name = os.path.basename(path)
+action = ""
+try:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
+except OSError:
+    fd = -1
+if fd >= 0:
+    with os.fdopen(fd, "rb") as handle:
+        if stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            action = "".join(c for c in handle.read(32).decode("ascii", "ignore")
+                             if "a" <= c <= "z")
+try:
+    os.unlink(name, dir_fd=folder)
+except OSError:
+    pass
+os.close(folder)
+sys.stdout.write(action)
+' "$REQUEST"
 }
 
 commit_fields() {
@@ -198,10 +215,14 @@ print(doc.get(sys.argv[2], sys.argv[3]) if isinstance(doc, dict) else sys.argv[3
 follow_on() {
   python3 -I -c '
 import os, stat, sys
+path = sys.argv[1]
 try:
-    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    folder = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    fd = os.open(os.path.basename(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                 dir_fd=folder)
 except OSError:
     sys.exit(1)
+os.close(folder)
 with os.fdopen(fd, "rb") as handle:
     if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
         sys.exit(1)
@@ -213,17 +234,20 @@ request_follow() {
   python3 -I -c '
 import os, sys
 path = sys.argv[1]
-tmp = path + ".new"
-folder = os.stat(os.path.dirname(path))
+folder = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+owner = os.fstat(folder)
+name = os.path.basename(path)
+tmp = name + ".new"
 try:
-    os.unlink(tmp)
+    os.unlink(tmp, dir_fd=folder)
 except FileNotFoundError:
     pass
-fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640, dir_fd=folder)
 with os.fdopen(fd, "w", encoding="ascii") as handle:
-    os.fchown(handle.fileno(), folder.st_uid, folder.st_gid)
+    os.fchown(handle.fileno(), owner.st_uid, owner.st_gid)
     handle.write("follow\n")
-os.replace(tmp, path)
+os.replace(tmp, name, src_dir_fd=folder, dst_dir_fd=folder)
+os.close(folder)
 ' "$REQUEST"
 }
 
