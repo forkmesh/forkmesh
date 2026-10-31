@@ -5,11 +5,14 @@
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonValue>
+#include <QHash>
+#include <QMutex>
 #include <QMutexLocker>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QThread>
+#include <QThreadPool>
 #include <QTimer>
 
 #ifdef FORKMESH_HAVE_MULTIMEDIA
@@ -1801,6 +1804,30 @@ QStringList Player::pipePrograms()
 #endif
 }
 
+QStringList Player::availablePipePrograms()
+{
+    static QMutex mutex;
+    static QHash<QByteArray, QStringList> byPath;
+    const QByteArray path = qgetenv("PATH");
+    QMutexLocker lock(&mutex);
+    const auto known = byPath.constFind(path);
+    if (known != byPath.constEnd())
+        return *known;
+    QStringList programs;
+    for (const QString &program : pipePrograms()) {
+        if (!pipeArgumentsFor(program).isEmpty() &&
+            !QStandardPaths::findExecutable(program).isEmpty())
+            programs.append(program);
+    }
+    byPath.insert(path, programs);
+    return programs;
+}
+
+void Player::warmPipePrograms()
+{
+    QThreadPool::globalInstance()->start([] { availablePipePrograms(); });
+}
+
 QStringList Player::pipeArgumentsFor(const QString &program)
 {
     const QString rate = QString::number(kSampleRate);
@@ -1926,11 +1953,7 @@ bool Player::start()
     // Candidates, best first; the silent backend is a pump with no process.
     QStringList programs;
     if (!wantSilent) {
-        for (const QString &program : pipePrograms()) {
-            if (!QStandardPaths::findExecutable(program).isEmpty() &&
-                !pipeArgumentsFor(program).isEmpty())
-                programs.append(program);
-        }
+        programs = availablePipePrograms();
         if (programs.isEmpty())
             return false;
     } else {
