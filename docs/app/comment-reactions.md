@@ -222,9 +222,19 @@ comments play, one after another in page order.
   `forkmesh.reactionCheer.v1:<account>`, newest 400 comments kept), and never
   older than 14 days, so a first visit on a new device does not replay
   months of reactions. It is remembered before the animation starts, so a
-  reload mid-way does not replay it.
+  reload mid-way does not replay it. When localStorage is unavailable
+  (private mode, a full store) the celebration may play again next time.
 - It waits until the tab is visible, and plays whichever of the reactions
   read and the record render finishes second.
+- Each reacted emoji gets a share of the flying bits by its count, at least
+  four each; bits start upward and outward so they fill the screen before
+  falling.
+- `reactedAt` goes to every signed-in reader of the record, not only the
+  comment's author: the server does not know comment authors (the ping takes
+  the author from the client too). It holds only times, never names, but
+  with a one-person tally it tells a reader when that named person reacted.
+- The note's names come from the tally's `people`, the first ten reactors,
+  so it can name someone who reacted earlier alongside the new reactor.
 - Under `prefers-reduced-motion: reduce` only the note shows; nothing moves.
   The note is `role="status"`; the flying layer is `aria-hidden` and ignores
   the pointer.

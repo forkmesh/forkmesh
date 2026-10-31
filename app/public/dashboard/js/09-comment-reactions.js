@@ -299,11 +299,6 @@
     }
   }
 
-  // A comment's author who opens the page after others reacted to it gets a
-  // celebration: the new reactions burst out of that comment across the whole
-  // screen, with a note saying who reacted. What was already celebrated is
-  // remembered per account in this browser (localStorage), keyed by the newest
-  // reaction time the server reports in `reactedAt`.
   function commentReactionCheerSeen(me) {
     try {
       const seen = JSON.parse(localStorage.getItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`) || "{}");
@@ -322,9 +317,7 @@
       .slice(0, COMMENT_REACTION_CHEER_KEEP);
     try {
       localStorage.setItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`, JSON.stringify(Object.fromEntries(kept)));
-    } catch (_) {
-      // Private mode or a full store: the celebration may play again next time.
-    }
+    } catch (_) {}
   }
 
   function commentReactionCheers(subject, now = Date.now()) {
@@ -352,8 +345,6 @@
     return cheers.sort((a, b) => (a.bar.compareDocumentPosition(b.bar) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   }
 
-  // Called when the reactions arrive and when the record is drawn; whichever
-  // comes second finds both ready and plays.
   function scheduleCommentReactionCheer(subject) {
     if (commentReactionUi.cheering) return;
     if (document.hidden) {
@@ -453,7 +444,6 @@
       { transform: "scale(.2)", opacity: .9 },
       { transform: `scale(${Math.max(window.innerWidth, window.innerHeight) / 30})`, opacity: 0 },
     ], { duration: 1100, easing: "cubic-bezier(.15,.7,.3,1)", fill: "forwards" });
-    // Each tally gets a share of the bits by its count, at least a few each.
     const weights = cheer.tallies.map((tally) => Math.max(1, Number(tally.count) || 1));
     const total = weights.reduce((sum, weight) => sum + weight, 0);
     const pool = [];
@@ -468,7 +458,6 @@
       bit.innerHTML = glyph;
       bit.style.fontSize = `${Math.round(20 + Math.random() * 26)}px`;
       layer.append(bit);
-      // Mostly upward and outward, so the bits fill the screen before falling.
       const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7;
       const distance = reach * (0.28 + Math.random() * 0.42);
       const dx = Math.cos(angle) * distance;

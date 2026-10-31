@@ -133,9 +133,6 @@ async def summarize(env, rows, viewer_bi="", custom=None):
 
 
 def reacted_at(rows, viewer_bi):
-    # When others last reacted, per comment and emoji, so a comment's author
-    # can be shown what is new since they last looked (the viewer's own
-    # reactions never count).
     out = {}
     if not viewer_bi:
         return out
