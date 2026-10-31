@@ -21,6 +21,7 @@ Topic pages in this folder:
 - [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in
 - [git-change-arrows.md](git-change-arrows.md): the arrows between the two sides of the Git page's split diff that revert, stage or unstage one change block
 - [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch prompt it drafts in the composer, and the cleanup of merged pull requests and branches
+- [pull-review-all.md](pull-review-all.md): Review all with AI on the Pull requests list: the read-only review prompt, the report the agent writes, and the threads, verdicts and summary ForkMesh posts from it
 - [tasks-page.md](tasks-page.md): Tasks page layout, top-search filtering, row and detail design, task work items and delete cleanup
 - [saved-searches.md](saved-searches.md): saved searches, their pings, and the security-pertinent alarm
 - [ui-redesign.md](ui-redesign.md): the interface redesign plan: design tokens, components, welcome and sign-in, expanded sidebar, phases and rules

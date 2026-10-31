@@ -6746,8 +6746,8 @@ void MainWindow::quickAddIssue()
             quickAddAgentBaseBranchForGitView(), /*priority=*/50, directCheckout,
             QString(), m_promptVibeCheck && m_promptVibeCheck->isChecked());
         if (agentSessionId > 0) {
-            adoptPullMergeAllDraft(agentSessionId, issuesRepoIndex(), prompt,
-                                   directCheckout);
+            adoptPullAgentDrafts(agentSessionId, issuesRepoIndex(), prompt,
+                                 directCheckout);
             m_issueQuickAdd->clear();
             clearQuickAddImages();
             // Working straight in the checkout is a one-prompt choice: re-tick

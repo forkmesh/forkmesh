@@ -1187,8 +1187,8 @@ QWidget *MainWindow::buildHomeGridSection()
                     hero->branchChoice, 50, directCheckout,
                     QString(), m_promptVibeCheck && m_promptVibeCheck->isChecked());
                 if (id > 0) {
-                    adoptPullMergeAllDraft(id, issuesRepoIndex(), prompt,
-                                           directCheckout);
+                    adoptPullAgentDrafts(id, issuesRepoIndex(), prompt,
+                                         directCheckout);
                     recordQuickAddHistory(text);
                     m_issueQuickAdd->clear();
                     clearQuickAddImages();

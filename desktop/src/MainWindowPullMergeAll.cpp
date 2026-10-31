@@ -273,6 +273,8 @@ void MainWindow::preparePullMergeAll(
     m_pullMergeAllPreparing = true;
     if (m_pullMergeAllAiButton)
         m_pullMergeAllAiButton->setEnabled(false);
+    if (m_pullReviewAllAiButton)
+        m_pullReviewAllAiButton->setEnabled(false);
     runOffThread<PullMergeAllPrepared>(
         [store, workTree, open] {
             PullMergeAllPrepared out;
@@ -329,6 +331,8 @@ void MainWindow::preparePullMergeAll(
             m_pullMergeAllPreparing = false;
             if (m_pullMergeAllAiButton)
                 m_pullMergeAllAiButton->setEnabled(true);
+            if (m_pullReviewAllAiButton)
+                m_pullReviewAllAiButton->setEnabled(true);
             if (ready)
                 ready(prepared.targets, prepared.skipped);
         });
@@ -413,6 +417,22 @@ void MainWindow::draftPullMergeAllPrompt(int repoIndex,
     const RepositoryRecord repo = m_repositories.at(repoIndex);
     const QString prompt = pullmergeall::agentPrompt(
         repo.owner, repo.name, writableRecordFor(repo).localPath, targets);
+    m_pullMergeAllDraft = pullmergeall::Draft();
+    m_pullMergeAllDraft.run.owner = repo.owner;
+    m_pullMergeAllDraft.run.name = repo.name;
+    m_pullMergeAllDraft.run.targets = targets;
+    m_pullMergeAllDraft.prompt = prompt;
+    m_pullMergeAllDraft.skipped = skipped;
+    fillComposerForPullDraft(repoIndex, prompt,
+                             pullmergeall::draftMessage(targets.size(), skipped),
+                             m_pullMergeAllAiButton);
+}
+
+void MainWindow::fillComposerForPullDraft(int repoIndex, const QString &prompt,
+                                          const QString &notice, QWidget *from)
+{
+    if (!m_issueQuickAdd)
+        return;
     if (m_issuesRepoCombo) {
         const int combo = m_issuesRepoCombo->findData(repoIndex);
         if (combo >= 0)
@@ -434,37 +454,36 @@ void MainWindow::draftPullMergeAllPrompt(int repoIndex,
     if (m_promptOverlayCollapsed)
         setPromptOverlayCollapsed(false);
 
-    m_pullMergeAllDraft = pullmergeall::Draft();
-    m_pullMergeAllDraft.run.owner = repo.owner;
-    m_pullMergeAllDraft.run.name = repo.name;
-    m_pullMergeAllDraft.run.targets = targets;
-    m_pullMergeAllDraft.prompt = prompt;
-    m_pullMergeAllDraft.skipped = skipped;
-
     recordQuickAddHistory(m_issueQuickAdd->toPlainText());
     m_issueQuickAdd->setPlainText(prompt);
     m_issueQuickAdd->moveCursor(QTextCursor::Start);
     if (m_promptWorktreeCheck)
         m_promptWorktreeCheck->setChecked(false);
     if (repoIndex == m_repoDetailIndex)
-        setRepoDetailNotice(pullmergeall::draftMessage(targets.size(), skipped));
-    const QPointer<QWidget> from = m_pullMergeAllAiButton;
-    QTimer::singleShot(0, this, [this, from] {
-        flyToComposer(from);
+        setRepoDetailNotice(notice);
+    const QPointer<QWidget> origin = from;
+    QTimer::singleShot(0, this, [this, origin] {
+        flyToComposer(origin);
         if (m_issueQuickAdd)
             m_issueQuickAdd->setFocus();
     });
 }
 
-void MainWindow::adoptPullMergeAllDraft(int sessionId, int repoIndex,
-                                        const QString &prompt, bool directCheckout)
+void MainWindow::adoptPullAgentDrafts(int sessionId, int repoIndex,
+                                      const QString &prompt, bool directCheckout)
 {
-    if (sessionId <= 0 || repoIndex < 0 || repoIndex >= m_repositories.size() ||
-        m_pullMergeAllDraft.run.targets.isEmpty())
+    if (sessionId <= 0 || !directCheckout || repoIndex < 0 ||
+        repoIndex >= m_repositories.size())
         return;
-    const RepositoryRecord &repo = m_repositories.at(repoIndex);
-    if (!directCheckout ||
-        !pullmergeall::draftMatches(m_pullMergeAllDraft, repo.owner, repo.name, prompt))
+    const RepositoryRecord repo = m_repositories.at(repoIndex);
+    adoptPullMergeAllDraft(sessionId, repo, prompt);
+    adoptPullReviewAllDraft(sessionId, repo, prompt);
+}
+
+void MainWindow::adoptPullMergeAllDraft(int sessionId, const RepositoryRecord &repo,
+                                        const QString &prompt)
+{
+    if (!pullmergeall::draftMatches(m_pullMergeAllDraft, repo.owner, repo.name, prompt))
         return;
     const pullmergeall::Draft draft = m_pullMergeAllDraft;
     m_pullMergeAllDraft = pullmergeall::Draft();

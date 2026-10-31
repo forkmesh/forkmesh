@@ -29644,6 +29644,13 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       mergeAllAi->toolTip().contains(QStringLiteral("deletes")),
                   QStringLiteral("the pull list offers Merge all with AI, which "
                                  "reviews, merges and cleans up every open PR"));
+            QPushButton *reviewAllAi = window.findChild<QPushButton *>(
+                QStringLiteral("pullReviewAllAiButton"));
+            check(reviewAllAi && reviewAllAi->text() == QStringLiteral("Review all") &&
+                      reviewAllAi->toolTip().contains(QStringLiteral("security")) &&
+                      reviewAllAi->toolTip().contains(QStringLiteral("approves")),
+                  QStringLiteral("the pull list offers Review all with AI, which "
+                                 "reviews every open PR and posts the verdicts"));
             QPushButton *restore = window.findChild<QPushButton *>(
                 QStringLiteral("pullRestoreArchivedButton"));
             check(restore && restore->toolTip().contains(
