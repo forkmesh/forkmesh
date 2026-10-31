@@ -1,5 +1,7 @@
 #include "CrmStageStrip.h"
 
+#include "DesignTokens.h"
+
 #include <QEvent>
 #include <QFontMetricsF>
 #include <QHelpEvent>
@@ -12,6 +14,7 @@
 #include <QToolTip>
 
 #include <algorithm>
+#include <cmath>
 
 namespace forkmesh::crm {
 namespace {
@@ -39,6 +42,25 @@ qreal luminance(const QColor &color)
 QFont countFont(QFont font)
 {
     font.setBold(true);
+    return font;
+}
+
+constexpr qreal kBoxGap = 4.0;
+constexpr qreal kBoxPadX = 12.0;
+constexpr qreal kBoxPadY = 8.0;
+constexpr qreal kBoxMinimum = 56.0;
+
+QFont boxLabelFont(QFont font)
+{
+    font.setPixelSize(12);
+    font.setWeight(QFont::Normal);
+    return font;
+}
+
+QFont boxCountFont(QFont font)
+{
+    font.setPixelSize(18);
+    font.setWeight(QFont::DemiBold);
     return font;
 }
 
@@ -119,6 +141,15 @@ qreal CrmStageStrip::naturalBody(int index) const
 
 QSize CrmStageStrip::sizeHint() const
 {
+    if (Theme::isNext()) {
+        const qreal height = kBoxPadY * 2 + QFontMetricsF(boxLabelFont(font())).height() + 2 +
+                             QFontMetricsF(boxCountFont(font())).height();
+        qreal width = 0;
+        for (const Stage &stage : std::as_const(m_stages))
+            width += qMax(kBoxMinimum, QFontMetricsF(boxLabelFont(font())).horizontalAdvance(
+                                           stage.label) + kBoxPadX * 2 + 12) + kBoxGap;
+        return {int(width), int(std::ceil(height))};
+    }
     const int h = int(QFontMetricsF(countFont(font())).height()) + 16;
     qreal width = 0;
     for (int at = 0; at < m_stages.size(); ++at)
@@ -129,6 +160,8 @@ QSize CrmStageStrip::sizeHint() const
 QSize CrmStageStrip::minimumSizeHint() const
 {
     const QSize hint = sizeHint();
+    if (Theme::isNext())
+        return {int(m_stages.size() * (kBoxMinimum + kBoxGap)), hint.height()};
     return {int(m_stages.size() * (hint.height() * 0.64 + 36)), hint.height()};
 }
 
@@ -140,6 +173,25 @@ QList<CrmStageStrip::Segment> CrmStageStrip::segments() const
     const int n = int(m_stages.size());
     if (n == 0)
         return result;
+    if (Theme::isNext()) {
+        int total = 0;
+        for (const Stage &stage : std::as_const(m_stages))
+            total += qMax(0, stage.count);
+        QList<qreal> grows;
+        qreal growTotal = 0;
+        for (const Stage &stage : std::as_const(m_stages)) {
+            grows << qMax<qreal>(qMax(0, stage.count), qMax(1.0, total * 0.12));
+            growTotal += grows.last();
+        }
+        const qreal room = qMax(0.0, width() - (n - 1) * kBoxGap - n * kBoxMinimum);
+        qreal left = 0;
+        for (int at = 0; at < n; ++at) {
+            const qreal body = kBoxMinimum + (growTotal > 0 ? room * grows.at(at) / growTotal : 0);
+            result.append({left, body});
+            left += body + kBoxGap;
+        }
+        return result;
+    }
     const qreal depth = arrowDepth();
     QList<qreal> bodies;
     qreal natural = 0;
@@ -162,6 +214,15 @@ QList<CrmStageStrip::Segment> CrmStageStrip::segments() const
 int CrmStageStrip::segmentAt(const QPointF &position) const
 {
     const QList<Segment> list = segments();
+    if (Theme::isNext()) {
+        for (int at = 0; at < list.size(); ++at) {
+            const Segment &segment = list.at(at);
+            if (position.x() >= segment.left &&
+                position.x() < segment.left + segment.body + kBoxGap)
+                return at;
+        }
+        return -1;
+    }
     const qreal depth = arrowDepth();
     for (int at = 0; at < list.size(); ++at) {
         const Segment &segment = list.at(at);
@@ -178,6 +239,48 @@ void CrmStageStrip::paintEvent(QPaintEvent *)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     const QList<Segment> list = segments();
+    if (Theme::isNext()) {
+        const QFont labelFont = boxLabelFont(font());
+        const QFont numberFont = boxCountFont(font());
+        const QFontMetricsF labelMetrics(labelFont);
+        const qreal labelHeight = labelMetrics.height();
+        for (int at = 0; at < list.size(); ++at) {
+            const Stage &stage = m_stages.at(at);
+            const Segment &segment = list.at(at);
+            const bool selected = !m_selected.isEmpty() && stage.name == m_selected;
+            const bool hovered = at == m_hover;
+            const QRectF box = QRectF(segment.left, 0, segment.body, height()).adjusted(0.5, 0.5, -0.5, -0.5);
+            painter.setPen(QPen(selected ? Theme::color(Theme::Role::Accent, 102)
+                                         : Theme::color(Theme::Role::Border), 1));
+            painter.setBrush(selected  ? Theme::color(Theme::Role::AccentSubtle)
+                             : hovered ? Theme::color(Theme::Role::SurfaceRaised)
+                                       : Theme::color(Theme::Role::Surface));
+            painter.drawRoundedRect(box, 8, 8);
+            const qreal left = box.left() + kBoxPadX;
+            const qreal room = qMax(0.0, box.width() - kBoxPadX * 2);
+            const qreal dot = 6;
+            const qreal labelTop = box.top() + kBoxPadY;
+            painter.setPen(Qt::NoPen);
+            QColor dotColor = stageColor(stage.name, at);
+            if (stage.count == 0)
+                dotColor.setAlphaF(0.5f);
+            painter.setBrush(dotColor);
+            painter.drawEllipse(QRectF(left, labelTop + (labelHeight - dot) / 2, dot, dot));
+            painter.setFont(labelFont);
+            painter.setPen(Theme::color(selected ? Theme::Role::AccentFg : Theme::Role::FgMuted));
+            const qreal labelLeft = left + dot + 6;
+            const qreal labelRoom = qMax(0.0, room - dot - 6);
+            painter.drawText(QRectF(labelLeft, labelTop, labelRoom, labelHeight),
+                             Qt::AlignLeft | Qt::AlignVCenter,
+                             labelMetrics.elidedText(stage.label, Qt::ElideRight, labelRoom));
+            painter.setFont(numberFont);
+            painter.setPen(Theme::color(stage.count == 0 ? Theme::Role::FgMuted : Theme::Role::Fg));
+            painter.drawText(QRectF(left, labelTop + labelHeight + 2, room,
+                                    box.bottom() - kBoxPadY - labelTop - labelHeight - 2),
+                             Qt::AlignLeft | Qt::AlignVCenter, QLocale().toString(stage.count));
+        }
+        return;
+    }
     const qreal depth = arrowDepth();
     const qreal h = height();
     const QColor window = palette().color(QPalette::Window);

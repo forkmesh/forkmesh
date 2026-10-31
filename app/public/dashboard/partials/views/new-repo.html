@@ -92,20 +92,21 @@
                         <button data-new-repo-source="provider" type="button" aria-pressed="false"><i data-lucide="download" class="h-4 w-4"></i>Import from GitHub, GitLab, Codeberg</button>
                       </div>
                       <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" style="margin-top:6px" />
-                      <p data-new-repo-source-hint class="nr-help"><span data-platform-name>ForkMesh</span> clones this URL into a bare mirror. Local paths never leave your machine.</p>
+                      <p data-new-repo-source-hint class="nr-help">Copies the repository at this URL. Private repositories are backed up through the <span data-desktop-brand>ForkMesh </span>desktop app. Local paths never leave your machine.</p>
                       <div data-new-repo-provider-options class="hidden nr-panel">
                         <label class="nr-field">
-                          <span class="nr-label">Import type</span>
+                          <span class="nr-label">What to import</span>
                           <select data-new-repo-import-mode class="nr-input">
-                            <option value="import">Full provider metadata &amp; collaboration history (no Git contents)</option>
-                            <option value="stub">Create a non-mirrored stub</option>
+                            <option value="import">Issues, pull requests &amp; history (not the code)</option>
+                            <option value="stub">Only a listing that links to the original</option>
                           </select>
                         </label>
                         <label class="nr-field">
-                          <span class="nr-label">Provider access token <span class="nr-optional">(required for private repositories)</span></span>
-                          <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Request-scoped GitHub, GitLab, or Codeberg token" class="nr-input" />
+                          <span class="nr-label">Read-only access token <span class="nr-optional">(required for private repositories)</span></span>
+                          <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Read-only GitHub, GitLab, or Codeberg token" class="nr-input" />
                         </label>
-                        <p class="nr-help">The token is used for this request only and is never stored. Git contents stay on the normal mirror path; provider records and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
+                        <p class="nr-help">This copies issues, pull requests and their history once; it does not copy the code or keep anything up to date. To back up the code, see <a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>.</p>
+                        <p class="nr-help">A read-only token is enough: on GitHub, a fine-grained token for that one repository with Contents, Issues and Pull requests set to Read-only. <span data-platform-name>ForkMesh</span> never needs permission to push to GitHub. The token is used for this request only and is never stored. Git contents stay on the normal mirror path; provider records and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
                       </div>
                     </div>
 
@@ -172,6 +173,7 @@
 
                   <hr class="nr-rule" />
                   <div class="nr-info"><i data-lucide="info" class="h-4 w-4"></i><span>You get the clone URL and a push credential right after you create it. Local folders and private URLs finish on your <a href="/desktop"><span data-desktop-brand>ForkMesh </span>desktop node</a>.</span></div>
+                  <p data-new-repo-visibility-note role="status" aria-live="polite" class="nr-help" style="margin-top:12px"></p>
                   <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground" style="margin-top:12px"></p>
                   <div data-new-repo-migration-status class="hidden nr-panel text-xs" role="status" aria-live="polite">
                     <div class="flex flex-wrap items-center gap-x-4 gap-y-1">

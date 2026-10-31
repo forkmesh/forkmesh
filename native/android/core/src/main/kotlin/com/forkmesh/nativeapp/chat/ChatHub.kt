@@ -10,6 +10,7 @@ import com.forkmesh.nativeapp.model.ChatReceiptTimes
 import com.forkmesh.nativeapp.model.ChatRetention
 import com.forkmesh.nativeapp.model.Member
 import com.forkmesh.nativeapp.model.MemberGroup
+import java.util.concurrent.locks.ReentrantLock
 
 interface ChatRelay : ChatFrameSink {
     val channels: List<String>
@@ -182,6 +183,7 @@ sealed class ChatHubSend {
 class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     companion object {
         const val PING_FRESH_MS = 10 * 60 * 1000L
+        const val READ_MARKS_INTERVAL_MS = 5_000L
         const val WELCOME_CHANNEL = "#welcome"
         const val PUBLIC_SEAL_SUMMARY =
             "This channel is public: everyone in this room can read it, guests included. Every message is signed by the " +
@@ -892,7 +894,30 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         marks.queue(key, newest)
     }
 
-    fun applyReadMarks() {
+    private val readMarksLock = ReentrantLock()
+
+    @Volatile
+    private var readMarksAtMs = 0L
+
+    var readMarksClock: () -> Long = System::currentTimeMillis
+
+    fun applyReadMarks(force: Boolean = false) {
+        if (force) {
+            readMarksLock.lock()
+        } else {
+            val last = readMarksAtMs
+            if (last != 0L && readMarksClock() - last < READ_MARKS_INTERVAL_MS) return
+            if (!readMarksLock.tryLock()) return
+        }
+        try {
+            fetchReadMarks()
+        } finally {
+            readMarksAtMs = readMarksClock()
+            readMarksLock.unlock()
+        }
+    }
+
+    private fun fetchReadMarks() {
         val marks = readMarks ?: return
         if (!marks.fetch()) return
         val unread = relay.unreadConversations +

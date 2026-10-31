@@ -31,7 +31,8 @@ with `not_active`, `no_email` or `email_not_verified`.
 key, then:
 
 - sends each tester a separate email (no shared `To` list), lowercased and
-  deduplicated;
+  deduplicated, whose only link is the install page (no `itms-services:` or
+  `.ipa` link, which spam filters hold; see MAC_BUILD.md, "Publisher");
 - falls back to a configured operator address when nobody qualifies;
 - `--to ADDRESS` (repeatable) skips the lookup and sends no ping;
 - sends nothing if the lookup fails, and retries on the next tick;

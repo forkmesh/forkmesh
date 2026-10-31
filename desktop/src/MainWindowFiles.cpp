@@ -8,6 +8,7 @@
 #include "MarkdownRender.h"
 #include "NetworkFilesPanel.h"
 
+#include <QAction>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QDateTime>
@@ -16,17 +17,22 @@
 #include <QEvent>
 #include <QFile>
 #include <QFrame>
+#include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
+#include <QStandardPaths>
+#include <QStorageInfo>
 #include <QShortcut>
 #include <QSplitter>
 #include <QTabBar>
@@ -351,8 +357,8 @@ void fillSymbolRows(QTreeWidget *tree, QTreeWidgetItem *parent,
 }
 
 constexpr int kFilesTabMaxWidth = 320;
-constexpr int kFilesTreeRowHeight = 28;
-constexpr int kFilesTreeCompactRowHeight = 26;
+constexpr int kFilesTreeRowHeight = 36;
+constexpr int kFilesTreeCompactRowHeight = 32;
 constexpr int kFilesTreeFontPx = 13;
 constexpr int kFilesTreeIconSize = 16;
 constexpr int kFilesTreeChevronSize = 12;
@@ -360,7 +366,6 @@ constexpr int kFilesTreePadX = 8;
 constexpr int kFilesTreeIconInset = 2;
 constexpr int kFilesTreeIconGap = 8;
 constexpr int kFilesTreeRowInset = 1;
-constexpr int kFilesTreeRowRadius = 6;
 constexpr int kFilesTreeIndent = 16;
 constexpr int kFilesTreeClassicIndent = 14;
 constexpr int kFilesCommitMessageWidth = 200;
@@ -409,6 +414,7 @@ QPixmap filesFolderPixmap(const QIcon &icon, bool open, const QColor &color, qre
 {
     static QHash<QString, QPixmap> cache;
     const QString key = QString::number(open ? 1 : 0) + QLatin1Char('|') +
+                        QString::number(icon.cacheKey(), 16) + QLatin1Char('|') +
                         QString::number(color.rgba(), 16) + QLatin1Char('|') +
                         QString::number(dpr);
     const auto cached = cache.constFind(key);
@@ -468,20 +474,22 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
         painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
-        if (view && (selected || hovered)) {
+        if (view) {
             QRect clip = option.rect;
             if (first)
                 clip.setLeft(0);
             painter->save();
             painter->setClipRect(clip, Qt::IntersectClip);
-            painter->setPen(Qt::NoPen);
-            painter->setBrush(Theme::color(selected ? Theme::Role::SurfaceActive
-                                                    : Theme::Role::SurfaceRaised));
-            painter->drawRoundedRect(
-                QRectF(0, option.rect.top() + kFilesTreeRowInset,
-                       view->viewport()->width(),
-                       option.rect.height() - 2 * kFilesTreeRowInset),
-                kFilesTreeRowRadius, kFilesTreeRowRadius);
+            if (selected || hovered) {
+                painter->setPen(Qt::NoPen);
+                painter->setBrush(Theme::color(selected ? Theme::Role::AccentSubtle
+                                                        : Theme::Role::SurfaceRaised));
+                painter->drawRect(QRectF(0, option.rect.top(), view->viewport()->width(),
+                                         option.rect.height() - kFilesTreeRowInset));
+            }
+            painter->setPen(QPen(Theme::color(Theme::Role::Border), 1));
+            const qreal rule = option.rect.bottom() + 0.5;
+            painter->drawLine(QPointF(clip.left(), rule), QPointF(clip.right() + 1, rule));
             painter->restore();
         }
 
@@ -518,14 +526,12 @@ public:
             if (!icon.isNull()) {
                 const QRect iconRect =
                     glyphRect(option.rect, left, kFilesTreeIconSize);
-                if (folder)
-                    painter->drawPixmap(
-                        iconRect,
-                        filesFolderPixmap(icon, tree && tree->isExpanded(index),
-                                          Theme::color(Theme::Role::FgMuted),
-                                          painter->device()->devicePixelRatioF()));
-                else
-                    icon.paint(painter, iconRect);
+                painter->drawPixmap(
+                    iconRect,
+                    filesFolderPixmap(icon, folder && tree && tree->isExpanded(index),
+                                      Theme::color(folder ? Theme::Role::FgMuted
+                                                          : Theme::Role::FgSubtle),
+                                      painter->device()->devicePixelRatioF()));
                 left += kFilesTreeIconSize + kFilesTreeIconGap;
             }
         }
@@ -689,6 +695,17 @@ private:
 struct FilesHeaderParts {
     QBoxLayout *heading = nullptr;
     QBoxLayout *toolbar = nullptr;
+    QBoxLayout *statusRow = nullptr;
+    QWidget *back = nullptr;
+    QWidget *forward = nullptr;
+    QWidget *upNext = nullptr;
+    QWidget *crumbs = nullptr;
+    QWidget *pencil = nullptr;
+    QWidget *search = nullptr;
+    QWidget *view = nullptr;
+    QWidget *preview = nullptr;
+    QWidget *selection = nullptr;
+    QWidget *hint = nullptr;
     QWidget *title = nullptr;
     QWidget *status = nullptr;
     QWidget *hidden = nullptr;
@@ -716,39 +733,48 @@ void arrangeFilesHeader(const FilesHeaderParts &parts, bool next)
 {
     emptyFilesRow(parts.heading);
     emptyFilesRow(parts.toolbar);
-    parts.sourceRule->setVisible(next);
-    parts.actionRule->setVisible(next);
-    parts.status->setSizePolicy(next ? QSizePolicy::Ignored : QSizePolicy::Preferred,
-                                QSizePolicy::Preferred);
-    parts.heading->addWidget(parts.title);
-    if (!next) {
-        parts.heading->addWidget(parts.status);
-        parts.heading->addStretch();
-        for (QWidget *widget :
-             {parts.hidden, parts.size, parts.up, parts.home, parts.repo,
-              parts.coves, parts.network, parts.choose, parts.refresh, parts.open})
-            parts.heading->addWidget(widget);
-        parts.toolbar->addWidget(parts.path);
+    emptyFilesRow(parts.statusRow);
+    parts.sourceRule->setVisible(false);
+    parts.actionRule->setVisible(false);
+    for (QWidget *widget :
+         {parts.title, parts.hidden, parts.size, parts.up, parts.home, parts.repo,
+          parts.coves, parts.network, parts.choose, parts.refresh, parts.open})
+        widget->setVisible(!next);
+    for (QWidget *widget :
+         {parts.back, parts.forward, parts.upNext, parts.crumbs, parts.pencil,
+          parts.search, parts.view, parts.preview, parts.selection, parts.hint})
+        widget->setVisible(next);
+    parts.path->setVisible(!next);
+    parts.status->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    parts.status->setMinimumWidth(next ? 1 : 0);
+    parts.status->setProperty("filesStatusBar", next);
+    parts.status->style()->unpolish(parts.status);
+    parts.status->style()->polish(parts.status);
+    if (next) {
+        parts.toolbar->addWidget(parts.back);
+        parts.toolbar->addWidget(parts.forward);
+        parts.toolbar->addWidget(parts.upNext);
+        parts.toolbar->addSpacing(kFilesRuleGap);
+        parts.toolbar->addWidget(parts.crumbs, 1);
+        parts.toolbar->addWidget(parts.pencil);
+        parts.toolbar->addWidget(parts.path, 1);
+        parts.toolbar->addSpacing(2 * kFilesRuleGap);
+        parts.toolbar->addWidget(parts.search);
+        parts.toolbar->addWidget(parts.view);
+        parts.toolbar->addWidget(parts.preview);
+        parts.statusRow->addWidget(parts.status);
+        parts.statusRow->addWidget(parts.selection);
+        parts.statusRow->addWidget(parts.hint, 1);
         return;
     }
-    parts.heading->addWidget(parts.status, 1);
-    parts.heading->addWidget(parts.hidden);
-    parts.heading->addWidget(parts.size);
-    const auto addRule = [&parts](QWidget *rule) {
-        parts.toolbar->addSpacing(kFilesRuleGap);
-        parts.toolbar->addWidget(rule);
-        parts.toolbar->addSpacing(kFilesRuleGap);
-    };
-    parts.toolbar->addWidget(parts.repo);
-    parts.toolbar->addWidget(parts.coves);
-    parts.toolbar->addWidget(parts.network);
-    addRule(parts.sourceRule);
-    for (QWidget *widget : {parts.up, parts.home, parts.choose})
-        parts.toolbar->addWidget(widget);
-    parts.toolbar->addWidget(parts.path, 1);
-    addRule(parts.actionRule);
-    parts.toolbar->addWidget(parts.refresh);
-    parts.toolbar->addWidget(parts.open);
+    parts.heading->addWidget(parts.title);
+    parts.heading->addWidget(parts.status);
+    parts.heading->addStretch();
+    for (QWidget *widget :
+         {parts.hidden, parts.size, parts.up, parts.home, parts.repo,
+          parts.coves, parts.network, parts.choose, parts.refresh, parts.open})
+        parts.heading->addWidget(widget);
+    parts.toolbar->addWidget(parts.path);
 }
 
 QFrame *filesToolbarRule(QWidget *page)
@@ -788,15 +814,237 @@ QString filesBreadcrumbMarkup(const QString &trail)
         .arg(Theme::hex(Theme::Role::FgMuted), head.toHtmlEscaped(),
              Theme::hex(Theme::Role::Fg), leaf.toHtmlEscaped());
 }
+
+constexpr int kFilesPlacesWidth = 208;
+constexpr int kFilesToolSize = 28;
+constexpr int kFilesSearchWidth = 176;
+constexpr int kFilesHistoryLimit = 100;
+constexpr int kFilesCrumbsShown = 3;
+
+struct FilesNextUi {
+    QPointer<QFrame> places;
+    QPointer<QPushButton> source;
+    QList<QPointer<QPushButton>> placeRows;
+    QPointer<QFrame> disk;
+    QPointer<QLabel> diskIcon;
+    QPointer<QLabel> diskName;
+    QPointer<QProgressBar> diskBar;
+    QPointer<QLabel> diskCaption;
+    QPointer<QPushButton> back;
+    QPointer<QPushButton> forward;
+    QPointer<QPushButton> up;
+    QPointer<QPushButton> pencil;
+    QPointer<QPushButton> view;
+    QPointer<QPushButton> preview;
+    QPointer<QWidget> crumbs;
+    QPointer<QLineEdit> search;
+    QAction *searchIcon = nullptr;
+    QPointer<QLabel> selection;
+    QPointer<QLabel> hint;
+    QList<QPointer<QFrame>> hairlines;
+    QStringList history;
+    int historyIndex = -1;
+    bool stepping = false;
+    bool editingPath = false;
+};
+
+QString filesHomeShort(const QString &path)
+{
+    const QString home = QDir::homePath();
+    if (!home.isEmpty() && (path == home || path.startsWith(home + QLatin1Char('/'))))
+        return QLatin1Char('~') + path.mid(home.size());
+    return path;
+}
+
+QString filesKindLabel(const QFileInfo &info)
+{
+    if (info.isDir())
+        return QStringLiteral("Folder");
+    static const QMimeDatabase database;
+    const QMimeType type = database.mimeTypeForFile(info, QMimeDatabase::MatchExtension);
+    QString comment = type.isValid() && !type.isDefault() ? type.comment() : QString();
+    if (comment.isEmpty()) {
+        const QString suffix = info.suffix();
+        comment = suffix.isEmpty() ? QStringLiteral("Document")
+                                   : QStringLiteral("%1 file").arg(suffix.toUpper());
+    }
+    comment[0] = comment.at(0).toUpper();
+    return comment;
+}
+
+QIcon filesPanelIcon(const QColor &color, bool open)
+{
+    const qreal ratio = qMax<qreal>(2.0, qGuiApp ? qGuiApp->devicePixelRatio() : 1.0);
+    const int px = 16;
+    QPixmap pixmap(qRound(px * ratio), qRound(px * ratio));
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color, 1.4);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(QRectF(1.7, 2.7, 12.6, 10.6), 2.4, 2.4);
+    painter.drawLine(QPointF(10.0, 2.7), QPointF(10.0, 13.3));
+    if (open) {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(color);
+        painter.drawRect(QRectF(10.0, 3.4, 3.6, 9.2));
+    }
+    return QIcon(pixmap);
+}
+
+QFrame *filesHairline(QWidget *page, bool vertical)
+{
+    auto *line = new QFrame(page);
+    line->setProperty("filesHairline", true);
+    line->setFrameShape(QFrame::NoFrame);
+    if (vertical)
+        line->setFixedWidth(1);
+    else
+        line->setFixedHeight(1);
+    line->hide();
+    return line;
+}
+
+void filesRepolish(QWidget *widget)
+{
+    if (!widget)
+        return;
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    widget->update();
+}
+
+QPushButton *filesToolButton(QWidget *page, const QString &tip, const QString &octicon,
+                             qreal rotation)
+{
+    auto *button = new QPushButton(page);
+    button->setObjectName(QStringLiteral("ghostButton"));
+    button->setProperty("filesTool", true);
+    button->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    button->setCursor(Qt::PointingHandCursor);
+    button->setToolTip(tip);
+    button->setAccessibleName(tip);
+    button->setFixedSize(kFilesToolSize, kFilesToolSize);
+    if (!octicon.isEmpty())
+        setOcticon(button, octicon, 16, rotation);
+    button->hide();
+    return button;
+}
+
+void filesFilterTopLevel(QTreeWidget *tree, const QString &needle)
+{
+    if (!tree)
+        return;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = tree->topLevelItem(i);
+        item->setHidden(!needle.isEmpty() &&
+                        !item->text(0).contains(needle, Qt::CaseInsensitive));
+    }
+}
+
+class FilesDoubleClickHook : public QObject
+{
+public:
+    FilesDoubleClickHook(QWidget *target, std::function<void()> action)
+        : QObject(target), m_target(target), m_action(std::move(action))
+    {
+        target->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_target && event->type() == QEvent::MouseButtonDblClick &&
+            Theme::isNext()) {
+            m_action();
+            return true;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QWidget *m_target = nullptr;
+    std::function<void()> m_action;
+};
+
+QLabel *filesInfoValue(QWidget *parent, const QString &name)
+{
+    auto *label = new QLabel(parent);
+    label->setObjectName(name);
+    label->setTextFormat(Qt::PlainText);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    return label;
+}
+
+void syncFilesInfoPanel(QWidget *column, QWidget *tab, const QString &path, bool cove,
+                        const QString &repoDir)
+{
+    auto *panel = column ? column->findChild<QFrame *>(QStringLiteral("filesInfoPanel"))
+                         : nullptr;
+    if (!panel)
+        return;
+    if (!Theme::isNext() || path.isEmpty()) {
+        panel->hide();
+        panel->setProperty("filesInfoPath", QString());
+        panel->setProperty("filesInfoLocal", QString());
+        return;
+    }
+    QString local;
+    if (!cove && (!tab || tab->property("networkFile").toString().isEmpty())) {
+        if (QDir::isAbsolutePath(path) && QFileInfo::exists(path))
+            local = QFileInfo(path).absoluteFilePath();
+        else if (!repoDir.isEmpty() && QFileInfo::exists(QDir(repoDir).filePath(path)))
+            local = QFileInfo(QDir(repoDir).filePath(path)).absoluteFilePath();
+    }
+    const QFileInfo info(local.isEmpty() ? path : local);
+    const auto set = [panel](const char *name, const QString &text) {
+        if (auto *label = panel->findChild<QLabel *>(QString::fromLatin1(name)))
+            label->setText(text);
+    };
+    const auto row = [panel](const char *name, bool on) {
+        for (QWidget *widget : panel->findChildren<QWidget *>()) {
+            if (widget->property("filesInfoRow").toString() == QLatin1String(name))
+                widget->setVisible(on);
+        }
+    };
+    QString name = info.fileName();
+    if (name.isEmpty())
+        name = path.section(QLatin1Char('/'), -1, -1, QString::SectionSkipEmpty);
+    set("filesInfoName", name.isEmpty() ? path : name);
+    set("filesInfoKind", cove ? QStringLiteral("Encrypted Cove document")
+                              : filesKindLabel(info));
+    const bool known = !local.isEmpty();
+    row("size", known && !info.isDir());
+    row("modified", known && info.lastModified().isValid());
+    if (known) {
+        set("filesInfoSize", formatByteSize(info.size()));
+        set("filesInfoModified", QLocale().toString(info.lastModified().toLocalTime(),
+                                                     QLocale::ShortFormat));
+    }
+    set("filesInfoWhere", known ? filesHomeShort(local) : path);
+    panel->setProperty("filesInfoPath", known ? local : path);
+    panel->setProperty("filesInfoLocal", local);
+    if (auto *open = panel->findChild<QPushButton *>(QStringLiteral("filesInfoOpen")))
+        open->setEnabled(known);
+    panel->show();
+}
 } // namespace
 
 QWidget *MainWindow::buildFilesSection()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("filesSection"));
-    auto *outer = new QVBoxLayout(page);
-    outer->setContentsMargins(20, 18, 20, 20);
+    auto *frame = new QHBoxLayout(page);
+    frame->setContentsMargins(20, 18, 20, 20);
+    frame->setSpacing(0);
+    auto *outer = new QVBoxLayout;
+    outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(10);
+    frame->addLayout(outer, 1);
 
     auto *heading = new QHBoxLayout;
     auto *title = new QLabel(QStringLiteral("Files"));
@@ -963,16 +1211,19 @@ QWidget *MainWindow::buildFilesSection()
     m_fileExplorerTree->setObjectName(QStringLiteral("fileTree"));
     enableHoverRowHighlight(m_fileExplorerTree);
     installFilesTreeDelegate(m_fileExplorerTree, true);
-    m_fileExplorerTree->setColumnCount(3);
+    m_fileExplorerTree->setColumnCount(4);
     m_fileExplorerTree->setHeaderLabels(
         {QStringLiteral("Name"), QStringLiteral("Size"),
-         QStringLiteral("Modified")});
+         QStringLiteral("Modified"), QStringLiteral("Kind")});
+    m_fileExplorerTree->setColumnHidden(3, true);
     m_fileExplorerTree->header()->setStretchLastSection(false);
     m_fileExplorerTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_fileExplorerTree->header()->setSectionResizeMode(
         1, QHeaderView::ResizeToContents);
     m_fileExplorerTree->header()->setSectionResizeMode(
         2, QHeaderView::ResizeToContents);
+    m_fileExplorerTree->header()->setSectionResizeMode(
+        3, QHeaderView::ResizeToContents);
     m_fileExplorerTree->setMinimumWidth(320);
     m_fileExplorerTree->setIndentation(14);
     m_fileExplorerTree->setUniformRowHeights(true);
@@ -1132,11 +1383,498 @@ QWidget *MainWindow::buildFilesSection()
     updateRepoFileSaveActions();
     updateFilesCommitActions();
 
+    QWidget *editorColumn = splitter->widget(1);
+    auto ui = std::make_shared<FilesNextUi>();
+
+    ui->places = new QFrame(page);
+    ui->places->setObjectName(QStringLiteral("filesPlaces"));
+    ui->places->setFrameShape(QFrame::NoFrame);
+    ui->places->setFixedWidth(kFilesPlacesWidth);
+    auto *placesLayout = new QVBoxLayout(ui->places);
+    placesLayout->setContentsMargins(10, 10, 10, 10);
+    placesLayout->setSpacing(2);
+
+    ui->source = new QPushButton(ui->places);
+    ui->source->setObjectName(QStringLiteral("filesSourcePicker"));
+    ui->source->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    ui->source->setCursor(Qt::PointingHandCursor);
+    ui->source->setToolTip(QStringLiteral("What to browse: this computer, the open "
+                                          "repository, its encrypted Coves or network shares"));
+    setOcticon(ui->source, QStringLiteral("device-desktop"), 16);
+    auto *sourceMenu = new QMenu(ui->source);
+#ifdef Q_OS_MACOS
+    const QString localName = QStringLiteral("This Mac");
+#else
+    const QString localName = QStringLiteral("This computer");
+#endif
+    QAction *sourceLocal = sourceMenu->addAction(localName);
+    QAction *sourceRepo = sourceMenu->addAction(QStringLiteral("Repository"));
+    QAction *sourceCoves = sourceMenu->addAction(QStringLiteral("Coves"));
+    QAction *sourceNetwork = sourceMenu->addAction(QStringLiteral("Network"));
+    sourceLocal->setToolTip(QStringLiteral("Folders on this computer"));
+    for (QAction *action : {sourceLocal, sourceRepo, sourceCoves, sourceNetwork})
+        action->setCheckable(true);
+    connect(sourceMenu, &QMenu::aboutToShow, this,
+            [this, sourceLocal, sourceRepo, sourceCoves, sourceNetwork] {
+                const int index = m_filesTreeStack ? m_filesTreeStack->currentIndex() : 0;
+                sourceLocal->setChecked(index == 0);
+                sourceRepo->setChecked(index == 1);
+                sourceCoves->setChecked(index == 2);
+                sourceNetwork->setChecked(index == 3);
+                sourceRepo->setEnabled(m_filesRepoTreeButton->isEnabled());
+                sourceCoves->setEnabled(m_filesCoveTreeButton->isEnabled());
+                sourceNetwork->setEnabled(m_filesNetworkTreeButton->isEnabled());
+            });
+    connect(sourceLocal, &QAction::triggered, this,
+            [this] { setFileExplorerRoot(m_fileExplorerRoot); });
+    connect(sourceRepo, &QAction::triggered, m_filesRepoTreeButton, &QPushButton::click);
+    connect(sourceCoves, &QAction::triggered, m_filesCoveTreeButton, &QPushButton::click);
+    connect(sourceNetwork, &QAction::triggered, m_filesNetworkTreeButton,
+            &QPushButton::click);
+    ui->source->setMenu(sourceMenu);
+    placesLayout->addWidget(ui->source);
+    placesLayout->addSpacing(8);
+
+    const auto addPlacesHeading = [&placesLayout, &ui](const QString &text) {
+        auto *heading = new QLabel(text, ui->places);
+        heading->setProperty("filesPlacesHeading", true);
+        placesLayout->addWidget(heading);
+    };
+    const auto addPlace = [this, &placesLayout, &ui](const QString &label,
+                                                     const QString &path,
+                                                     const QString &icon,
+                                                     QPushButton *same) {
+        if (path.isEmpty() || !QDir(path).exists())
+            return;
+        auto *row = new QPushButton(label, ui->places);
+        row->setProperty("filesPlace", true);
+        row->setProperty("filesPlacePath", QDir(path).absolutePath());
+        row->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+        row->setCursor(Qt::PointingHandCursor);
+        row->setToolTip(filesHomeShort(QDir(path).absolutePath()));
+        setOcticon(row, icon, 16);
+        if (same)
+            connect(row, &QPushButton::clicked, same, &QPushButton::click);
+        else
+            connect(row, &QPushButton::clicked, this,
+                    [this, path] { setFileExplorerRoot(path); });
+        placesLayout->addWidget(row);
+        ui->placeRows << row;
+    };
+    const QString home = QDir::homePath();
+    const QString projectDir = QDir(forkmesh::paths::projectDir()).absolutePath();
+    const QString nodeDir = QDir(forkmesh::paths::homeDir()).absolutePath();
+    addPlacesHeading(QStringLiteral("PLACES"));
+    addPlace(QStringLiteral("Home"), home, QStringLiteral("home"), nullptr);
+    addPlace(QStringLiteral("code"), home + QStringLiteral("/code"), QStringLiteral("code"),
+             nullptr);
+    addPlace(QStringLiteral("projects"), forkmesh::paths::projectsRoot(),
+             QStringLiteral("file-directory"), nullptr);
+    addPlace(QStringLiteral("Downloads"),
+             QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
+             QStringLiteral("download"), nullptr);
+    addPlace(QStringLiteral("Desktop"),
+             QStandardPaths::writableLocation(QStandardPaths::DesktopLocation),
+             QStringLiteral("device-desktop"), nullptr);
+    placesLayout->addSpacing(12);
+    addPlacesHeading(QStringLiteral("FORKMESH"));
+    if (projectDir == nodeDir) {
+        addPlace(QStringLiteral("Node"), projectDir, QStringLiteral("lock"), homeButton);
+    } else {
+        addPlace(QStringLiteral("Node"), nodeDir, QStringLiteral("lock"), nullptr);
+        addPlace(QStringLiteral("This project"), projectDir, QStringLiteral("lock"),
+                 homeButton);
+    }
+    addPlace(QStringLiteral("Node data"), forkmesh::paths::dataDir(), QStringLiteral("lock"),
+             nullptr);
+    addPlace(QStringLiteral("Primary checkout"), nodeDir + QStringLiteral("/src"),
+             QStringLiteral("repo"), nullptr);
+    placesLayout->addStretch(1);
+
+    ui->disk = new QFrame(ui->places);
+    ui->disk->setObjectName(QStringLiteral("filesDiskCard"));
+    ui->disk->setFrameShape(QFrame::NoFrame);
+    auto *diskLayout = new QVBoxLayout(ui->disk);
+    diskLayout->setContentsMargins(12, 10, 12, 10);
+    diskLayout->setSpacing(8);
+    auto *diskHead = new QHBoxLayout;
+    diskHead->setContentsMargins(0, 0, 0, 0);
+    diskHead->setSpacing(8);
+    ui->diskIcon = new QLabel(ui->disk);
+    ui->diskName = new QLabel(ui->disk);
+    ui->diskName->setObjectName(QStringLiteral("filesDiskName"));
+    ui->diskName->setTextFormat(Qt::PlainText);
+    ui->diskName->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    diskHead->addWidget(ui->diskIcon);
+    diskHead->addWidget(ui->diskName, 1);
+    diskLayout->addLayout(diskHead);
+    ui->diskBar = new QProgressBar(ui->disk);
+    ui->diskBar->setObjectName(QStringLiteral("filesDiskBar"));
+    ui->diskBar->setRange(0, 1000);
+    ui->diskBar->setTextVisible(false);
+    ui->diskBar->setFixedHeight(6);
+    diskLayout->addWidget(ui->diskBar);
+    ui->diskCaption = new QLabel(ui->disk);
+    ui->diskCaption->setObjectName(QStringLiteral("filesDiskCaption"));
+    ui->diskCaption->setTextFormat(Qt::PlainText);
+    ui->diskCaption->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    diskLayout->addWidget(ui->diskCaption);
+    placesLayout->addWidget(ui->disk);
+    ui->places->hide();
+    frame->insertWidget(0, ui->places);
+
+    ui->back = filesToolButton(page, QStringLiteral("Back to the previous folder"),
+                               QStringLiteral("arrow-left"), 0.0);
+    ui->forward = filesToolButton(page, QStringLiteral("Forward to the next folder"),
+                                  QStringLiteral("arrow-left"), 180.0);
+    ui->up = filesToolButton(page, upButton->toolTip(), QStringLiteral("arrow-left"), 90.0);
+    connect(ui->up, &QPushButton::clicked, upButton, &QPushButton::click);
+    ui->pencil = filesToolButton(page, QStringLiteral("Type a path"),
+                                 QStringLiteral("pencil"), 0.0);
+    ui->pencil->setProperty("nextIconRole", int(Theme::Role::FgSubtle));
+    setOcticon(ui->pencil, QStringLiteral("pencil"), 12);
+    ui->pencil->setFixedSize(24, 24);
+
+    ui->crumbs = new QWidget(page);
+    ui->crumbs->setObjectName(QStringLiteral("filesCrumbs"));
+    ui->crumbs->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    ui->crumbs->setToolTip(QStringLiteral("Double-click to type a path"));
+    auto *crumbsRow = new QHBoxLayout(ui->crumbs);
+    crumbsRow->setContentsMargins(0, 0, 0, 0);
+    crumbsRow->setSpacing(0);
+    ui->crumbs->hide();
+
+    ui->search = new QLineEdit(page);
+    ui->search->setObjectName(QStringLiteral("filesFolderSearch"));
+    ui->search->setPlaceholderText(QStringLiteral("Search this folder"));
+    ui->search->setClearButtonEnabled(true);
+    ui->search->setFixedWidth(kFilesSearchWidth);
+    ui->search->setToolTip(QStringLiteral("Show only the entries of this folder whose "
+                                          "name contains this text"));
+    ui->searchIcon = ui->search->addAction(
+        themedOcticon(QStringLiteral("search"), Theme::color(Theme::Role::FgSubtle), 14),
+        QLineEdit::LeadingPosition);
+    ui->search->hide();
+
+    ui->view = filesToolButton(page, QStringLiteral("View options"),
+                               QStringLiteral("filter"), 0.0);
+    auto *viewMenu = new QMenu(ui->view);
+    QAction *viewHidden = viewMenu->addAction(QStringLiteral("Show hidden files"));
+    viewHidden->setCheckable(true);
+    viewHidden->setToolTip(m_fileExplorerHidden->toolTip());
+    QAction *viewSize = viewMenu->addAction(QStringLiteral("Show sizes"));
+    viewSize->setCheckable(true);
+    viewSize->setToolTip(m_filesSizeButton->toolTip());
+    viewMenu->addSeparator();
+    QAction *viewProject = viewMenu->addAction(QStringLiteral("Project folder"));
+    viewProject->setToolTip(homeButton->toolTip());
+    QAction *viewChoose = viewMenu->addAction(QString::fromUtf8("Choose a folder\xE2\x80\xA6"));
+    viewChoose->setToolTip(chooseButton->toolTip());
+    QAction *viewRefresh = viewMenu->addAction(QStringLiteral("Refresh"));
+    viewRefresh->setToolTip(refreshButton->toolTip());
+    QAction *viewOpen = viewMenu->addAction(QStringLiteral("Open in the file manager"));
+    viewOpen->setToolTip(openButton->toolTip());
+    viewMenu->setToolTipsVisible(true);
+    connect(viewMenu, &QMenu::aboutToShow, this, [this, viewHidden, viewSize] {
+        viewHidden->setChecked(m_fileExplorerHidden->isChecked());
+        viewSize->setChecked(m_filesSizeButton->isChecked());
+    });
+    connect(viewHidden, &QAction::triggered, m_fileExplorerHidden, &QCheckBox::setChecked);
+    connect(viewSize, &QAction::triggered, m_filesSizeButton, &QPushButton::setChecked);
+    connect(viewProject, &QAction::triggered, homeButton, &QPushButton::click);
+    connect(viewChoose, &QAction::triggered, chooseButton, &QPushButton::click);
+    connect(viewRefresh, &QAction::triggered, refreshButton, &QPushButton::click);
+    connect(viewOpen, &QAction::triggered, openButton, &QPushButton::click);
+    connect(ui->view, &QPushButton::clicked, ui->view, [view = ui->view.data(), viewMenu] {
+        viewMenu->exec(view->mapToGlobal(QPoint(view->width() - viewMenu->sizeHint().width(),
+                                                view->height() + 4)));
+    });
+
+    ui->preview = filesToolButton(page, QStringLiteral("Hide the preview"), QString(), 0.0);
+    ui->preview->setCheckable(true);
+    ui->preview->setChecked(true);
+    ui->preview->setIconSize(QSize(16, 16));
+    connect(ui->preview, &QPushButton::toggled, ui->preview,
+            [preview = ui->preview.data(), editorColumn](bool on) {
+                preview->setToolTip(on ? QStringLiteral("Hide the preview")
+                                       : QStringLiteral("Show the preview"));
+                preview->setIcon(filesPanelIcon(Theme::color(Theme::Role::FgMuted), on));
+                if (Theme::isNext() && editorColumn)
+                    editorColumn->setVisible(on);
+            });
+    connect(m_repoFileTabs, &QTabWidget::currentChanged, ui->preview,
+            [this, ui, editorColumn] {
+                if (!Theme::isNext() || !editorColumn || !editorColumn->isHidden() ||
+                    !m_repoFileTabs ||
+                    m_repoFileTabs->currentWidget() == m_fileExplorerPreview)
+                    return;
+                ui->preview->setChecked(true);
+            });
+
+    ui->selection = new QLabel(page);
+    ui->selection->setObjectName(QStringLiteral("filesSelectionLabel"));
+    ui->selection->setTextFormat(Qt::PlainText);
+    ui->selection->hide();
+    ui->hint = new QLabel(QString::fromUtf8("Double-click a folder to open it \xC2\xB7 "
+                                            "double-click the path to type one"),
+                          page);
+    ui->hint->setObjectName(QStringLiteral("filesStatusHint"));
+    ui->hint->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    ui->hint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    ui->hint->hide();
+
+    for (int i = 0; i < 3; ++i)
+        ui->hairlines << filesHairline(page, false);
+    outer->insertWidget(2, ui->hairlines.at(0));
+    outer->insertWidget(4, ui->hairlines.at(1));
+    outer->addWidget(ui->hairlines.at(2));
+    auto *statusRow = new QHBoxLayout;
+    statusRow->setContentsMargins(16, 0, 16, 0);
+    statusRow->setSpacing(6);
+    outer->addLayout(statusRow);
+
+    const auto beginPathEdit = [this, ui] {
+        if (!Theme::isNext())
+            return;
+        ui->editingPath = true;
+        ui->crumbs->hide();
+        ui->pencil->hide();
+        m_fileExplorerPath->show();
+        m_fileExplorerPath->setFocus();
+        m_fileExplorerPath->selectAll();
+    };
+    connect(ui->pencil, &QPushButton::clicked, ui->pencil, beginPathEdit);
+    new FilesDoubleClickHook(ui->crumbs, beginPathEdit);
+    connect(m_fileExplorerPath, &QLineEdit::editingFinished, ui->crumbs, [this, ui] {
+        if (!Theme::isNext() || !ui->editingPath)
+            return;
+        ui->editingPath = false;
+        m_fileExplorerPath->hide();
+        ui->crumbs->show();
+        ui->pencil->setVisible(m_filesTreeStack && m_filesTreeStack->currentIndex() == 0);
+    });
+
+    const auto applySearch = [this, ui] {
+        const QString needle = ui->search ? ui->search->text().trimmed() : QString();
+        filesFilterTopLevel(m_fileExplorerTree, needle);
+        filesFilterTopLevel(m_repoFileTree, needle);
+    };
+    connect(ui->search, &QLineEdit::textChanged, ui->search, applySearch);
+
+    QTreeWidget *networkTree = m_networkFilesPanel ? m_networkFilesPanel->tree() : nullptr;
+    const auto currentTree = [this, coveTree, networkTree]() -> QTreeWidget * {
+        switch (m_filesTreeStack ? m_filesTreeStack->currentIndex() : 0) {
+        case 1: return m_repoFileTree;
+        case 2: return coveTree;
+        case 3: return networkTree;
+        default: return m_fileExplorerTree;
+        }
+    };
+    const auto syncSelection = [ui, currentTree] {
+        if (!ui->selection)
+            return;
+        QTreeWidget *tree = currentTree();
+        QTreeWidgetItem *item = tree ? tree->currentItem() : nullptr;
+        const bool named = item && (item->flags() & Qt::ItemIsEnabled) &&
+                           !item->text(0).isEmpty();
+        ui->selection->setText(named ? QString::fromUtf8("\xC2\xB7 %1 selected")
+                                           .arg(item->text(0))
+                                     : QString());
+    };
+    for (QTreeWidget *tree : {m_fileExplorerTree, m_repoFileTree, coveTree, networkTree}) {
+        if (tree)
+            connect(tree, &QTreeWidget::currentItemChanged, ui->selection, syncSelection);
+    }
+
+    const auto rebuildCrumbs = [this, ui](int index) {
+        auto *row = qobject_cast<QHBoxLayout *>(ui->crumbs->layout());
+        if (!row)
+            return;
+        while (QLayoutItem *item = row->takeAt(0)) {
+            if (QWidget *widget = item->widget()) {
+                widget->hide();
+                widget->deleteLater();
+            }
+            delete item;
+        }
+        const auto addLabel = [&](const QString &text, bool current) {
+            auto *label = new QLabel(text, ui->crumbs);
+            label->setTextFormat(Qt::PlainText);
+            label->setProperty("filesCrumbLabel", true);
+            label->setProperty("filesCrumbCurrent", current);
+            row->addWidget(label);
+        };
+        const auto addSeparator = [&] {
+            auto *chevron = new QLabel(ui->crumbs);
+            chevron->setPixmap(tintedOcticonPixmap(QStringLiteral("chevron-right"),
+                                                   Theme::color(Theme::Role::FgSubtle), 12));
+            chevron->setFixedWidth(16);
+            chevron->setAlignment(Qt::AlignCenter);
+            row->addWidget(chevron);
+        };
+        if (index != 0) {
+            const QString source = index == 1   ? QStringLiteral("Repository")
+                                   : index == 2 ? QStringLiteral("Coves")
+                                                : QStringLiteral("Network");
+            addLabel(source, true);
+            row->addStretch(1);
+            return;
+        }
+        const QString root = m_fileExplorerRoot;
+        const QString homePath = QDir::homePath();
+        QString base;
+        QString baseLabel;
+        QStringList rest;
+        if (!homePath.isEmpty() &&
+            (root == homePath || root.startsWith(homePath + QLatin1Char('/')))) {
+            base = homePath;
+            baseLabel = QDir(homePath).dirName();
+            rest = root.mid(homePath.size()).split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        } else {
+            rest = root.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+            if (root.startsWith(QLatin1Char('/'))) {
+                base = QStringLiteral("/");
+                baseLabel = QStringLiteral("/");
+            } else if (!rest.isEmpty()) {
+                base = rest.takeFirst() + QLatin1Char('/');
+                baseLabel = base.chopped(1);
+            }
+        }
+        QStringList paths;
+        QString walked = base;
+        for (const QString &part : std::as_const(rest)) {
+            walked = walked.endsWith(QLatin1Char('/')) ? walked + part
+                                                       : walked + QLatin1Char('/') + part;
+            paths << walked;
+        }
+        const auto addCrumb = [&](const QString &label, const QString &path, bool current) {
+            auto *crumb = new QPushButton(QString(label).replace(QLatin1Char('&'),
+                                                                 QStringLiteral("&&")),
+                                          ui->crumbs);
+            crumb->setProperty("filesCrumb", true);
+            crumb->setProperty("filesCrumbCurrent", current);
+            crumb->setCursor(Qt::PointingHandCursor);
+            crumb->setToolTip(path);
+            connect(crumb, &QPushButton::clicked, this,
+                    [this, path] { setFileExplorerRoot(path); });
+            row->addWidget(crumb);
+        };
+        if (!base.isEmpty())
+            addCrumb(baseLabel.isEmpty() ? base : baseLabel, base, rest.isEmpty());
+        int from = 0;
+        if (rest.size() > kFilesCrumbsShown + 1) {
+            addSeparator();
+            addLabel(QString::fromUtf8("\xE2\x80\xA6"), false);
+            from = rest.size() - kFilesCrumbsShown;
+        }
+        for (int i = from; i < rest.size(); ++i) {
+            if (i > 0 || !base.isEmpty())
+                addSeparator();
+            addCrumb(rest.at(i), paths.at(i), i == rest.size() - 1);
+        }
+        row->addStretch(1);
+    };
+
+    const auto syncNext = [this, ui, rebuildCrumbs, applySearch, syncSelection,
+                           sourceLocal, sourceRepo, sourceCoves, sourceNetwork] {
+        if (!Theme::isNext())
+            return;
+        const int index = m_filesTreeStack ? m_filesTreeStack->currentIndex() : 0;
+        const QString root = m_fileExplorerRoot;
+        if (!root.isEmpty()) {
+            if (ui->stepping) {
+                ui->stepping = false;
+            } else if (ui->historyIndex < 0 || ui->history.at(ui->historyIndex) != root) {
+                ui->history = ui->history.mid(0, ui->historyIndex + 1);
+                ui->history << root;
+                while (ui->history.size() > kFilesHistoryLimit)
+                    ui->history.removeFirst();
+                ui->historyIndex = int(ui->history.size()) - 1;
+            }
+        }
+        ui->back->setEnabled(ui->historyIndex > 0);
+        ui->forward->setEnabled(ui->historyIndex >= 0 &&
+                                ui->historyIndex < ui->history.size() - 1);
+        ui->up->setEnabled(!root.isEmpty() && !QDir(root).isRoot());
+        const QAction *chosen = index == 1   ? sourceRepo
+                                : index == 2 ? sourceCoves
+                                : index == 3 ? sourceNetwork
+                                             : sourceLocal;
+        ui->source->setText(chosen->text());
+        for (const QPointer<QPushButton> &row : std::as_const(ui->placeRows)) {
+            if (!row)
+                continue;
+            const bool active =
+                index == 0 && row->property("filesPlacePath").toString() == root;
+            if (row->property("filesPlaceActive").toBool() != active) {
+                row->setProperty("filesPlaceActive", active);
+                filesRepolish(row);
+            }
+        }
+        if (!ui->editingPath) {
+            rebuildCrumbs(index);
+            ui->pencil->setVisible(index == 0);
+        }
+        ui->search->setVisible(index <= 1);
+        applySearch();
+        syncSelection();
+        const QStorageInfo storage(root.isEmpty() ? QDir::rootPath() : root);
+        const bool known = storage.isValid() && storage.isReady() && storage.bytesTotal() > 0;
+        ui->disk->setVisible(known);
+        if (known) {
+            const qint64 total = storage.bytesTotal();
+            const qint64 free = storage.bytesAvailable();
+            ui->diskName->setText(storage.displayName());
+            ui->diskBar->setValue(int(1000.0 * double(total - free) / double(total)));
+            ui->diskCaption->setText(QStringLiteral("%1 free of %2")
+                                         .arg(formatByteSize(free), formatByteSize(total)));
+        }
+    };
+    auto *syncTimer = new QTimer(page);
+    syncTimer->setSingleShot(true);
+    syncTimer->setInterval(0);
+    connect(syncTimer, &QTimer::timeout, page, syncNext);
+    connect(m_fileExplorerTree->model(), &QAbstractItemModel::modelReset, syncTimer,
+            qOverload<>(&QTimer::start));
+    connect(m_filesTreeStack, &QStackedWidget::currentChanged, syncTimer,
+            qOverload<>(&QTimer::start));
+    connect(m_fileExplorerPath, &QLineEdit::textChanged, syncTimer, [this, syncTimer] {
+        if (!m_fileExplorerPath->isModified())
+            syncTimer->start();
+    });
+
+    const auto step = [this, ui](int delta) {
+        const int target = ui->historyIndex + delta;
+        if (target < 0 || target >= ui->history.size())
+            return;
+        const QString path = ui->history.at(target);
+        ui->historyIndex = target;
+        ui->stepping = true;
+        setFileExplorerRoot(path);
+        if (m_fileExplorerRoot != QDir(path).absolutePath()) {
+            ui->stepping = false;
+            ui->historyIndex = target - delta;
+        }
+    };
+    connect(ui->back, &QPushButton::clicked, ui->back, [step] { step(-1); });
+    connect(ui->forward, &QPushButton::clicked, ui->forward, [step] { step(1); });
+
     openButton->setProperty("filesQuiet", true);
     m_repoFileSaveButton->setProperty("filesQuiet", true);
     FilesHeaderParts parts;
     parts.heading = heading;
     parts.toolbar = toolbar;
+    parts.statusRow = statusRow;
+    parts.back = ui->back;
+    parts.forward = ui->forward;
+    parts.upNext = ui->up;
+    parts.crumbs = ui->crumbs;
+    parts.pencil = ui->pencil;
+    parts.search = ui->search;
+    parts.view = ui->view;
+    parts.preview = ui->preview;
+    parts.selection = ui->selection;
+    parts.hint = ui->hint;
     parts.title = title;
     parts.status = m_fileExplorerStatus;
     parts.hidden = m_fileExplorerHidden;
@@ -1153,11 +1891,57 @@ QWidget *MainWindow::buildFilesSection()
     parts.sourceRule = filesToolbarRule(page);
     parts.actionRule = filesToolbarRule(page);
     auto arranged = std::make_shared<int>(-1);
-    const auto applyLook = [this, parts, arranged, editorBar, openButton, coveTree] {
+    const auto applyLook = [this, parts, arranged, editorBar, openButton, coveTree, ui,
+                            frame, outer, toolbar, splitter, editorColumn, syncTimer] {
         const bool next = Theme::isNext();
         if (*arranged != int(next)) {
+            const bool switched = *arranged != -1;
             *arranged = int(next);
+            ui->editingPath = false;
             arrangeFilesHeader(parts, next);
+            ui->places->setVisible(next);
+            for (const QPointer<QFrame> &line : std::as_const(ui->hairlines)) {
+                if (line)
+                    line->setVisible(next);
+            }
+            if (next)
+                frame->setContentsMargins(0, 0, 0, 0);
+            else
+                frame->setContentsMargins(20, 18, 20, 20);
+            outer->setSpacing(next ? 0 : 10);
+            if (next)
+                toolbar->setContentsMargins(10, 10, 12, 10);
+            else
+                toolbar->setContentsMargins(0, 0, 0, 0);
+            if (next)
+                editorBar->setContentsMargins(12, 6, 12, 6);
+            else
+                editorBar->setContentsMargins(0, 0, 0, 0);
+            if (editorColumn && editorColumn->layout()) {
+                if (next)
+                    editorColumn->layout()->setContentsMargins(12, 10, 12, 12);
+                else
+                    editorColumn->layout()->setContentsMargins(0, 0, 0, 0);
+            }
+            if (editorColumn)
+                editorColumn->setVisible(!next || ui->preview->isChecked());
+            splitter->setStretchFactor(0, next ? 1 : 0);
+            splitter->setStretchFactor(1, next ? 0 : 1);
+            if (next)
+                splitter->setSizes({600, 440});
+            else if (switched)
+                splitter->setSizes({420, 620});
+            QHeaderView *header = m_fileExplorerTree->header();
+            m_fileExplorerTree->setColumnHidden(3, !next);
+            const int kindAt = header->visualIndex(3);
+            const int wantKindAt = next ? 1 : 3;
+            if (kindAt != wantKindAt)
+                header->moveSection(kindAt, wantKindAt);
+            m_fileExplorerTree->headerItem()->setData(
+                1, Qt::TextAlignmentRole,
+                next ? QVariant(int(Qt::AlignRight | Qt::AlignVCenter)) : QVariant());
+            if (next && switched)
+                setFileExplorerRoot(m_fileExplorerRoot);
             for (QTreeWidget *tree : {m_fileExplorerTree, m_repoFileTree, coveTree,
                                       m_networkFilesPanel->tree()}) {
                 if (!tree)
@@ -1184,6 +1968,16 @@ QWidget *MainWindow::buildFilesSection()
             if (m_filesSymbolPanel && m_filesSymbolPanel->layout())
                 m_filesSymbolPanel->layout()->setContentsMargins(
                     inset, kFilesSymbolPanelTop, inset, 0);
+        }
+        if (next) {
+            ui->preview->setIcon(filesPanelIcon(Theme::color(Theme::Role::FgMuted),
+                                                ui->preview->isChecked()));
+            if (ui->searchIcon)
+                ui->searchIcon->setIcon(themedOcticon(
+                    QStringLiteral("search"), Theme::color(Theme::Role::FgSubtle), 14));
+            ui->diskIcon->setPixmap(tintedOcticonPixmap(
+                QStringLiteral("database"), Theme::color(Theme::Role::FgMuted), 16));
+            syncTimer->start();
         }
         updateFilesEditorStatus();
         tintFilesQuietButton(openButton);
@@ -1301,6 +2095,89 @@ QWidget *MainWindow::buildFilesEditorColumn()
     m_filesEditorSplit->setStretchFactor(0, 1);
     m_filesEditorSplit->setStretchFactor(1, 0);
     layout->addWidget(m_filesEditorSplit, 1);
+
+    auto *info = new QFrame(column);
+    info->setObjectName(QStringLiteral("filesInfoPanel"));
+    info->setFrameShape(QFrame::NoFrame);
+    auto *infoLayout = new QVBoxLayout(info);
+    infoLayout->setContentsMargins(4, 12, 4, 0);
+    infoLayout->setSpacing(2);
+    infoLayout->addWidget(filesInfoValue(info, QStringLiteral("filesInfoName")));
+    infoLayout->addWidget(filesInfoValue(info, QStringLiteral("filesInfoKind")));
+    auto *facts = new QGridLayout;
+    facts->setContentsMargins(0, 14, 0, 14);
+    facts->setHorizontalSpacing(12);
+    facts->setVerticalSpacing(8);
+    facts->setColumnMinimumWidth(0, 76);
+    facts->setColumnStretch(1, 1);
+    const struct {
+        const char *row;
+        const char *label;
+        const char *value;
+    } kInfoRows[] = {
+        {"size", "Size", "filesInfoSize"},
+        {"modified", "Modified", "filesInfoModified"},
+        {"where", "Where", "filesInfoWhere"},
+    };
+    int infoRow = 0;
+    for (const auto &spec : kInfoRows) {
+        auto *caption = new QLabel(QString::fromLatin1(spec.label), info);
+        caption->setProperty("filesInfoCaption", true);
+        caption->setProperty("filesInfoRow", QString::fromLatin1(spec.row));
+        QLabel *value = filesInfoValue(info, QString::fromLatin1(spec.value));
+        value->setProperty("filesInfoRow", QString::fromLatin1(spec.row));
+        facts->addWidget(caption, infoRow, 0);
+        facts->addWidget(value, infoRow, 1);
+        ++infoRow;
+    }
+    infoLayout->addLayout(facts);
+    auto *infoRule = new QFrame(info);
+    infoRule->setProperty("filesHairline", true);
+    infoRule->setFrameShape(QFrame::NoFrame);
+    infoRule->setFixedHeight(1);
+    infoLayout->addWidget(infoRule);
+    auto *infoActions = new QHBoxLayout;
+    infoActions->setContentsMargins(0, 10, 0, 0);
+    infoActions->setSpacing(6);
+    auto *infoOpen = new QPushButton(QStringLiteral("Open"), info);
+    infoOpen->setObjectName(QStringLiteral("filesInfoOpen"));
+    infoOpen->setProperty("filesInfoAction", true);
+    infoOpen->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    infoOpen->setCursor(Qt::PointingHandCursor);
+    infoOpen->setToolTip(QStringLiteral("Open this file with the desktop app"));
+    setOcticon(infoOpen, QStringLiteral("link"), 14);
+    connect(infoOpen, &QPushButton::clicked, this, [info] {
+        const QString local = info->property("filesInfoLocal").toString();
+        if (!local.isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(local));
+    });
+    auto *infoSend = new QPushButton(QStringLiteral("Send to agent"), info);
+    infoSend->setObjectName(QStringLiteral("filesInfoSend"));
+    infoSend->setProperty("filesInfoAction", true);
+    infoSend->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    infoSend->setCursor(Qt::PointingHandCursor);
+    infoSend->setToolTip(QStringLiteral(
+        "Put this file's path in the agent prompt. Nothing is sent until you send it."));
+    setOcticon(infoSend, QStringLiteral("sparkle"), 14);
+    connect(infoSend, &QPushButton::clicked, this, [this, info] {
+        const QString path = info->property("filesInfoPath").toString();
+        if (path.isEmpty() || !m_issueQuickAdd)
+            return;
+        if (m_promptOverlayCollapsed)
+            setPromptOverlayCollapsed(false);
+        const QString draft = m_issueQuickAdd->toPlainText();
+        const bool spaced = draft.isEmpty() || draft.endsWith(QLatin1Char(' ')) ||
+                            draft.endsWith(QLatin1Char('\n'));
+        m_issueQuickAdd->moveCursor(QTextCursor::End);
+        m_issueQuickAdd->insertPlainText((spaced ? QString() : QStringLiteral(" ")) + path +
+                                         QLatin1Char(' '));
+        m_issueQuickAdd->setFocus();
+    });
+    infoActions->addWidget(infoOpen, 1);
+    infoActions->addWidget(infoSend, 1);
+    infoLayout->addLayout(infoActions);
+    info->hide();
+    layout->addWidget(info);
     return column;
 }
 
@@ -1832,6 +2709,8 @@ QTreeWidgetItem *MainWindow::addFileExplorerRow(QTreeWidgetItem *parent,
     if (!isDir)
         setFileTreeSizeCell(item, 1, formatByteSize(entry.size()));
     item->setText(2, modifiedLabel(entry));
+    if (Theme::isNext())
+        item->setText(3, filesKindLabel(entry));
     item->setToolTip(0, entry.absoluteFilePath());
     // The placeholder child is what draws the expand arrow before the directory
     // has been read. Symlinked directories never get one, so a link pointing at
@@ -2611,6 +3490,7 @@ void MainWindow::updateFilesEditorStatus()
         path = w->property("filesPreviewPath").toString(); // the preview tab
     if (path.isEmpty() && coveFile)
         path = covePath;
+    syncFilesInfoPanel(m_filesBreadcrumb->parentWidget(), w, path, coveFile, repoGitDir());
     if (path.isEmpty()) {
         m_filesBreadcrumb->setText(
             QString::fromUtf8("No file open \xE2\x80\x94 pick one on the left."));

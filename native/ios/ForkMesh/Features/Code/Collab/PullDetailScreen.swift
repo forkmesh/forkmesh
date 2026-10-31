@@ -70,18 +70,19 @@ struct PullDetailScreen: View {
                 VStack(alignment: .leading, spacing: 12) {
                     headerCard(pull)
                     changesCard(pull)
+                    timelineCard(pull)
+                    if model.showsFederatedReplies {
+                        FederatedRepliesCard(repo: repo, kind: "pull", number: pull.number)
+                    }
                     PullMergeCard(
                         repo: repo,
                         pull: pull,
                         onMerged: { refresh() })
+                        .id("\(pull.number)-\(pull.status)")
+                    CollabNoticeLine()
                     reviewActions(pull)
                     if DesktopCommandAvailability.shared.available && !model.offeredShipCommands.isEmpty {
                         shipControls(pull)
-                    }
-                    CollabNoticeLine()
-                    timelineCard(pull)
-                    if model.showsFederatedReplies {
-                        FederatedRepliesCard(repo: repo, kind: "pull", number: pull.number)
                     }
                 }
                 .padding(20)
@@ -103,23 +104,33 @@ struct PullDetailScreen: View {
     // MARK: Cards
 
     private func headerCard(_ pull: PublishedPull) -> some View {
-        CollabInfoCard(title: pull.title) {
+        let state: PullState = PullState(pull)
+        let summary: String = PullState.summary(pull, commits: model.commits.count)
+        return CollabInfoCard(title: pull.title) {
             VStack(alignment: .leading, spacing: 0) {
-                CollabChips(chips: PullDetail.chips(pull))
+                HStack(spacing: FmSpace.x2) {
+                    PullStatePill(state: state)
+                    Text("#\(pull.number)")
+                        .fmText(.bodyMedium, color: fm.textTertiary)
+                    if pull.signed {
+                        CollabChipView(chip: CollabChip("verified_outlined", "signed"))
+                    }
+                }
+                Text(summary)
+                    .fmText(.bodyMedium, color: fm.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fmMessageTools(summary)
+                    .padding(.top, 10)
                 PullBranchRow(pull: pull)
                     .padding(.top, 10)
-                let meta: String = PullDetail.meta(pull)
-                if !meta.isEmpty {
-                    Text(meta)
-                        .fmText(.bodySmall, color: fm.textTertiary)
-                        .padding(.top, FmSpace.x2)
+                if state == .open {
+                    FmInboxPendingNote()
+                        .padding(.top, 10)
                 }
-                FmInboxPendingNote()
-                    .padding(.top, 10)
-                CollabBodyText(text: PullDetail.body(pull), repo: RepoRef(owner: repo.owner, name: repo.name))
-                    .padding(.top, 16)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pull-header")
     }
 
     @ViewBuilder private func changesCard(_ pull: PublishedPull) -> some View {
@@ -160,18 +171,38 @@ struct PullDetailScreen: View {
     }
 
     private func timelineCard(_ pull: PublishedPull) -> some View {
-        CollabInfoCard(title: "Timeline") {
-            if pull.events.isEmpty {
-                Text(PullDetail.timelineEmpty)
-                    .fmText(.bodyMedium, color: fm.textPrimary)
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(pull.events.indices, id: \.self) { (index: Int) in
-                        timelineTile(pull.events[index])
-                    }
+        let events: [PullEvent] = PullTimeline.events(pull)
+        return CollabInfoCard(title: PullDetail.conversationTitle) {
+            VStack(spacing: 10) {
+                openingComment(pull)
+                ForEach(events.indices, id: \.self) { (index: Int) in
+                    timelineTile(events[index])
+                }
+                if events.isEmpty {
+                    Text(PullDetail.timelineEmpty)
+                        .fmText(.bodySmall, color: fm.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
+        .accessibilityIdentifier("pull-timeline")
+    }
+
+    private func openingComment(_ pull: PublishedPull) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                FmIcon("chat_bubble_outline", size: 18, color: fm.textTertiary)
+                Text(PullDetail.openedLine(pull))
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .opensProfile(pull.authorName)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            CollabBodyText(text: PullDetail.body(pull), repo: RepoRef(owner: repo.owner, name: repo.name))
+                .padding(.top, FmSpace.x2)
+        }
+        .padding(12)
+        .background(fm.bgBase)
+        .clipShape(FmRoundedShape(radius: FmRadius.lg))
     }
 
     private func timelineTile(_ event: PullEvent) -> CollabTimelineTile {
@@ -179,7 +210,7 @@ struct PullDetailScreen: View {
             icon: PullTimeline.icon(event),
             tone: PullTimeline.tone(event),
             title: event.displayTitle,
-            author: event.displayAuthor,
+            author: PullTimeline.author(event),
             text: event.body,
             repo: RepoRef(owner: repo.owner, name: repo.name),
             profile: event.authorName)
@@ -217,19 +248,22 @@ struct PullDetailScreen: View {
     }
 
     private func reviewActions(_ pull: PublishedPull) -> some View {
-        CollabInfoCard(title: PullDetail.reviewTitle) {
+        let reviewable: Bool = PullState.reviewable(pull)
+        return CollabInfoCard(title: reviewable ? PullDetail.reviewTitle : PullDetail.commentTitle) {
             VStack(alignment: .leading, spacing: FmSpace.x3) {
-                Text(PullDetail.reviewCopy)
+                Text(reviewable ? PullDetail.reviewCopy : PullDetail.doneReviewCopy)
                     .fmText(.bodyMedium, color: fm.textSecondary)
                 AgentChipRow {
-                    FmToneButton(label: "Approve", icon: "check_circle_outline", tone: .success) {
-                        openReview(pull, state: "approve")
+                    if reviewable {
+                        FmToneButton(label: "Approve", icon: "check_circle_outline", tone: .success) {
+                            openReview(pull, state: "approve")
+                        }
+                        .accessibilityIdentifier("pull-review-approve")
+                        FmToneButton(label: "Request changes", icon: "cancel_outlined", tone: .danger) {
+                            openReview(pull, state: "request-changes")
+                        }
+                        .accessibilityIdentifier("pull-review-request-changes")
                     }
-                    .accessibilityIdentifier("pull-review-approve")
-                    FmToneButton(label: "Request changes", icon: "cancel_outlined", tone: .danger) {
-                        openReview(pull, state: "request-changes")
-                    }
-                    .accessibilityIdentifier("pull-review-request-changes")
                     FmToneButton(label: "Comment", icon: "chat_bubble_outline", tone: .neutral) {
                         openComment()
                     }
@@ -344,7 +378,9 @@ private struct PullMergeCard: View {
 
     var body: some View {
         Group {
-            if model.visible {
+            if model.state != .open {
+                PullDoneCard(pull: model.pull, state: model.state)
+            } else if model.visible {
                 CollabInfoCard(title: PullMerge.title) {
                     VStack(alignment: .leading, spacing: 0) {
                         status
@@ -467,6 +503,60 @@ private struct PullMergeCard: View {
                 onMerged()
             }
         }
+    }
+}
+
+private struct PullStatePill: View {
+    @Environment(\.fmPalette) private var fm
+
+    let state: PullState
+
+    var body: some View {
+        let color: Color = fm.collabTone(state.tone)
+        HStack(spacing: 6) {
+            FmIcon(state.icon, size: 16, color: fm.onPrimary)
+            Text(state.label)
+                .fmText(.labelLarge, color: fm.onPrimary, height: 1)
+        }
+        .padding(.horizontal, FmSpace.x3)
+        .frame(height: 30)
+        .background(color)
+        .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Status: \(state.label)"))
+        .accessibilityIdentifier("pull-state-\(state.rawValue)")
+    }
+}
+
+private struct PullDoneCard: View {
+    @Environment(\.fmPalette) private var fm
+
+    let pull: PublishedPull
+    let state: PullState
+
+    var body: some View {
+        let merged: Bool = state == .merged
+        let copy: String = merged ? PullState.mergedCopy(pull) : PullState.closedCopy
+        HStack(alignment: .top, spacing: FmSpace.x3) {
+            FmIcon(state.icon, size: 22, color: fm.collabTone(state.tone))
+            VStack(alignment: .leading, spacing: FmSpace.x1) {
+                Text(merged ? PullState.mergedTitle : PullState.closedTitle)
+                    .fmText(.titleSmall, color: fm.textPrimary)
+                Text(copy)
+                    .fmText(.bodyMedium, color: fm.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fmMessageTools(copy)
+            }
+        }
+        .padding(FmSpace.x4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(fm.bgRaised)
+        .clipShape(FmRoundedShape(radius: FmRadius.lg))
+        .overlay {
+            FmRoundedShape(radius: FmRadius.lg).strokeBorder(fm.collabTone(state.tone), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(merged ? "pull-merged-box" : "pull-closed-box")
     }
 }
 

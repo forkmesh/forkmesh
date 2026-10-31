@@ -75,6 +75,12 @@ QString readText(const QString &path)
     return QString::fromUtf8(file.readAll());
 }
 
+QString scriptString(const QString &value)
+{
+    const QByteArray quoted = QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);
+    return QString::fromUtf8(quoted.mid(1, quoted.size() - 2));
+}
+
 QString systemdQuote(QString value)
 {
     value.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
@@ -482,13 +488,12 @@ QString StartManager::bootSleepPolicy() const
 {
     if (account.isEmpty())
         return {};
-    const QByteArray quoted = QJsonDocument(QJsonArray{account}).toJson(QJsonDocument::Compact);
     return QStringLiteral(
         "polkit.addRule(function(action, subject) {\n"
         "    if (action.id === \"org.freedesktop.login1.inhibit-block-sleep\" &&\n"
         "        subject.user === %1)\n"
         "        return polkit.Result.YES;\n"
-        "});\n").arg(QString::fromUtf8(quoted.mid(1, quoted.size() - 2)));
+        "});\n").arg(scriptString(account));
 }
 
 bool StartManager::bootSleepProtected() const
@@ -505,16 +510,69 @@ bool StartManager::ensureBootSleepPermission(QString *error) const
             *error = QStringLiteral("Could not determine the account for the boot sleep permission.");
         return false;
     }
-    const CommandResult result = call(QStringLiteral("pkexec"), {
-        QStringLiteral("/bin/sh"), QStringLiteral("-c"),
-        QStringLiteral("umask 022; mkdir -p -- \"$1\" && "
-                       "printf '%s' \"$3\" > \"$2\" && chmod 0644 -- \"$2\""),
-        QStringLiteral("forkmesh-boot-sleep"), polkitRulesHome, bootSleepPolicyPath(),
-        bootSleepPolicy()});
+    const CommandResult result =
+        installPolicy(QStringLiteral("forkmesh-boot-sleep"), bootSleepPolicyPath(), bootSleepPolicy());
     if (!result.ok && error)
         *error = QStringLiteral("Start at boot is registered, but keeping the computer awake "
                                 "before login needs administrator authentication. %1")
                      .arg(QString::fromUtf8(result.output).trimmed());
+    return result.ok;
+}
+
+CommandResult StartManager::installPolicy(const QString &tag, const QString &path,
+                                          const QString &text) const
+{
+    return call(QStringLiteral("pkexec"), {
+        QStringLiteral("/bin/sh"), QStringLiteral("-c"),
+        QStringLiteral("umask 022; mkdir -p -- \"$1\" && "
+                       "printf '%s' \"$3\" > \"$2\" && chmod 0644 -- \"$2\""),
+        tag, polkitRulesHome, path, text});
+}
+
+QString StartManager::restartPolicyPath() const
+{
+    return polkitRulesHome + QStringLiteral("/49-forkmesh-restart-%1.rules").arg(uid);
+}
+
+QString StartManager::restartPolicy() const
+{
+    if (account.isEmpty())
+        return {};
+    return QStringLiteral(
+        "polkit.addRule(function(action, subject) {\n"
+        "    if ((action.id === \"org.freedesktop.login1.reboot\" ||\n"
+        "         action.id === \"org.freedesktop.login1.reboot-multiple-sessions\") &&\n"
+        "        subject.user === %1)\n"
+        "        return polkit.Result.YES;\n"
+        "});\n").arg(scriptString(account));
+}
+
+bool StartManager::restartAllowed() const
+{
+    return !account.isEmpty() && readText(restartPolicyPath()) == restartPolicy();
+}
+
+bool StartManager::allowRestart(bool on, QString *error) const
+{
+    if (on ? restartAllowed() : !QFileInfo::exists(restartPolicyPath()))
+        return true;
+    if (on && account.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Could not determine the account for the restart permission.");
+        return false;
+    }
+    const CommandResult result =
+        on ? installPolicy(QStringLiteral("forkmesh-restart"), restartPolicyPath(), restartPolicy())
+           : call(QStringLiteral("pkexec"),
+                  {QStringLiteral("/bin/sh"), QStringLiteral("-c"),
+                   QStringLiteral("rm -f -- \"$1\""), QStringLiteral("forkmesh-restart"),
+                   restartPolicyPath()});
+    if (!result.ok && error) {
+        const QString output = QString::fromUtf8(result.output).trimmed();
+        *error = QStringLiteral("Changing who may restart this computer needs administrator "
+                                "authentication. %1")
+                     .arg(output.isEmpty() ? QStringLiteral("Not approved.") : output);
+    }
     return result.ok;
 }
 
@@ -682,6 +740,7 @@ StartStatus StartManager::status(const QString &project) const
     StartStatus status;
     status.sleepDisabled = sleepDisabled();
     status.bootSleepProtected = bootSleepProtected();
+    status.restartAllowed = restartAllowed();
     status.afterLogout = QFileInfo::exists(logoutUnitPath(project)) && lingering();
     const QString unit = systemdUnitPath(project);
     if (QFileInfo::exists(unit)) {

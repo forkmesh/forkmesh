@@ -168,6 +168,31 @@ class CiTest {
         assertEq("2h 0m", ActionsRunSummary(1, startedAtMs = 1, finishedAtMs = 7_200_001).durationLabel(0))
     }
 
+    fun testFailedRunPromptKeepsTheFailureAtTheEndOfALongLog() {
+        val build = (0 until 180).map { "[ 33%] Building CXX object CMakeFiles/forkmesh-window-tests.dir/src/File$it.cpp.o" }
+        val log = (listOf("esh-window-tests.dir/src/ClientErrorReports.cpp.o") + build +
+            listOf("!! Process crashed", "", "==> FAILED: Critical Qt client contracts exceeded the process time limit."))
+            .joinToString("\n")
+        expect(log.length > com.forkmesh.nativeapp.navigation.MessageHandoff.MAX_MESSAGE_LENGTH)
+        val run = ActionsRunSummary(
+            id = 8092,
+            workflow = "Desktop client CI tests",
+            commit = "f86a1b189b07",
+            ref = "refs/heads/main",
+            status = ActionsRunStatus.Failed,
+            logTail = log,
+            steps = listOf(ActionsStep("Critical Qt client contracts", "failed")),
+        )
+        val prompt = CiPrompts.fixFailedRun(run, repo)
+        expect(prompt.text.contains("exceeded the process time limit"))
+        expect(prompt.text.contains("Failed steps: Critical Qt client contracts."))
+        expect(!prompt.text.contains("ClientErrorReports"))
+        expect(!com.forkmesh.nativeapp.navigation.MessageHandoff.cleaned(log).contains("exceeded the process time limit"))
+        val target = prompt.composeTarget
+        assertEq("alice/tool", "${target.repo?.owner}/${target.repo?.name}")
+        assertEq(prompt.text, target.text)
+    }
+
     fun testPullChecksKeepTheLatestRunPerWorkflow() {
         val runs = listOf(
             ActionsRunSummary(1, workflowPath = "a", status = ActionsRunStatus.Failed, createdAtMs = 1, pullNumber = 7),

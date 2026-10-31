@@ -42,6 +42,89 @@ enum ShellBarShapes {
     }
 }
 
+struct ShellBarBevel: View {
+    @Environment(\.fmPalette) var fm
+
+    let shape: AnyShape
+
+    var body: some View {
+        ZStack {
+            shape.fill(
+                LinearGradient(
+                    stops: [
+                        Gradient.Stop(color: Color.white.opacity(fm.dark ? 0.13 : 0.34), location: 0),
+                        Gradient.Stop(color: Color.white.opacity(fm.dark ? 0.03 : 0.08), location: 0.5),
+                        Gradient.Stop(color: Color.clear, location: 1),
+                    ],
+                    startPoint: UnitPoint.top,
+                    endPoint: UnitPoint.bottom))
+            shape.stroke(
+                LinearGradient(
+                    stops: [
+                        Gradient.Stop(color: Color.white.opacity(fm.dark ? 0.42 : 0.85), location: 0),
+                        Gradient.Stop(color: Color.clear, location: 0.46),
+                    ],
+                    startPoint: UnitPoint.top,
+                    endPoint: UnitPoint.bottom),
+                lineWidth: 1.5
+            )
+            .blur(radius: 0.7)
+            shape.stroke(
+                LinearGradient(
+                    stops: [
+                        Gradient.Stop(color: Color.clear, location: 0.55),
+                        Gradient.Stop(color: Color.black.opacity(fm.dark ? 0.55 : 0.14), location: 1),
+                    ],
+                    startPoint: UnitPoint.top,
+                    endPoint: UnitPoint.bottom),
+                lineWidth: 5
+            )
+            .blur(radius: 3)
+        }
+        .clipShape(shape)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+struct ShellBarLens: View {
+    @Environment(\.fmPalette) var fm
+
+    var body: some View {
+        Capsule()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(fm.dark ? 0.2 : 0.5), Color.white.opacity(fm.dark ? 0.06 : 0.22),
+                    ],
+                    startPoint: UnitPoint.top,
+                    endPoint: UnitPoint.bottom)
+            )
+            .overlay {
+                Capsule()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.white.opacity(fm.dark ? 0.16 : 0.3), Color.clear],
+                            center: UnitPoint(x: 0.5, y: 1.05),
+                            startRadius: 0,
+                            endRadius: 46))
+            }
+            .overlay {
+                Capsule().strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(fm.dark ? 0.5 : 0.85), Color.white.opacity(fm.dark ? 0.06 : 0.3),
+                            Color.white.opacity(fm.dark ? 0.2 : 0.5),
+                        ],
+                        startPoint: UnitPoint.top,
+                        endPoint: UnitPoint.bottom),
+                    lineWidth: 1)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 struct ShellBarBackdrop: ViewModifier {
     @Environment(\.fmPalette) var fm
 
@@ -57,16 +140,27 @@ struct ShellBarBackdrop: ViewModifier {
                 .overlay(shape.stroke(fm.border.opacity(0.8), lineWidth: 0.5))
                 .shadow(color: Color.black.opacity(fm.dark ? 0.35 : 0.12), radius: lift, y: lift / 3)
         } else {
-            #if compiler(>=6.2)
-            if #available(iOS 26.0, *) {
-                content.glassEffect(glass, in: shape)
-            } else {
-                material(content)
-            }
-            #else
-            material(content)
-            #endif
+            rimmed(content)
         }
+    }
+
+    @ViewBuilder private func rimmed<Inner: View>(_ inner: Inner) -> some View {
+        Group {
+            if fill == .glass {
+                frosted(inner)
+            } else {
+                #if compiler(>=6.2)
+                if #available(iOS 26.0, *) {
+                    inner.glassEffect(glass, in: shape)
+                } else {
+                    material(inner)
+                }
+                #else
+                material(inner)
+                #endif
+            }
+        }
+        .overlay { ShellBarBevel(shape: shape) }
     }
 
     #if compiler(>=6.2)
@@ -74,11 +168,24 @@ struct ShellBarBackdrop: ViewModifier {
     private var glass: Glass {
         switch fill {
         case .glass, .solid: return .regular.interactive(interactive)
-        case .clear: return .clear.interactive(interactive)
+        case .clear:
+            return .clear.tint(fm.dark ? Color.black.opacity(0.24) : Color.white.opacity(0.14))
+                .interactive(interactive)
         case .tinted: return .regular.tint(fm.accent.opacity(0.35)).interactive(interactive)
         }
     }
     #endif
+
+    private func frosted<Inner: View>(_ inner: Inner) -> some View {
+        inner
+            .background {
+                ZStack {
+                    shape.fill(.ultraThinMaterial)
+                    shape.fill(fm.dark ? Color.black.opacity(0.4) : Color.white.opacity(0.08))
+                }
+            }
+            .shadow(color: Color.black.opacity(fm.dark ? 0.5 : 0.16), radius: 20, y: 8)
+    }
 
     private func material<Inner: View>(_ inner: Inner) -> some View {
         inner
@@ -102,6 +209,7 @@ struct ShellBarSlotChrome: ViewModifier {
     let shape: AnyShape
     let style: ShellBarStyle
     let selected: Bool
+    var slides: Bool = false
 
     func body(content: Content) -> some View {
         if style.shape.separate && style.shape.backed {
@@ -127,6 +235,10 @@ struct ShellBarSlotChrome: ViewModifier {
 
     @ViewBuilder private var under: some View {
         switch style.selection {
+        case .lens:
+            if !slides {
+                ShellBarLens()
+            }
         case .fill:
             shape.fill(fm.accent.opacity(style.shape.separate ? 0.2 : 0.14))
         case .glow:
@@ -164,7 +276,7 @@ struct ShellBarSlotChrome: ViewModifier {
                 .frame(width: 18, height: 3)
                 .frame(maxHeight: .infinity, alignment: .bottom)
                 .padding(.bottom, 1.5)
-        case .fill, .glow, .none:
+        case .lens, .fill, .glow, .none:
             EmptyView()
         }
     }
@@ -175,8 +287,8 @@ extension View {
         modifier(ShellBarBackdrop(shape: shape, fill: fill, interactive: interactive))
     }
 
-    func shellBarSlotChrome(_ shape: AnyShape, style: ShellBarStyle, selected: Bool) -> some View {
-        modifier(ShellBarSlotChrome(shape: shape, style: style, selected: selected))
+    func shellBarSlotChrome(_ shape: AnyShape, style: ShellBarStyle, selected: Bool, slides: Bool = false) -> some View {
+        modifier(ShellBarSlotChrome(shape: shape, style: style, selected: selected, slides: slides))
     }
 
     @ViewBuilder func shellBarLift(_ on: Bool, dark: Bool) -> some View {

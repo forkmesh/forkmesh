@@ -102,6 +102,7 @@ FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE="${FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_
 [ -n "$FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE" ] ||
   [ ! -f /etc/forkmesh/release-publisher.pem ] ||
   FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE=/etc/forkmesh/release-publisher.pem
+FORKMESH_MIN_RELEASE_VERSION="1.2.8"
 # Direct uploads do not carry a release manifest, so the authenticated
 # controller must supply their exact digest.
 FORKMESH_LOCAL_BINARY_SHA256="${FORKMESH_LOCAL_BINARY_SHA256:-}"
@@ -1247,7 +1248,8 @@ pkg_config_probe() {
 # are checked. This needs no pkg-config, compiler or build tool, so it stays
 # accurate on a host the installer has not finished setting up.
 have_qt6_cmake_package() {
-  local root cfg cmake_dir
+  local root cfg cmake_dir module found
+  local modules="${*:-Widgets Svg}"
   # shellcheck disable=SC2086
   for root in ${CMAKE_PREFIX_PATH:+${CMAKE_PREFIX_PATH//[:;]/ }} \
               ${Qt6_DIR:+$Qt6_DIR} \
@@ -1258,10 +1260,11 @@ have_qt6_cmake_package() {
                "$root"/lib/*/cmake/Qt6/Qt6Config.cmake; do
       [ -f "$cfg" ] || continue
       cmake_dir="$(dirname "$(dirname "$cfg")")"
-      if [ -f "$cmake_dir/Qt6Widgets/Qt6WidgetsConfig.cmake" ] &&
-         [ -f "$cmake_dir/Qt6Svg/Qt6SvgConfig.cmake" ]; then
-        return 0
-      fi
+      found=1
+      for module in $modules; do
+        [ -f "$cmake_dir/Qt6$module/Qt6${module}Config.cmake" ] || found=0
+      done
+      [ "$found" = 1 ] && return 0
     done
   done
   return 1
@@ -1285,6 +1288,13 @@ have_qt6_dev() {
   # with "Installed qt6-base-dev qt6-svg-dev but 'qt' is still unavailable" on a
   # machine that was ready to build. Look for the CMake packages instead.
   have_qt6_cmake_package
+}
+
+have_qt6_webengine() {
+  if pkg_config_probe --exists Qt6WebEngineWidgets 2>/dev/null; then
+    return 0
+  fi
+  have_qt6_cmake_package WebEngineWidgets
 }
 
 have_openssl_dev() {
@@ -1355,6 +1365,38 @@ emoji_font_package() {
     zypper)  echo noto-coloremoji-fonts ;;
     apk)     echo font-noto-emoji ;;
   esac
+}
+
+webengine_package() {
+  case "$PM" in
+    apt)     echo qt6-webengine-dev ;;
+    dnf|yum) echo qt6-qtwebengine-devel ;;
+    pacman)  echo qt6-webengine ;;
+    zypper)  echo qt6-webengine-devel ;;
+    apk)     echo qt6-qtwebengine-dev ;;
+  esac
+}
+
+ensure_webengine() {
+  [ "$(uname -s)" = "Linux" ] || return 0
+  if [ "$(id -u)" -eq 0 ] && [ -z "${DISPLAY:-}" ] &&
+     [ -z "${WAYLAND_DISPLAY:-}" ] &&
+     [ -n "${FORKMESH_TUNNEL_HOSTNAME:-}" ]; then
+    return 0
+  fi
+  if have_qt6_webengine; then
+    say "  Qt WebEngine: already present"
+    return 0
+  fi
+  local pkg; pkg="$(webengine_package)"
+  if [ "${FORKMESH_NO_INSTALL_DEPS:-0}" = "1" ] || [ -z "$pkg" ] ||
+     { [ "$PM" != "brew" ] && ! need_sudo; }; then
+    warn "Qt WebEngine is not installed, so YouTube, the Browser tab and agent browser windows open outside ForkMesh. Install your distribution's Qt 6 WebEngine development package${pkg:+ ($pkg)} and rebuild."
+    return 0
+  fi
+  say "Installing Qt WebEngine ($pkg) so YouTube and web pages play inside ForkMesh"
+  pm_install "$pkg" ||
+    warn "Could not install $pkg via $PM; YouTube, the Browser tab and agent browser windows open outside ForkMesh until it is installed."
 }
 
 ensure_emoji_font() {
@@ -1575,6 +1617,36 @@ _manifest_tag() {
     head -n 1
 }
 
+_manifest_channel() {
+  [ -f "$1" ] || return 0
+  sed -n 's/.*"channel"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" |
+    head -n 1
+}
+
+_release_channel_accepts() {
+  local wanted="$1" channel="$2" version="${3#v}"
+  [ -n "$channel" ] || return 1
+  [ "$channel" = "$wanted" ] && return 0
+  [ "$wanted" = "latest" ] && [ -n "$version" ] &&
+    [ "$channel" = "candidate-$version" ]
+}
+
+_release_version_at_least() {
+  local have="${1#v}" want="${2#v}" index h w
+  printf '%s' "$have" | grep -Eq '^[0-9]{1,6}(\.[0-9]{1,6}){0,3}$' || return 1
+  printf '%s' "$want" | grep -Eq '^[0-9]{1,6}(\.[0-9]{1,6}){0,3}$' || return 1
+  local -a have_parts want_parts
+  IFS=. read -r -a have_parts <<<"$have"
+  IFS=. read -r -a want_parts <<<"$want"
+  for index in 0 1 2 3; do
+    h=$((10#${have_parts[$index]:-0}))
+    w=$((10#${want_parts[$index]:-0}))
+    [ "$h" -gt "$w" ] && return 0
+    [ "$h" -lt "$w" ] && return 1
+  done
+  return 0
+}
+
 _manifest_checksums_sha256() {
   [ -f "$1" ] || return 0
   sed -n 's/.*"checksums_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]*\)".*/\1/p' "$1" |
@@ -1587,6 +1659,7 @@ _manifest_checksums_sha256() {
 _verify_release_metadata() {
   local manifest="$1" signature="$2" sums="$3"
   local manifest_hash sums_hash expected_sums tag build_commit asset_commit
+  local signature_trust=0
   manifest_hash="$(_sha256_file "$manifest")"
   if ! printf '%s' "$manifest_hash" | grep -Eq '^[0-9a-f]{64}$'; then
     warn "A working SHA-256 tool is required for every prebuilt install."
@@ -1609,6 +1682,7 @@ _verify_release_metadata() {
       warn "Release manifest signature is missing or invalid."
       return 1
     fi
+    signature_trust=1
   else
     warn "No independent release trust anchor is configured; refusing prebuilt bytes."
     return 1
@@ -1616,6 +1690,19 @@ _verify_release_metadata() {
 
   grep -Eq '"schema"[[:space:]]*:[[:space:]]*"forkmesh-release-v2"' "$manifest" ||
     { warn "Authenticated release manifest uses an unsupported schema."; return 1; }
+  if [ "$signature_trust" = "1" ]; then
+    tag="$(_manifest_tag "$manifest")"
+    if ! _release_channel_accepts "${RELEASE_CHANNEL:-latest}" \
+         "$(_manifest_channel "$manifest")" "$tag"; then
+      warn "Authenticated release manifest is not for the ${RELEASE_CHANNEL:-latest} release channel."
+      return 1
+    fi
+    if [ -z "$FORKMESH_EXPECTED_BUILD_COMMIT" ] &&
+       ! _release_version_at_least "$tag" "${FORKMESH_MIN_RELEASE_VERSION:-}"; then
+      warn "Authenticated release manifest ${tag:-without a tag} is older than this installer's minimum release ${FORKMESH_MIN_RELEASE_VERSION:-}."
+      return 1
+    fi
+  fi
   expected_sums="$(_manifest_checksums_sha256 "$manifest")"
   sums_hash="$(_sha256_file "$sums")"
   if ! printf '%s' "$expected_sums" | grep -Eq '^[0-9a-f]{64}$' ||
@@ -2035,6 +2122,7 @@ fi
 # component is genuinely absent.
 ensure qt have_qt6_dev
 ensure openssl have_openssl_dev
+ensure_webengine
 ensure_emoji_font
 # detail records which prerequisites had to be installed ("none" = all present),
 # so the funnel shows how often a machine already met the requirements.
@@ -2310,7 +2398,7 @@ register_desktop_entry() {
     # the .desktop entry isn't present — that's expected, not an error. The app
     # still runs from $BIN on the PATH.
     if [ "$INSTALLED_PREBUILT" = "1" ]; then
-      say "Installed the prebuilt binary; skipping app-menu registration (run:  forkmesh)."
+      say "ForkMesh adds itself to the application menu the first time it opens."
     else
       warn "Desktop integration script not found at $script; skipping menu registration."
     fi
@@ -3124,6 +3212,7 @@ fi
 case "$LAUNCH_MODE" in
   gui)
     say "Done — launching the ForkMesh desktop client now."
+    say "To open it again later, search \"ForkMesh\" in your applications menu, or type  forkmesh  in a terminal ($BIN)."
     ;;
   service)
     say "Done — the native ForkMesh mirror service is running."
@@ -3152,7 +3241,7 @@ case "$LAUNCH_MODE" in
     say "Done — the desktop client is installed but was not daemonized on this display-less machine."
     ;;
   *)
-    say "Done. Launch the desktop client with: forkmesh"
+    say "Done. Open ForkMesh from your applications menu (search \"ForkMesh\"), or type  forkmesh  in a terminal ($BIN)."
     ;;
 esac
 

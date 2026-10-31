@@ -646,7 +646,7 @@ extension AgentWatchScreen {
     @MainActor
     static func forRelaySession(_ repo: Repository, _ session: AgentSession, ownerAccount: String) -> AgentWatchScreen? {
         if let center = HostsFeature.agents, let row = center.rows.first(where: { (row: UnifiedAgentRow) -> Bool in
-            row.isDesktop && !row.outside && row.localId == session.id
+            row.isDesktop && !row.outside && !row.elsewhere && row.localId == session.id
                 && row.repoName.lowercased() == repo.name.lowercased()
         }) {
             return forControl(center, [row])
@@ -666,7 +666,7 @@ extension AgentWatchScreen {
         _ groups: [AgentRepoGroup], center: AgentControlCenter?, ownerAccount: (Repository) -> String
     ) -> AgentWatchScreen? {
         guard let center else { return forRelay(groups, ownerAccount: ownerAccount) }
-        let listed = Set(center.rows.filter(\.isDesktop).map { "\($0.repoName.lowercased())#\($0.localId)" })
+        let listed = Set(center.rows.filter { $0.isDesktop && !$0.elsewhere }.map { "\($0.repoName.lowercased())#\($0.localId)" })
         let live = center.rows.contains(where: \.isActive)
         var targets: [AgentWatchTarget] = []
         if let api = Services.get(ApiService.self) {

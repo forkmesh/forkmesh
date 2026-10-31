@@ -129,6 +129,15 @@ and wakes the other cores.
   The next pass, 50 s later, went through. A refused `main` or ledger ref that
   does not read as outrun is now read once more after 10 s before the pass
   fails.
+- **Ledger grace.** `forkmesh/pulls` is written by the cores too (mirror
+  intake, web merges), and the desktop merges their records into its own
+  ledger on its next intake ("Merge divergent mirror collaboration
+  intake"). Until it does, every push of the ledger is refused (`fetch
+  first`). When that is the only refusal, the publisher logs it and waits
+  `LEDGER_GRACE_SECONDS` (10 minutes, from `ledgerSince` in
+  `publish-alert.json`) before it Pings. On 2026-10-25 pull #108's mirror
+  intake sent a "Repository publishing failed" Ping for a gap the desktop
+  closed four minutes later. Any other refused ref still Pings at once.
 - **Ping cause.** A refused ref is named in the Ping (`the cores refused
   refs/heads/forkmesh/pulls (non-fast-forward)`, plus the absorb reason for
   `main`). Before, the Ping carried the last 600 characters of git's output.
@@ -220,6 +229,24 @@ the cores. The `post-merge` hook then lets the desktop queue its Actions. A
 conflicting or untakeable `main` is recorded in
 `state/publisher/cores-watch.json` and not retried until that core's `main`
 moves. An unreadable `main` does nothing.
+
+**Two cores must agree.** `absorb_cores` (used by `watch-cores` and by a
+publish pass whose `main` push was refused) takes a tip only when at least
+two cores serve it as `main`, or every core that answered does when fewer
+than two answer (`cores_agreement`). Otherwise it logs `not taking … only N
+of M reachable cores serve main …; waiting for a second core`, changes
+nothing, and does not record the tip in `cores-watch.json`, so the next
+20-second pass tries again once a peer has caught up. The reason: a taken
+tip is deployed with the operator's fleet credentials, and one core's `main`
+alone, or the edge, which can route to any node it trusts, should not be
+enough to move the checkout. The cores converge on each other within
+seconds, so a real merge or owner push still lands on the next pass. With
+no `deploy/fleet.toml` cores to ask, the old behaviour applies
+(`test_absorb_takes_main_only_when_a_second_core_serves_it`,
+`test_absorb_accepts_the_only_reachable_core`,
+`test_watch_waits_for_a_second_core_before_taking_main`). The installed copy
+in `bin/publisher` takes this only after `python3 tools/source_publisher.py
+install`.
 
 ## Flagship guard
 

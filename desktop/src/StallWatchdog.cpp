@@ -219,6 +219,8 @@ bool isGlueFrame(const QString &symbol)
            symbol.contains(QLatin1String("QtEventDeliveryProbe")) ||
            symbol.contains(QLatin1String("QtRuntimeDiagnostics::noteDelivery")) ||
            symbol.contains(QLatin1String("QtRuntimeDiagnostics::recordEventDelivery")) ||
+           symbol.contains(QLatin1String("QtRuntimeDiagnostics::noteEventTiming")) ||
+           symbol.contains(QLatin1String("hiddenunicode::guardWidget(")) ||
            symbol.contains(QLatin1String("::eventFilter(")) ||
            symbol.contains(QLatin1String("MainWindow::handleFramelessResizeEvent(")) ||
            symbol.contains(QLatin1String("MainWindow::resizeEdgesAtGlobalPos(")) ||

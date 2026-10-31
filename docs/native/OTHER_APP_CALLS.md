@@ -69,8 +69,10 @@ changes.
 `platform/OtherAppCall.kt` reads `AudioManager.mode` (a mode above normal
 means a call, cellular or VoIP), listening with `addOnModeChangedListener`
 on Android 12+ and polling every 2 s while the app is in the foreground
-below that; every check also reads the mode fresh. ForkMesh's own direct call
-(`DirectCallFeature.engine.phase`) does not count. While a call is up
+below that; every check also reads the mode fresh. Since 2026-10-28
+ForkMesh's own direct or group call (`DirectCallFeature.engine.phase`,
+`GroupCallFeature.active`) counts too, as on iOS, and dictation does not
+start during it ([ANDROID.md](ANDROID.md#calls-ledger-s125-to-s133)). While a call is up
 (wired in `App.onCreate`): interface sounds are quietened
 (`FmSoundCues.quieten`), Agent Watch plays nothing, and Glasses Alert still
 notifies and vibrates but plays no ring; a ring already sounding stops and

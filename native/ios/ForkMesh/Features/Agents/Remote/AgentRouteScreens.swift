@@ -89,26 +89,91 @@ struct AgentRouteDestination: View {
 private struct AgentRouteLookup: View {
     @Bindable var center: AgentControlCenter
     let id: String
+    @State private var pinned: UnifiedAgentRow?
     @State private var looked = false
 
-    private var row: UnifiedAgentRow? { center.rows.first { $0.id == id } }
+    private var found: UnifiedAgentRow? { center.row(forRoute: id) }
 
     var body: some View {
         Group {
-            if let row {
+            if let row = pinned ?? found {
                 AgentRunScreen(center: center, row: row)
-            } else if looked {
-                ContentUnavailableView(
-                    "Agent not found", systemImage: "cpu",
-                    description: Text("The desktop or the relay no longer lists this run."))
+                    .id(row.id)
+            } else if looked && !center.loading {
+                AgentRouteMissing(note: center.desktopNote) {
+                    looked = false
+                    await center.refresh()
+                    looked = true
+                }
             } else {
-                ProgressView()
+                AgentRouteLoading()
             }
         }
+        .onChange(of: found?.id, initial: true) { (_: String?, _: String?) in
+            guard let found else { return }
+            if pinned == nil || center.loading { pinned = found }
+        }
         .task {
-            if row == nil { await center.refresh() }
+            if pinned == nil && found == nil { await center.refresh() }
             looked = true
         }
+    }
+}
+
+private struct AgentRouteLoading: View {
+    private static let lineWidths: [CGFloat] = [0.92, 0.78, 0.86, 0.6, 0.9, 0.7]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FmSpace.x3) {
+            FmSkeleton(width: 220, height: 18)
+            HStack(spacing: FmSpace.x2) {
+                FmSkeleton(width: 54, height: 16, radius: FmRadius.md)
+                FmSkeleton(width: 120, height: 10)
+                Spacer(minLength: 0)
+                FmSkeleton(width: 56, height: 10)
+            }
+            GeometryReader { (proxy: GeometryProxy) in
+                VStack(alignment: .leading, spacing: FmSpace.x3) {
+                    ForEach(Array(AgentRouteLoading.lineWidths.enumerated()), id: \.offset) { entry in
+                        FmSkeleton(width: proxy.size.width * entry.element, height: 11)
+                    }
+                }
+            }
+            .padding(.top, FmSpace.x3)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Opening agent"))
+        .accessibilityIdentifier("agent-route-loading")
+    }
+}
+
+private struct AgentRouteMissing: View {
+    let note: String
+    let retry: () async -> Void
+    @State private var retrying = false
+
+    var body: some View {
+        FmEmptyState(
+            icon: "smart_toy_outlined", title: "Agent not found",
+            message: note.isEmpty
+                ? "The desktop or the relay no longer lists this run."
+                : "Your desktop did not answer: \(note)")
+            .overlay(alignment: .bottom) {
+                FmTextButton("Try again", icon: "refresh", onPressed: {
+                    guard !retrying else { return }
+                    retrying = true
+                    Task {
+                        await retry()
+                        retrying = false
+                    }
+                })
+                .disabled(retrying)
+                .padding(.bottom, FmSpace.x6)
+            }
+            .accessibilityIdentifier("agent-route-missing")
     }
 }
 

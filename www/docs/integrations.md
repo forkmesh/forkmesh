@@ -10,9 +10,9 @@ standard-library file,
 [`tools/forkmesh_integration.py`](../../tools/forkmesh_integration.py).
 
 ```sh
-python3 forkmesh_integration.py discover --target hosted
-python3 forkmesh_integration.py contract --target self-hosted --base-url http://127.0.0.1:8791
-python3 forkmesh_integration.py contract --target hosted --fixture next   # offline
+python3 tools/forkmesh_integration.py discover --target hosted
+python3 tools/forkmesh_integration.py contract --target self-hosted --base-url http://127.0.0.1:8791
+python3 tools/forkmesh_integration.py contract --target hosted --fixture next   # offline
 ```
 
 `contract` prints a `forkmesh-integration-contract-report-v1` report (status

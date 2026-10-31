@@ -45,6 +45,8 @@ KINDS = ("user", "organization")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
 ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+ORG_INSIDER_ROLES = frozenset({"owner", "admin", "maintainer", "member", "auditor"})
+ORG_INSIDER_ROLE_SQL = "('owner','admin','maintainer','member','auditor')"
 B64_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 # base64url lengths of the fixed-size fields: 32-byte keys, a 64-byte
 # signature, an ML-KEM-768 public key (1184) and ciphertext (1088), and a
@@ -348,7 +350,8 @@ async def _save_trust(runtime, row, data):
 async def _organizations(runtime, account_bi):
     rows = await runtime.d1_all(
         "SELECT o.name,m.role FROM org_members m JOIN orgs o ON o.org_bi=m.org_bi "
-        "WHERE m.member_bi=? ORDER BY o.name COLLATE NOCASE LIMIT 200", account_bi)
+        "WHERE m.member_bi=? AND m.role IN " + ORG_INSIDER_ROLE_SQL
+        + " ORDER BY o.name COLLATE NOCASE LIMIT 200", account_bi)
     return [{"name": str(row.get("name") or ""), "role": str(row.get("role") or "member")}
             for row in rows or []]
 
@@ -359,7 +362,8 @@ async def _org_members(runtime, org_bi):
     rows = await runtime.d1_all(
         "SELECT m.member_bi,m.name,a.data FROM org_members m "
         "LEFT JOIN vault_accounts a ON a.account_bi=m.member_bi "
-        "WHERE m.org_bi=? ORDER BY m.name COLLATE NOCASE LIMIT ?",
+        "WHERE m.org_bi=? AND m.role IN " + ORG_INSIDER_ROLE_SQL
+        + " ORDER BY m.name COLLATE NOCASE LIMIT ?",
         org_bi, MAX_ORG_MEMBERS + 1)
     members = []
     for row in rows or []:
@@ -406,7 +410,8 @@ async def _readable_grant(runtime, item_id, account_bi):
         "FROM vault_grants g JOIN vault_shares s ON s.item_id=g.item_id "
         "AND s.target_kind=g.via_kind AND s.target_bi=g.via_bi "
         "WHERE g.item_id=? AND g.recipient_bi=? AND (g.via_kind='user' OR EXISTS("
-        "SELECT 1 FROM org_members m WHERE m.org_bi=g.via_bi AND m.member_bi=g.recipient_bi))",
+        "SELECT 1 FROM org_members m WHERE m.org_bi=g.via_bi AND m.member_bi=g.recipient_bi "
+        "AND m.role IN " + ORG_INSIDER_ROLE_SQL + "))",
         item_id, account_bi)
     best = None
     for row in rows or []:
@@ -515,7 +520,8 @@ async def _grant_rows(runtime, item_id, owner_bi, grants):
             covered = recipient_bi == share["target_bi"]
         else:
             covered = bool(await runtime.d1_first(
-                "SELECT 1 AS one FROM org_members WHERE org_bi=? AND member_bi=?",
+                "SELECT 1 AS one FROM org_members WHERE org_bi=? AND member_bi=? "
+                "AND role IN " + ORG_INSIDER_ROLE_SQL,
                 share["target_bi"], recipient_bi))
         key = (recipient_bi, kind, share["target_bi"])
         if not covered or key in seen:
@@ -628,7 +634,7 @@ async def _resolve_target(runtime, account_bi, kind, name):
             return "", "", "recipient_has_no_vault"
         return target_bi, target_name, ""
     org_bi, role = await runtime.organization(name, account_bi)
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return "", "", "organization_not_found"
     return org_bi, name, ""
 
@@ -894,7 +900,7 @@ async def handle(runtime, path):
         if not ORG_RE.fullmatch(parts[1]):
             return _error(runtime, "organization_not_found", 404)
         org_bi, role = await runtime.organization(parts[1], account_bi)
-        if not org_bi or not role:
+        if not org_bi or role not in ORG_INSIDER_ROLES:
             return _error(runtime, "organization_not_found", 404)
         members = await _org_members(runtime, org_bi)
         if len(members) > MAX_ORG_MEMBERS:

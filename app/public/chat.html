@@ -3,8 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <script>
-      if (new URLSearchParams(location.search).get("embed") === "office") {
-        document.documentElement.dataset.chatEmbed = "office";
+      const chatEmbed = new URLSearchParams(location.search).get("embed");
+      if (chatEmbed === "office" || chatEmbed === "world") {
+        document.documentElement.dataset.chatEmbed = chatEmbed;
       }
     </script>
     <script src="/api-client.js?v=${version}"></script>
@@ -32,7 +33,8 @@
         const keys = ["forkmesh.dashboard.theme", "forkmesh.theme"];
         let theme = "dark";
         try {
-          theme = keys.map((key) => localStorage.getItem(key)).find((value) => value === "light" || value === "dark") || theme;
+          const stored = keys.map((key) => localStorage.getItem(key)).find((value) => ["light", "dark", "system"].includes(value));
+          theme = stored === "system" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : stored || theme;
         } catch (_) {}
         document.documentElement.classList.toggle("dark", theme !== "light");
         document.documentElement.style.colorScheme = theme;
@@ -1238,6 +1240,31 @@
         white-space: nowrap;
       }
 
+      html[data-chat-embed="world"],
+      html[data-chat-embed="world"] body {
+        min-width: 0;
+        height: 100dvh;
+        overflow: hidden;
+      }
+
+      html[data-chat-embed="world"] .chat-shell {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        height: 100dvh;
+      }
+
+      html[data-chat-embed="world"] .chat-panes {
+        min-width: 0;
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      html[data-chat-embed="world"] .chat-site-header,
+      html[data-chat-embed="world"] .chat-rooms-pane,
+      html[data-chat-embed="world"] .chat-people-pane {
+        display: none;
+      }
+
       /* ── responsive ── */
       @media (max-width: 980px) {
         .chat-panes { grid-template-columns: 200px minmax(0, 1fr); }
@@ -1395,6 +1422,17 @@
                   <path d="M12 5v14M5 12h14"></path>
                 </svg>
                 <span class="chat-manage-label">Add person</span>
+              </button>
+              <button
+                id="chat-genie-welcome"
+                class="chat-admin-action chat-genie-welcome-button"
+                type="button"
+                data-instance-plugin="genie"
+                title="Send a genie spider to welcome everyone"
+                hidden
+              >
+                <span aria-hidden="true">🕷️</span>
+                <span class="chat-manage-label">Welcome</span>
               </button>
               <select
                 id="chat-retention-select"

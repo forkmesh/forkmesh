@@ -117,7 +117,7 @@ struct ReportBugSheet: View {
                     .autocorrectionDisabled(true)
                     .disabled(model.busy)
             }
-            FmToneButton(label: "Add files", tone: .neutral, filled: false,
+            FmToneButton(label: "Add files", tone: .neutral, filled: false, busy: false,
                          onPressed: model.busy || model.attachments.count >= 5 ? nil : { importing = true })
             if !model.attachments.isEmpty {
                 Text(model.attachments.map(\.name).joined(separator: " · "))

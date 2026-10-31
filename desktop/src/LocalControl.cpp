@@ -440,6 +440,12 @@ LocalControlServer::~LocalControlServer()
         closeConnection(conn->id, QString());
 }
 
+bool LocalControlServer::userVerified(const Device &device)
+{
+    return !device.key.isEmpty() &&
+           (device.approval == accountApproval() || device.userConfirmed);
+}
+
 void LocalControlServer::setDesktopInfo(const QString &name, const QString &user)
 {
     m_name = name.left(kMaxNameChars);
@@ -486,6 +492,23 @@ bool LocalControlServer::isConnected(const QString &key) const
         if (conn->state == State::Paired && conn->device.key == key)
             return true;
     return false;
+}
+
+bool LocalControlServer::connectedLocally(const QString &key) const
+{
+    for (const Connection *conn : m_connections)
+        if (conn->state == State::Paired && conn->device.key == key && !conn->relayed())
+            return true;
+    return false;
+}
+
+void LocalControlServer::setRemoteOff(bool off)
+{
+    if (m_remoteOff == off)
+        return;
+    m_remoteOff = off;
+    if (onDevicesChanged)
+        onDevicesChanged();
 }
 
 void LocalControlServer::forget(const QString &key)
@@ -823,6 +846,54 @@ bool LocalControlServer::admitsBeforeCheck(const Connection &conn) const
            QDateTime::currentMSecsSinceEpoch() - it->accountCheckedMs < kAccountGraceMs;
 }
 
+bool LocalControlServer::claimsUnconfirmedUser(const Connection &conn) const
+{
+    if (!accountDeviceCheck)
+        return false;
+    const auto it = m_devices.constFind(conn.device.key);
+    if (it == m_devices.cend() || it->approval == accountApproval())
+        return false;
+    const QString claimed = conn.device.user.trimmed();
+    if (claimed.isEmpty())
+        return false;
+    if (claimed.compare(it->user.trimmed(), Qt::CaseInsensitive) != 0)
+        return true;
+    return !it->userConfirmed &&
+           claimed.compare(m_user.trimmed(), Qt::CaseInsensitive) == 0;
+}
+
+void LocalControlServer::confirmClaimedUser(Connection &conn)
+{
+    conn.state = State::Checking;
+    conn.accountCheckInFlight = true;
+    const int id = conn.id;
+    const QString key = conn.device.key;
+    const QString claimed = conn.device.user.trimmed();
+    QPointer<LocalControlServer> self(this);
+    if (onDevicesChanged)
+        onDevicesChanged();
+    accountDeviceCheck(conn.device, [self, id, key, claimed](AccountCheck verdict) {
+        if (!self)
+            return;
+        Connection *c = self->connection(id);
+        if (!c || c->state != State::Checking || c->device.key != key)
+            return;
+        c->accountCheckInFlight = false;
+        const auto it = self->m_devices.find(key);
+        if (it == self->m_devices.end()) {
+            self->requestPairing(*c);
+        } else {
+            if (verdict == AccountCheck::Owned) {
+                it->user = claimed;
+                it->userConfirmed = true;
+            }
+            self->admitStored(*c);
+        }
+        if (self->onDevicesChanged)
+            self->onDevicesChanged();
+    });
+}
+
 void LocalControlServer::recheckAccount(int connectionId)
 {
     Connection *conn = connection(connectionId);
@@ -1032,6 +1103,10 @@ void LocalControlServer::handleAuth(Connection &conn, const QByteArray &payload)
         saveDevices();
     if (!browser && m_devices.contains(conn.device.key) &&
         !needsAccountCheck(conn)) {
+        if (claimsUnconfirmedUser(conn)) {
+            confirmClaimedUser(conn);
+            return;
+        }
         admitStored(conn);
     } else if (!browser && admitsBeforeCheck(conn)) {
         const int id = conn.id;
@@ -1207,6 +1282,9 @@ void LocalControlServer::approvePairing(int connectionId)
     Connection *conn = connection(connectionId);
     if (!conn || conn->state != State::Pending)
         return;
+    if (conn->device.user.trimmed().compare(m_user.trimmed(), Qt::CaseInsensitive) == 0)
+        conn->device.user.clear();
+    conn->device.userConfirmed = false;
     pairDevice(*conn, codeApproval());
     if (onPairingClosed)
         onPairingClosed(connectionId);
@@ -1238,6 +1316,10 @@ void LocalControlServer::handleMessage(Connection &conn, const QJsonObject &mess
     }
     if (conn.state != State::Paired) {
         respondError(conn.id, requestId, QStringLiteral("not_paired"));
+        return;
+    }
+    if (m_remoteOff) {
+        respondError(conn.id, requestId, QStringLiteral("remote_off"));
         return;
     }
     if (const QString family = familyFor(method); !family.isEmpty()) {
@@ -1431,6 +1513,8 @@ void LocalControlServer::respondError(int connectionId, int requestId,
 
 void LocalControlServer::broadcast(const QString &event, const QJsonObject &data)
 {
+    if (m_remoteOff)
+        return;
     for (Connection *conn : std::as_const(m_connections))
         if (conn->state == State::Paired)
             sendEvent(*conn, event, data);
@@ -1442,6 +1526,8 @@ bool LocalControlServer::sendEventTo(int connectionId, const QString &event,
     Connection *conn = connection(connectionId);
     if (!conn || conn->state != State::Paired)
         return false;
+    if (m_remoteOff)
+        return true;
     return writeJson(*conn, {{QStringLiteral("event"), event},
                              {QStringLiteral("data"), data}});
 }
@@ -1574,6 +1660,7 @@ void LocalControlServer::loadDevices()
         device.approval = boundedText(object, "approval", 16);
         device.accountCheckedMs =
             qint64(object.value(QStringLiteral("accountCheckedMs")).toDouble());
+        device.userConfirmed = object.value(QStringLiteral("userConfirmed")).toBool();
         m_devices.insert(device.key, device);
     }
 }
@@ -1597,6 +1684,8 @@ void LocalControlServer::saveDevices() const
         if (device.accountCheckedMs > 0)
             object.insert(QStringLiteral("accountCheckedMs"),
                           double(device.accountCheckedMs));
+        if (device.userConfirmed)
+            object.insert(QStringLiteral("userConfirmed"), true);
         devices.append(object);
     }
     forkmesh::ownerfile::write(

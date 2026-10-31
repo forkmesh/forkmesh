@@ -8,6 +8,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "call_diagnostics_parity.mjs"
 FIXTURE = ROOT / "native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/call-diagnostics-parity.json"
+ANDROID_FIXTURE = ROOT / "native/android/core/src/test/resources/chat/call-diagnostics-parity.json"
 REGENERATE = f"node tools/call_diagnostics_parity.mjs {FIXTURE.relative_to(ROOT)}"
 
 
@@ -35,3 +36,10 @@ def test_the_fixture_covers_every_problem(regenerated):
     assert severities == {"unknown", "ok", "warn", "bad"}
     issues = {issue["id"] for case in regenerated["cases"] for issue in case["diagnosis"]["issues"]}
     assert issues == {"latency", "loss", "jitter", "bandwidth", "cpu", "sendFps", "receive", "face"}
+
+
+def test_the_android_fixture_matches_the_ios_fixture():
+    assert json.loads(ANDROID_FIXTURE.read_text()) == json.loads(FIXTURE.read_text()), (
+        f"copy {FIXTURE.relative_to(ROOT)} to {ANDROID_FIXTURE.relative_to(ROOT)} and update "
+        "native/android/core/src/main/kotlin/com/forkmesh/nativeapp/chat/CallDiagnostics.kt"
+    )

@@ -82,13 +82,14 @@ internal class TelemetryScreen(
     private val telemetry: AppTelemetry,
     focusMetric: TelemetryMetric? = null,
     logCategory: LogCategory? = null,
+    showLogs: Boolean = false,
     private val now: () -> Long = { System.currentTimeMillis() },
 ) : Screen() {
     private var range by mutableStateOf(TelemetryRange.M5)
     private var focus by mutableStateOf(focusMetric)
     private var categories by mutableStateOf(if (logCategory != null) setOf(logCategory) else emptySet())
     private var pausedAt by mutableStateOf<Long?>(null)
-    private var page by mutableIntStateOf(if (logCategory != null) 1 else 0)
+    private var page by mutableIntStateOf(if (logCategory != null || showLogs) 1 else 0)
     private val copyStatus = FmStatus()
 
     override val title: String get() = TelemetryScreenText.TITLE

@@ -119,6 +119,75 @@ def test_about_micro_cache_serves_anonymous_reads_from_memory(monkeypatch):
     asyncio.run(main())
 
 
+
+def test_about_micro_cache_never_replays_one_visitors_cors_headers():
+    import asyncio
+    from forkmesh_host import js
+
+    async def worker_fetch(request):
+        return js.Response(b'{"ok":true}', 200, "", js.Headers({
+            "content-type": "application/json",
+            "access-control-allow-origin": "https://forkmesh.com",
+            "access-control-allow-credentials": "true",
+            "vary": "Accept-Encoding"}))
+
+    def scope(headers=()):
+        return {"method": "GET", "path": "/api/repo/o/r/about",
+                "raw_path": b"/api/repo/o/r/about", "query_string": b"",
+                "headers": list(headers)}
+
+    async def main():
+        repo_ssr._micro.clear()
+        assert repo_ssr.start(object(), scope(
+            [(b"origin", b"https://forkmesh.com")])) is None
+        key = repo_ssr.start(object(), scope())
+        live = await repo_ssr.fetch(key, worker_fetch, "req")
+        assert live.headers.get("access-control-allow-origin") == \
+            "https://forkmesh.com"
+        cached = await repo_ssr.fetch(key, worker_fetch, "req")
+        assert cached.headers.get("access-control-allow-origin") is None
+        assert cached.headers.get("access-control-allow-credentials") is None
+        assert cached.headers.get("vary") == "Accept-Encoding, Origin"
+        repo_ssr._micro.clear()
+    asyncio.run(main())
+
+
+def test_about_micro_cache_forgets_a_repository_that_answers_not_found():
+    import asyncio
+    from forkmesh_host import js
+
+    status = [200]
+
+    async def worker_fetch(request):
+        return js.Response(b'{"ok":true,"description":"old"}' if status[0] == 200
+                           else b'{"error":"not_found"}', status[0], "",
+                           js.Headers({"content-type": "application/json"}))
+
+    def scope():
+        return {"method": "GET", "path": "/api/repo/o/r/about",
+                "raw_path": b"/api/repo/o/r/about", "query_string": b"",
+                "headers": []}
+
+    async def main():
+        repo_ssr._micro.clear()
+        repo_ssr._about_memo.clear()
+        key = repo_ssr.start(object(), scope())
+        await repo_ssr.fetch(key, worker_fetch, "req")
+        assert key in repo_ssr._micro
+        assert repo_ssr._about_memo
+        stamp, *rest = repo_ssr._micro[key]
+        repo_ssr._micro[key] = (stamp - repo_ssr.MICRO_FRESH_SECONDS - 1,
+                                *rest)
+        status[0] = 404
+        await repo_ssr.fetch(key, worker_fetch, "req")
+        await asyncio.sleep(0.01)
+        assert key not in repo_ssr._micro
+        assert not repo_ssr._about_memo
+        gone = await repo_ssr.fetch(key, worker_fetch, "req")
+        assert int(gone.status) == 404
+    asyncio.run(main())
+
+
 def test_a_view_that_misses_its_budget_still_starts_its_bundle():
     import asyncio
 

@@ -175,7 +175,7 @@ def _hook_path(workflow_id, token):
 def _summary(row, record):
     workflow = record or {}
     trigger = engine.trigger_node(workflow)
-    return {
+    out = {
         "id": row["workflow_id"],
         "name": workflow.get("name") or "Untitled workflow",
         "active": bool(row.get("active")),
@@ -188,6 +188,9 @@ def _summary(row, record):
         "createdAt": int(row.get("created_at") or 0),
         "updatedAt": int(row.get("updated_at") or 0),
     }
+    if desktop.has_desktop_steps(workflow):
+        out["runsOn"] = desktop.RUNS_ON
+    return out
 
 
 def _detail(row, record):

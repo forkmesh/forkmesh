@@ -210,7 +210,8 @@ def test_signup_rejects_malformed_email_before_submit_with_inline_error():
     assert "EMAIL_LOCAL_RE" in signup_js
     assert "EMAIL_DOMAIN_RE" in signup_js
     assert 'local.includes("..")' in signup_js
-    assert "nameOk && validEmail(email)" in signup_js
+    assert "nameOk && emailAcceptable(email)" in signup_js
+    assert "(emailOptional && !value) || validEmail(value)" in signup_js
     assert 'emailInput.addEventListener("blur", () => validateEmail(true))' in signup_js
     assert 'if (!validateEmail(true))' in signup_js
     assert 'emailInput.setAttribute("aria-invalid"' in signup_js

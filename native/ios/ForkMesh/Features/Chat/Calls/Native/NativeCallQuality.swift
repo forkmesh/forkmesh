@@ -12,11 +12,12 @@ final class NativeMicMeter {
 
     var running: Bool { recorder != nil }
 
-    func start(into monitor: CallQualityMonitor) -> Bool {
+    func start(into monitor: CallQualityMonitor, video: Bool = false) -> Bool {
         stop(deactivate: false)
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
+            try session.setCategory(
+                .playAndRecord, mode: video ? .videoChat : .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
             return false

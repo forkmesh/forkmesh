@@ -1219,6 +1219,32 @@
         letter-spacing: 0;
       }
 
+      .chat-genie-welcome-button { justify-self: start; }
+
+      .chat-genie-welcome {
+        display: block;
+        width: min(100%, 280px);
+        aspect-ratio: 280 / 150;
+        margin: 6px 0 2px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: rgb(10, 12, 28);
+        cursor: pointer;
+      }
+
+      .chat-genie-welcome canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .chat-genie-welcome:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
       #chat-channel-manage {
         width: 26px;
         padding: 0;
@@ -3262,6 +3288,7 @@
       html[data-chat-embed="office"] .chat-people-pane { display: none; }
       html[data-chat-embed="office"] .chat-e2e-note { display: none; }
       html[data-chat-embed="office"] .chat-admin-action { display: none; }
+      html[data-chat-embed="office"] .chat-genie-welcome-button:not([hidden]) { display: inline-flex; }
       /* Creating a channel is the one manager control the embed keeps, for
          organization members. [hidden] still wins for everyone else, and the
          dialog's member/webhook sections stay closed in create mode. */

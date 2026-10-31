@@ -930,6 +930,78 @@ int main(int argc, char *argv[])
     }
 
     {
+        const QString source = root.filePath(QStringLiteral("empty-object-source"));
+        const QString mirror = root.filePath(QStringLiteral("empty-object-mirror.git"));
+        QDir().mkpath(source);
+        check(git(source, {QStringLiteral("init"), QStringLiteral("-q"),
+                           QStringLiteral("-b"), QStringLiteral("main")}),
+              "init empty-object source");
+        check(commitFile(source, QStringLiteral("a.txt"), QByteArrayLiteral("a\n"),
+                         QStringLiteral("one")),
+              "seed empty-object source");
+        check(git(root.path(), {QStringLiteral("clone"), QStringLiteral("-q"),
+                                QStringLiteral("--bare"), source, mirror}),
+              "clone empty-object mirror");
+        const QString tip = revParse(mirror, QStringLiteral("main"));
+        const QString tipObject = tip.left(2) + QLatin1Char('/') + tip.mid(2);
+        const QString tipPath =
+            QDir(mirror).filePath(QStringLiteral("objects/") + tipObject);
+        QFile emptied(tipPath);
+        check(QFileInfo(tipPath).size() > 0 && QFile::remove(tipPath) &&
+                  emptied.open(QIODevice::WriteOnly),
+              "replace the mirror's tip commit with an empty loose object");
+        emptied.close();
+        check(commitFile(source, QStringLiteral("b.txt"), QByteArrayLiteral("b\n"),
+                         QStringLiteral("two")),
+              "advance empty-object source");
+        const auto gitErr = [](const QString &path, const QStringList &arguments,
+                               QString *errors) {
+            QProcess process;
+            process.start(QStringLiteral("git"),
+                          QStringList{QStringLiteral("-C"), path} + arguments);
+            const bool finished = process.waitForFinished(30000);
+            *errors += QString::fromUtf8(process.readAllStandardError());
+            return finished && process.exitCode() == 0;
+        };
+        const QStringList fetchArgs{
+            QStringLiteral("fetch"), QStringLiteral("--prune"), source,
+            QStringLiteral("+refs/heads/main:refs/heads/main")};
+        QString fetchErrors;
+        bool fetched = gitErr(mirror, fetchArgs, &fetchErrors);
+        std::fprintf(stderr, "fetch into mirror with an empty object: %s\n",
+                     qPrintable(fetchErrors.simplified()));
+        check(!fetched &&
+                  forkmesh::upstream::emptyLooseObjectsNamed(fetchErrors)
+                      .contains(tipObject),
+              "an empty loose object fails the fetch and git names its file");
+        QStringList removed;
+        for (int attempt = 0; attempt < 4 && !fetched; ++attempt) {
+            removed += forkmesh::upstream::removeEmptyLooseObjects(mirror,
+                                                                   fetchErrors);
+            forkmesh::upstream::dropUnreadableRefs(mirror, fetchErrors);
+            fetchErrors.clear();
+            fetched = gitErr(mirror, fetchArgs, &fetchErrors);
+        }
+        check(fetched, "the fetch succeeds once the empty object is removed");
+        check(removed == QStringList{tip}, "exactly the empty object is removed");
+        check(revParse(mirror, QStringLiteral("main")) ==
+                  revParse(source, QStringLiteral("main")),
+              "the repaired mirror syncs to the source");
+        const QString blob = revParse(mirror, QStringLiteral("main:a.txt"));
+        const QString blobPath = QDir(mirror).filePath(
+            QStringLiteral("objects/") + blob.left(2) + QLatin1Char('/') +
+            blob.mid(2));
+        check(QFileInfo(blobPath).size() > 0 &&
+                  forkmesh::upstream::removeEmptyLooseObjects(
+                      mirror, QStringLiteral("error: object file ./objects/") +
+                                  blob.left(2) + QLatin1Char('/') + blob.mid(2) +
+                                  QStringLiteral(" is empty"))
+                      .isEmpty() &&
+                  QFileInfo(blobPath).size() > 0,
+              "a readable object named in error text is never removed");
+    }
+
+    {
         const QString served = root.filePath(QStringLiteral("cloud-served.git"));
         const QString runner = root.filePath(QStringLiteral("cloud-runner"));
         const QString desk = root.filePath(QStringLiteral("cloud-desktop"));

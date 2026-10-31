@@ -123,6 +123,11 @@ void MainWindow::startAgentParityWatch()
                        [this] { checkAgentParity(); });
 }
 
+void MainWindow::stopAgentParityWatch()
+{
+    delete AgentParityState::of(this);
+}
+
 void MainWindow::checkAgentParity()
 {
     auto *state = AgentParityState::of(this);

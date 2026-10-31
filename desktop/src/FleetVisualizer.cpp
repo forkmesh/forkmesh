@@ -832,14 +832,20 @@ void FleetVisualizer::paintStream(QPainter &p, const QRectF &area)
             if (value > 0)
                 parts.append(QStringLiteral("%1 %2").arg(group, number(value)));
         }
-        m_hits.append(
-            {disc.adjusted(-4, -4, 4, 4),
-             QStringLiteral("%1\n%2 statements (%3 of all)\n%4")
-                 .arg(name == kMoreTables ? label + QStringLiteral(" tables")
-                                          : name,
-                      number(count),
-                      percent(double(count) / qMax<qint64>(1, m_totalStatements)),
-                      parts.join(QStringLiteral(" · ")))});
+        const bool openable = name != kMoreTables &&
+                              name != QLatin1String("(no table)") &&
+                              onTableClicked;
+        QString tip =
+            QStringLiteral("%1\n%2 statements (%3 of all)\n%4")
+                .arg(name == kMoreTables ? label + QStringLiteral(" tables")
+                                         : name,
+                     number(count),
+                     percent(double(count) / qMax<qint64>(1, m_totalStatements)),
+                     parts.join(QStringLiteral(" · ")));
+        if (openable)
+            tip += QStringLiteral("\nClick to open the table in the Database tab");
+        m_hits.append({disc.adjusted(-4, -4, 4, 4), tip,
+                       openable ? name : QString()});
     }
 
     p.setFont(font());
@@ -1309,6 +1315,23 @@ QString FleetVisualizer::toolTipAt(const QPointF &point) const
     return QString();
 }
 
+QString FleetVisualizer::tableAt(const QPointF &point) const
+{
+    for (int i = m_hits.size() - 1; i >= 0; --i)
+        if (m_hits.at(i).area.contains(point))
+            return m_hits.at(i).table;
+    return QString();
+}
+
+bool FleetVisualizer::clickAt(const QPointF &point)
+{
+    const QString table = tableAt(point);
+    if (table.isEmpty() || !onTableClicked)
+        return false;
+    onTableClicked(table);
+    return true;
+}
+
 void FleetVisualizer::mouseMoveEvent(QMouseEvent *event)
 {
     const QString text = toolTipAt(event->position());
@@ -1316,7 +1339,18 @@ void FleetVisualizer::mouseMoveEvent(QMouseEvent *event)
         QToolTip::hideText();
     else
         QToolTip::showText(event->globalPosition().toPoint(), text, this);
+    setCursor(tableAt(event->position()).isEmpty() ? Qt::ArrowCursor
+                                                   : Qt::PointingHandCursor);
     QWidget::mouseMoveEvent(event);
+}
+
+void FleetVisualizer::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && clickAt(event->position())) {
+        event->accept();
+        return;
+    }
+    QWidget::mousePressEvent(event);
 }
 
 void FleetVisualizer::leaveEvent(QEvent *event)

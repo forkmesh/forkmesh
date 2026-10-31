@@ -38,6 +38,7 @@ final class DirectCallAudio {
     private func observe(_ engine: DirectCallEngine) {
         withObservationTracking {
             _ = engine.phase
+            _ = DirectCallPrecheck.shared.request
             #if canImport(WebRTC)
             _ = NativeGroupCall.shared.active
             #endif
@@ -50,12 +51,16 @@ final class DirectCallAudio {
         }
     }
 
-    private func refresh() {
-        var busy = engine?.active ?? false
+    static var callBusy: Bool {
+        var busy = shared.engine?.active ?? false
         #if canImport(WebRTC)
         busy = busy || NativeGroupCall.shared.active
         #endif
-        OtherAppCall.shared.setOwnCall(busy)
+        return busy
+    }
+
+    private func refresh() {
+        OtherAppCall.shared.setOwnCall(Self.callBusy || DirectCallPrecheck.shared.request != nil)
     }
 
     private func resume() {

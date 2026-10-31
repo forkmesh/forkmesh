@@ -9,6 +9,11 @@ verified and tested; **Preview** is packaged but not fully published;
 **Source-only** builds with `FORKMESH_FROM_SOURCE=1`; **Planned** is not
 installable.
 
+The iPhone and iPad app is on the
+[App Store](https://apps.apple.com/app/forkmesh/id6803060735), and the Apple
+Watch app installs with it. Apple signs and delivers it, so it is never in the
+signed release manifest and stays listed as Preview here.
+
 ## Profiles
 
 | Profile | Tier | Artifact |
@@ -22,7 +27,7 @@ installable.
 | `macos-desktop-x86_64` | Preview | `forkmesh-macos-x86_64.dmg` |
 | `linux-desktop-arm64` | Preview | `forkmesh-linux-arm64.AppImage` |
 | `linux-arm-small-device` | Source-only | none |
-| `ios` | Preview | App Store / TestFlight |
+| `ios` | Preview (on the App Store) | [App Store](https://apps.apple.com/app/forkmesh/id6803060735), with the watch app inside |
 | `oci-container` | Planned | none |
 | `cluster` | Planned | none |
 

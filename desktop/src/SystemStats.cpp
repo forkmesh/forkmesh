@@ -504,6 +504,63 @@ SystemStats::Termination SystemStats::requestTermination(qint64 pid,
 #endif
 }
 
+QString SystemStats::executablePath(qint64 pid)
+{
+#if defined(Q_OS_LINUX)
+    if (pid <= 0)
+        return QString();
+    QString target =
+        QFile::symLinkTarget(QStringLiteral("/proc/%1/exe").arg(pid));
+    const QLatin1String deleted(" (deleted)");
+    if (target.endsWith(deleted))
+        target.chop(deleted.size());
+    return target;
+#else
+    Q_UNUSED(pid);
+    return QString();
+#endif
+}
+
+bool SystemStats::isDisplayServer(const QString &name)
+{
+    static const QSet<QString> kNames{
+        QStringLiteral("Xorg"),          QStringLiteral("X"),
+        QStringLiteral("Xwayland"),      QStringLiteral("gnome-shell"),
+        QStringLiteral("mutter"),        QStringLiteral("kwin_wayland"),
+        QStringLiteral("kwin_x11"),      QStringLiteral("sway"),
+        QStringLiteral("Hyprland"),      QStringLiteral("weston"),
+        QStringLiteral("wayfire"),       QStringLiteral("labwc"),
+        QStringLiteral("river"),         QStringLiteral("niri"),
+        QStringLiteral("cosmic-comp"),   QStringLiteral("WindowServer")};
+    return kNames.contains(name);
+}
+
+QSet<qint64> SystemStats::killProtectedPids(
+    qint64 selfPid, const QSet<QString> &selfExecutables,
+    const QHash<qint64, qint64> &parentOf, const QHash<qint64, QString> &nameOf,
+    const QHash<qint64, QString> &executableOf)
+{
+    QSet<qint64> protectedPids{1};
+    if (selfPid > 0)
+        protectedPids.insert(selfPid);
+    qint64 current = parentOf.value(selfPid, 0);
+    for (int hops = 0; current > 0 && hops < 64; ++hops) {
+        if (protectedPids.contains(current))
+            break;
+        protectedPids.insert(current);
+        current = parentOf.value(current, 0);
+    }
+    for (auto it = executableOf.constBegin(); it != executableOf.constEnd(); ++it) {
+        if (!it.value().isEmpty() && selfExecutables.contains(it.value()))
+            protectedPids.insert(it.key());
+    }
+    for (auto it = nameOf.constBegin(); it != nameOf.constEnd(); ++it) {
+        if (isDisplayServer(it.value()))
+            protectedPids.insert(it.key());
+    }
+    return protectedPids;
+}
+
 int SystemStats::raiseOpenFileLimit()
 {
 #if defined(Q_OS_UNIX)

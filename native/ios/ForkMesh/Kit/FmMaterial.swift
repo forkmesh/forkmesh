@@ -30,11 +30,14 @@ struct FmButtonLabel: View {
     let icon: String?
     let color: Color
     let role: FmTextRole
+    var busy: Bool = false
+    var ringColor: Color? = nil
 
     var body: some View {
         HStack(spacing: FmSpace.x2) {
             if let icon = icon {
                 FmIcon(icon, size: 18, color: color)
+                    .fmBusyRing(busy, size: 26, color: ringColor)
             }
             Text(label)
                 .fmText(role, color: color)
@@ -54,7 +57,9 @@ struct FmTextButton: View {
     private let color: Color?
     private let minHeight: CGFloat
     private let fillWidth: Bool
+    private let busy: Bool?
     private let onPressed: (() -> Void)?
+    @State private var tap: FmBusyTap = FmBusyTap()
 
     init(
         _ label: String,
@@ -62,6 +67,7 @@ struct FmTextButton: View {
         color: Color? = nil,
         minHeight: CGFloat = 44,
         fillWidth: Bool = false,
+        busy: Bool? = nil,
         onPressed: (() -> Void)?
     ) {
         self.label = label
@@ -69,6 +75,7 @@ struct FmTextButton: View {
         self.color = color
         self.minHeight = minHeight
         self.fillWidth = fillWidth
+        self.busy = busy
         self.onPressed = onPressed
     }
 
@@ -76,15 +83,29 @@ struct FmTextButton: View {
         return color ?? fm.accent
     }
 
+    private var working: Bool {
+        return busy ?? tap.busy
+    }
+
+    private func press() {
+        guard let onPressed = onPressed, !working else {
+            return
+        }
+        tap.mark()
+        onPressed()
+    }
+
     var body: some View {
-        Button(action: { onPressed?() }) {
-            FmButtonLabel(label: label, icon: icon, color: tone, role: .labelLarge)
+        Button(action: press) {
+            FmButtonLabel(label: label, icon: icon, color: tone, role: .labelLarge, busy: working)
                 .padding(.horizontal, FmSpace.x3)
                 .frame(maxWidth: fillWidth ? CGFloat.infinity : nil, minHeight: minHeight)
+                .fmBusyRing(working && icon == nil, corner: FmRadius.full)
         }
         .buttonStyle(FmMaterialButtonStyle(highlight: tone.opacity(0.10), radius: FmRadius.full))
-        .disabled(onPressed == nil)
-        .opacity(onPressed == nil ? 0.38 : 1)
+        .disabled(onPressed == nil || working)
+        .opacity(onPressed == nil && !working ? 0.38 : 1)
+        .fmBusyTracking($tap, enabled: onPressed != nil)
     }
 }
 
@@ -103,7 +124,9 @@ struct FmFilledButton: View {
     private let radius: CGFloat
     private let fillWidth: Bool
     private let role: FmTextRole
+    private let busy: Bool?
     private let onPressed: (() -> Void)?
+    @State private var tap: FmBusyTap = FmBusyTap()
 
     init(
         _ label: String,
@@ -114,6 +137,7 @@ struct FmFilledButton: View {
         radius: CGFloat = FmRadius.full,
         fillWidth: Bool = false,
         role: FmTextRole = .labelLarge,
+        busy: Bool? = nil,
         onPressed: (() -> Void)?
     ) {
         self.label = label
@@ -124,11 +148,24 @@ struct FmFilledButton: View {
         self.radius = radius
         self.fillWidth = fillWidth
         self.role = role
+        self.busy = busy
         self.onPressed = onPressed
     }
 
+    private var working: Bool {
+        return busy ?? tap.busy
+    }
+
     private var enabled: Bool {
-        return onPressed != nil
+        return onPressed != nil || working
+    }
+
+    private func press() {
+        guard let onPressed = onPressed, !working else {
+            return
+        }
+        tap.mark()
+        onPressed()
     }
 
     /// Material's disabled fill and label: on-surface at 12% and 38%.
@@ -141,15 +178,17 @@ struct FmFilledButton: View {
     }
 
     var body: some View {
-        Button(action: { onPressed?() }) {
-            FmButtonLabel(label: label, icon: icon, color: labelColor, role: role)
+        Button(action: press) {
+            FmButtonLabel(label: label, icon: icon, color: labelColor, role: role, busy: working, ringColor: labelColor)
                 .padding(.horizontal, FmSpace.x5)
                 .frame(maxWidth: fillWidth ? CGFloat.infinity : nil, minHeight: minHeight)
                 .background(fillColor)
                 .clipShape(FmRoundedShape(radius: radius))
+                .fmBusyRing(working && icon == nil, corner: radius, color: labelColor)
         }
         .buttonStyle(FmMaterialButtonStyle(highlight: labelColor.opacity(0.12), radius: radius))
-        .disabled(!enabled)
+        .disabled(onPressed == nil || working)
+        .fmBusyTracking($tap, enabled: onPressed != nil)
     }
 }
 
@@ -159,17 +198,19 @@ struct FmElevatedButton: View {
     private let label: String
     private let icon: String?
     private let fillWidth: Bool
+    private let busy: Bool?
     private let onPressed: (() -> Void)?
 
-    init(_ label: String, icon: String? = nil, fillWidth: Bool = false, onPressed: (() -> Void)?) {
+    init(_ label: String, icon: String? = nil, fillWidth: Bool = false, busy: Bool? = nil, onPressed: (() -> Void)?) {
         self.label = label
         self.icon = icon
         self.fillWidth = fillWidth
+        self.busy = busy
         self.onPressed = onPressed
     }
 
     var body: some View {
-        FmFilledButton(label, icon: icon, fillWidth: fillWidth, onPressed: onPressed)
+        FmFilledButton(label, icon: icon, fillWidth: fillWidth, busy: busy, onPressed: onPressed)
     }
 }
 
@@ -185,7 +226,9 @@ struct FmOutlinedButton: View {
     private let radius: CGFloat
     private let fillWidth: Bool
     private let role: FmTextRole
+    private let busy: Bool?
     private let onPressed: (() -> Void)?
+    @State private var tap: FmBusyTap = FmBusyTap()
 
     init(
         _ label: String,
@@ -195,6 +238,7 @@ struct FmOutlinedButton: View {
         radius: CGFloat = FmRadius.full,
         fillWidth: Bool = false,
         role: FmTextRole = .labelLarge,
+        busy: Bool? = nil,
         onPressed: (() -> Void)?
     ) {
         self.label = label
@@ -204,27 +248,42 @@ struct FmOutlinedButton: View {
         self.radius = radius
         self.fillWidth = fillWidth
         self.role = role
+        self.busy = busy
         self.onPressed = onPressed
     }
 
+    private var working: Bool {
+        return busy ?? tap.busy
+    }
+
     private var labelColor: Color {
-        if onPressed == nil {
+        if onPressed == nil && !working {
             return fm.textPrimary.opacity(0.38)
         }
         return foreground ?? fm.textPrimary
     }
 
+    private func press() {
+        guard let onPressed = onPressed, !working else {
+            return
+        }
+        tap.mark()
+        onPressed()
+    }
+
     var body: some View {
-        Button(action: { onPressed?() }) {
-            FmButtonLabel(label: label, icon: icon, color: labelColor, role: role)
+        Button(action: press) {
+            FmButtonLabel(label: label, icon: icon, color: labelColor, role: role, busy: working)
                 .padding(.horizontal, FmSpace.x5)
                 .frame(maxWidth: fillWidth ? CGFloat.infinity : nil, minHeight: minHeight)
                 .overlay {
                     FmRoundedShape(radius: radius).strokeBorder(fm.border, lineWidth: 1)
                 }
+                .fmBusyRing(working && icon == nil, corner: radius)
         }
         .buttonStyle(FmMaterialButtonStyle(highlight: labelColor.opacity(0.08), radius: radius))
-        .disabled(onPressed == nil)
+        .disabled(onPressed == nil || working)
+        .fmBusyTracking($tap, enabled: onPressed != nil)
     }
 }
 
@@ -238,18 +297,24 @@ struct FmFloatingActionButton: View {
     private let icon: String
     private let label: String?
     private let accessibilityName: String
+    private let busy: Bool
     private let onPressed: () -> Void
 
-    init(icon: String, label: String? = nil, accessibilityLabel: String, onPressed: @escaping () -> Void) {
+    init(
+        icon: String, label: String? = nil, accessibilityLabel: String, busy: Bool = false,
+        onPressed: @escaping () -> Void
+    ) {
         self.icon = icon
         self.label = label
         self.accessibilityName = accessibilityLabel
+        self.busy = busy
         self.onPressed = onPressed
     }
 
     private var face: some View {
         HStack(spacing: FmSpace.x2) {
             FmIcon(icon, size: 24, color: Color.white)
+                .fmBusyRing(busy, size: 34, color: Color.white)
             if let label = label {
                 Text(label)
                     .fmText(.labelLarge, color: Color.white)
@@ -271,6 +336,7 @@ struct FmFloatingActionButton: View {
             face
         }
         .buttonStyle(FmMaterialButtonStyle(highlight: Color.white.opacity(0.16), radius: 14))
+        .disabled(busy)
         .accessibilityLabel(Text(accessibilityName))
     }
 }

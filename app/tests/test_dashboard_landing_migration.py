@@ -1451,7 +1451,7 @@ def test_repository_logo_moved_from_about_to_settings():
     assert "const canSeeSettingsTab = canEditAbout;" in render
     assert "const canEditAbout = sessionAdministersRepo(repo);" in render
     logo = settings[
-        settings.index("data-repo-settings-logo class")
+        settings.index("data-repo-settings-logo id=")
         : settings.index("data-repo-pull-rules-card")
     ]
     for marker in (
@@ -1683,7 +1683,7 @@ def test_dashboard_repository_metadata_constrains_long_values_without_fake_langu
     # index (loadRepoAboutFilesAndLanguages), never a hardcoded mock mix.
     assert "formatSize(repo.sizeBytes)" not in render
     assert "TypeScript" not in render
-    assert "CSS" not in render
+    assert not re.search(r"\bCSS\b(?!\.escape)", render)
     assert "JavaScript" not in render
     assert "grid-cols-[72fr_18fr_10fr]" not in render
 
@@ -2355,7 +2355,7 @@ def test_dashboard_repository_tab_counts_wait_for_live_data_and_update_mirrors()
     assert 'data-dashboard-repo-tab-count="${tab}"' in render
     assert 'data-dashboard-repo-count="mirrors"' in render
     assert "updateRepoLiveCounts(repo, data.counts);" in dashboard_js
-    assert "updateRepoLiveCounts(repo, { mirrors: mirrorCount });" in mirror_loader
+    assert "updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });" in mirror_loader
     for fake_action in ("Watch <span", "Fork <span", "Star <span"):
         assert fake_action not in render
 
@@ -2677,7 +2677,7 @@ def test_dashboard_repository_blob_viewer_previews_media_csv_pdf_and_binary():
 
     for marker in (
         "function repoPreviewKindFromPath(path)",
-        "function repoRawUrl(repo, path)",
+        'function repoRawUrl(repo, path, ref = "")',
         "function repoPreviewMeta(data, repo, path)",
         "function renderRepoMediaPreview(meta)",
         "function renderRepoCsvPreview(meta)",

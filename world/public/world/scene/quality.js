@@ -487,9 +487,10 @@ export function prepareWorldRendererContext(
   doc = globalThis.document,
   bakeSky = null,
 ) {
+  let context = null;
   try {
     const canvas = doc.createElement("canvas");
-    const context = canvas.getContext("webgl2", plan.contextAttributes);
+    context = canvas.getContext("webgl2", plan.contextAttributes);
     if (!context) return null;
     const renderer = THREE?.WebGLRenderer
       ? new THREE.WebGLRenderer({ canvas, context, ...plan.contextAttributes })
@@ -503,6 +504,9 @@ export function prepareWorldRendererContext(
       renderer && bakeSky && !plan.compactRenderer ? bakeSky(THREE, renderer) : null;
     return { canvas, context, renderer, sky, key: plan.key };
   } catch (_) {
+    try {
+      context?.getExtension?.("WEBGL_lose_context")?.loseContext?.();
+    } catch (_) {}
     return null;
   }
 }

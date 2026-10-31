@@ -8,7 +8,7 @@ after 8.
 Code: `app/src/stale_pulls.py` (relay), the `stale-pulls` cron phase in
 `app/src/entry.py`, the two switches in the Features group of the repository
 Settings tab (`08-repo-detail-network.js`, `REPO_FEATURE_SWITCHES` in
-`06-repo-content.js`), migration `0291_stale_pulls`. Tests:
+`06-repo-content.js`), migration `0298_stale_pulls`. Tests:
 `app/tests/test_stale_pulls.py`.
 
 ## Turning it on

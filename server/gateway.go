@@ -144,6 +144,14 @@ func refsSHA256(ctx context.Context, gitDir string) (string, error) {
 }
 
 func syncRepository(ctx context.Context, repo Repository, upstreams []string, avoidNode string, desired ...string) error {
+	return syncRepositoryFollowing(ctx, repo, upstreams, avoidNode, true, desired...)
+}
+
+func syncCoreRepository(ctx context.Context, repo Repository, upstreams []string, avoidNode string, desired ...string) error {
+	return syncRepositoryFollowing(ctx, repo, upstreams, avoidNode, false, desired...)
+}
+
+func syncRepositoryFollowing(ctx context.Context, repo Repository, upstreams []string, avoidNode string, follow bool, desired ...string) error {
 	if len(upstreams) == 0 {
 		return errors.New("no upstream configured")
 	}
@@ -153,7 +161,7 @@ func syncRepository(ctx context.Context, repo Repository, upstreams []string, av
 			continue
 		}
 		if _, err := os.Stat(repo.GitDir); errors.Is(err, os.ErrNotExist) {
-			if err := cloneMirrorRepository(ctx, upstream, repo.GitDir, avoidNode); err == nil {
+			if err := cloneMirrorRepositoryFollowing(ctx, upstream, repo.GitDir, avoidNode, follow); err == nil {
 				if err := makePublicRepositoryTraversable(repo.GitDir); err != nil {
 					failures = append(failures, fmt.Sprintf(
 						"%s: publish repository permissions: %s", upstream, err))
@@ -188,13 +196,13 @@ func syncRepository(ctx context.Context, repo Repository, upstreams []string, av
 		// response cannot rewind main, delete a new tag, or make the whole cycle
 		// fail with a non-fast-forward rejection.
 		dropBrokenRefs(ctx, repo.GitDir)
-		if output, err := fetchUpstreamAvoidingBrokenPeers(ctx, repo.GitDir, upstream, avoidNode); err == nil {
+		if output, err := fetchUpstreamAvoidingBrokenPeers(ctx, repo.GitDir, upstream, avoidNode, follow); err == nil {
 			if err := reconcileUpstreamRefs(ctx, repo.GitDir, desired...); err != nil {
 				failures = append(failures, fmt.Sprintf("%s: %s", upstream, err))
 				continue
 			}
 			ensureHeadResolves(ctx, repo.GitDir)
-			convergePeerMains(ctx, repo.GitDir, laterUpstreams(upstreams, upstream), avoidNode)
+			convergePeerMains(ctx, repo.GitDir, laterUpstreams(upstreams, upstream), avoidNode, follow)
 			return nil
 		} else {
 			failures = append(failures, fmt.Sprintf("%s: %s", upstream, boundedText(output, 240)))
@@ -267,6 +275,14 @@ func gitRoutingArgs(avoid ...string) []string {
 	return []string{"-c", "http.extraHeader=X-ForkMesh-Avoid-Node: " + strings.Join(nodes, ",")}
 }
 
+func upstreamGitArgs(follow bool, avoid ...string) []string {
+	args := gitRoutingArgs(avoid...)
+	if !follow {
+		args = append(args, "-c", "http.followRedirects=false")
+	}
+	return args
+}
+
 func redirectedPeer(output []byte) string {
 	matches := redirectedPeerPattern.FindAllSubmatch(output, -1)
 	if len(matches) == 0 {
@@ -275,10 +291,10 @@ func redirectedPeer(output []byte) string {
 	return strings.ToLower(string(matches[len(matches)-1][1]))
 }
 
-func fetchUpstreamAvoidingBrokenPeers(ctx context.Context, gitDir, upstream, avoidNode string) ([]byte, error) {
+func fetchUpstreamAvoidingBrokenPeers(ctx context.Context, gitDir, upstream, avoidNode string, follow bool) ([]byte, error) {
 	avoid := []string{avoidNode}
 	for attempt := 0; ; attempt++ {
-		args := gitRoutingArgs(avoid...)
+		args := upstreamGitArgs(follow, avoid...)
 		args = append(args, "--git-dir="+gitDir, "fetch", "--prune", "--", upstream,
 			"+refs/heads/*:refs/forkmesh/upstream/heads/*",
 			"+refs/tags/*:refs/forkmesh/upstream/tags/*")
@@ -372,6 +388,10 @@ func dropBrokenRefs(ctx context.Context, gitDir string) []string {
 }
 
 func cloneMirrorRepository(ctx context.Context, upstream, destination, avoidNode string) error {
+	return cloneMirrorRepositoryFollowing(ctx, upstream, destination, avoidNode, true)
+}
+
+func cloneMirrorRepositoryFollowing(ctx context.Context, upstream, destination, avoidNode string, follow bool) error {
 	parent := filepath.Dir(destination)
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		return err
@@ -382,7 +402,7 @@ func cloneMirrorRepository(ctx context.Context, upstream, destination, avoidNode
 	}
 	os.Remove(temporary)
 	defer removeTreeUnder(parent, temporary)
-	args := gitRoutingArgs(avoidNode)
+	args := upstreamGitArgs(follow, avoidNode)
 	args = append(args, "clone", "--mirror", "--", upstream, temporary)
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Env = gitNetworkEnvironment()
@@ -737,7 +757,7 @@ func peerMainDue(gitDir string, now time.Time) bool {
 	return true
 }
 
-func convergePeerMains(ctx context.Context, gitDir string, peers []string, avoidNode string) []string {
+func convergePeerMains(ctx context.Context, gitDir string, peers []string, avoidNode string, follow bool) []string {
 	if len(peers) == 0 || !peerMainDue(gitDir, time.Now()) {
 		return nil
 	}
@@ -749,7 +769,7 @@ func convergePeerMains(ctx context.Context, gitDir string, peers []string, avoid
 		if strings.TrimSpace(peer) == "" {
 			continue
 		}
-		args := append(gitRoutingArgs(avoidNode), "--git-dir="+gitDir, "fetch",
+		args := append(upstreamGitArgs(follow, avoidNode), "--git-dir="+gitDir, "fetch",
 			"--no-tags", "--", peer, "+"+head+":"+staged)
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Env = gitNetworkEnvironment()

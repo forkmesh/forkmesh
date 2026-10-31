@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
 
@@ -623,13 +624,32 @@ void testCountersPersist()
     check(local->isValid() && local->newestPrekey() != nullptr,
           "the installation's identity and prekey are created on first use");
     const QString keyRoom = QStringLiteral("chat-counter-room");
+    const QString counterKey = QStringLiteral("chat/e2ee/ctrV3/") + b64u(keyRoom.toUtf8());
+    const quint64 before = local->writeTicket();
     const qint64 first = local->nextCounter(keyRoom);
+    const quint64 firstTicket = local->writeTicket();
     const qint64 second = local->nextCounter(keyRoom);
     check(first == 1 && second == 2, "counters start at 1 and increase");
-    check(QSettings()
-                  .value(QStringLiteral("chat/e2ee/ctrV3/") + b64u(keyRoom.toUtf8()))
-                  .toLongLong() >= second,
+    check(firstTicket > before,
+          "a counter reservation is queued on the state writer and gates the send");
+    ChatDevice::waitForWrites();
+    check(ChatDevice::isWritten(local->writeTicket()) &&
+              storedSetting(counterKey).toLongLong() >= second &&
+              !QSettings().contains(counterKey),
           "a counter is persisted before the frame that uses it is sent");
+    QSet<quint64> tickets;
+    qint64 last = second;
+    for (int i = 0; i < 200; ++i) {
+        last = local->nextCounter(keyRoom);
+        tickets.insert(local->writeTicket());
+        ChatDevice::waitForWrites();
+        if (storedSetting(counterKey).toLongLong() < last + 1) {
+            check(false, "the stored reservation stays ahead of the next counter");
+            break;
+        }
+    }
+    check(last == 202 && tickets.size() <= 8,
+          "counters inside a reserved block reuse its write instead of one per message");
     check(!QSettings().value(QStringLiteral("chat/e2ee/ed25519IdentityV3")).toString().isEmpty() &&
               !QSettings().value(QStringLiteral("chat/e2ee/prekeysV3")).toString().isEmpty(),
           "the identity seed and prekeys live in the settings store");
@@ -712,14 +732,19 @@ void testStoredStateLeavesSettingsFile()
                                  .toJson(QJsonDocument::Compact);
     QSettings().setValue(trustKey, trust);
     QSettings().setValue(seenKey, QByteArray("{}"));
-    QSettings().setValue(QStringLiteral("chat/e2ee/ctrV3/kept"), 7);
+    const QString counterKey =
+        QStringLiteral("chat/e2ee/ctrV3/") + b64u(QByteArray("migrated-room"));
+    QSettings().setValue(counterKey, 7);
     check(storedSetting(trustKey).toByteArray() == trust,
           "state still in the settings file is read before it moves");
     check(migrateStoredState(), "the stored state moves out of the settings file");
     check(!QSettings().contains(trustKey) && !QSettings().contains(seenKey),
           "the moved keys are gone from the settings file");
-    check(QSettings().value(QStringLiteral("chat/e2ee/ctrV3/kept")).toInt() == 7,
-          "counters stay in the settings file");
+    QFile counterFile(storedStateKeyFile(counterKey));
+    check(!QSettings().contains(counterKey) && storedSetting(counterKey).toLongLong() == 7 &&
+              counterFile.open(QIODevice::ReadOnly) && counterFile.readAll() == "7",
+          "a send counter moves into its own file and reads back the same");
+    counterFile.close();
     QFile trustFile(storedStateKeyFile(trustKey));
     check(storedSetting(trustKey).toByteArray() == trust &&
               trustFile.open(QIODevice::ReadOnly) && trustFile.readAll() == trust &&

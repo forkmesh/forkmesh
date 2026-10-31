@@ -16,7 +16,7 @@ def _slice(start, end):
 
 HEADER = _slice("function renderHeaderContext(", "// ---- Public-profile mode")
 CARD = _slice("function repositoryCard(group)", "function updateRepositoryPagination(")
-HOME_ROW = _slice("function homeRepositoryRow(entry)", "function renderHomeRepositories()")
+HOME_ROW = _slice("function homeRepositoryRow(", "function renderHomeRepositories()")
 MIRRORS = _slice("async function loadRepoMirrors(repo, options = {})", "function renderRepoRelease(")
 
 _HARNESS = r"""
@@ -113,4 +113,7 @@ def test_mirror_load_leaves_the_hidden_pill_alone_on_an_instance():
 
 
 def test_about_rail_omits_the_direct_access_mirror_list_on_an_instance():
-    assert '${dashboardOnInstance() ? "" : `<div data-repo-live-summary' in DASHBOARD_JS
+    start = DASHBOARD_JS.index("${dashboardOnInstance() ? `<div data-repo-external-mirrors")
+    instance_branch, other_branch = DASHBOARD_JS[start:].split("` : `", 1)
+    assert "data-repo-live-summary" not in instance_branch
+    assert other_branch.startswith("<div data-repo-live-summary")

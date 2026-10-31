@@ -1,4 +1,5 @@
 #include "ClaudeSessionScan.h"
+#include "SafeDelete.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -261,10 +262,72 @@ QString projectKey(const QString &cwd)
     return key;
 }
 
+int removeOrphanedTranscripts(const QStringList &configDirs, const QString &cwd,
+                              QStringList *removed)
+{
+    if (cwd.trimmed().isEmpty())
+        return 0;
+    const QString folder = QDir::cleanPath(QDir(cwd).absolutePath());
+    if (folder == QLatin1String("/") || QFileInfo::exists(folder))
+        return 0;
+    const QString key = projectKey(folder);
+    QStringList roots;
+    for (const QString &dir : configDirs) {
+        const QString clean = dir.trimmed().isEmpty() ? QString() : QDir::cleanPath(dir);
+        if (!clean.isEmpty() && !roots.contains(clean))
+            roots.append(clean);
+    }
+    int count = 0;
+    for (const QString &root : std::as_const(roots)) {
+        const QString projects = root + QStringLiteral("/projects");
+        const QString target = projects + QLatin1Char('/') + key;
+        const QFileInfo info(target);
+        if (!info.exists() && !info.isSymLink())
+            continue;
+        QStringList uuids;
+        if (info.isDir() && !info.isSymLink()) {
+            for (const QFileInfo &fi :
+                 QDir(target).entryInfoList({QStringLiteral("*.jsonl")}, QDir::Files)) {
+                const QString uuid = fi.completeBaseName();
+                if (!uuid.isEmpty() && !uuid.startsWith(QLatin1Char('.')))
+                    uuids.append(uuid);
+            }
+        }
+        if (!forkmesh::safedelete::removeTree(target, projects))
+            continue;
+        ++count;
+        if (removed)
+            removed->append(target);
+        if (uuids.isEmpty())
+            continue;
+        const QStringList others = QDir(projects).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString &uuid : std::as_const(uuids)) {
+            const bool stillUsed =
+                std::any_of(others.cbegin(), others.cend(), [&](const QString &other) {
+                    return QFileInfo::exists(projects + QLatin1Char('/') + other +
+                                             QLatin1Char('/') + uuid +
+                                             QStringLiteral(".jsonl"));
+                });
+            if (stillUsed)
+                continue;
+            for (const QString &kind :
+                 {QStringLiteral("file-history"), QStringLiteral("session-env")}) {
+                const QString parent = root + QLatin1Char('/') + kind;
+                const QString path = parent + QLatin1Char('/') + uuid;
+                if (QFileInfo(path).isDir() &&
+                    forkmesh::safedelete::removeTree(path, parent) && removed)
+                    removed->append(path);
+            }
+        }
+    }
+    return count;
+}
+
 // code-health: allow(dir-walk-in-loop) only called from runOffThread in MainWindow::scanExternalClaudeSessions()
 QList<ExternalClaudeSession> scan(const QString &repoLocalPath,
                                   const QSet<QString> &excludeCwds,
-                                  qint64 activeWindowMs)
+                                  qint64 activeWindowMs,
+                                  const QStringList &ownConfigDirs)
 {
     QList<ExternalClaudeSession> out;
     if (repoLocalPath.isEmpty())
@@ -275,10 +338,22 @@ QList<ExternalClaudeSession> scan(const QString &repoLocalPath,
     if (!projects.exists())
         return out;
 
+    QStringList ownRoots;
+    for (const QString &dir : ownConfigDirs) {
+        const QString canonical = QFileInfo(dir).canonicalFilePath();
+        if (!canonical.isEmpty())
+            ownRoots.append(canonical);
+    }
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QSet<QString> seen;
     const auto dirs = projects.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QFileInfo &di : dirs) {
+        if (!ownRoots.isEmpty()) {
+            const QString target = di.canonicalFilePath();
+            if (std::any_of(ownRoots.cbegin(), ownRoots.cend(),
+                            [&target](const QString &root) { return isUnder(target, root); }))
+                continue;
+        }
         QDir d(di.absoluteFilePath());
         const auto files = d.entryInfoList(QStringList{QStringLiteral("*.jsonl")},
                                            QDir::Files, QDir::Time);

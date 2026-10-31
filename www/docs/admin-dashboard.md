@@ -43,7 +43,7 @@ stamped at signup by `_record_signup_origin`. Rules (`v1`): a referral
 attribution or referrer marker gives `referral`; a signup inside
 `PRODUCT_ANALYSIS_JOB_FLOW_WINDOWS` (none configured) gives `job_flow`; a
 captured marker without referrer gives `organic`; everything else is `unknown`.
-Migration `0175_product_analysis.sql` backfills the referral rule; the Worker
+Migration `0175_product_analysis.sql` backfills the referral rule; the app
 backfills the encrypted rules once, guarded by `schema_meta` key
 `product_analysis_signup_origin_backfill:v1`.
 
@@ -51,12 +51,14 @@ backfills the encrypted rules once, guarded by `schema_meta` key
 
 Every source table is read with keyset pagination (`scan_table`) and checked
 against `COUNT(*)`; a mismatch renders an error for the affected figures only.
-Requests run in their own App ingress Durable Object shard because a report
-decrypts every account and repository row.
+Requests run in their own app ingress shard (an emulated Durable Object on
+the core nodes) because a report decrypts every account and repository row.
 
 ## Operations
 
-- Rotate the password with `pywrangler secret put PRODUCT_ANALYSIS_PASS`.
+- Rotate the password on the fleet: edit `PRODUCT_ANALYSIS_PASS` in
+  `secrets.env`, then run `python3 tools/next_vault.py sync --execute`
+  ([OPERATIONS.md](../../docs/OPERATIONS.md)).
 - Disable the route by deleting either secret.
 - Each public HTTPS clone does one best-effort `product_clone_daily` upsert.
 - Down migration: `app/migrations/down/0175_product_analysis.sql`.

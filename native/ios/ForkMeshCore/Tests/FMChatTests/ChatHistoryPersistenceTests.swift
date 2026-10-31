@@ -214,6 +214,73 @@ final class ChatHistoryPersistenceTests: XCTestCase {
         await h.close()
     }
 
+    @MainActor func testRestoringDirectHistoryReportsOneChangeAndKeepsTheNewestInOrder() async throws {
+        let direct = makeDirect()
+        var changes = 0
+        direct.onChange = { changes += 1 }
+        let conversation = "\(DirectMessageFrames.prefix)\(String(repeating: "e", count: 32))"
+        let count = DirectMessageFrames.maxMessagesPerRoom + 50
+        let messages = (0..<count).reversed().map { note("d\($0)", conversation, 1_000 + Int64($0)) }
+        direct.restore(messages + [note("d7", conversation, 1_007)], receipts: [:])
+        XCTAssertEqual(changes, 1, "one restore is one change, not one per message")
+        XCTAssertEqual(
+            direct.messages(conversation).map(\.id), (50..<count).map { "d\($0)" },
+            "sorted oldest first, the oldest past the cap dropped, duplicates skipped")
+    }
+
+    @MainActor func testRestoringRelayHistoryMergesWithWhatIsShownInOrder() async throws {
+        let h = try await RelayHarness.start()
+        h.relay.restoreHistory([note("b", "#general", 20), note("d", "#general", 40)])
+        h.relay.restoreHistory([note("c", "#general", 30), note("a", "#general", 10), note("e", "#general", 40), note("b", "#general", 20)])
+        XCTAssertEqual(h.relay.messages("#general").map(\.id), ["a", "b", "c", "d", "e"])
+        await h.close()
+    }
+
+    @MainActor func testOfficeRestoreKeepsTheNewestAndSkipsKnownIds() {
+        let office = makeOffice()
+        var changes = 0
+        office.onChange = { changes += 1 }
+        let room = "#office/general"
+        let count = OfficeFrames.maxMessagesPerRoom + 10
+        office.restore((0..<count).reversed().map { note("o\($0)", room, 5_000 + Int64($0)) })
+        office.restore([note("o\(count - 1)", room, 5_000 + Int64(count - 1))])
+        XCTAssertEqual(changes, 1)
+        XCTAssertEqual(office.messages(room).map(\.id), (10..<count).map { "o\($0)" })
+    }
+
+    @MainActor func testABackgroundAttachReturnsBeforeTheHistoryIsReadAndKeepsWhatArrivesMeanwhile() async throws {
+        let dir = temporaryDirectory("chat-history-background")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = Date().epochMillis
+        ChatHistoryStore(directory: dir).save(
+            snapshot([note("old-1", "#general", now - 2_000), note("old-2", "#general", now - 1_000)]), scope: "s")
+
+        let h = try await RelayHarness.start()
+        let hub = ChatHub(relay: h.relay, mesh: makeMesh(h))
+        let store = ChatHistoryStore(directory: dir, delay: 0)
+        hub.attachHistory(store, scope: { "s" }, inBackground: true)
+        XCTAssertTrue(h.relay.messages("#general").isEmpty, "the file is read off the main actor, after attach returns")
+        h.relay.restoreHistory([note("new-1", "#general", now)])
+        await hub.historyLoaded()
+        XCTAssertEqual(h.relay.messages("#general").map(\.id), ["old-1", "old-2", "new-1"])
+        await store.flush()
+        let saved = ChatHistoryStore(directory: dir).load(scope: "s")?.messages.map(\.id)
+        XCTAssertEqual(saved, ["old-1", "old-2", "new-1"], "the save waits for the restore, so nothing saved is lost")
+        await h.close()
+    }
+
+    @MainActor func testStoredBytesCountsOnlyHistoryFiles() throws {
+        let dir = temporaryDirectory("chat-history-bytes")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(count: 3_000).write(to: dir.appendingPathComponent("relay-a.json"))
+        try Data(count: 1_000).write(to: dir.appendingPathComponent("relay-b.json"))
+        try Data(count: 500).write(to: dir.appendingPathComponent("relay-a.json.migrated"))
+        let stored = ChatHistoryStore.storedBytes(in: dir)
+        XCTAssertEqual(stored.files, 2)
+        XCTAssertEqual(stored.bytes, 4_000)
+    }
+
     @MainActor private func makeMesh(_ h: RelayHarness) -> LocalMeshService {
         LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
     }

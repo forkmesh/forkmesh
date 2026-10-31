@@ -186,3 +186,26 @@ def asset_upload_decision(release_state, existing_asset, new_sha256):
     if release_state == "draft":
         return "noop" if existing_sha == new_sha else "replace"
     return "noop" if existing_sha == new_sha else "conflict"
+
+
+APT_REPOSITORY = "forkmesh/forkmesh"
+APT_METADATA_DIR = ".forkmesh/releases/apt"
+APT_METADATA_RE = re.compile(
+    r"^/apt/(dists/stable/(?:InRelease|Release|Release\.gpg"
+    r"|main/binary-[a-z0-9]{1,16}/Packages)"
+    r"|forkmesh-archive-keyring\.asc|forkmesh\.sources)$")
+APT_POOL_RE = re.compile(
+    r"^/apt/pool/sha256/([0-9a-f]{64})/[A-Za-z0-9._+~%-]{1,255}\.deb$")
+
+
+def apt_redirect_target(path):
+    match = APT_POOL_RE.match(path or "")
+    if match:
+        return "/api/repo/%s/releases/blob/sha256/%s" % (
+            APT_REPOSITORY, match.group(1))
+    match = APT_METADATA_RE.match(path or "")
+    if match:
+        return "/api/repo/%s/raw?path=%s&ref=main" % (
+            APT_REPOSITORY,
+            quote(APT_METADATA_DIR + "/" + match.group(1), safe=""))
+    return ""

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "NotesPage.h",
+    "NotesPage.cpp",
+    "NoteCommentsPanel.h",
+    "NoteCommentsPanel.cpp",
+    "NotePresenceFaces.h",
+    "NotePresenceFaces.cpp",
+    "NotePageView.h",
+    "NotePageView.cpp",
+    "NotePageDialogs.h",
+    "NotePageDialogs.cpp"
+  ],
+  "mocHeaders": []
+}

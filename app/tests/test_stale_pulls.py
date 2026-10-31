@@ -538,8 +538,8 @@ def test_entry_wires_the_setting_the_cron_phase_and_the_purge():
 
 
 def test_migration_creates_and_drops_both_tables():
-    up = (ROOT / "migrations" / "0291_stale_pulls.sql").read_text("utf-8")
-    down = (ROOT / "migrations" / "down" / "0291_stale_pulls.sql").read_text(
+    up = (ROOT / "migrations" / "0298_stale_pulls.sql").read_text("utf-8")
+    down = (ROOT / "migrations" / "down" / "0298_stale_pulls.sql").read_text(
         "utf-8")
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")

@@ -5,6 +5,7 @@
 
 #include <QHash>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 
 #include <utility>
@@ -133,12 +134,14 @@ public:
 
     static bool mayRestoreDesktopCapability(
         const CachedSession &session, const QString &currentPublicKey,
-        const QString &validatedAccountPublicKey)
+        const QString &validatedAccountPublicKey,
+        const QStringList &accountDesktopKeys = QStringList())
     {
         const QString current = currentPublicKey.trimmed();
         return session.desktopCapable && !current.isEmpty() &&
                session.desktopPublicKey == current &&
-               validatedAccountPublicKey.trimmed() == current;
+               (validatedAccountPublicKey.trimmed() == current ||
+                accountDesktopKeys.contains(current));
     }
 
 private:

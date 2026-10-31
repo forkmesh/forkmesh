@@ -18,6 +18,12 @@ object AuthCopy {
     const val NETWORK_ERROR = "Network error - please try again."
     const val REVOKED_DETAIL =
         "Your local repositories were kept. Sign in again to register this phone as a new node."
+    val WELCOME_LINES: List<String> = listOf("Welcome to", "ForkMesh")
+    const val WELCOME_BODY = "Private relay chat, repository mirrors, and signed collaboration from your phone."
+    const val SIGNUP_TITLE = "Create your account"
+    const val SIGNUP_SUBTITLE = "For spam protection, new accounts are created only on the secure ForkMesh website."
+    const val SIGNUP_BODY =
+        "The signup page issues a short-lived, one-use browser check. After you confirm your email, return here and log in."
     const val SIGNUP_RETURN_HINT = "When your email is confirmed, log in here with your new account."
     const val FORGOT_PASSWORD = "Forgot password?"
 }

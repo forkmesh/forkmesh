@@ -357,6 +357,23 @@ class PackageGateTest {
         assertEq("Files", RouteCatalog.title(Route.Kind.Files))
     }
 
+    fun testSpeechLogsAndDiagnosticsAreGatedPackages() {
+        for ((pkg, kind) in listOf("speech" to Route.Kind.Speech, "logs" to Route.Kind.Logs, "diagnostics" to Route.Kind.Diagnostics)) {
+            assertEq(pkg, PackageGate.HUB_ITEMS[kind.raw])
+            assertEq(pkg, PackageGate.ROUTE_KINDS[kind])
+            assertEq(kind.raw, MarketPackage.NATIVE_DESTINATIONS[pkg])
+            expect(pkg in PackageGate.GATED)
+            assertEq(pkg, PackageMenu.packageFor(kind))
+        }
+        assertEq(listOf(Route.Speech), RouteParser.parse("forkmesh://speech")!!.stack)
+        assertEq(listOf(Route.Speech), RouteParser.parse("https://app.forkmesh.com/dashboard/speech")!!.stack)
+        assertEq("Speech", RouteCatalog.title(Route.Kind.Speech))
+        assertEq("Logs", RouteCatalog.title(Route.Kind.Logs))
+        assertEq("Diagnostics", RouteCatalog.title(Route.Kind.Diagnostics))
+        expect(Route.Speech in HubCatalog.personal.mapNotNull { it.route })
+        assertEq(listOf(Route.Logs, Route.Diagnostics), HubCatalog.operate.mapNotNull { it.route }.takeLast(2))
+    }
+
     fun testNexusIsAlwaysShownInWorkspace() {
         expect(HubCatalog.workspace.any { it.route == Route.Nexus })
         assertEq("NEXUS", RouteCatalog.title(Route.Kind.Nexus))

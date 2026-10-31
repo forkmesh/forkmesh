@@ -147,7 +147,9 @@ private struct ChatThreadBody: View {
         ChatRowActions(
             onCopied: { notice = FmNotice("Copied to clipboard") },
             onReact: { (value: String) in hub.toggleReaction(root, value: value) }, onThread: nil, onEdit: nil, onDelete: nil,
-            onIssue: nil, onPrompt: nil, onProfile: nil, onHide: { hub.hide(root) },
+            onIssue: nil, onPrompt: nil,
+            onProfile: root.isSelf || root.senderId == "forkbot" ? nil : { pushed = .profile(name: root.senderName) },
+            onHide: { hub.hide(root) },
             onSticker: { (slug: String) in hub.toggleSticker(root, slug: slug) })
     }
 

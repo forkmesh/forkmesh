@@ -1,0 +1,112 @@
+#componentHealthSection QLabel#mutedLabel[healthRole="summary"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#componentHealthSection QFrame#healthHeaderDivider {
+    background-color: @border; border: none; min-height: 1px; max-height: 1px;
+}
+#componentHealthSection QPushButton#ghostButton[healthRole="tab"] {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0px; color: @fgMuted; padding: 0px 10px; margin: 0px;
+    min-height: 34px; max-height: 34px; font-size: 13px; font-weight: 500;
+}
+#componentHealthSection QPushButton#ghostButton[healthRole="tab"]:hover {
+    background: transparent; color: @fg;
+}
+#componentHealthSection QPushButton#ghostButton[healthRole="tab"]:checked {
+    background: transparent; color: @fg; border-bottom: 2px solid @accentFg;
+}
+#componentHealthSection QPushButton#ghostButton[healthRole="action"] {
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgMuted; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+#componentHealthSection QPushButton#ghostButton[healthRole="action"]:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#componentHealthSection QPushButton#ghostButton[healthRole="action"]:pressed {
+    background-color: @surfaceActive;
+}
+
+#componentHealthSection QWidget[healthRole="toolbar"] {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+}
+#componentHealthSection QWidget[healthRole="toolbar"] QLineEdit,
+#componentHealthSection QWidget[healthRole="toolbar"] QComboBox {
+    border-color: @border; border-radius: 8px; min-height: 30px; max-height: 30px;
+    font-size: 13px;
+}
+#componentHealthSection QWidget[healthRole="toolbar"] QLineEdit:hover,
+#componentHealthSection QWidget[healthRole="toolbar"] QComboBox:hover {
+    border-color: @borderStrong;
+}
+#componentHealthSection QWidget[healthRole="toolbar"] QLineEdit:focus,
+#componentHealthSection QWidget[healthRole="toolbar"] QComboBox:on {
+    border-color: @accent;
+}
+#componentHealthSection QLabel#healthCardCount {
+    color: @fgSubtle; font-size: 12px; background: transparent;
+}
+#componentHealthSection QLabel#mutedLabel[healthRole="crumbs"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+
+#componentHealthSection QFrame#healthStatTile {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#componentHealthSection QFrame#healthStatTile QLabel { background: transparent; border: none; }
+#componentHealthSection QLabel[healthRole="tileLabel"] { color: @fgMuted; font-size: 12px; }
+#componentHealthSection QLabel[healthRole="tileValue"] {
+    color: @fg; font-size: 22px; font-weight: 600;
+}
+#componentHealthSection QLabel[healthRole="tileHint"] { color: @fgSubtle; font-size: 12px; }
+
+#componentHealthSection QFrame#healthDetailPanel {
+    background-color: @bg; border: none; border-left: 1px solid @border;
+}
+#componentHealthSection QFrame#healthDetailHead {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+}
+#componentHealthSection QScrollArea#healthDetailScroll,
+#componentHealthSection QWidget#healthDetailBody { background: transparent; border: none; }
+#componentHealthSection QLabel#healthDetailIcon { background: transparent; }
+#componentHealthSection QLabel#healthDetailName {
+    color: @fg; font-size: 14px; font-weight: 500; background: transparent;
+}
+#componentHealthSection QPushButton#healthDetailClose {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
+}
+#componentHealthSection QPushButton#healthDetailClose:hover { background-color: @surfaceRaised; }
+#componentHealthSection QPushButton#healthDetailClose:pressed { background-color: @surfaceActive; }
+#componentHealthSection QLabel#healthDetailPath {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#componentHealthSection QLabel#healthDetailMeta {
+    color: @fgSubtle; font-size: 12px; background: transparent;
+}
+#componentHealthSection QLabel#healthDetailScore {
+    color: @fg; font-size: 36px; font-weight: 600; background: transparent;
+}
+#componentHealthSection QLabel#healthDetailScore[tone="success"] { color: @success; }
+#componentHealthSection QLabel#healthDetailScore[tone="warning"] { color: @warning; }
+#componentHealthSection QLabel#healthDetailScore[tone="danger"] { color: @danger; }
+#componentHealthSection QLabel#healthDetailVerdict {
+    color: @fgMuted; font-size: 12px; background: transparent; padding-bottom: 4px;
+}
+#componentHealthSection QLabel#healthDetailFlagsHeading {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; background: transparent;
+}
+#componentHealthSection QFrame[healthCard="true"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#componentHealthSection QFrame#healthDetailRow {
+    background: transparent; border: none; border-top: 1px solid @border;
+}
+#componentHealthSection QFrame#healthDetailRow[first="true"] { border-top: none; }
+#componentHealthSection QFrame#healthDetailRow QLabel { background: transparent; border: none; }
+#componentHealthSection QLabel[healthRole="factKey"] { color: @fgMuted; font-size: 13px; }
+#componentHealthSection QLabel[healthRole="factValue"] { color: @fg; font-size: 13px; }
+#componentHealthSection QLabel[healthRole="flag"] { color: @fg; font-size: 13px; }
+#componentHealthSection QLabel[healthRole="empty"] {
+    color: @fgSubtle; font-size: 12px; padding: 8px 0px;
+}

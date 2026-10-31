@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.navigation
 
+import com.forkmesh.nativeapp.poker.PokerApi
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -135,7 +136,7 @@ object RouteParser {
         is Route.TeammateEditor ->
             if (!route.id.isNullOrEmpty()) listOf(Route.Teammates, Route.Teammate(route.id), route)
             else listOf(Route.Teammates, route)
-        is Route.Note -> listOf(Route.Notes, route)
+        is Route.Note, is Route.NotePage -> listOf(Route.Notes, route)
         is Route.Task -> listOf(Route.Tasks(null), route)
         is Route.Host, is Route.Provision -> listOf(Route.Hosts, route)
         is Route.Node -> listOf(Route.Network(null), route)
@@ -238,15 +239,23 @@ object RouteParser {
             "chat" -> listOf(Route.Chat)
             "notes" -> {
                 val id = first ?: query["note"]?.trim()?.takeIf { it.isNotEmpty() }
-                if (id != null) listOf(Route.Notes, Route.Note(id)) else listOf(Route.Notes)
+                val comment = query["comment"]?.trim()?.takeIf { it.isNotEmpty() }
+                val page = query["page"]?.trim()?.takeIf { it.isNotEmpty() }
+                when {
+                    first == null && page != null -> listOf(Route.Notes, Route.NotePage(page, id))
+                    id != null -> listOf(Route.Notes, Route.Note(id, comment))
+                    else -> listOf(Route.Notes)
+                }
             }
             "tasks" -> if (first != null) listOf(Route.Tasks(null), Route.Task(first)) else listOf(Route.Tasks(query["filter"]))
             "calendar" -> listOf(Route.Calendar(query["date"], CalendarMode.of(query["mode"]) ?: CalendarMode.Month))
             "settings" -> listOf(Route.Settings(first))
             "network" -> listOf(Route.Network(first))
             "ads" -> listOf(Route.Ads)
+            "invoices" -> if (first == null) listOf(Route.Invoices(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["invoice"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
+            "speech" -> listOf(Route.Speech)
             "ember" -> if (first == null) listOf(Route.Ember(RepoRef.parse(query["repo"]))) else null
             "strata" -> if (first == null) listOf(Route.Strata(RepoRef.parse(query["repo"]))) else null
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
@@ -257,6 +266,7 @@ object RouteParser {
             "rss", "rss-reader" -> listOf(Route.RssReader)
         "video-mix-dj-studio", "dj-studio" -> listOf(Route.VideoMixDjStudio)
             "video-mix-dj-studio", "dj-studio" -> if (first == null) listOf(Route.VideoMixDjStudio) else null
+            "poker" -> if (first == null) listOf(Route.Poker(query["table"]?.trim()?.lowercase()?.takeIf(PokerApi::isTableId))) else null
             "instance-feed" -> if (first == null) listOf(Route.InstanceFeed(query["post"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "secure-drive" -> listOf(Route.SecureDrive)
             "files" -> listOf(Route.Files)
@@ -318,6 +328,7 @@ object RouteParser {
         "sugar-break" -> listOf(Route.SugarBreak)
         "stretch" -> listOf(Route.Stretch)
         "food-guide" -> listOf(Route.FoodGuide)
+        "speech" -> listOf(Route.Speech)
         "glasses-alert" -> listOf(Route.GlassesAlert)
         "phone-security" -> listOf(Route.PhoneSecurity)
         "ember" -> listOf(Route.Ember(null))
@@ -330,6 +341,7 @@ object RouteParser {
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
         "instance-feed" -> listOf(Route.InstanceFeed(first))
+        "poker" -> listOf(Route.Poker(null))
         "secure-drive" -> listOf(Route.SecureDrive)
         "files" -> listOf(Route.Files)
         "nexus" -> listOf(Route.Nexus)

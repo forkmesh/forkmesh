@@ -100,7 +100,7 @@ internal suspend fun deleteAgentTarget(target: AgentDeleteTarget): AgentDeleteOu
         if (AgentsFeature.hub.desktop == null) {
             AgentDeleteOutcome.failed(AgentSwipeDelete.DESKTOP_OUT_OF_REACH)
         } else {
-            val model = AgentDeleteModel(AgentOpsFeature.client, target.desktopId)
+            val model = AgentDeleteModel(AgentOpsFeature.client(target.onDesktopKey), target.desktopId)
             when {
                 !opsIo { model.prepare(); model.run() } ->
                     AgentDeleteOutcome.failed(model.errorText.ifEmpty { "Could not delete the agent." })

@@ -50,6 +50,12 @@ def collect(repo: str, branch: str, token: str = "", fetch=None) -> dict:
     if status != 200 or not isinstance(payload, dict):
         raise RuntimeError(f"GitHub answered {status} for the run list of {repo}")
     verdicts = watch.workflow_verdicts(payload.get("workflow_runs"), branch)
+    status, listing = fetch(watch.workflows_path(repo))
+    if status == 200:
+        for workflow_id in watch.unseen_workflows(listing, verdicts):
+            status, runs = fetch(watch.workflow_runs_path(repo, workflow_id, branch))
+            if status == 200 and isinstance(runs, dict):
+                verdicts.update(watch.workflow_verdicts(runs.get("workflow_runs"), branch))
     workflows = []
     for path in sorted(verdicts, key=lambda key: verdicts[key]["name"].lower()):
         verdict = dict(verdicts[path])

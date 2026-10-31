@@ -56,14 +56,15 @@ internal class DesktopTerminalScreen(
     private val account: String = "",
     private val accountLabel: String = "",
     private val mode: String = "",
+    private val desktopKey: String = "",
 ) : Screen() {
     private val signIn: Boolean get() = mode == "login" || mode == "logout"
     private var terminal by mutableStateOf(
         when {
-            session > 0 -> DesktopAgentTerminal(AgentsFeature.hub, owner = owner, name = name, provider = provider, session = session)
+            session > 0 -> DesktopAgentTerminal(AgentsFeature.hub, owner = owner, name = name, provider = provider, session = session, desktopKey = desktopKey)
             mode == "login" || mode == "logout" -> DesktopAgentTerminal(AgentsFeature.hub, provider = provider, mode = mode, account = account)
             attach.isEmpty() -> null
-            else -> DesktopAgentTerminal(AgentsFeature.hub, terminal = attach)
+            else -> DesktopAgentTerminal(AgentsFeature.hub, terminal = attach, desktopKey = desktopKey)
         },
     )
     private var repo by mutableStateOf<String?>(null)
@@ -92,7 +93,7 @@ internal class DesktopTerminalScreen(
     private fun start(center: AgentControlCenter, owner: String, name: String) {
         val previous = terminal
         terminal = DesktopAgentTerminal(
-            AgentsFeature.hub, owner = owner, name = name, provider = provider, account = account,
+            AgentsFeature.hub, owner = owner, name = name, provider = provider, account = account, desktopKey = desktopKey,
             onStarted = { center.refreshDesktopAsync() },
         )
         previous?.let { Thread { it.detach() }.start() }

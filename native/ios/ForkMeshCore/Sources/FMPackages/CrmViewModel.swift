@@ -10,6 +10,7 @@ public final class CrmModel {
     public private(set) var loading = false
     public private(set) var errorText = ""
     public private(set) var saving = false
+    public private(set) var contactsLoading = false
     public var notice = ""
     public var organization = ""
     public var flowId: String?
@@ -17,11 +18,16 @@ public final class CrmModel {
     public var tab: CrmTab?
     public var filter = CrmFilter()
     public var nextSkipped: Set<String> = []
+    public var existing: CrmContact?
+    public var section: CrmSection = .home
 
     @ObservationIgnored private let client: PackagesClient
     @ObservationIgnored private var memory: [String: CrmOrganizationData] = [:]
     @ObservationIgnored private var listViewsRecorded: [String: Date] = [:]
+    @ObservationIgnored private var contactsGeneration = 0
+    @ObservationIgnored public private(set) var contactsTask: Task<Void, Never>?
     @ObservationIgnored public var now: () -> Date = { Date() }
+    @ObservationIgnored public var retryDelays: [UInt64] = [400_000_000, 1_500_000_000]
 
     public init(client: PackagesClient, organization: String = "", flowId: String? = nil) {
         self.client = client
@@ -80,6 +86,21 @@ public final class CrmModel {
         if case .list(let id) = tab { Task { await self.recordListView(id) } }
     }
 
+    public func show(_ section: CrmSection) {
+        self.section = section
+        guard let data else { return }
+        switch section {
+        case .contacts:
+            if !activeTab.isContacts { select(data.defaultTab) }
+        case .pipeline:
+            if activeFlow == nil, let item = data.contactTabs.first(where: { $0.flow != nil }) { select(item.tab) }
+        case .activity:
+            if activeTab.isContacts { select(.activity) }
+        case .home, .more:
+            break
+        }
+    }
+
     public func refresh() async {
         loading = true
         defer { loading = false }
@@ -96,28 +117,84 @@ public final class CrmModel {
         await load()
     }
 
+    public var contactsStatus: String {
+        guard contactsLoading, let data else { return "" }
+        let loaded = data.contacts.count
+        return "Loading contacts, \(loaded.formatted()) of \(max(loaded, data.contactsTotal).formatted())"
+    }
+
+    private func stopContacts() -> Int {
+        contactsGeneration += 1
+        contactsTask?.cancel()
+        contactsTask = nil
+        contactsLoading = false
+        return contactsGeneration
+    }
+
     public func load() async {
+        let generation = stopContacts()
         guard PackagesText.isOrgName(organization) else {
             data = nil
             return
         }
-        let cached = memory[organization]
-        data = cached
+        let org = organization
+        let cached = memory[org]
+        if cached != nil || data?.organization != org { data = cached }
         do {
-            if let fresh = try await client.crm(organization, since: cached?.revision ?? "") {
-                memory[organization] = fresh
+            let fresh = try await client.crm(org, since: cached?.revision ?? "", contacts: PackagesClient.crmFirstContacts)
+            guard generation == contactsGeneration else { return }
+            if let fresh {
                 data = fresh
+                if fresh.contactsComplete {
+                    memory[org] = fresh
+                } else {
+                    loadRemainingContacts(org, cursor: fresh.contactsNext, generation: generation)
+                }
             }
             errorText = ""
         } catch {
+            guard generation == contactsGeneration else { return }
             errorText = PackagesError.describe(error)
+        }
+    }
+
+    private func loadRemainingContacts(_ org: String, cursor first: String, generation: Int) {
+        contactsLoading = true
+        contactsTask = Task {
+            var cursor = first
+            while !cursor.isEmpty {
+                do {
+                    let page = try await client.crmContactsPage(org, cursor: cursor)
+                    guard generation == contactsGeneration else { return }
+                    guard org == organization else {
+                        contactsLoading = false
+                        return
+                    }
+                    data?.appendContacts(page.contacts, next: page.next)
+                    cursor = page.next
+                } catch {
+                    guard generation == contactsGeneration else { return }
+                    contactsLoading = false
+                    data?.revision = ""
+                    memory[org]?.revision = ""
+                    errorText = "Some contacts did not load: \(PackagesError.describe(error))"
+                    return
+                }
+            }
+            guard generation == contactsGeneration else { return }
+            contactsLoading = false
+            if let data, org == organization { memory[org] = data }
         }
     }
 
     public func contact(_ id: String) -> CrmContact? { data?.contacts.first { $0.id == id } }
 
+    public var dashboard: CrmDashboard {
+        CrmDashboard(contacts: data?.contacts ?? [], now: Int64(now().timeIntervalSince1970 * 1000))
+    }
+
     private func remember() {
-        if let data { memory[organization] = data }
+        if let data, data.contactsComplete { memory[organization] = data }
     }
 
     private func perform<T>(_ work: () async throws -> T) async -> T? {
@@ -134,29 +211,81 @@ public final class CrmModel {
         }
     }
 
-    public func clearError() { errorText = "" }
+    public func clearError() {
+        errorText = ""
+        existing = nil
+    }
 
     @discardableResult
-    public func save(_ edit: CrmContactEdit, original: CrmContact?, addTo viewId: String? = nil) async -> CrmContact? {
+    public func save(
+        _ edit: CrmContactEdit, original: CrmContact?, addTo viewId: String? = nil, requestId: String = ""
+    ) async -> CrmContact? {
+        existing = nil
         guard edit.isValid, PackagesText.isOrgName(organization) else {
             errorText = PackagesError.sentence("name_or_email_required")
             return nil
         }
-        let org = organization
-        let saved = await perform { () async throws -> CrmContact in
-            if let original {
-                let changes = edit.changes(from: original)
-                if changes.isEmpty { return original }
-                return try await client.updateCrmContact(CrmContactRef(organization: org, contactId: original.id), changes: changes)
-            }
-            var fields = edit.changes(from: nil)
-            if let viewId, PackagesText.isHexId(viewId) { fields["views"] = [.string(viewId)] }
-            return try await client.createCrmContact(org, fields: fields)
+        if let original {
+            let changes = edit.changes(from: original)
+            if changes.isEmpty { return original }
+            return await update(original, changes: changes)
         }
-        guard let saved else { return nil }
-        data?.replace(saved)
-        remember()
+        let org = organization
+        var fields = edit.changes(from: nil)
+        if let viewId, PackagesText.isHexId(viewId) { fields["views"] = [.string(viewId)] }
+        if PackagesText.isHexId(requestId) { fields["requestId"] = .string(requestId) }
+        saving = true
+        defer { saving = false }
+        var attempt = 0
+        while true {
+            do {
+                let saved = try await client.createCrmContact(org, fields: fields)
+                errorText = ""
+                guard org == organization else { return saved }
+                data?.replace(saved)
+                remember()
+                return saved
+            } catch {
+                if let error = error as? PackagesError, let found = duplicate(from: error) {
+                    existing = found
+                    let label = found.name.isEmpty ? found.email : found.name
+                    errorText = "\(label.isEmpty ? "A contact" : label) already uses that email address, so they are already in the CRM."
+                    return nil
+                }
+                guard PackagesText.isHexId(requestId), PackagesError.isTransient(error), attempt < retryDelays.count else {
+                    errorText = PackagesError.describe(error)
+                    return nil
+                }
+                try? await Task.sleep(nanoseconds: retryDelays[attempt])
+                attempt += 1
+            }
+        }
+    }
+
+    private func duplicate(from error: PackagesError) -> CrmContact? {
+        guard error.code == "contact_email_exists", let id = error.fields["contactId"], PackagesText.isHexId(id) else {
+            return nil
+        }
+        if let known = contact(id) { return known }
+        return CrmContact(json: [
+            "id": .string(id), "organization": .string(organization),
+            "name": .string(error.fields["contactName"] ?? ""), "email": .string(error.fields["contactEmail"] ?? ""),
+        ])
+    }
+
+    @discardableResult
+    public func addDetails(_ edit: CrmContactEdit, to found: CrmContact, addTo viewId: String? = nil) async -> CrmContact? {
+        if contact(found.id) == nil { await load() }
+        let current = contact(found.id) ?? found
+        var changes = edit.additions(to: current)
+        if let viewId, PackagesText.isHexId(viewId), !current.views.contains(viewId) { changes["views"] = [.string(viewId)] }
+        let saved = await update(current, changes: changes)
+        if saved != nil { existing = nil }
         return saved
+    }
+
+    nonisolated public static func newRequestId() -> String {
+        UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 
     @discardableResult
@@ -291,6 +420,7 @@ public final class CrmModel {
     }
 
     public func forget() {
+        _ = stopContacts()
         memory.removeAll()
         listViewsRecorded.removeAll()
         data = nil
@@ -321,9 +451,9 @@ public final class CrmModel {
         return sent
     }
 
-    public func nextContact(_ mode: CrmNextContact.Mode) -> CrmNextContact {
+    public func nextContact(_ mode: CrmNextContact.Mode, everyone: Bool = false) -> CrmNextContact {
         CrmNextContact.pick(
-            mode, contacts: tabContacts, activity: data?.activity ?? [], skipped: nextSkipped,
+            mode, contacts: everyone ? (data?.contacts ?? []) : tabContacts, activity: data?.activity ?? [], skipped: nextSkipped,
             now: Int64(now().timeIntervalSince1970 * 1000))
     }
 

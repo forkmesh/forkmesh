@@ -71,6 +71,7 @@ import com.forkmesh.nativeapp.feature.account.AccountScreen
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.HGap
 import com.forkmesh.nativeapp.feature.account.VGap
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.model.ORG_ROLES
 import com.forkmesh.nativeapp.model.ORG_TEAM_PERMISSIONS
 import com.forkmesh.nativeapp.model.OrgMember
@@ -482,7 +483,7 @@ internal class TeamDetailScreen(
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         member.name,
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.weight(1f).openProfile(member.name),
                                         style = Fm.text.bodyMedium.copy(fontWeight = FmType.emphasis),
                                     )
                                     if (canManage) {
@@ -616,7 +617,7 @@ private fun MemberRow(member: OrgMember, canManage: Boolean, onChangeRole: (Stri
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 member.name,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).openProfile(member.name),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = Fm.text.bodyMedium.copy(fontWeight = FmType.emphasis),

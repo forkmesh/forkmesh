@@ -379,6 +379,7 @@ void MainWindow::importClaudeSessions(const QList<ExternalClaudeSession> &sessio
             if (!m_streamEvents.contains(lastId))
                 if (const AgentSession *s = findAgentSession(lastId))
                     m_streamEvents[lastId] = m_agentStore->loadEvents(*s);
+            m_agentTaskTrackers.remove(lastId);
             sendPromptToAgentSession(lastId, followUp);
             return;
         }
@@ -429,6 +430,7 @@ void MainWindow::importClaudeSessions(const QList<ExternalClaudeSession> &sessio
                     first = id;
                     if (!followUp.isEmpty())
                         m_streamEvents[id] = c.batch.events;
+                    m_agentTaskTrackers.remove(id);
                 }
             }
             saveAgentFolders();

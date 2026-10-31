@@ -108,7 +108,7 @@ test("the Agents page lists cloud, organization and desktop sessions with filter
   expect(reads).toContain("/api/account/desktop-agents");
 
   await expect(page.locator('a[data-nav="agents"]')).toHaveAttribute("aria-current", "page");
-  await expect(page.locator("[data-agents-count]")).toHaveText("1 working · 3 total");
+  await expect(page.locator("[data-agents-count]")).toHaveText("3 sessions · 1 working");
 
   const running = page.locator('[data-agents-row="cloud:session-running"]');
   await expect(running).toHaveAttribute("href", "/alpha/engine/agents?session=session-running");
@@ -117,7 +117,7 @@ test("the Agents page lists cloud, organization and desktop sessions with filter
   await expect(running).toContainText("Claude Code · opus");
   await expect(running).toContainText("mirror35");
   await expect(running.locator('[data-agents-status="running"]')).toHaveText("Working");
-  await expect(running.locator(".animate-pulse")).toHaveCount(1);
+  await expect(running.locator(".animate-spin")).toHaveCount(1);
 
   const org = page.locator('[data-agents-row="cloud:session-done"]');
   await expect(org).toHaveAttribute("href", "/acme/web/agents?session=session-done");

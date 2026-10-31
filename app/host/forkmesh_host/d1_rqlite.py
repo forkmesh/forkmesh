@@ -47,6 +47,7 @@ from typing import Any, Iterable
 import httpx
 
 from . import d1_caller
+from . import read_only
 
 __all__ = [
     "D1Config",
@@ -56,6 +57,7 @@ __all__ = [
     "D1Result",
     "D1Rqlite",
     "D1Session",
+    "ReadOnlyError",
     "make_d1",
     "request_scope",
 ]
@@ -215,6 +217,10 @@ def _wrote_in_request() -> bool:
 
 class D1Error(Exception):
     """An error whose text matches what the app expects from D1."""
+
+
+class ReadOnlyError(D1Error):
+    pass
 
 
 _OVERLOAD_HINTS = (
@@ -384,6 +390,8 @@ def _convert_rows(result) -> list:
 # statement classification (only used to pick the local read path)
 
 _LEADING_NOISE = re.compile(r"^(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/)+", re.S)
+_READ_HEAD = ("SELECT", "WITH", "VALUES", "EXPLAIN", "PRAGMA")
+_LOCAL_WRITE = object()
 _WRITE_WORD = re.compile(
     r"\b(INSERT|UPDATE|DELETE|REPLACE|UPSERT|CREATE|DROP|ALTER|RETURNING|"
     r"ATTACH|DETACH|VACUUM|REINDEX|ANALYZE|PRAGMA)\b", re.I)
@@ -398,6 +406,11 @@ def _is_plain_read(sql: str) -> bool:
     # Conservative: any write keyword anywhere (even inside a string literal)
     # sends the statement through rqlite instead.
     return _WRITE_WORD.search(text) is None
+
+
+def _looks_like_read(sql: str) -> bool:
+    text = _LEADING_NOISE.sub("", sql or "")
+    return text[:10].upper().startswith(_READ_HEAD)
 
 
 # --------------------------------------------------------------------------
@@ -524,6 +537,7 @@ class D1Rqlite:
                                            config.confirm_burst)
         self._confirm_logged_at = None
         self._confirm_skipped_since_log = 0
+        self.read_only_probe = None
 
     # -- D1 API --------------------------------------------------------
 
@@ -537,6 +551,11 @@ class D1Rqlite:
         statements = list(statements or [])
         if not statements:
             return []
+        if self.read_only():
+            if all(_is_plain_read(stmt.sql) for stmt in statements):
+                return [await self._read_only_execute(stmt)
+                        for stmt in statements]
+            return self._refuse_write(len(statements))
         payload = [stmt._payload() for stmt in statements]
         started = time.perf_counter()
         try:
@@ -553,6 +572,9 @@ class D1Rqlite:
     async def exec(self, sql):
         statements = split_statements(sql)
         if not statements:
+            return {"count": 0, "duration": 0}
+        if self.read_only():
+            self._refuse_write()
             return {"count": 0, "duration": 0}
         started = time.perf_counter()
         try:
@@ -611,13 +633,44 @@ class D1Rqlite:
     def _write_read_level(self):
         return "weak" if _wrote_in_request() else None
 
-    async def _post(self, payload, transaction=False, level=None):
+    def read_only(self):
+        probe = self.read_only_probe
+        return probe is not None and bool(probe())
+
+    def _refuse_write(self, count=1):
+        read_only.refuse(ReadOnlyError)
+        return [D1Result(meta=D1Meta(served_by="read-only"))
+                for _ in range(count)]
+
+    async def _read_only_execute(self, stmt):
+        if not _looks_like_read(stmt.sql):
+            return self._refuse_write()[0]
+        plain = _is_plain_read(stmt.sql)
+        if self.config.read_mode == "local":
+            local = self._local_read(stmt, writes_fail=not plain)
+            if local is _LOCAL_WRITE:
+                return self._refuse_write()[0]
+            if local is not None:
+                return local
+        try:
+            body = await self._post([stmt._payload()], level="none",
+                                    freshness=False)
+            results = body.get("results") or []
+            self._raise_first_error(results)
+        except D1Error as error:
+            if plain or "overloaded" not in str(error):
+                raise
+            return self._refuse_write()[0]
+        return self._to_result(results[0]) if results else D1Result()
+
+    async def _post(self, payload, transaction=False, level=None,
+                    freshness=True):
         params = ["associative", "blob_array"]
         if transaction:
             params.append("transaction")
         if level:
             params.append("level=" + level)
-            if level == "none" and self.config.freshness:
+            if level == "none" and freshness and self.config.freshness:
                 params.append("freshness=" + self.config.freshness)
         url = self.config.url + "/db/request?" + "&".join(params)
         content = json.dumps(payload, separators=(",", ":"),
@@ -673,6 +726,8 @@ class D1Rqlite:
 
     async def _execute_one(self, stmt: D1PreparedStatement,
                            session: D1Session | None) -> D1Result:
+        if self.read_only():
+            return await self._read_only_execute(stmt)
         level = None
         if session is not None:
             level = session._read_level()
@@ -795,7 +850,7 @@ class D1Rqlite:
             self._local_ino = identity
         return self._local
 
-    def _local_read(self, stmt: D1PreparedStatement):
+    def _local_read(self, stmt: D1PreparedStatement, writes_fail=False):
         try:
             conn = self._local_connection()
             if conn is None:
@@ -815,6 +870,9 @@ class D1Rqlite:
                 self._local_started = None
         except sqlite3.OperationalError as error:
             text = str(error).lower()
+            if writes_fail and ("readonly" in text
+                                or "attempt to write" in text):
+                return _LOCAL_WRITE
             if any(hint in text for hint in (
                     "interrupted", "locked", "busy", "disk i/o",
                     "unable to open", "malformed", "not a database",
