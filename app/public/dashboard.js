@@ -18309,7 +18309,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by <span class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "font-medium text-foreground")}</span>` : "",
+      run.actor ? `Triggered by <span class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false)}${issuePersonNameHtml(run.actor, "font-medium text-foreground")}</span>` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -18374,7 +18374,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
-        run.actor ? `<span data-repo-actions-run-actor class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "")}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false)}${issuePersonNameHtml(run.actor, "")}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
@@ -59812,10 +59812,10 @@ Your reply
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=232a89697276",
+    "notes": "/dashboard-page-notes.js?v=9c271809708a",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=62cb9058a6b6",
-    "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
+    "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
     "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
   };
   const dashboardChunkScope = {
@@ -59839,6 +59839,7 @@ Your reply
     hydrateRepoActivityGraphs,
     initSettingsRunners,
     issuePersonNameHtml,
+    issuePersonProfileHref,
     loadQrGenerator,
     loadRepoRecordDetail,
     loadRunnerAccountsPicker,

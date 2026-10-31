@@ -37,6 +37,7 @@ struct InboxItemScreen: View {
                     }
                     if !item.actor.isEmpty {
                         LabeledContent("From", value: "@\(item.actor)")
+                            .opensProfile(item.actor)
                     }
                     if !linkText.isEmpty {
                         LabeledContent("Link") {

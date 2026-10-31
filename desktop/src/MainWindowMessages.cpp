@@ -20,6 +20,7 @@
 #include "ChatVisitorPresence.h"
 #include "AppPaths.h"
 #include "QrCode.h"
+#include "TipSigner.h"
 #include "RoomSeal.h"
 
 #include <QApplication>
@@ -172,6 +173,36 @@ static QUrl chatMentionProfileUrl(const QString &serverInput,
         url.setPort(base.port());
     url.setPath(QStringLiteral("/@") + accountName.trimmed().toLower());
     return url;
+}
+
+static QStringList profileLinkLines(const QJsonObject &rec)
+{
+    QStringList lines;
+    auto add = [&lines](const QString &label, const QString &url) {
+        const QUrl parsed(url, QUrl::StrictMode);
+        if (!parsed.isValid() || parsed.host().isEmpty() ||
+            (parsed.scheme() != QStringLiteral("https") &&
+             parsed.scheme() != QStringLiteral("http")))
+            return;
+        lines << QStringLiteral("<a href=\"%1\">%2</a>")
+                     .arg(parsed.toString(QUrl::FullyEncoded).toHtmlEscaped(),
+                          label.toHtmlEscaped());
+    };
+    const QJsonArray links = rec.value(QStringLiteral("profileLinks")).toArray();
+    for (const QJsonValue &value : links) {
+        if (lines.size() >= 10)
+            break;
+        const QJsonObject link = value.toObject();
+        const QString url = link.value(QStringLiteral("url")).toString().trimmed();
+        QString label = link.value(QStringLiteral("label")).toString().trimmed().left(60);
+        if (label.isEmpty())
+            label = link.value(QStringLiteral("domain")).toString().trimmed();
+        add(label.isEmpty() ? url : label, url);
+    }
+    const QString mastodon = rec.value(QStringLiteral("mastodon")).toString().trimmed();
+    add(mastodon.isEmpty() ? QStringLiteral("Mastodon") : mastodon,
+        rec.value(QStringLiteral("mastodonUrl")).toString().trimmed());
+    return lines;
 }
 
 static QPixmap nextChatInitials(const QString &name, int side)
@@ -3051,6 +3082,56 @@ void MainWindow::refreshChatMembers()
     }
 }
 
+namespace {
+
+class ProfileAvatarClickFilter : public QObject
+{
+public:
+    ProfileAvatarClickFilter(QObject *parent, std::function<void()> onClicked)
+        : QObject(parent), m_onClicked(std::move(onClicked))
+    {
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::MouseButtonRelease &&
+            static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+            auto callback = m_onClicked;
+            callback();
+            return true;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void()> m_onClicked;
+};
+
+} // namespace
+
+void MainWindow::linkAvatarToProfile(QWidget *avatar, const QString &account)
+{
+    const QString key = userProfileAccount(account);
+    if (!avatar || key.isEmpty() ||
+        avatar->property("profileAccount").toString() == key)
+        return;
+    if (auto *previous = avatar->property("profileAvatarFilter").value<QObject *>()) {
+        avatar->removeEventFilter(previous);
+        previous->deleteLater();
+    }
+    avatar->setCursor(Qt::PointingHandCursor);
+    avatar->setProperty("profileAccount", key);
+    if (avatar->toolTip().isEmpty() || avatar->property("profileAutoTip").toBool()) {
+        avatar->setToolTip(QStringLiteral("View @%1's profile").arg(key));
+        avatar->setProperty("profileAutoTip", true);
+    }
+    auto *filter = new ProfileAvatarClickFilter(
+        avatar, [this, key] { openUserProfile(key); });
+    avatar->installEventFilter(filter);
+    avatar->setProperty("profileAvatarFilter", QVariant::fromValue<QObject *>(filter));
+}
+
 bool MainWindow::openUserProfile(const QString &account, const QString &name)
 {
     const QString key = account.trimmed().toLower();
@@ -3061,11 +3142,16 @@ bool MainWindow::openUserProfile(const QString &account, const QString &name)
                               name.isEmpty() ? account.trimmed() : name);
         return true;
     }
-    const QUrl url = chatMentionProfileUrl(
-        m_serverUrlEdit ? m_serverUrlEdit->text() : QString(), key);
-    if (!url.isValid() || url.host().isEmpty())
+    if (!forkmesh::ui::isValidNodeName(key))
         return false;
-    QDesktopServices::openUrl(url);
+    MemberInfo member;
+    member.id = QStringLiteral("user:") + key;
+    member.name = name.trimmed().isEmpty() ? key : name.trimmed();
+    member.nodeName = key;
+    member.ownerUser = key;
+    member.accountKind = QStringLiteral("user");
+    member.self = !key.isEmpty() && key == chatTrustAccount().trimmed().toLower();
+    showChatUserProfile(member, {});
     return true;
 }
 
@@ -3303,6 +3389,50 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
     bioLabel->setWordWrap(true);
     bioLabel->setVisible(false);
     bioLabel->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#c9d1d9;")));
+    auto *linksLabel = new QLabel;
+    linksLabel->setObjectName(QStringLiteral("chatUserProfileLinks"));
+    linksLabel->setTextFormat(Qt::RichText);
+    linksLabel->setWordWrap(true);
+    linksLabel->setOpenExternalLinks(true);
+    linksLabel->setVisible(false);
+
+    auto *tipsBox = new QWidget;
+    tipsBox->setObjectName(QStringLiteral("chatUserProfileTips"));
+    tipsBox->setVisible(false);
+    auto *tipsLayout = new QVBoxLayout(tipsBox);
+    tipsLayout->setContentsMargins(0, 4, 0, 0);
+    tipsLayout->setSpacing(6);
+    auto *tipsTitle = new QLabel(QStringLiteral("Tips"));
+    tipsTitle->setStyleSheet(QStringLiteral("font-weight:700;"));
+    auto *tipsQr = new QLabel;
+    tipsQr->setObjectName(QStringLiteral("chatUserProfileTipQr"));
+    tipsQr->setAlignment(Qt::AlignCenter);
+    tipsQr->setVisible(false);
+    auto *tipsAddress = new QLabel;
+    tipsAddress->setObjectName(QStringLiteral("chatUserProfileTipAddress"));
+    tipsAddress->setAlignment(Qt::AlignCenter);
+    tipsAddress->setWordWrap(true);
+    tipsAddress->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    tipsAddress->setStyleSheet(QStringLiteral("font-family:monospace;"));
+    auto *tipsNote = new QLabel;
+    tipsNote->setObjectName(QStringLiteral("chatUserProfileTipNote"));
+    tipsNote->setAlignment(Qt::AlignCenter);
+    tipsNote->setWordWrap(true);
+    tipsNote->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#8b949e;")));
+    auto *tipsCopy = new QPushButton(QStringLiteral("Copy address"));
+    tipsCopy->setObjectName(QStringLiteral("ghostButton"));
+    tipsCopy->setCursor(Qt::PointingHandCursor);
+    tipsCopy->setVisible(false);
+    connect(tipsCopy, &QPushButton::clicked, tipsCopy, [tipsCopy, tipsAddress] {
+        QGuiApplication::clipboard()->setText(tipsAddress->text());
+        tipsCopy->setText(QStringLiteral("Address copied"));
+    });
+    tipsLayout->addWidget(tipsTitle);
+    tipsLayout->addWidget(tipsQr, 0, Qt::AlignHCenter);
+    tipsLayout->addWidget(tipsAddress);
+    tipsLayout->addWidget(tipsNote);
+    tipsLayout->addWidget(tipsCopy, 0, Qt::AlignHCenter);
+
     auto *loadingLabel = new QLabel(QString::fromUtf8("Loading profile\xE2\x80\xA6"));
     loadingLabel->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#8b949e; font-size:11px;")));
 
@@ -3381,6 +3511,8 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
     layout->addLayout(headRow);
     layout->addWidget(details);
     layout->addWidget(bioLabel);
+    layout->addWidget(linksLabel);
+    layout->addWidget(tipsBox);
     layout->addWidget(loadingLabel);
     layout->addStretch(1);
     layout->addLayout(buttonRow);
@@ -3392,9 +3524,12 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
         QPointer<QDialog> dialogGuard(dialog);
         QPointer<QLabel> bioGuard(bioLabel);
         QPointer<QLabel> loadingGuard(loadingLabel);
+        QPointer<QLabel> iconGuard(icon);
+        const bool hasLocalAvatar = !m_avatars.value(member.id).isNull();
         connect(reply, &QNetworkReply::finished, this,
-                [reply, dialogGuard, bioGuard, loadingGuard, facts,
-                 renderDetails] {
+                [reply, dialogGuard, bioGuard, loadingGuard, iconGuard,
+                 hasLocalAvatar, linksLabel, tipsBox, tipsQr, tipsAddress,
+                 tipsNote, tipsCopy, accountShown, facts, renderDetails] {
                     const QByteArray body = reply->readAll();
                     const bool ok = reply->error() == QNetworkReply::NoError;
                     reply->deleteLater();
@@ -3427,6 +3562,35 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
                         bioGuard->setText(bio.toHtmlEscaped());
                         bioGuard->setVisible(true);
                     }
+                    const QString avatarPng =
+                        rec.value(QStringLiteral("avatarPng")).toString();
+                    QPixmap fetchedAvatar;
+                    if (iconGuard && !hasLocalAvatar && !avatarPng.isEmpty() &&
+                        fetchedAvatar.loadFromData(
+                            QByteArray::fromBase64(avatarPng.toLatin1())))
+                        iconGuard->setPixmap(roundedRectPixmap(fetchedAvatar, 56, 28));
+                    const QStringList links = profileLinkLines(rec);
+                    linksLabel->setText(links.join(QStringLiteral("<br>")));
+                    linksLabel->setVisible(!links.isEmpty());
+                    if (rec.value(QStringLiteral("kind")).toString() == QStringLiteral("node"))
+                        return;
+                    const QString solana =
+                        rec.value(QStringLiteral("solana")).toString().trimmed();
+                    const bool hasTip = forkmesh::tips::isValidTipAddress(solana);
+                    const QImage qr = hasTip
+                        ? QrCode::encodeToImage(QStringLiteral("solana:%1").arg(solana), 4, 3)
+                        : QImage();
+                    if (!qr.isNull())
+                        tipsQr->setPixmap(QPixmap::fromImage(qr));
+                    tipsQr->setVisible(!qr.isNull());
+                    tipsAddress->setText(hasTip ? solana : QString());
+                    tipsAddress->setVisible(hasTip);
+                    tipsCopy->setVisible(hasTip);
+                    tipsNote->setText(
+                        hasTip ? QStringLiteral("Scan with a Solana wallet to tip @%1.").arg(accountShown)
+                               : QStringLiteral("@%1 has not entered a Solana address for tips.")
+                                     .arg(accountShown));
+                    tipsBox->setVisible(true);
                 });
     } else {
         loadingLabel->setVisible(false);

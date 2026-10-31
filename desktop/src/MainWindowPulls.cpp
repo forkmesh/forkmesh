@@ -5279,6 +5279,13 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
         avatar->setText(QString());
         avatar->setPixmap(authorAvatar);
     }
+    {
+        static const QRegularExpression userLink(
+            QStringLiteral("forkmesh-user:([a-z0-9-]+)"));
+        const QRegularExpressionMatch linked = userLink.match(headerHtml);
+        if (linked.hasMatch())
+            linkAvatarToProfile(avatar, linked.captured(1));
+    }
     rowLayout->addWidget(avatar, 0, Qt::AlignTop);
 
     auto *card = new QWidget;

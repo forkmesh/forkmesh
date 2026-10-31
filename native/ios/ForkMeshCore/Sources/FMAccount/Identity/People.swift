@@ -248,6 +248,7 @@ public struct PeopleProfile: Equatable, Sendable {
     public let isFollowing: Bool
     public let statusText: String
     public let statusEmoji: String
+    public var tipAddress: String = ""
 
     public static func parse(_ map: JSONObject, requested: String) -> PeopleProfile {
         let social = map["social"]?.objectValue ?? JSONObject()
@@ -266,14 +267,15 @@ public struct PeopleProfile: Equatable, Sendable {
             following: pick("following"),
             isFollowing: social["isFollowing"] != nil ? social.bool("isFollowing") : map.bool("isFollowing"),
             statusText: String(status.str("text").prefix(80)),
-            statusEmoji: String(status.str("emoji").prefix(8)))
+            statusEmoji: String(status.str("emoji").prefix(8)),
+            tipAddress: SolanaAddress.valid(map.str("solana")))
     }
 
     public func following(_ value: Bool, followers count: Int) -> PeopleProfile {
         PeopleProfile(
             name: name, exists: exists, isPrivate: isPrivate, avatar: avatar, bio: bio, about: about,
             location: location, createdAt: createdAt, followers: max(0, count), following: following,
-            isFollowing: value, statusText: statusText, statusEmoji: statusEmoji)
+            isFollowing: value, statusText: statusText, statusEmoji: statusEmoji, tipAddress: tipAddress)
     }
 }
 

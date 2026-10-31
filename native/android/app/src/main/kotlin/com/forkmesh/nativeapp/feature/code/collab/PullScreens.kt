@@ -37,6 +37,7 @@ import com.forkmesh.nativeapp.collab.PullTimeline
 import com.forkmesh.nativeapp.collab.THREAD_SUBSCRIPTION_NOTE
 import com.forkmesh.nativeapp.collab.dartErrorText
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.model.PublishedPull
 import com.forkmesh.nativeapp.model.Repository
 import com.forkmesh.nativeapp.shell.ShellPullsWatch
@@ -388,7 +389,7 @@ private fun PullTimelineView(pull: PublishedPull, repo: RepoRef) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FmIcon("chat_bubble_outline", size = 18.dp, tint = colors.textTertiary)
                 Spacer(Modifier.width(10.dp))
-                Text(PullDetail.openedLine(pull), style = Fm.text.bodySmall.copy(color = colors.textSecondary))
+                Text(PullDetail.openedLine(pull), style = Fm.text.bodySmall.copy(color = colors.textSecondary), modifier = Modifier.openProfile(pull.authorName))
             }
             Spacer(Modifier.height(FmSpace.x2))
             SelectableBody(PullDetail.body(pull), style = LocalTextStyle.current.withHeight(1.45f), repo = repo)

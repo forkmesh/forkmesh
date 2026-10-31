@@ -194,6 +194,7 @@ struct PullDetailScreen: View {
                 FmIcon("chat_bubble_outline", size: 18, color: fm.textTertiary)
                 Text(PullDetail.openedLine(pull))
                     .fmText(.bodySmall, color: fm.textSecondary)
+                    .opensProfile(pull.authorName)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             CollabBodyText(text: PullDetail.body(pull), repo: RepoRef(owner: repo.owner, name: repo.name))

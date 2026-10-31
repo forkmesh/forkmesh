@@ -5208,7 +5208,15 @@ function threadMessageHeader(record) {
       record.recipients, "chat-thread-recipients", record.recipientNames));
   }
   if (receipt) meta.append(makeReceipt(record));
-  header.append(avatar, meta);
+  if (isBot) {
+    header.append(avatar, meta);
+  } else {
+    const avatarLink = document.createElement("a");
+    avatarLink.className = "chat-avatar-link";
+    avatarLink.href = mentionProfilePath(record.sender);
+    avatarLink.append(avatar);
+    header.append(avatarLink, meta);
+  }
   return header;
 }
 
