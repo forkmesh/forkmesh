@@ -95,6 +95,15 @@ can log in as `build` on the Mac.
   (it looked for `#file`) nor resolved (it only tried paths from the repository
   root). It now follows walk-up lookups from the test's folder, and the sparse
   checkout holds `/native/fixtures/`.
+- The 2026-10-29 and 2026-10-30 App Store builds (`1b28b0231c39`,
+  `b57ffa5bc4f4`) failed in "Test ForkMeshCore" with `skippedFiles: got 4, want
+  5` in `InsightGoldenTests`. `expected.json` had been written from a fixture
+  folder holding a git-ignored `node_modules` file that was never committed,
+  so every fresh checkout (the Mac's, and the Android tests') skipped one file
+  fewer than the desktop had. The fixture now commits
+  `repo/vendor/left-pad/index.js` (not ignored), and the desktop writer
+  reproduces the committed `expected.json` byte for byte from the committed
+  tree (`docs/marketplace/codebase-analysis.md`, "Parity tests").
 - Each run fetches its commit at depth 1 from `MAC_BUILD_GIT_URL` and checks it
   out with `git clean -ffdx`. Fetch and checkout retry together (six times,
   20 s apart) because a core may advertise a commit before it holds every blob,
