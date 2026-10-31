@@ -289,15 +289,15 @@ def test_commercial_and_protocol_commitments_are_published():
         "incentivesAffectIdentityPermissionsRankingModerationOrGovernance"] is False
 
     business = " ".join(
-        (ROOT / "www" / "docs" / "business-model.md").read_text(encoding="utf-8").split())
+        (ROOT / "docs" / "business-model.md").read_text(encoding="utf-8").split())
     assert "[incentive independence](incentive-independence.md)" in business
     protocol = " ".join(
-        (ROOT / "www" / "docs" / "design" / "conflict-safe-collaboration.md")
+        (ROOT / "docs" / "design" / "conflict-safe-collaboration.md")
         .read_text(encoding="utf-8").split())
     assert "MUST NOT infer any role from asset ownership" in protocol
 
     gates = json.loads(
-        (ROOT / "www" / "docs" / "engineering" / "quality-gates.json")
+        (ROOT / "docs" / "engineering" / "quality-gates.json")
         .read_text(encoding="utf-8"))
     gate = {item["id"]: item for item in gates["gates"]}["incentive-independence"]
     assert "app/tests/test_incentive_independence.py" in gate["command"]
@@ -305,7 +305,7 @@ def test_commercial_and_protocol_commitments_are_published():
         assert "incentive-independence" in gates["profiles"][profile]
 
     assert "[Incentive independence](incentive-independence.md)" in (
-        ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+        ROOT / "docs" / "README.md").read_text(encoding="utf-8")
 
     market = (ROOT / "www" / "public" / "market.html").read_text(encoding="utf-8")
     assert "wallet-qualified" not in market

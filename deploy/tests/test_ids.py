@@ -1,5 +1,5 @@
 """deploy/core/ids.py: detectors, expected changes, response state machine,
-alert fan-out, peer watch (docs/IDS.md). Everything runs against fakes and
+alert fan-out, peer watch (docs/operations/intrusion-detection.md). Everything runs against fakes and
 temp trees: no journal, no nft, no systemctl, no network."""
 
 import hashlib

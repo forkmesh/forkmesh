@@ -36,7 +36,7 @@ states `--dashboard-open`; every state is also a text label and an icon.
 `GET /api/repo/<owner>/<repo>/pulse?period=<24h|3d|1w|1m|all>[&person=<name>]`
 
 Served by the mirror gateway (`tools/mirror_gateway.py`,
-`GitRepository.pulse`; see [mirroring](../../www/docs/mirroring.md)). It is
+`GitRepository.pulse`; see [mirroring](../mirroring.md)). It is
 not a separately advertised operation: a repository serves `pulse` exactly
 when it serves `stats` (`PULSE_CARRIER_OPERATION`, as with `branch-trash`), so
 no repository configuration, signed operation list or node binary had to

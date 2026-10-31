@@ -1,4 +1,4 @@
-"""The production cutover tooling (docs/CUTOVER.md)."""
+"""The production cutover tooling (docs/operations/served-stack.md)."""
 
 import base64
 import hashlib

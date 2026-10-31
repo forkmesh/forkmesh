@@ -325,7 +325,7 @@ def _append(root, path, text, rebind=True):
         _rebind(root, path)
 
 
-ENCODING_DOC = "www/docs/protocol/encoding-and-identifiers.md"
+ENCODING_DOC = "docs/protocol/encoding-and-identifiers.md"
 EVENTS = "conformance/protocol/v1/vectors/events.json"
 THREATS = "conformance/protocol/v1/threats.json"
 

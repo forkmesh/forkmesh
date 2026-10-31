@@ -19,7 +19,7 @@ are stored. `repo_views` has one row per viewer with a per-repository
 `viewer_key` digest (viewers cannot be linked across repositories);
 `repo_view_totals` holds `views`, `viewers` and `last_viewed_at`. Both are
 purged with the repository and rekeyed by the rekey tool
-([REKEY.md](../REKEY.md)).
+([REKEY.md](../operations/rekey.md)).
 
 ## API (all `no-store`)
 
@@ -346,7 +346,7 @@ and `ForkMesh Deploy`), dropped from avatars and count. Code:
 `loadRepoContributorRoster`, `renderRepoAboutRoster`, `repoContributorIsBot`
 in `06-repo-content.js`; tests in `app/tests/test_repo_contributor_roster.py`.
 The upstream sync that writes this roster for mirrored forums is in
-[forge-sync.md](../../www/docs/forge-sync.md#avatars).
+[forge-sync.md](../forge-sync.md#avatars).
 
 Commit emails are not sent to the browser. Direct access lists online
 mirrors as plain rows: node name, its version or (for the node serving the
@@ -354,7 +354,7 @@ page) the response time, and an open-direct icon. The logo suggestion form
 and the owner's fediverse posts are collapsibles at the bottom, then the
 "Mirrors" card with the mirror goal and each copy's health
 ([mirror-quota.md](mirror-quota.md); see
-[mirroring](../../www/docs/mirroring.md)).
+[mirroring](../mirroring.md)).
 
 ## Issues, pull requests and discussions
 
@@ -535,7 +535,7 @@ moves when the dashboard takes over:
   test's `FUNCTIONS`/`CONSTANTS`).
 - **Long threads.** The forum's requirement is that a whole thread is
   readable from the first HTTP response without JavaScript, on links as slow
-  as a DNS tunnel (see [censorship resilience](../../www/docs/censorship-resilience.md)),
+  as a DNS tunnel (see [censorship resilience](../censorship-resilience.md)),
   so the first HTML carries every comment, streamed:
   - **Streamed.** `inject_issue_page` (`repo_ssr.py`) returns an `IssuePage`:
     the page through the header, opening post and first `TIMELINE_FIRST`
@@ -643,7 +643,7 @@ moves when the dashboard takes over:
   first by `ts` (`renderIssueTimeline` / `Renderer.timeline`, stable sorts);
   mirrored comments carry the provider's creation time.
 - **Instance switches.** With the `issue-ai-prompt` or `fediverse-ui` plugin
-  off ([INSTANCES.md](../INSTANCES.md#plugins)) neither renderer draws the
+  off ([INSTANCES.md](../operations/instances.md#plugins)) neither renderer draws the
   prompt box or the Fediverse thread; the server reads `plugins_off()` and
   keys its kept article by it.
 - **Pictures.** A paragraph that is one picture of unknown size
@@ -652,7 +652,7 @@ moves when the dashboard takes over:
   conversation below does not move when it loads.
 - **Mirrored attachments.** `tools/forge_sync.py` copies the images and files
   GitHub threads embed into `.forkmesh/attachments/`
-  ([forge-sync.md](../../www/docs/forge-sync.md#attachments)). The issue page
+  ([forge-sync.md](../forge-sync.md#attachments)). The issue page
   reads the issue's map `.forkmesh/attachments/issues/<n>.json` with one
   `blobs` read at the branch (`loadRepoIssueAttachments`, kept in
   `repoAttachmentFiles`; `_issue_attachments` in `plan_issue` puts the same

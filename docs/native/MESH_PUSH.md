@@ -100,7 +100,7 @@ while the app is in the foreground (`ApplePushBridge.willPresent`), and a tap
 opens Chat on `#mesh` (the payload's `conversation`, see
 [../app/README.md](../app/README.md)). Ping mutes and quiet hours do not
 apply, the same as `#general` and channel pushes. The token design is part of
-the [threat model](../../www/docs/protocol/threat-model.md).
+the [threat model](../protocol/threat-model.md).
 
 ## Limits
 

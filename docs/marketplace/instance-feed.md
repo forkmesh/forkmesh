@@ -5,7 +5,7 @@ people on one ForkMesh instance (the local timeline, in Mastodon terms). Each
 account installs it for itself; everyone on the instance with it installed
 reads the same feed. It does not federate: the network-wide ActivityPub view
 is the separate `feed` package
-([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md)).
+([../marketplace-usage-feed-mastodon.md](usage-feed-mastodon.md)).
 Part of [the marketplace docs](README.md).
 
 Every surface (Market, web page, desktop rail, iOS and Android) calls it Feed

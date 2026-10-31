@@ -36,7 +36,7 @@ type Config struct {
 	// uses the bounded safety fetch cadence instead of the operator polling
 	// interval; one served by another relay gets a public upstream watch
 	// socket on that relay and keeps the operator polling interval as its
-	// fallback (docs/INSTANCES.md).
+	// fallback (docs/operations/instances.md).
 	EventDrivenUpstreams []string          `json:"eventDrivenUpstreams,omitempty"`
 	MirrorOf             map[string]string `json:"mirrorOf,omitempty"`
 	PublishOwner         string            `json:"publishOwner"`
@@ -67,7 +67,7 @@ type Config struct {
 	// model safety preflight, so nothing reads this any more; it stays so
 	// existing configurations keep parsing under DisallowUnknownFields.
 	AgentOwner string `json:"agentOwner,omitempty"`
-	// Role splits trusted core from untrusted agent compute (docs/RUNNERS.md).
+	// Role splits trusted core from untrusted agent compute (docs/operations/runners.md).
 	// "mirror" (the default) keeps today's behaviour. "core" serves
 	// repositories but never runs agent jobs or Actions. "runner" serves
 	// nothing: no gateway, tunnel, catalog, merge executor or repositories on
@@ -78,7 +78,7 @@ type Config struct {
 	// Burst runner autoscaler (runnerpool.go); core role only, off by default.
 	RunnerPool *RunnerPoolConfig `json:"runnerPool,omitempty"`
 	// ForkMesh-hosted repositories replicated across the core (hosted.go,
-	// docs/HOSTED_REPOS.md); off by default.
+	// docs/operations/core-hosted-repositories.md); off by default.
 	Hosted *HostedConfig `json:"hosted,omitempty"`
 
 	ReleasePruneInterval *Duration `json:"releasePruneInterval,omitempty"`
@@ -109,7 +109,7 @@ type RunnerConfig struct {
 	// autoscaler; it exits its loop once idle so the pool can reclaim it.
 	Burst bool `json:"burst,omitempty"`
 	// The uid the job scope runs as; required when the daemon is root
-	// (docs/RUNNERS.md: a dedicated user such as forkmesh-job, never the
+	// (docs/operations/runners.md: a dedicated user such as forkmesh-job, never the
 	// daemon's own). JobUser names it instead and is resolved at startup.
 	JobUID  int    `json:"jobUid,omitempty"`
 	JobUser string `json:"jobUser,omitempty"`

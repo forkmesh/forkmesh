@@ -31,7 +31,7 @@
     <text x="36" y="442" font-weight="bold">Schemas &amp; data (17)</text>
   </g>
   <g font-family="sans-serif" fill="#c9d1d9">
-    <text x="260" y="80" font-size="12" fill="#8b949e">Library · Guides · www/docs/getting-started.md · 4 min read</text>
+    <text x="260" y="80" font-size="12" fill="#8b949e">Library · Guides · docs/getting-started.md · 4 min read</text>
     <rect x="260" y="92" width="480" height="388" rx="6" fill="#0d1117" stroke="#30363d"/>
     <text x="280" y="130" font-size="24" font-weight="bold">Getting started</text>
     <text x="280" y="160" font-size="13">Install the desktop, create your identity and clone your first</text>

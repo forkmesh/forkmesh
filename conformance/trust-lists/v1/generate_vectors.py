@@ -716,7 +716,7 @@ def build() -> dict[str, Any]:
         built.append(item)
     return {
         "schema": "forkmesh-trust-list-vectors-v1",
-        "specification": "www/docs/design/scoped-trust-lists.md",
+        "specification": "docs/design/scoped-trust-lists.md",
         "reference": "app/src/trust_lists.py",
         "testKeys": {name: KEYS[name] for name in ACTOR_NAMES},
         "cases": built,

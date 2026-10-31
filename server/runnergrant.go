@@ -1,6 +1,6 @@
 package mirrornode
 
-// Runner lease grants (docs/RUNNERS.md). The app signs one read grant and one
+// Runner lease grants (docs/operations/runners.md). The app signs one read grant and one
 // push grant per runner job with the router key; the core's gateway checks
 // them on /v1/runner/<owner>/<repo>.git and lets the push move exactly one
 // ref. The canonical message is shared byte for byte with

@@ -86,7 +86,7 @@ PRODUCT_ANALYSIS_MAX_FORM_BYTES = 4096
 PRODUCT_ANALYSIS_BACKFILL_MARKER = "product_analysis_signup_origin_backfill:v1"
 # (start_ms, end_ms) UTC windows during which account creation was part of a
 # job application. None are known yet, so no account is classified as job
-# flow; the founders supply the windows and www/docs/admin-dashboard.md
+# flow; the founders supply the windows and docs/admin-dashboard.md
 # records them.
 PRODUCT_ANALYSIS_JOB_FLOW_WINDOWS = ()
 WINDOW_DAYS = 30
@@ -1691,7 +1691,7 @@ def render_sources(report, params):
         "referral link, whatever the credit decision. Organic: the signup "
         "recorded no referrer (marker introduced 2026-08-12). Job flow: no "
         "rule yet, so nothing is classified there. Unknown: everything else. "
-        "Rules are recorded in www/docs/admin-dashboard.md.</p>")
+        "Rules are recorded in docs/admin-dashboard.md.</p>")
     return "".join(body)
 
 

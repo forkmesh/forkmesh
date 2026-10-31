@@ -62,7 +62,7 @@ milliseconds, like the desktop's; replies use seconds.
 
 `fetchRepoMutation(repo, "discussions", ...)` tries the repository's online
 mirrors first and the relay second, like issues (see
-[mirroring](../../www/docs/mirroring.md)):
+[mirroring](../mirroring.md)):
 
 - **Mirror** (`tools/mirror_gateway.py`, `_repo_collaboration`): verifies the
   signature and, for `status` and `delete`, that the portable session is the

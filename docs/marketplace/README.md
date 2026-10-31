@@ -166,7 +166,7 @@ kept under `market/windows/<id>/geometry`.
 right on the web, the desktop and both phones, with the same three actions so
 a user can manage a plugin without going back to the Market or Apps page:
 
-- **Rate** opens the package's reviews (`docs/MARKETPLACE_RATINGS.md`).
+- **Rate** opens the package's reviews (`docs/marketplace/ratings.md`).
 - **Send feedback or report a bug** posts to `/api/bug-reports` with
   `package: <id>`. The private report and any attachments are visible only to
   platform administrators in the Support inbox and the phones' Bug sheet
@@ -338,7 +338,7 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   iPhone and Android; [secure-drive.md](secure-drive.md)),
   `rss-reader` (a local-only feed reader on iPhone, Android and the desktop,
   [rss-reader.md](rss-reader.md)),
-  `docs` (the `www/docs` library on desktop and phones), `workflows` with its
+  `docs` (the `docs` library on desktop and phones), `workflows` with its
   nested `workflows-*` packs ([../app/workflows.md](../app/workflows.md)).
 - **Code analysis:** `code-map`, `size-map` (built-in features as
   switches), `strata` (architecture and complexity), `ember` (file-level
@@ -394,7 +394,7 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Community:** `instance-feed`, shown as Feed (a Mastodon-style timeline of
   posts from the people on one instance; [instance-feed.md](instance-feed.md)),
   `feed`, shown as Network Feed, and `mastodon`
-  ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md);
+  ([../marketplace-usage-feed-mastodon.md](usage-feed-mastodon.md);
   the native desktop client: [mastodon.md](mastodon.md)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
@@ -449,7 +449,7 @@ All packages are currently free (`price.amount: 0`).
   `:/forkmesh-market/packages/<id>/repository/<folder>/...` (inside the
   plugin's module when it is one); the generator
   also emits `FORKMESH_MARKETPLACE_RESOURCE_GLOBS` so a new file in such a
-  folder re-runs package discovery. The Docs package uses it for `www/docs`,
+  folder re-runs package discovery. The Docs package uses it for `docs`,
   because a copy of the library inside the package would drift from the web.
   `coreLinked: true` marks a plugin the window still calls directly; it is
   always built into the core ([plugins.md](plugins.md#plugins-the-core-still-links)).
@@ -478,7 +478,7 @@ catalog fails the configure with "Marketplace package discovery failed".
   bumped without its catalog row passes pytest but fails every desktop
   configure.
 - Package server modules deploy with the App to the core nodes
-  ([../deploy/auto-deploy.md](../deploy/auto-deploy.md)); package web pages
+  ([../deploy/auto-deploy.md](../operations/auto-deploy.md)); package web pages
   with the App's static assets.
 
 ## Security
@@ -545,5 +545,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 ## Related docs
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
-- [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
+- [`docs/plugins/README.md`](../plugins/README.md): planned plugins.
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).

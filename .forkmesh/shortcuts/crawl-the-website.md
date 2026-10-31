@@ -57,7 +57,7 @@ For every error and every warning that touches more than one page:
    `curl -sI <target>` for a single link. A finding that does not reproduce
    is dropped and noted as flaky.
 2. Find the cause in the repository. The report names the source file for
-   pages it can map (`www/templates/pages/...`, `www/docs/...md`,
+   pages it can map (`www/templates/pages/...`, `docs/...md`,
    `www/public/...`). Shared chrome lives in `www/templates/base.html` and
    `www/templates/partials/`, docs page chrome in `app/tools/docs_site.py`,
    redirects in `www/public/_redirects` and `www/worker.js`, and pages the

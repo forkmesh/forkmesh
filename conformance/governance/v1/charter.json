@@ -3,7 +3,7 @@
   "charterVersion": "1.0.0-rc.1",
   "status": "proposed",
   "adoptionRecord": "FMP-0001",
-  "guide": "www/docs/governance/README.md",
+  "guide": "docs/governance/README.md",
   "bodies": [
     {
       "id": "protocol-council",
@@ -95,7 +95,7 @@
     "compatibility": {
       "wireIdentifiersFrozen": true,
       "majorSuiteVersionRemovesAcceptance": true,
-      "reference": "www/docs/protocol/README.md#compatibility-policy"
+      "reference": "docs/protocol/README.md#compatibility-policy"
     }
   },
   "disclosures": {
@@ -135,6 +135,6 @@
     "vacantSeatFilledWithinDays": 60,
     "interimHolder": "When a seat is vacant, it counts as absent. Its constituency's quorum requirement blocks decisions that need it, and no other constituency fills it.",
     "stewardshipTransfer": "If the entity operating forkmesh.com stops operating, the protocol council holds the suite, vectors, and certification registry. Any member may republish them under the MIT license.",
-    "reference": "www/docs/operations/organization-succession.md"
+    "reference": "docs/operations/organization-succession.md"
   }
 }

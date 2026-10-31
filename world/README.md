@@ -5,7 +5,7 @@ World API and Durable Object emulation source (`world/src/`, staged into the
 App), tools and tests. The developer home page, with the code map,
 architecture and traps, is [docs/world/README.md](../docs/world/README.md);
 the served stack is described in
-[Architecture and availability](../www/docs/architecture.md).
+[Architecture and availability](../docs/codebase.md).
 
 `world.forkmesh.com` is served by the three core nodes, reached by DNS round
 robin. Caddy serves the built files from `world/dist` in the current app
@@ -36,7 +36,7 @@ triangles (`world/browser_tests/tests/world.spec.js`); the
 `world-render-workload.json` attachment records the measurement.
 
 The numbered World migrations stay in `app/migrations`: they are immutable
-entries in the shared database's applied sequence, and moving them would
-break ordering for existing installs. They can move only with a planned World
-database and namespace migration that preserves every applied version and
+entries in the shared database's applied migration sequence, and moving them would
+break ordering for existing installs. They can move only with a
+planned World database and namespace migration that preserves every applied version and
 production row.

@@ -32,9 +32,9 @@ from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_POLICY = ROOT / "www" / "docs" / "security-scan-policy.json"
-DEFAULT_SCHEMA = ROOT / "www" / "docs" / "security-scan.schema.json"
-DEFAULT_CLIPBOARD_SCHEMA = ROOT / "www" / "docs" / "security-clipboard.schema.json"
+DEFAULT_POLICY = ROOT / "docs" / "security-scan-policy.json"
+DEFAULT_SCHEMA = ROOT / "docs" / "security-scan.schema.json"
+DEFAULT_CLIPBOARD_SCHEMA = ROOT / "docs" / "security-clipboard.schema.json"
 SCANNER_NAME = "ForkMesh public-safe scanner"
 SCANNER_VERSION = "1.0.0"
 OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"

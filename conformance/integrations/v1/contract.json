@@ -8,7 +8,7 @@
     "eventSchema": "forkmesh-event-v1",
     "cliSchema": "forkmesh-cli-v1",
     "tool": "tools/forkmesh_integration.py",
-    "documentation": "www/docs/integrations.md"
+    "documentation": "docs/integrations.md"
   },
   "services": [
     {

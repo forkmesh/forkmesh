@@ -1,6 +1,6 @@
 """Mirror Actions control requests and summary v2 revalidation.
 
-The wire contract is www/docs/operations/mirror-actions-control.md. Split out
+The wire contract is docs/operations/mirror-actions-control.md. Split out
 of entry.py so Cloudflare's startup-memory validation (error 10021) does not
 pay for this domain on every isolate; entry.py loads it through a _LazyModule
 proxy on the first control request or the first version 2 summary.

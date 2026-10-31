@@ -6,7 +6,7 @@ push, merge, run CI, run scheduled jobs and deploy from the website alone.
 It builds on the runner Actions path ([runner-actions.md](runner-actions.md)):
 one runner daemon is installed next to the core and leases every Actions job.
 Home: [README.md](README.md); running an instance:
-[self-hosting](../../www/docs/self-hosting.md).
+[self-hosting](../self-hosting.md).
 
 What this adds over runner Actions:
 

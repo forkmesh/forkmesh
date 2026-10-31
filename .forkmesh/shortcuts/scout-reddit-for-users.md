@@ -21,7 +21,7 @@ posts every word. Read `docs/community/reddit.md` before anything else.
 - Never read, print or post `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` or any
   other secret. The tool loads them itself.
 - Every ForkMesh claim needs evidence: the release manifest, `docs/`,
-  `www/docs/`, tests or a commit on main. Say what is released and what is
+  `docs/`, tests or a commit on main. Say what is released and what is
   only merged on main.
 
 ## 1. Read

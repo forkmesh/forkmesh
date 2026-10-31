@@ -6,7 +6,7 @@ This page is the plan and the record of decisions. [rtc.md](rtc.md) is the
 WebRTC stack that serves calls until then, [call-bench.md](call-bench.md) the
 bench that decides "better", [fmm-protocol.md](fmm-protocol.md) the wire
 format. Home: [README.md](README.md); the public view of call encryption is
-[encryption](../../www/docs/encryption.md).
+[encryption](../encryption.md).
 
 ## What we write and what we take from the platform
 
@@ -101,7 +101,7 @@ beating it takes ideas it does not use. Five, each measurable on the bench:
    multipath keeps Wi-Fi and cellular open together and sends audio over both
    while either is weak; each client also keeps a warm standby session on a
    second core, so a core failure moves the call in well under a second
-   instead of a rejoin ([architecture](../../www/docs/architecture.md)).
+   instead of a rejoin ([architecture](../architecture.md)).
 5. **Post-quantum, group-verified encryption.** Media keys come from a hybrid
    X25519 + ML-KEM-768 exchange per epoch, with a new epoch on every join and
    leave and a short verification code every participant can compare. The

@@ -3,8 +3,8 @@
 ForkMesh is an open-source desktop node, mirror daemon, relay and set of
 mobile apps under active development. This page says how to report a
 vulnerability and what is in scope. The design is in the
-[threat model](www/docs/protocol/threat-model.md) and
-[encryption and signatures](www/docs/encryption.md).
+[threat model](docs/protocol/threat-model.md) and
+[encryption and signatures](docs/encryption.md).
 
 ## Supported Versions
 
@@ -68,10 +68,10 @@ We acknowledge reports within 3 days. Once a fix is available we coordinate
 disclosure and credit reporters who wish to be named.
 
 Security decisions follow the emergency process in the
-[governance charter](www/docs/governance/README.md#security-decisions).
+[governance charter](docs/governance/README.md#security-decisions).
 An embargo lasts at most 90 days. A public `FMS` record naming who decided,
 when, and any dissent is published in the
-[decision register](www/docs/governance/decision-register.md) within 7 days
+[decision register](docs/governance/decision-register.md) within 7 days
 of disclosure.
 
 ## Scope
@@ -80,7 +80,7 @@ Security-relevant areas:
 
 - **Identity and signing** — local Ed25519 keys used to sign profile,
   repository, issue, and pull-request metadata
-  ([encryption and signatures](www/docs/encryption.md)).
+  ([encryption and signatures](docs/encryption.md)).
 - **Relay chat** — payloads are encrypted client-side with AES-256-GCM.
   Default rooms use a relay-derived authenticated shared key: clients apply
   PBKDF2-HMAC-SHA256 with 210,000 rounds, while the relay can derive the same
@@ -89,14 +89,14 @@ Security-relevant areas:
   an automatic device-local X25519 layer that wraps a fresh content key for
   each known device, so the controller key opens only recipient ciphertext.
   The relay retains at most 500 persisted frames per room for 7 days. See
-  [chat encryption and public integrations](www/docs/security/sealed-chat.md)
+  [chat encryption and public integrations](docs/security/sealed-chat.md)
   for the wire format and unauthenticated-key-discovery boundary. Coves and
   encrypted mirrors use separate per-object encryption boundaries.
 
 - **Mirroring** — bare Git mirrors fetched from remotes and served on demand.
   The complete private-repository leakage envelope, key lifecycle, keyless
   backup inspection command, and commercial-GA evidence requirements are in
-  [private repository confidentiality](www/docs/security/private-repository-confidentiality.md).
+  [private repository confidentiality](docs/security/private-repository-confidentiality.md).
 - **Marketplace packages** — package Worker modules run with a
   least-privilege runtime; the Password Vault is end-to-end encrypted and its
   server holds no key ([`marketplace/packages/vault/README.md`](marketplace/packages/vault/README.md)).
@@ -106,9 +106,9 @@ Security-relevant areas:
   repositories. Legacy custodial payouts are frozen; current rewards use
   externally owned wallets.
 - **Hosted service** — the self-hosted core nodes behind app.forkmesh.com
-  and world.forkmesh.com ([architecture](www/docs/architecture.md)) and the
+  and world.forkmesh.com ([architecture](docs/codebase.md)) and the
   runners that execute agent and Actions jobs
-  ([docs/RUNNERS.md](docs/RUNNERS.md)).
+  ([docs/operations/runners.md](docs/operations/runners.md)).
 
 The developer overview of trust boundaries is
 [`docs/security/README.md`](docs/security/README.md).

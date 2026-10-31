@@ -77,19 +77,19 @@ void testCatalog(const DocsLibrary &library)
               order.value(1) == QStringLiteral("getting-started.md") &&
               order.value(2) == QStringLiteral("business-model.md"),
           "curated guides lead in the web library's order");
-    check(order.indexOf(QStringLiteral("governance/README.md")) <
+    check(order.indexOf(QStringLiteral("research/brief.md")) <
               order.indexOf(QStringLiteral("untitled.md")) &&
               order.indexOf(QStringLiteral("untitled.md")) < order.indexOf(QStringLiteral("zeta.md")),
           "other guides sort by path like the web library");
     check(order.indexOf(QStringLiteral("design/protocol.md")) >
                   order.indexOf(QStringLiteral("zeta.md")) &&
-              order.indexOf(QStringLiteral("research/brief.md")) >
+              order.indexOf(QStringLiteral("governance/README.md")) >
                   order.indexOf(QStringLiteral("design/protocol.md")) &&
               order.last().endsWith(QLatin1String(".json")),
           "areas follow the web order with schemas last");
-    check(library.page(QStringLiteral("research/brief.md"))->area == QStringLiteral("strategy"),
-          "research folders file under strategy");
-    check(library.page(QStringLiteral("governance/README.md"))->area == QStringLiteral("guides"),
+    check(library.page(QStringLiteral("governance/README.md"))->area == QStringLiteral("project"),
+          "governance files under the project area");
+    check(library.page(QStringLiteral("research/brief.md"))->area == QStringLiteral("guides"),
           "unmapped folders file under guides");
     check(library.pagesIn(QStringLiteral("schemas")).size() == 2, "json files are schemas");
     check(library.homePath() == QStringLiteral("README.md"), "the library README is home");
@@ -153,7 +153,7 @@ void testLinks(const DocsLibrary &library)
               target.url.toString() ==
                   QStringLiteral("https://app.forkmesh.com/forkmesh/forkmesh/tree/main/desktop/src/main.cpp"),
           "a repository file opens in the hosted source tree");
-    target = library.resolve(QStringLiteral("getting-started.md"), QStringLiteral("../public/pricing.html"));
+    target = library.resolve(QStringLiteral("getting-started.md"), QStringLiteral("../www/public/pricing.html"));
     check(target.url.toString() == QStringLiteral("https://forkmesh.com/pricing.html"),
           "a public site file opens on forkmesh.com");
     target = library.resolve(QStringLiteral("getting-started.md"), QStringLiteral("/docs/protocol/"));
@@ -277,7 +277,7 @@ void testDependencies(const QString &root)
           "the Dependencies page has no web copy");
     check(DocsLibrary::repositoryPath(DocsLibrary::dependenciesPath()) ==
                   QStringLiteral("marketplace/packages/docs/data/dependencies.json") &&
-              DocsLibrary::repositoryPath(QStringLiteral("README.md")) == QStringLiteral("www/docs/README.md"),
+              DocsLibrary::repositoryPath(QStringLiteral("README.md")) == QStringLiteral("docs/README.md"),
           "repository paths name the snapshot and the library");
     const QString markdown = page ? page->markdown : QString();
     check(markdown.contains(QStringLiteral("## Desktop (C++)")) && markdown.contains(QStringLiteral("## Python")) &&
@@ -351,7 +351,7 @@ void testRelativeRoot(const QString &root)
 void testRepositoryLibrary()
 {
     const QString root =
-        QFileInfo(QStringLiteral(__FILE__)).dir().absoluteFilePath(QStringLiteral("../../../../../../www/docs"));
+        QFileInfo(QStringLiteral(__FILE__)).dir().absoluteFilePath(QStringLiteral("../../../../../../docs"));
     if (!QFileInfo(root).isDir()) {
         std::printf("SKIP: repository docs not found at %s\n", qPrintable(root));
         return;

@@ -6,7 +6,7 @@ the ``forkmesh/forkmesh`` organization repository then makes the final
 publication decision.
 
 Governance never reads a wallet, payout address, balance, token, or payment
-history (issue #516, ``www/docs/incentive-independence.md``). The legacy
+history (issue #516, ``docs/incentive-independence.md``). The legacy
 ``wallet_address``/``value_lamports``/``value_checked_at`` approval columns
 are retired: new approvals store blanks and nothing reads them.
 """

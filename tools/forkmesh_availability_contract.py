@@ -2,7 +2,7 @@
 """Reproduce, sign, and verify a repository availability-contract report.
 
 Implements the forkmesh-availability-contract-report-v1 model
-(www/docs/availability-contract.md) by reusing the reference implementation,
+(docs/availability-contract.md) by reusing the reference implementation,
 so the CLI and the shared fixture always agree.
 
   forkmesh_availability_contract.py explain bundle.json         plain-language summary

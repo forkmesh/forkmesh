@@ -80,7 +80,7 @@ def test_trigger_filter_selects_served_stack_paths_only():
         "tools/mirror_gateway.py", "marketplace/packages/p/manifest.json",
         "app/tests/test_x.py", "deploy/tests/test_y.py", "app/host/tests_cluster/t.py",
         "app/browser_tests/tests/a.spec.js", "server/main_test.go",
-        "www/docs/guide.md", "docs/deploy/README.md", "desktop/src/MainWindow.cpp",
+        "docs/guide.md", "docs/operations/fleet-tooling.md", "desktop/src/MainWindow.cpp",
         "native/ios/ForkMesh/App/ForkMeshApp.swift", "tools/source_publisher.py",
         ".forkmesh/ci.yml"])
     assert changed["release"] == [
@@ -90,7 +90,7 @@ def test_trigger_filter_selects_served_stack_paths_only():
         "www/public/styles.css"]
     assert changed["roll"] == ["deploy/core/render.py", "server/main.go",
                                "tools/mirror_gateway.py"]
-    assert auto.classify(["www/docs/a.md", "docs/x.md", "README.md"]) == {
+    assert auto.classify(["docs/a.md", "docs/x.md", "README.md"]) == {
         "release": [], "roll": []}
 
 
@@ -114,7 +114,7 @@ def test_workflow_prefilter_is_generated_and_covers_every_served_file():
     served = [p for p in tracked if auto.release_path(p) or auto.roll_path(p)]
     assert served
     assert [p for p in served if not any(x.match(p) for x in patterns)] == []
-    assert not any(x.match("www/docs/guide.md") for x in patterns)
+    assert not any(x.match("docs/guide.md") for x in patterns)
     assert not any(x.match("desktop/src/main.cpp") for x in patterns)
 
 
@@ -869,10 +869,10 @@ def test_the_critical_security_suite_must_pass_before_a_deploy(tmp_path):
 
 
 def test_markdown_under_roll_prefixes_never_needs_a_roll():
-    assert not auto.roll_path("deploy/core/edge_client.md")
+    assert not auto.roll_path("docs/www/edge-client.md")
     assert not auto.roll_path("server/README.md")
     assert auto.roll_path("deploy/core/edge_client.py")
-    assert auto.classify(["deploy/core/edge_client.md"])["roll"] == []
+    assert auto.classify(["docs/www/edge-client.md"])["roll"] == []
 
 
 def test_a_roll_lost_by_an_earlier_deploy_is_rolled_by_the_next(repo, tmp_path):

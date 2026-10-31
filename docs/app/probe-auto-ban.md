@@ -88,7 +88,7 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
   `deploy/fleet.toml` (the IPv4 address and the IPv6 /64): a job on a shared
   runner can reach the public App, and one probe from it would otherwise ban
   the runner's address, cutting off its own claims and every other owner's
-  jobs ([../RUNNERS.md](../RUNNERS.md)). Autoscaled pool runners and
+  jobs ([../RUNNERS.md](../operations/runners.md)). Autoscaled pool runners and
   user-run mirrors are not in the fleet file and are not covered.
 - Bans block the App, World and proxied site routes, not the static
   forkmesh.com files.
@@ -124,7 +124,7 @@ scoring it.
 
 ## Re-key
 
-A re-key ([../REKEY.md](../REKEY.md)) empties both tables (they are keyed by
+A re-key ([../REKEY.md](../operations/rekey.md)) empties both tables (they are keyed by
 blind index); the next sweep then lifts all automatic bans.
 
 ## Tests

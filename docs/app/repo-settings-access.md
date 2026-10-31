@@ -3,7 +3,7 @@
 Part of the [App](README.md). A repository linked to an organization
 (`org_repos`) is stored under the account that created or publishes it, for
 example `alice/site`, and shown at the organization address `/acme/site` (or
-`/site` on a single-organization instance, [INSTANCES.md](../INSTANCES.md)).
+`/site` on a single-organization instance, [INSTANCES.md](../operations/instances.md)).
 On an organization address the repository's `owner` field is the
 organization, so matching the session against it (`sessionOwnsRepo`) alone
 would hide Settings from everyone, the creator and the organization's owners
@@ -21,7 +21,7 @@ An account administers a repository when either:
 
 `maintainer` (`maintain`), `member`, `auditor` and `guest` do not administer
 the repository; this follows the role table in
-[www/docs/security/organization-roles.md](../../www/docs/security/organization-roles.md),
+[docs/security/organization-roles.md](../security/organization-roles.md),
 where only `owner` and `admin` hold `admin` on linked repositories, the same
 split as GitHub's Maintain and Admin repository roles. The rule is
 `_repo_admin_allowed(env, actor, node, repo)` in `app/src/entry.py`; a lookup

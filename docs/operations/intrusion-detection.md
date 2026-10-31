@@ -1,0 +1,321 @@
+# Host intrusion detection (IDS)
+
+Every core node and runner runs `fmnext-ids`, a small root service
+(`deploy/core/ids.py`, installed as `/opt/forkmesh-next/bin/fmnext-ids`,
+config `/etc/forkmesh-next/ids.json`, state in `/var/lib/fmnext-ids`). It uses
+the Python standard library (plus `python3-cryptography` for signing), runs
+with a CPU quota and idle I/O priority, stats files instead of re-reading
+them, and re-hashes everything every 6 hours.
+
+On an intrusion it **locks the node down**: the vault key leaves memory, the
+node is quarantined in rqlite, the firewall closes and services stop. It also
+pages the admins, and mails them itself (see *Direct mail*). Only the
+operator can end a lockdown (`tools/next_ids.py release`). Fleet runbook:
+[OPERATIONS.md](README.md); public threat model:
+[threat-model](../protocol/threat-model.md); developer index:
+[README.md](../README.md).
+
+## Threat model
+
+Detects within seconds: a shell as a service user, logins with unknown keys or
+passwords, new privileged accounts, tampering with code, units or security
+configuration, ptrace of protected processes, runner jobs escaping their
+scope, persistence through cron, listeners, unusual egress or kernel modules,
+and an IDS that stops reporting while its node keeps serving.
+
+Does not stop:
+
+- **Root acting faster than the IDS.** Mitigated by fast detection (journald
+  lines as they arrive, process scans every 5 s), sealing the key first, and
+  peers that vote a node into quarantine when its app runs while its IDS has
+  been silent for 3 minutes.
+- **A node compromised while unsealed**: its memory held `DATA_KEY`. Rotate
+  `DATA_KEY` and vault secrets after any real lockdown ([REKEY.md](rekey.md)).
+- **A compromised operator box**, which holds `DATA_KEY`, the fleet SSH key,
+  the IDS master key and the operator release key.
+- **HTTPS exfiltration by the app user**: only non-HTTP(S) egress is logged.
+- **Non-interactive use of a stolen fleet key** raises only `info` unless
+  `ssh_allow` is set.
+
+## Detectors
+
+Override any severity with `[ids] severity = { detector = "lockdown" }` in
+`deploy/fleet.toml`.
+
+| Detector | Trigger | Default |
+|---|---|---|
+| `ssh_unknown_key` | key not in `ssh_fleet_fingerprints` | lockdown |
+| `ssh_non_key_login` | password or keyboard-interactive login | lockdown |
+| `ssh_foreign_ip` | login from outside `ssh_allow` (when set) | alert |
+| `ssh_interactive_login`, `ssh_login_user` | a pty shell; a non-root login | alert |
+| `ssh_tool_session` | a command without a pty, sftp or tunnel (the fleet tools) | info |
+| `integrity_*` | a change outside a signed expected-change window | lockdown for binaries, the release tree, units, sshd, sudoers, PAM, firewall; else alert |
+| `account_uid0`, `account_login_shell`, `group_privileged`, `root_password_set` | account database diffs | lockdown |
+| other `account_*`, `group_changed`, `shadow_changed` | account changes | alert |
+| `service_user_outside_unit` | a service user's process outside its own unit (outermost unit in the cgroup path) | lockdown |
+| `service_user_shell` | a shell or interpreter under a service user | lockdown |
+| `service_user_exe` | an executable outside the user's allowlist | alert |
+| `exe_suspicious_path` | an executable in `/tmp`, `/dev/shm`, `/var/tmp` or a memfd | lockdown |
+| `ptrace` | a traced protected process | lockdown |
+| `job_user_outside_scope` | runner job-user process outside a job scope | lockdown |
+| `listener_unexpected` | a listener on an unexpected port | alert |
+| `egress_unexpected` | a new outbound connection (SYN only) from a service user to a non-web port | alert |
+| `kernel_module_loaded`, `kernel_module_taint` | a module loaded after start or a tainting module | alert |
+| `privilege_tool` | sudo/su by a non-root account | alert |
+| `peer_ids_silent` | a peer's IDS heartbeat is stale while its app runs | alert |
+| `quarantined_by_peers` | a majority voted this node into quarantine | lockdown |
+| `expectation_rejected` | a forged, replayed or stale expected-change manifest | alert |
+| `baseline_tampered`, `baseline_missing` | the baseline failed its HMAC check or vanished | lockdown |
+| `reboot` | boot id changed outside a window | info |
+
+A process that exits mid-scan is marked `vanished` and skipped by the unit
+checks; a live process with no unit still alerts.
+
+`service_user_exe` skips systemd's `systemd-executor` (systemd 255+) while it
+starts a service: between dropping to the service user and `execve`, the
+process runs `/usr/lib/systemd/systemd-executor` under the unit's cgroup with
+a name like `(caddy)`. Only that path, a parenthesised name and the user's own
+unit are skipped (a Caddy restart tripped it); the executor anywhere else, or
+under another name, still alerts.
+
+### Process context and verdict
+
+Every process incident (`ptrace`, `exe_suspicious_path`,
+`job_user_outside_scope`, `service_user_outside_unit`, `service_user_shell`,
+`service_user_exe`) records, as soon as it is detected:
+
+| Key | What |
+|---|---|
+| `cmdline`, `cwd`, `ppid`, `started` | the process's own command line, working directory, parent and start time |
+| `parents` | up to six ancestors, nearest first: pid, exe, user, command line |
+| `children` | up to five child processes |
+| `environment` | only `SSH_CONNECTION`, `SSH_CLIENT`, `SSH_ORIGINAL_COMMAND`, `REMOTE_ADDR`, `REMOTE_PORT`, `HTTP_X_FORWARDED_FOR`, `HTTP_X_REAL_IP`, `HTTP_USER_AGENT`, `GIT_PROTOCOL`, `GIT_DIR`, `GIT_QUARANTINE_PATH`, `SUDO_USER`, `LOGNAME`, from the process or its nearest ancestor; never any other variable, so no secret leaves the node |
+| `connections` | inet sockets held by the process and its ancestors (read in each one's own network namespace), public peers first: this is where a remote IP shows |
+| `verdict` | what the IDS concluded, also appended to the summary (and so to the Ping title) |
+
+Command lines and environment values pass through `redact`: a URL's password, an `Authorization:` value, `token=`/`password=`/`secret=`/`key=` values and `--token`/`--password`/`--secret`/`--api-key` arguments become `***`.
+
+Verdicts:
+
+- **likely benign: ForkMesh's own `<hook>` hook during a git push**: the
+  shell runs a git receive hook, an ancestor is `git receive-pack`, and the
+  hook file carries `# Managed-By: ForkMesh` (the mirror-node `post-receive`
+  hook, `server/pushhook.go`; the operator-policy hook) or is the gateway's
+  push-rewrite `pre-receive` hook (`tools/mirror_gateway.py`).
+- **needs a look: a `<hook>` hook ForkMesh did not write**: the same, but the
+  file has no marker or is not a small regular file (never opened then, so a
+  FIFO cannot stall the IDS).
+- **likely benign: the Actions sandbox self-test**: `/bin/sh -c 'exit 0'` under
+  `bwrap` (`server/actions.go`, `probeBubblewrap`).
+- **probably an Actions job step**: any other process under `bwrap`.
+- **needs a look: git ran a shell command**: `sh -c` directly under git (an
+  ssh command, credential helper, alias or hook from config).
+- **unexplained**: the process exited before it could be read, or nothing
+  above matches.
+
+The verdict never changes the severity: a process can fake its command line,
+so benign verdicts say what matched and still ask for a cross-check in the
+unit's journal. The added context is trimmed (children, connections,
+environment, then the farthest parents) so the stored detail stays valid JSON
+under the 4000-character column cap. The Ping and email show the verdict
+under the summary and list each parent, child and connection on its own line.
+
+Why: an alert that records only pid, exe, name, unit and user cannot be
+explained once the process has exited, which happened with a dash under
+`forkmesh-mirror-node.service` on n5.
+
+## Lockdown on a core
+
+1. **Seal**: the app drops `DATA_KEY` and every vault value and exits.
+2. **Marker** `/var/lib/fmnext-ids/LOCKDOWN`; drop-ins keep the app, daemon,
+   Caddy and certsync from starting, also after reboot.
+3. **Quarantine**: a signed `self` row in `cluster_quarantine` and the
+   incident in `security_incidents`.
+4. **rqlite**: stopped only if the other reachable voters are a majority (at
+   least two) with a leader and no other node is quarantined; otherwise it
+   keeps running behind the firewall. One healthy peer later removes the node
+   as a voter when that is quorum-safe, never below two voters.
+5. **Firewall** (`inet fmnext_ids`): inbound only replies, loopback, SSH (on
+   `ssh.port`, the fleet's `ssh_port`; [deploy/ssh-port.md](ssh-port.md))
+   and mesh; outbound only root.
+6. **Stop** services.
+7. **Alerts.**
+
+Peers then exclude the node from the live set, refuse it unseal and mesh
+traffic, and drop its WireGuard packets. The operator-box DNS loop removes it
+from DNS after failed probes.
+
+On a runner: marker, kill all job scopes, report to
+`/api/runners/security-incident` (the app revokes the runner), firewall, stop
+the daemon.
+
+## Alerts
+
+Every incident is logged to the journal and recorded in `security_incidents`
+(cores) or through the signed runner API. Unsealed core apps
+(`app/host/forkmesh_host/ids_alerts.py`, leaderless, compare-and-set claim)
+deliver them, so delivery works while the reporting node is down. When no
+app is unsealed (every core sealed, locked down or stopped), the IDS's own
+direct mail still reaches the admins for lockdown, `test` and unrecorded
+incidents (*Direct mail* below); `alert` and `info` rows wait for an app:
+
+| Severity | Record | Ping (inbox, live clients, push) | Email |
+|---|---|---|---|
+| `info` | yes | no | no |
+| `alert` | yes | every admin | no |
+| `lockdown`, `test` | yes | every admin | yes, within limits |
+
+The `security_alert` Ping cannot be muted and carries the full incident and
+lockdown step outcomes. A lockdown row waits up to 15 s for its step results
+before delivery.
+
+Email limits (counters in the rqlite `mail_budget` table): one email per node
+and detector per hour, five IDS emails per day in total; suppressed alerts
+are summarised in the next allowed email. Service accounts, unverified
+addresses and domains that receive no mail are skipped.
+
+All platform mail shares one daily budget (`app/src/mail_budget.py`):
+`MAIL_DAILY_LIMIT` per day with `MAIL_ACCOUNT_RESERVE_PERCENT` reserved for
+verification, password and account mail. Set the limit to the provider's real
+daily limit.
+
+From the IDS process itself, so an alert gets out when every app is sealed
+or down: direct mail (`[ids] direct_mail`, on in the ForkMesh fleet, off in `fleet.example.toml`) and an
+optional signed webhook (`[ids] webhook_url`, header
+`x-fmnext-ids-signature: v1:<ms>:<hex>`).
+
+### Direct mail
+
+Lockdown and `test` incidents, and any incident the IDS could not record
+(rqlite down), are mailed by the IDS to `[ids] mail_to`
+(`security@forkmesh.com`) from `mail_from` (empty: `founders@forkmesh.com`,
+`smtp_mail.SENDER`), envelope sender `no-reply@forkmesh.com`, as the app's
+mail. Without it, a lockdown that sealed every app leaves only the journal
+and the `security_incidents` row, and nobody is told.
+
+- **Normally** it submits over SMTP to the node's own Postfix on
+  `127.0.0.1:25`, so the same route as every other server mail applies:
+  OpenDKIM signing, the n4 relay for n3 and n5, and the Mailtrap fallback
+  relay when that route fails ([MAIL_LOG.md](mail-log.md#sending-from-the-cores)).
+  Only a loopback address is accepted.
+- **In a lockdown** the IDS firewall lets only root send off the node, so
+  Postfix (user `postfix`) could queue the alert but not deliver it, and the
+  peers drop the node's WireGuard packets, so the n4 relay is gone too. The
+  IDS (root) then posts to the Mailtrap send API first, with the fallback
+  relay's own token read from `/etc/postfix/sasl_passwd` (root-only,
+  written by `next_mail.py install`). If that fails the mail goes into the
+  Postfix queue and leaves after the release. Opening the lockdown firewall
+  to Postfix was rejected: a service-user shell could then send mail out
+  through loopback while the node is locked down.
+- If Postfix does not answer outside a lockdown, the IDS tries the API the
+  same way.
+- No secret is pushed for it: the recipient is plain config and the token
+  is the one Postfix already holds. A core without the Mailtrap fallback
+  (no `MAILTRAP_API_TOKEN` at `next_mail.py install`) still mails normally,
+  but its lockdown mail waits for the release.
+- Each attempt leaves a masked note in #email-log (`kind: ids_direct`,
+  `via: postfix|mailtrap`, the routes tried).
+- Check it with `python3 tools/next_ids.py test-fire nN --execute`: the
+  `test` incident is mailed directly and through the app.
+
+## Retention
+
+The app's `sensitive-cleanup` cron (`prune_security_incidents` in
+`app/src/entry.py`) deletes from `security_incidents`:
+
+- `info` incidents older than 90 days;
+- every other severity older than 365 days;
+- never a `lockdown` incident, and never an incident whose id a
+  `cluster_quarantine` row names (the `incident` field of a signed `self`
+  body), so the evidence behind a quarantine or lockdown stays.
+
+Each run deletes at most 2000 rows, oldest first, so one cron tick stays
+cheap; a backlog clears over several ticks. A failure is logged and does not
+stop the rest of the cleanup.
+
+Why: without retention the table grew to 6.5 MiB and 21k rows on 1 GB
+nodes. Ids are random, so `INSERT OR IGNORE` never dedupes, and the IDS
+dedupe (`DEDUPE_SECONDS`) is per process only.
+
+## Admin console
+
+Security, Intrusion detection (`?view=ids`, `app/src/ids_console.py`): KPIs,
+node states (Normal, Lockdown, Silent, No heartbeat), filters, an incident
+chart, groups by detector or node, and the incident log. Read-only.
+
+## Quarantine records
+
+Verified by `app/host/forkmesh_host/ids_records.py` (shared by the app, the
+IDS and the desktop); rows are trusted only by Ed25519 signature:
+
+| Kind | Signed by | Effect |
+|---|---|---|
+| `self` | the node's own IDS key | the node is quarantined |
+| `vote` | a peer's IDS key | counts once a strict majority of other cores voted |
+| `release` | the operator key (operator box only) | clears the records it names or predates |
+
+One compromised node cannot quarantine a peer or release itself. Verifiers
+remember what they have seen, so deleting rows does not lift a quarantine.
+After a release, peers refuse peer unseal until the operator unseals the node
+once.
+
+## Expected changes
+
+Fleet tools push an **expected-change manifest** before each step, signed
+with the node's own key `HMAC(FMNEXT_IDS_MASTER, "fmnext-ids-node-key-v1:<node>")`
+(pushed as `FMNEXT_IDS_KEY`). Manifests are single-use, valid at most 60
+minutes, and list exact file hashes (`files`), accepted paths (`rescan`) and
+relaxed detectors (`allow`). The `files` step also expects new unit drop-in
+directories. A fresh node starts its IDS last, so its first baseline already
+contains everything the start step wrote.
+
+For a manual change, open a window first:
+
+```sh
+python3 tools/next_ids.py expect n3 --path /etc/ssh --allow modules --execute
+python3 tools/next_ids.py expect n3 --allow ptrace --minutes 10 --execute
+python3 tools/next_ids.py baseline n3 --execute
+```
+
+## Operator commands
+
+```sh
+python3 tools/next_ids.py status [nN|rN ...]
+python3 tools/next_ids.py test-fire n3 --execute
+python3 tools/next_ids.py baseline nN --execute
+python3 tools/next_ids.py release nN --note "why" --execute
+python3 tools/next_vault.py seal nN --restart --execute
+```
+
+Setup: `next_fleet.py init-secrets` adds `FMNEXT_IDS_MASTER`;
+`next_ids.py keygen` creates the operator key (its public half goes into
+`deploy/fleet.toml [ids]` with `enabled = true`); `install --steps ids`, then
+`base,secrets,files,start` one node at a time; `baseline`; `test-fire`. The
+unit passes `--config` before the subcommand.
+
+## Release
+
+1. Investigate: `next_ids.py status`, `journalctl -u fmnext-ids`, the state
+   file. SSH still works.
+2. Real compromise: do not release. Rebuild the node and rotate `DATA_KEY`,
+   vault secrets, `RQLITE_PASSWORD`, `FORKMESH_MESH_SECRET` and the fleet SSH
+   key.
+3. False positive: `release` signs a release, stores it through a healthy peer
+   (rqlite `/nodes` queries use a short timeout), tells the IDS to lift the
+   lockdown, and unseals the node. A released runner must be registered again.
+
+## Rules
+
+- Never run anything as a service user over SSH (`systemd-run -p User=`,
+  `sudo -u`, `runuser`, `su`): that is a lockdown. Probe as root, or read the
+  app's journal and `/proc/<MainPID>`.
+- Change nodes only through the fleet tools or inside an `expect` window.
+
+## Residual risks
+
+- Root can disable the IDS before it reacts; the peer vote takes about four
+  minutes. Runners have no peer watching their heartbeat.
+- A false lockdown takes a node out until released.
+- Expected-change windows accept any change under `rescan` paths while open.
+- A forged quarantine needs two nodes' IDS keys; a forged release needs the
+  operator key. Keep the operator key and IDS master offline-backed.

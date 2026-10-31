@@ -7,7 +7,7 @@ I'll check the runner fix and the Mac build.
 
 [Bash git log --oneline -3]
 
-[Read /home/dev/projects/forkmesh/src/docs/RUNNERS.md]
+[Read /home/dev/projects/forkmesh/src/docs/operations/runners.md]
 
 [Grep server]
 

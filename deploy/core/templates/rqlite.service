@@ -11,7 +11,7 @@ User=rqlite
 Group=rqlite
 # 0027: the app user (in group rqlite) may read db.sqlite for local reads.
 UMask=0027
-# rqlite rewrites 'now' with the host's local clock (app/host/RQLITE_FINDINGS.md).
+# rqlite rewrites 'now' with the host's local clock (docs/host/rqlite-findings.md).
 Environment=TZ=UTC
 Environment=GOMEMLIMIT=@@GOMEMLIMIT@@
 # Basic-auth users (built from RQLITE_PASSWORD on the operator box); %d is

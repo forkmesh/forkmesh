@@ -1,7 +1,7 @@
 # Legal pages on self-hosted instances (Terms, Privacy, Security)
 
 Part of [the App docs](README.md); see also
-[self-hosting](../../www/docs/self-hosting.md). forkmesh.com links Terms,
+[self-hosting](../self-hosting.md). forkmesh.com links Terms,
 Privacy and Security from the dashboard sidebar,
 the shared site header's menu, the site footer, the profile page footer and
 the sign-up agreement box. Those pages are forkmesh.com's own policies. On a

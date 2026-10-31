@@ -6,7 +6,7 @@ measures the App's staged Python source and the World's static assets,
 enforces the World's static budgets, and can write `worker-footprint.json`
 for the desktop's Logs → Build tab. Startup source size is reported, not
 budgeted: the App runs on CPython on the core nodes
-([architecture](../../www/docs/architecture.md)).
+([architecture](../architecture.md)).
 
 ## What ships
 

@@ -23,7 +23,7 @@ Read `docs/security/sentinel.md` (your charter and lanes) and
   hostnames. The 2026-09-24 infrastructure audit's login burst locked the
   operator's IP out for 15 minutes and its local scan stalled their uplink.
   Read-only probes of the fleet happen only when the operator asks for one
-  named check, and then from the commands in `docs/OPERATIONS.md`.
+  named check, and then from the commands in `docs/operations/README.md`.
 - Never print, paste, commit or post a secret, key, token, password, cookie,
   credential file or `DATA_KEY` value. Name the file and the key, never the value.
   If you find a secret in the tree or history, report the path and commit and
@@ -71,11 +71,11 @@ or runs someone else's code counts.
 
 | Boundary | Paths |
 | --- | --- |
-| Front door, request limits, client IP, edge-client MAC | `app/host/forkmesh_host/request_guard.py`, `asgi.py`, `deploy/core/edge_client.md` |
+| Front door, request limits, client IP, edge-client MAC | `app/host/forkmesh_host/request_guard.py`, `asgi.py`, `docs/www/edge-client.md` |
 | Outbound fetch (SSRF) | `app/host/forkmesh_host/egress.py`, callers of `fetch` in `app/src/` (webhooks, ActivityPub, mirrors, microjobs, marketplace runtime) |
 | Auth, sessions, reset and verify tokens, passkeys, admin | `app/src/entry.py` (login, signup, reset, verify, `LOCAL_DEMO_PASSWORD` gate, `_account_link_grant`), `app/src/portable_sessions.py`, `app/src/runner_auth.py`, `app/src/admin_console.py` (`ADMIN_HIDDEN_TABLES`), `app/src/admin_database.py`, `app/src/admin_shell.py`, `app/src/turnstile.py` |
 | Cluster, mesh, database | `app/host/forkmesh_host/cluster.py`, `durable_cluster.py`, `d1_rqlite.py`, `vault.py`, `vault_crypto.py` |
-| Runners and agent jobs | `server/runner.go`, `sandbox.go`, `jobhome.go`, `runnergrant.go`, `runnerlogin.go`, `merge.go`, `actions.go`, `app/src/runner_leases.py`, `docs/RUNNERS.md` |
+| Runners and agent jobs | `server/runner.go`, `sandbox.go`, `jobhome.go`, `runnergrant.go`, `runnerlogin.go`, `merge.go`, `actions.go`, `app/src/runner_leases.py`, `docs/operations/runners.md` |
 | Desktop agent sandboxing | `desktop/src/ProjectAgentAccess.*`, `AgentNetworkGate.*`, `AgentGuardScript.h`, `AgentJail.h`, `AgentGuardrails.*`, `AgentPermissionController.*`, `VirtualMachineRuntime.*` |
 | Node hardening and serving | `deploy/core/render.py`, `caddy_routes.py`, `certsync.py`, `ids.py`, `deploy/core/templates/`, `tools/next_fleet.py`, `tools/next_vault.py`, `tools/next_backup.py`, `tools/next_rekey.py`, `tools/next_deploy.py`, `www/public/_headers` |
 | Signed records and crypto | event and catalog signing strings (`forkmesh-*-v1`/`-v2`), `desktop/src/RoomCrypto.*`, `CoveCrypto.*`, `MirrorCrypto.*`, `TipSigner.*`, `RewardPoolSigner.*`, sealed chat, Office chat, site DMs, direct calls in `app/public/chat*.js` (WebRTC calls arrive with branch `858-show-direct-messages-app`), `app/src/chat_direct_messages_api.py`, `app/src/chat_channels_api.py`, `app/src/org_office*.py`, `office/public/features/chat/`) |
@@ -135,7 +135,7 @@ convinced you, or a finding.
 1. Scan the added lines in the range for credential shapes (private key
    headers, `sk-`/`ghp_`/`xox`/`AKIA` prefixes, `api_key=`/`token=`/`password=`
    with a literal value, long base64 or hex blobs next to those words, `.pem`,
-   `.p8`, `.cred`, `.env*`, `credentials.json`). `www/docs/security/secret-scanning.md`
+   `.p8`, `.cred`, `.env*`, `credentials.json`). `docs/security/secret-scanning.md`
    describes the product's own scanner; reuse its patterns. Report the path and
    commit only.
 2. Re-run the security regression tests that guard the fixed findings in the
@@ -154,7 +154,7 @@ convinced you, or a finding.
 
 Query OSV (`https://api.osv.dev/v1/querybatch`) for every pinned package in
 the manifests listed in step 2. Compare with
-`www/docs/security/dependency-security-audit.md`; add new advisories, note
+`docs/security/dependency-security-audit.md`; add new advisories, note
 packages that left or entered, and flag unpinned requirements or requirements
 without `--hash`. A vulnerable version that is reachable is a finding; one that
 is not reachable is a note with the reason.
@@ -170,7 +170,7 @@ Update `docs/security/findings.md`:
   with no guard test stays `Fixed, unguarded` until one exists; writing that
   test is a valid fix for this run.
 - Public open items (threat model TM rows, documented gaps such as the runner
-  HOME gap in `docs/RUNNERS.md`) keep their status and age.
+  HOME gap in `docs/operations/runners.md`) keep their status and age.
 - New unfixed findings go to the task board, not here (rule 0).
 
 Before filing a task, run `list_tasks` with `department: security` and a query

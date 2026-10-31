@@ -1,6 +1,6 @@
 # ForkMesh Next runner (managed by deploy/core/render.py)
 
-This machine is an **untrusted, outbound-only** runner (docs/PLAN.md Phase 5).
+This machine is an **untrusted, outbound-only** runner (docs/operations/served-stack.md Phase 5).
 
 - It holds no core secret: no DATA_KEY, no ADMIN_PASS, no rqlite password,
   no FORKMESH_MESH_SECRET, and it is not a WireGuard peer of the core.
@@ -14,4 +14,4 @@ This machine is an **untrusted, outbound-only** runner (docs/PLAN.md Phase 5).
   nftables refuses it the metadata service, private, CGNAT, loopback and
   WireGuard addresses. Provider logins live in /var/lib/forkmesh-job.
 - Link it to an account with the daemon's link-code flow after install
-  (docs/OPERATIONS.md).
+  (docs/operations/README.md).

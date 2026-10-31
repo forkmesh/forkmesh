@@ -117,7 +117,7 @@ the same text, so a repeat refill does not re-mail an unread ping.
 ## Re-keying
 
 `notification_email_sends` is emptied by `tools/next_rekey.py`
-([REKEY.md](../REKEY.md)): its keys are HMACs under the old key and match
+([REKEY.md](../operations/rekey.md)): its keys are HMACs under the old key and match
 nothing afterwards. `notifications.content_bi` is pseudonymised like
 `dedupe_bi`, so the first re-file of each row after a re-key bumps `ts` once.
 `content_bi` is also declared in `app/src/private_surface_audit.py`, the

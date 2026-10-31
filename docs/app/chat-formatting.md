@@ -25,7 +25,7 @@ Renderers share the same rules:
 | Server | `app/src/chat_format.py` | email HTML and plain text |
 
 Chat text is end-to-end encrypted
-([../../www/docs/encryption.md](../../www/docs/encryption.md)), so emails
+([../../docs/encryption.md](../encryption.md)), so emails
 never quote messages.
 
 Tests: `app/tests/test_chat_formatting.py`, `testChatFormat` in

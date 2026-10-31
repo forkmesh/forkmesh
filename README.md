@@ -36,14 +36,14 @@ lives in [`.forkmesh/projects`](.forkmesh/projects) and
 
 ## Core documentation
 
-- [Architecture and availability](www/docs/architecture.md)
-- [Encryption and signatures](www/docs/encryption.md)
-- [Mirroring and software distribution](www/docs/mirroring.md)
-- [Self-hosting](www/docs/self-hosting.md)
-- [Censorship resilience](www/docs/censorship-resilience.md)
-- [Threat model](www/docs/protocol/threat-model.md)
+- [Architecture and availability](docs/codebase.md)
+- [Encryption and signatures](docs/encryption.md)
+- [Mirroring and software distribution](docs/mirroring.md)
+- [Self-hosting](docs/self-hosting.md)
+- [Censorship resilience](docs/censorship-resilience.md)
+- [Threat model](docs/protocol/threat-model.md)
 - Indexes: [developer docs](docs/README.md) and
-  [public documentation](www/docs/README.md), also at
+  [public documentation](docs/README.md), also at
   [forkmesh.com/docs](https://forkmesh.com/docs)
 
 ## Quick start
@@ -57,7 +57,7 @@ curl -fsSL https://forkmesh.com/install.sh | bash
 
 To work on ForkMesh itself, build and run the ForkMesh desktop app from source
 (Qt 6.4+, CMake 3.16+, OpenSSL headers, Git, a C++17 compiler; per-distribution
-packages are in the [desktop guide](www/docs/qt-client.md#build-and-run-from-source)):
+packages are in the [desktop guide](docs/qt-client.md#build-and-run-from-source)):
 
 ```sh
 git clone https://forkmesh.com/forkmesh/forkmesh
@@ -68,17 +68,17 @@ cd forkmesh
 On first run the app creates a local Ed25519 node identity and connects to the
 default network. Signing in from **Settings** adds a portable public username;
 the node identity stays on the device. Then open **Repos** to create, add or
-fork a repository. [Getting started](www/docs/getting-started.md) has the full
+fork a repository. [Getting started](docs/getting-started.md) has the full
 walkthrough.
 
 ForkMesh is also on the App Store for iPhone and iPad (with an Apple Watch app
 for following and steering agents) and on Android as a signed APK
-([ForkMesh apps](www/docs/apps.md)).
+([ForkMesh apps](docs/apps.md)).
 
 ## Start your own instance
 
 Open [forkmesh.com/start](https://forkmesh.com/start), fill in six short
-sections (or upload one [settings file](www/docs/start-config.md)), and
+sections (or upload one [settings file](docs/start-config.md)), and
 ForkMesh connects over SSH, installs a complete white-label instance and shows
 each step live. It needs a fresh Debian 13 or Ubuntu 24.04 server with 1 GB RAM
 and takes about fifteen minutes. Or paste this into Claude Code:
@@ -88,10 +88,10 @@ Read https://app.forkmesh.com/forkmesh-agent.md and help me start my own ForkMes
 ```
 
 The [agent guide](app/public/forkmesh-agent.md) also explains how the team
-opens pull requests; [Working with coding agents](www/docs/coding-agents.md)
+opens pull requests; [Working with coding agents](docs/coding-agents.md)
 shows how to keep it in your repository without committing it. Full guide:
-[Start your own instance](www/docs/start-your-own-instance.md); overview:
-[Self-hosting](www/docs/self-hosting.md).
+[Start your own instance](docs/start-your-own-instance.md); overview:
+[Self-hosting](docs/self-hosting.md).
 
 ## Usage
 
@@ -104,7 +104,7 @@ git clone https://forkmesh.com/forkmesh/forkmesh
 
 A repository created on the web is hosted on the core nodes and takes
 fast-forward `git push` over HTTPS with your account name and the push
-credential shown at creation ([Hosted repositories](www/docs/hosted-repositories.md)):
+credential shown at creation ([Hosted repositories](docs/hosted-repositories.md)):
 
 ```sh
 git remote add forkmesh https://app.forkmesh.com/<owner>/<repo>
@@ -121,7 +121,7 @@ with the MCP tool `open_pr_from_branch` or `POST /api/repo/<owner>/<repo>/pulls`
 be assigned to coding agents, which work in isolated worktrees with live
 transcripts and diffs and finish with a pull request.
 
-The [stock Git compatibility matrix](www/docs/git-compatibility.md) lists the
+The [stock Git compatibility matrix](docs/git-compatibility.md) lists the
 supported clone, fetch, push, partial-clone, bundle, submodule and
 signed-commit workflows and their limits.
 
@@ -148,18 +148,18 @@ signed-commit workflows and their limits.
 
 With a disposable public repository:
 
-1. [Collaborate](www/docs/product-promise.md#1-collaborate) with a signed issue,
+1. [Collaborate](docs/product-promise.md#1-collaborate) with a signed issue,
    discussion, review, or pull request.
-2. [Add an independent mirror](www/docs/product-promise.md#2-add-an-independent-mirror)
+2. [Add an independent mirror](docs/product-promise.md#2-add-an-independent-mirror)
    and wait until its signed health and refs are current.
-3. [Take the source mirror offline](www/docs/product-promise.md#3-take-the-source-mirror-offline)
+3. [Take the source mirror offline](docs/product-promise.md#3-take-the-source-mirror-offline)
    by stopping `forkmesh-mirror-node` on the source host.
-4. [Clone again](www/docs/product-promise.md#4-clone-again) from the same URL,
+4. [Clone again](docs/product-promise.md#4-clone-again) from the same URL,
    confirm the expected commit, then restart the source.
 
 A mirror is not called available until it passes the signed health and
 integrity checks. ForkMesh's
-[free-protocol / paid-services contract](www/docs/business-model.md) keeps the
+[free-protocol / paid-services contract](docs/business-model.md) keeps the
 MIT protocol, self-hosting, public read and clone, and portable Git plus signed
 collaboration records free; only bounded, replaceable hosted work is charged.
 
@@ -179,15 +179,15 @@ independent mirrors     →  Git bytes + signed health, serve clones on their ow
   ([`app/host/`](docs/host/README.md)), rqlite (Raft) and the Go daemon. A DNS
   health loop (`tools/next_dns.py`) drops a failed core from the records, so no
   single core is a point of failure; with two cores down the survivor serves
-  reads and refuses writes ([docs/PLAN.md](docs/PLAN.md)). Cloudflare provides
+  reads and refuses writes ([docs/operations/served-stack.md](docs/operations/served-stack.md)). Cloudflare provides
   DNS only for these names. Cores hold the data and run no untrusted code.
 - **Runners** hold no core secret and run agent and Actions jobs
-  ([docs/RUNNERS.md](docs/RUNNERS.md)).
+  ([docs/operations/runners.md](docs/operations/runners.md)).
 - **Mirrors** are Go daemons or desktop nodes that hold Git data and publish
   signed health. The app sends clones to a mirror whose signed proof is fresh
   and whose refs match an accepted source revision, so clones keep working
   without the cores. The cores also host repositories created on the web
-  ([docs/HOSTED_REPOS.md](docs/HOSTED_REPOS.md)).
+  ([docs/operations/core-hosted-repositories.md](docs/operations/core-hosted-repositories.md)).
 - **Clients** are the web app, the desktop app, and the native iOS (Swift),
   watchOS and Android (Kotlin) apps. Phones are mobile nodes with their own key
   and Git engine; the watch works through the iPhone. Mirroring remains a
@@ -195,16 +195,16 @@ independent mirrors     →  Git bytes + signed health, serve clones on their ow
 
 The app is also the self-hosting unit: one deployment at an address such as
 `forkmesh.example.com` gives the full Git, account, API and realtime surface;
-World is optional ([docs/INSTANCES.md](docs/INSTANCES.md)). See
-[Architecture and availability](www/docs/architecture.md) and the developer view
-in [docs/architecture.md](docs/architecture.md).
+World is optional ([docs/operations/instances.md](docs/operations/instances.md)). See
+[Architecture and availability](docs/codebase.md) and the developer view
+in [docs/codebase.md](docs/codebase.md).
 
 ## Self-hosting and operations
 
 Run a mirror server: the headless Go service syncs repositories, serves the
 public HTTPS Git gateway and publishes signed endpoints. Create and check hosts
 from **App → Network → Nodes**, or build by hand
-([mirror-node operations](www/docs/operations/mirror-node.md)):
+([mirror-node operations](docs/operations/mirror-node.md)):
 
 ```sh
 cd server && go test ./... && go build ./cmd/forkmesh-mirror-node
@@ -218,9 +218,9 @@ python3 tools/next_deploy.py all              # plan an app release
 python3 tools/next_deploy.py all --execute    # build, upload, migrate, rolling restart
 ```
 
-[docs/deploy/README.md](docs/deploy/README.md) maps the tooling and
-[docs/OPERATIONS.md](docs/OPERATIONS.md) is the runbook. Never commit secrets.
-The [external dependency and observability map](www/docs/external-dependency-map.md)
+[docs/operations/fleet-tooling.md](docs/operations/fleet-tooling.md) maps the tooling and
+[docs/operations/README.md](docs/operations/README.md) is the runbook. Never commit secrets.
+The [external dependency and observability map](docs/external-dependency-map.md)
 lists every outside service a deployment contacts, what it sees, and what
 still works without it; `python3 tools/external_dependency_inventory.py check`
 keeps it complete.
@@ -236,7 +236,7 @@ deploy/      fleet file, node renderer, certsync, IDS, systemd units
 desktop/     Qt 6 desktop node
 changelog/   the one changelog: forkmesh.com/changelog and the apps' What's new
 docs/        developer documentation, one home page per subsystem
-examples/    example third-party apps (docs/APPS.md)
+examples/    example third-party apps (docs/app/oauth-apps.md)
 marketplace/ creator package schema, catalog, packages, and editor plugins
 native/      native iOS and watchOS (Swift/SwiftUI) and Android (Kotlin/Compose) apps
 office/      Office (2D) code and media
@@ -316,7 +316,7 @@ infrastructure credentials, code modification, Git pushes or note deletion;
 ## Security model
 
 - Node and protocol actions use local Ed25519 identities and signed records
-  ([Encryption and signatures](www/docs/encryption.md)).
+  ([Encryption and signatures](docs/encryption.md)).
 - Public mirror eligibility requires a fresh account-bound signature, a healthy
   direct HTTPS endpoint, allowed status, and an integrity-matching repository
   proof.
@@ -332,27 +332,27 @@ infrastructure credentials, code modification, Git pushes or note deletion;
   wallets.
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md). What an
-attacker can and cannot do is in the [threat model](www/docs/protocol/threat-model.md);
-protocol boundaries are in [www/docs/security](www/docs/security) and the
+attacker can and cannot do is in the [threat model](docs/protocol/threat-model.md);
+protocol boundaries are in [docs/security](docs/security) and the
 developer view in [docs/security](docs/security/README.md).
 
 ## Documentation
 
 | Goal | Guide |
 | --- | --- |
-| Install and first run | [Getting started](www/docs/getting-started.md) |
-| Run your own instance | [Start your own instance](www/docs/start-your-own-instance.md) |
-| Work with Claude Code or another coding agent | [Working with coding agents](www/docs/coding-agents.md), [agent guide](app/public/forkmesh-agent.md) |
-| iPhone, Apple Watch and Android apps | [ForkMesh apps](www/docs/apps.md) |
-| Build and troubleshoot the desktop app | [Desktop app guide](www/docs/qt-client.md) |
-| Decide whether ForkMesh fits | [Category comparisons](www/docs/category-comparisons.md) |
-| Supported Git operations | [Git compatibility](www/docs/git-compatibility.md) |
-| Web-created and imported repositories | [Hosted repositories](www/docs/hosted-repositories.md), [Repository imports](www/docs/repository-imports.md) |
-| Recover or move an identity | [Portable identities](www/docs/portable-identities.md) |
-| Operate a mirror host | [Mirror-node operations](www/docs/operations/mirror-node.md), [Mirroring](www/docs/mirroring.md) |
-| Back up a node and its key | [Node backup and recovery](www/docs/operations/node-backup-and-recovery.md) |
-| Storage, content and legal-response policy | [Node operator policy](www/docs/operations/node-operator-policy.md) |
-| Everything else | [Public index](www/docs/README.md), [developer index](docs/README.md), [architecture overview](docs/architecture.md) |
+| Install and first run | [Getting started](docs/getting-started.md) |
+| Run your own instance | [Start your own instance](docs/start-your-own-instance.md) |
+| Work with Claude Code or another coding agent | [Working with coding agents](docs/coding-agents.md), [agent guide](app/public/forkmesh-agent.md) |
+| iPhone, Apple Watch and Android apps | [ForkMesh apps](docs/apps.md) |
+| Build and troubleshoot the desktop app | [Desktop app guide](docs/qt-client.md) |
+| Decide whether ForkMesh fits | [Category comparisons](docs/category-comparisons.md) |
+| Supported Git operations | [Git compatibility](docs/git-compatibility.md) |
+| Web-created and imported repositories | [Hosted repositories](docs/hosted-repositories.md), [Repository imports](docs/repository-imports.md) |
+| Recover or move an identity | [Portable identities](docs/portable-identities.md) |
+| Operate a mirror host | [Mirror-node operations](docs/operations/mirror-node.md), [Mirroring](docs/mirroring.md) |
+| Back up a node and its key | [Node backup and recovery](docs/operations/node-backup-and-recovery.md) |
+| Storage, content and legal-response policy | [Node operator policy](docs/operations/node-operator-policy.md) |
+| Everything else | [Public index](docs/README.md), [developer index](docs/README.md), [architecture overview](docs/codebase.md) |
 
 ## Mirrors
 
@@ -375,7 +375,7 @@ Human and AI contributors are both welcome. Start with
 contract or integration test, and run the affected suite before opening a pull
 request. Work is not complete until its compatibility, security,
 documentation, observability and rollout gates match the claim
-([definition of done](www/docs/engineering/definition-of-done.md)). You can
+([definition of done](docs/engineering/definition-of-done.md)). You can
 also help by running a node or mirroring a project you care about.
 
 ## License

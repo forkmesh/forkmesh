@@ -9,11 +9,11 @@ standard-library Python run from the repository root with
 `native/ios/tools/`). Fleet tools run on the operator machine; those that
 change something are dry runs unless given `--execute`. Home:
 [docs/README.md](../README.md); what the fleet looks like:
-[architecture](../../www/docs/architecture.md).
+[architecture](../architecture.md).
 
 ## Code map
 
-**Fleet and releases** ([../deploy/README.md](../deploy/README.md))
+**Fleet and releases** ([../deploy/README.md](../operations/fleet-tooling.md))
 
 | File | What it does |
 | --- | --- |
@@ -21,15 +21,15 @@ change something are dry runs unless given `--execute`. Home:
 | `next_fleet.py` | Cloud instances, node install steps, secrets push, destroy, core replacement, core and runner rolls (`roll`, `roll-runners`), `delete-refs` |
 | `next_cloud.py`, `next_aws.py` | Cloud provider interface; the AWS EC2 provider (standard-library SigV4) |
 | `next_deploy.py` | App release build, upload, migrate, rolling restart, rollback |
-| `next_autodeploy.py` | Deploys `main` to the core nodes when served-stack paths change ([auto-deploy](../deploy/auto-deploy.md)) |
-| `next_autoscale.py` | Operator side of the core autoscaler ([AUTOSCALING.md](../fleet/AUTOSCALING.md)) |
-| `next_vault.py` | Secrets vault: `status`, `sync`, `unseal`, `seal`, `reload` ([VAULT.md](../VAULT.md)) |
-| `next_ids.py` | IDS: `keygen`, `fingerprint`, `status`, `baseline`, `expect`, `test-fire`, `release` ([IDS.md](../IDS.md)) |
+| `next_autodeploy.py` | Deploys `main` to the core nodes when served-stack paths change ([auto-deploy](../operations/auto-deploy.md)) |
+| `next_autoscale.py` | Operator side of the core autoscaler ([AUTOSCALING.md](../operations/autoscaling.md)) |
+| `next_vault.py` | Secrets vault: `status`, `sync`, `unseal`, `seal`, `reload` ([VAULT.md](../operations/vault.md)) |
+| `next_ids.py` | IDS: `keygen`, `fingerprint`, `status`, `baseline`, `expect`, `test-fire`, `release` ([IDS.md](../operations/intrusion-detection.md)) |
 | `next_dns.py` | DNS for the served names and core node names, plus DNS health failover |
-| `next_mail.py` | Core mail: DKIM, DNS, reverse DNS, install, check ([MAIL_LOG.md](../MAIL_LOG.md)) |
-| `next_node_owner.py` | Fleet node ownership ([NODE_OWNERSHIP.md](../NODE_OWNERSHIP.md)) |
+| `next_mail.py` | Core mail: DKIM, DNS, reverse DNS, install, check ([MAIL_LOG.md](../operations/mail-log.md)) |
+| `next_node_owner.py` | Fleet node ownership ([NODE_OWNERSHIP.md](../operations/node-ownership.md)) |
 | `next_backup.py` | Nightly age-encrypted rqlite backup: `run`, `prune`, `keygen`, `verify`, `restore` |
-| `next_rekey.py` | Offline re-key of a database copy ([REKEY.md](../REKEY.md)) |
+| `next_rekey.py` | Offline re-key of a database copy ([REKEY.md](../operations/rekey.md)) |
 | `next_git_host.py`, `next_codemagic.py` | Private Git over HTTPS on the cores; native iOS builds cloned from it (full history: dumb HTTP has no shallow clones) |
 | `next_import.py` | Replays the old separate Next repository's history onto a branch here (`next-import`); refuses to rewind a diverged branch without `--force` |
 | `rqlite_migrate.py` | Applies `app/migrations/*.sql` to rqlite, keeping the `d1_migrations` ledger shape |
@@ -38,7 +38,7 @@ change something are dry runs unless given `--execute`. Home:
 | `free_disk_space.py` | Deletes agent scratch, build and test debris nothing uses; run step by step on the desktop by the **Free disk space** workflow in Workflows ([free-disk-space.md](free-disk-space.md)) |
 | `branch_inventory.py` | Classifies unmerged branches and saves daily snapshots ([branch-inventory.md](branch-inventory.md)) |
 | `grants_build.py` | Builds the grants CRM import and ranked page from `docs/finance/grants/grants.json` ([grants](../finance/grants/README.md)) |
-| `cutover_*.py`, `rehost.py` | Hostname rewrite, DNS, TLS, identity and data move tooling kept from the move to the self-hosted cores ([CUTOVER.md](../CUTOVER.md)) |
+| `cutover_*.py`, `rehost.py` | Hostname rewrite, DNS, TLS, identity and data move tooling kept from the move to the self-hosted cores |
 
 **Forum reach** ([../app/forum-reach.md](../app/forum-reach.md)):
 `forum_static_export.py` writes a static, read-only, JavaScript-free copy of
@@ -74,7 +74,7 @@ security scan runners.
 `zoho_mail.py` (send email from a Zoho Mail mailbox with no prompts, the `send_email` MCP tool, [zoho-mail.md](zoho-mail.md)), `code_health.py`,
 `measure_startup.py`, `run_critical_tests.py`, `quality_gate.py`.
 
-**Evidence ledgers and contracts**: each backs a `www/docs` page; inputs and
+**Evidence ledgers and contracts**: each backs a `docs` page; inputs and
 outputs are listed in [../conformance/README.md](../conformance/README.md).
 
 **Other**: forge sync and imports (`forge_sync.py`, `forge_providers.py`,
@@ -117,7 +117,7 @@ python3 tools/next_fleet.py list                # read-only
 ```
 
 Many tools are also covered by `app/tests/test_<tool>.py`. The fleet runbook
-is [OPERATIONS.md](../OPERATIONS.md).
+is [OPERATIONS.md](../operations/README.md).
 
 ## Security
 

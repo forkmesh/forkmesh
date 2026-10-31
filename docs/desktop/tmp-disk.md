@@ -92,7 +92,7 @@ At startup and then hourly, `cleanUnused()` removes:
 
 The Action sandbox sweep (`ActionRunner::reclaimSandboxes`) already runs on
 whatever `sandboxDir()` returns. The node deploy agent looks for Deploy nodes runs
-in both sandbox folders ([auto-deploy](../deploy/auto-deploy.md#where-the-agent-finds-runs)). Every delete goes through
+in both sandbox folders ([auto-deploy](../operations/auto-deploy.md#where-the-agent-finds-runs)). Every delete goes through
 `safedelete::removeTree` with the folder's own parent.
 
 #### A live run's sandbox is locked, not just claimed

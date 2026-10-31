@@ -13,11 +13,11 @@ issue list, the cron phase does nothing, and `/api/repo/<o>/<r>/mirror-quota`
 answers 404 (`plugin_on`, from `instance_features.enabled_ids`).
 
 The example instance `forum.example.org` mirrors `github.com/example/forum`
-into `example/forum` with [forge sync](../../www/docs/forge-sync.md) and asks
+into `example/forum` with [forge sync](../forge-sync.md) and asks
 for 10 mirrors so the forum survives a takedown of either site. The issues are
 committed under `.forkmesh/issues`, so a plain `git clone --mirror` carries
 the whole forum. Why independent copies matter:
-[censorship resilience](../../www/docs/censorship-resilience.md).
+[censorship resilience](../censorship-resilience.md).
 
 Code: `app/src/mirror_quota.py` (API, health rules, cron job),
 `app/public/dashboard/js/09-mirror-quota.js` (card and dialog),
@@ -28,11 +28,11 @@ view). Tests: `app/tests/test_mirror_quota.py`,
 ## What is counted
 
 These are not the ForkMesh mirror fleet
-([mirroring](../../www/docs/mirroring.md)). The Mirrors tab and the "Direct
+([mirroring](../mirroring.md)). The Mirrors tab and the "Direct
 access" list (`GET /api/repo/<o>/<r>/mirrors`) are ForkMesh nodes that serve
 the repository with signed proofs and are routed to; on an instance they are
 hidden because one node serves everything
-([INSTANCES.md](../INSTANCES.md#dashboard-on-an-instance)). The quota counts
+([INSTANCES.md](../operations/instances.md#dashboard-on-an-instance)). The quota counts
 plain git copies anywhere, which the instance never routes to: it only checks
 that they answer and are current.
 
@@ -72,7 +72,7 @@ Migration `0283_repo_mirror_quota.sql`:
 
 Both tables are in `_REPO_SCOPED_TABLES` (purged with the repository) and in
 `tools/next_rekey.py` (`BI_COLUMNS`, `CIPHER_COLUMNS`); see
-[REKEY.md](../REKEY.md).
+[REKEY.md](../operations/rekey.md).
 
 ## API
 

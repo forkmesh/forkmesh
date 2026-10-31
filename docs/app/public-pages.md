@@ -30,7 +30,7 @@ Refresh requests a fresh on-chain read (`refresh=1`).
 - The Nodes section lists cores (`core:<node>`, from `cluster_members`
   heartbeats) and pool runners (`runner:<name>`); personal runners are never
   listed. Core rows page administrators continually by default. See
-  [RUNNERS.md](../RUNNERS.md).
+  [RUNNERS.md](../operations/runners.md).
 - A failing WebSocket constructor falls back to reconnect backoff.
 - A row turned red by server errors gives only the status code and the route
   family (`_status_route_family`: `/api/<area>`, `/api/repo/[repository]/<kind>`,

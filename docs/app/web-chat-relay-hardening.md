@@ -3,7 +3,7 @@
 How the browser clients follow [chat-relay-hardening.md](chat-relay-hardening.md)
 (R1 to R7). Part of [the App docs](README.md). Protocol:
 [chat-protocol-v3.md](chat-protocol-v3.md); signatures and sealing in general:
-[encryption](../../www/docs/encryption.md).
+[encryption](../encryption.md).
 
 The clients are the `/chat` page (`app/public/chat.js`), the dashboard chat
 and the World's CHAT terminal (`app/public/dashboard-chat.js`, mounted by
@@ -55,7 +55,7 @@ inside a `history` frame. The web keeps no saved history of its own.
 - An unsealed frame is opened only when its envelope has `srv: true`, in any
   room except a direct message: the shared relay rooms and every server
   channel room, public or private, notices (such as the `#email-log` mail log,
-  [../MAIL_LOG.md](../MAIL_LOG.md)) included. The server writes those frames
+  [../MAIL_LOG.md](../operations/mail-log.md)) included. The server writes those frames
   (`_chat_channel_deliver`) and strips `srv` from anything a client sends.
   `serverPlain()` marks it; `attributeFrame()` shows it as the
   integration it names (`accountKind: "integration"`, a `srv:`, `app:`,

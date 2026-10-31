@@ -6,7 +6,7 @@ screen, draw on whiteboards, chat, claim desks, see teammates' agent runs,
 and play. The client is a static bundle; the server half runs in Python on
 the core nodes' app host, like the [World](../world/README.md). Index:
 [docs/README.md](../README.md); how the cores fit together:
-[architecture](../../www/docs/architecture.md).
+[architecture](../architecture.md).
 
 ## Code map
 
@@ -169,7 +169,7 @@ current scene.
   token prefixes, JWTs, `password=`/`token:` pairs and long hex/base64 runs
   become `[redacted]`. Only this scrubbed snippet is shared with org members;
   transcripts stay end-to-end encrypted
-  ([encryption](../../www/docs/encryption.md)).
+  ([encryption](../encryption.md)).
 - The office never starts, stops or controls an agent.
 
 ## Rides and play
@@ -430,4 +430,4 @@ only by the measured size of what a change adds.
 
 - [World](../world/README.md), [app](../app/README.md),
   [cron and Durable Objects](../app/cron-and-durable-objects.md),
-  [host](../host/README.md), [PLAN](../PLAN.md).
+  [host](../host/README.md), [PLAN](../operations/served-stack.md).

@@ -8,7 +8,7 @@ import sys
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-DOCS_ROOT = REPOSITORY_ROOT / "www" / "docs"
+DOCS_ROOT = REPOSITORY_ROOT / "docs"
 DEPENDENCIES = REPOSITORY_ROOT / "marketplace" / "packages" / "docs" / "data" / "dependencies.json"
 BUNDLE = REPOSITORY_ROOT / "native" / "ios" / "ForkMesh" / "Resources" / "DocsLibrary.json"
 SCHEMA = "forkmesh-docs-library-v1"
@@ -31,9 +31,11 @@ def bundle(docs_root: Path = DOCS_ROOT, dependencies: Path = DEPENDENCIES) -> di
     catalog = docs_site.load_catalog(docs_root)
     pages = []
     for entry in catalog.entries:
-        if entry.kind not in {"doc", "asset"} or not entry.source.startswith("www/docs/"):
+        if entry.kind not in {"doc", "asset"} or not entry.source.startswith("docs/"):
             continue
-        path = entry.source.removeprefix("www/docs/")
+        if entry.area in docs_site.DEVELOPER_AREAS:
+            continue
+        path = entry.source.removeprefix("docs/")
         text = (docs_root / path).read_text(encoding="utf-8")
         if entry.kind == "asset":
             text = f"# {entry.title}\n\n{entry.description}\n\n```json\n{text.strip()}\n```\n"
@@ -46,11 +48,12 @@ def bundle(docs_root: Path = DOCS_ROOT, dependencies: Path = DEPENDENCIES) -> di
             "asset": entry.kind == "asset",
             "markdown": text,
         })
+    pages.sort(key=lambda page: page["path"] != "README.md")
     snapshot = json.loads(dependencies.read_text(encoding="utf-8")) if dependencies.is_file() else {}
     areas = [
         {"key": area.key, "label": area.label, "blurb": area.blurb}
         for area in docs_site.AREAS
-        if area.key != "product"
+        if area.key != "product" and area.key not in docs_site.DEVELOPER_AREAS
     ]
     return {
         "schema": SCHEMA,
@@ -78,7 +81,7 @@ def write(path: Path = BUNDLE) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Write the Docs library bundle the iPhone and Android apps ship: every page of "
-                    "www/docs with the web library's titles, areas and order, and the dependency snapshot.")
+                    "docs with the web library's titles, areas and order, and the dependency snapshot.")
     parser.add_argument("--output", type=Path, default=BUNDLE, help="bundle to write")
     parser.add_argument("--check", action="store_true",
                         help="exit 1 if the bundle is out of date; write nothing")

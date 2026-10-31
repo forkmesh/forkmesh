@@ -6,7 +6,7 @@
 -- referral programme from organic signups. It is a plain category, never a
 -- secret, so it lives beside is_admin as an operational column. 'unknown' is
 -- the default and the honest answer for every account the derivation rules in
--- www/docs/admin-dashboard.md cannot classify.
+-- docs/admin-dashboard.md cannot classify.
 --
 -- The referral half of the backfill is expressible in SQL: an account with a
 -- referral_attributions row arrived through a referral link, whatever the

@@ -82,15 +82,15 @@ gateway) through DNS round robin, plus an untrusted runner tier. There is no
 proxy in front and no single point of failure: a failed core leaves DNS, and
 with two down the survivor serves read-only. The old Cloudflare Worker relay
 (Workers, D1, Durable Objects) is gone; do not describe or rebuild it.
-`app/host/`, `deploy/` and `tools/next_*.py` drive the stack; `docs/PLAN.md`
-and `docs/NEXT_ADOPTION.md` describe it, `www/docs/architecture.md` summarises
+`app/host/`, `deploy/` and `tools/next_*.py` drive the stack; `docs/operations/served-stack.md`
+and `docs/operations/operator-files.md` describe it, `docs/codebase.md` summarises
 it.
 
 - Vultr instances are labelled `fmnext-*` and tagged `forkmesh-next`. Never add
   them to the desktop's saved hosts.
 - Its operator files live in `~/projects/forkmesh/data/core/{config,ssh,logs}/fleet`
   and `data/core/fleet` (reached through the `~/projects/forkmesh/<root>` links
-  too; moved 2026-09-24 and 2026-10-19, `docs/NEXT_ADOPTION.md`); the
+  too; moved 2026-09-24 and 2026-10-19, `docs/operations/operator-files.md`); the
   never-erase rule applies.
   `~/projects/forkmesh-backup` is the retired Next folder, kept as a backup:
   never erase it either.
@@ -108,7 +108,7 @@ them (`docs/desktop/build-and-test.md#ccache`).
 Source files hold code; human-readable text lives in `docs/`. Do not add
 comments or docstrings. Put the reason for a change in the matching
 `docs/*.md`; `docs/README.md` maps each subsystem to its home page. Keep docs
-short, link related pages, and link the core pages (`www/docs/architecture.md`,
+short, link related pages, and link the core pages (`docs/codebase.md`,
 `encryption.md`, `mirroring.md`, `self-hosting.md`, `censorship-resilience.md`,
 `protocol/threat-model.md`) instead of re-explaining them. The only exceptions are lines tools read: shebangs, encoding
 lines, build tags and `//go:embed`, lint/type directives, license headers,
@@ -133,7 +133,7 @@ something a user can notice adds one plain sentence with
 the file itself, so nothing needs re-rendering. Each note is one line and git
 merges the file with `merge=union`, so a conflict there is rare; if one
 happens, keep both sides' lines and run `python3 tools/changelog.py check`.
-See `docs/changelog.md`.
+See `docs/engineering/changelog.md`.
 
 ## Desktop layout modes: Control Tower and Focus
 

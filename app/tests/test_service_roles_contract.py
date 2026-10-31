@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "forkmesh_service_roles.py"
 MANIFEST = ROOT / "conformance" / "service-roles" / "v1" / "manifest.json"
-DOC = ROOT / "www" / "docs" / "operations" / "service-roles.md"
+DOC = ROOT / "docs" / "operations" / "service-roles.md"
 MIRROR_NODE_MAIN = ROOT / "server" / "cmd" / "forkmesh-mirror-node" / "main.go"
 ISSUE_ROLES = (
     "web-ui", "relay", "public-index", "search", "identity-resolver",
@@ -117,7 +117,7 @@ def _mutated(manifest, change):
         (lambda m: m["roles"][1]["defaultEndpoints"][0].pop("override"),
          "needs an override"),
         (lambda m: m["roles"][0]["independentProfile"].update(
-            runbook="www/docs/operations/mirror-node.md#no-such-heading"),
+            runbook="docs/operations/mirror-node.md#no-such-heading"),
          "has no heading #no-such-heading"),
         (lambda m: m["roles"][2].update(gaps=[]), "must list its gaps"),
         (lambda m: m["roles"][0]["contract"][0].update(method="POST"),

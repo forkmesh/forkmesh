@@ -9,7 +9,7 @@ and report that it went out. Agents call it through the ForkMesh MCP tool
 ([below](#logged-in-the-crm)).
 
 It is unrelated to platform mail (Mailtrap and the cores' Postfix,
-[../MAIL_LOG.md](../MAIL_LOG.md)) and to the CRM's Zoho connection, which
+[../MAIL_LOG.md](../operations/mail-log.md)) and to the CRM's Zoho connection, which
 reads mail and, since CRM 1.36.0, sends the CRM's automated emails through the
 Zoho Mail API (`ZohoMail.messages.CREATE`,
 [marketplace/packages/crm/README.md](../../marketplace/packages/crm/README.md),

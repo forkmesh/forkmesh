@@ -5,7 +5,7 @@ Its source is code only; the reasons behind non-obvious decisions live here.
 Build, test and release steps are in
 [native/android/README.md](../../native/android/README.md); the phone apps'
 home page is [README.md](README.md). Encryption and signatures are explained
-once in [encryption.md](../../www/docs/encryption.md).
+once in [encryption.md](../encryption.md).
 
 Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
 `C/` is `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/`.
@@ -102,7 +102,7 @@ lands in both apps in the same pull request.
   `MAX_OWNER_ENVELOPE_RECIPIENTS` in `app/src/security_controls.py`. Failed
   opens are never distinguished by cause.
 - **Portable identity** (`C/security/PortableIdentity.kt`, shared with web and
-  desktop, [portable-identities.md](../../www/docs/portable-identities.md)):
+  desktop, [portable-identities.md](../portable-identities.md)):
   PBKDF2-HMAC-SHA-256 600000 iterations, 16-byte salt, AES-256-GCM with
   associated data `forkmesh.portable-identity/v1`. Restore validates type,
   schema, a canonical 32-byte seed and the matching public key, and signs out
@@ -427,7 +427,7 @@ the default application id `com.forkmesh.nativeapp` installs beside it.
 
 ## 8. Git engine and repositories
 
-How repositories reach mirrors is in [mirroring.md](../../www/docs/mirroring.md).
+How repositories reach mirrors is in [mirroring.md](../mirroring.md).
 
 - A pure-Kotlin Git engine (`C/git`), blocking, run off the main thread.
   `GitIsolateRunner` serializes operations per repository; cancel trips the
@@ -530,7 +530,7 @@ How repositories reach mirrors is in [mirroring.md](../../www/docs/mirroring.md)
   census scan feeds the device grid (`GlassesCensus`); `GlassesHoming` and
   `GlassesCompass` drive closeness and direction; `GlassesRadarChip` sits in
   the top bar. Device kinds match iOS
-  ([FMTools.md](../../native/ios/docs/FMTools.md)).
+  ([FMTools.md](ios/FMTools.md)).
 - **Router** (`feature/openwrt/`, core `openwrt/`) talks to an OpenWrt router
   through `RouterHttp`, a small HTTP/1.0 client on a plain or TLS socket,
   because the network security config forbids cleartext and a domain rule
@@ -759,7 +759,7 @@ default in new projects except the chosen starter pack
   route and package `usage`) from the desktop's `agentops.usage` through
   `AgentUsageModel`, with the account actions and the agent-in-a-terminal
   form; the Usage card on Desktop agents opens it
-  ([Usage on Android](../marketplace-usage-feed-mastodon.md#usage-on-android)).
+  ([Usage on Android](../marketplace/usage-feed-mastodon.md#usage-on-android)).
   Refresh sends `agentops.usage` with `refresh: true`; opening is a plain read;
   each meter shows `UsageFormat.resetClock` ("Resets 3:45 PM", "Resets Tue
   9:00 AM", "Resets Oct 26, 10:00 AM"; `UsageResetClockTest`).
@@ -1415,7 +1415,7 @@ Where one pill is drawn, new pull requests (accent) win over the open count.
   current repository's pull list: on a repository change, return to the
   foreground, account socket reconnect and the relay `pulls` frame
   (`ShellBadges.install` chains `AccountEventChannel.onTopic`). It does not
-  poll ([polling-elimination.md](../../www/docs/operations/polling-elimination.md));
+  poll ([polling-elimination.md](../operations/polling-elimination.md));
   core keeps `NewPullsMarker.pollEvery` only for the iOS tests. A read that
   lands while one runs queues one more. The Pull requests page takes the
   watch's list, supports pull to refresh, keeps its list when a refresh fails

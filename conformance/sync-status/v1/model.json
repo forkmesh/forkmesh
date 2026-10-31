@@ -3,7 +3,7 @@
   "outputSchema": "forkmesh-sync-status-v1",
   "version": "1.0.0",
   "updated": "2026-09-14",
-  "documentation": "www/docs/sync-status.md",
+  "documentation": "docs/sync-status.md",
   "fixture": "conformance/sync-status/v1/fixture.json",
   "referenceImplementation": "app/src/sync_status.py",
   "implementations": [

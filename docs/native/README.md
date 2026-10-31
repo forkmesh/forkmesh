@@ -8,8 +8,8 @@ Market's phone tools. A phone is a *mobile node*: it holds its own Ed25519 node
 key and owner-encryption key and clones and commits with its own Git engine.
 The two apps share endpoints, storage keys and signing formats, so the relay
 and the desktop cannot tell them apart. Where the phones sit in the system:
-[architecture](../../www/docs/architecture.md); keys and signatures:
-[encryption](../../www/docs/encryption.md).
+[architecture](../architecture.md); keys and signatures:
+[encryption](../encryption.md).
 
 - iOS ships as the App Store app **ForkMesh** (`com.forkmesh.forkmesh`)
   ([IOS_RELEASE.md](IOS_RELEASE.md)).
@@ -21,7 +21,7 @@ and the desktop cannot tell them apart. Where the phones sit in the system:
   and works through the iPhone over WatchConnectivity; a standalone mode is
   phase 2 ([PARITY.md](PARITY.md), section 4).
 
-User guides: [all apps](../../www/docs/apps.md), [Siri](../../www/docs/mobile/siri.md).
+User guides: [all apps](../apps.md), [Siri](../mobile/siri.md).
 Per-app READMEs: [native/ios/README.md](../../native/ios/README.md),
 [native/android/README.md](../../native/android/README.md); one API note per
 iOS core module in [native/ios/docs/](../../native/ios/docs/).
@@ -72,7 +72,7 @@ iOS core module in [native/ios/docs/](../../native/ios/docs/).
 | `native/ios/tools/` | `generate_project.rb` (the Xcode project is generated), `check_swift_syntax.sh`, `asc_bundle_ids.py`, the Mac build scripts. |
 | `native/android/core/` | Pure Kotlin/JVM (no `android.*`), tested on the host JVM. |
 | `native/android/app/` | Android + Compose: platform, theme, navigation, kit, shell, one package per feature area. |
-| `changelog/changelog.json` | The changelog the apps' What's new and forkmesh.com/changelog show ([../changelog.md](../changelog.md)). |
+| `changelog/changelog.json` | The changelog the apps' What's new and forkmesh.com/changelog show ([../changelog.md](../engineering/changelog.md)). |
 
 Shortcuts (`.forkmesh/shortcuts/`):
 
@@ -130,7 +130,7 @@ release manifest.
     `/instance-logo.png|jpg|webp` icon is used. A branded instance never gives
     its favicon (that is the stock ForkMesh icon), so with no logo it keeps the
     letter icon. Phones cannot draw SVG, so the brand tool keeps a PNG copy
-    ([INSTANCES.md](../INSTANCES.md#white-label)).
+    ([INSTANCES.md](../operations/instances.md#white-label)).
 - **New project sheet (iOS).** Once "Check instance" passes, the sheet shows
   the instance's logo as the project image before creation. Candidates come
   from `AddProjectModel.logoCandidates`, in order: `/api/instance` `logo`, the
@@ -202,9 +202,9 @@ release manifest.
 
 - Relay REST (`/api/...`) and WebSockets: the relay room socket and the
   account event socket (`/api/nodes/events`). The phone as a node:
-  [mobile-node-contract.md](../../www/docs/mobile/mobile-node-contract.md);
+  [mobile-node-contract.md](../mobile/mobile-node-contract.md);
   agents from the phone:
-  [mobile-agent-access.md](../../www/docs/mobile/mobile-agent-access.md).
+  [mobile-agent-access.md](../mobile/mobile-agent-access.md).
 - Push: `app/src/apns.py` pushes the `pings`, `direct-messages`, chat,
   `code-push` and `calls` topics to iOS (`calls` is a PushKit VoIP push when
   the phone registered a VoIP token, see
@@ -236,7 +236,7 @@ release manifest.
   - A guest still starts, steers and stops agents and sends files; owner-only
     screens show "Only the account that owns this desktop ...".
 - Cryptography is pinned by shared vectors across Kotlin, Swift and the
-  desktop: [FMCrypto.md](../../native/ios/docs/FMCrypto.md).
+  desktop: [FMCrypto.md](ios/FMCrypto.md).
 
 ## Configuration
 
@@ -295,7 +295,7 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)).
   v3 direct-distribution key (`android-direct-distribution-v3.jks` under the
   home project's `data/release/`). See [../release/README.md](../release/README.md)
   and, for how releases reach users,
-  [mirroring](../../www/docs/mirroring.md).
+  [mirroring](../mirroring.md).
 - `native/ios/tools/asc_bundle_ids.py ensure` registers the bundle ids and
   capabilities (reads `ASC_KEY_ID`, `ASC_ISSUER_ID` and the key under
   `~/.appstoreconnect/private_keys/`).
@@ -309,7 +309,7 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)).
 
 ## Security
 
-Threat model for phones: [threat-model.md](../../www/docs/protocol/threat-model.md).
+Threat model for phones: [threat-model.md](../protocol/threat-model.md).
 
 - Keys live in the Keychain (`native/ios/ForkMesh/Platform/KeychainStore.swift`)
   and the Android Keystore (`app/platform/SecureStore`).
@@ -424,6 +424,6 @@ the avatar movement but does not change that saved preference.
 
 ## Related docs
 
-- [www/docs/mobile/](../../www/docs/mobile/): node contract, agent access, file editing, Git engine spec.
-- [mobile-push-notifications.md](../../www/docs/operations/mobile-push-notifications.md).
-- [Self-hosting](../../www/docs/self-hosting.md): running the instance the phones sign in to.
+- [docs/mobile/](../mobile/): node contract, agent access, file editing, Git engine spec.
+- [mobile-push-notifications.md](../operations/mobile-push-notifications.md).
+- [Self-hosting](../self-hosting.md): running the instance the phones sign in to.

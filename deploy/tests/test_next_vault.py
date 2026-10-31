@@ -378,7 +378,7 @@ def test_deploy_restart_unseals_with_the_key_on_stdin(tmp_path, sandbox):
     next_deploy.restart(fleet(tmp_path), "0123456789ab", ssh, Runner(execute=True,
                                                                       out=io.StringIO()))
     assert len(seen) == 3
-    # Each node's IDS is told first (docs/IDS.md), with no secret on stdin.
+    # Each node's IDS is told first (docs/operations/intrusion-detection.md), with no secret on stdin.
     assert sorted(m["node"] for _, m in expected) == ["n1", "n2", "n3"]
     for _, manifest in expected:
         assert manifest["files"] == {

@@ -19,7 +19,7 @@ pack. Finishing sets the intro to seen.
 The text lives in `PermissionPacing` (FMAccount) so a core test keeps it to
 five short rows. Installs that predate the screen never see it:
 `PermissionPacing.settle` marks them `seen` on their first launch with it
-([FMAccount.md](../../native/ios/docs/FMAccount.md)).
+([FMAccount.md](ios/FMAccount.md)).
 
 ## When each permission is asked
 
@@ -35,7 +35,7 @@ five short rows. Installs that predate the screen never see it:
 Starting `#mesh` at launch would raise the Local Network prompt before the
 user has seen anything, so it waits. Calls ring while notifications are not
 asked yet: `start` registers for calls only
-([FMApi.md](../../native/ios/docs/FMApi.md)).
+([FMApi.md](ios/FMApi.md)).
 
 Once `#mesh` has been opened, `permissions/nearby-opened` is stored and the
 mesh starts at launch, so nearby messages keep arriving.

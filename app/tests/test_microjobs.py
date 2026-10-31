@@ -33,7 +33,7 @@ PULL_STORE = (ROOT.parent / "desktop" / "src" / "PullStore.cpp").read_text(
 REWARD_SIGNER = (
     ROOT.parent / "desktop" / "src" / "RewardPoolSigner.cpp"
 ).read_text(encoding="utf-8")
-DOC = ROOT.parent / "www" / "docs" / "operations" / "microjobs.md"
+DOC = ROOT.parent / "docs" / "operations" / "microjobs.md"
 
 sys.path.insert(0, str(SRC))
 import microjobs  # noqa: E402

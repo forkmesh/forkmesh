@@ -16,7 +16,7 @@ Two things this module deliberately does not do:
 
 * It never touches the anonymous clone or read path. Capture runs only on a
   served top-level HTML navigation; ``git`` requests carry no browser cookie
-  and are never joined to a session (see ``docs/attribution.md``).
+  and are never joined to a session (see ``docs/app/attribution.md``).
 * It never renders a number it has not fully collected. Every list read is
   cursor-paginated and consumed to exhaustion, and the collected row count is
   asserted against the server-side total before any aggregate is shown.
@@ -46,7 +46,7 @@ def _bind_runtime(runtime):
 
 # --- metric dictionary ------------------------------------------------------
 # Exactly these event names exist. Adding one means adding it here first, so
-# reporting, the dictionary in docs/attribution.md and the browser beacon
+# reporting, the dictionary in docs/app/attribution.md and the browser beacon
 # allowlist cannot drift apart.
 EVENT_NAMES = (
     "landing_view",

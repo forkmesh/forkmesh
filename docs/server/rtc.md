@@ -26,7 +26,7 @@ shared through the channel's sealed chat messages, so the SFU forwards
 ciphertext it cannot read. What the SFU learns: that a call is running in some
 room (an opaque id), who is connected (opaque per-join peer ids), when, from
 which IP addresses, and the size and timing of packets. The public summary is
-[encryption](../../www/docs/encryption.md); the v2 key schedule is
+[encryption](../encryption.md); the v2 key schedule is
 [call-e2ee.md](call-e2ee.md).
 
 ## Packages (`server/rtc/`)

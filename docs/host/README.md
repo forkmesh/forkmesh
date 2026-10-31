@@ -9,8 +9,8 @@ Queue, Assets, AI, Durable Object emulation), cron and WebSockets. On each core
 it runs as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. On
 this page "the Worker" means that in-process `entry.py` router, and "the
 homepage Worker" means `forkmesh-www`, the static forkmesh.com site. Design:
-[PLAN.md](../PLAN.md); operations: [OPERATIONS.md](../OPERATIONS.md); overview:
-[architecture](../../www/docs/architecture.md); index:
+[PLAN.md](../operations/served-stack.md); operations: [OPERATIONS.md](../operations/README.md); overview:
+[architecture](../architecture.md); index:
 [docs/README.md](../README.md).
 
 ## Code map
@@ -24,20 +24,20 @@ homepage Worker" means `forkmesh-www`, the static forkmesh.com site. Design:
 | `request_policy.py` | `request_block_rules` enforcement (403) and per-visitor rate limit (429) |
 | `request_tally.py` | per-route `/api` counts as `web-requests` journal lines |
 | `env.py`, `bindings.py` | `env` from `[vars]`, env file, `FORKMESH_VAR_<NAME>` and credentials; KV, Queue, Assets, AI |
-| `d1_rqlite.py`, `d1_sqlite.py` | D1-shaped `env.DB` on rqlite or local sqlite ([RQLITE_FINDINGS.md](../../app/host/RQLITE_FINDINGS.md)) |
-| `read_only.py` | read-only mode without an rqlite leader: which requests skip or refuse writes, the 503 answer ([PLAN.md](../PLAN.md#read-only-mode)) |
+| `d1_rqlite.py`, `d1_sqlite.py` | D1-shaped `env.DB` on rqlite or local sqlite ([RQLITE_FINDINGS.md](rqlite-findings.md)) |
+| `read_only.py` | read-only mode without an rqlite leader: which requests skip or refuse writes, the 503 answer ([PLAN.md](../operations/served-stack.md#read-only-mode)) |
 | `durable.py`, `durable_cluster.py`, `cluster.py` | Durable Object emulation: placement, mesh, replicated storage, alarms |
 | `dns_reconciler.py`, `dns_rules.py` | leaderless DNS health votes (rules shared with `tools/next_dns.py`) |
-| `vault.py`, `vault_crypto.py` | sealed start, unseal socket, `host_secrets` encryption ([VAULT.md](../VAULT.md)) |
+| `vault.py`, `vault_crypto.py` | sealed start, unseal socket, `host_secrets` encryption ([VAULT.md](../operations/vault.md)) |
 | `egress.py` | outbound guard for every fetch |
-| `quarantine.py`, `ids_records.py`, `ids_alerts.py` | IDS quarantine, signed records, alert delivery ([IDS.md](../IDS.md)) |
+| `quarantine.py`, `ids_records.py`, `ids_alerts.py` | IDS quarantine, signed records, alert delivery ([IDS.md](../operations/intrusion-detection.md)) |
 | `background.py` | keyed background refresh and single-flight loads; cache warm-up after unseal |
 | `repo_fastpath.py`, `repo_ssr.py`, `repo_views.py` | public repository reads from the local gateway; server-rendered first views |
 | `error_log.py` | one `ERROR … -> 500` line and traceback for host-side failures |
 | `js.py`, `ffi.py`, `workers.py`, `webcrypto.py` | the JavaScript surface, `pyodide.ffi`, Workers SDK classes, WebCrypto |
 | `ops.py` | one-off operator actions inside the unsealed app |
 | `instance_bootstrap.py`, `instance_repo.py`, `pull_resync.py` | self-hosted instance commands: first admin, own runner, single-organization mode, hosted repository import, moving open pulls to a moved head branch |
-| `autoscaler.py` | autoscaler for app replicas (`aN`) and burst runners (`bN`): leased tick, join tokens, node states from creating to removing, metrics publisher ([AUTOSCALING.md](../fleet/AUTOSCALING.md)) |
+| `autoscaler.py` | autoscaler for app replicas (`aN`) and burst runners (`bN`): leased tick, join tokens, node states from creating to removing, metrics publisher ([AUTOSCALING.md](../operations/autoscaling.md)) |
 | `fleet_api.py` | `/api/fleet/` endpoints for joining nodes, release bundles and autoscale settings, status and commands |
 | `d1_caller.py` | names the caller of each D1 statement in logs and the `x-fm-d1-caller` header; `D1-done` timing lines |
 | `mail_events.py` | drains the core mail spool (`/var/lib/fmnext-mail-spool`) into the app every 15 s |
@@ -58,7 +58,7 @@ homepage Worker" means `forkmesh-www`, the static forkmesh.com site. Design:
   10 s serves reads from its own copy, skips the side writes of GET requests
   and answers other writes with a 503 "read-only while servers recover";
   `/readyz` stays 503 with `"readOnly": true`
-  ([PLAN.md](../PLAN.md#read-only-mode)).
+  ([PLAN.md](../operations/served-stack.md#read-only-mode)).
 - **Durable Objects (emulated).** Rendezvous placement over live members; the cron
   coordinator and watchdog rotate each minute (hand-off 45 s in). Objects
   owned elsewhere are proxied over the mesh. Storage in `do_storage`, alarms
@@ -75,7 +75,7 @@ homepage Worker" means `forkmesh-www`, the static forkmesh.com site. Design:
 - **Front door.** Caddy terminates TLS and serves static assets; the app
   listens on loopback. `request_guard.py` rejects unknown hosts and oversized
   bodies and verifies the homepage Worker's signed visitor header
-  ([edge_client.md](../../deploy/core/edge_client.md)), once per request.
+  ([edge_client.md](../www/edge-client.md)), once per request.
 - **JSON body limits.** Behind the front door, `app/src/request_bodies.py`
   reads JSON bodies up to 2 MiB, or 8 MiB for security reports, repository
   imports and `POST /api/repo/<owner>/<repo>/pulls`. A pull submission
@@ -217,7 +217,7 @@ memory after importing everything.
 
 ## Operations
 
-- Deployed by `tools/next_deploy.py` ([deploy/README.md](../deploy/README.md)).
+- Deployed by `tools/next_deploy.py` ([deploy/README.md](../operations/fleet-tooling.md)).
 - On a node: `journalctl -u forkmesh-app`, `fmnext-unseal --status`,
   `fmnext-app-ops` for one-off account actions,
   `journalctl -u fmnext-request-rules`.
@@ -250,4 +250,4 @@ memory after importing everything.
 - `serve` rebuilds `app/src_build` when sources are newer (`--no-build` skips
   it); tests that stage it must call `importlib.invalidate_caches()`.
 - Adding a `*_bi` column or encrypted table requires registering it in
-  `tools/next_rekey.py` and [REKEY.md](../REKEY.md), or the host tests fail.
+  `tools/next_rekey.py` and [REKEY.md](../operations/rekey.md), or the host tests fail.

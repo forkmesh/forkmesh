@@ -11,7 +11,6 @@ const BUDGET_CONFIG = require(path.resolve(
   "..",
   "..",
   "..",
-  "www",
   "docs",
   "engineering",
   "daily-interface-budgets.json",

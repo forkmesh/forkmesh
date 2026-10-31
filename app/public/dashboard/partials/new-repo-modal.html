@@ -52,7 +52,7 @@
               <p class="text-xs leading-5 text-muted-foreground">A read-only token is enough: on GitHub, a fine-grained token for that one repository with Contents, Issues and Pull requests set to Read-only. <span data-platform-name>ForkMesh</span> never needs permission to push to GitHub. The token passes through ForkMesh’s Worker only for this request and is forwarded to the provider; it is not persisted. The page repeats request-scoped calls only while it advances the transfer, then clears the form. Executable source files are not fetched by the provider adapter: Git object transfer stays on the normal mirror path, while provider objects and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
             </div>
 
-            <!-- ForkMesh-hosted options (docs/HOSTED_REPOS.md): shown when this
+            <!-- ForkMesh-hosted options (docs/operations/core-hosted-repositories.md): shown when this
                  relay's core nodes host repositories (GET /api/hosted-repositories). -->
             <div data-new-repo-hosted-options class="hidden grid gap-3">
               <label data-new-repo-owner-wrap class="grid gap-1.5 text-xs text-muted-foreground">

@@ -6,7 +6,7 @@ Phase 4 of [FM Media](fm-media.md): the SFU forwarding core of
 room model: the same tickets and room ids, at most 4 places per account in a
 room, one server-wide cap for both engines, and the same browser origin
 list. Home: [README.md](README.md). Media stays end-to-end encrypted
-([call-e2ee.md](call-e2ee.md), [encryption](../../www/docs/encryption.md));
+([call-e2ee.md](call-e2ee.md), [encryption](../encryption.md));
 the server sees only ciphertext and headers.
 
 | Package | Role |
@@ -16,7 +16,7 @@ the server sees only ciphertext and headers.
 | `server/rtc/signal` | Tickets (two new optional fields) and `RoomEngines`, the room registry both engines share |
 | `server/cmd/forkmesh-calls` | Starts the listener when `FORKMESH_CALLS_FMM` names an address, and adds the FM Media block to `/calls/health` |
 
-Deploy settings: [../deploy/calls.md](../deploy/calls.md#fm-media). The app's
+Deploy settings: [../deploy/calls.md](../operations/call-servers.md#fm-media). The app's
 side (the ticket response): [../app/chat-group-calls.md](../app/chat-group-calls.md#fm-media-tickets).
 
 ## One UDP port, two ways in
@@ -192,7 +192,7 @@ audio played.
 Rooms stay per core. Instead of rooms that span cores (a core-to-core
 cascade), every client keeps a warm connection to the next core and everyone
 moves there together. That needs no inter-core protocol and no shared room
-state ([architecture](../../www/docs/architecture.md) covers core failover in
+state ([architecture](../architecture.md) covers core failover in
 general). It works because rendezvous ordering is the same for every
 participant: the
 app ranks the cores for a room by SHA-256(room + node) over the healthy ones.
@@ -285,7 +285,7 @@ with the WebRTC ticket from the same response, with no second request. Old
 clients ask for nothing and get the old response unchanged.
 
 The cost: an old WebRTC-only client cannot join a call that started on FM
-Media. FM Media ships disabled ([../deploy/calls.md](../deploy/calls.md#fm-media)),
+Media. FM Media ships disabled ([../deploy/calls.md](../operations/call-servers.md#fm-media)),
 so this cannot happen until it is switched on. A bridge before then would
 need, for every mixed pair:
 

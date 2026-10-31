@@ -5,7 +5,7 @@ to GitHub or GitLab with a personal access token, choosing a direction per
 feature. Available from repository Settings, the Code page **Mirror** button,
 and the iOS and Android apps (which render the server's `catalog`). How
 ForkMesh's own mirrors work is in
-[mirroring](../../www/docs/mirroring.md); this page covers copies on outside
+[mirroring](../mirroring.md); this page covers copies on outside
 hosts.
 
 | Part | File |
@@ -13,7 +13,7 @@ hosts.
 | Settings, provider API, import, outbox, cron | `app/src/repository_provider_mirror.py` |
 | Route | `REPO_PROVIDER_MIRROR_RE` in `app/src/urls.py` |
 | Tables | `repo_provider_mirrors`, `repo_provider_mirror_links`, `repo_provider_mirror_outbox` |
-| Code push | `server/hosted_push_mirror.go`, fed by `hosted_repos.replicas` ([../HOSTED_REPOS.md](../HOSTED_REPOS.md)) |
+| Code push | `server/hosted_push_mirror.go`, fed by `hosted_repos.replicas` ([../HOSTED_REPOS.md](../operations/core-hosted-repositories.md)) |
 | Tests | `app/tests/test_repository_provider_mirror.py`, `server/hosted_push_mirror_test.go` |
 
 ## Features
@@ -72,4 +72,4 @@ Built by `public_link` / `public_about_link` in
 - Provider calls use `redirect: "manual"` and only `api.github.com` and
   `gitlab.com/api/v4`; remote names are `owner/name` with `[A-Za-z0-9_.-]`.
 - The stored token is listed in
-  [relay-data-retention.md](../../www/docs/relay-data-retention.md).
+  [relay-data-retention.md](../relay-data-retention.md).

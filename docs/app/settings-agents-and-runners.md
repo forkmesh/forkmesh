@@ -3,7 +3,7 @@
 Part of [the App docs](README.md). `/dashboard/settings/agents` manages the
 Claude Code and Codex accounts that the account's desktops and runners use,
 combining the desktop account menu ([desktop/agents-ui.md](../desktop/agents-ui.md))
-and the runners page ([RUNNERS.md](../RUNNERS.md)).
+and the runners page ([RUNNERS.md](../operations/runners.md)).
 
 ## Desktops
 
@@ -26,7 +26,7 @@ permissions. Desktops lacking a capability show read-only rows.
 
 The lower half reuses `/dashboard/runners` code (`09-runners.js`). The
 runner rows carry their own padding and dividers (see
-[RUNNERS.md](../RUNNERS.md#the-runners-page)), so the `data-runners-list`
+[RUNNERS.md](../operations/runners.md#the-runners-page)), so the `data-runners-list`
 container should be a plain `divide-y` list without padding. Markup
 `settings-agents` in `partials/views/settings.html`; logic
 `app/public/dashboard/js/09-agent-profiles.js`. Tests:

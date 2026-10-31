@@ -8,7 +8,7 @@
   ],
   "mocHeaders": [],
   "repositoryResources": [
-    "www/docs"
+    "docs"
   ],
   "testSources": [
     "tests/test_docs_library.cpp",

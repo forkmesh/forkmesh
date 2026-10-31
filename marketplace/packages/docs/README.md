@@ -1,7 +1,7 @@
 # Docs
 
 The ForkMesh documentation library on a desktop rail page and on iPhone and
-Android: every Markdown page and data file under `www/docs/`, the same public
+Android: every Markdown page and data file under `docs/`, the same public
 library forkmesh.com/docs renders, and nothing else. Free, bundled and on by
 default; remove it from the rail, the Home grid or the Market like any other
 package. It is account-synced (`install.sync: "account"`) and offered on
@@ -78,7 +78,7 @@ browser.
 iPhone and Android read one file, `native/ios/ForkMesh/Resources/DocsLibrary.json`
 (schema `forkmesh-docs-library-v1`), written by
 `marketplace/tools/docs_mobile_bundle.py`. It holds the web library's areas,
-then every page of `www/docs` in the web library's order with its title,
+then every page of `docs` in the web library's order with its title,
 summary, area, forkmesh.com URL and Markdown, then the dependency snapshot.
 The pages come from `app/tools/docs_site.py`'s catalog, the same one that
 builds forkmesh.com/docs, so the phones match the website and cannot pick up
@@ -88,7 +88,7 @@ The iOS app ships the file as a resource (`ForkMesh/` is a synchronized
 group). The Android build copies the same file into its assets, so there is
 one copy in the repository. A checked-in file rather than a build step,
 because the iOS build has no step that can read outside `native/ios`, and
-`www/docs` changes rarely.
+`docs` changes rarely.
 
 ```
 python3 marketplace/tools/docs_mobile_bundle.py          # rewrite the bundle
@@ -97,16 +97,16 @@ python3 marketplace/tools/docs_mobile_bundle.py --check  # exit 1 if it is out o
 
 `marketplace/tools/docs_dependencies.py` rewrites the bundle whenever it writes
 the snapshot. `marketplace/tests/test_docs_dependencies.py` fails when the
-bundle lags `www/docs` or the snapshot, and checks it holds exactly the
-`www/docs` pages.
+bundle lags `docs` or the snapshot, and checks it holds exactly the
+`docs` pages.
 
 ## How the documents get in
 
-`content/desktop/build.json` names `www/docs` under `repositoryResources`, so
+`content/desktop/build.json` names `docs` under `repositoryResources`, so
 the desktop build embeds that folder as
-`:/forkmesh-market/packages/docs/repository/www/docs/`. The viewer works
+`:/forkmesh-market/packages/docs/repository/docs/`. The viewer works
 offline and always shows the docs of the build you are running. Adding a file
-to `www/docs` re-runs package discovery on the next build.
+to `docs` re-runs package discovery on the next build.
 
 ## Code
 
@@ -119,6 +119,6 @@ to `www/docs` re-runs package discovery on the next build.
 - `content/desktop/DocsFeature.{h,cpp}`: the rail page and its `builtin:docs`
   registration.
 - Tests: `forkmesh-docs-tests` (`content/desktop/tests/test_docs_library.cpp`),
-  run against a temporary library and the repository's `www/docs`.
+  run against a temporary library and the repository's `docs`.
   `www/tests/test_docs_library.py` checks that the guide order, areas and
   reserved slugs match `app/tools/docs_site.py`.

@@ -414,7 +414,7 @@ systemctl --user daemon-reload && systemctl --user enable --now forkmesh-mac-adh
 ## What's new changelog
 
 Every build bundles `changelog/changelog.json`, the same file
-forkmesh.com/changelog shows ([../changelog.md](../changelog.md)). The app
+forkmesh.com/changelog shows ([../changelog.md](../engineering/changelog.md)). The app
 shows it from the version row of the You hub ([NAVIGATION.md](NAVIGATION.md)).
 
 - **iOS.** The step "Bundle the changelog" runs

@@ -1,83 +1,96 @@
-# Architecture overview
+# Architecture and availability
 
-How the code fits together. ForkMesh keeps Git data on hosts people run
-themselves; the app on the core nodes handles accounts, routing and
-collaboration metadata. The public overview, including what is still a single
-dependency, is [www/docs/architecture.md](../www/docs/architecture.md); the
-index of developer docs is [README.md](README.md).
+ForkMesh is built so that no single machine has to stay up for code to stay
+reachable. Git data lives on hosts that developers and operators run; the
+service at app.forkmesh.com runs on several equal core nodes that DNS hands out
+in turn; independent mirrors serve clones on their own.
+
+Part of the core documentation: [architecture](architecture.md) ·
+[encryption](encryption.md) · [mirroring and distribution](mirroring.md) ·
+[self-hosting](self-hosting.md) · [censorship resilience](censorship-resilience.md)
+· [threat model](protocol/threat-model.md).
 
 ```text
-        browsers · phones (iOS, Android) · desktop nodes · mirrors
-                              │
-     DNS round robin (app.forkmesh.com, world.forkmesh.com), no proxy
-                              ▼
-   core nodes n3 · n4 · n5 (equal; WireGuard mesh between them):
-   Caddy · app (Python on CPython) · rqlite · Go daemon (Git gateway)
-         ▲                 ▲                        ▲
- signed HTTP,       node events (WebSocket)    outbound job leases
- WebSockets               │                         │
-   desktop node      mirror daemon             runners (agent jobs)
-   (Qt, desktop/)    (Go, server/)
-         └── both hold bare Git repositories and serve clones ──┘
+        browsers · desktop nodes · phones · mirrors · git
+                           │
+     DNS round robin: app.forkmesh.com, world.forkmesh.com
+        (one A/AAAA record per healthy core, TTL 60 s)
+           ┌───────────────┼───────────────┐
+        core n3         core n4         core n5      ◄─ WireGuard mesh
+  Caddy · app · rqlite · Git gateway (each core is a full copy)
+           ▲  outbound only: claim job, clone, run, push
+     runner tier (untrusted, holds no core secrets)
+
+  independent mirrors (anyone's server) ─► serve clones of the repositories they carry
+  desktop nodes ─► hold and serve their own repositories
 ```
 
-## Parts
+## The parts
 
-| Part | Code | Runs on |
+| Part | What it does | Code |
 | --- | --- | --- |
-| Desktop node | `desktop/` (Qt 6, C++) | Linux, Windows, macOS |
-| Mirror daemon and gateway | `server/` (Go), `tools/mirror_gateway.py` | headless mirrors, core nodes, runners |
-| App | `app/` (Python, run on CPython by `app/host/`) | the core nodes ([PLAN.md](PLAN.md)) |
-| Website | `www/` (static site and docs) | forkmesh.com ([www/README.md](www/README.md)) |
-| World | `world/` (three.js client; backend in the app) | world.forkmesh.com |
-| Native apps | `native/ios/`, `native/android/` | phones |
-| Marketplace packages | `marketplace/` | inside the desktop, app, World and mobile hosts |
-| Fleet tooling | `deploy/`, `tools/next_*.py` | operator box ([deploy/README.md](deploy/README.md)) |
-| Releases | `tools/package/`, release tooling | build hosts ([release/README.md](release/README.md)) |
-| Contracts | `conformance/` | CI and independent implementations ([conformance/README.md](conformance/README.md)) |
+| Desktop node | Holds bare repositories, serves clones, signs every record with its Ed25519 key, runs coding agents in isolated worktrees | `desktop/` |
+| Mirror | A headless server that carries copies of repositories and serves `git clone` and `git fetch` | `server/` ([mirror node](operations/mirror-node.md)) |
+| Core node | Accounts, the web app and API, Git over HTTPS, chat, the World, the routing catalog of mirrors | `app/`, `app/host/`, `server/` |
+| Runner | Runs agent jobs and Actions in a per-job sandbox with a short-lived, single-branch push grant | `server/` |
+| Phone apps | Access clients over the same API; they do not hold Git data | `native/` |
 
-## How they talk
+Collaboration records (issues, pull requests, reviews, discussions, releases)
+are signed files under `.forkmesh/` in the repository, so every clone carries
+them ([protocol](protocol/README.md)).
 
-- **Identity.** Every node has an Ed25519 key and signs its requests; users
-  have accounts with web sessions.
-- **Desktop ↔ app.** HTTP API plus an account event WebSocket that pushes
-  topics instead of polling; chat rides WebSockets into room objects, which
-  `app/host/` places on one core by rendezvous hash
-  ([app/cron-and-durable-objects.md](app/cron-and-durable-objects.md)).
-- **Mirror ↔ app.** The daemon publishes a catalog record and endpoint lease
-  per repository, holds a signed node-event WebSocket, materialises
-  web-submitted issues and pulls into Git, and runs merges, agent jobs and
-  Actions.
-- **Desktop ↔ mirror.** The desktop installs and updates mirror hosts over SSH
-  and pushes to them with Git.
-- **Clones.** `git clone https://app.forkmesh.com/<owner>/<repo>` reaches a
-  core, which redirects or proxies to a mirror whose signed health is fresh
-  and whose refs match the signed pin
-  ([www/docs/mirroring.md](../www/docs/mirroring.md)). The app stores no
-  packfiles except for repositories hosted on the cores
-  ([HOSTED_REPOS.md](HOSTED_REPOS.md)).
-- **Collaboration records.** Issues, pulls, discussions, reviews and releases
-  are signed files under `.forkmesh/` in the repository, so they travel with
-  every clone.
-- **Phones** are access clients over the same API and sockets; they do not
-  mirror Git.
-- **Agents.** Agent jobs run on desktops, mirrors or the untrusted runner tier,
-  which holds only per-job grants ([RUNNERS.md](RUNNERS.md)).
-- **Packages.** Hosts expose generic sockets; packages contribute pages, API
-  handlers and World modules without core code naming them.
+## No single point of failure
 
-## Where data lives
+- **Equal cores, no leader in the request path.** Each core runs Caddy, the
+  Python app, an rqlite (Raft) database member and the Go Git gateway. Any core
+  answers any request. Membership, scheduled jobs and certificate renewal are
+  leaderless: no core is special.
+- **Direct DNS round robin.** `app.forkmesh.com` and `world.forkmesh.com` have
+  one unproxied record per core with a 60-second TTL; clients connect straight
+  to a core, with no proxy or CDN in between. A health loop probes every core's
+  `/readyz` every 30 seconds and removes a core after three failures, so a dead
+  core drops out of DNS within about two minutes. It never empties the set.
+- **One core down:** the other two serve everything, reads and writes.
+- **Two cores down:** the survivor has no database majority, so it switches to
+  read-only mode on its own. Browsing, signed-in reads, `git clone`,
+  `git fetch` and release downloads keep working from its full local copy;
+  sign-in, pushes, edits and chat sends answer `503` with
+  "ForkMesh is read-only while servers recover". It returns to normal when a
+  second core comes back.
+- **Per-core Git endpoints.** Every core also serves Git at its own name
+  (`nN.next.forkmesh.com`) without touching the database, so a clone works even
+  while the app is degraded.
+- **Mirrors outside the fleet.** A public repository with a live mirror stays
+  clonable when every ForkMesh server is unreachable: point Git at the mirror
+  ([mirroring and distribution](mirroring.md)).
+- **Untrusted work is separate.** Agent runs execute arbitrary code, so they run
+  only on the runner tier, never on a core holding data or keys.
 
-- Desktop: `~/projects/forkmesh/{data,config,cache,state,logs,ssh}` with the
-  checkout in `src/`.
-- Mirror: the daemon's config, identity key and bare repositories.
-- Cores: rqlite (payloads encrypted under `DATA_KEY`, HMAC blind indexes),
-  node-local caches, and room-object storage in rqlite. Secrets are sealed in
-  the vault ([VAULT.md](VAULT.md)); every layer is summarised in
-  [www/docs/encryption.md](../www/docs/encryption.md).
+## What is still a dependency
 
-Trust boundaries: [security/README.md](security/README.md) and the
-[threat model](../www/docs/protocol/threat-model.md). The normative protocol
-for independent implementations is the
-[protocol suite](../www/docs/protocol/README.md). Running your own:
-[www/docs/self-hosting.md](../www/docs/self-hosting.md).
+We state these so nobody mistakes the design for more than it is:
+
+- All three cores currently run with one hosting provider (Vultr) in one
+  region. Losing that provider or region takes down the hosted service; mirrors
+  and desktop nodes elsewhere keep serving their copies.
+- DNS for forkmesh.com is one provider (Cloudflare DNS, unproxied for the app
+  and World names). The website at `forkmesh.com` itself is still served from
+  Cloudflare, and it forwards app paths such as `forkmesh.com/<owner>/<repo>`
+  to the cores. `app.forkmesh.com` and the per-core names reach the cores
+  directly.
+- The DNS health loop runs on the operator's machine. If it stops, DNS keeps
+  listing every core and clients still spread across them, but a failed core is
+  not removed until it returns.
+- Discovery of mirrors goes through the catalog on the cores; a mirror's own
+  address works without it, but someone has to know that address.
+
+## Where to read more
+
+- Operators: [docs/operations/served-stack.md](operations/served-stack.md) (the served stack and read-only
+  mode in detail), [docs/operations/README.md](operations/README.md) (runbook),
+  [docs/codebase.md](codebase.md) (how the code fits together).
+- Recovery from losing a domain, region, key or backup:
+  [disaster recovery](disaster-recovery/README.md).
+- What outside services see: [external dependency map](external-dependency-map.md).
+- Developer index: [docs/README.md](README.md); public index:
+  [README.md](README.md).

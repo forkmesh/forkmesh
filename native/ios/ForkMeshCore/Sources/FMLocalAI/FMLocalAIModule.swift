@@ -1,5 +1,5 @@
 // On-device models for the native iOS app: Gemma 4 through MLX, run by the
-// app target; see native/ios/docs/FMLocalAI.md.
+// app target; see docs/native/ios/FMLocalAI.md.
 //
 // This module holds everything that is not MLX: the model catalog, device
 // fit, the Hugging Face snapshot download, the engine protocol the app

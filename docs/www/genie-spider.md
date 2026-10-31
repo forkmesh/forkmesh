@@ -32,7 +32,7 @@ genie spider greeting: only `paint` is used
 an empty `{% block genie %}` or `data-genie="off"` on `<html>`.
 
 **White-label instances.** The spider is the `genie` instance plugin and is
-off on a new instance ([../INSTANCES.md](../INSTANCES.md)). When the page
+off on a new instance ([../INSTANCES.md](../operations/instances.md)). When the page
 carries `script[data-instance-brand]`, `instanceAllows()` reads
 `/api/instance` once and builds the spider only if the plugin is enabled.
 
@@ -53,7 +53,7 @@ carries `script[data-instance-brand]`, `instanceAllows()` reads
   capped at 4,200 px/s; bounces off walls and the floor and skids to rest.
 - **Start.** The spider is built in idle time after the page's `load` event
   (at most 2 s later), never during the page's first render
-  ([../PERF_PAGES.md](../PERF_PAGES.md)).
+  ([../PERF_PAGES.md](page-performance.md)).
 - **Frames.** `requestAnimationFrame` while it moves, reacts, plays or shows a
   bubble; 12 fps when idle; none while the tab is hidden. The frame step is
   clamped to 0–0.1 s. With `prefers-reduced-motion` it never wanders and

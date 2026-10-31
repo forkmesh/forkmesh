@@ -24,7 +24,7 @@ roles and a compact control size. Both live in one file,
 Which of the two sets a page shows is the visitor's Settings, Appearance
 choice (System, Dark or Light), else the instance's colour mode (dark unless
 its theme says light or system); see
-[Colour mode](../INSTANCES.md#colour-mode). The light values here are also
+[Colour mode](../operations/instances.md#colour-mode). The light values here are also
 what a script-less visitor gets on a system-mode instance.
 
 ## Why `primary` is blue
@@ -57,7 +57,7 @@ only holds the markers), and that each one has a dark and a light value in
 
 White text on the dark-theme blue (`#4493f8`) reaches only 3.1:1, below the
 4.5:1 text minimum in
-`www/docs/engineering/daily-interface-budgets.json` (the daily-interface
+`docs/engineering/daily-interface-budgets.json` (the daily-interface
 browser check enforces it). In the dark theme, `primary-foreground` is the
 page background (`1 4 9`), which gives 6.6:1 and keeps the blue unchanged for
 links, focus and selection. The light theme keeps white text on `#0969da`

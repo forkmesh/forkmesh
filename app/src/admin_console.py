@@ -188,7 +188,7 @@ ADMIN_HIDDEN_TABLES = (
     "host_cron_runs",
     "dns_health_votes",
     "dns_reconciler_state",
-    # Intrusion detection (docs/IDS.md): signed quarantine records, the
+    # Intrusion detection (docs/operations/intrusion-detection.md): signed quarantine records, the
     # incident log and the IDS heartbeats. An admin write could lift or forge
     # a quarantine or erase evidence.
     "cluster_quarantine",

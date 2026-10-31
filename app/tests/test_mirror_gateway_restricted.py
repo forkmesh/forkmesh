@@ -6,7 +6,7 @@ only to a verified router capability (``/v1/repositories/...``) or a runner
 grant (``/v1/runner/...``, which core replicas use to fetch each other). The
 unauthenticated spellings (``/v1/public/...``, ``/<owner>/<repo>.git``, the
 legacy branches read) answer exactly as for an unknown repository.
-docs/HOSTED_REPOS.md.
+docs/operations/core-hosted-repositories.md.
 """
 
 import json

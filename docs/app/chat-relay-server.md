@@ -69,7 +69,7 @@ copies, read and delivered notices) are not chat messages and carry no mark.
   reveals nothing about which accounts do.
 - Storage: table `chat_blocks` (migration 0286), one row per account:
   `account_bi` and the list sealed in `data`. An empty list deletes the row.
-  `tools/next_rekey.py` and [REKEY.md](../REKEY.md) list the table.
+  `tools/next_rekey.py` and [REKEY.md](../operations/rekey.md) list the table.
 - Desktops without a session sign `forkmesh-chat-blocks-list-v1\n<node>\n<ts>`
   for `GET` and `forkmesh-chat-blocks-put-v1\n<node>\n<ts>\n<sha256>` for
   `PUT`, where the digest is SHA-256 of the cleaned names joined by `\n`

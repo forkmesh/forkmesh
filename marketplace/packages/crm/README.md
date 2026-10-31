@@ -185,7 +185,7 @@ Pictures come from the ForkMesh user, Mastodon, Bluesky, GitHub, then
 Gravatar (`gravatar.com/avatar/<sha256 of the email>?d=404`). Posts and
 pictures are read on demand from public, unauthenticated endpoints (those
 services see the reading device's IP address and the account asked about; see
-`www/docs/external-dependency-map.md`), kept in memory for the session;
+`docs/external-dependency-map.md`), kept in memory for the session;
 desktop pictures are cached on disk for a week, including negative results.
 Nothing is stored server-side.
 
@@ -302,7 +302,7 @@ host's shared mail account, so any account that made an organization and
 installed the CRM could otherwise send arbitrary HTML under a display name of
 its choice. On the shared sender the host then sends from its own address as
 `<organization> via ForkMesh` with the CRM's sender address as `Reply-To`
-(docs/MAIL_LOG.md), so the saved and chosen `fromName` show only in the CRM;
+(docs/operations/mail-log.md), so the saved and chosen `fromName` show only in the CRM;
 every shared send carries `organization` and `account` so the host's per-org
 and per-account daily caps apply.
 

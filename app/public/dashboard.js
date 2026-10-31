@@ -15396,7 +15396,7 @@
   let newRepoSetupStartedAt = 0;
 
   // What this relay's own nodes can host (GET /api/hosted-repositories,
-  // docs/HOSTED_REPOS.md): "core" = the Next core nodes keep a replica each,
+  // docs/operations/core-hosted-repositories.md): "core" = the Next core nodes keep a replica each,
   // so private repositories, a first commit, an import from a public forge and
   // an organization owner are offered, within the account's quota.
   let hostedSettings = null;
@@ -17829,7 +17829,7 @@
   // reads that executor's bounded summary (GET actions/runs) and, when the
   // answering node advertises it, sends control requests back to the same node
   // (POST actions/control). Wire contract:
-  // www/docs/operations/mirror-actions-control.md.
+  // docs/operations/mirror-actions-control.md.
   //
   // The workflow list needs no session: it is read from .forkmesh/ in the
   // repository tree like any other file. Who sees runs, logs and controls:
@@ -19835,7 +19835,7 @@
       navigateHistory(repoCodeLinkUrl(repo, "blob", path));
       window.lucide?.createIcons();
     } catch (_) {
-      // A markdown link to a folder ("[docs](www/docs)") has no trailing slash
+      // A markdown link to a folder ("[docs](docs)") has no trailing slash
       // to say so. When the path lists as a tree, show that folder instead of
       // a dead file view.
       if (!repoPreviewKindFromPath(path)) {
@@ -47636,7 +47636,7 @@ Your reply
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
           </div>
           <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">www/docs/integrations.md</span>.</p>
+            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">docs/integrations.md</span>.</p>
             <div data-repo-webhooks-list class="grid gap-2 text-xs text-muted-foreground">Loading webhooks…</div>
             <form data-repo-webhook-form class="grid gap-3 rounded-md border border-border p-3">
               <label class="grid gap-1 text-[11px] font-medium text-foreground">Payload URL
@@ -51322,7 +51322,7 @@ Your reply
           copyButton.classList.add("copied");
           if (copyButton.closest("[data-repo-code-wrap]")) {
             window.ForkMeshAnalytics?.recordProductAction?.("repository-clone-copied");
-            // First-party acquisition signal (docs/attribution.md). The
+            // First-party acquisition signal (docs/app/attribution.md). The
             // server joins it to the HttpOnly fm_attr session cookie; only
             // the repository name travels, never the URL that was copied.
             try {

@@ -10,7 +10,7 @@ and the sidebar's Lite link stays hidden.
 Some readers of a public repository's issues never run the dashboard: people
 behind DNS tunnels or other slow, filtered links, and people who follow a
 forum by email through a feed-to-mail tool such as rss2email (see
-[censorship resilience](../../www/docs/censorship-resilience.md)). A forum
+[censorship resilience](../censorship-resilience.md)). A forum
 mirrored from GitHub issues (`example/forum` below) is the case this was
 built for. Three read surfaces serve them without JavaScript, from data the
 node already has:
@@ -27,7 +27,7 @@ node already has:
 | `/` | The forum home page, on an instance with a home repository |
 | `/<o>/<r>/mirror` | How to help: run a mirror, join the federation, register it |
 
-The user-facing guide is [www/docs/feeds-and-email.md](../../www/docs/feeds-and-email.md).
+The user-facing guide is [docs/feeds-and-email.md](../feeds-and-email.md).
 
 ## Where they are answered
 

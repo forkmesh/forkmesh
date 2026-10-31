@@ -920,7 +920,7 @@
       navigateHistory(repoCodeLinkUrl(repo, "blob", path));
       window.lucide?.createIcons();
     } catch (_) {
-      // A markdown link to a folder ("[docs](www/docs)") has no trailing slash
+      // A markdown link to a folder ("[docs](docs)") has no trailing slash
       // to say so. When the path lists as a tree, show that folder instead of
       // a dead file view.
       if (!repoPreviewKindFromPath(path)) {

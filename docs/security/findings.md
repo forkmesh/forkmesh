@@ -145,8 +145,8 @@ IDs: `C-` code audit, `I-` infrastructure audit, `S-<n>` later reviews.
 | TM-008 a relay or mirror can withhold events | High | Open | protocol threat model | not started |
 | TM-014 tunnelled node traffic trusts the relay | High | Open | protocol threat model | not started |
 | TM-018 no account-key recovery protocol | High | Open | protocol threat model | not started |
-| Runner jobs share one uid; no private tmp or read-only system in the job scope | High | Partial | [RUNNERS.md](../RUNNERS.md) | job user, egress rules, owner opt-in and per-job grants are in |
-| Runner jobs run with the persistent HOME, not their session home | High | Open | [RUNNERS.md](../RUNNERS.md) | `HOME` must be set inside the scope after the uid switch |
+| Runner jobs share one uid; no private tmp or read-only system in the job scope | High | Partial | [RUNNERS.md](../operations/runners.md) | job user, egress rules, owner opt-in and per-job grants are in |
+| Runner jobs run with the persistent HOME, not their session home | High | Open | [RUNNERS.md](../operations/runners.md) | `HOME` must be set inside the scope after the uid switch |
 | Executable proof for agent boundaries | High | Partial | [agent-host-boundaries.md](agent-host-boundaries.md) | extend fixtures and checks |
 
 ## Private and operator-owned

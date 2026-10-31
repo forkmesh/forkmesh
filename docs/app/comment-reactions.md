@@ -117,7 +117,7 @@ comment_reaction_rate (account_bi PRIMARY KEY, window_start, count)
 - `idx_comment_reactions_account (account_bi, created_at)` serves the daily
   cap and account deletion.
 - Deleting the repository (`_REPO_SCOPED_TABLES`) or the account
-  (`_delete_account_namespace`) deletes its rows. [REKEY.md](../REKEY.md) lists
+  (`_delete_account_namespace`) deletes its rows. [REKEY.md](../operations/rekey.md) lists
   both tables (the rate counter is emptied on a re-key).
 
 The `comment_reactions` migration (`app/migrations/*_comment_reactions.sql`)

@@ -1,6 +1,6 @@
 package mirrornode
 
-// Web sign-in of a runner's provider CLI (docs/RUNNERS.md, "Web sign-in").
+// Web sign-in of a runner's provider CLI (docs/operations/runners.md, "Web sign-in").
 //
 // A runner has no node event channel, so the relayed login terminal that a
 // mirror serves over its socket (terminal.go) reaches a runner through its

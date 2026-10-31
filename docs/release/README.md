@@ -6,8 +6,8 @@ macOS `.dmg`, and the App Store submission of the iOS app. The metadata layout
 and publisher flags are documented beside the data in
 `.forkmesh/releases/README.md`; binaries never enter git. Home:
 [docs/README.md](../README.md). Why signed releases on mirrors keep software
-reachable: [mirroring](../../www/docs/mirroring.md) and
-[encryption and signatures](../../www/docs/encryption.md).
+reachable: [mirroring](../mirroring.md) and
+[encryption and signatures](../encryption.md).
 
 ## Code map
 

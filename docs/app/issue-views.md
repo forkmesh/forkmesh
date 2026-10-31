@@ -42,7 +42,7 @@ two tables, keyed like the repository ones on
 
 No names, addresses or user agents are stored. Both tables are deleted with
 the repository (`_REPO_SCOPED_TABLES`) and rekeyed by the rekey tool
-([../REKEY.md](../REKEY.md)). New tables were used instead of `repo_views`
+([../REKEY.md](../operations/rekey.md)). New tables were used instead of `repo_views`
 because those rows are keyed on the repository alone: issue rows there would
 survive a repository purge and could not be rekeyed.
 

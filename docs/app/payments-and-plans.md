@@ -31,9 +31,9 @@ reports membership, promotion state and usage meters.
 
 ## Operations
 
-- Patreon setup and secrets: [patreon.md](../../www/docs/operations/patreon.md).
-- Trials and usage meters: [plan-trials.md](../../www/docs/operations/plan-trials.md).
-- Business model: [business-model.md](../../www/docs/business-model.md).
+- Patreon setup and secrets: [patreon.md](../operations/patreon.md).
+- Trials and usage meters: [plan-trials.md](../operations/plan-trials.md).
+- Business model: [business-model.md](../business-model.md).
 
 ## Traps
 

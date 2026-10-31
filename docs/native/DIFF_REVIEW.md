@@ -247,4 +247,4 @@ desktop.
   New events are signed with the `branch-comment` v2 string and posted as
   `{"branch", "event"}` to the pull inbox. A sent comment shows as pending until
   a node writes it into the ledger. See
-  [pull-review-threads.md](../../www/docs/design/pull-review-threads.md).
+  [pull-review-threads.md](../design/pull-review-threads.md).

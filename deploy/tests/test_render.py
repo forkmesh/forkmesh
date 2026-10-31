@@ -269,7 +269,7 @@ def test_runner_holds_no_core_secret_and_no_mesh(tmp_path):
     data = fleet(tmp_path)
     data["runners"][0]["wg_ip"] = "10.77.0.11"
     files, manifest = render.render_runner(data, "r1")
-    # Only the runner's own IDS key (docs/IDS.md), never a core secret.
+    # Only the runner's own IDS key (docs/operations/intrusion-detection.md), never a core secret.
     assert manifest["credentials"] == {"fmnext-ids.service": ["FMNEXT_IDS_KEY"]}
     blob = "\n".join(content for path, (content, _) in files.items()
                      if path != "/etc/systemd/system/fmnext-ids.service")
@@ -326,7 +326,7 @@ def test_core_daemon_has_agents_and_actions_off(tmp_path):
         "disableAgentJobs": True, "disableAgentLogin": True,
         "disableCloudflared": True, "enableActions": False, "role": "core",
         # Every core keeps a replica of the ForkMesh-hosted repositories
-        # (server/hosted.go, docs/HOSTED_REPOS.md).
+        # (server/hosted.go, docs/operations/core-hosted-repositories.md).
         "hosted": {"enabled": True, "root": "/var/lib/forkmesh/hosted",
                    "maxRepositoryBytes": 256 * 1024 * 1024},
         "upstreams": {"forkmesh/forkmesh": [

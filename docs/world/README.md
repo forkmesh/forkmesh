@@ -7,7 +7,7 @@ code is static. It is served by the core nodes: Caddy serves the built files
 from `world/dist` in the current app release, and the App on the same node
 answers `/api/world/*`, the World Durable Object emulation and
 `/health/mobile`. world.forkmesh.com resolves by DNS round robin to the cores,
-like app.forkmesh.com ([architecture](../../www/docs/architecture.md)). The
+like app.forkmesh.com ([architecture](../architecture.md)). The
 desktop embeds the same page. Index: [docs/README.md](../README.md); entry
 point in the tree: [world/README.md](../../world/README.md).
 
@@ -35,9 +35,9 @@ point in the tree: [world/README.md](../../world/README.md).
 | `world/public/world/world-debug-log.js` | Admin debug log: counters, ring buffer, error/console/long-animation-frame/HTTP observers |
 | `world/public/world/world-mesh.js` | World mesh: directory normalising and the watch/visit sockets to neighbouring worlds ([World mesh](#world-mesh)) |
 | `world/public/world/world-boot.js` | Load log: boot timeline, scene-element and shader-compile trace, load suggestions |
-| `world/public/world/world-territory.js` | An instance's own hexagon: settings from `/api/instance`, the ForkMesh elements it hides, crossing URLs and arrival parameters, the bug list ([INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)) |
+| `world/public/world/world-territory.js` | An instance's own hexagon: settings from `/api/instance`, the ForkMesh elements it hides, crossing URLs and arrival parameters, the bug list ([INSTANCES.md](../operations/instances.md#an-instance-world-is-its-own-hexagon)) |
 | `world/public/world/scene/instance-territory.js`, `scene/territory-geometry.js` | The instance hexagon's scene (plaza, sign, buildings, bug terrarium, the ForkMesh hexagons next door) and the road-crossing geometry |
-| `world/public/world/world-brand.js` | On a white-label instance, renames "ForkMesh" in canvas-painted scene text to the instance name ([INSTANCES.md](../INSTANCES.md#the-world-on-an-instance)) |
+| `world/public/world/world-brand.js` | On a white-label instance, renames "ForkMesh" in canvas-painted scene text to the instance name ([INSTANCES.md](../operations/instances.md#the-world-on-an-instance)) |
 | `world/public/world/world-marketplace-packages.js` | Loader for World packages from `marketplace/packages/*/content/world/` |
 | `world/public/world/elements/` | Self-contained purchasable World elements; contract in its `README.md` |
 | `world/public/world/vendor/` | Pinned three.js (`three-0.184.0`) and other vendored libraries |
@@ -199,19 +199,19 @@ the diffs. Pure-Python parts are tested by
 ## Operations
 
 World is deployed with every app release
-([docs/deploy/README.md](../deploy/README.md)): the release carries
+([docs/operations/fleet-tooling.md](../operations/fleet-tooling.md)): the release carries
 `world/dist` and `world-routes.caddy`, and Caddy is reloaded when the release
 switches. World API changes ship in the same release. `tools/next_deploy.py`
 writes `world_deploy_status` for the "ForkMesh is deploying now" notice
-([deploy/auto-deploy.md](../deploy/auto-deploy.md#world-deploy-notice)).
+([deploy/auto-deploy.md](../operations/auto-deploy.md#world-deploy-notice)).
 
 ## Security
 
 - Elements get only `THREE`, validated params and an allowlisted
   same-origin `net()`; they have no other I/O.
 - Chat content is encrypted by the chat client; the Office uses the same
-  channel authorization as `/chat` ([sealed chat](../../www/docs/security/sealed-chat.md)).
-- The local speech bridge: [world-local-speech-bridge.md](../../www/docs/security/world-local-speech-bridge.md).
+  channel authorization as `/chat` ([sealed chat](../security/sealed-chat.md)).
+- The local speech bridge: [world-local-speech-bridge.md](../security/world-local-speech-bridge.md).
 - Optional elements that read data (for example the status board, which
   reads `/api/status/world`) declare the endpoint in their manifest and
   disclose it before purchase.
@@ -583,7 +583,7 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
 - **Desert ring.** Six desert hexagons (`DESERT_HEXES`) of the same shape tile
   around it at `WORLD_HEX_PITCH` = 2 × 365 + `WORLD_ROAD_WIDTH` (10).
   `DESERT_PLOTS` holds twelve plots, each with a "start your own instance"
-  sign that opens `<site>/start?plot=<n>` ([INSTANCES.md](../INSTANCES.md)).
+  sign that opens `<site>/start?plot=<n>` ([INSTANCES.md](../operations/instances.md)).
 - **Roads.** `createHexRoadNetwork()` draws a 10-unit road around every hex
   in three draws (asphalt, edge lines, instanced centre dashes).
   `createRoadGraph()` builds the matching graph (24 nodes, 30 roads) for
@@ -607,12 +607,12 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   On an instance with its own hexagon (a territory), the World is drawn as
   that one hexagon with the ForkMesh hexagons next door, and walking across
   its road puts the page in the ForkMesh World without a reload
-  (`leaveOwnTerritory()`, [../INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon),
+  (`leaveOwnTerritory()`, [../INSTANCES.md](../operations/instances.md#an-instance-world-is-its-own-hexagon),
   Stepping into the ForkMesh World); while the walker stands in the
   territory `placeWorldMesh` draws no world-mesh neighbours, so the two
   layouts never overlap. Off a territory the world-mesh flowers below
   replace the old road crossing into an instance hexagon
-  ([../INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)).
+  ([../INSTANCES.md](../operations/instances.md#an-instance-world-is-its-own-hexagon)).
 - **Bounds.** `desertWalkSurfaceContains()` is the union of all hexes grown
   by the road width plus junction discs, the hexes of every placed
   neighbouring world included (`setWorldMeshFlowers()`). `WORLD_RADIUS` (1900) bounds remote
@@ -867,7 +867,7 @@ them without changing page.
   a visa and socket are pending or refused.
 - **Standing in an instance's hexagon.** The page enters an instance's World
   as that World draws itself, not as a flower and not as its published scene
-  alone ([INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)):
+  alone ([INSTANCES.md](../operations/instances.md#an-instance-world-is-its-own-hexagon)):
   - As soon as the hexagon is placed, the page reads the instance's
     `/api/instance` (`neighbourInstance()`: CORS, no credentials, no
     redirects, 6 seconds; the federation client's path list stays as it is)
@@ -1023,12 +1023,12 @@ them without changing page.
 - [docs/app/README.md](../app/README.md) (the App),
   [sessions](../app/auth-sessions.md),
   [footprint](../app/worker-footprint.md)
-- [docs/deploy/README.md](../deploy/README.md),
-  [docs/deploy/auto-deploy.md](../deploy/auto-deploy.md),
-  [docs/PLAN.md](../PLAN.md), [docs/OPERATIONS.md](../OPERATIONS.md)
+- [docs/operations/fleet-tooling.md](../operations/fleet-tooling.md),
+  [docs/operations/auto-deploy.md](../operations/auto-deploy.md),
+  [docs/operations/served-stack.md](../operations/served-stack.md), [docs/operations/README.md](../operations/README.md)
 - [world/README.md](../../world/README.md),
   [elements/README.md](../../world/public/world/elements/README.md)
-- [World community services](../../www/docs/world-community-services.md)
-- Security: [sealed chat](../../www/docs/security/sealed-chat.md),
-  [local speech bridge](../../www/docs/security/world-local-speech-bridge.md),
-  [threat model](../../www/docs/protocol/threat-model.md)
+- [World community services](../world-community-services.md)
+- Security: [sealed chat](../security/sealed-chat.md),
+  [local speech bridge](../security/world-local-speech-bridge.md),
+  [threat model](../protocol/threat-model.md)

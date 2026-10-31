@@ -47,7 +47,7 @@ A small subset of Jinja:
 
 `changelog.html` holds no releases: `www/public/changelog.js` fetches
 `/changelog.json` and prints them in the browser
-([../changelog.md](../changelog.md)); edit `changelog/changelog.json`, not
+([../changelog.md](../engineering/changelog.md)); edit `changelog/changelog.json`, not
 the page, to change a release.
 
 A line holding only one tag is dropped entirely. Names in `extends` and

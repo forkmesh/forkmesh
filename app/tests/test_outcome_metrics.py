@@ -1,6 +1,6 @@
 """Outcome metric dictionary, monthly review template, and review report (issue #519).
 
-``www/docs/outcome-metrics.json`` defines every community, product, and revenue
+``docs/outcome-metrics.json`` defines every community, product, and revenue
 KPI once. ``tools/outcome_metrics.py`` validates it and turns an aggregate
 observation file into values with freshness and confidence; missing data is
 unknown, small segments are suppressed, and identifiers are refused.
@@ -19,8 +19,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "outcome_metrics.py"
-REVIEW_PATH = ROOT / "www" / "docs" / "outcome-review.md"
-SCORECARD_PATH = ROOT / "www" / "docs" / "activation-revenue-scorecard.md"
+REVIEW_PATH = ROOT / "docs" / "outcome-review.md"
+SCORECARD_PATH = ROOT / "docs" / "activation-revenue-scorecard.md"
 SPEC = importlib.util.spec_from_file_location("outcome_metrics", TOOL)
 assert SPEC and SPEC.loader
 OUTCOMES = importlib.util.module_from_spec(SPEC)
@@ -86,7 +86,7 @@ def test_dictionary_is_valid_versioned_and_supersedes_v1():
     assert dictionary["supersedes"] == (
         "forkmesh-activation-revenue-metric-dictionary-v1")
     assert [entry["version"] for entry in dictionary["changelog"]] == [1, 2]
-    assert not (ROOT / "www" / "docs" / "activation-revenue-metrics.json").exists()
+    assert not (ROOT / "docs" / "activation-revenue-metrics.json").exists()
 
 
 def test_every_issue_scope_term_maps_to_defined_kpis():
@@ -328,7 +328,7 @@ def test_monthly_template_lists_every_metric_and_the_privacy_rules():
     for policy in dictionary["confidencePolicy"]:
         assert f"| `{policy}` |" in text
     assert "(outcome-review.md)" in (
-        ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+        ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(outcome-review.md)" in SCORECARD_PATH.read_text(encoding="utf-8")
 
 

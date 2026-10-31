@@ -2,7 +2,7 @@
 
 How a mirror runs the Claude Code, Codex and Gemma sessions the website (or a
 desktop's **To cloud**) queues for it. Operator view:
-[mirror-node.md, "Running website agent jobs"](../../www/docs/operations/mirror-node.md#running-website-agent-jobs).
+[mirror-node.md, "Running website agent jobs"](../operations/mirror-node.md#running-website-agent-jobs).
 Code: `server/agents.go`, `agent_errors.go`, `agent_attachments.go`,
 `agent_live.go`, `agent_workspace.go`, `sandbox.go`, `jobhome.go`,
 `terminal.go`.
@@ -71,7 +71,7 @@ and ignored. Gemma models come from `marketplace/packages/gemma-4`
 The agent still runs as the node's user and can open the node key by path; a
 mirror cannot switch users because session clones share objects with the
 served repositories. Untrusted owners belong on a runner
-([../RUNNERS.md](../RUNNERS.md)). Tests: `server/sandbox_test.go`.
+([../RUNNERS.md](../operations/runners.md)). Tests: `server/sandbox_test.go`.
 
 ## Error reporting
 

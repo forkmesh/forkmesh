@@ -12,7 +12,7 @@ referenced by credential name only (``LoadCredentialEncrypted=NAME:...``)
 and pushed separately by ``tools/next_fleet.py secrets``. The renderer never
 reads secrets.env, so it cannot leak it. With ``[app] vault = true`` the app
 unit loads only the bootstrap credentials and starts sealed; the other
-secrets are sealed into the database by ``tools/next_vault.py`` (docs/VAULT.md).
+secrets are sealed into the database by ``tools/next_vault.py`` (docs/operations/vault.md).
 
 WireGuard public keys come from the fleet file, or else from the operator
 state file (``<config_dir>/fleet-state.json``, written by
@@ -119,7 +119,7 @@ def load_instances(path=None):
     target = instances_file(path)
     if not target.is_file():
         raise RenderError("no %s: the fleet's public addresses live only in "
-                          "that operator file (docs/deploy/README.md)" % target)
+                          "that operator file (docs/operations/fleet-tooling.md)" % target)
     data = json.loads(target.read_text("utf-8"))
     if not isinstance(data, dict):
         raise RenderError("%s is not a JSON object keyed by label" % target)
@@ -416,7 +416,7 @@ def app_credential_names(fleet):
     """Names the forkmesh-app unit loads with LoadCredentialEncrypted=.
 
     Vault off: every app secret. Vault on: only the bootstrap names; the
-    rest live encrypted in the host_secrets table (docs/VAULT.md)."""
+    rest live encrypted in the host_secrets table (docs/operations/vault.md)."""
     names = app_secret_names(fleet)
     if not vault_enabled(fleet):
         return names
@@ -514,7 +514,7 @@ def production_settings(fleet):
     prod = production(fleet)
     if not prod:
         return ""
-    lines = ["", "# Production identity (docs/CUTOVER.md): fleet.toml [production].",
+    lines = ["", "# Production identity (docs/operations/served-stack.md): fleet.toml [production].",
              "FORKMESH_SERVES_PRODUCTION=1"]
     for name, value in sorted((prod.get("vars") or {}).items()):
         lines.append("FORKMESH_VAR_%s=%s" % (name, value))
@@ -570,13 +570,13 @@ def public_hosts(fleet):
 # The certsync pair server authenticates with its own secret, which the app
 # never loads (only fmnext-certsync.service / fmnext-cert-sync.service).
 CERTSYNC_SECRET_NAME = "FORKMESH_CERTSYNC_SECRET"
-# The runner's untrusted job user (docs/RUNNERS.md "Job sandbox").
+# The runner's untrusted job user (docs/operations/runners.md "Job sandbox").
 JOB_USER = "forkmesh-job"
 JOB_HOME = "/var/lib/forkmesh-job"
 RUNNER_WORK_ROOT = "/var/lib/forkmesh-runner/work"
 RUNNER_JOB_TMP = "/var/lib/forkmesh-runner/tmp"
 RUNNER_JOB_SWAP_MAX = "1G"
-# ForkMesh-hosted repositories on the cores (docs/HOSTED_REPOS.md). The fetch
+# ForkMesh-hosted repositories on the cores (docs/operations/core-hosted-repositories.md). The fetch
 # guard sits a little above the App's per-repository limit (200 MiB,
 # HOSTED_REPO_MAX_BYTES in app/wrangler.toml) so a repository at the limit
 # still replicates.
@@ -591,7 +591,7 @@ LARGE_BODY_MAX = "32MB"
 LARGE_BODY_PATH = r"^/api/repo/[^/]+/[^/]+/pulls$"
 GIT_BODY_MAX = "1GB"
 # A Git push through the App (POST /<owner>/<repo>/git-receive-pack) streams to
-# a core gateway; ForkMesh-hosted repositories (docs/HOSTED_REPOS.md) need
+# a core gateway; ForkMesh-hosted repositories (docs/operations/core-hosted-repositories.md) need
 # more than the App's 16 MB. Matches request_guard.DEFAULT_MAX_GIT_PUSH_BODY.
 GIT_PUSH_BODY_MAX = "256MB"
 GIT_PUSH_PATH = r"^/[^/]+/[^/]+/git-receive-pack$"
@@ -599,7 +599,7 @@ GIT_PUSH_REFS_PATH = r"^/[^/]+/[^/]+/info/refs$"
 
 
 # --------------------------------------------------------------------------
-# intrusion detection (deploy/core/ids.py, docs/IDS.md)
+# intrusion detection (deploy/core/ids.py, docs/operations/intrusion-detection.md)
 
 IDS_KEY_CREDENTIAL = "FMNEXT_IDS_KEY"
 CADDY_BIN = "/usr/local/bin/caddy"
@@ -629,7 +629,7 @@ def caddy_binary_dropin(fleet):
         raise RenderError("deploy/fleet.toml has no [caddy] version")
     return (
         "# Managed by tools/next_fleet.py (step caddy): Caddy %s from the\n"
-        "# upstream release instead of Debian's %s (docs/OPERATIONS.md).\n"
+        "# upstream release instead of Debian's %s (docs/operations/README.md).\n"
         "[Service]\n"
         "ExecStart=\n"
         "ExecStart=%s run --environ --config /etc/caddy/Caddyfile\n"
@@ -651,7 +651,7 @@ IDS_CORE_STOP_UNITS = ("forkmesh-mirror-node.service", "forkmesh-app.service",
 IDS_RUNNER_STOP_UNITS = ("forkmesh-mirror-node.service",)
 IDS_LOCKDOWN_CONDITION = IDS_STATE_DIR + "/LOCKDOWN"
 IDS_RQLITE_CONDITION = IDS_STATE_DIR + "/RQLITE_STOPPED"
-# Watched on every node (docs/IDS.md "What is detected").
+# Watched on every node (docs/operations/intrusion-detection.md "What is detected").
 IDS_LOCKDOWN_PATHS = (
     "/usr/local/bin", "/usr/local/sbin", "/usr/local/share/forkmesh",
     "/opt/forkmesh-next/bin", "/etc/systemd/system", "/etc/ssh/sshd_config",
@@ -837,7 +837,7 @@ def ids_env_settings(fleet):
         return "# IDS off ([ids] enabled = false)."
     keys = ",".join("%s=%s" % (n["name"], n["ids_pubkey"])
                     for n in fleet["nodes"] if n.get("ids_pubkey"))
-    return ("# Intrusion detection (docs/IDS.md): the core IDS public keys and\n"
+    return ("# Intrusion detection (docs/operations/intrusion-detection.md): the core IDS public keys and\n"
             "# the operator release key; quarantine rows are verified with them.\n"
             "FORKMESH_IDS_PUBKEYS=%s\nFORKMESH_IDS_OPERATOR_PUBKEY=%s" % (
                 keys, ids_settings(fleet).get("operator_public_key", "")))
@@ -989,7 +989,7 @@ def ids_config(fleet, name, role, paths):
 
 
 def ids_dropin(condition, unit):
-    return ("# Managed by deploy/core/render.py (docs/IDS.md). %s never starts\n"
+    return ("# Managed by deploy/core/render.py (docs/operations/intrusion-detection.md). %s never starts\n"
             "# while the IDS holds this node in lockdown; only\n"
             "# tools/next_ids.py release removes the marker.\n"
             "[Unit]\nConditionPathExists=!%s\n" % (unit, condition))
@@ -1088,7 +1088,7 @@ def ids_egress_log_rules():
     local = "{ 127.0.0.0/8, 10.77.0.0/24 }"
     local6 = "{ ::1, fe80::/10 }"
     return [
-        "\t\t# IDS (docs/IDS.md): log unusual outbound connections of the",
+        "\t\t# IDS (docs/operations/intrusion-detection.md): log unusual outbound connections of the",
         "\t\t# service users (log only; rate-limited).",
         "\t\tmeta skuid %s ct state new ip daddr != %s tcp flags & (syn | ack) == syn tcp dport != "
         "{ 80, 443 } limit rate 6/minute log prefix \"fmnext-ids-egress: \" "
@@ -1659,7 +1659,7 @@ def caddyfile(fleet, node, paths, per_node=True):
         "# Every Cf-* header a client sends is dropped; the App learns the",
         "# visitor from Cf-Connecting-Ip (this connection's peer) or, for",
         "# requests relayed by the next.forkmesh.com Worker, from the signed",
-        "# x-forkmesh-edge-client header (deploy/core/edge_client.md).",
+        "# x-forkmesh-edge-client header (docs/www/edge-client.md).",
         "(client_headers) {",
         "\trequest_header -Cf-*",
         "\trequest_header -True-Client-Ip",
@@ -1794,7 +1794,7 @@ def caddyfile(fleet, node, paths, per_node=True):
                fleet["world_host"]: served_world_host(fleet)}
     for host in legacy_hosts(fleet):
         out.append("%s {" % host)
-        out += ["\t# Next name after the cutover (docs/CUTOVER.md): redirects.",
+        out += ["\t# Next name after the cutover (docs/operations/served-stack.md): redirects.",
                 "\timport %s/tls-%s.caddy" % (include_dir, host)]
         out += request_rules
         if host == fleet["app_host"]:
@@ -1970,7 +1970,7 @@ def core_upstreams(fleet, node_name):
 
 
 def daemon_overrides(fleet, role, burst=False, node_name=None):
-    """Merged over the daemon's --init config (docs/RUNNERS.md)."""
+    """Merged over the daemon's --init config (docs/operations/runners.md)."""
     if role == "core":
         overrides = {
             "role": "core",
@@ -1986,7 +1986,7 @@ def daemon_overrides(fleet, role, burst=False, node_name=None):
         hosted = fleet.get("hosted") or {}
         if hosted.get("enabled", True):
             # ForkMesh-hosted repositories (server/hosted.go,
-            # docs/HOSTED_REPOS.md): every core keeps a replica under root,
+            # docs/operations/core-hosted-repositories.md): every core keeps a replica under root,
             # inside the daemon's own state directory.
             overrides["hosted"] = {
                 "enabled": True,
@@ -2130,7 +2130,7 @@ def render_core(fleet, node_name, replacement=False):
         "VAULT": "1" if vault else "0",
         "UNSEAL_SOCKET": UNSEAL_SOCKET,
         "VAULT_SETTINGS": (
-            "# Vault on (docs/VAULT.md): start sealed; every other secret is\n"
+            "# Vault on (docs/operations/vault.md): start sealed; every other secret is\n"
             "# unsealed from host_secrets through the socket below%s.\n"
             "Environment=FORKMESH_VAULT=1\n"
             "Environment=FORKMESH_VAULT_SOCKET=%s\n"

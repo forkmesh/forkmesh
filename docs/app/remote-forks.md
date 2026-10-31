@@ -1,7 +1,7 @@
 # Forks on other instances and cross-instance pull requests
 
 Part of [the App docs](README.md). A repository can list copies of itself on
-other ForkMesh instances ([INSTANCES.md](../INSTANCES.md)) and send a
+other ForkMesh instances ([INSTANCES.md](../operations/instances.md)) and send a
 branch to one of them as a pull request: the same signed, self-contained patch
 a fork sends its parent. Code: `app/src/remote_forks.py`, table
 `repo_remote_forks`, `_open_pull_cors_headers` in `app/src/entry.py`. Tests:
@@ -32,7 +32,7 @@ the target instance; both copies must share history.
 
 The iPhone app's New pull request sheet offers the same **Send to** menu
 (`NewPullSheet`, `InboxService.openRemotePull`,
-[FMCodeCollab.md](../../native/ios/docs/FMCodeCollab.md)):
+[FMCodeCollab.md](../native/ios/FMCodeCollab.md)):
 it reads the saved list, compares the branches on this instance's mirror, signs
 with the device's key for the target's owner and name, and posts the same body
 (`{owner, repo, pull}`) with no session. It refuses an origin that is not

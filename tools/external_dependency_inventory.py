@@ -2,7 +2,7 @@
 """Inventory outside services and check them against the dependency map (issue #503).
 
 The map lives in ``conformance/external-dependencies/v1/manifest.json``; the
-human page ``www/docs/external-dependency-map.md`` carries a generated block
+human page ``docs/external-dependency-map.md`` carries a generated block
 rendered from it. This tool scans production source for every outside host a
 ForkMesh surface can contact, every Worker secret that authenticates to a
 provider, and every D1 table that stores a provider's identifier, then fails

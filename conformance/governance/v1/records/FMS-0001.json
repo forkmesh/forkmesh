@@ -13,7 +13,7 @@
   "threats": ["TM-004", "TM-006", "TM-008", "TM-014", "TM-018"],
   "links": [
     {"label": "Issue #511", "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/511"},
-    {"label": "Threat model", "href": "www/docs/protocol/threat-model.md"}
+    {"label": "Threat model", "href": "docs/protocol/threat-model.md"}
   ],
   "timeline": {
     "opened": "2026-09-13",

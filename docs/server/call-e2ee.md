@@ -12,8 +12,8 @@ sender by signed digest batches. The servers carry only ciphertext and
 headers.
 
 Home: [README.md](README.md). The public summary of what is encrypted and
-signed is [encryption](../../www/docs/encryption.md); the adversaries are in
-the [threat model](../../www/docs/protocol/threat-model.md).
+signed is [encryption](../encryption.md); the adversaries are in
+the [threat model](../protocol/threat-model.md).
 
 | Part | Code |
 | --- | --- |

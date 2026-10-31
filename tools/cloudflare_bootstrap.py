@@ -2430,7 +2430,7 @@ def bootstrap(
                 if mirror_manifest is not None
                 else None
             ),
-            "schema": "www/docs/mirror-endpoint.schema.json",
+            "schema": "docs/mirror-endpoint.schema.json",
             "payloadSha256": (
                 mirror_manifest["signature"]["payloadSha256"]
                 if mirror_manifest is not None

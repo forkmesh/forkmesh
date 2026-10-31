@@ -7,20 +7,20 @@ and points to the page that owns each mechanism. Report vulnerabilities as
 
 The public pillars explain the design; this page does not repeat them:
 
-- [Threat model](../../www/docs/protocol/threat-model.md): who can attack
+- [Threat model](../protocol/threat-model.md): who can attack
   what, and what holds
-- [Encryption and signatures](../../www/docs/encryption.md): identities,
+- [Encryption and signatures](../encryption.md): identities,
   signed records, chat and repository encryption
-- [Architecture and availability](../../www/docs/architecture.md): cores, DNS
+- [Architecture and availability](../architecture.md): cores, DNS
   round robin, runners, read-only mode
-- [Mirroring and software distribution](../../www/docs/mirroring.md): signed
+- [Mirroring and software distribution](../mirroring.md): signed
   mirror health and release verification
-- [Self-hosting](../../www/docs/self-hosting.md): running your own instance
-- [Censorship resilience](../../www/docs/censorship-resilience.md): what still
+- [Self-hosting](../self-hosting.md): running your own instance
+- [Censorship resilience](../censorship-resilience.md): what still
   depends on a provider
 
 Product-level details (sealed chat, private repositories, organization roles,
-secret scanning) are in [www/docs/security/](../../www/docs/security/).
+secret scanning) are in [docs/security/](./).
 
 ## Code map
 
@@ -28,20 +28,20 @@ secret scanning) are in [www/docs/security/](../../www/docs/security/).
 | --- | --- | --- |
 | Node identity | `desktop/src/ForkMeshIdentity.{h,cpp}`, `server/identity.go` | Ed25519 key in `<data>/identity/ed25519.pem` |
 | Signed events | `app/src/events.py`, `app/src/releases.py` | canonical strings verified with Ed25519 |
-| Encryption at rest | `app/src/entry.py` (row sealing, blind indexes) | [encryption.md](../../www/docs/encryption.md) |
-| Secrets vault | `app/host/forkmesh_host/vault.py`, `vault_crypto.py`, `tools/next_vault.py` | [VAULT.md](../VAULT.md) |
-| Key rotation | `tools/next_rekey.py` | [REKEY.md](../REKEY.md) |
-| Organization roles | `app/src/organization_rbac.py` | [organization-roles.md](../../www/docs/security/organization-roles.md) |
+| Encryption at rest | `app/src/entry.py` (row sealing, blind indexes) | [encryption.md](../encryption.md) |
+| Secrets vault | `app/host/forkmesh_host/vault.py`, `vault_crypto.py`, `tools/next_vault.py` | [VAULT.md](../operations/vault.md) |
+| Key rotation | `tools/next_rekey.py` | [REKEY.md](../operations/rekey.md) |
+| Organization roles | `app/src/organization_rbac.py` | [organization-roles.md](organization-roles.md) |
 | Node ownership changes | `_account_link_grant` | [NODE_LINK_GRANT.md](NODE_LINK_GRANT.md) |
-| Signup bot check | `app/src/turnstile.py` | [OPERATIONS.md](../OPERATIONS.md) |
+| Signup bot check | `app/src/turnstile.py` | [OPERATIONS.md](../operations/README.md) |
 | Front-door checks | `app/host/forkmesh_host/request_guard.py`, `request_policy.py` | [host/README.md](../host/README.md) |
 | Hidden Unicode in input | `app/src/hidden_unicode.py`, `www/public/safe-input.js`, `desktop/src/HiddenUnicodeGuard.{h,cpp}`, `HiddenUnicode.swift`, `HiddenUnicode.kt`, `conformance/hidden-unicode/v1` | [hidden-unicode.md](hidden-unicode.md) |
 | Outbound request guard | `app/host/forkmesh_host/egress.py` | [host/README.md](../host/README.md) |
-| Host intrusion detection | `deploy/core/ids.py`, `tools/next_ids.py` | [IDS.md](../IDS.md) |
-| Node hardening | `deploy/core/render.py`, `deploy/core/certsync.py`, `tools/next_fleet.py` | [OPERATIONS.md](../OPERATIONS.md) |
-| Runner isolation | `server/runner.go`, `sandbox.go`, `jobhome.go`, `runnergrant.go` | [RUNNERS.md](../RUNNERS.md) |
-| Encrypted backups | `tools/next_backup.py` (age) | [disaster recovery](../../www/docs/disaster-recovery/README.md) |
-| Secret scanning | `tools/secret_gate.py`, `conformance/secrets/v1` | [secret-scanning.md](../../www/docs/security/secret-scanning.md) |
+| Host intrusion detection | `deploy/core/ids.py`, `tools/next_ids.py` | [IDS.md](../operations/intrusion-detection.md) |
+| Node hardening | `deploy/core/render.py`, `deploy/core/certsync.py`, `tools/next_fleet.py` | [OPERATIONS.md](../operations/README.md) |
+| Runner isolation | `server/runner.go`, `sandbox.go`, `jobhome.go`, `runnergrant.go` | [RUNNERS.md](../operations/runners.md) |
+| Encrypted backups | `tools/next_backup.py` (age) | [disaster recovery](../disaster-recovery/README.md) |
+| Secret scanning | `tools/secret_gate.py`, `conformance/secrets/v1` | [secret-scanning.md](secret-scanning.md) |
 | Desktop outbound firewall | `desktop/src/BackoffNetworkAccessManager.{h,cpp}` | every external destination needs an Allow or Deny |
 | Agent filesystem guard | `tools/forkmesh_agent_guard.py` | fail-closed allowlist |
 | Agent host boundaries | `desktop/tests/test_agent_host_boundaries.cpp`, `conformance/agent-adversarial/` | [agent-host-boundaries.md](agent-host-boundaries.md) |
@@ -49,14 +49,14 @@ secret scanning) are in [www/docs/security/](../../www/docs/security/).
 | Releases | `www/public/install.sh`, release tooling | [release/README.md](../release/README.md) |
 | Destructive actions | guarded delete helpers | [engineering/destructive-actions.md](../engineering/destructive-actions.md) |
 | Vulnerability reports | `security_report_handler` in `app/src/entry.py` | [sentinel.md](sentinel.md#reports-from-the-security-webhook) |
-| Protocol threat model | `conformance/protocol/v1/threats.json` | [threat-model.md](../../www/docs/protocol/threat-model.md) |
+| Protocol threat model | `conformance/protocol/v1/threats.json` | [threat-model.md](../protocol/threat-model.md) |
 
 ## Trust boundaries
 
 1. **The device** holds the node identity key, repository decryption keys,
    SSH keys, agent-provider logins and wallet keys; none leave it.
 2. **The core nodes (relay)** run the app with rqlite and are reached by DNS
-   round robin ([architecture](../../www/docs/architecture.md)). They store routing,
+   round robin ([architecture](../architecture.md)). They store routing,
    authorization and collaboration metadata encrypted at rest under
    `DATA_KEY` with HMAC blind indexes. This protects a stolen database copy,
    not data from the operator. Cores run no agent or untrusted code.
@@ -68,7 +68,7 @@ secret scanning) are in [www/docs/security/](../../www/docs/security/).
    no repositories, and push only `refs/heads/agent/<session>` with a per-job
    grant.
 5. **Third parties** are listed with what they observe in the
-   [external dependency map](../../www/docs/external-dependency-map.md).
+   [external dependency map](../external-dependency-map.md).
    Cloudflare hosts the DNS zone and the forkmesh.com homepage Worker
    (`www/worker.js`); it does not proxy app or world traffic.
 
@@ -83,11 +83,11 @@ added to the desktop's saved hosts.
   an argument, environment variable or file. Peers unseal each other over the
   mesh.
 - IDS: signed expected-change manifests and signed quarantine records
-  ([IDS.md](../IDS.md)).
+  ([IDS.md](../operations/intrusion-detection.md)).
 - `x-forkmesh-edge-client`: an HMAC-signed visitor address from the homepage
   Worker, verified before the app sees the request; direct requests have
   client-address headers replaced by the TCP peer
-  ([deploy/core/edge_client.md](../../deploy/core/edge_client.md)).
+  ([docs/www/edge-client.md](../www/edge-client.md)).
 - ActivityPub inbox (`ap_inbox_handler`): after the HTTP signature verifies,
   the key's actor (the document fetched from `keyId` without its fragment)
   must be the activity's `actor`, or a path under it (GoToSocial publishes

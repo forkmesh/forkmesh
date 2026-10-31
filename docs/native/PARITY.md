@@ -231,7 +231,7 @@ that names one person in `to` (a `hello` reply aside) is sealed to that
 person's keys (`RelayService.directRecipient`).
 
 Relay hardening ([chat-relay-hardening.md](../app/chat-relay-hardening.md);
-threat model: [threat-model.md](../../www/docs/protocol/threat-model.md)):
+threat model: [threat-model.md](../protocol/threat-model.md)):
 
 - R1: open-room bundles carry `nsig` by the node key (`RoomSeal.bundle`,
   `verifyNodeBinding`); `RelayService`, `OfficeChannelService` (through
@@ -508,7 +508,7 @@ are separate from the phone's viewed marks ([DIFF_REVIEW.md](DIFF_REVIEW.md)).
 
 The watch app has its own `NewAgentIntent` (`ForkMeshWatch/NewAgentIntent.swift`)
 and `AppShortcutsProvider`, since Siri on the watch runs the watch app's
-intents. User guide: `www/docs/mobile/siri.md`.
+intents. User guide: `docs/mobile/siri.md`.
 
 1. Siri asks for the prompt and reads it back for confirmation.
 2. The intent opens the watch app (`openAppWhenRun`);

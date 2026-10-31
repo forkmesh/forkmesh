@@ -783,11 +783,11 @@ def test_cli_rejects_unknown_resolution_and_unconnected_checkout(tmp_path, capsy
 
 
 def test_documentation_covers_the_engine_and_is_indexed():
-    doc = (ROOT / "www/docs/forge-sync.md").read_text(encoding="utf-8")
+    doc = (ROOT / "docs/forge-sync.md").read_text(encoding="utf-8")
     for phrase in ("forge-sync.json", "sourceOfTruth", "resolve", "pause", "Gitea", "SLO",
                    "rate limit", "identities", "--mirror", "--ledger", "forge-source.json"):
         assert phrase in doc, phrase
-    assert "(forge-sync.md)" in (ROOT / "www/docs/README.md").read_text(encoding="utf-8")
+    assert "(forge-sync.md)" in (ROOT / "docs/README.md").read_text(encoding="utf-8")
 
 
 # ---- avatars ----------------------------------------------------------------------

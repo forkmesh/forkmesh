@@ -1,7 +1,7 @@
 # Sealed sender for direct messages (proposed)
 
 Part of [the App docs](README.md); see also the
-[threat model](../../www/docs/protocol/threat-model.md). Status: proposed
+[threat model](../protocol/threat-model.md). Status: proposed
 2026-10-16, not implemented. Chat protocol v4
 ([chat-protocol-v4.md](chat-protocol-v4.md)) closed the first gap with Signal
 (per-message forward secrecy). This page is the plan for the second: Signal's

@@ -3,17 +3,17 @@
 The daemon ([README.md](README.md)) never serves Git itself. It supervises the
 Python HTTPS gateway and leaves SSH writes to the SSH gateway and broker. These
 gateways are what a mirror serves clones from
-([mirroring](../../www/docs/mirroring.md)).
+([mirroring](../mirroring.md)).
 
 | Component | Code | Guide |
 | --- | --- | --- |
-| HTTPS gateway (read-only `upload-pack`, dashboard, merge/Actions couriers, `/v1/node/logs`) | `tools/mirror_gateway.py` | [direct-https-mirror-gateway.md](../../www/docs/operations/direct-https-mirror-gateway.md) |
-| SSH gateway (push over SSH, forced command) | `tools/ssh_gateway.py`, `server/packaging/ssh/ssh-gateway-entrypoint`, `tools/provision_ssh_gateway.sh` | [git-ssh-gateway.md](../../www/docs/operations/git-ssh-gateway.md) |
-| SSH authorization broker (local authorization on independent mirrors) | `tools/ssh_authorization_broker.py`, `server/packaging/systemd/forkmesh-ssh-authorization-broker.service` | [git-ssh-gateway.md](../../www/docs/operations/git-ssh-gateway.md), [breakout-authorization-replica.md](../../www/docs/operations/breakout-authorization-replica.md) |
-| Post-receive refresh | `tools/ssh_post_receive_refresh.py`, `server/packaging/ssh/ssh-refresh-notify` | [git-ssh-gateway.md](../../www/docs/operations/git-ssh-gateway.md) |
-| SSH host certificates | `tools/sign_ssh_host_certs.sh` | [git-ssh-gateway.md](../../www/docs/operations/git-ssh-gateway.md) |
+| HTTPS gateway (read-only `upload-pack`, dashboard, merge/Actions couriers, `/v1/node/logs`) | `tools/mirror_gateway.py` | [direct-https-mirror-gateway.md](../operations/direct-https-mirror-gateway.md) |
+| SSH gateway (push over SSH, forced command) | `tools/ssh_gateway.py`, `server/packaging/ssh/ssh-gateway-entrypoint`, `tools/provision_ssh_gateway.sh` | [git-ssh-gateway.md](../operations/git-ssh-gateway.md) |
+| SSH authorization broker (local authorization on independent mirrors) | `tools/ssh_authorization_broker.py`, `server/packaging/systemd/forkmesh-ssh-authorization-broker.service` | [git-ssh-gateway.md](../operations/git-ssh-gateway.md), [breakout-authorization-replica.md](../operations/breakout-authorization-replica.md) |
+| Post-receive refresh | `tools/ssh_post_receive_refresh.py`, `server/packaging/ssh/ssh-refresh-notify` | [git-ssh-gateway.md](../operations/git-ssh-gateway.md) |
+| SSH host certificates | `tools/sign_ssh_host_certs.sh` | [git-ssh-gateway.md](../operations/git-ssh-gateway.md) |
 
-JSON schemas for these configs are in `www/docs/*.schema.json`
+JSON schemas for these configs are in `docs/*.schema.json`
 (`mirror-gateway-config`, `mirror-gateway-manifest`, `mirror-endpoint`,
 `ssh-gateway-config`, `ssh-authorization-broker`, `ssh-post-receive-refresh`,
 `mirror-actions-*`).
@@ -101,7 +101,7 @@ interpreter start before `main()` installs the handlers.
   renders every issue folder at once instead of "more" tiles that each need
   their own `/tree` read on zoom.
 - The HTTPS gateway has no `receive-pack`. Pushes go through SSH or through the
-  App's hosted-push path ([hosted-repositories.md](../../www/docs/hosted-repositories.md)).
+  App's hosted-push path ([hosted-repositories.md](../hosted-repositories.md)).
 - A search for a common word is a repository answer too, not an outage.
   `search` streams `git grep` and stops at `MAX_SEARCH_RESULTS` matches, at
   2 MB of output or at the process timeout, returning what it has with

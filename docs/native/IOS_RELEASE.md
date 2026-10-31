@@ -222,7 +222,7 @@ requires the UI to identify it:
 - The text is `AppleHealthGuide` in
   `ForkMeshCore/Sources/FMTools/AppleHealthGuide.swift`, one `AppleHealthUse`
   per `AppleHealthTool`; `AppleHealthGuideTests` fails on a missing entry. Keep
-  it in sync with [apple-health.md](../../www/docs/mobile/apple-health.md),
+  it in sync with [apple-health.md](../mobile/apple-health.md),
   `www/templates/pages/privacy.html` and the usage strings in
   `Config/ForkMesh-Info.plist`.
 

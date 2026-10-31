@@ -8,7 +8,7 @@ measurements that shaped them. The code is `server/rtc/fmm/`, standard
 library only, in the `forkmesh.com/mirror-node` module. Home:
 [README.md](README.md). Payloads are end-to-end encrypted before they reach
 this layer ([call-e2ee.md](call-e2ee.md),
-[encryption](../../www/docs/encryption.md)).
+[encryption](../encryption.md)).
 
 The core includes its half of ideas 1 to 3 of
 [Beyond FaceTime](fm-media.md#beyond-facetime): long-term reference recovery,

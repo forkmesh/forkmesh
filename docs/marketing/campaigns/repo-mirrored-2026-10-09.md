@@ -14,8 +14,8 @@ copying a public repository into ForkMesh from the browser.
 | --- | --- | --- |
 | Paste the `https://` URL of a public GitHub, GitLab or Codeberg repository into **Remote clone URL** | `HOSTED_IMPORT_HOSTS` in `app/wrangler.toml` | That private repositories can be copied |
 | ForkMesh copies every branch and tag | `server/hosted.go` fetches `+refs/heads/*` and `+refs/tags/*` | That issues, pull requests, releases, wikis or LFS files come along |
-| The copy is kept on several servers | [HOSTED_REPOS.md](../../HOSTED_REPOS.md) | "An independent network" |
-| Anyone can clone a public copy without an account | [HOSTED_REPOS.md](../../HOSTED_REPOS.md) | Uptime, speed or "never down" |
+| The copy is kept on several servers | [HOSTED_REPOS.md](../../operations/core-hosted-repositories.md) | "An independent network" |
+| Anyone can clone a public copy without an account | [HOSTED_REPOS.md](../../operations/core-hosted-repositories.md) | Uptime, speed or "never down" |
 | You push new commits to it with plain Git over HTTPS | The credential shown after **Create & mirror** | That it follows the original: the browser path copies once |
 | Up to 200 MiB per repository and 10 per account | `app/wrangler.toml`, `server/hosted.go` | Any pricing promise |
 | Set it up before an outage | Copying from a host that is down fails | That you can copy a repository while its host is down |
@@ -34,7 +34,7 @@ https://forkmesh.com/mirror?utm_source=mastodon&utm_medium=social&utm_campaign=r
 `repo_mirrored` is on `ATTRIBUTION_ALLOWED_CAMPAIGNS` in `app/wrangler.toml`
 and `DEFAULT_ALLOWED_CAMPAIGNS` in `app/src/attribution.py`. The page's own
 links are untagged so they keep the post's first touch
-([../../attribution.md](../../attribution.md)).
+([../../app/attribution.md](../../app/attribution.md)).
 
 ## Gates before posting
 

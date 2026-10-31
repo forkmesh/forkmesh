@@ -1,4 +1,4 @@
-"""Which core nodes are quarantined, as this app host sees it (docs/IDS.md).
+"""Which core nodes are quarantined, as this app host sees it (docs/operations/intrusion-detection.md).
 
 The root IDS on a node that detects an intrusion (``deploy/core/ids.py``)
 writes a ``self`` row to ``cluster_quarantine`` signed with its own IDS key;

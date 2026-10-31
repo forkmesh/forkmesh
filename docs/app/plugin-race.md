@@ -19,7 +19,7 @@ constants at the top of `plugin_race.py`. The pages state the same numbers, so
 change both together.
 
 The race is separate from the points-and-squads hackathon engine
-(`hackathon.py`, [www/docs/hackathon.md](../../www/docs/hackathon.md)). Its
+(`hackathon.py`, [docs/hackathon.md](../hackathon.md)). Its
 finish line is marketplace ratings, which that engine does not model.
 
 ## Who counts

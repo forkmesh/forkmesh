@@ -24,7 +24,7 @@ The caps on the issue path are sized for that; keep paired values in step.
 | `MAX_PENDING_ISSUES`, `MAX_PENDING_DISCUSSIONS` | `app/src/entry.py` | 2,000 | web posts waiting for the git node |
 | `MAX_PENDING_PER_AUTHOR` | `app/src/entry.py` | 100 | the same, per author |
 | `MAX_NOTIFICATIONS_PER_RECIPIENT` | `app/src/entry.py` | 2,000 | notifications kept per account |
-| title, body, labels, per-run counts | `app/src/repository_provider_mirror.py` | 256 chars, 262,144 chars, 100 labels, 100 issues and 500 comments per run, all replies | the in-app provider mirror; `tools/forge_sync.py` (see [forge-sync](../../www/docs/forge-sync.md)) has no caps |
+| title, body, labels, per-run counts | `app/src/repository_provider_mirror.py` | 256 chars, 262,144 chars, 100 labels, 100 issues and 500 comments per run, all replies | the in-app provider mirror; `tools/forge_sync.py` (see [forge-sync](../forge-sync.md)) has no caps |
 
 ## The issue index
 
@@ -176,7 +176,7 @@ as soon as it arrives; later cards are `content-visibility: auto`.
 ## Mirrored attachments
 
 `tools/forge_attachments.py` (see
-[forge-sync.md](../../www/docs/forge-sync.md#attachments)) keeps a mirror's
+[forge-sync.md](../forge-sync.md#attachments)) keeps a mirror's
 images and files in the repository itself, so they count against its size:
 
 | Limit | Value | Where |

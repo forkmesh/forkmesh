@@ -1,6 +1,6 @@
 package mirrornode
 
-// Per-job resource containment for runner agent jobs (docs/RUNNERS.md).
+// Per-job resource containment for runner agent jobs (docs/operations/runners.md).
 //
 // When systemd-run is usable, each provider CLI runs in its own transient
 // scope with MemoryMax and CPUQuota, and as runner.jobUid when the daemon is

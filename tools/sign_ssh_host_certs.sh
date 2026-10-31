@@ -2,7 +2,7 @@
 # Give every round-robin git gateway ONE SSH identity, via a host certificate.
 #
 # ssh.forkmesh.com resolves to several mirrors (see
-# www/docs/operations/git-ssh-gateway.md). Each of them has its own host key, so a
+# docs/operations/git-ssh-gateway.md). Each of them has its own host key, so a
 # client that pinned one key hits "REMOTE HOST IDENTIFICATION HAS CHANGED" the
 # moment DNS hands it a different member. The fix is not to share a private
 # host key between machines — it is to have each machine keep its own key and

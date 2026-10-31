@@ -12,7 +12,7 @@ leaves behind.
 
 The contract lives in ``conformance/availability-contract/v1/model.json``, the
 shared fixture in ``conformance/availability-contract/v1/fixture.json``, and
-the model is documented in ``www/docs/availability-contract.md``.
+the model is documented in ``docs/availability-contract.md``.
 
 Observations are ``GET /api/repo/<owner>/<repo>/mirrors`` payloads, so every
 sample is scored by ``availability_proof.evaluate_mirrors_payload`` from the

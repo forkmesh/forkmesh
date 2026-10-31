@@ -15,7 +15,7 @@ vX.Y". Anyone signed in may report abuse; administrators hide reviews.
 This module is provider-neutral: every Worker/D1 primitive arrives through the
 narrow runtime adapter in ``marketplace_runtime._MarketplaceReviewsRuntime``,
 so the whole route is testable against sqlite3. Wire format and rules:
-``docs/MARKETPLACE_RATINGS.md``.
+``docs/marketplace/ratings.md``.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 Opt-in runner for a repository's `.forkmesh/*.yml` workflows on a mirror
 (home: [README.md](README.md)). Wire contract and operator steps:
-[mirror-actions-control.md](../../www/docs/operations/mirror-actions-control.md).
+[mirror-actions-control.md](../operations/mirror-actions-control.md).
 Code: `server/actions.go`, `server/actions_workflow.go`,
 `server/actions_control.go`; systemd drop-in
 `server/packaging/systemd/forkmesh-mirror-node-actions.conf`.

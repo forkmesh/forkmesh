@@ -59,7 +59,7 @@ so a broken link in shared chrome is one finding with its page count.
 
 Each finding has `url` (the page), `target`, `detail`, and `source`: the
 repository file for the page when the URL maps to one
-(`www/templates/pages/…`, `www/docs/…md`, `www/public/…`). Grouped findings
+(`www/templates/pages/…`, `docs/…md`, `www/public/…`). Grouped findings
 list every page in `pages` and their files in `sources`. `compare` matches
 findings by check and target (or page), so a fix shows up as resolved.
 

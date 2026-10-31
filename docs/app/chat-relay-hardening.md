@@ -74,7 +74,7 @@ recipient's keys only.
   app and system frames; the relay strips `srv` from any client frame). It is
   shown as the integration it names, never as a person. This holds in public
   and private channel rooms (webhook-fed rooms such as the private
-  `#email-log` notices channel, [../MAIL_LOG.md](../MAIL_LOG.md)), never in
+  `#email-log` notices channel, [../MAIL_LOG.md](../operations/mail-log.md)), never in
   direct-message rooms; a frame with `serverVisible` is labelled
   server-visible.
 

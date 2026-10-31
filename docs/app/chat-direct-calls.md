@@ -5,7 +5,7 @@ turning a DM into a group, and one-to-one audio/video calls with on-device
 face, background and voice filters. Access rules and DM delivery are in
 [chat-private-rooms.md](chat-private-rooms.md); group calls in
 [chat-group-calls.md](chat-group-calls.md); how chat is encrypted in
-[encryption](../../www/docs/encryption.md).
+[encryption](../encryption.md).
 
 ## Direct messages on the dashboard
 
@@ -148,7 +148,7 @@ of the alert, once per phone and call (`_APNS_VOIP_CALL_MEMO`, 2 min), so the
 20 s re-ring does not report the call twice. A phone without a VoIP token, or
 whose VoIP push fails, gets the alert; a VoIP token Apple calls dead is
 dropped and the alert token kept. iOS shows it as a CallKit call
-(`native/ios/docs/FMChat.md`). A VoIP push needs no notification permission,
+(`docs/native/ios/FMChat.md`). A VoIP push needs no notification permission,
 so `PushNotificationService.start` always calls `PushPlatform.registerForCalls`
 (`registerForRemoteNotifications`, which iOS answers whatever the permission)
 and registers both tokens without prompting; with notifications off, calls
@@ -216,7 +216,7 @@ rings (`hangUp` in `chat-calls.js`; the `call-bye` carries
   panel spans the width with 8 px margins and scrolls if taller than the
   screen; Start / Mute / Camera off / Hang up share each row at 44 px tall,
   and Accept and Decline share the card's width. The phone apps follow the
-  same idea (`native/ios/docs/FMChat.md`).
+  same idea (`docs/native/ios/FMChat.md`).
 - **Large view and mini window.** A live or ringing video call
   (`.is-call.is-video`) fills most of the window (up to 1100 px wide, centred,
   remote video up to the window height less the controls, self view up to
@@ -280,7 +280,7 @@ route line (`.fm-q` uses `display: contents`); group calls and the Office
   sendKbps, recvKbps, inWidth, inHeight, inFps, outWidth, outHeight, outFps,
   limit, mic: [...], peer: [...]}` once a second (`mic`/`peer` are the level
   samples since the last event; `live` is false in preview). The apps draw
-  the widget natively (`native/ios/docs/FMChat.md`,
+  the widget natively (`docs/native/ios/FMChat.md`,
   [../native/ANDROID.md](../native/ANDROID.md)).
 - **Diagnose button.** Right of the pill (`.fm-q-bar` holds both), labelled
   "Diagnose" with a dot, in the foreground colour with a stronger border so it
@@ -325,7 +325,7 @@ phone through the `calls` account event and push above: iOS reports incoming
 calls to CallKit (system call screen, lock screen, system ringtone), woken by
 a VoIP push even when suspended or killed; Android's background connection
 wakes the call engine or posts a ringing full-screen call notification
-(`native/ios/docs/FMChat.md`, [../native/ANDROID.md](../native/ANDROID.md)).
+(`docs/native/ios/FMChat.md`, [../native/ANDROID.md](../native/ANDROID.md)).
 
 The page applies the same quality settings as `/chat` (constraints, sender
 caps, Opus FEC on the SDP it returns from `offer`/`answer`) and posts

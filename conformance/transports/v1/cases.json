@@ -1,6 +1,6 @@
 {
   "schema": "forkmesh-transport-conformance-cases-v1",
-  "description": "Route planning and profile validation vectors for forkmesh-transport-profile-v1 (www/docs/transports.md). Every implementation of the planner must produce these routes, refusals, and codes in this order. Expectations are written by hand; do not regenerate them from an implementation.",
+  "description": "Route planning and profile validation vectors for forkmesh-transport-profile-v1 (docs/transports.md). Every implementation of the planner must produce these routes, refusals, and codes in this order. Expectations are written by hand; do not regenerate them from an implementation.",
   "profiles": {
     "standard-all": {
       "schema": "forkmesh-transport-profile-v1",

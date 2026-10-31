@@ -1,7 +1,7 @@
 /*
  * ForkMesh portable social signals v1, browser/Node implementation.
  *
- * Written from www/docs/social-signals.md, independently of
+ * Written from docs/social-signals.md, independently of
  * tools/social_signals.py. Both must agree on every case in
  * conformance/social-signals/v1/vectors.json, and the quality gate round-trips
  * a signed bundle between them. Signing and verification use WebCrypto; the

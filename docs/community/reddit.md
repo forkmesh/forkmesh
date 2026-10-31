@@ -51,7 +51,7 @@ which is not a post, comment or message.
   between mentions and 30 days between showcases per subreddit.
 - `link --subreddit <name>` builds a tagged `forkmesh.com` link
   (`utm_source=reddit&utm_medium=social&utm_campaign=reddit_scout&utm_content=<subreddit>`);
-  static docs and blog links go out untagged ([../attribution.md](../attribution.md)).
+  static docs and blog links go out untagged ([../attribution.md](../app/attribution.md)).
 
 Reading modes: public Atom feeds by default (slow, paced, retried with
 backoff), or app-only OAuth when `REDDIT_CLIENT_ID` and

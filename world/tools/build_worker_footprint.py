@@ -132,7 +132,7 @@ LAZY_MODULES = {
     # that resolves on the hosted-create route or on a receive-pack
     # request carrying a Basic credential.
     "hosted_git.py",
-    # Core-hosted repository replication and quotas (docs/HOSTED_REPOS.md);
+    # Core-hosted repository replication and quotas (docs/operations/core-hosted-repositories.md);
     # imported only by hosted_git.
     "hosted_repos.py",
     # Campaign routes, hooks, personal pages and the admin page: entry.py holds

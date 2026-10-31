@@ -254,7 +254,7 @@ def register_core(db, ssh, runner, node, account, app_url):
                     "%s: the account is bound to another key than the node's "
                     "(a rebuilt core reusing the name); its daemon gets HTTP "
                     "401 until the owner reclaims the name "
-                    "(docs/NODE_OWNERSHIP.md)" % account)
+                    "(docs/operations/node-ownership.md)" % account)
         runner.say("%s: node account already active" % account)
         return False
     if record and record.get("kind") not in (None, "node"):
@@ -508,7 +508,7 @@ def transfer(db, ssh, runner, fleet, source, target, app_url,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Fleet node ownership (docs/NODE_OWNERSHIP.md)")
+        description="Fleet node ownership (docs/operations/node-ownership.md)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("status")
     reg = sub.add_parser("register")

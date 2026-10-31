@@ -243,7 +243,7 @@ Skills live in `.forkmesh/skills/`.
 
 No app code on the core nodes gives an LLM tools to run on the server: ForkBot chat uses
 JSON-schema intent classification, other AI calls are tool-less, and
-marketplace package workers and ForkMesh Apps ([../APPS.md](../APPS.md))
+marketplace package workers and ForkMesh Apps ([../APPS.md](../app/oauth-apps.md))
 expose fixed APIs, not LLM tools.
 
 ## Known gaps
@@ -263,5 +263,5 @@ expose fixed APIs, not LLM tools.
 - [README.md](README.md): agent runs and sandboxing
 - [../security/agent-host-boundaries.md](../security/agent-host-boundaries.md)
 - [../desktop/agents-ui.md](../desktop/agents-ui.md)
-- [../server/agent-jobs.md](../server/agent-jobs.md), [../RUNNERS.md](../RUNNERS.md)
+- [../server/agent-jobs.md](../server/agent-jobs.md), [../RUNNERS.md](../operations/runners.md)
 - [../tools/README.md](../tools/README.md)

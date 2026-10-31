@@ -1,6 +1,6 @@
 package mirrornode
 
-// Web Actions control requests (www/docs/operations/mirror-actions-control.md).
+// Web Actions control requests (docs/operations/mirror-actions-control.md).
 //
 // The gateway is a courier: it writes the routing Worker's signed capability
 // next to the exact request body into <mirror-gateway>/actions-control/. This

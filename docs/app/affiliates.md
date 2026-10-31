@@ -1,7 +1,7 @@
 # Affiliate program
 
 Part of [the App docs](README.md). The September Revenue Contest
-([www/docs/hackathon.md](../../www/docs/hackathon.md)), kept open all year
+([docs/hackathon.md](../hackathon.md)), kept open all year
 without its leaderboard. People with a verified ForkMesh account join as
 affiliates, claim companies before any outreach, and bring them onto a paid
 plan through the Patreon link on the homepage. They earn 50% of each eligible

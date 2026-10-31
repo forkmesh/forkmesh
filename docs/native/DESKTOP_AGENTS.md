@@ -5,7 +5,7 @@ desktop agents next to node runs and manage them over the local control
 channel: directly on the same network, through the relay on the core nodes
 when away, end-to-end encrypted either way
 ([desktop networking](../desktop/networking.md); [PARITY.md](PARITY.md) WS7;
-[encryption](../../www/docs/encryption.md)). The website's Agents tab uses the
+[encryption](../encryption.md)). The website's Agents tab uses the
 same channel ([desktop-agents-web.md](../app/desktop-agents-web.md)).
 
 ## Reaching a desktop without meeting it on the LAN
@@ -955,10 +955,10 @@ per provider, New terminal, every account profile (name, signed-in identity,
 usage windows), tap to use for new agents, and a menu with New terminal as
 this account, Log in, Log out, Rename, Delete; Add account creates and selects
 a profile and opens its sign-in
-([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md#usage-on-ios)).
+([../marketplace-usage-feed-mastodon.md](../marketplace/usage-feed-mastodon.md#usage-on-ios)).
 Android's `UsageScreen` offers the same actions, with Log in and Log out
 started as `terminal.start {provider, mode, account}`
-([Usage on Android](../marketplace-usage-feed-mastodon.md#usage-on-android)).
+([Usage on Android](../marketplace/usage-feed-mastodon.md#usage-on-android)).
 
 - Capabilities `terminal.accounts` and `agentops.accounts` gate the per-account
   terminals and the account methods.

@@ -2,7 +2,7 @@
   "schema": "forkmesh-external-dependency-map-v1",
   "issue": 503,
   "updated": "2026-10-24",
-  "documentation": "www/docs/external-dependency-map.md",
+  "documentation": "docs/external-dependency-map.md",
   "inventoryScope": {
     "include": [
       "app/src/*.py",
@@ -81,7 +81,7 @@
       "gap": "Every ForkMesh domain uses Cloudflare DNS with no second provider, so a Cloudflare DNS outage takes app.forkmesh.com and world.forkmesh.com offline even while the core nodes are healthy.",
       "privacyDisclosure": "Cloudflare hosts the public website at forkmesh.com, passes requests made there on to ForkMesh’s servers, and provides DNS for ForkMesh domains. The app, APIs, account data, and relay infrastructure run on ForkMesh’s own servers.",
       "personalData": true,
-      "evidence": ["www/worker.js", "www/wrangler.production.toml", "docs/PLAN.md", "app/src/app_runtime.py", "app/src/usage_reporting.py", "app/src/entry.py"],
+      "evidence": ["www/worker.js", "www/wrangler.production.toml", "docs/operations/served-stack.md", "app/src/app_runtime.py", "app/src/usage_reporting.py", "app/src/entry.py"],
       "drills": ["app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected", "app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum"]
     },
     {
@@ -101,7 +101,7 @@
       "recovery": "Caddy retries renewal automatically; the operator can switch ACME issuer or use the Cloudflare Tunnel mode.",
       "alternative": "Self-host operators may point Caddy at any ACME issuer or their own certificate, or run the mirror node in Cloudflare Tunnel mode.",
       "gap": "No automated drill simulates ACME issuance failure or certificate expiry on a direct-HTTPS mirror.",
-      "evidence": ["tools/direct_https_bootstrap.py", "www/docs/operations/direct-https-mirror-gateway.md"],
+      "evidence": ["tools/direct_https_bootstrap.py", "docs/operations/direct-https-mirror-gateway.md"],
       "drills": []
     },
     {
@@ -204,7 +204,7 @@
       "outage": "Fresh builds that need to download packages fail. Deployed services never contact registries, and the ForkMesh Actions critical suites use preinstalled packages.",
       "recovery": "Retry the build, or build from a warm package cache.",
       "alternative": "Self-host builds may use a local package mirror or cache; the app and mirror node need no third-party packages at runtime.",
-      "evidence": ["tools/requirements-ci.txt", "docs/dependency-security-audit-2026-09-13.md", "tools/android-toolchain.sh", "tools/package/linux-baseline/stage-qt.sh", "tools/package/linux-baseline/stage-packages.sh", "tools/package/linux-baseline/oci_rootfs.py", "tools/package/macos_universal_on_mac.sh", "tools/clean_machine_vm.py"],
+      "evidence": ["tools/requirements-ci.txt", "docs/security/dependency-security-audit.md", "tools/android-toolchain.sh", "tools/package/linux-baseline/stage-qt.sh", "tools/package/linux-baseline/stage-packages.sh", "tools/package/linux-baseline/oci_rootfs.py", "tools/package/macos_universal_on_mac.sh", "tools/clean_machine_vm.py"],
       "drills": ["app/tests/test_offline_ci_workflow.py::test_deploy_fails_before_secrets_when_the_sandbox_has_no_egress"]
     },
     {
@@ -270,7 +270,7 @@
       "alternative": "Open the app, or use the desktop or web client; a self-host leaves the APNs secrets unset and push becomes a silent no-op.",
       "privacyFinding": true,
       "personalData": true,
-      "evidence": ["app/src/apns.py", "www/docs/operations/mobile-push-notifications.md"],
+      "evidence": ["app/src/apns.py", "docs/operations/mobile-push-notifications.md"],
       "drills": [
         "app/tests/test_apns_push.py::test_send_one_never_raises_when_the_gateway_is_unreachable",
         "app/tests/test_apns_push.py::test_push_test_handler_reports_missing_credentials_without_sending"
@@ -319,7 +319,7 @@
       "gap": "No drill simulates a Patreon API outage during member reconciliation.",
       "privacyFinding": true,
       "personalData": true,
-      "evidence": ["app/src/patreon_handler.py", "app/src/patreon.py", "www/docs/operations/patreon.md"],
+      "evidence": ["app/src/patreon_handler.py", "app/src/patreon.py", "docs/operations/patreon.md"],
       "drills": []
     },
     {
@@ -339,7 +339,7 @@
       "recovery": "The next successful RPC read refreshes balances; pending verifications retry.",
       "alternative": "Point SOLANA_RPC_URL at your own Solana node, or self-host with incentives unconfigured.",
       "privacyDisclosure": "A configured Solana JSON-RPC endpoint is queried for public pool balances",
-      "evidence": ["app/src/solana.py", "app/src/ledger.py", "www/docs/incentive-independence.md"],
+      "evidence": ["app/src/solana.py", "app/src/ledger.py", "docs/incentive-independence.md"],
       "drills": [
         "app/tests/test_solana_display_balance_cache.py::test_a_dead_rpc_keeps_the_last_reading_rather_than_publishing_zero",
         "app/tests/test_central_fund.py::test_pool_verification_serves_bounded_stale_through_rpc_outages",
@@ -549,7 +549,7 @@
       "alternative": "A self-hosted instance runs the same app on any Linux server it owns, and the mirror node installs on any Linux host with install.sh. Moving the hosted service to another provider means provisioning new cores and restoring a backup; the fleet tools only create Vultr instances.",
       "gap": "All three cores and the runner are in one Vultr region, and no drill covers losing the region or the account.",
       "personalData": true,
-      "evidence": ["deploy/fleet.toml", "docs/OPERATIONS.md", "tools/next_fleet.py", "tools/next_backup.py", "app/host/forkmesh_host/vultr_guard.py", "app/host/forkmesh_host/d1_rqlite.py", "app/host/forkmesh_host/durable.py", "desktop/src/MainWindowChat.cpp"],
+      "evidence": ["deploy/fleet.toml", "docs/operations/README.md", "tools/next_fleet.py", "tools/next_backup.py", "app/host/forkmesh_host/vultr_guard.py", "app/host/forkmesh_host/d1_rqlite.py", "app/host/forkmesh_host/durable.py", "desktop/src/MainWindowChat.cpp"],
       "drills": ["deploy/tests/test_next_dns.py::test_production_failover_removes_from_both_names_and_readds", "app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising", "app/host/tests_unit/test_autoscale.py::test_boot_timeout_destroys_a_node_that_never_joined"]
     },
     {

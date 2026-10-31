@@ -59,7 +59,7 @@ events.
   no script, before the invited person sees who invited them), so they are
   not counted. The static hackathon pages are.
 - No IP address is stored.
-- Campaign attribution ([../attribution.md](../attribution.md)) is a
+- Campaign attribution ([../attribution.md](attribution.md)) is a
   separate server-side system.
 
 ## Storage

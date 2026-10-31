@@ -60,7 +60,7 @@ The plan prints every kept branch with the reason.
 ## Remote branches
 
 Cores refuse branch deletes on push (`receive.denyDeletes`,
-[CORE_PUSH.md](../CORE_PUSH.md)). `next_fleet.py delete-refs` sends one batch
+[CORE_PUSH.md](../operations/core-push.md)). `next_fleet.py delete-refs` sends one batch
 per core over one SSH session, after one IDS expectation per core, and runs the
 cores in parallel. Each branch is deleted only while it is still at the listed
 commit and that commit is in `main`; a branch that moved is reported and kept.

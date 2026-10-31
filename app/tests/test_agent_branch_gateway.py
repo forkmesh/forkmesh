@@ -265,7 +265,7 @@ def test_operations_are_write_only_routed_and_need_the_executor():
         assert operation in edge_routing.MERGE_EXECUTOR_OPERATIONS
     assert '" requires an operator-owned mergeExecutorCommand"' in source
     schema = json.loads(
-        (ROOT / "www" / "docs" / "mirror-gateway-config.schema.json")
+        (ROOT / "docs" / "mirror-gateway-config.schema.json")
         .read_text("utf-8"))
     assert "merge-agent-branch" in json.dumps(schema)
     go = (ROOT / "server" / "merge_branch.go").read_text("utf-8")

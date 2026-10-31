@@ -3,7 +3,7 @@
 
 ``resolve`` reads a bundle of raw signed documents plus local follows and
 overrides and prints the resolution defined in
-www/docs/design/scoped-trust-lists.md. ``verify`` checks each document on
+docs/design/scoped-trust-lists.md. ``verify`` checks each document on
 its own. ``drill`` replays the compromised-list drill from the shared vectors
 and fails unless the list flips from ``active`` to ``recovered`` with every
 malicious assertion gone.

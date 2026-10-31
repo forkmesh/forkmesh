@@ -2,7 +2,7 @@
 
 Part of [the desktop docs](README.md). The user-facing build guide with
 per-distribution package commands is
-[www/docs/qt-client.md](../../www/docs/qt-client.md#build-and-run-from-source).
+[docs/qt-client.md](../qt-client.md#build-and-run-from-source).
 
 ## Requirements
 

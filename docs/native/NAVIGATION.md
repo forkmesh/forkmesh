@@ -378,7 +378,7 @@ at least 5 s apart), `memPct` (`MemTotal` less `MemAvailable`) and `diskPct`
 (root file system, as `df` counts) in its `host_metrics` row every 30 s, and
 `/api/status` adds `resources: {cpu, memory, disk}` to a `core:` system while
 that row is under 3 minutes old (`STATUS_CORE_METRICS_FRESH_MS`); see
-[architecture.md](../../www/docs/architecture.md) for the cores. The desktop's
+[architecture.md](../architecture.md) for the cores. The desktop's
 bars read the latest `DesktopVitals` while the phone watches a desktop; a
 relayed desktop's globe then moves to the bottom-left. VoiceOver labels add
 the percentages.
@@ -422,7 +422,7 @@ Diagnostics screen opens from its page (the `diagnostics` route).
 - DMs and groups use the conversation header instead: back circle, a pill with
   the avatar and the name beside it over the presence, route ("Direct · Wi-Fi",
   "Direct · Bluetooth", "Direct only") and server-copies line, and the call
-  buttons ([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)).
+  buttons ([docs/native/ios/FMChat.md](ios/FMChat.md)).
 - Under a DM's header, each device waiting for approval gets a banner with
   Approve, Block and the safety number; the transcript carries the matching
   system lines and "Your safety number with X changed". The DM details sheet
@@ -465,7 +465,7 @@ Diagnostics screen opens from its page (the `diagnostics` route).
   stores ciphertext only); office and server rooms use the server's list.
   `@here`, `@channel` and `@everyone` are offered first, highlight as mentions,
   and ask before notifying six or more people. Link previews
-  (`ChatLinkPreviews`) are described in `native/ios/docs/FMChat.md`.
+  (`ChatLinkPreviews`) are described in `docs/native/ios/FMChat.md`.
 - Avatars paint on the first frame from `FmAvatarImages` and a persisted
   `ChatAvatarCache`.
 
@@ -652,7 +652,7 @@ describes, moves, and offers three depths.
   the account actions and terminals (`UsageScreen.swift`, body
   `AgentAccountsPanel`), drawn natively instead of the package's web page.
   The Agents usage bars push it too
-  ([Usage](../marketplace-usage-feed-mastodon.md#usage-on-ios)).
+  ([Usage](../marketplace/usage-feed-mastodon.md#usage-on-ios)).
 - **RSS Reader** (`.rssReader`, `/dashboard/rss`, `forkmesh://rss-reader`,
   Personal group): a local-only feed reader laid out after NetNewsWire. Feeds
   are fetched, parsed and stored on the phone (`RSSReader*.swift` in
@@ -978,7 +978,7 @@ Every command uses `.keyboardShortcut`, so it shows in the hold-⌘ overlay.
 
 ### 6.1 App Intents, Siri and Shortcuts
 
-User guide: [`www/docs/mobile/siri.md`](../../www/docs/mobile/siri.md); update it
+User guide: [`docs/mobile/siri.md`](../mobile/siri.md); update it
 when a phrase or answer changes.
 
 - **Entities**: repositories, agent sessions, issues, pulls, notes, projects,

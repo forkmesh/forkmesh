@@ -31,8 +31,8 @@ MAIN_WINDOW_CHAT_SOURCES = (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-MATRIX_PATH = ROOT / "www" / "docs" / "install-support-matrix.json"
-MATRIX_DOC = ROOT / "www" / "docs" / "install-support-matrix.md"
+MATRIX_PATH = ROOT / "docs" / "install-support-matrix.json"
+MATRIX_DOC = ROOT / "docs" / "install-support-matrix.md"
 LATEST = ROOT / ".forkmesh" / "releases" / "latest"
 INSTALLER = ROOT / "www" / "public" / "install.sh"
 UNINSTALLER = ROOT / "www" / "public" / "uninstall.sh"

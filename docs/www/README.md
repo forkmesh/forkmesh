@@ -2,7 +2,7 @@
 
 The `forkmesh-www` Worker serves `forkmesh.com` and `www.forkmesh.com`: the
 landing page, marketing pages, the blog and RSS, the hosted documentation
-(including the Markdown library rendered from `www/docs/`), the installer
+(including the Markdown library rendered from `docs/`), the installer
 scripts, and shared site chrome. It is a small JavaScript Worker in front of
 Cloudflare Static Assets, deployed from `www/wrangler.production.toml`. The
 App (`app.forkmesh.com`) and World run on the core nodes; the Worker has no
@@ -13,8 +13,8 @@ route, so a deploy from it fails instead of creating a second Worker.
 
 The site is the one part of the served stack still on Cloudflare; the cores
 behind app and world are reached by DNS round robin, not through it
-([architecture](../../www/docs/architecture.md),
-[censorship resilience](../../www/docs/censorship-resilience.md)). Index:
+([architecture](../architecture.md),
+[censorship resilience](../censorship-resilience.md)). Index:
 [docs/README.md](../README.md).
 
 ## Code map
@@ -39,9 +39,9 @@ behind app and world are reached by DNS round robin, not through it
 | `#everywhere` in `www/public/index.html`, `assets/everywhere/` | "Your mesh, wherever you work": the connection line, the three device mockups and their screenshots |
 | `www/public/mobile.html`, `mobile.css`, `assets/mobile/` | The `/mobile` page for the iPhone app in the landing page's style, built from real app screenshots ([mobile page](mobile-page.md)) |
 | `#mobile-app` in `www/public/index.html` | "Your mesh, now in your pocket": the landing page's call to action for the phone app ([mobile page](mobile-page.md#landing-page-section)) |
-| `www/docs/` | Public documentation library (Markdown and JSON schemas); see the note at the top of [www/docs/README.md](../../www/docs/README.md) |
+| `docs/` | Public documentation library (Markdown and JSON schemas); see the note at the top of [docs/README.md](../README.md) |
 | `app/tools/build_site_assets.py www` | Stages `www/dist` (the upload), rendering the docs library into it |
-| `app/tools/docs_site.py`, `docs_markdown.py`, `docs_history.py` | Render `www/docs/**/*.md` to `/docs/<path>/`, `/docs/library/`, `/docs/history/`, `/docs/documents/` |
+| `app/tools/docs_site.py`, `docs_markdown.py`, `docs_history.py` | Render `docs/**/*.md` to `/docs/<path>/`, `/docs/library/`, `/docs/history/`, `/docs/documents/` |
 | `www/public/robots.txt`, `sitemap.xml` (built) | Crawler rules and the sitemap they point to; see Security |
 | `www/tests/` | Python and Node tests for routing, the docs library, headers and scripts |
 | `www/deploy.sh` | Calls `app/deploy.sh www`; see Traps |
@@ -65,7 +65,7 @@ Routing in `www/worker.js`, in order:
    ([package pages](../marketplace/README.md#share-links-and-package-pages));
    other `/<owner>/<repo>` paths redirect to the App.
 7. Everything else is a static asset, with first-party attribution captured
-   on page navigations (`fm_attr` cookie; [attribution](../attribution.md)).
+   on page navigations (`fm_attr` cookie; [attribution](../app/attribution.md)).
 
 Many redirects are also in `www/public/_redirects` so the asset router
 answers them without running the Worker. Static responses carry
@@ -79,12 +79,12 @@ answers them without running the Worker. Static responses carry
 - **Visitor identity.** Caddy on a core sees only a Cloudflare egress
   address for relayed requests, so the Worker signs the visitor's address
   and country into `x-forkmesh-edge-client` with `WWW_EDGE_SECRET`
-  ([edge_client.md](../../deploy/core/edge_client.md)); the host verifies it before the App runs.
+  ([edge_client.md](edge-client.md)); the host verifies it before the App runs.
   Without the secret no identity is forwarded.
 - **Downloads card.** `homepage-downloads.js` reads
   `.forkmesh/releases/<channel>/release.json`, its `.sig` and
   `desktop/CMakeLists.txt` from app.forkmesh.com, verifies the signature and
-  shows one card per platform ([release verification](../../www/docs/mirroring.md)).
+  shows one card per platform ([release verification](../mirroring.md)).
   An asset missing from `latest` that is only held back (Windows, macOS) does
   not drop straight to "Coming soon": `earlierAsset` checks the signed
   `candidate-<major>.<minor>.<patch-1…patch-6>` manifests, newest first, and
@@ -104,12 +104,12 @@ answers them without running the Worker. Static responses carry
 ## Protocols and interfaces
 
 - `/docs/library/` and every `/docs/<path>/` page are generated from
-  `www/docs/` by `app/tools/docs_site.py`. Relative links, heading anchors and
+  `docs/` by `app/tools/docs_site.py`. Relative links, heading anchors and
   schema references are resolved; Git history dates each page. Code and tests
-  reference many `www/docs/**` paths directly, so do not rename or move them.
+  reference many `docs/**` paths directly, so do not rename or move them.
 - `/api/home-availability`: JSON for the homepage availability strip.
 - `x-forkmesh-edge-client: v1,<ip>,<country>,<ts>,<mac>`
-  ([edge_client.md](../../deploy/core/edge_client.md)).
+  ([edge_client.md](edge-client.md)).
 
 ## Configuration
 
@@ -194,7 +194,7 @@ The node auto-deploy agent keeps forkmesh.com current: after each deploy
 check it compares the website fingerprint with the live
 `x-forkmesh-deploy-fingerprint` and, when they differ, runs `wrangler deploy
 --config wrangler.production.toml` from the pinned worktree
-([auto-deploy](../deploy/auto-deploy.md), "The website Worker"). By hand:
+([auto-deploy](../operations/auto-deploy.md), "The website Worker"). By hand:
 
 ```sh
 cd www && npx --yes wrangler@4.136.2 deploy --config wrangler.production.toml \
@@ -272,7 +272,7 @@ Crawlers and scrapers:
 - `www/public/analytics-sdk.js` is generated by
   `marketplace/packages/analytics/tools/sync_assets.py`; edit the package.
 - Removed pages must also leave `_redirects`, `app/src/static_routes.py`,
-  `app/tools/deploy_targets.py` and `www/docs/external-dependency-map.md`.
+  `app/tools/deploy_targets.py` and `docs/external-dependency-map.md`.
 - `features.html` draws filled icons from an inline SVG sprite whose
   knockouts are masks; keep the `.fx-sprite mask > g` rule, and hide the
   sprite with zero size, not `display: none`. Its six-column grid's
@@ -334,11 +334,10 @@ Test: `app/tests/test_www_plugin_pages.py`.
 ## Related docs
 
 - [docs/app/README.md](../app/README.md), [World](../world/README.md)
-- [OPERATIONS.md](../OPERATIONS.md), [auto-deploy](../deploy/auto-deploy.md)
+- [OPERATIONS.md](../operations/README.md), [auto-deploy](../operations/auto-deploy.md)
 - [templates](templates.md), [genie spider](genie-spider.md),
   [site crawler](site-crawler.md), [auth backdrop](auth-mesh.md),
   [auth theme](auth-theme.md), [mobile page](mobile-page.md)
-- [www/docs/README.md](../../www/docs/README.md) (public library index)
-- [Cloudflare Workers self-host](../../www/docs/operations/worker-split.md)
+- [docs/README.md](../README.md) (public library index)
   (optional self-host; not how forkmesh.com's app runs)
-- [attribution](../attribution.md)
+- [attribution](../app/attribution.md)

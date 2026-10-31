@@ -170,7 +170,7 @@ type Status struct {
 	LastEndpointAt string            `json:"lastEndpointAt,omitempty"`
 	SyncCount      int64             `json:"syncCount"`
 	// SyncStatus explains this node's copy in the shared
-	// forkmesh-sync-status-v1 model (www/docs/sync-status.md).
+	// forkmesh-sync-status-v1 model (docs/sync-status.md).
 	SyncStatus SyncStatus   `json:"syncStatus"`
 	Runtime    RuntimeStats `json:"runtime"`
 	// Recovery exposes the last recorded backup and restore drill so the

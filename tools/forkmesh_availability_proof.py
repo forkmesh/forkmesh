@@ -2,7 +2,7 @@
 """Reproduce a repository's availability proof and risk score.
 
 Implements the forkmesh-availability-proof-v1 model
-(www/docs/availability-proof.md) by reusing the Worker's reference
+(docs/availability-proof.md) by reusing the Worker's reference
 implementation, so the CLI, the API, and the shared fixture always agree.
 
   forkmesh_availability_proof.py explain payload.json          plain-language summary

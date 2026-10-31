@@ -20,7 +20,7 @@ Each run covers every line, then states what changed since the previous entry.
 | --- | --- | --- |
 | Cash and runway | reward pool and treasury balances, monthly burn, months of runway | ledger header (`app/src/ledger.py`), on-chain balances |
 | Revenue and collection | whether money can be collected, who receives it, paying members, price consistency across pages | payment and plan code, membership prompt, `www/public/business-model.json` |
-| Operating costs and renewals | fleet, autoscale and burst ceilings, AI subscriptions, developer programs, domain, build minutes, mail, receipts the ledger marks missing | [OPERATIONS.md](../OPERATIONS.md), [fleet/AUTOSCALING.md](../fleet/AUTOSCALING.md), `/ledger` |
+| Operating costs and renewals | fleet, autoscale and burst ceilings, AI subscriptions, developer programs, domain, build minutes, mail, receipts the ledger marks missing | [OPERATIONS.md](../operations/README.md), [fleet/AUTOSCALING.md](../operations/autoscaling.md), `/ledger` |
 | Contributor rewards and payout controls | backlog against the daily cap, how rewards become payable, address changes, held receipts | `desktop/src/TipSigner.cpp`, `desktop/src/MainWindowRewardPool.cpp`, `app/src/ledger.py` |
 | Ledgers and reconciliation | recorded outflows against on-chain, unmatched transfers, audit trail | `app/src/ledger.py` chain backfill, `tools/public_interest_funding.py` |
 | Tax and compliance | entity receiving revenue, recipient tax forms, filing deadlines | the accountant |

@@ -207,7 +207,7 @@ final class DocsLibraryTests: XCTestCase {
             docs.resolve(from: from, href: "../../public/install.sh"), .external(URL(string: "https://forkmesh.com/install.sh")!))
         XCTAssertEqual(
             docs.resolve(from: from, href: "runbook.md#step-2"),
-            .external(URL(string: "https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/runbook.md#step-2")!))
+            .external(URL(string: "https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/operations/runbook.md#step-2")!))
         XCTAssertEqual(
             docs.resolve(from: from, href: "../../../app/host/main.py"),
             .external(URL(string: "https://app.forkmesh.com/forkmesh/forkmesh/tree/main/app/host/main.py")!))

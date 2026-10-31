@@ -13,7 +13,7 @@ sides prove themselves in one request:
 The owner is always the accepting account; a body `user` is only a claim
 checked against it. App tokens (`fmat_…`) are not accepted as a session.
 Part of [docs/security](README.md); key and signature basics are in
-[Encryption and signatures](../../www/docs/encryption.md).
+[Encryption and signatures](../encryption.md).
 
 ## Grant forms
 

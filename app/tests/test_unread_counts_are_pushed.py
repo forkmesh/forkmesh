@@ -84,7 +84,7 @@ QT_CHAT = "".join(
 )
 QT_INTERNAL = (REPO / "desktop" / "src" / "MainWindowInternal.h").read_text(
     encoding="utf-8")
-DOC = (REPO / "www" / "docs" / "operations" / "polling-elimination.md").read_text(
+DOC = (REPO / "docs" / "operations" / "polling-elimination.md").read_text(
     encoding="utf-8")
 
 

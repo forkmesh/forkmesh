@@ -1,7 +1,7 @@
 -- Link each account session to the node key that opened it.
 --
 -- A key-bound login (desktop node, and now a mobile node — see
--- www/docs/mobile/mobile-node-contract.md) records the account_devices row it
+-- docs/mobile/mobile-node-contract.md) records the account_devices row it
 -- proved possession of on the session it mints. Revoking that device from the
 -- web registry (DELETE /api/accounts/devices/{id}) then revokes every session
 -- the device opened, and session lookups treat a session whose device row is

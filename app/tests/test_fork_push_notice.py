@@ -5,7 +5,7 @@ the final flush of a receive-pack result, which stock git prints as
 ``remote:`` lines. ``_fork_push_notice`` (entry.py) decides when: a new or
 updated branch other than the default, on a repository whose catalog record
 says it is a fork, or a contributor's ``pr/<account>/`` branch on the
-repository itself. docs/CORE_PUSH.md.
+repository itself. docs/operations/core-push.md.
 """
 
 import ast

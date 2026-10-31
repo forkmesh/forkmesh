@@ -8,7 +8,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLIC = ROOT / "www" / "public"
-DOCS = ROOT / "www" / "docs"
+DOCS = ROOT / "docs"
 CONTRACT_PATH = PUBLIC / "business-model.json"
 RESEARCH_PATH = DOCS / "research" / "pricing-interviews.json"
 

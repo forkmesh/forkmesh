@@ -4,7 +4,7 @@ The ForkMesh iOS app in **Swift + SwiftUI**, the iOS sibling of
 [`native/android`](../android/README.md). App Store app id `com.forkmesh.forkmesh`.
 The developer home page for both native apps is
 [docs/native/README.md](../../docs/native/README.md); how the app talks to the
-relay and the mirrors is in [www/docs/architecture.md](../../www/docs/architecture.md).
+relay and the mirrors is in [docs/codebase.md](../../docs/codebase.md).
 
 ## Layout
 
@@ -43,15 +43,15 @@ ForkMesh.xcodeproj   generated; regenerate with tools/generate_project.rb
 docs/                one API note per core module
 ```
 
-Module notes: [FMBase](docs/FMBase.md), [FMCrypto](docs/FMCrypto.md) and
-[its additions](docs/FMCryptoAdditions.md), [FMNet](docs/FMNet.md),
-[FMVault](docs/FMVault.md), [FMAccount](docs/FMAccount.md),
-[FMApi](docs/FMApi.md) ([models](docs/FMApiModels.md),
-[view models](docs/FMApiViewModels.md)), [FMChat](docs/FMChat.md),
-FMCode ([repos](docs/FMCodeRepos.md), [collaboration](docs/FMCodeCollab.md),
-[local Git](docs/FMCodeLocal.md)), [FMLocalAI](docs/FMLocalAI.md),
-[FMAgents](docs/FMAgents.md), [FMTools](docs/FMTools.md),
-[FMAssistant](docs/FMAssistant.md), [FMPackages](docs/FMPackages.md). The parity
+Module notes: [FMBase](../../docs/native/ios/FMBase.md), [FMCrypto](../../docs/native/ios/FMCrypto.md) and
+[its additions](../../docs/native/ios/FMCryptoAdditions.md), [FMNet](../../docs/native/ios/FMNet.md),
+[FMVault](../../docs/native/ios/FMVault.md), [FMAccount](../../docs/native/ios/FMAccount.md),
+[FMApi](../../docs/native/ios/FMApi.md) ([models](../../docs/native/ios/FMApiModels.md),
+[view models](../../docs/native/ios/FMApiViewModels.md)), [FMChat](../../docs/native/ios/FMChat.md),
+FMCode ([repos](../../docs/native/ios/FMCodeRepos.md), [collaboration](../../docs/native/ios/FMCodeCollab.md),
+[local Git](../../docs/native/ios/FMCodeLocal.md)), [FMLocalAI](../../docs/native/ios/FMLocalAI.md),
+[FMAgents](../../docs/native/ios/FMAgents.md), [FMTools](../../docs/native/ios/FMTools.md),
+[FMAssistant](../../docs/native/ios/FMAssistant.md), [FMPackages](../../docs/native/ios/FMPackages.md). The parity
 matrix is [`docs/native/PARITY.md`](../../docs/native/PARITY.md).
 
 ## Build and test

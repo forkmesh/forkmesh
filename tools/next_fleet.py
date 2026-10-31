@@ -103,7 +103,7 @@ RUNNER_STEPS = ("base", "ssh-port", "files", "start")
 APP_STEPS = ("base", "wireguard", "ids", "rqlite", "turn", "ssh-port", "files",
              "caddy", "secrets", "start")
 BURST_STEPS = ("base", "ids", "ssh-port", "files", "secrets", "start", "daemon")
-# "ids" generates the node's IDS signing key on the node (docs/IDS.md); run
+# "ids" generates the node's IDS signing key on the node (docs/operations/intrusion-detection.md); run
 # it on every node before the files step that first renders the IDS.
 ALL_STEPS = INSTALL_STEPS + ("daemon", "ids", "caddy-debian", "logread")
 CORE_ONLY_STEPS = ("caddy", "caddy-debian", "turn", "calls")
@@ -143,7 +143,7 @@ SSHD_SETTINGS = (
     "PermitRootLogin prohibit-password", "MaxAuthTries 3",
     "AllowAgentForwarding no", "AllowTcpForwarding local",
     "X11Forwarding no", "PermitTunnel no",
-    # The IDS classifies sessions from "Starting session: ..." (docs/IDS.md).
+    # The IDS classifies sessions from "Starting session: ..." (docs/operations/intrusion-detection.md).
     "LogLevel VERBOSE",
 )
 # Vendor leftovers: cloud-init's sshd file says PasswordAuthentication yes
@@ -598,7 +598,7 @@ def fleet_toml_text(instances, state=None, example=None, current=None):
         "# --execute` from ~/projects/forkmesh/config/fleet/fleet-instances.json\n"
         "# (instance ids) and fleet-state.json (WireGuard public keys). Public\n"
         "# addresses stay in fleet-instances.json; the tools read them by label.\n"
-        "# No secrets: every secret is a credential name only (docs/OPERATIONS.md).\n"
+        "# No secrets: every secret is a credential name only (docs/operations/README.md).\n"
         "\n" + header)
     blocks = []
     cores = sorted((int(LABEL_RE.match(l).group(2)), l, v) for l, v in instances.items()
@@ -666,7 +666,7 @@ def base_script(role):
         "if sshd -t; then systemctl reload ssh || true; else rm -f /etc/ssh/sshd_config.d/10-fmnext.conf; fi; fi"
         % (" ".join(shq(x) for x in SSHD_SETTINGS), shq(CLOUD_INIT_SSHD)),
         # No console root password (the Vultr console then needs a rescue
-        # boot; docs/OPERATIONS.md). passwd -l only where sshd uses PAM,
+        # boot; docs/operations/README.md). passwd -l only where sshd uses PAM,
         # which ignores the lock for key logins; otherwise '*' (no valid
         # password, not "locked") so root's key login keeps working.
         "if sshd -T 2>/dev/null | grep -qi '^usepam yes'; then passwd -l root >/dev/null; "
@@ -1370,7 +1370,7 @@ def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
         steps.insert(steps.index("files"), "ssh-port")
     for step in steps:
         # Tell the node's IDS first, so the step's changes are expected
-        # (a no-op until the IDS runs there; docs/IDS.md).
+        # (a no-op until the IDS runs there; docs/operations/intrusion-detection.md).
         next_ids.expect_step(fleet, ssh, runner, name, step, replacement)
         if step == "base":
             script = base_script(role)

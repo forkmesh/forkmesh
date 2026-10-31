@@ -50,7 +50,7 @@ No secret is shared by all of an account's devices (identity seed and owner
 keys are per device), so the phone cannot encrypt for its siblings without the
 vault's master password. The store uses the per-account key scheme of
 account-scoped packages (background in
-[encryption](../../www/docs/encryption.md)):
+[encryption](../encryption.md)):
 
 - Each account gets 256 bits of random key material in
   `account_store_keys.wrapped`, itself sealed with `DATA_KEY`.

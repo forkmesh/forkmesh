@@ -2,7 +2,7 @@
 
 Part of [the App docs](README.md). Who can see a chat conversation, where that
 rule is enforced, and how direct messages are delivered. Encryption overview:
-[encryption](../../www/docs/encryption.md). Related: [chat-everyone-channels.md](chat-everyone-channels.md),
+[encryption](../encryption.md). Related: [chat-everyone-channels.md](chat-everyone-channels.md),
 [chat-push-previews.md](chat-push-previews.md),
 [chat-direct-calls.md](chat-direct-calls.md),
 [chat-unread-reminders.md](chat-unread-reminders.md).
@@ -63,7 +63,7 @@ bound to the resource and body (`_chat_channel_signed_session`,
 - The web link is `/chat#invite=<token>`: a fragment, so the token never
   reaches the server in a page request or `Referer`, and the API takes it in
   the request body, so it never lands in a Caddy access log line
-  ([NODE_LOGS.md](../NODE_LOGS.md#caddy-access-log)). The old path
+  ([NODE_LOGS.md](../operations/node-logs.md#caddy-access-log)). The old path
   `/api/chat/invites/<token>` answers `410 token_path_retired`. (A body was
   chosen over a Caddy `regexp` log filter because no Caddy binary is at hand
   to validate a new log config before it ships.)

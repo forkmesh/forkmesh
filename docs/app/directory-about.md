@@ -1,7 +1,7 @@
 # Folder About boxes
 
 Part of [the App docs](README.md). User guide:
-[www/docs/folder-about.md](../../www/docs/folder-about.md) (the file format,
+[docs/folder-about.md](../folder-about.md) (the file format,
 limits and fallbacks).
 
 A folder's About box is read from `<folder>/.forkmesh/info.json`, the file the

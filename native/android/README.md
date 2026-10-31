@@ -170,11 +170,11 @@ signing key stay the same: a reinstall under another id or key starts empty.
    build.
 3. The asset name is `forkmesh-android-universal.apk`: the homepage download
    widget (`www/public/homepage-downloads.js`), the install support matrix
-   (`www/docs/install-support-matrix.{json,md}`), the status page's release
+   (`docs/install-support-matrix.{json,md}`), the status page's release
    checks (`app/src/status_monitoring.py`) and the release manifests
    (`.forkmesh/releases/*/release.json`, `SHASUMS256.txt`) use it. Publish the
    APK into the candidate with `tools/forkmesh-release-publish.sh` and promote
    it as usual (`.forkmesh/releases/README.md`; how releases reach users and
-   mirrors: [www/docs/mirroring.md](../../www/docs/mirroring.md)).
+   mirrors: [docs/mirroring.md](../../docs/mirroring.md)).
 4. Device support: the native app's `minSdk` is 26; phones on Android 7.x
    cannot install it.

@@ -9,11 +9,11 @@ daemon in `server/` (see [../server/README.md](../server/README.md)). The same
 binary runs on the deploy box as the "flagship" node, built from the primary
 checkout.
 
-User-facing guide: [www/docs/qt-client.md](../../www/docs/qt-client.md).
+User-facing guide: [docs/qt-client.md](../qt-client.md).
 Developer docs index: [../README.md](../README.md). How the desktop fits with
-the core nodes, mirrors and phones: [architecture](../../www/docs/architecture.md);
-what it signs and encrypts: [encryption](../../www/docs/encryption.md); running
-your own instance: [self-hosting](../../www/docs/self-hosting.md).
+the core nodes, mirrors and phones: [architecture](../architecture.md);
+what it signs and encrypts: [encryption](../encryption.md); running
+your own instance: [self-hosting](../self-hosting.md).
 
 Topic pages in this folder:
 
@@ -262,7 +262,7 @@ Everything is in `desktop/`.
   (`MainWindowRepoSync.cpp` handles topics such as `cloud-agents`, `tasks`,
   `chat-read`, `direct-messages`); catch-up reads are bounded by floors
   measured in minutes. See
-  [www/docs/operations/polling-elimination.md](../../www/docs/operations/polling-elimination.md).
+  [docs/operations/polling-elimination.md](../operations/polling-elimination.md).
 - **Backups run at background priority.** The hourly and "Back up now"
   `tar -czf` (`MainWindow::takeBackupNow`, `MainWindowData.cpp`) starts with
   nice 19 and, on Linux, the lowest best-effort I/O priority; `gzip` inherits
@@ -502,9 +502,9 @@ The full description is in
   Never delete `~/projects/forkmesh/{data,config,ssh,state,logs}` or the
   primary checkout (see `AGENTS.md`). What an attacker can and cannot do with
   the desktop's keys is in the
-  [threat model](../../www/docs/protocol/threat-model.md).
+  [threat model](../protocol/threat-model.md).
 - Bearer tokens are held in memory and never written to `QSettings`
-  ([www/docs/qt-client.md](../../www/docs/qt-client.md#multiple-relay-instances)).
+  ([docs/qt-client.md](../qt-client.md#multiple-relay-instances)).
 - Cloud credentials (Settings → Cloud) are sealed with AES-256-GCM under a
   0600 key file in `data/secrets/`; the settings file holds only ciphertext
   ([networking.md](networking.md#aws-credentials)).
@@ -809,10 +809,10 @@ measured and keep the plain branch icon.
 
 ## Related docs
 
-- [www/docs/qt-client.md](../../www/docs/qt-client.md): user guide
-- [www/docs/operations/desktop-control-node.md](../../www/docs/operations/desktop-control-node.md): Control page
-- [www/docs/engineering/definition-of-done.md](../../www/docs/engineering/definition-of-done.md)
+- [docs/qt-client.md](../qt-client.md): user guide
+- [docs/operations/desktop-control-node.md](../operations/desktop-control-node.md): Control page
+- [docs/engineering/definition-of-done.md](../engineering/definition-of-done.md)
 - [../engineering/destructive-actions.md](../engineering/destructive-actions.md): guarded deletes
 - [../native/DESKTOP_PARITY.md](../native/DESKTOP_PARITY.md): native app parity with the desktop
-- [../../www/docs/mirroring.md](../../www/docs/mirroring.md): how mirrors serve repositories and releases
-- [../../www/docs/censorship-resilience.md](../../www/docs/censorship-resilience.md): what keeps working when the core nodes are unreachable
+- [../../docs/mirroring.md](../mirroring.md): how mirrors serve repositories and releases
+- [../../docs/censorship-resilience.md](../censorship-resilience.md): what keeps working when the core nodes are unreachable

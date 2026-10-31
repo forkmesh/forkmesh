@@ -130,11 +130,11 @@ def test_html_header_block_renders_as_markdown_not_tag_soup():
 
 def test_relative_readme_links_open_repository_files():
     html = _render(
-        "See [the compatibility matrix](www/docs/git-compatibility.md#limits).\n"
+        "See [the compatibility matrix](docs/git-compatibility.md#limits).\n"
     )
-    assert 'href="/forkmesh/forkmesh/blob/www/docs/git-compatibility.md#limits"' in html
+    assert 'href="/forkmesh/forkmesh/blob/docs/git-compatibility.md#limits"' in html
     assert 'data-repo-markdown-link="blob"' in html
-    assert 'data-repo-markdown-path="www/docs/git-compatibility.md"' in html
+    assert 'data-repo-markdown-path="docs/git-compatibility.md"' in html
     assert 'data-repo-markdown-anchor="limits"' in html
     # In-repository links open in place instead of a new dashboard tab.
     assert 'target="_blank"' not in html
@@ -143,11 +143,11 @@ def test_relative_readme_links_open_repository_files():
 def test_relative_links_resolve_against_the_rendered_file_directory():
     html = _render(
         "[up](../README.md) [guide](./guide.md) [folder](operations/)\n",
-        context='{ repo: { owner: "forkmesh", name: "forkmesh" }, basePath: "www/docs/intro.md" }',
+        context='{ repo: { owner: "forkmesh", name: "forkmesh" }, basePath: "docs/intro.md" }',
     )
-    assert 'href="/forkmesh/forkmesh/blob/www/README.md"' in html
-    assert 'href="/forkmesh/forkmesh/blob/www/docs/guide.md"' in html
-    assert 'href="/forkmesh/forkmesh/tree/www/docs/operations"' in html
+    assert 'href="/forkmesh/forkmesh/blob/README.md"' in html
+    assert 'href="/forkmesh/forkmesh/blob/docs/guide.md"' in html
+    assert 'href="/forkmesh/forkmesh/tree/docs/operations"' in html
     assert 'data-repo-markdown-link="tree"' in html
 
 

@@ -9,9 +9,9 @@ self-hosted core nodes; each core runs Caddy, this Python code on CPython
 (`app/src`, staged to `app/src_build`, under the host in
 `app/host/forkmesh_host/`), rqlite and the Go daemon, and a DNS health loop
 (`tools/next_dns.py`) drops a failed core. With two cores down the survivor
-serves reads and refuses writes ([PLAN.md](../PLAN.md);
-[architecture](../../www/docs/architecture.md)). Agent jobs run on the runner
-tier ([RUNNERS.md](../RUNNERS.md)). The host is documented in
+serves reads and refuses writes ([PLAN.md](../operations/served-stack.md);
+[architecture](../architecture.md)). Agent jobs run on the runner
+tier ([RUNNERS.md](../operations/runners.md)). The host is documented in
 [docs/host/README.md](../host/README.md); this page covers the App code.
 
 The code keeps the API shape it was written for on Cloudflare Workers: a
@@ -22,7 +22,7 @@ site (the `forkmesh-www` Worker) proxies its dynamic traffic here (see
 [docs/www](../www/README.md) and [docs/world](../world/README.md)). The
 desktop, the Go daemon, the runner, the mobile apps and browsers are the
 App's clients. Developer docs index: [../README.md](../README.md); public,
-user-facing descriptions live in `www/docs/` ([index](../../www/docs/README.md)).
+user-facing descriptions live in `docs/` ([index](../README.md)).
 
 ## Code map
 
@@ -91,7 +91,7 @@ live node by rendezvous hash; storage and alarms live in rqlite. See
 **Storage.** `DB` is the database of record and keeps D1's SQL dialect. Most
 row payloads are AES-GCM blobs under `DATA_KEY` with HMAC blind indexes for
 lookups. Git bytes are never stored in the database; they live on desktop
-nodes and in the cores' Git stores ([HOSTED_REPOS.md](../HOSTED_REPOS.md)).
+nodes and in the cores' Git stores ([HOSTED_REPOS.md](../operations/core-hosted-repositories.md)).
 See [d1.md](d1.md).
 
 **Cron.** Each minute the host calls `scheduled`, which rings the
@@ -107,9 +107,9 @@ display data: changes reach them as frames on the node event socket
 (`ForkMeshNodes`) and as APNs pushes (`app/src/apns.py`).
 
 **Secrets.** Nodes start sealed; `DATA_KEY` and other vaulted secrets arrive
-over the unseal socket ([VAULT.md](../VAULT.md)). How data is encrypted:
-[encryption](../../www/docs/encryption.md); threats considered:
-[threat model](../../www/docs/protocol/threat-model.md).
+over the unseal socket ([VAULT.md](../operations/vault.md)). How data is encrypted:
+[encryption](../encryption.md); threats considered:
+[threat model](../protocol/threat-model.md).
 
 ## Protocols and interfaces
 
@@ -127,7 +127,7 @@ over the unseal socket ([VAULT.md](../VAULT.md)). How data is encrypted:
   `branch.push`, `pull.merged`, `release.published`; queued and drained by the
   `webhook-outbox` cron phase with up to 6 attempts; private repositories emit
   nothing. The versioned integration contract is
-  [integrations](../../www/docs/integrations.md).
+  [integrations](../integrations.md).
 - Public snapshots: anonymous GET routes served from validated
   `public_api_snapshots` rows (`app/src/public_snapshots.py`). The catalog
   schema is an exact allow-list: a new public field in `/api/repositories`
@@ -172,8 +172,8 @@ exhaust memory. Browser tests:
 ## Operations
 
 - Releases, migrations and rolling restarts:
-  [docs/deploy/README.md](../deploy/README.md) and
-  [OPERATIONS.md](../OPERATIONS.md). A node that fails its gate reverts and
+  [docs/operations/fleet-tooling.md](../operations/fleet-tooling.md) and
+  [OPERATIONS.md](../operations/README.md). A node that fails its gate reverts and
   the rollout stops. Check the rev at `/api/version` before assuming a fix
   is live.
 - Logs: `journalctl -u forkmesh-app` on a node, or the desktop Log page.
@@ -190,7 +190,7 @@ exhaust memory. Browser tests:
 
 - `DATA_KEY` encrypts row payloads; blind indexes are HMACs. There is no
   key-version byte, so the key is rotated only offline with the apps stopped
-  (`tools/next_rekey.py`, [REKEY.md](../REKEY.md)).
+  (`tools/next_rekey.py`, [REKEY.md](../operations/rekey.md)).
 - The host applies a Host allowlist, streamed body caps, an SSRF egress guard
   and edge-client verification before the App sees a request
   (`request_guard.py`, `egress.py`).
@@ -246,13 +246,13 @@ exhaust memory. Browser tests:
 ## Related docs
 
 - [docs/host/README.md](../host/README.md),
-  [docs/deploy/README.md](../deploy/README.md), [PLAN.md](../PLAN.md),
-  [OPERATIONS.md](../OPERATIONS.md), [VAULT.md](../VAULT.md)
-- [polling elimination](../../www/docs/operations/polling-elimination.md)
-  (push-first client contract), [integrations](../../www/docs/integrations.md),
-  [ActivityPub federation](../../www/docs/design/activitypub-federation.md)
-- Pillars: [architecture](../../www/docs/architecture.md),
-  [encryption](../../www/docs/encryption.md),
-  [mirroring](../../www/docs/mirroring.md),
-  [self-hosting](../../www/docs/self-hosting.md),
-  [censorship resilience](../../www/docs/censorship-resilience.md)
+  [docs/operations/fleet-tooling.md](../operations/fleet-tooling.md), [PLAN.md](../operations/served-stack.md),
+  [OPERATIONS.md](../operations/README.md), [VAULT.md](../operations/vault.md)
+- [polling elimination](../operations/polling-elimination.md)
+  (push-first client contract), [integrations](../integrations.md),
+  [ActivityPub federation](../design/activitypub-federation.md)
+- Pillars: [architecture](../architecture.md),
+  [encryption](../encryption.md),
+  [mirroring](../mirroring.md),
+  [self-hosting](../self-hosting.md),
+  [censorship resilience](../censorship-resilience.md)

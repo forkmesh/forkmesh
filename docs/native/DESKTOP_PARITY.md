@@ -26,7 +26,7 @@ Paths: `D/` is `desktop/src/`, `MP/` is `marketplace/packages/`, `NI/` is
 - **DC**: desktop control. The phone drives the owner's desktop over the local
   control channel (`D/LocalControl.h`: pairing, AES-256-GCM frames, method
   families), on the same LAN or end-to-end encrypted through the owner's node
-  socket on the relay ([encryption.md](../../www/docs/encryption.md)). DC is how anything that lives only on the desktop (saved
+  socket on the relay ([encryption.md](../encryption.md)). DC is how anything that lives only on the desktop (saved
   hosts, SSH keys, worktrees, CLI sessions, local ledgers) reaches the phone.
 - **Device**: runs on the phone.
 

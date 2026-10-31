@@ -2977,7 +2977,7 @@ class Default:
             return await package_ratings_handler(self.env, request)
 
         # Account-based Market star ratings with required improvement
-        # reviews, owner replies and moderation (docs/MARKETPLACE_RATINGS.md).
+        # reviews, owner replies and moderation (docs/marketplace/ratings.md).
         if (url.path == "/api/market/reviews"
                 or url.path.startswith("/api/market/reviews/")):
             return await marketplace_reviews.handle(
@@ -3012,7 +3012,7 @@ class Default:
         if url.path in ("/api/client-errors", "/api/client-errors/"):
             return await client_error_handler(self.env, request)
 
-        # Acquisition attribution (docs/attribution.md): the www Worker's
+        # Acquisition attribution (docs/app/attribution.md): the www Worker's
         # page-view relay, the copy-clone-URL beacon, self-serve erasure,
         # and the admin-only report/list/discovery-call endpoints.
         if url.path in (
@@ -3201,7 +3201,7 @@ class Default:
                 self.env, request, url.path)
 
         # Preservation-first crisis plans and their scenario catalog
-        # (www/docs/crisis-preservation.md).
+        # (docs/crisis-preservation.md).
         if url.path in ("/api/preservation/crisis-plan",
                         "/api/preservation/crisis-plan/"):
             return await crisis_preservation_plan_handler(self.env, request)

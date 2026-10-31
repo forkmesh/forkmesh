@@ -6,8 +6,8 @@ and `legal-pages`, dispatched from the admin route in `app/src/app_runtime.py`).
 Legal pages are in [instance-legal-pages.md](instance-legal-pages.md). Every
 change is CSRF-checked and written to the sensitive audit log as
 `admin.console_<action>`. Running your own instance is covered in
-[self-hosting](../../www/docs/self-hosting.md) and
-[../INSTANCES.md](../INSTANCES.md).
+[self-hosting](../self-hosting.md) and
+[../INSTANCES.md](../operations/instances.md).
 
 The pages live at `<ADMIN_PATH>?view=update` and so on. With a private
 `ADMIN_PATH` every console page (theme switch, Acquisition and Hackathon
@@ -15,7 +15,7 @@ included) is served only under that path and `/admin/...` answers the normal
 404; links and form actions come from `admin_shell.subpage_base(env)` and
 `console_base(env)`, never a fixed `/admin`. Setting it on a live instance,
 the installer's `adminPath` setting, and what stays at `/api/admin/...` are in
-[../INSTANCES.md](../INSTANCES.md#private-admin-console-path).
+[../INSTANCES.md](../operations/instances.md#private-admin-console-path).
 
 ## Update ForkMesh (`?view=update`)
 
@@ -74,7 +74,7 @@ only drops a request file; a root unit does the work.
    accounts. It builds beside the running version, switches only after a
    good build and rolls back if the restart fails, so a failed update leaves
    the old version serving
-   ([../INSTANCES.md](../INSTANCES.md#updates-build-beside-the-running-version)).
+   ([../INSTANCES.md](../operations/instances.md#updates-build-beside-the-running-version)).
    **auto** is the same run with `trigger: merge`, except it ends at once
    (`done`, nothing restarted) when the fetched commit is already running
    (for example two coalesced merges).
@@ -90,7 +90,7 @@ the buttons; it may fail to load for a moment while the app restarts.
 The Version card also warns when `build-info.json` says the git node program
 was built from older `server/` code than the running source
 (`daemon.state` = `stale`); see
-[../INSTANCES.md](../INSTANCES.md#the-git-node-program).
+[../INSTANCES.md](../operations/instances.md#the-git-node-program).
 
 ### Update when a pull request is merged
 
@@ -148,7 +148,7 @@ and `admin_updates` are both true in `deploy/fleet.toml`) turns the button
 on. It inserts a `deploy_approvals` row with `kind = 'admin'`,
 `target = 'main'` and empty commits; one admin request may be open at a time.
 `deploy/core/self_deploy.py` pins it to the current `main` head and deploys it
-like a phone-approved merge ([../deploy/self-deploy.md](../deploy/self-deploy.md)).
+like a phone-approved merge ([../deploy/self-deploy.md](../operations/self-deploy.md)).
 The page lists the last five admin requests with each core's progress.
 
 The newest commit on the cores is the `core_upstream` row of
@@ -364,7 +364,7 @@ catalog snapshot on the cores (instances do not use it).
 
 New instances opt in with `"singleOrganization": true` in the install
 settings (default `false`, organization owners only); see
-[../INSTANCES.md](../INSTANCES.md). For an existing instance, run the operator
+[../INSTANCES.md](../operations/instances.md). For an existing instance, run the operator
 command as the app user from the instance's source:
 
 ```sh

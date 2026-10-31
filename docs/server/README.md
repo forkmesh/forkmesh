@@ -10,11 +10,11 @@ jobs and, when enabled, repository Actions. The same module holds the
 group-call server and its encryption.
 
 This folder is the detail behind two public pillars:
-[mirroring and software distribution](../../www/docs/mirroring.md) and
-[encryption and signatures](../../www/docs/encryption.md) (call encryption).
+[mirroring and software distribution](../mirroring.md) and
+[encryption and signatures](../encryption.md) (call encryption).
 How the cores fit together is in
-[architecture](../../www/docs/architecture.md); running your own node is in
-[self-hosting](../../www/docs/self-hosting.md). Developer index:
+[architecture](../architecture.md); running your own node is in
+[self-hosting](../self-hosting.md). Developer index:
 [docs/README.md](../README.md).
 
 `role` in `mirror-node.json` (`server/config.go`, `applyRole`) picks what a
@@ -28,10 +28,10 @@ host does:
   (`disableAgentJobs` forced on, `enableActions` off).
 - `runner`: no repositories, catalog, tunnel or merge executor. It claims agent
   job leases from the App and runs them in a per-job sandbox
-  ([RUNNERS.md](../RUNNERS.md)).
+  ([RUNNERS.md](../operations/runners.md)).
 
 The operator guide for independent mirrors is
-[www/docs/operations/mirror-node.md](../../www/docs/operations/mirror-node.md).
+[docs/operations/mirror-node.md](../operations/mirror-node.md).
 
 ## Pages in this folder
 
@@ -80,7 +80,7 @@ pinned toolchain). Paths are relative to `server/`.
 | `pull_head.go` | Deterministic head commits for patch-backed pulls ([pull-heads.md](pull-heads.md)) |
 | `merge.go`, `merge_branch.go`, `checks.go` | Merge executor, branch operations, signed required checks ([merge-executor.md](merge-executor.md)) |
 | `pullrules.go`, `agentattest.go` | Pull request rules and model attestations ([pull-rules.md](pull-rules.md)) |
-| `forks.go`, `hosted.go` | Website fork jobs; core-side hosted repository reconciliation ([HOSTED_REPOS.md](../HOSTED_REPOS.md)) |
+| `forks.go`, `hosted.go` | Website fork jobs; core-side hosted repository reconciliation ([HOSTED_REPOS.md](../operations/core-hosted-repositories.md)) |
 | `agents.go`, `agent_*.go`, `agentstream.go`, `terminal.go` | Website agent jobs, errors, attachments, live output, provider sign-in terminal ([agent-jobs.md](agent-jobs.md)) |
 | `runner.go`, `runnergrant.go`, `sandbox.go`, `jobhome.go`, `runnerlogin.go` | Runner role: claim, clone with a read grant, run, push `refs/heads/agent/<session>`, report; per-job sandbox and homes |
 | `runnerpool.go`, `vultr.go` | Burst runner autoscaler (only fleet-labelled instances) |
@@ -121,8 +121,8 @@ broker ([gateways.md](gateways.md)), the desktop host installer, and
   `POST /v1/control/collaboration`.
 - Gateway on `127.0.0.1:8790`, fronted by Caddy (cores and most mirrors) or
   an operator's Cloudflare Tunnel
-  ([direct-https-mirror-gateway.md](../../www/docs/operations/direct-https-mirror-gateway.md),
-  `www/docs/mirror-*.schema.json`); the core gateway also serves
+  ([direct-https-mirror-gateway.md](../operations/direct-https-mirror-gateway.md),
+  `docs/mirror-*.schema.json`); the core gateway also serves
   `/v1/runner/<owner>/<repo>.git` to runners with grants.
 - App: `/api/nodes/events`, `/api/repositories`, `/api/accounts`,
   `org-agent-jobs` leases, collaboration inbox leases, runner routes
@@ -168,7 +168,7 @@ Git directory, is a read-only mirror: its catalog record carries `mirrorOf`,
 `upstreamCommit` and `lastSyncedAt` (signed optional fields the relay keeps
 only when well formed), and its gateway entries lose `git-receive-pack`,
 `merge-pull`, `update-pull-branch` and the agent-branch operations. See
-[../INSTANCES.md](../INSTANCES.md#the-platform-source-mirror-ownerforkmesh).
+[../INSTANCES.md](../operations/instances.md#the-platform-source-mirror-ownerforkmesh).
 
 ## Build, run, test
 
@@ -191,7 +191,7 @@ it on a core or runner. Gateway tests are Python
 (`app/tests/test_mirror_gateway*.py`, `app/tests/test_headless_mirror_*.py`).
 Diagnosis: `journalctl -u forkmesh-mirror-node`,
 `curl -s 127.0.0.1:8791/v1/status`. Fleet runbook:
-[OPERATIONS.md](../OPERATIONS.md); independent mirrors:
+[OPERATIONS.md](../operations/README.md); independent mirrors:
 [fleet-operations.md](fleet-operations.md).
 
 ## Security
@@ -211,7 +211,7 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   staging and objects a hosted fork borrows from its pool are never served
   (`test_reads_resolve_only_visible_refs`). A commit id needs at least 7 hex
   digits and is served only when a visible ref, or a force-push backup under
-  `refs/forkmesh/history/` (kept for reviews, [CORE_PUSH.md](../CORE_PUSH.md)),
+  `refs/forkmesh/history/` (kept for reviews, [CORE_PUSH.md](../operations/core-push.md)),
   contains it (`test_reads_refuse_commit_reachable_only_from_hidden_refs`).
 - **That check costs one walk per refs state.** On the first commit-id read of
   a cache generation the gateway lists the visible refs and, when they reach
@@ -238,8 +238,8 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   runners keep following redirects: the public route is their only upstream
   (`TestCoreSyncNeverFollowsARedirectToAnotherHost`,
   `TestMirrorSyncStillFollowsRedirects`).
-- See [RUNNERS.md](../RUNNERS.md), [IDS.md](../IDS.md) and the
-  [threat model](../../www/docs/protocol/threat-model.md).
+- See [RUNNERS.md](../operations/runners.md), [IDS.md](../operations/intrusion-detection.md) and the
+  [threat model](../protocol/threat-model.md).
 
 ## Traps
 
@@ -316,14 +316,14 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   `rtc/quic`): each attempt builds fresh cores, parties and links, misses are
   logged, and the test fails only when all three miss. Setup failures and
   the anti-amplification upper bound still fail at once
-  ([../deploy/auto-deploy.md](../deploy/auto-deploy.md)).
+  ([../deploy/auto-deploy.md](../operations/auto-deploy.md)).
 
 ## Related docs
 
-- [RUNNERS.md](../RUNNERS.md), [HOSTED_REPOS.md](../HOSTED_REPOS.md),
-  [OPERATIONS.md](../OPERATIONS.md), [IDS.md](../IDS.md),
-  [CORE_PUSH.md](../CORE_PUSH.md)
-- Operations pages under `www/docs/operations/`: mirror node, direct HTTPS
+- [RUNNERS.md](../operations/runners.md), [HOSTED_REPOS.md](../operations/core-hosted-repositories.md),
+  [OPERATIONS.md](../operations/README.md), [IDS.md](../operations/intrusion-detection.md),
+  [CORE_PUSH.md](../operations/core-push.md)
+- Operations pages under `docs/operations/`: mirror node, direct HTTPS
   gateway, Git SSH gateway, Actions control, headless refresh and identity,
   backup and recovery, operator policy, required checks, service roles, Git
-  conformance; [sync status](../../www/docs/sync-status.md).
+  conformance; [sync status](../sync-status.md).

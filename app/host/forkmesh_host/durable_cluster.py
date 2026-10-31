@@ -922,7 +922,7 @@ class MeshASGI:
         return MESH_MAX_BODY
 
     def _quarantined_source(self, scope):
-        """A quarantined node's mesh requests are refused (docs/IDS.md)."""
+        """A quarantined node's mesh requests are refused (docs/operations/intrusion-detection.md)."""
         client = scope.get("client") or (None, None)
         check = getattr(getattr(self.host, "membership", None),
                         "source_quarantined", None)

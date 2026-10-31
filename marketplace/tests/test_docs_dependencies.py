@@ -210,12 +210,17 @@ def test_mobile_bundle_matches_the_public_library_and_the_snapshot():
     ), "run python3 marketplace/tools/docs_mobile_bundle.py to refresh the phones' Docs bundle"
 
 
-def test_mobile_bundle_holds_only_the_public_www_docs_library():
+def test_mobile_bundle_holds_only_the_public_docs_library():
+    import docs_site
+
     payload = json.loads(docs_mobile_bundle.BUNDLE.read_text(encoding="utf-8"))
     assert payload["schema"] == docs_mobile_bundle.SCHEMA
     docs = docs_mobile_bundle.DOCS_ROOT
     expected = sorted(
-        path.relative_to(docs).as_posix() for path in docs.rglob("*") if path.suffix in {".md", ".json"}
+        relative
+        for relative in (path.relative_to(docs).as_posix() for path in docs.rglob("*") if path.suffix in {".md", ".json"})
+        if docs_site.is_published(relative)
+        and (relative.endswith(".json") or docs_site.area_for(relative) not in docs_site.DEVELOPER_AREAS)
     )
     assert sorted(page["path"] for page in payload["pages"]) == expected
     assert all(page["url"].startswith("https://forkmesh.com/docs/") for page in payload["pages"])

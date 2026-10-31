@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MATRIX_PATH = ROOT / "www" / "docs" / "capability-matrix.json"
+MATRIX_PATH = ROOT / "docs" / "capability-matrix.json"
 SURFACES = {"worker", "web", "world", "qt"}
 ALLOWED_MODES = {
     "native",

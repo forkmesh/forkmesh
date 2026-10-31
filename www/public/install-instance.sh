@@ -112,7 +112,7 @@ https://forkmesh.com/start connects to the server and runs it for you.
   bash install-instance.sh --update
 
 Options:
-  --config FILE    JSON settings (see docs/INSTANCES.md)
+  --config FILE    JSON settings (see docs/operations/instances.md)
   --config-stdin   read the settings as one base64 line on standard input
   --update         pull the latest ForkMesh source, rebuild and restart
 EOF
@@ -1948,7 +1948,7 @@ daemon_rebuild_notice() {
   local state
   state="$(python3 -c 'import json, sys; print((json.load(open(sys.argv[1])).get("daemon") or {}).get("state") or "")' "$BUILD_INFO" 2>/dev/null || true)"
   if [ "$state" = "stale" ]; then
-    warn "server/ changed since the git node program was built; it keeps running the old build. Rebuild it from $(git -C "$SRC" rev-parse --short HEAD) and run the update with FORKMESH_INSTANCE_DAEMON (docs/INSTANCES.md)."
+    warn "server/ changed since the git node program was built; it keeps running the old build. Rebuild it from $(git -C "$SRC" rev-parse --short HEAD) and run the update with FORKMESH_INSTANCE_DAEMON (docs/operations/instances.md)."
   fi
 }
 

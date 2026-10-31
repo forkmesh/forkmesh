@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "category_comparisons.py"
 LEDGER = ROOT / "conformance" / "category-comparisons" / "v1" / "ledger.json"
-PAGE = ROOT / "www" / "docs" / "category-comparisons.md"
+PAGE = ROOT / "docs" / "category-comparisons.md"
 
 
 def _tool():
@@ -92,8 +92,8 @@ def test_vanished_tests_files_and_headings_fail():
     ledger = _ledger()
     evidence = _claim(ledger, "fm-protocol-workflow")["evidence"]
     evidence.append({"kind": "test", "ref": "app/tests/test_git_http.py::test_that_was_renamed"})
-    evidence.append({"kind": "specification", "path": "www/docs/removed.md"})
-    evidence.append({"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "no-such-heading"})
+    evidence.append({"kind": "specification", "path": "docs/removed.md"})
+    evidence.append({"kind": "product-evidence", "path": "docs/git-compatibility.md", "anchor": "no-such-heading"})
     problems = _problems(tool, ledger)
     assert any("test_that_was_renamed" in p and "does not exist" in p for p in problems)
     assert any("removed.md" in p for p in problems)
@@ -104,7 +104,7 @@ def test_category_claims_need_primary_sources_that_name_the_vendor():
     tool = _tool()
     ledger = _ledger()
     _claim(ledger, "central-portability")["evidence"] = [
-        {"kind": "specification", "path": "www/docs/repository-imports.md"}]
+        {"kind": "specification", "path": "docs/repository-imports.md"}]
     assert any("only dated primary sources" in p for p in _problems(tool, ledger))
 
     ledger = _ledger()
@@ -242,9 +242,9 @@ def test_page_is_published_in_the_docs_library_readme_quality_gates_and_workflow
     import docs_site
 
     assert "category-comparisons.md" in docs_site.GUIDE_ORDER
-    assert "(category-comparisons.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
-    assert "(www/docs/category-comparisons.md)" in (ROOT / "README.md").read_text(encoding="utf-8")
-    gates = json.loads((ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
+    assert "(category-comparisons.md)" in (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    assert "(docs/category-comparisons.md)" in (ROOT / "README.md").read_text(encoding="utf-8")
+    gates = json.loads((ROOT / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
     gate = next(g for g in gates["gates"] if g["id"] == "category-comparison-claims")
     assert "app/tests/test_category_comparisons.py" in gate["command"]
     for profile in ("core", "release"):

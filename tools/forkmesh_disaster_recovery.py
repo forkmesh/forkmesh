@@ -65,8 +65,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK_REL = "conformance/disaster-recovery/v1/runbook.json"
 EXERCISES_REL = "conformance/disaster-recovery/v1/exercises"
 EVIDENCE_REL = "conformance/disaster-recovery/v1/evidence"
-RUNBOOK_DOC_REL = "www/docs/disaster-recovery/runbook.md"
-REGISTER_DOC_REL = "www/docs/disaster-recovery/exercise-register.md"
+RUNBOOK_DOC_REL = "docs/disaster-recovery/runbook.md"
+REGISTER_DOC_REL = "docs/disaster-recovery/exercise-register.md"
 KIT_MANIFEST = "forkmesh-recovery-kit.json"
 KIT_ROSTER = "roster.json"
 

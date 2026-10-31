@@ -1,4 +1,4 @@
-"""Repositories the Next core nodes host (docs/HOSTED_REPOS.md).
+"""Repositories the Next core nodes host (docs/operations/core-hosted-repositories.md).
 
 ``hosted_git.py`` (create, push routing, quotas, private reads) and
 ``hosted_repos.py`` (the signed replica exchange the core daemons use) run

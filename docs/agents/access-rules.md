@@ -3,7 +3,7 @@
 What every desktop agent may reach and run, and where each rule is enforced.
 The run lifecycle is in [README.md](README.md); the tools each agent sees are
 in [tools.md](tools.md); what the sandbox does not defend against is in the
-[threat model](../../www/docs/protocol/threat-model.md).
+[threat model](../protocol/threat-model.md).
 
 ## Global rules and project rules
 

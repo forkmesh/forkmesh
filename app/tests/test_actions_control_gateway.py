@@ -1,6 +1,6 @@
 """Mirror gateway half of Actions control and the version 2 summary.
 
-Wire contract: www/docs/operations/mirror-actions-control.md.
+Wire contract: docs/operations/mirror-actions-control.md.
 """
 
 import hashlib
@@ -819,7 +819,7 @@ def test_control_directory_policy_is_the_exact_service_owned_0700(tmp_path):
 
 
 def test_schemas_describe_the_new_key_operation_and_envelope():
-    docs = ROOT / "www" / "docs"
+    docs = ROOT / "docs"
     config_schema = json.loads(
         (docs / "mirror-gateway-config.schema.json").read_text("utf-8"))
     assert "actionsControlPath" in config_schema["properties"]

@@ -26,8 +26,8 @@ group above the ActivityPub switches).
 
 ## Self-hosted instances
 
-See [INSTANCES.md](../INSTANCES.md) and
-[self-hosting](../../www/docs/self-hosting.md).
+See [INSTANCES.md](../operations/instances.md) and
+[self-hosting](../self-hosting.md).
 
 `instance-bootstrap` writes all three switches off for the
 `<owner>/forkmesh` mirror the instance creates (`ensure_mirror_features`,

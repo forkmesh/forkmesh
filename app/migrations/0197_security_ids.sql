@@ -1,4 +1,4 @@
--- ForkMesh Next host intrusion detection (docs/IDS.md).
+-- ForkMesh Next host intrusion detection (docs/operations/intrusion-detection.md).
 --
 -- cluster_quarantine: signed quarantine records (app/host/forkmesh_host/
 -- ids_records.py). kind 'self' (a node's IDS locked the node down, signed by

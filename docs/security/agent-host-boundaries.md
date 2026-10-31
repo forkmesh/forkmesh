@@ -4,7 +4,7 @@ What a desktop coding agent can read, execute and reach for each provider and
 mode, which secrets it can see, what limits its network, how injected
 instructions are handled, and what limits spend. Each claim is proven by a
 named check. Part of [docs/security](README.md); the wider attacker model is in
-the [threat model](../../www/docs/protocol/threat-model.md).
+the [threat model](../protocol/threat-model.md).
 
 ## Run the checks
 
@@ -65,7 +65,7 @@ shell commands that name a non-local destination and web fetch/search tools,
 and asks, blocks or allows per the project rule (default Ask). Commands that
 hide their destination (encoded payloads, self-written programs, binaries with
 their own HTTP client) are not seen. Server runners have their own egress
-rules ([../RUNNERS.md](../RUNNERS.md)).
+rules ([../RUNNERS.md](../operations/runners.md)).
 
 ## Prompt injection
 

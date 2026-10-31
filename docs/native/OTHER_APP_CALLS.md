@@ -13,7 +13,7 @@ the air during calls".
 cellular calls and every VoIP call an app reports through CallKit (Signal,
 WhatsApp, FaceTime). ForkMesh reports its own incoming direct calls through
 CallKit too (`DirectCallKit`, see
-[FMChat.md](../../native/ios/docs/FMChat.md)), so the rules below apply to our
+[FMChat.md](ios/FMChat.md)), so the rules below apply to our
 own call as well. `OtherAppCall.inProgress` reads the call list each time, and
 listeners registered with `onChange` hear the start and end.
 
@@ -26,7 +26,7 @@ without checking `inProgress` (speech, voice messages, view-once voice,
 dictation, the DJ studio, the alarms' stop) skips its category change during
 our call and deactivates only through `OtherAppCall.deactivateSession()`,
 which does nothing then (`OtherAppCall.ownCall`). Details in
-[FMChat.md](../../native/ios/docs/FMChat.md), "Audio session during a call".
+[FMChat.md](ios/FMChat.md), "Audio session during a call".
 
 While a call is up:
 

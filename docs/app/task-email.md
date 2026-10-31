@@ -2,7 +2,7 @@
 
 Part of [the App docs](README.md). Every task activity that files a [Tasks Ping](task-pings.md) is also emailed
 (mail kind `task`). Opens, clicks and views are written to the task timeline and
-the private [#email-log](../MAIL_LOG.md) channel.
+the private [#email-log](../operations/mail-log.md) channel.
 
 Code: `world/src/world_task_email.py`; shared tracking in
 `app/src/mail_activity.py`; records in `email_sends` (`ref` =

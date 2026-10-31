@@ -2,7 +2,7 @@
  * ForkMesh scoped, community-operated trust lists, browser/Node implementation.
  *
  * Port of the reference resolver in app/src/trust_lists.py
- * (forkmesh-trust-list-v1, www/docs/design/scoped-trust-lists.md).  Every
+ * (forkmesh-trust-list-v1, docs/design/scoped-trust-lists.md).  Every
  * client must produce a resolution whose canonical JSON is byte-identical for
  * each case in conformance/trust-lists/v1/vectors.json, so validation order
  * (first failing check wins), rejection codes, sort orders, and telemetry

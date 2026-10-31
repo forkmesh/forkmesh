@@ -6,7 +6,7 @@ checkout on the publishing machine without the desktop app. Commit or merge in
 minute, whether `forkmesh-source.service` (the flagship desktop) is running or
 not. Tests: `python3 -m pytest -q tools/test_source_publisher.py`. Tools
 index: [README.md](README.md); how mirrors then serve the source:
-[mirroring](../../www/docs/mirroring.md).
+[mirroring](../mirroring.md).
 
 ## Model
 
@@ -79,7 +79,7 @@ For each target the publisher:
    bypass for local Git traffic;
 2. runs `git push --porcelain <proxy> refs/heads/*:refs/heads/* refs/tags/*:refs/tags/*`
    (never forced, never deleting; deletions go through
-   `POST /api/git/branch-deletes`, see [CORE_PUSH.md](../CORE_PUSH.md));
+   `POST /api/git/branch-deletes`, see [CORE_PUSH.md](../operations/core-push.md));
 3. has the proxy sign each request as
    `forkmesh-git-push-v1\n{owner}\n{repo}\n{METHOD}\n{ts}\n{sha256(body)}`
    with `X-ForkMesh-Pubkey/-Ts/-Sig/-Body-Sha256`, the scheme the mobile
@@ -172,7 +172,7 @@ and is masked in errors.
 ## Merges made on the cores
 
 Runner and web merges land on a core's `main` first, and only commits on the
-checkout's `main` are deployed ([../deploy/auto-deploy.md](../deploy/auto-deploy.md)).
+checkout's `main` are deployed ([../deploy/auto-deploy.md](../operations/auto-deploy.md)).
 `watch-cores` (every 20 s) reads `main` with `git ls-remote` from each core
 (`core_read_urls`, `role = "core"` nodes in `deploy/fleet.toml`) and from the
 edge. When the checkout's `main` lacks one, it takes it (`absorb_cores`: a

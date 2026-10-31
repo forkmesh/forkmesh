@@ -2,7 +2,7 @@
 
 ForkMesh runs coding agents (Claude Code and Codex CLIs, plus a few legacy
 script providers) in four places: the desktop app, a mirror node or runner
-([../RUNNERS.md](../RUNNERS.md)), another of the account's desktops (a job
+([../RUNNERS.md](../operations/runners.md)), another of the account's desktops (a job
 queued from the website or phone), and the phone. This page follows a run
 through every layer. The desktop UI is in
 [../desktop/agents-ui.md](../desktop/agents-ui.md); the developer docs index is
@@ -153,7 +153,7 @@ The rules, per-provider enforcement and teammate permissions are in
 - **Codex** keeps approval policy `never`; web search is off unless allowed.
 - **KVM workspace (optional, `VirtualMachineRuntime.*`)**: the guest is the
   boundary
-  ([www/docs/qt-client.md](../../www/docs/qt-client.md#kvm-isolated-coding-workspace)).
+  ([docs/qt-client.md](../qt-client.md#kvm-isolated-coding-workspace)).
 - **Jail** (`AgentJail.h`) is a resource fence, not a security sandbox.
 - Not covered: MCP tools and the `openai` legacy provider. The gate works per
   tool call; it is not a network sandbox.
@@ -464,7 +464,7 @@ running jobs keep their binary. The update's exit status is unchanged.
 ## Related docs
 
 - [../desktop/agents-ui.md](../desktop/agents-ui.md)
-- [../../www/docs/protocol/threat-model.md](../../www/docs/protocol/threat-model.md): what the agent sandbox is and is not trusted to stop
+- [../../docs/protocol/threat-model.md](../protocol/threat-model.md): what the agent sandbox is and is not trusted to stop
 - [../server/README.md](../server/README.md) and [../server/agent-jobs.md](../server/agent-jobs.md)
-- [www/docs/operations/organization-agent-offline-queue.md](../../www/docs/operations/organization-agent-offline-queue.md)
-- [www/docs/mobile/mobile-agent-access.md](../../www/docs/mobile/mobile-agent-access.md)
+- [docs/operations/organization-agent-offline-queue.md](../operations/organization-agent-offline-queue.md)
+- [docs/mobile/mobile-agent-access.md](../mobile/mobile-agent-access.md)

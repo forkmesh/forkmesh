@@ -77,7 +77,7 @@ reads the current blob at the branch tip (checking its OID) and returns:
 
 The base branch must exist; proposals never create branches. The browser
 signs the pull with its web key (`signWebPullContent`, the new pull request
-form's signer; see [encryption and signatures](../../www/docs/encryption.md)),
+form's signer; see [encryption and signatures](../encryption.md)),
 posts it to `/api/repo/<owner>/<repo>/pulls`, stores an optimistic record and
 opens the new pull request. The `head` name is provenance only, not a branch,
 so the node stores the pull as a patch. Each proposal is audited as

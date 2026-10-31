@@ -524,7 +524,7 @@ def test_public_schema_docs_and_automation_cover_the_protocol_contract():
     assert schema["properties"]["schema"]["const"] == collaboration.EVENT_SCHEMA
     assert set(schema["properties"]["family"]["enum"]) == set(collaboration.FAMILIES)
     design = (
-        ROOT / "www" / "docs" / "design" / "conflict-safe-collaboration.md"
+        ROOT / "docs" / "design" / "conflict-safe-collaboration.md"
     ).read_text(encoding="utf-8")
     for marker in (
         "Canonical encoding",

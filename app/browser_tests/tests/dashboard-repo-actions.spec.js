@@ -12,7 +12,7 @@ const HEAD = "a".repeat(40);
 // lists the workflows, shows the executor's runs with their steps and log
 // tail, and -- only when that node advertises the actions-control operation --
 // sends dispatch / stop / re-run / enable requests back to the same node.
-// Contract: www/docs/operations/mirror-actions-control.md.
+// Contract: docs/operations/mirror-actions-control.md.
 async function stageRepoPage(page, { session, api }) {
   if (session) {
     await page.addInitScript((value) => {

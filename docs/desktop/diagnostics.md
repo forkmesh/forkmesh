@@ -45,7 +45,7 @@ Windows and macOS read paths from there.
   block so batches never merge into the previous row).
 - Host and core node logs: [networking.md](networking.md#host-logs),
   [networking.md](networking.md#fleet-node-logs),
-  [../NODE_LOGS.md](../NODE_LOGS.md).
+  [../NODE_LOGS.md](../operations/node-logs.md).
 
 ### Repeated errors fold into one ping
 
@@ -948,6 +948,6 @@ drop-ins. Linux only.
 
 ## Related
 
-- [www/docs/qt-client.md](../../www/docs/qt-client.md#logs-and-diagnostics)
+- [docs/qt-client.md](../qt-client.md#logs-and-diagnostics)
 - [build-and-test.md](build-and-test.md)
 - [git-locking.md](git-locking.md)

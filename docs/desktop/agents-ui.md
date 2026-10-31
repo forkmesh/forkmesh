@@ -1421,7 +1421,7 @@ the role (`src/TeammateStore.*` reads it through `src/RepoWorkflow.*`;
 `src/MainWindowTeammates.cpp`). Older `.forkmesh/teammates/*.json` files still
 load and move on their next save. It runs on demand, on a cron cadence, on
 events or continually with a decision gate (see
-[www/docs/qt-client.md](../../www/docs/qt-client.md)); error-log and crash
+[docs/qt-client.md](../qt-client.md)); error-log and crash
 repair are special agent tasks ([diagnostics.md](diagnostics.md)). Every run
 is a workflow run with its own record and output file
 ([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).

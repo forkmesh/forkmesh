@@ -24,7 +24,7 @@ name.
 ## Why the database
 
 The served stack has no object store
-([architecture](../../www/docs/architecture.md)). The chat's view-once video
+([architecture](../architecture.md)). The chat's view-once video
 ([chat-private-rooms.md](chat-private-rooms.md)) already stores media as
 512 KiB parts in the rqlite database every core replicates (behind the D1
 shape, `d1_rqlite.py`), with quotas and a sweep; this reuses that shape. Committing videos into the repository
@@ -67,7 +67,7 @@ is sealed like every other row.
   cannot be replayed under another repository's address.
 - Deletes and keys: a repository delete purges its `repo_uploads` rows and
   their parts (`_repo_scoped_state_statements`); `repo_uploads` is in the
-  rekey inventory ([REKEY.md](../REKEY.md)) for its two blind indexes and
+  rekey inventory ([REKEY.md](../operations/rekey.md)) for its two blind indexes and
   its sealed `data`.
 
 ## Web

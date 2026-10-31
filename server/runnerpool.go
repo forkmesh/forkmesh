@@ -1,6 +1,6 @@
 package mirrornode
 
-// Burst runner autoscaler (PLAN.md Phase 5, docs/RUNNERS.md).
+// Burst runner autoscaler (PLAN.md Phase 5, docs/operations/runners.md).
 //
 // decidePool is a pure function: given the policy, the remembered state and
 // one observation (queue depth, the always-on runners' load, the burst

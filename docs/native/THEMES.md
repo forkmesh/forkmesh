@@ -3,7 +3,7 @@
 Part of [the native docs](README.md).
 The iOS and Android apps let the user pick and edit a colour theme, the way
 the start page's theme picker does for a new instance
-([../INSTANCES.md](../INSTANCES.md)). The choice is the phone's own: it is
+([../INSTANCES.md](../operations/instances.md)). The choice is the phone's own: it is
 stored in the app's preferences, never in a project scope, and is not synced.
 
 ## What a theme is

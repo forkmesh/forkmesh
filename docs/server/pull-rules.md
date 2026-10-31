@@ -2,7 +2,7 @@
 
 Repository and organization requirements checked against every pull request,
 and the signed proof of which AI model wrote a commit. The user guide is
-[`www/docs/operations/pull-rules.md`](../../www/docs/operations/pull-rules.md);
+[`docs/operations/pull-rules.md`](../operations/pull-rules.md);
 this page is the implementation (home: [README.md](README.md); merges:
 [merge-executor.md](merge-executor.md)).
 

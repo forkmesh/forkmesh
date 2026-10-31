@@ -7,7 +7,7 @@ buffers, the session layer) is a JavaScript port of the Go core in
 `server/rtc/fmm`, held to it by shared fixtures. Media goes through
 WebTransport, WebCodecs and an AudioWorklet, encrypted with call e2ee v2
 ([call-e2ee.md](../server/call-e2ee.md); overview in
-[encryption](../../www/docs/encryption.md)). Browsers without
+[encryption](../encryption.md)). Browsers without
 WebTransport, WebCodecs or a call signer stay on the WebRTC path of
 [chat-group-calls.md](chat-group-calls.md), unchanged.
 

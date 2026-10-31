@@ -56,7 +56,7 @@ Reporters edit while in triage; collaborators while in triage or draft.
 ## Record
 
 `security_advisories.data` is `encrypt_row` of the whole record
-([encryption](../../www/docs/encryption.md)): title, description (Markdown),
+([encryption](../encryption.md)): title, description (Markdown),
 severity, CWE IDs, affected products, references, CVE ID, fix link, reporter,
 collaborators, history and the signed ledger events. Comments, members and
 credits are encrypted the same way in their own tables. Only the ID, state,
@@ -120,7 +120,7 @@ The ledger file is
 event carries `type`, `ts`, `author`, `authorName`, `repoKey`, `contentHash`,
 `sig` and the `osv` it signed, so every event verifies from the file alone and
 git history mirrors it like `.forkmesh/issues`
-([mirroring](../../www/docs/mirroring.md)). When no host takes the commit (no
+([mirroring](../mirroring.md)). When no host takes the commit (no
 live host, a protected branch, a private repository), the advisory is still
 published with ledger state `pending`; a maintainer can retry, and the kept
 signed events are written then.
@@ -201,7 +201,7 @@ Tables (migration 0277): `security_advisories`, `security_advisory_members`,
 `security_advisory_comments`, `security_advisory_credits`,
 `security_advisory_settings`. All carry `repo_bi`, so a repository delete
 purges them (`_REPO_SCOPED_TABLES`), and all are in the re-key inventory
-([REKEY.md](../REKEY.md)).
+([REKEY.md](../operations/rekey.md)).
 
 The access record `context()` builds is passed as `ctx` and read by key only
 (`ctx["admin"]`, never `ctx.get(...)`): the `test_host_js_surface` inventory

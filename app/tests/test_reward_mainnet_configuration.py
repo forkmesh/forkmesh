@@ -163,7 +163,7 @@ def test_production_and_development_wrangler_networks_are_explicit():
 
     config = tomllib.loads(
         (ROOT / "wrangler.toml").read_text(encoding="utf-8"))
-    # ForkMesh Next starts with Solana rewards off mainnet (docs/PLAN.md:
+    # ForkMesh Next starts with Solana rewards off mainnet (docs/operations/served-stack.md:
     # integrations start off), so its manifest names devnet explicitly.
     assert config["vars"]["COMMUNITY_REWARD_NETWORK"] == "devnet"
     assert config["vars"]["COMMUNITY_REWARD_RPC_URL"] == (

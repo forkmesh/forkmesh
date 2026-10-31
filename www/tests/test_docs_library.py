@@ -1,4 +1,4 @@
-"""The Markdown tree under www/docs is rendered into the hosted /docs/ tree.
+"""The Markdown tree under docs is rendered into the hosted /docs/ tree.
 
 app/tools/docs_site.py runs during ``build_site_assets.py www``; these tests
 pin the contract: every document and schema gets a URL, hand-written pages are
@@ -19,7 +19,7 @@ import pytest
 WWW = Path(__file__).resolve().parents[1]
 REPOSITORY = WWW.parent
 PUBLIC = WWW / "public"
-DOCS = WWW / "docs"
+DOCS = WWW.parent / "docs"
 APP_TOOLS = REPOSITORY / "app" / "tools"
 if str(APP_TOOLS) not in sys.path:
     sys.path.insert(0, str(APP_TOOLS))
@@ -33,7 +33,7 @@ def test_every_markdown_document_and_json_file_has_a_hosted_url():
     catalog = docs_site.load_catalog()
     sources = {entry.source for entry in catalog.entries if entry.source}
     expected = {
-        f"www/docs/{path.relative_to(DOCS).as_posix()}"
+        f"docs/{path.relative_to(DOCS).as_posix()}"
         for path in DOCS.rglob("*")
         if path.is_file() and path.suffix in {".md", ".json"}
     }
@@ -118,7 +118,7 @@ def test_pages_cross_link_each_other():
     assert "More in Operations" in page
     assert "Previous</span>" in page and "Next</span>" in page
     assert 'class="dp-outline"' in page
-    assert f'href="{docs_site.SOURCE_TREE_URL}www/docs/operations/mirror-node.md"' in page
+    assert f'href="{docs_site.SOURCE_TREE_URL}docs/operations/mirror-node.md"' in page
     assert 'href="/docs-page.css?v=${version}"' in page
     assert 'src="/docs-page.js?v=${version}"' in page
     assert 'src="/site-header.js?v=${version}"' in page
@@ -259,18 +259,18 @@ def test_history_log_parser_follows_renames_and_additions():
     commits, files = docs_history.parse_log(output)
     assert [commit.sha for commit in commits] == ["c3", "c2", "c1", "c0"]
     assert [commit.parent for commit in commits] == ["c2", "", "", ""]
-    assert commits[0].changes[0] == docs_history.Change("renamed", "www/docs/new.md", "www/docs/old.md")
+    assert commits[0].changes[0] == docs_history.Change("renamed", "docs/new.md", "docs/old.md")
     # The older commits that named old.md are the same document as new.md.
-    assert commits[1].changes[0].path == "www/docs/new.md"
+    assert commits[1].changes[0].path == "docs/new.md"
     assert commits[1].changes[1].status == "removed"
-    guide = files["www/docs/new.md"]
+    guide = files["docs/new.md"]
     assert (guide.added, guide.updated, guide.revisions, guide.added_known) == (100, 300, 3, True)
-    other = files["www/docs/other.md"]
+    other = files["docs/other.md"]
     assert (other.added, other.updated, other.revisions, other.added_known) == (50, 300, 2, False)
 
 
 def test_history_degrades_without_a_repository(tmp_path):
-    history = docs_history.load_history(tmp_path, ("www/docs",))
+    history = docs_history.load_history(tmp_path, ("docs",))
     assert history is docs_history.EMPTY and not history.available
 
 

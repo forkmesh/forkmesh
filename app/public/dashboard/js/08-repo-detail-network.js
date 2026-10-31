@@ -291,7 +291,7 @@
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
           </div>
           <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">www/docs/integrations.md</span>.</p>
+            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">docs/integrations.md</span>.</p>
             <div data-repo-webhooks-list class="grid gap-2 text-xs text-muted-foreground">Loading webhooks…</div>
             <form data-repo-webhook-form class="grid gap-3 rounded-md border border-border p-3">
               <label class="grid gap-1 text-[11px] font-medium text-foreground">Payload URL
@@ -3977,7 +3977,7 @@
           copyButton.classList.add("copied");
           if (copyButton.closest("[data-repo-code-wrap]")) {
             window.ForkMeshAnalytics?.recordProductAction?.("repository-clone-copied");
-            // First-party acquisition signal (docs/attribution.md). The
+            // First-party acquisition signal (docs/app/attribution.md). The
             // server joins it to the HttpOnly fm_attr session cookie; only
             // the repository name travels, never the URL that was copied.
             try {

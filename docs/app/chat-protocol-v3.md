@@ -1,8 +1,8 @@
 # Chat protocol v3: signed, post-quantum, forward-secret chat
 
 Part of [the App docs](README.md); background in
-[encryption](../../www/docs/encryption.md) and the
-[threat model](../../www/docs/protocol/threat-model.md).
+[encryption](../encryption.md) and the
+[threat model](../protocol/threat-model.md).
 
 Status: adopted 2026-10-16. Replaces RoomSeal v2 (`type:"sealed", v:2`,
 `type:"e2ee-key", v:2`) on every client (iOS `FMCrypto/RoomSeal.swift`,

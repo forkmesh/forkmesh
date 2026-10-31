@@ -65,7 +65,7 @@ the alert stops, and the page offers *Identity key (optional)* while the folder
 lacks this project's key for its current public key
 (`DataFolder.identitySaved`), so a user who keeps the key elsewhere is never
 asked for a passphrase. How the key is encrypted:
-[encryption.md](../../www/docs/encryption.md).
+[encryption.md](../encryption.md).
 
 *Not now* hides it until the next launch. On iOS the alert sits on the root
 view; on Android it is drawn outside `AccountFeature.Gate`. Either way it shows

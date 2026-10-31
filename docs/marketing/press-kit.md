@@ -14,7 +14,7 @@ rendered to `www/public/press.html` with `python3 app/tools/site_templates.py`
 | Style guide | Name, voice, fonts (from `www/public/styles.css`) |
 | Colors | Website background `#090909` and green `#4ade80` (`www/public/styles.css`); app background `#010409`, foreground `#f0f6fc`, primary blue `#4493f8`, create green `#238636`, status green `#3fb950` (dark values in `app/public/dashboard/theme.json`, with their roles) |
 | Fast facts | Category, focus, public beta, MIT License (`LICENSE`), desktop platforms (`/desktop`), mobile (`/mobile`), web dashboard |
-| How it works | Mirrors, clone URL, failover, Ed25519 identity, agents (`/features`); three self-hosted core nodes and a runner tier (`docs/PLAN.md`) |
+| How it works | Mirrors, clone URL, failover, Ed25519 identity, agents (`/features`); three self-hosted core nodes and a runner tier (`docs/operations/served-stack.md`) |
 | Press contact | `founders@forkmesh.com`, the address the site already uses for press; `security@forkmesh.com` for security reports |
 | Screenshots | Images already on the site: `assets/desktop-mockup/desktop-app.webp`, `assets/mobile/repos.webp`, `assets/mobile/review.webp`, `assets/everywhere/web.webp`, `assets/social-card.jpg`, `assets/logo-96.png` |
 | Boilerplate | Short, medium and long versions |

@@ -3,7 +3,7 @@
 The `mastodon` package (entry point `builtin:mastodon`) is a native Qt Mastodon
 client on the desktop since 1.1.0 (the web page keeps its token in one browser
 session). The web page (`content/web/`) still serves the web and phone apps
-([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md)).
+([../marketplace-usage-feed-mastodon.md](usage-feed-mastodon.md)).
 Part of [the marketplace docs](README.md).
 
 Source: `marketplace/packages/mastodon/content/desktop/`.

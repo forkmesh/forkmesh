@@ -27,7 +27,7 @@ screenshots, dependencies and provenance. Every listing supplies at least one
 image under `preview/` with alternative text. `SIGNATURE` signs the canonical
 manifest and the digest of every archived file, so mirrors can carry the bytes
 but cannot change the creator or content
-([mirroring and software distribution](../www/docs/mirroring.md)).
+([mirroring and software distribution](../docs/mirroring.md)).
 
 The source tree keeps one creation under `packages/<id>/`. A package with a
 `content/` folder is a plugin; a build adds only the plugins listed in
@@ -137,7 +137,7 @@ Its package list is generated from `catalog.json`; re-run
 `python3 app/tools/build_market_catalog.py` after adding or changing a package
 (`app/tests/test_market_landing.py` fails while page and catalog disagree).
 Planned extractions are described in
-[`www/docs/plugins/README.md`](../www/docs/plugins/README.md).
+[`docs/plugins/README.md`](../docs/plugins/README.md).
 
 ## Notable packages
 

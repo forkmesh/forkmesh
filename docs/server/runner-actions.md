@@ -114,5 +114,5 @@ carries `cancel`.
 
 ## Related docs
 
-[actions-runner.md](actions-runner.md), [../RUNNERS.md](../RUNNERS.md),
+[actions-runner.md](actions-runner.md), [../RUNNERS.md](../operations/runners.md),
 [agent-jobs.md](agent-jobs.md).

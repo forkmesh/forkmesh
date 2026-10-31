@@ -20,7 +20,7 @@ for another `nodeName`.
 `account_activity_days`, one row per `(account_bi, day, device_key)`. At most
 24 devices per day (`429 too_many_activity_devices`); rows older than three days
 are pruned; rows are deleted with the account and re-keyed by
-`tools/next_rekey.py` ([REKEY.md](../REKEY.md)).
+`tools/next_rekey.py` ([REKEY.md](../operations/rekey.md)).
 
 ## Sync
 

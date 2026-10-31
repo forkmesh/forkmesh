@@ -378,7 +378,7 @@ def _link(item: dict, ledger: dict, root: Path) -> str:
         target = Path(item["path"])
         label = f"`{target.name}`" + (f" §{item['anchor']}" if item.get("anchor") else "")
     relative = Path(*([".."] * len(documentation_dir.relative_to(root).parts)), target).as_posix()
-    if target.parts[:2] == ("www", "docs"):
+    if target.parts[:1] == ("docs",):
         relative = Path(*target.parts[len(documentation_dir.relative_to(root).parts):]).as_posix()
     anchor = f"#{item['anchor']}" if kind != "test" and item.get("anchor") else ""
     return f"[{label}]({relative}{anchor})"

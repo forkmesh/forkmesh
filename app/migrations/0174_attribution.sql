@@ -1,4 +1,4 @@
--- Acquisition attribution (docs/attribution.md).
+-- Acquisition attribution (docs/app/attribution.md).
 --
 -- One row per anonymous browser session, keyed by the opaque random id in the
 -- fm_attr cookie. UTM values are sanitised and allowlisted server-side; the

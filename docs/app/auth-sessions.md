@@ -217,9 +217,9 @@ router key. A mirror never receives the session row or password material.
 
 ## Related
 
-[portable identities](../../www/docs/portable-identities.md),
-[organization roles](../../www/docs/security/organization-roles.md),
-[encryption](../../www/docs/encryption.md).
+[portable identities](../portable-identities.md),
+[organization roles](../security/organization-roles.md),
+[encryption](../encryption.md).
 
 ## Settings pinned header
 

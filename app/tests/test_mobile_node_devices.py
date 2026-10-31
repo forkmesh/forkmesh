@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Mobile node binding and the owner-facing node registry (Worker side).
 
-Contract: www/docs/mobile/mobile-node-contract.md sections 2-5. A phone binds
+Contract: docs/mobile/mobile-node-contract.md sections 2-5. A phone binds
 its Ed25519 key on a normal password login with ``deviceKind: mobile_node``;
 the key lands in account_devices with the reduced MOBILE_NODE_CAPABILITIES,
 never becomes the account's primary key, signs as the owner while enabled,

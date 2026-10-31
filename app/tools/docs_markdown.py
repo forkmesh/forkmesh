@@ -4,7 +4,7 @@
 The public site builds on whatever machine runs ``wrangler deploy`` and on
 clean CI sandboxes, so the renderer deliberately depends on nothing outside
 the standard library. It covers the GitHub-flavoured subset the files under
-``www/docs`` actually use: ATX headings, paragraphs, fenced and indented code,
+``docs`` actually use: ATX headings, paragraphs, fenced and indented code,
 nested ordered/unordered/task lists, block quotes, pipe tables, thematic
 breaks, HTML comments, inline code, emphasis, links, images, autolinks and a
 small allowlist of raw inline HTML (``<a id="…">`` anchors and the like).

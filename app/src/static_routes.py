@@ -281,7 +281,7 @@ def legacy_page_redirect(path, query):
 # and the list at /owner/repo/pulls; /pulls/12, /pull-requests/12 and GitLab's
 # /-/merge_requests/12 land on /pull/12. Like the page redirects above these
 # are permanent 308s, so an alias is never removed; see
-# www/docs/terminology.json for the full compatibility table.
+# docs/terminology.json for the full compatibility table.
 REPO_ROUTE_ALIASES = {
     "commit": "commits",
     "pull": "pulls",

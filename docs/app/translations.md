@@ -183,14 +183,14 @@ post_translations (repo_bi, subject, comment, lang, account_bi,
   says "the original was edited after this translation" when it no longer
   matches.
 - Deleting the repository (`_REPO_SCOPED_TABLES`) or the account deletes its
-  rows; `tools/next_rekey.py` and [REKEY.md](../REKEY.md) list the table.
+  rows; `tools/next_rekey.py` and [REKEY.md](../operations/rekey.md) list the table.
 - Migration `0293_post_translations.sql` creates it and stamps the schema
   fingerprint.
 
 ### Signature
 
 The browser signs with its web issue key (`getWebIssueKey`, the Ed25519 key
-that signs web comments; see [encryption](../../www/docs/encryption.md)):
+that signs web comments; see [encryption](../encryption.md)):
 
 ```
 forkmesh-translation-v1

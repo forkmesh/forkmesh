@@ -100,7 +100,7 @@ no login, so both suites write their failures as annotations:
   `docs_mobile_bundle.py`). To reproduce a CI run, install only that file in a
   fresh venv and run `python tools/quality_gate.py run --profile core`.
 - **Terminology and claims gates read public copy.** "peer to peer" is a
-  discouraged term on primary surfaces (`www/docs/terminology.json`);
+  discouraged term on primary surfaces (`docs/terminology.json`);
   `app/tests/test_public_security_claims.py` checks that mirroring stays a
   desktop or headless-node job.
 - **Third-party headers.** A vendored file with a license header naming an
@@ -109,7 +109,7 @@ no login, so both suites write their failures as annotations:
 - **The issue-sync workflow** skips with a notice when the
   `FORKMESH_ISSUE_SYNC_DESTINATION` repository variable is unset on a scheduled
   run; a manual run without it still fails. Set the variable and the tokens in
-  [automation-and-cloudflare-bootstrap.md](../../www/docs/operations/automation-and-cloudflare-bootstrap.md)
+  [automation-and-cloudflare-bootstrap.md](../operations/automation-and-cloudflare-bootstrap.md)
   to turn it on.
 - **World browser E2E** cancels in progress only on pull requests; on `main` a
   newer push waits, and GitHub keeps only the newest waiting run. The job limit
@@ -125,7 +125,7 @@ The App browser specs run against a local Workers runtime:
 `pywrangler dev` and `world/browser_tests/wrangler.browser-tests.toml`. This is
 a test harness only; production runs the app on the cores
 ([docs/host/README.md](../host/README.md),
-[architecture](../../www/docs/architecture.md)). Its traps:
+[architecture](../architecture.md)). Its traps:
 
 - **Off-site redirects.** `build_site_assets.py cutover` copies
   `www/public/_redirects` into `app/dist`, and wrangler applies its 308s to
@@ -179,7 +179,7 @@ in `app/browser_tests`.
   status. The harness reads the newest stage still running.
 
 The page fixes behind past spec failures are in their subsystem pages, for
-example [daily-interface-validation.md](../../www/docs/engineering/daily-interface-validation.md),
+example [daily-interface-validation.md](daily-interface-validation.md),
 [web-composer.md](../app/web-composer.md) and
 [branch-ops.md](../app/branch-ops.md).
 

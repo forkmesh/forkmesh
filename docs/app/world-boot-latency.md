@@ -2,7 +2,7 @@
 
 Part of [the App docs](README.md); the World is in
 [docs/world](../world/README.md). How the App keeps the World's first
-requests fast. Each core ([architecture](../../www/docs/architecture.md))
+requests fast. Each core ([architecture](../architecture.md))
 runs one App process on a single event loop, so every statement a boot
 request skips shortens the queue for all others. Code: `app/src/account_users.py`,
 `app/src/entry.py` (`edge_cache_delete`, `host_warm_caches`),

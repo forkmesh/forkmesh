@@ -3,7 +3,7 @@
 Part of [the App docs](README.md). Writers draft, edit and delete releases on
 the Releases tab, and a release creates its tag, without the desktop app.
 Signed software distribution through the mirrors is described in
-[mirroring](../../www/docs/mirroring.md).
+[mirroring](../mirroring.md).
 
 ## What a web release is
 

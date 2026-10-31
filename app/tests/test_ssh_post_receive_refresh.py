@@ -942,7 +942,7 @@ def test_refresh_health_timeout_default_and_example_allow_tunnel_startup():
     )
     schema = json.loads(
         (
-            PROJECT_ROOT / "www" / "docs" / "ssh-post-receive-refresh.schema.json"
+            PROJECT_ROOT / "docs" / "ssh-post-receive-refresh.schema.json"
         ).read_text(encoding="utf-8")
     )
     assert bridge.DEFAULT_HEALTH_TIMEOUT_SECONDS == 180

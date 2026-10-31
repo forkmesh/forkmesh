@@ -31,7 +31,7 @@
 # Every Cf-* header a client sends is dropped; the App learns the
 # visitor from Cf-Connecting-Ip (this connection's peer) or, for
 # requests relayed by the next.forkmesh.com Worker, from the signed
-# x-forkmesh-edge-client header (deploy/core/edge_client.md).
+# x-forkmesh-edge-client header (docs/www/edge-client.md).
 (client_headers) {
 	request_header -Cf-*
 	request_header -True-Client-Ip

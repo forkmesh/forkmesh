@@ -25,7 +25,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_PATH = ROOT / "tools" / "forkmesh_offline_sync.py"
-DOC = ROOT / "www" / "docs" / "offline-sync.md"
+DOC = ROOT / "docs" / "offline-sync.md"
 sys.path.insert(0, str(ROOT / "app" / "src"))
 
 import availability_proof  # noqa: E402
@@ -628,12 +628,12 @@ def test_documentation_covers_the_contract():
         assert "`%s`" % vocabulary in doc, vocabulary
     for code in ("0", "2", "3", "4", "5"):
         assert re.search(r"^\| `%s` \|" % code, doc, re.M), code
-    assert "limited_replica" in (ROOT / "www" / "docs" / "availability-proof.md").read_text()
-    assert "(offline-sync.md)" in (ROOT / "www" / "docs" / "README.md").read_text()
+    assert "limited_replica" in (ROOT / "docs" / "availability-proof.md").read_text()
+    assert "(offline-sync.md)" in (ROOT / "docs" / "README.md").read_text()
 
 
 def test_quality_gate_and_platform_matrix_run_this_suite():
-    config = json.loads((ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text())
+    config = json.loads((ROOT / "docs" / "engineering" / "quality-gates.json").read_text())
     gate = next(g for g in config["gates"] if g["id"] == "offline-sync-conformance")
     assert "app/tests/test_offline_sync.py" in gate["command"]
     assert "offline-sync-conformance" in config["profiles"]["core"]

@@ -4,7 +4,7 @@
 One standard-library file that third parties may vendor next to their own
 tooling. It implements the v1 contract in
 ``conformance/integrations/v1/contract.json`` (documented in
-``www/docs/integrations.md``):
+``docs/integrations.md``):
 
 * ``discover`` probes a hosted or self-hosted service and prints which contract
   resources it serves, with a version-skew verdict;

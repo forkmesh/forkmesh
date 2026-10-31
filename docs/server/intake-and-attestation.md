@@ -3,7 +3,7 @@
 How web issue, pull and discussion submissions become Git commits on a mirror,
 and how the App learns which refs a mirror serves (home:
 [README.md](README.md); why mirrors take writes and how clones are routed:
-[mirroring](../../www/docs/mirroring.md)). Code: `server/intake.go`,
+[mirroring](../mirroring.md)). Code: `server/intake.go`,
 `server/issue_reconcile.go`, `server/pull_metadata_refs.go`,
 `server/catalog.go`, `server/identity.go`. Background on convergence with the
 source desktop lives in the desktop's `desktop/src/UpstreamCheckoutSync.cpp`.

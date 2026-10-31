@@ -1,7 +1,7 @@
 # Desktop: chat encryption (protocols v3 and v4)
 
 Part of [the desktop docs](README.md). The public overview of what is
-encrypted and how is [encryption](../../www/docs/encryption.md). The protocols
+encrypted and how is [encryption](../encryption.md). The protocols
 themselves are
 [../app/chat-protocol-v3.md](../app/chat-protocol-v3.md) and, for direct
 messages, [../app/chat-protocol-v4.md](../app/chat-protocol-v4.md); this page

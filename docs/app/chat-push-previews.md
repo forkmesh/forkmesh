@@ -4,7 +4,7 @@ Direct-message and channel pushes show the sender and text once the phone has
 opened the frame, while neither the server nor Apple sees the text, the
 sender or the channel name. Home page: [README.md](README.md). Related:
 [chat-private-rooms.md](chat-private-rooms.md),
-[mobile push notifications](../../www/docs/operations/mobile-push-notifications.md).
+[mobile push notifications](../operations/mobile-push-notifications.md).
 
 ## Model
 
@@ -30,7 +30,7 @@ already holds that room's key from an earlier push (the room name is
 `chat-direct:<id>:v<keyVersion>`, cached only as a hash), and retries the
 pending fetch once on a network error, 429 or 5xx. A photo, voice, video or
 view-once message with no text says what arrived instead of "New message".
-Details: [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md).
+Details: [docs/native/ios/FMChat.md](../native/ios/FMChat.md).
 
 **Why no sender or channel in the payload**
 ([chat-protocol-v3.md](chat-protocol-v3.md#push-notifications)): alert text and
@@ -111,7 +111,7 @@ keeps no DM history, so the app still needs the server copy when it opens.
 404 for non-members, own messages or gone rows; 400 `invalid_ref`.
 
 Clients: `native/ios/NotificationService`
-([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)) and Android
+([docs/native/ios/FMChat.md](../native/ios/FMChat.md)) and Android
 `BackgroundLinkService` ([native/ANDROID.md](../native/ANDROID.md)). Both
 phones offer a notification-content setting applied after decryption.
 

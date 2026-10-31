@@ -228,6 +228,6 @@ ahead, conflicting paths). `base_bi`/`head_bi` are blind indexes of
 `pull-watch-branch:<repo_bi>:<branch>`, `trial_bi` and `notified_bi` of the
 commit pair. Repository deletion removes both tables' rows
 (`_REPO_SCOPED_TABLES`). A `DATA_KEY` rotation empties both
-(`tools/next_rekey.py`, [REKEY.md](../REKEY.md)): watch rows come back with the next
+(`tools/next_rekey.py`, [REKEY.md](../operations/rekey.md)): watch rows come back with the next
 push, submission or page view, and a quick reply already sent on a head can
 be sent once more.

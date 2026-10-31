@@ -5,9 +5,9 @@ desktop: one install command (SSH) or one cloud-init script installs the
 native `forkmesh-mirror-node` service, links it to their account, waits for
 their DNS record, and serves the node over HTTPS through Caddy with a Let's
 Encrypt certificate. Whole white-label instances use a different path
-([../INSTANCES.md](../INSTANCES.md)); the options for running your own
-infrastructure are in [self-hosting](../../www/docs/self-hosting.md), and what
-a mirror node does in [mirroring](../../www/docs/mirroring.md). Release and
+([../INSTANCES.md](../operations/instances.md)); the options for running your own
+infrastructure are in [self-hosting](../self-hosting.md), and what
+a mirror node does in [mirroring](../mirroring.md). Release and
 installer details: [README.md](README.md).
 
 ## Flow

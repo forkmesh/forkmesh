@@ -3,7 +3,7 @@
 Part of [the App docs](README.md). Settings > **Access** (owner only,
 `renderRepoAccessSettings`) covers who can read a repository without the
 desktop app. How private repositories are sealed is in
-[encryption](../../www/docs/encryption.md).
+[encryption](../encryption.md).
 
 ## Collaborators (private repositories)
 

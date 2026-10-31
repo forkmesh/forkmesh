@@ -1,4 +1,4 @@
-"""IDS quarantine and incident delivery on a real rqlite (docs/IDS.md).
+"""IDS quarantine and incident delivery on a real rqlite (docs/operations/intrusion-detection.md).
 
 One rqlite node with migrations 0192 (cluster_members), 0197 (the IDS
 tables) and 0208 (the mail budget). The root IDS side runs deploy/core/ids.py's own rqlite client and

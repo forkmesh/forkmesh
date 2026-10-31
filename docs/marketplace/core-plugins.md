@@ -133,7 +133,7 @@ instance has no onboarding, and without this its signed-in users would see
 fewer repository tabs than signed-out visitors. Removing a package still stores an
 `installed: false` row, which wins as in step 1. ForkMesh-company surfaces
 among them (World, the ledger) stay hidden by the instance's own plugin
-switch (`INSTANCE_PLUGINS`, see [INSTANCES.md](../INSTANCES.md)).
+switch (`INSTANCE_PLUGINS`, see [INSTANCES.md](../operations/instances.md)).
 forkmesh.com is unchanged.
 
 The server marks answers from steps 2 and 3 with `"legacy": true`

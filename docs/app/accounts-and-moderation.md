@@ -290,7 +290,7 @@ throttle limits how many accounts one network can make.
 ## Mirrored GitHub content
 
 example/forum is filled by `tools/forge_sync.py` in mirror mode
-([forge-sync](../../www/docs/forge-sync.md)): GitHub wins every field, a
+([forge-sync](../forge-sync.md)): GitHub wins every field, a
 ForkMesh change to a mirrored title, body, state or comment is replaced on the
 next pass, and authors are `github:<login>`, not accounts. So:
 
@@ -318,10 +318,10 @@ schema fingerprint, `test_local_migrations`; [d1.md](d1.md)):
 | `moderation_log` | `scope_bi` | `{scope, actor, action, target, detail}` |
 
 No table has an address or browser column. Payloads are sealed under
-`DATA_KEY` ([encryption](../../www/docs/encryption.md)). Every payload carries the
+`DATA_KEY` ([encryption](../encryption.md)). Every payload carries the
 plaintext its blind indexes were made from (`scope` as `org:<name>` or
 `moderation-scope:instance`, `repo` as `<owner>/<repo>`, the account name), so
-`tools/next_rekey.py` recomputes them ([REKEY.md](../REKEY.md)); the counters
+`tools/next_rekey.py` recomputes them ([REKEY.md](../operations/rekey.md)); the counters
 are emptied instead. A repository delete purges flags and queue
 (`_REPO_SCOPED_TABLES`); an account delete purges roles, blocks, counters and
 queued posts.

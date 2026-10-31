@@ -1,8 +1,8 @@
 # Desktop: networking
 
 Part of [the desktop docs](README.md). How the relay, cores and mirrors fit
-together is in [architecture](../../www/docs/architecture.md); the encryption
-used on links and chat is in [encryption](../../www/docs/encryption.md).
+together is in [architecture](../architecture.md); the encryption
+used on links and chat is in [encryption](../encryption.md).
 
 ## Relay transport
 
@@ -29,7 +29,7 @@ used on links and chat is in [encryption](../../www/docs/encryption.md).
   `src/MainWindowRepoSync.cpp` dispatches them (e.g. `cloud-agents`, `tasks`).
 - A relay instance is a security boundary: repository lists, bearers, chat and
   queued agent work are scoped to one relay origin
-  ([www/docs/qt-client.md](../../www/docs/qt-client.md#multiple-relay-instances)).
+  ([docs/qt-client.md](../qt-client.md#multiple-relay-instances)).
   `src/RelayRepositoryScope.h` decides which relay owns a repository record.
 - The desktop signs requests with the node key and sends no `Origin` header, so
   routes that require a browser session token do not work from it.
@@ -93,7 +93,7 @@ the node log and the systemd journal, and retries QUIC periodically.
 ## Fleet node logs
 
 `src/CoreNodeLogs.{h,cpp}` and `CoreLogFeed` in `src/MainWindowLogs.cpp` follow
-every fleet node's journal live. Node side: [../NODE_LOGS.md](../NODE_LOGS.md),
+every fleet node's journal live. Node side: [../NODE_LOGS.md](../operations/node-logs.md),
 `deploy/core/logread.py`. Setting: "Follow the fleet nodes' logs, rqlite
 statements and web traffic" (`diagnostics/coreNodeLogFeed`, on by default;
 compiled out under `FORKMESH_WINDOW_TESTS`).
@@ -225,7 +225,7 @@ rail.
   and `GET /api/runners` (status, last check-in, `activeLeases`, scope, owner).
   Their **Logs** action opens the Log page filtered to that runner.
 - Owner and version come from the catalog
-  ([NODE_OWNERSHIP.md](../NODE_OWNERSHIP.md)).
+  ([NODE_OWNERSHIP.md](../operations/node-ownership.md)).
 - A node in the relay's serving set counts as online even when its endpoint
   lease is not current (`mirrorsync::catalogMirrorLiveness`); its tooltip says
   clones are not routed to it.
@@ -245,7 +245,7 @@ Passwords are only a fallback and travel via environment or stdin, never argv.
 The Hosts rail's Runners section lists the app's cloud agent runners (`hostsRunnersTable`,
 `refreshRunners()`, `src/RunnerListView.*`) from `GET /api/runners`, with
 status, scope, last check-in and per-provider sign-in state, and buttons that
-open the runner sign-in dialog ([../RUNNERS.md](../RUNNERS.md#provider-credentials)).
+open the runner sign-in dialog ([../RUNNERS.md](../operations/runners.md#provider-credentials)).
 Runners are never added to the saved hosts; they show in the node list as runners.
 
 ### Add core node
@@ -314,7 +314,7 @@ delete it later with **Remove…** and the instance box. Test:
 The Hosts rail's ForkMesh fleet section carries **Fleet autoscaling** (`src/FleetAutoscalePanel.{h,cpp}`,
 `src/FleetAutoscaleModel.h`), a control plane for `tools/next_autoscale.py`
 (`FORKMESH_NEXT_AUTOSCALE`, `FORKMESH_FLEET_PYTHON`). The scaler itself runs
-leaderless on the cores ([../fleet/AUTOSCALING.md](../fleet/AUTOSCALING.md)).
+leaderless on the cores ([../fleet/AUTOSCALING.md](../operations/autoscaling.md)).
 The panel offers a kill switch, per-pool settings (validated, then signed by
 `next_autoscale.py settings set`; going live asks first), a status view
 refreshed every 60 s only while visible, and manual scale requests queued to the

@@ -9,7 +9,7 @@ never means zero.
 ## North star
 
 **Activated accounts:** accounts that have published at least one repository
-(`first_mirror_created`, [../attribution.md](../attribution.md); "accounts
+(`first_mirror_created`, [../attribution.md](../app/attribution.md); "accounts
 with at least one mirror" on `/product-analysis`).
 
 - **Drivers.** New signups, the share of signups that publish a first

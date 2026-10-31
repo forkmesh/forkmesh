@@ -2,7 +2,7 @@
 """Static contracts for the settings "Nodes & devices" panel.
 
 The web dashboard is the source of truth for every node key bound to an
-account (``www/docs/mobile/mobile-node-contract.md`` section 4). These
+account (``docs/mobile/mobile-node-contract.md`` section 4). These
 assertions pin the DOM hooks and the API calls the panel makes so the
 Worker routes and the dashboard script cannot drift apart silently.
 """

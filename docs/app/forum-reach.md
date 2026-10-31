@@ -1,7 +1,7 @@
 # Forum reach: many doors to one forum
 
 Part of [the App docs](README.md); the public overview is
-[censorship resilience](../../www/docs/censorship-resilience.md). A forum that
+[censorship resilience](../censorship-resilience.md). A forum that
 lives in a ForkMesh repository (its threads are the issue records in
 `.forkmesh/issues`) should stay readable when a censor blocks one domain name
 or one IP address, with read-only static copies elsewhere and pages light
@@ -13,10 +13,10 @@ No single trick does this, so an instance opens several doors at once:
 | --- | --- | --- | --- |
 | The instance domain | yes | yes | the normal site |
 | The provider the forum mirrors (GitHub) | yes | yes | kept by forge sync ([provider-mirrors.md](provider-mirrors.md)) |
-| A Tor onion address | yes | yes | `onionService: true` ([INSTANCES.md](../INSTANCES.md#tor-onion-service)) |
+| A Tor onion address | yes | yes | `onionService: true` ([INSTANCES.md](../operations/instances.md#tor-onion-service)) |
 | Static copies on GitHub Pages, Codeberg Pages, S3, IPFS, a USB stick | yes | no | `tools/forum_static_export.py` + `tools/forum_static_publish.py` (below) |
 | `git clone` of the repository or of a pages branch | yes, offline | no | any git host that carries it |
-| Mirror nodes that carry the repository | yes | no | the mirror quota panel sets a goal of how many mirrors a repository wants ([mirror-quota.md](mirror-quota.md); [mirroring](../../www/docs/mirroring.md)) |
+| Mirror nodes that carry the repository | yes | no | the mirror quota panel sets a goal of how many mirrors a repository wants ([mirror-quota.md](mirror-quota.md); [mirroring](../mirroring.md)) |
 
 Each door has different blocking costs for a censor: a domain, an IP, all
 of github.io or codeberg.page, Tor itself, and every copy anyone hosts. A
@@ -245,7 +245,7 @@ while a sync writes to it can catch a half-written state; `--source
 --update`) adds a v3 onion address that serves the same app over Tor, and
 the HTTPS site advertises it with `Onion-Location`, so Tor Browser offers
 it. Details, files and the key backup are in
-[INSTANCES.md](../INSTANCES.md#tor-onion-service).
+[INSTANCES.md](../operations/instances.md#tor-onion-service).
 
 Every onion visitor reaches Caddy from Tor's loopback connection, and the
 host skips its rate limiter for a loopback address, so the onion site sends

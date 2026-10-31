@@ -4,7 +4,7 @@ Part of [the App docs](README.md). Anyone in a private channel can start or
 join a group call from the channel's Voice call and Video call buttons on
 `/chat`. Up to 16 people can be in one call. Media goes through ForkMesh's own
 call server (an SFU, [../server/rtc.md](../server/rtc.md)) and stays
-end-to-end encrypted ([encryption](../../www/docs/encryption.md)): the server
+end-to-end encrypted ([encryption](../encryption.md)): the server
 forwards every frame without being able to decrypt it. One-to-one calls in direct
 messages are unchanged and stay peer to peer
 ([chat-direct-calls.md](chat-direct-calls.md)).
@@ -61,8 +61,8 @@ reports the new room name.
 ## Every core runs a call server
 
 The fleet's three cores each run `forkmesh-calls`
-([../deploy/calls.md](../deploy/calls.md)), so losing one or two of them keeps
-calls working ([architecture](../../www/docs/architecture.md)). A room lives in one process at
+([../deploy/calls.md](../operations/call-servers.md)), so losing one or two of them keeps
+calls working ([architecture](../architecture.md)). A room lives in one process at
 a time, so everybody in a call has to reach the same server: `chat_call_pick`
 in `entry.py` uses rendezvous hashing, the highest SHA-256 of
 `room + "\n" + url` among the servers that answered their

@@ -16,7 +16,7 @@ as ``skipped`` or ``unavailable``, never as preserved.
 
 The contract lives in ``conformance/crisis-preservation/v1/model.json`` with
 the shared fixture beside it, and is documented in
-``www/docs/crisis-preservation.md``. The module is pure: the same input always
+``docs/crisis-preservation.md``. The module is pure: the same input always
 produces the same output.
 """
 

@@ -18,7 +18,7 @@ def test_www_worker_owns_only_official_marketing_domains():
     assert "routes" not in WRANGLER
     assert WRANGLER["assets"]["directory"] == "./dist"
     # Landing pages pass through the Worker only so acquisition attribution
-    # can observe them server-side (docs/attribution.md); the Worker still
+    # can observe them server-side (docs/app/attribution.md); the Worker still
     # answers from the static asset. Blog and docs remain static assets.
     assert "/" in WRANGLER["assets"]["run_worker_first"]
     assert "/blog" not in WRANGLER["assets"]["run_worker_first"]
@@ -33,7 +33,7 @@ def test_www_worker_owns_only_official_marketing_domains():
         "www.forkmesh.com",
     }
     # Next has no App Worker: worker.js fetches APP_ORIGIN over the internet
-    # (deploy/core/edge_client.md), so there is no service binding.
+    # (docs/www/edge-client.md), so there is no service binding.
     assert "services" not in WRANGLER
 
 

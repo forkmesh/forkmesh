@@ -32,5 +32,5 @@ Every member belongs to three fixed public channels. The shared relay room
   posts an animated genie spider: [chat-genie-welcome.md](chat-genie-welcome.md).
 
 Clients: [chat-private-rooms.md](chat-private-rooms.md#everyone-channels-on-web-chat)
-(web), `native/ios/docs/FMChat.md` (iPhone),
+(web), `docs/native/ios/FMChat.md` (iPhone),
 [../desktop/README.md](../desktop/README.md).

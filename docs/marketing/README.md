@@ -23,7 +23,7 @@ Index: [docs/README.md](../README.md).
 | Blogger definition | `.forkmesh/workflows/blogger.json` |
 | Blogger playbook | [`.forkmesh/shortcuts/write-changelog-blog-post.md`](../../.forkmesh/shortcuts/write-changelog-blog-post.md) |
 | Blogger portrait | `desktop/resources/agent-ui/icons/teammate-blogger.png` (avatar key `blogger`) |
-| Acquisition data | `/admin/acquisition`, [../attribution.md](../attribution.md) |
+| Acquisition data | `/admin/acquisition`, [../attribution.md](../app/attribution.md) |
 | Campaigns, keywords, Ads manager, channel metrics, posting to X | `marketplace/packages/marketing/` ([package README](../../marketplace/packages/marketing/README.md)) |
 | Herald, the ready X post | [x-ready-post.md](x-ready-post.md) |
 | Where to advertise first, and the ad readiness checks | [ads-plan.md](ads-plan.md) |
@@ -50,7 +50,7 @@ A special agent whose name contains a space is addressed by its id.
 | Blog posts, changelog stories, their artwork, metadata and tests | Blogger |
 | The next X post and its image | Herald ([x-ready-post.md](x-ready-post.md)) |
 | Reddit threads and subreddit research | Reddit ([../community/reddit.md](../community/reddit.md)) |
-| Hacker News launch readiness | Y Combinator News ([readiness](../../www/docs/launch/y-combinator-news-readiness.md)) |
+| Hacker News launch readiness | Y Combinator News ([readiness](../launch/y-combinator-news-readiness.md)) |
 | The Discord community | Hearth ([../community/hearth.md](../community/hearth.md)) |
 | Partners, leads and outreach | Sales |
 | Security and privacy wording | Sentinel ([../security/sentinel.md](../security/sentinel.md)) |
@@ -119,9 +119,9 @@ and snapshots the browser-captured Pages on Google count over time.
 - **Evidence-backed claims.** Released, live, merged on main only,
   experimental and planned are kept apart; security and privacy claims are
   traced to the protocol documentation with their limitations
-  ([encryption](../../www/docs/encryption.md),
-  [threat model](../../www/docs/protocol/threat-model.md),
-  [censorship resilience](../../www/docs/censorship-resilience.md)). No
+  ([encryption](../encryption.md),
+  [threat model](../protocol/threat-model.md),
+  [censorship resilience](../censorship-resilience.md)). No
   absolute claims about censorship or decentralization: say what holds and
   what is still a dependency.
 - **Untrusted input.** Web pages, comments, imported mail and analytics

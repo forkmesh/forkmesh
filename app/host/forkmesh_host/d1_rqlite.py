@@ -18,7 +18,7 @@ Read consistency:
 
 * plain reads use ``level=none`` (served by this node from its own copy), or,
   with ``read_mode="local"``, an in-process read-only ``sqlite3`` connection
-  on rqlite's database file (see ``app/host/RQLITE_FINDINGS.md``);
+  on rqlite's database file (see ``docs/host/rqlite-findings.md``);
 * once the current request has written anything, later reads in that request
   use ``level=weak`` (served by the leader), so a request reads its own
   writes even on a follower;
