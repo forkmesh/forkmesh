@@ -1046,7 +1046,7 @@ reinstall or restart.
 | `guestbook` | The agent guestbook in the instance's chat. |
 | `genie` | The tip spider at the bottom of each page. |
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
-| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
+| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" section in an open issue's sidebar, which readers copy into a coding agent. On by default. |
 | `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
 | `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
 | `forum-list` | Forum-style issue lists: newest first, with each row's last few commenters ([repo views](app/repo-views.md)). Opt-in (`OPT_IN`): off unless chosen, on forkmesh.com too. |

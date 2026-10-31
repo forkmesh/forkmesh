@@ -141,6 +141,8 @@ struct SessionsPageUi : public QObject {
     QHash<int, QString> desktopRecord;
     QHash<int, QString> desktopTitle;
     QHash<int, QString> desktopFolder;
+    QHash<int, qint64> desktopAt;
+    QHash<int, qint64> listedAt;
     QHash<QString, int> desktopIds;
     QHash<QString, QString> desktopTranscripts;
     int nextDesktopId = -900000;
@@ -186,7 +188,8 @@ constexpr int kSessionsPickerLimit = 40;
 constexpr int kSessionsRelayLimit = 200;
 constexpr int kSessionsRelayChips = 6;
 constexpr qint64 kSessionsRelayDedupMs = 3000;
-constexpr qint64 kSessionsDesktopReadMs = 4000;
+constexpr qint64 kSessionsDesktopReadMs = 1500;
+constexpr int kSessionsDesktopTickMs = 2000;
 constexpr qint64 kSessionsDesktopLiveMs = 90 * 1000;
 const QString kSessionsGroupingSetting = QStringLiteral("sessions/groupBy");
 
@@ -1527,10 +1530,29 @@ QWidget *MainWindow::buildSessionsSection()
         retintSessionsIcons(ui);
     }
     auto *desktopTimer = new QTimer(page);
-    desktopTimer->setInterval(int(kSessionsDesktopReadMs) + 1000);
+    desktopTimer->setInterval(kSessionsDesktopTickMs);
     connect(desktopTimer, &QTimer::timeout, this, [this] {
-        if (sessionsPageOnScreen())
-            requestSessionsDesktopIndex();
+        if (!sessionsPageOnScreen())
+            return;
+        requestSessionsDesktopIndex();
+        SessionsPageUi *ui = m_sessionsUi;
+        if (!ui || !ui->list)
+            return;
+        bool changed = false;
+        for (int row = 0; row < ui->list->count(); ++row) {
+            QListWidgetItem *item = ui->list->item(row);
+            const qint64 at = ui->listedAt.value(item->data(kSessionIdRole).toInt());
+            if (at <= 0)
+                continue;
+            const QString age = formatShortRelativeTime(at / 1000);
+            if (item->data(kSessionAgeRole).toString() == age)
+                continue;
+            QSignalBlocker block(ui->list);
+            item->setData(kSessionAgeRole, age);
+            changed = true;
+        }
+        if (changed)
+            ui->list->viewport()->update();
     });
     desktopTimer->start();
     return page;
@@ -1712,6 +1734,7 @@ void MainWindow::rebuildSessionsDesktopRows()
     QHash<int, QString> titleOf;
     QHash<int, QString> folderOf;
     QHash<int, qint64> recordAt;
+    QHash<int, qint64> activityOf;
     for (const forkmesh::claudedesktop::DesktopRecord &record :
          std::as_const(ui->desktop.records)) {
         const QString cwd = QDir::cleanPath(record.cwd);
@@ -1723,6 +1746,7 @@ void MainWindow::rebuildSessionsDesktopRows()
             if (recordAt.contains(id) && recordAt.value(id) >= record.activityMs)
                 continue;
             recordAt.insert(id, record.activityMs);
+            activityOf.insert(id, record.activityMs);
             recordOf.insert(id, record.key);
             folderOf.insert(id, folder);
             if (record.title.isEmpty())
@@ -1753,7 +1777,7 @@ void MainWindow::rebuildSessionsDesktopRows()
         row.provider = QStringLiteral("claude-code");
         row.model = record.model;
         row.issueTitle =
-            record.title.isEmpty() ? QStringLiteral("Claude Code session") : record.title;
+            record.title.isEmpty() ? QStringLiteral("General coding session") : record.title;
         const qint64 written = record.writtenMs;
         row.status = record.waiting ? AgentStatus::Waiting
                      : written > 0 && now - written < kSessionsDesktopLiveMs
@@ -1772,6 +1796,7 @@ void MainWindow::rebuildSessionsDesktopRows()
         ext.lastActivityMs = row.finishedAtMs;
         external.insert(rowId, ext);
         recordOf.insert(rowId, record.key);
+        activityOf.insert(rowId, record.activityMs);
         titleOf.insert(rowId, row.issueTitle);
         folderOf.insert(rowId, folder);
     }
@@ -1780,6 +1805,7 @@ void MainWindow::rebuildSessionsDesktopRows()
     ui->desktopRecord = std::move(recordOf);
     ui->desktopTitle = std::move(titleOf);
     ui->desktopFolder = std::move(folderOf);
+    ui->desktopAt = std::move(activityOf);
 }
 
 const AgentSession *MainWindow::sessionsFind(int sessionId)
@@ -1903,13 +1929,19 @@ void MainWindow::refreshSessionsList()
         headers.append(Header());
     };
     const bool claudeLayout = ui->next && ui->grouping == SessionsGrouping::Claude;
+    QHash<int, qint64> listedAt;
     if (claudeLayout) {
         QList<Row> rows = active + recent;
         QList<forkmesh::claudedesktop::SidebarItem> items;
         items.reserve(rows.size());
-        for (const Row &row : std::as_const(rows))
+        for (Row &row : rows) {
+            const qint64 claudeAt = ui->desktopAt.value(row.session->id);
+            if (claudeAt > 0)
+                row.at = claudeAt;
+            listedAt.insert(row.session->id, row.at);
             items.append({ui->desktopRecord.value(row.session->id),
                           sessionsFolder(*row.session), row.at});
+        }
         const QList<forkmesh::claudedesktop::SidebarGroup> groups =
             forkmesh::claudedesktop::arrangeSidebar(ui->desktop, items);
         for (const forkmesh::claudedesktop::SidebarGroup &group : groups) {
@@ -2006,7 +2038,7 @@ void MainWindow::refreshSessionsList()
         }
     }
 
-    const auto fill = [this, ui, claudeLayout](QListWidgetItem *item, int id,
+    const auto fill = [this, ui, claudeLayout, &listedAt](QListWidgetItem *item, int id,
                                  const AgentSession *session, const Header &header) {
         if (!session) {
             item->setData(kSessionIdRole, 0);
@@ -2046,6 +2078,8 @@ void MainWindow::refreshSessionsList()
         qint64 at = sessionsActivityMs(*session);
         if (isExternalSession(id) && !isCloudSession(id))
             at = std::max(at, sessionsOutsideSession(id).lastActivityMs);
+        at = listedAt.value(id, at);
+        listedAt.insert(id, at);
         const QString claudeTitle = claudeLayout ? ui->desktopTitle.value(id) : QString();
         item->setData(kSessionIdRole, id);
         item->setData(kSessionHeaderRole, false);
@@ -2075,6 +2109,7 @@ void MainWindow::refreshSessionsList()
     if (ids == ui->listedIds && ui->list->count() == ids.size()) {
         for (int row = 0; row < ids.size(); ++row)
             fill(ui->list->item(row), ids.at(row), sessions.at(row), headers.at(row));
+        ui->listedAt = std::move(listedAt);
         ui->list->viewport()->update();
         return;
     }
@@ -2087,6 +2122,7 @@ void MainWindow::refreshSessionsList()
         if (ids.at(row) == ui->openId && ui->openId != 0 && !ui->newMode)
             ui->list->setCurrentItem(item);
     }
+    ui->listedAt = std::move(listedAt);
 }
 
 void MainWindow::refreshSessionsHeader()

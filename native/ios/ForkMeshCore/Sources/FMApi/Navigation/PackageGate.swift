@@ -43,7 +43,7 @@ public enum PackageGate {
         .pull: "pull-requests", .review: "pull-requests", .discussion: "discussions", .run: "actions",
         .release: "releases",
         .chat: "chat", .channel: "chat", .thread: "chat", .dm: "chat",
-        .notes: "notes", .note: "notes", .tasks: "tasks", .task: "tasks", .calendar: "calendar", .event: "calendar",
+        .notes: "notes", .note: "notes", .notePage: "notes", .tasks: "tasks", .task: "tasks", .calendar: "calendar", .event: "calendar",
         .timers: "timers", .desktops: "desktops", .desktop: "desktops", .hosts: "hosts", .host: "hosts",
         .runners: "runners",
         .provision: "hosts", .network: "network", .node: "network",
