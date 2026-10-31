@@ -118,7 +118,7 @@
     // for the session list.
     // canViewSessions carries the last fetch's verdict so the list can redraw
     // itself under the header search filter without re-asking (adhoc #62).
-    agentsView: { agents: [], selectedAgentId: null, selectedAgentComposerMode: "", canViewSessions: false, canDeleteSessions: false, canQueueAgent: false, ownerScope: false, accessReason: "", notice: "", startPayload: null, desktopNotice: "", desktopNoticeTone: "" },
+    agentsView: { agents: [], statusView: "all", selectedAgentId: null, selectedAgentComposerMode: "", canViewSessions: false, canDeleteSessions: false, canQueueAgent: false, ownerScope: false, accessReason: "", notice: "", startPayload: null, desktopNotice: "", desktopNoticeTone: "" },
     homeAgentSessions: null,
     // Home right-rail "Latest from the blog" (adhoc #381): the newest posts
     // parsed from /blog/rss.xml. null until the feed read resolves so the card
@@ -7397,6 +7397,7 @@
     invalid_pinned: "Use repository names such as widgets or owner/name, one per line.",
     too_many_pinned: "That is more pinned repositories than the setting holds.",
     invalid_forks: "Forks shown must be a whole number from 0 to 50.",
+    invalid_devto: "A dev.to account name has only letters, digits and underscores.",
     not_admin: "Only an admin of this instance can change Top repositories.",
     unauthorized: "Sign in again to change Top repositories.",
   };
@@ -7424,7 +7425,7 @@
       const response = await fetch("/api/instance/sidebar", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ sessionToken: state.session?.sessionToken || "", sidebar: { pinned: instanceSidebarPinnedLines(), forks } }),
+        body: JSON.stringify({ sessionToken: state.session?.sessionToken || "", sidebar: { pinned: instanceSidebarPinnedLines(), forks, devto: String($("[data-instance-sidebar-devto]")?.value || "").trim() } }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
@@ -7446,6 +7447,8 @@
     if (pinned) pinned.value = (Array.isArray(sidebar?.pinned) ? sidebar.pinned : []).join("\n");
     const forks = $("[data-instance-sidebar-forks]");
     if (forks) forks.value = String(Number.isInteger(sidebar?.forks) ? sidebar.forks : 3);
+    const devto = $("[data-instance-sidebar-devto]");
+    if (devto) devto.value = String(sidebar?.devto || "");
   }
 
   async function initInstanceSidebarSection() {
@@ -13496,12 +13499,31 @@
     return `${repoApiBase(repo)}/logo`;
   }
 
+  // The instance's own logo (the header brand mark) stands in for a
+  // repository that has none of its own.
+  function instanceLogoUrl() {
+    const src = document.querySelector("header img.brand-mark")?.getAttribute("src") || "";
+    return /^\/(?!\/)[A-Za-z0-9._/-]+\.(?:svg|png|webp|jpe?g)(?:\?[A-Za-z0-9=&._-]*)?$/.test(src) ? src : "";
+  }
+
+  function instanceLogoFallbackMarkup() {
+    const src = instanceLogoUrl();
+    return src
+      ? `<img data-native-repo-logo-fallback src="${escapeHtml(src)}" alt="" decoding="async" class="h-full w-full object-contain p-[12%]" />`
+      : '<i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>';
+  }
+
+  function instanceLogoFrameMarkup(sizeClass = "h-10 w-10") {
+    if (!instanceLogoUrl()) return "";
+    return `<span data-instance-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary">${instanceLogoFallbackMarkup()}</span>`;
+  }
+
   function nativeRepositoryLogoMarkup(repo, sizeClass = "h-10 w-10") {
     const endpoint = nativeRepositoryLogoEndpoint(repo);
     if (!endpoint) return "";
     return `
       <span data-native-repo-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary text-muted-foreground">
-        <i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>
+        ${instanceLogoFallbackMarkup()}
         <img data-native-repo-logo data-logo-endpoint="${escapeHtml(endpoint)}" alt="" loading="lazy" decoding="async" class="absolute inset-0 hidden h-full w-full object-cover" />
       </span>
     `;
@@ -14579,7 +14601,7 @@
 
   function homeBlogPostCard(post) {
     return `
-      <a href="${escapeHtml(post.href)}" class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
+      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
         ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
         <span class="block px-3 py-2.5">
           ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
@@ -14602,8 +14624,64 @@
       : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
   }
 
+  // An instance can name a dev.to account (Settings > Top repositories) whose
+  // newest posts fill the card instead of the blog feed; the dev.to API
+  // answers cross-origin reads, so this is one public read per Home load.
+  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
+
+  function homeDevtoPost(article) {
+    let href = "";
+    let image = "";
+    try {
+      const link = new URL(String(article?.url || ""));
+      if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
+    } catch (_) {}
+    try {
+      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
+      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
+    } catch (_) {}
+    const when = Date.parse(String(article?.published_at || ""));
+    return {
+      title: String(article?.title || "").trim(),
+      href,
+      image,
+      meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
+    };
+  }
+
+  async function loadHomeDevtoPosts(user) {
+    const card = $("[data-home-blog-card]");
+    card?.removeAttribute("data-instance-plugin");
+    const viewAll = card?.querySelector("a[href]");
+    if (viewAll) {
+      viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
+      viewAll.target = "_blank";
+      viewAll.rel = "noopener";
+    }
+    try {
+      const response = await fetch(`https://dev.to/api/articles?username=${encodeURIComponent(user)}&per_page=${HOME_BLOG_POST_LIMIT}`, {
+        credentials: "omit",
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`dev.to returned ${response.status}`);
+      const articles = await response.json();
+      state.homeBlogPosts = (Array.isArray(articles) ? articles : [])
+        .map(homeDevtoPost)
+        .filter((post) => post.title && post.href)
+        .slice(0, HOME_BLOG_POST_LIMIT);
+    } catch (_) {
+      state.homeBlogPosts = [];
+    }
+    renderHomeBlogPosts();
+  }
+
   async function loadHomeBlogPosts() {
     if (!$("[data-home-blog-list]")) return;
+    const devto = String((await instanceInfo())?.sidebar?.devto || "");
+    if (/^[a-z0-9_]{1,30}$/.test(devto)) {
+      await loadHomeDevtoPosts(devto);
+      return;
+    }
     if (!(await instancePluginEnabled("blog"))) return;
     try {
       const response = await fetch(HOME_BLOG_FEED_URL, {
@@ -16060,6 +16138,9 @@
     const contentGrid = detail.querySelector("[data-repo-content-grid]");
     const about = detail.querySelector("[data-repo-about]");
     const showAbout = tab === "code";
+    // The name, visibility, Fork and Star row belongs to the Code page only;
+    // every other tab starts right under the tab strip.
+    detail.querySelector("[data-repo-title-row]")?.classList.toggle("hidden", !showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);
     about?.classList.toggle("hidden", !showAbout);
@@ -16095,6 +16176,7 @@
       // Leaving the tab closes any open agent detail page (adhoc #259) so
       // returning to Agents lands on the session list, not a stale transcript.
       state.agentsView.selectedAgentId = null;
+      state.agentsView.statusView = "all";
     }
     if (!state.selectedRepo) return;
     // Record pages have no Back button: the tab is the way back to the list,
@@ -16125,6 +16207,7 @@
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
     if (tab === "security") void loadRepoSecurity(state.selectedRepo);
     if (tab === "settings") {
+      renderRepoSettingsRail();
       loadRepoFediverse(state.selectedRepo);
       void loadRepoSettingsLogo(state.selectedRepo);
       void loadRepoCollaborators(state.selectedRepo);
@@ -18432,9 +18515,9 @@
       ? `${renderRepoActionsExecutor(repo, view)}${notice}${pending}${renderRepoActionsWorkflowBar(repo, view, workflow)}<div data-repo-actions-runs>${renderRepoActionsRuns(repo, view, workflow)}</div>`
       : `${notice}${renderRepoActionsEmptyState(view)}`;
     target.innerHTML = `
-      <div class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
-        <nav aria-label="Workflows" data-repo-actions-workflows class="grid content-start gap-0.5 border-b border-border p-2 md:border-b-0 md:border-r">${renderRepoActionsWorkflowList(view, repo)}</nav>
-        <div class="min-w-0">${main}</div>
+      <div data-repo-rail-layout class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
+        <nav data-repo-rail aria-label="Workflows" class="min-w-0 border-b border-border md:border-b-0 md:border-r"><div data-repo-rail-inner><h2 class="fm-rail-title hidden lg:block">Actions</h2><div data-repo-actions-workflows class="grid content-start gap-0.5 p-2 lg:p-0">${renderRepoActionsWorkflowList(view, repo)}</div></div></nav>
+        <div data-repo-rail-main class="min-w-0"><div class="overflow-hidden rounded-lg border border-border bg-background">${main}</div></div>
       </div>`;
     const nextRef = target.querySelector("[data-repo-actions-dispatch-ref]");
     if (nextRef && chosenRef && Array.from(nextRef.options).some((option) => option.value === chosenRef)) {
@@ -33248,31 +33331,33 @@ Your reply
     };
     return `
       <section data-dashboard-repo-tab-panel="discussions" class="hidden">
-        <div data-repo-record-host="discussions" class="mx-auto mt-2 grid w-full min-w-0 max-w-[80rem] gap-6">
-          <div data-repo-collection-chrome class="flex min-w-0 flex-wrap items-center gap-2">
-            <label class="flex h-8 min-w-0 flex-1 basis-72 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
-              <span class="inline-flex w-8 shrink-0 items-center justify-center text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
-              <span class="relative min-w-0 flex-1 overflow-hidden">
-                <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pr-3 text-[14px] text-foreground"></span>
-                <input data-repo-filter-query="discussions" type="search" autocomplete="off" spellcheck="false" aria-label="Search all discussions" value="${escapeHtml(`${serializeDiscussionQuery()} `)}" placeholder="Search all discussions" class="relative h-full w-full bg-transparent pr-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
-              </span>
-            </label>
-            ${select("sort", DISCUSSION_SORTS, "Sort by:")}
-            ${select("status", DISCUSSION_STATUSES, "Filter:")}
-            <button type="button" data-repo-discussion-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</button>
-          </div>
-          <div data-repo-discussions-columns class="grid min-w-0 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <aside data-repo-collection-chrome class="grid min-w-0 content-start gap-4">
+        <div data-repo-record-host="discussions" data-repo-rail-layout class="mt-2 grid w-full min-w-0 gap-6">
+          <aside data-repo-rail data-repo-collection-chrome class="min-w-0">
+            <div data-repo-rail-inner class="grid min-w-0 content-start gap-4">
               <div>
-                <h2 class="mb-2 px-2 text-[16px] font-semibold text-foreground">Categories</h2>
+                <h2 class="fm-rail-title">Categories</h2>
                 <nav data-repo-discussion-categories aria-label="Discussion categories">${renderDiscussionCategoriesNav()}</nav>
               </div>
               <div class="rounded-md border border-border p-4">
-                <h3 class="text-[16px] font-semibold text-foreground">Signed conversations</h3>
+                <h3 class="text-[14px] font-semibold text-foreground">Signed conversations</h3>
                 <p class="mt-2 text-[12px] leading-5 text-muted-foreground">Every discussion and reply is signed by its author, from this website or the apps, and served by the repository's mirrors.</p>
               </div>
               <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="inline-flex items-center gap-2 px-2 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="heart-handshake" class="h-4 w-4"></i>Contributing guide</a>
-            </aside>
+            </div>
+          </aside>
+          <div data-repo-rail-main class="grid min-w-0 content-start gap-4">
+            <div data-repo-collection-chrome class="flex min-w-0 flex-wrap items-center gap-2">
+              <label class="flex h-8 min-w-0 flex-1 basis-72 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+                <span class="inline-flex w-8 shrink-0 items-center justify-center text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
+                <span class="relative min-w-0 flex-1 overflow-hidden">
+                  <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pr-3 text-[14px] text-foreground"></span>
+                  <input data-repo-filter-query="discussions" type="search" autocomplete="off" spellcheck="false" aria-label="Search all discussions" value="${escapeHtml(`${serializeDiscussionQuery()} `)}" placeholder="Search all discussions" class="relative h-full w-full bg-transparent pr-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
+                </span>
+              </label>
+              ${select("sort", DISCUSSION_SORTS, "Sort by:")}
+              ${select("status", DISCUSSION_STATUSES, "Filter:")}
+              <button type="button" data-repo-discussion-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</button>
+            </div>
             <div class="min-w-0">
               <h2 data-repo-collection-chrome data-repo-discussions-heading class="mb-2 text-[16px] font-semibold text-foreground">Discussions</h2>
               <div data-repo-collection-box class="overflow-clip rounded-md border border-border bg-background">
@@ -37401,6 +37486,40 @@ Your reply
   // Header-search page filter for the Agents tab (adhoc #62). One haystack for
   // both session renderers — they draw the same snapshots, just different
   // fields of them — so a hit is always something visible on the row.
+  // The Agents rail's views: every session, the ones still working, the ones
+  // that finished, and the ones that failed or were stopped.
+  const REPO_AGENT_STATUS_VIEWS = [
+    ["all", "All sessions", "bot"],
+    ["running", "Running", "loader-circle"],
+    ["finished", "Finished", "circle-check"],
+    ["failed", "Failed", "circle-x"],
+  ];
+
+  function repoAgentStatusGroup(agent) {
+    const status = String(agent?.status || "").toLowerCase();
+    if (REPO_AGENT_ACTIVE_STATUSES.has(status)) return "running";
+    if (["failed", "error", "stopped", "cancelled", "canceled"].includes(status)) return "failed";
+    return "finished";
+  }
+
+  function repoAgentsInStatusView(agents) {
+    const view = state.agentsView.statusView || "all";
+    const list = Array.isArray(agents) ? agents : [];
+    return view === "all" ? list : list.filter((agent) => repoAgentStatusGroup(agent) === view);
+  }
+
+  function renderRepoAgentsRail() {
+    const rail = $("[data-repo-agents-views]");
+    if (!rail) return;
+    const agents = Array.isArray(state.agentsView.agents) ? state.agentsView.agents : [];
+    const view = state.agentsView.statusView || "all";
+    rail.innerHTML = REPO_AGENT_STATUS_VIEWS.map(([id, label, icon]) => {
+      const count = id === "all" ? agents.length : agents.filter((agent) => repoAgentStatusGroup(agent) === id).length;
+      return `<li><button type="button" data-repo-agents-view="${id}" class="fm-rail-item"${id === view ? ' aria-current="true"' : ""}><i data-lucide="${icon}"></i><span class="min-w-0 truncate">${escapeHtml(label)}</span><span class="fm-counter">${formatCount(count)}</span></button></li>`;
+    }).join("");
+    window.lucide?.createIcons();
+  }
+
   function repoAgentsMatchingPageFilter(agents) {
     const queries = pageFilterQueries("");
     if (!queries.length) return agents;
@@ -37451,7 +37570,8 @@ Your reply
     if (selectedId != null) state.agentsView.selectedAgentId = null;
     // The "start a new agent" composer now lives in the header robot-button
     // modal (adhoc #62), so this list is just the sessions.
-    const visible = repoAgentsMatchingPageFilter(agents);
+    renderRepoAgentsRail();
+    const visible = repoAgentsMatchingPageFilter(repoAgentsInStatusView(agents));
     container.innerHTML = visible.length
       ? `<div class="divide-y divide-border">${visible.map(renderRepoAgentRow).join("")}</div>`
       : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyListHtml("No agent sessions yet. Start one from the robot button in the header, or from the desktop app.")}</div>`;
@@ -39231,8 +39351,9 @@ Your reply
       window.lucide?.createIcons();
       return;
     }
+    renderRepoAgentsRail();
     const visible = repoAgentsMatchingPageFilter(
-      Array.isArray(state.agentsView.agents) ? state.agentsView.agents : []);
+      repoAgentsInStatusView(state.agentsView.agents));
     // An open session keeps the pane only while its row is one the list would
     // show: a deleted session, or one the header search now excludes, drops the
     // reader back on the start composer rather than stranding them on a page
@@ -42866,7 +42987,7 @@ Your reply
         </div>` : "";
     if (!visibility && !collaborators) return "";
     return `
-      <div data-repo-settings-access class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+      <div data-repo-settings-access id="settings-access" data-repo-settings-section="Access" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
         <div class="border-b border-border bg-secondary/50 px-4 py-3">
           <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield" class="h-3.5 w-3.5 text-muted-foreground"></i>Access</span>
         </div>
@@ -45467,13 +45588,15 @@ Your reply
           <span class="fm-flash-title">Want to contribute to ${escapeHtml(repository)}?</span>
           <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
-        <details class="fm-flash-actions relative text-left">
-          <summary class="fm-btn fm-btn-sm inline-flex list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
-          <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
-            <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
-            <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
-          </div>
-        </details>
+        <div class="fm-flash-actions relative inline-flex text-left">
+          <button type="button" data-repo-issue-contribution-dismiss="repository" title="Dismiss for this repository" class="fm-btn fm-btn-sm" style="border-top-right-radius:0;border-bottom-right-radius:0">Dismiss</button>
+          <details class="relative">
+            <summary aria-label="More ways to dismiss" class="fm-btn fm-btn-sm inline-flex list-none" style="margin-left:-1px;padding:0 6px;border-top-left-radius:0;border-bottom-left-radius:0"><i data-lucide="chevron-down"></i></summary>
+            <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
+              <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
+            </div>
+          </details>
+        </div>
       </aside>`;
   }
 
@@ -46684,12 +46807,12 @@ Your reply
         : "";
     const privateItems = Array.isArray(data.private) ? data.private : [];
     const privateSection = data.maintainer || privateItems.length ? `
-      <section data-security-private class="overflow-hidden rounded-md border border-border">
+      <section data-security-private id="security-private" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
         <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="lock" class="h-4 w-4 text-muted-foreground"></i>${data.maintainer ? "Reports and drafts" : "Your private reports"}<span class="fm-counter">${privateItems.length}</span><span class="ml-auto text-[12px] font-normal text-muted-foreground">Only visible to you${data.maintainer ? ", the reporters and collaborators" : " and the maintainers"}</span></div>
         ${securityList(repo, privateItems, "No reports are waiting for triage.")}
       </section>` : "";
     const settings = data.admin ? `
-      <section data-security-settings class="flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
+      <section data-security-settings id="security-settings" class="scroll-mt-4 flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
         <i data-lucide="settings" class="h-4 w-4 text-muted-foreground"></i>
         <div class="min-w-0 flex-1">
           <p class="text-[14px] font-semibold text-foreground">Private vulnerability reporting</p>
@@ -46697,8 +46820,17 @@ Your reply
         </div>
         <button type="button" data-security-action="reporting" data-enable="${data.reportingEnabled ? "0" : "1"}" class="inline-flex h-8 items-center rounded-md border border-border px-3 text-[14px] text-foreground hover:bg-secondary">${data.reportingEnabled ? "Turn off" : "Turn on"}</button>
       </section>` : "";
+    const railItem = (target, icon, label, count = null) => `<li><button type="button" data-repo-rail-jump="${target}" class="fm-rail-item"><i data-lucide="${icon}"></i><span class="min-w-0 truncate">${escapeHtml(label)}</span>${count === null ? "" : `<span class="fm-counter">${formatCount(count)}</span>`}</button></li>`;
+    const rail = [
+      railItem("security-policy", "shield", "Security policy"),
+      railItem("security-published", "shield-check", "Advisories", (data.published || []).length),
+      privateSection ? railItem("security-private", "lock", data.maintainer ? "Reports" : "Your reports", privateItems.length) : "",
+      settings ? railItem("security-settings", "settings", "Settings") : "",
+    ].join("");
     container.innerHTML = `
-      <div data-security-overview class="grid gap-5 py-2">
+      <div data-security-overview data-repo-rail-layout class="grid gap-5 py-2">
+        <nav data-repo-rail aria-label="Security sections" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Security</h2><ul class="fm-rail-list">${rail}</ul></div></nav>
+        <div data-repo-rail-main class="grid min-w-0 content-start gap-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <h2 class="text-xl font-semibold text-foreground">Security</h2>
@@ -46706,16 +46838,17 @@ Your reply
           </div>
           <div class="flex flex-wrap gap-2">${reportButton}</div>
         </div>
-        <section class="overflow-hidden rounded-md border border-border">
+        <section id="security-policy" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield" class="h-4 w-4 text-muted-foreground"></i>Security policy<span data-security-policy-source class="ml-auto font-mono text-[12px] font-normal text-muted-foreground"></span></div>
           <div data-security-policy class="px-4 py-4 text-sm text-muted-foreground">${loadingHtml("Reading SECURITY.md...")}</div>
         </section>
-        <section data-security-published class="overflow-hidden rounded-md border border-border">
+        <section data-security-published id="security-published" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>Published advisories<span class="fm-counter">${(data.published || []).length}</span><a href="/advisories" class="ml-auto text-[12px] font-normal text-primary hover:underline">All advisories on this site</a></div>
           ${securityList(repo, data.published || [], "There are no published security advisories.")}
         </section>
         ${privateSection}
         ${settings}
+        </div>
       </div>`;
   }
 
@@ -47288,7 +47421,20 @@ Your reply
     const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `
       <section data-dashboard-repo-tab-panel="settings" class="hidden">
-        <div class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
+       <div data-repo-rail-layout data-repo-settings-layout class="grid min-w-0 gap-4">
+        <nav data-repo-rail aria-label="Settings sections" class="mt-4 min-w-0 rounded-lg border border-border p-3 lg:mt-0">
+          <div data-repo-rail-inner>
+            <h2 class="fm-rail-title">Settings</h2>
+            <label class="mb-2 flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 text-muted-foreground focus-within:border-[var(--dashboard-link)]">
+              <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
+              <input data-repo-settings-search type="search" autocomplete="off" spellcheck="false" placeholder="Search settings" aria-label="Search settings" class="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground" />
+            </label>
+            <ul data-repo-settings-nav class="fm-rail-list"></ul>
+            <p data-repo-settings-search-empty hidden class="px-2 py-1 text-[12px] text-muted-foreground">No settings match.</p>
+          </div>
+        </nav>
+        <div data-repo-rail-main class="min-w-0">
+        <div id="settings-general" data-repo-settings-section="General" class="scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="settings" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository settings</span>
           </div>
@@ -47324,14 +47470,14 @@ Your reply
           </form>
         </div>
         ${renderRepoAccessSettings(repo)}
-        ${repo.isPrivate ? "" : `<div data-repo-settings-logo class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        ${repo.isPrivate ? "" : `<div data-repo-settings-logo id="settings-logo" data-repo-settings-section="Logo" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="image" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
             <span class="font-mono text-[10px] text-muted-foreground">PNG · up to 256 KB</span>
           </div>
           <div class="grid gap-4 p-4">
             <div class="flex items-start gap-3">
-              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16")}</span>
+              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16") || instanceLogoFrameMarkup("h-16 w-16")}</span>
               <p class="text-[11px] leading-5 text-muted-foreground">Shown on repository cards and as the repository's fediverse avatar. A logo uploaded here comes first. Without one, ${escapeHtml(platformName())} uses the <span class="font-mono">logo.png</span> committed at the root of the repository, then approved artwork below, and never invents artwork for a project.</p>
             </div>
             <form data-repo-settings-logo-form class="grid gap-2">
@@ -47354,7 +47500,7 @@ Your reply
             </div>
           </div>
         </div>`}
-        <div data-repo-pull-rules-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-pull-rules-card id="settings-pull-rules" data-repo-settings-section="Pull request rules" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Pull request rules</span>
             <span class="font-mono text-[10px] text-muted-foreground">.forkmesh/pull-rules.json</span>
@@ -47364,7 +47510,7 @@ Your reply
             <div data-repo-pull-rules-editor class="text-xs text-muted-foreground">Loading rules…</div>
           </div>
         </div>
-        <div data-repo-webhooks-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-webhooks-card id="settings-webhooks" data-repo-settings-section="Webhooks" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="webhook" class="h-3.5 w-3.5 text-muted-foreground"></i>Webhooks</span>
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
@@ -47394,14 +47540,14 @@ Your reply
             </div>
           </div>
         </div>
-        <div data-repo-actions-secrets-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-actions-secrets-card id="settings-secrets" data-repo-settings-section="Actions secrets" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="key-round" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions secrets</span>
             <span class="font-mono text-[10px] text-muted-foreground">secrets.NAME</span>
           </div>
           <div data-actions-secrets data-actions-secrets-scope="repo" data-actions-secrets-base="${escapeHtml(`${repoApiBase(repo)}/actions/secrets`)}" class="p-4 text-xs text-muted-foreground"></div>
         </div>
-        <div data-repo-forge-mirror-card id="mirror" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-forge-mirror-card id="mirror" data-repo-settings-section="Mirror to GitHub or GitLab" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror to GitHub or GitLab</span>
             <span data-repo-forge-mirror-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
@@ -47412,7 +47558,7 @@ Your reply
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-archive-sync-card id="archive" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-archive-sync-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
             <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
@@ -47423,7 +47569,7 @@ Your reply
             <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-danger-zone class="mt-5 overflow-hidden rounded-lg border border-destructive/50 bg-background">
+        <div data-repo-danger-zone id="settings-danger" data-repo-settings-section="Danger zone" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-destructive/50 bg-background">
           <div class="border-b border-destructive/30 px-4 py-3">
             <h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
           </div>
@@ -47436,6 +47582,8 @@ Your reply
             <button type="button" data-repo-delete class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-destructive/60 px-3 text-xs font-semibold text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete repository</button>
           </div>
         </div>
+        </div>
+       </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
@@ -47552,11 +47700,11 @@ Your reply
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
-            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
+            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div data-repo-actions class="mt-4 min-w-0 lg:mt-0"></div></section>
             <section data-dashboard-repo-tab-panel="insights" class="hidden"><div data-repo-insights class="min-w-0"></div></section>
             <section data-dashboard-repo-tab-panel="sizemap" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-pie" class="h-3.5 w-3.5 text-muted-foreground"></i>Size map</span><span class="font-mono text-[10px] text-muted-foreground">directory sizes · default branch</span></div><div data-repo-sizemap class="p-4"></div></div></section>
             <section data-dashboard-repo-tab-panel="mirrors" class="hidden"><div data-mirror-request hidden class="py-2"><label class="block text-[11px] font-medium text-foreground">Ask a node to mirror this repo</label><div class="flex items-center gap-2"><input data-mirror-request-target type="text" autocomplete="off" spellcheck="false" placeholder="node name" class="h-8 min-w-0 flex-1 rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" /><button type="button" data-mirror-request-send class="h-8 shrink-0 rounded-md bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70">Ask to mirror</button></div><p data-mirror-request-hint class="text-[11px] text-muted-foreground">They get a ping; if they accept, their node starts mirroring your repo.</p></div><div data-repo-mirrors></div></section>
-            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></section>` : ""}
+            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div data-repo-rail-layout class="grid min-w-0 gap-4"><nav data-repo-rail aria-label="Agent sessions" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Agents</h2><ul data-repo-agents-views class="fm-rail-list"></ul></div></nav><div data-repo-rail-main class="min-w-0"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background lg:mt-0"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></div></div></section>` : ""}
             ${settingsPanel}
           </div>
           <aside data-repo-about data-repo-about-rail class="min-w-0 self-start rounded-lg border border-border bg-background p-4">
@@ -47690,6 +47838,7 @@ Your reply
     if (initialTab === "security") void loadRepoSecurity(repo);
     hydrateNativeRepositoryLogos(detail.querySelector("[data-repo-title-row]"));
     if (initialTab === "settings") {
+      renderRepoSettingsRail();
       void loadRepoSettingsLogo(repo);
       void loadRepoCollaborators(repo);
     }
@@ -47701,6 +47850,7 @@ Your reply
     const provenance = repoProvenanceHtml(repo, { forkButton: false });
     const websiteForkAvailable = !repo.isPrivate;
     const logo = nativeRepositoryLogoMarkup(repo, "h-6 w-6")
+      || instanceLogoFrameMarkup("h-6 w-6")
       || `<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">${escapeHtml(String(repo.owner || "F").slice(0, 1).toUpperCase())}</span>`;
     return `
         <div data-repo-title-row class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5">
@@ -47743,6 +47893,72 @@ Your reply
           </div>
         </div>`;
   }
+
+  // Settings rail: one entry per settings card on the page, a search that
+  // hides the cards (and entries) it does not match, and the entry of the
+  // card at the top of the screen marked as the page scrolls.
+  function renderRepoSettingsRail() {
+    const nav = $("[data-repo-settings-nav]");
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]"));
+    nav.innerHTML = sections.map((section) => `<li><button type="button" data-repo-rail-jump="${escapeHtml(section.id)}" class="fm-rail-item"><span class="min-w-0 truncate">${escapeHtml(section.dataset.repoSettingsSection || "")}</span></button></li>`).join("");
+    filterRepoSettings($("[data-repo-settings-search]")?.value || "");
+    markRepoRailSection();
+  }
+
+  function filterRepoSettings(query) {
+    const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]").forEach((section) => {
+      const text = `${section.dataset.repoSettingsSection} ${section.textContent} ${Array.from(section.querySelectorAll("input[placeholder]")).map((input) => input.placeholder).join(" ")}`.toLowerCase();
+      const match = words.every((word) => text.includes(word));
+      section.style.display = match ? "" : "none";
+      $(`[data-repo-settings-nav] [data-repo-rail-jump="${CSS.escape(section.id)}"]`)?.closest("li")?.toggleAttribute("hidden", !match);
+      if (match) shown += 1;
+    });
+    const empty = $("[data-repo-settings-search-empty]");
+    if (empty) empty.hidden = shown > 0;
+  }
+
+  function jumpToRepoRailSection(button) {
+    const target = document.getElementById(button.dataset.repoRailJump || "");
+    if (!target) return;
+    target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    button.closest("ul")?.querySelectorAll("[data-repo-rail-jump]").forEach((item) => {
+      if (item === button) item.setAttribute("aria-current", "true");
+      else item.removeAttribute("aria-current");
+    });
+  }
+
+  function markRepoRailSection() {
+    document.querySelectorAll("[data-dashboard-repo-tab-panel]:not(.hidden) [data-repo-rail]").forEach((rail) => {
+      const buttons = Array.from(rail.querySelectorAll("[data-repo-rail-jump]"));
+      if (!buttons.length) return;
+      let current = buttons[0];
+      buttons.forEach((button) => {
+        const target = document.getElementById(button.dataset.repoRailJump || "");
+        if (target && target.style.display !== "none" && target.getBoundingClientRect().top <= 140) current = button;
+      });
+      buttons.forEach((button) => {
+        if (button === current) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
+    });
+  }
+
+  let repoRailScrollFrame = 0;
+  document.addEventListener("scroll", () => {
+    if (repoRailScrollFrame) return;
+    repoRailScrollFrame = requestAnimationFrame(() => {
+      repoRailScrollFrame = 0;
+      markRepoRailSection();
+    });
+  }, { capture: true, passive: true });
+
+  document.addEventListener("input", (event) => {
+    const search = event.target.closest?.("[data-repo-settings-search]");
+    if (search) filterRepoSettings(search.value);
+  });
 
   function startRepoForkFromTitle(button) {
     const own = String(button?.dataset.repoForkOwnUrl || "");
@@ -51020,6 +51236,21 @@ Your reply
       const contextMenuAction = event.target.closest("[data-repo-tree-context-action]");
       if (contextMenuAction) {
         await handleRepoTreeContextAction(contextMenuAction);
+        return;
+      }
+
+      const agentsViewButton = event.target.closest("[data-repo-agents-view]");
+      if (agentsViewButton) {
+        state.agentsView.statusView = agentsViewButton.dataset.repoAgentsView || "all";
+        state.agentsView.selectedAgentId = null;
+        if ($("[data-org-agent-sessions]")) renderOrgAgentSessions();
+        else renderRepoAgentsList(state.agentsView.agents);
+        return;
+      }
+
+      const railJump = event.target.closest("[data-repo-rail-jump]");
+      if (railJump) {
+        jumpToRepoRailSection(railJump);
         return;
       }
 
@@ -59814,7 +60045,7 @@ Your reply
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=9c271809708a",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "repo-activity": "/dashboard-page-repo-activity.js?v=62cb9058a6b6",
+    "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
     "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
     "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
   };
