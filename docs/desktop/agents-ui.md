@@ -1432,7 +1432,8 @@ newest session no special agent started, else `defaultAgentProvider()`.
 
 The run mode is the composer's, clamped by `agentrules::teammateRunMode`:
 without `modify-code` it is Plan, and Auto without `run-unattended` becomes
-Edit. Missing permissions are refused at the external-call gate and, for
+Edit. A UI-stall repair ignores the composer and starts in Auto when the agent
+holds `run-unattended`. Missing permissions are refused at the external-call gate and, for
 Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
 [../agents/access-rules.md](../agents/access-rules.md)):
 
