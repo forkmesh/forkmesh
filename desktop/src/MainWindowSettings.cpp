@@ -934,7 +934,8 @@ QWidget *MainWindow::buildSettingsSection()
 
     addLazyTab([this] { return buildMcpConnectorTab(); }, "MCP", "link");
 
-    addLazyTab([this] { return buildLocalControlTab(); }, "Phone", "device-mobile");
+    m_phoneSettingsTabIndex =
+        addLazyTab([this] { return buildLocalControlTab(); }, "Phone", "device-mobile");
 
     if (forkmesh::systemdtimers::systemctlAvailable()) {
         addLazyTab(
