@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-10-31", "area": "Projects", "text": "When you open an issue, pull request or discussion after people reacted to your comment, their reactions burst out of that comment across the whole screen with confetti and a note saying who reacted."},
+  {"date": "2026-10-31", "area": "Projects", "text": "An issue's sidebar Agent section now holds the AI prompt with Copy prompt and Copy MCP prompt side by side, instead of a separate AI prompt section."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The debug bar's expand chevron now also grows the CPU, memory, swap and disk chart into four full-height charts, and says on hover whether it expands or collapses."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The Sessions list now matches the Claude app's sidebar: ungrouped sessions sit under one Recents list in the Claude app's order, and titles, order and ages update every two seconds."},
   {"date": "2026-10-31", "area": "Highlights", "text": "Notes can have their own emoji, and you can gather many notes into one shareable page with an outline on the left, sections, links, your own title, emoji and colour, on the web, desktop, iPhone and Android."},
