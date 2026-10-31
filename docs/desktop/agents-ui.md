@@ -1376,6 +1376,13 @@ window to OpenGL composition. **Speak** reads replies aloud.
   Qt Multimedia (`QAudioSink`) when built with it, else raw PCM to `pw-cat
   --raw` or `aplay`. `FORKMESH_SONIFY_BACKEND=silent|pipe|none` forces one
   (tests use `silent`). Rendering runs on the player's thread.
+  `Player::availablePipePrograms()` looks the pipe players up once per
+  `PATH` value and keeps the answer, holding its lock across the lookup so
+  a `start()` during a warm-up waits for it; `UiSounds` starts the warm-up
+  (`Player::warmPipePrograms()`, on the global thread pool) when cues are
+  audible. The lookup stats every `PATH` entry, and on WSL, whose `PATH`
+  carries ~40 `/mnt/c` directories, it froze the first cue for ~1.5 s on
+  the GUI thread.
 - **Announcer** (`src/AgentAnnouncer.*`, `src/AgentAnnouncerVoice.*`):
   sportscaster commentary on running agents, spoken by Piper neural TTS,
   downloaded on demand with a pinned SHA-256 into `announcer/` under the data

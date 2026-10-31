@@ -448,6 +448,8 @@ public:
     static QStringList pipeArgumentsFor(const QString &program);
     // The candidates, best first.
     static QStringList pipePrograms();
+    static QStringList availablePipePrograms();
+    static void warmPipePrograms();
 
 private:
     void shutdown(bool waitForPump);
