@@ -669,9 +669,6 @@
         </div>`;
   }
 
-  // Settings rail: one entry per settings card on the page, a search that
-  // hides the cards (and entries) it does not match, and the entry of the
-  // card at the top of the screen marked as the page scrolls.
   function renderRepoSettingsRail() {
     const nav = $("[data-repo-settings-nav]");
     if (!nav) return;

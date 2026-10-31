@@ -13499,8 +13499,6 @@
     return `${repoApiBase(repo)}/logo`;
   }
 
-  // The instance's own logo (the header brand mark) stands in for a
-  // repository that has none of its own.
   function instanceLogoUrl() {
     const src = document.querySelector("header img.brand-mark")?.getAttribute("src") || "";
     return /^\/(?!\/)[A-Za-z0-9._/-]+\.(?:svg|png|webp|jpe?g)(?:\?[A-Za-z0-9=&._-]*)?$/.test(src) ? src : "";
@@ -14624,9 +14622,6 @@
       : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
   }
 
-  // An instance can name a dev.to account (Settings > Top repositories) whose
-  // newest posts fill the card instead of the blog feed; the dev.to API
-  // answers cross-origin reads, so this is one public read per Home load.
   const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
 
   function homeDevtoPost(article) {
@@ -16138,8 +16133,6 @@
     const contentGrid = detail.querySelector("[data-repo-content-grid]");
     const about = detail.querySelector("[data-repo-about]");
     const showAbout = tab === "code";
-    // The name, visibility, Fork and Star row belongs to the Code page only;
-    // every other tab starts right under the tab strip.
     detail.querySelector("[data-repo-title-row]")?.classList.toggle("hidden", !showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);
@@ -37486,8 +37479,6 @@ Your reply
   // Header-search page filter for the Agents tab (adhoc #62). One haystack for
   // both session renderers — they draw the same snapshots, just different
   // fields of them — so a hit is always something visible on the row.
-  // The Agents rail's views: every session, the ones still working, the ones
-  // that finished, and the ones that failed or were stopped.
   const REPO_AGENT_STATUS_VIEWS = [
     ["all", "All sessions", "bot"],
     ["running", "Running", "loader-circle"],
@@ -47894,9 +47885,6 @@ Your reply
         </div>`;
   }
 
-  // Settings rail: one entry per settings card on the page, a search that
-  // hides the cards (and entries) it does not match, and the entry of the
-  // card at the top of the screen marked as the page scrolls.
   function renderRepoSettingsRail() {
     const nav = $("[data-repo-settings-nav]");
     if (!nav) return;

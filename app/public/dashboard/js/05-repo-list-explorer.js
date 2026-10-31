@@ -437,8 +437,6 @@
     return `${repoApiBase(repo)}/logo`;
   }
 
-  // The instance's own logo (the header brand mark) stands in for a
-  // repository that has none of its own.
   function instanceLogoUrl() {
     const src = document.querySelector("header img.brand-mark")?.getAttribute("src") || "";
     return /^\/(?!\/)[A-Za-z0-9._/-]+\.(?:svg|png|webp|jpe?g)(?:\?[A-Za-z0-9=&._-]*)?$/.test(src) ? src : "";
@@ -1562,9 +1560,6 @@
       : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
   }
 
-  // An instance can name a dev.to account (Settings > Top repositories) whose
-  // newest posts fill the card instead of the blog feed; the dev.to API
-  // answers cross-origin reads, so this is one public read per Home load.
   const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
 
   function homeDevtoPost(article) {
@@ -3076,8 +3071,6 @@
     const contentGrid = detail.querySelector("[data-repo-content-grid]");
     const about = detail.querySelector("[data-repo-about]");
     const showAbout = tab === "code";
-    // The name, visibility, Fork and Star row belongs to the Code page only;
-    // every other tab starts right under the tab strip.
     detail.querySelector("[data-repo-title-row]")?.classList.toggle("hidden", !showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);

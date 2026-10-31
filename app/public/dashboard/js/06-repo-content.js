@@ -18693,8 +18693,6 @@ Your reply
   // Header-search page filter for the Agents tab (adhoc #62). One haystack for
   // both session renderers — they draw the same snapshots, just different
   // fields of them — so a hit is always something visible on the row.
-  // The Agents rail's views: every session, the ones still working, the ones
-  // that finished, and the ones that failed or were stopped.
   const REPO_AGENT_STATUS_VIEWS = [
     ["all", "All sessions", "bot"],
     ["running", "Running", "loader-circle"],
