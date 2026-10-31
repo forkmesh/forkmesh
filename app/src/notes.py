@@ -7,6 +7,7 @@ contract and authorization rules independently testable.
 
 import json
 import re
+import unicodedata
 
 from organization_rbac import ORG_INSIDER_ROLE_SQL
 
@@ -39,6 +40,15 @@ MAX_PEOPLE = 200
 MENTION_RE = re.compile(r"(?<![\w@])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)", re.IGNORECASE)
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 PRESENCE_STATES = frozenset({"viewing", "editing", "left"})
+PAGES = PREFIX + "/pages"
+PAGE_ACCENTS = ("blue", "purple", "pink", "red", "orange", "yellow", "teal", "gray")
+PAGE_LAYOUTS = ("outline", "continuous")
+PAGE_KINDS = frozenset({"note", "section", "link"})
+MAX_PAGE_ENTRIES = 300
+MAX_PAGE_DESCRIPTION = 2000
+MAX_PAGE_CONTENT = 4 * 1024 * 1024
+MAX_PAGES = 200
+ENTRY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,32}$")
 
 
 def _response(runtime, payload, status=200, allow=""):
@@ -56,6 +66,28 @@ def _title(value):
     return " ".join(str(value or "").replace("<", " ").replace(">", " ").split())[:MAX_TITLE]
 
 
+def _emoji(value):
+    text = str(value if value is not None else "").strip()
+    if not text:
+        return ""
+    if len(text) > 16 or len(text.encode("utf-8")) > 64:
+        return None
+    keycap = "\u20e3" in text
+    for char in text:
+        category = unicodedata.category(char)
+        if char.isspace() or category in ("Cc", "Zs", "Zl", "Zp"):
+            return None
+        if char.isascii() and char.isalpha():
+            return None
+        if char.isascii() and (char.isdigit() or char in "#*") and not keycap:
+            return None
+        if char.isascii() and not (char.isdigit() or char in "#*"):
+            return None
+        if not char.isascii() and category[0] not in ("S", "M") and category != "Cf":
+            return None
+    return text
+
+
 def _markdown(value):
     value = str(value or "").replace("\x00", "")
     return value[:MAX_MARKDOWN]
@@ -65,6 +97,11 @@ def _route(path):
     clean = str(path or "").rstrip("/")
     if clean == PREFIX:
         return "collection", "", "", ""
+    if clean == PAGES:
+        return "pages", "", "", ""
+    page = re.fullmatch(r"/api/notes/pages/([0-9a-f]{32})(?:/(shares))?", clean)
+    if page:
+        return "pages", page.group(1), page.group(2) or "", ""
     match = re.fullmatch(
         r"/api/notes/([0-9a-f]{32})(?:/(versions|shares|links|activity|ws|presence|comments)"
         r"(?:/([0-9a-f]{32}))?)?", clean)
@@ -349,6 +386,7 @@ async def _project(runtime, row, role, full=True, counts=None):
     result = {
         "id": row["note_id"],
         "title": _title(data.get("title")) or "Untitled note",
+        "emoji": _emoji(data.get("emoji")) or "",
         "visibility": str(row.get("visibility") or "private"),
         "version": int(row.get("version") or 1),
         "createdAt": int(row.get("created_at") or 0),
@@ -420,9 +458,12 @@ async def _create(runtime, account_bi, actor, data):
     title = _title(data.get("title")) or "Untitled note"
     markdown = _markdown(data.get("markdown"))
     visibility = "public" if data.get("visibility") == "public" else "private"
+    emoji = _emoji(data.get("emoji"))
+    if emoji is None:
+        return _response(runtime, {"error": "invalid_emoji"}, status=400)
     now = runtime.now()
     note_id = runtime.new_id()
-    sealed = await runtime.seal({"title": title, "markdown": markdown})
+    sealed = await runtime.seal({"title": title, "markdown": markdown, "emoji": emoji})
     published = now if visibility == "public" else 0
     await runtime.d1_run(
         "INSERT INTO notes(note_id,owner_bi,visibility,version,created_at,"
@@ -455,6 +496,9 @@ async def _update(runtime, row, account_bi, actor, data, event=None):
     old = old if isinstance(old, dict) else {}
     title = _title(data.get("title", old.get("title"))) or "Untitled note"
     markdown = _markdown(data.get("markdown", old.get("markdown")))
+    emoji = _emoji(data.get("emoji", old.get("emoji")))
+    if emoji is None:
+        return _response(runtime, {"error": "invalid_emoji"}, status=400)
     visibility = str(row.get("visibility") or "private")
     if "visibility" in data:
         if role != "owner" or data.get("visibility") not in ("private", "public"):
@@ -467,7 +511,7 @@ async def _update(runtime, row, account_bi, actor, data, event=None):
         published = now
     if visibility == "private":
         published = 0
-    sealed = await runtime.seal({"title": title, "markdown": markdown})
+    sealed = await runtime.seal({"title": title, "markdown": markdown, "emoji": emoji})
     result = await runtime.d1_run(
         "UPDATE notes SET visibility=?,version=?,updated_at=?,published_at=?,"
         "data=? WHERE note_id=? AND version=?",
@@ -554,6 +598,7 @@ async def _versions(runtime, row, account_bi, actor, method, data):
         "baseVersion": base,
         "title": (restored or {}).get("title", "Untitled note"),
         "markdown": (restored or {}).get("markdown", ""),
+        "emoji": (restored or {}).get("emoji", ""),
     }, event=("restore", {"version": target}))
 
 
@@ -991,13 +1036,354 @@ async def _presence(runtime, row, actor, role, method, data):
         "commentsKey": await _comments_key(runtime, row["note_id"])})
 
 
+async def _page_row(runtime, page_id):
+    return await runtime.d1_first(
+        "SELECT page_id,owner_bi,version,created_at,updated_at,data "
+        "FROM note_pages WHERE page_id=?", page_id)
+
+
+async def _page_role(runtime, row, account_bi):
+    if not row or not account_bi:
+        return ""
+    if str(row.get("owner_bi") or "") == account_bi:
+        return "owner"
+    direct = await runtime.d1_first(
+        "SELECT role FROM note_page_shares WHERE page_id=? "
+        "AND principal_type='user' AND principal_bi=?", row["page_id"], account_bi)
+    if direct:
+        return str(direct.get("role") or "viewer")
+    organization = await runtime.d1_first(
+        "SELECT s.role AS role, m.role AS member_role FROM note_page_shares s "
+        "INNER JOIN org_members m ON m.org_bi=s.principal_bi WHERE s.page_id=? "
+        "AND s.principal_type='organization' AND m.member_bi=? "
+        "AND m.role IN " + ORG_INSIDER_ROLE_SQL + " "
+        "ORDER BY CASE WHEN s.role='editor' AND m.role<>'auditor' "
+        "THEN 0 ELSE 1 END LIMIT 1", row["page_id"], account_bi)
+    if organization:
+        if str(organization.get("member_role") or "") == "auditor":
+            return "viewer"
+        return str(organization.get("role") or "viewer")
+    return ""
+
+
+async def _page_shares(runtime, page_id):
+    rows = await runtime.d1_all(
+        "SELECT principal_type,principal_name,role,created_at FROM note_page_shares "
+        "WHERE page_id=? ORDER BY principal_type,principal_name COLLATE NOCASE", page_id)
+    return [{
+        "type": str(row.get("principal_type") or ""),
+        "name": str(row.get("principal_name") or ""),
+        "role": str(row.get("role") or "viewer"),
+        "createdAt": int(row.get("created_at") or 0),
+    } for row in rows or []]
+
+
+def _page_entry(value):
+    if not isinstance(value, dict):
+        return None
+    entry_id = str(value.get("id") or "")
+    kind = str(value.get("kind") or "")
+    if not ENTRY_ID_RE.fullmatch(entry_id) or kind not in PAGE_KINDS:
+        return None
+    depth = value.get("depth", 0)
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 0 <= depth <= 3:
+        return None
+    entry = {"id": entry_id, "kind": kind, "depth": depth,
+             "label": _title(value.get("label")), "noteId": "", "url": "",
+             "collapsed": value.get("collapsed") is True}
+    if kind == "note":
+        note_id = str(value.get("noteId") or "").lower()
+        if not NOTE_ID_RE.fullmatch(note_id):
+            return None
+        entry["noteId"] = note_id
+    elif kind == "link":
+        url = str(value.get("url") or "").strip()
+        if (not url.startswith("https://") or len(url) > 2000
+                or any(char.isspace() or ord(char) < 32 for char in url)):
+            return None
+        entry["url"] = url
+        entry["label"] = entry["label"] or url[8:][:MAX_TITLE]
+    elif not entry["label"]:
+        return None
+    return entry
+
+
+def _page_fields(data, old):
+    fields = dict(old)
+    if "title" in data:
+        fields["title"] = _title(data.get("title"))
+    if "emoji" in data:
+        emoji = _emoji(data.get("emoji"))
+        if emoji is None:
+            return None, "invalid_emoji"
+        fields["emoji"] = emoji
+    if "description" in data:
+        description = str(data.get("description") or "").replace("\x00", "")
+        if len(description) > MAX_PAGE_DESCRIPTION:
+            return None, "invalid_page"
+        fields["description"] = description
+    if "accent" in data:
+        if data.get("accent") not in PAGE_ACCENTS:
+            return None, "invalid_page"
+        fields["accent"] = data["accent"]
+    if "layout" in data:
+        if data.get("layout") not in PAGE_LAYOUTS:
+            return None, "invalid_page"
+        fields["layout"] = data["layout"]
+    if "showEmoji" in data:
+        if not isinstance(data.get("showEmoji"), bool):
+            return None, "invalid_page"
+        fields["showEmoji"] = data["showEmoji"]
+    if "outline" in data:
+        outline = data.get("outline")
+        if not isinstance(outline, list):
+            return None, "invalid_page"
+        if len(outline) > MAX_PAGE_ENTRIES:
+            return None, "too_many_entries"
+        entries = [_page_entry(item) for item in outline]
+        if any(entry is None for entry in entries):
+            return None, "invalid_page"
+        if len({entry["id"] for entry in entries}) != len(entries):
+            return None, "invalid_page"
+        fields["outline"] = entries
+    fields.setdefault("title", "")
+    fields.setdefault("emoji", "")
+    fields.setdefault("description", "")
+    fields.setdefault("accent", "blue")
+    fields.setdefault("layout", "outline")
+    fields.setdefault("showEmoji", True)
+    fields.setdefault("outline", [])
+    return fields, ""
+
+
+async def _page_data(runtime, row):
+    data = await runtime.open(row.get("data"))
+    data = data if isinstance(data, dict) else {}
+    fields, _ = _page_fields({}, data)
+    return fields
+
+
+async def _page_project(runtime, row, role, full=True):
+    data = await _page_data(runtime, row)
+    result = {
+        "id": row["page_id"],
+        "title": data["title"] or "Untitled page",
+        "emoji": data["emoji"],
+        "description": data["description"],
+        "accent": data["accent"],
+        "layout": data["layout"],
+        "showEmoji": data["showEmoji"],
+        "role": role,
+        "version": int(row.get("version") or 1),
+        "createdAt": int(row.get("created_at") or 0),
+        "updatedAt": int(row.get("updated_at") or 0),
+        "entries": len(data["outline"]),
+        "shares": await _page_shares(runtime, row["page_id"]),
+    }
+    if full:
+        result["outline"] = data["outline"]
+    return result
+
+
+async def _page_notes(runtime, outline, account_bi, actor, content):
+    rows, roles = [], {}
+    for note_id in dict.fromkeys(entry["noteId"] for entry in outline if entry["kind"] == "note"):
+        row = await _row(runtime, note_id)
+        role = await _role(runtime, row, account_bi)
+        if row and role:
+            rows.append(row)
+            roles[note_id] = role
+    fresh = await _freshness(runtime, rows, account_bi, actor)
+    notes, budget = {}, MAX_PAGE_CONTENT
+    for row in rows:
+        note_id = row["note_id"]
+        data = await runtime.open(row.get("data"))
+        data = data if isinstance(data, dict) else {}
+        summary = {
+            "id": note_id,
+            "title": _title(data.get("title")) or "Untitled note",
+            "emoji": _emoji(data.get("emoji")) or "",
+            "updatedAt": int(row.get("updated_at") or 0),
+            "version": int(row.get("version") or 1),
+            "role": roles[note_id],
+            "lastEditedBy": fresh.get(note_id, {}).get("lastEditedBy", ""),
+            "unread": fresh.get(note_id, {}).get("unread", False),
+        }
+        if content:
+            markdown = _markdown(data.get("markdown"))
+            size = len(markdown.encode("utf-8"))
+            if size <= budget:
+                summary["markdown"] = markdown
+                budget -= size
+        notes[note_id] = summary
+    return notes
+
+
+async def _page_list(runtime, account_bi):
+    rows = await runtime.d1_all(
+        "SELECT DISTINCT p.page_id,p.owner_bi,p.version,p.created_at,p.updated_at,p.data "
+        "FROM note_pages p LEFT JOIN note_page_shares s ON s.page_id=p.page_id "
+        "LEFT JOIN org_members m ON s.principal_type='organization' "
+        "AND m.org_bi=s.principal_bi AND m.member_bi=? "
+        "AND m.role IN " + ORG_INSIDER_ROLE_SQL + " "
+        "WHERE p.owner_bi=? OR (s.principal_type='user' AND s.principal_bi=?) "
+        "OR m.member_bi=? ORDER BY p.updated_at DESC LIMIT ?",
+        account_bi, account_bi, account_bi, account_bi, MAX_PAGES)
+    pages = []
+    for row in rows or []:
+        role = await _page_role(runtime, row, account_bi)
+        if role:
+            pages.append(await _page_project(runtime, row, role, full=False))
+    return _response(runtime, {"ok": True, "pages": pages})
+
+
+async def _page_unknown_notes(runtime, outline, known, account_bi):
+    for entry in outline:
+        if entry["kind"] != "note" or entry["noteId"] in known:
+            continue
+        row = await _row(runtime, entry["noteId"])
+        if await _role(runtime, row, account_bi) not in ("owner", "editor", "viewer", "public"):
+            return True
+        known.add(entry["noteId"])
+    return False
+
+
+async def _page_create(runtime, account_bi, data):
+    fields, error = _page_fields(data, {})
+    if error:
+        return _response(runtime, {"error": error}, status=400)
+    if await _page_unknown_notes(runtime, fields["outline"], set(), account_bi):
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    page_id = runtime.new_id()
+    now = runtime.now()
+    await runtime.d1_run(
+        "INSERT INTO note_pages(page_id,owner_bi,version,created_at,updated_at,data) "
+        "VALUES(?,?,1,?,?,?)", page_id, account_bi, now, now, await runtime.seal(fields))
+    row = await _page_row(runtime, page_id)
+    return _response(runtime, {"ok": True, "page": await _page_project(runtime, row, "owner")},
+                     status=201)
+
+
+async def _page_update(runtime, row, account_bi, role, data):
+    if role not in ("owner", "editor"):
+        return _response(runtime, {"error": "page_not_found"}, status=404)
+    try:
+        base_version = int(data.get("baseVersion"))
+    except (TypeError, ValueError, OverflowError):
+        return _response(runtime, {"error": "base_version_required"}, status=400)
+    current = int(row.get("version") or 1)
+    if base_version != current:
+        return _response(runtime, {"error": "version_conflict",
+                                   "page": await _page_project(runtime, row, role)}, status=409)
+    old = await _page_data(runtime, row)
+    fields, error = _page_fields(data, old)
+    if error:
+        return _response(runtime, {"error": error}, status=400)
+    known = {entry["noteId"] for entry in old["outline"] if entry["kind"] == "note"}
+    if await _page_unknown_notes(runtime, fields["outline"], known, account_bi):
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    result = await runtime.d1_run(
+        "UPDATE note_pages SET version=?,updated_at=?,data=? WHERE page_id=? AND version=?",
+        current + 1, runtime.now(), await runtime.seal(fields), row["page_id"], current)
+    latest = await _page_row(runtime, row["page_id"])
+    if runtime.changes(result) != 1:
+        return _response(runtime, {"error": "version_conflict",
+                                   "page": await _page_project(runtime, latest, role)}, status=409)
+    return _response(runtime, {"ok": True, "page": await _page_project(runtime, latest, role)})
+
+
+async def _page_share(runtime, row, account_bi, method, data):
+    page_id = row["page_id"]
+    if method == "GET":
+        return _response(runtime, {"ok": True, "shares": await _page_shares(runtime, page_id)})
+    kind = str(data.get("type") or "").strip().lower()
+    name = str(data.get("name") or "").strip().lower()
+    role = str(data.get("role") or "viewer").strip().lower()
+    if kind not in ("user", "organization") or not NAME_RE.fullmatch(name):
+        return _response(runtime, {"error": "invalid_principal"}, status=400)
+    principal_bi, canonical = await runtime.principal(kind, name)
+    if not principal_bi:
+        return _response(runtime, {"error": "principal_not_found"}, status=404)
+    if method == "DELETE":
+        await runtime.d1_run(
+            "DELETE FROM note_page_shares WHERE page_id=? AND principal_type=? "
+            "AND principal_bi=?", page_id, kind, principal_bi)
+        return _response(runtime, {"ok": True, "shares": await _page_shares(runtime, page_id)})
+    if role not in ROLES:
+        return _response(runtime, {"error": "invalid_role"}, status=400)
+    now = runtime.now()
+    await runtime.d1_run(
+        "INSERT INTO note_page_shares(page_id,principal_type,principal_bi,principal_name,"
+        "role,added_by_bi,created_at) VALUES(?,?,?,?,?,?,?) "
+        "ON CONFLICT(page_id,principal_type,principal_bi) DO UPDATE SET "
+        "principal_name=excluded.principal_name,role=excluded.role",
+        page_id, kind, principal_bi, canonical, role, account_bi, now)
+    shared_notes = []
+    if data.get("includeNotes") is True:
+        outline = (await _page_data(runtime, row))["outline"]
+        for note_id in dict.fromkeys(entry["noteId"] for entry in outline if entry["kind"] == "note"):
+            note = await _row(runtime, note_id)
+            if not note or str(note.get("owner_bi") or "") != account_bi:
+                continue
+            previous = await runtime.d1_first(
+                "SELECT role FROM note_shares WHERE note_id=? AND principal_type=? "
+                "AND principal_bi=?", note_id, kind, principal_bi)
+            if previous and (str(previous.get("role") or "") == "editor" or role == "viewer"):
+                continue
+            await runtime.d1_run(
+                "INSERT INTO note_shares(note_id,principal_type,principal_bi,principal_name,"
+                "role,added_by_bi,created_at) VALUES(?,?,?,?,?,?,?) "
+                "ON CONFLICT(note_id,principal_type,principal_bi) DO UPDATE SET "
+                "principal_name=excluded.principal_name,role=excluded.role",
+                note_id, kind, principal_bi, canonical, role, account_bi, now)
+            await _log(runtime, note_id, account_bi,
+                       "role" if previous else "share",
+                       {"type": kind, "name": canonical, "role": role,
+                        **({"from": str(previous.get("role") or "")} if previous else {})})
+            await runtime.broadcast(note_id, {"type": "access-changed"})
+            shared_notes.append(note_id)
+    return _response(runtime, {"ok": True, "shares": await _page_shares(runtime, page_id),
+                               "sharedNotes": shared_notes})
+
+
+async def _pages(runtime, method, page_id, action, account_bi, actor, data):
+    if not account_bi:
+        return _response(runtime, {"error": "invalid_session"}, status=401)
+    if not page_id:
+        if method == "GET":
+            return await _page_list(runtime, account_bi)
+        return await _page_create(runtime, account_bi, data)
+    row = await _page_row(runtime, page_id)
+    role = await _page_role(runtime, row, account_bi)
+    if not row or not role:
+        return _response(runtime, {"error": "page_not_found"}, status=404)
+    if action == "shares":
+        if role != "owner":
+            return _response(runtime, {"error": "page_not_found"}, status=404)
+        return await _page_share(runtime, row, account_bi, method, data)
+    if method == "GET":
+        page = await _page_project(runtime, row, role)
+        content = str(runtime.query_params().get("content") or "") == "1"
+        notes = await _page_notes(runtime, page["outline"], account_bi, actor, content)
+        return _response(runtime, {"ok": True, "page": page, "notes": notes})
+    if method == "DELETE":
+        if role != "owner":
+            return _response(runtime, {"error": "owner_required"}, status=403)
+        await runtime.d1_run("DELETE FROM note_pages WHERE page_id=?", page_id)
+        return _response(runtime, {"ok": True})
+    return await _page_update(runtime, row, account_bi, role, data)
+
+
 async def handle(runtime, path):
     route = _route(path)
     if route is None:
         return _response(runtime, {"error": "not_found"}, status=404)
     method = runtime.method()
-    _, note_id, action, comment_id = route
-    allowed = (("GET", "POST") if not note_id else
+    kind, note_id, action, comment_id = route
+    allowed = (("GET", "POST") if kind == "pages" and not note_id else
+               ("GET", "POST", "DELETE") if kind == "pages" and action == "shares" else
+               ("GET", "PATCH", "DELETE") if kind == "pages" else
+               ("GET", "POST") if not note_id else
                ("PATCH", "DELETE") if comment_id else
                ("GET", "POST") if action in ("versions", "activity", "presence", "comments") else
                ("GET", "POST", "DELETE") if action in ("shares", "links") else
@@ -1015,6 +1401,8 @@ async def handle(runtime, path):
             return _response(runtime, {"error": error}, status=413 if error == "payload_too_large" else 400)
     await runtime.ensure_schema()
     account_bi, actor = await _actor(runtime, data)
+    if kind == "pages":
+        return await _pages(runtime, method, note_id, action, account_bi, actor, data)
     if not note_id:
         if not account_bi:
             return _response(runtime, {"error": "invalid_session"}, status=401)
