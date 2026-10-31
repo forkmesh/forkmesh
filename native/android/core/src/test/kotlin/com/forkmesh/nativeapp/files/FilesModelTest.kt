@@ -44,6 +44,22 @@ class FilesModelTest {
         assertEq(listOf("media" to "", "Movies" to "Movies", "2024" to "Movies/2024"), FilesModel.crumbs("media", "Movies/2024"))
     }
 
+    fun testAServerListedNameCannotLeaveTheDownloadFolder() {
+        val folder = File("/tmp/fm-files-open-test/files-open-1")
+        val base = folder.toPath().toAbsolutePath().normalize()
+        for (name in listOf("../../Documents/x", "a/../../b", "/etc/passwd", "sub/report.pdf", "..\\..\\c")) {
+            val target = FilesModel.localTarget(folder, name)
+            assertEq(base, target.toPath().parent, name)
+            expect(!target.name.contains("/"), name)
+        }
+        assertEq("x", FilesModel.localTarget(folder, "../../Documents/x").name)
+        for (name in listOf("", ".", "..", "../..", "a/..", "/")) {
+            assertEq(null, FilesModel.localName(name), name)
+            assertFails<FileProblem> { FilesModel.localTarget(folder, name) }
+        }
+        for (name in listOf("report.pdf", ".env", "My File (1).txt")) assertEq(name, FilesModel.localTarget(folder, name).name)
+    }
+
     fun testNamesAndFreeNames() {
         assertEq("Enter a name.", FilesModel.nameProblem(" "))
         assertEq("Names cannot contain / \\ : * ? \" < > |.", FilesModel.nameProblem("a/b"))

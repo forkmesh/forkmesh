@@ -50,13 +50,17 @@ remote:      https://app.forkmesh.com/<you>/<repo>/compare/main...my-change
 
 Open that link, write a title and a description, and click **Create pull
 request**. The pull request goes to the original repository. Your browser signs
-it, so the maintainer can check it came from your account.
+it, so the maintainer can check it came from your account. If the original is
+a read-only mirror of a repository hosted elsewhere, the pull request is
+opened on your fork instead, and the page says so.
 
 A pull request opened from a branch of the same repository follows that
 branch: push more commits (or force-push a rebase) and the pull request shows
 them, with "pushed N commits" in its timeline. A pull request from a fork
-records your branch as it was when you opened it; to update it, open a new pull
-request from the same link.
+records your branch as it was when you opened it. After you push more commits
+to your fork, open the pull request and click **Update pull request**: it sends
+your branch's current state as a new revision, and the comments and reviews
+stay. Only the pull request's author can update it this way.
 
 ## Without a fork
 

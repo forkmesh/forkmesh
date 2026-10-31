@@ -456,6 +456,7 @@ private fun ScanTab(state: NexusState, navigator: Navigator) {
                     }),
                     Modifier.fillMaxWidth(),
                     icon = "play_arrow",
+                    busy = state.running,
                 )
             }
         }
@@ -507,7 +508,7 @@ private fun InspectTab(state: NexusState) {
                     }
                 }
                 Spacer(Modifier.width(FmSpace.x2))
-                FmToneButton("Lookup", if (dnsName.isBlank() || busy != null) null else ({ run("dns") { dns = state.lookup(dnsName, dnsType) } }), tone = FmTone.Accent)
+                FmToneButton("Lookup", if (dnsName.isBlank() || busy != null) null else ({ run("dns") { dns = state.lookup(dnsName, dnsType) } }), tone = FmTone.Accent, busy = busy == "dns")
             }
             dns?.let { result ->
                 Divider()
@@ -537,7 +538,7 @@ private fun InspectTab(state: NexusState) {
                 FmTextField(port, { port = it.filter(Char::isDigit).take(5) }, Modifier.width(84.dp), hint = "Port", keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 Spacer(Modifier.width(FmSpace.x2))
                 val portNumber = port.toIntOrNull()?.takeIf { it in 1..65535 }
-                FmToneButton("Check", if (host.isBlank() || portNumber == null || busy != null) null else ({ run("reach") { reach = state.reach(host, portNumber) } }), tone = FmTone.Accent)
+                FmToneButton("Check", if (host.isBlank() || portNumber == null || busy != null) null else ({ run("reach") { reach = state.reach(host, portNumber) } }), tone = FmTone.Accent, busy = busy == "reach")
             }
             reach?.let { result ->
                 Divider()

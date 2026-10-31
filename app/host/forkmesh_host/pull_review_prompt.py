@@ -21,8 +21,12 @@ FIELD_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 INVISIBLE_RE = re.compile(
     r"[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064"
     r"\u2066-\u2069\ufeff]")
-COLLAPSE_LINES = 5
-COLLAPSE_CHARS = 360
+CHATGPT_URL = "https://chatgpt.com/"
+CHATGPT_URL_LIMIT = 14000
+FILE_LINKS_MAX = 50
+FILES_COLLAPSE = 5
+PATH_LIMIT = 300
+URL_SAFE = "-_.!~*'()"
 
 DEFAULT_TEMPLATE = """Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -88,12 +92,33 @@ def template_from_blobs(blobs):
     return template_from_text(content)
 
 
-def fields(origin, link_base, number, pull, has_diff=False):
+def changed_files(patch):
+    files = []
+    for line in str(patch or "").split("\n"):
+        if line.startswith("diff --git "):
+            files.append([line.split(" b/", 1)[-1] if " b/" in line else line[11:],
+                          False])
+        elif files and line.startswith("deleted file mode"):
+            files[-1][1] = True
+    return files
+
+
+def fields(origin, link_base, number, pull, has_diff=False, patch=""):
     origin = public_site_origin(origin)
     url = "%s%s/pull/%d" % (origin, link_base, int(number))
     files = url + "/files"
     diff = url + ".diff"
     clone = origin + link_base + (".git" if link_base.count("/") == 1 else "")
+    head = clean_field(pull.get("head"), FIELD_LIMITS["head"])
+    changed = changed_files(patch)
+    links = []
+    for path, deleted in changed[:FILE_LINKS_MAX]:
+        name = clean_field(path, PATH_LIMIT)
+        href = "" if deleted or not head or ":" in head else "%s%s/blob/%s?ref=%s" % (
+            origin, link_base, "/".join(urllib.parse.quote(part, safe=URL_SAFE)
+                                        for part in name.split("/")),
+            urllib.parse.quote(head, safe=URL_SAFE))
+        links.append([name, href])
     return {
         "url": url, "number": str(int(number)),
         "title": clean_field(pull.get("title"), FIELD_LIMITS["title"]),
@@ -102,12 +127,42 @@ def fields(origin, link_base, number, pull, has_diff=False):
         "host": re.sub(r"/.*$", "", re.sub(r"^[a-z][a-z0-9+.-]*://", "",
                                            origin, flags=re.I)),
         "base": clean_field(pull.get("base") or "main", FIELD_LIMITS["base"]),
-        "head": clean_field(pull.get("head"), FIELD_LIMITS["head"]),
+        "head": head,
         "author": clean_field(pull.get("author") or "unknown",
                               FIELD_LIMITS["author"]),
         "cloneUrl": clone, "diffUrl": diff, "filesUrl": files,
         "textUrl": url + ".txt", "rawDiffUrl": diff if has_diff else "",
+        "patchUrl": url + ".patch", "files": links, "fileCount": len(changed),
     }
+
+
+def summary_text(values, with_files=True):
+    lines = ["Summarize pull request #%s in %s on %s: %s" % (
+                 values["number"], values["repo"], values["host"], values["url"]),
+             'Title: "%s"' % values["title"],
+             "Author: %s. Merges %s into %s." % (
+                 values["author"], values["head"], values["base"]),
+             "",
+             "Diff: " + values["diffUrl"],
+             "Patch: " + values["patchUrl"],
+             "Description, comments and diff as plain text: " + values["textUrl"]]
+    if with_files and values["files"]:
+        lines += ["", "Changed files:"] + [
+            "- " + path + (": " + href if href else "")
+            for path, href in values["files"]]
+        if values["fileCount"] > len(values["files"]):
+            lines.append("- and %d more" % (values["fileCount"] - len(values["files"])))
+    lines += ["", "Reply with a short summary of what it changes and why, file by file."]
+    return "\n".join(lines)
+
+
+def chatgpt_url(values):
+    for with_files in (True, False):
+        url = CHATGPT_URL + "?q=" + urllib.parse.quote(
+            summary_text(values, with_files), safe=URL_SAFE)
+        if len(url) <= CHATGPT_URL_LIMIT:
+            return url
+    return CHATGPT_URL
 
 
 def prompt_text(values, template=""):
@@ -120,41 +175,50 @@ def is_open(pull):
     return str((pull or {}).get("state") or "open").strip().lower() == "open"
 
 
-def collapses(prompt):
-    return prompt.count("\n") >= COLLAPSE_LINES or len(prompt) > COLLAPSE_CHARS
-
-
 def render(values, number, template=""):
-    prompt = prompt_text(values, template)
-    text = esc(prompt)
-    toggle = collapses(prompt)
+    prompt = esc(prompt_text(values, template))
+    files = values.get("files") or []
+    more = values.get("fileCount", 0) - len(files)
+    toggle = len(files) + (1 if more > 0 else 0) > FILES_COLLAPSE
     box_id = "repo-pull-review-prompt-%d" % int(number)
     raw = values.get("rawDiffUrl") or ""
-    diff_button = (
-        '<button type="button" data-dashboard-copy="%s" aria-label="Copy the raw diff URL" '
-        'title="%s" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary">%s%s<span class="copy-icon">Copy diff URL</span>'
-        '<span class="copy-check">Copied</span></button>' % (
-            esc(raw), esc(raw), icon("link", "copy-icon h-3 w-3"),
-            icon("check", "copy-check h-3 w-3"))) if raw else ""
+    link = "font-medium text-[var(--dashboard-link)] hover:underline"
+    button = ("inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border "
+              "px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary")
+    diff_links = (
+        '\n            <span class="flex items-center gap-3"><a href="%s" '
+        'data-repo-pull-diff-link class="%s">Diff</a><a href="%s" data-repo-pull-patch-link '
+        'class="%s">Patch</a></span>' % (
+            esc(raw), link, esc(values["patchUrl"]), link)) if raw else ""
     toggle_button = (
         '<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" '
         'aria-controls="%s" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md '
         'px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary '
         'hover:text-foreground">%s<span data-repo-pull-review-prompt-toggle-label>Show all'
         '</span></button>' % (box_id, icon("chevron-down", "h-3 w-3"))) if toggle else ""
+    rows = "".join(
+        '<li class="truncate"><a href="%s" title="%s" class="text-[var(--dashboard-link)] '
+        'hover:underline">%s</a></li>' % (esc(href), esc(path), esc(path)) if href else
+        '<li class="truncate" title="%s">%s</li>' % (esc(path), esc(path))
+        for path, href in files)
+    if more > 0:
+        rows += '<li class="text-muted-foreground">and %d more</li>' % more
+    listing = (
+        '\n            <ul id="%s" data-repo-pull-review-files class="%s min-w-0 overflow-hidden '
+        'rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 '
+        'font-mono text-[11px] leading-5 text-foreground">%s</ul>' % (
+            box_id, "max-h-28" if toggle else "max-h-none", rows)) if rows else ""
     return (
-        '<div data-repo-pull-review-prompt aria-label="Review with your agent" '
-        'class="grid min-w-0 gap-1.5">\n'
-        '            <pre id="%s" data-repo-pull-review-prompt-text class="%s min-w-0 '
-        'overflow-hidden whitespace-pre-wrap rounded-md border border-border '
-        'bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 '
-        'text-muted-foreground [overflow-wrap:anywhere]">%s</pre>\n'
+        '<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 '
+        'gap-1.5 text-[12px]">%s%s\n'
         '            <span class="flex flex-wrap items-center gap-1"><button type="button" '
         'data-dashboard-copy="%s" aria-label="Copy the review prompt for this pull request" '
-        'title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary">%s%s<span '
-        'class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>'
-        '%s%s</span>\n'
+        'title="Copy a review prompt for your coding agent" class="copy-button %s">%s%s<span '
+        'class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span>'
+        '</button><a href="%s" target="_blank" rel="noopener noreferrer" '
+        'data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this '
+        'pull request" class="%s">%sSummarize in ChatGPT</a>%s</span>\n'
         '          </div>' % (
-            box_id, "max-h-28" if toggle else "max-h-none", text, text,
-            icon("copy", "copy-icon h-3 w-3"), icon("check", "copy-check h-3 w-3"),
-            diff_button, toggle_button))
+            diff_links, listing, prompt, button, icon("copy", "copy-icon h-3 w-3"),
+            icon("check", "copy-check h-3 w-3"), esc(chatgpt_url(values)), button,
+            icon("external-link", "h-3 w-3"), toggle_button))

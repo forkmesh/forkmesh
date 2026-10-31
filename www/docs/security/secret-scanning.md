@@ -39,7 +39,12 @@ python3 tools/secret_gate.py install-hooks --repo . \
   --repository owner/app --org-policy ~/.config/forkmesh/secret-policy.json
 ```
 
-The installer never overwrites a hook it did not write.
+The installer never overwrites a hook it did not write. It writes
+`--org-policy` and `--repository` before the hook stage, because Git appends
+the remote name and URL to a pre-push hook's arguments and argparse cannot
+hand positionals that follow options to the stage's arguments; with the
+options after the stage, every push failed with "unrecognized arguments".
+Hooks installed in that older order keep working without reinstalling.
 
 ## Policy
 

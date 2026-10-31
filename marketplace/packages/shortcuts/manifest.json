@@ -33,8 +33,60 @@
     "desktop": "builtin:shortcuts",
     "ios": "builtin:shortcuts",
     "android": "builtin:shortcuts",
+    "shortcut-review": "content/shortcuts/review-changes.md",
+    "shortcut-ux": "content/shortcuts/audit-user-experience.md",
+    "shortcut-cleanup": "content/shortcuts/clean-up-stale-code.md",
+    "shortcut-docs": "content/shortcuts/refresh-documentation.md",
+    "shortcut-retire": "content/shortcuts/propose-feature-removal.md",
     "settings": "builtin:package"
   },
+  "contributions": [
+    {
+      "id": "review-shortcut",
+      "socket": "content.shortcut",
+      "entrypoint": "shortcut-review",
+      "config": {
+        "path": ".forkmesh/shortcuts/review-changes.md",
+        "name": "Review my changes"
+      }
+    },
+    {
+      "id": "ux-shortcut",
+      "socket": "content.shortcut",
+      "entrypoint": "shortcut-ux",
+      "config": {
+        "path": ".forkmesh/shortcuts/audit-user-experience.md",
+        "name": "Audit and improve user experience"
+      }
+    },
+    {
+      "id": "cleanup-shortcut",
+      "socket": "content.shortcut",
+      "entrypoint": "shortcut-cleanup",
+      "config": {
+        "path": ".forkmesh/shortcuts/clean-up-stale-code.md",
+        "name": "Retire stale code and performance debt"
+      }
+    },
+    {
+      "id": "docs-shortcut",
+      "socket": "content.shortcut",
+      "entrypoint": "shortcut-docs",
+      "config": {
+        "path": ".forkmesh/shortcuts/refresh-documentation.md",
+        "name": "Refresh the documentation"
+      }
+    },
+    {
+      "id": "retire-shortcut",
+      "socket": "content.shortcut",
+      "entrypoint": "shortcut-retire",
+      "config": {
+        "path": ".forkmesh/shortcuts/propose-feature-removal.md",
+        "name": "Propose a feature to retire"
+      }
+    }
+  ],
   "permissions": [
     {
       "id": "shortcuts.run",

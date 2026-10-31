@@ -420,6 +420,8 @@ async def _account_finalize(env, request):
                 and await ed25519_verify(pubkey, signature, canonical)):
             return json_response({"error": "bad_signature"}, status=401)
         rec["pubkey"] = pubkey
+    if await _account_key_revoked(env, name_bi, rec["pubkey"]):
+        return json_response({"error": "device_revoked"}, status=401)
     # Finalize can never introduce a new name — it 404s above unless the
     # reservation already exists — so the name was moderated when it was
     # reserved. Only the deterministic filter re-runs here; re-asking the AI
@@ -480,11 +482,7 @@ async def _account_finalize(env, request):
     # Send a verification email (Mailtrap). If delivery is unavailable, retain
     # the account in the support queue for resend/follow-up; administrators can
     # no longer mark the address verified on the recipient's behalf.
-    if rec.get("email") and not rec["email_verified"]:
-        sent = await _send_verification_email(
-            env, request, name, rec["email"], rec=rec)
-        if not sent:
-            await _enqueue_verification(env, name_bi, name, rec["email"])
+    await _send_signup_verification(env, request, name_bi, name, rec)
     # Redeem the code read above: if the installing desktop's signed offer
     # already arrived the node is linked to that user right now; otherwise the
     # node's half is parked until the offer lands (see
@@ -912,6 +910,10 @@ async def record_core_mail_event(env, event, now=None):
         if reason == "unsubscribe" and mail_budget.is_marketing_kind(
                 row.get("kind")):
             reason = "marketing_unsubscribe"
+        if mail_tracking.bounce_cause(
+                event.get("event"), event.get("dsn"),
+                event.get("reason")) == "sender":
+            reason = ""
         if reason and row.get("recipient_bi"):
             await d1_run(
                 env, "INSERT INTO mail_suppressions"
@@ -2341,6 +2343,7 @@ async def org_agent_bots_handler(
                 sessions.append(_org_agent_hide_private_runner(
                     _org_agent_session_projection(row, record), row, record,
                     context["actor"]))
+        import agent_branches
         targets = await _org_agent_session_targets(env, context)
         return json_response({
             "ok": True,
@@ -2353,6 +2356,7 @@ async def org_agent_bots_handler(
             "canQueueAgent": True,
             "canViewAgentSessions": True,
             "canDeleteAgentSessions": True,
+            "canMergeAgentBranches": agent_branches.merge_allowed(context),
             "accessBasis": context["accessBasis"],
             "accessReason": (
                 "Owner access to agent-capable repository nodes."
@@ -3060,12 +3064,26 @@ async def _agent_handoff_signer(env, request, owner, repo):
     return (signer, key) if key else ("", "")
 
 
+async def _agent_handoff_desktops(env, account, from_key):
+    account_bi, record = await _account_row(env, account)
+    if not account_bi or not record:
+        return []
+    return [
+        item for item in await _account_desktops(env, account_bi, record)
+        if item.get("key") and item.get("key") != from_key
+    ]
+
+
 async def agent_handoff_handler(env, request, owner, repo, agent_id):
     await ensure_schema(env)
-    if method_name(request) != "POST":
+    method = method_name(request)
+    if method not in ("GET", "POST"):
         return _org_agent_error(
             "method_not_allowed",
-            "Use POST to move an agent session into the cloud.",
+            (
+                "Use POST to move an agent session into the cloud, or GET to "
+                "list the desktops it can be sent to."
+            ),
             405,
         )
     # The exact device key that signed, not just "somebody who may sign for
@@ -3090,6 +3108,20 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "The requested repository was not found.",
             404,
         )
+    signer = clean_string(signer, MAX_NODE_NAME).strip().lower() or owner
+    if method == "GET":
+        desktops = await _agent_handoff_desktops(env, signer, from_key)
+        return json_response({
+            "ok": True,
+            "desktops": [
+                {
+                    "key": item["key"],
+                    "node": item["node"],
+                    "lastSeen": item["lastSeen"],
+                }
+                for item in desktops
+            ],
+        }, cache_control="no-store")
     try:
         data = await bounded_json_request(request)
     except Exception:
@@ -3163,14 +3195,33 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
         data.get("title") or prompt.split("\n", 1)[0],
         _AGENT_HANDOFF_MAX_TITLE).strip()
     create_pr = data.get("createPr") is True
+    to_key = clean_string(data.get("toKey"), 120).strip()
+    to_desktop = None
+    if to_key:
+        to_desktop = next((
+            item for item in await _agent_handoff_desktops(
+                env, signer, from_key)
+            if item["key"] == to_key), None)
+        if not to_desktop:
+            return _org_agent_error(
+                "unknown_desktop",
+                (
+                    "That desktop is no longer linked to this account. "
+                    "Refresh the list of desktops and try again."
+                ),
+                409,
+                required_action="select_desktop",
+            )
+    to_device = to_desktop["node"] if to_desktop else ""
     # Queue for an owned mirror node when there is one, so the session carries
     # on in the cloud; otherwise the account namespace, which the owner's
     # other desktops drain.
-    mirror_node, mirror_online = await _agent_handoff_mirror_target(
-        env, owner, repo, provider, from_device)
+    mirror_node, mirror_online = (
+        ("", False) if to_desktop else
+        await _agent_handoff_mirror_target(
+            env, owner, repo, provider, from_device))
     target_node = mirror_node or owner
     account_bi = str(await blind_index(env, owner))
-    signer = clean_string(signer, MAX_NODE_NAME).strip().lower() or owner
     signer_bi = (
         account_bi if signer == owner
         else str(await blind_index(env, signer)))
@@ -3204,6 +3255,8 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "baseRef": base_ref,
             "fromDevice": from_device,
             "fromKey": from_key,
+            "toDevice": to_device,
+            "toKey": to_key,
             "sourceAgentId": clean_string(agent_id, 40),
         },
         "history": [{
@@ -3234,6 +3287,8 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
         "title": title,
         "fromDevice": from_device,
         "fromKey": from_key,
+        "toDevice": to_device,
+        "toKey": to_key,
         "sourceAgentId": clean_string(agent_id, 40),
     }
     try:
@@ -3282,10 +3337,23 @@ async def agent_handoff_handler(env, request, owner, repo, agent_id):
             "model": model or "provider-default",
             "branch": branch,
             "fromDevice": from_device,
+            "toDevice": to_device,
             "targetNode": target_node,
         })
     await notify_repo_host(env, target_node, repo, "org-agents")
     await _ring_cloud_agent_readers(env, record)
+    if to_desktop:
+        return json_response({
+            "ok": True,
+            "sessionId": session_id,
+            "queueState": "ready_for_claim",
+            "branch": branch,
+            "targetDevice": to_device,
+            "message": (
+                "Sent to " + to_device + ". It continues the session on "
+                + branch + " as soon as it is online."
+            ),
+        }, status=202, cache_control="no-store")
     if mirror_node:
         return json_response({
             "ok": True,
@@ -4323,14 +4391,84 @@ async def _pull_mutation_node(env, context, candidates, operation):
         len(candidates), rejected)
 
 
+async def _pull_update_head(env, context, pull_number):
+    record = await _pull_lifecycle_record(
+        env, context["owner"], context["repo"], int(pull_number))
+    if (
+        str(record.get("status") or "open").strip().lower() != "open"
+        or str(record.get("derive") or "").strip() != "branch"
+    ):
+        return ""
+    head = str(record.get("head") or "").strip()
+    if not head or ":" in head or not _branch_protection.valid_branch(head):
+        return ""
+    return head
+
+
+async def _account_may_write_branch(env, request, context, branch, actor):
+    if not branch or not actor:
+        return False
+    if await _account_owns_node(env, actor, context["owner"]):
+        return True
+    if await _org_write_allowed(env, context["owner"], context["repo"], actor):
+        return True
+    prefix = _hosted_git.contributor_ref_prefix(actor)
+    if not prefix or not ("refs/heads/" + branch).startswith(prefix):
+        return False
+    try:
+        match = REPO_API_PREFIX_RE.match(urlparse(request.url).path)
+    except Exception:
+        match = None
+    alias = (safe_segment(match.group(1)) or "") if match else ""
+    return await _hosted_git.contributor_push_allowed(
+        env, context["owner"], context["repo"], actor, alias=alias)
+
+PULL_MUTATION_PROGRESS_MESSAGES = {
+    "queued": "Waiting for an online mirror to take this job.",
+    "claimed": "A mirror took the job.",
+    "fetching": "Reading the base and head commits.",
+    "verifying": "Verifying the reviewed commits.",
+    "checking": "Checking branch protection and required checks.",
+    "testing": "Test-merging to check for conflicts.",
+    "committing": "Creating the merge commit.",
+    "hooks": "Running pre-merge hooks.",
+    "pushing": "Moving the branch to the new commit.",
+    "publishing": "Publishing to the mirrors and the catalog.",
+}
+
+
+def _pull_mutation_progress(progress, node, state):
+    progress = dict(progress or {})
+    phase = str(progress.get("phase") or ("claimed" if node else "queued"))
+    progress.update({
+        "state": state,
+        "phase": phase,
+        "message": PULL_MUTATION_PROGRESS_MESSAGES.get(phase, ""),
+        "node": node,
+    })
+    progress.setdefault("steps", [])
+    return progress
+
+
+def _pull_mutation_stored_progress(row):
+    if not row or row.get("status") != "requested":
+        return {}
+    try:
+        stored = json.loads(str(row.get("result") or ""))
+    except Exception:
+        return {}
+    return stored.get("progress") if isinstance(stored, dict) and isinstance(
+        stored.get("progress"), dict) else {}
+
+
 async def repository_pull_merge_handler(
         env, request, owner, repo, pull_number, mutation="merge"):
     """Authorize, pin, dispatch, and durably reconcile one pull mutation job.
 
     ``mutation`` selects between merging the pull request into the base branch
     and merging the base branch into the pull request's own head branch. Both
-    are exact-OID, idempotent-by-request-id, owner-only, and audited; they share
-    this handler so neither can drift away from those four properties.
+    are exact-OID, idempotent-by-request-id, and audited; a merge is owner-only,
+    and an update is open to anyone who may push to the head branch.
     """
     profile = HTTPS_MIRROR_PULL_MUTATIONS[mutation]
     if method_name(request) != "POST":
@@ -4371,6 +4509,15 @@ async def repository_pull_merge_handler(
             env, request, context["owner"], context["repo"], actor)
     except Exception:
         authorized = False
+    update_head = ""
+    if mutation == "update":
+        try:
+            update_head = await _pull_update_head(env, context, pull_number)
+            if not authorized:
+                authorized = await _account_may_write_branch(
+                    env, request, context, update_head, actor)
+        except Exception:
+            authorized = False
     target = context["owner"] + "/" + context["repo"]
     # An owner may merge without the independent-review gate. Only the owner
     # check above stands between a caller and that waiver, so every audit line
@@ -4448,6 +4595,15 @@ async def repository_pull_merge_handler(
                            "reason": protection[1].get("error", "")})
             return json_response(
                 protection[1], status=protection[0], cache_control="no-store")
+    if row is None and mutation == "update" and update_head:
+        refused = await _branch_protection.branch_refusal(
+            env, context["owner"], context["repo"], [update_head])
+        if refused is not None:
+            await _audit_sensitive_action(
+                env, actor, profile["action"], "repository", target,
+                "denied", {"pullNumber": int(pull_number),
+                           "reason": "branch_protected"})
+            return refused
     if row is None:
         if not await _repo_merge_jobs_make_room(
                 env, context["repoBi"], now):
@@ -4538,7 +4694,10 @@ async def repository_pull_merge_handler(
         # The node this job was dispatched to has dropped out of the healthy
         # set for now. Only it may answer for the job, so the browser waits.
         return json_response(
-            {"error": "merge_node_unavailable", "reason": "job_node_offline"},
+            {"error": "merge_node_unavailable", "reason": "job_node_offline",
+             "progress": _pull_mutation_progress(
+                 _pull_mutation_stored_progress(row), selected_node,
+                 "waiting")},
             status=503, cache_control="no-store",
             extra_headers=EXPECTED_DEGRADED_HEADERS)
     upstream_status, result = await _https_mirror_merge_proxy(
@@ -4556,6 +4715,21 @@ async def repository_pull_merge_handler(
                 env, actor, profile["action"], "repository", target,
                 "requested", {"pullNumber": int(pull_number),
                               "overrideReview": override_review})
+        progress = result.get("progress")
+        if progress and progress != _pull_mutation_stored_progress(row):
+            try:
+                await d1_run(
+                    env,
+                    """UPDATE repo_merge_jobs SET result=?,updated_at=?
+                         WHERE request_id=? AND status='requested'""",
+                    json.dumps({"progress": progress}, sort_keys=True,
+                               separators=(",", ":")),
+                    int(Date.now()), node_request["requestId"],
+                )
+            except Exception:
+                pass
+        result = dict(result, progress=_pull_mutation_progress(
+            progress, selected_node, "processing"))
         return _https_mirror_merge_response(result, mutation)
     terminal = (
         "succeeded" if result["status"] == profile["terminal"] else "failed")

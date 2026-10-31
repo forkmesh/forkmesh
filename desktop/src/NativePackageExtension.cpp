@@ -47,9 +47,9 @@ QString contributionError(const NativePackageContribution &contribution)
     static const QRegularExpression browserPathPattern(
         QStringLiteral("^/[a-z0-9][a-z0-9_-]{0,63}(?:/[a-z0-9][a-z0-9_-]{0,63}){0,3}$"));
     if (contribution.browserPath.isEmpty()) {
-        if (!contribution.factory)
+        if (!contribution.factory && !contribution.chromeFactory)
             return QStringLiteral("missing page factory");
-    } else if (contribution.factory ||
+    } else if (contribution.factory || contribution.chromeFactory ||
                !browserPathPattern.match(contribution.browserPath).hasMatch() ||
                !contribution.apiPrefix.isEmpty()) {
         return QStringLiteral("invalid browser link");
@@ -70,6 +70,16 @@ QString contributionError(const NativePackageContribution &contribution)
                contribution.apiPrefix.contains(QStringLiteral("/../")) ||
                !proofPattern.match(contribution.requestProof).hasMatch()) {
         return QStringLiteral("invalid package API boundary");
+    }
+    for (const QString &proof : contribution.resourceProofs) {
+        if (!proofPattern.match(proof).hasMatch())
+            return QStringLiteral("invalid resource proof");
+    }
+    for (const QString &path : contribution.accountPaths) {
+        if (!apiPattern.match(path).hasMatch() ||
+            path.contains(QStringLiteral("//")) ||
+            path.contains(QStringLiteral("/../")))
+            return QStringLiteral("invalid account path");
     }
     return QString();
 }

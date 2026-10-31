@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["tasks"] = (core) => {
-  const { $, $$, MD_BODY_CLASS, copyTextToClipboard, escapeHtml, fetchJson, formatCount, issuePersonNameHtml, loadingHtml, publicProfileUrl, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, watchIssueActorAvatars } = core;
+  const { $, $$, MD_BODY_CLASS, copyTextToClipboard, escapeHtml, fetchJson, formatCount, issuePersonNameHtml, issuePersonProfileHref, loadingHtml, publicProfileUrl, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, watchIssueActorAvatars } = core;
   // ---------------------------------------------------------------------------
   // Organization tasks. The dashboard uses the same encrypted catalog and
   // lifecycle endpoints as desktop and World; authorization always remains on
@@ -128,6 +128,13 @@
     const name = String(task?.assignee || "").trim().toLowerCase();
     const initial = Array.from(name)[0]?.toUpperCase() || "?";
     return `<span class="${size}" data-task-assignee-avatar="${escapeHtml(name)}" title="@${escapeHtml(name || "member")}" aria-label="@${escapeHtml(name || "member")} avatar">${escapeHtml(initial)}</span>`;
+  }
+
+  function taskAvatarLinkHtml(task) {
+    const avatar = taskAvatarHtml(task);
+    const name = String(task?.assignee || "").trim().toLowerCase();
+    const href = taskAssigneeKind(task) === "user" ? issuePersonProfileHref(name) : "";
+    return href ? `<a href="${escapeHtml(href)}" class="task-avatar-link" data-task-avatar-profile="${escapeHtml(name)}" aria-label="@${escapeHtml(name)} profile">${avatar}</a>` : avatar;
   }
 
   function taskAvatarForName(name) {
@@ -942,11 +949,11 @@
     const departments = [...new Set([...(state.tasksView.departments.length ? state.tasksView.departments : ["general", "engineering"]), ...(task.department ? [task.department] : [])])];
     const teams = [...new Set([...(state.tasksView.teams || []), ...(task.team ? [task.team] : [])])];
     const priority = Number(task.priority ?? 50);
-    const creator = task.createdBy ? `${taskAvatarHtml({ assigneeKind: "user", assignee: task.createdBy })}${taskPersonHtml(task.createdBy)}` : "—";
+    const creator = task.createdBy ? `${taskAvatarLinkHtml({ assigneeKind: "user", assignee: task.createdBy })}${taskPersonHtml(task.createdBy)}` : "—";
     return taskPropsHtml([
       ["Status", `${taskRingHtml(task)}${task.deletedAt ? '<span>In trash</span>' : statusEnabled ? taskPropSelectHtml("status", "Status", statusChoices, status, true) : `<span>${escapeHtml(taskStatusLabel(task))}</span>`}`],
       ["Priority", `${taskPriorityHtml(task)}${access.priority ? `<input type="number" min="1" max="99" step="1" inputmode="numeric" class="task-prop-input task-prop-number" data-task-prop="priority" aria-label="Priority" value="${escapeHtml(String(priority))}" />` : `<span class="tabular-nums">P${escapeHtml(String(priority))}</span>`}<span class="text-muted-foreground">${TASK_PRIORITY_LABELS[taskPriorityLevel(task)]}</span>`],
-      ["Assignee", `${taskAvatarHtml(task)}${access.edit ? taskPropSelectHtml("assignee", "Assignee", assigneeChoices, assignment, true) : `<span title="${escapeHtml(access.locked)}">${escapeHtml(taskAssigneeLabel(task))}</span>`}`],
+      ["Assignee", `${taskAvatarLinkHtml(task)}${access.edit ? taskPropSelectHtml("assignee", "Assignee", assigneeChoices, assignment, true) : `<span title="${escapeHtml(access.locked)}">${taskAssigneeKind(task) === "user" && task.assignee ? taskPersonHtml(task.assignee) : escapeHtml(taskAssigneeLabel(task))}</span>`}`],
       ["Created by", creator],
       ["Repository", access.edit ? taskPropTextHtml("repository", "Repository", task.repository, true, "owner/repository") : task.repository ? taskRepositoryHtml(task.repository) : '<span class="text-muted-foreground">None</span>'],
       ["Department", taskPropSelectHtml("department", "Department", departments.map((value) => [value, `#${value.replaceAll("-", " ")}`]), task.department || "general", access.edit, access.locked)],

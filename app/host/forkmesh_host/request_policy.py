@@ -54,6 +54,12 @@ def parse_ip(value):
     return mapped or address
 
 
+def rate_key(address):
+    if address.version == 6:
+        return str(ipaddress.ip_network((address, 64), strict=False))
+    return str(address)
+
+
 class Rules:
     def __init__(self, keywords=(), networks=(), ranges=()):
         self.keywords = tuple(keywords)
@@ -301,7 +307,7 @@ class RequestPolicy:
         address = parse_ip(ip)
         if address is None or (loopback_peer and address.is_loopback):
             return None
-        wait = self.limiter.retry_after(str(address))
+        wait = self.limiter.retry_after(rate_key(address))
         if wait:
             self.stats["rate_limited"] += 1
             return 429, wait

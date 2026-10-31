@@ -42,7 +42,7 @@ struct RepoProjectsScreen: View {
                 List {
                     Section {
                         Toggle("Show closed", isOn: Binding(get: { model.showClosed }, set: { model.showClosed = $0 }))
-                        NavigationLink {
+                        ShellPaneLink {
                             MilestonesScreen(model: model)
                                 .shellPageClearance()
                         } label: {
@@ -59,7 +59,7 @@ struct RepoProjectsScreen: View {
                             Text("No projects. Projects are created on the desktop.").foregroundStyle(fm.textSecondary)
                         }
                         ForEach(model.shownProjects) { (project: RepoProject) in
-                            NavigationLink {
+                            ShellPaneLink {
                                 ProjectDetailScreen(model: model, number: project.number)
                                     .shellPageClearance()
                             } label: {
@@ -185,7 +185,7 @@ struct ProjectDetailScreen: View {
                         Text("No linked issues.").foregroundStyle(fm.textSecondary)
                     }
                     ForEach(issues) { (issue: Issue) in
-                        NavigationLink {
+                        ShellPaneLink {
                             RouteDestinationView(route: .issue(model.repo, number: issue.number))
                                 .shellPageClearance()
                         } label: {

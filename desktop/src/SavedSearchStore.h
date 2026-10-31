@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -86,6 +87,8 @@ public:
 
     bool load();
     bool save() const;
+    void saveLater() const;
+    QByteArray serialized() const;
 
 private:
     SavedSearch *findMutable(const QString &id);

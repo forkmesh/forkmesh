@@ -6,8 +6,9 @@ import re
 
 
 CHANNEL_BODY_MAX_BYTES = 64 * 1024
-MAX_CHAT_CHANNELS = 100
 MAX_CHAT_CHANNELS_PER_CREATOR = 20
+CHANNEL_CREATE_WINDOW_MS = 60 * 60 * 1000
+CHANNEL_CREATE_MAX_PER_WINDOW = 5
 MAX_CHANNEL_MEMBERS = 500
 MAX_CHANNEL_TOPIC_LENGTH = 200
 MAX_CHANNEL_WEBHOOKS = 10
@@ -294,13 +295,11 @@ async def _create_channel(runtime, account_bi, actor, data):
     if existing:
         return _response(
             runtime, {"error": "channel_name_taken"}, status=409)
-    count = await runtime.d1_first(
-        "SELECT COUNT(*) AS n FROM chat_channels WHERE channel_id NOT IN "
-        "(SELECT channel_id FROM org_office_channels) "
-        "AND channel_id NOT IN (?,?,?)", *EVERYONE_IDS)
-    if int((count or {}).get("n") or 0) >= MAX_CHAT_CHANNELS:
+    recent = await runtime.channel_creations_since(
+        actor, runtime.now() - CHANNEL_CREATE_WINDOW_MS)
+    if int(recent or 0) >= CHANNEL_CREATE_MAX_PER_WINDOW:
         return _response(
-            runtime, {"error": "too_many_channels"}, status=429)
+            runtime, {"error": "too_many_new_channels"}, status=429)
     own = await runtime.d1_first(
         "SELECT COUNT(*) AS n FROM chat_channels WHERE created_by_bi=? "
         "AND channel_id NOT IN (SELECT channel_id FROM org_office_channels) "
@@ -1068,7 +1067,8 @@ async def _deliver_webhook(runtime, token, data):
                 if username and username not in recipients:
                     recipients.append(username)
         elif notify_public:
-            for username in await runtime.public_webhook_recipients():
+            for username in await runtime.public_webhook_recipients(
+                    channel_id):
                 if username and username not in recipients:
                     recipients.append(username)
         for recipient in recipients:
@@ -1212,7 +1212,8 @@ async def _call_ticket(runtime, account_bi, channel_id, is_admin, data=None):
     if _visibility(record) == "public" or _is_notices(record):
         return _response(
             runtime, {"error": "private_channel_required"}, status=409)
-    ticket = await runtime.call_ticket(channel_id, account_bi)
+    key_version = int(row.get("key_version") or 1)
+    ticket = await runtime.call_ticket(channel_id, account_bi, key_version)
     if not ticket:
         return _response(
             runtime, {"error": "calls_unavailable"}, status=503)

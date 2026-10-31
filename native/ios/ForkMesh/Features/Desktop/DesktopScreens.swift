@@ -55,6 +55,19 @@ struct DesktopsScreen: View {
                             .fmMessageTools(diagnostics.error)
                     }
                 }
+                if !otherDesktops.isEmpty {
+                    Section {
+                        ForEach(otherDesktops) { (light: ShellDesktopLight) in
+                            DesktopChoiceRow(light: light) { hub.choose(key: light.id) }
+                        }
+                    } header: {
+                        Text("Other desktops")
+                    } footer: {
+                        Text(
+                            "These desktops are signed in to the same account. Tap one to send prompts and read agents there instead."
+                        )
+                    }
+                }
             } else if let local = hub.local {
                 DesktopDiscoverySection(control: local)
             } else {
@@ -93,14 +106,20 @@ struct DesktopsScreen: View {
             }
         }
         .navigationTitle("Desktops")
-        .navigationDestination(isPresented: $showShortcutOutput) {
+        .shellDetail(isPresented: $showShortcutOutput) {
             if let shortcuts { ShortcutOutputScreen(store: shortcuts).shellPageClearance() }
         }
         .fmRefreshable { await refreshAll() }
         .task { await refreshAll() }
     }
 
+    private var otherDesktops: [ShellDesktopLight] {
+        guard let current = hub.desktop?.key else { return [] }
+        return hub.choices.filter { $0.id != current }
+    }
+
     private func refreshAll() async {
+        let desktops: Task<Void, Never> = Task { await hub.checkDesktops(force: true) }
         let lights: Task<Void, Never> = Task {
             if let fleet { await fleet.load() }
         }
@@ -111,6 +130,49 @@ struct DesktopsScreen: View {
         await diagnostics.refreshHealth()
         await lights.value
         await mac.value
+        await desktops.value
+    }
+}
+
+private struct DesktopChoiceRow: View {
+    let light: ShellDesktopLight
+    let onUse: () -> Void
+
+    private var color: Color {
+        switch light.presence {
+        case .online: return .green
+        case .offline: return .red
+        case .checking: return .orange
+        case .unknown: return .gray
+        }
+    }
+
+    var body: some View {
+        Button {
+            FmHaptics.selection()
+            onUse()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "desktopcomputer")
+                    .foregroundStyle(color)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(light.name)
+                    Text(light.presence.label).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("Use")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                FleetStateDot(color: color)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(light.label))
+        .accessibilityHint(Text("Sends prompts to this desktop from now on"))
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -442,19 +504,19 @@ struct DesktopScreen: View {
                 Section { ProgressView() }
             }
             Section("On the desktop") {
-                NavigationLink {
+                ShellPaneLink {
                     FileRootsScreen(store: files)
                         .shellPageClearance()
                 } label: {
                     Label("Files", systemImage: "folder")
                 }
-                NavigationLink {
+                ShellPaneLink {
                     DesktopLogScreen(tail: DesktopLogTail(store: diagnostics))
                         .shellPageClearance()
                 } label: {
                     Label("Log", systemImage: "text.alignleft")
                 }
-                NavigationLink {
+                ShellPaneLink {
                     StallsScreen(store: diagnostics)
                         .shellPageClearance()
                 } label: {
@@ -466,7 +528,7 @@ struct DesktopScreen: View {
                         }
                     }
                 }
-                NavigationLink {
+                ShellPaneLink {
                     ProcessesScreen(store: diagnostics)
                         .shellPageClearance()
                 } label: {
@@ -483,7 +545,7 @@ struct DesktopScreen: View {
                 NavigationLink(value: Route.hosts) {
                     Label("Hosts", systemImage: "server.rack")
                 }
-                NavigationLink {
+                ShellPaneLink {
                     FleetOperationsScreen(store: fleet, hub: hub)
                         .shellPageClearance()
                 } label: {

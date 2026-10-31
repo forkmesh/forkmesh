@@ -62,6 +62,19 @@ const pc = { getTransceivers: () => [
 await q.tuneCallSenders(pc);
 out.applied = applied;
 out.unsentEncodings = await q.tuneCallSender({ getParameters: () => ({ encodings: [] }), setParameters: async () => {} }, "video");
+const priorities = [];
+await q.tuneCallSender({ getParameters: () => ({ encodings: [{}] }), async setParameters(p) { priorities.push(p.encodings[0].priority, p.encodings[0].networkPriority); } }, "video");
+out.videoPriority = priorities;
+const chosen = [];
+const codecs = [{ mimeType: "audio/opus", clockRate: 48000 }, { mimeType: "audio/G722" }, { mimeType: "audio/red", clockRate: 48000 }, { mimeType: "audio/PCMU" }];
+const codecPc = { getTransceivers: () => [
+  { receiver: { track: { kind: "audio" } }, setCodecPreferences(list) { chosen.push(list.map((c) => c.mimeType)); } },
+  { receiver: { track: { kind: "video" } }, setCodecPreferences() { chosen.push("video"); } },
+] };
+out.red = await q.preferCallAudioCodecs(codecPc, { getCapabilities: () => ({ codecs }) });
+out.redOrder = chosen;
+out.noRed = q.preferCallAudioCodecs(codecPc, { getCapabilities: () => ({ codecs: codecs.filter((c) => c.mimeType !== "audio/red") }) });
+out.noApi = q.preferCallAudioCodecs(codecPc, undefined);
 class FakeRecorder {
   static isTypeSupported(type) { return type === "audio/webm;codecs=opus" || type === "video/webm;codecs=vp8,opus"; }
   constructor(stream, options) { this.stream = stream; this.options = options; this.state = "inactive"; this.listeners = {}; FakeRecorder.last = this; }
@@ -316,8 +329,8 @@ def _node(harness, *args):
 
 def test_quality_helpers_tune_opus_bitrates_and_read_the_route():
     data = _node(QUALITY_HARNESS, PUBLIC / "chat-call-quality.js")
-    assert data["tuned"] == "a=fmtp:111 minptime=10;useinbandfec=1;usedtx=0;stereo=0;maxplaybackrate=48000;maxaveragebitrate=96000"
-    assert data["inserted"][2] == "a=fmtp:109 useinbandfec=1;usedtx=0;stereo=0;maxplaybackrate=48000;maxaveragebitrate=96000"
+    assert data["tuned"] == "a=fmtp:111 minptime=10;useinbandfec=1;usedtx=0;stereo=0;maxplaybackrate=48000;maxaveragebitrate=128000;sprop-maxcapturerate=48000"
+    assert data["inserted"][2] == "a=fmtp:109 useinbandfec=1;usedtx=0;stereo=0;maxplaybackrate=48000;maxaveragebitrate=128000;sprop-maxcapturerate=48000"
     assert data["noSdp"] == {}
     video, audio = data["constraints"]
     assert video["video"]["width"] == {"ideal": 1280}
@@ -336,8 +349,13 @@ def test_quality_helpers_tune_opus_bitrates_and_read_the_route():
         "",
     ]
     audio_params, video_params = data["applied"]
-    assert audio_params["encodings"][0]["maxBitrate"] == 96000
+    assert audio_params["encodings"][0]["maxBitrate"] == 128000
     assert audio_params["encodings"][0]["priority"] == "high"
+    assert audio_params["encodings"][0]["networkPriority"] == "high"
+    assert data["videoPriority"] == ["medium", "medium"]
+    assert data["red"] is True
+    assert data["redOrder"] == [["audio/red", "audio/opus", "audio/G722", "audio/PCMU"]]
+    assert data["noRed"] is False and data["noApi"] is False
     assert video_params["encodings"][0]["maxBitrate"] == 2500000
     assert video_params["encodings"][0]["maxFramerate"] == 30
     assert "degradationPreference" not in video_params
@@ -447,7 +465,8 @@ def test_native_call_pages_share_quality_route_and_audio_test_clips():
     for marker in (
         'const VIDEO_CONSTRAINTS = { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };',
         "const VIDEO_MAX_BITRATE = 2500000;",
-        "const AUDIO_MAX_BITRATE = 96000;",
+        "const AUDIO_MAX_BITRATE = 128000;",
+        '["maxaveragebitrate", String(AUDIO_MAX_BITRATE)], ["sprop-maxcapturerate", "48000"]];',
         "return tuneSdp(plain(pc.localDescription));",
         'post({ event: "route", ...found });',
         'route: local === "relay" || remote === "relay" ? "relay" : "direct",',

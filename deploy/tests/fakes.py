@@ -32,12 +32,26 @@ class FakeSsh:
     """Records scripts; ``answers`` is a list of (predicate(host, script),
     stdout bytes | callable) consulted in order."""
 
-    def __init__(self, answers=None, returncode=0):
+    def __init__(self, answers=None, returncode=0, port=822):
         self.answers = list(answers or [])
         self.runs = []
         self.puts = []
         self.tunnels = []
         self.returncode = returncode
+        self.ports = {}
+        self.default_port = port
+        self.strict = []
+        self.strict_answer = subprocess.CompletedProcess(["ssh"], 0, b"", b"")
+
+    def port(self, host):
+        return self.ports.get(host, self.default_port)
+
+    def use_port(self, host, port):
+        self.ports[host] = port
+
+    def run_strict(self, host, script, timeout=None):
+        self.strict.append((host, script, self.port(host)))
+        return self.strict_answer
 
     def run(self, host, script, input_bytes=None, check=True, timeout=None):
         self.runs.append((host, script, input_bytes))

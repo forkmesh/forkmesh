@@ -59,6 +59,7 @@ final class NativeGroupCall {
     @ObservationIgnored weak var office: OfficeChannelService?
     @ObservationIgnored private var sendKey = GroupCallSendKey()
     @ObservationIgnored private var peer = ""
+    @ObservationIgnored private var chatRoom = ""
     @ObservationIgnored private var connection: RTCPeerConnection?
     @ObservationIgnored private var relay: GroupPeerDelegate?
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
@@ -154,6 +155,7 @@ final class NativeGroupCall {
                 : "Allow ForkMesh to use the microphone in Settings to join the call."
         }
         conversation = scope
+        chatRoom = office?.room(for: scope).map { "chat-channel:\($0.id):v\($0.keyVersion)" } ?? ""
         media = kind
         quality.reset()
         state = "joining"
@@ -185,6 +187,24 @@ final class NativeGroupCall {
         return nil
     }
 
+    @discardableResult
+    func channelRekeyed(_ scope: String, chatRoom room: String) async -> Bool {
+        guard active, scope == conversation, !room.isEmpty else { return false }
+        guard !chatRoom.isEmpty else {
+            chatRoom = room
+            return false
+        }
+        guard chatRoom != room else { return false }
+        chatRoom = room
+        reconnecting?.cancel()
+        reconnecting = nil
+        dropConnection()
+        retries = 0
+        state = "reconnecting"
+        if !(await connect()) { connectionLost("The call could not connect.") }
+        return true
+    }
+
     func leave() {
         guard active else { return }
         reconnecting?.cancel()
@@ -204,6 +224,7 @@ final class NativeGroupCall {
             NativeCallMedia.shared.endAudio()
         }
         conversation = ""
+        chatRoom = ""
         state = ""
     }
 
@@ -237,6 +258,7 @@ final class NativeGroupCall {
         timers.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(GroupCallFrames.heartbeat * 1_000_000_000))
+                if let self, self.active, let office = self.office { _ = await office.open(self.conversation) }
                 self?.announce("in")
             }
         })

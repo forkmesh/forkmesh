@@ -196,6 +196,42 @@ final class InboxServiceTests: XCTestCase {
         verify(fx, "forkmesh-pull-event-v2\no/r\n\(fx.author)\n1770000000000\n\(hash)", pull["sig"])
     }
 
+    func testARemotePullIsSignedForTheTargetAndPostedToItsOrigin() async throws {
+        let identity = try Identity.fromSeed([UInt8](repeating: 7, count: 32))
+        let http = FakeHTTPClient { _ in HTTPResponse(status: 200, json: ["ok": true, "number": 8]) }
+        let inbox = InboxService(
+            settings: StaticApiSettings(serverUrl: "wss://app.forkmesh.com/ws"), identity: identity, http: http,
+            clock: FixedClock(epochMillis: svcEpochMillis))
+        let fork = RemoteFork(
+            url: "https://git.example.org/Acme/Repo", origin: "https://git.example.org", host: "git.example.org",
+            owner: "Acme", name: "Repo")
+        let head = "forkmesh.com/forkmesh/forkmesh:fix/x"
+        let number = try await inbox.openRemotePull(
+            fork, title: "Fix", base: "main", head: head, patch: "diff --git a b", commits: "From abc",
+            description: "Why")
+        XCTAssertEqual(number, 8)
+        let request = try XCTUnwrap(http.requests.first)
+        XCTAssertEqual(request.url.absoluteString, "https://git.example.org/api/repo/Acme/Repo/pulls")
+        XCTAssertNil(request.headers["Authorization"])
+        let body = JSON.parseObject(request.bodyText)
+        XCTAssertEqual(body["owner"], "Acme")
+        XCTAssertEqual(body["repo"], "Repo")
+        let pull = body.obj("pull")
+        XCTAssertEqual(pull["head"], .string(head))
+        let hash = sha256Hex("Fix\0main\0\(head)\0diff --git a b\0From abc")
+        let fx = Fixture(identity: identity, http: http, inbox: inbox)
+        verify(fx, "forkmesh-pull-event-v2\nacme/repo\n\(fx.author)\n1770000000000\n\(hash)", pull["sig"])
+
+        let bad = RemoteFork(url: "", origin: "http://git.example.org", host: "", owner: "a", name: "b")
+        do {
+            _ = try await inbox.openRemotePull(bad, title: "Fix", base: "main", head: head, patch: "p")
+            XCTFail("an http origin must be refused")
+        } catch let error as ApiException {
+            XCTAssertEqual(error.message, "invalid_remote_fork")
+        }
+        XCTAssertEqual(http.requests.count, 1)
+    }
+
     func testOpeningAPullAnswersItsNumber() async throws {
         let identity = try Identity.fromSeed([UInt8](repeating: 7, count: 32))
         let http = FakeHTTPClient { _ in HTTPResponse(status: 200, json: ["ok": true, "number": 31]) }

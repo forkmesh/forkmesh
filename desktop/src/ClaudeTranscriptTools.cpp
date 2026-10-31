@@ -612,6 +612,20 @@ QString systemNotice(const QJsonObject &event)
             return QStringLiteral("Compacting conversation…");
         return QString();
     }
+    if (sub == QLatin1String("vcs_state_changed")) {
+        const QString kind = event.value(QStringLiteral("kind")).toString().trimmed();
+        return kind.isEmpty() ? QStringLiteral("Version control state changed")
+                              : QStringLiteral("Version control state changed: %1").arg(kind);
+    }
+    if (sub == QLatin1String("dev_intent")) {
+        const QString kind = event.value(QStringLiteral("kind")).toString().trimmed();
+        const QString trigger = event.value(QStringLiteral("trigger")).toString().trimmed();
+        QString text = kind.isEmpty() ? QStringLiteral("Development intent")
+                                     : QStringLiteral("Development intent: %1").arg(kind);
+        if (!trigger.isEmpty())
+            text += QStringLiteral(" (trigger: %1)").arg(trigger);
+        return text;
+    }
     if (sub == QLatin1String("api_retry")) {
         const int attempt = event.value(QStringLiteral("attempt")).toInt();
         const int max = event.value(QStringLiteral("max_retries")).toInt();
@@ -644,6 +658,17 @@ QString systemNotice(const QJsonObject &event)
                  summary.isEmpty() ? QString() : QStringLiteral(": ") + summary);
     }
     return QString();
+}
+
+QString commandLifecycleNotice(const QJsonObject &event)
+{
+    const QString state = event.value(QStringLiteral("state")).toString().trimmed();
+    const QString id = event.value(QStringLiteral("command_uuid")).toString().trimmed();
+    QString text = state.isEmpty() ? QStringLiteral("Command lifecycle update")
+                                  : QStringLiteral("Command %1").arg(state);
+    if (!id.isEmpty())
+        text += QStringLiteral(": %1").arg(id);
+    return text;
 }
 
 namespace {
@@ -948,22 +973,79 @@ QString windowResultSummary(const WindowResult &result)
     return result.open ? QStringLiteral("Window open") : QStringLiteral("Window closed");
 }
 
+static qint64 countMessageTokens(QHash<QString, qint64> &seen, const QString &id, qint64 count)
+{
+    if (count <= 0)
+        return 0;
+    if (id.isEmpty())
+        return count;
+    const qint64 before = seen.value(id, 0);
+    if (count <= before)
+        return 0;
+    if (seen.size() >= 512 && !seen.contains(id))
+        seen.clear();
+    seen.insert(id, count);
+    return count - before;
+}
+
 qint64 OutputTokenCounter::add(const QJsonObject &message)
 {
     const qint64 out = qint64(message.value(QStringLiteral("usage")).toObject()
                                   .value(QStringLiteral("output_tokens")).toDouble());
-    const QString id = message.value(QStringLiteral("id")).toString();
-    if (out <= 0)
-        return 0;
-    if (id.isEmpty())
-        return out;
-    const qint64 seen = m_seen.value(id, 0);
-    if (out <= seen)
-        return 0;
-    if (m_seen.size() >= 512 && !m_seen.contains(id))
-        m_seen.clear();
-    m_seen.insert(id, out);
-    return out - seen;
+    return countMessageTokens(m_seen, message.value(QStringLiteral("id")).toString(), out);
+}
+
+qint64 InputTokenCounter::add(const QJsonObject &message)
+{
+    const QJsonObject usage = message.value(QStringLiteral("usage")).toObject();
+    const qint64 in = qint64(usage.value(QStringLiteral("input_tokens")).toDouble()) +
+                      qint64(usage.value(QStringLiteral("cache_creation_input_tokens")).toDouble()) +
+                      qint64(usage.value(QStringLiteral("cache_read_input_tokens")).toDouble());
+    return countMessageTokens(m_seen, message.value(QStringLiteral("id")).toString(), in);
+}
+
+TokenStep LiveTokenMeter::addMessage(const QJsonObject &message)
+{
+    return {m_in.add(message), m_out.add(message)};
+}
+
+TokenStep LiveTokenMeter::add(const QJsonObject &event)
+{
+    const QString type = event.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("assistant"))
+        return addMessage(event.value(QStringLiteral("message")).toObject());
+    if (type == QLatin1String("_codex_agent_delta")) {
+        const qint64 before = m_codexChars / kCharsPerToken;
+        m_codexChars += event.value(QStringLiteral("delta")).toString().size();
+        return {0, m_codexChars / kCharsPerToken - before};
+    }
+    if (type != QLatin1String("stream_event"))
+        return {};
+    const QJsonObject inner = event.value(QStringLiteral("event")).toObject();
+    const QString innerType = inner.value(QStringLiteral("type")).toString();
+    if (innerType == QLatin1String("message_start")) {
+        const QJsonObject message = inner.value(QStringLiteral("message")).toObject();
+        m_message = message.value(QStringLiteral("id")).toString();
+        m_messageChars = 0;
+        return m_message.isEmpty() ? TokenStep{} : addMessage(message);
+    }
+    if (m_message.isEmpty())
+        return {};
+    if (innerType == QLatin1String("content_block_delta")) {
+        const QJsonObject delta = inner.value(QStringLiteral("delta")).toObject();
+        m_messageChars += delta.value(QStringLiteral("text")).toString().size() +
+                          delta.value(QStringLiteral("thinking")).toString().size() +
+                          delta.value(QStringLiteral("partial_json")).toString().size();
+        const qint64 guess = (m_messageChars + kCharsPerToken - 1) / kCharsPerToken;
+        return {0, m_out.add(QJsonObject{
+                       {QStringLiteral("id"), m_message},
+                       {QStringLiteral("usage"),
+                        QJsonObject{{QStringLiteral("output_tokens"), double(guess)}}}})};
+    }
+    if (innerType == QLatin1String("message_delta"))
+        return addMessage(QJsonObject{{QStringLiteral("id"), m_message},
+                                      {QStringLiteral("usage"), inner.value(QStringLiteral("usage"))}});
+    return {};
 }
 
 namespace {

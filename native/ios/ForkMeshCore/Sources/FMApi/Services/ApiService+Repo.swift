@@ -170,6 +170,16 @@ extension ApiService {
         return ApiService.asList(data).compactMap(\.objectValue).map(RepoBranch.init(json:)).filter { !$0.name.isEmpty }
     }
 
+    public func remoteForks(_ owner: String, _ name: String) async throws -> [RemoteFork] {
+        RemoteFork.list(try await getRepoRead(owner, name, "remote-forks"))
+    }
+
+    public var instanceHost: String {
+        let server = ServerURL.parse(settings.serverUrl)
+        guard let port = server.port, port != 443 else { return server.host }
+        return "\(server.host):\(port)"
+    }
+
     public func searchRepo(_ owner: String, _ name: String, _ query: String, ref: String = "") async throws -> RepoSearchResults {
         var params: [(String, String)] = [("q", query)]
         if !ref.isEmpty { params.append(("ref", ref)) }

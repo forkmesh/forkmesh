@@ -384,6 +384,11 @@ async def _write(env, request, owner, repo):
         if on and emoji[len("custom:"):] not in custom:
             return json_response({"error": "invalid_reaction"}, status=400,
                                  cache_control=PRIVATE_CACHE)
+    blocked = globals().get("moderation_blocked_response")
+    if on and blocked is not None:
+        refused = await blocked(env, account, owner, repo)
+        if refused is not None:
+            return refused
     now = int(Date.now())
     limited = await _rate_limited(env, account_bi, now)
     if limited is not None:

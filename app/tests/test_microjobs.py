@@ -174,8 +174,12 @@ class Runtime:
         self.db.commit()
 
     async def batch(self, statements):
-        for sql, params in statements:
-            self.db.execute(sql, params)
+        try:
+            for sql, params in statements:
+                self.db.execute(sql, params)
+        except Exception:
+            self.db.rollback()
+            raise
         self.db.commit()
 
     async def audit(self, actor, action, kind, resource, details):
@@ -464,6 +468,30 @@ def test_a_signed_marker_cannot_be_copied_to_a_different_pull():
     assert runtime.prompts == []
 
 
+def test_a_fork_copy_of_a_paid_pull_is_the_same_claim():
+    runtime = Runtime(pull_record=MCP_PULL)
+    assert _claim(runtime, _pull_body()).status == 201
+    for owner, repo in (("alice", "forkmesh"), ("bob", "forkmesh-copy")):
+        response = _claim(runtime, _pull_body(owner=owner, repo=repo))
+        assert response.status == 409, (owner, repo)
+        assert response.data["error"] == "already_claimed"
+    assert runtime.db.execute(
+        "SELECT COUNT(*) FROM microjob_claims").fetchone()[0] == 1
+
+
+def test_a_pull_claimed_under_the_old_repository_key_stays_claimed():
+    runtime = Runtime(pull_record=MCP_PULL)
+    runtime.db.execute(
+        "INSERT INTO microjob_claims (claim_id,account_bi,job,subject_bi,"
+        "status,amount_lamports,data,created_at,updated_at) "
+        "VALUES ('old','acct-bi','merged_pull',"
+        "'bi:microjob:merged_pull:forkmesh/forkmesh:128','paid',1,'{}',0,0)")
+    runtime.db.commit()
+    response = _claim(runtime, _pull_body())
+    assert response.status == 409
+    assert response.data["error"] == "already_claimed"
+
+
 def test_somebody_elses_mcp_pull_cannot_be_claimed():
     runtime = Runtime(pull_record=MCP_PULL, owns_key=False)
     response = _claim(runtime, _pull_body())
@@ -622,6 +650,251 @@ def test_the_same_page_cannot_be_claimed_twice():
     _seed_referral(runtime, 25, 9)
     assert _claim(runtime, _referral_body()).status == 201
     assert _claim(runtime, _referral_body()).status == 409
+
+
+def _subject(url):
+    normalized, _host = microjobs.normalize_public_url(url)
+    return microjobs.referral_subject_url(normalized)
+
+
+def _claim_count(runtime):
+    return runtime.db.execute(
+        "SELECT COUNT(*) FROM microjob_claims "
+        "WHERE amount_lamports>0").fetchone()[0]
+
+
+def test_tracking_slash_case_and_www_variants_of_one_page_are_the_same_claim():
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    assert _claim(runtime, _referral_body(
+        "https://example.com/post?a=1&b=2")).status == 201
+    for variant in (
+        "https://example.com/post?b=2&a=1",
+        "https://example.com/post/?a=1&b=2&utm_source=x&fbclid=y",
+        "https://EXAMPLE.com/post?a=1&b=2&gclid=z&ref=hn#again",
+        "https://www.example.com/post?a=1&b=2&si=q&s=1&t=2",
+        "HTTPS://m.example.com./post//?a=1&b=2",
+        "https://example.com/po%73t?a=1&b=2",
+    ):
+        response = _claim(runtime, _referral_body(variant))
+        assert response.status == 409, variant
+        assert response.data["error"] == "already_claimed"
+    assert _claim_count(runtime) == 1
+
+
+def test_identifying_query_keys_keep_different_posts_apart():
+    runtime = Runtime(page_text=PAGE)
+    for url in (
+        "https://news.ycombinator.com/item?id=101",
+        "https://news.ycombinator.com/item?id=102",
+        "https://www.youtube.com/watch?v=AAAAAAAAAAA",
+        "https://www.youtube.com/watch?v=BBBBBBBBBBB",
+        "https://www.reddit.com/r/forkmesh/comments/1aaaaa/a/",
+        "https://www.reddit.com/r/forkmesh/comments/1bbbbb/b/",
+    ):
+        assert _claim(runtime, _referral_body(url)).status == 201, url
+    assert _claim_count(runtime) == 6
+
+
+def test_hacker_news_keeps_only_the_item_id():
+    assert _subject("https://news.ycombinator.com/item?id=101&p=2") == (
+        _subject("https://news.ycombinator.com/item?utm_source=x&id=101"))
+    assert _subject("https://news.ycombinator.com/item?id=101") != (
+        _subject("https://news.ycombinator.com/item?id=102"))
+
+
+def test_every_youtube_spelling_of_one_video_is_one_subject():
+    expected = "https://youtube.com/watch?v=AbC_12-xyz9"
+    for url in (
+        "https://www.youtube.com/watch?v=AbC_12-xyz9",
+        "https://m.youtube.com/watch?v=AbC_12-xyz9&t=30&si=zz&list=PL1",
+        "https://youtu.be/AbC_12-xyz9?si=zz",
+        "https://www.youtube.com/shorts/AbC_12-xyz9",
+        "https://youtube.com/embed/AbC_12-xyz9",
+    ):
+        assert _subject(url) == expected, url
+    assert _subject("https://youtu.be/abc_12-xyz9") != expected
+
+
+def test_reddit_case_subdomains_subreddit_and_slug_do_not_split_a_post():
+    expected = "https://reddit.com/comments/1ab2cd"
+    for url in (
+        "https://www.reddit.com/r/forkmesh/comments/1ab2cd/a_title/",
+        "https://old.reddit.com/r/ForkMesh/comments/1ab2cd/any-slug",
+        "https://reddit.com/R/forkmesh/comments/1AB2CD/",
+        "https://new.reddit.com/r/other/comments/1ab2cd/x/?utm_source=share",
+        "https://redd.it/1ab2cd",
+    ):
+        assert _subject(url) == expected, url
+    comment = _subject(
+        "https://www.reddit.com/r/forkmesh/comments/1ab2cd/slug/k9z9zz/")
+    assert comment == expected + "/k9z9zz"
+    assert _subject(
+        "https://old.reddit.com/r/forkmesh/comments/1ab2cd/comment/K9Z9ZZ"
+    ) == comment
+    assert _subject(
+        "https://www.reddit.com/r/forkmesh/comments/2xyz/slug/") != expected
+    runtime = Runtime(page_text=PAGE)
+    assert _claim(runtime, _referral_body(
+        "https://old.reddit.com/r/forkmesh/comments/1ab2cd/a/")).status == 201
+    response = _claim(runtime, _referral_body(
+        "https://www.reddit.com/R/Forkmesh/comments/1ab2cd/b/"))
+    assert response.status == 409
+    assert response.data["error"] == "already_claimed"
+
+
+def test_the_pages_own_canonical_link_names_the_claim_on_the_same_site():
+    page = (PAGE + '<link data-x="1" REL="Canonical" '
+            "href='/article?id=7&amp;utm_source=feed'>")
+    runtime = Runtime(page_text=page)
+    assert _claim(runtime, _referral_body(
+        "https://example.com/article?id=7&junk=1")).status == 201
+    response = _claim(runtime, _referral_body(
+        "https://example.com/article?id=7&junk=2"))
+    assert response.status == 409
+    assert response.data["error"] == "already_claimed"
+    assert microjobs.referral_subject(
+        "https://example.com/article?id=7&junk=3", page) == (
+        "https://example.com/article?id=7")
+
+
+def test_a_canonical_link_to_another_site_is_ignored():
+    page = PAGE + '<link rel="canonical" href="https://other.example/x">'
+    assert microjobs.referral_subject(
+        "https://example.com/post?a=1", page) == "https://example.com/post?a=1"
+    runtime = Runtime(page_text=page)
+    assert _claim(runtime, _referral_body(
+        "https://example.com/post?a=1")).status == 201
+    other = _second_account(runtime, name="reporter")
+    assert _claim(other, _referral_body(
+        "https://example.com/post?a=2")).status == 201
+
+
+def _second_account(runtime, account_bi="other-bi", name="writer"):
+    other = Runtime(page_text=runtime.page_text)
+    other.db = runtime.db
+    other.account = (account_bi, name)
+    other._ids = 10_000
+    return other
+
+
+def test_one_account_gets_one_claim_per_page_path_on_a_generic_host():
+    page = PAGE + '<a href="https://forkmesh.com/r/writer">me too</a>'
+    runtime = Runtime(page_text=page)
+    _seed_referral(runtime, 25, 9)
+    assert _claim(runtime, _referral_body(
+        "https://example.com/post?x=1")).status == 201
+    for variant in ("https://example.com/post?x=2",
+                    "https://www.example.com/post/?x=3&y=4"):
+        response = _claim(runtime, _referral_body(variant))
+        assert response.status == 409, variant
+        assert response.data["error"] == "already_claimed"
+    other = _second_account(runtime)
+    assert _claim(other, _referral_body(
+        "https://example.com/other-page")).status == 201
+    assert _claim(other, _referral_body(
+        "https://example.com/post?x=5")).status == 201
+    assert _claim(other, _referral_body(
+        "https://example.com/post?x=6")).status == 409
+    assert _claim_count(runtime) == 3
+
+
+def test_the_page_scope_row_is_never_shown_counted_or_paid():
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    assert _claim(runtime, _referral_body(
+        "https://example.com/post?x=1")).status == 201
+    rows = runtime.db.execute(
+        "SELECT status,amount_lamports FROM microjob_claims "
+        "ORDER BY amount_lamports").fetchall()
+    assert [tuple(row) for row in rows] == [
+        ("rejected", 0),
+        ("approved", microjobs.JOBS["referral_post"]["lamports"])]
+    runtime._method = "GET"
+    listing = _run(microjobs.handle(runtime, "/api/microjobs"))
+    assert len(listing.data["claims"]) == 1
+    assert listing.data["claims"][0]["status"] == "approved"
+    result = _run(microjobs.queue_payouts(runtime))
+    assert result["queued"] == 1
+    plan = json.loads(runtime.db.execute(
+        "SELECT data FROM chain_intents").fetchone()["data"])
+    assert plan["distributedLamports"] == (
+        microjobs.JOBS["referral_post"]["lamports"])
+
+
+def test_allowlisted_hosts_take_no_page_scope():
+    for url in ("https://news.ycombinator.com/item?id=1",
+                "https://www.youtube.com/watch?v=AAAAAAAAAAA",
+                "https://youtu.be/AAAAAAAAAAA",
+                "https://old.reddit.com/r/x/comments/1abc/slug/"):
+        normalized, _host = microjobs.normalize_public_url(url)
+        assert microjobs.referral_page_scope(normalized, PAGE) == "", url
+    canonical = PAGE + '<link rel="canonical" href="https://example.com/a">'
+    assert microjobs.referral_page_scope(
+        "https://example.com/a?x=1", canonical) == ""
+    assert microjobs.referral_page_scope(
+        "https://www.example.com/a/?x=1", PAGE) == "https://example.com/a"
+
+
+def test_the_insert_itself_refuses_a_raced_second_claim_on_one_page_path():
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    scope = "bi:microjob:referral_post:account:acct-bi:https://example.com/post"
+    lookups = []
+    original = runtime.d1_first
+
+    async def miss_scope_once(sql, *args):
+        if "subject_bi IN" in sql and scope in args and not lookups:
+            lookups.append(sql)
+            return None
+        return await original(sql, *args)
+
+    runtime.db.execute(
+        "INSERT INTO microjob_claims (claim_id,account_bi,job,subject_bi,"
+        "status,amount_lamports,data,created_at,updated_at) "
+        "VALUES ('held','acct-bi','referral_post',?,'rejected',0,'{}',0,0)",
+        (scope,))
+    runtime.db.commit()
+    runtime.d1_first = miss_scope_once
+    response = _claim(runtime, _referral_body("https://example.com/post?x=9"))
+    assert response.status == 409
+    assert _claim_count(runtime) == 0
+
+
+def test_a_referral_claimed_under_the_old_full_url_key_stays_claimed():
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    url, _host = microjobs.normalize_public_url("https://example.com/post?x=1")
+    runtime.db.execute(
+        "INSERT INTO microjob_claims (claim_id,account_bi,job,subject_bi,"
+        "status,amount_lamports,data,created_at,updated_at) "
+        "VALUES ('old','other-bi','referral_post',?,'paid',1,'{}',0,0)",
+        ("bi:microjob:referral_post:" + url,))
+    runtime.db.commit()
+    response = _claim(runtime, _referral_body("https://example.com/post?x=1"))
+    assert response.status == 409
+    assert response.data["error"] == "already_claimed"
+
+
+def test_the_daily_caps_hold_even_when_the_precheck_is_raced(monkeypatch):
+    async def raced(*_args):
+        return ""
+
+    monkeypatch.setattr(microjobs, "_quota_error", raced)
+    runtime = Runtime(page_text=PAGE)
+    _seed_referral(runtime, 25, 9)
+    statuses = [
+        _claim(runtime, _referral_body(
+            "https://example.com/post-%d" % index)).status
+        for index in range(microjobs.MAX_CLAIMS_PER_ACCOUNT_PER_DAY + 3)
+    ]
+    stored = runtime.db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount_lamports),0) "
+        "FROM microjob_claims WHERE amount_lamports>0").fetchone()
+    assert stored[0] <= microjobs.MAX_CLAIMS_PER_ACCOUNT_PER_DAY
+    assert stored[1] <= microjobs.MAX_DAILY_LAMPORTS_PER_ACCOUNT
+    assert statuses.count(201) == stored[0]
+    assert set(statuses) == {201, 429}
 
 
 # --- anti-farming ------------------------------------------------------------

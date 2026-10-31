@@ -1,0 +1,99 @@
+#controlNodeSection QLabel#controlNextTitle {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+#controlNodeSection QLabel#controlNextLede,
+#controlNodeSection QLabel#controlNextRelayStatus {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#controlNodeSection QLabel#controlNextRelayDot {
+    background-color: @fgSubtle; border: none; border-radius: 3px;
+}
+#controlNodeSection QLabel#controlNextRelayDot[tone="success"] { background-color: @success; }
+#controlNodeSection QLabel#controlNextRelayDot[tone="warning"] { background-color: @warning; }
+#controlNodeSection QFrame#controlNextHeaderRule,
+#controlNodeSection QFrame#controlNextCardRule {
+    background-color: @border; border: none;
+}
+#controlNodeSection QLabel#controlNodePrivacyHint {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+
+#controlNodeSection QTabWidget#controlNodeTabs::pane { border: none; background: transparent; }
+#controlNodeSection QScrollArea#controlNodeTabScroll { background: transparent; border: none; }
+#controlNodeSection QScrollArea#controlNodeTabScroll > QWidget > QWidget { background: transparent; }
+
+#controlNodeSection QLabel#controlNextSectionTitle {
+    color: @fg; font-size: 14px; font-weight: 600; background: transparent;
+}
+#controlNodeSection QFrame#controlTabPane { background: transparent; border: none; }
+#controlNodeSection QFrame#controlTabPane[controlNextCard="true"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#controlNodeSection QFrame#controlTabPane QLabel { background: transparent; }
+#controlNodeSection QLabel#controlNextCardTitle { color: @fg; font-size: 13px; font-weight: 600; }
+#controlNodeSection QLabel#mutedLabel { color: @fgMuted; font-size: 12px; }
+#controlNodeSection QLabel[controlNextRole="status"] { font-size: 12px; }
+#controlNodeSection QLabel[controlNextRole="fieldLabel"] { color: @fgMuted; font-size: 12px; }
+#controlNodeSection QLabel[controlNextRole="subheading"] {
+    color: @fg; font-size: 13px; font-weight: 600; padding-top: 8px;
+}
+#controlNodeSection QLabel#controlNodeStatus,
+#controlNodeSection QLabel#controlIdentityStatus,
+#controlNodeSection QLabel#controlTokenStatus,
+#controlNodeSection QLabel#rewardPoolVaultStatus,
+#controlNodeSection QLabel#rewardPoolStatus,
+#controlNodeSection QLabel#exportSummary {
+    color: @fgSecondary; font-size: 13px;
+}
+
+#controlNodeSection QPlainTextEdit#nodeDeployOutput,
+#controlNodeSection QPlainTextEdit#siteDeployOutput,
+#controlNodeSection QPlainTextEdit#controlNodeDeploymentOutput,
+#controlNodeSection QPlainTextEdit#controlTokenOutput {
+    background-color: @bgSubtle; border: 1px solid @border; border-radius: 12px;
+    padding: 8px; color: @fgSecondary;
+    selection-background-color: @accentSubtle; selection-color: @fg;
+}
+
+#controlNodeSection QTableWidget {
+    background-color: @surface; alternate-background-color: @surface;
+    border: 1px solid @border; border-radius: 12px;
+}
+#controlNodeSection QTableWidget QHeaderView::section {
+    background-color: transparent; color: @fgSubtle; font-weight: 400;
+}
+
+#controlNodeSection QPushButton[controlNextButton="outline"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+#controlNodeSection QPushButton[controlNextButton="outline"]:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong;
+}
+#controlNodeSection QPushButton[controlNextButton="outline"]:pressed {
+    background-color: @surfaceActive;
+}
+#controlNodeSection QPushButton[controlNextButton="outline"]:checked {
+    color: @warning; border-color: @warning; background-color: @warningSubtle;
+}
+#controlNodeSection QPushButton[controlNextButton="outline"]:disabled {
+    color: @fgSubtle; background-color: @surface; border-color: @border;
+}
+#controlNodeSection QPushButton[controlNextButton="primary"] {
+    background-color: @fg; border: 1px solid @fg; border-radius: 8px;
+    color: @bg; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+#controlNodeSection QPushButton[controlNextButton="primary"]:hover {
+    background-color: @fgSecondary; border-color: @fgSecondary;
+}
+#controlNodeSection QPushButton[controlNextButton="primary"]:pressed {
+    background-color: @fgMuted; border-color: @fgMuted;
+}
+#controlNodeSection QPushButton[controlNextButton="primary"]:disabled {
+    background-color: @surfaceRaised; border-color: @border; color: @fgSubtle;
+}
+#controlNodeSection QPushButton#siteDeployMoreButton::menu-indicator {
+    image: none; width: 0px;
+}

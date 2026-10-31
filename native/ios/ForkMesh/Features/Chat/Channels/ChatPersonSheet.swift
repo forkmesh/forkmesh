@@ -110,6 +110,11 @@ struct ChatPersonSheet: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, FmSpace.x4)
                     }
+                    if let profile = model?.profile, profile.exists, !profile.isPrivate, !profile.isNode {
+                        ProfileTipContent(name: profile.name, address: profile.tipAddress)
+                            .padding(FmSpace.x3)
+                            .background(FmRoundedShape(radius: FmRadius.lg).fill(fm.bgRaised))
+                    }
                     actions
                 }
                 .frame(maxWidth: .infinity)

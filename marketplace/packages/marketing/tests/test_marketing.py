@@ -134,6 +134,30 @@ def test_content_pipeline_is_encrypted_shared_and_filter_ready():
     assert call(runtime.use("GET", "bob"), "/api/marketing/acme")["status"] == 404
 
 
+def test_org_guests_get_nothing_and_auditors_only_read():
+    runtime = Runtime()
+    runtime.accounts["dave"] = "bi:dave"
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:bob','guest','bob',1)")
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:dave','auditor','dave',1)")
+    created = call(runtime.use("POST", body={"title": "Launch story", "body": "Draft",
+                                              "channel": "blog"}),
+                   "/api/marketing/acme/content")
+    assert created["status"] == 201
+    item = created["data"]["content"]["id"]
+    for path in ("/api/marketing/acme", "/api/marketing/acme/content",
+                 f"/api/marketing/acme/content/{item}"):
+        guest = call(runtime.use("GET", "bob"), path)
+        assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
+    assert call(runtime.use("GET", "dave"), "/api/marketing/acme/content")["status"] == 200
+    for method, path, body in (
+            ("POST", "/api/marketing/acme/content", {"title": "Auditor post"}),
+            ("PATCH", f"/api/marketing/acme/content/{item}", {"status": "published"}),
+            ("DELETE", f"/api/marketing/acme/content/{item}", {})):
+        refused = call(runtime.use(method, "dave", body), path)
+        assert (refused["status"], refused["data"]["error"]) == (403, "read_only_role")
+    assert runtime.db.execute("SELECT COUNT(*) FROM marketing_content").fetchone()[0] == 1
+
+
 def test_latest_channel_metrics_power_dashboard_totals():
     runtime = Runtime()
     for body in (
@@ -169,6 +193,32 @@ def test_x_profile_snapshot_keeps_its_counters_beside_the_channel_metrics():
     assert {item["channel"]: item for item in summary["channels"]}["x"]["reach"] == 5
     web = (PACKAGE / "content" / "web" / "page.js").read_text()
     assert 'latest?.source === "x-profile"' in web
+
+
+def test_recorded_numbers_can_be_corrected_in_place():
+    runtime = Runtime()
+    created = call(runtime.use("POST", body={
+        "channel": "x", "followers": 93, "following": 649, "posts": 35,
+        "engagements": 0, "views": 382457, "source": "extension",
+        "note": "Read from x.com", "observedAt": 1_700_000_000_000}),
+        "/api/marketing/acme/metrics")["data"]["metric"]
+    path = "/api/marketing/acme/metrics/" + created["id"]
+    fixed = call(runtime.use("PATCH", body={"views": 145, "engagements": 12,
+                                            "note": "Corrected by hand"}), path)
+    assert fixed["status"] == 200
+    metric = fixed["data"]["metric"]
+    assert (metric["views"], metric["engagements"], metric["note"]) == (145, 12, "Corrected by hand")
+    assert (metric["followers"], metric["following"], metric["posts"]) == (93, 649, 35)
+    assert (metric["source"], metric["channel"], metric["observedAt"]) == (
+        "extension", "x", 1_700_000_000_000)
+    listed = call(runtime.use("GET"), "/api/marketing/acme/metrics")["data"]["metrics"]
+    assert [item["views"] for item in listed] == [145]
+    for body in ({"views": -1}, {"views": "12"}, {"views": True}, {"views": 10 ** 13}):
+        assert call(runtime.use("PATCH", body=body), path)["status"] == 400
+    assert call(runtime.use("PATCH", body={"channel": "youtube"}), path)["status"] == 400
+    assert call(runtime.use("PATCH", body={"views": 1}),
+                "/api/marketing/acme/metrics/" + "f" * 32)["status"] == 404
+    assert call(runtime.use("DELETE"), path)["status"] == 405
 
 
 def test_channel_settings_are_manager_only_and_https_only():
@@ -622,7 +672,7 @@ def test_discord_posts_lists_the_connector_posts_of_the_last_six_days():
     runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:bob','guest','bob',1)")
     runtime.db.commit()
     guest = call(runtime.use("GET", "bob"), "/api/marketing/acme/discord-posts")
-    assert (guest["status"], guest["data"]["error"]) == (403, "organization_member_required")
+    assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
 
 
 def test_desktop_and_web_show_the_discord_posts_on_the_discord_channel():
@@ -3403,8 +3453,8 @@ def test_ready_x_post_validates_its_text_image_and_roles():
         "data"]["error"] == "ready_post_image_too_large"
     assert put({"text": "hi", "link": "javascript:alert(1)"})["data"][
         "error"] == "invalid_ready_post_link"
-    assert put({"text": "hi"}, "bob")["status"] == 403
-    assert call(runtime.use("GET", "bob"), "/api/marketing/acme/ready-post")["status"] == 403
+    assert put({"text": "hi"}, "bob")["status"] == 404
+    assert call(runtime.use("GET", "bob"), "/api/marketing/acme/ready-post")["status"] == 404
     assert call(runtime.use("DELETE"), "/api/marketing/acme/ready-post")["status"] == 405
 
 
@@ -3452,6 +3502,24 @@ def test_every_surface_shows_the_ready_x_post_with_a_one_tap_post():
     assert "navigator.share" in web and "Download image" in web
     assert "Post to X" in ios and "Ready for X" in ios
     assert "ACTION_SEND" in android and "com.twitter.android" in android
+
+
+def test_every_surface_takes_an_optional_link_when_marking_the_ready_post_posted():
+    desktop = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    ios = (REPO / "native" / "ios" / "ForkMesh" / "Features" / "Packages"
+           / "MarketingSections.swift").read_text()
+    android = (REPO / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com"
+               / "forkmesh" / "nativeapp" / "feature" / "market" / "MarketingScreens.kt").read_text()
+    android_model = (REPO / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com"
+                     / "forkmesh" / "nativeapp" / "market" / "MarketingModel.kt").read_text()
+    for source in (desktop, web, ios, android):
+        assert "Link to the post (optional)" in source
+    assert "data-marketing-ready-url" in web and "...(url ? { url } : {})" in web
+    assert 'body.insert(QStringLiteral("url"), url)' in desktop
+    assert 'status: "posted", url: url' in ios
+    assert 'closeReadyPost("posted", link.trim())' in android
+    assert 'url = if (status == "posted") url else ""' in android_model
 
 
 def test_a_rate_limited_reddit_refresh_is_named_falls_back_and_backs_off():
@@ -4067,3 +4135,41 @@ def test_desktop_shows_the_advisor_and_the_ad_plan():
         "async def _marketing_inputs", 1)[0]))
     assert emitted <= {"campaign", "campaign-edit", "content", "content-open", "channel", "keyword", "page",
                        "ad", "ad-new", "experiment", "funnel-new", "goals", "analytics"}, emitted
+
+
+def test_web_tables_sort_by_number_duration_date_and_text_with_blanks_last():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    body = web[web.index("  const SORT_MONTHS"):web.index("  function sortTable(")]
+    assert "setupSortableTables();" in web
+    cells = ["1,234", "12.5%", "−4", "$4.50", "12.00 USD", "1.2k", "3M", "12 ★",
+             "2m 05s", "—", "2026-10-30 14:00", "Oct 3", "Facebook ads"]
+    script = (body + "\nconst cells = JSON.parse(process.argv[1]);"
+              "\nconst keys = cells.map(sortKey);"
+              "\nconst order = ['Week 10', 'week 2', 'Alpha', '3'].sort((a, b) => compareSortKeys(sortKey(a), sortKey(b)));"
+              "\nconst relative = [sortKey('3 days ago'), sortKey('yesterday'), sortKey('2 hours ago'), sortKey('just now'), sortKey('in 2 hours')];"
+              "\nprocess.stdout.write(JSON.stringify({keys, order, rising: relative.every((v, i) => !i || v > relative[i - 1])}));")
+    result = subprocess.run([node, "-e", script, json.dumps(cells)], capture_output=True,
+                            text=True, timeout=30, check=True)
+    out = json.loads(result.stdout)
+    assert out["keys"][:10] == [1234, 12.5, -4, 4.5, 12, 1200, 3000000, 12, 125000, None]
+    assert out["keys"][11] < out["keys"][10]
+    assert out["keys"][12] == "Facebook ads"
+    assert out["order"] == ["3", "Alpha", "week 2", "Week 10"]
+    assert out["rising"]
+
+
+def test_desktop_tables_sort_and_find_records_by_id_not_row_number():
+    common = (PACKAGE / "content" / "desktop" / "MarketingCommon.cpp").read_text()
+    pages = (PACKAGE / "content" / "desktop" / "MarketingPages.cpp").read_text()
+    feature = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    dashboard_table = common.split("void dashboardTable(QTableWidget *table)", 1)[1].split("\n}\n", 1)[0]
+    assert "sortableTable(table);" in dashboard_table
+    assert "table->sortItems(keyColumn, Qt::AscendingOrder);" in common
+    assert "&QAbstractItemModel::rowsInserted" in common
+    assert "items.at(row)" not in pages
+    assert "checks.at(cell->row())" not in pages
+    assert "m_channelRows.at(previousRow)" not in feature
+    assert "cells.at(0)->setData(kPinnedRowRole, true);" in feature

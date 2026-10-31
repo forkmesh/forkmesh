@@ -169,6 +169,7 @@ def test_publisher_labels_native_installer_platforms(release_repo):
     for name in (
         "forkmesh-linux-x86_64.AppImage",
         "forkmesh-linux-x86_64.AppImage.zsync",
+        "forkmesh-linux-x86_64.deb",
         "forkmesh-windows-x86_64-setup.exe",
         "forkmesh-macos-arm64.dmg",
         "forkmesh-macos-x86_64.dmg",
@@ -196,6 +197,7 @@ def test_publisher_labels_native_installer_platforms(release_repo):
     assert platforms == {
         "forkmesh-linux-x86_64.AppImage": ("linux", "x86_64"),
         "forkmesh-linux-x86_64.AppImage.zsync": ("linux", "x86_64"),
+        "forkmesh-linux-x86_64.deb": ("linux", "x86_64"),
         "forkmesh-windows-x86_64-setup.exe": ("windows", "x86_64"),
         "forkmesh-macos-arm64.dmg": ("macos", "arm64"),
         "forkmesh-macos-x86_64.dmg": ("macos", "x86_64"),

@@ -78,8 +78,10 @@ def message(row):
         label = "Fleet autoscaler"
     title = "%s on %s: %s" % (label, node, summary)
     detail = detail_of(row)
-    lines = [summary, "",
-             "Node: %s" % node,
+    lines = [summary, ""]
+    if detail.get("verdict"):
+        lines += ["Verdict: %s" % _value(detail["verdict"]), ""]
+    lines += ["Node: %s" % node,
              "Severity: %s" % severity,
              "Detector: %s" % _clean(row.get("detector"), 60),
              "Incident: %s" % _clean(row.get("id"), 64),
@@ -87,9 +89,18 @@ def message(row):
                  "%Y-%m-%d %H:%M:%S", time.gmtime(
                      int(row.get("created_ms") or 0) / 1000))]
     for key in sorted(detail):
-        if key == "lockdown":
+        if key in ("lockdown", "verdict"):
             continue
-        lines.append("%s: %s" % (_clean(key, 40), _value(detail[key])))
+        value = detail[key]
+        if isinstance(value, list) and value:
+            lines.append("%s:" % _clean(key, 40))
+            lines += ["  - %s" % _value(item) for item in value]
+        elif isinstance(value, dict) and value:
+            lines.append("%s:" % _clean(key, 40))
+            lines += ["  %s: %s" % (_clean(k, 40), _value(value[k]))
+                      for k in sorted(value)]
+        else:
+            lines.append("%s: %s" % (_clean(key, 40), _value(value)))
     if "lockdown" in detail:
         lines += [""] + _steps(detail["lockdown"])
     if severity == "lockdown":

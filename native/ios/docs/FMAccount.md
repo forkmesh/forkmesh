@@ -146,7 +146,7 @@ Deleting the app from an iPhone removes its UserDefaults and files, but iOS
 keeps its Keychain items. So that a reinstall asks the user to sign in again,
 the first launch of a new install erases those leftovers.
 
-`FreshInstallReset(prefs:eraseKeychain:).run()` is the first step
+`FreshInstallReset(prefs:eraseKeychain:isKeychainLocked:).run()` is the first step
 of `AppServices.start`, before anything reads
 the Keychain (`StartupMaintenance.eraseLeftoversOfADeletedApp`, with
 `KeychainBackend.eraseAll`, which deletes every item of every class in all of
@@ -154,6 +154,11 @@ the app's access groups: the session, identity, owner keys, vault copy, push
 credentials and share drop).
 
 - `install/installed` set: `.alreadyInstalled`, nothing happens.
+- No marker and the Keychain locked (`KeychainBackend.isLockedUntilFirstUnlock`):
+  `.deferred`, with nothing written or erased. Before the first unlock after a
+  reboot, UserDefaults reads empty, so an installed app would look new and lose
+  its sign-ins. `AppBoot` already waits for the first unlock; this is the
+  backstop.
 - No marker, but the app's `fm.` preferences hold anything: an update, which
   keeps its login. The marker is
   set: `.upgraded`.
@@ -162,6 +167,19 @@ credentials and share drop).
   fails (the phone still locked after a reboot), it returns `.deferred`, and
   the pending flag makes the next launch erase again, even though the
   preferences are no longer empty.
+
+## PermissionPacing (`PermissionPacing.swift`)
+
+Device-wide keys that keep a fresh install free of permission prompts
+(`docs/native/PERMISSIONS.md`). `settle(prefs, freshInstall:)` runs once at boot
+(`SettingsService.settlePermissionPacing`, fresh when the active project still
+needs its starter pack): a fresh install stores `permissions/intro` = `pending`;
+an update stores `seen` and `permissions/nearby-opened` = true, so nothing
+changes for people who already answered the old launch prompts. Later calls
+keep the first answer. `SettingsService.needsPermissionsIntro` and
+`finishPermissionsIntro` drive the intro screen; `reasons`, `title`, `summary`
+and `footnote` are its text. `nearbyAllowed` / `markNearbyOpened` drive the
+mesh hold.
 
 ## Sync status and trust lists (conformance ports; pure functions over `JSONObject`)
 

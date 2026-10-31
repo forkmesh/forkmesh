@@ -31,3 +31,10 @@ Refresh requests a fresh on-chain read (`refresh=1`).
   listed. Core rows page administrators continually by default. See
   [RUNNERS.md](../RUNNERS.md).
 - A failing WebSocket constructor falls back to reconnect backoff.
+- A row turned red by Worker errors gives only the status code and the route
+  family (`_status_route_family`: `/api/<area>`, `/api/repo/[repository]/<kind>`,
+  `/[repository]/info/refs`, `/@[account]`, or the first path segment;
+  already-redacted private routes stay as they are), plus the extra count.
+  The `error_log` message, which holds the exception and traceback, stays in
+  the admin console; the one fixed phrase kept is "Exceeded allowed duration"
+  for Durable Object aborts (`app/tests/test_status_page.py`).

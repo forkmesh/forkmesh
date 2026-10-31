@@ -1,5 +1,4 @@
 
-#include "ForkMeshBuildCommit.h"
 #include "DesktopBuildCommit.h"
 #include "ForkMeshVersion.h"
 #include "Tooltips.h"
@@ -233,8 +232,8 @@ const QString kVultrMirrorUploadMarker =
 QString packagedMirrorFile(const QString &relative)
 {
     const QStringList candidates{
-        QDir(QStringLiteral(FORKMESH_SOURCE_DIR)).filePath(relative),
-        QDir(QStringLiteral(FORKMESH_SOURCE_DIR))
+        QDir(forkmesh::sourceDir()).filePath(relative),
+        QDir(forkmesh::sourceDir())
             .filePath(QStringLiteral("../") + relative),
         QDir(QCoreApplication::applicationDirPath()).filePath(relative),
         QDir(QCoreApplication::applicationDirPath())
@@ -282,7 +281,7 @@ QString controllerReleaseManifestDigest(const QString &expectedBuildCommit,
     // the environment above; they never trust a hash copied from the remote
     // install response.
     const QString manifestPath =
-        QDir(QStringLiteral(FORKMESH_SOURCE_DIR))
+        QDir(forkmesh::sourceDir())
             .filePath(QStringLiteral(
                 ".forkmesh/releases/latest/release.json"));
     QFile manifestFile(manifestPath);
@@ -352,7 +351,7 @@ bool MainWindow::buildVultrMirrorNodeInstallCommand(
     }
     if (mirrorBinary.isEmpty()) {
         const QString sourceBinary =
-            QDir(QStringLiteral(FORKMESH_SOURCE_DIR))
+            QDir(forkmesh::sourceDir())
                 .filePath(QStringLiteral("../server/forkmesh-mirror-node"));
         if (QFileInfo(sourceBinary).isExecutable())
             mirrorBinary = sourceBinary;
@@ -586,8 +585,7 @@ bool MainWindow::buildHostInstallCommand(const QString &ip, const QString &user,
             expectedReleaseManifestDigest =
                 publishedRelease.manifestSha256.trimmed().toLower();
         } else {
-            expectedBuildCommit =
-                QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
+            expectedBuildCommit = forkmesh::desktopBuildCommit();
 #ifdef FORKMESH_WINDOW_TESTS
             const QString testBuildCommit =
                 qEnvironmentVariable("FORKMESH_TEST_BUILD_COMMIT")
@@ -1983,9 +1981,4 @@ void MainWindow::submitHostLinkCode(const QString &code)
         if (m_hostInstallStatus)
             m_hostInstallStatus->setText(message.trimmed());
     });
-}
-
-QString forkmesh::desktopBuildCommit()
-{
-    return QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
 }

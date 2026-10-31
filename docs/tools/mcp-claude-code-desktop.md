@@ -18,17 +18,22 @@ Code or any MCP client the desktop launched) gets them inside ForkMesh.
 | Environments: local, cloud, remote | `list_runners` | `agents.runners` | `MainWindowAgentHub.cpp`, `RunnerLogin.*` |
 | `PushNotification` | `notify_user` | `desktop.notify` | `MainWindowAgentHub.cpp` |
 | Built-in browser pane: navigate, click, type, read | `open_browser_window`, `browser_action`, `read_browser_page` | `windows.browse`, `windows.act`, `windows.capture` | `AgentWindows.*` |
+| Terminal panes the session can read and drive | `list_terminals`, `open_terminal`, `read_terminal`, `type_in_terminal`, `run_in_terminal`, `close_terminal` | `terminals.list`, `terminals.open`, `terminals.read`, `terminals.input`, `terminals.close` | `MainWindowTerminals.cpp`, `TerminalBridge.*` |
 | Panels, widgets and mods beside the chat | `show_window` (static), `show_widget` (scripted) | `windows.show`, `windows.widget` | `AgentWindows.*` |
 
 All of them need `FORKMESH_AGENT_INTAKE` and `FORKMESH_AGENT_INTAKE_TOKEN`
 (set only for agents the desktop launched, never in the KVM workspace) and,
 once the node publishes an MCP connector, a matching `FORKMESH_MCP_TOKEN`: the
-window tools through `WINDOW_TOOLS`, the others through `HUB_TOOLS`
-(`require_write_access`). `list_agents` and `list_runners` are marked
+window tools through `WINDOW_TOOLS`, the terminal tools through
+`TERMINAL_TOOLS`, the others through `HUB_TOOLS` (`require_write_access`). `list_agents` and `list_runners` are marked
 read-only in `tools/list` but still need the token, because they describe
-the user's other work. `whoami` reports `agentTools`. Window basics, safety
+the user's other work. `whoami` reports `agentTools` and `terminalTools`. Window basics, safety
 limits and the browser profile are in [mcp-agent-windows.md](mcp-agent-windows.md);
 the session token and socket in [mcp-create-agent.md](mcp-create-agent.md).
+The terminal tools also work from Claude Code started in a ForkMesh terminal
+tab, which gets its own channel token; the tabs, the launcher and the rules
+(Auto mode to type, private tabs, limits) are in
+[../desktop/side-rail-and-terminals.md](../desktop/side-rail-and-terminals.md).
 
 ## Suggesting a new session
 

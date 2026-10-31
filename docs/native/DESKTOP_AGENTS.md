@@ -20,6 +20,52 @@ ten minutes.
   (newest first), then the account's desktops; the last one that answered is
   tried first. `link()` dials up to four at once and keeps the first that
   completes the handshake with the expected key.
+- **Several desktops running (iOS, 2026-10-25).** The user can pick which
+  desktop the phone uses: on the Desktops page (Other desktops, tap one) or in
+  the composer's "Where it runs" sheet, which lists one row per desktop.
+  `choose(key:)` stores the key in `desktop/preferred-key`. From then on
+  `link()` dials only that desktop, `currentLink` ignores a LAN or relay
+  channel to any other one, and a relay channel to another desktop is closed.
+  A preferred key that is no longer one of the account's desktops is ignored.
+  `presence` records whether each desktop answered: every dial in the race
+  counts, and `checkDesktops()` dials the desktops it has no channel to and
+  closes each channel again. It runs when the Desktops page loads or is
+  pulled to refresh, and after `warm()` connects when the account has more
+  than one desktop, at most every five minutes. `choices` turns that into
+  `ShellDesktopLight` rows. Two desktops with the same node name get the first
+  six characters of their key added to the name. The icon above the clock
+  draws the desktop in use, with the other desktops stacked behind it, each
+  with its own dot. The core nodes are stacked the same way. Before this the
+  phone took whichever desktop answered first and showed only that one.
+- **Agents from every desktop (iOS, 2026-10-27).** A phone paired with two
+  desktops showed "No agent sessions yet" because its chosen desktop had none,
+  while the desktop it was connected to on the LAN had dozens. The Agents list
+  now shows the agents of every desktop of the account in one list.
+  `AgentControlCenter.rows` holds the desktop in use's rows plus up to four
+  other desktops' (`otherDesktops`, one `OtherDesktopAgents` each; an
+  unreachable one adds "<name>: Not reachable" to the list's notes). They
+  load on a full `refresh()`, after the desktop in use, and again when that
+  desktop rings `agents.changed`.
+  - Reaching another desktop: `link(to:)` / `request(_:_:to:)` use the LAN
+    channel when it goes to that desktop, else a relay channel kept per
+    desktop (`sideLinks`). `choose(key:)` keeps the old desktop's relay
+    channel as a side link and takes over the chosen desktop's side link, so
+    switching back and forth dials nothing new. `addEventTap(_:for:)` hears
+    one desktop's events whichever channel carries them. `openLink(for:)`
+    returns that desktop's open channel without dialling.
+  - The same local session id means a different agent on each desktop, so
+    every action follows the row's `desktopKey`. The center sends stop,
+    prompt, questions, answer, continue and transcript there. The transcript
+    stream follows that desktop. `DesktopScopedChannel` (from
+    `hub.channel(for:)` / `terminalChannel(for:)`) is a family and terminal
+    channel bound to one desktop. The app gives it to the agent-ops client
+    (`AgentOpsFeature.client(for:)`: diff, merge, delete, swipe delete) and to
+    an agent's terminal.
+  - Rows from another desktop have `elsewhere` set and ids prefixed with the
+    desktop key. They never match the relay-pushed sessions, which do not say
+    which desktop they came from, nor the active desktop's folders, queue,
+    unread marks, approvals or voice numbers. Their delete and read keys
+    carry the desktop key, and the line's host chip shows the desktop's name.
 - The desktop approves the phone without a code because its key is an enabled
   `owner_sign` device of the same account (`checkLocalControlAccountDevice`),
   records it in `data/local_control/paired-devices.json` as
@@ -112,6 +158,24 @@ nothing else is read from it. Its `outside` row carries `"otherUser"`, a title
 like `Claude Code (<login>)`, and no `steer`, `typeable` or `stoppable`;
 `agents.prompt`, `agents.stop` and deletes answer `outside_other_user`. Phones
 explain that ForkMesh cannot read or steer another login's agents.
+
+## Agents left in a deleted worktree
+
+An `outside` row is titled by its process's working folder, and an agent
+worktree is named after its branch. When a worktree was removed under a
+process that kept running, Linux reports `/proc/<pid>/cwd` as
+`<path> (deleted)`, so phones showed a leftover row like
+`2641-some-branch (deleted)` after the agent was deleted (2026-10-28).
+
+- `MachineAgentScan::scan` skips a process whose cwd `cwdRemoved` (ends in
+  ` (deleted)` and no longer exists): its folder is gone and it can do no work
+  there.
+- Deleting an agent ends what still runs in its worktree before the folder is
+  removed: `endOutsideAgentsIn` (called from `cleanupStreamWorktree` and
+  `deleteWorktreeBranchAndAgentInBackground`) stops each same-user outside
+  agent and surfaced Claude Code session whose cwd is `within` the worktree,
+  drops its row and tells phones the list changed. Another login's agents are
+  left alone.
 
 ## Following and watching an agent started outside ForkMesh
 
@@ -323,24 +387,55 @@ left, so the text starts at the row's edge (asked for from a phone screenshot:
 the dot took width and the churn bars were hard to read).
 
 - The tile shows the first image of the session, or a blank tile when there is
-  none. Its border is the churn (`AgentChurnRing`): one continuous 2 pt stroke,
-  green for the share of lines added and red for the share removed, so the
-  larger side is the longer stretch. With no churn the border is a hairline.
-  While the agent is active the ring turns (one lap every 2.4 s, the green and
-  red stretches keep their lengths) so a working agent stands out in the list;
-  when it finishes the ring stops still. Reduce Motion keeps it still, and it
-  pauses while the tab is hidden (asked for from the phone: see at a glance
-  which agents are working).
-- A small semi-transparent pill on the tile's top right (`AgentTilePill`) holds
-  the file count and a dot coloured by status: blue running, orange waiting,
-  green done, purple merged, red failed, grey queued or stopped.
-- The tile's bottom left shows one dot per open background task
-  (`AgentTileTasks`, up to three, then `+n`), from the desktop row's
-  `backgroundTasks`: the session's open backgrounded tasks
-  (`agentclitasks::Ledger::openBackground`). The desktop rings
-  `agents.changed` when that count changes. The dots blink while the agent is
-  active; Reduce Motion holds them still.
-- The unread dot sits on the tile's top left.
+  none. Since 2026-10-25 its border is the token flow (`AgentTokenRing`): two
+  1 pt dashed lanes, tokens in on the outer lane and tokens out on the inner
+  one, moving in opposite directions while the agent is active. Each lane's
+  colour follows its rate: grey idle, blue slow, green steady, orange fast,
+  red very fast (`AgentTokenPace`; output steps at 1, 15, 60 and 200
+  tokens/s, input at ten times that because each request re-reads the
+  context). Its speed follows the rate smoothly, 4 pt/s at 1 token/s plus
+  4 pt/s per tenfold, at most 24 (`AgentTokenPace.travel`), and the dash
+  position adds up frame by frame (`AgentTokenClock`), so a change of speed
+  does not make the dashes jump. The phone measures the rate from how the
+  totals grow: once a second from the desktop vitals feed's `agentTokens`
+  while it watches the desktop (see NAVIGATION.md, agent token charts), and
+  on each list update otherwise (`AgentTokenSampler`: gaps count as at most
+  8 s; a second with no growth halves the rate every 1.5 s, down to idle below
+  0.5 tokens/s, so bursty arrivals glide instead of stopping each second; the
+  rate drops to idle after 10 s with no growth). Asked for on 2026-10-25: the
+  ring should move with tokens as they are sent and received. With no token
+  counts the border is a hairline. Reduce Motion keeps the lanes still, and
+  they pause while the tab is hidden.
+- The totals come from the desktop row's `tokensIn` and `tokensOut`, counted
+  live as the run streams (`transcripttools::LiveTokenMeter`, since
+  2026-10-27). For Claude sessions a `message_start` adds the request's input
+  (fresh, cache written and cache read); each `content_block_delta` adds an
+  output guess of one token per four characters of text, thinking or tool
+  input; the closing `message_delta` usage tops the guess up to the real count,
+  and the finished `assistant` message adds only what is still missing, all
+  once per message id. Codex agent deltas add the same four-character guess.
+  Each `result` resets the totals to the CLI's own counts, so a guess that ran
+  high is corrected at the end of every turn. Before, the totals grew only when
+  a whole assistant message landed, so the ring and the island charts sat
+  still while a long reply streamed. Older desktops without these fields fall
+  back to the session's stored `promptTokens` / `completionTokens`.
+- Inside the tile, top to bottom: the file count in a small semi-transparent
+  pill (`AgentTileFiles`) whose outline is the churn, a 0.75 pt stroke green
+  for the share of lines added and red for the share removed (it used to be the
+  turning 2 pt border); a row of tiny icons (`AgentTileBadges`, up to four,
+  most urgent first: conflict or behind, worktree, branch, commits ahead, pull
+  request, then runner, cloud or outside terminal, the same icons as the list's
+  meta line, from `AgentLineBadge.of`); and the open background tasks.
+- Background tasks are thin 1 pt lines (`AgentTileTasks`, up to ten, or seven
+  and `+n` past that), from the desktop row's `backgroundTasks`: the session's
+  open backgrounded tasks (`agentclitasks::Ledger::openBackground`). The
+  desktop rings `agents.changed` when that count changes. The lines blink while
+  the agent is active; Reduce Motion holds them still.
+- When the agent has finished successfully the bottom slot shows a small green
+  `done` bar instead of the task lines (`AgentTileDone`).
+- The status dot (blue running, orange waiting, green done, purple merged, red
+  failed, grey queued or stopped; `AgentTileStatusDot`) sits on the tile's top
+  right corner and the unread dot on its top left.
 
 - `AgentEagleStrip` keeps the lane as a train of copies of the latest line
   with 5 pt seams, scrolling left at 80 pt/s after a 0.5 s pause, so the lane is
@@ -456,7 +551,7 @@ on 2026-10-21): `AgentRunScreen` (desktop, node and runner runs),
 | --- | --- | --- | --- |
 | List, start, transcript, prompt, stop, continue | `agents.*` | `AgentRunScreen` | `UnifiedAgentScreen` |
 | Pending tool approvals | `agentops.approvals`, `agentops.prepare` + `agentops.answer` | `ApprovalScreen` | `ApprovalScreen` |
-| Agent questions (`AskUserQuestion`) | `agents.questions`, `agents.answer` | `AgentRunScreen` cards | none |
+| Agent questions (`AskUserQuestion`) | `agents.questions`, `agents.answer` | `AgentRunScreen` cards | `AgentQuestionCards` on `UnifiedAgentScreen` |
 | Changes (committed, uncommitted, untracked) | `agentops.diff` | `AgentDiffScreen` | `AgentDiffScreen` |
 | Changed images | `agentops.file` | `DiffImagePreview` | none |
 | Merge & clean up | `agentops.prepare` + `agentops.merge` | `MergeCleanupButton`, `MergeLandedScreen` | `MergeCleanupDialog` |
@@ -567,6 +662,23 @@ account's other devices (`UserActivityLog`, `UserActivitySync`,
 `/api/accounts/activity-today`, [activity-today.md](../app/activity-today.md)).
 Counts are stored as `user_activity_today` (`yyyy-MM-dd|n,n,…`), written at
 most once a minute.
+
+### Answering an agent's question (2026-10-29)
+
+- The cards for a pending `AskUserQuestion` sit at the end of the transcript,
+  just above the composer, on both phones. They used to sit above the
+  transcript on iOS, so on a long run the phone kept the view at the bottom
+  and you only saw the tool line, never the question. Android had no cards.
+- While a question waits, the composer hint reads "Type your answer for the
+  agent" and Send answers the newest question with the typed text (an "Other"
+  answer), not a follow-up. A follow-up would wait in the queue behind a turn
+  that cannot end until the question is answered. A message with photos still
+  goes as a follow-up.
+- The questions are fetched again each time the transcript grows, and again
+  after an answer.
+- `AgentLogText::toolLine` writes the question texts for `AskUserQuestion`.
+  Its JSON input was cut at 200 characters, so the phone could not read it
+  and showed raw, truncated JSON.
 
 ### Fix conflicts with the agent
 
@@ -786,6 +898,7 @@ The feed stays plain text, so older phones read every line:
 | `> <text>` (to a blank line) | the user's prompt |
 | `> ⟵ <name>: <text>` | a message sent into the session (`ForkMesh (phone)` for a phone steer) |
 | `[<Tool> <arg>]` | tool call (may span lines, closed by `…]` or `]` before a blank line; capped at 200 characters) |
+| `[AskUserQuestion <question> · <question>]` | an agent question: its question texts, not its JSON input |
 | `▸ <Tool>: <arg>` | a runner's tool call (`claudeToolSummary` in `server/agents.go`) |
 | `==> Task <status>: <summary>` then lines indented four spaces | task notification and its result |
 | anything else | the agent's markdown |

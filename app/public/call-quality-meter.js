@@ -883,6 +883,7 @@ export function mountCallQualityWidget(host, meter, {
   sending = () => true,
   peerLabel = "Them",
   scope = globalThis,
+  visible = () => !documentRef?.hidden,
 } = {}) {
   if (!host || !meter || !documentRef) return null;
   const root = documentRef.createElement("div");
@@ -931,10 +932,16 @@ export function mountCallQualityWidget(host, meter, {
   diag.className = "fm-q-diag";
   diag.dataset.state = "unknown";
   diag.setAttribute("aria-expanded", "false");
+  diag.title = "Show diagnostics and how to fix them";
+  diag.setAttribute("aria-label", "Call diagnostics");
   const dot = documentRef.createElement("span");
   dot.className = "fm-q-dot";
   dot.setAttribute("aria-hidden", "true");
-  diag.append(dot);
+  const diagText = documentRef.createElement("span");
+  diagText.className = "fm-q-diag-text";
+  diagText.setAttribute("aria-hidden", "true");
+  diagText.textContent = "Diagnose";
+  diag.append(dot, diagText);
   bar.append(pill, diag);
   const diagPanel = documentRef.createElement("div");
   diagPanel.className = "fm-q-panel fm-q-diag-panel";
@@ -990,6 +997,14 @@ export function mountCallQualityWidget(host, meter, {
   } catch (_) {}
   let colors = readColors(root);
   let colorsAt = Date.now();
+  let drawnFor;
+  const written = new Map();
+
+  function put(key, value, apply) {
+    if (written.get(key) === value) return;
+    written.set(key, value);
+    apply(value);
+  }
 
   function setOpen(value) {
     open = Boolean(value);
@@ -1000,11 +1015,12 @@ export function mountCallQualityWidget(host, meter, {
       storage?.setItem(QUALITY_OPEN_KEY, open ? "1" : "0");
     } catch (_) {}
     colors = readColors(root);
+    drawnFor = undefined;
     render();
   }
 
   function refreshDiagnosis() {
-    diag.hidden = !meter.hasStats;
+    if (diag.hidden !== !meter.hasStats) diag.hidden = !meter.hasStats;
     if (!meter.hasStats || meter.latest === diagnosedFor) return;
     diagnosedFor = meter.latest;
     diagnosis = diagnoseCall(meter.samples, { video: video(), sending: sending() });
@@ -1084,6 +1100,7 @@ export function mountCallQualityWidget(host, meter, {
 
   function render() {
     refreshDiagnosis();
+    if (!visible()) return;
     if (Date.now() - colorsAt > 1000) {
       colors = readColors(root);
       colorsAt = Date.now();
@@ -1091,29 +1108,41 @@ export function mountCallQualityWidget(host, meter, {
     const latest = meter.latest;
     const grade = meter.hasStats ? gradeCallQuality(latest) : "unknown";
     const count = meter.hasStats ? qualityBars(latest) : 0;
-    root.dataset.grade = grade;
-    root.dataset.stats = meter.hasStats ? "true" : "false";
-    [...bars.children].forEach((bar, i) => bar.classList.toggle("is-on", i < count));
+    put("grade", grade, (value) => { root.dataset.grade = value; });
+    put("stats", meter.hasStats ? "true" : "false", (value) => { root.dataset.stats = value; });
+    put("bars", count, (value) => [...bars.children].forEach((bar, i) => bar.classList.toggle("is-on", i < value)));
     const network = meter.hasStats ? describeNetwork(latest) : "";
-    pillText.textContent = meter.hasStats && latest?.rttMs !== null && latest?.rttMs !== undefined
+    const rtt = meter.hasStats && latest?.rttMs !== null && latest?.rttMs !== undefined
       ? Math.round(latest.rttMs) + " ms"
       : "";
-    pillText.hidden = !pillText.textContent;
-    bars.hidden = !meter.hasStats;
+    put("rtt", rtt, (value) => {
+      pillText.textContent = value;
+      pillText.hidden = !value;
+    });
+    put("barsHidden", !meter.hasStats, (value) => { bars.hidden = value; });
     const summary = meter.hasStats ? qualityGradeLabel(grade) + (network && latest ? " · " + network : "") : "Microphone level";
-    pill.title = summary + (open ? ". Hide live charts" : ". Show live charts");
-    pill.setAttribute("aria-label", "Call quality: " + summary);
+    put("summary", summary + (open ? "|open" : ""), () => {
+      pill.title = summary + (open ? ". Hide live charts" : ". Show live charts");
+      pill.setAttribute("aria-label", "Call quality: " + summary);
+    });
     drawVoiceWave(wave, meter.levels, colors, 20);
     if (!open) return;
-    heading.textContent = meter.hasStats ? qualityGradeLabel(grade) : "Microphone";
+    put("heading", meter.hasStats ? qualityGradeLabel(grade) : "Microphone", (value) => { heading.textContent = value; });
     drawVoiceWave(rows.voice.chart, meter.levels, colors);
     const hasPeer = meter.levels.some((entry) => entry.peer !== null && entry.peer !== undefined);
-    rows.voice.value.textContent = hasPeer ? "You ▲ · " + peerLabel + " ▼" : "You";
-    rows.voice.chart.setAttribute("aria-label", "Voice levels over the last five seconds");
-    rows.network.line.hidden = !meter.hasStats;
-    rows.video.line.hidden = !meter.hasStats || !video();
-    rows.send.line.hidden = !meter.hasStats || !video();
-    if (!meter.hasStats) return;
+    put("voice", hasPeer ? "You ▲ · " + peerLabel + " ▼" : "You", (value) => {
+      rows.voice.value.textContent = value;
+      rows.voice.value.title = value;
+      rows.voice.chart.setAttribute("aria-label", "Voice levels over the last five seconds");
+    });
+    const showVideo = meter.hasStats && video();
+    put("rows", String(meter.hasStats) + showVideo, () => {
+      rows.network.line.hidden = !meter.hasStats;
+      rows.video.line.hidden = !showVideo;
+      rows.send.line.hidden = !showVideo;
+    });
+    if (!meter.hasStats || drawnFor === latest) return;
+    drawnFor = latest;
     const samples = meter.samples;
     const marks = samples.map((sample) => {
       if (sample.lossPct === null || sample.lossPct < QUALITY_LOSS_STEPS[0]) return "";

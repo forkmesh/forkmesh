@@ -1,0 +1,6 @@
+Types: deb
+URIs: https://app.forkmesh.com/apt
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/forkmesh-archive-keyring.asc

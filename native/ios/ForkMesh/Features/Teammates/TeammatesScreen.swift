@@ -175,7 +175,7 @@ struct TeammatesScreen: View {
             }
         }
         ToolbarItem(placement: .secondaryAction) {
-            NavigationLink {
+            ShellPaneLink {
                 TeamBriefingScreen(store: store)
                     .shellPageClearance()
             } label: {
@@ -183,7 +183,7 @@ struct TeammatesScreen: View {
             }
         }
         ToolbarItem(placement: .secondaryAction) {
-            NavigationLink {
+            ShellPaneLink {
                 TeamStatsScreen(store: store)
                     .shellPageClearance()
             } label: {
@@ -191,7 +191,7 @@ struct TeammatesScreen: View {
             }
         }
         ToolbarItem(placement: .secondaryAction) {
-            NavigationLink {
+            ShellPaneLink {
                 TeamRoomScreen(store: store)
                     .shellPageClearance()
             } label: {

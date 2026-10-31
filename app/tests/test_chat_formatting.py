@@ -161,7 +161,8 @@ def test_email_html_mentions_link_to_the_profile():
 def test_notification_emails_format_their_body():
     assert "_chat_format = _LazyModule(\"chat_format\")" in ENTRY
     assert "_chat_format.to_text(body).split(\"\\n\")" in ENTRY
-    assert "_chat_format.to_html(\n             body, _notification_item_url(base_url, \"/\"))" in ENTRY
+    assert "_chat_format.to_html( body, _notification_item_url(base_url, \"/\"))" in " ".join(
+        ENTRY.split())
 
 
 def test_desktop_notifications_show_formatted_plain_text():

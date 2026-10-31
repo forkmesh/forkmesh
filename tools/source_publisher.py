@@ -48,6 +48,8 @@ BRANCH_DELETE_RETRYABLE = ("merge_status_pending", "merge_node_unavailable")
 UNDELETABLE_BRANCHES = ("main", "master", "HEAD")
 CORES_MAIN_REF = "refs/remotes/forkmesh-cores/main"
 CORES_MERGE_MESSAGE = "Merge pushes to main from the cores"
+LEDGER_REF = "refs/heads/forkmesh/pulls"
+LEDGER_GRACE_SECONDS = 600
 FLAGSHIP_REPOSITORY = "forkmesh/forkmesh"
 EMPTY_OBJECT = re.compile(r"object file \S*/objects/([0-9a-f]{2})/([0-9a-f]{38,62}) is empty")
 MIN_PASS_SPACING_SECONDS = 2
@@ -932,6 +934,9 @@ def absorb_cores(source: Path, fetch_url: str) -> dict:
         return {"absorbed": False, "reason": "main is missing"}
     if _checkout_git(source, ["merge-base", "--is-ancestor", cores, local]).returncode == 0:
         return {"absorbed": False, "reason": "already contained", "cores": cores}
+    agreed, why = cores_agreement(source, cores)
+    if not agreed:
+        return {"absorbed": False, "unconfirmed": True, "cores": cores, "reason": why}
     worktree = main_worktree(source)
     if not worktree:
         return absorb_without_worktree(source, local, cores)
@@ -967,6 +972,19 @@ def cores_main(url: str) -> str:
         if ref.strip() == "refs/heads/main" and re.fullmatch(r"[0-9a-f]{40,64}", oid):
             return oid
     return ""
+
+
+def cores_agreement(source: Path, oid: str) -> tuple:
+    cores = core_read_urls(source)
+    if not cores:
+        return True, ""
+    mains = {core["name"]: cores_main(core["url"]) for core in cores}
+    reachable = [name for name, main in mains.items() if main]
+    holding = [name for name in reachable if mains[name] == oid]
+    if len(holding) >= 2 or (holding and len(holding) == len(reachable)):
+        return True, ""
+    return False, "only %d of %d reachable cores serve main %s; waiting for a second core" % (
+        len(holding), len(reachable), oid[:12])
 
 
 def checkout_contains(source: Path, oid: str) -> bool:
@@ -1006,7 +1024,9 @@ def take_core_main(paths, core: dict, oid: str, log=print) -> bool:
         log("%s: took main %s into the checkout (%s)" % (
             core["name"], oid[:12], outcome["mode"]))
         return True
-    if outcome.get("reason") != "already contained":
+    if outcome.get("unconfirmed"):
+        log("%s: not taking main %s: %s" % (core["name"], oid[:12], outcome["reason"]))
+    elif outcome.get("reason") != "already contained":
         log("%s DIVERGED: main %s is not in the checkout; %s" % (
             core["name"], oid[:12], outcome.get("reason")))
     return False
@@ -1018,6 +1038,11 @@ def watch_cores(paths, run=subprocess.run, log=print) -> int:
     for core in core_read_urls(paths.source):
         oid = cores_main(core["url"])
         if not oid or checkout_contains(paths.source, oid) or seen.get(core["name"]) == oid:
+            continue
+        agreed, why = cores_agreement(paths.source, oid)
+        if not agreed:
+            log("%s: main moved to %s, which the checkout lacks; not taking it: %s" % (
+                core["name"], oid[:12], why))
             continue
         log("%s: main moved to %s, which the checkout lacks; taking it" % (
             core["name"], oid[:12]))
@@ -1210,12 +1235,30 @@ def gateway_failure_cause(gateway: dict) -> str:
         "; %s" % absorb if absorb else "")
 
 
+def ledger_only_refusal(gateway: dict) -> bool:
+    refused = [item for item in gateway.get("rejected", []) if not stale_branch(item)]
+    return bool(refused) and all(item["ref"] == LEDGER_REF for item in refused) \
+        and not gateway.get("other") and not gateway.get("loopbackBlocked")
+
+
 def notify_publish_failure(paths, status, log=print, opener=None, clock=time.time):
     alert_path = paths.publisher_state / "publish-alert.json"
     if status.get("ok"):
         write_json(alert_path, {})
         return
     failed = [item for item in status.get("gateways", []) if not item.get("ok")]
+    previous = read_json(alert_path, {}) or {}
+    if failed and status.get("fanout", {}).get("ok", True) \
+            and all(ledger_only_refusal(item) for item in failed):
+        since = float(previous.get("ledgerSince") or clock())
+        if clock() - since < LEDGER_GRACE_SECONDS:
+            write_json(alert_path, dict(previous, ledgerSince=since))
+            log("gateway: the cores hold pull ledger records the source lacks; "
+                "waiting for the desktop to merge them (%ds of %ds grace)" % (
+                    int(clock() - since), LEDGER_GRACE_SECONDS))
+            return
+    else:
+        previous.pop("ledgerSince", None)
     cause = "; ".join(gateway_failure_cause(item) for item in failed)
     cause = cause or status.get("sync", {}).get("error") or "mirror fan-out failed"
     fix = ("Allow local TCP to 127.0.0.1, ::1 or 127.0.0.2 in OpenSnitch or "
@@ -1227,7 +1270,6 @@ def notify_publish_failure(paths, status, log=print, opener=None, clock=time.tim
             "Check: python3 tools/source_publisher.py status; "
             "journalctl --user -u forkmesh-source-publish.service -n 50" % (cause, fix))
     log("ERROR: " + body)
-    previous = read_json(alert_path, {}) or {}
     stable_body = re.sub(r"last port \d+", "last port <local>", body)
     digest = hashlib.sha256(stable_body.encode()).hexdigest()
     if previous.get("digest") == digest and clock() - previous.get("at", 0) < 3600:
@@ -1252,7 +1294,7 @@ def notify_publish_failure(paths, status, log=print, opener=None, clock=time.tim
             headers={"Content-Type": "application/json"}, method="POST")
         with (opener or urllib.request.urlopen)(request, timeout=20) as response:
             reply = json.loads(response.read() or b"{}")
-        write_json(alert_path, {"digest": digest, "at": clock()})
+        write_json(alert_path, dict(previous, digest=digest, at=clock()))
         log("notify: %s operator Ping(s)" % reply.get("pings", 0))
     except (OSError, ValueError, PublishError, IndexError) as error:
         log("notify: publishing failure Ping could not be sent: %s" % error)

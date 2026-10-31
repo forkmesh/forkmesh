@@ -1,5 +1,8 @@
 # Cloudflare Free-tier request audit
 
+In production only `forkmesh-www` (forkmesh.com) runs on Workers; the App and
+World run on the core nodes.
+
 Rules for keeping a Cloudflare Workers deployment of ForkMesh inside
 Free-plan request, subrequest and CPU limits. They apply to the App, WWW and
 World Workers and to the mirror routing path.

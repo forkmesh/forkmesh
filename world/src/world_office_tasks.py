@@ -20,6 +20,9 @@ PREFIX = "/api/world/office/marketing-tasks"
 UNIVERSAL_PREFIX = "/api/tasks"
 LEGACY_MARKETING_PREFIX = PREFIX
 BODY_MAX_BYTES = 64 * 1024
+ORG_INSIDER_ROLES = frozenset(
+    ("owner", "admin", "maintainer", "member", "auditor"))
+ORG_READ_ONLY_ROLES = frozenset(("auditor",))
 # A catalog refresh may read this many rows across pages, but each Worker
 # request decrypts only one small page. Keep the server page deliberately
 # below the UI's 100-row display page: projection decrypts each private row,
@@ -4494,6 +4497,10 @@ async def handle(runtime, path):
         # Task titles and routing are organization-private. A valid ForkMesh
         # account without current membership receives no existence signal.
         return _response(runtime, {"error": "org_member_required"}, status=403)
+    if role not in ORG_INSIDER_ROLES:
+        return _response(runtime, {"error": "org_member_required"}, status=403)
+    if role in ORG_READ_ONLY_ROLES and method != "GET":
+        return _response(runtime, {"error": "read_only_role"}, status=403)
     if kind == "initiatives":
         if not marketing_only:
             return _response(runtime, {"error": "not_found"}, status=404)

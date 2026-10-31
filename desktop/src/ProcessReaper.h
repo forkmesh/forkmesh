@@ -38,6 +38,19 @@ inline bool startReleased(const QString &program, const QStringList &arguments,
     return launcher.startDetached(pid);
 }
 
+inline bool startReleasedQuietly(const QString &program,
+                                 const QStringList &arguments)
+{
+    QProcess launcher;
+    launcher.setProgram(program);
+    launcher.setArguments(arguments);
+    launcher.setProcessEnvironment(releasedEnvironment());
+    launcher.setStandardInputFile(QProcess::nullDevice());
+    launcher.setStandardOutputFile(QProcess::nullDevice());
+    launcher.setStandardErrorFile(QProcess::nullDevice());
+    return launcher.startDetached();
+}
+
 inline QMutex &ownedUnitMutex()
 {
     static QMutex mutex;

@@ -754,15 +754,19 @@ void SynapseFeature::rebuildPanel()
 }
 
 namespace {
-const forkmesh::market::NativePackageRegistration synapseRegistration({
-    QStringLiteral("builtin:synapse"),
-    {QStringLiteral("extension.native")},
-    QStringLiteral("Synapse"),
-    QStringLiteral("brain"),
-    QString(),
-    QString(),
-    [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
-        return new forkmesh::synapse::SynapseFeature(host, parent);
-    },
-});
+const forkmesh::market::NativePackageRegistration synapseRegistration([] {
+    forkmesh::market::NativePackageContribution contribution{
+        QStringLiteral("builtin:synapse"),
+        {QStringLiteral("extension.native")},
+        QStringLiteral("Synapse"),
+        QStringLiteral("brain"),
+        QString(),
+        QString(),
+        [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
+            return new forkmesh::synapse::SynapseFeature(host, parent);
+        },
+    };
+    contribution.gpuSurface = true;
+    return contribution;
+}());
 }

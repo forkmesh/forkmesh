@@ -33,6 +33,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs
 
+import instance_privacy
+
 
 def _bind_runtime(runtime):
     """Supply the entrypoint primitives used by the attribution implementation."""
@@ -315,6 +317,8 @@ def tracking_declined(request, env, country=None):
     a configured skip country (EU/EEA by default, until a consent banner
     exists) are treated the same way.
     """
+    if instance_privacy.active(env):
+        return True
     if _header(request, "dnt").strip() == "1":
         return True
     if _header(request, "sec-gpc").strip() == "1":

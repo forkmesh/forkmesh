@@ -13,13 +13,17 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 FRAGMENT = ROOT / "public" / "dashboard" / "js" / "07-repo-compose-branch.js"
+MODERATION = ROOT / "public" / "dashboard" / "js" / "09-moderation.js"
 
 
 def _helpers_source():
     text = FRAGMENT.read_text(encoding="utf-8")
     start = text.index("  function webSubmissionErrorDetail(")
     end = text.index("  async function handleIssueComposeSubmit(", start)
-    return text[start:end]
+    moderation = MODERATION.read_text(encoding="utf-8")
+    refusal = moderation.index("  function moderationRefusalText(")
+    refusal_end = moderation.index("  function moderationPendingMessage(", refusal)
+    return moderation[refusal:refusal_end] + text[start:end]
 
 
 def _issue_error_text(error_js):

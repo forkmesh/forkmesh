@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "ChatLinkText.h"
 #include "ChatRelayRules.h"
 #include "OfficeChannelMirror.h"
 #include "PingSettings.h"
@@ -15,12 +16,15 @@
 #include "MirrorCrypto.h"
 #include "PrivateMirrorRuntime.h"
 #include "PromptDraftStore.h"
+#include "PromptDrop.h"
 #include "PromptSpellCheckHighlighter.h"
 #include "ReactionEmoji.h"
 #include "UiSounds.h"
 
 #include <QDateEdit>
 #include <QDrag>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFontDatabase>
 #include <QImageReader>
 #include <QLayoutItem>
@@ -4853,6 +4857,7 @@ void MainWindow::addIssueThreadCard(const Issue &issue, const IssueEvent &ev,
         avatar->setPixmap(authorAvatar);
     }
     avatar->setToolTip(who);
+    linkAvatarToProfile(avatar, ev.authorName);
     rowLayout->addWidget(avatar, 0, Qt::AlignTop);
 
     auto *card = new QWidget;
@@ -5546,6 +5551,7 @@ void MainWindow::addIssueActivityRow(const IssueEvent &ev, const QString &html)
         avatar->setPixmap(pixmap);
     }
     avatar->setToolTip(who);
+    linkAvatarToProfile(avatar, ev.authorName);
     auto *avatarColumn = new QWidget(row);
     avatarColumn->setFixedWidth(36);
     auto *avatarLayout = new QHBoxLayout(avatarColumn);
@@ -6734,14 +6740,16 @@ void MainWindow::quickAddIssue()
                 m_issueQuickAdd->clear();
             return;
         }
+        const bool directCheckout =
+            m_promptWorktreeCheck && !m_promptWorktreeCheck->isChecked();
         const int agentSessionId = startAdHocAgentForRepo(
             issuesRepoIndex(), prompt, provider, createPr, model, QString(),
             /*genie=*/false, /*switchToTab=*/false, QString(), QString(),
-            quickAddAgentBaseBranchForGitView(), /*priority=*/50,
-            /*directCheckout=*/m_promptWorktreeCheck &&
-                !m_promptWorktreeCheck->isChecked(),
+            quickAddAgentBaseBranchForGitView(), /*priority=*/50, directCheckout,
             QString(), m_promptVibeCheck && m_promptVibeCheck->isChecked());
         if (agentSessionId > 0) {
+            adoptPullAgentDrafts(agentSessionId, issuesRepoIndex(), prompt,
+                                 directCheckout);
             m_issueQuickAdd->clear();
             clearQuickAddImages();
             // Working straight in the checkout is a one-prompt choice: re-tick
@@ -8504,6 +8512,9 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     case QEvent::Hide:
     case QEvent::Close:
     case QEvent::WindowStateChange:
+    case QEvent::DragEnter:
+    case QEvent::DragMove:
+    case QEvent::Drop:
         break;
     default:
         return QMainWindow::eventFilter(obj, event);
@@ -8676,10 +8687,91 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             }
         }
     }
+    if (m_issueQuickAdd && obj == m_issueQuickAdd->viewport() &&
+        (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)) {
+        auto *de = static_cast<QDragMoveEvent *>(event);
+        if (de->mimeData() && de->mimeData()->hasUrls() &&
+            !forkmesh::promptdrop::localPaths(de->mimeData()->urls()).isEmpty()) {
+            de->acceptProposedAction();
+            return true;
+        }
+    }
+    if (m_issueQuickAdd && obj == m_issueQuickAdd->viewport() &&
+        event->type() == QEvent::Drop) {
+        auto *de = static_cast<QDropEvent *>(event);
+        const QStringList paths = de->mimeData() && de->mimeData()->hasUrls()
+                                      ? forkmesh::promptdrop::localPaths(
+                                            de->mimeData()->urls())
+                                      : QStringList();
+        if (!paths.isEmpty()) {
+            QStringList roots = {m_streamWorktree.value(m_selectedAgentSessionId)};
+            for (const int idx : {m_repoDetailIndex, issuesRepoIndex()})
+                if (idx >= 0 && idx < m_repositories.size())
+                    roots << m_repositories.at(idx).localPath;
+            const forkmesh::promptdrop::Plan plan = forkmesh::promptdrop::plan(
+                paths, roots, [](const QString &path) {
+                    static const QStringList images = {
+                        QStringLiteral("png"), QStringLiteral("jpg"),
+                        QStringLiteral("jpeg"), QStringLiteral("gif"),
+                        QStringLiteral("webp"), QStringLiteral("bmp")};
+                    return images.contains(QFileInfo(path).suffix().toLower()) ||
+                           isVideoAttachmentPath(path);
+                });
+            for (const QString &path : plan.attachments)
+                queueQuickAddImage(path);
+            if (!plan.mentions.isEmpty()) {
+                QTextCursor cursor =
+                    m_issueQuickAdd->cursorForPosition(de->position().toPoint());
+                cursor.insertText(forkmesh::promptdrop::insertion(
+                    plan, m_issueQuickAdd->toPlainText().left(cursor.position())));
+                m_issueQuickAdd->setTextCursor(cursor);
+            }
+            de->acceptProposedAction();
+            m_issueQuickAdd->setFocus(Qt::OtherFocusReason);
+            return true;
+        }
+    }
+    if (obj == m_slashActionsPopup && event->type() == QEvent::Hide &&
+        m_slashActionsPopup->property("typedSlash").toBool()) {
+        m_slashActionsPopup->setProperty("typedSlash", false);
+        const QString typed =
+            m_slashActionsFilter ? m_slashActionsFilter->text() : QString();
+        if (m_issueQuickAdd) {
+            if (!typed.isEmpty() &&
+                m_issueQuickAdd->toPlainText() == QLatin1String("/")) {
+                QTextCursor cursor = m_issueQuickAdd->textCursor();
+                cursor.movePosition(QTextCursor::End);
+                cursor.insertText(typed);
+                m_issueQuickAdd->setTextCursor(cursor);
+            }
+            m_issueQuickAdd->setFocus(Qt::PopupFocusReason);
+        }
+    }
     if (obj == m_issueQuickAdd && event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
         if (ke->matches(QKeySequence::Paste) && tryPasteImageIntoQuickAdd())
             return true;
+        if (ke->key() == Qt::Key_Backtab &&
+            !(ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier |
+                                 Qt::MetaModifier)) &&
+            m_quickAddModeSelector && m_quickAddModeSelector->isVisible() &&
+            m_quickAddModeSelector->isEnabled() && m_quickAddModeSelector->count() > 1) {
+            m_quickAddModeSelector->setCurrentIndex(
+                (m_quickAddModeSelector->currentIndex() + 1) %
+                m_quickAddModeSelector->count());
+            return true;
+        }
+        if (ke->text() == QLatin1String("/") &&
+            !(ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier |
+                                 Qt::MetaModifier)) &&
+            m_issueQuickAdd->toPlainText().isEmpty() && promptChatRoom().isEmpty() &&
+            m_quickAddSlashButton && m_quickAddSlashButton->isVisible()) {
+            m_issueQuickAdd->insertPlainText(QStringLiteral("/"));
+            openQuickAddSlashActions();
+            if (m_slashActionsPopup && m_slashActionsPopup->isVisible())
+                m_slashActionsPopup->setProperty("typedSlash", true);
+            return true;
+        }
         if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) &&
             !(ke->modifiers() & Qt::ShiftModifier)) {
             if (submitQuickAddToPackage())
@@ -9036,18 +9128,23 @@ bool MainWindow::handleFramelessResizeEvent(QObject *obj, QEvent *event)
 {
     if (!qApp || !testAttribute(Qt::WA_WState_Created))
         return false;
+    const auto *widget = qobject_cast<QWidget *>(obj);
+    const bool ownWindow = !widget || widget->window() == this;
 
     switch (event->type()) {
     case QEvent::MouseMove: {
         auto *mouse = static_cast<QMouseEvent *>(event);
         updateFramelessResizeCursor(
-            resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint()));
+            ownWindow ? resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint())
+                      : Qt::Edges());
         return false;
     }
     case QEvent::HoverMove: {
         auto *hover = static_cast<QHoverEvent *>(event);
         updateFramelessResizeCursor(
-            resizeEdgesAtGlobalPos(mapToGlobal(hover->position().toPoint())));
+            ownWindow
+                ? resizeEdgesAtGlobalPos(mapToGlobal(hover->position().toPoint()))
+                : Qt::Edges());
         return false;
     }
     case QEvent::Leave:
@@ -9056,7 +9153,7 @@ bool MainWindow::handleFramelessResizeEvent(QObject *obj, QEvent *event)
         return false;
     case QEvent::MouseButtonPress: {
         auto *mouse = dynamic_cast<QMouseEvent *>(event);
-        if (!mouse || mouse->button() != Qt::LeftButton)
+        if (!ownWindow || !mouse || mouse->button() != Qt::LeftButton)
             return false;
         const Qt::Edges edges =
             resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint());
@@ -9070,7 +9167,8 @@ bool MainWindow::handleFramelessResizeEvent(QObject *obj, QEvent *event)
         return false;
     }
     case QEvent::MouseButtonRelease:
-        updateFramelessResizeCursor(resizeEdgesAtGlobalPos(QCursor::pos()));
+        updateFramelessResizeCursor(
+            ownWindow ? resizeEdgesAtGlobalPos(QCursor::pos()) : Qt::Edges());
         return false;
     case QEvent::WindowStateChange:
         updateFramelessResizeCursor({});
@@ -10607,7 +10705,12 @@ void MainWindow::analyzeIssueCompleteness()
         dialog.resize(560, 480);
         auto *layout = new QVBoxLayout(&dialog);
         auto *view = new QTextBrowser(&dialog);
-        view->setOpenExternalLinks(true);
+        view->setOpenExternalLinks(false);
+        view->setOpenLinks(false);
+        connect(view, &QTextBrowser::anchorClicked, &dialog, [](const QUrl &link) {
+            if (const QUrl external = ChatLinkText::externalLinkUrl(link.toString()); external.isValid())
+                QDesktopServices::openUrl(external);
+        });
         view->setMarkdown(reportLines.join('\n'));
         layout->addWidget(view);
         auto *buttons =
@@ -12594,26 +12697,193 @@ QWidget *MainWindow::buildChatSection()
 
 namespace {
 
-constexpr int kChatRoomRowHeight = 32;
-constexpr int kChatRoomTallRowHeight = 44;
-constexpr int kChatRoomRowPadX = 16;
-constexpr int kChatRoomGearPadX = 2;
-constexpr int kChatRoomGlyphGap = 8;
-constexpr int kChatRoomChevronGap = 4;
-constexpr int kChatRoomGlyphSize = 14;
+QString chatGlyphBody(const QString &name)
+{
+    static const QHash<QString, QString> bodies = {
+        {QStringLiteral("hash"),
+         QStringLiteral("<line x1='4' x2='20' y1='9' y2='9'/><line x1='4' x2='20' "
+                        "y1='15' y2='15'/><line x1='10' x2='8' y1='3' y2='21'/>"
+                        "<line x1='16' x2='14' y1='3' y2='21'/>")},
+        {QStringLiteral("search"),
+         QStringLiteral("<circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/>")},
+        {QStringLiteral("plus"),
+         QStringLiteral("<path d='M5 12h14'/><path d='M12 5v14'/>")},
+        {QStringLiteral("chevron-down"), QStringLiteral("<path d='m6 9 6 6 6-6'/>")},
+        {QStringLiteral("chevron-right"), QStringLiteral("<path d='m9 18 6-6-6-6'/>")},
+        {QStringLiteral("lock"),
+         QStringLiteral("<rect width='18' height='11' x='3' y='11' rx='2' ry='2'/>"
+                        "<path d='M7 11V7a5 5 0 0 1 10 0v4'/>")},
+        {QStringLiteral("shield-check"),
+         QStringLiteral("<path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 "
+                        "20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 "
+                        "1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/>"
+                        "<path d='m9 12 2 2 4-4'/>")},
+        {QStringLiteral("phone"),
+         QStringLiteral("<path d='M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63"
+                        "-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 "
+                        "4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-"
+                        ".45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 "
+                        "12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z'/>")},
+        {QStringLiteral("video"),
+         QStringLiteral("<path d='m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.87a.5.5 0 0 0"
+                        "-.75-.43L16 10.5'/><rect x='2' y='6' width='14' height='12' "
+                        "rx='2'/>")},
+        {QStringLiteral("info"),
+         QStringLiteral("<circle cx='12' cy='12' r='10'/><path d='M12 16v-4'/>"
+                        "<path d='M12 8h.01'/>")},
+        {QStringLiteral("activity"),
+         QStringLiteral("<path d='M22 12h-4l-3 9L9 3l-3 9H2'/>")},
+        {QStringLiteral("paperclip"),
+         QStringLiteral("<path d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57"
+                        "A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'/>")},
+        {QStringLiteral("smile"),
+         QStringLiteral("<circle cx='12' cy='12' r='10'/><path d='M8 14s1.5 2 4 2 4-2 "
+                        "4-2'/><line x1='9' x2='9.01' y1='9' y2='9'/><line x1='15' "
+                        "x2='15.01' y1='9' y2='9'/>")},
+        {QStringLiteral("at-sign"),
+         QStringLiteral("<circle cx='12' cy='12' r='4'/><path d='M16 8v5a3 3 0 0 0 6 0"
+                        "v-1a10 10 0 1 0-4 8'/>")},
+        {QStringLiteral("link"),
+         QStringLiteral("<path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l"
+                        "-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 "
+                        "7.07 7.07l1.71-1.71'/>")},
+        {QStringLiteral("arrow-up"),
+         QStringLiteral("<path d='m5 12 7-7 7 7'/><path d='M12 19V5'/>")},
+        {QStringLiteral("inbox"),
+         QStringLiteral("<polyline points='22 12 16 12 14 15 10 15 8 12 2 12'/><path "
+                        "d='M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45"
+                        "-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'/>")},
+        {QStringLiteral("x"), QStringLiteral("<path d='M18 6 6 18'/><path d='m6 6 12 12'/>")},
+    };
+    return bodies.value(name);
+}
+
+QPixmap chatGlyphPixmap(const QString &name, const QColor &color, int size)
+{
+    static QHash<QString, QPixmap> cache;
+    const qreal dpr = iconDevicePixelRatio();
+    const QString key = name + QLatin1Char('|') + color.name(QColor::HexArgb) +
+                        QLatin1Char('|') + QString::number(size) + QLatin1Char('|') +
+                        QString::number(dpr);
+    const auto cached = cache.constFind(key);
+    if (cached != cache.constEnd())
+        return cached.value();
+    QPixmap pixmap(qMax(1, qRound(size * dpr)), qMax(1, qRound(size * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    const QString body = chatGlyphBody(name);
+    if (!body.isEmpty()) {
+        const QByteArray svg =
+            QStringLiteral("<svg xmlns='http://www.w3.org/2000/svg' width='24' "
+                           "height='24' viewBox='0 0 24 24' fill='none' stroke='%1' "
+                           "stroke-width='2' stroke-linecap='round' "
+                           "stroke-linejoin='round'>%2</svg>")
+                .arg(color.name(QColor::HexRgb), body)
+                .toUtf8();
+        QSvgRenderer renderer(svg);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setOpacity(color.alphaF());
+        renderer.render(&painter, QRectF(0, 0, size, size));
+    }
+    if (cache.size() > 256)
+        cache.clear();
+    cache.insert(key, pixmap);
+    return pixmap;
+}
+
+class ChatGlyphTinter : public QObject
+{
+public:
+    using QObject::QObject;
+
+    static ChatGlyphTinter *instance()
+    {
+        static ChatGlyphTinter *tinter = new ChatGlyphTinter(qApp);
+        return tinter;
+    }
+
+    static void apply(QObject *target)
+    {
+        const QString name = target->property("chatGlyph").toString();
+        if (name.isEmpty())
+            return;
+        const int size = qMax(8, target->property("chatGlyphSize").toInt());
+        const QColor color = Theme::color(
+            static_cast<Theme::Role>(target->property("chatGlyphRole").toInt()));
+        const QPixmap pixmap = chatGlyphPixmap(name, color, size);
+        if (auto *button = qobject_cast<QAbstractButton *>(target)) {
+            button->setIcon(QIcon(pixmap));
+            button->setIconSize(QSize(size, size));
+        } else if (auto *label = qobject_cast<QLabel *>(target)) {
+            label->setPixmap(pixmap);
+        } else if (auto *edit = qobject_cast<QLineEdit *>(target)) {
+            const QList<QAction *> actions = edit->actions();
+            if (!actions.isEmpty())
+                actions.first()->setIcon(QIcon(pixmap));
+        }
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::StyleChange ||
+            event->type() == QEvent::PaletteChange)
+            apply(watched);
+        return false;
+    }
+};
+
+void setChatGlyph(QWidget *target, const QString &name, int size, Theme::Role role)
+{
+    if (!target)
+        return;
+    target->setProperty("forkmeshOcticon", QVariant());
+    target->setProperty("chatGlyph", name);
+    target->setProperty("chatGlyphSize", size);
+    target->setProperty("chatGlyphRole", static_cast<int>(role));
+    ChatGlyphTinter::apply(target);
+    target->removeEventFilter(ChatGlyphTinter::instance());
+    target->installEventFilter(ChatGlyphTinter::instance());
+}
+
+class ChatNextEventHook : public QObject
+{
+public:
+    ChatNextEventHook(QObject *parent, std::function<void(QObject *, QEvent *)> handler)
+        : QObject(parent), m_handler(std::move(handler))
+    {
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (m_handler)
+            m_handler(watched, event);
+        return false;
+    }
+
+private:
+    std::function<void(QObject *, QEvent *)> m_handler;
+};
+
+constexpr int kChatNextColumnWidth = 860;
+constexpr int kNextRoomRowHeight = 33;
+constexpr int kNextRoomGroupHeight = 28;
+constexpr int kNextRoomInset = 10;
+constexpr int kNextRoomPadX = 8;
+constexpr int kNextRoomGlyph = 16;
+constexpr int kNextRoomAvatar = 20;
+constexpr int kNextRoomGap = 8;
+constexpr int kNextRoomRadius = 8;
+constexpr int kNextRoomFontPx = 13;
+constexpr int kNextRoomGroupFontPx = 12;
+constexpr int kNextRoomPill = 16;
+
 constexpr int kChatRoomLeadSize = 28;
-constexpr int kChatRoomHashFontPx = 20;
 constexpr int kChatRoomGearSize = 14;
-constexpr int kChatRoomUnreadDot = 6;
-constexpr int kChatRoomPresenceDot = 8;
-constexpr int kChatRoomBadgeHeight = 18;
-constexpr int kChatRoomGroupFontPx = 13;
-constexpr int kChatRoomFontPx = 15;
 constexpr int kChatRoomPreviewFontPx = 13;
-constexpr int kChatRoomTimeFontPx = 11;
 constexpr int kChatRoomLineGap = 1;
-constexpr int kChatRoomRowInset = 8;
-constexpr int kChatRoomRowRadius = 4;
 
 struct ChatRoomRow {
     QString label;
@@ -12672,7 +12942,7 @@ public:
         const bool group =
             index.siblingAtColumn(0).data(ChannelGroupTree::kGroupRole).isValid();
         if (Theme::isNext()) {
-            hint.setHeight(group ? kChatRoomRowHeight : kChatRoomTallRowHeight);
+            hint.setHeight(group ? kNextRoomGroupHeight : kNextRoomRowHeight);
             return hint;
         }
         if (!group)
@@ -12691,6 +12961,43 @@ public:
             paintClassic(painter, option, index);
             return;
         }
+        paintNext(painter, option, index);
+    }
+
+    bool helpEvent(QHelpEvent *event, QAbstractItemView *view,
+                   const QStyleOptionViewItem &option,
+                   const QModelIndex &index) override
+    {
+        if (!Theme::isNext() || !event || !view || !index.isValid() ||
+            event->type() != QEvent::ToolTip ||
+            index.column() == ChannelGroupTree::kSettingsColumn)
+            return QStyledItemDelegate::helpEvent(event, view, option, index);
+        const QModelIndex first = index.siblingAtColumn(0);
+        const ChatRoomRow row = chatRoomRow(first);
+        QString tip = first.data(Qt::ToolTipRole).toString();
+        if (!row.group && !row.preview.isEmpty()) {
+            QString line = row.preview;
+            const QString when = forkmesh::chatlist::timeLabel(
+                row.previewTimeMs, QDateTime::currentDateTime());
+            if (!when.isEmpty())
+                line = when + QString::fromUtf8(" \xC2\xB7 ") + line;
+            tip = tip.isEmpty() ? line : tip + QStringLiteral("\n\n") + line;
+        }
+        if (tip.isEmpty())
+            return QStyledItemDelegate::helpEvent(event, view, option, index);
+        QToolTip::showText(event->globalPos(),
+                           QStringLiteral("<qt>") +
+                               tip.toHtmlEscaped().replace(QLatin1Char('\n'),
+                                                           QStringLiteral("<br>")) +
+                               QStringLiteral("</qt>"),
+                           view->viewport(), option.rect);
+        return true;
+    }
+
+private:
+    void paintNext(QPainter *painter, const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const
+    {
         const auto *tree = qobject_cast<const QTreeView *>(option.widget);
         const auto *view = qobject_cast<const QAbstractItemView *>(option.widget);
         const bool gearCell =
@@ -12709,7 +13016,7 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
         painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
-        if ((selected && !row.group) || hovered) {
+        if (!row.group && (selected || hovered)) {
             QRect clip = option.rect;
             if (!gearCell)
                 clip.setLeft(band.left());
@@ -12718,18 +13025,19 @@ public:
             painter->save();
             painter->setClipRect(clip, Qt::IntersectClip);
             painter->setPen(Qt::NoPen);
-            painter->setBrush(Theme::chatColor(
-                selected && !row.group ? QStringLiteral("chatRowSelected")
-                                       : QStringLiteral("chatRowHover")));
+            painter->setBrush(Theme::color(selected ? Theme::Role::SurfaceActive
+                                                    : Theme::Role::SurfaceRaised));
             painter->drawRoundedRect(
-                QRectF(band.adjusted(kChatRoomRowInset, 1, -kChatRoomRowInset, -1)),
-                kChatRoomRowRadius, kChatRoomRowRadius);
+                QRectF(band.adjusted(kNextRoomInset, 0, -kNextRoomInset, -1)),
+                kNextRoomRadius, kNextRoomRadius);
             painter->restore();
         }
-        const QColor railText = Theme::chatColor(QStringLiteral("chatMuted"));
-        const QColor ink = (selected && !row.group) || row.unread || hovered
-                               ? Theme::chatColor(QStringLiteral("chatTextStrong"))
-                               : railText;
+        const QColor fg = Theme::color(Theme::Role::Fg);
+        const QColor muted = Theme::color(Theme::Role::FgMuted);
+        const QColor subtle = Theme::color(Theme::Role::FgSubtle);
+        const QColor ink =
+            row.group ? (hovered ? muted : subtle)
+                      : (selected || hovered || row.unread ? fg : muted);
 
         if (gearCell) {
             if ((selected || hovered) &&
@@ -12739,71 +13047,55 @@ public:
                                                (option.rect.width() -
                                                 kChatRoomGearSize) / 2,
                               kChatRoomGearSize),
-                    tintedOcticonPixmap(QStringLiteral("gear"), ink,
+                    tintedOcticonPixmap(QStringLiteral("gear"), muted,
                                         kChatRoomGearSize));
             }
             painter->restore();
             return;
         }
 
-        int left = option.rect.left() + kChatRoomRowPadX;
-        int right = option.rect.right() - kChatRoomRowPadX;
-        if (gearColumn)
-            right = option.rect.right() - kChatRoomGearPadX;
-        else if (row.unread || !row.preview.isEmpty())
-            right = option.rect.right() - kChatRoomGearPadX -
-                    ChannelGroupTree::kSettingsColumnWidth;
-        if (row.group) {
-            painter->drawPixmap(
-                glyphRect(option.rect, left, kChatRoomGlyphSize),
-                tintedOcticonPixmap(
-                    row.collapsed ? QStringLiteral("chevron-right")
-                                  : QStringLiteral("chevron-down"),
-                    railText, kChatRoomGlyphSize));
-            left += qMax(tree ? tree->indentation() : 0,
-                         kChatRoomGlyphSize + kChatRoomChevronGap);
-        }
-
+        int left = option.rect.left() + kNextRoomInset + kNextRoomPadX;
+        int right = gearColumn ? option.rect.right() - 2
+                               : option.rect.right() - kNextRoomInset - kNextRoomPadX;
         QFont font = option.font;
-        font.setPixelSize(row.group ? kChatRoomGroupFontPx : kChatRoomFontPx);
-        font.setWeight(row.unread ? QFont::Bold : QFont::Normal);
-
-        if (row.direct && !row.avatar.isNull()) {
-            painter->drawPixmap(glyphRect(option.rect, left, kChatRoomLeadSize),
-                                row.avatar);
-            left += kChatRoomLeadSize + kChatRoomGlyphGap;
-        } else if (row.direct) {
-            const QRectF dot(left + (kChatRoomLeadSize - kChatRoomPresenceDot) / 2.0,
-                             option.rect.top() +
-                                 (option.rect.height() - kChatRoomPresenceDot) / 2.0,
-                             kChatRoomPresenceDot, kChatRoomPresenceDot);
-            if (row.online) {
-                painter->setPen(Qt::NoPen);
-                painter->setBrush(Theme::chatColor(QStringLiteral("chatOnline")));
-            } else {
-                painter->setPen(QPen(ink, 1.4));
-                painter->setBrush(Qt::NoBrush);
-            }
-            painter->drawEllipse(dot.adjusted(0.7, 0.7, -0.7, -0.7));
-            left += kChatRoomLeadSize + kChatRoomGlyphGap;
-        } else if (row.locked) {
+        if (row.group) {
+            constexpr int chevron = 12;
+            left = option.rect.left() + kNextRoomInset + 4;
             painter->drawPixmap(
-                glyphRect(option.rect,
-                          left + (kChatRoomLeadSize - kChatRoomGlyphSize) / 2,
-                          kChatRoomGlyphSize),
-                tintedOcticonPixmap(QStringLiteral("lock"), ink,
-                                    kChatRoomGlyphSize));
-            left += kChatRoomLeadSize + kChatRoomGlyphGap;
-        } else if (!row.group) {
-            QFont hashFont = font;
-            hashFont.setWeight(QFont::Normal);
-            hashFont.setPixelSize(kChatRoomHashFontPx);
-            painter->setFont(hashFont);
-            painter->setPen(railText);
-            painter->drawText(QRect(left, option.rect.top(), kChatRoomLeadSize,
-                                    option.rect.height()),
-                              Qt::AlignCenter, QStringLiteral("#"));
-            left += kChatRoomLeadSize + kChatRoomGlyphGap;
+                glyphRect(option.rect, left, chevron),
+                chatGlyphPixmap(row.collapsed ? QStringLiteral("chevron-right")
+                                              : QStringLiteral("chevron-down"),
+                                ink, chevron));
+            left += chevron + 4;
+            font.setPixelSize(kNextRoomGroupFontPx);
+            font.setWeight(QFont::Medium);
+        } else {
+            font.setPixelSize(kNextRoomFontPx);
+            font.setWeight(row.unread ? QFont::Medium : QFont::Normal);
+            if (row.direct) {
+                const QRect face = glyphRect(option.rect, left, kNextRoomAvatar);
+                if (!row.avatar.isNull()) {
+                    painter->drawPixmap(face, row.avatar);
+                } else {
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(Theme::color(Theme::Role::SurfaceActive));
+                    painter->drawEllipse(QRectF(face));
+                    const QRectF dot(face.right() - 6.5, face.bottom() - 6.5, 8, 8);
+                    painter->setBrush(Theme::color(Theme::Role::Bg));
+                    painter->drawEllipse(dot.adjusted(-2, -2, 2, 2));
+                    painter->setBrush(row.online ? Theme::color(Theme::Role::Success)
+                                                 : subtle);
+                    painter->drawEllipse(dot);
+                }
+                left += kNextRoomAvatar + kNextRoomGap;
+            } else {
+                painter->drawPixmap(
+                    glyphRect(option.rect, left, kNextRoomGlyph),
+                    chatGlyphPixmap(row.locked ? QStringLiteral("lock")
+                                               : QStringLiteral("hash"),
+                                    subtle, row.locked ? 14 : kNextRoomGlyph));
+                left += kNextRoomGlyph + kNextRoomGap;
+            }
         }
 
         QString label = row.label;
@@ -12812,107 +13104,53 @@ public:
         else if (!row.group && label.startsWith(QLatin1Char('#')))
             label.remove(0, 1);
 
-        const bool twoLine = !row.group && !row.preview.isEmpty();
-        const QFont subFont = previewFont(option.font);
-        const QFontMetrics nameMetrics(font);
-        const QFontMetrics subMetrics(subFont);
-        QRect nameLine = option.rect;
-        QRect subLine;
-        if (twoLine) {
-            const int block =
-                nameMetrics.height() + kChatRoomLineGap + subMetrics.height();
-            nameLine.setTop(option.rect.top() +
-                            (option.rect.height() - block) / 2);
-            nameLine.setHeight(nameMetrics.height());
-            subLine = QRect(nameLine.left(),
-                            nameLine.bottom() + 1 + kChatRoomLineGap,
-                            nameLine.width(), subMetrics.height());
-        }
-        int nameRight = right;
-        int subRight = right;
-
-        if (twoLine) {
-            const QString when = forkmesh::chatlist::timeLabel(
-                row.previewTimeMs, QDateTime::currentDateTime());
-            if (!when.isEmpty()) {
-                QFont timeFont = option.font;
-                timeFont.setPixelSize(kChatRoomTimeFontPx);
-                timeFont.setWeight(QFont::Normal);
-                const int width = QFontMetrics(timeFont).horizontalAdvance(when);
-                painter->setFont(timeFont);
-                painter->setPen(railText);
-                painter->drawText(QRect(nameRight + 1 - width, nameLine.top(),
-                                        width, nameLine.height()),
-                                  Qt::AlignRight | Qt::AlignVCenter, when);
-                nameRight -= width + kChatRoomGlyphGap;
-            }
-        }
-
         if (row.unread && !row.group) {
-            const QRect badgeLine = twoLine ? subLine : option.rect;
-            int &badgeRight = twoLine ? subRight : nameRight;
             const QString count =
                 row.unreadCount > 99 ? QStringLiteral("99+")
                                      : row.unreadCount > 0
                                            ? QString::number(row.unreadCount)
                                            : QString();
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::Accent));
             if (count.isEmpty()) {
-                painter->setPen(Qt::NoPen);
-                painter->setBrush(ink);
-                painter->drawEllipse(QRectF(
-                    badgeRight + 1 - kChatRoomUnreadDot,
-                    badgeLine.top() +
-                        (badgeLine.height() - kChatRoomUnreadDot) / 2.0,
-                    kChatRoomUnreadDot, kChatRoomUnreadDot));
-                badgeRight -= kChatRoomUnreadDot + kChatRoomGlyphGap;
+                constexpr qreal dot = 6;
+                painter->drawEllipse(QRectF(right + 1 - dot,
+                                            option.rect.top() +
+                                                (option.rect.height() - dot) / 2.0,
+                                            dot, dot));
+                right -= int(dot) + kNextRoomGap;
             } else {
-                QFont badgeFont = option.font;
-                badgeFont.setPixelSize(11);
-                badgeFont.setWeight(QFont::Bold);
+                QFont pillFont = option.font;
+                pillFont.setPixelSize(10);
+                pillFont.setWeight(QFont::DemiBold);
                 const int width = qMax(
-                    kChatRoomBadgeHeight,
-                    QFontMetrics(badgeFont).horizontalAdvance(count) + 12);
-                const int height =
-                    qMin(kChatRoomBadgeHeight, qMax(badgeLine.height(), 14));
-                const QRectF badge(
-                    badgeRight + 1 - width,
-                    badgeLine.top() + (badgeLine.height() - height) / 2.0,
-                    width, height);
-                painter->setPen(Qt::NoPen);
-                painter->setBrush(Theme::chatColor(QStringLiteral("chatNew")));
-                painter->drawRoundedRect(badge, height / 2.0, height / 2.0);
-                painter->setFont(badgeFont);
-                painter->setPen(Qt::white);
-                painter->drawText(badge, Qt::AlignCenter, count);
-                badgeRight -= width + kChatRoomGlyphGap;
+                    kNextRoomPill,
+                    QFontMetrics(pillFont).horizontalAdvance(count) + 8);
+                const QRectF pill(right + 1 - width,
+                                  option.rect.top() +
+                                      (option.rect.height() - kNextRoomPill) / 2.0,
+                                  width, kNextRoomPill);
+                painter->drawRoundedRect(pill, kNextRoomPill / 2.0,
+                                         kNextRoomPill / 2.0);
+                painter->setFont(pillFont);
+                painter->setPen(Theme::color(Theme::Role::OnAccent));
+                painter->drawText(pill, Qt::AlignCenter, count);
+                right -= width + kNextRoomGap;
             }
         }
 
-        const QRect textRect(left, nameLine.top(), qMax(0, nameRight + 1 - left),
-                             nameLine.height());
+        const QFontMetrics metrics(font);
+        const QRect textRect(left, option.rect.top(), qMax(0, right + 1 - left),
+                             option.rect.height());
         painter->setFont(font);
         painter->setPen(ink);
         painter->drawText(textRect,
                           Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
-                          nameMetrics.elidedText(label, Qt::ElideRight,
-                                                 textRect.width()));
-        if (twoLine) {
-            const QRect previewRect(left, subLine.top(),
-                                    qMax(0, subRight + 1 - left),
-                                    subLine.height());
-            painter->setFont(subFont);
-            painter->setPen(Theme::chatColor(row.unread ? QStringLiteral("chatText")
-                                                        : QStringLiteral("chatMuted")));
-            painter->drawText(previewRect,
-                              Qt::AlignLeft | Qt::AlignVCenter |
-                                  Qt::TextSingleLine,
-                              subMetrics.elidedText(row.preview, Qt::ElideRight,
-                                                    previewRect.width()));
-        }
+                          metrics.elidedText(label, Qt::ElideRight,
+                                             textRect.width()));
         painter->restore();
     }
 
-private:
     static QFont previewFont(const QFont &base)
     {
         QFont font = base;
@@ -13010,11 +13248,31 @@ QWidget *MainWindow::buildChatSidebar(QPushButton *&addChannelButton)
     connect(composeButton, &QPushButton::clicked, this,
             &MainWindow::showNewMessageDialog);
     auto *workspaceLayout = new QHBoxLayout(workspaceHeader);
-    workspaceLayout->setContentsMargins(8, 0, 10, 0);
-    workspaceLayout->setSpacing(4);
-    workspaceLayout->addWidget(workspaceName, 0, Qt::AlignVCenter);
-    workspaceLayout->addStretch(1);
-    workspaceLayout->addWidget(composeButton, 0, Qt::AlignVCenter);
+    QLineEdit *jumpSearch = nullptr;
+    if (Theme::isNext()) {
+        jumpSearch = new QLineEdit;
+        jumpSearch->setObjectName(QStringLiteral("chatJumpSearch"));
+        jumpSearch->setPlaceholderText(QStringLiteral("Jump to a conversation"));
+        jumpSearch->setToolTip(QStringLiteral(
+            "Filter the channels and direct messages; Enter opens the first match"));
+        jumpSearch->setClearButtonEnabled(true);
+        jumpSearch->addAction(QIcon(), QLineEdit::LeadingPosition);
+        setChatGlyph(jumpSearch, QStringLiteral("search"), 14, Theme::Role::FgSubtle);
+        workspaceName->hide();
+        composeButton->setFixedSize(32, 32);
+        setChatGlyph(composeButton, QStringLiteral("plus"), 16, Theme::Role::FgMuted);
+        workspaceLayout->setContentsMargins(10, 0, 10, 0);
+        workspaceLayout->setSpacing(4);
+        workspaceLayout->addWidget(workspaceName, 0, Qt::AlignVCenter);
+        workspaceLayout->addWidget(jumpSearch, 1, Qt::AlignVCenter);
+        workspaceLayout->addWidget(composeButton, 0, Qt::AlignVCenter);
+    } else {
+        workspaceLayout->setContentsMargins(8, 0, 10, 0);
+        workspaceLayout->setSpacing(4);
+        workspaceLayout->addWidget(workspaceName, 0, Qt::AlignVCenter);
+        workspaceLayout->addStretch(1);
+        workspaceLayout->addWidget(composeButton, 0, Qt::AlignVCenter);
+    }
 
     auto *userPanel = new QWidget;
     userPanel->setObjectName(QStringLiteral("chatUserPanel"));
@@ -13082,8 +13340,12 @@ QWidget *MainWindow::buildChatSidebar(QPushButton *&addChannelButton)
                  index = tree->indexBelow(index))
                 height += qMax(1, view->sizeHintForIndex(index).height());
         } else {
-            for (int row = 0; row < model->rowCount(); ++row)
+            const auto *list = qobject_cast<QListView *>(view);
+            for (int row = 0; row < model->rowCount(); ++row) {
+                if (list && list->isRowHidden(row))
+                    continue;
                 height += qMax(1, view->sizeHintForRow(row));
+            }
         }
         view->setFixedHeight(height + 2 * view->frameWidth());
     };
@@ -13112,8 +13374,16 @@ QWidget *MainWindow::buildChatSidebar(QPushButton *&addChannelButton)
         toggle->setCursor(Qt::PointingHandCursor);
         toggle->setCheckable(true);
         toggle->setChecked(true);
-        toggle->setLayoutDirection(Qt::RightToLeft);
+        toggle->setLayoutDirection(Theme::isNext() ? Qt::LeftToRight
+                                                   : Qt::RightToLeft);
         const auto setChevron = [toggle](bool open) {
+            if (Theme::isNext()) {
+                setChatGlyph(toggle,
+                             open ? QStringLiteral("chevron-down")
+                                  : QStringLiteral("chevron-right"),
+                             12, Theme::Role::FgSubtle);
+                return;
+            }
             setOcticon(toggle,
                        open ? QStringLiteral("chevron-down")
                             : QStringLiteral("chevron-right"),
@@ -13132,6 +13402,11 @@ QWidget *MainWindow::buildChatSidebar(QPushButton *&addChannelButton)
         auto *layout = new QHBoxLayout(row);
         layout->setContentsMargins(4, 0, 10, 0);
         layout->setSpacing(0);
+        if (Theme::isNext()) {
+            setChatGlyph(addButton, QStringLiteral("plus"), 14, Theme::Role::FgSubtle);
+            layout->setContentsMargins(12, 0, 12, 0);
+            row->setFixedHeight(28);
+        }
         layout->addWidget(toggle);
         layout->addStretch();
         layout->addWidget(addButton);
@@ -13164,11 +13439,22 @@ QWidget *MainWindow::buildChatSidebar(QPushButton *&addChannelButton)
     roomsLayout->addSpacing(8);
     roomsLayout->addWidget(divider);
     roomsLayout->addSpacing(12);
+    if (Theme::isNext()) {
+        divider->hide();
+        roomsLayout->setContentsMargins(0, 2, 0, 12);
+        m_chatAllUnreadButton->setProperty("nextIconRole",
+                                           static_cast<int>(Theme::Role::FgSubtle));
+        setOcticon(m_chatAllUnreadButton, QStringLiteral("list-unordered"), 16);
+    }
     roomsLayout->addWidget(
-        sectionHeader(QStringLiteral("Text Channels"), m_channelList, addChannelButton));
+        sectionHeader(Theme::isNext() ? QStringLiteral("Channels")
+                                      : QStringLiteral("Text Channels"),
+                      m_channelList, addChannelButton));
     roomsLayout->addWidget(m_channelList);
-    roomsLayout->addSpacing(16);
-    roomsLayout->addWidget(sectionHeader(QStringLiteral("Direct Messages"),
+    roomsLayout->addSpacing(Theme::isNext() ? 12 : 16);
+    roomsLayout->addWidget(sectionHeader(Theme::isNext()
+                                             ? QStringLiteral("Direct messages")
+                                             : QStringLiteral("Direct Messages"),
                                          m_dmList, newMessageButton));
     roomsLayout->addWidget(m_dmList);
     roomsLayout->addStretch();
@@ -13180,6 +13466,112 @@ QWidget *MainWindow::buildChatSidebar(QPushButton *&addChannelButton)
     sidebarLayout->addWidget(workspaceHeader);
     sidebarLayout->addWidget(roomsScroll, 1);
     sidebarLayout->addWidget(userPanel);
+    if (Theme::isNext()) {
+        userPanel->hide();
+        auto *footer = new QWidget;
+        footer->setObjectName(QStringLiteral("chatEncryptionFooter"));
+        footer->setAttribute(Qt::WA_StyledBackground, true);
+        auto *footerIcon = new QLabel;
+        footerIcon->setObjectName(QStringLiteral("chatEncryptionFooterIcon"));
+        footerIcon->setFixedSize(14, 14);
+        setChatGlyph(footerIcon, QStringLiteral("shield-check"), 14,
+                     Theme::Role::FgSubtle);
+        auto *footerText = new QLabel;
+        footerText->setObjectName(QStringLiteral("chatEncryptionFooterText"));
+        footerText->setTextFormat(Qt::PlainText);
+        footerText->setWordWrap(true);
+        footerText->setMinimumWidth(0);
+        auto *footerLayout = new QHBoxLayout(footer);
+        footerLayout->setContentsMargins(16, 10, 16, 10);
+        footerLayout->setSpacing(8);
+        footerLayout->addWidget(footerIcon, 0, Qt::AlignVCenter);
+        footerLayout->addWidget(footerText, 1, Qt::AlignVCenter);
+        sidebarLayout->addWidget(footer);
+        m_channelList->setProperty("chatEncryptionFooterText",
+                                   QVariant::fromValue<QObject *>(footerText));
+        m_channelList->setProperty("chatEncryptionFooterIcon",
+                                   QVariant::fromValue<QObject *>(footerIcon));
+    }
+    if (jumpSearch) {
+        auto *refilter = new QTimer(jumpSearch);
+        refilter->setSingleShot(true);
+        refilter->setInterval(0);
+        const auto applyJump = [this, jumpSearch, fitToRows] {
+            const QString needle = jumpSearch->text().trimmed();
+            const auto matches = [&needle](const QString &label) {
+                return needle.isEmpty() || label.contains(needle, Qt::CaseInsensitive);
+            };
+            for (int top = 0; top < m_channelList->topLevelItemCount(); ++top) {
+                QTreeWidgetItem *item = m_channelList->topLevelItem(top);
+                if (!ChannelGroupTree::isGroupItem(item)) {
+                    item->setHidden(!matches(item->text(0)));
+                    continue;
+                }
+                bool any = false;
+                for (int child = 0; child < item->childCount(); ++child) {
+                    QTreeWidgetItem *channel = item->child(child);
+                    const bool shown = matches(channel->text(0));
+                    channel->setHidden(!shown);
+                    any = any || shown;
+                }
+                item->setHidden(!needle.isEmpty() && !any);
+            }
+            for (int row = 0; row < m_dmList->count(); ++row) {
+                QListWidgetItem *item = m_dmList->item(row);
+                item->setHidden(!matches(item->text()));
+            }
+            fitToRows(m_channelList);
+            fitToRows(m_dmList);
+        };
+        connect(refilter, &QTimer::timeout, jumpSearch, applyJump);
+        connect(jumpSearch, &QLineEdit::textChanged, jumpSearch, applyJump);
+        for (QAbstractItemView *view :
+             {static_cast<QAbstractItemView *>(m_channelList),
+              static_cast<QAbstractItemView *>(m_dmList)}) {
+            const auto schedule = [jumpSearch, refilter] {
+                if (!jumpSearch->text().trimmed().isEmpty())
+                    refilter->start();
+            };
+            connect(view->model(), &QAbstractItemModel::rowsInserted, refilter,
+                    schedule);
+            connect(view->model(), &QAbstractItemModel::modelReset, refilter,
+                    schedule);
+        }
+        connect(jumpSearch, &QLineEdit::returnPressed, jumpSearch, [this, jumpSearch] {
+            if (jumpSearch->text().trimmed().isEmpty())
+                return;
+            QTreeWidgetItem *channel = nullptr;
+            for (QTreeWidgetItemIterator it(m_channelList,
+                                            QTreeWidgetItemIterator::NotHidden);
+                 *it; ++it) {
+                if (!ChannelGroupTree::isGroupItem(*it) &&
+                    !ChannelGroupTree::channelOf(*it).isEmpty() &&
+                    (!(*it)->parent() || !(*it)->parent()->isHidden())) {
+                    channel = *it;
+                    break;
+                }
+            }
+            QListWidgetItem *direct = nullptr;
+            for (int row = 0; !channel && row < m_dmList->count(); ++row) {
+                if (!m_dmList->item(row)->isHidden()) {
+                    direct = m_dmList->item(row);
+                    break;
+                }
+            }
+            if (!channel && !direct)
+                return;
+            jumpSearch->clear();
+            if (channel)
+                m_channelList->setCurrentItem(channel);
+            else
+                m_dmList->setCurrentItem(direct);
+            if (m_messageInput)
+                m_messageInput->setFocus(Qt::ShortcutFocusReason);
+        });
+        auto *clearJump = new QShortcut(QKeySequence(Qt::Key_Escape), jumpSearch);
+        clearJump->setContext(Qt::WidgetShortcut);
+        connect(clearJump, &QShortcut::activated, jumpSearch, &QLineEdit::clear);
+    }
     refreshChatWorkspaceUser();
     return sidebar;
 }
@@ -13321,6 +13713,35 @@ QWidget *MainWindow::buildChatHeader()
     headerLayout->addWidget(m_channelSettingsButton, 0, Qt::AlignVCenter);
     headerLayout->addWidget(m_chatMembersButton, 0, Qt::AlignVCenter);
     topicDivider->hide();
+    if (Theme::isNext()) {
+        headerLayout->setContentsMargins(16, 0, 12, 0);
+        headerLayout->setSpacing(4);
+        titleBoxLayout->setContentsMargins(4, 0, 2, 0);
+        headerLayout->removeWidget(m_encryptionLabel);
+        headerLayout->insertWidget(headerLayout->indexOf(titleBox) + 1,
+                                   m_encryptionLabel, 0, Qt::AlignVCenter);
+        m_encryptionLabel->setPixmap(tintedOcticonPixmap(
+            QStringLiteral("unlock"), Theme::color(Theme::Role::FgSubtle), 14));
+        headerLayout->removeWidget(m_chatMembersButton);
+        headerLayout->insertWidget(headerLayout->indexOf(m_callAudioButton),
+                                   m_chatMembersButton, 0, Qt::AlignVCenter);
+        m_chatMembersButton->setProperty("nextIconRole",
+                                         static_cast<int>(Theme::Role::FgMuted));
+        setOcticon(m_chatMembersButton, QStringLiteral("people"), 14);
+        const auto iconButton = [](QPushButton *button, const QString &glyph) {
+            if (!button->text().isEmpty()) {
+                button->setAccessibleName(button->text());
+                button->setText(QString());
+            }
+            button->setProperty("chatHeaderIcon", true);
+            button->setFixedSize(28, 28);
+            setChatGlyph(button, glyph, 16, Theme::Role::FgMuted);
+        };
+        iconButton(m_callAudioButton, QStringLiteral("phone"));
+        iconButton(m_callVideoButton, QStringLiteral("video"));
+        iconButton(m_meshDebugToggleButton, QStringLiteral("activity"));
+        iconButton(m_channelSettingsButton, QStringLiteral("info"));
+    }
 
     m_firewallBanner = new QWidget;
     m_firewallBanner->setObjectName("firewallBanner");
@@ -13571,14 +13992,62 @@ QWidget *MainWindow::buildChatMainColumn(QWidget *header, QPushButton *&sendButt
     sendButton->setFocusPolicy(Qt::NoFocus);
     sendButton->setFixedSize(32, 32);
     setOcticon(sendButton, "paper-airplane", 18);
-    auto *inputRowLayout = new QHBoxLayout(inputRow);
-    inputRowLayout->setContentsMargins(16, 6, 10, 6);
-    inputRowLayout->setSpacing(4);
-    inputRowLayout->addWidget(attachButton, 0, Qt::AlignVCenter);
-    inputRowLayout->addSpacing(8);
-    inputRowLayout->addWidget(m_messageInput, 1, Qt::AlignVCenter);
-    for (QPushButton *button : {linkButton, mentionButton, emojiButton, sendButton})
-        inputRowLayout->addWidget(button, 0, Qt::AlignVCenter);
+    if (Theme::isNext()) {
+        inputRow->setAttribute(Qt::WA_StyledBackground, true);
+        auto *cardLayout = new QVBoxLayout(inputRow);
+        cardLayout->setContentsMargins(16, 12, 8, 8);
+        cardLayout->setSpacing(6);
+        m_messageInput->setMinimumHeight(24);
+        cardLayout->addWidget(m_messageInput);
+        auto *toolRow = new QHBoxLayout;
+        toolRow->setContentsMargins(0, 0, 0, 0);
+        toolRow->setSpacing(2);
+        const std::pair<QPushButton *, QString> tools[] = {
+            {attachButton, QStringLiteral("paperclip")},
+            {emojiButton, QStringLiteral("smile")},
+            {mentionButton, QStringLiteral("at-sign")},
+            {linkButton, QStringLiteral("link")},
+        };
+        for (const auto &[button, glyph] : tools) {
+            if (!button->text().isEmpty()) {
+                button->setAccessibleName(button->toolTip());
+                button->setText(QString());
+            }
+            button->setFixedSize(28, 28);
+            setChatGlyph(button, glyph, 16, Theme::Role::FgMuted);
+            toolRow->addWidget(button, 0, Qt::AlignVCenter);
+        }
+        toolRow->addStretch(1);
+        auto *hint = new QLabel(QStringLiteral("Enter to send"));
+        hint->setObjectName(QStringLiteral("composerHint"));
+        toolRow->addWidget(hint, 0, Qt::AlignVCenter);
+        toolRow->addSpacing(6);
+        sendButton->setFixedSize(28, 28);
+        setChatGlyph(sendButton, QStringLiteral("arrow-up"), 16, Theme::Role::OnAccent);
+        toolRow->addWidget(sendButton, 0, Qt::AlignVCenter);
+        cardLayout->addLayout(toolRow);
+        auto *focusHook = new ChatNextEventHook(inputRow, [inputRow](QObject *, QEvent *event) {
+            if (event->type() != QEvent::FocusIn && event->type() != QEvent::FocusOut)
+                return;
+            const bool focused = event->type() == QEvent::FocusIn;
+            if (inputRow->property("composerFocused").toBool() == focused)
+                return;
+            inputRow->setProperty("composerFocused", focused);
+            inputRow->style()->unpolish(inputRow);
+            inputRow->style()->polish(inputRow);
+            inputRow->update();
+        });
+        m_messageInput->installEventFilter(focusHook);
+    } else {
+        auto *inputRowLayout = new QHBoxLayout(inputRow);
+        inputRowLayout->setContentsMargins(16, 6, 10, 6);
+        inputRowLayout->setSpacing(4);
+        inputRowLayout->addWidget(attachButton, 0, Qt::AlignVCenter);
+        inputRowLayout->addSpacing(8);
+        inputRowLayout->addWidget(m_messageInput, 1, Qt::AlignVCenter);
+        for (QPushButton *button : {linkButton, mentionButton, emojiButton, sendButton})
+            inputRowLayout->addWidget(button, 0, Qt::AlignVCenter);
+    }
     auto *composerLayout = new QHBoxLayout(composer);
     composerLayout->setContentsMargins(16, 0, 16, 20);
     composerLayout->setSpacing(8);
@@ -13612,6 +14081,33 @@ QWidget *MainWindow::buildChatMainColumn(QWidget *header, QPushButton *&sendButt
     transcriptColumn->addWidget(m_messageScroll, 1);
     transcriptColumn->addWidget(m_typingLabel);
     transcriptColumn->addWidget(composer);
+    if (Theme::isNext()) {
+        m_typingLabel->setTextFormat(Qt::PlainText);
+        m_typingLabel->setFixedHeight(26);
+        QPointer<QLabel> typing = m_typingLabel;
+        QPointer<QScrollArea> scroll = m_messageScroll;
+        QPointer<QVBoxLayout> rows = m_messageLayout;
+        QPointer<QWidget> composerHost = composer;
+        const auto centre = [scroll, rows, typing, composerHost](QObject *,
+                                                                  QEvent *event) {
+            if (event->type() != QEvent::Resize || !scroll)
+                return;
+            const int width = scroll->width();
+            const int offset = qMax(0, (width - kChatNextColumnWidth) / 2);
+            if (rows)
+                rows->setContentsMargins(offset + 12, 16, offset + 12, 8);
+            if (typing)
+                typing->setContentsMargins(offset + 24, 0, offset + 24, 0);
+            if (composerHost && composerHost->layout())
+                composerHost->layout()->setContentsMargins(offset + 24, 4,
+                                                           offset + 24, 16);
+        };
+        auto *columnHook = new ChatNextEventHook(m_messageScroll, centre);
+        m_messageScroll->installEventFilter(columnHook);
+        m_messageLayout->setContentsMargins(12, 16, 12, 8);
+        m_typingLabel->setContentsMargins(24, 0, 24, 0);
+        composerLayout->setContentsMargins(24, 4, 24, 16);
+    }
     auto *bodyLayout = new QHBoxLayout(m_chatBody);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(0);
@@ -13650,6 +14146,13 @@ void MainWindow::buildChatThreadPane()
     threadHeaderLayout->addStretch();
     threadHeaderLayout->addWidget(closeThread);
     threadLayout->addWidget(threadHeader);
+    if (Theme::isNext()) {
+        threadHeader->setAttribute(Qt::WA_StyledBackground, true);
+        threadHeader->setFixedHeight(kChatBarHeight);
+        threadHeaderLayout->setContentsMargins(16, 0, 12, 0);
+        closeThread->setFixedSize(28, 28);
+        setChatGlyph(closeThread, QStringLiteral("x"), 16, Theme::Role::FgMuted);
+    }
 
     auto *threadScroll = new QScrollArea;
     threadScroll->setObjectName(QStringLiteral("chatThreadView"));

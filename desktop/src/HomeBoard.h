@@ -2,6 +2,7 @@
 
 #include "HomeLayout.h"
 
+#include <QColor>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QPixmap>
@@ -40,6 +41,23 @@ struct HomeTile {
     bool operator!=(const HomeTile &other) const { return !(*this == other); }
 };
 
+struct HomeBoardStyle {
+    bool flat = false;
+    QColor page;
+    QColor plate;
+    QColor plateBorder;
+    QColor plateHoverBorder;
+    QColor icon;
+    QColor title;
+    QColor detail;
+    QColor badge;
+    QColor onBadge;
+    QColor ring;
+    QColor success;
+    QColor warning;
+    QColor danger;
+};
+
 struct HomeGroup {
     QString id;
     QString title;
@@ -69,6 +87,8 @@ public:
     bool setGroups(const QVector<HomeGroup> &groups);
     void setSavedPages(const HomeLayout::Pages &saved);
     void setFilter(const QString &text);
+    void setStyle(const HomeBoardStyle &style);
+    const HomeBoardStyle &style() const { return m_style; }
     void setPage(int page);
     void setIconProvider(
         std::function<QPixmap(const QString &, const QColor &, int)> provider)
@@ -153,6 +173,10 @@ private:
     QStringList presentKeys() const;
     void endDrag(bool commit);
 
+    void paintFlatTile(QPainter &painter, const HomeTile &tile,
+                       const QRect &rect, bool hovered) const;
+
+    HomeBoardStyle m_style;
     QVector<HomeGroup> m_groups;
     QHash<QString, QPair<int, int>> m_index;
     HomeLayout::Pages m_saved;

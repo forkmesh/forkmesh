@@ -127,7 +127,7 @@ internal class RoomCounters private constructor(private val room: String, privat
         val target = store ?: return
         try {
             reserved = target.read(counterKey)?.trim()?.toLongOrNull() ?: 0L
-            next = reserved + 1
+            next = maxOf(reserved, ChatDeviceKeys.counterFloor(target)) + 1
         } catch (_: Exception) {
         }
         try {
@@ -829,7 +829,7 @@ class RoomSeal private constructor(
                 policy,
                 acct,
                 node,
-                ChatDeviceKeys.forStore(secureStore),
+                ChatDeviceKeys.forStore(secureStore, clock()),
                 ChatTrust.forStore(secureStore, trustScope),
                 RoomCounters.forStore(secureStore, room),
                 RoomRatchets.forStore(secureStore, room),

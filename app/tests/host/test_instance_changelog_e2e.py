@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import os
 import shutil
@@ -33,8 +32,9 @@ def instance(staged_src, tmp_path_factory, sandbox_env):
     assets = tmp / "assets"
     shutil.copytree(paths.APP_DIR / "public", assets)
     for name in build_site_assets.BACKEND_ASSETS:
-        if name.endswith(".html"):
+        if name.endswith((".html", ".js")):
             shutil.copyfile(WWW_PUBLIC / name, assets / name)
+    shutil.copyfile(build_site_assets.CHANGELOG, assets / "changelog.json")
     port = _free_port()
     origin = "http://127.0.0.1:%d" % port
     env = sandbox_env(tmp)
@@ -88,10 +88,13 @@ def test_an_instance_serves_its_own_changelog(instance):
     page = instance.get("/changelog")
     assert page.status_code == 200
     assert page.headers["content-type"].startswith("text/html")
-    entries = json.loads((paths.APP_DIR.parent / "changelog" / "changelog.json")
-                         .read_text(encoding="utf-8"))["entries"]
-    assert html.escape(entries[0]["title"], quote=False) in page.text
+    assert 'data-source="/changelog.json"' in page.text
     assert "Changelog" in page.text
+    served = instance.get("/changelog.json")
+    assert served.status_code == 200
+    assert served.json() == json.loads((paths.APP_DIR.parent / "changelog" / "changelog.json")
+                                       .read_text(encoding="utf-8"))
+    assert instance.get("/changelog.js").status_code == 200
     assert instance.get("/about").status_code == 404
     assert instance.get("/careers").status_code == 404
 

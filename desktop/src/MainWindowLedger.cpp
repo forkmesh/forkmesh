@@ -22,6 +22,7 @@
 #include "TipSigner.h"
 
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QCompleter>
 #include <QCoreApplication>
@@ -34,31 +35,40 @@
 #include <QFont>
 #include <QFormLayout>
 #include <QFrame>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHelpEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMetaType>
 #include <QModelIndex>
+#include <QMouseEvent>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPainter>
 #include <QPalette>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScreen>
 #include <QSettings>
 #include <QStringListModel>
+#include <QStyledItemDelegate>
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QTimer>
+#include <QToolTip>
 #include <QUrlQuery>
 #include <QUuid>
 #include <QVBoxLayout>
 #include <QVariant>
+#include <QWidgetAction>
 
 #include <algorithm>
 #include <cmath>
@@ -248,6 +258,9 @@ struct LedgerWalletCard {
     bool signsPayments = false; // an empty one is why a payout is refused
     std::function<void()> onRemove;  // set only for a reader-entered address
     std::function<void()> onRefresh; // re-read this one balance
+    QString setUpText;
+    QString setUpIcon;
+    std::function<void()> onSetUp;
 };
 
 QString ledgerAbbreviatedAddress(const QString &address)
@@ -799,22 +812,751 @@ QString ledgerUnpayableTooltip(const LedgerRecord &record)
         "this desktop has nothing to sign for it.");
 }
 
+constexpr int kLedgerStatusToneRole = Qt::UserRole + 11;
+constexpr int kLedgerNextGutter = 24;
+constexpr int kLedgerNextRowHeight = 48;
+
+enum LedgerTone {
+    kLedgerToneNeutral = 0,
+    kLedgerToneAccent,
+    kLedgerToneSuccess,
+    kLedgerToneWarning,
+    kLedgerToneDanger,
+};
+
+int ledgerStatusTone(const LedgerRecord &record, bool pending, bool settledHere,
+                     bool held)
+{
+    const QString status = record.status.toLower();
+    if (status.contains(QLatin1String("fail")) ||
+        status.contains(QLatin1String("cancel")) ||
+        status.contains(QLatin1String("reject")))
+        return kLedgerToneDanger;
+    if (held)
+        return kLedgerToneWarning;
+    if (settledHere)
+        return kLedgerToneSuccess;
+    if (pending)
+        return kLedgerToneAccent;
+    return kLedgerToneSuccess;
+}
+
+QColor ledgerToneColor(int tone)
+{
+    switch (tone) {
+    case kLedgerToneAccent:
+        return Theme::color(Theme::Role::Accent);
+    case kLedgerToneSuccess:
+        return Theme::color(Theme::Role::Success);
+    case kLedgerToneWarning:
+        return Theme::color(Theme::Role::Warning);
+    case kLedgerToneDanger:
+        return Theme::color(Theme::Role::Danger);
+    default:
+        return Theme::color(Theme::Role::FgSubtle);
+    }
+}
+
+class LedgerNextRowDelegate : public QStyledItemDelegate
+{
+public:
+    explicit LedgerNextRowDelegate(QTableWidget *table)
+        : QStyledItemDelegate(table), m_table(table)
+    {
+        table->viewport()->installEventFilter(this);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        if (!Theme::isNext()) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        painter->save();
+        const QRect rect = option.rect;
+        if (option.state & QStyle::State_Selected)
+            painter->fillRect(rect, Theme::color(Theme::Role::AccentSubtle));
+        else if (index.row() == m_hoverRow)
+            painter->fillRect(rect, Theme::color(Theme::Role::SurfaceRaised));
+        painter->fillRect(QRect(rect.left(), rect.bottom(), rect.width(), 1),
+                          Theme::color(Theme::Role::Border));
+        const int column = index.column();
+        QString text = shownText(index);
+        QRect box = rect.adjusted(leftPad(column), 0, -rightPad(column), 0);
+        if (column == kLedgerStatusColumn && !text.isEmpty()) {
+            painter->setRenderHint(QPainter::Antialiasing);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(
+                ledgerToneColor(index.data(kLedgerStatusToneRole).toInt()));
+            painter->drawEllipse(
+                QRectF(box.left(), rect.top() + rect.height() / 2.0 - 3.0, 6.0, 6.0));
+            box.setLeft(box.left() + 12);
+        }
+        const QFont font = cellFont(option, column);
+        const QFontMetrics metrics(font);
+        const Qt::TextElideMode mode =
+            m_table ? m_table->textElideMode() : Qt::ElideRight;
+        if (column == kLedgerAmountColumn) {
+            const int split = text.indexOf(QStringLiteral(" ("));
+            const QString main = split < 0 ? text : text.left(split);
+            const QString extra = split < 0 ? QString() : usdLine(text.mid(split));
+            const QColor mainColor = main.startsWith(QLatin1Char('+'))
+                                         ? Theme::color(Theme::Role::Success)
+                                         : cellColor(index, column, main);
+            drawLines(painter, box, font, mainColor, main, extra,
+                      Qt::AlignRight, Qt::ElideLeft);
+        } else if (column == kLedgerRecordColumn) {
+            drawLines(painter, box, font, Theme::color(Theme::Role::Fg), text,
+                      subtitle(index), Qt::AlignLeft, mode);
+        } else {
+            painter->setFont(font);
+            painter->setPen(cellColor(index, column, text));
+            painter->drawText(box, Qt::AlignLeft | Qt::AlignVCenter,
+                              metrics.elidedText(text, mode, box.width()));
+        }
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        if (!Theme::isNext())
+            return QStyledItemDelegate::sizeHint(option, index);
+        const int column = index.column();
+        QString text = shownText(index);
+        if (column == kLedgerAmountColumn) {
+            const int split = text.indexOf(QStringLiteral(" ("));
+            if (split >= 0)
+                text = text.left(split);
+        }
+        int width = QFontMetrics(cellFont(option, column)).horizontalAdvance(text) +
+                    leftPad(column) + rightPad(column) + 2;
+        if (column == kLedgerStatusColumn)
+            width += 12;
+        return QSize(width, kLedgerNextRowHeight);
+    }
+
+    bool helpEvent(QHelpEvent *event, QAbstractItemView *view,
+                   const QStyleOptionViewItem &option,
+                   const QModelIndex &index) override
+    {
+        if (Theme::isNext() && event && event->type() == QEvent::ToolTip &&
+            index.column() == kLedgerRecordColumn && titleFolded()) {
+            const QModelIndex title = index.siblingAtColumn(kLedgerTitleColumn);
+            QStringList parts;
+            for (const QModelIndex &cell : {index, title}) {
+                const QString tip = cell.data(Qt::ToolTipRole).toString();
+                if (!tip.isEmpty() && !parts.contains(tip))
+                    parts << tip;
+            }
+            if (!parts.isEmpty()) {
+                QToolTip::showText(event->globalPos(),
+                                   parts.join(QStringLiteral("\n\n")), view,
+                                   option.rect);
+                return true;
+            }
+        }
+        return QStyledItemDelegate::helpEvent(event, view, option, index);
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (m_table && watched == m_table->viewport()) {
+            int row = m_hoverRow;
+            if (event->type() == QEvent::MouseMove)
+                row = m_table->rowAt(
+                    static_cast<QMouseEvent *>(event)->position().toPoint().y());
+            else if (event->type() == QEvent::Leave)
+                row = -1;
+            if (row != m_hoverRow) {
+                m_hoverRow = row;
+                if (Theme::isNext())
+                    m_table->viewport()->update();
+            }
+            return false;
+        }
+        return QStyledItemDelegate::eventFilter(watched, event);
+    }
+
+private:
+    bool titleFolded() const
+    {
+        return m_table && m_table->isColumnHidden(kLedgerTitleColumn);
+    }
+
+    QString subtitle(const QModelIndex &index) const
+    {
+        if (!titleFolded())
+            return QString();
+        const QString title =
+            index.siblingAtColumn(kLedgerTitleColumn).data(Qt::DisplayRole).toString();
+        return title == QString::fromUtf8("\xE2\x80\x94") ? QString() : title;
+    }
+
+    QString shownText(const QModelIndex &index) const
+    {
+        QString text = index.data(Qt::DisplayRole).toString();
+        if (index.column() == kLedgerStatusColumn && !text.isEmpty())
+            text[0] = text.at(0).toUpper();
+        if (index.column() == kLedgerTransactionColumn && m_table &&
+            text == QString::fromUtf8("\xE2\x80\x94") &&
+            m_table->cellWidget(index.row(), kLedgerActionColumn))
+            text.clear();
+        return text;
+    }
+
+    static QString usdLine(QString extra)
+    {
+        extra = extra.trimmed();
+        if (extra.startsWith(QLatin1Char('(')))
+            extra.remove(0, 1);
+        if (extra.endsWith(QLatin1Char(')')))
+            extra.chop(1);
+        if (extra.startsWith(QLatin1Char('~')))
+            return QString::fromUtf8("\xE2\x89\x88 ") + extra.mid(1);
+        return extra;
+    }
+
+    static void drawLines(QPainter *painter, const QRect &box, const QFont &font,
+                          const QColor &color, const QString &main,
+                          const QString &second, Qt::AlignmentFlag side,
+                          Qt::TextElideMode mode)
+    {
+        const QFontMetrics metrics(font);
+        QFont small = font;
+        small.setPixelSize(main.isEmpty() ? font.pixelSize() : 11);
+        small.setWeight(QFont::Normal);
+        const QFontMetrics smallMetrics(small);
+        const int gap = 2;
+        const int total = second.isEmpty()
+                              ? metrics.height()
+                              : metrics.height() + gap + smallMetrics.height();
+        const int top = box.top() + (box.height() - total) / 2;
+        painter->setFont(font);
+        painter->setPen(color);
+        painter->drawText(QRect(box.left(), top, box.width(), metrics.height()),
+                          side | Qt::AlignVCenter,
+                          metrics.elidedText(main, mode, box.width()));
+        if (second.isEmpty())
+            return;
+        painter->setFont(small);
+        painter->setPen(side == Qt::AlignRight
+                            ? Theme::color(Theme::Role::FgSubtle)
+                            : Theme::color(Theme::Role::FgMuted));
+        painter->drawText(QRect(box.left(), top + metrics.height() + gap,
+                                box.width(), smallMetrics.height()),
+                          side | Qt::AlignVCenter,
+                          smallMetrics.elidedText(second, mode, box.width()));
+    }
+
+    static int leftPad(int column)
+    {
+        return column == kLedgerWhenColumn ? 16 : 10;
+    }
+
+    static int rightPad(int column)
+    {
+        return column == kLedgerAmountColumn ? 16 : 10;
+    }
+
+    static QFont cellFont(const QStyleOptionViewItem &option, int column)
+    {
+        QFont font = option.font;
+        font.setUnderline(false);
+        if (column == kLedgerAmountColumn || column == kLedgerTransactionColumn) {
+            font.setFamily(Theme::monoFontFamily());
+            font.setPixelSize(13);
+            return font;
+        }
+        font.setPixelSize(column == kLedgerActionColumn ? 12 : 13);
+        if (column == kLedgerRecordColumn)
+            font.setWeight(QFont::Medium);
+        return font;
+    }
+
+    static QColor cellColor(const QModelIndex &index, int column,
+                            const QString &text)
+    {
+        if (text == QString::fromUtf8("\xE2\x80\x94"))
+            return Theme::color(Theme::Role::FgSubtle);
+        switch (column) {
+        case kLedgerRecordColumn:
+        case kLedgerAmountColumn:
+            return Theme::color(Theme::Role::Fg);
+        case kLedgerTransactionColumn:
+            return index.data(kLedgerLinkUrlRole).toUrl().isValid()
+                       ? Theme::color(Theme::Role::AccentFg)
+                       : Theme::color(Theme::Role::FgSubtle);
+        case kLedgerActionColumn:
+            return Theme::color(Theme::Role::FgSubtle);
+        default:
+            return Theme::color(Theme::Role::FgMuted);
+        }
+    }
+
+    QTableWidget *m_table = nullptr;
+    int m_hoverRow = -1;
+};
+
+QIcon ledgerQrIcon(const QColor &color)
+{
+    const qreal ratio =
+        qMax<qreal>(2.0, qGuiApp ? qGuiApp->devicePixelRatio() : 1.0);
+    const int px = 14;
+    QPixmap pixmap(qRound(px * ratio), qRound(px * ratio));
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(color, 1.2));
+    painter.setBrush(Qt::NoBrush);
+    for (const QPointF &corner :
+         {QPointF(1.6, 1.6), QPointF(8.4, 1.6), QPointF(1.6, 8.4)})
+        painter.drawRoundedRect(QRectF(corner, QSizeF(4.0, 4.0)), 0.8, 0.8);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    for (const QRectF &dot :
+         {QRectF(8.6, 8.6, 1.8, 1.8), QRectF(11.4, 11.4, 1.8, 1.8),
+          QRectF(8.6, 11.4, 1.8, 1.8), QRectF(11.4, 8.6, 1.8, 1.8)})
+        painter.drawRect(dot);
+    return QIcon(pixmap);
+}
+
+QString ledgerWalletStatusText(const LedgerWalletCard &wallet)
+{
+    const bool linked = !wallet.address.isEmpty();
+    QString text;
+    if (linked && wallet.lamports >= 0) {
+        text = LedgerFeature::balanceAgeText(
+            wallet.checkedAt, QDateTime::currentMSecsSinceEpoch());
+        if (wallet.sharedAddress)
+            text += QStringLiteral(" · shared address");
+    } else if (linked) {
+        text = QStringLiteral("not read yet");
+    }
+    return text;
+}
+
+QPixmap ledgerQrTile(const QImage &qr, int padding)
+{
+    const qreal ratio =
+        qMax<qreal>(2.0, qGuiApp ? qGuiApp->devicePixelRatio() : 1.0);
+    const QSize size(qr.width() + 2 * padding, qr.height() + 2 * padding);
+    QPixmap tile(qRound(size.width() * ratio), qRound(size.height() * ratio));
+    tile.setDevicePixelRatio(ratio);
+    tile.fill(Qt::transparent);
+    QPainter painter(&tile);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(Qt::white));
+    painter.drawRoundedRect(QRectF(0, 0, size.width(), size.height()), 10, 10);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    painter.drawImage(QRect(padding, padding, qr.width(), qr.height()), qr);
+    return tile;
+}
+
+QPushButton *makeLedgerCardIconButton(const QString &objectName,
+                                      const QString &toolTip)
+{
+    auto *button = new QPushButton;
+    button->setObjectName(objectName);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setFocusPolicy(Qt::NoFocus);
+    button->setFixedSize(22, 22);
+    button->setToolTip(toolTip);
+    button->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    return button;
+}
+
+QWidget *makeLedgerNextWalletCard(const LedgerWalletCard &wallet)
+{
+    auto *card = new QFrame;
+    card->setObjectName(QStringLiteral("ledgerWalletCard"));
+    card->setFrameShape(QFrame::NoFrame);
+    card->setMinimumWidth(200);
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(16, 14, 16, 14);
+    layout->setSpacing(2);
+
+    const bool linked = !wallet.address.isEmpty();
+    const bool unfunded =
+        linked && wallet.signsPayments && wallet.lamports == 0;
+    const QString statusText = ledgerWalletStatusText(wallet);
+    QString noteText;
+    if (!linked) {
+        noteText = wallet.emptyPurpose;
+    } else if (unfunded) {
+        noteText = QStringLiteral(
+            "Empty. Solana refuses a transfer signed from an unfunded account "
+            "before it ever becomes a transaction.");
+    } else if (wallet.lamports < 0) {
+        noteText = wallet.purpose;
+    }
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->setContentsMargins(0, 0, 0, 0);
+    headerRow->setSpacing(6);
+    auto *icon = new QLabel;
+    icon->setObjectName(QStringLiteral("ledgerWalletIcon"));
+    icon->setPixmap(kit::tintedIcon(QStringLiteral("credit-card"),
+                                    Theme::color(Theme::Role::FgSubtle), 13,
+                                    qGuiApp ? qGuiApp->devicePixelRatio() : 1.0));
+    headerRow->addWidget(icon);
+    auto *label = new QLabel(wallet.label.toUpper());
+    label->setObjectName(QStringLiteral("ledgerWalletLabel"));
+    label->setTextFormat(Qt::PlainText);
+    label->setToolTip(wallet.purpose);
+    QFont labelFont = label->font();
+    labelFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+    label->setFont(labelFont);
+    headerRow->addWidget(label, 1);
+    if (linked && wallet.onRefresh) {
+        auto *refresh = makeLedgerCardIconButton(
+            QStringLiteral("ledgerWalletRefresh"),
+            QStringLiteral("Read this balance again"));
+        setOcticon(refresh, QStringLiteral("sync"), 12);
+        QObject::connect(refresh, &QPushButton::clicked, refresh,
+                         wallet.onRefresh);
+        headerRow->addWidget(refresh);
+    }
+    if (wallet.onRemove) {
+        auto *removeButton = makeLedgerCardIconButton(
+            QStringLiteral("ghostButton"),
+            QStringLiteral("Stop tracking this address"));
+        setOcticon(removeButton, QStringLiteral("x"), 12);
+        QObject::connect(removeButton, &QPushButton::clicked, removeButton,
+                         wallet.onRemove);
+        headerRow->addWidget(removeButton);
+    }
+    if (linked) {
+        const QImage qr = QrCode::encodeToImage(
+            QStringLiteral("solana:%1").arg(wallet.address), 6, 0);
+        if (!qr.isNull()) {
+            auto *qrButton = makeLedgerCardIconButton(
+                QStringLiteral("ledgerWalletQrButton"),
+                QStringLiteral("Show a QR code a Solana wallet app can scan to "
+                               "send SOL to this address"));
+            qrButton->setIcon(ledgerQrIcon(Theme::color(Theme::Role::FgMuted)));
+            qrButton->setIconSize(QSize(14, 14));
+            auto *menu = new QMenu(qrButton);
+            menu->setObjectName(QStringLiteral("ledgerWalletQrMenu"));
+            auto *panel = new QWidget;
+            panel->setObjectName(QStringLiteral("ledgerWalletQrPanel"));
+            auto *panelLayout = new QVBoxLayout(panel);
+            panelLayout->setContentsMargins(16, 16, 16, 12);
+            panelLayout->setSpacing(10);
+            auto *qrLabel = new QLabel(panel);
+            qrLabel->setObjectName(QStringLiteral("ledgerWalletQr"));
+            qrLabel->setPixmap(ledgerQrTile(qr, 14));
+            qrLabel->setAlignment(Qt::AlignCenter);
+            qrLabel->setToolTip(
+                QStringLiteral("Scan with a Solana wallet app to send SOL "
+                               "to this address"));
+            panelLayout->addWidget(qrLabel, 0, Qt::AlignHCenter);
+            auto *addressRow = new QHBoxLayout;
+            addressRow->setContentsMargins(0, 0, 0, 0);
+            addressRow->setSpacing(6);
+            auto *shortAddress =
+                new QLabel(ledgerAbbreviatedAddress(wallet.address), panel);
+            shortAddress->setObjectName(QStringLiteral("ledgerWalletQrAddress"));
+            shortAddress->setTextFormat(Qt::PlainText);
+            shortAddress->setToolTip(wallet.address);
+            QFont mono = shortAddress->font();
+            mono.setFamily(Theme::monoFontFamily());
+            shortAddress->setFont(mono);
+            addressRow->addWidget(shortAddress);
+            addressRow->addStretch(1);
+            auto *copy = makeLedgerCardIconButton(
+                QStringLiteral("ledgerWalletQrCopy"),
+                QStringLiteral("Copy the full address"));
+            copy->setParent(panel);
+            setOcticon(copy, QStringLiteral("copy"), 14);
+            const QString address = wallet.address;
+            QObject::connect(copy, &QPushButton::clicked, copy, [address] {
+                if (QClipboard *clipboard = QGuiApplication::clipboard())
+                    clipboard->setText(address);
+            });
+            addressRow->addWidget(copy);
+            panelLayout->addLayout(addressRow);
+            auto *action = new QWidgetAction(menu);
+            action->setDefaultWidget(panel);
+            menu->addAction(action);
+            QObject::connect(qrButton, &QPushButton::clicked, qrButton,
+                             [qrButton, menu] {
+                const QSize size = menu->sizeHint();
+                menu->popup(qrButton->mapToGlobal(
+                    QPoint(qrButton->width() - size.width(),
+                           qrButton->height() + 6)));
+            });
+            headerRow->addWidget(qrButton);
+        }
+    }
+    layout->addLayout(headerRow);
+    layout->addSpacing(8);
+
+    auto *amount = new QLabel(
+        !linked ? wallet.emptyText
+                : wallet.lamports < 0
+                      ? QStringLiteral("Not read yet")
+                      : LedgerFeature::solText(quint64(wallet.lamports)) +
+                            QStringLiteral(" SOL"));
+    amount->setObjectName(QStringLiteral("ledgerWalletAmount"));
+    amount->setTextFormat(Qt::PlainText);
+    amount->setProperty("ledgerEmpty", !linked || wallet.lamports < 0);
+    layout->addWidget(amount);
+
+    if (linked) {
+        auto *metaRow = new QHBoxLayout;
+        metaRow->setContentsMargins(0, 0, 0, 0);
+        metaRow->setSpacing(8);
+        if (wallet.usdMicros >= 0) {
+            auto *usd = new QLabel(QString::fromUtf8("\xE2\x89\x88 $") +
+                                   LedgerFeature::usdText(wallet.usdMicros));
+            usd->setObjectName(QStringLiteral("ledgerWalletUsd"));
+            usd->setTextFormat(Qt::PlainText);
+            usd->setToolTip(QStringLiteral(
+                "A live spot estimate at the price this page was read with, not "
+                "transaction-time accounting."));
+            metaRow->addWidget(usd);
+        }
+        auto *address = new QLabel;
+        address->setObjectName(QStringLiteral("ledgerWalletAddress"));
+        address->setTextFormat(Qt::RichText);
+        address->setOpenExternalLinks(true);
+        address->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        QFont mono = address->font();
+        mono.setFamily(Theme::monoFontFamily());
+        address->setFont(mono);
+        const QString shown =
+            ledgerAbbreviatedAddress(wallet.address).toHtmlEscaped();
+        address->setText(
+            wallet.explorerUrl.isValid()
+                ? QStringLiteral(
+                      "<a href=\"%1\" style=\"color:%2; text-decoration:none;\">%3</a>")
+                      .arg(wallet.explorerUrl.toString(QUrl::FullyEncoded)
+                               .toHtmlEscaped(),
+                           Theme::hex(Theme::Role::FgSubtle), shown)
+                : shown);
+        address->setToolTip(wallet.address);
+        metaRow->addWidget(address);
+        metaRow->addStretch(1);
+        if (!statusText.isEmpty()) {
+            auto *status = new QLabel(statusText);
+            status->setObjectName(QStringLiteral("ledgerWalletAge"));
+            status->setTextFormat(Qt::PlainText);
+            status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            status->setToolTip(wallet.purpose);
+            metaRow->addWidget(status);
+        }
+        layout->addLayout(metaRow);
+    }
+
+    if (!noteText.isEmpty()) {
+        auto *note = new QLabel(noteText);
+        note->setObjectName(unfunded ? QStringLiteral("ledgerWalletWarning")
+                                     : QStringLiteral("ledgerWalletNote"));
+        note->setWordWrap(true);
+        note->setToolTip(wallet.purpose);
+        layout->addSpacing(2);
+        layout->addWidget(note);
+    }
+    layout->addStretch(1);
+    if (!linked && wallet.onSetUp && !wallet.setUpText.isEmpty()) {
+        auto *setUp = new QPushButton(wallet.setUpText);
+        setUp->setObjectName(QStringLiteral("ledgerWalletSetUpButton"));
+        setUp->setCursor(Qt::PointingHandCursor);
+        setUp->setToolTip(wallet.emptyPurpose);
+        setUp->setProperty("ledgerVariant", QStringLiteral("outline"));
+        if (!wallet.setUpIcon.isEmpty()) {
+            setUp->setProperty("nextIconRole", int(Theme::Role::FgSecondary));
+            setOcticon(setUp, wallet.setUpIcon, 14);
+        }
+        QObject::connect(setUp, &QPushButton::clicked, setUp, wallet.onSetUp);
+        layout->addSpacing(10);
+        layout->addWidget(setUp, 0, Qt::AlignLeft);
+    }
+    return card;
+}
+
+void styleLedgerNextButton(QPushButton *button, const char *variant,
+                           const QString &octicon, Theme::Role iconRole)
+{
+    if (!button)
+        return;
+    button->setProperty("ledgerVariant", QString::fromLatin1(variant));
+    button->setProperty("nextIconRole", int(iconRole));
+    if (!octicon.isEmpty())
+        setOcticon(button, octicon, 14);
+}
+
+QFrame *makeLedgerNextStat(const QString &key, const QString &name)
+{
+    auto *card = new QFrame;
+    card->setObjectName(QStringLiteral("ledgerNextStat"));
+    card->setFrameShape(QFrame::NoFrame);
+    card->setMinimumWidth(140);
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(16, 12, 16, 12);
+    layout->setSpacing(2);
+    auto *label = new QLabel(name);
+    label->setProperty("ledgerRole", QStringLiteral("statName"));
+    layout->addWidget(label);
+    auto *value = new QLabel(QString::fromUtf8("\xE2\x80\x94"));
+    value->setObjectName(QStringLiteral("ledgerStat%1Value").arg(key));
+    value->setProperty("ledgerRole", QStringLiteral("statValue"));
+    value->setTextFormat(Qt::PlainText);
+    layout->addWidget(value);
+    auto *note = new QLabel;
+    note->setObjectName(QStringLiteral("ledgerStat%1Note").arg(key));
+    note->setProperty("ledgerRole", QStringLiteral("statNote"));
+    note->setTextFormat(Qt::PlainText);
+    layout->addWidget(note);
+    return card;
+}
+
+void setLedgerNextStat(QWidget *section, const QString &key,
+                       const QString &value, const QString &note,
+                       const QString &tip)
+{
+    auto *valueLabel =
+        section->findChild<QLabel *>(QStringLiteral("ledgerStat%1Value").arg(key));
+    if (!valueLabel)
+        return;
+    valueLabel->setText(value);
+    if (auto *noteLabel = section->findChild<QLabel *>(
+            QStringLiteral("ledgerStat%1Note").arg(key)))
+        noteLabel->setText(note);
+    if (QWidget *card = valueLabel->parentWidget())
+        card->setToolTip(tip);
+}
+
+QString ledgerStatAmount(quint64 lamports, qint64 usdMicros)
+{
+    if (lamports > 0)
+        return LedgerFeature::solText(lamports) + QStringLiteral(" SOL");
+    if (usdMicros > 0)
+        return QStringLiteral("$") + LedgerFeature::usdText(usdMicros);
+    return QStringLiteral("0 SOL");
+}
+
+QString ledgerStatNote(quint64 lamports, qint64 usdMicros, const QString &count)
+{
+    if (lamports > 0 && usdMicros > 0)
+        return QString::fromUtf8("\xE2\x89\x88 $") +
+               LedgerFeature::usdText(usdMicros);
+    return count;
+}
+
+void applyLedgerSearch(QTableWidget *table, const QString &query)
+{
+    if (!table)
+        return;
+    const QString needle = query.trimmed();
+    for (int row = 0; row < table->rowCount(); ++row) {
+        bool match = needle.isEmpty();
+        for (int column = kLedgerWhenColumn; !match && column < kLedgerActionColumn;
+             ++column) {
+            if (QTableWidgetItem *item = table->item(row, column))
+                match = item->text().contains(needle, Qt::CaseInsensitive);
+        }
+        if (table->isRowHidden(row) == match)
+            table->setRowHidden(row, !match);
+    }
+}
+
+void refreshLedgerNextStats(QWidget *anchor, const LedgerTotals &totals,
+                            const LedgerPage &page, const QString &totalsTip)
+{
+    QWidget *section = anchor;
+    while (section && section->objectName() != QLatin1String("ledgerSection"))
+        section = section->parentWidget();
+    if (!section)
+        return;
+    setLedgerNextStat(
+        section, QStringLiteral("Expenses"),
+        ledgerStatAmount(totals.expenseLamports, totals.expenseUsdMicros),
+        ledgerStatNote(totals.expenseLamports, totals.expenseUsdMicros,
+                       QStringLiteral("%1 paid record(s)").arg(totals.expenseCount)),
+        totalsTip);
+    setLedgerNextStat(
+        section, QStringLiteral("Income"),
+        ledgerStatAmount(totals.incomeLamports, totals.incomeUsdMicros),
+        ledgerStatNote(totals.incomeLamports, totals.incomeUsdMicros,
+                       QStringLiteral("%1 record(s)").arg(totals.incomeCount)),
+        totalsTip);
+    setLedgerNextStat(section, QStringLiteral("Records"),
+                      QString::number(page.recordCount),
+                      QStringLiteral("%1 on-chain").arg(page.settledCount),
+                      QString());
+    setLedgerNextStat(
+        section, QStringLiteral("Awaiting"),
+        QString::number(totals.pendingCount),
+        totals.pendingCount > 0
+            ? ledgerTotalText(totals.pendingLamports, totals.pendingUsdMicros)
+            : QStringLiteral("Nothing owed"),
+        QStringLiteral("Records still owed either way, counted in money as well "
+                       "as in rows."));
+    if (auto *price = section->findChild<QLabel *>(QStringLiteral("ledgerNextPrice"))) {
+        price->setText(page.solUsdPrice.isEmpty()
+                           ? QString()
+                           : QString::fromUtf8("SOL \xE2\x89\x88 $") +
+                                 ledgerUsdText(page.solUsdPrice));
+        price->setVisible(!page.solUsdPrice.isEmpty());
+    }
+    if (auto *search = section->findChild<QLineEdit *>(
+            QStringLiteral("ledgerNextSearch")))
+        applyLedgerSearch(qobject_cast<QTableWidget *>(anchor), search->text());
+}
+
 } // namespace
 
 QWidget *MainWindow::buildLedgerSection()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("ledgerSection"));
+    const bool next = Theme::isNext();
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(24, 20, 24, 20);
     outer->setSpacing(12);
+    QVBoxLayout *body = outer;
+    if (next) {
+        page->setProperty("ledgerNextPage", true);
+        page->setAttribute(Qt::WA_StyledBackground, true);
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->setSpacing(0);
+    }
+    const QString ledgerDescription = QStringLiteral(
+        "Every relay-owned financial record, projected from the tables that "
+        "own each state transition. Amounts are exact; USD figures are a live "
+        "spot estimate, not transaction-time accounting.");
 
     auto *header = new QHBoxLayout;
     auto *title = new QLabel(QStringLiteral("Ledger"));
     title->setObjectName(QStringLiteral("sectionTitle"));
     title->setAccessibleName(QStringLiteral("ForkMesh Ledger"));
-    header->addWidget(title);
-    header->addStretch();
+    if (next) {
+        header->setContentsMargins(kLedgerNextGutter, 12, kLedgerNextGutter, 12);
+        header->setSpacing(6);
+        auto *titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        title->setAccessibleDescription(ledgerDescription);
+        title->setToolTip(ledgerDescription);
+        titleColumn->addWidget(title);
+        auto *lede = new QLabel(QStringLiteral(
+            "Every relay-owned financial record. Amounts are exact; USD is a "
+            "live spot estimate."));
+        lede->setObjectName(QStringLiteral("mutedLabel"));
+        lede->setProperty("ledgerRole", QStringLiteral("summary"));
+        lede->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        lede->setToolTip(ledgerDescription);
+        titleColumn->addWidget(lede);
+        header->addLayout(titleColumn, 1);
+    } else {
+        header->addWidget(title);
+        header->addStretch();
+    }
     m_ledgerSendPaymentButton =
         new QPushButton(QString::fromUtf8("Send payment\xE2\x80\xA6"));
     m_ledgerSendPaymentButton->setObjectName(
@@ -847,12 +1589,40 @@ QWidget *MainWindow::buildLedgerSection()
     connect(browserButton, &QPushButton::clicked, this,
             &MainWindow::openLedgerInBrowser);
     header->addWidget(browserButton);
+    QPushButton *addRecordToggle = nullptr;
+    if (next) {
+        styleLedgerNextButton(m_ledgerRefreshButton, "ghost",
+                              QStringLiteral("sync"), Theme::Role::FgMuted);
+        styleLedgerNextButton(browserButton, "ghost", QStringLiteral("link"),
+                              Theme::Role::FgMuted);
+        addRecordToggle = new QPushButton(QStringLiteral("Add record"));
+        addRecordToggle->setObjectName(QStringLiteral("ledgerAddRecordToggle"));
+        addRecordToggle->setCursor(Qt::PointingHandCursor);
+        addRecordToggle->setToolTip(QStringLiteral(
+            "Show or hide the form for your own expense and income records"));
+        styleLedgerNextButton(addRecordToggle, "outline", QStringLiteral("plus"),
+                              Theme::Role::FgSecondary);
+        header->removeWidget(m_ledgerSendPaymentButton);
+        header->addWidget(addRecordToggle);
+        styleLedgerNextButton(m_ledgerSendPaymentButton, "inverse",
+                              QStringLiteral("paper-airplane"), Theme::Role::Bg);
+        header->addWidget(m_ledgerSendPaymentButton);
+    }
     outer->addLayout(header);
 
-    outer->addWidget(ledgerHint(QStringLiteral(
-        "Every relay-owned financial record, projected from the tables that "
-        "own each state transition. Amounts are exact; USD figures are a live "
-        "spot estimate, not transaction-time accounting.")));
+    if (next) {
+        auto *rule = new QFrame;
+        rule->setProperty("ledgerRule", true);
+        rule->setFrameShape(QFrame::NoFrame);
+        rule->setFixedHeight(1);
+        outer->addWidget(rule);
+        body = new QVBoxLayout;
+        body->setContentsMargins(kLedgerNextGutter, 20, kLedgerNextGutter, 16);
+        body->setSpacing(16);
+        outer->addLayout(body, 1);
+    } else {
+        outer->addWidget(ledgerHint(ledgerDescription));
+    }
 
     // The entry form. The relay's records are the ones this app can pay and
     // verify, but a ledger that can only hold them is not a ledger: this is
@@ -864,6 +1634,26 @@ QWidget *MainWindow::buildLedgerSection()
     auto *entryLayout = new QVBoxLayout(entryForm);
     entryLayout->setContentsMargins(12, 10, 12, 10);
     entryLayout->setSpacing(6);
+    if (next) {
+        entryLayout->setContentsMargins(16, 12, 16, 14);
+        entryLayout->setSpacing(8);
+        auto *formHead = new QHBoxLayout;
+        formHead->setContentsMargins(0, 0, 0, 0);
+        auto *formTitle = new QLabel(QStringLiteral("New record"));
+        formTitle->setProperty("ledgerRole", QStringLiteral("formTitle"));
+        formHead->addWidget(formTitle);
+        formHead->addStretch();
+        auto *formClose = new QPushButton;
+        formClose->setObjectName(QStringLiteral("ledgerEntryCloseButton"));
+        formClose->setCursor(Qt::PointingHandCursor);
+        formClose->setToolTip(QStringLiteral("Hide this form"));
+        formClose->setFixedSize(26, 26);
+        styleLedgerNextButton(formClose, "icon", QStringLiteral("x"),
+                              Theme::Role::FgMuted);
+        connect(formClose, &QPushButton::clicked, entryForm, &QWidget::hide);
+        formHead->addWidget(formClose);
+        entryLayout->addLayout(formHead);
+    }
 
     auto *entryTop = new QHBoxLayout;
     entryTop->setSpacing(8);
@@ -942,12 +1732,50 @@ QWidget *MainWindow::buildLedgerSection()
     setOcticon(entryAddButton, QStringLiteral("plus"), 13);
     entryBottom->addWidget(entryAddButton);
     entryLayout->addLayout(entryBottom);
-    outer->addWidget(entryForm);
-
-    outer->addWidget(ledgerHint(QStringLiteral(
+    const QString entryHint = QStringLiteral(
         "A record you add here stays on this machine, counts towards the "
         "totals below, and is never published. Entering only a Solana "
-        "address tracks that wallet without recording anything.")));
+        "address tracks that wallet without recording anything.");
+    if (next) {
+        m_ledgerEntryAmount->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        styleLedgerNextButton(entryAddButton, "inverse", QStringLiteral("plus"),
+                              Theme::Role::Bg);
+        auto *formHint = ledgerHint(entryHint);
+        formHint->setProperty("ledgerRole", QStringLiteral("formHint"));
+        entryLayout->addSpacing(2);
+        entryLayout->addWidget(formHint);
+        entryForm->setParent(page, Qt::Popup | Qt::FramelessWindowHint |
+                                       Qt::NoDropShadowWindowHint);
+        entryForm->setAttribute(Qt::WA_TranslucentBackground, true);
+        entryForm->setProperty("ledgerPopover", true);
+        entryForm->setFixedWidth(660);
+        entryForm->hide();
+        connect(addRecordToggle, &QPushButton::clicked, entryForm,
+                [entryForm, addRecordToggle, this] {
+            if (entryForm->isVisible()) {
+                entryForm->hide();
+                return;
+            }
+            entryForm->adjustSize();
+            const QPoint anchor = addRecordToggle->mapToGlobal(
+                QPoint(addRecordToggle->width(), addRecordToggle->height() + 6));
+            QPoint at(anchor.x() - entryForm->width(), anchor.y());
+            if (QScreen *screen = addRecordToggle->screen()) {
+                const QRect area = screen->availableGeometry();
+                at.setX(qBound(area.left() + 8, at.x(),
+                               qMax(area.left() + 8,
+                                    area.right() - entryForm->width() - 8)));
+            }
+            entryForm->move(at);
+            entryForm->show();
+            entryForm->raise();
+            if (m_ledgerEntryCategory)
+                m_ledgerEntryCategory->setFocus();
+        });
+    } else {
+        outer->addWidget(entryForm);
+        outer->addWidget(ledgerHint(entryHint));
+    }
 
     connect(entryAddButton, &QPushButton::clicked, this,
             &MainWindow::addLedgerEntry);
@@ -964,7 +1792,9 @@ QWidget *MainWindow::buildLedgerSection()
     walletRow->setContentsMargins(0, 0, 0, 0);
     walletRow->setSpacing(10);
     m_ledgerWalletStrip->hide(); // nothing to say until a wallet is known
-    outer->addWidget(m_ledgerWalletStrip);
+    body->addWidget(m_ledgerWalletStrip);
+    if (next)
+        walletRow->setSpacing(12);
 
     // A saved contributor receipt is a page-wide payment state, not a detail
     // hidden behind whichever row happens to be clicked. Put its recovery
@@ -1045,7 +1875,7 @@ QWidget *MainWindow::buildLedgerSection()
     payoutHoldActions->addWidget(m_ledgerPayoutUndoButton);
     payoutHoldLayout->addLayout(payoutHoldActions);
     payoutHold->hide();
-    outer->addWidget(payoutHold);
+    body->addWidget(payoutHold);
 
     auto *controls = new QHBoxLayout;
     m_ledgerPendingOnly =
@@ -1067,7 +1897,75 @@ QWidget *MainWindow::buildLedgerSection()
     m_ledgerSummary->setObjectName(QStringLiteral("ledgerSummary"));
     m_ledgerSummary->setTextFormat(Qt::PlainText);
     controls->addWidget(m_ledgerSummary);
-    outer->addLayout(controls);
+    body->addLayout(controls);
+
+    QVBoxLayout *tableBlock = nullptr;
+    QLineEdit *nextSearch = nullptr;
+    if (next) {
+        m_ledgerPendingOnly->hide();
+        m_ledgerTotals->hide();
+        m_ledgerSummary->hide();
+
+        auto *stats = new QHBoxLayout;
+        stats->setContentsMargins(0, 0, 0, 0);
+        stats->setSpacing(12);
+        stats->addWidget(makeLedgerNextStat(QStringLiteral("Expenses"),
+                                            QStringLiteral("Expenses")), 1);
+        stats->addWidget(makeLedgerNextStat(QStringLiteral("Income"),
+                                            QStringLiteral("Income")), 1);
+        stats->addWidget(makeLedgerNextStat(QStringLiteral("Records"),
+                                            QStringLiteral("Records")), 1);
+        stats->addWidget(makeLedgerNextStat(QStringLiteral("Awaiting"),
+                                            QStringLiteral("Awaiting payment")),
+                         1);
+        body->addLayout(stats);
+
+        tableBlock = new QVBoxLayout;
+        tableBlock->setContentsMargins(0, 0, 0, 0);
+        tableBlock->setSpacing(0);
+        auto *toolbar = new QWidget;
+        toolbar->setObjectName(QStringLiteral("ledgerNextToolbar"));
+        toolbar->setAttribute(Qt::WA_StyledBackground, true);
+        toolbar->setFixedHeight(44);
+        auto *toolbarLayout = new QHBoxLayout(toolbar);
+        toolbarLayout->setContentsMargins(10, 0, 14, 0);
+        toolbarLayout->setSpacing(10);
+        auto *filter = new kit::SegmentedControl(
+            {QStringLiteral("All"), QStringLiteral("Awaiting payment")});
+        filter->setProperty("ledgerRole", QStringLiteral("filter"));
+        filter->setToolTip(m_ledgerPendingOnly->text());
+        filter->setCurrentIndex(m_ledgerPendingOnly->isChecked() ? 1 : 0);
+        filter->onChanged([this](int index) {
+            if (m_ledgerPendingOnly)
+                m_ledgerPendingOnly->setChecked(index == 1);
+        });
+        connect(m_ledgerPendingOnly, &QCheckBox::toggled, filter,
+                [filter](bool on) { filter->setCurrentIndex(on ? 1 : 0); });
+        toolbarLayout->addWidget(filter);
+        toolbarLayout->addStretch(1);
+        auto *search = new QLineEdit;
+        search->setObjectName(QStringLiteral("ledgerNextSearch"));
+        search->setPlaceholderText(QStringLiteral("Search records"));
+        search->setClearButtonEnabled(true);
+        search->setFixedWidth(224);
+        search->setToolTip(QStringLiteral(
+            "Show only the records whose date, record, title, person, amount, "
+            "status or transaction contains this text. The totals still cover "
+            "the whole page."));
+        search->addAction(themedOcticon(QStringLiteral("search"),
+                                        Theme::color(Theme::Role::FgSubtle), 14),
+                          QLineEdit::LeadingPosition);
+        toolbarLayout->addWidget(search);
+        nextSearch = search;
+        auto *price = new QLabel;
+        price->setObjectName(QStringLiteral("ledgerNextPrice"));
+        price->setTextFormat(Qt::PlainText);
+        price->setToolTip(QStringLiteral(
+            "The live SOL/USD spot price the USD estimates on this page use"));
+        price->hide();
+        toolbarLayout->addWidget(price);
+        tableBlock->addWidget(toolbar);
+    }
 
     m_ledgerTable = new QTableWidget(0, kLedgerColumnCount);
     m_ledgerTable->setObjectName(QStringLiteral("ledgerTable"));
@@ -1131,18 +2029,46 @@ QWidget *MainWindow::buildLedgerSection()
         if (column != kLedgerTransactionColumn)
             openLedgerLink(ledgerCellLink(row, kLedgerWhenColumn));
     });
-    outer->addWidget(m_ledgerTable, 1);
+    if (tableBlock) {
+        m_ledgerTable->setProperty("ledgerNext", true);
+        m_ledgerTable->setFrameShape(QFrame::NoFrame);
+        m_ledgerTable->verticalHeader()->setDefaultSectionSize(
+            kLedgerNextRowHeight);
+        ledgerHeader->setFixedHeight(36);
+        if (QTableWidgetItem *amountHeader =
+                m_ledgerTable->horizontalHeaderItem(kLedgerAmountColumn))
+            amountHeader->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_ledgerTable->setItemDelegate(new LedgerNextRowDelegate(m_ledgerTable));
+        m_ledgerTable->setColumnHidden(kLedgerTitleColumn, true);
+        if (QTableWidgetItem *counterpartyHeader =
+                m_ledgerTable->horizontalHeaderItem(kLedgerCounterpartyColumn))
+            counterpartyHeader->setText(QStringLiteral("To / from"));
+        if (QLineEdit *search = nextSearch) {
+            QTableWidget *table = m_ledgerTable;
+            connect(search, &QLineEdit::textChanged, table,
+                    [table](const QString &text) { applyLedgerSearch(table, text); });
+            connect(table->model(), &QAbstractItemModel::layoutChanged, search,
+                    [table, search] { applyLedgerSearch(table, search->text()); });
+        }
+        tableBlock->addWidget(m_ledgerTable, 1);
+        body->addLayout(tableBlock, 1);
+    } else {
+        outer->addWidget(m_ledgerTable, 1);
+    }
 
     m_ledgerStatus = new QLabel;
     m_ledgerStatus->setObjectName(QStringLiteral("ledgerStatus"));
     m_ledgerStatus->setWordWrap(true);
-    outer->addWidget(m_ledgerStatus);
+    body->addWidget(m_ledgerStatus);
 
-    outer->addWidget(ledgerHint(QStringLiteral(
+    QLabel *payingHint = ledgerHint(QStringLiteral(
         "Paying a reward signs one Solana transfer with the wallet you linked "
         "in Settings and broadcasts it yourself. ForkMesh never holds the "
         "funds; it verifies the finalized transfer and records the same "
-        "signature on the issue or pull request it paid for.")));
+        "signature on the issue or pull request it paid for."));
+    if (next)
+        payingHint->setProperty("ledgerRole", QStringLiteral("footnote"));
+    body->addWidget(payingHint);
 
     // Paint the two wallets this machine already knows about, and the
     // reader's own records, before the first relay answer: a ledger that
@@ -1433,6 +2359,16 @@ void MainWindow::rebuildLedgerWalletStrip()
     mine.emptyPurpose = QStringLiteral(
         "Publish a public payout address in Settings so tips and rewards can "
         "reach you.");
+    if (Theme::isNext()) {
+        mine.setUpText = QStringLiteral("Publish address");
+        mine.onSetUp = [this] {
+            openAccountManagement();
+            QTimer::singleShot(0, this, [this] {
+                if (m_settingsSolanaEdit && m_settingsSolanaEdit->isVisible())
+                    m_settingsSolanaEdit->setFocus(Qt::OtherFocusReason);
+            });
+        };
+    }
     cards.append(mine);
 
     LedgerWalletCard paying;
@@ -1447,6 +2383,17 @@ void MainWindow::rebuildLedgerWalletStrip()
     paying.emptyPurpose = QStringLiteral(
         "Link a Solana wallet in Settings to pay a reward from this page.");
     paying.signsPayments = true;
+    if (Theme::isNext()) {
+        paying.setUpText = QStringLiteral("Link wallet");
+        paying.setUpIcon = QStringLiteral("link");
+        paying.onSetUp = [this] {
+            openAccountManagement();
+            QTimer::singleShot(0, this, [this] {
+                if (m_profileTipLinkButton && m_profileTipLinkButton->isVisible())
+                    m_profileTipLinkButton->setFocus(Qt::OtherFocusReason);
+            });
+        };
+    }
     cards.append(paying);
 
     for (const LedgerWallet &wallet : m_ledgerPage.wallets) {
@@ -1513,7 +2460,9 @@ void MainWindow::rebuildLedgerWalletStrip()
         delete item;
     }
     for (const LedgerWalletCard &card : cards)
-        layout->addWidget(makeLedgerWalletCard(card), 1);
+        layout->addWidget(Theme::isNext() ? makeLedgerNextWalletCard(card)
+                                          : makeLedgerWalletCard(card),
+                          1);
     m_ledgerWalletStrip->setVisible(!cards.isEmpty());
 }
 
@@ -2439,6 +3388,10 @@ void MainWindow::rebuildLedgerTable()
             statusItem->setToolTip(ledgerSettledTooltip(record, settledHere));
         else if (heldHere)
             statusItem->setToolTip(ledgerHeldTooltip(record, heldPayout));
+        if (Theme::isNext())
+            statusItem->setData(kLedgerStatusToneRole,
+                                ledgerStatusTone(record, isPending,
+                                                 settledHereRow, heldHere));
         statusItem->setData(kLedgerStatusTextRole, statusItem->text());
         statusItem->setData(kLedgerStatusTooltipRole, statusItem->toolTip());
         if (paymentProcessing || paymentQueued)
@@ -2575,7 +3528,9 @@ void MainWindow::rebuildLedgerTable()
                 "broadcast, and reconciled."));
             progressLayout->addWidget(progressLabel);
             cellLayout->addWidget(progress);
-            auto *pay = new QPushButton(QStringLiteral("Send payment"));
+            auto *pay = new QPushButton(Theme::isNext()
+                                            ? QStringLiteral("Pay reward")
+                                            : QStringLiteral("Send payment"));
             pay->setObjectName(QStringLiteral("ledgerPayButton"));
             pay->setProperty("buttonSize", "primary");
             pay->setCursor(Qt::PointingHandCursor);
@@ -2703,6 +3658,10 @@ void MainWindow::rebuildLedgerTable()
                        ledgerUsdText(m_ledgerPage.solUsdPrice);
     if (m_ledgerSummary)
         m_ledgerSummary->setText(summary.join(QString::fromUtf8("  \xC2\xB7  ")));
+    if (Theme::isNext())
+        refreshLedgerNextStats(m_ledgerTable, totals, m_ledgerPage,
+                               m_ledgerTotals ? m_ledgerTotals->toolTip()
+                                              : QString());
 
     // A payment made from this page gets the last word. Paying refreshes the
     // ledger, and the rebuild that lands afterwards would otherwise replace

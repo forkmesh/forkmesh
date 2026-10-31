@@ -330,9 +330,15 @@ internal fun DesktopSessionOpsCard(navigator: Navigator, session: AgentSession, 
 }
 
 @Composable
-internal fun MergeCleanupDialog(sessionId: Int, base: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun MergeCleanupDialog(
+    sessionId: Int,
+    base: String,
+    onDone: (String) -> Unit,
+    onDismiss: () -> Unit,
+    desktopKey: String = "",
+) {
     val c = Fm.colors
-    val model = remember(sessionId) { MergeCleanupModel(AgentOpsFeature.client, sessionId) }
+    val model = remember(sessionId, desktopKey) { MergeCleanupModel(AgentOpsFeature.client(desktopKey), sessionId) }
     val tick = rememberOpsTick(model)
     val scope = rememberCoroutineScope()
     LaunchedEffect(model) { opsIo { model.mergeNow() } }
@@ -353,6 +359,10 @@ internal fun MergeCleanupDialog(sessionId: Int, base: String, onDone: (String) -
             onDismissRequest = close,
             fields = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (outcome.setAsideNote.isNotBlank()) {
+                        Text(outcome.setAsideNote.trim(), style = Fm.text.bodySmall.copy(color = c.textSecondary))
+                        Spacer(Modifier.height(FmSpace.x2))
+                    }
                     outcome.stats?.let { MergeStatsBlock(it) }
                     Spacer(Modifier.height(FmSpace.x3))
                     TodayActivityBlock()
@@ -362,22 +372,35 @@ internal fun MergeCleanupDialog(sessionId: Int, base: String, onDone: (String) -
         return
     }
     if (model.conflicted) {
-        MergeConflictFixDialog(model.errorText, onFix = { AgentsFeature.control.fixDesktopConflicts(sessionId, base) }, onDone = onDone, onDismiss = onDismiss)
+        MergeConflictFixDialog(model.errorText, onFix = { AgentsFeature.control.fixDesktopConflicts(sessionId, base, desktopKey) }, onDone = onDone, onDismiss = onDismiss)
         return
     }
     val failed = model.errorText.isNotEmpty() && !model.busy
+    val setAside = failed && model.canSetAside
     FmConfirmDialog(
         title = "Merge & clean up",
         body = if (failed) null else "Merging and cleaning up on the desktop…",
-        confirmLabel = "Try again",
+        confirmLabel = if (setAside) MERGE_SET_ASIDE_LABEL else "Try again",
         busy = !failed,
-        onConfirm = { scope.launch { opsIo { model.mergeNow() } } },
+        onConfirm = { scope.launch { opsIo { model.mergeNow(setAside = setAside) } } },
         onDismissRequest = onDismiss,
         fields = {
             if (model.errorText.isNotEmpty()) Text(model.errorText, style = Fm.text.bodySmall.copy(color = c.danger))
+            if (setAside) {
+                Spacer(Modifier.height(FmSpace.x2))
+                Text(MERGE_SET_ASIDE_EXPLANATION, style = Fm.text.bodySmall.copy(color = c.textSecondary))
+            }
         },
     )
 }
+
+internal const val MERGE_SET_ASIDE_LABEL = "Set aside and merge"
+
+internal const val MERGE_SET_ASIDE_EXPLANATION =
+    "The desktop saves all uncommitted work in its checkout on a wip/ branch, sets aside only the files this merge " +
+        "touches, merges, then puts those edits back. If they clash with the merge, the files get conflict markers " +
+        "and the wip/ branch keeps the untouched copy."
+
 
 @Composable
 internal fun MergeConflictFixDialog(message: String, onFix: () -> Unit, onDone: (String) -> Unit, onDismiss: () -> Unit) {

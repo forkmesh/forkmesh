@@ -8,10 +8,12 @@ struct FmMessageTools: View {
 
     private let text: String
     private let color: Color?
+    private let handoff: ComposeTarget?
 
-    init(_ text: String, color: Color? = nil) {
+    init(_ text: String, color: Color? = nil, handoff: ComposeTarget? = nil) {
         self.text = text
         self.color = color
+        self.handoff = handoff
     }
 
     var body: some View {
@@ -48,7 +50,11 @@ struct FmMessageTools: View {
 
     private func send() {
         FmHaptics.tap()
-        FmMessageHandoff.send(text)
+        if let handoff {
+            FmMessageHandoff.compose(handoff)
+        } else {
+            FmMessageHandoff.send(text)
+        }
     }
 }
 

@@ -808,9 +808,24 @@ QString oversizedShellTopic(const QString &command)
     static const QStringList searches = {
         QStringLiteral("rg"), QStringLiteral("grep"), QStringLiteral("git grep"),
         QStringLiteral("find")};
-    for (const QString &shape : chainShapes(command))
+    static const QStringList history = {
+        QStringLiteral("git diff"), QStringLiteral("git log"), QStringLiteral("git show")};
+    static const QStringList readers = {
+        QStringLiteral("sed"), QStringLiteral("cat"), QStringLiteral("nl"),
+        QStringLiteral("head"), QStringLiteral("tail"), QStringLiteral("awk")};
+    const QStringList shapes = chainShapes(command);
+    for (const QString &shape : shapes)
         if (searches.contains(shape))
             return QStringLiteral("search");
+    for (const QString &shape : shapes)
+        if (history.contains(shape))
+            return QStringLiteral("git history");
+    int reads = 0;
+    for (const QString &shape : shapes)
+        if (readers.contains(shape) || shape.endsWith(QLatin1String(" loop")))
+            ++reads;
+    if (reads >= 2)
+        return QStringLiteral("chained reads");
     return QString();
 }
 
@@ -827,6 +842,17 @@ QString oversizedShellSuggestion(const QString &command)
                               "total: list files first with rg -l, then pipe the "
                               "search through head -n 60 and add --max-columns "
                               "200; leave data, logs and build trees out.");
+    if (topic == QLatin1String("git history"))
+        return QStringLiteral("git log --oneline without --stat, piped through head "
+                              "-n 30; git diff --stat first, then one path at a "
+                              "time with the default context (no --unified=50), "
+                              "piped through head -n 200; never diff or show a "
+                              "whole branch, or a loop over many refs, in one call.");
+    if (topic == QLatin1String("chained reads"))
+        return QStringLiteral("Several reads in one call share one budget: wrap "
+                              "the chain or loop as { ...; } | head -n 300, read "
+                              "~150 lines of one file per range, and read the next "
+                              "file in a second call.");
     return oversizedSuggestion(QStringLiteral("bash"));
 }
 
@@ -976,6 +1002,12 @@ int AgentToolImprovementLog::observe(const AgentToolCallObservation &call)
                 "the whole new content is paid for again; Read a range of an "
                 "existing file first and change it with Edit, and Write only "
                 "new files.");
+        } else if (lowered.contains(QLatin1String("too large to read whole"))) {
+            signature = topic = QStringLiteral("whole-file read refused");
+            suggestion = QStringLiteral(
+                "The read guard refused a whole read of a large file; Grep -n "
+                "the symbol or headings first and Read about 300 lines around "
+                "the match with offset and limit.");
         } else if (lowered.contains(QLatin1String("concurrent subagent limit"))) {
             signature = topic = QStringLiteral("subagent limit");
             suggestion = QStringLiteral(

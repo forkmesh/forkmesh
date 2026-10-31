@@ -2149,6 +2149,7 @@ void MainWindow::switchToBranch(const QString &branch, int agentSessionId)
         }
     }
     m_branchDiffPullNumber = -1; // plain branch mode
+    updateBranchPullReviewBar();
     showOverviewCommits();
     const QString base = branchCompareBase();
     const bool branchChanged = !target.isEmpty() && target != m_repoBranch;
@@ -2217,6 +2218,7 @@ void MainWindow::setBranchCompareBase(const QString &base)
     }
     setCommitWorkspacePage(kCommitWorkspaceRangePage);
     m_branchDiffPullNumber = -1; // a base change leaves PR mode
+    updateBranchPullReviewBar();
     showBranchDiff(branch, m_branchDiffAgentSessionId);
 }
 
@@ -4020,6 +4022,8 @@ void MainWindow::removeWorktree(const QString &worktreePath, const QString &bran
                         true, forkmesh::kLocalOperationNoticeKind);
                 }
             }
+            if (!removal.refused)
+                removeOrphanedClaudeTranscripts(worktreePath);
             if (removal.branchDeleted)
                 propagateBranchDeletion(repo.owner, repo.name);
             if (here) {
@@ -4062,8 +4066,9 @@ MainWindow::WorktreeRemoval MainWindow::removeWorktreeAndBranch(
                                        "its entry and finished the cleanup.")
                             .arg(worktreePath);
     }
-    const QString scratch = forkmesh::agentscratch::folderFor(worktreePath);
-    if (!scratch.isEmpty() && QFileInfo::exists(scratch)) {
+    for (const QString &scratch : forkmesh::agentscratch::foldersFor(worktreePath)) {
+        if (!QFileInfo::exists(scratch))
+            continue;
         if (forkmesh::agentscratch::remove(scratch)) {
             removal.logs << QStringLiteral("Agents: removed scratch folder %1.").arg(scratch);
             runGitCapture(repoPath, {QStringLiteral("worktree"), QStringLiteral("prune")},
@@ -4421,6 +4426,7 @@ void MainWindow::deleteWorktreeBranchAndAgentInBackground(
             return;
         }
     }
+    endOutsideAgentsIn(worktreePath);
     if (!agentIds.isEmpty()) {
         logSystem(
             QStringLiteral("Agents: dropped %1 stored session%2 on %3 in %4 ms; "
@@ -4466,12 +4472,13 @@ void MainWindow::deleteWorktreeBranchAndAgentInBackground(
                   .arg(worktreePath.isEmpty() ? QStringLiteral("(none)") : worktreePath)
                   .arg(branch));
 
-    auto finish = [this, repo, issueNumbers, branch, deleteBranch, taskId,
+    auto finish = [this, repo, issueNumbers, worktreePath, branch, deleteBranch, taskId,
                    completed, cleanupTimer, onDone = std::move(onDone)](
                       bool success, const QString &error) {
         if (*completed)
             return;
         *completed = true;
+        removeOrphanedClaudeTranscripts(worktreePath);
         int closedIssues = 0;
         if (success && !issueNumbers.isEmpty()) {
             const RepositoryRecord &writable = writableRecordFor(repo);
@@ -5479,6 +5486,7 @@ QWidget *MainWindow::buildBranchRangePane()
     layout->setSpacing(8);
     layout->addWidget(detailHeader);
     layout->addWidget(m_branchDiffSummaryBar);
+    layout->addWidget(buildBranchPullReviewBar());
     layout->addWidget(m_branchSecretBanner);
     layout->addWidget(buildBranchDiffLogPanel());
     layout->addWidget(m_branchDiffSearchBar);
@@ -6021,7 +6029,9 @@ void MainWindow::refreshBranchLinks()
                 ids.append(id);
         }
     };
-    for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
+    const QJsonArray catalog =
+        m_organizationTaskStore ? m_organizationTaskStore->tasks() : QJsonArray();
+    for (const QJsonValue &value : catalog) {
         const QJsonObject task = value.toObject();
         const QString id = task.value(QStringLiteral("id")).toString();
         if (id.isEmpty())
@@ -8301,6 +8311,8 @@ void MainWindow::applyBranchDetailActions(const QString &branch, const QString &
                     .arg(m_branchDiffPullNumber));
         }
     }
+
+    updateBranchPullReviewBar();
 
     refreshBranchAgentButton();
 

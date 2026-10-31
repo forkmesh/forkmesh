@@ -127,7 +127,7 @@ def test_firewall_ids_and_app_env_follow_the_turn_ports(tmp_path):
     fleet = turn_fleet(tmp_path)
     files, _ = rendered(fleet)
     nft = files["/etc/nftables.conf"]
-    assert "tcp dport { 22, 80, 443, 3478, 5349 } accept" in nft
+    assert "tcp dport { 822, 80, 443, 3478, 5349 } accept" in nft
     assert "udp dport { 443, 51820, 3478, 49160-49999 } accept" in nft
     ids = json.loads(files["/etc/forkmesh-next/ids.json"])
     assert {3478, 5349} <= set(ids["listeners"]["tcp"])

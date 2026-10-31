@@ -38,4 +38,4 @@ def test_rebuilding_the_package_pages_cannot_be_relied_on_to_prepare_them():
     start = source.index("void MainWindow::syncNativePackagePages()")
     head = source[start:source.index("preparePackagePage(widget);", start)]
 
-    assert "if (unchanged)\n        return;" in head
+    assert "if (desired == m_nativePackagePagesWanted)\n        return;" in head

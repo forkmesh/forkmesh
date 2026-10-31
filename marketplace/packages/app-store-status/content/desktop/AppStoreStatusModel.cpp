@@ -35,7 +35,7 @@ QDateTime fromEpochNumber(double value)
     if (value <= 0)
         return {};
     const qint64 milliseconds = value >= 1e11 ? qint64(value) : qint64(value * 1000);
-    return QDateTime::fromMSecsSinceEpoch(milliseconds, QTimeZone::UTC);
+    return QDateTime::fromMSecsSinceEpoch(milliseconds, QTimeZone::utc());
 }
 
 }

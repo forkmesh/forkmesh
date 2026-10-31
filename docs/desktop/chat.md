@@ -33,11 +33,11 @@ state writer and its send gate) and
 
 ## Keys and storage
 
-`ChatDevice::local()` is the installation's one device. Its identity, prekeys
-and counters live in QSettings, where the v2 key lived:
-`chat/e2ee/ed25519IdentityV3`, `chat/e2ee/prekeysV3`,
-`chat/e2ee/ctrV3/<b64u(room)>`. The per-scope and per-room state that grows
-with use, `chat/e2ee/trustV3/<b64u(scope)>` (records, held frames, last safety
+`ChatDevice::local()` is the installation's one device. Its identity and
+prekeys live in QSettings, where the v2 key lived:
+`chat/e2ee/ed25519IdentityV3`, `chat/e2ee/prekeysV3`. The per-scope and
+per-room state, `chat/e2ee/ctrV3/<b64u(room)>` (send counters),
+`chat/e2ee/trustV3/<b64u(scope)>` (records, held frames, last safety
 number), `chat/e2ee/ratchetV4/<b64u(room)>` and `chat/e2ee/seenV3/<b64u(room)>`,
 lives under the same keys in its own ini file, `chat-seal/state.ini` in the
 core data folder (`storedStateFile()`, `data/core/chat-seal/state.ini` in the
@@ -70,6 +70,27 @@ older build therefore finds no ratchet in `state.ini` and starts a new session
 instead of reusing message keys. Reads take the file, then `state.ini`, then
 `ForkMesh.conf`; a write that cannot reach the file removes the file and goes
 to `state.ini` as before (`testStoredStateKeysHaveTheirOwnFiles`).
+Since report #15 (2026-10-24) send counters are a stored-state family too,
+`chat-seal/ctrV3/<b64u(room)>`, and their reservation is written on the state
+writer instead of the GUI thread. `nextCounter()` used to write the reserved
+block (64 counters) straight into the 421 KB `ForkMesh.conf` with fsync on the
+GUI thread, the first send in each room after every start and every 64th
+after that (`ChatDevice::nextCounter -> RoomSeal::seal`, 17 stalls over
+500 ms on 2026-10-25). Now the next block is queued when half of the current
+one is used, and a counter beyond the block on disk raises the device's write
+ticket, so `SendGate` holds that frame until the reservation is on disk: a
+crash still cannot reuse a counter a peer has seen. A frame inside the stored
+block leaves at once. `migrateStoredState()` moves existing counters out of
+`ForkMesh.conf` like the other families, so a build older than this one
+starts that installation's counters from zero again and peers drop its
+frames as replays until the counter passes what they last saw
+(`testCountersPersist`, `testStoredStateLeavesSettingsFile`).
+The first sealed frame in each room after a start therefore leaves one state
+write later (about 35 ms on an NVMe disk), so a frame sent just before a test
+clears its captured frames can land after the clear: the transport tests call
+`settleSends()` (wait for the state writer, then pump events) before they
+clear and send the frame they check (`testDirectRoomRatchetRecovery` and the
+superseded-DM test failed on disk and passed on tmpfs without it).
 Held frames are capped per room at 64 frames and 128 KB (`kMaxHeldBytes`),
 newest first, and a scope saved before the byte cap is trimmed when it loads:
 on 2026-10-19 three direct rooms held 64 frames of about 8 KB each from

@@ -1561,8 +1561,20 @@ async def _credit_entries(env, user, include_private):
         "security_advisory_credits c JOIN security_advisories a "
         "ON a.id=c.advisory_id WHERE c.user_bi=? ORDER BY c.updated_at DESC "
         "LIMIT 500", await blind_index(env, user))
+    views = {}
+    for row in rows or []:
+        try:
+            view = json.loads(row.get("public") or "null")
+        except ValueError:
+            view = None
+        if isinstance(view, dict):
+            views[id(row)] = view
+    shown = {id(view) for view in await _still_public(
+        env, list(views.values()))}
     out = []
     for row in rows or []:
+        if id(row) in views and id(views[id(row)]) not in shown:
+            continue
         state = str(row.get("state") or "")
         advisory_state = str(row.get("advisory_state") or "")
         if advisory_state not in PUBLIC_STATES:

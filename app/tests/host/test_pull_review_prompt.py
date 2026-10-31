@@ -1,4 +1,4 @@
-"""The "Review with your agent" box on open pull requests
+"""The "Diff and files" box on open pull requests
 (forkmesh_host.pull_review_prompt, 06-repo-content.js renderPullReviewPrompt).
 
 The parity tests run the dashboard's own functions (extracted from the
@@ -13,6 +13,7 @@ import json
 import re
 import shutil
 import subprocess
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -69,8 +70,15 @@ SECURITY_CLAUSES = (
 )
 
 
-def values(pull=None, has_diff=True, origin=ORIGIN, link=LINK):
-    return prp.fields(origin, link, (pull or PULL)["number"], pull or PULL, has_diff)
+PATCH = ("diff --git a/src/limits.py b/src/limits.py\n--- a/src/limits.py\n"
+         "+++ b/src/limits.py\n@@ -1 +1 @@\n-a\n+b\n"
+         "diff --git a/old name.txt b/old name.txt\ndeleted file mode 100644\n"
+         "--- a/old name.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n")
+
+
+def values(pull=None, has_diff=True, origin=ORIGIN, link=LINK, patch=""):
+    return prp.fields(origin, link, (pull or PULL)["number"], pull or PULL, has_diff,
+                      patch)
 
 
 # -- template ------------------------------------------------------------------
@@ -143,8 +151,9 @@ def test_the_fields():
         "base": "main", "head": "feature/limits", "author": "alice",
         "cloneUrl": "https://git.example.test/acme/bolt",
         "diffUrl": url + ".diff", "rawDiffUrl": url + ".diff",
-        "filesUrl": url + "/files", "textUrl": url + ".txt"}
-    # Without a diff to show there is no Copy diff URL button; the prompt
+        "filesUrl": url + "/files", "textUrl": url + ".txt",
+        "patchUrl": url + ".patch", "files": [], "fileCount": 0}
+    # Without a diff to show there are no Diff and Patch links; the prompt
     # still names the address, which answers once the diff exists.
     empty = values(has_diff=False)
     assert empty["rawDiffUrl"] == "" and empty["diffUrl"] == url + ".diff"
@@ -177,23 +186,77 @@ def test_the_box_escapes_every_value():
     assert 'onclick="x' not in html
     escaped = ("&quot;&gt;&lt;img src=x onerror=alert(1)&gt; &quot; onclick=&quot;x "
                "&lt;script&gt;x&lt;/script&gt;")
-    assert html.count(escaped) == 2  # the copy attribute and the preview
+    assert html.count(escaped) == 1  # the copy attribute; the page shows no prompt
     copied = re.search(r'aria-label="Copy the review prompt[^"]*"', html)
     assert copied
 
 
-def test_the_box_has_copy_buttons_and_a_toggle():
+def test_the_box_shows_links_not_the_prompt():
     html = prp.render(values(), 12)
-    assert "Copy prompt" in html and "Copied" in html
+    assert "<pre" not in html and "Ground rules" not in html.split('data-dashboard-copy="', 1)[0]
+    assert "Copy review prompt" in html and "Copied" in html
     assert 'aria-label="Copy the review prompt for this pull request"' in html
-    assert "Copy diff URL" in html
+    url = "https://git.example.test/acme/bolt/pull/12"
+    assert '<a href="%s.diff" data-repo-pull-diff-link' % url in html
+    assert '<a href="%s.patch" data-repo-pull-patch-link' % url in html
+    assert "prompt-toggle" not in html and "data-repo-pull-review-files" not in html
+    branch = prp.render(values(has_diff=False), 12, "Short {url}")
+    assert "data-repo-pull-diff-link" not in branch
+
+
+def test_changed_files_link_to_the_head_branch():
+    got = values(patch=PATCH)
+    assert got["fileCount"] == 2
+    assert got["files"] == [
+        ["src/limits.py", "https://git.example.test/acme/bolt/blob/src/limits.py"
+                          "?ref=feature%2Flimits"],
+        ["old name.txt", ""]]
+    html = prp.render(got, 12)
+    assert ('<li class="truncate"><a href="https://git.example.test/acme/bolt/blob/'
+            'src/limits.py?ref=feature%2Flimits"') in html
+    assert '<li class="truncate" title="old name.txt">old name.txt</li>' in html
+    remote = values(dict(PULL, head="bob:feature"), patch=PATCH)
+    assert [href for _, href in remote["files"]] == ["", ""]
+
+
+def test_many_files_collapse_behind_a_toggle():
+    patch = "".join("diff --git a/f%d b/f%d\n" % (n, n) for n in range(prp.FILE_LINKS_MAX + 3))
+    got = values(patch=patch)
+    assert len(got["files"]) == prp.FILE_LINKS_MAX and got["fileCount"] == prp.FILE_LINKS_MAX + 3
+    html = prp.render(got, 12)
     assert 'data-repo-pull-review-prompt-toggle aria-expanded="false" ' \
            'aria-controls="repo-pull-review-prompt-12"' in html
-    assert '<pre id="repo-pull-review-prompt-12" data-repo-pull-review-prompt-text ' \
-           'class="max-h-28 ' in html
-    branch = prp.render(values(has_diff=False), 12, "Short {url}")
-    assert "Copy diff URL" not in branch and "prompt-toggle" not in branch
-    assert 'class="max-h-none ' in branch
+    assert '<ul id="repo-pull-review-prompt-12" data-repo-pull-review-files class="max-h-28 ' in html
+    assert "and 3 more" in html and "- and 3 more" in prp.summary_text(got)
+
+
+def test_chatgpt_asks_for_a_summary_with_the_diff_and_files():
+    got = values(patch=PATCH)
+    html = prp.render(got, 12)
+    href = re.search(r'<a href="([^"]+)" target="_blank" rel="noopener noreferrer" '
+                     r'data-repo-pull-chatgpt-summary', html).group(1)
+    assert href.startswith("https://chatgpt.com/?q=")
+    prompt = urllib.parse.unquote(href.split("?q=", 1)[1].replace("&amp;", "&"))
+    assert prompt == prp.summary_text(got)
+    assert prompt.startswith("Summarize pull request #12 in bolt on git.example.test")
+    url = "https://git.example.test/acme/bolt/pull/12"
+    for line in ("Diff: %s.diff" % url, "Patch: %s.patch" % url,
+                 "- src/limits.py: https://git.example.test/acme/bolt/blob/src/limits.py"
+                 "?ref=feature%2Flimits", "- old name.txt"):
+        assert line in prompt.splitlines()
+    for clause in ("Ground rules", "untrusted data", "sandbox", "Changes requested"):
+        assert clause not in prompt
+    assert "Summarize in ChatGPT" in html
+
+
+def test_a_long_file_list_is_left_out_of_the_chatgpt_link():
+    patch = "".join("diff --git a/%s%d b/%s%d\n" % ("d" * 250, n, "d" * 250, n)
+                    for n in range(prp.FILE_LINKS_MAX))
+    got = values(patch=patch)
+    url = prp.chatgpt_url(got)
+    assert len(url) <= prp.CHATGPT_URL_LIMIT
+    assert "Changed files" not in urllib.parse.unquote(url)
+    assert "Patch: " in urllib.parse.unquote(url)
 
 
 # -- first view ----------------------------------------------------------------
@@ -223,8 +286,8 @@ def test_the_first_view_of_an_open_pull_has_the_box(monkeypatch):
     box = _box(page)
     assert ("Look at https://git.example.test/forkmesh/forkmesh/pull/4 "
             "https://git.example.test/forkmesh/forkmesh/pull/4.diff") in box
-    assert "Copy diff URL" in box
-    # Between the header line and the tabs, on every tab.
+    assert "data-repo-pull-diff-link" in box and "Summarize in ChatGPT" in box
+    # After the conversation, on the Conversation tab only.
     assert page.rindex('<nav class="fm-ssr-tabs">') < page.index("opened this pull request") < page.index(box)
     assert "data-repo-pull-review-prompt" not in repo_views.render(bundle, "files", origin=ORIGIN)
     # Signed-out visitors see it: nothing in it is member-only.
@@ -298,11 +361,13 @@ def _const(name, text=CONTENT):
 JS_PRELUDE = "\n".join(
     [_function("escapeHtml", HELPERS)]
     + [_const(name) for name in (
-        "PULL_REVIEW_PROMPT_MAX", "PULL_REVIEW_FIELD_LIMITS", "PULL_REVIEW_COLLAPSE_LINES",
-        "PULL_REVIEW_COLLAPSE_CHARS", "PULL_REVIEW_INVISIBLE", "PULL_REVIEW_PROMPT_DEFAULT")]
+        "PULL_REVIEW_PROMPT_MAX", "PULL_REVIEW_FIELD_LIMITS", "PULL_SUMMARY_CHATGPT_URL",
+        "PULL_SUMMARY_URL_LIMIT", "PULL_REVIEW_FILE_LINKS_MAX", "PULL_REVIEW_FILES_COLLAPSE",
+        "PULL_REVIEW_PATH_LIMIT", "PULL_REVIEW_INVISIBLE", "PULL_REVIEW_PROMPT_DEFAULT")]
     + [_function(name) for name in (
         "normalizePullReviewTemplate", "cleanPullReviewField",
-        "pullReviewPromptFields", "pullReviewPromptText", "renderPullReviewPrompt")]
+        "pullChangedFiles", "pullReviewPromptFields", "pullSummaryText",
+        "pullSummaryChatGptUrl", "pullReviewPromptText", "renderPullReviewPrompt")]
     + ["""
 let ORIGIN = "";
 function publicSiteOrigin() { return ORIGIN; }
@@ -332,6 +397,10 @@ def _node(script):
 
 CASES = [
     {"pull": PULL, "patch": "diff --git a/x b/x\n", "template": "", "link": LINK, "origin": ORIGIN},
+    {"pull": PULL, "patch": PATCH, "template": "", "link": "/bolt", "origin": ORIGIN},
+    {"pull": dict(PULL, head="bob:feature"), "patch": PATCH + "".join(
+        "diff --git a/f\u202e%d b/f\u202e%d\n" % (n, n) for n in range(60)),
+     "template": "", "link": LINK, "origin": ORIGIN},
     {"pull": PULL, "patch": "", "template": TEMPLATE, "link": "/bolt", "origin": ORIGIN},
     {"pull": dict(PULL, title='Fix "{url}" <b>\u202eboth</b>\nnow', author="m\x00x",
                   head="evil$(id)", base=""),
@@ -361,7 +430,8 @@ process.stdout.write(JSON.stringify(cases.map((c) => {
     for case, (fields, template, prompt, markup) in zip(CASES, got):
         pull = dict(case["pull"], title=case["pull"]["title"] or "pull request #12",
                     author=case["pull"]["author"] or "unknown")
-        want = prp.fields(case["origin"], case["link"], 12, pull, bool(case["patch"].strip()))
+        want = prp.fields(case["origin"], case["link"], 12, pull, bool(case["patch"].strip()),
+                          case["patch"])
         assert fields == want
         assert template == prp.normalize_template(case["template"])
         assert prompt == prp.prompt_text(want, template)
@@ -396,15 +466,14 @@ def test_the_dashboard_reads_the_same_template_from_the_settings():
 
 def test_the_dashboard_shows_the_box_on_open_pulls_only():
     detail = _function("renderRepoRecordDetail")
-    assert ('${isPulls && stateKey === "open" ? sidebarSection("Review with your agent", '
+    assert ('${isPulls && stateKey === "open" ? sidebarSection("Diff and files", '
             'renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, '
             'parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) '
             ': ""}') in detail
     # In the sidebar, after the reviewers, before the assignees.
     assert detail.index("renderPullReviewers(") < detail.index(
         "renderPullReviewPrompt(") < detail.index('sidebarSection("Assignees"')
-    # The settings are read for pulls (signed out too), and the raw diff is
-    # the changes.patch the page read.
+    # The settings are read for pulls (signed out too).
     load = _function("loadRepoRecordDetail")
     assert 'kind === "discussions" ? null : loadRepoCollabSettings(repo)' in load
 

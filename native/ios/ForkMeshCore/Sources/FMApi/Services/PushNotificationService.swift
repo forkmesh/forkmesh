@@ -209,15 +209,18 @@ public final class PushNotificationService {
 
     // MARK: Registration
 
-    /// Ask for permission (first launch) and bind the resulting token to the signed-in account.
-    /// Safe to call on every sign-in.
-    public func start(accountKey: String) async {
+    /// Bind this phone's token to the signed-in account. Safe to call on every sign-in. The system
+    /// prompt only comes up with `ask` (the first message sent, or Settings' "Enable notifications").
+    public func start(accountKey: String, ask: Bool = false) async {
         guard supported, let platform else { return }
         started = true
         do {
             let status = try await platform.permissionStatus() ?? "unknown"
             permission = status
-            if status == "notDetermined" {
+            if status == "notDetermined" && !ask {
+                log("permission not asked yet; registering for calls until a feature needs alerts")
+                try await platform.registerForCalls()
+            } else if status == "notDetermined" {
                 let granted = try await platform.requestPermission() ?? false
                 permission = granted ? "authorized" : "denied"
                 if !granted {
@@ -339,7 +342,13 @@ public final class PushNotificationService {
 
     /// The settings screen's "Enable notifications".
     public func enable() async {
-        await rebind(accountKey: accountKeyProvider?() ?? "")
+        guard supported else { return }
+        await start(accountKey: accountKeyProvider?() ?? "", ask: true)
+    }
+
+    public func askWhenUseful() async {
+        guard supported, started, permission == "notDetermined" else { return }
+        await enable()
     }
 
     /// Ask the relay to send one real alert to every device registered for this account.

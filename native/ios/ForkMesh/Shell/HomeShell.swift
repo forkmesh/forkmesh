@@ -75,6 +75,8 @@ struct HomeShell: View {
     @State var genieLater: [PaletteCommand] = []
     @State var genieDevice: AgentDeviceRun?
     @State var live: ThrottledSnapshot<ShellLiveCounts>?
+    @State var windowSize: CGSize = .zero
+    @State var detailHost: ShellDetailHost = ShellDetailHost.shared
 
     private let navigator: AppNavigator
     private let auth: AuthService?
@@ -99,7 +101,7 @@ struct HomeShell: View {
         self.push = Services.get(PushNotificationService.self)
         self.userStatus = Services.get(UserStatusService.self)
         self.identityKey = Services.get(DeviceIdentity.self)?.shortKey ?? ""
-        _page = State(initialValue: UIDevice.current.userInterfaceIdiom == .pad ? nil : .home)
+        _page = State(initialValue: StoreScreenshotLaunch.pad ? nil : .home)
         // Built once with the services (ComposerInstaller) so the composer
         // is ready the moment the prompt button is tapped.
         _composer = State(initialValue: Services.get(ShellComposer.self) ?? ComposerInstaller.makeComposer())
@@ -112,7 +114,26 @@ struct HomeShell: View {
     static let hubHeight: CGFloat = 640
 
     private var usesSplit: Bool {
-        sizeClass == .regular && UIDevice.current.userInterfaceIdiom == .pad
+        sizeClass == .regular && StoreScreenshotLaunch.pad
+    }
+
+    private var panes: ShellPaneMetrics {
+        ShellPanes.metrics(
+            width: Double(windowSize.width), height: Double(windowSize.height),
+            pad: StoreScreenshotLaunch.pad)
+    }
+
+    private func paneLayout(_ tab: AppTab) -> ShellPaneLayout {
+        ShellPanes.layout(path: router.path(for: tab), tab: tab, wide: panes.wide)
+    }
+
+    private var inSplit: Bool {
+        if case .split = paneLayout(router.selectedTab) { return true }
+        return false
+    }
+
+    private var showsRail: Bool {
+        panes.rail && !usesSplit
     }
 
     // MARK: Top bar
@@ -144,7 +165,7 @@ struct HomeShell: View {
             onNewAgent: newAgentAction,
             onPalette: { openPalette() },
             onVoice: voiceAction,
-            showsSearch: usesSplit,
+            showsSearch: usesSplit || panes.wide,
             showsSignIn: PackageGateSync.isInstalled(PhonePackages.signIn))
     }
 
@@ -162,6 +183,15 @@ struct HomeShell: View {
 
     private var liveCounts: ShellLiveCounts {
         live?.value ?? ShellLiveCounts()
+    }
+
+    private var sidebarActiveTabs: Set<AppTab> {
+        guard ShellBarPrefs.shared.barStyle.showActivity, ShellCounts.shared.agents > 0 else { return [] }
+        return [.agents]
+    }
+
+    private var sidebarActiveHub: Set<String> {
+        ShellBarPrefs.shared.barStyle.showActivity ? liveCounts.hubActive : []
     }
 
     private var primaryBarItems: [ShellBarItem] {
@@ -300,6 +330,14 @@ struct HomeShell: View {
         }
     }
 
+    nonisolated static func coverTitle(_ page: ShellPage?) -> String? {
+        switch page {
+        case .home: return "Home"
+        case .reportBug: return "Report a bug"
+        case nil: return nil
+        }
+    }
+
     nonisolated static func tabSymbol(_ tab: AppTab, selected: Bool) -> String {
         switch tab {
         case .agents: return "sparkles"
@@ -425,7 +463,7 @@ struct HomeShell: View {
     }
 
     private var showsBar: Bool {
-        !pageKeyboardUp && !usesSplit && !ShellChrome.shared.isBare(router.selectedTab)
+        !pageKeyboardUp && !usesSplit && !showsRail && (inSplit || !ShellChrome.shared.isBare(router.selectedTab))
     }
 
     private var genieFloor: CGFloat? {
@@ -506,9 +544,8 @@ struct HomeShell: View {
         }
     }
 
-    private func tab(_ tab: AppTab) -> some View {
-        let selected: Bool = page == nil && tab == router.selectedTab
-        return NavigationStack(path: pathBinding(tab)) {
+    private func tabStack(_ tab: AppTab) -> some View {
+        NavigationStack(path: pathBinding(tab)) {
             tabRoot(tab)
                 .tabStackPage(tab, tops: stackTops)
                 .shellPageClearance()
@@ -520,6 +557,108 @@ struct HomeShell: View {
                         .shellPageClearance()
                 }
         }
+    }
+
+    private func listBinding(_ tab: AppTab, _ layout: ShellPaneLayout) -> Binding<[Route]> {
+        let router: AppRouter = self.router
+        return Binding<[Route]>(
+            get: { [] },
+            set: { (pushed: [Route]) in
+                guard let next = ShellPanes.picked(pushed, layout: layout) else { return }
+                ShellDetailHost.shared.clear(tab)
+                router.setPath(next, for: tab)
+            })
+    }
+
+    private func detailBinding(_ tab: AppTab, _ layout: ShellPaneLayout) -> Binding<[Route]> {
+        let router: AppRouter = self.router
+        return Binding<[Route]>(
+            get: {
+                if case let .split(_, detail) = layout { return detail }
+                return []
+            },
+            set: { (next: [Route]) in router.setPath(ShellPanes.detailPath(next, layout: layout), for: tab) })
+    }
+
+    private func closeList(_ tab: AppTab) {
+        ShellDetailHost.shared.clear(tab)
+        router.setPath([], for: tab)
+    }
+
+    @ViewBuilder private func listColumn(_ tab: AppTab, list: Route?, layout: ShellPaneLayout) -> some View {
+        NavigationStack(path: listBinding(tab, layout)) {
+            Group {
+                if let list {
+                    RouteDestinationView(route: list)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button {
+                                    closeList(tab)
+                                } label: {
+                                    Image(systemName: "chevron.backward")
+                                }
+                                .accessibilityLabel(Text("Back to \(tab.title)"))
+                                .accessibilityIdentifier("shell-pane-list-back")
+                            }
+                        }
+                } else {
+                    tabRoot(tab)
+                        .background { ShellRootBarHider(tab: tab) }
+                        .toolbar(.hidden, for: .navigationBar)
+                }
+            }
+            .tabStackPage(tab, tops: stackTops)
+            .shellPageClearance()
+            .navigationDestination(for: Route.self) { (route: Route) in
+                RouteDestinationView(route: route)
+                    .shellPageClearance()
+            }
+        }
+        .id(list)
+        .environment(\.shellPaneRole, .list)
+        .environment(\.shellPaneOpen, ShellPanes.opened(layout))
+    }
+
+    @ViewBuilder private func detailColumn(_ tab: AppTab, list: Route?, layout: ShellPaneLayout) -> some View {
+        NavigationStack(path: detailBinding(tab, layout)) {
+            Group {
+                if let hosted = detailHost.page(tab) {
+                    hosted.view
+                        .id(hosted.id)
+                } else {
+                    ShellPanePlaceholder(tab: tab, list: list)
+                        .toolbar(.hidden, for: .navigationBar)
+                }
+            }
+            .navigationDestination(for: Route.self) { (route: Route) in
+                RouteDestinationView(route: route)
+                    .shellPageClearance()
+            }
+        }
+        .environment(\.shellPaneRole, .detail)
+    }
+
+    @ViewBuilder private func tabPanes(_ tab: AppTab) -> some View {
+        switch paneLayout(tab) {
+        case let .split(list, _):
+            let layout: ShellPaneLayout = paneLayout(tab)
+            HStack(spacing: 0) {
+                listColumn(tab, list: list, layout: layout)
+                    .frame(width: CGFloat(panes.list))
+                ShellPaneDivider()
+                detailColumn(tab, list: list, layout: layout)
+                    .frame(maxWidth: .infinity)
+            }
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.shellPanes, ShellPaneMetrics(rail: panes.rail, wide: false, list: panes.list))
+        case .stack, .full:
+            tabStack(tab)
+        }
+    }
+
+    private func tab(_ tab: AppTab) -> some View {
+        let selected: Bool = page == nil && tab == router.selectedTab
+        return tabPanes(tab)
         .scrollContentBackground(fm.wallpaper ? .hidden : .automatic)
         .environment(\.shellDock, docks[tab])
         .environment(\.shellStackTab, tab)
@@ -577,7 +716,8 @@ struct HomeShell: View {
     }
 
     private var floatsChrome: Bool {
-        page == nil && router.path(for: router.selectedTab).isEmpty && !stackTops.covered(router.selectedTab)
+        page == nil && !inSplit && router.path(for: router.selectedTab).isEmpty
+            && !stackTops.covered(router.selectedTab)
     }
 
     private var floatingTop: CGFloat {
@@ -586,10 +726,10 @@ struct HomeShell: View {
 
     private var topChrome: some View {
         VStack(spacing: 0) {
-            if page != nil || showsTopBar(router.selectedTab) {
+            if page != nil || inSplit || showsTopBar(router.selectedTab) {
                 topBar
             }
-            if settings?.project.hasInstance != false {
+            if settings?.project.hasInstance != false && !StoreScreenshotLaunch.on {
                 FmConnectionBanner(state: offlineShown ? .offline : .connected, onRetry: { model.chat?.connect() })
             }
             if notice != nil {
@@ -711,10 +851,19 @@ struct HomeShell: View {
         if usesSplit {
             NavigationSplitView {
                 ShellSidebar(
-                    router: router, badges: badges, guest: auth?.isGuest ?? false,
+                    router: router, badges: badges,
+                    activeTabs: sidebarActiveTabs, activeHub: sidebarActiveHub,
+                    guest: auth?.isGuest ?? false,
                     onSelectTab: { (tab: AppTab) in selectTab(tab) },
                     onOpen: { (route: Route) in openRoute(route) })
             } detail: {
+                shellColumn
+            }
+        } else if showsRail {
+            HStack(spacing: 0) {
+                ShellSideRail(items: barGroups.flatMap(\.items), onPackage: { (id: String) in openPackage(id) })
+                    .opacity(composer.isOpen ? 0.35 : 1)
+                    .allowsHitTesting(!composer.isOpen)
                 shellColumn
             }
         } else {
@@ -723,7 +872,41 @@ struct HomeShell: View {
     }
 
     var body: some View {
-        appChanges(routeChanges(framed(sheets(overlays(layout)))))
+        appChanges(routeChanges(framed(sheets(overlays(paned(layout))))))
+    }
+
+    @ViewBuilder private func sized<Content: View>(_ content: Content) -> some View {
+        if !StoreScreenshotLaunch.pad {
+            content.environment(\.horizontalSizeClass, panes.wide ? UserInterfaceSizeClass.regular : .compact)
+        } else {
+            content
+        }
+    }
+
+    private func paned<Content: View>(_ content: Content) -> some View {
+        sized(content)
+            .environment(\.shellPanes, panes)
+            .background {
+                Color.clear
+                    .ignoresSafeArea()
+                    .onGeometryChange(for: CGSize.self, of: { $0.size }) { (size: CGSize) in
+                        resize(size)
+                    }
+            }
+    }
+
+    private func resize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let wasWide: Bool = panes.wide
+        windowSize = size
+        let wide: Bool = panes.wide
+        if detailHost.active != wide {
+            detailHost.active = wide
+        }
+        if wasWide && !wide {
+            detailHost.clearAll()
+        }
+        FmOrientationLock.allowRoomy(ShellPanes.roomy(width: Double(size.width), height: Double(size.height)))
     }
 
     private func framed<Content: View>(_ content: Content) -> some View {
@@ -744,20 +927,25 @@ struct HomeShell: View {
                     voice: voice, onType: { voiceToComposer(voice.heard) }, onCommands: { voiceToPalette() })
             }
             .overlay { ShellLaunchSparkles(flight: ShellLaunchFlight.shared) }
-            .overlay { AquariumLayer(hidden: composer.isOpen || keyboardUp || voice.isOpen, floor: genieFloor) }
             .overlay {
-                if !genie.spiderHidden {
+                AquariumLayer(
+                    hidden: composer.isOpen || keyboardUp || voice.isOpen || StoreScreenshotLaunch.on, floor: genieFloor)
+            }
+            .overlay {
+                if !genie.spiderHidden && !StoreScreenshotLaunch.on {
                     GenieSpiderLayer(
                         hidden: composer.isOpen || keyboardUp || voice.isOpen || router.currentRoute?.kind == .spiderRoom,
                         floor: genieFloor)
                 }
             }
             .overlay(alignment: .top) {
-                if diagnosticsEnabled {
+                if diagnosticsEnabled && !StoreScreenshotLaunch.on {
                     ShellIslandStatusDots(
                         lights: islandSystems, fleet: islandFleet, runnerAgents: ShellCounts.shared.runnerAgents,
                         desktop: Services.get(ShellLocalDesktopBridge.self)?.localDesktop ?? .hidden,
-                        desktopLoad: InsightsFeature.desktopLoadLight?.load, buildMac: InsightsFeature.buildMacLight?.light)
+                        desktops: Services.get(ShellLocalDesktopBridge.self)?.desktopLights ?? [],
+                        desktopLoad: InsightsFeature.desktopLoadLight?.load, buildMac: InsightsFeature.buildMacLight?.light,
+                        agentTokens: agentsOn)
                 }
             }
             .overlay { hubDropdown }
@@ -860,6 +1048,7 @@ struct HomeShell: View {
                 ShellBarPrefs.shared.visit(next)
             }
             .onChange(of: page) { (_: ShellPage?, next: ShellPage?) in
+                router.cover = HomeShell.coverTitle(next)
                 if next != .home {
                     homeHold = nil
                 }
@@ -937,7 +1126,7 @@ struct HomeShell: View {
                 })
             }
             .sheet(isPresented: $showTour) {
-                TourView(onFinish: { showTour = false })
+                TourView(onFinish: { showTour = false }, onJump: { (jump: TourJump) in tourJump(jump) })
             }
             .sheet(isPresented: $genie.sheetShown, onDismiss: genieClosed) {
                 if let session = genie.session {
@@ -1087,6 +1276,12 @@ struct HomeShell: View {
             return
         }
         started = true
+        PerformanceMonitorService.section("shell.start") { startNow() }
+        await routePushOpen()
+        await push?.collectLaunchOpen()
+    }
+
+    private func startNow() {
         if live == nil {
             let auth: AuthService? = self.auth
             live = ShellLiveCounts.snapshot(
@@ -1110,8 +1305,13 @@ struct HomeShell: View {
         } else if page == .home {
             page = nil
         }
+        router.cover = HomeShell.coverTitle(page)
         if let target = router.takeComposeRequest() {
             openComposer(target)
+        }
+        if StoreScreenshotLaunch.open(router) {
+            page = nil
+            model.select(tab: router.selectedTab)
         }
         ShellQuickActions.refresh(recents: router.recents)
         if !ShellTour.seen && PackageGateSync.isInstalled(PhonePackages.tour) {
@@ -1138,8 +1338,6 @@ struct HomeShell: View {
         // Send does not wait on the relay.
         let launcher: QuickAgentLauncher = composer.launcher
         Task { await launcher.prepare() }
-        await routePushOpen()
-        await push?.collectLaunchOpen()
     }
 
     private func settleOffline(_ state: ShellRelayState) async {
@@ -1276,6 +1474,22 @@ struct HomeShell: View {
             showHub = false
         } else if page != nil {
             page = nil
+        }
+    }
+
+    private func tourJump(_ jump: TourJump) {
+        showTour = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            switch jump {
+            case let .tab(tab): selectTab(tab)
+            case .home: showHome()
+            case .hub: openHub()
+            case .composer: openComposer(nil)
+            case .palette: openPalette()
+            case .projects: showProjects = true
+            case let .route(route): openRoute(route)
+            }
         }
     }
 

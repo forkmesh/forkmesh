@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QThread>
@@ -67,6 +69,20 @@ int main(int argc, char **argv)
     check(!scriptStub(QString()), "an unreadable exe is not treated as a stub");
     check(agentKind(QStringLiteral("bash"), args({"bash", "-c", "claude"})).isEmpty(),
           "a shell that mentions claude is not an agent");
+    check(within(QStringLiteral("/w/.worktrees/2641-x"), QStringLiteral("/w/.worktrees/2641-x")),
+          "an agent in the worktree's top folder is inside it");
+    check(within(QStringLiteral("/w/.worktrees/2641-x/desktop/src"), QStringLiteral("/w/.worktrees/2641-x/")),
+          "an agent in a subfolder is inside the worktree");
+    check(!within(QStringLiteral("/w/.worktrees/2641-xy"), QStringLiteral("/w/.worktrees/2641-x")),
+          "a sibling worktree sharing a name prefix is not inside it");
+    check(!within(QStringLiteral("/w"), QStringLiteral("/w/.worktrees/2641-x")),
+          "the main checkout is not inside an agent worktree");
+    check(!within(QString(), QStringLiteral("/w/.worktrees/2641-x")) && !within(QStringLiteral("/w"), QString()),
+          "an unknown folder matches nothing");
+    check(cwdRemoved(QStringLiteral("/nonexistent-forkmesh/.worktrees/2641-x (deleted)")),
+          "a working folder the kernel marks deleted is removed");
+    check(!cwdRemoved(QStringLiteral("/nonexistent-forkmesh/.worktrees/2641-x")),
+          "a plain path is not removed");
 
     check(argValue(args({"claude", "--model", "claude-opus-5-5"}), {"--model"})
               == QLatin1String("claude-opus-5-5"),
@@ -182,6 +198,40 @@ int main(int argc, char **argv)
         rollout.close();
         check(openCodexRollout(own, QCoreApplication::applicationPid()).isEmpty(),
               "no open rollout, no transcript");
+    }
+    {
+        QTemporaryDir root;
+        const QString bin = root.path() + QStringLiteral("/bin");
+        const QString worktree = root.path() + QStringLiteral("/2641-delete-session-mobile-artifacts");
+        QDir(root.path()).mkpath(QStringLiteral("bin"));
+        QDir(root.path()).mkpath(QStringLiteral("home"));
+        QDir(root.path()).mkpath(QFileInfo(worktree).fileName());
+        const QString sleeper = QFileInfo(QStringLiteral("/bin/sleep")).canonicalFilePath();
+        check(QFile::copy(sleeper, bin + QStringLiteral("/claude")), "copied sleep as a claude binary");
+        QFile(bin + QStringLiteral("/claude")).setPermissions(QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+        QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+        environment.insert(QStringLiteral("HOME"), root.path() + QStringLiteral("/home"));
+        environment.insert(QStringLiteral("CLAUDE_CONFIG_DIR"), root.path() + QStringLiteral("/home/.claude"));
+        QProcess agent;
+        agent.setProcessEnvironment(environment);
+        agent.setWorkingDirectory(worktree);
+        agent.start(bin + QStringLiteral("/claude"), {QStringLiteral("30")});
+        check(agent.waitForStarted(5000), "the leftover agent started");
+        const qint64 pid = agent.processId();
+        SystemStats::ProcessTable table;
+        table.entries.insert(pid, {QCoreApplication::applicationPid(), QStringLiteral("claude"), false, 0});
+        const QList<MachineAgent> before = scan(table, {}, {});
+        check(before.size() == 1 && before.first().pid == pid &&
+                  QFileInfo(before.first().cwd).fileName() == QFileInfo(worktree).fileName(),
+              "an agent running in a worktree is listed by its folder");
+        check(within(before.first().cwd, worktree), "the listed agent is inside the worktree");
+        check(QDir(root.path()).rmdir(QFileInfo(worktree).fileName()), "removed the empty worktree folder");
+        const QString link = QFileInfo(QStringLiteral("/proc/%1/cwd").arg(pid)).symLinkTarget();
+        check(cwdRemoved(link), "the kernel reports the removed worktree as deleted");
+        check(scan(table, {}, {}).isEmpty(),
+              "an agent whose worktree was deleted is not listed as '<branch> (deleted)'");
+        agent.kill();
+        agent.waitForFinished(5000);
     }
 #endif
 

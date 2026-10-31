@@ -49,6 +49,7 @@ import re
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
+import instance_privacy
 
 
 def _bind_runtime(runtime):
@@ -269,7 +270,7 @@ async def verify(env, token, action, remoteip="", cdata="", fetcher=None,
         if _seen_before(token, now):
             return EXPIRED, "token_reused"
         body = {"secret": settings["secret"], "response": token}
-        if remoteip:
+        if remoteip and not instance_privacy.is_pseudonym(remoteip):
             body["remoteip"] = str(remoteip)[:64]
         fetch = fetcher or globals().get("js_fetch_with_timeout")
         try:

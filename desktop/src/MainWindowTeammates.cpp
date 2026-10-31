@@ -6,6 +6,11 @@
 #include "RepoWorkflow.h"
 
 #include <QButtonGroup>
+#include <QDynamicPropertyChangeEvent>
+#include <QEnterEvent>
+#include <QLineEdit>
+#include <QPointer>
+#include <QScrollBar>
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -18,6 +23,7 @@
 #include <QSaveFile>
 #include <QStackedWidget>
 #include <QTimeEdit>
+#include <QToolButton>
 
 #include <algorithm>
 #include <functional>
@@ -1606,6 +1612,432 @@ qint64 briefingSessionTimestamp(const AgentSession *session)
                                           : session->createdAtMs;
 }
 
+constexpr int kNextSpecialCardHeight = 176;
+constexpr int kNextSpecialCardMinWidth = 300;
+constexpr int kNextSpecialRunSlots = 7;
+const char *const kNextTeamKind = "nextTeamKind";
+const char *const kNextTeamFitted = "nextTeamFitted";
+const char *const kNextTeamStylerName = "nextTeamButtonStyler";
+
+enum NextSpecialRun { NextRunNone, NextRunOk, NextRunFail, NextRunSkip, NextRunLive };
+enum NextTeamKind { NextTeamPill = 1, NextTeamIcon = 2, NextTeamCreate = 3 };
+
+QPointer<QLabel> g_nextTeamSummary;
+QPointer<QLineEdit> g_nextTeamSearch;
+
+struct NextSpecialCardData {
+    QString id;
+    QString initials;
+    QString name;
+    QString role;
+    QString status;
+    QString activity;
+    QString schedule;
+    QString next;
+    Theme::Role statusRole = Theme::Role::FgMuted;
+    QList<int> runs;
+};
+
+QString nextSpecialInitials(const QString &value)
+{
+    const QString name = value.trimmed();
+    const QString initials = name.size() <= 3 ? name : name.left(2);
+    return initials.isEmpty() ? QStringLiteral("?") : initials;
+}
+
+QString nextSpecialAgo(qint64 timestampMs)
+{
+    if (timestampMs <= 0)
+        return QStringLiteral("Never run");
+    const qint64 minutes = qMax<qint64>(0, (QDateTime::currentMSecsSinceEpoch() - timestampMs) / 60000);
+    if (minutes < 1)
+        return QStringLiteral("Last run just now");
+    if (minutes < 60)
+        return QStringLiteral("Last run %1 min ago").arg(minutes);
+    if (minutes < 48 * 60)
+        return QStringLiteral("Last run %1 h ago").arg(minutes / 60);
+    return QStringLiteral("Last run %1 days ago").arg(minutes / (24 * 60));
+}
+
+QFont nextTeamFont(const QWidget *widget, int px, QFont::Weight weight)
+{
+    QFont font = widget->font();
+    font.setPixelSize(px);
+    font.setWeight(weight);
+    return font;
+}
+
+class NextSpecialCard final : public QPushButton
+{
+public:
+    explicit NextSpecialCard(const NextSpecialCardData &data, QWidget *parent = nullptr)
+        : QPushButton(parent), m_data(data)
+    {
+        setObjectName(QStringLiteral("teammateCard"));
+        setProperty("nextSpecialCard", true);
+        setProperty("teammateId", data.id);
+        setProperty("teammateName", data.name);
+        setProperty("caption", data.activity);
+        setCursor(Qt::PointingHandCursor);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setFixedHeight(kNextSpecialCardHeight);
+        setMinimumWidth(kNextSpecialCardMinWidth);
+        setAttribute(Qt::WA_Hover, true);
+        setAccessibleName(QStringLiteral("%1, %2, %3").arg(data.name, data.role, data.status));
+        setAccessibleDescription(data.activity);
+        m_hud = new QWidget(this);
+        m_hud->setObjectName(QStringLiteral("teammateNextCardHud"));
+        m_hud->setAttribute(Qt::WA_StyledBackground, true);
+        m_hudLayout = new QHBoxLayout(m_hud);
+        m_hudLayout->setContentsMargins(3, 3, 3, 3);
+        m_hudLayout->setSpacing(2);
+        m_hud->hide();
+    }
+
+    void addHud(QPushButton *button)
+    {
+        button->setParent(m_hud);
+        m_hudLayout->addWidget(button);
+        button->show();
+        m_hud->adjustSize();
+    }
+
+    QSize sizeHint() const override { return {kNextSpecialCardMinWidth, kNextSpecialCardHeight}; }
+    QSize minimumSizeHint() const override { return sizeHint(); }
+
+protected:
+    void enterEvent(QEnterEvent *event) override
+    {
+        QPushButton::enterEvent(event);
+        placeHud();
+        m_hud->setVisible(m_hudLayout->count() > 0);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QPushButton::leaveEvent(event);
+        m_hud->hide();
+    }
+
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QPushButton::resizeEvent(event);
+        placeHud();
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const bool selected = property("selected").toBool();
+        const bool hovered = underMouse();
+        const QRectF frame = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        painter.setPen(QPen(selected ? Theme::color(Theme::Role::Accent, 128)
+                            : hovered ? Theme::color(Theme::Role::BorderStrong)
+                                      : Theme::color(Theme::Role::Border),
+                            1));
+        painter.setBrush(Theme::color(selected || hovered ? Theme::Role::SurfaceRaised
+                                                          : Theme::Role::Surface));
+        painter.drawRoundedRect(frame, 12, 12);
+        if (hasFocus()) {
+            painter.setPen(QPen(Theme::color(Theme::Role::Accent), 1.5));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(frame.adjusted(1, 1, -1, -1), 11, 11);
+        }
+
+        const int pad = 16;
+        const QRectF tile(pad, pad, 40, 40);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+        painter.drawRoundedRect(tile, 12, 12);
+        painter.setFont(nextTeamFont(this, 12, QFont::DemiBold));
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        painter.drawText(tile, Qt::AlignCenter, m_data.initials);
+
+        const QFont statusFont = nextTeamFont(this, 12, QFont::Normal);
+        const QFontMetrics statusMetrics(statusFont);
+        const int statusWidth = statusMetrics.horizontalAdvance(m_data.status);
+        const int statusRight = width() - pad;
+        const int statusLeft = statusRight - statusWidth;
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Theme::color(m_data.statusRole == Theme::Role::FgMuted ? Theme::Role::FgSubtle
+                                                                              : m_data.statusRole));
+        painter.drawEllipse(QRectF(statusLeft - 12, pad + 6, 6, 6));
+        painter.setFont(statusFont);
+        painter.setPen(Theme::color(m_data.statusRole));
+        painter.drawText(QRect(statusLeft, pad, statusWidth + 1, 18), Qt::AlignLeft | Qt::AlignVCenter,
+                         m_data.status);
+
+        const int textLeft = pad + 40 + 12;
+        const int nameRoom = qMax(0, statusLeft - 20 - textLeft);
+        const QFont nameFont = nextTeamFont(this, 13, QFont::DemiBold);
+        painter.setFont(nameFont);
+        painter.setPen(Theme::color(Theme::Role::Fg));
+        painter.drawText(QRect(textLeft, pad, nameRoom, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(nameFont).elidedText(m_data.name, Qt::ElideRight, nameRoom));
+        const QFont roleFont = nextTeamFont(this, 12, QFont::Normal);
+        const int roleRoom = qMax(0, width() - pad - textLeft);
+        painter.setFont(roleFont);
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        painter.drawText(QRect(textLeft, pad + 20, roleRoom, 18), Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(roleFont).elidedText(m_data.role, Qt::ElideRight, roleRoom));
+
+        const QFont activityFont = nextTeamFont(this, 13, QFont::Normal);
+        const QFontMetrics activityMetrics(activityFont);
+        const int activityTop = pad + 40 + 12;
+        const int activityWidth = width() - 2 * pad;
+        const int line = activityMetrics.lineSpacing();
+        const QString activity = m_data.activity.simplified();
+        painter.setFont(activityFont);
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        qsizetype split = activity.size();
+        while (split > 0 && activityMetrics.horizontalAdvance(activity.left(split)) > activityWidth)
+            split = activity.lastIndexOf(QLatin1Char(' '), split - 1);
+        if (split <= 0)
+            split = qMin<qsizetype>(activity.size(), qMax(1, activityWidth / qMax(1, activityMetrics.averageCharWidth())));
+        painter.drawText(QRect(pad, activityTop, activityWidth, line), Qt::AlignLeft | Qt::AlignVCenter,
+                         activityMetrics.elidedText(activity.left(split), Qt::ElideRight, activityWidth));
+        const QString rest = activity.mid(split).trimmed();
+        if (!rest.isEmpty())
+            painter.drawText(QRect(pad, activityTop + line, activityWidth, line), Qt::AlignLeft | Qt::AlignVCenter,
+                             activityMetrics.elidedText(rest, Qt::ElideRight, activityWidth));
+
+        const int barsWidth = kNextSpecialRunSlots * 6 + (kNextSpecialRunSlots - 1) * 4;
+        const int footerBottom = height() - pad;
+        const QFont footerFont = nextTeamFont(this, 12, QFont::Normal);
+        const int footerRoom = qMax(0, width() - 2 * pad - barsWidth - 12);
+        painter.setFont(footerFont);
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        painter.drawText(QRect(pad, footerBottom - 34, footerRoom, 17), Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(footerFont).elidedText(m_data.schedule, Qt::ElideRight, footerRoom));
+        painter.setPen(Theme::color(Theme::Role::FgSubtle));
+        painter.drawText(QRect(pad, footerBottom - 17, footerRoom, 17), Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(footerFont).elidedText(m_data.next, Qt::ElideRight, footerRoom));
+
+        QList<int> runs = m_data.runs.mid(qMax<qsizetype>(0, m_data.runs.size() - kNextSpecialRunSlots));
+        while (runs.size() < kNextSpecialRunSlots)
+            runs.prepend(NextRunNone);
+        qreal x = width() - pad - barsWidth;
+        for (const int run : std::as_const(runs)) {
+            const bool full = run == NextRunOk || run == NextRunFail || run == NextRunLive;
+            const QRectF bar(x, footerBottom - (full ? 16 : 8), 6, full ? 16 : 8);
+            if (run == NextRunNone) {
+                painter.setPen(QPen(Theme::color(Theme::Role::Border), 1));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRoundedRect(bar.adjusted(0.5, 0.5, -0.5, -0.5), 1.5, 1.5);
+            } else {
+                QColor fill = run == NextRunFail ? Theme::color(Theme::Role::Danger, 153)
+                              : run == NextRunLive ? Theme::color(Theme::Role::Accent)
+                              : run == NextRunSkip ? Theme::color(Theme::Role::BorderStrong)
+                                                   : Theme::color(Theme::Role::Fg, 64);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(fill);
+                painter.drawRoundedRect(bar, 1.5, 1.5);
+            }
+            x += 10;
+        }
+    }
+
+private:
+    void placeHud()
+    {
+        m_hud->adjustSize();
+        m_hud->move(width() - 10 - m_hud->width(), 40);
+        m_hud->raise();
+    }
+
+    NextSpecialCardData m_data;
+    QWidget *m_hud = nullptr;
+    QHBoxLayout *m_hudLayout = nullptr;
+};
+
+class NextTeamButtonStyler final : public QObject
+{
+public:
+    explicit NextTeamButtonStyler(QObject *parent) : QObject(parent)
+    {
+        setObjectName(QLatin1String(kNextTeamStylerName));
+    }
+
+    static NextTeamButtonStyler *forWindow(QObject *window)
+    {
+        if (QObject *found = window->findChild<QObject *>(QLatin1String(kNextTeamStylerName),
+                                                          Qt::FindDirectChildrenOnly))
+            return static_cast<NextTeamButtonStyler *>(found);
+        return new NextTeamButtonStyler(window);
+    }
+
+    void adopt(QWidget *widget, NextTeamKind kind)
+    {
+        auto *button = dynamic_cast<VerticalIconButton *>(widget);
+        if (!button || button->property(kNextTeamKind).toInt() != 0)
+            return;
+        button->setProperty(kNextTeamKind, int(kind));
+        if (button->toolTip().isEmpty())
+            button->setToolTip(button->text());
+        button->installEventFilter(this);
+        fit(button);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        const QEvent::Type type = event->type();
+        if (type != QEvent::Paint && type != QEvent::Show && type != QEvent::FontChange &&
+            type != QEvent::Polish && type != QEvent::StyleChange && type != QEvent::DynamicPropertyChange)
+            return false;
+        auto *button = dynamic_cast<VerticalIconButton *>(watched);
+        if (!button)
+            return false;
+        if (type != QEvent::Paint) {
+            if (type != QEvent::DynamicPropertyChange ||
+                static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName() == "count")
+                QTimer::singleShot(0, button, [guarded = QPointer<VerticalIconButton>(button)] {
+                    if (guarded)
+                        fit(guarded);
+                });
+            return false;
+        }
+        if (!active(button)) {
+            release(button);
+            return false;
+        }
+        if (button->size() != preferredSize(button))
+            QTimer::singleShot(0, button, [guarded = QPointer<VerticalIconButton>(button)] {
+                if (guarded)
+                    fit(guarded);
+            });
+        paint(button);
+        return true;
+    }
+
+private:
+    static int kindOf(const QWidget *button) { return button->property(kNextTeamKind).toInt(); }
+
+    static bool active(const VerticalIconButton *button)
+    {
+        return Theme::isNext() && !button->inRail() && kindOf(button) != 0;
+    }
+
+    static QString label(const VerticalIconButton *button)
+    {
+        const QString custom = button->property("nextTeamLabel").toString();
+        return custom.isEmpty() ? button->text() : custom;
+    }
+
+    static QSize preferredSize(const VerticalIconButton *button)
+    {
+        const int kind = kindOf(button);
+        if (kind == NextTeamIcon)
+            return {28, 28};
+        if (kind == NextTeamCreate) {
+            const QFont font = nextTeamFont(button, 13, QFont::Medium);
+            return {10 + 14 + 6 + QFontMetrics(font).horizontalAdvance(label(button)) + 12, 32};
+        }
+        const QFont font = nextTeamFont(button, 12, QFont::Medium);
+        int width = 12 + QFontMetrics(font).horizontalAdvance(label(button)) + 12;
+        if (button->badgeCount() > 0)
+            width += 6 + QFontMetrics(font).horizontalAdvance(formatCount(button->badgeCount()));
+        return {width, 28};
+    }
+
+    static void fit(VerticalIconButton *button)
+    {
+        if (!active(button)) {
+            release(button);
+            return;
+        }
+        const QSize want = preferredSize(button);
+        if (button->minimumSize() != want || button->maximumSize() != want)
+            button->setFixedSize(want);
+        button->setProperty(kNextTeamFitted, true);
+    }
+
+    static void release(VerticalIconButton *button)
+    {
+        if (!button->property(kNextTeamFitted).toBool())
+            return;
+        button->setProperty(kNextTeamFitted, false);
+        button->setMinimumSize(0, 0);
+        button->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    }
+
+    static void paint(VerticalIconButton *button)
+    {
+        QPainter painter(button);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const int kind = kindOf(button);
+        const bool enabled = button->isEnabled();
+        const bool hovered = enabled && button->underMouse();
+        const bool pressed = enabled && button->isDown();
+        const bool checked = button->isChecked();
+        const QRectF body = QRectF(button->rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        const QString iconName = button->property("forkmeshOcticon").toString();
+        if (kind == NextTeamCreate) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(Theme::color(!enabled ? Theme::Role::SurfaceRaised
+                                          : pressed ? Theme::Role::AccentPressed
+                                          : hovered ? Theme::Role::AccentHover
+                                                    : Theme::Role::Accent));
+            painter.drawRoundedRect(body, 8, 8);
+            const QColor ink = Theme::color(enabled ? Theme::Role::OnAccent : Theme::Role::FgSubtle);
+            painter.drawPixmap(QPoint(10, (button->height() - 14) / 2),
+                               tintedOcticonPixmap(QStringLiteral("plus"), ink, 14));
+            painter.setFont(nextTeamFont(button, 13, QFont::Medium));
+            painter.setPen(ink);
+            painter.drawText(QRect(30, 0, button->width() - 30, button->height()),
+                             Qt::AlignLeft | Qt::AlignVCenter, label(button));
+            return;
+        }
+        if (kind == NextTeamIcon) {
+            if (hovered || pressed || checked) {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(Theme::color(pressed || checked ? Theme::Role::SurfaceActive
+                                                                 : Theme::Role::SurfaceRaised));
+                painter.drawRoundedRect(body, 6, 6);
+            }
+            const QColor ink = Theme::color(!enabled ? Theme::Role::FgSubtle
+                                            : hovered || checked ? Theme::Role::Fg
+                                                                 : Theme::Role::FgMuted);
+            const QRect iconRect((button->width() - 16) / 2, (button->height() - 16) / 2, 16, 16);
+            if (iconName.isEmpty())
+                button->icon().paint(&painter, iconRect, Qt::AlignCenter,
+                                     enabled ? QIcon::Normal : QIcon::Disabled);
+            else
+                painter.drawPixmap(iconRect.topLeft(), tintedOcticonPixmap(iconName, ink, 16));
+            return;
+        }
+        painter.setPen(QPen(Theme::color(checked ? Theme::Role::BorderStrong : Theme::Role::Border), 1));
+        painter.setBrush(checked ? Theme::color(Theme::Role::SurfaceActive)
+                         : hovered ? Theme::color(Theme::Role::SurfaceRaised)
+                                   : QColor(Qt::transparent));
+        painter.drawRoundedRect(body, body.height() / 2, body.height() / 2);
+        const QFont font = nextTeamFont(button, 12, QFont::Medium);
+        const QFontMetrics metrics(font);
+        const QString text = label(button);
+        painter.setFont(font);
+        painter.setPen(Theme::color(!enabled ? Theme::Role::FgSubtle
+                                    : checked || hovered ? Theme::Role::Fg
+                                                         : Theme::Role::FgMuted));
+        painter.drawText(QRect(12, 0, metrics.horizontalAdvance(text) + 1, button->height()),
+                         Qt::AlignLeft | Qt::AlignVCenter, text);
+        if (button->badgeCount() > 0) {
+            painter.setPen(Theme::color(Theme::Role::FgSubtle));
+            painter.drawText(QRect(12 + metrics.horizontalAdvance(text) + 6, 0,
+                                   button->width(), button->height()),
+                             Qt::AlignLeft | Qt::AlignVCenter, formatCount(button->badgeCount()));
+        }
+    }
+};
+
+QFrame *nextTeamDivider()
+{
+    auto *divider = new QFrame;
+    divider->setObjectName(QStringLiteral("teammatesNextDivider"));
+    divider->setFixedSize(1, 16);
+    return divider;
+}
+
 } // namespace
 
 // A teammate is stored in the repository it works on, so every teammate path
@@ -1900,7 +2332,8 @@ QString MainWindow::teammateLatestOutput(const AgentSession *session) const
 
     QString output = agentClosingSummary(session->id).trimmed();
     if (output.isEmpty() && m_agentStore)
-        output = assistantOutputFromEvents(m_agentStore->loadEvents(*session));
+        output = assistantOutputFromEvents(m_agentStore->loadRecentEvents(
+            *session, AgentStore::kLatestOutputTailBytes));
     if (!output.isEmpty())
         return output;
     if (!session->lastError.trimmed().isEmpty())
@@ -2176,6 +2609,99 @@ QWidget *MainWindow::buildTeamSectionHeader(QWidget *page)
                     QStringLiteral("history"));
     m_teammateDashboardButton->setChecked(true);
     addTeamSectionHeaderActions(header, page);
+    if (!Theme::isNext())
+        return headerHost;
+
+    delete headerHost->layout();
+    NextTeamButtonStyler *styler = NextTeamButtonStyler::forWindow(this);
+    auto *column = new QVBoxLayout(headerHost);
+    column->setContentsMargins(8, 0, 8, 4);
+    column->setSpacing(14);
+    auto *top = new QHBoxLayout;
+    top->setSpacing(4);
+    auto *titleColumn = new QVBoxLayout;
+    titleColumn->setSpacing(2);
+    auto *title = new QLabel(QStringLiteral("Specials"));
+    title->setObjectName(QStringLiteral("pageTitle"));
+    title->setProperty("teamNextRole", QStringLiteral("title"));
+    auto *summary = new QLabel;
+    summary->setObjectName(QStringLiteral("teammatesNextSummary"));
+    summary->setTextFormat(Qt::PlainText);
+    summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    summary->setText(m_teammatesSummaryText);
+    g_nextTeamSummary = summary;
+    titleColumn->addWidget(title);
+    titleColumn->addWidget(summary);
+    top->addLayout(titleColumn, 1);
+    repoCaption->hide();
+    m_teammatesRepoChooser->setMinimumWidth(180);
+    m_teammatesRepoChooser->setProperty("teamNextRole", QStringLiteral("repo"));
+    top->addWidget(repoHost, 0, Qt::AlignVCenter);
+    top->addSpacing(6);
+    for (const char *name : {"teammateRunTeamButton", "teammateRunAllOneSessionButton",
+                             "teammateDisableAllSchedulesButton", "teammateRefreshButton"}) {
+        if (auto *button = headerHost->findChild<QPushButton *>(QLatin1String(name),
+                                                                Qt::FindDirectChildrenOnly)) {
+            styler->adopt(button, NextTeamIcon);
+            top->addWidget(button, 0, Qt::AlignVCenter);
+        }
+    }
+    QList<QPushButton *> views;
+    for (QPushButton *button : headerHost->findChildren<QPushButton *>(QStringLiteral("topNavButton"),
+                                                                       Qt::FindDirectChildrenOnly)) {
+        if (button->property("teamView").isValid())
+            views.append(button);
+    }
+    if (!views.isEmpty()) {
+        top->addSpacing(4);
+        top->addWidget(nextTeamDivider(), 0, Qt::AlignVCenter);
+        top->addSpacing(4);
+        for (QPushButton *button : std::as_const(views)) {
+            styler->adopt(button, NextTeamIcon);
+            top->addWidget(button, 0, Qt::AlignVCenter);
+        }
+    }
+    if (auto *add = headerHost->findChild<QPushButton *>(QStringLiteral("teammateAddButton"),
+                                                         Qt::FindDirectChildrenOnly)) {
+        top->addSpacing(8);
+        styler->adopt(add, NextTeamCreate);
+        top->addWidget(add, 0, Qt::AlignVCenter);
+    }
+    column->addLayout(top);
+
+    auto *filters = new QHBoxLayout;
+    filters->setSpacing(6);
+    for (QPushButton *button : {static_cast<QPushButton *>(m_teammateDashboardButton),
+                                static_cast<QPushButton *>(m_teammateBriefingButton),
+                                static_cast<QPushButton *>(m_teammateStatsButton)}) {
+        styler->adopt(button, NextTeamPill);
+        filters->addWidget(button);
+    }
+    filters->addSpacing(4);
+    filters->addWidget(nextTeamDivider(), 0, Qt::AlignVCenter);
+    filters->addSpacing(4);
+    allMetric->setProperty("nextTeamLabel", QStringLiteral("All"));
+    for (const QString &status : {QString(), QStringLiteral("Working"), QStringLiteral("Scheduled"),
+                                  QStringLiteral("Idle")}) {
+        if (QPushButton *button = m_teammateMetricButtons.value(status)) {
+            styler->adopt(button, NextTeamPill);
+            filters->addWidget(button);
+        }
+    }
+    filters->addStretch(1);
+    auto *search = new QLineEdit;
+    search->setObjectName(QStringLiteral("teammatesNextSearch"));
+    search->setPlaceholderText(QStringLiteral("Search specials"));
+    search->setClearButtonEnabled(true);
+    search->setFixedWidth(240);
+    search->addAction(themedOcticon(QStringLiteral("search"), Theme::color(Theme::Role::FgSubtle), 14),
+                      QLineEdit::LeadingPosition);
+    search->setToolTip(QStringLiteral("Filter the special agents by name, role, skill or latest output. "
+                                      "The window's search box filters them too."));
+    g_nextTeamSearch = search;
+    connect(search, &QLineEdit::textChanged, this, [this] { loadTeammatesPanel(); });
+    filters->addWidget(search, 0, Qt::AlignVCenter);
+    column->addLayout(filters);
     return headerHost;
 }
 
@@ -2393,6 +2919,11 @@ void MainWindow::showTeammateGrid()
 {
     m_teammatesDashboardMode = false;
     m_selectedTeammateId.clear();
+    if (Theme::isNext() && m_teammateCardsHost) {
+        for (QPushButton *card : m_teammateCardsHost->findChildren<QPushButton *>(
+                 QStringLiteral("teammateCard"), Qt::FindDirectChildrenOnly))
+            card->setProperty("selected", false);
+    }
     m_teammateEditorDirectory.clear();
     m_teammateEditorOpen = false;
     if (m_teammateDetailPanel)
@@ -2476,9 +3007,11 @@ void MainWindow::loadTeammatesPanel()
         loadTeammateBriefing();
     const bool onTeam = m_sectionStack &&
                         m_sectionStack->currentIndex() == kTeamSectionIndex;
-    const QString search = onTeam && m_globalSearch
-                               ? m_globalSearch->text().trimmed()
-                               : QString();
+    QString search = onTeam && m_globalSearch
+                         ? m_globalSearch->text().trimmed()
+                         : QString();
+    if (search.isEmpty() && Theme::isNext() && g_nextTeamSearch)
+        search = g_nextTeamSearch->text().trimmed();
     const QString statusFilter = m_teammatesStatusFilter;
     int working = 0;
     int scheduled = 0;
@@ -2565,6 +3098,9 @@ void MainWindow::loadTeammatesPanel()
                                                    : QStringLiteral("s"));
     }
 
+    if (g_nextTeamSummary && Theme::isNext())
+        g_nextTeamSummary->setText(m_teammatesSummaryText);
+
     auto updateMetric = [this, &loaded](const QString &status, int count,
                                         const QString &label) {
         QPushButton *button = m_teammateMetricButtons.value(status);
@@ -2644,6 +3180,68 @@ QPushButton *MainWindow::buildTeammateRosterCard(const TeammateRosterEntry &entr
                                                  const QString &latestOutput,
                                                  const QString &handle)
 {
+    if (m_teammatesGridView && Theme::isNext()) {
+        const Config &config = entry.config;
+        NextSpecialCardData data;
+        data.id = config.id;
+        data.initials = nextSpecialInitials(config.name);
+        data.name = config.name;
+        data.role = config.specialty.isEmpty() ? QStringLiteral("@") + handle : config.specialty;
+        const bool failed = !entry.inFlight && config.enabled && entry.session &&
+                            entry.session->status == AgentStatus::Failed;
+        data.status = entry.status;
+        if (entry.inFlight) {
+            data.statusRole = Theme::Role::AccentFg;
+        } else if (failed) {
+            data.status = QStringLiteral("Failed");
+            data.statusRole = Theme::Role::Danger;
+        } else if (entry.mood.wantsAttention) {
+            data.status = QStringLiteral("Needs you");
+            data.statusRole = Theme::Role::Warning;
+        } else if (entry.doneUnseen) {
+            data.status = QStringLiteral("Done");
+            data.statusRole = Theme::Role::Warning;
+        }
+        const QString caption = forkmesh::teammates::runCaptionFromSummary(latestOutput);
+        data.activity = !caption.isEmpty() ? caption
+                        : !config.description.isEmpty() ? config.description
+                                                        : QStringLiteral("No runs yet");
+        const bool recurring = config.enabled && config.schedule.active &&
+                               config.schedule.mode != forkmesh::teammates::kScheduleOnDemand;
+        data.schedule = !config.enabled ? QStringLiteral("Paused")
+                        : teammateIsOneTime(config) ? QStringLiteral("One-time · starts when asked")
+                                                    : forkmesh::teammates::humanSchedule(config.schedule);
+        const QString monitor = logMonitorStatusDetail(config);
+        data.next = recurring ? QStringLiteral("Next: %1").arg(forkmesh::teammates::humanNextInvocation(config))
+                    : !monitor.isEmpty() ? monitor
+                                         : nextSpecialAgo(config.lastRunAtMs);
+        for (const AgentSession *run : teammateHomeRuns(config.id)) {
+            if (run->status == AgentStatus::Success)
+                data.runs.append(NextRunOk);
+            else if (run->status == AgentStatus::Failed)
+                data.runs.append(NextRunFail);
+            else if (AgentStatus::isTerminal(run->status) || run->status == AgentStatus::Cleared)
+                data.runs.append(NextRunSkip);
+            else
+                data.runs.append(NextRunLive);
+        }
+        auto *card = new NextSpecialCard(data);
+        card->setProperty("status", statusKind(entry.status));
+        card->setProperty("dashboard", m_teammatesDashboardMode);
+        card->setProperty("selected", config.id == m_selectedTeammateId && m_teammateDetailPanel &&
+                                          m_teammateDetailPanel->isVisible());
+        card->setToolTip(QStringLiteral("Open @%1's page").arg(handle));
+        card->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(card, &QPushButton::clicked, this,
+                [this, id = config.id] { showTeammateHome(id); });
+        connect(card, &QWidget::customContextMenuRequested, this,
+                [this, id = config.id] { showTeammateRailMenu(id, nullptr); });
+        const int sessionId = entry.session ? entry.session->id : 0;
+        for (QPushButton *button : addTeammateRailHud(card, config, entry.inFlight, sessionId, entry.mood,
+                                                      QStringLiteral("teammateTile"), 26, 26))
+            card->addHud(button);
+        return card;
+    }
     if (m_teammatesGridView) {
         QPushButton *tile = buildTeammateVideoTile(
             entry.config, entry.status, entry.inFlight, entry.doneUnseen,
@@ -4625,11 +5223,58 @@ void MainWindow::showTeammateDetail(const QString &id, bool focusSkills)
     close->setFixedSize(30, 30);
     setOcticon(close, QStringLiteral("x"), 14);
     connect(close, &QPushButton::clicked, this, &MainWindow::showTeammateGrid);
-    panelHeader->addWidget(panelTitle);
-    panelHeader->addStretch();
-    panelHeader->addWidget(saveButton);
-    panelHeader->addWidget(close);
+    const bool nextLook = Theme::isNext();
+    if (nextLook) {
+        panelTitle->hide();
+        panelHeader->setContentsMargins(4, 4, 0, 8);
+        panelHeader->setSpacing(12);
+        auto *tile = new QLabel(nextSpecialInitials(teammate.name));
+        tile->setObjectName(QStringLiteral("teammateNextPanelTile"));
+        tile->setAlignment(Qt::AlignCenter);
+        tile->setFixedSize(44, 44);
+        panelHeader->addWidget(tile, 0, Qt::AlignTop);
+        auto *identity = new QVBoxLayout;
+        identity->setSpacing(1);
+        auto *nextName = new QLabel(teammate.name);
+        nextName->setObjectName(QStringLiteral("teammateNextPanelName"));
+        nextName->setTextFormat(Qt::PlainText);
+        auto *nextRole = new QLabel(teammate.specialty +
+                                    (teammate.focus.isEmpty() ? QString()
+                                                              : QStringLiteral(" · ") + teammate.focus));
+        nextRole->setObjectName(QStringLiteral("teammateNextPanelRole"));
+        nextRole->setTextFormat(Qt::PlainText);
+        nextRole->setWordWrap(true);
+        nextRole->setVisible(!nextRole->text().isEmpty());
+        auto *nextState = new QLabel(QStringLiteral("\u25CF ") + state);
+        nextState->setObjectName(QStringLiteral("teammateNextPanelStatus"));
+        nextState->setTextFormat(Qt::PlainText);
+        nextState->setProperty("kind", inFlight ? QStringLiteral("working")
+                                       : !teammate.enabled ? QStringLiteral("paused")
+                                                           : QStringLiteral("idle"));
+        identity->addWidget(nextName);
+        identity->addWidget(nextRole);
+        identity->addSpacing(3);
+        identity->addWidget(nextState);
+        panelHeader->addLayout(identity, 1);
+        panelHeader->addWidget(saveButton, 0, Qt::AlignTop);
+        panelHeader->addWidget(close, 0, Qt::AlignTop);
+    } else {
+        panelHeader->addWidget(panelTitle);
+        panelHeader->addStretch();
+        panelHeader->addWidget(saveButton);
+        panelHeader->addWidget(close);
+    }
     root->addLayout(panelHeader);
+    QWidget *nextTabs = nullptr;
+    if (nextLook) {
+        nextTabs = new QWidget;
+        nextTabs->setObjectName(QStringLiteral("teammateNextPanelTabs"));
+        nextTabs->setAttribute(Qt::WA_StyledBackground, true);
+        auto *tabsLayout = new QHBoxLayout(nextTabs);
+        tabsLayout->setContentsMargins(0, 0, 0, 0);
+        tabsLayout->setSpacing(2);
+        root->addWidget(nextTabs);
+    }
 
     auto *scroll = new QScrollArea;
     scroll->setObjectName(QStringLiteral("teammateSideScroll"));
@@ -4662,6 +5307,71 @@ void MainWindow::showTeammateDetail(const QString &id, bool focusSkills)
 
     appendTeammateEditorForm(contentLayout, scroll, teammate, /*editing=*/true,
                              directory, saveButton, focusSkills);
+
+    if (nextTabs) {
+        for (const char *name : {"teammateHeroAvatar", "teammateHeroName", "teammateHeroRole"}) {
+            if (auto *duplicate = content->findChild<QLabel *>(QLatin1String(name)))
+                duplicate->hide();
+        }
+        QHash<QString, QWidget *> sections;
+        for (QFrame *frame : content->findChildren<QFrame *>(QStringLiteral("teammateSection"))) {
+            if (auto *heading = frame->findChild<QLabel *>(QStringLiteral("teammateSectionTitle"),
+                                                           Qt::FindDirectChildrenOnly)) {
+                if (!sections.contains(heading->text()))
+                    sections.insert(heading->text(), frame);
+            }
+        }
+        const QList<QPair<QString, QWidget *>> anchors{
+            {QStringLiteral("Instructions"), sections.value(QStringLiteral("Instructions"))},
+            {QStringLiteral("Schedule"), sections.value(QStringLiteral("Schedule"))},
+            {QStringLiteral("Runs"), sections.value(QStringLiteral("Activity"))},
+            {QStringLiteral("Settings"), editHeading}};
+        auto *tabsLayout = static_cast<QHBoxLayout *>(nextTabs->layout());
+        auto *group = new QButtonGroup(nextTabs);
+        group->setExclusive(true);
+        QList<QPair<QToolButton *, QPointer<QWidget>>> tabs;
+        for (const auto &[label, target] : anchors) {
+            if (!target)
+                continue;
+            auto *tab = new QToolButton;
+            tab->setObjectName(QStringLiteral("teammateNextPanelTab"));
+            tab->setText(label);
+            tab->setCheckable(true);
+            tab->setAutoRaise(true);
+            tab->setCursor(Qt::PointingHandCursor);
+            tab->setToolTip(QStringLiteral("Jump to %1").arg(label.toLower()));
+            group->addButton(tab);
+            tabsLayout->addWidget(tab);
+            tabs.append({tab, QPointer<QWidget>(target)});
+            connect(tab, &QToolButton::clicked, scroll, [scroll, content, target = QPointer<QWidget>(target)] {
+                if (target)
+                    scroll->verticalScrollBar()->setValue(target->mapTo(content, QPoint(0, 0)).y());
+            });
+        }
+        tabsLayout->addStretch(1);
+        if (!tabs.isEmpty())
+            tabs.constFirst().first->setChecked(true);
+        connect(scroll->verticalScrollBar(), &QScrollBar::valueChanged, nextTabs,
+                [content, tabs](int value) {
+                    QToolButton *current = tabs.isEmpty() ? nullptr : tabs.constFirst().first;
+                    for (const auto &[tab, target] : tabs) {
+                        if (target && target->mapTo(content, QPoint(0, 0)).y() <= value + 12)
+                            current = tab;
+                    }
+                    if (current && !current->isChecked())
+                        current->setChecked(true);
+                });
+    }
+
+    if (nextLook && m_teammateCardsHost) {
+        for (QPushButton *card : m_teammateCardsHost->findChildren<QPushButton *>(
+                 QStringLiteral("teammateCard"), Qt::FindDirectChildrenOnly)) {
+            if (!card->property("nextSpecialCard").toBool())
+                continue;
+            card->setProperty("selected", card->property("teammateId").toString() == teammate.id);
+            card->update();
+        }
+    }
 
     m_teammateDetailPanel->show();
     if (m_teammatesSplit) {
@@ -6937,8 +7647,10 @@ int MainWindow::startTeammateSession(Config teammate, const QString &trigger,
     if (teammate.lowCostModel)
         taskAgent = forkmesh::teammates::lowCostAgentChoice(taskAgent);
     const QString provider = taskAgent.provider;
+    const bool composerMode = m_quickAddModeSelector &&
+                              taskType != forkmesh::teammates::kTaskTypeUiStalls;
     QString runMode = forkmesh::agentrules::teammateRunMode(
-        m_quickAddModeSelector ? m_quickAddModeSelector->currentText() : QString(),
+        composerMode ? m_quickAddModeSelector->currentText() : QString(),
         grantedPermissions, kClaudeAutoModeLabel, QStringLiteral("Edit"),
         QStringLiteral("Plan"));
     if (!teammate.permissions.contains(QStringLiteral("run-unattended")) &&
@@ -7555,6 +8267,9 @@ void MainWindow::checkTeammateSchedules()
         }
         if (!forkmesh::teammates::scheduleIsDue(teammate, now))
             continue;
+        if (const int repoIndex = activeTeammateRepoIndex();
+            !repoWorkflowApproved(repoIndex, repoWorkflowPath(repoIndex, teammate.id), teammate.name))
+            continue;
         runTeammate(teammate.id,
                     QStringLiteral("Scheduled · %1")
                         .arg(forkmesh::teammates::humanSchedule(
@@ -7663,6 +8378,10 @@ void MainWindow::triggerTeammatesForEvent(const QString &eventName,
             continue;
         if (!forkmesh::teammates::scheduleMatchesEvent(teammate, eventName))
             continue;
+        if (const int eventRepoIndex = repoIndex < 0 ? activeTeammateRepoIndex() : repoIndex;
+            !repoWorkflowApproved(eventRepoIndex, repoWorkflowPath(eventRepoIndex, teammate.id),
+                                  teammate.name))
+            continue;
         const QString trigger =
             detail.trimmed().isEmpty()
                 ? QStringLiteral("Repository event · %1").arg(eventName)
@@ -7702,7 +8421,8 @@ void MainWindow::finishTeammateCreatorRun(int sessionId)
     const int repoIndex = repoIndexFor(session->owner, session->name);
     QString output = m_agentStore
                          ? assistantOutputFromEvents(
-                               m_agentStore->loadEvents(*session))
+                               m_agentStore->loadRecentEvents(
+                                   *session, AgentStore::kLatestOutputTailBytes))
                          : QString();
     if (output.trimmed().isEmpty())
         output = agentClosingSummary(sessionId);

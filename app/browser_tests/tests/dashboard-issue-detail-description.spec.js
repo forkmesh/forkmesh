@@ -170,7 +170,7 @@ test("an issue with no description opens compact and names its author once", asy
       detail.locator('[data-repo-record-hero] [title="jett"]'),
     ).toHaveCount(0);
     await expect(
-      detail.locator('[data-repo-record-conversation] [title="jett"]'),
+      detail.locator('[data-repo-record-conversation] [title="jett"]:visible'),
     ).toHaveCount(1);
     await expect(
       detail.locator('[data-repo-issue-opening]'),
@@ -225,7 +225,7 @@ test("an issue with a description still renders it once, under one author", asyn
       height: viewport.height,
     });
     await expect(
-      detail.locator('[data-repo-record-conversation] [title="jett"]'),
+      detail.locator('[data-repo-record-conversation] [title="jett"]:visible'),
     ).toHaveCount(1);
     const card = detail.locator("[data-repo-record-description]");
     await expect(card).toHaveAttribute("data-repo-record-description", "body");

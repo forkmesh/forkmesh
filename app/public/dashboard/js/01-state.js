@@ -118,7 +118,7 @@
     // for the session list.
     // canViewSessions carries the last fetch's verdict so the list can redraw
     // itself under the header search filter without re-asking (adhoc #62).
-    agentsView: { agents: [], selectedAgentId: null, selectedAgentComposerMode: "", canViewSessions: false, canDeleteSessions: false, canQueueAgent: false, ownerScope: false, accessReason: "", notice: "", startPayload: null, desktopNotice: "", desktopNoticeTone: "" },
+    agentsView: { agents: [], statusView: "all", selectedAgentId: null, selectedAgentComposerMode: "", canViewSessions: false, canDeleteSessions: false, canQueueAgent: false, ownerScope: false, accessReason: "", notice: "", startPayload: null, desktopNotice: "", desktopNoticeTone: "" },
     homeAgentSessions: null,
     // Home right-rail "Latest from the blog" (adhoc #381): the newest posts
     // parsed from /blog/rss.xml. null until the feed read resolves so the card

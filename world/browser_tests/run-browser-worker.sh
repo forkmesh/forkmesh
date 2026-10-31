@@ -9,6 +9,16 @@ fi
 
 if [ "${FORKMESH_BROWSER_FULL:-0}" = "1" ]; then
   cd ../../app
+  python3 - dist/_redirects <<'PY'
+import re, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+if path.is_file():
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    path.write_text("".join(
+        line for line in lines if not re.match(r"\S+\s+https?://", line)
+    ), encoding="utf-8")
+PY
   source ./pywrangler.sh
   export FORKMESH_D1_LOCAL=1
   pywrangler dev \

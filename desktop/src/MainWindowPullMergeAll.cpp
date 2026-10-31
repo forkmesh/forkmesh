@@ -5,14 +5,21 @@
 #include "PullMergeAll.h"
 #include "PullStore.h"
 
+#include <QComboBox>
+#include <QGraphicsOpacityEffect>
 #include <QHash>
+#include <QLabel>
+#include <QPlainTextEdit>
+#include <QPointer>
 #include <QSet>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
 #include <QTimer>
+#include <QVariantAnimation>
 
 #include <algorithm>
+#include <cmath>
 
 using namespace forkmesh::ui;
 namespace pullmergeall = forkmesh::pullmergeall;
@@ -210,28 +217,25 @@ void MainWindow::mergeAllPullsWithAgent()
         setRepoDetailNotice(pullmergeall::errorMessage(QStringLiteral("no_open_pulls")));
         return;
     }
-    const auto answer = QMessageBox::question(
-        this, QStringLiteral("Merge all with AI"),
-        QStringLiteral(
-            "Start an AI agent in %1 with no branch and no permission prompts?\n\n"
-            "It reviews all %2 open pull request(s) for security issues, bugs and "
-            "code that does not fit this codebase, fixes what it can, and merges "
-            "the safe ones into their base branch. When it finishes, ForkMesh "
-            "deletes every pull request whose branch was merged, and that branch.\n\n"
-            "Pull requests it skips stay open. The agent does not push.")
-            .arg(writableRecordFor(repo).localPath)
-            .arg(open.size()),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-    if (answer != QMessageBox::Yes)
-        return;
-    startPullMergeAll(repo.owner, repo.name, open, true,
-                      [this](const pullmergeall::Launch &launch) {
-                          if (launch.error.isEmpty() ||
-                              launch.error == QLatin1String("launch_failed"))
-                              return;
-                          QMessageBox::warning(this, QStringLiteral("Merge all with AI"),
-                                               pullmergeall::launchMessage(launch));
-                      });
+    const QString owner = repo.owner;
+    const QString name = repo.name;
+    preparePullMergeAll(
+        owner, name, open,
+        [this, owner, name](const QList<pullmergeall::Target> &targets,
+                            const QStringList &skipped) {
+            const int repoIndex = repoIndexFor(owner, name);
+            if (repoIndex < 0)
+                return;
+            if (targets.isEmpty()) {
+                pullmergeall::Launch launch;
+                launch.error = QStringLiteral("nothing_mergeable");
+                launch.skipped = skipped;
+                if (repoIndex == m_repoDetailIndex)
+                    setRepoDetailNotice(pullmergeall::launchMessage(launch));
+                return;
+            }
+            draftPullMergeAllPrompt(repoIndex, targets, skipped);
+        });
 }
 
 void MainWindow::startPullMergeAll(
@@ -248,11 +252,29 @@ void MainWindow::startPullMergeAll(
             done(refused);
         return;
     }
+    preparePullMergeAll(
+        owner, name, open,
+        [this, owner, name, switchToTab, done](const QList<pullmergeall::Target> &targets,
+                                               const QStringList &skipped) {
+            const pullmergeall::Launch launch =
+                launchPullMergeAllAgent(owner, name, targets, skipped, switchToTab);
+            if (done)
+                done(launch);
+        });
+}
+
+void MainWindow::preparePullMergeAll(
+    const QString &owner, const QString &name, const QList<PullRequest> &open,
+    std::function<void(const QList<pullmergeall::Target> &, const QStringList &)> ready)
+{
+    const int repoIndex = repoIndexFor(owner, name);
     const QString workTree = writableRecordFor(m_repositories.at(repoIndex)).localPath;
     const PullStore store = pullStoreForRepoIndex(repoIndex);
     m_pullMergeAllPreparing = true;
     if (m_pullMergeAllAiButton)
         m_pullMergeAllAiButton->setEnabled(false);
+    if (m_pullReviewAllAiButton)
+        m_pullReviewAllAiButton->setEnabled(false);
     runOffThread<PullMergeAllPrepared>(
         [store, workTree, open] {
             PullMergeAllPrepared out;
@@ -305,14 +327,14 @@ void MainWindow::startPullMergeAll(
             }
             return out;
         },
-        [this, owner, name, switchToTab, done](PullMergeAllPrepared prepared) {
+        [this, ready](PullMergeAllPrepared prepared) {
             m_pullMergeAllPreparing = false;
             if (m_pullMergeAllAiButton)
                 m_pullMergeAllAiButton->setEnabled(true);
-            const pullmergeall::Launch launch = launchPullMergeAllAgent(
-                owner, name, prepared.targets, prepared.skipped, switchToTab);
-            if (done)
-                done(launch);
+            if (m_pullReviewAllAiButton)
+                m_pullReviewAllAiButton->setEnabled(true);
+            if (ready)
+                ready(prepared.targets, prepared.skipped);
         });
 }
 
@@ -353,7 +375,17 @@ pullmergeall::Launch MainWindow::launchPullMergeAllAgent(
     }
     launch.sessionId = sessionId;
     launch.count = targets.size();
+    recordPullMergeAllRun(sessionId, owner, name, targets, skipped);
+    if (repoIndex == m_repoDetailIndex)
+        setRepoDetailNotice(pullmergeall::launchMessage(launch));
+    return launch;
+}
 
+void MainWindow::recordPullMergeAllRun(int sessionId, const QString &owner,
+                                       const QString &name,
+                                       const QList<pullmergeall::Target> &targets,
+                                       const QStringList &skipped)
+{
     loadPullMergeAllRuns();
     pullmergeall::Run run;
     run.owner = owner;
@@ -374,9 +406,138 @@ pullmergeall::Launch MainWindow::launchPullMergeAllAgent(
                 *session, QStringLiteral("==> Merge all: left out %1.\n")
                               .arg(skipped.join(QStringLiteral(", "))));
     }
+}
+
+void MainWindow::draftPullMergeAllPrompt(int repoIndex,
+                                         const QList<pullmergeall::Target> &targets,
+                                         const QStringList &skipped)
+{
+    if (!m_issueQuickAdd || repoIndex < 0 || repoIndex >= m_repositories.size())
+        return;
+    const RepositoryRecord repo = m_repositories.at(repoIndex);
+    const QString prompt = pullmergeall::agentPrompt(
+        repo.owner, repo.name, writableRecordFor(repo).localPath, targets);
+    m_pullMergeAllDraft = pullmergeall::Draft();
+    m_pullMergeAllDraft.run.owner = repo.owner;
+    m_pullMergeAllDraft.run.name = repo.name;
+    m_pullMergeAllDraft.run.targets = targets;
+    m_pullMergeAllDraft.prompt = prompt;
+    m_pullMergeAllDraft.skipped = skipped;
+    fillComposerForPullDraft(repoIndex, prompt,
+                             pullmergeall::draftMessage(targets.size(), skipped),
+                             m_pullMergeAllAiButton);
+}
+
+void MainWindow::fillComposerForPullDraft(int repoIndex, const QString &prompt,
+                                          const QString &notice, QWidget *from)
+{
+    if (!m_issueQuickAdd)
+        return;
+    if (m_issuesRepoCombo) {
+        const int combo = m_issuesRepoCombo->findData(repoIndex);
+        if (combo >= 0)
+            m_issuesRepoCombo->setCurrentIndex(combo);
+    }
+    if (m_quickAddAgentProvider) {
+        const QString current = m_quickAddAgentProvider->currentData().toString();
+        if (current != QLatin1String("claude-code") && !agentIsCodexProvider(current)) {
+            QString provider = defaultAgentProvider();
+            if (provider != QLatin1String("claude-code") && !agentIsCodexProvider(provider))
+                provider = QStringLiteral("claude-code");
+            const int index = m_quickAddAgentProvider->findData(provider);
+            if (index >= 0)
+                m_quickAddAgentProvider->setCurrentIndex(index);
+        }
+    }
+    if (m_promptCloudButton && m_promptCloudButton->isChecked())
+        m_promptCloudButton->setChecked(false);
+    if (m_promptOverlayCollapsed)
+        setPromptOverlayCollapsed(false);
+
+    recordQuickAddHistory(m_issueQuickAdd->toPlainText());
+    m_issueQuickAdd->setPlainText(prompt);
+    m_issueQuickAdd->moveCursor(QTextCursor::Start);
+    if (m_promptWorktreeCheck)
+        m_promptWorktreeCheck->setChecked(false);
     if (repoIndex == m_repoDetailIndex)
-        setRepoDetailNotice(pullmergeall::launchMessage(launch));
-    return launch;
+        setRepoDetailNotice(notice);
+    const QPointer<QWidget> origin = from;
+    QTimer::singleShot(0, this, [this, origin] {
+        flyToComposer(origin);
+        if (m_issueQuickAdd)
+            m_issueQuickAdd->setFocus();
+    });
+}
+
+void MainWindow::adoptPullAgentDrafts(int sessionId, int repoIndex,
+                                      const QString &prompt, bool directCheckout)
+{
+    if (sessionId <= 0 || !directCheckout || repoIndex < 0 ||
+        repoIndex >= m_repositories.size())
+        return;
+    const RepositoryRecord repo = m_repositories.at(repoIndex);
+    adoptPullMergeAllDraft(sessionId, repo, prompt);
+    adoptPullReviewAllDraft(sessionId, repo, prompt);
+}
+
+void MainWindow::adoptPullMergeAllDraft(int sessionId, const RepositoryRecord &repo,
+                                        const QString &prompt)
+{
+    if (!pullmergeall::draftMatches(m_pullMergeAllDraft, repo.owner, repo.name, prompt))
+        return;
+    const pullmergeall::Draft draft = m_pullMergeAllDraft;
+    m_pullMergeAllDraft = pullmergeall::Draft();
+    if (activePullMergeAllSession(repo.owner, repo.name) > 0)
+        return;
+    recordPullMergeAllRun(sessionId, draft.run.owner, draft.run.name, draft.run.targets,
+                          draft.skipped);
+}
+
+void MainWindow::flyToComposer(QWidget *from)
+{
+    QWidget *to = m_issueQuickAdd;
+    if (!from || !to || !from->isVisible() || !to->isVisible() ||
+        from->window() != to->window())
+        return;
+    QWidget *host = from->window();
+    const QRect start(from->mapTo(host, QPoint()), from->size());
+    const QRect landing(to->mapTo(host, QPoint()), to->size());
+    QRect end(QPoint(), start.size() * 0.7);
+    end.moveCenter(landing.center());
+
+    auto *ghost = new QLabel(host);
+    ghost->setObjectName(QStringLiteral("composerFlyGhost"));
+    ghost->setAttribute(Qt::WA_TransparentForMouseEvents);
+    ghost->setPixmap(from->grab());
+    ghost->setScaledContents(true);
+    ghost->setGeometry(start);
+    auto *opacity = new QGraphicsOpacityEffect(ghost);
+    opacity->setOpacity(1.0);
+    ghost->setGraphicsEffect(opacity);
+    ghost->show();
+    ghost->raise();
+
+    auto *flight = new QVariantAnimation(ghost);
+    flight->setStartValue(0.0);
+    flight->setEndValue(1.0);
+    flight->setDuration(520);
+    flight->setEasingCurve(QEasingCurve::InOutCubic);
+    const int lift = qMin(80, qAbs(end.center().y() - start.center().y()) / 4 + 24);
+    connect(flight, &QVariantAnimation::valueChanged, ghost,
+            [ghost, opacity, start, end, lift](const QVariant &value) {
+                const qreal t = value.toReal();
+                const auto mix = [t](int a, int b) { return qRound(a + (b - a) * t); };
+                QRect rect(QPoint(), QSize(mix(start.width(), end.width()),
+                                           mix(start.height(), end.height())));
+                rect.moveCenter(QPoint(
+                    mix(start.center().x(), end.center().x()),
+                    mix(start.center().y(), end.center().y()) -
+                        qRound(lift * std::sin(t * M_PI))));
+                ghost->setGeometry(rect);
+                opacity->setOpacity(1.0 - 0.85 * t * t);
+            });
+    connect(flight, &QVariantAnimation::finished, ghost, &QObject::deleteLater);
+    flight->start();
 }
 
 void MainWindow::finishPullMergeAllRun(int sessionId)
