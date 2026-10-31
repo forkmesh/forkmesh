@@ -118,7 +118,7 @@ void MainWindow::resolveAgentSessionTaskWorktree(int sessionId)
 {
     const AgentSession *session = findAgentSession(sessionId);
     if (!session || m_taskWorkItemSessionWorktree.contains(sessionId) ||
-        session->directCheckout || session->branchName.isEmpty())
+        session->branchName.isEmpty())
         return;
     const int repoIndex = repoIndexFor(session->owner, session->name);
     const QString repoLocal =

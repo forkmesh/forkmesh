@@ -246,19 +246,21 @@ void MainWindow::reconcileOrganizationTaskWorkItems(const QJsonArray &tasks, boo
 void MainWindow::attachOrgTaskWorkItemForSession(int sessionId)
 {
     const AgentSession *session = findAgentSession(sessionId);
-    if (!session || session->orgTaskId.isEmpty() || session->directCheckout ||
+    if (!session || session->orgTaskId.isEmpty() || session->branchName.isEmpty() ||
         m_taskWorkItemSessionsAttached.contains(sessionId))
         return;
     QString worktree = m_taskWorkItemSessionWorktree.value(sessionId);
-    if (worktree.isEmpty())
+    if (worktree.isEmpty() && !session->directCheckout)
         worktree = m_streamWorktree.value(sessionId);
-    if (worktree.isEmpty() || session->branchName.isEmpty())
+    if (worktree.isEmpty() && !session->directCheckout)
         return;
     m_taskWorkItemSessionsAttached.insert(sessionId);
     const QString repository = session->owner + QLatin1Char('/') + session->name;
     attachOrganizationTaskWorkItem(session->orgTaskId,
                                    tw::validRepository(repository) ? repository : QString(),
-                                   session->branchName, QDir(worktree).absolutePath());
+                                   session->branchName,
+                                   worktree.isEmpty() ? QString()
+                                                      : QDir(worktree).absolutePath());
 }
 
 void MainWindow::attachOrganizationTaskWorkItem(const QString &taskId,

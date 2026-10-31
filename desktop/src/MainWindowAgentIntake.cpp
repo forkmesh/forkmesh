@@ -148,6 +148,13 @@ QJsonObject MainWindow::handleAgentIntakeRequest(const intake::Request &request)
         request.method == forkmesh::agenthub::MessageMethod ||
         request.method == forkmesh::agenthub::NotifyMethod)
         return handleAgentHubRequest(requester, request);
+    if (request.method == intake::LinkBranchMethod) {
+        intake::LinkBranchRequest link;
+        QString code;
+        if (!intake::parseLinkBranchRequest(request.params, &link, &code))
+            return intake::errorReply(code, intakeErrorMessage(code));
+        return linkBranchFromIntake(requester, link);
+    }
     if (request.method != intake::CreateMethod)
         return intake::errorReply(QStringLiteral("unknown_method"),
                                   QStringLiteral("Unknown method."));
@@ -220,27 +227,11 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
                     .arg(slug));
     }
     if (!request.worktree.isEmpty()) {
-        const QFileInfo info(request.worktree);
-        const QString canonical = info.canonicalFilePath();
-        if (!info.isDir() || canonical.isEmpty())
-            return intake::errorReply(QStringLiteral("bad_worktree"),
-                                      QStringLiteral("worktree is not a directory."));
-        const QString head = worktreeHeadBranch(canonical);
-        if (head.isEmpty())
-            return intake::errorReply(
-                QStringLiteral("bad_worktree"),
-                QStringLiteral("worktree has no branch checked out."));
-        if (branch.isEmpty())
-            branch = head;
-        else if (head != branch)
-            return intake::errorReply(
-                QStringLiteral("worktree_mismatch"),
-                QStringLiteral("worktree has %1 checked out, not %2.").arg(head, branch));
-        const QString holder = worktreePathForBranch(gitDir, branch);
-        if (holder.isEmpty() || QFileInfo(holder).canonicalFilePath() != canonical)
-            return intake::errorReply(
-                QStringLiteral("worktree_mismatch"),
-                QStringLiteral("worktree is not a worktree of %1.").arg(slug));
+        QString canonical;
+        const QJsonObject refused =
+            verifyIntakeWorktree(gitDir, slug, request.worktree, &branch, &canonical);
+        if (!refused.isEmpty())
+            return refused;
         const QString root = forkmesh::vm::active() ? forkmesh::vm::worktreeRoot()
                                                     : forkmesh::agentwt::root(gitDir);
         if (QFileInfo(canonical).absolutePath() != QFileInfo(root).canonicalFilePath())
@@ -383,6 +374,186 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
         {QStringLiteral("priority"), created ? created->priority : request.priority},
         {QStringLiteral("task"), created ? created->orgTaskId : taskId},
         {QStringLiteral("handedOff"), request.handoff},
+    };
+}
+
+QJsonObject MainWindow::verifyIntakeWorktree(const QString &gitDir, const QString &slug,
+                                             const QString &worktree, QString *branch,
+                                             QString *canonical)
+{
+    const QFileInfo info(worktree);
+    const QString path = info.canonicalFilePath();
+    if (!info.isDir() || path.isEmpty())
+        return intake::errorReply(QStringLiteral("bad_worktree"),
+                                  QStringLiteral("worktree is not a directory."));
+    const QString head = worktreeHeadBranch(path);
+    if (head.isEmpty())
+        return intake::errorReply(QStringLiteral("bad_worktree"),
+                                  QStringLiteral("worktree has no branch checked out."));
+    if (branch->isEmpty())
+        *branch = head;
+    else if (head != *branch)
+        return intake::errorReply(
+            QStringLiteral("worktree_mismatch"),
+            QStringLiteral("worktree has %1 checked out, not %2.").arg(head, *branch));
+    const QString holder = worktreePathForBranch(gitDir, *branch);
+    if (holder.isEmpty() || QFileInfo(holder).canonicalFilePath() != path)
+        return intake::errorReply(
+            QStringLiteral("worktree_mismatch"),
+            QStringLiteral("worktree is not a worktree of %1.").arg(slug));
+    if (canonical)
+        *canonical = path;
+    return QJsonObject();
+}
+
+bool MainWindow::sessionLinkedFromCheckout(int sessionId)
+{
+    const AgentSession *session = findAgentSession(sessionId);
+    return session && session->directCheckout && !session->branchName.trimmed().isEmpty();
+}
+
+QJsonObject MainWindow::linkBranchFromIntake(int requesterId,
+                                             const intake::LinkBranchRequest &request)
+{
+    const QString requester = QStringLiteral("Agent #%1").arg(requesterId);
+    intake::LinkBranchTarget target;
+    QString owner;
+    QString name;
+    if (const AgentSession *session = findAgentSession(requesterId)) {
+        target.found = true;
+        target.local = !session->cloud && !isExternalSession(requesterId) &&
+                       !isCloudSession(requesterId);
+        target.running = session->runInFlight();
+        target.directCheckout = session->directCheckout;
+        target.branch = session->branchName.trimmed();
+        target.baseBranch = session->baseBranch.trimmed();
+        owner = session->owner;
+        name = session->name;
+    }
+    const QString refusal = intake::linkBranchRefusal(target, request.branch);
+    if (refusal == QLatin1String("no_session"))
+        return intake::errorReply(
+            refusal, QStringLiteral("%1 has no agent session on this desktop to link a "
+                                    "branch to.")
+                         .arg(requester));
+    if (refusal == QLatin1String("not_running"))
+        return intake::errorReply(
+            refusal, QStringLiteral("%1 is not running; only a running agent can link "
+                                    "a branch to its own session.")
+                         .arg(requester));
+    if (refusal == QLatin1String("protected_branch"))
+        return intake::errorReply(
+            refusal, QStringLiteral("%1 is a base branch, not work of its own; link the "
+                                    "agent or feature branch you created.")
+                         .arg(request.branch));
+    if (refusal == QLatin1String("has_branch"))
+        return intake::errorReply(
+            refusal, QStringLiteral("%1 already works on branch %2 in its own worktree; "
+                                    "it cannot be linked to %3.")
+                         .arg(requester, target.branch, request.branch));
+    if (!refusal.isEmpty())
+        return intake::errorReply(refusal, intakeErrorMessage(refusal));
+
+    const int repoIndex = repoIndexFor(owner, name);
+    if (repoIndex < 0)
+        return intake::errorReply(
+            QStringLiteral("no_checkout"),
+            QStringLiteral("%1/%2 is not a repository this desktop has checked out.")
+                .arg(owner, name));
+    const RepositoryRecord repo = m_repositories.at(repoIndex);
+    const QString slug = repo.owner + QLatin1Char('/') + repo.name;
+    const QString gitDir = writableRecordFor(repo).localPath.trimmed();
+    if (gitDir.isEmpty())
+        return intake::errorReply(
+            QStringLiteral("no_checkout"),
+            QStringLiteral("%1 has no writable checkout on this desktop.").arg(slug));
+    QString branch = request.branch;
+    if (!localBranchExists(gitDir, branch))
+        return intake::errorReply(
+            QStringLiteral("branch_not_found"),
+            QStringLiteral("Branch %1 is not in %2 on this desktop; create it first.")
+                .arg(branch, slug));
+    QString worktree;
+    if (!request.worktree.isEmpty()) {
+        const QJsonObject refused =
+            verifyIntakeWorktree(gitDir, slug, request.worktree, &branch, &worktree);
+        if (!refused.isEmpty())
+            return refused;
+    }
+    QString base = target.baseBranch;
+    if (base.isEmpty() && repoIndex == m_repoDetailIndex)
+        base = m_repoInfo.defaultBranch.trimmed();
+    if (base.isEmpty()) {
+        for (const QString &candidate : {QStringLiteral("main"), QStringLiteral("master")})
+            if (localBranchExists(gitDir, candidate)) {
+                base = candidate;
+                break;
+            }
+    }
+    if (!base.isEmpty() && base == branch)
+        return intake::errorReply(
+            QStringLiteral("protected_branch"),
+            QStringLiteral("%1 is the base branch of %2; link the agent or feature "
+                           "branch you created.")
+                .arg(branch, slug));
+
+    AgentSession *session = findAgentSession(requesterId);
+    if (!session)
+        return intake::errorReply(
+            QStringLiteral("no_session"),
+            QStringLiteral("%1 has no agent session on this desktop to link a branch to.")
+                .arg(requester));
+    if (!m_agentStore)
+        return intake::errorReply(QStringLiteral("not_saved"),
+                                  QStringLiteral("The desktop's agent store is not open."));
+    const QString previousBranch = session->branchName;
+    const QString previousWorktreeName = session->worktreeName;
+    const QString previousBase = session->baseBranch;
+    session->branchName = branch;
+    if (!worktree.isEmpty())
+        session->worktreeName = QFileInfo(worktree).fileName();
+    if (session->baseBranch.trimmed().isEmpty() && !base.isEmpty())
+        session->baseBranch = base;
+    if (!m_agentStore->saveSession(*session)) {
+        session->branchName = previousBranch;
+        session->worktreeName = previousWorktreeName;
+        session->baseBranch = previousBase;
+        return intake::errorReply(
+            QStringLiteral("not_saved"),
+            QStringLiteral("%1's record could not be saved, so the branch was not "
+                           "linked.")
+                .arg(requester));
+    }
+    m_agentStore->appendLog(
+        *session,
+        worktree.isEmpty()
+            ? QStringLiteral("==> Linked branch %1.\n").arg(branch)
+            : QStringLiteral("==> Linked branch %1 (worktree %2).\n").arg(branch, worktree));
+    const QString taskId = session->orgTaskId;
+
+    m_sessionWorkdirCache.remove(requesterId);
+    m_taskWorkItemSessionWorktree.remove(requesterId);
+    if (!worktree.isEmpty()) {
+        m_sessionWorkdirCache.insert(requesterId, worktree);
+        m_taskWorkItemSessionWorktree.insert(requesterId, worktree);
+    }
+    m_agentDiffSig.remove(requesterId);
+    m_agentDiffStats.remove(requesterId);
+    if (!taskId.isEmpty()) {
+        m_taskWorkItemSessionsAttached.remove(requesterId);
+        if (worktree.isEmpty())
+            resolveAgentSessionTaskWorktree(requesterId);
+        attachOrgTaskWorkItemForSession(requesterId);
+    }
+    reloadAgents(AgentReloadScan::Rescan);
+    notifyLocalControlAgentsChanged();
+    scheduleAgentSessionsPush();
+    logSystem(QStringLiteral("%1 linked branch %2 of %3 to its session.")
+                  .arg(requester, branch, slug));
+    return QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("branch"), branch},
+        {QStringLiteral("worktree"), worktree},
     };
 }
 

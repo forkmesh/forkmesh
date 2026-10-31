@@ -157,6 +157,128 @@ static void testParse()
           "a non-string prompt is refused");
 }
 
+static QString linkError(const QJsonObject &params, LinkBranchRequest *out = nullptr)
+{
+    LinkBranchRequest request;
+    QString error;
+    if (parseLinkBranchRequest(params, &request, &error)) {
+        if (out)
+            *out = request;
+        return QString();
+    }
+    return error;
+}
+
+static void testLinkBranchParse()
+{
+    LinkBranchRequest request;
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral(" 20-agent-link-branch ")}},
+                    &request).isEmpty(),
+          "a branch alone parses");
+    check(request.branch == QLatin1String("20-agent-link-branch") && request.worktree.isEmpty(),
+          "the branch is trimmed and no worktree is assumed");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("agent/20-link")},
+                                {QStringLiteral("worktree"),
+                                 QStringLiteral("/home/u/src/.worktrees/20-link")}},
+                    &request).isEmpty(),
+          "a branch with its worktree parses");
+    check(request.worktree == QLatin1String("/home/u/src/.worktrees/20-link"),
+          "the worktree is carried");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("x")},
+                                {QStringLiteral("worktree"), QJsonValue()}})
+              .isEmpty(),
+          "a null worktree is no worktree");
+    check(linkError(QJsonObject{}) == QLatin1String("bad_branch"), "a missing branch is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("   ")}}) ==
+              QLatin1String("bad_branch"),
+          "a blank branch is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("agent/../main")}}) ==
+              QLatin1String("bad_branch"),
+          "a branch with .. is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("-x")}}) ==
+              QLatin1String("bad_branch"),
+          "a branch that looks like an option is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("a.lock")}}) ==
+              QLatin1String("bad_branch"),
+          "a .lock branch is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), 5}}) == QLatin1String("bad_request"),
+          "a non-string branch is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("x")},
+                                {QStringLiteral("worktree"), true}}) ==
+              QLatin1String("bad_request"),
+          "a non-string worktree is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("x")},
+                                {QStringLiteral("worktree"), QStringLiteral("relative/path")}}) ==
+              QLatin1String("bad_worktree"),
+          "a relative worktree is refused");
+    check(linkError(QJsonObject{{QStringLiteral("branch"), QStringLiteral("x")},
+                                {QStringLiteral("worktree"), QStringLiteral("/a/b/../c")}}) ==
+              QLatin1String("bad_worktree"),
+          "an uncleaned worktree path is refused");
+    check(!parseLinkBranchRequest(QJsonObject{}, nullptr, nullptr),
+          "parsing without an output fails safely");
+}
+
+static void testLinkBranchRefusal()
+{
+    check(linkBranchProtected(QStringLiteral("main"), QString()) &&
+              linkBranchProtected(QStringLiteral("master"), QString()) &&
+              linkBranchProtected(QStringLiteral("HEAD"), QString()) &&
+              linkBranchProtected(QStringLiteral("trunk"), QString()) &&
+              linkBranchProtected(QStringLiteral("refs/heads/x"), QString()) &&
+              linkBranchProtected(QStringLiteral("release/1.5"), QString()),
+          "base and release branches cannot be linked");
+    check(linkBranchProtected(QStringLiteral("develop"), QStringLiteral("develop")),
+          "the session's own base branch cannot be linked");
+    check(!linkBranchProtected(QStringLiteral("20-agent-link-branch"), QStringLiteral("main")),
+          "a feature branch can be linked");
+
+    LinkBranchTarget direct;
+    direct.found = true;
+    direct.running = true;
+    direct.directCheckout = true;
+    const QString branch = QStringLiteral("20-agent-link-branch");
+    check(linkBranchRefusal(direct, branch).isEmpty(),
+          "a running direct-checkout session can link a branch");
+    LinkBranchTarget relinked = direct;
+    relinked.branch = QStringLiteral("19-earlier");
+    check(linkBranchRefusal(relinked, branch).isEmpty(),
+          "a direct-checkout session can move to another branch");
+
+    check(linkBranchRefusal(LinkBranchTarget(), branch) == QLatin1String("no_session"),
+          "an unknown session is refused");
+    LinkBranchTarget cloud = direct;
+    cloud.local = false;
+    check(linkBranchRefusal(cloud, branch) == QLatin1String("no_session"),
+          "a cloud or external session is refused");
+    LinkBranchTarget stopped = direct;
+    stopped.running = false;
+    check(linkBranchRefusal(stopped, branch) == QLatin1String("not_running"),
+          "a session that is not running is refused");
+    check(linkBranchRefusal(direct, QStringLiteral("main")) == QLatin1String("protected_branch"),
+          "main is refused");
+
+    LinkBranchTarget worktreeRun = direct;
+    worktreeRun.directCheckout = false;
+    worktreeRun.branch = QStringLiteral("12-own-branch");
+    worktreeRun.baseBranch = QStringLiteral("main");
+    check(linkBranchRefusal(worktreeRun, branch) == QLatin1String("has_branch"),
+          "a worktree session keeps the branch the desktop gave it");
+    check(linkBranchRefusal(worktreeRun, QStringLiteral("12-own-branch")).isEmpty(),
+          "a worktree session may confirm its own branch");
+    LinkBranchTarget emptyWorktreeRun = worktreeRun;
+    emptyWorktreeRun.branch.clear();
+    check(linkBranchRefusal(emptyWorktreeRun, branch).isEmpty(),
+          "a session with no branch yet can link one");
+
+    check(unauthorizedReply(LinkBranchMethod)
+              .value(QStringLiteral("message"))
+              .toString()
+              .contains(QLatin1String("link a branch")),
+          "a link refusal names linking");
+    check(LinkBranchMethod == QLatin1String("agents.link_branch"), "the method name is pinned");
+}
+
 static void testTokens()
 {
     const QString token = mintToken(42);
@@ -462,6 +584,8 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     testParse();
+    testLinkBranchParse();
+    testLinkBranchRefusal();
     testTokens();
     testAuthorization();
     testRateLimiter();

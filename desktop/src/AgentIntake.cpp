@@ -161,6 +161,49 @@ bool parseCreateRequest(const QJsonObject &params, CreateRequest *out,
     return true;
 }
 
+bool parseLinkBranchRequest(const QJsonObject &params, LinkBranchRequest *out,
+                            QString *error)
+{
+    if (!out)
+        return fail(error, QStringLiteral("bad_request"));
+    bool wrongType = false;
+    const QString branch =
+        stringField(params, QStringLiteral("branch"), &wrongType).trimmed();
+    const QString worktree =
+        stringField(params, QStringLiteral("worktree"), &wrongType).trimmed();
+    if (wrongType)
+        return fail(error, QStringLiteral("bad_request"));
+    if (branch.isEmpty() || !forkmesh::localcontrol::handoffRefNameValid(branch))
+        return fail(error, QStringLiteral("bad_branch"));
+    if (!worktree.isEmpty() && !worktreePathValid(worktree))
+        return fail(error, QStringLiteral("bad_worktree"));
+    out->branch = branch;
+    out->worktree = worktree;
+    return true;
+}
+
+bool linkBranchProtected(const QString &branch, const QString &baseBranch)
+{
+    static const QStringList reserved{QStringLiteral("main"), QStringLiteral("master"),
+                                      QStringLiteral("HEAD"), QStringLiteral("trunk")};
+    return reserved.contains(branch) || branch.startsWith(QLatin1String("refs/")) ||
+           branch.startsWith(QLatin1String("release/")) ||
+           (!baseBranch.isEmpty() && branch == baseBranch);
+}
+
+QString linkBranchRefusal(const LinkBranchTarget &target, const QString &branch)
+{
+    if (!target.found || !target.local)
+        return QStringLiteral("no_session");
+    if (!target.running)
+        return QStringLiteral("not_running");
+    if (linkBranchProtected(branch, target.baseBranch))
+        return QStringLiteral("protected_branch");
+    if (!target.directCheckout && !target.branch.isEmpty() && target.branch != branch)
+        return QStringLiteral("has_branch");
+    return QString();
+}
+
 bool releaseTagValid(const QString &tag)
 {
     return forkmesh::releasedraft::tagNameValid(tag);
@@ -290,7 +333,9 @@ QJsonObject errorReply(const QString &code, const QString &message)
 QJsonObject unauthorizedReply(const QString &method)
 {
     QString action = QStringLiteral("create agents");
-    if (method.startsWith(ReleaseMethodPrefix))
+    if (method == LinkBranchMethod)
+        action = QStringLiteral("link a branch to their own session");
+    else if (method.startsWith(ReleaseMethodPrefix))
         action = QStringLiteral("manage its releases");
     else if (method.startsWith(WindowMethodPrefix))
         action = QStringLiteral("open or read its windows");
