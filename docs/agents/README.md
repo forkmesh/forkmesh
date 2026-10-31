@@ -131,6 +131,26 @@ follows a run through every layer. The desktop UI for agents is described in
   runs in the main checkout; it proceeds past unstaged or untracked edits the
   branch does not touch and refuses (naming files) when the branch touches a
   dirty file, anything is staged or the checkout is not on the base branch.
+- **Claude Code sessions go with the worktree** (2026-10-31). Claude Code
+  files a session under `<config>/projects/<cwd with every non-alphanumeric
+  as ->/`, so every agent worktree left a folder there after its worktree was
+  removed (about 1,600 on one box), still listed by `claude --resume` and the
+  Claude app but never resumable. Merge & clean up, the agent Delete, the
+  Worktrees panel's remove and the agent's own teardown
+  (`cleanupStreamWorktree`) now call
+  `ClaudeSessionScan::removeOrphanedTranscripts`, which removes that folder
+  (transcripts and subagent logs) in `~/.claude`, the default config folder
+  and every Claude account's folder, plus `file-history/<uuid>` and
+  `session-env/<uuid>` of each session in it unless the same session id is
+  still filed under another folder. It acts only when the worktree folder no
+  longer exists, matches the exact key (never a prefix, so `9-x-v2` survives
+  `9-x`), never touches the main checkout's folder (where Claude's memory
+  lives), and deletes through `safedelete::removeTree`. A link in `~/.claude`
+  the Claude app reads is removed as a link. The ForkMesh session itself
+  stays in the recycle bin with its own transcript; restoring it cannot
+  resume the CLI conversation, which needed the worktree anyway. Not covered:
+  Claude's hashed keys for paths over 200 characters, and Codex threads,
+  which are not filed by folder.
 
 ## Desktop agent sandboxing
 
