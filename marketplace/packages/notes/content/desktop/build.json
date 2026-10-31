@@ -6,7 +6,11 @@
     "NoteCommentsPanel.h",
     "NoteCommentsPanel.cpp",
     "NotePresenceFaces.h",
-    "NotePresenceFaces.cpp"
+    "NotePresenceFaces.cpp",
+    "NotePageView.h",
+    "NotePageView.cpp",
+    "NotePageDialogs.h",
+    "NotePageDialogs.cpp"
   ],
   "mocHeaders": []
 }

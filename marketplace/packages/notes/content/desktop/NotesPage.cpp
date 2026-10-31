@@ -7,6 +7,9 @@
 #include "OcticonIcons.h"
 #include "Theme.h"
 #include "NoteCommentsPanel.h"
+#include "NotePageDialogs.h"
+#include "NotePageView.h"
+#include "NotePages.h"
 #include "NoteListEntry.h"
 #include "NotePresenceFaces.h"
 #include "NoteRequestProof.h"
@@ -59,6 +62,7 @@
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QTimer>
+#include <QToolButton>
 #include <QUrlQuery>
 #include <QUuid>
 #include <QVBoxLayout>
@@ -86,6 +90,9 @@ constexpr int kNoteRowCommentsRole = Qt::UserRole + 9;
 constexpr int kNoteRowCloudIdRole = Qt::UserRole + 10;
 constexpr int kNoteRowRoleRole = Qt::UserRole + 11;
 constexpr int kNoteRowHeaderRole = Qt::UserRole + 12;
+constexpr int kPageIdRole = Qt::UserRole + 30;
+constexpr int kPageAccentRole = Qt::UserRole + 31;
+constexpr int kPageCountRole = Qt::UserRole + 32;
 constexpr int kShareSuggestionNameRole = Qt::UserRole + 20;
 constexpr int kShareSuggestionTypeRole = Qt::UserRole + 21;
 constexpr int kNoteAutosaveMs = 1500;
@@ -422,6 +429,59 @@ public:
     }
 };
 
+class PageRowDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &) const override
+    {
+        return QSize(kNoteRowHintWidth, QFontMetrics(option.font).height() + 12);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        const bool selected = option.state.testFlag(QStyle::State_Selected);
+        const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        if (selected || hovered) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(selected ? Theme::Role::SurfaceActive
+                                                    : Theme::Role::SurfaceRaised));
+            painter->drawRoundedRect(QRectF(option.rect), 6, 6);
+        }
+        const QRect content = option.rect.adjusted(kNoteRowPadX, 0, -kNoteRowPadX, 0);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(forkmesh::notes::pageAccentHex(
+            index.data(kPageAccentRole).toString())));
+        painter->drawRoundedRect(
+            QRectF(content.left(), content.center().y() - 4, 8, 8), 2, 2);
+        const QString count = index.data(kPageCountRole).toString();
+        QFont small = option.font;
+        small.setPixelSize(qMax(10, (option.font.pixelSize() > 0
+                                         ? option.font.pixelSize()
+                                         : QFontInfo(option.font).pixelSize()) - 2));
+        const int countWidth = QFontMetrics(small).horizontalAdvance(count);
+        painter->setFont(small);
+        painter->setPen(Theme::color(Theme::Role::FgMuted));
+        painter->drawText(QRect(content.right() - countWidth, content.top(), countWidth,
+                                content.height()),
+                          Qt::AlignRight | Qt::AlignVCenter, count);
+        const QRect text(content.left() + 16, content.top(),
+                         qMax(0, content.width() - 16 - countWidth - 8), content.height());
+        painter->setFont(option.font);
+        painter->setPen(Theme::color(Theme::Role::Fg));
+        painter->drawText(text, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
+                          QFontMetrics(option.font).elidedText(
+                              index.data(Qt::DisplayRole).toString(), Qt::ElideRight,
+                              text.width()));
+        painter->restore();
+    }
+};
+
 QListWidgetItem *noteListItem(const QJsonObject &note,
                               const QJsonObject &cloud, const QString &mode,
                               bool synced, const QString &me)
@@ -434,6 +494,11 @@ QListWidgetItem *noteListItem(const QJsonObject &note,
         local ? QString() : cloud.value(QStringLiteral("lastEditedBy")).toString();
     const QStringList lines =
         NoteListEntry::lines(note, cloud, mode, synced, noteTimestampLabel(status));
+    const QString emoji = note.contains(QStringLiteral("emoji")) || local
+        ? note.value(QStringLiteral("emoji")).toString()
+        : cloud.value(QStringLiteral("emoji")).toString();
+    const QString shownTitle = forkmesh::notes::noteDisplayTitle(
+        emoji, lines.value(0) == QLatin1String("Untitled note") ? QString() : lines.value(0));
     const bool unread = forkmesh::notes::noteUnread(cloud, mode);
     const int comments =
         local ? 0 : cloud.value(QStringLiteral("openComments")).toInt();
@@ -444,7 +509,8 @@ QListWidgetItem *noteListItem(const QJsonObject &note,
     const QString edited = forkmesh::notes::noteLastEditLabel(
         stamp, editor, me, QDateTime::currentDateTime());
 
-    QStringList text{(unread ? QStringLiteral("● ") : QString()) + lines.value(0),
+    QStringList text{(unread ? QStringLiteral("● ") : QString()) +
+                         (shownTitle.isEmpty() ? lines.value(0) : shownTitle),
                      QStringLiteral("%1 · %2").arg(storage, visibility)};
     if (!edited.isEmpty())
         text << edited;
@@ -473,7 +539,7 @@ QListWidgetItem *noteListItem(const QJsonObject &note,
         detail << edited;
     if (!local && !synced)
         detail << QStringLiteral("not in the cloud yet");
-    item->setData(kNoteRowTitleRole, lines.value(0));
+    item->setData(kNoteRowTitleRole, shownTitle);
     item->setData(kNoteRowStorageRole, storage);
     item->setData(kNoteRowVisibilityRole, visibility);
     item->setData(kNoteRowPublicRole, visibility == QLatin1String("Public"));
@@ -710,11 +776,13 @@ void NotesPage::buildNotesSection()
     connect(versions, &QPushButton::clicked, this,
             &NotesPage::showNoteVersions);
     heading->addWidget(versions);
+    m_noteActionButtons << versions;
     auto *share = new QPushButton(QStringLiteral("Share"));
     share->setObjectName(QStringLiteral("ghostButton"));
     setOcticon(share, "people", 14);
     connect(share, &QPushButton::clicked, this, &NotesPage::shareNote);
     heading->addWidget(share);
+    m_noteActionButtons << share;
     auto *attach = new QPushButton(QStringLiteral("Links"));
     attach->setObjectName(QStringLiteral("ghostButton"));
     setOcticon(attach, "link", 14);
@@ -722,6 +790,7 @@ void NotesPage::buildNotesSection()
         "Issues, pull requests and discussions linked to this note"));
     connect(attach, &QPushButton::clicked, this, &NotesPage::showNoteLinks);
     heading->addWidget(attach);
+    m_noteActionButtons << attach;
     m_commentsButton = new QPushButton(commentsButtonLabel(0));
     m_commentsButton->setObjectName(QStringLiteral("ghostButton"));
     m_commentsButton->setProperty("noteCommentsButton", true);
@@ -749,6 +818,7 @@ void NotesPage::buildNotesSection()
                            &NotesPage::convertNoteToIssue);
     convert->setMenu(convertMenu);
     heading->addWidget(convert);
+    m_noteActionButtons << convert;
     auto *more = new QPushButton;
     more->setObjectName(QStringLiteral("ghostButton"));
     more->setCursor(Qt::PointingHandCursor);
@@ -780,11 +850,13 @@ void NotesPage::buildNotesSection()
     });
     more->setMenu(moreMenu);
     heading->addWidget(more);
+    m_noteActionButtons << more;
     auto *remove = new QPushButton(QStringLiteral("Delete"));
     remove->setObjectName(QStringLiteral("dangerButton"));
     setOcticon(remove, "trash", 14);
     connect(remove, &QPushButton::clicked, this, &NotesPage::deleteNote);
     heading->addWidget(remove);
+    m_noteActionButtons << remove;
     auto *add = new QPushButton(QStringLiteral("New note"));
     add->setObjectName(QStringLiteral("primaryButton"));
     setOcticon(add, "plus", 14);
@@ -804,6 +876,39 @@ void NotesPage::buildNotesSection()
     auto *listLayout = new QVBoxLayout(listColumn);
     listLayout->setContentsMargins(0, 0, 0, 0);
     listLayout->setSpacing(6);
+    m_pagesGroup = new QWidget;
+    m_pagesGroup->setObjectName(QStringLiteral("notePagesGroup"));
+    auto *pagesLayout = new QVBoxLayout(m_pagesGroup);
+    pagesLayout->setContentsMargins(0, 0, 0, 0);
+    pagesLayout->setSpacing(2);
+    auto *pagesHeader = new QHBoxLayout;
+    auto *pagesTitle = new QLabel(QStringLiteral("Pages"));
+    pagesTitle->setObjectName(QStringLiteral("mutedLabel"));
+    pagesTitle->setStyleSheet(Theme::remapSheet(QStringLiteral("font-weight:600;")));
+    pagesHeader->addWidget(pagesTitle);
+    pagesHeader->addStretch();
+    auto *newPage = new QPushButton(QStringLiteral("New page"));
+    newPage->setObjectName(QStringLiteral("ghostButton"));
+    newPage->setCursor(Qt::PointingHandCursor);
+    newPage->setToolTip(QStringLiteral(
+        "Gather several notes on one shareable page with an outline"));
+    setOcticon(newPage, "plus", 14);
+    connect(newPage, &QPushButton::clicked, this, &NotesPage::createPage);
+    pagesHeader->addWidget(newPage);
+    pagesLayout->addLayout(pagesHeader);
+    m_pagesList = new QListWidget;
+    m_pagesList->setObjectName(QStringLiteral("notePagesList"));
+    m_pagesList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_pagesList->setItemDelegate(new PageRowDelegate(m_pagesList));
+    m_pagesList->viewport()->setAttribute(Qt::WA_Hover, true);
+    m_pagesList->setFrameShape(QFrame::NoFrame);
+    m_pagesList->hide();
+    connect(m_pagesList, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+        openPage(item->data(kPageIdRole).toString());
+    });
+    pagesLayout->addWidget(m_pagesList);
+    m_pagesGroup->hide();
+    listLayout->addWidget(m_pagesGroup);
     m_noteSearch = new QLineEdit;
     m_noteSearch->setObjectName(QStringLiteral("noteSearch"));
     m_noteSearch->setPlaceholderText(QStringLiteral("Search notes"));
@@ -858,9 +963,11 @@ void NotesPage::buildNotesSection()
     m_notesList->viewport()->setAttribute(Qt::WA_Hover, true);
     connect(m_notesList, &QListWidget::itemSelectionChanged, this, [this] {
         QListWidgetItem *item = m_notesList->currentItem();
-        if (item && !item->data(kNoteIdRole).toString().isEmpty())
+        if (item && !item->data(kNoteIdRole).toString().isEmpty()) {
+            showEditorPane();
             selectNote(item->data(kNoteIdRole).toString(),
                        item->data(kNoteStorageRole).toString());
+        }
     });
     m_notesList->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_notesList, &QWidget::customContextMenuRequested, this,
@@ -869,6 +976,7 @@ void NotesPage::buildNotesSection()
     splitter->addWidget(listColumn);
 
     auto *editorHost = new QWidget;
+    m_editorHost = editorHost;
     auto *editorLayout = new QVBoxLayout(editorHost);
     editorLayout->setContentsMargins(12, 0, 0, 0);
     auto *toolbar = new QHBoxLayout;
@@ -876,6 +984,20 @@ void NotesPage::buildNotesSection()
     m_noteTitle->setObjectName(QStringLiteral("noteTitleEdit"));
     m_noteTitle->setPlaceholderText(QStringLiteral("Untitled note"));
     m_noteTitle->setMaxLength(200);
+    m_noteEmojiButton = new QToolButton;
+    m_noteEmojiButton->setObjectName(QStringLiteral("noteEmojiButton"));
+    m_noteEmojiButton->setAutoRaise(true);
+    m_noteEmojiButton->setCursor(Qt::PointingHandCursor);
+    {
+        QFont font = m_noteEmojiButton->font();
+        font.setPixelSize(18);
+        m_noteEmojiButton->setFont(font);
+    }
+    m_noteEmojiButton->setFixedWidth(34);
+    connect(m_noteEmojiButton, &QToolButton::clicked, this,
+            &NotesPage::pickSelectedNoteEmoji);
+    toolbar->addWidget(m_noteEmojiButton);
+    updateNoteEmojiButton();
     toolbar->addWidget(m_noteTitle, 1);
     m_presenceBox = new QWidget;
     m_presenceBox->setObjectName(QStringLiteral("notePresence"));
@@ -978,7 +1100,34 @@ void NotesPage::buildNotesSection()
     connect(m_noteLinkedItems, &QLabel::linkActivated, this,
             [this](const QString &href) { openReferenceLink(href); });
     editorLayout->addWidget(m_noteLinkedItems);
-    splitter->addWidget(editorHost);
+    m_rightStack = new QStackedWidget;
+    m_rightStack->setObjectName(QStringLiteral("notesRightStack"));
+    m_rightStack->addWidget(editorHost);
+    NotePageView::Hooks pageHooks;
+    pageHooks.request = [this](const QByteArray &method, const QString &path,
+                               const QJsonObject &body, NotePageView::Reply reply) {
+        requestNotes(method, path, body, std::move(reply));
+    };
+    pageHooks.me = [this] {
+        return m_host.accountName ? m_host.accountName() : QString();
+    };
+    pageHooks.openNote = [this](const QString &noteId) { openNoteByCloudId(noteId); };
+    pageHooks.back = [this] { showEditorPane(); };
+    pageHooks.customize = [this] { customizeCurrentPage(); };
+    pageHooks.share = [this] { shareCurrentPage(); };
+    pageHooks.copyLink = [this](const QString &pageId, const QString &noteId) {
+        QGuiApplication::clipboard()->setText(
+            forkmesh::notes::pageAccessLink(catalogApiUrl(), pageId, noteId));
+        flashMessage(noteId.isEmpty()
+                         ? QStringLiteral("Link to the page copied.")
+                         : QStringLiteral("Link to the page, open at this note, copied."),
+                     false, QString(), forkmesh::kLocalOperationNoticeKind);
+    };
+    pageHooks.loaded = [this](const QJsonObject &loadedPage) { pageLoaded(loadedPage); };
+    pageHooks.noteViewed = [this](const QString &noteId) { recordNoteView(noteId); };
+    m_pageView = new NotePageView(std::move(pageHooks));
+    m_rightStack->addWidget(m_pageView);
+    splitter->addWidget(m_rightStack);
     NoteCommentsPanel::Hooks commentHooks;
     commentHooks.request = [this](const QByteArray &method, const QString &path,
                                   const QJsonObject &body,
@@ -1203,6 +1352,7 @@ void NotesPage::refreshNotes()
         return;
     m_localNotes = readLocalNotes();
     m_notesLoading = true;
+    refreshPages();
     requestNotes(QByteArrayLiteral("GET"), QStringLiteral("/api/notes"), {},
                  [this](bool ok, const QJsonObject &payload,
                         const QString &error) {
@@ -1364,6 +1514,7 @@ void NotesPage::selectNote(const QString &id, const QString &storage)
         m_selectedNote = m_localNotes.at(index).toObject();
         m_selectedNoteStorage = QStringLiteral("local");
         m_noteTitle->setText(m_selectedNote.value(QStringLiteral("title")).toString());
+        updateNoteEmojiButton();
         m_noteEditor->setMarkdown(m_selectedNote.value(QStringLiteral("markdown")).toString());
         const QString mode = m_selectedNote.value(QStringLiteral("storage"))
                                  .toString(QStringLiteral("local"));
@@ -1395,6 +1546,7 @@ void NotesPage::selectNote(const QString &id, const QString &storage)
         m_selectedNote = payload.value(QStringLiteral("note")).toObject();
         m_selectedNoteStorage = QStringLiteral("cloud");
         m_noteTitle->setText(m_selectedNote.value(QStringLiteral("title")).toString());
+        updateNoteEmojiButton();
         m_noteEditor->setMarkdown(m_selectedNote.value(QStringLiteral("markdown")).toString());
         m_noteStorageMode->setCurrentIndex(
             m_noteStorageMode->findData(QStringLiteral("cloud")));
@@ -1431,6 +1583,7 @@ void NotesPage::openNoteFromSearch(const QString &id, const QString &storage)
 {
     if (m_host.showPage)
         m_host.showPage();
+    showEditorPane();
     if (!m_notesList || id.isEmpty())
         return;
     for (int row = 0; row < m_notesList->count(); ++row) {
@@ -1447,6 +1600,7 @@ void NotesPage::openNoteFromSearch(const QString &id, const QString &storage)
 
 void NotesPage::createNote()
 {
+    showEditorPane();
     m_selectedNote = QJsonObject{
         {QStringLiteral("id"), newNoteId()},
         {QStringLiteral("title"), QStringLiteral("Untitled note")},
@@ -1456,6 +1610,7 @@ void NotesPage::createNote()
     };
     m_selectedNoteStorage = QStringLiteral("local");
     m_noteTitle->setText(QStringLiteral("Untitled note"));
+    updateNoteEmojiButton();
     m_noteEditor->setMarkdown(QString());
     m_noteEditor->showWriteArea();
     m_noteStorageMode->setCurrentIndex(0);
@@ -1567,6 +1722,9 @@ void NotesPage::saveNote()
         {QStringLiteral("title"), title},
         {QStringLiteral("markdown"), body},
     };
+    if (cloudId.isEmpty() || forkmesh::notes::noteCanEdit(selectedNoteRole()))
+        requestBody.insert(QStringLiteral("emoji"),
+                           m_selectedNote.value(QStringLiteral("emoji")).toString());
     if (cloudId.isEmpty() || selectedNoteRole() == QLatin1String("owner"))
         requestBody.insert(QStringLiteral("visibility"),
                            m_notePublic->isChecked() ? QStringLiteral("public")
@@ -1771,6 +1929,8 @@ void NotesPage::autosaveNote()
         {QStringLiteral("baseVersion"),
          m_selectedNote.value(QStringLiteral("version")).toInt()},
     };
+    request.insert(QStringLiteral("emoji"),
+                   m_selectedNote.value(QStringLiteral("emoji")).toString());
     if (selectedNoteRole() == QLatin1String("owner"))
         request.insert(QStringLiteral("visibility"),
                        m_notePublic->isChecked() ? QStringLiteral("public")
@@ -1884,6 +2044,7 @@ void NotesPage::takeTheirNoteVersion()
                      theirs.value(QStringLiteral("visibility")));
         local.insert(QStringLiteral("shares"),
                      theirs.value(QStringLiteral("shares")));
+        local.insert(QStringLiteral("emoji"), theirs.value(QStringLiteral("emoji")));
         local = localSnapshot(local, title, markdown,
                               m_noteStorageMode->currentData().toString());
         const int index = localNoteIndex(
@@ -1900,6 +2061,7 @@ void NotesPage::takeTheirNoteVersion()
         storeCloudNote(theirs);
     }
     m_noteTitle->setText(title);
+    updateNoteEmojiButton();
     m_noteEditor->setMarkdown(markdown);
     m_notePublic->setChecked(theirs.value(QStringLiteral("visibility")).toString() ==
                              QLatin1String("public"));
@@ -2663,6 +2825,12 @@ bool NotesPage::openNoteLink(const QString &href)
 {
     const forkmesh::notes::NoteLink link =
         forkmesh::notes::trustedNoteLink(href, noteRelayHosts());
+    if (!link.page.isEmpty()) {
+        if (m_host.showPage)
+            m_host.showPage();
+        openPage(link.page, link.id);
+        return true;
+    }
     if (link.id.isEmpty())
         return false;
     m_pendingCommentNote = link.comment.isEmpty() ? QString() : link.id;
@@ -2832,6 +3000,7 @@ void NotesPage::showNoteVersions()
             }
             m_selectedNote = result.value(QStringLiteral("note")).toObject();
             m_noteTitle->setText(m_selectedNote.value(QStringLiteral("title")).toString());
+            updateNoteEmojiButton();
             m_noteEditor->setMarkdown(m_selectedNote.value(QStringLiteral("markdown")).toString());
             m_noteDirty = false;
             m_notesStatus->setText(QStringLiteral("Snapshot restored as a new version."));
@@ -2920,7 +3089,7 @@ void NotesPage::pollNotePresence()
         syncNoteCollab();
         return;
     }
-    if (id.isEmpty() || m_presencePaused)
+    if (id.isEmpty() || m_presencePaused || pageShown())
         return;
     if (m_presenceInFlight) {
         m_presenceQueued = true;
@@ -2991,7 +3160,7 @@ void NotesPage::updateCommentControls()
 {
     if (!m_commentsButton || !m_commentButton || !m_commentsPanel)
         return;
-    const bool collab = !collabNoteId().isEmpty();
+    const bool collab = !collabNoteId().isEmpty() && !pageShown();
     m_commentsButton->setVisible(collab);
     m_commentsButton->setText(forkmesh::notes::commentsButtonLabel(
         collab ? m_commentsPanel->openCount() : 0));
@@ -3250,6 +3419,269 @@ void NotesPage::runPendingRowAction()
         else if (action == QLatin1String("delete"))
             guard->deleteNote();
     });
+}
+
+bool NotesPage::pageShown() const
+{
+    return m_rightStack && m_pageView && m_rightStack->currentWidget() == m_pageView;
+}
+
+void NotesPage::showEditorPane()
+{
+    if (!pageShown())
+        return;
+    m_rightStack->setCurrentWidget(m_editorHost);
+    if (m_pagesList) {
+        const QSignalBlocker blocker(m_pagesList);
+        m_pagesList->clearSelection();
+    }
+    for (QWidget *widget : std::as_const(m_noteActionButtons))
+        widget->setVisible(true);
+    updateCommentControls();
+    schedulePresencePoll(0);
+}
+
+void NotesPage::openPage(const QString &pageId, const QString &noteId)
+{
+    if (!forkmesh::notes::isNoteId(pageId) || !m_pageView)
+        return;
+    if (!pageShown()) {
+        setCommentsPanelOpen(false);
+        leaveNotePresence();
+        hideNotePresence();
+        m_rightStack->setCurrentWidget(m_pageView);
+        for (QWidget *widget : std::as_const(m_noteActionButtons))
+            widget->setVisible(false);
+        updateCommentControls();
+        if (m_notesList) {
+            const QSignalBlocker blocker(m_notesList);
+            m_notesList->clearSelection();
+            m_notesList->setCurrentItem(nullptr);
+        }
+    }
+    if (m_pagesList) {
+        const QSignalBlocker blocker(m_pagesList);
+        for (int row = 0; row < m_pagesList->count(); ++row) {
+            if (m_pagesList->item(row)->data(kPageIdRole).toString() == pageId)
+                m_pagesList->setCurrentRow(row);
+        }
+    }
+    m_pageView->showPage(pageId, noteId);
+}
+
+void NotesPage::refreshPages()
+{
+    const int sequence = ++m_pagesSequence;
+    requestNotes(QByteArrayLiteral("GET"), QStringLiteral("/api/notes/pages"), {},
+                 [this, sequence](bool ok, const QJsonObject &payload, const QString &) {
+        if (sequence != m_pagesSequence || !m_pagesGroup)
+            return;
+        if (!ok) {
+            m_pagesGroup->hide();
+            return;
+        }
+        m_pages = payload.value(QStringLiteral("pages")).toArray();
+        m_pagesGroup->show();
+        renderPagesList();
+    });
+}
+
+void NotesPage::renderPagesList()
+{
+    if (!m_pagesList)
+        return;
+    const QSignalBlocker blocker(m_pagesList);
+    m_pagesList->clear();
+    const QString open = pageShown() ? m_pageView->pageId() : QString();
+    for (const QJsonValue &value : std::as_const(m_pages)) {
+        const QJsonObject page = value.toObject();
+        const QString id = page.value(QStringLiteral("id")).toString();
+        if (id.isEmpty())
+            continue;
+        auto *item = new QListWidgetItem(forkmesh::notes::noteDisplayTitle(
+            page.value(QStringLiteral("emoji")).toString(),
+            forkmesh::notes::pageTitle(page), QStringLiteral("Untitled page")));
+        const int entries = page.value(QStringLiteral("entries")).toInt();
+        item->setData(kPageIdRole, id);
+        item->setData(kPageAccentRole, page.value(QStringLiteral("accent")).toString());
+        item->setData(kPageCountRole, QString::number(entries));
+        const QString role = page.value(QStringLiteral("role")).toString();
+        item->setToolTip(QStringLiteral("%1\n%2 · %3")
+                             .arg(forkmesh::notes::pageTitle(page),
+                                  forkmesh::notes::pageEntriesLabel(entries),
+                                  forkmesh::notes::noteRoleLine(role)));
+        m_pagesList->addItem(item);
+        if (id == open)
+            m_pagesList->setCurrentItem(item);
+    }
+    const int rows = qMin(m_pagesList->count(), 6);
+    m_pagesList->setVisible(rows > 0);
+    if (rows > 0)
+        m_pagesList->setFixedHeight(rows * m_pagesList->sizeHintForRow(0) +
+                                    2 * m_pagesList->frameWidth() + 2);
+}
+
+void NotesPage::pageLoaded(const QJsonObject &page)
+{
+    const QString id = page.value(QStringLiteral("id")).toString(m_pageView->pageId());
+    bool found = false;
+    for (int i = 0; i < m_pages.size(); ++i) {
+        QJsonObject entry = m_pages.at(i).toObject();
+        if (entry.value(QStringLiteral("id")).toString() != id)
+            continue;
+        for (const char *field : {"title", "emoji", "accent", "layout", "role"})
+            entry.insert(QLatin1String(field), page.value(QLatin1String(field)));
+        entry.insert(QStringLiteral("entries"),
+                     page.value(QStringLiteral("outline")).toArray().size());
+        m_pages.replace(i, entry);
+        found = true;
+    }
+    if (found)
+        renderPagesList();
+    if (!m_customizeWhenLoaded.isEmpty() && m_customizeWhenLoaded == id) {
+        m_customizeWhenLoaded.clear();
+        customizeCurrentPage();
+    }
+}
+
+void NotesPage::createPage()
+{
+    requestNotes(QByteArrayLiteral("POST"), QStringLiteral("/api/notes/pages"),
+                 QJsonObject{{QStringLiteral("title"), QStringLiteral("Untitled page")},
+                             {QStringLiteral("layout"), QStringLiteral("outline")}},
+                 [this](bool ok, const QJsonObject &payload, const QString &error) {
+        if (!ok) {
+            flashMessage(forkmesh::notes::pageError(
+                             payload.value(QStringLiteral("error")).toString(),
+                             QStringLiteral("Could not create the page: %1").arg(error)),
+                         true, QString(), forkmesh::kLocalOperationNoticeKind);
+            return;
+        }
+        const QJsonObject page = payload.contains(QStringLiteral("page"))
+            ? payload.value(QStringLiteral("page")).toObject()
+            : payload;
+        const QString id = page.value(QStringLiteral("id")).toString();
+        if (!forkmesh::notes::isNoteId(id))
+            return;
+        m_pages.prepend(page);
+        if (m_pagesGroup)
+            m_pagesGroup->show();
+        m_customizeWhenLoaded = id;
+        renderPagesList();
+        openPage(id);
+    });
+}
+
+void NotesPage::customizeCurrentPage()
+{
+    if (!m_pageView)
+        return;
+    const QJsonObject page = m_pageView->page();
+    const QString pageId = m_pageView->pageId();
+    if (page.isEmpty() ||
+        !forkmesh::notes::noteCanEdit(page.value(QStringLiteral("role")).toString()))
+        return;
+    forkmesh::notes::PageCustomizeHooks hooks;
+    hooks.save = [this, pageId](const QJsonObject &fields,
+                                std::function<void(bool, const QString &)> done) {
+        QJsonObject body = fields;
+        body.insert(QStringLiteral("baseVersion"),
+                    m_pageView->page().value(QStringLiteral("version")).toInt());
+        requestNotes(QByteArrayLiteral("PATCH"),
+                     QStringLiteral("/api/notes/pages/%1").arg(pageId), body,
+                     [this, pageId, done](bool ok, const QJsonObject &payload,
+                                          const QString &error) {
+            if (m_pageView->pageId() == pageId)
+                m_pageView->reload();
+            if (ok) {
+                refreshPages();
+                done(true, QString());
+                return;
+            }
+            done(false, forkmesh::notes::pageError(
+                            payload.value(QStringLiteral("error")).toString(),
+                            QStringLiteral("Could not save the page: %1").arg(error)));
+        });
+    };
+    if (page.value(QStringLiteral("role")).toString() == QLatin1String("owner"))
+        hooks.remove = [this, pageId] {
+            requestNotes(QByteArrayLiteral("DELETE"),
+                         QStringLiteral("/api/notes/pages/%1").arg(pageId), {},
+                         [this, pageId](bool ok, const QJsonObject &payload,
+                                        const QString &error) {
+                if (!ok) {
+                    flashMessage(forkmesh::notes::pageError(
+                                     payload.value(QStringLiteral("error")).toString(),
+                                     QStringLiteral("Could not delete the page: %1")
+                                         .arg(error)),
+                                 true, QString(), forkmesh::kLocalOperationNoticeKind);
+                    return;
+                }
+                if (m_pageView->pageId() == pageId)
+                    showEditorPane();
+                for (int i = m_pages.size() - 1; i >= 0; --i) {
+                    if (m_pages.at(i).toObject().value(QStringLiteral("id")).toString() ==
+                        pageId)
+                        m_pages.removeAt(i);
+                }
+                renderPagesList();
+                flashMessage(QStringLiteral("Page deleted. Its notes are kept."), false,
+                             QString(), forkmesh::kLocalOperationNoticeKind);
+            });
+        };
+    forkmesh::notes::customizePage(this, page, m_pageView->notes(), m_cloudNotes,
+                                   std::move(hooks));
+}
+
+void NotesPage::shareCurrentPage()
+{
+    if (!m_pageView || m_pageView->page().isEmpty())
+        return;
+    QJsonObject page = m_pageView->page();
+    if (!page.contains(QStringLiteral("id")))
+        page.insert(QStringLiteral("id"), m_pageView->pageId());
+    forkmesh::notes::sharePage(
+        this, page,
+        [this](const QByteArray &method, const QString &path, const QJsonObject &body,
+               forkmesh::notes::PageReply reply) {
+            requestNotes(method, path, body, std::move(reply));
+        },
+        [this](const QJsonArray &) {
+            refreshPages();
+            m_pageView->reload();
+        });
+}
+
+void NotesPage::updateNoteEmojiButton()
+{
+    if (!m_noteEmojiButton)
+        return;
+    const QString emoji = m_selectedNote.value(QStringLiteral("emoji")).toString();
+    const bool editable = !m_selectedNote.isEmpty() &&
+                          forkmesh::notes::noteCanEdit(selectedNoteRole());
+    m_noteEmojiButton->setText(emoji.isEmpty() ? QString(QChar(0x263A)) : emoji);
+    m_noteEmojiButton->setStyleSheet(
+        emoji.isEmpty() ? QStringLiteral("QToolButton { color: %1; }")
+                              .arg(Theme::hex(Theme::Role::FgMuted))
+                        : QString());
+    m_noteEmojiButton->setEnabled(editable);
+    m_noteEmojiButton->setToolTip(
+        !editable ? QStringLiteral("Only the owner and editors can change the emoji")
+        : emoji.isEmpty() ? QStringLiteral("Add an emoji")
+                          : QStringLiteral("Change or remove the emoji"));
+}
+
+void NotesPage::pickSelectedNoteEmoji()
+{
+    if (m_selectedNote.isEmpty() || !forkmesh::notes::noteCanEdit(selectedNoteRole()))
+        return;
+    const QString current = m_selectedNote.value(QStringLiteral("emoji")).toString();
+    QString chosen;
+    if (!forkmesh::notes::pickNoteEmoji(this, current, &chosen) || chosen == current)
+        return;
+    m_selectedNote.insert(QStringLiteral("emoji"), chosen);
+    updateNoteEmojiButton();
+    scheduleNoteAutosave();
 }
 
 void NotesPage::openPendingComment()

@@ -23,6 +23,8 @@ struct NoteLink {
     QString id;
     QString host;
     QString comment;
+    QString page;
+    bool isValid() const { return !id.isEmpty() || !page.isEmpty(); }
 };
 
 inline NoteLink parseNoteLink(const QString &value)
@@ -43,7 +45,8 @@ inline NoteLink parseNoteLink(const QString &value)
             !path.startsWith(QLatin1Char('/')))
             return {};
         const QString id = path.mid(1).toLower();
-        return isNoteId(id) ? NoteLink{id, QString(), QString()} : NoteLink{};
+        return isNoteId(id) ? NoteLink{id, QString(), QString(), QString()}
+                            : NoteLink{};
     }
     if (scheme != QLatin1String("https") && scheme != QLatin1String("http"))
         return {};
@@ -58,22 +61,32 @@ inline NoteLink parseNoteLink(const QString &value)
     else if (path.startsWith(prefix + QLatin1Char('/')))
         id = path.mid(prefix.size() + 1);
     id = id.trimmed().toLower();
-    if (!isNoteId(id))
-        return {};
+    QString page = path == prefix
+        ? query.queryItemValue(QStringLiteral("page"), QUrl::FullyDecoded)
+              .trimmed()
+              .toLower()
+        : QString();
+    if (!isNoteId(page))
+        page.clear();
+    if (!isNoteId(id)) {
+        if (page.isEmpty())
+            return {};
+        id.clear();
+    }
     QString comment = query.queryItemValue(QStringLiteral("comment"),
                                            QUrl::FullyDecoded)
                           .trimmed()
                           .toLower();
-    if (!isNoteId(comment))
+    if (!isNoteId(comment) || id.isEmpty())
         comment.clear();
-    return NoteLink{id, host, comment};
+    return NoteLink{id, host, comment, page};
 }
 
 inline NoteLink trustedNoteLink(const QString &value,
                                 const QStringList &relayHosts)
 {
     NoteLink link = parseNoteLink(value);
-    if (link.id.isEmpty() || link.host.isEmpty())
+    if (!link.isValid() || link.host.isEmpty())
         return link;
     for (const QString &host : relayHosts) {
         if (!host.isEmpty() &&
@@ -106,6 +119,18 @@ inline QString noteAccessLink(const QUrl &base, const QString &id)
     QUrl url = noteOrigin(base);
     url.setPath(QStringLiteral("/dashboard/notes"));
     url.setQuery(QStringLiteral("note=") + id);
+    return url.toString();
+}
+
+inline QString pageAccessLink(const QUrl &base, const QString &page,
+                              const QString &note = QString())
+{
+    if (page.isEmpty())
+        return {};
+    QUrl url = noteOrigin(base);
+    url.setPath(QStringLiteral("/dashboard/notes"));
+    url.setQuery(note.isEmpty() ? QStringLiteral("page=") + page
+                                : QStringLiteral("page=%1&note=%2").arg(page, note));
     return url.toString();
 }
 

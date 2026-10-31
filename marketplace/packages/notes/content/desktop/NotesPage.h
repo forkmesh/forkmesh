@@ -16,11 +16,14 @@ class QLineEdit;
 class QListWidget;
 class QPushButton;
 class QSplitter;
+class QStackedWidget;
+class QToolButton;
 class QTimer;
 
 namespace forkmesh::notes {
 
 class NoteCommentsPanel;
+class NotePageView;
 class NotePresenceFaces;
 
 class NotesPage : public forkmesh::market::NativePackageWidget
@@ -114,6 +117,17 @@ private:
     void runRowAction(const QString &action, const QString &id,
                       const QString &storage);
     void runPendingRowAction();
+    bool pageShown() const;
+    void showEditorPane();
+    void openPage(const QString &pageId, const QString &noteId = QString());
+    void refreshPages();
+    void renderPagesList();
+    void pageLoaded(const QJsonObject &page);
+    void createPage();
+    void customizeCurrentPage();
+    void shareCurrentPage();
+    void pickSelectedNoteEmoji();
+    void updateNoteEmojiButton();
     QUrl catalogApiUrl() const;
     void flashMessage(const QString &text, bool error = false,
                       const QString &clickHref = QString(),
@@ -172,6 +186,16 @@ private:
     QString m_pendingCommentId;
     QString m_pendingRowAction;
     QString m_pendingRowNote;
+    QWidget *m_pagesGroup = nullptr;
+    QListWidget *m_pagesList = nullptr;
+    QStackedWidget *m_rightStack = nullptr;
+    QWidget *m_editorHost = nullptr;
+    NotePageView *m_pageView = nullptr;
+    QToolButton *m_noteEmojiButton = nullptr;
+    QList<QWidget *> m_noteActionButtons;
+    QJsonArray m_pages;
+    QString m_customizeWhenLoaded;
+    int m_pagesSequence = 0;
 };
 
 }
