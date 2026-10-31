@@ -736,7 +736,12 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   grabbed edges (`resizedPromptRect`), keeps the 280×120 minimum and stops at
   the window's edges. A docked composer lifts off the footer on the first
   resize, as it does on a drag; a popped-out composer asks the window system
-  to resize from that edge (`startSystemResize`). The bands show whenever the
+  to resize from that edge (`startSystemResize`). The main window's own
+  frameless-border handler (`handleFramelessResizeEvent`) only takes presses
+  and cursor changes from widgets in the main window: Wayland reports every
+  window at the origin, so until 2026-10-31 the popped-out composer's left and
+  top bands fell inside the main window's 8 px border, and a press there
+  resized the main window instead of the composer. The bands show whenever the
   composer does, the centred Agents-page layout included (its first resize
   lifts it out to float); only the collapsed avatar has none. Until
   2026-10-24 they hid with the button bar, so the centred composer could not

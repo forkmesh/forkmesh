@@ -1750,6 +1750,51 @@ void checkFooterOverlayGeometry(MainWindow &window)
                   prompt->geometry() == detachWindow->rect(),
               QStringLiteral("the popped-out window has no frame or margin: it "
                              "is just the prompt"));
+        if (detachWindow) {
+            const QRect mainFrame = window.geometry();
+            const QRect home = detachWindow->geometry();
+            detachWindow->move(mainFrame.topLeft());
+            QApplication::processEvents();
+            for (QWidget *edge : promptEdges) {
+                const auto edges =
+                    Qt::Edges::fromInt(edge->property("promptResizeEdges").toInt());
+                const QRect before = detachWindow->geometry();
+                const QPoint at = edge->mapToGlobal(
+                    QPoint(edge->width() / 2, edge->height() / 2));
+                const QPoint delta((edges & Qt::LeftEdge) ? -40 : 40,
+                                   (edges & Qt::TopEdge) ? -30 : 30);
+                const QPoint to = at + delta;
+                sendMouse(edge, QEvent::MouseButtonPress, at);
+                QWidget *target = QWidget::mouseGrabber() ? QWidget::mouseGrabber() : edge;
+                sendMouse(target, QEvent::MouseMove, to);
+                sendMouse(target, QEvent::MouseButtonRelease, to);
+                QApplication::processEvents();
+                QRect expected = before;
+                if (edges & Qt::LeftEdge)
+                    expected.setLeft(before.left() + delta.x());
+                if (edges & Qt::RightEdge)
+                    expected.setRight(before.right() + delta.x());
+                if (edges & Qt::TopEdge)
+                    expected.setTop(before.top() + delta.y());
+                if (edges & Qt::BottomEdge)
+                    expected.setBottom(before.bottom() + delta.y());
+                const QRect after = detachWindow->geometry();
+                check(after == expected && window.geometry() == mainFrame,
+                      QString("dragging edge %1 of the popped-out prompt resizes "
+                              "that window from that edge, even over the main "
+                              "window's border (before %2,%3 %4x%5, after "
+                              "%6,%7 %8x%9)")
+                          .arg(edges.toInt())
+                          .arg(before.x()).arg(before.y())
+                          .arg(before.width()).arg(before.height())
+                          .arg(after.x()).arg(after.y())
+                          .arg(after.width()).arg(after.height()));
+                detachWindow->setGeometry(before);
+                QApplication::processEvents();
+            }
+            detachWindow->setGeometry(home);
+            QApplication::processEvents();
+        }
         const QRect detachedFrame = detachWindow ? detachWindow->geometry() : QRect();
         const int topLevelsBefore = int(QApplication::topLevelWidgets().size());
         window.testFlashMessage(QStringLiteral("Mirror caught up again"));
@@ -29649,6 +29694,13 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       mergeAllAi->toolTip().contains(QStringLiteral("deletes")),
                   QStringLiteral("the pull list offers Merge all with AI, which "
                                  "reviews, merges and cleans up every open PR"));
+            QPushButton *reviewAllAi = window.findChild<QPushButton *>(
+                QStringLiteral("pullReviewAllAiButton"));
+            check(reviewAllAi && reviewAllAi->text() == QStringLiteral("Review all") &&
+                      reviewAllAi->toolTip().contains(QStringLiteral("security")) &&
+                      reviewAllAi->toolTip().contains(QStringLiteral("approves")),
+                  QStringLiteral("the pull list offers Review all with AI, which "
+                                 "reviews every open PR and posts the verdicts"));
             QPushButton *restore = window.findChild<QPushButton *>(
                 QStringLiteral("pullRestoreArchivedButton"));
             check(restore && restore->toolTip().contains(
@@ -41066,6 +41118,73 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                       QStringLiteral("a pull whose code no local branch holds is "
                                      "marked as not on this machine (%1)")
                           .arg(awayTip));
+
+                window.testOpenPullDiffInGitView(codeAwayPr);
+                QElapsedTimer gitViewWait;
+                gitViewWait.start();
+                while (gitViewWait.elapsed() < 5000 &&
+                       !window.testBranchDiffText().contains(
+                           QStringLiteral("only-on-author.txt")))
+                    QApplication::processEvents(QEventLoop::AllEvents, 20);
+                const QString prBar = window.testBranchPullReviewBarText();
+                check(prBar.contains(
+                          QStringLiteral("Reviewing PR #%1").arg(codeAwayPr)) &&
+                          prBar.contains(QStringLiteral("Review changes")),
+                      QStringLiteral("a pull opened in the Git diff view shows "
+                                     "its review bar (bar = %1)")
+                          .arg(prBar));
+                const QString prTitle = window.testBranchDiffDragComment(
+                    QStringLiteral("only-on-author.txt"), 1, 1);
+                const bool queued = window.testQueueBranchPullInlineComment(
+                    QStringLiteral("Why does this line change?"));
+                const QString draftBar = window.testBranchPullReviewBarText();
+                check(prTitle.contains(QStringLiteral("line 1")) && queued &&
+                          draftBar.contains(QStringLiteral("1 draft comment")) &&
+                          draftBar.contains(QStringLiteral("Submit review (1)")) &&
+                          draftBar.contains(QStringLiteral("Discard drafts")),
+                      QStringLiteral("a line comment in the Git diff view joins "
+                                     "the pending review (title = %1, bar = %2)")
+                          .arg(prTitle, draftBar));
+                QString reviewError;
+                const bool approved = window.testFinishBranchPullReview(
+                    QStringLiteral("approved"), QStringLiteral("Looks good"),
+                    &reviewError);
+                bool postedThread = false;
+                bool postedApproval = false;
+                QList<PullEvent> reviewEvents;
+                for (const PullRequest &pr : pullBranchStore.loadAll())
+                    if (pr.number == codeAwayPr)
+                        reviewEvents = pr.events;
+                for (const PullEvent &ev : std::as_const(reviewEvents)) {
+                    if (ev.type == QLatin1String("thread-comment") &&
+                        ev.path == QLatin1String("only-on-author.txt") &&
+                        ev.body == QLatin1String("Why does this line change?"))
+                        postedThread = true;
+                    if (ev.type == QLatin1String("review") &&
+                        ev.state == QLatin1String("approved") &&
+                        ev.body == QLatin1String("Looks good"))
+                        postedApproval = true;
+                }
+                const QString afterBar = window.testBranchPullReviewBarText();
+                check(approved && postedThread && postedApproval &&
+                          afterBar.contains(QStringLiteral("Review changes")) &&
+                          !afterBar.contains(QStringLiteral("Discard drafts")),
+                      QStringLiteral("approving from the Git diff view posts the "
+                                     "draft thread and the approval (error = %1, "
+                                     "thread = %2, approval = %3, bar = %4)")
+                          .arg(reviewError)
+                          .arg(postedThread)
+                          .arg(postedApproval)
+                          .arg(afterBar));
+                QString emptyError;
+                check(!window.testFinishBranchPullReview(
+                          QStringLiteral("commented"), QString(), &emptyError) &&
+                          !emptyError.isEmpty(),
+                      QStringLiteral("an empty comment review is refused"));
+                window.testSwitchToBranchImmediateSelection(QStringLiteral("main"));
+                check(window.testBranchPullReviewBarText().isEmpty(),
+                      QStringLiteral("leaving the pull for a plain branch hides "
+                                     "the review bar"));
             }
         }
         // Both temporary directories go with this scope, so the linked

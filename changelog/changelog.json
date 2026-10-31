@@ -12,6 +12,11 @@
  ],
  "notes": [
   {"date": "2026-10-31", "area": "Other improvements", "text": "Clicking a person's avatar or name on the desktop, the phone apps or the web now opens their profile in that app, with their full profile and a QR code of their Solana tip address."},
+  {"date": "2026-10-31", "area": "Market", "text": "In the CRM contacts table, right-click a column heading to copy the whole column, or drag down one column to pick just those cells and right-click to copy them."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "Review all on the pull request list drafts a no-branch review of every open pull request; when the agent finishes, clean ones are approved and the rest get review threads with one-click fixes and a summary naming the model."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "Merge all on the pull request list now writes its prompt into the composer with no branch, so you can read and change it before you send it."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "A prompt window popped out of the app can now be resized from its left and top edges, not just the right and bottom."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "A pull request opened in the Git diff view now has the full review tools: draft line comments, AI review, and a Review changes button to comment, approve or request changes."},
   {"date": "2026-10-30", "area": "iPhone", "text": "The desktop icons in the phone app's top bar turn green while the desktop is connected, on iPhone and Android."},
   {"date": "2026-10-30", "area": "Projects", "text": "A repository's Files view opens faster after issues, reviews or other project activity, which no longer redo its code analysis."},
   {"date": "2026-10-30", "area": "Projects", "text": "Sending an approving quick reply on a pull request also adds the Thank you sticker to its description."},

@@ -1612,12 +1612,15 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function openCrmColumnMenu(event, field) {
-    if (crmActiveShared()) return;
+    const copy = { label: "Copy column", run: () => void copyCrmCells(crmColumnCells(field), crmColumnLabel(field)) };
+    if (crmActiveShared()) { openCrmMenu(event, [{ heading: crmColumnLabel(field) }, copy]); return; }
     const columns = crmColumns();
     const visible = columns.filter((column) => !column.hidden);
     const at = visible.findIndex((column) => column.field === field);
     openCrmMenu(event, [
       { heading: crmColumnLabel(field) },
+      copy,
+      { separator: true },
       { label: "Move left", disabled: at <= 0, run: () => crmMoveColumn(field, -1) },
       { label: "Move right", disabled: at < 0 || at >= visible.length - 1, run: () => crmMoveColumn(field, 1) },
       { label: "Remove from this view", disabled: visible.length <= 1, run: () => crmSetColumnHidden(field, true) },
@@ -4064,7 +4067,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     list.innerHTML = contacts.map((contact) => `
       <tr data-crm-contact-row="${escapeHtml(contact.id)}" class="crm-row">
         ${shared ? "" : `<td class="px-2 py-2 align-top"><input type="checkbox" data-crm-select="${escapeHtml(contact.id)}" aria-label="Select ${escapeHtml(crmContactLabel(contact))}" class="mt-1.5" /></td>`}
-        ${columns.map((column) => `<td class="px-3 py-2 align-top">${cell(contact, column)}</td>`).join("")}
+        ${columns.map((column) => `<td data-crm-cell="${escapeHtml(column.field)}" class="px-3 py-2 align-top">${cell(contact, column)}</td>`).join("")}
         ${actions(contact, false)}
       </tr>`).join("");
     const cards = $(`[data-crm-contact-cards]`);
@@ -4083,6 +4086,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       </article>`).join("");
     $(`[data-crm-contact-empty]`)?.classList.toggle("hidden", contacts.length > 0 || people);
     crmPaintSelection();
+    crmPaintCellPick();
     crmWatchPictures();
     const empty = $(`[data-crm-contact-empty]`);
     if (empty) empty.textContent = shared && !state.crmView.sharedCache[state.crmView.activeShared]
@@ -6320,6 +6324,97 @@ window.ForkMeshDashboard.registerPage("crm", ({
     });
   }
 
+  const crmCellPick = { field: "", from: "", to: "", pressField: "", pressRow: "", pressed: false, dragging: false, dragged: false };
+
+  function crmColumnCells(field) {
+    return $$(`[data-crm-contact-list] [data-crm-contact-row]`)
+      .map((row) => row.querySelector(`[data-crm-cell="${CSS.escape(field)}"]`)).filter(Boolean);
+  }
+
+  function crmPickedCells() {
+    return $$(`[data-crm-contact-list] .crm-cell-picked`);
+  }
+
+  function crmCellText(cell) {
+    const name = cell.querySelector(".crm-name-open");
+    if (name) return name.textContent.trim();
+    const control = cell.querySelector("input:not([type=checkbox]), select, textarea");
+    if (control?.tagName === "SELECT") return control.selectedOptions[0]?.textContent.trim() || "";
+    if (control) return control.value;
+    return cell.textContent.replace(/\s+/g, " ").trim();
+  }
+
+  function crmPaintCellPick() {
+    for (const cell of crmPickedCells()) cell.classList.remove("crm-cell-picked");
+    if (!crmCellPick.field) return;
+    const ids = $$(`[data-crm-contact-list] [data-crm-contact-row]`).map((row) => row.dataset.crmContactRow);
+    const from = ids.indexOf(crmCellPick.from); const to = ids.indexOf(crmCellPick.to);
+    if (from < 0 || to < 0) return;
+    for (const cell of crmColumnCells(crmCellPick.field).slice(Math.min(from, to), Math.max(from, to) + 1)) {
+      cell.classList.add("crm-cell-picked");
+    }
+  }
+
+  function clearCrmCellPick() {
+    if (!crmCellPick.field) return;
+    crmCellPick.field = "";
+    crmPaintCellPick();
+  }
+
+  async function copyCrmCells(cells, label) {
+    const values = cells.map(crmCellText);
+    try {
+      await navigator.clipboard.writeText(values.join("\n"));
+    } catch {
+      crmMessage("error", "The browser did not allow copying.");
+      return;
+    }
+    crmMessage("notice", `Copied ${values.length} ${values.length === 1 ? "value" : "values"} from “${label}”.`);
+  }
+
+  function handleCrmCellPickPress(event) {
+    if (event.button === 2 && event.target.closest(".crm-cell-picked")) return;
+    clearCrmCellPick();
+    crmCellPick.pressed = false;
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const cell = event.target.closest("[data-crm-cell]");
+    const row = cell?.closest("[data-crm-contact-row]");
+    if (!row) return;
+    Object.assign(crmCellPick, {
+      pressed: true, dragging: false, pressField: cell.dataset.crmCell, pressRow: row.dataset.crmContactRow,
+    });
+  }
+
+  function handleCrmCellPickMove(event) {
+    if (!crmCellPick.pressed || !(event.buttons & 1)) return;
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    const row = under?.closest("[data-crm-contact-list] [data-crm-contact-row]");
+    if (!crmCellPick.dragging) {
+      const cell = under?.closest("[data-crm-cell]");
+      if (!row || row.dataset.crmContactRow === crmCellPick.pressRow || cell?.dataset.crmCell !== crmCellPick.pressField) return;
+      crmCellPick.dragging = true;
+      crmCellPick.field = crmCellPick.pressField;
+      crmCellPick.from = crmCellPick.pressRow;
+      crmCellPick.to = "";
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    }
+    event.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    if (row && row.dataset.crmContactRow !== crmCellPick.to) {
+      crmCellPick.to = row.dataset.crmContactRow;
+      crmPaintCellPick();
+    }
+  }
+
+  function handleCrmCellPickRelease() {
+    if (!crmCellPick.pressed) return;
+    crmCellPick.pressed = false;
+    if (!crmCellPick.dragging) return;
+    crmCellPick.dragging = false;
+    crmCellPick.dragged = true;
+    setTimeout(() => { crmCellPick.dragged = false; }, 0);
+  }
+
   function handleCrmSelectionPress(event) {
     if (event.button !== 0 || crmActiveShared() || event.target.closest("[data-crm-select]")) return;
     if ((event.ctrlKey || event.metaKey || event.shiftKey) && event.target.closest("[data-crm-contact-row]")) {
@@ -6851,6 +6946,33 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const list = $(`[data-crm-contact-list]`);
     list?.addEventListener("click", handleCrmSelectionClick, true);
     list?.addEventListener("mousedown", handleCrmSelectionPress, true);
+    list?.addEventListener("mousedown", handleCrmCellPickPress, true);
+    list?.addEventListener("click", (event) => {
+      if (!crmCellPick.dragged) return;
+      crmCellPick.dragged = false;
+      event.preventDefault(); event.stopPropagation();
+    }, true);
+    list?.addEventListener("contextmenu", (event) => {
+      if (!event.target.closest(".crm-cell-picked")) return;
+      const cells = crmPickedCells();
+      const label = crmColumnLabel(crmCellPick.field);
+      openCrmMenu(event, [
+        { heading: label },
+        { label: cells.length === 1 ? "Copy" : `Copy ${cells.length} values`, run: () => void copyCrmCells(cells, label) },
+      ]);
+    }, true);
+    document.addEventListener("mousemove", handleCrmCellPickMove);
+    document.addEventListener("mouseup", handleCrmCellPickRelease);
+    document.addEventListener("keydown", (event) => {
+      if (!crmCellPick.field) return;
+      if (event.key === "Escape") { clearCrmCellPick(); return; }
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c") return;
+      if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+      const cells = crmPickedCells();
+      if (!cells.length) return;
+      event.preventDefault();
+      void copyCrmCells(cells, crmColumnLabel(crmCellPick.field));
+    });
     for (const selector of ["[data-crm-contact-list]", "[data-crm-contact-cards]", "[data-crm-contact-detail-dialog]"]) {
       $(selector)?.addEventListener("click", handleCrmParityClick);
     }
