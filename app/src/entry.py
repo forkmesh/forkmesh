@@ -36163,7 +36163,8 @@ AP_REPO_SETTING_DEFAULTS = {
 }
 
 REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
-                         "actions": True, "protectDefaultBranch": False}
+                         "forum": False, "actions": True,
+                         "protectDefaultBranch": False}
 
 
 async def _repo_features_bi(env, owner, repo):

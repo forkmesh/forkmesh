@@ -25,7 +25,8 @@ def post(topic_id, number, username, cooked, **extra):
         "id": topic_id * 100 + number, "post_number": number, "post_type": 1, "username": username,
         "name": username.title(), "created_at": f"2026-01-0{min(number, 9)}T10:00:00.000Z",
         "updated_at": f"2026-01-0{min(number, 9)}T10:00:00.000Z", "cooked": cooked,
-        "avatar_template": "/user_avatar/{size}.png", **extra,
+        "avatar_template": "/user_avatar/{size}.png", "reads": 4, "reply_count": 0,
+        "actions_summary": [{"id": 2, "count": number}], **extra,
     }
 
 
@@ -54,7 +55,16 @@ class FakeForum:
             "posts_count": len(topic["posts"]),
             "highest_post_number": max(p["post_number"] for p in topic["posts"]),
             "created_at": topic["posts"][0]["created_at"], "last_posted_at": topic["bumped_at"],
+            "views": 10 * topic["id"], "like_count": len(topic["posts"]), "reply_count": len(topic["posts"]) - 1,
+            "pinned_globally": topic["pinned"], "visible": topic.get("visible", True),
+            "excerpt": "Rules &amp; <b>tips</b>&hellip;" if topic["pinned"] else "",
+            "last_poster_username": topic["posts"][-1]["username"],
+            "posters": [{"user_id": self.user_id(p["username"]), "description": "Original Poster" if i == 0 else "Frequent Poster"}
+                        for i, p in enumerate(topic["posts"][:5])],
         }
+
+    def user_id(self, username):
+        return sum(ord(c) for c in username)
 
     def answer(self, path, query):
         if path == "/robots.txt":
@@ -76,7 +86,9 @@ class FakeForum:
             page = int(query.get("page", ["0"])[0])
             chunk = ordered[page * self.page_size:(page + 1) * self.page_size]
             more = (page + 1) * self.page_size < len(ordered)
-            body = {"topic_list": {"topics": [self.listing_row(t) for t in chunk]}}
+            names = {p["username"] for t in chunk for p in t["posts"]}
+            body = {"users": [{"id": self.user_id(n), "username": n, "name": n.title()} for n in sorted(names)],
+                    "topic_list": {"topics": [self.listing_row(t) for t in chunk]}}
             if more:
                 body["topic_list"]["more_topics_url"] = f"/latest?page={page + 1}"
             return 200, "application/json", json.dumps(body).encode()
@@ -92,7 +104,8 @@ class FakeForum:
                 wanted = {int(v) for v in query.get("post_ids[]", [])}
                 posts = [p for p in topic["posts"] if p["id"] in wanted]
                 return 200, "application/json", json.dumps({"post_stream": {"posts": posts}}).encode()
-            body = self.listing_row(topic) | {"views": 7, "like_count": 1, "post_stream": {
+            body = self.listing_row(topic) | {"details": {
+                "participants": [{"username": "alice"}], "links": [{"url": "https://example.org"}]}, "post_stream": {
                 "posts": topic["posts"][:self.first_posts], "stream": [p["id"] for p in topic["posts"]]}}
             return 200, "application/json", json.dumps(body).encode()
         if parts[0] == "uploads" and path.endswith(".png"):
@@ -254,6 +267,84 @@ def test_a_capped_run_leaves_the_rest_for_the_next(forum):
     result, repo = sync(forum)
     assert result["fetched"] == 2 and result["pending"] == 0
     assert 'href="10.html"' in (repo / "site" / "t" / "11.html").read_text()
+
+
+def forum_checkout(fake, tmp_path):
+    checkout = tmp_path / "project"
+    checkout.mkdir()
+    for args in (["init", "-q", "-b", "main"], ["-c", "user.name=t", "-c", "user.email=t@example.org",
+                                                "commit", "-q", "--allow-empty", "-m", "start"]):
+        subprocess.run(["git", "-C", str(checkout), *args], check=True, capture_output=True)
+    (checkout / "work.txt").write_text("unsaved work")
+    return checkout
+
+
+def test_the_forum_layout_writes_one_read_views_into_a_repository(forum, tmp_path):
+    seed(forum)
+    forum.topics[12]["tags"] = [{"name": "новости"}]
+    forum.first_posts = 1
+    checkout = forum_checkout(forum, tmp_path)
+    result, repo = sync(forum, layout="forum", repository=str(checkout))
+    assert result["error"] is None and result["fetched"] == 3
+    root = checkout / ".forkmesh" / "forum"
+    meta = json.loads((root / "forum.json").read_text())
+    assert meta["kind"] == "forkmesh-forum" and meta["format"] == 1 and meta["title"] == "Example Forum"
+    assert meta["source"] == {"type": "discourse", "origin": forum.origin, "lastSync": meta["source"]["lastSync"],
+                              "pending": 0}
+    assert meta["counts"] == {"topics": 3, "posts": 7, "categories": 2}
+    categories = {item["id"]: item for item in json.loads((root / "categories.json").read_text())}
+    assert categories[1]["subcategory_ids"] == [2] and categories[1]["topic_count"] == 2
+    assert categories[1]["total_topic_count"] == 3 and categories[2]["topic_count"] == 1
+    assert [row["id"] for row in categories[1]["latest"]] == [11, 10, 12]
+    latest = json.loads((root / "latest" / "1.json").read_text())
+    assert [row["id"] for row in latest["rows"]] == [10, 11, 12] and latest["pages"] == 1
+    assert latest["rows"][0]["excerpt"] == "Rules & tips\u2026"
+    row = latest["rows"][1]
+    assert row["posters"][0] == {"username": "alice", "name": "Alice", "description": "Original Poster"}
+    assert row["views"] == 110 and row["like_count"] == 5 and row["reply_count"] == 4
+    assert "fetched_at" not in row and row["origin"] == "discourse"
+    assert [r["id"] for r in json.loads((root / "c" / "2" / "1.json").read_text())["rows"]] == [11]
+    tags = json.loads((root / "tags.json").read_text())
+    assert {tag["name"]: tag["key"] for tag in tags} == {"tips": "tips", "новости": "новости"}
+    assert [r["id"] for r in json.loads((root / "tag" / "новости" / "1.json").read_text())["rows"]] == [12]
+    assert json.loads((root / "top" / "all.json").read_text())["rows"][0]["id"] == 11
+    topic = json.loads((root / "topics" / "11" / "topic.json").read_text())
+    assert topic["chunks"] == 1 and len(topic["posts"]) == 5 and topic["link_count"] == 1
+    assert topic["posts"][1]["like_count"] == 2 and topic["posts"][0]["format"] == "html"
+    shot = topic["uploads"][f"{forum.origin}/uploads/default/shot.png"]
+    assert (root / "uploads" / shot).read_bytes() == PNG
+    assert not (checkout / "site").exists() and not (checkout / "README.md").exists()
+    assert (checkout / "work.txt").read_text() == "unsaved work"
+    status = subprocess.run(["git", "-C", str(checkout), "status", "--porcelain"], capture_output=True,
+                            text=True, check=True).stdout
+    assert status.strip() == "?? work.txt"
+    assert git_log(checkout)[0] == "Mirror Example Forum: 3 topics updated"
+
+
+def test_the_forum_layout_splits_long_topics_and_removes_what_left(forum, tmp_path, monkeypatch):
+    monkeypatch.setattr(dm, "FORUM_POSTS_PER_CHUNK", 2)
+    monkeypatch.setattr(dm, "FORUM_PAGE_SIZE", 2)
+    seed(forum)
+    checkout = forum_checkout(forum, tmp_path)
+    _, _ = sync(forum, layout="forum", repository=str(checkout))
+    root = checkout / ".forkmesh" / "forum"
+    topic = json.loads((root / "topics" / "11" / "topic.json").read_text())
+    assert topic["chunks"] == 3 and [p["post_number"] for p in topic["posts"]] == [1, 2]
+    assert [p["post_number"] for p in json.loads((root / "topics" / "11" / "posts" / "2.json").read_text())["posts"]] == [5]
+    assert json.loads((root / "latest" / "2.json").read_text())["rows"][0]["id"] == 12
+    del forum.topics[11]
+    forum.categories = forum.categories[:1]
+    result, _ = sync(forum, layout="forum", repository=str(checkout), revisitPerRun=10)
+    assert result["removed"] == 1
+    assert not (root / "topics" / "11").exists() and not (root / "c" / "2").exists()
+    assert not (root / "latest" / "2.json").exists()
+    assert not (root / "tag" / "tips" / "2.json").exists()
+
+
+def test_the_forum_layout_needs_an_existing_checkout(forum, tmp_path):
+    seed(forum)
+    with pytest.raises(dm.MirrorError, match="not a Git checkout"):
+        sync(forum, layout="forum", repository=str(tmp_path / "missing"))
 
 
 def test_robots_txt_is_honoured_unless_the_operator_has_permission(forum):

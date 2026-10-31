@@ -2478,7 +2478,7 @@
 
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
-  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "forum", "mirrors", "actions", "security"];
   const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an
@@ -16199,6 +16199,7 @@
     // Runs are live executor state, never a load-once cache.
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
     if (tab === "security") void loadRepoSecurity(state.selectedRepo);
+    if (tab === "forum") loadRepoForum(state.selectedRepo);
     if (tab === "settings") {
       renderRepoSettingsRail();
       loadRepoFediverse(state.selectedRepo);
@@ -34129,7 +34130,7 @@ Your reply
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "forum", "actions"];
   const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
 
   function repoFirstViewSeed(repo) {
@@ -43648,6 +43649,9 @@ Your reply
     } else if (active === "insights") {
       state.loadedRepoTabs.insights = true;
       loadRepoInsights(repo);
+    } else if (active === "forum") {
+      state.loadedRepoTabs.forum = true;
+      loadRepoForum(repo);
     } else if (active === "sizemap") {
       state.loadedRepoTabs.sizemap = true;
       loadRepoSizeMapTab(repo);
@@ -47356,8 +47360,8 @@ Your reply
             ? pullBatchUrl(repo)
           : routeKind === "issues" && routeParts[3] === "new" && state.session?.nodeName
             ? issueComposeUrl(repo)
-          : routeKind === "security"
-            ? `${repoLinkUrl(repo)}/security${routeParts.slice(3).map((part) => `/${part}`).join("")}`
+          : routeKind === "security" || routeKind === "forum"
+            ? `${repoLinkUrl(repo)}/${routeKind}${routeParts.slice(3).map((part) => `/${part}`).join("")}${routeKind === "forum" ? location.search : ""}`
           : routeKind === "insights"
             ? `${repoLinkUrl(repo)}/insights${repoInsightsRouteQuery()}`
             : repoTabRoutesFor(repo).includes(routeKind)
@@ -47383,6 +47387,7 @@ Your reply
       actions: { label: "Actions", icon: "workflow", count: "" },
       security: { label: "Security", icon: "shield", count: "" },
       discussions: { label: "Discussions", icon: "message-square", count: discussionsCount },
+      forum: { label: "Forum", icon: "messages-square", count: "" },
       agents: { label: "Agents", icon: "bot", count: "" },
       settings: { label: "Settings", icon: "settings", count: "" },
     };
@@ -47435,6 +47440,7 @@ Your reply
               <label class="inline-flex items-start gap-2"><input data-repo-feature="issues" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Issues</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="pulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Pull requests</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="forum" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Forum (a Discourse-style forum kept in <code>.forkmesh/forum</code>)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="actions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Actions (run this repository's workflows)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="protectDefaultBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Protect the default branch: it changes only by merging a pull request an organization owner or admin approved</label>
             </fieldset>
@@ -47582,7 +47588,7 @@ Your reply
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
           <div data-repo-tabs class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
-            ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
+            ${["code", "issues", "pulls", "discussions", "forum", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
               const isDiscussions = tab === "discussions";
               const discussionCount = Number(meta.count);
@@ -47608,7 +47614,7 @@ Your reply
               // ctrl/cmd-click open it in a new browser tab; a plain click is
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
-              const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
+              const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", forum: "forum", actions: "actions", agents: "agents" }[tab];
               return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span data-repo-tab-label="${escapeHtml(meta.label)}">${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground tabular-nums${hideDiscussionsBadge ? " hidden" : reserveDiscussionsBadge ? " invisible" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
@@ -47689,6 +47695,7 @@ Your reply
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
             <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><button type="button" data-repo-project-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New project</button></div><div data-repo-projects></div></div></section>
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
+            <section data-dashboard-repo-tab-panel="forum" class="hidden"><div data-repo-forum class="mt-4 min-w-0 lg:mt-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
             <section data-dashboard-repo-tab-panel="actions" class="hidden"><div data-repo-actions class="mt-4 min-w-0 lg:mt-0"></div></section>
@@ -47793,6 +47800,7 @@ Your reply
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
       </div>`;
+    if (routeKind !== "forum") detail.querySelector('[data-dashboard-repo-tab="forum"]')?.classList.add("hidden");
     applyRepoFirstViewAbout(repo);
     // Restore whichever tab the URL points at (e.g. a refresh on
     // /owner/repo/issues) instead of always defaulting back to Code. This
@@ -52119,6 +52127,7 @@ Your reply
           // records since they cache in state.
           setRepoTab(kind);
           if (kind === "security") void loadRepoSecurity(repo);
+          if (kind === "forum") loadRepoForum(repo);
           if (kind === "commits") {
             const commitHash = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (/^[0-9a-f]{7,64}$/i.test(commitHash)) loadRepoCommitDetail(repo, commitHash);
@@ -58521,6 +58530,11 @@ Your reply
     return loadDashboardChunk("repo-activity").then((chunk) => chunk.loadRepoActivity(...args));
   }
 
+  // loadRepoForum lives in 09-repo-forum.js (a per-page chunk).
+  function loadRepoForum(...args) {
+    return loadDashboardChunk("repo-forum").then((chunk) => chunk.loadRepoForum(...args));
+  }
+
   // ---------------------------------------------------------------------------
   // /dashboard/runners: list the agent runners this account may manage and
   // sign their provider CLIs in from the browser (app/src/runner_logins.py).
@@ -60034,6 +60048,7 @@ Your reply
     "notes": "/dashboard-page-notes.js?v=9c271809708a",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
+    "repo-forum": "/dashboard-page-repo-forum.js?v=11ba9c3c1c89",
     "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
     "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
   };
@@ -60041,6 +60056,7 @@ Your reply
     $,
     $$,
     MD_BODY_CLASS,
+    applyRepoFeatures,
     blobText,
     copyTextToClipboard,
     desktopBrand,
@@ -60049,6 +60065,7 @@ Your reply
     dropBrokenContributorAvatars,
     escapeHtml,
     fetchJson,
+    fetchRepoBlobs,
     fetchRepoJson,
     formatCount,
     formatDate,
@@ -60079,16 +60096,20 @@ Your reply
     repoApiBase,
     repoContributorAvatar,
     repoDataVersion,
+    repoDefaultBranch,
     repoIsLive,
     repoKey,
     repoLinkUrl,
     repoLiveUrl,
     repoPathUrl,
     repoPublicKey,
+    repoRawUrl,
     repoRecordUrl,
+    repoRouteParts,
     repoSelectedBranch,
     runnerUsageRow,
     runnersEl,
+    safeDecodeURIComponent,
     sendTextToPrompt,
     setAgentLoginStatus,
     setRepoTab,

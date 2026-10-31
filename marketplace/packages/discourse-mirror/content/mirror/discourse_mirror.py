@@ -53,7 +53,14 @@ DEFAULTS = {
     "branch": "main",
     "commitName": "ForkMesh Discourse Mirror",
     "commitEmail": "discourse-mirror@forkmesh.invalid",
+    "layout": "site",
 }
+FORUM_PATH = ".forkmesh/forum"
+FORUM_PAGE_SIZE = 50
+FORUM_POSTS_PER_CHUNK = 100
+FORUM_LATEST_PER_CATEGORY = 3
+TOP_PERIODS = {"all": 0, "yearly": 365, "quarterly": 91, "monthly": 30, "weekly": 7, "daily": 1}
+SAFE_KEY_RE = re.compile(r"[\w.-]{1,80}")
 TOPIC_LINK_RE = re.compile(r"^/t/(?:[^/]+/)?(\d+)(?:/(\d+))?/?$")
 DIMENSION_RE = re.compile(r"\d{1,5}")
 
@@ -330,6 +337,7 @@ def category_record(raw: dict) -> dict:
         "name": str(raw.get("name") or ""),
         "slug": str(raw.get("slug") or ""),
         "color": str(raw.get("color") or ""),
+        "text_color": str(raw.get("text_color") or ""),
         "description": str(raw.get("description_text") or ""),
         "parent_category_id": _int(raw.get("parent_category_id"), 0) or None,
         "position": _int(raw.get("position")),
@@ -348,10 +356,40 @@ def post_record(raw: dict) -> dict:
         "reply_to_post_number": _int(raw.get("reply_to_post_number"), 0) or None,
         "action_code": str(raw.get("action_code") or ""),
         "cooked": str(raw.get("cooked") or ""),
+        "like_count": _like_count(raw),
+        "reads": _int(raw.get("reads")),
+        "reply_count": _int(raw.get("reply_count")),
+        "hidden": bool(raw.get("hidden")),
     }
 
 
-def listing_fields(raw: dict) -> dict:
+def _like_count(raw: dict) -> int:
+    for action in raw.get("actions_summary") or []:
+        if isinstance(action, dict) and _int(action.get("id")) == 2:
+            return _int(action.get("count"))
+    return _int(raw.get("like_count"))
+
+
+def _posters(raw: dict, users: dict[int, dict] | None) -> list[dict]:
+    posters = []
+    for poster in raw.get("posters") or []:
+        if not isinstance(poster, dict):
+            continue
+        user = (users or {}).get(_int(poster.get("user_id"))) or {}
+        username = str(user.get("username") or "")
+        if username:
+            posters.append({
+                "username": username,
+                "name": str(user.get("name") or ""),
+                "description": str(poster.get("description") or ""),
+            })
+    return posters[:5]
+
+
+LISTING_ONLY = ("posters", "excerpt", "last_poster_username")
+
+
+def listing_fields(raw: dict, users: dict[int, dict] | None = None) -> dict:
     return {
         "id": _int(raw.get("id")),
         "title": str(raw.get("title") or ""),
@@ -364,8 +402,16 @@ def listing_fields(raw: dict) -> dict:
         "posts_count": _int(raw.get("posts_count")),
         "highest_post_number": _int(raw.get("highest_post_number")),
         "pinned": bool(raw.get("pinned")),
+        "pinned_globally": bool(raw.get("pinned_globally")),
         "closed": bool(raw.get("closed")),
         "archived": bool(raw.get("archived")),
+        "visible": raw.get("visible") is not False,
+        "views": _int(raw.get("views")),
+        "like_count": _int(raw.get("like_count")),
+        "reply_count": _int(raw.get("reply_count")),
+        "excerpt": html.unescape(re.sub(r"<[^>]*>", "", str(raw.get("excerpt") or ""))).strip()[:400],
+        "last_poster_username": str(raw.get("last_poster_username") or ""),
+        "posters": _posters(raw, users),
     }
 
 
@@ -417,6 +463,223 @@ class Store:
         return removed
 
 
+LIST_FIELDS = (
+    "id", "title", "slug", "category_id", "tags", "created_at", "bumped_at", "last_posted_at", "posts_count",
+    "reply_count", "views", "like_count", "pinned", "pinned_globally", "closed", "archived", "visible", "excerpt",
+    "posters", "last_poster_username",
+)
+
+
+def _epoch(value: str) -> float:
+    with contextlib.suppress(ValueError, TypeError):
+        return datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    return 0.0
+
+
+def list_row(row: dict) -> dict:
+    return {**{key: row.get(key) for key in LIST_FIELDS}, "origin": "discourse"}
+
+
+def latest_row(row: dict) -> dict:
+    return {key: row.get(key) for key in ("id", "title", "slug", "bumped_at", "last_posted_at", "posts_count",
+                                          "pinned", "closed", "archived")}
+
+
+def tag_key(tag: str) -> str:
+    if SAFE_KEY_RE.fullmatch(tag) and not tag.startswith("."):
+        return tag
+    return "h-" + hashlib.sha256(tag.encode("utf-8")).hexdigest()[:16]
+
+
+def _bumped(row: dict) -> tuple:
+    return (row.get("bumped_at") or "", row["id"])
+
+
+class ForumStore(Store):
+    def __init__(self, root: Path, origin: str):
+        self.root = root
+        self.origin = origin
+        self.topics_dir = root / "topics"
+        self.uploads_dir = root / "uploads"
+        self.site = root / "site"
+        cursor = read_json(root / "source" / "discourse.json", {})
+        cursor = cursor if isinstance(cursor, dict) else {}
+        self.index = {
+            int(row["id"]): row for row in cursor.get("topics") or [] if isinstance(row, dict) and "id" in row
+        }
+        uploads = cursor.get("uploads")
+        self.uploads = uploads if isinstance(uploads, dict) else {}
+        forum = read_json(root / "forum.json", {})
+        forum = forum if isinstance(forum, dict) else {}
+        source = forum.get("source") if isinstance(forum.get("source"), dict) else {}
+        self.meta = {
+            "title": forum.get("title") or "",
+            "description": forum.get("description") or "",
+            "source": source.get("origin") or origin,
+            "pending": source.get("pending", 1),
+        }
+        categories = read_json(root / "categories.json", [])
+        self.categories = categories if isinstance(categories, list) else []
+
+    def topic_dir(self, topic_id: int) -> Path:
+        return self.topics_dir / str(topic_id)
+
+    def topic(self, topic_id: int) -> dict | None:
+        directory = self.topic_dir(topic_id)
+        value = read_json(directory / "topic.json", None)
+        if not isinstance(value, dict):
+            return None
+        posts = list(value.get("posts") or [])
+        for number in range(1, _int(value.get("chunks"), 1)):
+            chunk = read_json(directory / "posts" / f"{number}.json", {})
+            posts += (chunk.get("posts") if isinstance(chunk, dict) else None) or []
+        return {**value, "posts": posts}
+
+    def put_topic(self, topic: dict) -> None:
+        directory = self.topic_dir(topic["id"])
+        posts = [{**post, "format": "html", "origin": "discourse"} for post in topic["posts"]]
+        chunks = max(1, math.ceil(len(posts) / FORUM_POSTS_PER_CHUNK))
+        uploads = {}
+        for post in posts:
+            for url in image_sources(post["cooked"], self.origin):
+                if self.uploads.get(url):
+                    uploads[url] = self.uploads[url]
+        header = {key: value for key, value in topic.items() if key != "posts"}
+        header.update(origin="discourse", chunks=chunks, uploads=uploads, posts=posts[:FORUM_POSTS_PER_CHUNK])
+        write_json(directory / "topic.json", header)
+        for number in range(1, chunks):
+            start = number * FORUM_POSTS_PER_CHUNK
+            write_json(directory / "posts" / f"{number}.json", {"posts": posts[start:start + FORUM_POSTS_PER_CHUNK]})
+        for stale in (directory / "posts").glob("*.json"):
+            if not stale.stem.isdigit() or int(stale.stem) >= chunks:
+                remove_file(stale)
+
+    def drop_topic(self, topic_id: int) -> None:
+        self.index.pop(topic_id, None)
+        directory = self.topic_dir(topic_id)
+        for stale in (directory / "posts").glob("*.json"):
+            remove_file(stale)
+        remove_file(directory / "topic.json")
+        for folder in (directory / "posts", directory):
+            with contextlib.suppress(OSError):
+                folder.rmdir()
+
+    def save(self) -> None:
+        write_json(self.root / "source" / "discourse.json", {
+            "format": FORMAT,
+            "topics": [self.index[key] for key in sorted(self.index)],
+            "uploads": self.uploads,
+        })
+        ForumViews(self).write()
+
+
+class ForumViews:
+    def __init__(self, store: ForumStore):
+        self.store = store
+        self.root = store.root
+        self.rows = [row for row in store.index.values() if row.get("fetched_at")]
+        self.listed = [row for row in self.rows if row.get("visible", True)]
+
+    def write(self) -> None:
+        categories = self.categories()
+        write_json(self.root / "categories.json", categories)
+        meta = self.store.meta
+        write_json(self.root / "forum.json", {
+            "format": FORMAT,
+            "kind": "forkmesh-forum",
+            "generator": f"ForkMesh {PLUGIN_ID}",
+            "title": str(meta.get("title") or ""),
+            "description": str(meta.get("description") or ""),
+            "source": {
+                "type": "discourse",
+                "origin": str(meta.get("source") or self.store.origin),
+                "lastSync": str(meta.get("lastSync") or ""),
+                "pending": _int(meta.get("pending")),
+            },
+            "counts": {
+                "topics": len(self.rows),
+                "posts": sum(_int(row.get("mirrored_posts")) for row in self.rows),
+                "categories": len(categories),
+            },
+            "pageSize": FORUM_PAGE_SIZE,
+            "postsPerChunk": FORUM_POSTS_PER_CHUNK,
+            "topPeriods": list(TOP_PERIODS),
+        })
+        ordered = sorted(self.listed, key=_bumped, reverse=True)
+        global_pins = [row for row in ordered if row.get("pinned_globally")]
+        self.write_pages(self.root / "latest", global_pins + [row for row in ordered if not row.get("pinned_globally")])
+        kept = set()
+        for category in categories:
+            family = {category["id"], *category["subcategory_ids"]}
+            rows = [row for row in ordered if row.get("category_id") in family]
+            pins = [row for row in rows if row.get("pinned")]
+            self.write_pages(self.root / "c" / str(category["id"]), pins + [row for row in rows if not row.get("pinned")])
+            kept.add(str(category["id"]))
+        self.prune_dirs(self.root / "c", kept)
+        tags: dict[str, int] = {}
+        for row in self.listed:
+            for tag in row.get("tags") or []:
+                tags[tag] = tags.get(tag, 0) + 1
+        tag_list = sorted(({"name": name, "key": tag_key(name), "count": count} for name, count in tags.items()),
+                          key=lambda item: (-item["count"], item["name"]))
+        write_json(self.root / "tags.json", tag_list)
+        for tag in tag_list:
+            self.write_pages(self.root / "tag" / tag["key"], [row for row in ordered if tag["name"] in (row.get("tags") or [])])
+        self.prune_dirs(self.root / "tag", {tag["key"] for tag in tag_list})
+        now = time.time()
+        for period, days in TOP_PERIODS.items():
+            rows = [row for row in self.listed if not days or now - _epoch(row.get("created_at")) <= days * 86400]
+            rows.sort(key=lambda row: (_int(row.get("like_count")) * 15 + _int(row.get("posts_count")) * 5
+                                       + _int(row.get("views")) * 0.05, row["id"]), reverse=True)
+            write_json(self.root / "top" / f"{period}.json",
+                       {"period": period, "rows": [list_row(row) for row in rows[:FORUM_PAGE_SIZE]]})
+
+    def categories(self) -> list[dict]:
+        items = [dict(item) for item in self.store.categories if isinstance(item, dict) and item.get("id")]
+        known = {item["id"] for item in items}
+        for item in items:
+            if item.get("parent_category_id") not in known:
+                item["parent_category_id"] = None
+        children: dict[int, list[int]] = {}
+        for item in sorted(items, key=lambda value: (value.get("position", 0), value["id"])):
+            if item["parent_category_id"]:
+                children.setdefault(item["parent_category_id"], []).append(item["id"])
+        ordered = sorted(self.listed, key=_bumped, reverse=True)
+        for item in items:
+            own = [row for row in self.listed if row.get("category_id") == item["id"]]
+            family = {item["id"], *children.get(item["id"], [])}
+            members = [row for row in ordered if row.get("category_id") in family]
+            item.update(
+                subcategory_ids=children.get(item["id"], []),
+                topic_count=len(own),
+                total_topic_count=len(members),
+                post_count=sum(_int(row.get("posts_count")) for row in own),
+                latest=[latest_row(row) for row in members[:FORUM_LATEST_PER_CATEGORY]],
+            )
+        return sorted(items, key=lambda value: (value.get("position", 0), value["id"]))
+
+    def write_pages(self, directory: Path, rows: list[dict]) -> None:
+        pages = max(1, math.ceil(len(rows) / FORUM_PAGE_SIZE))
+        for number in range(1, pages + 1):
+            chunk = rows[(number - 1) * FORUM_PAGE_SIZE:number * FORUM_PAGE_SIZE]
+            write_json(directory / f"{number}.json", {
+                "page": number, "pages": pages, "more": number < pages, "rows": [list_row(row) for row in chunk],
+            })
+        for stale in directory.glob("*.json"):
+            if not stale.stem.isdigit() or int(stale.stem) > pages:
+                remove_file(stale)
+
+    def prune_dirs(self, parent: Path, keep: set[str]) -> None:
+        if not parent.is_dir():
+            return
+        for child in parent.iterdir():
+            if child.is_dir() and child.name not in keep:
+                for stale in child.glob("*.json"):
+                    remove_file(stale)
+                with contextlib.suppress(OSError):
+                    child.rmdir()
+
+
 class _ImageSources(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -453,13 +716,17 @@ class Mirror:
         self.forum = forum
         self.origin = forum["origin"]
         self.client = Client(forum, sleep=sleep)
-        self.store = Store(Path(forum["repository"]))
+        self.forum_layout = forum.get("layout") == "forum"
+        if self.forum_layout:
+            self.store = ForumStore(Path(forum["repository"]) / FORUM_PATH, self.origin)
+        else:
+            self.store = Store(Path(forum["repository"]))
         self.upload_budget = int(forum["maxUploadBytesPerRun"])
         self.stats = {"fetched": 0, "revisited": 0, "removed": 0, "uploads": 0, "pending": 0}
         self.rendered: list[int] = []
 
     def sync(self, full: bool = False, max_topics: int | None = None) -> dict:
-        ensure_repository(Path(self.forum["repository"]), self.forum["branch"])
+        ensure_repository(Path(self.forum["repository"]), self.forum["branch"], create=not self.forum_layout)
         site = self.client.json("/site.json")
         about = (self.client.json("/about.json", missing_ok=True) or {}).get("about") or {}
         previous = dict(self.store.meta) if isinstance(self.store.meta, dict) else {}
@@ -500,6 +767,9 @@ class Mirror:
             pending=self.stats["pending"],
         )
         self.store.save()
+        if self.forum_layout:
+            commit = commit_repository(self.forum, self.summary_line())
+            return {**self.stats, "requests": self.client.requests, "commit": commit, "error": error}
         renderer = Renderer(self.store)
         finished_first_copy = self.stats["pending"] == 0 and previous.get("pending", 1) != 0
         if finished_first_copy:
@@ -529,7 +799,8 @@ class Mirror:
         while True:
             data = self.client.json("/latest.json", [("page", str(page))]) or {}
             topic_list = data.get("topic_list") or {}
-            rows = [listing_fields(item) for item in topic_list.get("topics") or [] if isinstance(item, dict)]
+            users = {_int(user.get("id")): user for user in data.get("users") or [] if isinstance(user, dict)}
+            rows = [listing_fields(item, users) for item in topic_list.get("topics") or [] if isinstance(item, dict)]
             fresh = False
             new_ids = False
             for row in rows:
@@ -574,10 +845,11 @@ class Mirror:
             for post in map(post_record, (more.get("post_stream") or {}).get("posts") or []):
                 posts[post["id"]] = post
         ordered = [posts[post_id] for post_id in stream if post_id in posts]
+        details = data.get("details") or {}
         topic = {
             **listing_fields(data),
-            "views": _int(data.get("views")),
-            "like_count": _int(data.get("like_count")),
+            "participant_count": _int(data.get("participant_count")) or len(details.get("participants") or []),
+            "link_count": len(details.get("links") or []),
             "source": f"{self.origin}/t/{data.get('slug') or 'topic'}/{topic_id}",
             "posts": ordered,
         }
@@ -585,9 +857,14 @@ class Mirror:
         self.store.put_topic(topic)
         listed = self.store.index.get(topic_id) or {}
         row = {key: topic[key] for key in listing_fields({})}
-        for key in ("bumped_at", "highest_post_number", "posts_count"):
+        for key in ("bumped_at", "highest_post_number", "posts_count", *LISTING_ONLY):
             if listed.get(key):
                 row[key] = listed[key]
+        if not row.get("posters") and ordered:
+            row["posters"] = [{"username": ordered[0]["username"], "name": ordered[0]["name"],
+                               "description": "Original Poster"}]
+        if not row.get("last_poster_username") and ordered:
+            row["last_poster_username"] = ordered[-1]["username"]
         row.update(
             fetched_at=now_iso(),
             mirrored_posts=len(ordered),
@@ -1010,9 +1287,11 @@ def git(repository: Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-def ensure_repository(repository: Path, branch: str) -> None:
+def ensure_repository(repository: Path, branch: str, create: bool = True) -> None:
     if (repository / ".git").exists():
         return
+    if not create:
+        raise MirrorError(f"{repository} is not a Git checkout; point --repository at the ForkMesh repository's checkout")
     repository.mkdir(parents=True, exist_ok=True)
     result = git(repository, "init", "-q", "-b", branch)
     if result.returncode:
@@ -1021,14 +1300,15 @@ def ensure_repository(repository: Path, branch: str) -> None:
 
 def commit_repository(forum: dict, message: str) -> str:
     repository = Path(forum["repository"])
-    result = git(repository, "add", "-A")
+    scope = FORUM_PATH if forum.get("layout") == "forum" else "."
+    result = git(repository, "add", "-A", "--", scope)
     if result.returncode:
         raise MirrorError(f"git add failed: {result.stderr.strip()}")
-    if not git(repository, "diff", "--cached", "--quiet").returncode:
+    if not git(repository, "diff", "--cached", "--quiet", "--", scope).returncode:
         return ""
     result = git(
         repository, "-c", f"user.name={forum['commitName']}", "-c", f"user.email={forum['commitEmail']}",
-        "commit", "-q", "--no-verify", "-m", message,
+        "commit", "-q", "--no-verify", "-m", message, "--", scope,
     )
     if result.returncode:
         raise MirrorError(f"git commit failed: {result.stderr.strip()}")
@@ -1103,6 +1383,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     add.add_argument("--repository", help="Git checkout to write (default: data/discourse-mirror/forums/<name>)")
     add.add_argument("--push-remote", default="", help="Git remote to push after each copy")
     add.add_argument("--no-uploads", action="store_true", help="do not copy pictures")
+    add.add_argument("--forum", action="store_true",
+                     help=f"write the forum into {FORUM_PATH} of an existing ForkMesh repository checkout")
     add.add_argument("--delay", type=float, default=DEFAULTS["delaySeconds"], help="seconds between requests")
     commands.add_parser("list", help="list the configured forums")
     remove = commands.add_parser("remove", help="stop copying a forum; its repository is kept")
@@ -1143,6 +1425,10 @@ def main(argv: list[str] | None = None) -> int:
                 entry["pushRemote"] = args.push_remote
             if args.no_uploads:
                 entry["uploads"] = False
+            if args.forum:
+                if not args.repository:
+                    raise MirrorError("--forum needs --repository, the ForkMesh repository's checkout")
+                entry["layout"] = "forum"
             if args.delay != DEFAULTS["delaySeconds"]:
                 entry["delaySeconds"] = max(0.5, args.delay)
             config.forums.append(entry)
@@ -1161,7 +1447,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "render":
             forum = config.find(args.name)
             with forum_lock(data_dir, forum["name"]):
-                Renderer(Store(Path(forum["repository"]))).render()
+                if forum["layout"] == "forum":
+                    ForumStore(Path(forum["repository"]) / FORUM_PATH, forum["origin"]).save()
+                else:
+                    Renderer(Store(Path(forum["repository"]))).render()
                 print(commit_repository(forum, "Mirror: rebuild pages") or "no changes")
             return 0
         names = args.names or [forum["name"] for forum in config.forums]

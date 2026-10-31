@@ -10,6 +10,18 @@ repository. Pushed to ForkMesh, that repository is replicated by the mirror
 fleet like any other, so the forum stays readable from every mirror and every
 clone when the forum itself is down or blocked where a reader lives.
 
+It writes one of two layouts (`layout` in `forums.json`):
+
+- `forum` (`add --forum --repository <checkout>`): the forum format v1 in
+  `.forkmesh/forum/` of an existing ForkMesh repository checkout, which the
+  repository's **Forum tab** shows with the Discourse look
+  ([repo-forum](../app/repo-forum.md)). Only `.forkmesh/forum` is staged and
+  committed (`git add -A -- .forkmesh/forum`, `git commit -- .forkmesh/forum`),
+  so other work in the checkout is never swept into the commit. The checkout
+  must exist; the tool never creates or re-clones it.
+- `site` (the default): a repository of its own holding the topics as JSON and
+  offline HTML pages, described below.
+
 ## Why it is a tool and not a Worker module
 
 Package Worker modules may only fetch from the `outboundOrigins` written in
@@ -19,7 +31,7 @@ controls (a mirror node, the deploy box or a desktop), like
 `tools/hosted_repository_sync.py`. ForkMesh carries the result as an ordinary
 repository; nothing on the App or the desktop changes.
 
-## What a copy holds
+## What a `site` copy holds
 
 ```text
 README.md            what the copy is, where it came from, when it was taken
@@ -130,8 +142,15 @@ repository where it is.
 4. Add the forum:
 
    ```sh
-   python3 $T add https://forum.example.org --name example --push-remote forkmesh
+   python3 $T add https://forum.example.org --name example --forum --repository ~/projects/example/src
    ```
+
+   With `--forum` the forum goes into that repository's Forum tab. Point
+   `--repository` at the checkout the repository's owner publishes from (the
+   owner's desktop project) and leave the push to that node; then turn the
+   tab on under the repository's Settings, Features. Without `--forum`,
+   `--push-remote forkmesh` names the Git remote of a repository that holds
+   only the copy.
 
    `--no-uploads` skips pictures, `--delay 2` slows the copy down. Other
    settings (`revisitPerRun`, `maxTopicsPerRun`, `uploadHosts` for a forum
@@ -179,8 +198,10 @@ tool never resets, re-clones or deletes a checkout.
 
 ## Not done yet
 
-- A reader page inside ForkMesh (dashboard or desktop) for a mirrored forum's
-  repository; today the copy is read from a clone.
+- The Forum tab is on the web only; the desktop, iPhone and Android follow
+  ([repo-forum](../app/repo-forum.md#roadmap)).
+- Posting, likes and operator tools on ForkMesh, and writing back to the
+  Discourse forum: phases 2 and 3 of the roadmap.
 - Private categories and logged-in copies: only what an anonymous visitor
   sees is copied.
 - Polls, reactions and user profile pages.
@@ -194,5 +215,6 @@ python3 -m pytest -q marketplace/packages/discourse-mirror/tests
 The suite runs an in-process fake Discourse server on `127.0.0.1` (plain
 `http` is accepted only for loopback) and covers a first copy, incremental
 runs, removals, blocked answers, `--full`, capped runs, `robots.txt`, rate
-limits, `check`, the HTML sanitizer, the CLI, and that the package names no
-forum.
+limits, `check`, the HTML sanitizer, the CLI, the `forum` layout (one-read
+list files, long topics split into post files, removals, a scoped commit that
+leaves other work alone), and that the package names no forum.

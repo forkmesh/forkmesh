@@ -35,6 +35,7 @@ REPO_TAB_ROUTES = frozenset({
     "pulls",
     "actions",
     "discussions",
+    "forum",
     "mirrors",
     "agents",
     "insights",

@@ -410,6 +410,18 @@ def test_first_view_tabs_follow_the_cached_about():
     assert 'href="/forkmesh/forkmesh" role="tab" aria-selected="true"' in view
 
 
+def test_the_forum_tab_is_drawn_only_when_the_owner_turned_the_forum_on():
+    on = {"ok": True, "features": {"issues": True, "pulls": True, "discussions": True, "forum": True}}
+    labels = re.findall(r'<span data-repo-tab-label="[^"]+">([^<]+)</span>',
+                        _tablist(repo_ssr.render_view(DATA, about=on)))
+    assert labels == ["Code", "Issues", "Pull requests", "Discussions", "Forum", "Insights",
+                      "Projects", "Actions", "Security"]
+    for features in ({"forum": False}, {}):
+        view = _tablist(repo_ssr.render_view(DATA, about={"ok": True, "features": features}))
+        assert ">Forum</span>" not in view
+    assert "forum" in repo_ssr.SUB_OTHER_ROUTES
+
+
 def test_first_view_tab_strip_matches_the_dashboards_so_hydration_does_not_shift_it():
     # The dashboard draws every default tab, Security after Actions, a counter
     # pill on Issues and Pull requests even before their counts arrive, and a

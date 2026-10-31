@@ -432,6 +432,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard-page-notes.js",
     "dashboard-page-referrals.js",
     "dashboard-page-repo-activity.js",
+    "dashboard-page-repo-forum.js",
     "dashboard-page-tasks.js",
 )
 

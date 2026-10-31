@@ -2998,6 +2998,9 @@
     } else if (active === "insights") {
       state.loadedRepoTabs.insights = true;
       loadRepoInsights(repo);
+    } else if (active === "forum") {
+      state.loadedRepoTabs.forum = true;
+      loadRepoForum(repo);
     } else if (active === "sizemap") {
       state.loadedRepoTabs.sizemap = true;
       loadRepoSizeMapTab(repo);

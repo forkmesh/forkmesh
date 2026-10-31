@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Community",
-  "version": "1.0.0",
-  "summary": "Keeps a read-only copy of a public Discourse forum in a Git repository that ForkMesh mirrors carry, so its topics stay readable when the forum itself cannot be reached. The copy loads nothing from the network.",
+  "version": "1.1.0",
+  "summary": "Copies a public Discourse forum into a ForkMesh repository's Forum tab, or into a repository of its own with offline pages, so mirrors keep it readable when the forum cannot be reached.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -25,7 +25,10 @@
     "creatorRetainsOwnership": true,
     "terms": "Included under the ForkMesh repository licence. Mirrored posts stay their authors' under the source forum's terms."
   },
-  "price": { "amount": 0, "currency": "USD" },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
   "entrypoints": {
     "mirror": "content/mirror/discourse_mirror.py",
     "settings": "builtin:package"
@@ -53,7 +56,15 @@
     "reproducibleBuild": true,
     "signature": "verified-bundle"
   },
-  "install": { "bundled": true, "default": false },
-  "lifecycle": { "migrations": [] },
-  "dataLifecycle": { "scope": "none", "localData": false }
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
 }
