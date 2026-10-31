@@ -50,7 +50,7 @@ const QRegularExpression &genieTaskLineRe()
 QString MainWindow::mcpServerScriptPath() const
 {
     return forkmesh::control::findMcpServerScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
 }
 

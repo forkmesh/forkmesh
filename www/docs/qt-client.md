@@ -20,12 +20,14 @@ Requirements: Qt 6.4+ (Widgets, Network, SVG, Concurrent; D-Bus on Linux),
 CMake 3.16+, a C++17 compiler, OpenSSL 3.0+ with headers, Python 3, and Git.
 Private mirrors and the Password Vault need OpenSSL 3.5; on older systems pass
 `-DFORKMESH_BUNDLED_OPENSSL=ON` (fetches and verifies a pinned OpenSSL) or
-`-DOPENSSL_ROOT_DIR=...`. Optional: `libnghttp3` for the HTTP/3 log-feed client
-and Qt 6 Multimedia for in-app video playback.
+`-DOPENSSL_ROOT_DIR=...`. Optional: `libnghttp3` for the HTTP/3 log-feed client,
+Qt 6 Multimedia for in-app video playback, and Qt 6 WebEngine
+(`qt6-webengine-dev`) for the Browser tab and YouTube inside the app.
 
 ```sh
 sudo apt install build-essential cmake git libssl-dev openssl \
-  qt6-base-dev qt6-svg-dev qt6-base-dev-tools pkg-config   # Debian/Ubuntu
+  qt6-base-dev qt6-svg-dev qt6-base-dev-tools pkg-config \
+  qt6-webengine-dev                                         # Debian/Ubuntu
 brew install cmake git openssl@3 qt                         # macOS
 ```
 

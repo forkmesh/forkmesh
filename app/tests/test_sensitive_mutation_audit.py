@@ -552,6 +552,7 @@ def _org_delete_handler(*, caller_role="owner", fail_mutation=False):
         "schedule_public_catalog_republish": _noop,
         "_audit_sensitive_action": audit,
         "plugin_data": plugin_data,
+        "org_office_chat": SimpleNamespace(dissolve=_noop),
         "_PluginPurgeRuntime": lambda env: SimpleNamespace(
             d1_all=lambda sql, *args: _list_result([]),
             d1_first=lambda sql, *args: _list_result(None),

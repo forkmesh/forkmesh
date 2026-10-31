@@ -80,7 +80,7 @@ let modules: [Module] = [
     // Code analysis (Ember, Strata, Synapse): a port of the desktop's RepoInsight engine.
     Module(name: "FMCodeInsight", deps: []),
     Module(name: "FMPush", deps: ["FMBase", "FMCrypto"]),
-    Module(name: "FMWorkflows", deps: ["FMBase", "FMNet", "FMAccount", "FMApi"], resources: true, assets: true),
+    Module(name: "FMWorkflows", deps: ["FMBase", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl"], resources: true, assets: true),
     Module(name: "FMFiles", deps: ["FMBase", "FMCrypto", "FMPackages"]),
     Module(name: "FMAssistant", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl", "FMPackages", "FMPlanning", "FMLocalAI"]),
 ]

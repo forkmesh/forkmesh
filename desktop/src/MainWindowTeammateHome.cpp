@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "ChatLinkText.h"
 #include "MainWindowInternal.h"
 #include "AppPaths.h"
 #include "FlowLayout.h"
@@ -1397,7 +1398,11 @@ QWidget *MainWindow::buildTeammateHomeWidgetCard(const Config &teammate,
                                              item.text.toHtmlEscaped()));
             link->setObjectName(QStringLiteral("teammateHomeLink"));
             link->setTextFormat(Qt::RichText);
-            link->setOpenExternalLinks(true);
+            link->setOpenExternalLinks(false);
+            connect(link, &QLabel::linkActivated, link, [](const QString &href) {
+                if (const QUrl external = ChatLinkText::externalLinkUrl(href); external.isValid())
+                    QDesktopServices::openUrl(external);
+            });
             link->setToolTip(item.url);
             layout->addWidget(link);
         }

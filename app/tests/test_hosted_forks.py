@@ -251,6 +251,54 @@ def test_every_core_is_told_where_the_node_published_parent_lives():
             fork_id, network)
 
 
+def _org_alias(world, org, node, repo, org_bi=None):
+    world.db.execute("INSERT INTO orgs VALUES (?,?,?,?)",
+                     (org_bi or "bi:org:" + org, org, "{}", NOW))
+    world.db.execute("INSERT INTO org_repos VALUES (?,?,?,?)",
+                     (org_bi or "bi:org:" + org, repo, node, NOW))
+
+
+def test_cores_are_told_the_organization_name_they_serve_the_parent_under():
+    world, module = _world()
+    _node_repo(world, owner="fmnext-n1")
+    _org_alias(world, "forkmesh", "fmnext-n1", "forkmesh")
+    world.account = "bob"
+    response = asyncio.run(module.hosted_fork_create(
+        ForkEnv(), Request({"sessionToken": SESSION_TOKEN}), "fmnext-n1",
+        "forkmesh", "forkmesh"))
+    assert response.status == 201, response.data
+    assert response.data["fork"]["forkedFrom"] == "forkmesh/forkmesh"
+    hosted = world.hosted("bob", "forkmesh")
+    network = hosted_repos.upstream_network("fmnext-n1", "forkmesh")
+    assert hosted["data"]["fork"]["upstream"]["owner"] == "fmnext-n1"
+    assert hosted["data"]["fork"]["network"] == network
+    record, _ = world.catalog("bob", "forkmesh")
+    assert record["forkedFrom"] == "forkmesh/forkmesh"
+    for index, node in enumerate(CORES):
+        items = {item["id"]: item for item in signed_replicas(
+            module, node, {},
+            request_id="request_org_alias_%02d" % index).data["repositories"]}
+        assert items[hosted["id"]]["forkUpstream"] == {
+            "owner": "forkmesh", "name": "forkmesh", "cloneUrl": CLONE_URL}
+        assert items[hosted["id"]]["network"] == network
+
+
+def test_an_organization_link_with_a_forged_name_is_not_served():
+    world, module = _world()
+    _node_repo(world, owner="fmnext-n1")
+    _org_alias(world, "forkmesh", "fmnext-n1", "forkmesh",
+               org_bi="bi:org:someone-else")
+    world.account = "bob"
+    asyncio.run(module.hosted_fork_create(
+        ForkEnv(), Request({"sessionToken": SESSION_TOKEN}), "fmnext-n1",
+        "forkmesh", "forkmesh"))
+    fork_id = world.hosted("bob", "forkmesh")["id"]
+    items = {item["id"]: item for item in signed_replicas(
+        module, CORES[0], {},
+        request_id="request_org_forged_0").data["repositories"]}
+    assert items[fork_id]["forkUpstream"]["owner"] == "fmnext-n1"
+
+
 def test_a_node_published_parent_made_private_is_not_named():
     world, module = _world()
     _node_repo(world)

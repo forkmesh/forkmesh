@@ -6,6 +6,7 @@
 // user grant the access (AgentAccessFailure.h).
 
 #include "MainWindow.h"
+#include "MainWindowNextAccess.h"
 #include "MessageBoxClicks.h"
 #include "MainWindowInternal.h"
 #include "AgentNetworkGate.h"
@@ -289,6 +290,7 @@ void MainWindow::startAgentRunner(const AgentSession &session, const Issue &issu
     config.extraEnvironment += agentRunToolEnvironment(session.id);
     config.extraEnvironment += agentNetworkGateEnv(session.id);
     acquireAgentRunner()->start(session, issue, repoPath, config);
+    forkmesh::ui::NextAccess::sessionStarted(*this, session.id);
 }
 
 QStringList MainWindow::agentNetworkGateEnv(int sessionId)

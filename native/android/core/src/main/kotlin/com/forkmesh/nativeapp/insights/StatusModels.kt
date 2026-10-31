@@ -46,6 +46,7 @@ data class StatusSystem(
     val reasonTs: Long = 0,
     val observedAt: Long = 0,
     val minutes: List<StatusMinute> = emptyList(),
+    val resources: NodeResources? = null,
 ) {
     val isMirror: Boolean get() = id.startsWith("mirror:")
     val isNode: Boolean get() = id.startsWith("core:") || id.startsWith("runner:")
@@ -64,6 +65,7 @@ data class StatusSystem(
             reasonTs = json.long("reasonTs"),
             observedAt = json.long("observedAt"),
             minutes = json.maps("minutes").takeLast(60).map { StatusMinute(it.long("minuteTs"), ServiceState.of(it.str("status"))) },
+            resources = NodeResources.fromJson(json["resources"]),
         )
     }
 }

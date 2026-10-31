@@ -275,7 +275,10 @@ struct ChatChannelSidebar: View {
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) { content() }
             .padding(FmSpace.x1)
-            .background(FmRoundedShape(radius: FmRadius.lg).fill(cardFill))
+            .background(
+                FmRoundedShape(radius: FmRadius.lg).fill(cardFill)
+                    .shadow(color: Color.black.opacity(fm.dark ? 0 : 0.05), radius: 5, y: 2)
+            )
             .overlay(FmRoundedShape(radius: FmRadius.lg).stroke(fm.border.opacity(fm.wallpaper ? 0.35 : 0.6), lineWidth: 0.5))
     }
 

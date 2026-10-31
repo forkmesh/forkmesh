@@ -178,7 +178,8 @@ def test_avatar_endpoint_serves_a_glyph_for_system_names_only():
 
 
 def test_other_surfaces_use_the_helpers_and_the_bundle_is_built():
-    assert 'issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)' in ACTIONS
+    assert 'issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false)' in ACTIONS
+    assert 'issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)' not in ACTIONS
     assert "botAvatarSvg(botAvatarKind(lead.actor" in NETWORK
     assert 'avatar.innerHTML = botAvatarSvg(botKind, "h-3.5 w-3.5")' in CONTENT
     assert "function botAvatarKind(" in BUNDLE and "const BOT_AVATAR_GLYPHS = {" in BUNDLE

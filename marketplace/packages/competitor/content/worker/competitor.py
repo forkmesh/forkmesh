@@ -8,6 +8,8 @@ PLUGIN_ID = "competitor"
 MAX_BODY_BYTES = 256 * 1024
 MAX_ITEMS = 1000
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_INSIDER_ROLES = frozenset({"owner", "admin", "maintainer", "member", "auditor"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 STATUSES = frozenset({"watch", "primary", "archived"})
 ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -317,8 +319,10 @@ async def handle(runtime, path):
     if not ORG_RE.fullmatch(org_name):
         return _response(runtime, {"error": "organization_not_found"}, 404)
     org_bi, role = await runtime.organization(org_name, account_bi)
-    if not org_bi or not role:
+    if not org_bi or role not in ORG_INSIDER_ROLES:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(
             runtime,

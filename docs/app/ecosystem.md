@@ -102,10 +102,14 @@ Unknown top-level fields, `NaN` and `Infinity` are rejected.
 - Load a file: `python3 tools/ecosystem_seed.py <file>.json --node <admin account>`
   (`--key`, `--origin` optional); safe to re-run.
 - Seed files in the repository (`tools/ecosystem_third_parties.json`,
-  `tools/ecosystem_hn_launches.json`, `tools/ecosystem_requested.json`) carry
-  no private notes; `tools/test_ecosystem_seed.py` runs them through the
+  `tools/ecosystem_hn_launches.json`, `tools/ecosystem_requested.json`,
+  `tools/ecosystem_client_work.json`) carry no private notes beyond sources,
+  levels and a one-line note; `tools/test_ecosystem_seed.py` runs them through the
   server's import checks. An entry removed from a file must be deleted in the
   console.
+- `tools/ecosystem_client_work.json` holds the agency client-work tools from
+  a 2026-10-27 X thread, in the `work-management` category; the analysis is
+  [ecosystem-client-work.md](ecosystem-client-work.md).
 
 ## Traps
 

@@ -59,7 +59,7 @@ struct ShortcutsScreen: View {
             }
             if let run = store.shownRun {
                 Section("Output") {
-                    NavigationLink {
+                    ShellPaneLink {
                         ShortcutOutputScreen(store: store)
                             .shellPageClearance()
                     } label: {
@@ -98,7 +98,7 @@ struct ShortcutsScreen: View {
     }
 
     private func row(_ entry: ShortcutEntry) -> some View {
-        NavigationLink {
+        ShellPaneLink {
             ShortcutDetailScreen(store: store, repo: repo, entry: entry)
                 .shellPageClearance()
         } label: {
@@ -293,7 +293,7 @@ struct ShortcutDetailScreen: View {
                     .disabled(repo.isEmpty)
                 }
                 if AppStoreStatusText.isStatusShortcut(file: entry.file), PackageGate.shows(Route.appStoreStatus) {
-                    NavigationLink {
+                    ShellPaneLink {
                         AppStoreStatusScreen()
                             .shellPageClearance()
                     } label: {
@@ -309,7 +309,7 @@ struct ShortcutDetailScreen: View {
                     Label(banner, systemImage: "checkmark.circle").foregroundStyle(.green).font(.footnote).frame(maxWidth: .infinity, alignment: .leading).fmMessageTools(banner)
                 }
                 if let run = store.liveRun(repo: repo, entry: entry) {
-                    NavigationLink {
+                    ShellPaneLink {
                         ShortcutOutputScreen(store: store, runId: run.id)
                             .shellPageClearance()
                     } label: {
@@ -353,7 +353,7 @@ struct ShortcutDetailScreen: View {
                 }
             }
         }
-        .navigationDestination(isPresented: $showTerminal) {
+        .shellDetail(isPresented: $showTerminal) {
             ShortcutOutputScreen(store: store)
                 .shellPageClearance()
         }
@@ -421,7 +421,7 @@ struct ShortcutStepsTimeline: View {
         let total = entry.steps.count
         let last = step.number == total
         if let target = store.catalog?.linked(step, from: entry) {
-            NavigationLink {
+            ShellPaneLink {
                 ShortcutDetailScreen(store: store, repo: repo, entry: target)
                     .shellPageClearance()
             } label: {

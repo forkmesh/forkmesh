@@ -86,6 +86,32 @@ FEATURES = (
     ("changelog", "Changelog",
      "Platform changelog: what changed in each platform version.",
      ("/changelog",), ()),
+    ("read-surfaces", "Feeds and lite view",
+     "Atom feeds of a repository's issues, threads, labels and activity, a "
+     "no-JavaScript lite view of every thread, and the forum home page.",
+     (), ()),
+    ("mirror-quota", "Mirror goal",
+     "A Mirrors card on each repository page with a goal for independent "
+     "copies, their health, and a page that asks readers to run one.",
+     (), (r"^/api/repo/[^/]+/[^/]+/mirror-quota$",)),
+    ("mirrored-attachments", "No images from the source forge",
+     "Images hosted by the forge a repository mirrors (GitHub user "
+     "attachments) are shown from the instance's copy, or as a link when "
+     "there is none, so readers' browsers never load them from the forge.",
+     (), ()),
+    ("forum-list", "Forum-style issue lists",
+     "Issue lists open on Newest first, as on GitHub, and each row shows the "
+     "thread's last few commenters.",
+     (), ()),
+    ("post-translate", "Translate posts",
+     "A Translate bar under every post: the site's own machine translations "
+     "(made on the server, see tools/forge_translate.py), shown on hover or "
+     "at once, and the browser's on-device translator for other languages.",
+     (), ()),
+    ("community-translations", "Community translations",
+     "Signed translations that members attach to posts in issues, pull "
+     "requests and discussions, shown beside the original.",
+     (), (r"^/api/repo/[^/]+/[^/]+/translations$",)),
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
@@ -116,6 +142,16 @@ INSTANCE_NOTES = {
     "genie": "The spider at the bottom of each page that offers tips.",
     "developer-docs": "Shows the docs/ folder of this instance's read-only "
                       "forkmesh mirror in the dashboard.",
+    "read-surfaces": "Serves /<owner>/<repo>/issues.atom, /lite and the home "
+                     "page for readers on slow or filtered links and feed readers.",
+    "mirror-quota": "Lets maintainers set how many independent mirrors a "
+                    "repository should have and checks them.",
+    "post-translate": "Translates posts into the reader's language without "
+                      "sending them to a translation service.",
+    "mirrored-attachments": "Never makes readers' browsers fetch images from "
+                            "the forge a repository mirrors.",
+    "forum-list": "Lists a repository's issues newest first and shows who "
+                  "commented last, like a forum.",
     "issue-ai-prompt": "Offers readers a prompt to paste into a coding agent "
                        "on each open issue.",
     "fediverse-ui": "Shows replies from the fediverse beside a thread and "
@@ -123,9 +159,14 @@ INSTANCE_NOTES = {
                     "replies endpoint answers 404 too.",
     "changelog": "The changelog of the platform version this instance runs, "
                  "at /changelog. On unless turned off.",
+    "community-translations": "Lets signed-in members attach a translation "
+                              "to any post; readers see it next to the "
+                              "original. The on-device Translate button "
+                              "works either way.",
 }
 DEFAULT_ON = frozenset({"changelog", "issue-ai-prompt", "fediverse-ui"})
-OPT_IN = frozenset()
+OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota", "mirrored-attachments",
+                    "post-translate", "community-translations"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
@@ -289,8 +330,10 @@ def blocked(env, path):
 
 def switched_off(env=None):
     env = _REMEMBERED["env"] if env is None else env
-    if env is None or not branded(env):
-        return frozenset()
+    if env is None:
+        return frozenset(OPT_IN)
+    if not branded(env):
+        return frozenset(set(IDS) - core_ids(env))
     return frozenset(set(IDS) - enabled_ids(env))
 
 
@@ -342,6 +385,7 @@ PLUGIN_ELEMENTS = {
     "genie": ".fm-genie, .fm-genie-bubble, .fm-genie-fx, genie-spider",
     "issue-ai-prompt": "[data-repo-issue-ai-prompt]",
     "fediverse-ui": "[data-repo-federated-thread], [data-repo-watch-wrap]",
+    "community-translations": "[data-post-translations]",
 }
 OFFSITE_PAGES = {"/world": "https://world.forkmesh.com"}
 
@@ -350,9 +394,19 @@ def _css_string(value):
     return '"%s"' % value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+OFFSITE_CHROME = (
+    'a[href^="https://forkmesh.com/"]:not([href="https://forkmesh.com/"])',
+    'a[href^="https://www.forkmesh.com/"]', 'a[href^="https://app.forkmesh.com/"]',
+    'a[href^="https://www.patreon.com/"]', "a[data-forkmesh-membership]")
+
+
 def chrome_css(env):
     on = enabled_ids(env)
     rules = [":root{--instance-plugins:ready}"]
+    if branded(env) and _setting(env, "INSTANCE_WHITE_LABEL") == "1":
+        rules.append("%s{display:none !important}" % ",".join(
+            "%s %s:not([data-instance-powered-by] a)" % (CHROME, item)
+            for item in OFFSITE_CHROME))
     for feature in FEATURES:
         if feature[0] in on or not branded(env):
             continue

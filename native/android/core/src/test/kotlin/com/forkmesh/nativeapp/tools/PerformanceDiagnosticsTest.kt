@@ -65,6 +65,27 @@ class PerformanceDiagnosticsTest {
         expect(clean.contains("2026-10-13 19:20:15 took 420 ms"))
     }
 
+    fun testScrubsConversationAndRoomNames() {
+        val raw = """
+            relay.send.edit {"type":"edit","conversation":"#layoffs-plan","to":"node-9"}
+            stall conversation=#layoffs-plan room=secret-room channel=@pat took 300 ms
+        """.trimIndent()
+        val clean = DiagnosticsBundle.scrub(raw)
+        for (leaked in listOf("layoffs-plan", "secret-room", "@pat", "node-9")) expect(!clean.contains(leaked), leaked)
+        expect(clean.contains("took 300 ms"))
+    }
+
+    fun testThePerformanceReportIsScrubbed() {
+        val report = DiagnosticsBundle.report(
+            listOf("screen" to "chat conversation=#layoffs-plan", "note" to "token=abc123def from pat@example.com"),
+            null,
+            emptyList(),
+            emptyList(),
+            now,
+        )
+        for (leaked in listOf("layoffs-plan", "abc123def", "pat@example.com")) expect(!report.contains(leaked), leaked)
+    }
+
     fun testReportAndPromptLeaveLogsOutWhenAsked() {
         val log = AppLog(now = { now })
         log.add(LogCategory.entries.first(), "secret line")

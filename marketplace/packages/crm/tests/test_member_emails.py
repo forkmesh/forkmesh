@@ -15,6 +15,9 @@ GRANTED = {"crm": frozenset(item["id"] for item in json.loads(
 sys.path.insert(0, str(PACKAGE / "content" / "worker"))
 import crm  # noqa: E402
 
+sys.path.insert(0, str(ENTRY.parent))
+import organization_rbac as _org_rbac  # noqa: E402
+
 
 def _member_emails(db):
     tree = ast.parse(ENTRY.read_text(encoding="utf-8"))
@@ -43,6 +46,7 @@ def _member_emails(db):
         "valid_account_email": lambda value: bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]+", value)),
         "plugin_data": SimpleNamespace(
             permissions=lambda plugin: GRANTED.get(plugin, frozenset())),
+        "_org_rbac": _org_rbac,
     }
     exec(compile(ast.Module(body=constants + [method], type_ignores=[]),
                  str(ENTRY), "exec"), namespace)
@@ -102,6 +106,10 @@ def test_outsiders_and_packages_without_the_permission_get_nothing():
     assert asyncio.run(emails(runtime, "org:other", "bi:outsider")) == []
     other, _ = _runtime("analytics")
     assert asyncio.run(emails(other, "org:acme", "bi:alice")) == []
+    db.execute("INSERT INTO users VALUES('bi:gus',?)", (json.dumps(
+        {"status": "active", "email": "gus@guest.test", "email_verified": True}),))
+    db.execute("INSERT INTO org_members VALUES('org:acme','bi:gus','guest','gus')")
+    assert asyncio.run(emails(runtime, "org:acme", "bi:gus")) == []
 
 
 def test_the_crm_summary_offers_them_for_cc():
@@ -119,3 +127,30 @@ def test_the_crm_summary_offers_them_for_cc():
     source = (PACKAGE / "content" / "worker" / "crm.py").read_text(encoding="utf-8")
     summary = source.split("async def _summary(", 1)[1].split("\nasync def ", 1)[0]
     assert '"memberEmails": await _member_emails(runtime, org_bi, account_bi)' in summary
+
+
+def test_package_organization_lookup_gives_guests_no_role():
+    tree = ast.parse(ENTRY.read_text(encoding="utf-8"))
+    runtime_class = next(node for node in tree.body
+                         if isinstance(node, ast.ClassDef) and node.name == "_PluginApiRuntime")
+    method = next(node for node in runtime_class.body
+                  if isinstance(node, ast.AsyncFunctionDef) and node.name == "organization")
+    db = _database()
+    db.execute("INSERT INTO org_members VALUES('org:acme','bi:gus','guest','gus')")
+    db.execute("INSERT INTO org_members VALUES('org:acme','bi:aud','auditor','aud')")
+
+    async def d1_first(_env, sql, *args):
+        row = db.execute(sql, args).fetchone()
+        return dict(row) if row else None
+
+    async def _org_row(_env, name):
+        return ("org:" + name, {"name": name}) if name == "acme" else ("", None)
+
+    namespace = {"d1_first": d1_first, "_org_row": _org_row, "_org_rbac": _org_rbac}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), str(ENTRY), "exec"), namespace)
+    organization = namespace["organization"]
+    runtime = SimpleNamespace(env=None)
+    assert asyncio.run(organization(runtime, "acme", "bi:kim")) == ("org:acme", "member")
+    assert asyncio.run(organization(runtime, "acme", "bi:aud")) == ("org:acme", "auditor")
+    assert asyncio.run(organization(runtime, "acme", "bi:gus")) == ("org:acme", "")
+    assert asyncio.run(organization(runtime, "acme", "bi:outsider")) == ("org:acme", "")

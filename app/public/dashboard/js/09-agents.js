@@ -278,6 +278,7 @@
     const rows = agentsRows();
     const visible = agentsFilteredRows(rows);
     if (count) count.textContent = agentsCountText(rows);
+    setNavWorking("agents", rows.some((row) => row.live));
     renderAgentsFilterOptions(rows);
     const problems = [agentsPageView.cloudError, agentsPageView.desktopError].filter(Boolean);
     const notes = [];

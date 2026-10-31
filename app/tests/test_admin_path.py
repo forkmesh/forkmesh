@@ -230,9 +230,11 @@ def test_routing_checks_the_private_path_before_the_router():
     assert hidden < sub < console < router
     assert "_serve_not_found_page(url)" in inner[hidden:sub]
     assert "_private_console_headers(response)" in inner
-    assert "if not read_only and not private_console:\n            response = " \
+    assert "if not read_only and not private_console and not private_mode:\n" \
+        "            response = " \
         "await _attribution.capture_page_view(" in inner
-    assert "if not read_only and not private_console:\n            await " \
+    assert "if not read_only and not private_console and not private_mode:\n" \
+        "            await " \
         "record_site_referral(" in inner
     entry = (SRC / "entry.py").read_text(encoding="utf-8")
     headers = entry.split("def _private_console_headers(response):", 1)[1]

@@ -261,8 +261,11 @@ def test_package_mail_gets_the_logo_footer_and_keeps_its_links():
     async def blind_index(_env, value):
         return hashlib.sha256(str(value).encode()).hexdigest()
 
+    import instance_privacy
+
     namespace = {"blind_index": blind_index, "mail_tracking": mail_tracking,
-                 "mail_activity": mail_activity}
+                 "mail_activity": mail_activity,
+                 "instance_privacy": instance_privacy}
     exec(compile(ast.Module(body=selected, type_ignores=[]), str(entry),
                  "exec"), namespace)
     env = types.SimpleNamespace(API_ORIGIN="https://app.example")

@@ -3,6 +3,10 @@
 Racing a shutdown, a takedown, a lost account, or censorship? Start with
 [preservation-first crisis onboarding](crisis-preservation.md).
 
+An import copies a project's issues, pull requests and their history once. It
+does not copy the code and is not kept up to date, so it is not a backup; to
+keep a copy of the code, see [Back up a GitHub repository](back-up-a-github-repository.md).
+
 ## Setup
 
 On **Repositories**, choose **New repository**, select **GitHub / GitLab /

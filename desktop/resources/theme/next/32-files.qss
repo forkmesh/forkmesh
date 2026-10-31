@@ -58,8 +58,12 @@ QLineEdit#filesCommitMessage:disabled {
     background-color: @surfaceRaised; border-color: @border; color: @fgSubtle;
 }
 
-#filesExplorerSplitter::handle:horizontal, #filesEditorSplitter::handle:vertical {
-    background: transparent;
+#filesEditorSplitter::handle:vertical { background: transparent; }
+#filesExplorerSplitter::handle:horizontal {
+    width: 9px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 transparent, stop:0.44 transparent, stop:0.45 @border,
+        stop:0.55 @border, stop:0.56 transparent, stop:1 transparent);
 }
 #filesExplorerSplitter::handle:horizontal:hover,
 #filesExplorerSplitter::handle:horizontal:pressed {
@@ -73,9 +77,14 @@ QLineEdit#filesCommitMessage:disabled {
         stop:0.66 @accent, stop:0.67 transparent, stop:1 transparent);
 }
 
-#filesSection #fileTree, #filesSymbolPanel #searchResultsTree {
+#filesSymbolPanel #searchResultsTree {
     background-color: @bg; border: 1px solid @border; border-radius: 12px;
     padding: 6px; outline: none; font-size: 13px; color: @fgSecondary;
+    show-decoration-selected: 0;
+}
+#filesSection #fileTree {
+    background-color: @bg; border: none; border-radius: 0px;
+    padding: 0px; outline: none; font-size: 13px; color: @fgSecondary;
     show-decoration-selected: 0;
 }
 #filesSection #fileTree::item, #filesSymbolPanel #searchResultsTree::item {
@@ -89,9 +98,9 @@ QLineEdit#filesCommitMessage:disabled {
     background: transparent; border-image: none; image: none;
 }
 #filesSection #fileTree QHeaderView::section {
-    background-color: @bg; color: @fgMuted; border: none;
-    border-bottom: 1px solid @border; padding: 5px 8px;
-    font-size: 12px; font-weight: 500;
+    background-color: @bg; color: @fgSubtle; border: none;
+    border-bottom: 1px solid @border; padding: 0px 8px; min-height: 36px;
+    font-size: 12px; font-weight: 400;
 }
 
 #filesEditorColumn > QLabel#mutedLabel {
@@ -197,3 +206,121 @@ QLineEdit#filesCommitMessage:disabled {
     padding: 4px 6px;
 }
 #filesSymbolPanel QPushButton#ghostButton:hover { background-color: @surfaceRaised; }
+
+#filesSection > QFrame[filesHairline="true"],
+#filesInfoPanel QFrame[filesHairline="true"] { background-color: @border; border: none; }
+#filesSection > QLabel#mutedLabel[filesStatusBar="true"],
+#filesSection > QLabel#filesSelectionLabel,
+#filesSection > QLabel#filesStatusHint {
+    color: @fgSubtle; font-size: 11px; background: transparent;
+    min-height: 32px; max-height: 32px;
+}
+
+#filesPlaces {
+    background-color: transparent; border: none; border-right: 1px solid @border;
+}
+#filesPlaces QLabel[filesPlacesHeading="true"] {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; letter-spacing: 0.6px;
+    background: transparent; padding: 4px 8px 4px 8px;
+}
+#filesPlaces QPushButton[filesPlace="true"] {
+    background-color: transparent; border: none; border-radius: 8px;
+    color: @fgMuted; font-size: 13px; font-weight: 400; text-align: left;
+    padding: 0px 8px; min-height: 32px; max-height: 32px;
+}
+#filesPlaces QPushButton[filesPlace="true"]:hover { background-color: @surfaceRaised; color: @fg; }
+#filesPlaces QPushButton[filesPlace="true"][filesPlaceActive="true"] {
+    background-color: @surfaceActive; color: @fg;
+}
+#filesPlaces QPushButton#filesSourcePicker {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; font-weight: 500; text-align: left;
+    padding: 0px 28px 0px 10px; min-height: 30px; max-height: 30px;
+}
+#filesPlaces QPushButton#filesSourcePicker:hover { border-color: @borderStrong; }
+#filesPlaces QPushButton#filesSourcePicker:pressed,
+#filesPlaces QPushButton#filesSourcePicker:open { border-color: @accent; }
+#filesPlaces QPushButton#filesSourcePicker::menu-indicator {
+    image: url(@chevronIcon); subcontrol-origin: padding;
+    subcontrol-position: center right; right: 10px; width: 12px; height: 12px;
+}
+#filesPlaces QFrame#filesDiskCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#filesDiskCard QLabel { background: transparent; }
+#filesDiskCard QLabel#filesDiskName { color: @fg; font-size: 13px; }
+#filesDiskCard QLabel#filesDiskCaption { color: @fgSubtle; font-size: 12px; }
+#filesDiskCard QProgressBar#filesDiskBar {
+    background-color: @surfaceActive; border: none; border-radius: 3px;
+}
+#filesDiskCard QProgressBar#filesDiskBar::chunk { background-color: @accent; border-radius: 3px; }
+
+#filesSection > QPushButton#ghostButton[filesTool="true"] {
+    background-color: transparent; border: 1px solid transparent; border-radius: 6px;
+    padding: 0px; min-height: 0px; color: @fgMuted;
+}
+#filesSection > QPushButton#ghostButton[filesTool="true"]:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#filesSection > QPushButton#ghostButton[filesTool="true"]:pressed {
+    background-color: @surfaceActive;
+}
+#filesSection > QPushButton#ghostButton[filesTool="true"]:checked {
+    background-color: transparent;
+}
+#filesSection > QPushButton#ghostButton[filesTool="true"]:checked:hover {
+    background-color: @surfaceRaised;
+}
+#filesSection > QPushButton#ghostButton[filesTool="true"]:disabled {
+    background-color: transparent;
+}
+
+#filesCrumbs { background: transparent; }
+#filesCrumbs QPushButton[filesCrumb="true"] {
+    background-color: transparent; border: none; border-radius: 6px;
+    color: @fgMuted; font-size: 13px; font-weight: 400;
+    padding: 3px 6px; min-height: 0px;
+}
+#filesCrumbs QPushButton[filesCrumb="true"]:hover { background-color: @surfaceRaised; color: @fg; }
+#filesCrumbs QPushButton[filesCrumb="true"][filesCrumbCurrent="true"] {
+    color: @fg; font-weight: 500;
+}
+#filesCrumbs QLabel { background: transparent; }
+#filesCrumbs QLabel[filesCrumbLabel="true"] {
+    color: @fgMuted; font-size: 13px; padding: 0px 6px;
+}
+#filesCrumbs QLabel[filesCrumbLabel="true"][filesCrumbCurrent="true"] {
+    color: @fg; font-weight: 500;
+}
+
+QLineEdit#filesFolderSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 6px;
+    color: @fg; font-size: 13px; padding: 0px 8px 0px 2px;
+    min-height: 26px; max-height: 26px;
+}
+QLineEdit#filesFolderSearch:hover { border-color: @borderStrong; }
+QLineEdit#filesFolderSearch:focus { border-color: @accent; }
+
+#filesInfoPanel { background: transparent; border: none; }
+#filesInfoPanel QLabel { background: transparent; }
+#filesInfoPanel QLabel#filesInfoName { color: @fg; font-size: 15px; font-weight: 600; }
+#filesInfoPanel QLabel#filesInfoKind { color: @fgMuted; font-size: 12px; }
+#filesInfoPanel QLabel[filesInfoCaption="true"] { color: @fgMuted; font-size: 13px; }
+#filesInfoPanel QLabel#filesInfoSize, #filesInfoPanel QLabel#filesInfoModified {
+    color: @fg; font-size: 13px;
+}
+#filesInfoPanel QLabel#filesInfoWhere {
+    color: @fg; font-size: 12px;
+    font-family: "Geist Mono", "SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono",
+        "Liberation Mono", "Noto Sans Mono", monospace;
+}
+#filesInfoPanel QPushButton[filesInfoAction="true"] {
+    background-color: transparent; border: 1px solid @borderStrong; border-radius: 8px;
+    color: @fg; font-size: 13px; font-weight: 500;
+    padding: 0px 10px; min-height: 30px; max-height: 30px;
+}
+#filesInfoPanel QPushButton[filesInfoAction="true"]:hover { background-color: @surfaceRaised; }
+#filesInfoPanel QPushButton[filesInfoAction="true"]:pressed { background-color: @surfaceActive; }
+#filesInfoPanel QPushButton[filesInfoAction="true"]:disabled {
+    color: @fgSubtle; border-color: @border;
+}

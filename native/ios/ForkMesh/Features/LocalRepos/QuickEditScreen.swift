@@ -44,7 +44,7 @@ struct QuickEditScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 FmToneButton(
-                    label: "Propose", icon: "call_merge", tone: .accent, filled: true, height: 32,
+                    label: "Propose", icon: "call_merge", tone: .accent, filled: true, height: 32, busy: model.submitting,
                     onPressed: model.canPropose ? { startPropose() } : nil)
             }
         }

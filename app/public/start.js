@@ -915,6 +915,20 @@
       button.textContent = "Copy example";
     }, 2000);
   });
+  $("[data-start-agent-copy]").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const prompt = $("[data-start-agent-prompt]");
+    try {
+      await navigator.clipboard.writeText(prompt.value);
+      button.textContent = "Copied";
+    } catch {
+      prompt.select();
+      button.textContent = "Press Ctrl+C";
+    }
+    setTimeout(() => {
+      button.textContent = "Copy";
+    }, 2000);
+  });
 
   const clearError = () => {
     errorBox.hidden = true;

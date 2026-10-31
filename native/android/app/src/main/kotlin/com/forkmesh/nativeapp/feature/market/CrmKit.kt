@@ -197,42 +197,73 @@ internal fun CrmStageDots(flow: CrmFlow, stage: String, modifier: Modifier = Mod
 }
 
 @Composable
-internal fun CrmContactRowContent(contact: CrmContact, flow: CrmFlow?, showStage: Boolean, columns: List<CrmColumn> = emptyList(), selected: Boolean? = null) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.Top) {
+internal fun CrmContactRowContent(
+    contact: CrmContact,
+    flow: CrmFlow?,
+    showStage: Boolean,
+    columns: List<CrmColumn> = emptyList(),
+    selected: Boolean? = null,
+    dense: Boolean? = null,
+) {
+    val compact = dense ?: crmDense()
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 6.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (selected != null) {
             FmIcon(if (selected) "check_circle" else "radio_button_unchecked", size = 22.dp, tint = if (selected) Fm.colors.accent else Fm.colors.textTertiary)
             Spacer(Modifier.width(10.dp))
         }
-        CrmAvatar(contact.name.ifEmpty { contact.email }, 36)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(contact.displayName, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyLarge.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
+        CrmAvatar(contact.name.ifEmpty { contact.email }, if (compact) 32 else 42)
+        Spacer(Modifier.width(if (compact) 9.dp else 12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compact) 1.dp else 3.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    contact.displayName, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = (if (compact) Fm.text.bodyMedium else Fm.text.bodyLarge).copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary,
+                )
+                Spacer(Modifier.weight(1f).width(4.dp))
                 if (showStage) CrmChip(CrmStageLabel.title(contact.stage), CrmColors.stage(contact.stage, flow))
-                Spacer(Modifier.weight(1f))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    contact.subtitle.ifEmpty { contact.email }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = Fm.text.labelSmall, color = Fm.colors.textSecondary,
+                )
+                Spacer(Modifier.weight(1f).width(4.dp))
                 if (contact.value > 0) Text(CrmText.money(contact.value), style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold), color = CrmColors.green)
             }
-            if (contact.subtitle.isNotEmpty()) Text(contact.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
-            if (contact.nextStep.isNotEmpty()) {
+            if (compact) {
+                CrmDenseFooter(contact)
+            } else if (contact.nextStep.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FmIcon("subdirectory_arrow_right", size = 13.dp, tint = Fm.colors.textSecondary)
                     Spacer(Modifier.width(3.dp))
-                    Text(contact.nextStep, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textPrimary)
+                    Text(contact.nextStep, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textPrimary.copy(alpha = 0.8f))
                 }
             }
-            columns.take(2).forEach { column ->
+            columns.take(if (compact) 1 else 2).forEach { column ->
                 val value = contact.valueOf(column.field)
                 if (value.isNotEmpty()) Text("${column.label}: $value", maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
             }
-            if (contact.tags.isNotEmpty() || contact.owner.isNotEmpty() || contact.lastContactedAt > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    contact.tags.take(3).forEach { CrmChip("#$it", CrmColors.purple) }
-                    if (contact.owner.isNotEmpty()) CrmChip(contact.owner, Fm.colors.textSecondary, icon = "person")
-                    Spacer(Modifier.weight(1f))
-                    if (contact.lastContactedAt > 0) Text(relativeTime(contact.lastContactedAt), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
-                }
-            }
         }
+    }
+}
+
+@Composable
+private fun CrmDenseFooter(contact: CrmContact) {
+    val tags = contact.tags.take(2)
+    if (contact.nextStep.isEmpty() && tags.isEmpty() && contact.lastContactedAt <= 0) return
+    val tint = Fm.colors.textPrimary.copy(alpha = 0.75f)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (contact.nextStep.isNotEmpty()) {
+            FmIcon("subdirectory_arrow_right", size = 11.dp, tint = tint)
+            Text(contact.nextStep, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = tint)
+        } else {
+            tags.forEach { CrmChip("#$it", CrmColors.purple) }
+        }
+        Spacer(Modifier.weight(1f))
+        if (contact.lastContactedAt > 0) Text(relativeTime(contact.lastContactedAt), maxLines = 1, style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
     }
 }
 

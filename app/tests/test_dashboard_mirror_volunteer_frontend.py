@@ -129,10 +129,12 @@ def test_handoff_steps_walk_from_install_to_a_hosted_mirror():
     assert len(steps) == 5
     assert "Install the ForkMesh desktop app" in steps[0]
     assert 'href="/dashboard/settings/nodes"' in steps[0]
-    assert "Remote clone URL" in steps[1]
-    assert "https://github.com/acme/spidertest" in steps[2]
+    assert "Remote clone URL" not in "\n".join(steps)
+    assert "https://github.com/acme/spidertest" in steps[1]
+    assert "git" in steps[1]
+    assert "Import folder" in steps[2]
     assert "spidertest" in steps[2]
-    assert "Publish" in steps[3]
+    assert "Private" in steps[3]
     assert "Volunteer to mirror" in steps[4]
 
 

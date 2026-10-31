@@ -1,5 +1,6 @@
 #include "RepoWorkflow.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -776,14 +777,29 @@ QJsonObject agentParams(const Config &config)
     return params;
 }
 
+QString agentStepId(const Workflow &workflow, const QString &nodeId)
+{
+    return nodeId == workflow.primaryAgent()
+               ? workflow.id
+               : forkmesh::teammates::Store::safeId(workflow.id + QLatin1Char('-') + nodeId);
+}
+
+bool runsAgent(const Workflow &workflow, const QString &agentId)
+{
+    if (agentId.isEmpty())
+        return false;
+    for (const QString &nodeId : workflow.nodesOfType(kAgent))
+        if (agentStepId(workflow, nodeId) == agentId)
+            return true;
+    return false;
+}
+
 Config agentConfig(const Workflow &workflow, const QString &nodeId, QString *error)
 {
     const QJsonObject node = workflow.node(nodeId);
     QJsonObject object = node.value(QStringLiteral("params")).toObject();
     const bool primary = nodeId == workflow.primaryAgent();
-    object.insert(QStringLiteral("id"), primary ? workflow.id
-                                                : forkmesh::teammates::Store::safeId(workflow.id + QLatin1Char('-') +
-                                                                                     nodeId));
+    object.insert(QStringLiteral("id"), agentStepId(workflow, nodeId));
     object.insert(QStringLiteral("name"), primary && !workflow.name.isEmpty() ? workflow.name : text(node, "name"));
     if (text(object, "avatar").isEmpty())
         object.insert(QStringLiteral("avatar"), workflow.icon.isEmpty() ? QStringLiteral("sol") : workflow.icon);
@@ -1015,6 +1031,76 @@ QList<Listing> listRepositoryWorkflows(const QString &checkout)
         listings.append(listing);
     }
     return listings;
+}
+
+QJsonObject approvalContent(const QByteArray &bytes)
+{
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(bytes, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+        return {};
+    return withoutBookkeeping(document.object());
+}
+
+QString approvalDigest(const QString &checkout, const QString &path)
+{
+    QFile file(path);
+    if (checkout.isEmpty() || !QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly))
+        return {};
+    const QByteArray bytes = file.readAll();
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    if (!path.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
+        hash.addData(QByteArrayLiteral("forkmesh-shortcut-approval-v1"));
+        hash.addData(QByteArray(1, '\0'));
+        hash.addData(bytes);
+        return QString::fromLatin1(hash.result().toHex());
+    }
+    const QJsonObject object = approvalContent(bytes);
+    if (object.isEmpty())
+        return {};
+    hash.addData(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    const QDir shortcuts(QDir(checkout).filePath(QStringLiteral(".forkmesh/shortcuts")));
+    for (const QJsonValue &value : object.value(QStringLiteral("nodes")).toArray()) {
+        const QJsonObject node = value.toObject();
+        if (node.value(QStringLiteral("type")).toString() != kShortcut)
+            continue;
+        const QString name =
+            QFileInfo(node.value(QStringLiteral("params")).toObject().value(QStringLiteral("file")).toString())
+                .fileName();
+        hash.addData(QByteArray(1, '\0'));
+        hash.addData(name.toUtf8());
+        hash.addData(QByteArray(1, '\0'));
+        QFile script(shortcuts.filePath(name));
+        if (!name.isEmpty() && script.open(QIODevice::ReadOnly))
+            hash.addData(script.readAll());
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+QString approvalSettingsKey(const QString &repository, const QString &checkout, const QString &path)
+{
+    const QString relative = QDir(checkout).relativeFilePath(QFileInfo(path).absoluteFilePath());
+    const QByteArray identity = (repository.trimmed().toLower() + QLatin1Char('\n') + relative).toUtf8();
+    return QStringLiteral("repoWorkflows/approved/%1")
+        .arg(QString::fromLatin1(QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex().left(32)));
+}
+
+bool isApproved(const QSettings &settings, const QString &repository, const QString &checkout,
+                const QString &path)
+{
+    const QString digest = approvalDigest(checkout, path);
+    return !digest.isEmpty() &&
+           settings.value(approvalSettingsKey(repository, checkout, path)).toString() == digest;
+}
+
+bool approve(QSettings &settings, const QString &repository, const QString &checkout, const QString &path,
+             const QString &expectedDigest)
+{
+    const QString digest = approvalDigest(checkout, path);
+    if (digest.isEmpty() || (!expectedDigest.isEmpty() && digest != expectedDigest))
+        return false;
+    settings.setValue(approvalSettingsKey(repository, checkout, path), digest);
+    return true;
 }
 
 QString writeWorkflow(const QString &checkout, Workflow workflow, qint64 nowMs, QString *path)
@@ -1473,6 +1559,34 @@ QList<Pin> pinWorkflow(QList<Pin> pins, const Pin &pin)
     }
     if (pins.size() < kMaxPins)
         pins.append(pin);
+    return pins;
+}
+
+QList<Pin> movePin(QList<Pin> pins, const Pin &pin, int slot)
+{
+    if (pin.repo.trimmed().isEmpty() || pin.workflowId.isEmpty() || !isRail(pin.rail))
+        return pins;
+    Pin moved = pin;
+    const int existing = pins.indexOf(pin);
+    if (existing >= 0) {
+        moved.repo = pins.at(existing).repo;
+        pins.removeAt(existing);
+    } else if (pins.size() >= kMaxPins) {
+        return pins;
+    }
+    moved.rail = pin.rail;
+    int at = pins.size();
+    int seen = 0;
+    for (int i = 0; i < pins.size(); ++i) {
+        if (pins.at(i).rail != pin.rail)
+            continue;
+        if (seen++ == slot) {
+            at = i;
+            break;
+        }
+        at = i + 1;
+    }
+    pins.insert(at, moved);
     return pins;
 }
 

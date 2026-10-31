@@ -366,13 +366,13 @@ internal class MergeLeaderboardScreen : Screen() {
     }
 }
 
-internal class WorktreesScreen(private val owner: String, private val name: String) : Screen() {
+internal class WorktreesScreen(private val owner: String, private val name: String, private val desktopKey: String = "") : Screen() {
     override val title: String get() = "Worktrees"
 
     @Composable
     override fun Content(navigator: Navigator) {
         val c = Fm.colors
-        val model = remember { WorktreesModel(AgentOpsFeature.client, owner, name) }
+        val model = remember { WorktreesModel(AgentOpsFeature.client(desktopKey), owner, name) }
         val tick = rememberOpsTick(model)
         val scope = rememberCoroutineScope()
         LaunchedEffect(model) { opsIo { model.refresh() } }

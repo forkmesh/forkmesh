@@ -5,6 +5,7 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -17,6 +18,7 @@
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStyle>
 #include <QStyledItemDelegate>
 #include <QTimer>
 #include <QToolButton>
@@ -40,6 +42,77 @@ constexpr int kBuildAheadScreens = 2;
 constexpr int kSubTitlesRole = Qt::UserRole + 1;
 constexpr int kCurrentSubRole = Qt::UserRole + 2;
 constexpr int kHoverSubRole = Qt::UserRole + 3;
+constexpr int kNextSidebarWidth = 256;
+constexpr int kNextContentMaxWidth = 824;
+constexpr int kNextTitleHeight = 34;
+constexpr int kNextSubHeight = 28;
+constexpr int kNextSubIndent = 16;
+const char kNextNavColors[] = "nextNavColors";
+const char kNextLayout[] = "nextLayout";
+const char kLitProperty[] = "settingsLit";
+
+QVariantMap nextNavColors(const QWidget *widget)
+{
+    return widget ? widget->property(kNextNavColors).toMap() : QVariantMap();
+}
+
+QColor navColor(const QVariantMap &colors, const char *name)
+{
+    return QColor(colors.value(QString::fromLatin1(name)).toString());
+}
+
+void applyNextChrome(QWidget *view, QLineEdit *search, QListWidget *nav,
+                     QScrollArea *scroll, QWidget *content)
+{
+    if (view->property("nextLayoutApplied").toBool())
+        return;
+    auto *row = qobject_cast<QHBoxLayout *>(view->layout());
+    auto *sidebar = view->findChild<QWidget *>(QStringLiteral("settingsSidebar"),
+                                               Qt::FindDirectChildrenOnly);
+    auto *side = sidebar ? qobject_cast<QVBoxLayout *>(sidebar->layout()) : nullptr;
+    if (!row || !side)
+        return;
+    view->setProperty("nextLayoutApplied", true);
+    row->setSpacing(0);
+    sidebar->setFixedWidth(kNextSidebarWidth);
+    sidebar->setAttribute(Qt::WA_StyledBackground, true);
+    side->setContentsMargins(0, 0, 0, 0);
+    side->setSpacing(0);
+
+    auto *band = new QWidget(sidebar);
+    band->setObjectName(QStringLiteral("settingsSearchBand"));
+    auto *bandColumn = new QVBoxLayout(band);
+    bandColumn->setContentsMargins(12, 12, 12, 12);
+    bandColumn->setSpacing(0);
+    side->removeWidget(search);
+    bandColumn->addWidget(search);
+    side->insertWidget(0, band);
+    auto *bandRule = new QFrame(sidebar);
+    bandRule->setObjectName(QStringLiteral("settingsSidebarRule"));
+    bandRule->setFrameShape(QFrame::NoFrame);
+    bandRule->setFixedHeight(1);
+    side->insertWidget(1, bandRule);
+    nav->setIconSize(QSize(16, 16));
+
+    auto *column = new QWidget(view);
+    column->setObjectName(QStringLiteral("settingsMainColumn"));
+    auto *main = new QVBoxLayout(column);
+    main->setContentsMargins(0, 0, 0, 0);
+    main->setSpacing(0);
+    row->removeWidget(scroll);
+    main->addWidget(scroll, 1);
+    auto *slot = new QWidget(column);
+    slot->setObjectName(QStringLiteral("settingsFooterSlot"));
+    auto *slotColumn = new QVBoxLayout(slot);
+    slotColumn->setContentsMargins(0, 0, 0, 0);
+    slotColumn->setSpacing(0);
+    main->addWidget(slot);
+    row->addWidget(column, 1);
+
+    content->setMaximumWidth(kNextContentMaxWidth);
+    if (QLayout *contentColumn = content->layout())
+        contentColumn->setContentsMargins(32, 0, 32, 40);
+}
 
 QString plainText(const QString &text)
 {
@@ -86,6 +159,10 @@ public:
     {
         QSize size = QStyledItemDelegate::sizeHint(option, index);
         const int subs = index.data(kSubTitlesRole).toStringList().size();
+        if (!nextNavColors(option.widget).isEmpty()) {
+            m_subHeight = kNextSubHeight;
+            return QSize(size.width(), kNextTitleHeight + subs * kNextSubHeight);
+        }
         if (subs > 0)
             size.setHeight(size.height() + subs * measureSubLine(option, index));
         return size;
@@ -95,6 +172,11 @@ public:
                const QModelIndex &index) const override
     {
         const QStringList subs = index.data(kSubTitlesRole).toStringList();
+        const QVariantMap colors = nextNavColors(option.widget);
+        if (!colors.isEmpty()) {
+            paintNext(painter, option, index, subs, colors);
+            return;
+        }
         if (subs.isEmpty()) {
             QStyledItemDelegate::paint(painter, option, index);
             return;
@@ -139,6 +221,79 @@ public:
     }
 
 private:
+    void paintNext(QPainter *painter, const QStyleOptionViewItem &option,
+                   const QModelIndex &index, const QStringList &subs,
+                   const QVariantMap &colors) const
+    {
+        const int current = subs.isEmpty() ? -1 : index.data(kCurrentSubRole).toInt();
+        const QVariant hoverData = index.data(kHoverSubRole);
+        const int hover = hoverData.isValid() ? hoverData.toInt() : -2;
+        const bool selected = option.state & QStyle::State_Selected;
+        const bool subActive = selected && current >= 0;
+        const bool rowActive = selected && !subActive;
+        const bool hovered = (option.state & QStyle::State_MouseOver) &&
+                             (subs.isEmpty() || hover == -1);
+        const QColor fg = navColor(colors, "fg");
+        const QColor muted = navColor(colors, "muted");
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        const QRect title(option.rect.left(), option.rect.top(), option.rect.width(),
+                          kNextTitleHeight);
+        const QRectF titleFill = QRectF(title.adjusted(0, 1, 0, -1));
+        if (rowActive || hovered) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(navColor(colors, rowActive ? "active" : "hover"));
+            painter->drawRoundedRect(titleFill, 6, 6);
+        }
+        const QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
+        const int iconSide = 16;
+        const QRect iconRect(title.left() + 8, title.center().y() - iconSide / 2 + 1,
+                             iconSide, iconSide);
+        if (!icon.isNull())
+            icon.paint(painter, iconRect, Qt::AlignCenter,
+                       selected ? QIcon::Selected : QIcon::Disabled);
+        QFont font = option.font;
+        font.setPixelSize(13);
+        font.setWeight(rowActive ? QFont::Medium : QFont::Normal);
+        painter->setFont(font);
+        painter->setPen(selected || hovered ? fg : muted);
+        const QRect textRect = title.adjusted(8 + iconSide + 8, 0, -8, 0);
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(font).elidedText(index.data(Qt::DisplayRole).toString(),
+                                                        Qt::ElideRight, textRect.width()));
+
+        if (!subs.isEmpty()) {
+            const int top = title.bottom() + 1;
+            const qreal guide = title.left() + kNextSubIndent + 0.5;
+            painter->setPen(QPen(navColor(colors, "border"), 1));
+            painter->drawLine(QPointF(guide, top + 2),
+                              QPointF(guide, top + subs.size() * kNextSubHeight - 2));
+            QFont subFont = option.font;
+            subFont.setPixelSize(12);
+            for (int i = 0; i < subs.size(); ++i) {
+                const QRect line(title.left() + kNextSubIndent + 8,
+                                 top + i * kNextSubHeight,
+                                 title.width() - kNextSubIndent - 8, kNextSubHeight);
+                const bool lit = subActive && i == current;
+                const bool over = i == hover;
+                if (lit || over) {
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(navColor(colors, lit ? "active" : "hover"));
+                    painter->drawRoundedRect(QRectF(line.adjusted(0, 1, 0, -1)), 6, 6);
+                }
+                subFont.setWeight(lit ? QFont::Medium : QFont::Normal);
+                painter->setFont(subFont);
+                painter->setPen(lit || over ? fg : muted);
+                const QRect subText = line.adjusted(8, 0, -8, 0);
+                painter->drawText(subText, Qt::AlignLeft | Qt::AlignVCenter,
+                                  QFontMetrics(subFont).elidedText(subs.at(i), Qt::ElideRight,
+                                                                   subText.width()));
+            }
+        }
+        painter->restore();
+    }
+
     int measureSubLine(const QStyleOptionViewItem &option, const QModelIndex &index) const
     {
         QStyleOptionViewItem sub = option;
@@ -348,6 +503,34 @@ SettingsSectionsView::SettingsSectionsView(QWidget *parent) : QWidget(parent)
     m_scroll->setWidget(m_content);
     m_hitOverlay = new SearchHitOverlay(m_content, this);
 
+    m_sticky = new QWidget(m_scroll->viewport());
+    m_sticky->setObjectName(QStringLiteral("settingsStickyHeader"));
+    m_sticky->setAttribute(Qt::WA_StyledBackground, true);
+    m_sticky->setCursor(Qt::PointingHandCursor);
+    auto *stickyColumn = new QVBoxLayout(m_sticky);
+    stickyColumn->setContentsMargins(0, 8, 0, 8);
+    stickyColumn->setSpacing(4);
+    m_stickyTitleRow = new QWidget;
+    m_stickyTitleRow->setObjectName(QStringLiteral("settingsStickyTitleRow"));
+    auto *stickyHeading = new QHBoxLayout(m_stickyTitleRow);
+    stickyHeading->setContentsMargins(0, 0, 0, 0);
+    stickyHeading->setSpacing(8);
+    m_stickyIcon = new QLabel;
+    m_stickyIcon->setObjectName(QStringLiteral("settingsStickyIcon"));
+    m_stickyIcon->setFixedSize(16, 16);
+    m_stickyTitle = new QLabel;
+    m_stickyTitle->setObjectName(QStringLiteral("settingsStickyTitle"));
+    stickyHeading->addWidget(m_stickyIcon);
+    stickyHeading->addWidget(m_stickyTitle);
+    stickyHeading->addStretch(1);
+    m_stickySub = new QLabel;
+    m_stickySub->setObjectName(QStringLiteral("settingsStickySub"));
+    m_stickySub->hide();
+    stickyColumn->addWidget(m_stickyTitleRow);
+    stickyColumn->addWidget(m_stickySub);
+    m_sticky->hide();
+    m_sticky->installEventFilter(this);
+
     row->addWidget(sidebar);
     row->addWidget(m_scroll, 1);
 
@@ -387,6 +570,7 @@ SettingsSectionsView::SettingsSectionsView(QWidget *parent) : QWidget(parent)
     });
     m_scroll->viewport()->installEventFilter(this);
     m_content->installEventFilter(this);
+    installEventFilter(this);
 }
 
 int SettingsSectionsView::addSection(QWidget *body, const QString &title,
@@ -408,6 +592,7 @@ int SettingsSectionsView::appendSection(QWidget *body,
                                         const QString &iconName)
 {
     const int index = count();
+    const bool next = property(kNextLayout).toBool();
     auto *frame = new QWidget;
     frame->setObjectName(QStringLiteral("settingsSection"));
     // Each section is exactly as tall as it wants: a long page must not
@@ -437,16 +622,29 @@ int SettingsSectionsView::appendSection(QWidget *body,
     icon->setFixedSize(16, 16);
     auto *titleLabel = new QLabel(title);
     titleLabel->setObjectName(QStringLiteral("settingsSectionTitle"));
-    heading->addWidget(toggle);
-    heading->addWidget(icon);
-    heading->addWidget(titleLabel);
-    heading->addStretch(1);
     auto *rule = new QFrame;
     rule->setObjectName(QStringLiteral("settingsSectionRule"));
     rule->setFrameShape(QFrame::NoFrame);
     rule->setFixedHeight(1);
-    column->addWidget(header);
-    column->addWidget(rule);
+    if (next) {
+        column->setSpacing(0);
+        heading->setSpacing(8);
+        toggle->setFixedSize(20, 20);
+        heading->addWidget(icon);
+        heading->addWidget(titleLabel);
+        heading->addStretch(1);
+        heading->addWidget(toggle);
+        column->addWidget(rule);
+        column->addWidget(header);
+        rule->setVisible(index > 0);
+    } else {
+        heading->addWidget(toggle);
+        heading->addWidget(icon);
+        heading->addWidget(titleLabel);
+        heading->addStretch(1);
+        column->addWidget(header);
+        column->addWidget(rule);
+    }
     if (body)
         column->addWidget(body);
 
@@ -470,6 +668,7 @@ int SettingsSectionsView::appendSection(QWidget *body,
     section.header = header;
     section.toggle = toggle;
     section.icon = icon;
+    section.titleLabel = titleLabel;
     section.build = std::move(build);
     section.title = title;
     section.iconName = iconName;
@@ -579,6 +778,12 @@ void SettingsSectionsView::applyExpanded(int index)
     const QString verb = open ? QStringLiteral("Collapse") : QStringLiteral("Expand");
     section.toggle->setToolTip(QStringLiteral("%1 %2").arg(verb, section.title));
     section.toggle->setAccessibleName(QStringLiteral("%1 %2").arg(verb, section.title));
+    if (property(kNextLayout).toBool()) {
+        section.frame->layout()->setContentsMargins(0, 0, 0, open ? 28 : 0);
+        section.header->layout()->setContentsMargins(0, index == 0 ? 24 : open ? 28 : 16,
+                                                     0, 16);
+        return;
+    }
     section.frame->layout()->setContentsMargins(0, index == 0 ? 2 : open ? 26 : 10, 0,
                                                 open ? 6 : 2);
 }
@@ -692,7 +897,8 @@ void SettingsSectionsView::setCurrentSubSection(int index, int sub)
     m_pendingJump = -1;
     const int y = subs.at(sub).anchor->mapTo(m_content, QPoint(0, 0)).y();
     m_jumping = true;
-    m_scroll->verticalScrollBar()->setValue(qMax(0, y - kSubJumpMargin));
+    m_scroll->verticalScrollBar()->setValue(
+        qMax(0, y - kSubJumpMargin - stickyTitleHeight()));
     m_jumping = false;
     setCurrent(index);
     updateCurrentSub();
@@ -764,7 +970,8 @@ void SettingsSectionsView::updateCurrentSub()
     int current = -1;
     if (m_current >= 0) {
         const QVector<SubSection> subs = visibleSubSections(m_current);
-        const int line = m_scroll->verticalScrollBar()->value() + kReadingLine;
+        const int line =
+            m_scroll->verticalScrollBar()->value() + stickyTitleHeight() + kReadingLine;
         if (!subs.isEmpty())
             current = 0;
         for (int i = 1; i < subs.size(); ++i) {
@@ -775,6 +982,72 @@ void SettingsSectionsView::updateCurrentSub()
     }
     m_currentSub = current;
     syncNavSubs();
+    updateSticky();
+}
+
+int SettingsSectionsView::stickyTitleHeight()
+{
+    m_sticky->ensurePolished();
+    const QMargins margins = m_sticky->layout()->contentsMargins();
+    return margins.top() + m_stickyTitleRow->sizeHint().height() + margins.bottom();
+}
+
+void SettingsSectionsView::updateSticky()
+{
+    const int top = m_scroll->verticalScrollBar()->value();
+    const bool shown = m_current >= 0 && m_current < count() &&
+                       !m_sections.at(m_current).frame->isHidden() &&
+                       m_sections.at(m_current).titleLabel->mapTo(m_content, QPoint(0, 0)).y() <
+                           top;
+    if (!shown) {
+        m_sticky->hide();
+        return;
+    }
+    const Section &section = m_sections.at(m_current);
+    const int titleHeight = stickyTitleHeight();
+    m_stickyTitle->setText(section.title);
+    m_stickyIcon->setPixmap(section.icon->pixmap());
+    m_stickyIcon->setVisible(!section.icon->pixmap().isNull());
+    const bool next = property(kNextLayout).toBool();
+    m_stickyTitleRow->layout()->setContentsMargins(next ? 0 : 26, 0, 0, 0);
+
+    QLabel *subLabel = nullptr;
+    const QVector<SubSection> subs = visibleSubSections(m_current);
+    if (m_currentSub >= 0 && m_currentSub < subs.size()) {
+        QLabel *label = qobject_cast<QLabel *>(subs.at(m_currentSub).label.data());
+        if (label && label->mapTo(m_content, QPoint(0, 0)).y() < top + titleHeight)
+            subLabel = label;
+    }
+    if (subLabel)
+        m_stickySub->setText(plainText(subLabel->text()).simplified());
+    m_stickySub->setVisible(subLabel != nullptr);
+
+    const auto mark = [](QWidget *widget, bool on) {
+        if (widget->property(kLitProperty).toBool() == on)
+            return;
+        widget->setProperty(kLitProperty, on);
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
+    };
+    mark(m_stickyTitle, m_litHeading && m_litHeading == section.titleLabel);
+    mark(m_stickySub, subLabel && m_litHeading == subLabel);
+
+    int bottomLimit = QWIDGETSIZE_MAX;
+    for (int i = m_current + 1; i < count(); ++i) {
+        if (!m_sections.at(i).frame->isHidden()) {
+            bottomLimit = m_sections.at(i).frame->y() - top;
+            break;
+        }
+    }
+    const QMargins margins =
+        m_content->layout() ? m_content->layout()->contentsMargins() : QMargins();
+    const int height = m_sticky->sizeHint().height();
+    m_sticky->setGeometry(m_content->x() + margins.left(), qMin(0, bottomLimit - height),
+                          qMax(0, m_content->width() - margins.left() - margins.right()),
+                          height);
+    m_sticky->show();
+    m_sticky->raise();
 }
 
 void SettingsSectionsView::syncNavSubs()
@@ -810,6 +1083,32 @@ void SettingsSectionsView::syncNavSubs()
     } else if (relayout) {
         m_nav->doItemsLayout();
     }
+    syncLitHeading();
+}
+
+void SettingsSectionsView::syncLitHeading()
+{
+    QWidget *lit = nullptr;
+    if (m_current >= 0 && m_current < count() && !m_sections.at(m_current).frame->isHidden()) {
+        const QVector<SubSection> subs = visibleSubSections(m_current);
+        if (m_currentSub >= 0 && m_currentSub < subs.size())
+            lit = subs.at(m_currentSub).label;
+        else
+            lit = m_sections.at(m_current).titleLabel;
+    }
+    if (lit == m_litHeading)
+        return;
+    const auto mark = [](QWidget *widget, bool on) {
+        if (!widget)
+            return;
+        widget->setProperty(kLitProperty, on);
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
+    };
+    mark(m_litHeading, false);
+    m_litHeading = lit;
+    mark(lit, true);
 }
 
 bool SettingsSectionsView::handleNavMouse(QEvent *event)
@@ -941,6 +1240,14 @@ void SettingsSectionsView::setScrollAreaFlattened(QScrollArea *area, bool flatte
 
 bool SettingsSectionsView::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == this) {
+        if (event->type() == QEvent::DynamicPropertyChange &&
+            static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName() ==
+                kNextLayout &&
+            property(kNextLayout).toBool())
+            applyNextChrome(this, m_search, m_nav, m_scroll, m_content);
+        return false;
+    }
     if (m_nav && watched == m_nav->viewport())
         return handleNavMouse(event) || QWidget::eventFilter(watched, event);
     if (watched == m_search && event->type() == QEvent::KeyPress &&
@@ -951,6 +1258,16 @@ bool SettingsSectionsView::eventFilter(QObject *watched, QEvent *event)
     }
     if (event->type() == QEvent::MouseButtonRelease &&
         static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+        if (watched == m_sticky) {
+            const int index = m_current;
+            const int y = int(static_cast<QMouseEvent *>(event)->position().y());
+            if (m_stickySub->isVisible() && y >= m_stickySub->geometry().top() - 2)
+                setCurrentSubSection(index, m_currentSub);
+            else
+                setCurrentIndex(index);
+            emit sectionActivated(index);
+            return true;
+        }
         for (int i = 0; i < count(); ++i) {
             if (m_sections.at(i).header == watched) {
                 setExpanded(i, !m_sections.at(i).expanded);
@@ -1085,6 +1402,18 @@ void SettingsSectionsView::refreshGeometry()
                                m_sections.at(last).frame->height());
     if (m_bottomSpacer->height() != tail)
         m_bottomSpacer->setFixedHeight(tail);
+    if (property(kNextLayout).toBool()) {
+        bool first = true;
+        for (const Section &section : std::as_const(m_sections)) {
+            if (section.frame->isHidden())
+                continue;
+            if (auto *rule = section.frame->findChild<QFrame *>(
+                    QStringLiteral("settingsSectionRule"), Qt::FindDirectChildrenOnly);
+                rule && rule->isHidden() != first)
+                rule->setVisible(!first);
+            first = false;
+        }
+    }
 
     for (const Section &section : std::as_const(m_sections)) {
         QWidget *frame = section.frame;

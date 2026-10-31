@@ -27,7 +27,7 @@ AGENTS = "".join(
     (ROOT / "src" / name).read_text(encoding="utf-8")
     for name in MAIN_WINDOW_AGENT_SOURCES
 )
-TASKS = (ROOT / "src/MainWindowTasks.cpp").read_text(encoding="utf-8")
+TASKS = (ROOT / "src/MainWindowTaskBridge.cpp").read_text(encoding="utf-8")
 
 
 def between(source: str, start: str, end: str) -> str:
@@ -61,7 +61,7 @@ def main() -> None:
     reconciliation = between(
         TASKS,
         "void MainWindow::linkExistingAgentsToOrganizationTasks(",
-        "void MainWindow::updateOrganizationTaskActions(",
+        "void MainWindow::startOrganizationTaskAgent(",
     )
     assert "openOrgTaskForSession" not in reconciliation
 

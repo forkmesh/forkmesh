@@ -62,6 +62,8 @@ const (
 	maxActionsChangedPaths   = 4000
 	actionsInternalRefPrefix = "refs/heads/forkmesh/"
 
+	actionsContributorRefPrefix = "refs/heads/pr/"
+
 	actionQueued    = "queued"
 	actionRunning   = "running"
 	actionSuccess   = "success"
@@ -602,6 +604,9 @@ func sameStringMap(left, right map[string]string) bool {
 }
 
 func (r *actionsRunner) queuePush(ctx context.Context, repo Repository, ref, from, to string, isDefault bool, disabled []string) {
+	if strings.HasPrefix(ref, actionsContributorRefPrefix) {
+		return
+	}
 	changed, known := r.changedPaths(ctx, repo.GitDir, from, to)
 	for _, found := range r.workflowsAt(ctx, repo.GitDir, to) {
 		wf := found.workflow

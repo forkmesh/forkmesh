@@ -95,7 +95,7 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
             subtitle = if (unread > 0) "$unread unread" else null,
             actions = {
                 FmIconButton("search", "Search", onPressed = { searching = !searching; if (!searching) query = "" }, color = if (searching) Fm.colors.accent else Fm.colors.textSecondary)
-                FmIconButton("done_all", "Mark All as Read", onPressed = if (unread > 0) ({ if (settings.confirmMarkAllRead) confirm = true else markAll(articles) }) else null)
+                FmIconButton("done_all", "Mark All as Read", onPressed = if (unread > 0) ({ if (settings.confirmMarkAllRead) confirm = true else markAll(articles) }) else null, busy = false)
                 Box {
                     FmIconButton("more_vert", "More", onPressed = { menu = true })
                     FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

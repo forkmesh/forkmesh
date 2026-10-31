@@ -1,7 +1,21 @@
 {
   "schemaVersion": 1,
   "sources": [
-    "FaceChangerLink.cpp"
+    "FaceCamera.h",
+    "FaceCamera.cpp",
+    "FaceStudioPage.h",
+    "FaceStudioPage.cpp",
+    "FaceChangerFeature.h",
+    "FaceChangerFeature.cpp"
   ],
-  "mocHeaders": []
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_face_camera.cpp",
+    "FaceCamera.h",
+    "FaceCamera.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Widgets"
+  ]
 }

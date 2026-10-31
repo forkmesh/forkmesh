@@ -10,9 +10,9 @@ object PocketText {
     fun hubIcon(walking: Boolean): String = if (walking) "directions_walk" else "phonelink_lock"
 
     fun glassesTitle(nearby: Int): String = when (nearby) {
-        0 -> "No smart glasses"
-        1 -> "Smart glasses nearby"
-        else -> "$nearby smart glasses nearby"
+        0 -> "No smart glasses or cameras"
+        1 -> "Smart glasses or camera nearby"
+        else -> "$nearby smart glasses or cameras nearby"
     }
 
     fun devicesHeard(heard: Int): String = if (heard == 1) "1 device heard" else "$heard devices heard"

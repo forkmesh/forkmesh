@@ -196,13 +196,13 @@ struct PluginQuickSheet: View {
     private var actions: some View {
         HStack(spacing: FmSpace.x2) {
             FmToneButton(
-                label: PluginFeedback.agentLabel, icon: "auto_awesome_outlined", tone: .accent, height: 44,
+                label: PluginFeedback.agentLabel, icon: "auto_awesome_outlined", tone: .accent, height: 44, busy: false,
                 onPressed: busy || !feedback.canAskAgent ? nil : askAgent)
                 .accessibilityIdentifier("plugin-quick-agent")
             FmFilledButton(
                 busy ? PluginFeedback.sendingLabel : PluginFeedback.sendLabel, icon: busy ? nil : "send_rounded",
                 background: fm.accent, foreground: Color.white, minHeight: 44, radius: FmRadius.lg, fillWidth: true,
-                role: .titleSmall, onPressed: busy || !feedback.canSend ? nil : send)
+                role: .titleSmall, busy: busy, onPressed: busy || !feedback.canSend ? nil : send)
                 .accessibilityIdentifier("plugin-quick-send")
         }
     }

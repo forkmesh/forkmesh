@@ -1,0 +1,83 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "poker",
+  "name": "Poker",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Fun",
+  "version": "1.0.0",
+  "summary": "No-limit Texas Hold'em with other ForkMesh users for virtual chips: a dealer, blinds, side pots, turn clocks, bots to fill seats, table chat and casino sounds, on the web, desktop and phones.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A green felt poker table with six seats, the dealer at the top, three cards on the board, chip stacks in front of the players and the fold, call and raise bar"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "desktop": "builtin:poker",
+    "ios": "builtin:poker",
+    "android": "builtin:poker",
+    "worker": "content/worker/poker.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/poker",
+        "title": "Poker",
+        "description": "Play no-limit Texas Hold'em with other ForkMesh users for virtual chips.",
+        "script": "dashboard-script",
+        "navigation": { "label": "Poker", "icon": "spade", "order": 52 }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.poker.play",
+      "label": "Keep your virtual chip wallet and poker stats, and seat you at tables you choose",
+      "risk": "low"
+    },
+    {
+      "id": "account.poker.share",
+      "label": "Show your account name, stack, actions, chat lines and showdown cards to the players and watchers at your tables",
+      "risk": "sensitive"
+    },
+    {
+      "id": "notifications.plugin.send",
+      "label": "Ping a user you invite to a private table",
+      "risk": "low"
+    },
+    {
+      "id": "chrome.rail.button",
+      "label": "Add a Poker page to the desktop rail",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": { "bundled": true, "default": false, "sync": "account", "places": ["mobile", "desktop", "web"] },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "account" },
+  "worker": { "module": "poker", "api": "/api/poker", "outboundOrigins": [] }
+}

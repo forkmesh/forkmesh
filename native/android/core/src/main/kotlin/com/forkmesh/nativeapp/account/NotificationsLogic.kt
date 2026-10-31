@@ -260,6 +260,8 @@ fun pingWebLink(href: String): String? {
 }
 
 const val PING_DETAIL_TITLE = "Ping"
+const val PING_DETAIL_BACK = "All pings"
+const val INBOX_ITEM_BACK = "Inbox"
 const val PING_DELETE_LABEL = "Delete ping"
 const val PING_DELETE_TITLE = "Delete this ping?"
 const val PING_DELETE_BODY = "It is removed from your ForkMesh inbox on every device. This cannot be undone."

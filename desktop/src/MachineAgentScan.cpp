@@ -115,6 +115,20 @@ bool scriptStub(const QString &exePath)
     return shells.contains(QFileInfo(exePath).fileName());
 }
 
+bool cwdRemoved(const QString &linkTarget)
+{
+    return linkTarget.endsWith(QLatin1String(" (deleted)")) && !QFileInfo::exists(linkTarget);
+}
+
+bool within(const QString &path, const QString &folder)
+{
+    if (path.isEmpty() || folder.trimmed().isEmpty())
+        return false;
+    const QString root = QDir::cleanPath(QDir(folder).absolutePath());
+    const QString target = QDir::cleanPath(QDir(path).absolutePath());
+    return target == root || target.startsWith(root == QLatin1String("/") ? root : root + QLatin1Char('/'));
+}
+
 QString argValue(const QByteArrayList &argv, const QList<QByteArray> &names)
 {
     for (int i = 1; i < argv.size(); ++i) {
@@ -309,6 +323,8 @@ QList<MachineAgent> scan(const SystemStats::ProcessTable &table,
             continue;
         }
         agent.cwd = QFileInfo(QStringLiteral("/proc/%1/cwd").arg(pid)).symLinkTarget();
+        if (cwdRemoved(agent.cwd))
+            continue;
         if (agent.kind == QLatin1String("claude") && !agent.cwd.isEmpty()) {
             const QByteArrayList processEnvironment = splitNul(readProc(pid, "environ"));
             QString configDir = environValue(processEnvironment, QByteArrayLiteral("CLAUDE_CONFIG_DIR"));

@@ -14,6 +14,8 @@ body.preview #local{inset:0;right:auto;bottom:auto;width:100%;height:100%;max-wi
 body.staged.waiting #remote,body.staged.remote-off #remote{opacity:0}
 body.staged.waiting #local{inset:0;right:auto;bottom:auto;width:100%;height:100%;max-width:none;aspect-ratio:auto;border-radius:0}
 body.staged.mini #local{opacity:0}
+body.placed:not(.preview):not(.waiting) #local{left:var(--fm-lx);top:var(--fm-ly);right:auto;bottom:auto;width:var(--fm-lw);height:var(--fm-lh);max-width:none;aspect-ratio:auto;border-radius:12px;outline:1px solid rgba(255,255,255,.35);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+body.placed.settle:not(.preview):not(.waiting) #local{transition:left .35s cubic-bezier(.2,.9,.3,1.08),top .35s cubic-bezier(.2,.9,.3,1.08)}
 </style>
 </head>
 <body class="audio">
@@ -1583,7 +1585,7 @@ function createExpressionProbe({ documentRef = globalThis.document } = {}) {
 return { EYE_CORNERS, lumaOf, rednessOf, eyeBox, tongueWindow, sampleBox, skinReference, measureEye, measureTongue, eyeOpenness, pairClosure, closeLids, createBlinkTracker, createExpressionProbe };
 })();
 
-const { CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_STORAGE_KEY, CUSTOM_FACE_SIDE, customFaceTransform, applyTransform, smoothstep, boxBlur, headRing, polygonMask, skinModel, skinLikeness, buildCustomMatte, resizeMask, buildCustomFace, savedCustomFaceImage, rememberCustomFaceImage, customFaceFromFile } = (() => {
+const { CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_STORAGE_KEY, CUSTOM_FACE_SIDE, customFaceTransform, applyTransform, smoothstep, boxBlur, headRing, polygonMask, skinModel, skinLikeness, buildCustomMatte, resizeMask, buildCustomFace, savedCustomFaceImage, AVATAR_FACE_ID, avatarFaceImage, photoFaceId, stageFaceFor, faceImageFor, rememberCustomFaceImage, customFaceFromFile } = (() => {
 const CUSTOM_FACE_ID = "custom";
 const CUSTOM_FACE_LABEL = "Your photo";
 const CUSTOM_FACE_STORAGE_KEY = "forkmesh.chat.callFaceImage";
@@ -1880,6 +1882,32 @@ function savedCustomFaceImage(storage = globalThis.localStorage) {
   }
 }
 
+const AVATAR_FACE_ID = "avatar";
+
+function avatarFaceImage(source) {
+  let value = "";
+  try {
+    value = typeof source === "function" ? source() : source;
+  } catch (_) {
+    value = "";
+  }
+  return typeof value === "string" && value.startsWith("data:image/") ? value : "";
+}
+
+function photoFaceId(id) {
+  return id === CUSTOM_FACE_ID || id === AVATAR_FACE_ID;
+}
+
+function stageFaceFor(id) {
+  return id === AVATAR_FACE_ID ? CUSTOM_FACE_ID : id || "";
+}
+
+function faceImageFor(id, { storage = globalThis.localStorage, avatarImage = null } = {}) {
+  if (id === CUSTOM_FACE_ID) return savedCustomFaceImage(storage);
+  if (id === AVATAR_FACE_ID) return avatarFaceImage(avatarImage);
+  return "";
+}
+
 function rememberCustomFaceImage(image, storage = globalThis.localStorage) {
   try {
     if (image) storage?.setItem(CUSTOM_FACE_STORAGE_KEY, image);
@@ -1906,7 +1934,7 @@ async function customFaceFromFile(file, documentRef = globalThis.document, Image
     globalThis.URL.revokeObjectURL(url);
   }
 }
-return { CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_STORAGE_KEY, CUSTOM_FACE_SIDE, customFaceTransform, applyTransform, smoothstep, boxBlur, headRing, polygonMask, skinModel, skinLikeness, buildCustomMatte, resizeMask, buildCustomFace, savedCustomFaceImage, rememberCustomFaceImage, customFaceFromFile };
+return { CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_STORAGE_KEY, CUSTOM_FACE_SIDE, customFaceTransform, applyTransform, smoothstep, boxBlur, headRing, polygonMask, skinModel, skinLikeness, buildCustomMatte, resizeMask, buildCustomFace, savedCustomFaceImage, AVATAR_FACE_ID, avatarFaceImage, photoFaceId, stageFaceFor, faceImageFor, rememberCustomFaceImage, customFaceFromFile };
 })();
 
 const { SEGMENT_MODEL_BASE, SEGMENT_MODELS, MODEL_GROUPS, parseSegmentModel, decodeBase64, loadSegmentModels, sharedSegmentModels, halfToFloat, floatToHalf, layerShader, packAlpha, packWeights, expandLayers, floatTargets, createNetwork, MATTE_SAMPLE, chooseModel, createMatte, createHairMatte } = (() => {
@@ -2002,6 +2030,7 @@ const slices = (channels) => Math.ceil(channels / 4);
 function activation(name, alphaRow = 0) {
   if (name === "prelu") return `v = max(v, 0.0) + wAt(s, ${alphaRow.toFixed(1)}) * min(v, 0.0);`;
   if (name === "relu") return "v = max(v, 0.0);";
+  if (name === "relu6") return "v = clamp(v, 0.0, 6.0);";
   if (name === "hswish") return "v = v * clamp(v + 3.0, 0.0, 6.0) / 6.0;";
   if (name === "sigmoid") return "v = 1.0 / (1.0 + exp(-clamp(v, -30.0, 30.0)));";
   return "";
@@ -10213,6 +10242,17 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
       local.srcObject = null;
       return true;
     },
+  };
+
+  window.fmCallPlaceLocal = (x, y, width, height, settle) => {
+    const style = document.body.style;
+    style.setProperty("--fm-lx", Number(x) + "px");
+    style.setProperty("--fm-ly", Number(y) + "px");
+    style.setProperty("--fm-lw", Number(width) + "px");
+    style.setProperty("--fm-lh", Number(height) + "px");
+    document.body.classList.toggle("settle", Boolean(settle));
+    document.body.classList.add("placed");
+    return true;
   };
 
   window.fmCall = (id, name, args) => {

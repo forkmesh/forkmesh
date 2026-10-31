@@ -52,15 +52,28 @@ def test_delivers_to_loopback(monkeypatch):
         def __exit__(self, *exc):
             return False
 
-        def send_message(self, message):
-            sent.append(message["To"])
+        def send_message(self, message, from_addr=None):
+            sent.append((message["To"], from_addr))
             return {}
 
     monkeypatch.setattr(smtp.smtplib, "SMTP", Client)
     message_id = asyncio.run(smtp.send(types.SimpleNamespace(), smtp.build(
-        "no-reply@forkmesh.com", "ForkMesh", "a@example.com", "s", "t")))
-    assert sent == [("127.0.0.1", 25), "a@example.com"]
+        smtp.SENDER, smtp.SENDER_NAME, "a@example.com", "s", "t")))
+    assert sent == [("127.0.0.1", 25),
+                    ("a@example.com", "no-reply@forkmesh.com")]
     assert message_id.startswith("<")
+
+
+def test_replies_reach_founders_and_bounces_stay_on_no_reply():
+    smtp = load()
+    message = smtp.build(smtp.SENDER, smtp.SENDER_NAME, "a@example.com", "s",
+                         "t")
+    assert smtp.SENDER == "founders@forkmesh.com"
+    assert message["From"] == "ForkMesh <founders@forkmesh.com>"
+    assert smtp.envelope_sender(message) == "no-reply@forkmesh.com"
+    instance = smtp.build("hello@example.org", "Example", "a@example.com",
+                          "s", "t")
+    assert smtp.envelope_sender(instance) == "no-reply@example.org"
 
 
 def test_marks_automated_mail_and_tags_feedback_id():

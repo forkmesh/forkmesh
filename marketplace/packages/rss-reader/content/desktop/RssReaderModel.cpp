@@ -1026,7 +1026,7 @@ qint64 parseIso(QString text)
     text = text.trimmed();
     if (text.size() == 10) {
         const QDate date = QDate::fromString(text, Qt::ISODate);
-        return date.isValid() ? QDateTime(date, QTime(0, 0), QTimeZone::UTC).toMSecsSinceEpoch() : -1;
+        return date.isValid() ? QDateTime(date, QTime(0, 0), QTimeZone::utc()).toMSecsSinceEpoch() : -1;
     }
     if (text.size() > 10 && (text.at(10) == QLatin1Char(' ') || text.at(10) == QLatin1Char('t')))
         text[10] = QLatin1Char('T');
@@ -1049,7 +1049,7 @@ qint64 parseIso(QString text)
     if (!value.isValid())
         return -1;
     if (!hasZone)
-        value = QDateTime(value.date(), value.time(), QTimeZone::UTC);
+        value = QDateTime(value.date(), value.time(), QTimeZone::utc());
     return value.toMSecsSinceEpoch();
 }
 
@@ -1099,7 +1099,7 @@ qint64 parseRfc822(const QString &text)
                      match.captured(6).isEmpty() ? 0 : match.captured(6).toInt());
     if (!date.isValid() || !time.isValid())
         return -1;
-    const QDateTime utc(date, time, QTimeZone::UTC);
+    const QDateTime utc(date, time, QTimeZone::utc());
     return utc.toMSecsSinceEpoch() - qint64(zoneOffsetSeconds(match.captured(7))) * 1000;
 }
 
@@ -2637,7 +2637,7 @@ QByteArray writeOpml(const QList<Feed> &feeds, const QList<Folder> &folders, qin
     xml.writeStartElement(QStringLiteral("head"));
     xml.writeTextElement(QStringLiteral("title"), QStringLiteral("RSS Reader subscriptions"));
     xml.writeTextElement(QStringLiteral("dateCreated"),
-                         QDateTime::fromMSecsSinceEpoch(nowMs, QTimeZone::UTC).toString(Qt::RFC2822Date));
+                         QDateTime::fromMSecsSinceEpoch(nowMs, QTimeZone::utc()).toString(Qt::RFC2822Date));
     xml.writeEndElement();
     xml.writeStartElement(QStringLiteral("body"));
     auto byName = [](const Feed *a, const Feed *b) {
@@ -3928,7 +3928,7 @@ QJsonObject Store::exportBundle(qint64 nowMs) const
         {QStringLiteral("format"), QStringLiteral("forkmesh-rss-reader-export")},
         {QStringLiteral("version"), 1},
         {QStringLiteral("exportedAt"),
-         QDateTime::fromMSecsSinceEpoch(nowMs, QTimeZone::UTC).toString(Qt::ISODate)},
+         QDateTime::fromMSecsSinceEpoch(nowMs, QTimeZone::utc()).toString(Qt::ISODate)},
         {QStringLiteral("subscriptionsOpml"), QString::fromUtf8(writeOpml(m_feeds, m_folders, nowMs))},
         {QStringLiteral("settings"), m_settings.toJson()},
         {QStringLiteral("starred"), starredJson()},

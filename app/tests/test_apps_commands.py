@@ -63,6 +63,21 @@ def test_commands_are_listed_only_for_installers():
     assert _run(world, "/hello", user="bob")["status"] == 404
 
 
+def test_org_install_commands_are_not_offered_to_org_guests():
+    world = _world()
+    world.org("acme", alice="owner", bob="member", gwen="guest")
+    created = create_app(world, scopes=["commands", "chat:write"],
+                         commands=[{"command": "hello", "url": COMMAND_URL,
+                                    "description": "Say hello"}])
+    install(world, created, target="org:acme")
+    assert [c["command"] for c in call(
+        world, "GET", "/api/apps/commands",
+        user="bob")["data"]["commands"]] == ["hello"]
+    assert call(world, "GET", "/api/apps/commands",
+                user="gwen")["data"]["commands"] == []
+    assert _run(world, "/hello", user="gwen")["status"] == 404
+
+
 def test_slash_command_round_trip_is_signed_and_ephemeral_by_default():
     world = _world(reply={"text": "Hello, @alice!", "blocks": BLOCKS})
     created = _app(world)

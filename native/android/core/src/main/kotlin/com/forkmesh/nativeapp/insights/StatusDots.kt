@@ -36,8 +36,17 @@ data class StatusDot(val id: String, val label: String, val state: ServiceState,
     val description: String get() = "$label, ${state.label.lowercase()}"
 }
 
-data class StatusDotRow(val dots: List<StatusDot> = emptyList(), val troubled: Boolean = false, val refreshMs: Long = StatusDots.TROUBLED_REFRESH_MS) {
+data class StatusDotRow(
+    val dots: List<StatusDot> = emptyList(),
+    val troubled: Boolean = false,
+    val refreshMs: Long = StatusDots.TROUBLED_REFRESH_MS,
+    val fleet: List<FleetLight> = emptyList(),
+) {
     val description: String get() = dots.joinToString("; ") { it.description }
+
+    val services: List<StatusDot> get() = dots.filter { !it.id.startsWith(FleetLight.CORE_PREFIX) && !it.id.startsWith(FleetLight.RUNNER_PREFIX) }
+
+    val servicesDescription: String get() = services.joinToString("; ") { it.description }
 
     companion object {
         val EMPTY = StatusDotRow()
@@ -83,7 +92,8 @@ object StatusDots {
         val all = systems + custom
         val troubled = all.any { it.state != ServiceState.Operational }
         val shown = if (settings.onlyProblems) all.filter { it.state != ServiceState.Operational } else all
-        return StatusDotRow(shown, troubled, if (troubled) TROUBLED_REFRESH_MS else settings.healthyIntervalMs)
+        val fleet = FleetLight.lights(report, monitors, settings.onlyProblems)
+        return StatusDotRow(shown, troubled, if (troubled) TROUBLED_REFRESH_MS else settings.healthyIntervalMs, fleet)
     }
 
     fun rowFor(

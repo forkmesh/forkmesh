@@ -32,6 +32,7 @@ import {
 // un-routed subresource the World loads.
 import { createAccountEventChannel } from "../account-events.js";
 import { buildLiveMirrorNodes } from "./world-mirror-nodes.js";
+import { WORLD_VOICE_ROOM_RE, bubbleGroups, cleanVoiceRoomName } from "./world-voice-rooms.js";
 import {
   MASTODON_LOOKUP_URL,
   MASTODON_PROFILE_URL,
@@ -2018,6 +2019,14 @@ const WORLD_BRAND_NAV_SHORTCUTS = Object.freeze([
 // visited directly (homepage footer band, signup page). A console page must
 // never load inside that little embedded strip.
 const WORLD_UI_ICON_PATHS = Object.freeze({
+  mic:
+    '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path>',
+  video:
+    '<path d="m22 8-6 4 6 4V8Z"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect>',
+  headset:
+    '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"></path>',
+  hash:
+    '<path d="M4 9h16"></path><path d="M4 15h16"></path><path d="M10 3 8 21"></path><path d="M16 3l-2 18"></path>',
   users:
     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
   alert:
@@ -2613,6 +2622,7 @@ async function copyWorldText(value) {
     } catch (_) {}
   }
   const textarea = document.createElement("textarea");
+  textarea.name = "world-copy-text";
   textarea.value = text;
   textarea.setAttribute("readonly", "");
   textarea.style.position = "fixed";
@@ -3257,6 +3267,13 @@ function droneRaceFrame(value) {
   };
 }
 
+function worldApiHeaders(extra = {}) {
+  const headers = { accept: "application/json", ...extra };
+  const token = String(readSession()?.sessionToken || "");
+  if (token) headers.authorization = `Bearer ${token}`;
+  return headers;
+}
+
 function remotePlayer(peer) {
   if (!peer?.id) return null;
   const status = String(peer.status || "hidden");
@@ -3367,6 +3384,13 @@ function remotePlayer(peer) {
     solana: WORLD_SOLANA_ADDRESS_RE.test(String(peer.solana || ""))
       ? String(peer.solana)
       : "",
+    voice: WORLD_VOICE_ROOM_RE.test(String(peer.voice || ""))
+      ? String(peer.voice)
+      : "",
+    voiceName: cleanVoiceRoomName(peer.voiceName),
+    mic: peer.mic === true,
+    cam: peer.cam === true,
+    words: Math.max(0, Math.min(9_999_999, Math.floor(Number(peer.words) || 0))),
     // A live presence frame is by definition activity within the hour.
     activityBucket: "hour",
   };
@@ -5324,6 +5348,16 @@ function scheduleHudFacePortrait(key) {
   }
 }
 
+const WORLD_GENIE_SPIDER_KEY = "forkmesh.world.genie";
+
+function worldGenieSpiderShown() {
+  try {
+    return localStorage.getItem(WORLD_GENIE_SPIDER_KEY) !== "off";
+  } catch (_) {
+    return true;
+  }
+}
+
 function worldTemplate(identity, settings, mode, landmarkCapabilities) {
   const accountSession = readSession();
   const signedInName =
@@ -5412,7 +5446,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
       ([key, label]) => `
         <label class="world-privacy-option">
           <span>${escapeHTML(label)}</span>
-          <input
+          <input name="world-privacy"
             type="checkbox"
             data-world-privacy="${escapeHTML(key)}"
             ${settings.privacy[key] ? "checked" : ""}
@@ -5621,6 +5655,8 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                 alt=""
                 ${shirtAvatarSource ? "" : "hidden"}
               />
+              <canvas class="world-shirt-live" data-world-shirt-live width="128" height="128" aria-hidden="true" hidden></canvas>
+              <span class="world-on-air" data-world-on-air aria-hidden="true" hidden><span class="world-on-air-dot"></span>On air</span>
             </button>
           </nav>
         </header>
@@ -5739,10 +5775,10 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           <div class="world-gym-weight">
             <label>
               <span>Weight</span>
-              <input type="range" min="45" max="1200" step="5" value="135" data-world-gym-weight-range />
+              <input name="world-gym-weight-range" type="range" min="45" max="1200" step="5" value="135" data-world-gym-weight-range />
             </label>
             <label>
-              <input type="number" min="45" max="1200" step="5" value="135" data-world-gym-weight-number />
+              <input name="world-gym-weight-number" type="number" min="45" max="1200" step="5" value="135" data-world-gym-weight-number />
               <span>lb</span>
             </label>
           </div>
@@ -5809,6 +5845,9 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           </div>
         </details>
 
+        <section class="world-channels" data-world-channels role="dialog" aria-label="Channels, voice rooms and direct messages" hidden></section>
+        <div class="world-voice-audio" data-world-voice-audio hidden></div>
+        <div class="world-reaction-pops" data-world-reaction-pops aria-hidden="true"></div>
         <section
           class="world-hud-island"
           data-world-hud-island
@@ -5821,6 +5860,9 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           <div class="world-hud-island-bar">
             <button class="world-hud-island-grip" type="button" data-world-island-grip title="Drag to move · double-click to put back" aria-label="Move chat box. Arrow keys move it, Home puts it back.">${worldIconSvg("grip")}</button>
             <div class="world-avatar-actions" data-world-dock="bottom" data-world-avatar-actions data-dashboard-chat-emotes role="toolbar" aria-label="Avatar actions">
+              <button type="button" data-world-tool="voice-mic" data-world-voice-mic title="Talk: turn on your microphone" aria-label="Microphone" aria-pressed="false">${worldIconSvg("mic")}</button>
+              <button type="button" data-world-tool="voice-camera" data-world-voice-camera title="Camera: your face, head and hands move your avatar" aria-label="Camera" aria-pressed="false">${worldIconSvg("video")}</button>
+              <button type="button" data-world-tool="voice-panel" data-world-voice-open title="Voice rooms, privacy bubbles, reactions and performance" aria-label="Voice panel" aria-expanded="false">${worldIconSvg("headset")}</button>
               <button type="button" data-world-tool="emote-wave" data-dashboard-chat-emote="wave" title="Wave" aria-label="Wave">${worldIconSvg("hand")}</button>
               <button type="button" data-world-tool="emote-jump" data-dashboard-chat-emote="jump" title="Jump" aria-label="Jump">${worldIconSvg("jump")}</button>
               <button type="button" data-world-tool="emote-superjump" data-dashboard-chat-emote="superjump" title="Super jump over buildings" aria-label="Super jump">${worldIconSvg("superjump")}</button>
@@ -5832,7 +5874,9 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               <button type="button" data-world-tool="emote-sparkle" data-dashboard-chat-emote="sparkle" title="Sparkle" aria-label="Sparkle">${worldIconSvg("sparkle")}</button>
               <button type="button" data-world-tool="jetpack" data-world-jetpack-toggle title="Put on jetpack" aria-label="Put on jetpack" aria-pressed="false">${worldIconSvg("rocket")}</button>
             </div>
-            <button class="world-hud-island-open-chat" type="button" data-world-island-full-chat title="Open channels and direct messages" aria-label="Open channels and direct messages in a new tab">${worldIconSvg("external")}</button>
+            <figure class="world-voice-chart" data-world-voice-chart hidden><canvas width="248" height="112" role="img" aria-label="Live diagnostics"></canvas><figcaption>Live diagnostics · 30 s</figcaption></figure>
+            <button class="world-voice-perf" type="button" data-world-voice-perf data-grade="unknown" title="Voice and video performance" aria-label="Voice and video performance and diagnostic report" hidden><span class="world-voice-perf-dot" aria-hidden="true"></span><span data-world-voice-perf-text>…</span></button>
+            <button class="world-hud-island-open-chat" type="button" data-world-island-full-chat title="Channels, voice rooms, Office rooms and direct messages" aria-label="Open channels, voice rooms, Office rooms and direct messages">${worldIconSvg("hash")}</button>
             <button
               class="world-hud-island-toggle"
               type="button"
@@ -5843,6 +5887,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               title="Show more chat"
             >${worldIconSvg("up")}<span class="world-hud-island-unread" data-world-chat-unread role="status" hidden></span></button>
           </div>
+          <div class="world-voice-panel" data-world-voice-panel role="dialog" aria-label="Voice and video" hidden></div>
           <p class="world-hud-notice" data-world-hud-notice data-tone="status" role="status" aria-live="polite" hidden>
             <span data-world-hud-notice-text></span>
             <button type="button" data-world-hud-notice-dismiss aria-label="Dismiss notice">${worldIconSvg("close")}</button>
@@ -5890,7 +5935,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <div class="world-hud-agent" data-world-agent-controls hidden>
               <label class="world-hud-chip world-hud-chip--repo" title="Repository the agent works in">
                 <span class="world-visually-hidden">Repository</span>
-                <select data-world-agent-repo aria-label="Repository"></select>
+                <select name="world-agent-repo" data-world-agent-repo aria-label="Repository"></select>
               </label>
               <div class="world-hud-model" data-world-agent-model-picker>
                 <button type="button" class="world-hud-model-button" data-world-agent-model data-value="" aria-haspopup="listbox" aria-expanded="false" aria-controls="world-agent-model-menu" title="Model"><span data-world-agent-model-label>Opus 5.5</span></button>
@@ -5931,7 +5976,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <strong>Swing speed</strong>
             <output data-world-swing-speed-output>${WORLD_SWING_SPEED_DEFAULT}%</output>
           </span>
-          <input
+          <input name="world-swing-speed"
             type="range"
             min="${WORLD_SWING_SPEED_MIN}"
             max="${WORLD_SWING_SPEED_MAX}"
@@ -6057,7 +6102,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           <p class="world-eyebrow">PROGRESS CHECK-IN</p>
           <h2 id="world-office-task-checkin-title">How is it going?</h2>
           <p data-world-office-task-checkin-copy>How is your active task going?</p>
-          <textarea
+          <textarea name="world-office-task-checkin-note"
             data-world-office-task-checkin-note
             maxlength="500"
             rows="2"
@@ -6109,14 +6154,14 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <div class="world-office-composer">
               <label class="world-office-attach" aria-label="Attach image or document">
                 <span aria-hidden="true">＋</span>
-                <input
+                <input name="world-office-attachment-input"
                   type="file"
                   data-world-office-attachment-input
                   aria-label="Attach image or document"
                   accept="image/*,.pdf,.txt,.md,.csv,.json,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                 >
               </label>
-              <textarea
+              <textarea name="world-office-input"
                 data-world-office-input
                 rows="1"
                 maxlength="16000"
@@ -6262,23 +6307,23 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               <span class="world-work-quick-icon" aria-hidden="true">＋</span>
               <label class="world-work-quick-title">
                 <span class="world-visually-hidden">Task title</span>
-                <input type="text" maxlength="160" required placeholder="Quick add a task…" aria-label="Task title" data-world-work-task-title />
+                <input name="world-work-task-title" type="text" maxlength="160" required placeholder="Quick add a task…" aria-label="Task title" data-world-work-task-title />
               </label>
               <label>
                 <span class="world-visually-hidden">Assign</span>
-                <select data-world-work-task-assignee aria-label="Task assignee"></select>
+                <select name="world-work-task-assignee" data-world-work-task-assignee aria-label="Task assignee"></select>
               </label>
               <label>
                 <span class="world-visually-hidden">Department</span>
-                <select data-world-work-task-department aria-label="Task department"></select>
+                <select name="world-work-task-department" data-world-work-task-department aria-label="Task department"></select>
               </label>
               <label class="world-work-quick-repository">
                 <span class="world-visually-hidden">Repository</span>
-                <input type="text" maxlength="201" placeholder="owner/repository" aria-label="Repository, required for agent work" data-world-work-task-repository />
+                <input name="world-work-task-repository" type="text" maxlength="201" placeholder="owner/repository" aria-label="Repository, required for agent work" data-world-work-task-repository />
               </label>
               <label data-world-work-task-priority-wrap hidden>
                 <span class="world-visually-hidden">Priority</span>
-                <input type="number" min="1" max="99" value="50"
+                <input name="world-work-task-priority" type="number" min="1" max="99" value="50"
                   data-world-work-task-priority aria-label="Global task priority, 1 highest and 99 lowest" />
               </label>
               <button type="submit" data-world-work-task-submit><span aria-hidden="true">＋</span> Add</button>
@@ -6299,11 +6344,11 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   </div>
                   <label>
                     <span class="world-visually-hidden">Search tasks</span>
-                    <input type="search" placeholder="Search tasks…" aria-label="Search tasks" data-world-task-search />
+                    <input name="world-task-search" type="search" placeholder="Search tasks…" aria-label="Search tasks" data-world-task-search />
                   </label>
                   <label>
                     <span class="world-visually-hidden">Filter tasks</span>
-                    <select aria-label="Filter tasks" data-world-task-filter>
+                    <select name="world-task-filter" aria-label="Filter tasks" data-world-task-filter>
                       <option value="all">All statuses</option>
                       <option value="active">Running</option>
                       <option value="queued">Queued</option>
@@ -6315,7 +6360,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   </label>
                   <label>
                     <span class="world-visually-hidden">Sort tasks</span>
-                    <select aria-label="Sort tasks" data-world-task-sort>
+                    <select name="world-task-sort" aria-label="Sort tasks" data-world-task-sort>
                       <option value="priority">Priority</option>
                       <option value="status">Status</option>
                       <option value="updated">Recently updated</option>
@@ -6331,7 +6376,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   <button type="button" data-world-task-refresh aria-label="Refresh tasks" title="Refresh tasks">↻</button>
                   <label class="world-task-batch-size">
                     <span>Bot batch</span>
-                    <input type="number" min="1" max="50" value="10"
+                    <input name="world-task-batch-size" type="number" min="1" max="50" value="10"
                       data-world-task-batch-size aria-label="Maximum tasks to send to the Bot" />
                   </label>
                   <button type="button" data-world-task-batch-send>Send to Bot</button>
@@ -6393,7 +6438,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               </p>
               <label class="world-privacy-option">
                 <span>Show floating debug pill over the world</span>
-                <input
+                <input name="world-debug-panel"
                   type="checkbox"
                   data-world-debug-panel
                   ${settings.debugPanel ? "checked" : ""}
@@ -6560,7 +6605,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   settings.lightLevel,
                 )}%</output>
               </span>
-              <input
+              <input name="world-light-level"
                 type="range"
                 min="${WORLD_LIGHT_LEVEL_MIN}"
                 max="${WORLD_LIGHT_LEVEL_MAX}"
@@ -6581,7 +6626,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                   settings.moveSpeed,
                 )}%</output>
               </span>
-              <input
+              <input name="world-move-speed"
                 type="range"
                 min="${WORLD_MOVE_SPEED_MIN}"
                 max="${WORLD_MOVE_SPEED_MAX}"
@@ -6607,13 +6652,13 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <legend>Public avatar badge</legend>
             <label class="world-field">
               <span>Availability</span>
-              <select data-world-availability>${availabilityOptions}</select>
+              <select name="world-availability" data-world-availability>${availabilityOptions}</select>
             </label>
             <div class="world-status-editor">
               <div class="world-status-fields">
                 <label class="world-field">
                   <span>Emoji status</span>
-                  <input
+                  <input name="world-status-emoji"
                     type="text"
                     inputmode="text"
                     maxlength="48"
@@ -6627,7 +6672,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                 </label>
                 <label class="world-field">
                   <span>One-word note <small>optional</small></span>
-                  <input
+                  <input name="world-status-note"
                     type="text"
                     maxlength="${WORLD_STATUS_NOTE_MAX}"
                     autocomplete="off"
@@ -6642,7 +6687,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
                 <summary>Choose from the Unicode emoji picker</summary>
                 <label class="world-field world-emoji-category">
                   <span>Category</span>
-                  <select data-world-emoji-category>${emojiCategoryOptions}</select>
+                  <select name="world-emoji-category" data-world-emoji-category>${emojiCategoryOptions}</select>
                 </label>
                 ${emojiCategoryPanels}
               </details>
@@ -6669,7 +6714,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             </div>
             <label class="world-field">
               <span>Home / office door</span>
-              <select data-world-public-door>
+              <select name="world-public-door" data-world-public-door>
                 <option value="knock" ${settings.publicDoor === "knock" ? "selected" : ""}>Visitors knock first</option>
                 <option value="open" ${settings.publicDoor === "open" ? "selected" : ""}>Public lobby open</option>
                 <option value="closed" ${settings.publicDoor === "closed" ? "selected" : ""}>Closed</option>
@@ -6691,16 +6736,24 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <div class="world-outfit-grid">${outfitSwatches}</div>
             <label class="world-privacy-option">
               <span>Wear my account avatar photo as my face</span>
-              <input
+              <input name="world-face-image"
                 type="checkbox"
                 data-world-face-image
                 ${settings.faceImage ? "checked" : ""}
                 ${signedInName ? "" : "disabled"}
               />
             </label>
+            <label class="world-privacy-option">
+              <span>Show the Genie spider</span>
+              <input name="world-genie-spider"
+                type="checkbox"
+                data-world-genie-spider
+                ${worldGenieSpiderShown() ? "checked" : ""}
+              />
+            </label>
             <label class="world-avatar-upload">
               <span>Change and save avatar</span>
-              <input
+              <input name="world-avatar-upload"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 data-world-avatar-upload
@@ -8164,12 +8217,24 @@ class ForkMeshWorld extends HTMLElement {
     ])
       .then(async ([quality, environment, THREE]) => {
         if (this.destroyed || this.world) return null;
-        const plan = quality.planWorldRenderer({
-          container: this.$("[data-world-canvas-wrap]"),
-          forceCompactRenderer: this.rendererSafeMode === true,
-          qualityTier: this.requestedQualityTier,
-        });
-        const prepared = quality.prepareWorldRendererContext(plan, THREE, document);
+        const planFor = (forceCompactRenderer) =>
+          quality.planWorldRenderer({
+            container: this.$("[data-world-canvas-wrap]"),
+            forceCompactRenderer,
+            qualityTier: this.requestedQualityTier,
+          });
+        let plan = planFor(this.rendererSafeMode === true);
+        let prepared = quality.prepareWorldRendererContext(plan, THREE, document);
+        if (!prepared?.renderer && this.rendererSafeMode !== true) {
+          quality.releaseWorldRendererContext(prepared);
+          const compactPlan = planFor(true);
+          const compact = quality.prepareWorldRendererContext(compactPlan, THREE, document);
+          if (compact?.renderer) {
+            this.rendererSafeMode = true;
+            plan = compactPlan;
+            prepared = compact;
+          }
+        }
         if (!prepared?.renderer || plan.compactRenderer) return prepared;
         await new Promise((resolve) => setTimeout(() => resolve(), 0));
         if (this.destroyed || this.world) {
@@ -12809,7 +12874,7 @@ class ForkMeshWorld extends HTMLElement {
             </p>
             <label class="world-field">
               <span>Issue title</span>
-              <input
+              <input name="world-fediverse-title"
                 type="text"
                 maxlength="240"
                 data-world-fediverse-title
@@ -12818,7 +12883,7 @@ class ForkMeshWorld extends HTMLElement {
             </label>
             <label class="world-field">
               <span>Issue body</span>
-              <textarea
+              <textarea name="world-fediverse-body"
                 rows="9"
                 maxlength="8192"
                 data-world-fediverse-body
@@ -12826,11 +12891,11 @@ class ForkMeshWorld extends HTMLElement {
             </label>
             <label class="world-privacy-option">
               <span>I reviewed this public content and authorize a pending issue submission.</span>
-              <input type="checkbox" data-world-fediverse-confirm />
+              <input name="world-fediverse-confirm" type="checkbox" data-world-fediverse-confirm />
             </label>
             <label class="world-privacy-option">
               <span>After owner-node confirmation, publish one public follow-up with the issue backlink.</span>
-              <input type="checkbox" data-world-fediverse-followup />
+              <input name="world-fediverse-followup" type="checkbox" data-world-fediverse-followup />
             </label>
             <div class="world-notice">
               <strong>Pending is not created</strong>
@@ -14370,6 +14435,14 @@ class ForkMeshWorld extends HTMLElement {
         this.enterNeighborhoodHome(enterHome.dataset.worldEnterHome, false);
         return;
       }
+      const voiceAction = event.target.closest("[data-world-voice-action]");
+      if (voiceAction) {
+        this.runWorldVoiceAction(
+          voiceAction.dataset.worldVoiceAction,
+          voiceAction.dataset.worldVoicePeer,
+        );
+        return;
+      }
       const handshakeOffer = event.target.closest(
         "[data-world-handshake-offer]",
       );
@@ -14456,6 +14529,15 @@ class ForkMeshWorld extends HTMLElement {
       const faceImage = event.target.closest("[data-world-face-image]");
       if (faceImage) {
         this.setFaceImage(faceImage.checked);
+        return;
+      }
+      const genieSpider = event.target.closest("[data-world-genie-spider]");
+      if (genieSpider) {
+        try {
+          localStorage.setItem(WORLD_GENIE_SPIDER_KEY, genieSpider.checked ? "on" : "off");
+        } catch (_) {}
+        this.world?.setGenieSpiderEnabled?.(genieSpider.checked);
+        this.notice(genieSpider.checked ? "The Genie spider is back in the World." : "The Genie spider is taking a nap. Turn it back on here any time.");
         return;
       }
       const avatarUpload = event.target.closest("[data-world-avatar-upload]");
@@ -14994,7 +15076,24 @@ class ForkMeshWorld extends HTMLElement {
       this.setHudIslandExpanded(island.dataset.expanded !== "true");
     });
     this.$("[data-world-island-full-chat]")?.addEventListener("click", () => {
-      window.open("/chat", "_blank", "noopener,noreferrer");
+      void this.openChannelsPanel().then((opened) => {
+        if (!opened) window.open("/chat", "_blank", "noopener,noreferrer");
+      });
+    });
+    this.$("[data-world-voice-mic]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.toggleMic());
+    });
+    this.$("[data-world-voice-camera]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.toggleCamera());
+    });
+    this.$("[data-world-voice-open]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.openPanel());
+    });
+    this.$("[data-world-voice-chart]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.openPanel(true));
+    });
+    this.$("[data-world-voice-perf]")?.addEventListener("click", () => {
+      void this.ensureVoice().then((voice) => voice?.openPanel(true));
     });
     this.$("[data-world-island-feed]")?.addEventListener("click", (event) => {
       if (island.dataset.expanded === "true") return;
@@ -16622,16 +16721,16 @@ class ForkMeshWorld extends HTMLElement {
             <span>${this.adminErrors.length} recent records · administrator only</span>
           </div>
           <div class="world-activity-tools">
-            <label><span class="world-visually-hidden">Search errors</span><input type="search" value="${escapeHTML(
+            <label><span class="world-visually-hidden">Search errors</span><input name="world-activity-search" type="search" value="${escapeHTML(
               this.adminErrorBoardSearch,
             )}" placeholder="Search errors…" data-world-activity-search="errors" /></label>
-            <label><span class="world-visually-hidden">Filter errors</span><select data-world-activity-filter="errors" aria-label="Filter errors">
+            <label><span class="world-visually-hidden">Filter errors</span><select name="world-activity-filter" data-world-activity-filter="errors" aria-label="Filter errors">
               <option value="all"${filter === "all" ? " selected" : ""}>All errors</option>
               <option value="server"${filter === "server" ? " selected" : ""}>5xx server</option>
               <option value="client"${filter === "client" ? " selected" : ""}>4xx client</option>
               <option value="browser"${filter === "browser" ? " selected" : ""}>Browser</option>
             </select></label>
-            <label><span class="world-visually-hidden">Sort errors</span><select data-world-activity-sort="errors" aria-label="Sort errors">
+            <label><span class="world-visually-hidden">Sort errors</span><select name="world-activity-sort" data-world-activity-sort="errors" aria-label="Sort errors">
               <option value="newest"${this.adminErrorBoardSort === "newest" ? " selected" : ""}>Newest</option>
               <option value="oldest"${this.adminErrorBoardSort === "oldest" ? " selected" : ""}>Oldest</option>
               <option value="status"${this.adminErrorBoardSort === "status" ? " selected" : ""}>Status</option>
@@ -18783,7 +18882,8 @@ class ForkMeshWorld extends HTMLElement {
                         }</button>`
                   }
                 </div>
-              </section>`
+              </section>
+              ${this.worldVoiceDetailMarkup(peerId, name)}`
             : ""
         }
         <div class="world-truth-grid">
@@ -20275,11 +20375,11 @@ class ForkMeshWorld extends HTMLElement {
         <div class="world-reward-form">
           <label>
             <span>Amount (SOL)</span>
-            <input data-world-contribution-amount type="number" min="0.00001" max="100" step="0.00001" value="0.001" inputmode="decimal" />
+            <input name="world-contribution-amount" data-world-contribution-amount type="number" min="0.00001" max="100" step="0.00001" value="0.001" inputmode="decimal" />
           </label>
           <label>
             <span>Distribution choice</span>
-            <select data-world-contribution-mode>
+            <select name="world-contribution-mode" data-world-contribution-mode>
               <option value="trickle">Add to randomized trickle pool</option>
               <option value="instant_all_nodes">Instant intent for all eligible nodes</option>
             </select>
@@ -20309,7 +20409,7 @@ class ForkMeshWorld extends HTMLElement {
                 }
                 <label>
                   <span>Finalized transaction signature</span>
-                  <input data-world-contribution-signature type="text" autocomplete="off" spellcheck="false" placeholder="Paste public Solana signature" />
+                  <input name="world-contribution-signature" data-world-contribution-signature type="text" autocomplete="off" spellcheck="false" placeholder="Paste public Solana signature" />
                 </label>
                 <button type="button" data-world-contribution-confirm>Verify finalized transfer</button>
                 <small>Never paste a private key, seed, or recovery phrase. A reference-bound direct transfer is required; visual particles do not prove payment.</small>
@@ -20342,7 +20442,7 @@ class ForkMeshWorld extends HTMLElement {
                       )} (${remainingHours}h remaining)</span>
                       ${
                         claimable
-                          ? `<label><span>Public self-custodial wallet</span><input data-world-pending-wallet type="text" autocomplete="off" spellcheck="false" placeholder="Solana public address" /></label>
+                          ? `<label><span>Public self-custodial wallet</span><input name="world-pending-wallet" data-world-pending-wallet type="text" autocomplete="off" spellcheck="false" placeholder="Solana public address" /></label>
                              <button type="button" data-world-pending-claim="${escapeHTML(
                                item.rewardId || "",
                              )}">Use this public address</button>`
@@ -21308,16 +21408,16 @@ class ForkMeshWorld extends HTMLElement {
             <span>${session?.sessionToken ? `${unreadCount} unread` : "Sign in for private updates"} · ${globalCount} global</span>
           </div>
           <div class="world-activity-tools">
-            <label><span class="world-visually-hidden">Search pings</span><input type="search" value="${escapeHTML(
+            <label><span class="world-visually-hidden">Search pings</span><input name="world-activity-search" type="search" value="${escapeHTML(
               this.notificationBoardSearch,
             )}" placeholder="Search pings…" data-world-activity-search="notifications" /></label>
-            <label><span class="world-visually-hidden">Filter pings</span><select data-world-activity-filter="notifications" aria-label="Filter pings">
+            <label><span class="world-visually-hidden">Filter pings</span><select name="world-activity-filter" data-world-activity-filter="notifications" aria-label="Filter pings">
               <option value="all"${filter === "all" ? " selected" : ""}>All activity</option>
               <option value="unread"${filter === "unread" ? " selected" : ""}>Unread</option>
               <option value="personal"${filter === "personal" ? " selected" : ""}>Personal</option>
               <option value="global"${filter === "global" ? " selected" : ""}>Global</option>
             </select></label>
-            <label><span class="world-visually-hidden">Sort pings</span><select data-world-activity-sort="notifications" aria-label="Sort pings">
+            <label><span class="world-visually-hidden">Sort pings</span><select name="world-activity-sort" data-world-activity-sort="notifications" aria-label="Sort pings">
               <option value="newest"${this.notificationBoardSort === "newest" ? " selected" : ""}>Newest</option>
               <option value="oldest"${this.notificationBoardSort === "oldest" ? " selected" : ""}>Oldest</option>
               <option value="title"${this.notificationBoardSort === "title" ? " selected" : ""}>Title</option>
@@ -22171,7 +22271,7 @@ class ForkMeshWorld extends HTMLElement {
           ${
             authenticated
               ? `<div class="world-media-form">
-                  <label><span>Shared room</span><select data-world-media-space>
+                  <label><span>Shared room</span><select name="world-media-space" data-world-media-space>
                     ${
                       this.mediaSpaces.length
                         ? this.mediaSpaces
@@ -22187,7 +22287,7 @@ class ForkMeshWorld extends HTMLElement {
                         : `<option value="">No active rooms yet</option>`
                     }
                   </select></label>
-                  <label><span>Create a room</span><input type="text" maxlength="80" placeholder="Community listening room" data-world-media-space-name /></label>
+                  <label><span>Create a room</span><input name="world-media-space-name" type="text" maxlength="80" placeholder="Community listening room" data-world-media-space-name /></label>
                   <button type="button" data-world-media-create>Create room</button>
                 </div>`
               : `<div class="world-notice"><strong>Account required</strong><span>Sign in to load shared rooms, playlists, schedules, and moderation roles. No room state is stored in this browser.</span></div>`
@@ -22231,7 +22331,7 @@ class ForkMeshWorld extends HTMLElement {
             </div>
           </div>
           <div class="world-media-form">
-            <label><span>Session type</span><select data-world-media-session ${
+            <label><span>Session type</span><select name="world-media-session" data-world-media-session ${
               canModerate ? "" : "disabled"
             }>
               ${Object.entries(sessionLabels)
@@ -22243,13 +22343,13 @@ class ForkMeshWorld extends HTMLElement {
                 )
                 .join("")}
             </select></label>
-            <label><span>Schedule in your time zone</span><input type="datetime-local" value="${escapeHTML(
+            <label><span>Schedule in your time zone</span><input name="world-media-schedule" type="datetime-local" value="${escapeHTML(
               scheduleValue,
             )}" data-world-media-schedule ${canModerate ? "" : "disabled"} /></label>
           </div>
           <div class="world-media-add">
-            <input type="text" maxlength="80" placeholder="Playlist item title" data-world-media-title />
-            <input type="url" maxlength="500" placeholder="Official HTTPS provider or media page" data-world-media-url />
+            <input name="world-media-title" type="text" maxlength="80" placeholder="Playlist item title" data-world-media-title />
+            <input name="world-media-url" type="url" maxlength="500" placeholder="Official HTTPS provider or media page" data-world-media-url />
             <button type="button" data-world-media-add ${
               canModerate ? "" : "disabled"
             }>Add provider link</button>
@@ -22328,7 +22428,7 @@ class ForkMeshWorld extends HTMLElement {
           ${
             isOwner
               ? `<div class="world-media-add" aria-label="Room moderators">
-                  <input type="text" maxlength="40" placeholder="Registered username" data-world-media-moderator />
+                  <input name="world-media-moderator" type="text" maxlength="40" placeholder="Registered username" data-world-media-moderator />
                   <button type="button" data-world-media-moderator-add>Add moderator</button>
                 </div>
                 <div class="world-media-queue">
@@ -26108,7 +26208,7 @@ class ForkMeshWorld extends HTMLElement {
         <details class="world-filter-panel">
           <summary>Graph filters</summary>
           <div class="world-filter-grid">
-            <label><span>Language</span><select data-world-repo-filter="language"><option value="">All</option>${languages
+            <label><span>Language</span><select name="world-repo-filter" data-world-repo-filter="language"><option value="">All</option>${languages
               .map(
                 (language) =>
                   `<option value="${escapeHTML(language)}">${escapeHTML(
@@ -26116,19 +26216,19 @@ class ForkMeshWorld extends HTMLElement {
                   )}</option>`,
               )
               .join("")}</select></label>
-            <label><span>File type</span><select data-world-repo-filter="type"><option value="">Files + directories</option><option value="file">Files</option><option value="directory">Directories</option></select></label>
-            <label><span>Contributor</span><select data-world-repo-filter="contributor"><option value="">All public commit authors</option>${contributors
+            <label><span>File type</span><select name="world-repo-filter" data-world-repo-filter="type"><option value="">Files + directories</option><option value="file">Files</option><option value="directory">Directories</option></select></label>
+            <label><span>Contributor</span><select name="world-repo-filter" data-world-repo-filter="contributor"><option value="">All public commit authors</option>${contributors
               .map(
                 (name) =>
                   `<option value="${escapeHTML(name)}">${escapeHTML(name)}</option>`,
               )
               .join("")}</select></label>
-            <label><span>Directory</span><input data-world-repo-filter="directory" type="search" placeholder="Path contains…" /></label>
-            <label><span>Minimum size</span><select data-world-repo-filter="size"><option value="0">Any</option><option value="1024">1 KB</option><option value="10240">10 KB</option><option value="102400">100 KB</option></select></label>
-            <label><span>Modification frequency</span><select data-world-repo-filter="frequency"><option value="">All frequencies</option><option value="high">High (10+ recent changes)</option><option value="medium">Medium (3–9)</option><option value="low">Low (1–2)</option><option value="unknown">Unknown</option></select></label>
-            <label><span>Dependency depth</span><select data-world-repo-filter="dependency"><option value="">Any depth</option><option value="0">0 / not mapped</option><option value="1">1</option><option value="2">2</option><option value="3">3+</option></select></label>
-            <label><span>Security findings</span><select data-world-repo-filter="security"><option value="">All commit-matched states</option><option value="unavailable">Unavailable / commit mismatch</option><option value="no-finding">No reported finding</option><option value="finding">Reported finding</option><option value="reviewed">Dismissed after review</option></select></label>
-            <label><span>Test coverage</span><select data-world-repo-filter="coverage"><option value="">All coverage states</option><option value="covered">Covered (80%+)</option><option value="partial">Partial</option><option value="uncovered">Uncovered</option><option value="unknown">Unknown</option></select></label>
+            <label><span>Directory</span><input name="world-repo-filter" data-world-repo-filter="directory" type="search" placeholder="Path contains…" /></label>
+            <label><span>Minimum size</span><select name="world-repo-filter" data-world-repo-filter="size"><option value="0">Any</option><option value="1024">1 KB</option><option value="10240">10 KB</option><option value="102400">100 KB</option></select></label>
+            <label><span>Modification frequency</span><select name="world-repo-filter" data-world-repo-filter="frequency"><option value="">All frequencies</option><option value="high">High (10+ recent changes)</option><option value="medium">Medium (3–9)</option><option value="low">Low (1–2)</option><option value="unknown">Unknown</option></select></label>
+            <label><span>Dependency depth</span><select name="world-repo-filter" data-world-repo-filter="dependency"><option value="">Any depth</option><option value="0">0 / not mapped</option><option value="1">1</option><option value="2">2</option><option value="3">3+</option></select></label>
+            <label><span>Security findings</span><select name="world-repo-filter" data-world-repo-filter="security"><option value="">All commit-matched states</option><option value="unavailable">Unavailable / commit mismatch</option><option value="no-finding">No reported finding</option><option value="finding">Reported finding</option><option value="reviewed">Dismissed after review</option></select></label>
+            <label><span>Test coverage</span><select name="world-repo-filter" data-world-repo-filter="coverage"><option value="">All coverage states</option><option value="covered">Covered (80%+)</option><option value="partial">Partial</option><option value="uncovered">Uncovered</option><option value="unknown">Unknown</option></select></label>
           </div>
         </details>
         <div class="world-code-map" data-world-code-map>
@@ -27133,7 +27233,7 @@ class ForkMeshWorld extends HTMLElement {
                 .join("")}
               <label class="world-store-param">
                 <span>In the world</span>
-                <input
+                <input name="world-store-enabled"
                   type="checkbox"
                   data-world-store-enabled="${escapeHTML(element.id)}"
                   ${entry.enabled === false ? "" : "checked"}
@@ -27171,7 +27271,7 @@ class ForkMeshWorld extends HTMLElement {
             </p>
             <label class="world-store-param">
               <span>Transaction signature</span>
-              <input type="text" data-world-store-signature spellcheck="false" />
+              <input name="world-store-signature" type="text" data-world-store-signature spellcheck="false" />
             </label>
             <button type="button" data-world-store-confirm="${escapeHTML(element.id)}">Confirm purchase</button>
             <button type="button" data-world-store-cancel>Cancel</button>`
@@ -27210,7 +27310,7 @@ class ForkMeshWorld extends HTMLElement {
   storeParamField(elementId, spec, value) {
     const current = value === undefined ? spec.default : value;
     const attributes =
-      `data-world-store-param="${escapeHTML(spec.key)}" ` +
+      `name="world-store-${escapeHTML(spec.key)}" data-world-store-param="${escapeHTML(spec.key)}" ` +
       `data-world-store-element="${escapeHTML(elementId)}"`;
     let control = "";
     if (spec.type === "number") {
@@ -27338,7 +27438,7 @@ class ForkMeshWorld extends HTMLElement {
           data-expanded="${expanded}"
           ${element.system ? 'title="Per-frame system — no geometry of its own"' : ""}
         >
-          <input
+          <input name="world-element-toggle"
             type="checkbox"
             aria-label="${escapeHTML(`Keep ${element.label} in the world`)}"
             data-world-element-toggle="${escapeHTML(element.id)}"
@@ -27972,7 +28072,7 @@ class ForkMeshWorld extends HTMLElement {
       )}" data-world-chat-channel-option="${escapeHTML(choice.id)}"${
         external
           ? ` data-external="true" title="${escapeHTML(
-              `Open ${choice.label} in Chat in a new tab`,
+              `Open ${choice.label} here in the World`,
             )}"`
           : ""
       }>${escapeHTML(choice.label)}${
@@ -27999,10 +28099,10 @@ class ForkMeshWorld extends HTMLElement {
       );
     }
     if (extra.channels.length) {
-      parts.push(group("Channels · opens Chat", extra.channels, true));
+      parts.push(group("Channels", extra.channels, true));
     }
     if (extra.directs.length) {
-      parts.push(group("Direct messages · opens Chat", extra.directs, true));
+      parts.push(group("Direct messages", extra.directs, true));
     }
     const markup = parts.join("");
     if (menu.dataset.rendered !== markup) {
@@ -28071,8 +28171,10 @@ class ForkMeshWorld extends HTMLElement {
             : WORLD_CHAT_PRIVATE_DIRECT_KEY,
         );
       } catch (_) {}
-      window.open("/chat", "_blank", "noopener,noreferrer");
       this.setChatChannelMenuOpen(false, true);
+      void this.openChannelsPanel({ conversation: value }).then((opened) => {
+        if (!opened) window.open("/chat", "_blank", "noopener,noreferrer");
+      });
       return true;
     }
     return false;
@@ -29722,7 +29824,7 @@ class ForkMeshWorld extends HTMLElement {
         <div class="world-shot-stage"></div>
         <label class="world-shot-alt">
           <span>Alt text</span>
-          <input
+          <input name="shot-alt"
             type="text"
             data-shot-alt
             maxlength="500"
@@ -29871,6 +29973,7 @@ class ForkMeshWorld extends HTMLElement {
       const bounds = canvas.getBoundingClientRect();
       const stageBounds = stage.getBoundingClientRect();
       const input = document.createElement("textarea");
+      input.name = "world-edit-text";
       const defaultWidth = Math.max(
         160,
         Math.min(320, bounds.width * 0.45),
@@ -32277,12 +32380,12 @@ class ForkMeshWorld extends HTMLElement {
     );
   }
 
-  perfCopyReport() {
+  perfCopyReport({ logTail = false } = {}) {
     if (!this.world?.auditScene) return "";
     const profile = this.world.getProfile?.() || null;
     if (profile?.frames || !this.perfLastProfile) this.perfLastProfile = profile;
     this.runPerfAudit();
-    return this.perfReportMarkdown({ logTail: false });
+    return this.perfReportMarkdown({ logTail });
   }
 
   perfReportMarkdown({ logTail = true } = {}) {
@@ -32416,7 +32519,7 @@ class ForkMeshWorld extends HTMLElement {
   }
 
   async copyPerfReport() {
-    const text = this.perfReportMarkdown();
+    const text = this.perfCopyReport({ logTail: true }) || this.perfReportMarkdown();
     try {
       await navigator.clipboard.writeText(text);
       this.notice("📋 Optimization report copied — paste it into an issue or an agent prompt.");
@@ -33558,6 +33661,7 @@ class ForkMeshWorld extends HTMLElement {
       )
         ? String(this.identity.solana)
         : "",
+      ...this.voicePresence(),
     };
   }
 
@@ -33743,8 +33847,29 @@ class ForkMeshWorld extends HTMLElement {
           peersChanged = true;
         }
       }
+    } else if (message.type === "rig" && message.id) {
+      const rigger = String(message.id);
+      if (rigger !== this.serverPeerId && this.remotePlayers.has(rigger)) {
+        if (this.avatarPuppets) this.avatarPuppets.receive(message);
+        else void this.ensureAvatarPuppets().then((puppets) => puppets?.receive(message));
+      }
+    } else if (message.type === "voice-signal") {
+      this.voice?.handle(message);
+    } else if (
+      message.type === "interaction" &&
+      message.kind === "reaction" &&
+      message.from
+    ) {
+      this.receiveWorldReaction(message);
+    } else if (
+      message.type === "interaction" &&
+      ["bubble-invite", "bubble-knock", "bubble-decline"].includes(message.kind) &&
+      message.from
+    ) {
+      void this.ensureVoice().then((voice) => voice?.handle(message));
     } else if (message.type === "leave") {
       const departed = String(message.id || "");
+      this.avatarPuppets?.forget(departed);
       peersChanged = this.remotePlayers.delete(departed);
       this.pendingKnocks.delete(departed);
       this.pendingHandshakes.delete(departed);
@@ -33864,6 +33989,400 @@ class ForkMeshWorld extends HTMLElement {
     // change the public roster. Avoid re-walking every avatar and rebuilding
     // unrelated scene metrics for those high-frequency frames.
     if (peersChanged) this.schedulePeerRender();
+    if (peersChanged) this.syncWorldVoicePeers();
+  }
+
+  syncWorldVoicePeers() {
+    this.syncWorldBubbles();
+    this.onAirPeers ||= new Set();
+    for (const player of this.remotePlayers.values()) {
+      const live = Boolean(player.mic || player.cam);
+      if (live === this.onAirPeers.has(player.id)) continue;
+      if (live) this.onAirPeers.add(player.id);
+      else this.onAirPeers.delete(player.id);
+      this.world?.setAvatarOnAir?.(player.id, live);
+    }
+    for (const id of this.onAirPeers) {
+      if (this.remotePlayers.has(id)) continue;
+      this.onAirPeers.delete(id);
+      this.world?.setAvatarOnAir?.(id, false);
+    }
+    const talking = [...this.remotePlayers.values()].filter((player) => player.voice || player.words);
+    if (!talking.length) return;
+    const apply = (puppets) => {
+      for (const player of talking) puppets?.presence(player.id, player);
+    };
+    if (this.avatarPuppets) apply(this.avatarPuppets);
+    else void this.ensureAvatarPuppets().then(apply);
+  }
+
+  syncWorldBubbles() {
+    const groups = bubbleGroups(
+      this.remotePlayers,
+      this.voice?.room ? { room: this.voice.room } : null,
+    );
+    const key = JSON.stringify(groups);
+    if (key === this.worldBubbleKey) return;
+    this.worldBubbleKey = key;
+    this.world?.setPrivacyBubbles?.(groups);
+  }
+
+  receiveWorldReaction(message) {
+    void this.ensureAvatarPuppets().then((puppets) => {
+      const emoji = puppets?.emojiFor(message.reaction);
+      if (!emoji) return;
+      const from = String(message.from);
+      const target = String(message.target || "");
+      const toSelf = Boolean(target) && target === this.serverPeerId;
+      this.world?.playAvatarReaction?.(from, toSelf ? "self" : target || from, emoji);
+      const name = this.remotePlayers.get(from)?.name || "Someone";
+      this.popWorldReaction(emoji, from, name, { big: toSelf });
+      if (toSelf) {
+        const name = this.remotePlayers.get(from)?.name || "Someone";
+        this.notice(`${emoji} ${name} reacted to what you said.`);
+      }
+    });
+  }
+
+  ensureReactionPops() {
+    if (this.reactionPops) return Promise.resolve(this.reactionPops);
+    this.reactionPopsPromise ||= import("./world-reaction-pops.js")
+      .then((module) => {
+        if (this.destroyed) return null;
+        this.reactionPops = module.createReactionPops({
+          layer: () => this.$("[data-world-reaction-pops]"),
+          reducedMotion: Boolean(
+            window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches,
+          ),
+        });
+        return this.reactionPops;
+      })
+      .catch(() => {
+        this.reactionPopsPromise = null;
+        return null;
+      });
+    return this.reactionPopsPromise;
+  }
+
+  popWorldReaction(emoji, peerId, label = "", { big = false } = {}) {
+    void this.ensureReactionPops().then((pops) => {
+      pops?.pop(emoji, {
+        point: this.world?.avatarScreenPoint?.(peerId) || null,
+        label,
+        big,
+      });
+    });
+    this.world?.reactGenieSpider?.(emoji);
+  }
+
+  sendVoiceFrame(frame) {
+    const type = String(frame?.type || "");
+    if (type === "interaction") {
+      if (
+        !["bubble-invite", "bubble-knock", "bubble-decline", "reaction"].includes(
+          String(frame.kind || ""),
+        )
+      ) {
+        return false;
+      }
+    } else if (type !== "rig" && type !== "voice-signal") {
+      return false;
+    }
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
+    if (
+      type === "rig" &&
+      Number(this.socket.bufferedAmount || 0) > SOCKET_BUFFER_HIGH_WATER_BYTES
+    ) {
+      return false;
+    }
+    try {
+      this.socket.send(JSON.stringify(Object.assign({ type }, frame)));
+      this.socketOutboundFrames = incrementDiagnosticCounter(
+        this.socketOutboundFrames,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  voicePresence() {
+    return (
+      this.voice?.presence?.() || {
+        voice: "",
+        voiceName: "",
+        mic: false,
+        cam: false,
+        words: 0,
+      }
+    );
+  }
+
+  ensureAvatarPuppets() {
+    if (this.avatarPuppets) return Promise.resolve(this.avatarPuppets);
+    this.avatarPuppetsPromise ||= import("./world-avatar-puppets.js")
+      .then((module) => {
+        if (this.destroyed) return null;
+        this.avatarPuppets = module.createAvatarPuppets({
+          world: () => this.world,
+          ownPhoto: () => this.ownFacePhoto(),
+          onSelfFace: (canvas) => this.paintHudLiveFace(canvas),
+        });
+        this.avatarPuppetsTimer = window.setInterval(
+          () => this.avatarPuppets?.tick(),
+          100,
+        );
+        return this.avatarPuppets;
+      })
+      .catch(() => {
+        this.avatarPuppetsPromise = null;
+        return null;
+      });
+    return this.avatarPuppetsPromise;
+  }
+
+  ownFacePhoto() {
+    if (this.settings?.faceImagePreference === "generated") return null;
+    const png = String(readSession()?.avatarPng || "");
+    if (!png) return null;
+    if (this.ownFacePhotoSource !== png) {
+      this.ownFacePhotoSource = png;
+      this.ownFacePhotoImage = null;
+      if (png.length <= 90_000 && /^[A-Za-z0-9+/=]+$/.test(png)) {
+        const image = new Image();
+        image.decoding = "async";
+        image.src = `data:image/png;base64,${png}`;
+        this.ownFacePhotoImage = image;
+      }
+    }
+    const image = this.ownFacePhotoImage;
+    return image?.complete && image.naturalWidth ? image : null;
+  }
+
+  paintHudLiveFace(canvas) {
+    const live = this.$("[data-world-shirt-live]");
+    const still = this.$("[data-world-shirt-avatar]");
+    if (!live) return;
+    if (!canvas) {
+      live.hidden = true;
+      if (still) still.style.visibility = "";
+      return;
+    }
+    const context = live.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, live.width, live.height);
+    context.drawImage(canvas, 0, 0, live.width, live.height);
+    if (live.hidden) live.hidden = false;
+    if (still && still.style.visibility !== "hidden") still.style.visibility = "hidden";
+  }
+
+  ensureVoice() {
+    if (this.voice) return Promise.resolve(this.voice);
+    this.voicePromise ||= Promise.all([
+      import("./world-voice.js"),
+      this.ensureAvatarPuppets(),
+    ])
+      .then(([module]) => {
+        if (this.destroyed) return null;
+        this.voice = module.createWorldVoice(this.voiceHost());
+        this.voice.render();
+        return this.voice;
+      })
+      .catch(() => {
+        this.voicePromise = null;
+        this.notice("Voice could not load. Reload the page to try again.");
+        return null;
+      });
+    return this.voicePromise;
+  }
+
+  voiceHost() {
+    return {
+      documentRef: document,
+      session: () => readSession(),
+      selfId: () => this.serverPeerId,
+      popReaction: (emoji, label) => this.popWorldReaction(emoji, "self", label, { big: true }),
+      players: () => this.remotePlayers,
+      world: () => this.world,
+      puppets: () => this.avatarPuppets,
+      chatSpace: () => this.activeChatSpace(),
+      send: (frame) => this.sendVoiceFrame(frame),
+      presenceNow: () => this.sendPresenceNow({ type: "presence" }),
+      presenceSoon: () => this.sendPresence({ type: "presence" }),
+      notify: (text) => this.notice(text),
+      apiHeaders: (extra) => worldApiHeaders(extra),
+      audioHost: () => this.$("[data-world-voice-audio]"),
+      panelElement: () => this.$("[data-world-voice-panel]"),
+      perfElement: () => this.$("[data-world-voice-perf]"),
+      chartElement: () => this.$("[data-world-voice-chart]"),
+      syncButtons: (state) => this.syncVoiceButtons(state),
+      syncBubbles: () => {
+        this.worldBubbleKey = "";
+        this.syncWorldBubbles();
+      },
+      nearbyPlayers: (radius) => this.nearbyVoicePlayers(radius),
+      wearsPhotoFace: () =>
+        this.settings?.faceImage === true && Boolean(readSession()?.avatarPng),
+      version: () =>
+        document.querySelector('meta[name="forkmesh-world-version"]')
+          ?.content || "",
+      diagnostics: () => ({
+        quality: this.world?.qualityState?.() || null,
+        peers: this.remotePlayers.size,
+        socketOutbound: this.socketOutboundFrames,
+        socketBackpressure: this.socketBackpressureEvents,
+      }),
+    };
+  }
+
+  worldVoiceDetailMarkup(peerId, name) {
+    const peer = this.remotePlayers.get(String(peerId || ""));
+    if (!peer || peer.accountStatus === "Guest" || !this.chatSignedIn()) return "";
+    const mine = String(this.voice?.room?.id || "");
+    const theirs = String(peer.voice || "");
+    const button = (action, label, primary = false) =>
+      `<button type="button" class="${primary ? "world-primary-action" : "world-link-action"}" data-world-voice-action="${action}" data-world-voice-peer="${escapeHTML(peerId)}">${escapeHTML(label)}</button>`;
+    const actions = [];
+    let copy = `Talk with ${name} so only the two of you hear it: a privacy bubble wraps you both, and everyone else sees the bubble but never hears inside it.`;
+    if (mine.startsWith("bubble:") && theirs === mine) {
+      copy = `${name} is in your privacy bubble.`;
+    } else if (mine.startsWith("bubble:")) {
+      actions.push(button("invite", "Invite into my bubble", true));
+    } else if (theirs.startsWith("bubble:")) {
+      copy = `${name} is in a privacy bubble. You can ask to come in; someone inside decides.`;
+      actions.push(button("knock", "Ask to join their bubble", true));
+    } else {
+      actions.push(button("bubble", "Start a privacy bubble", true));
+    }
+    if (theirs && !theirs.startsWith("bubble:") && theirs !== "channel" && theirs !== mine) {
+      actions.push(button("join", "Join their voice room"));
+    }
+    return `<section class="world-detail-section" data-world-voice-detail>
+                <h3>Voice</h3>
+                <p>${escapeHTML(copy)}</p>
+                <div class="world-detail-actions">${actions.join("")}</div>
+              </section>`;
+  }
+
+  runWorldVoiceAction(action, peerId) {
+    const peer = this.remotePlayers.get(String(peerId || ""));
+    void this.ensureVoice().then((voice) => {
+      if (!voice || !peer) return;
+      if (action === "bubble") void voice.startBubble(peer.id);
+      else if (action === "invite") voice.invite(peer.id);
+      else if (action === "knock") voice.knock(peer.id);
+      else if (action === "join" && peer.voice) {
+        void voice.join({ id: peer.voice, name: peer.voiceName || "" });
+      }
+      voice.openPanel(true);
+      window.setTimeout(() => this.refreshWorldMemberDetail(peer.id), 600);
+    });
+  }
+
+  nearbyVoicePlayers(radius = 12) {
+    const here = this.lastMovement || {};
+    const space = String(here.space || this.currentSpace || "");
+    return [...this.remotePlayers.values()]
+      .filter(
+        (player) =>
+          player.accountStatus !== "Guest" &&
+          player.space === space &&
+          Math.hypot(
+            player.x - Number(here.x || 0),
+            player.z - Number(here.z || 0),
+          ) <= radius,
+      )
+      .slice(0, 8)
+      .map((player) => ({ id: player.id, name: player.name }));
+  }
+
+  syncVoiceButtons({ mic = false, cam = false, room = "", joining = false } = {}) {
+    const micButton = this.$("[data-world-voice-mic]");
+    const camButton = this.$("[data-world-voice-camera]");
+    if (micButton) {
+      micButton.setAttribute("aria-pressed", String(mic));
+      micButton.dataset.state = joining ? "joining" : mic ? "on" : room ? "listening" : "off";
+      micButton.title = mic
+        ? "Mute your microphone"
+        : room
+          ? "Listening · turn on your microphone to talk"
+          : "Talk: turn on your microphone";
+    }
+    if (camButton) {
+      camButton.setAttribute("aria-pressed", String(cam));
+      camButton.dataset.state = cam ? "on" : "off";
+      camButton.title = cam
+        ? "Turn the camera off"
+        : "Camera: your face, head and hands move your avatar";
+    }
+    const onAir = this.$("[data-world-on-air]");
+    if (onAir) {
+      const live = Boolean(mic || cam);
+      if (onAir.hidden === live) onAir.hidden = !live;
+      onAir.dataset.media = mic && cam ? "audio-video" : cam ? "video" : "audio";
+      this.$("[data-world-shirt-badge]")?.toggleAttribute("data-on-air", live);
+      this.world?.setAvatarOnAir?.("self", live);
+    }
+    const open = this.$("[data-world-voice-open]");
+    if (open) {
+      open.dataset.state = room ? "in-room" : "off";
+      open.setAttribute(
+        "aria-expanded",
+        String(this.$("[data-world-voice-panel]")?.hidden === false),
+      );
+    }
+  }
+
+  ensureChannels() {
+    if (this.worldChannels) return Promise.resolve(this.worldChannels);
+    this.worldChannelsPromise ||= import("./world-channels.js")
+      .then((module) => {
+        if (this.destroyed) return null;
+        this.worldChannels = module.createWorldChannels({
+          documentRef: document,
+          panel: this.$("[data-world-channels]"),
+          voice: () => this.voice,
+          ensureVoice: () => this.ensureVoice(),
+          players: () => this.remotePlayers,
+          spaces: () => this.chatSpaceChoices(),
+          signedIn: () => this.chatSignedIn(),
+          selectSpace: (space) => this.selectChatChannel(`space:${space}`),
+          loadPrivate: () => this.loadChatChannelChoices({ force: true }),
+          openOffice: (roomId) => this.openWorldOfficeRoom(roomId),
+        });
+        return this.worldChannels;
+      })
+      .catch(() => {
+        this.worldChannelsPromise = null;
+        return null;
+      });
+    return this.worldChannelsPromise;
+  }
+
+  async openChannelsPanel(options = {}) {
+    const channels = await this.ensureChannels();
+    if (!channels) return false;
+    channels.setOpen(true, options);
+    return true;
+  }
+
+  async openWorldOfficeRoom(roomId) {
+    const office = await this.ensureOfficeRuntime({ userInitiated: true });
+    const meeting = this.officeMeeting;
+    if (!office || !meeting) {
+      this.notice("The Office is not available right now.");
+      return false;
+    }
+    this.worldChannels?.setOpen(false);
+    const target =
+      roomId && /^[0-9a-f]{32}$/.test(String(roomId)) ? String(roomId) : "general";
+    meeting.openLobby();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (meeting.inRoom || (await meeting.joinRoom(target))) return true;
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+    }
+    this.notice("You are in the Office lobby. Use the meeting board on Marketing to pick a room.");
+    return false;
   }
 
   // A full renderPeers() pass walks the entire member directory (badges,
@@ -34938,6 +35457,12 @@ class ForkMeshWorld extends HTMLElement {
     const soundContext = this.soundContext;
     this.soundContext = null;
     soundContext?.close?.().catch(() => {});
+    this.voice?.destroy();
+    this.voice = null;
+    this.worldChannels?.destroy();
+    this.worldChannels = null;
+    window.clearInterval(this.avatarPuppetsTimer);
+    this.avatarPuppets = null;
     this.officeMeeting?.destroy();
     this.officeMeeting = null;
     this.officeController?.destroy();

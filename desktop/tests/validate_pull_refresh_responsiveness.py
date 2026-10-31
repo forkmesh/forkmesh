@@ -42,4 +42,15 @@ assert apply_loaded.index("snapshotDigest == m_pullSnapshotDigest") < apply_load
     "m_currentPulls = std::move(pulls)"
 ), "unchanged snapshots must return before replacing models or rebuilding widgets"
 
+REPO_SYNC = (ROOT / "src" / "MainWindowRepoSync.cpp").read_text(encoding="utf-8")
+converge_start = REPO_SYNC.find('QStringLiteral("Mesh converge %1: %2")')
+assert converge_start >= 0, "missing the mesh-converge completion handler"
+converge_end = REPO_SYNC.find("*reconciliationFetched &&", converge_start)
+assert converge_end > converge_start
+converge_done = REPO_SYNC[converge_start:converge_end]
+assert "reloadPullsInBackground();" in converge_done
+assert "reloadPulls();" not in converge_done, (
+    "the timer-driven converge completion must not load pulls on the GUI thread"
+)
+
 print("pull refresh responsiveness contract ok")

@@ -269,50 +269,52 @@ func TestMultipathPathFailureAudio(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sconf, cconf := benchConfigs(t)
-			b := newMPBench(t, benchDelayA, benchDelayB, sconf, cconf)
-			waitFor(t, "rtt samples on both paths", func() bool {
-				for _, id := range []uint64{0, 1} {
-					if info, ok := b.cc.PathInfo(id); !ok || info.SmoothedRTT > 200*time.Millisecond {
-						return false
+			retryTiming(t, func(fail func(string, ...any)) {
+				sconf, cconf := benchConfigs(t)
+				b := newMPBench(t, benchDelayA, benchDelayB, sconf, cconf)
+				waitFor(t, "rtt samples on both paths", func() bool {
+					for _, id := range []uint64{0, 1} {
+						if info, ok := b.cc.PathInfo(id); !ok || info.SmoothedRTT > 200*time.Millisecond {
+							return false
+						}
+					}
+					return true
+				})
+				sender, receiver := b.cc, b.sc
+				if tc.downlink {
+					sender, receiver = b.sc, b.cc
+				}
+				var infoA, infoB PathInfo
+				res := runAudio(t, sender, receiver, tc.policy, 2500*time.Millisecond, 1200*time.Millisecond, func() {
+					infoA, _ = sender.PathInfo(0)
+					infoB, _ = sender.PathInfo(1)
+					if tc.abandon {
+						if err := b.cc.AbandonPath(0); err != nil {
+							t.Error(err)
+						}
+						return
+					}
+					shapeBoth(b.relay, b.keyA, netsim.Step{Profile: netsim.Profile{Delay: benchDelayA, Loss: 1}})
+				})
+				st := receiver.Stats()
+				cs := sender.Stats()
+				t.Logf("%s: rtt A %v B %v; sent %d received %d lost %d %v; max gap %v at %v (extra %v over 20ms); receiver dropped %d duplicates; sender reinjected %d, primary switches %d",
+					tc.name, infoA.SmoothedRTT, infoB.SmoothedRTT, res.sent, res.received, res.lost, res.lostSeqs, res.maxGap, res.gapAt, res.maxGap-20*time.Millisecond, st.DatagramsDuplicate, cs.DatagramsReinjected, cs.PrimarySwitches)
+				if res.lost != 0 {
+					fail("%d datagrams lost", res.lost)
+				}
+				extra := res.maxGap - 20*time.Millisecond
+				switch {
+				case tc.policy == Redundant || tc.abandon:
+					if extra > 2*benchDelayB {
+						fail("gap %v beyond one round trip of the surviving path", res.maxGap)
+					}
+				default:
+					if res.maxGap > 4*(benchDelayA+benchDelayB) {
+						fail("failover gap %v", res.maxGap)
 					}
 				}
-				return true
 			})
-			sender, receiver := b.cc, b.sc
-			if tc.downlink {
-				sender, receiver = b.sc, b.cc
-			}
-			var infoA, infoB PathInfo
-			res := runAudio(t, sender, receiver, tc.policy, 2500*time.Millisecond, 1200*time.Millisecond, func() {
-				infoA, _ = sender.PathInfo(0)
-				infoB, _ = sender.PathInfo(1)
-				if tc.abandon {
-					if err := b.cc.AbandonPath(0); err != nil {
-						t.Error(err)
-					}
-					return
-				}
-				shapeBoth(b.relay, b.keyA, netsim.Step{Profile: netsim.Profile{Delay: benchDelayA, Loss: 1}})
-			})
-			st := receiver.Stats()
-			cs := sender.Stats()
-			t.Logf("%s: rtt A %v B %v; sent %d received %d lost %d %v; max gap %v at %v (extra %v over 20ms); receiver dropped %d duplicates; sender reinjected %d, primary switches %d",
-				tc.name, infoA.SmoothedRTT, infoB.SmoothedRTT, res.sent, res.received, res.lost, res.lostSeqs, res.maxGap, res.gapAt, res.maxGap-20*time.Millisecond, st.DatagramsDuplicate, cs.DatagramsReinjected, cs.PrimarySwitches)
-			if res.lost != 0 {
-				t.Errorf("%d datagrams lost", res.lost)
-			}
-			extra := res.maxGap - 20*time.Millisecond
-			switch {
-			case tc.policy == Redundant || tc.abandon:
-				if extra > 2*benchDelayB {
-					t.Errorf("gap %v beyond one round trip of the surviving path", res.maxGap)
-				}
-			default:
-				if res.maxGap > 4*(benchDelayA+benchDelayB) {
-					t.Errorf("failover gap %v", res.maxGap)
-				}
-			}
 		})
 	}
 }

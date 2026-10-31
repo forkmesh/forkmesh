@@ -39,7 +39,7 @@ async function openInsights(page) {
         body: "window.lucide = { createIcons() {} };",
       }),
   );
-  await page.route("**/alice/proj/insights", (route) =>
+  await page.route("**/alice/proj/insights**", (route) =>
     route.fulfill({
       path: REPO_PAGE_PATH,
       contentType: "text/html; charset=utf-8",
@@ -94,7 +94,7 @@ async function openInsights(page) {
     });
   });
 
-  await page.goto("/alice/proj/insights");
+  await page.goto("/alice/proj/insights?view=contributors");
   const graph = page.locator("[data-repo-activity-graph]");
   await expect(graph).toBeVisible();
   return graph;

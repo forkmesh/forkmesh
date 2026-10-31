@@ -47,7 +47,7 @@ def test_users_column_keeps_only_directory_accounts():
 
 def test_filter_waits_for_a_loaded_directory():
     body = _members_body()
-    guard = body.index("if (m_chatDirectoryLoaded) {")
+    guard = body.index("if (m_chatDirectoryLoaded && !meshRoom) {")
     assert guard < body.index("accountKeys.contains(g.key)")
 
 

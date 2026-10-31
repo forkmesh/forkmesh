@@ -70,6 +70,7 @@ ATTACHMENT_CHUNK_BYTES = 256 * 1024
 # cannot fill the table from one address.
 RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
 RATE_LIMIT_MAX = 10
+ANONYMOUS_ATTACHMENT_BYTES_PER_WINDOW = 64 * 1024 * 1024
 
 # Reports the console has not been shown yet are what the badge counts, so the
 # statuses are deliberately few and mean exactly one thing each.
@@ -182,7 +183,7 @@ async def _reporter_key(env, request, account):
     """
     if account:
         return await blind_index(env, "bug-reporter:account:" + account)
-    address = _transient_client_address(request)
+    address = _client_source_bucket(_transient_client_address(request))
     if not address:
         # No usable address means no per-address quota is possible. Fall back
         # to one shared bucket rather than to no bucket at all.
@@ -199,6 +200,17 @@ async def recent_report_count(env, reporter_bi, now=None):
         "WHERE reporter_bi=? AND created_at >= ?",
         reporter_bi, now - RATE_LIMIT_WINDOW_MS)
     return int((row or {}).get("n", 0) or 0)
+
+
+async def recent_anonymous_attachment_bytes(env, now=None):
+    now = int(Date.now()) if now is None else int(now)
+    row = await d1_first(
+        env,
+        "SELECT COALESCE(SUM(a.size),0) AS bytes FROM bug_reports r "
+        "JOIN bug_report_attachments a ON a.report_id=r.report_id "
+        "AND a.chunk_index=0 WHERE r.account='' AND r.created_at >= ?",
+        now - RATE_LIMIT_WINDOW_MS)
+    return int((row or {}).get("bytes", 0) or 0)
 
 
 async def store_report(env, record, reporter_bi, account):
@@ -271,6 +283,8 @@ def capability_document(env=None):
             "attachmentBytesEach": MAX_ATTACHMENT_BYTES,
             "attachmentBytesTotal": MAX_ATTACHMENT_BYTES_TOTAL,
             "perReporterPerHour": RATE_LIMIT_MAX,
+            "signedOutAttachmentBytesPerHour":
+                ANONYMOUS_ATTACHMENT_BYTES_PER_WINDOW,
         },
         "private": True,
     }
@@ -329,6 +343,18 @@ async def bug_reports_handler(env, request):
             extra_headers={
                 "retry-after": str(int(RATE_LIMIT_WINDOW_MS / 1000))})
     attachments = _attachments(data.get("attachments"))
+    incoming = sum(int(item.get("size") or 0) for item in attachments)
+    if incoming and not account and (
+            await recent_anonymous_attachment_bytes(env) + incoming
+            > ANONYMOUS_ATTACHMENT_BYTES_PER_WINDOW):
+        return json_response(
+            {"error": "attachments_busy",
+             "detail": "too many signed-out attachments in the last hour; "
+                       "sign in or send the report without attachments",
+             "retryAfterSeconds": int(RATE_LIMIT_WINDOW_MS / 1000)},
+            status=429, cache_control=no_store,
+            extra_headers={
+                "retry-after": str(int(RATE_LIMIT_WINDOW_MS / 1000))})
     for raw, stored_attachment in zip(attachments, record["attachments"]):
         raw["id"] = stored_attachment["id"]
     report_id, stored = await store_report(

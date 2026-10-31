@@ -1,4 +1,9 @@
 const { test, expect } = require("@playwright/test");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const RETAINED_KEY_ADVERTISEMENTS = 1;
 
 
 test.setTimeout(90_000);
@@ -42,7 +47,33 @@ async function signup(request, name, sourceAddress) {
     requestHeaders: { "cf-connecting-ip": sourceAddress },
   });
   expect(result.status, JSON.stringify(result.body)).toBe(201);
-  return result.body;
+  await confirmEmail(request, result.body.nodeName, `${name}@example.test`);
+  return { ...result.body, emailVerified: true };
+}
+
+
+function browserTestDataKey() {
+  const config = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "..", "world", "browser_tests", "wrangler.browser-tests.toml"),
+    "utf8",
+  );
+  return config.match(/^DATA_KEY\s*=\s*"([^"]+)"/m)[1];
+}
+
+
+async function confirmEmail(request, nodeName, email) {
+  const issuedAt = Date.now();
+  const key = crypto.createHash("sha256").update(`${browserTestDataKey()}:blind-index`).digest();
+  const mac = crypto.createHmac("sha256", key)
+    .update(`forkmesh-email-verify-v3\n${nodeName}\n${email}\n${issuedAt}`)
+    .digest();
+  const stamp = Buffer.alloc(6);
+  stamp.writeUIntBE(issuedAt, 0, 6);
+  const token = Buffer.concat([stamp, mac]).toString("base64url");
+  const response = await request.post("/api/accounts/verify-email", {
+    form: { node: nodeName, token },
+  });
+  expect(await response.text()).toContain("Email confirmed");
 }
 
 
@@ -134,7 +165,7 @@ test("real participants create, replay, and isolate an encrypted direct message"
   );
 
   const privateProfile = await api(request, "/api/accounts/profile", {
-    token: bob.sessionToken,
+    token: outsider.sessionToken,
     method: "POST",
     data: { profilePrivate: true },
   });
@@ -142,7 +173,16 @@ test("real participants create, replay, and isolate an encrypted direct message"
   const publicDirectory = await api(request, "/api/accounts/users");
   expect(publicDirectory.status).toBe(200);
   expect(publicDirectory.body.users.map((user) => user.name)).not.toContain(
-    bobName,
+    outsiderName,
+  );
+  const directSearch = await api(
+    request,
+    `/api/chat/direct-messages/users?query=${encodeURIComponent(outsiderName)}`,
+    { token: alice.sessionToken },
+  );
+  expect(directSearch.status).toBe(200);
+  expect(directSearch.body.users.map((user) => user.name)).not.toContain(
+    outsiderName,
   );
 
   const aliceBrowser = await accountPage(browser, alice);
@@ -201,7 +241,9 @@ test("real participants create, replay, and isolate an encrypted direct message"
     mimeType: "text/plain",
     buffer: Buffer.from("private attachment body"),
   });
-  await expect.poll(() => retainedFrames.length).toBe(5);
+  await expect.poll(() => retainedFrames.length).toBe(
+    RETAINED_KEY_ADVERTISEMENTS + 5,
+  );
   expect(retainedFrames.join("\n")).not.toContain("First private message");
   expect(retainedFrames.join("\n")).not.toContain("Second private message");
   expect(retainedFrames.join("\n")).not.toContain("private attachment body");
@@ -212,7 +254,7 @@ test("real participants create, replay, and isolate an encrypted direct message"
       token: bob.sessionToken,
     });
     return bobConversations.body.conversations?.[0]?.unreadCount;
-  }).toBe(5);
+  }).toBe(4);
   const conversation = bobConversations.body.conversations[0];
 
   const reopened = await api(request, "/api/chat/direct-messages", {
@@ -236,7 +278,7 @@ test("real participants create, replay, and isolate an encrypted direct message"
     bobBrowser.page.getByRole("button", {
       name: `Direct message with ${aliceName}`,
     }).locator(".chat-room-unread"),
-  ).toHaveText("5");
+  ).toHaveText("4");
   await bobBrowser.page.getByRole("button", {
     name: `Direct message with ${aliceName}`,
   }).click();

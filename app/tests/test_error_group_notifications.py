@@ -13,6 +13,7 @@ import ast
 import asyncio
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from _maintenance_stubs import with_maintenance_off
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -114,6 +115,7 @@ def _harness(admins=("root",)):
         "valid_node_name": lambda name: bool(name) and name.isalnum(),
         "clean_string": lambda value, limit: str(value or "")[:limit],
         "_privacy_safe_error_text": lambda _path, message: message,
+        "instance_privacy": SimpleNamespace(active=lambda _env: False),
         "_safe_error_text": str,
         "_error_log_actor": _error_log_actor,
         "method_name": lambda request: "GET",
@@ -298,10 +300,10 @@ def test_every_blocking_signup_refusal_is_recorded():
                    "account_pending_verification", "rate_limited"):
         assert reason in handler
         assert handler.count('"%s"' % reason) >= 1
-    # Two expired-intent sites, the referral gate, quarantine, the per-IP
-    # throttle, and username moderation.
-    assert handler.count("await log_blocked_signup(") == 6
-    assert handler.count("SIGNUP_PATH") == 7
+    # Two expired-intent sites, closed sign-up, the referral gate,
+    # quarantine, the per-IP throttle, and username moderation.
+    assert handler.count("await log_blocked_signup(") == 7
+    assert handler.count("SIGNUP_PATH") == 8
 
 
 def test_node_claim_routes_record_their_blocking_refusals():

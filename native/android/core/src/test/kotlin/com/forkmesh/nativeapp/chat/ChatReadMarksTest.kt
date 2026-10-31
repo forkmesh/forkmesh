@@ -74,11 +74,35 @@ class ChatReadMarksTest {
         hub.applyReadMarks()
         assertEq(2, relay.unread["#random"])
         api.marks = mapOf("#random" to 2_000L)
-        hub.applyReadMarks()
+        hub.applyReadMarks(force = true)
         expect(relay.unread.isEmpty())
         chat(relay, "replayed", 1_800)
         chat(relay, "fresh", 3_000)
         assertEq(1, relay.unread["#random"])
+    }
+
+    fun testReadMarksAreFetchedAtMostOnceInFiveSecondsUnlessPushed() {
+        val relay = FakeChatRelay()
+        val hub = ChatHub(relay)
+        val api = FakeCalling()
+        hub.readMarks = marks(api)
+        var now = 100_000L
+        hub.readMarksClock = { now }
+        chat(relay, "one", 1_000)
+        api.marks = mapOf("#random" to 500L)
+        hub.applyReadMarks()
+        val fetched = api.calls.size
+        api.marks = mapOf("#random" to 1_000L)
+        now += 4_000
+        hub.applyReadMarks()
+        assertEq(fetched, api.calls.size)
+        assertEq(1, relay.unread["#random"])
+        now += 1_000
+        hub.applyReadMarks()
+        assertEq(fetched * 2, api.calls.size)
+        expect(relay.unread.isEmpty())
+        hub.applyReadMarks(force = true)
+        assertEq(fetched * 3, api.calls.size)
     }
 
     fun testOpeningAConversationQueuesItsNewestMessage() {

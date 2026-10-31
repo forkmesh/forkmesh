@@ -232,12 +232,12 @@
         : "";
     const privateItems = Array.isArray(data.private) ? data.private : [];
     const privateSection = data.maintainer || privateItems.length ? `
-      <section data-security-private class="overflow-hidden rounded-md border border-border">
+      <section data-security-private id="security-private" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
         <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="lock" class="h-4 w-4 text-muted-foreground"></i>${data.maintainer ? "Reports and drafts" : "Your private reports"}<span class="fm-counter">${privateItems.length}</span><span class="ml-auto text-[12px] font-normal text-muted-foreground">Only visible to you${data.maintainer ? ", the reporters and collaborators" : " and the maintainers"}</span></div>
         ${securityList(repo, privateItems, "No reports are waiting for triage.")}
       </section>` : "";
     const settings = data.admin ? `
-      <section data-security-settings class="flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
+      <section data-security-settings id="security-settings" class="scroll-mt-4 flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
         <i data-lucide="settings" class="h-4 w-4 text-muted-foreground"></i>
         <div class="min-w-0 flex-1">
           <p class="text-[14px] font-semibold text-foreground">Private vulnerability reporting</p>
@@ -245,8 +245,17 @@
         </div>
         <button type="button" data-security-action="reporting" data-enable="${data.reportingEnabled ? "0" : "1"}" class="inline-flex h-8 items-center rounded-md border border-border px-3 text-[14px] text-foreground hover:bg-secondary">${data.reportingEnabled ? "Turn off" : "Turn on"}</button>
       </section>` : "";
+    const railItem = (target, icon, label, count = null) => `<li><button type="button" data-repo-rail-jump="${target}" class="fm-rail-item"><i data-lucide="${icon}"></i><span class="min-w-0 truncate">${escapeHtml(label)}</span>${count === null ? "" : `<span class="fm-counter">${formatCount(count)}</span>`}</button></li>`;
+    const rail = [
+      railItem("security-policy", "shield", "Security policy"),
+      railItem("security-published", "shield-check", "Advisories", (data.published || []).length),
+      privateSection ? railItem("security-private", "lock", data.maintainer ? "Reports" : "Your reports", privateItems.length) : "",
+      settings ? railItem("security-settings", "settings", "Settings") : "",
+    ].join("");
     container.innerHTML = `
-      <div data-security-overview class="grid gap-5 py-2">
+      <div data-security-overview data-repo-rail-layout class="grid gap-5 py-2">
+        <nav data-repo-rail aria-label="Security sections" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Security</h2><ul class="fm-rail-list">${rail}</ul></div></nav>
+        <div data-repo-rail-main class="grid min-w-0 content-start gap-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <h2 class="text-xl font-semibold text-foreground">Security</h2>
@@ -254,16 +263,17 @@
           </div>
           <div class="flex flex-wrap gap-2">${reportButton}</div>
         </div>
-        <section class="overflow-hidden rounded-md border border-border">
+        <section id="security-policy" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield" class="h-4 w-4 text-muted-foreground"></i>Security policy<span data-security-policy-source class="ml-auto font-mono text-[12px] font-normal text-muted-foreground"></span></div>
           <div data-security-policy class="px-4 py-4 text-sm text-muted-foreground">${loadingHtml("Reading SECURITY.md...")}</div>
         </section>
-        <section data-security-published class="overflow-hidden rounded-md border border-border">
+        <section data-security-published id="security-published" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>Published advisories<span class="fm-counter">${(data.published || []).length}</span><a href="/advisories" class="ml-auto text-[12px] font-normal text-primary hover:underline">All advisories on this site</a></div>
           ${securityList(repo, data.published || [], "There are no published security advisories.")}
         </section>
         ${privateSection}
         ${settings}
+        </div>
       </div>`;
   }
 

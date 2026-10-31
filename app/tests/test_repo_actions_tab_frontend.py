@@ -50,7 +50,7 @@ def test_tab_strip_panel_and_loaders_are_wired():
     assert 'actions: { label: "Actions", icon: "workflow", count: "" }' in DASHBOARD_JS
     assert '"pulls", "discussions", "insights", "projects", "actions"' in DASHBOARD_JS
     assert 'data-dashboard-repo-tab-panel="actions"' in DASHBOARD_JS
-    assert "<div data-repo-actions></div>" in DASHBOARD_JS
+    assert '<div data-repo-actions class="mt-4 min-w-0 lg:mt-0"></div>' in DASHBOARD_JS
     # Opened by click, restored by deep link, and silenced when left.
     assert 'if (tab === "actions") void loadRepoActions(state.selectedRepo);' in DASHBOARD_JS
     assert '} else if (active === "actions") {' in DASHBOARD_JS

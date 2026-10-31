@@ -358,12 +358,19 @@ final class NativeCallMedia {
         return (track, pipeline)
     }
 
-    func beginAudio() {
+    func beginAudio(video: Bool = false) {
         audioUsers += 1
-        guard !callKitOwnsAudio else { return }
+        let configuration = RTCAudioSessionConfiguration.webRTC()
+        configuration.category = AVAudioSession.Category.playAndRecord.rawValue
+        configuration.mode = (video ? AVAudioSession.Mode.videoChat : AVAudioSession.Mode.voiceChat).rawValue
+        RTCAudioSessionConfiguration.setWebRTC(configuration)
         let session = RTCAudioSession.sharedInstance()
         session.lockForConfiguration()
-        try? session.setConfiguration(RTCAudioSessionConfiguration.webRTC(), active: true)
+        if callKitOwnsAudio {
+            try? session.setConfiguration(configuration)
+        } else {
+            try? session.setConfiguration(configuration, active: true)
+        }
         session.unlockForConfiguration()
         session.isAudioEnabled = true
     }

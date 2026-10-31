@@ -30,9 +30,10 @@ and "Native face renderer (iOS)".
 | --- | --- |
 | Reference codec (Go), fuzz targets, parity fixture generator | `server/rtc/facestream/` |
 | Browser: codec, sender helpers, receiver, WebGL renderer, tile | `app/public/chat-call-facestream.js` |
+| The 68-point 3D template (shared with the World's avatar rig) | `app/public/chat-call-face-template.js`, re-exported as `FACE_STREAM_TEMPLATE` |
 | iPhone and Linux: codec, sender helpers, receiver maths | `native/ios/ForkMeshCore/Sources/FMChat/FaceStream/` |
 | iPhone app: Metal renderer, reference capture, tile badge | `native/ios/ForkMesh/Features/Chat/Calls/Native/NativeFaceStream*.swift`, `NativeFaceStream.metal` |
-| Android: codec only (no renderer yet) | `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/chat/facestream/` |
+| Android: codec; the group call WebView renders with the browser's module | `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/chat/facestream/`, `native/android/app/src/main/assets/group-call/` |
 | Receiver maths for the phones (matte, plate, mouth atlas, warp anchor) | `native/ios/ForkMeshCore/Sources/FMChat/FaceStream/FaceStreamLayers.swift` |
 | Quality harness (headless Chromium) | `tools/face_stream_eval.mjs` |
 | Real talking-head test clips, pinned by hash, with their licences | `tools/testdata/face-stream/` (`clips.json`) |
@@ -433,8 +434,11 @@ tile. References and atlases are prepared on a loader queue; frames keep
 drawing with the previous ones until the new ones are ready.
 
 **Android.** The codec (frames, reference pictures, mouth atlases) and the
-fixture test only. The OpenGL renderer comes with the face changer's Android
-renderer.
+fixture test. The group call page runs in a WebView with a copy of
+`chat-call-facestream.js`, so it receives and draws face streams with the
+browser renderer, and sends one from the browser's face mesh network
+whenever the server asks (`docs/native/ANDROID.md`, "Group calls on FM
+Media").
 
 ## Privacy
 

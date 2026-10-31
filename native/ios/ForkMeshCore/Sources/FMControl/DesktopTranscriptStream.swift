@@ -11,6 +11,7 @@ public final class DesktopTranscriptStream {
     private static var holders: [Holder] = []
 
     public let sessionId: Int
+    public let desktopKey: String
     public private(set) var next: Int
     public private(set) var isStreaming = false
 
@@ -34,6 +35,7 @@ public final class DesktopTranscriptStream {
         hub: DesktopControlHub,
         sessionId: Int,
         since: Int = 0,
+        desktopKey: String = "",
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
         },
@@ -42,6 +44,7 @@ public final class DesktopTranscriptStream {
     ) {
         self.hub = hub
         self.sessionId = sessionId
+        self.desktopKey = desktopKey
         self.next = since
         self.sleep = sleep
         self.onEnded = onEnded
@@ -53,7 +56,7 @@ public final class DesktopTranscriptStream {
         stopped = false
         hold()
         if tapId == nil {
-            tapId = hub.addEventTap { [weak self] name, data in self?.onEvent(name, data) }
+            tapId = hub.addEventTap({ [weak self] name, data in self?.onEvent(name, data) }, for: desktopKey)
         }
         if linkId == nil {
             linkId = hub.addLinkListener { [weak self] in self?.linkChanged() }
@@ -82,7 +85,7 @@ public final class DesktopTranscriptStream {
         if let linkId { hub.removeLinkListener(linkId) }
         tapId = nil
         linkId = nil
-        if !release(), let link = hub.currentLink {
+        if !release(), let link = hub.openLink(for: desktopKey) {
             let id = sessionId
             Task { _ = try? await link.request("agents.unfollow", ["id": .int(Int64(id))], timeout: 5) }
         }
@@ -102,7 +105,7 @@ public final class DesktopTranscriptStream {
             }
         }
         do {
-            let link = try await hub.link()
+            let link = try await hub.link(to: desktopKey)
             followedLink = ObjectIdentifier(link)
             let answer = try await link.request(
                 "agents.follow", ["id": .int(Int64(sessionId)), "since": .int(Int64(next))], timeout: 20)
@@ -174,7 +177,7 @@ public final class DesktopTranscriptStream {
         if since > 0 { params["since"] = .int(Int64(since)) }
         let answer: JSONObject
         do {
-            answer = try await hub.request("agents.transcript", params)
+            answer = try await hub.request("agents.transcript", params, to: desktopKey)
         } catch {
             if stopped || attempt != generation { return }
             filling = false
@@ -210,7 +213,7 @@ public final class DesktopTranscriptStream {
         Self.holders.removeAll { $0.stream == nil || $0.stream === self }
         return Self.holders.contains { holder in
             guard let other = holder.stream else { return false }
-            return other.hub === hub && other.sessionId == sessionId
+            return other.hub === hub && other.sessionId == sessionId && other.desktopKey == desktopKey
         }
     }
 
@@ -222,9 +225,9 @@ public final class DesktopTranscriptStream {
 
     private func linkChanged() {
         if stopped || awaiting { return }
-        if let link = hub.currentLink, ObjectIdentifier(link) == followedLink { return }
+        if let link = hub.openLink(for: desktopKey), ObjectIdentifier(link) == followedLink { return }
         isStreaming = false
-        if hub.currentLink != nil {
+        if hub.openLink(for: desktopKey) != nil {
             Task { await self.follow() }
         } else {
             scheduleRetry()

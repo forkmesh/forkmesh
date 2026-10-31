@@ -37,6 +37,7 @@ struct InboxItemScreen: View {
                     }
                     if !item.actor.isEmpty {
                         LabeledContent("From", value: "@\(item.actor)")
+                            .opensProfile(item.actor)
                     }
                     if !linkText.isEmpty {
                         LabeledContent("Link") {
@@ -78,6 +79,9 @@ struct InboxItemScreen: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
+            FmTextButton("Inbox", icon: "chevron_left", minHeight: 36, onPressed: { dismiss() })
+                .padding(.leading, -FmSpace.x3)
+                .accessibilityIdentifier("ping-detail-back")
             HStack(spacing: 12) {
                 FmIconTile(icon: item.icon, tint: fm.accent, size: 40, iconSize: 20)
                 VStack(alignment: .leading, spacing: 2) {

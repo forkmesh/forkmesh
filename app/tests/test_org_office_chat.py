@@ -152,3 +152,38 @@ def test_a_user_channel_with_the_same_name_is_never_adopted(world):
     mapped = asyncio.run(m.sync(None, ORG, "acme"))
     assert "general" not in mapped
     assert _members(db, "f" * 32) == set()
+
+
+def test_dissolving_the_org_removes_its_office_channels_and_members(world):
+    db, m = world["db"], world["m"]
+    db.executescript("""
+        CREATE TABLE chat_channel_webhooks (channel_id TEXT, webhook_id TEXT);
+        CREATE TABLE chat_channel_invites (channel_id TEXT, code TEXT);
+        CREATE TABLE chat_channel_reads (channel_id TEXT, account_bi TEXT);
+    """)
+    db.execute("INSERT INTO chat_channels VALUES (?,?,?,?,0,0,1)",
+               ("f" * 32, "user-channel", "sealed:{}", "e" * 64))
+    mapped = asyncio.run(m.sync(None, ORG, "acme"))
+    for channel_id in mapped.values():
+        db.execute("INSERT INTO chat_channel_reads VALUES (?,?)",
+                   (channel_id, "b" * 64))
+    db.commit()
+    world["notified"].clear()
+    assert asyncio.run(m.dissolve(None, ORG)) == len(m.ROOMS)
+    assert db.execute("SELECT COUNT(*) FROM org_office_channels").fetchone()[0] == 0
+    assert [r[0] for r in db.execute("SELECT channel_id FROM chat_channels")] == [
+        "f" * 32]
+    for table in ("chat_channel_members", "chat_channel_reads"):
+        assert db.execute("SELECT COUNT(*) FROM %s" % table).fetchone()[0] == 0
+    assert {cid for cid, _version in world["revoked"]} >= set(mapped.values())
+    assert ("dave", "private-channels") in world["notified"]
+
+
+def test_organization_delete_dissolves_the_office_before_the_roster():
+    from pathlib import Path
+    entry = (Path(__file__).resolve().parents[1] / "src" / "entry.py").read_text(
+        encoding="utf-8")
+    start = entry.index('"organization.dissolve"):')
+    handler = entry[start:entry.index('DELETE FROM orgs WHERE org_bi=?', start)]
+    assert handler.index("await org_office_chat.dissolve(env, org_bi)") < handler.index(
+        '"DELETE FROM org_members WHERE org_bi=?"')

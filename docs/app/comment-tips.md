@@ -23,7 +23,11 @@ or the platform payout code).
    (`&spl-token=<mint>` for a token).
 3. The sheet shows the link as a QR code (`ForkMeshQR`, as on the profile's
    tips card), an **Open in wallet** link and **Copy payment link**. The
-   tipper's wallet signs and sends.
+   tipper's wallet signs and sends. `world/public/qr.js` encodes up to QR
+   version 9 (230 bytes), enough for a token request with `spl-token` and
+   `reference`; when a request is longer, the QR drops the message and then
+   the label, while **Open in wallet** keeps them. A test pins the encoder
+   module for module against an independent one.
 4. While the sheet is open it asks `POST /api/tips/verify {reference}` every
    6 seconds for 3 minutes (and on **I've sent it - check now**). The
    `tip-verify` cron phase (every 5 minutes) looks again for up to three

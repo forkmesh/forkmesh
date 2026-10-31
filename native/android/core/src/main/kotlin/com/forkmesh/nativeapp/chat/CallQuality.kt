@@ -1,7 +1,6 @@
 package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.json.jsonText
-import java.util.Locale
 
 enum class CallQualityGrade(val wire: String, val label: String) {
     GOOD("good", "Good connection"),
@@ -42,6 +41,10 @@ data class CallQualitySample(
     val outHeight: Int? = null,
     val outFps: Double? = null,
     val limit: String = "",
+    val at: Double = 0.0,
+    val faceFps: Double? = null,
+    val faceMs: Double? = null,
+    val faceLevel: Double? = null,
 )
 
 data class CallQualityEvent(val sample: CallQualitySample, val levels: List<CallLevel>)
@@ -98,7 +101,7 @@ object CallQuality {
         return maxOf(1, 4 - penalty)
     }
 
-    fun parse(message: Map<String, Any?>): CallQualityEvent? {
+    fun parse(message: Map<String, Any?>, at: Double = System.currentTimeMillis() / 1000.0): CallQualityEvent? {
         if (jsonText(message["event"]) != "quality") return null
         val live = message["live"] == true
         val rtt = number(message["rttMs"])
@@ -123,6 +126,10 @@ object CallQuality {
             outHeight = size(message["outHeight"]),
             outFps = number(message["outFps"]),
             limit = jsonText(message["limit"]).takeIf { it != "none" }.orEmpty(),
+            at = at,
+            faceFps = number(message["faceFps"]),
+            faceMs = number(message["faceMs"]),
+            faceLevel = number(message["faceLevel"]),
         )
         val mic = message["mic"] as? List<*> ?: emptyList<Any?>()
         val peer = message["peer"] as? List<*> ?: emptyList<Any?>()
@@ -130,13 +137,9 @@ object CallQuality {
         return CallQualityEvent(sample, levels.takeLast(LEVEL_SAMPLES))
     }
 
-    private fun fixed(value: Double, digits: Int): String = String.format(Locale.US, "%.${digits}f", value)
+    private fun fixed(value: Double, digits: Int): String = CallDiagnostics.fixed(value, digits)
 
-    fun formatKbps(kbps: Double?): String = when {
-        kbps == null -> ""
-        kbps >= 1000 -> fixed(kbps / 1000, 1) + " Mb/s"
-        else -> "${Math.round(kbps)} kb/s"
-    }
+    fun formatKbps(kbps: Double?): String = CallDiagnostics.formatKbps(kbps?.takeIf { it.isFinite() })
 
     fun rttText(sample: CallQualitySample?): String {
         val rtt = sample?.rttMs ?: return ""

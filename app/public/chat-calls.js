@@ -7,10 +7,14 @@ import {
   createFaceStage,
 } from "./chat-call-faces.js";
 import {
+  AVATAR_FACE_ID,
   CUSTOM_FACE_ID,
   customFaceFromFile,
+  faceImageFor,
+  photoFaceId,
   rememberCustomFaceImage,
   savedCustomFaceImage,
+  stageFaceFor,
 } from "./chat-call-face-custom.js";
 import {
   CALL_BACKGROUNDS,
@@ -152,6 +156,7 @@ export function createChatCalls({
   documentRef = globalThis.document,
   windowRef = globalThis,
   storage = globalThis.localStorage,
+  avatarImage = () => "",
   facesSupported = () => callFacesSupported(documentRef),
   backgroundsSupported = () => callBackgroundsSupported(documentRef),
   createFaceStageImpl = createFaceStage,
@@ -448,7 +453,11 @@ export function createChatCalls({
     setHidden(remoteVideo, call.media !== "video");
     setHidden(cameraBtn, call.media !== "video");
     setHidden(faceRow, call.media !== "video" || !facesSupported());
-    if (faceSelect) faceSelect.value = call.stage?.face() || "";
+    if (faceSelect) {
+      const avatarOption = [...(faceSelect.options || [])].find((option) => option.value === AVATAR_FACE_ID);
+      if (avatarOption) avatarOption.hidden = !faceImageFor(AVATAR_FACE_ID, { avatarImage });
+      faceSelect.value = call.stage ? call.faceId || call.stage.face() || "" : "";
+    }
     renderBackgrounds();
     const previewing = call.phase === "preview";
     toggleClass(panel, "is-preview", previewing);
@@ -637,7 +646,7 @@ export function createChatCalls({
   }
 
   function knownFace(id) {
-    if (id === CUSTOM_FACE_ID) return savedCustomFaceImage(storage) ? CUSTOM_FACE_ID : "";
+    if (photoFaceId(id)) return faceImageFor(id, { storage, avatarImage }) ? id : "";
     return callFaceById(id)?.id || "";
   }
 
@@ -652,10 +661,14 @@ export function createChatCalls({
   function watchCustomFace() {
     const started = Date.now();
     const check = () => {
-      if (!call || call.faceId !== CUSTOM_FACE_ID || !call.stage?.faceState) return;
+      if (!call || !photoFaceId(call.faceId) || !call.stage?.faceState) return;
       const state = call.stage.faceState();
       if (state === "failed") {
-        if (stateLabel) stateLabel.textContent = "No face found in that photo. Try a clear, front-facing photo.";
+        if (stateLabel) {
+          stateLabel.textContent = call.faceId === AVATAR_FACE_ID
+            ? "No face found in your avatar. Pick another face or use a clear, front-facing profile photo."
+            : "No face found in that photo. Try a clear, front-facing photo.";
+        }
         rememberFace("");
         useFace("");
         renderPanel();
@@ -697,9 +710,9 @@ export function createChatCalls({
     const face = knownFace(id);
     if (face && !facesSupported()) return;
     call.faceId = face;
-    call.faceImage = face === CUSTOM_FACE_ID ? savedCustomFaceImage(storage) : "";
+    call.faceImage = faceImageFor(face, { storage, avatarImage });
     refreshStage();
-    if (face === CUSTOM_FACE_ID) watchCustomFace();
+    if (photoFaceId(face)) watchCustomFace();
   }
 
   function useBackground(id, image = "") {
@@ -715,8 +728,8 @@ export function createChatCalls({
     if (!call || call.media !== "video") return;
     const wanted = Boolean(call.faceId || call.backgroundId);
     if (wanted && call.stage) {
-      if (call.stage.face() !== call.faceId || (call.faceId === CUSTOM_FACE_ID && call.stageFaceImage !== call.faceImage)) {
-        call.stage.setFace(call.faceId, call.faceImage || "");
+      if (call.stage.face() !== stageFaceFor(call.faceId) || (photoFaceId(call.faceId) && call.stageFaceImage !== call.faceImage)) {
+        call.stage.setFace(stageFaceFor(call.faceId), call.faceImage || "");
         call.stageFaceImage = call.faceImage || "";
       }
       if ((call.stage.background?.() || "") !== call.backgroundId || call.backgroundId === "custom") {
@@ -726,7 +739,7 @@ export function createChatCalls({
       try {
         call.stage = createFaceStageImpl({
           cameraStream: call.localStream,
-          faceId: call.faceId,
+          faceId: stageFaceFor(call.faceId),
           faceImage: call.faceImage || "",
           backgroundId: call.backgroundId,
           backgroundImage: call.backgroundImage,
@@ -1183,7 +1196,7 @@ export function createChatCalls({
   function useSaved() {
     const saved = savedCallBackground(storage);
     call.faceId = facesSupported() ? savedFace() : "";
-    call.faceImage = call.faceId === CUSTOM_FACE_ID ? savedCustomFaceImage(storage) : "";
+    call.faceImage = faceImageFor(call.faceId, { storage, avatarImage });
     call.backgroundId = backgroundsSupported() ? saved.id : "";
     call.backgroundImage = saved.image;
     refreshStage();
@@ -1849,7 +1862,7 @@ export function createChatCalls({
   });
   declineBtn?.addEventListener("click", declineInvite);
   if (faceSelect && !faceSelect.options.length) {
-    for (const [value, label] of [["", "Your own face"],
+    for (const [value, label] of [["", "Your own face"], [AVATAR_FACE_ID, "Your avatar"],
       ...CALL_FACES.map((face) => [face.id, face.label]), [CUSTOM_FACE_ID, "Your photo…"]]) {
       const option = documentRef.createElement("option");
       option.value = value;
@@ -1858,6 +1871,11 @@ export function createChatCalls({
     }
   }
   faceSelect?.addEventListener("change", () => {
+    if (faceSelect.value === AVATAR_FACE_ID && !faceImageFor(AVATAR_FACE_ID, { avatarImage })) {
+      faceSelect.value = call?.faceId || "";
+      if (stateLabel) stateLabel.textContent = "Add a profile photo to use your avatar as your face.";
+      return;
+    }
     if (faceSelect.value === CUSTOM_FACE_ID) {
       faceFile?.click?.();
       if (!savedCustomFaceImage(storage)) {
@@ -1943,7 +1961,7 @@ export function createChatCalls({
       useFace(id);
       void applyVoice();
     },
-    face: () => call?.stage?.face() || "",
+    face: () => (call?.stage ? call.faceId || call.stage.face() || "" : ""),
     setVoice: chooseVoice,
     voiceChoice: () => call?.voiceChoice || savedVoiceChoice(storage),
     voice: () => call?.voiceStage?.voice() || "",

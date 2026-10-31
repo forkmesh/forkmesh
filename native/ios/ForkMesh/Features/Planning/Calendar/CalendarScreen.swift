@@ -189,7 +189,7 @@ struct CalendarContent: View {
     }
 
     private func occurrenceRow(_ occurrence: CalendarOccurrence) -> some View {
-        NavigationLink {
+        ShellPaneLink {
             CalendarEventScreen(model: model, eventId: occurrence.event.id)
                 .shellPageClearance()
         } label: {

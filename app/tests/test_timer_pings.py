@@ -18,10 +18,8 @@ FOOTPRINT = (
     ROOT.parent / "world" / "tools" / "build_worker_footprint.py"
 ).read_text(encoding="utf-8")
 DESKTOP_TIMERS = (
-    ROOT.parent / "desktop" / "src" / "MainWindowTimers.cpp"
-).read_text(encoding="utf-8")
-DESKTOP_INTERNAL = (
-    ROOT.parent / "desktop" / "src" / "MainWindowInternal.h"
+    ROOT.parent / "marketplace" / "packages" / "timers" / "content" / "desktop"
+    / "TimersClock.cpp"
 ).read_text(encoding="utf-8")
 NOW = 1_760_000_000_000
 
@@ -117,9 +115,9 @@ def test_route_kind_and_lazy_module_are_wired():
 
 def test_desktop_signs_the_same_proof_and_sends_the_ping():
     module, _ = _load()
-    assert (f'QStringLiteral("{module.TIMER_PING_PROOF}")' in DESKTOP_INTERNAL)
+    assert (f'QStringLiteral("{module.TIMER_PING_PROOF}")' in DESKTOP_TIMERS)
     assert "/api/notifications/timer" in DESKTOP_TIMERS
-    assert "sendTimerPing(timer, title, body)" in DESKTOP_TIMERS
+    assert "sendPing(timer, title, body)" in DESKTOP_TIMERS
     # Kept in step with the relay's refusal window.
     assert "kTimerPingMaxAgeMs = 15 * 60 * 1000" in DESKTOP_TIMERS
     assert module.TIMER_PING_MAX_AGE_MS == 15 * 60 * 1000

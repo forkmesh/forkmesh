@@ -1,3 +1,4 @@
+#include "BackgroundFileWriter.h"
 #include "HiddenTerms.h"
 #include "SavedSearchStore.h"
 
@@ -197,6 +198,22 @@ int main(int argc, char **argv)
         check(store.acknowledgeSecurityAlarm(QStringLiteral("a")) &&
                   !store.acknowledgeSecurityAlarm(QStringLiteral("b")),
               "a legacy run can be acknowledged; a search never run cannot");
+    }
+
+    {
+        const QString laterPath = QDir(dir.path()).filePath(QStringLiteral("later/saved.json"));
+        SavedSearchStore store(laterPath);
+        const SavedSearch added =
+            store.add(QStringLiteral("token"), QString(), true, 1000);
+        store.recordRun(added.id, {issue7}, {}, 2000, false);
+        store.saveLater();
+        store.recordRun(added.id, {issue7}, {}, 3000, false);
+        store.saveLater();
+        check(forkmesh::diskwrite::flush(5000), "a background save finishes");
+        SavedSearchStore reloaded(laterPath);
+        const SavedSearch *search = reloaded.find(added.id);
+        check(search && search->runs == 2 && search->lastRunMs == 3000,
+              "the newest background save is the one on disk");
     }
 
     {

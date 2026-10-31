@@ -43,6 +43,7 @@ internal class AgentDiffScreen(
     private val canMerge: Boolean = false,
     private val base: String = "",
     private val onMerged: (String) -> Unit = {},
+    private val desktopKey: String = "",
 ) : Screen() {
     override val title: String get() = "Changes"
     private var showMerge by mutableStateOf(false)
@@ -50,14 +51,14 @@ internal class AgentDiffScreen(
     @Composable
     override fun Content(navigator: Navigator) {
         val c = Fm.colors
-        val model = remember(sessionId) { AgentDiffModel(AgentOpsFeature.client, sessionId, Services.get<PrefStore>()) }
+        val model = remember(sessionId) { AgentDiffModel(AgentOpsFeature.client(desktopKey), sessionId, Services.get<PrefStore>()) }
         val tick = rememberOpsTick(model)
         val scope = rememberCoroutineScope()
         val copyStatus = rememberFmStatus()
         val copy = rememberCopyText(copyStatus)
         LaunchedEffect(model) { opsIo { model.load() } }
         if (showMerge) {
-            MergeCleanupDialog(sessionId, base, onDone = { message ->
+            MergeCleanupDialog(sessionId, base, desktopKey = desktopKey, onDone = { message ->
                 navigator.pop()
                 onMerged(message)
             }, onDismiss = { showMerge = false })
@@ -129,9 +130,9 @@ private fun AgentDiffSummary(agentTitle: String, diff: AgentDiff, errorText: Str
 }
 
 @Composable
-internal fun AgentDeleteDialog(sessionId: Int, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun AgentDeleteDialog(sessionId: Int, onDone: (String) -> Unit, onDismiss: () -> Unit, desktopKey: String = "") {
     val c = Fm.colors
-    val model = remember(sessionId) { AgentDeleteModel(AgentOpsFeature.client, sessionId) }
+    val model = remember(sessionId, desktopKey) { AgentDeleteModel(AgentOpsFeature.client(desktopKey), sessionId) }
     val tick = rememberOpsTick(model)
     val scope = rememberCoroutineScope()
     LaunchedEffect(model) { opsIo { model.prepare() } }

@@ -1,0 +1,28 @@
+#statsSection QLabel#mutedLabel[statsRole="summary"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#statsSection QFrame#statsHeaderDivider {
+    background-color: @border; border: none; min-height: 1px; max-height: 1px;
+}
+#statsSection QPushButton#ghostButton[statsRole="action"] {
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgMuted; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+#statsSection QPushButton#ghostButton[statsRole="action"]:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#statsSection QPushButton#ghostButton[statsRole="action"]:pressed {
+    background-color: @surfaceActive;
+}
+#statsSection QPushButton#repoAction[statsRole="create"] {
+    background-color: @fg; border: 1px solid @fg; border-radius: 8px;
+    color: @bg; padding: 0px 10px 0px 8px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+#statsSection QPushButton#repoAction[statsRole="create"]:hover {
+    background-color: @fgSecondary; border-color: @fgSecondary;
+}
+#statsSection QPushButton#repoAction[statsRole="create"]:pressed {
+    background-color: @fgMuted; border-color: @fgMuted;
+}

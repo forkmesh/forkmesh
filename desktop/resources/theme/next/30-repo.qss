@@ -38,3 +38,85 @@ QPushButton#navHistoryButton:hover, QPushButton#projectMenuButton:hover {
 #readmeCard[framed="true"] #readmeView {
     background: transparent; border: none; padding: 20px; color: @fg;
 }
+
+#repoNextHeader QLabel { background: transparent; }
+QLabel#repoNextHeaderTile {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+}
+#repoNextHeader QLabel#repoHeaderTitle { color: @fg; font-size: 15px; }
+QLabel#repoVisibilityPill {
+    color: @fgMuted; background: transparent; border: 1px solid @border;
+    border-radius: 9px; padding: 1px 8px; font-size: 11px; font-weight: 500;
+}
+
+QPushButton#repoBranchPicker {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; font-weight: 500; text-align: left;
+    padding: 0px 28px 0px 10px; min-height: 30px; max-height: 30px;
+}
+QPushButton#repoBranchPicker:hover { background-color: @surfaceRaised; border-color: @borderStrong; }
+QPushButton#repoBranchPicker:pressed { background-color: @surfaceActive; }
+QPushButton#repoBranchPicker QLabel, QPushButton#repoCloneButton QLabel { background: transparent; }
+QPushButton#repoCloneButton {
+    background-color: @accent; border: 1px solid @accent; border-radius: 8px;
+    color: @onAccent; font-size: 13px; font-weight: 500;
+    padding: 0px 27px 0px 10px; min-height: 30px; max-height: 30px;
+}
+QPushButton#repoCloneButton:hover { background-color: @accentHover; border-color: @accentHover; }
+QPushButton#repoCloneButton:pressed { background-color: @accentPressed; border-color: @accentPressed; }
+QLineEdit#repoFileSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; padding: 0px 6px 0px 2px;
+    min-height: 30px; max-height: 30px;
+}
+QLineEdit#repoFileSearch:hover { border-color: @borderStrong; }
+QLineEdit#repoFileSearch:focus { border-color: @accent; }
+
+QTreeWidget#overviewList[nextCodeTable="true"] {
+    background: transparent; border: 1px solid @border; border-radius: 12px;
+    padding: 0px; color: @fg; font-size: 13px; outline: none;
+}
+QTreeWidget#overviewList[nextCodeTable="true"]::item { padding: 0px 0px 0px 14px; border: none; }
+#overviewList[nextCodeTable="true"] QHeaderView { background: transparent; border: none; }
+#overviewList[nextCodeTable="true"] #commitBar {
+    background-color: @surface; border: none; border-bottom: 1px solid @border;
+    border-top-left-radius: 11px; border-top-right-radius: 11px;
+    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+}
+#overviewList[nextCodeTable="true"] QLabel#commitBarText {
+    color: @fg; font-size: 13px; background: transparent;
+}
+#overviewList[nextCodeTable="true"] QLabel#commitBarMeta {
+    color: @fgSubtle; font-size: 12px; background: transparent;
+}
+#overviewList[nextCodeTable="true"] QLabel#commitBarAvatar { background: transparent; }
+#overviewNameCell QLabel { background: transparent; }
+#overviewNameCell QLabel#overviewFileName { color: @fg; font-size: 13px; }
+
+#repoAboutSidebar QLabel { background: transparent; color: @fgMuted; font-size: 13px; }
+#repoAboutSidebar QLabel[aboutRole="heading"] { color: @fg; font-weight: 600; }
+#repoAboutSidebar QLabel[aboutRole="topic"] {
+    background-color: @accentSubtle; color: @accentFg; border-radius: 10px;
+    padding: 2px 9px; font-size: 12px; font-weight: 500;
+}
+#repoAboutSidebar QLabel[aboutRole="count"] {
+    background-color: @surfaceActive; color: @fgSecondary; border-radius: 9px;
+    padding: 1px 7px; font-size: 11px; font-weight: 500;
+}
+#repoAboutSidebar QLabel[aboutRole="legend"] { color: @fgSecondary; font-size: 12px; }
+#repoAboutSidebar QLabel[aboutRole="avatar"] {
+    background-color: @surfaceActive; color: @fgMuted; border-radius: 14px;
+    font-size: 10px; font-weight: 600;
+}
+#repoAboutSidebar QFrame[aboutRole="rule"] { background-color: @border; border: none; }
+#repoAboutSidebar QPushButton[aboutRole="link"] {
+    background: transparent; border: none; color: @fgMuted; font-size: 13px;
+    padding: 0px; text-align: left; min-height: 18px;
+}
+#repoAboutSidebar QPushButton[aboutRole="link"]:hover { color: @accentFg; }
+#repoAboutSidebar QPushButton[aboutRole="edit"] {
+    background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 0px;
+}
+#repoAboutSidebar QPushButton[aboutRole="edit"]:hover { background-color: @surfaceRaised; }
+#repoAboutSidebar QPushButton[aboutRole="edit"]:pressed { background-color: @surfaceActive; }
+#commitBar QLabel#commitBarMeta { color: @fgSubtle; font-size: 12px; background: transparent; }
