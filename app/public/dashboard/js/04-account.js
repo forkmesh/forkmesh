@@ -15,7 +15,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "instance-sidebar", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -28,8 +28,23 @@
     return normalizeSettingsSection(parts[0] === "dashboard" && parts[1] === "settings" ? parts[2] || "" : "");
   }
 
+  function bindSettingsStickyHeader() {
+    const layout = $("[data-settings-layout]");
+    const header = $("[data-settings-account-header]");
+    if (!layout || !header || layout.dataset.settingsStickyBound) return;
+    layout.dataset.settingsStickyBound = "true";
+    const sync = () => {
+      const pinned = getComputedStyle(header).position === "sticky";
+      layout.style.setProperty("--settings-sticky-top", pinned ? `${header.offsetHeight}px` : "0px");
+    };
+    sync();
+    if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(header);
+    window.addEventListener("resize", sync);
+  }
+
   function setSettingsSection(section, { scroll = true, push = false } = {}) {
     const activeSection = normalizeSettingsSection(section);
+    bindSettingsStickyHeader();
     if (!state.settingsView) state.settingsView = {};
     state.settingsView.section = activeSection;
     if (push) {
@@ -64,12 +79,14 @@
     if (activeSection === "ssh-keys") loadSshKeys();
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
+    if (activeSection === "instance-sidebar") initInstanceSidebarSection();
     if (activeSection === "instance-theme") initInstanceThemeSection();
     else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
       bindAccountPasswordControls();
+      bindAccountRecoveryControls();
       loadAccountSessions({ force: true });
       loadAccountDevices({ force: true });
       loadPatreonConnection();
@@ -1028,6 +1045,139 @@
     else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
   }
 
+  function bindAccountRecoveryControls() {
+    const button = $("[data-account-recovery-new]");
+    if (!button || button.dataset.controlsBound === "true") return;
+    button.dataset.controlsBound = "true";
+    const status = (text, bad) => {
+      const node = $("[data-account-recovery-status]");
+      if (!node) return;
+      node.textContent = text || "";
+      node.className = "min-h-4 text-xs " + (bad ? "text-destructive" : "text-muted-foreground");
+    };
+    button.addEventListener("click", async () => {
+      const field = $("[data-account-recovery-password]");
+      const password = field?.value || "";
+      if (!password) {
+        status("Enter your current password.", true);
+        field?.focus();
+        return;
+      }
+      button.disabled = true;
+      try {
+        const token = state.session?.sessionToken || "";
+        const response = await fetch("/api/accounts/recovery-code", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            ...(token && token !== "cookie" ? { authorization: "Bearer " + token } : {}),
+          },
+          body: JSON.stringify({ password }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.recoveryCode) throw new Error(body.error || `http_${response.status}`);
+        if (field) field.value = "";
+        const code = $("[data-account-recovery-code]");
+        if (code) {
+          code.textContent = String(body.recoveryCode);
+          code.hidden = false;
+        }
+        status("This is your new recovery code. The old one no longer works.");
+      } catch (error) {
+        status(ACCOUNT_PASSWORD_ERRORS[error.message] || "Could not make a new code. Try again.", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  const INSTANCE_SIDEBAR_ERRORS = {
+    invalid_pinned: "Use repository names such as widgets or owner/name, one per line.",
+    too_many_pinned: "That is more pinned repositories than the setting holds.",
+    invalid_forks: "Forks shown must be a whole number from 0 to 50.",
+    invalid_devto: "A dev.to account name has only letters, digits and underscores.",
+    not_admin: "Only an admin of this instance can change Top repositories.",
+    unauthorized: "Sign in again to change Top repositories.",
+  };
+
+  function setInstanceSidebarStatus(text) {
+    const status = $("[data-instance-sidebar-status]");
+    if (status) status.textContent = text;
+  }
+
+  function instanceSidebarPinnedLines() {
+    return String($("[data-instance-sidebar-pinned]")?.value || "")
+      .split(/[\n,]/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  async function saveInstanceSidebar() {
+    const forks = Number($("[data-instance-sidebar-forks]")?.value);
+    if (!Number.isInteger(forks) || forks < 0 || forks > 50) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS.invalid_forks);
+      return;
+    }
+    setInstanceSidebarStatus("Saving…");
+    try {
+      const response = await fetch("/api/instance/sidebar", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ sessionToken: state.session?.sessionToken || "", sidebar: { pinned: instanceSidebarPinnedLines(), forks, devto: String($("[data-instance-sidebar-devto]")?.value || "").trim() } }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+      fillInstanceSidebarForm(data.sidebar);
+      state.sidebarSetting = data.sidebar;
+      try {
+        localStorage.setItem(SIDEBAR_SETTING_STORAGE_KEY, JSON.stringify(data.sidebar));
+      } catch (_) {}
+      renderSidebarRepositories(state.session);
+      renderHomeRepositories();
+      setInstanceSidebarStatus("Saved. Other visitors see it within a minute.");
+    } catch (error) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS[error?.message] || "That didn't save. Try again.");
+    }
+  }
+
+  function fillInstanceSidebarForm(sidebar) {
+    const pinned = $("[data-instance-sidebar-pinned]");
+    if (pinned) pinned.value = (Array.isArray(sidebar?.pinned) ? sidebar.pinned : []).join("\n");
+    const forks = $("[data-instance-sidebar-forks]");
+    if (forks) forks.value = String(Number.isInteger(sidebar?.forks) ? sidebar.forks : 3);
+    const devto = $("[data-instance-sidebar-devto]");
+    if (devto) devto.value = String(sidebar?.devto || "");
+  }
+
+  async function initInstanceSidebarSection() {
+    const form = $("[data-instance-sidebar-form]");
+    if (!form) return;
+    const allowed = state.session?.isAdmin === true && dashboardOnInstance();
+    const denied = $("[data-instance-sidebar-denied]");
+    if (denied) denied.hidden = allowed;
+    form.hidden = !allowed;
+    if (!allowed) return;
+    if (!form.dataset.bound) {
+      form.dataset.bound = "1";
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void saveInstanceSidebar();
+      });
+    }
+    setInstanceSidebarStatus("");
+    try {
+      const data = await fetchJson("/api/instance/sidebar", { fresh: true });
+      fillInstanceSidebarForm(data?.sidebar);
+      const max = $("[data-instance-sidebar-pinned-max]");
+      if (max && data?.limits?.pinned) max.textContent = String(data.limits.pinned);
+    } catch (error) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS[error?.message] || "Could not load the setting. Refresh to try again.");
+    }
+  }
+
   // ---- Nodes & devices (account_devices registry) ----------------------------
   // The web dashboard is the source of truth for every node key bound to the
   // account (desktop and mobile). Listing is session-gated like sessions; the
@@ -1874,6 +2024,7 @@
     renderOrgDetail(
       root, name, profile, members, teams, repos, fediverse, botTokens);
     void loadOrgPullRules(root, name);
+    void loadOrgModeration(root, name);
   }
 
   async function loadOrgPullRules(root, name) {
@@ -2263,6 +2414,11 @@
         '<h4 class="text-sm font-semibold text-foreground">Pull request rules</h4>' +
         '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Requirements every pull request on this organization\'s linked repositories must meet: tests, documentation, size, commit format, secrets, protected paths, or a required AI model. Each repository can add its own rules in <span class="font-mono">.forkmesh/pull-rules.json</span>. A failing rule is flagged on the pull request with how to fix it; a blocking one also locks the merge.</p>' +
         '<div data-org-pull-rules class="mt-3 text-xs text-muted-foreground">Loading rules…</div>' +
+      "</section>" +
+      '<section class="mt-6" data-org-moderation-section hidden>' +
+        '<h4 class="text-sm font-semibold text-foreground">Moderation</h4>' +
+        '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Posts waiting for review, the people who moderate this organization\'s repositories, and the accounts blocked from them.</p>' +
+        '<div data-org-moderation class="mt-3 text-xs text-muted-foreground">Loading moderation…</div>' +
       "</section>" +
       botTokenControls +
       (canManage
@@ -3256,7 +3412,9 @@
     let installed = [];
     if (account) {
       try {
-        installed = (await pluginRequest("/api/plugins/")).plugins || [];
+        const reply = await pluginRequest("/api/plugins/");
+        if (!Array.isArray(reply?.plugins)) throw new Error("plugin_list_missing");
+        installed = reply.plugins;
         window.ForkMeshAPI?.rememberPlugins?.(account, installed);
         window.ForkMeshAPI?.rememberStatusPage?.(
           account, installed.includes("status-page"));
@@ -5338,7 +5496,9 @@
     renderProfileReferrals(session);
     if (!session?.emailVerified) {
       state.nodeNameAvailability.available = false;
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
     } else if (!($("[data-profile-rename-input]")?.value || "").trim()) {
       state.nodeNameAvailability.available = false;
       setRenameStatus("Enter a new username to check availability.", "");
@@ -6182,7 +6342,9 @@
       return;
     }
     if (!state.session?.emailVerified) {
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(state.session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
       updateRenameButton();
       return;
     }
@@ -6331,6 +6493,31 @@
       "and hyphens, e.g. \"mirror-01\". You can also paste the node's 43-character public key.";
   }
 
+  function claimNodeAuthHeaders() {
+    const token = String(state.session?.sessionToken || "");
+    const headers = { "content-type": "application/json", accept: "application/json" };
+    if (token && token !== "cookie") headers.authorization = "Bearer " + token;
+    return headers;
+  }
+
+  function claimNodeAuthBody(password, extra) {
+    const body = {
+      identifier: state.session?.email || state.session?.nodeName || "",
+      password,
+      ...extra,
+    };
+    const totp = String($("[data-claim-node-totp]")?.value || "").replace(/\s+/g, "");
+    if (totp) body.totp = totp;
+    return body;
+  }
+
+  function revealClaimNodeTotp() {
+    const row = $("[data-claim-node-totp-row]");
+    if (row) row.classList.remove("hidden");
+    const field = $("[data-claim-node-totp]");
+    if (field) { field.value = ""; field.focus(); }
+  }
+
   async function claimNode() {
     const input = $("[data-claim-node-input]");
     // Not lowercased up front: a node's public-key ID is case-sensitive, and
@@ -6350,11 +6537,8 @@
     try {
       const response = await fetch("/api/accounts/claim-node", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -6373,8 +6557,11 @@
           "good");
       }
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         invalid_node_id: claimNodeIdHint(nodeId),
         cannot_claim_self: "You can't claim your own account.",
         no_such_node: `No node called "${nodeId}" has registered with the relay. Check the ID on the node itself - or, if you have not installed one yet, see "No node yet?" below.`,
@@ -6411,11 +6598,8 @@
     try {
       const response = await fetch("/api/accounts/claim-confirm", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId, code,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId, code })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -6434,8 +6618,11 @@
       if (codeInput) codeInput.value = "";
       setProfilePageHint("[data-claim-node-status]", `Linked "${nodeId}" to your account.`, "good");
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         no_such_node: "No node with that ID was found.",
         no_pending_claim: "No pending claim for that node. Send a new claim code.",
         bad_code: "That code is incorrect.",

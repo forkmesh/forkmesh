@@ -29,12 +29,21 @@
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
 #include "FontSizing.h"
+#include "DesignTokens.h"
+#include "UiKit.h"
 
 #include <QBrush>
 #include <QGridLayout>
 #include <QInputDialog>
+#include <QLineEdit>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QPointer>
+#include <QMenu>
+#include <QScrollArea>
+#include <QButtonGroup>
+#include <QTabBar>
 #include <QRegularExpression>
 #include <QTabWidget>
 
@@ -57,12 +66,11 @@ void MainWindow::refreshNetworkTab(int tabIndex)
     case kNetworkNodesTab:
         refreshRelayNodes();
         refreshRunners();
+        refreshHostsTable();
+        refreshFleetNodesTable();
+        fetchDirectoryInstances(true);
         refreshNodesTable();
         loadMirrorNodesPanel();
-        break;
-    case kNetworkHostsTab:
-        refreshHostsTable();
-        refreshRunners();
         break;
     default:
         refreshFirewallTables();
@@ -95,13 +103,51 @@ constexpr int kRepoActionSlotCount = 5;
 constexpr int kRepoActionColumns = 3;
 constexpr int kRepoActionSlotSpacing = 6;
 constexpr int kRepoMirrorsColumnWidth = 88;
-constexpr int kRepoActionsColumnWidth =
-    2 * kRepoCellPadX + 2 * 4 + kRepoActionColumns * kRepoActionSlotWidth +
-    (kRepoActionColumns - 1) * kRepoActionSlotSpacing;
+constexpr int kRepoNextCellPadX = 12;
+constexpr int kRepoNextCellPadY = 10;
+constexpr int kRepoNextLineGap = 3;
+constexpr int kRepoNextActionSlotWidth = 80;
+constexpr int kRepoNextActionSlotSpacing = 4;
+constexpr int kRepoNextCompactRowHeight = 46;
+constexpr int kRepoNextLabelWidth = 92;
+
+inline int repoCellPadX()
+{
+    return Theme::isNext() ? kRepoNextCellPadX : kRepoCellPadX;
+}
+
+inline int repoCellPadY()
+{
+    return Theme::isNext() ? kRepoNextCellPadY : kRepoCellPadY;
+}
+
+inline int repoActionSlotWidth()
+{
+    return Theme::isNext() ? kRepoNextActionSlotWidth : kRepoActionSlotWidth;
+}
+
+inline int repoActionSlotSpacing()
+{
+    return Theme::isNext() ? kRepoNextActionSlotSpacing : kRepoActionSlotSpacing;
+}
+
+inline int repoActionsColumnWidth()
+{
+    return 2 * repoCellPadX() + 2 * 4 +
+           kRepoActionColumns * repoActionSlotWidth() +
+           (kRepoActionColumns - 1) * repoActionSlotSpacing();
+}
 
 inline QFont repoCellLeadFont(const QFont &base, bool bold)
 {
     QFont font(base);
+    if (Theme::isNext()) {
+        if (bold)
+            font.setFamily(Theme::monoFontFamily());
+        font.setPixelSize(13);
+        font.setWeight(bold ? QFont::Medium : QFont::Normal);
+        return font;
+    }
     font.setBold(bold);
     return font;
 }
@@ -109,6 +155,11 @@ inline QFont repoCellLeadFont(const QFont &base, bool bold)
 inline QFont repoCellBodyFont(const QFont &base)
 {
     QFont font(base);
+    if (Theme::isNext()) {
+        font.setPixelSize(12);
+        font.setWeight(QFont::Normal);
+        return font;
+    }
     // The style sheet sizes this table in pixels, so honour whichever unit the
     // inherited font actually carries.
     if (font.pixelSize() > 0)
@@ -120,6 +171,12 @@ inline QFont repoCellBodyFont(const QFont &base)
 
 inline int networkRepoRowHeight(const QFont &base)
 {
+    if (Theme::isNext())
+        return 2 * kRepoNextCellPadY +
+               QFontMetrics(repoCellLeadFont(base, true)).height() +
+               (kRepoCellLines - 1) *
+                   (QFontMetrics(repoCellBodyFont(base)).height() +
+                    kRepoNextLineGap);
     return 2 * kRepoCellPadY +
            QFontMetrics(repoCellLeadFont(base, true)).height() +
            (kRepoCellLines - 1) * QFontMetrics(repoCellBodyFont(base)).height();
@@ -143,6 +200,24 @@ public:
         QSize size = QStyledItemDelegate::sizeHint(option, index);
         size.setHeight(qMax(size.height(), networkRepoRowHeight(option.font)));
         const QString text = index.data(Qt::DisplayRole).toString();
+        if (Theme::isNext()) {
+            if (option.widget &&
+                option.widget->property("compactRepoList").toBool())
+                size.setHeight(kRepoNextCompactRowHeight);
+            if (!text.contains(QLatin1Char('\n')))
+                return size;
+            const QFontMetrics lead(repoCellLeadFont(
+                option.font, index.data(kRepoLeadBoldRole).toBool()));
+            const QFontMetrics body(repoCellBodyFont(option.font));
+            const QStringList lines = text.split(QLatin1Char('\n'));
+            int width = 0;
+            for (int i = 0; i < lines.size(); ++i)
+                width = qMax(width, i == 0 ? lead.horizontalAdvance(lines.at(i))
+                                           : kRepoNextLabelWidth +
+                                                 body.horizontalAdvance(lines.at(i)));
+            size.setWidth(qMin(width, kRepoCellMaxWidth) + 2 * kRepoNextCellPadX);
+            return size;
+        }
         if (!text.contains(QLatin1Char('\n')))
             return size;
         const QFontMetrics lead(repoCellLeadFont(
@@ -160,6 +235,10 @@ public:
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override
     {
+        if (Theme::isNext()) {
+            paintNext(painter, option, index);
+            return;
+        }
         // Single-line cells go through here too: the mirror count has to start
         // on the same line as every other cell's first line.
         const QString text = index.data(Qt::DisplayRole).toString();
@@ -247,7 +326,250 @@ public:
         }
         painter->restore();
     }
+
+private:
+    struct NextBadge {
+        QString text;
+        Theme::Role fill;
+        Theme::Role ink;
+        bool outline;
+    };
+
+    static NextBadge nextBadgeFor(const QString &part)
+    {
+        if (part.startsWith(QLatin1String("Flagged")))
+            return {part, Theme::Role::DangerSubtle, Theme::Role::Danger, false};
+        if (part == QLatin1String("Live host"))
+            return {part, Theme::Role::AccentSubtle, Theme::Role::AccentFg, false};
+        if (part.startsWith(QLatin1String("Public")) ||
+            part.startsWith(QLatin1String("Private")))
+            return {part, Theme::Role::BorderStrong, Theme::Role::FgMuted, true};
+        return {part, Theme::Role::SurfaceActive, Theme::Role::FgMuted, false};
+    }
+
+    static QStringList nextAccessParts(const QString &line)
+    {
+        const QString prefix = QStringLiteral("Access:");
+        QStringList parts;
+        if (!line.startsWith(prefix))
+            return parts;
+        const QString dash = QString::fromUtf8("\xE2\x80\x94");
+        const QStringList pieces = line.mid(prefix.size())
+                                       .split(QString::fromUtf8(" \xC2\xB7 "),
+                                              Qt::SkipEmptyParts);
+        for (const QString &piece : pieces) {
+            const QString trimmed = piece.trimmed();
+            if (!trimmed.isEmpty() && trimmed != dash)
+                parts << trimmed;
+        }
+        return parts;
+    }
+
+    static QColor nextForeground(const QModelIndex &index, const QColor &fallback)
+    {
+        const QVariant foreground = index.data(Qt::ForegroundRole);
+        if (!foreground.canConvert<QBrush>())
+            return fallback;
+        const QBrush brush = qvariant_cast<QBrush>(foreground);
+        return brush.style() == Qt::NoBrush ? fallback : brush.color();
+    }
+
+    void paintNext(QPainter *painter, const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const
+    {
+        const QWidget *widget = option.widget;
+        const QRect cell = option.rect;
+        painter->save();
+        const QVariant hover =
+            widget ? widget->property("reposNextHoverRow") : QVariant();
+        if (option.state.testFlag(QStyle::State_Selected))
+            painter->fillRect(cell, Theme::color(Theme::Role::SurfaceActive));
+        else if (hover.isValid() && hover.toInt() == index.row())
+            painter->fillRect(cell, Theme::color(Theme::Role::SurfaceRaised));
+        if (index.model() && index.row() < index.model()->rowCount() - 1)
+            painter->fillRect(QRect(cell.left(), cell.bottom(), cell.width(), 1),
+                              Theme::color(Theme::Role::Border));
+
+        const QString text = index.data(Qt::DisplayRole).toString();
+        if (text.isEmpty()) {
+            painter->restore();
+            return;
+        }
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        const bool title = index.data(kRepoLeadBoldRole).toBool();
+        const bool compact =
+            widget && widget->property("compactRepoList").toBool();
+        const QFont leadFont = repoCellLeadFont(option.font, title);
+        const QFont bodyFont = repoCellBodyFont(option.font);
+        const QFontMetrics leadMetrics(leadFont);
+        const QFontMetrics bodyMetrics(bodyFont);
+        const QColor fg = Theme::color(Theme::Role::Fg);
+        const QColor secondary = Theme::color(Theme::Role::FgSecondary);
+        const QColor muted = Theme::color(Theme::Role::FgMuted);
+        const QColor subtle = Theme::color(Theme::Role::FgSubtle);
+        const QString dash = QString::fromUtf8("\xE2\x80\x94");
+        const QString dot = QString::fromUtf8(" \xC2\xB7 ");
+
+        Qt::Alignment horizontal = Qt::AlignLeft;
+        const Qt::Alignment stored =
+            Qt::Alignment(index.data(Qt::TextAlignmentRole).toInt()) &
+            Qt::AlignHorizontal_Mask;
+        if (stored != Qt::Alignment())
+            horizontal = stored;
+
+        if (compact && !text.contains(QLatin1Char('\n'))) {
+            const QRect area =
+                cell.adjusted(kRepoNextCellPadX, 0, -kRepoNextCellPadX, 0);
+            QStringList parts = text.split(QStringLiteral(" | "));
+            const QString head = parts.takeFirst();
+            const int headRoom =
+                parts.isEmpty()
+                    ? area.width()
+                    : qMin(area.width(),
+                           qMax(area.width() / 2,
+                                leadMetrics.horizontalAdvance(head)));
+            const QString shownHead =
+                leadMetrics.elidedText(head, Qt::ElideRight, headRoom);
+            painter->setFont(leadFont);
+            painter->setPen(title ? fg : nextForeground(index, secondary));
+            painter->drawText(QRect(area.left(), area.top(), headRoom, area.height()),
+                              horizontal | Qt::AlignVCenter, shownHead);
+            if (!parts.isEmpty()) {
+                const int left =
+                    area.left() + leadMetrics.horizontalAdvance(shownHead) + 14;
+                const QRect rest(left, area.top(),
+                                 qMax(0, area.right() + 1 - left), area.height());
+                painter->setFont(bodyFont);
+                painter->setPen(muted);
+                painter->drawText(rest, Qt::AlignLeft | Qt::AlignVCenter,
+                                  bodyMetrics.elidedText(parts.join(dot),
+                                                         Qt::ElideRight,
+                                                         rest.width()));
+            }
+            painter->restore();
+            return;
+        }
+
+        const QRect area = cell.adjusted(kRepoNextCellPadX, kRepoNextCellPadY,
+                                         -kRepoNextCellPadX, -kRepoNextCellPadY);
+        const QStringList lines = text.split(QLatin1Char('\n'));
+        int y = area.top();
+        int first = 0;
+        if (title) {
+            const bool hasAccess =
+                lines.size() > 1 &&
+                lines.at(1).startsWith(QLatin1String("Access:"));
+            QList<NextBadge> badges;
+            if (hasAccess)
+                for (const QString &part : nextAccessParts(lines.at(1)))
+                    badges << nextBadgeFor(part);
+            QFont badgeFont = bodyFont;
+            badgeFont.setPixelSize(11);
+            badgeFont.setWeight(QFont::Medium);
+            const QFontMetrics badgeMetrics(badgeFont);
+            int badgesWidth = 0;
+            for (const NextBadge &badge : std::as_const(badges))
+                badgesWidth += 6 + badgeMetrics.horizontalAdvance(badge.text) + 14;
+            const int lineHeight = leadMetrics.height();
+            const int nameRoom = qMin(area.width(),
+                                      qMax(area.width() / 2,
+                                           area.width() - badgesWidth));
+            const QString name =
+                leadMetrics.elidedText(lines.at(0), Qt::ElideRight, nameRoom);
+            painter->setFont(leadFont);
+            painter->setPen(fg);
+            painter->drawText(QRect(area.left(), y, nameRoom, lineHeight),
+                              Qt::AlignLeft | Qt::AlignVCenter, name);
+            int x = area.left() + leadMetrics.horizontalAdvance(name);
+            const int centerY = y + lineHeight / 2;
+            painter->setFont(badgeFont);
+            for (const NextBadge &badge : std::as_const(badges)) {
+                x += 6;
+                const int width = badgeMetrics.horizontalAdvance(badge.text) + 14;
+                if (x + width > area.right() + 1)
+                    break;
+                const QRectF pill(x + 0.5, centerY - 8.5, width - 1, 17);
+                if (badge.outline) {
+                    painter->setPen(QPen(Theme::color(badge.fill), 1));
+                    painter->setBrush(Qt::NoBrush);
+                    painter->drawRoundedRect(pill, 8.5, 8.5);
+                } else {
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(Theme::color(badge.fill));
+                    painter->drawRoundedRect(pill, 5, 5);
+                }
+                painter->setPen(Theme::color(badge.ink));
+                painter->drawText(pill, Qt::AlignCenter, badge.text);
+                x += width;
+            }
+            y += lineHeight + kRepoNextLineGap + 1;
+            first = hasAccess ? 2 : 1;
+        }
+
+        for (int i = first; i < lines.size(); ++i) {
+            const bool leadLine = i == 0;
+            const QFont &font = leadLine ? leadFont : bodyFont;
+            const QFontMetrics metrics(font);
+            const int height = metrics.height();
+            if (y + height > area.bottom() + 1)
+                break;
+            const QString &line = lines.at(i);
+            const int divider = line.indexOf(QLatin1Char(':'));
+            if (divider > 0 && horizontal == Qt::AlignLeft) {
+                const int labelWidth = qMin(area.width(), kRepoNextLabelWidth);
+                const QString value = line.mid(divider + 1).trimmed();
+                painter->setFont(bodyFont);
+                painter->setPen(muted);
+                painter->drawText(QRect(area.left(), y, labelWidth, height),
+                                  Qt::AlignLeft | Qt::AlignVCenter,
+                                  bodyMetrics.elidedText(line.left(divider),
+                                                         Qt::ElideRight,
+                                                         qMax(0, labelWidth - 6)));
+                const int valueWidth = qMax(0, area.width() - labelWidth);
+                painter->setPen(value == dash ? subtle : secondary);
+                painter->drawText(QRect(area.left() + labelWidth, y, valueWidth, height),
+                                  Qt::AlignLeft | Qt::AlignVCenter,
+                                  bodyMetrics.elidedText(value, Qt::ElideRight,
+                                                         valueWidth));
+            } else {
+                painter->setFont(font);
+                painter->setPen(leadLine ? nextForeground(index, secondary) : muted);
+                painter->drawText(QRect(area.left(), y, area.width(), height),
+                                  horizontal | Qt::AlignVCenter,
+                                  metrics.elidedText(line, Qt::ElideRight,
+                                                     area.width()));
+            }
+            y += height + kRepoNextLineGap;
+        }
+        painter->restore();
+    }
 };
+
+void reposNextPaintBars(QPainter &painter, const QRectF &area,
+                        const QVector<qint64> &weeks)
+{
+    const int count = weeks.size();
+    if (count <= 0 || area.width() <= 1.0)
+        return;
+    qint64 maximum = 1;
+    for (const qint64 value : weeks)
+        maximum = qMax(maximum, value);
+    const QColor zero = Theme::color(Theme::Role::SurfaceActive);
+    const QColor recent = Theme::color(Theme::Role::Accent);
+    const QColor bar = Theme::color(Theme::Role::Fg, 89);
+    painter.setPen(Qt::NoPen);
+    const qreal step = area.width() / count;
+    const qreal barWidth = qMax(1.0, step - 1.0);
+    for (int index = 0; index < count; ++index) {
+        const qint64 value = weeks.at(index);
+        const qreal height = value > 0
+            ? qMax(area.height() * 0.1, area.height() * value / maximum)
+            : 2.0;
+        painter.setBrush(value <= 0 ? zero : (index >= count - 4 ? recent : bar));
+        painter.drawRect(QRectF(area.left() + index * step, area.bottom() - height,
+                                barWidth, height));
+    }
+}
 
 class NetworkRepoActivityChart final : public QWidget
 {
@@ -300,6 +622,10 @@ protected:
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
+        if (Theme::isNext()) {
+            paintNext(painter);
+            return;
+        }
 
         const QString totalLabel = m_totalCount >= 0
             ? QStringLiteral("%1 total").arg(formatCount(m_totalCount))
@@ -352,6 +678,37 @@ protected:
     }
 
 private:
+    void paintNext(QPainter &painter)
+    {
+        const qint64 shownTotal =
+            m_totalCount >= 0 ? m_totalCount : m_activityTotal;
+        QFont valueFont = font();
+        valueFont.setPixelSize(12);
+        valueFont.setWeight(QFont::Normal);
+        const QFontMetrics valueMetrics(valueFont);
+        const int footerHeight = valueMetrics.height();
+        const QRectF area = QRectF(rect()).adjusted(
+            kRepoNextCellPadX, kRepoNextCellPadY, -kRepoNextCellPadX, 0);
+        const qreal barsHeight =
+            qBound(8.0, area.height() - footerHeight - 6.0, 32.0);
+        const QRectF chartRect(area.left(), area.top(), area.width(), barsHeight);
+        const QRectF labelRect(area.left(), chartRect.bottom() + 6.0,
+                               area.width(), footerHeight);
+
+        reposNextPaintBars(painter, chartRect, m_weeks);
+
+        painter.setFont(valueFont);
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        painter.drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter,
+                         m_totalCount >= 0
+                             ? QStringLiteral("%1 total").arg(formatCount(shownTotal))
+                             : QStringLiteral("%1 in 52 weeks")
+                                   .arg(formatCount(shownTotal)));
+        painter.setPen(Theme::color(Theme::Role::FgSubtle));
+        painter.drawText(labelRect, Qt::AlignRight | Qt::AlignVCenter,
+                         QStringLiteral("52 wk"));
+    }
+
     QVector<qint64> m_weeks;
     qint64 m_totalCount = -1;
     qint64 m_activityTotal = 0;
@@ -374,6 +731,8 @@ enum NetworkRepoCol {
 
 constexpr int kRepoDetailedTextRole = Qt::UserRole + 40;
 constexpr int kRepoCompactTextRole = Qt::UserRole + 41;
+constexpr int kRepoNextRecordRole = Qt::UserRole + 46;
+constexpr int kRepoNextCurrentRole = Qt::UserRole + 47;
 
 QStringList networkRepoHeaders()
 {
@@ -408,7 +767,7 @@ void configureNetworkRepoGrid(QTableWidget *table)
     horizontal->setSectionResizeMode(kRepoColMirrors, QHeaderView::Fixed);
     horizontal->resizeSection(kRepoColMirrors, kRepoMirrorsColumnWidth);
     horizontal->setSectionResizeMode(kRepoColActions, QHeaderView::Fixed);
-    horizontal->resizeSection(kRepoColActions, kRepoActionsColumnWidth);
+    horizontal->resizeSection(kRepoColActions, repoActionsColumnWidth());
 
     QHeaderView *vertical = table->verticalHeader();
     vertical->setSectionResizeMode(QHeaderView::Fixed);
@@ -422,12 +781,15 @@ QGridLayout *networkRepoActionGrid(QWidget *cell)
     column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(0);
     auto *grid = new QGridLayout;
-    grid->setContentsMargins(4, kRepoCellPadY, 4, 2);
-    grid->setHorizontalSpacing(kRepoActionSlotSpacing);
-    grid->setVerticalSpacing(5);
+    grid->setContentsMargins(4, repoCellPadY(), 4, 2);
+    grid->setHorizontalSpacing(repoActionSlotSpacing());
+    grid->setVerticalSpacing(Theme::isNext() ? 6 : 5);
+    if (Theme::isNext())
+        grid->setContentsMargins(kRepoNextCellPadX + 4, kRepoNextCellPadY,
+                                 kRepoNextCellPadX - 4, 2);
     for (int columnIndex = 0; columnIndex < kRepoActionColumns;
          ++columnIndex)
-        grid->setColumnMinimumWidth(columnIndex, kRepoActionSlotWidth);
+        grid->setColumnMinimumWidth(columnIndex, repoActionSlotWidth());
     column->addLayout(grid);
     column->addStretch();
     return grid;
@@ -437,7 +799,7 @@ void addNetworkRepoAction(QGridLayout *grid, QPushButton *button, int slot)
 {
     if (!grid || !button)
         return;
-    button->setFixedWidth(kRepoActionSlotWidth);
+    button->setFixedWidth(repoActionSlotWidth());
     // First three controls use the top row. Web starts the second row and the
     // destructive action stays pinned to its right edge, leaving a deliberate
     // gap between navigation and deletion.
@@ -448,31 +810,1029 @@ void addNetworkRepoAction(QGridLayout *grid, QPushButton *button, int slot)
                             : slot - kRepoActionColumns);
     grid->addWidget(button, row, column);
 }
+
+class ReposNextTableChrome final : public QObject
+{
+public:
+    explicit ReposNextTableChrome(QTableWidget *table)
+        : QObject(table), m_table(table)
+    {
+        setObjectName(QStringLiteral("reposNextChrome"));
+        table->setProperty("reposNextHoverRow", -1);
+        table->viewport()->setMouseTracking(true);
+        table->viewport()->installEventFilter(this);
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (!m_table)
+            return false;
+        QWidget *viewport = m_table->viewport();
+        if (watched == viewport) {
+            if (event->type() == QEvent::MouseMove)
+                setHovered(m_table->rowAt(
+                    static_cast<QMouseEvent *>(event)->position().toPoint().y()));
+            else if (event->type() == QEvent::Leave)
+                setHovered(-1);
+        } else if (event->type() == QEvent::Enter) {
+            auto *cell = qobject_cast<QWidget *>(watched);
+            if (cell && cell->parentWidget() == viewport)
+                setHovered(m_table->rowAt(cell->geometry().center().y()));
+        }
+        return false;
+    }
+
+private:
+    void setHovered(int row)
+    {
+        const int before = m_table->property("reposNextHoverRow").toInt();
+        if (before == row)
+            return;
+        m_table->setProperty("reposNextHoverRow", row);
+        updateRow(before);
+        updateRow(row);
+    }
+
+    void updateRow(int row)
+    {
+        if (row < 0 || row >= m_table->rowCount())
+            return;
+        m_table->viewport()->update(QRect(0, m_table->rowViewportPosition(row),
+                                          m_table->viewport()->width(),
+                                          m_table->rowHeight(row)));
+    }
+
+    QPointer<QTableWidget> m_table;
+};
+
+void reposNextStyleTable(QTableWidget *table)
+{
+    if (!table || !Theme::isNext())
+        return;
+    table->setProperty("reposNext", true);
+    table->setAlternatingRowColors(false);
+    table->setShowGrid(false);
+    table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft |
+                                                   Qt::AlignVCenter);
+    new ReposNextTableChrome(table);
+}
+
+void reposNextTrackCell(QTableWidget *table, QWidget *cell)
+{
+    if (!table || !cell || !Theme::isNext())
+        return;
+    if (QObject *chrome = table->findChild<QObject *>(
+            QStringLiteral("reposNextChrome"), Qt::FindDirectChildrenOnly))
+        cell->installEventFilter(chrome);
+}
+
+QLineEdit *reposNextFilterField(const QString &objectName, QWidget *parent)
+{
+    auto *field = new QLineEdit(parent);
+    field->setObjectName(objectName);
+    field->setPlaceholderText(QStringLiteral("Filter repositories"));
+    field->setToolTip(QStringLiteral(
+        "Show only repositories whose name, branch, commit message or author "
+        "contains this text"));
+    field->setClearButtonEnabled(true);
+    field->setFixedWidth(288);
+    field->addAction(QIcon(kit::tintedIcon(QStringLiteral("search"),
+                                           Theme::color(Theme::Role::FgSubtle),
+                                           14, field->devicePixelRatioF())),
+                     QLineEdit::LeadingPosition);
+    return field;
+}
+
+QPushButton *reposNextHelpButton(const QString &accessibleName,
+                                 const QString &helpText)
+{
+    auto *button = new QPushButton;
+    button->setObjectName(QStringLiteral("inlineHelpButton"));
+    button->setAccessibleName(accessibleName);
+    button->setAccessibleDescription(helpText);
+    button->setToolTip(
+        QStringLiteral("<div style='width: 420px; white-space: normal;'>%1</div>")
+            .arg(helpText.toHtmlEscaped()));
+    button->setCursor(Qt::PointingHandCursor);
+    button->setFlat(true);
+    button->setFixedSize(24, 24);
+    button->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    setOcticon(button, "info", 14);
+    return button;
+}
+
+void reposNextButtonRole(QPushButton *button, const char *role,
+                         Theme::Role icon)
+{
+    if (!button)
+        return;
+    button->setProperty("reposRole", QString::fromLatin1(role));
+    button->setProperty("nextIconRole", int(icon));
+    applyStoredOcticon(button);
+}
+
+void reposNextStyleRowActions(QWidget *actions)
+{
+    if (!actions || !Theme::isNext())
+        return;
+    actions->setProperty("reposNext", true);
+    const auto buttons =
+        actions->findChildren<QPushButton *>(QString(), Qt::FindDirectChildrenOnly);
+    for (QPushButton *button : buttons) {
+        const QString name = button->objectName();
+        if (name == QLatin1String("primaryButton"))
+            reposNextButtonRole(button, "outline", Theme::Role::FgSecondary);
+        else if (name == QLatin1String("dangerButton"))
+            reposNextButtonRole(button, "danger", Theme::Role::Danger);
+        else
+            reposNextButtonRole(button, "ghost", Theme::Role::FgMuted);
+    }
+}
+
+class ReposNextElidedLabel final : public QLabel
+{
+public:
+    explicit ReposNextElidedLabel(const QString &text, QWidget *parent = nullptr)
+        : QLabel(text, parent)
+    {
+        setTextFormat(Qt::PlainText);
+        setToolTip(text);
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return QSize(0, QLabel::minimumSizeHint().height());
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        const QRect area = contentsRect();
+        const QString shown =
+            fontMetrics().elidedText(text(), Qt::ElideRight, area.width());
+        style()->drawItemText(&painter, area, int(alignment()), palette(),
+                              isEnabled(), shown, foregroundRole());
+    }
+};
+
+class ReposNextSparkCell final : public QWidget
+{
+public:
+    ReposNextSparkCell(const QString &title, const QVector<qint64> &weeks,
+                       qint64 total, QWidget *parent = nullptr)
+        : QWidget(parent), m_title(title), m_weeks(weeks), m_total(total)
+    {
+        setObjectName(QStringLiteral("reposNextCardSpark"));
+        setMinimumSize(120, 72);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        QFont head = font();
+        head.setPixelSize(13);
+        head.setWeight(QFont::Normal);
+        QFont small = head;
+        small.setPixelSize(12);
+        const QFontMetrics headMetrics(head);
+        const QRectF top(0, 0, width(), headMetrics.height());
+        painter.setFont(head);
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        painter.drawText(top, Qt::AlignLeft | Qt::AlignVCenter, m_title);
+        painter.setFont(small);
+        painter.setPen(Theme::color(Theme::Role::FgSubtle));
+        painter.drawText(top, Qt::AlignRight | Qt::AlignVCenter,
+                         m_total >= 0
+                             ? QString::fromUtf8("%1 \xC2\xB7 52 wk")
+                                   .arg(formatCount(m_total))
+                             : QString::fromUtf8("\xE2\x80\x94"));
+        const qreal barsTop = top.bottom() + 12.0;
+        const QRectF bars(0, barsTop, width(),
+                          qBound(8.0, height() - barsTop, 40.0));
+        if (m_weeks.isEmpty()) {
+            painter.setFont(head);
+            painter.setPen(Theme::color(Theme::Role::FgSubtle));
+            painter.drawText(bars, Qt::AlignLeft | Qt::AlignTop,
+                             QStringLiteral("Activity not published"));
+            return;
+        }
+        reposNextPaintBars(painter, bars, m_weeks);
+    }
+
+private:
+    QString m_title;
+    QVector<qint64> m_weeks;
+    qint64 m_total = -1;
+};
+
+QVariant reposNextNumber(const QJsonObject &record, const QString &key)
+{
+    const QJsonValue value = record.value(key);
+    if (value.isDouble())
+        return QVariant(qint64(value.toDouble()));
+    bool ok = false;
+    const qint64 parsed = value.toString().trimmed().toLongLong(&ok);
+    return ok ? QVariant(parsed) : QVariant();
+}
+
+QString reposNextText(const QJsonObject &record, const QString &key)
+{
+    return record.value(key).toString().trimmed();
+}
+
+QString reposNextDash()
+{
+    return QString::fromUtf8("\xE2\x80\x94");
+}
+
+QLabel *reposNextLabel(const QString &text, const char *objectName,
+                       QWidget *parent = nullptr)
+{
+    auto *label = new QLabel(text, parent);
+    label->setObjectName(QString::fromLatin1(objectName));
+    label->setTextFormat(Qt::PlainText);
+    return label;
+}
+
+QLabel *reposNextIconLabel(const QString &octicon, Theme::Role role, int px,
+                           QWidget *parent = nullptr)
+{
+    auto *label = new QLabel(parent);
+    label->setObjectName(QStringLiteral("reposNextCardIcon"));
+    label->setPixmap(kit::tintedIcon(octicon, Theme::color(role), px,
+                                     label->devicePixelRatioF()));
+    label->setFixedSize(px, px);
+    return label;
+}
+
+QLabel *reposNextPill(const QString &text, const char *tone,
+                      QWidget *parent = nullptr)
+{
+    auto *pill = reposNextLabel(text, "reposNextPill", parent);
+    pill->setProperty("tone", QString::fromLatin1(tone));
+    pill->setAlignment(Qt::AlignCenter);
+    return pill;
+}
+
+const char *reposNextPillTone(const QString &part)
+{
+    if (part.startsWith(QLatin1String("Flagged")))
+        return "danger";
+    if (part == QLatin1String("Live host"))
+        return "accent";
+    if (part.startsWith(QLatin1String("Public")) ||
+        part.startsWith(QLatin1String("Private")))
+        return "outline";
+    return "neutral";
+}
+
+QPixmap reposNextInitialsPixmap(const QString &name, qreal dpr)
+{
+    constexpr int side = 18;
+    QPixmap pixmap(qRound(side * dpr), qRound(side * dpr));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QString initials;
+    const QStringList parts = name.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        initials += part.at(0).toUpper();
+        if (initials.size() == 2)
+            break;
+    }
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+    painter.drawEllipse(QRectF(0, 0, side, side));
+    QFont font = painter.font();
+    font.setPixelSize(8);
+    font.setWeight(QFont::DemiBold);
+    painter.setFont(font);
+    painter.setPen(Theme::color(Theme::Role::FgMuted));
+    painter.drawText(QRectF(0, 0, side, side), Qt::AlignCenter, initials);
+    return pixmap;
+}
+
+QPixmap reposNextGridPixmap(const QColor &color, qreal dpr)
+{
+    constexpr int side = 14;
+    QPixmap pixmap(qRound(side * dpr), qRound(side * dpr));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(color, 1.3));
+    painter.setBrush(Qt::NoBrush);
+    for (const QPointF &corner : {QPointF(1.5, 1.5), QPointF(8.0, 1.5),
+                                  QPointF(1.5, 8.0), QPointF(8.0, 8.0)})
+        painter.drawRoundedRect(QRectF(corner, QSizeF(4.5, 4.5)), 1.0, 1.0);
+    return pixmap;
+}
+
+QString reposNextMirrorsText(const QTableWidgetItem *item)
+{
+    if (!item)
+        return reposNextDash();
+    bool ok = false;
+    const int count = item->text().toInt(&ok);
+    if (!ok)
+        return item->text();
+    return count == 1 ? QStringLiteral("1 mirror")
+                      : QStringLiteral("%1 mirrors").arg(formatCount(count));
+}
+
+QWidget *reposNextCardList(QTableWidget *table)
+{
+    if (!table || !table->parentWidget())
+        return nullptr;
+    return table->parentWidget()->findChild<QWidget *>(
+        QStringLiteral("reposNextCardList"));
+}
+
+QList<QFrame *> reposNextCards(QWidget *list)
+{
+    return list ? list->findChildren<QFrame *>(QStringLiteral("reposNextCard"),
+                                                Qt::FindDirectChildrenOnly)
+                : QList<QFrame *>();
+}
+
+QPushButton *reposNextCardButton(QPushButton *source, const QString &text,
+                                 const char *role, Theme::Role iconRole)
+{
+    auto *button = new QPushButton(text);
+    button->setObjectName(QStringLiteral("reposNextCardAction"));
+    button->setProperty("reposRole", QString::fromLatin1(role));
+    button->setCursor(Qt::PointingHandCursor);
+    button->setToolTip(source->toolTip());
+    button->setEnabled(source->isEnabled());
+    const QString icon = source->property("forkmeshOcticon").toString();
+    if (!icon.isEmpty()) {
+        button->setIcon(QIcon(kit::tintedIcon(icon, Theme::color(iconRole), 14,
+                                              button->devicePixelRatioF())));
+        button->setIconSize(QSize(14, 14));
+    }
+    QPointer<QPushButton> target(source);
+    QObject::connect(button, &QPushButton::clicked, button, [target] {
+        if (target)
+            target->click();
+    });
+    return button;
+}
+
+QPushButton *reposNextMoreButton(const QList<QPushButton *> &sources)
+{
+    auto *button = new QPushButton;
+    button->setObjectName(QStringLiteral("reposNextCardAction"));
+    button->setProperty("reposRole", QStringLiteral("more"));
+    button->setCursor(Qt::PointingHandCursor);
+    button->setToolTip(QStringLiteral("More actions"));
+    button->setAccessibleName(QStringLiteral("More actions"));
+    button->setIcon(QIcon(kit::tintedIcon(QStringLiteral("kebab-horizontal"),
+                                          Theme::color(Theme::Role::FgMuted), 14,
+                                          button->devicePixelRatioF())));
+    button->setIconSize(QSize(14, 14));
+    QList<QPointer<QPushButton>> targets;
+    for (QPushButton *source : sources)
+        targets.append(QPointer<QPushButton>(source));
+    QPointer<QPushButton> self(button);
+    QObject::connect(button, &QPushButton::clicked, button, [self, targets] {
+        if (!self)
+            return;
+        QMenu menu(self);
+        for (const QPointer<QPushButton> &target : targets) {
+            if (!target)
+                continue;
+            const bool danger =
+                target->objectName() == QLatin1String("dangerButton");
+            QAction *action = menu.addAction(target->text());
+            const QString icon = target->property("forkmeshOcticon").toString();
+            if (!icon.isEmpty())
+                action->setIcon(QIcon(kit::tintedIcon(
+                    icon,
+                    Theme::color(danger ? Theme::Role::Danger
+                                        : Theme::Role::FgMuted),
+                    14, self->devicePixelRatioF())));
+            action->setToolTip(target->toolTip());
+            action->setEnabled(target->isEnabled());
+            QObject::connect(action, &QAction::triggered, target.data(),
+                             [target] {
+                                 QTimer::singleShot(0, target.data(), [target] {
+                                     if (target)
+                                         target->click();
+                                 });
+                             });
+        }
+        menu.setToolTipsVisible(true);
+        menu.exec(self->mapToGlobal(QPoint(0, self->height() + 4)));
+    });
+    return button;
+}
+
+QFrame *reposNextCell(bool first)
+{
+    auto *cell = new QFrame;
+    cell->setObjectName(QStringLiteral("reposNextCardCell"));
+    cell->setProperty("reposCellFirst", first);
+    return cell;
+}
+
+QWidget *reposNextStatsCell(const QJsonObject &record, const QString &tip)
+{
+    QFrame *cell = reposNextCell(true);
+    cell->setToolTip(tip);
+    auto *grid = new QGridLayout(cell);
+    grid->setContentsMargins(20, 16, 20, 16);
+    grid->setHorizontalSpacing(8);
+    grid->setVerticalSpacing(14);
+    const auto count = [&record](const QString &key) {
+        const QVariant value = reposNextNumber(record, key);
+        return value.isValid() ? formatCount(value.toLongLong()) : reposNextDash();
+    };
+    QString copies = reposNextDash();
+    const QVariant worktrees = reposNextNumber(record, QStringLiteral("worktreeCount"));
+    const QVariant artifacts = reposNextNumber(record, QStringLiteral("artifactCount"));
+    if (worktrees.isValid() || artifacts.isValid())
+        copies = formatCount(worktrees.toLongLong() + artifacts.toLongLong());
+    const QVariant size = reposNextNumber(record, QStringLiteral("sizeBytes"));
+    const QString storage = size.isValid() && size.toLongLong() > 0
+                                ? SystemStats::formatBytes(size.toLongLong())
+                                : reposNextDash();
+    struct Stat {
+        const char *icon;
+        const char *key;
+        QString value;
+    };
+    const QList<Stat> stats = {
+        {"issue-opened", "Issues", count(QStringLiteral("issueCount"))},
+        {"comment", "Discussions", count(QStringLiteral("discussionCount"))},
+        {"copy", "Copies", copies},
+        {"database", "Storage", storage},
+    };
+    for (int index = 0; index < stats.size(); ++index) {
+        const int row = index / 2;
+        const int column = (index % 2) * 4;
+        grid->addWidget(reposNextIconLabel(QString::fromLatin1(stats.at(index).icon),
+                                           Theme::Role::FgSubtle, 14),
+                        row, column, Qt::AlignVCenter);
+        grid->addWidget(reposNextLabel(QString::fromLatin1(stats.at(index).key),
+                                       "reposNextCardKey"),
+                        row, column + 1);
+        QLabel *value = reposNextLabel(stats.at(index).value, "reposNextCardValue");
+        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        grid->addWidget(value, row, column + 2);
+    }
+    grid->setColumnMinimumWidth(3, 12);
+    grid->setColumnStretch(1, 1);
+    grid->setColumnStretch(5, 1);
+    return cell;
+}
+
+QWidget *reposNextSparkCellFor(const QJsonObject &record, const QString &title,
+                               const QString &seriesField,
+                               const QString &totalField, const QString &tip)
+{
+    QFrame *cell = reposNextCell(false);
+    cell->setToolTip(tip);
+    auto *layout = new QVBoxLayout(cell);
+    layout->setContentsMargins(20, 16, 20, 16);
+    QVector<qint64> weeks;
+    for (const QJsonValue &week : record.value(seriesField).toArray()) {
+        const qint64 value = week.isDouble()
+                                 ? qint64(week.toDouble())
+                                 : week.toString().trimmed().toLongLong();
+        weeks.append(qMax<qint64>(0, value));
+    }
+    qint64 total = -1;
+    const QVariant counted = reposNextNumber(record, totalField);
+    if (counted.isValid()) {
+        total = counted.toLongLong();
+    } else if (!weeks.isEmpty()) {
+        total = 0;
+        for (const qint64 value : std::as_const(weeks))
+            total += value;
+    }
+    layout->addWidget(new ReposNextSparkCell(title, weeks, total));
+    return cell;
+}
+
+QWidget *reposNextHostCell(const QJsonObject &record, const QTableWidgetItem *mirrors,
+                           const QString &tip)
+{
+    QFrame *cell = reposNextCell(false);
+    cell->setToolTip(tip);
+    auto *layout = new QVBoxLayout(cell);
+    layout->setContentsMargins(20, 16, 20, 16);
+    layout->setSpacing(6);
+    const auto join = [](const QStringList &parts) {
+        QStringList kept;
+        for (const QString &part : parts)
+            if (!part.trimmed().isEmpty())
+                kept << part.trimmed();
+        return kept.isEmpty() ? reposNextDash()
+                              : kept.join(QString::fromUtf8(" \xC2\xB7 "));
+    };
+    const auto row = [layout](QWidget *left, QWidget *right) {
+        auto *line = new QHBoxLayout;
+        line->setContentsMargins(0, 0, 0, 0);
+        line->setSpacing(8);
+        line->addWidget(left, 1);
+        if (right)
+            line->addWidget(right);
+        layout->addLayout(line);
+    };
+
+    QString machine = reposNextText(record, QStringLiteral("machineName"));
+    if (machine.isEmpty()) {
+        const QJsonArray members = record.value(QStringLiteral("_memberOwners")).toArray();
+        if (!members.isEmpty())
+            machine = members.first().toString().trimmed();
+    }
+    auto *head = new QWidget;
+    auto *headLayout = new QHBoxLayout(head);
+    headLayout->setContentsMargins(0, 0, 0, 0);
+    headLayout->setSpacing(6);
+    headLayout->addWidget(reposNextIconLabel(QStringLiteral("server"),
+                                             Theme::Role::FgMuted, 14));
+    auto *machineLabel =
+        new ReposNextElidedLabel(machine.isEmpty() ? reposNextDash() : machine);
+    machineLabel->setObjectName(QStringLiteral("reposNextCardHostName"));
+    headLayout->addWidget(machineLabel, 1);
+    QLabel *mirrorCount = reposNextLabel(reposNextMirrorsText(mirrors),
+                                         "reposNextCardMirrors");
+    mirrorCount->setToolTip(mirrors ? mirrors->toolTip() : QString());
+    row(head, mirrorCount);
+
+    const QString version = reposNextText(record, QStringLiteral("version"));
+    QLabel *versionLabel = reposNextLabel(
+        version.isEmpty() ? reposNextDash()
+                          : (version.startsWith(QLatin1Char('v'))
+                                 ? version
+                                 : QStringLiteral("v") + version),
+        "reposNextCardMeta");
+    auto *system = new ReposNextElidedLabel(
+        join({reposNextText(record, QStringLiteral("platform")),
+              reposNextText(record, QStringLiteral("runtimeMode"))}));
+    system->setObjectName(QStringLiteral("reposNextCardMeta"));
+    row(system, versionLabel);
+
+    const QVariant cpu = reposNextNumber(record, QStringLiteral("cpuPercent"));
+    const QVariant diskUsed = reposNextNumber(record, QStringLiteral("diskUsedBytes"));
+    const QVariant diskTotal = reposNextNumber(record, QStringLiteral("diskTotalBytes"));
+    QLabel *cpuLabel = reposNextLabel(
+        cpu.isValid() ? QStringLiteral("CPU %1%").arg(cpu.toLongLong())
+                      : QStringLiteral("CPU ") + reposNextDash(),
+        "reposNextCardMeta");
+    QLabel *diskLabel = reposNextLabel(
+        diskUsed.isValid() && diskTotal.isValid() && diskTotal.toLongLong() > 0
+            ? QStringLiteral("Disk %1%").arg(
+                  qRound(100.0 * diskUsed.toLongLong() / diskTotal.toLongLong()))
+            : QStringLiteral("Disk ") + reposNextDash(),
+        "reposNextCardMeta");
+    diskLabel->setToolTip(
+        diskUsed.isValid() && diskTotal.isValid()
+            ? QStringLiteral("%1 of %2").arg(
+                  SystemStats::formatBytes(diskUsed.toLongLong()),
+                  SystemStats::formatBytes(diskTotal.toLongLong()))
+            : QString());
+    row(cpuLabel, diskLabel);
+
+    const QString source = reposNextText(record, QStringLiteral("source"));
+    const QVariant synced = reposNextNumber(record, QStringLiteral("lastSync"));
+    QStringList syncParts;
+    if (!source.isEmpty())
+        syncParts << QStringLiteral("Sync via %1").arg(source);
+    if (synced.isValid() && synced.toLongLong() > 0)
+        syncParts << QStringLiteral("synced %1")
+                         .arg(formatIssueRelativeTime(synced.toLongLong()));
+    auto *sync = new ReposNextElidedLabel(join(syncParts));
+    sync->setObjectName(QStringLiteral("reposNextCardMeta"));
+    row(sync, nullptr);
+    layout->addStretch(1);
+    return cell;
+}
+
+QFrame *reposNextBuildCard(QTableWidget *table, int row, bool local)
+{
+    QTableWidgetItem *nameItem = table->item(row, kRepoColName);
+    if (!nameItem)
+        return nullptr;
+    const QJsonObject record = nameItem->data(kRepoNextRecordRole).toJsonObject();
+    const bool current = nameItem->data(kRepoNextCurrentRole).toBool();
+    const auto cellTip = [table, row](int column) {
+        const QTableWidgetItem *item = table->item(row, column);
+        if (!item)
+            return QString();
+        return item->toolTip().isEmpty() ? item->text() : item->toolTip();
+    };
+
+    auto *card = new QFrame;
+    card->setObjectName(QStringLiteral("reposNextCard"));
+    card->setProperty("reposRow", row);
+    card->setAttribute(Qt::WA_Hover);
+    auto *cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(0, 0, 0, 0);
+    cardLayout->setSpacing(0);
+
+    auto *top = new QWidget;
+    top->setObjectName(QStringLiteral("reposNextCardTop"));
+    auto *topLayout = new QHBoxLayout(top);
+    topLayout->setContentsMargins(20, 18, 16, 16);
+    topLayout->setSpacing(14);
+
+    const bool isPrivate = record.value(QStringLiteral("private")).toBool(false) ||
+                           record.value(QStringLiteral("isPrivate")).toBool(false);
+    auto *tile = new QLabel;
+    tile->setObjectName(QStringLiteral("reposNextCardTile"));
+    tile->setFixedSize(36, 36);
+    tile->setAlignment(Qt::AlignCenter);
+    tile->setPixmap(kit::tintedIcon(local && isPrivate ? QStringLiteral("lock")
+                                                       : QStringLiteral("git-branch"),
+                                    Theme::color(Theme::Role::FgMuted), 16,
+                                    tile->devicePixelRatioF()));
+    topLayout->addWidget(tile, 0, Qt::AlignTop);
+
+    auto *info = new QVBoxLayout;
+    info->setContentsMargins(0, 0, 0, 0);
+    info->setSpacing(4);
+    auto *nameRow = new QHBoxLayout;
+    nameRow->setContentsMargins(0, 0, 0, 0);
+    nameRow->setSpacing(8);
+    auto *name = new ReposNextElidedLabel(
+        reposNextText(record, QStringLiteral("owner")) + QLatin1Char('/') +
+        reposNextText(record, QStringLiteral("name")));
+    name->setObjectName(QStringLiteral("reposNextCardName"));
+    nameRow->addWidget(name);
+    const QStringList lines =
+        nameItem->data(kRepoDetailedTextRole).toString().split(QLatin1Char('\n'));
+    if (lines.size() > 1 && lines.at(1).startsWith(QLatin1String("Access:"))) {
+        const QStringList parts =
+            lines.at(1).mid(7).split(QString::fromUtf8(" \xC2\xB7 "), Qt::SkipEmptyParts);
+        for (const QString &part : parts) {
+            const QString trimmed = part.trimmed();
+            if (!trimmed.isEmpty() && trimmed != reposNextDash())
+                nameRow->addWidget(reposNextPill(trimmed, reposNextPillTone(trimmed)));
+        }
+    }
+    if (local) {
+        QStringList compact = nameItem->data(kRepoCompactTextRole)
+                                  .toString()
+                                  .split(QStringLiteral(" | "));
+        const QString state = compact.size() > 1 ? compact.at(1) : QString();
+        QLabel *dirty = reposNextPill(state, state.startsWith(QLatin1String("Dirty"))
+                                                 ? "warning"
+                                                 : "neutral");
+        dirty->setObjectName(QStringLiteral("reposNextCardDirty"));
+        dirty->setVisible(!state.isEmpty());
+        nameRow->addWidget(dirty);
+    }
+    if (current)
+        nameRow->addWidget(reposNextPill(QStringLiteral("Current"), "accent"));
+    nameRow->addStretch(1);
+    info->addLayout(nameRow);
+
+    const QString description = reposNextText(record, QStringLiteral("description"));
+    if (!description.isEmpty()) {
+        auto *label = new ReposNextElidedLabel(description);
+        label->setObjectName(QStringLiteral("reposNextCardDesc"));
+        info->addWidget(label);
+    }
+    const QString path = reposNextText(record, QStringLiteral("_localForkPath"));
+    if (local && !path.isEmpty()) {
+        auto *label = new ReposNextElidedLabel(path);
+        label->setObjectName(QStringLiteral("reposNextCardPath"));
+        label->setFont(Theme::monospaceFont(label->font()));
+        info->addWidget(label);
+    }
+    const QString subject = reposNextText(record, QStringLiteral("commitSubject"));
+    if (!subject.isEmpty()) {
+        auto *commitRow = new QHBoxLayout;
+        commitRow->setContentsMargins(0, 4, 0, 0);
+        commitRow->setSpacing(6);
+        const QString author = reposNextText(record, QStringLiteral("commitAuthorName"));
+        if (!author.isEmpty()) {
+            auto *avatar = new QLabel;
+            avatar->setObjectName(QStringLiteral("reposNextCardAvatar"));
+            avatar->setFixedSize(18, 18);
+            avatar->setPixmap(reposNextInitialsPixmap(author, avatar->devicePixelRatioF()));
+            avatar->setToolTip(author);
+            commitRow->addWidget(avatar);
+        }
+        auto *message = new ReposNextElidedLabel(subject);
+        message->setObjectName(QStringLiteral("reposNextCardCommit"));
+        commitRow->addWidget(message);
+        const QVariant at = reposNextNumber(record, QStringLiteral("commitAt"));
+        if (at.isValid() && at.toLongLong() > 0) {
+            QLabel *age = reposNextLabel(
+                QString::fromUtf8("\xC2\xB7 %1").arg(formatIssueRelativeTime(at.toLongLong())),
+                "reposNextCardAge");
+            age->setToolTip(formatRepoDate(at.toLongLong()));
+            commitRow->addWidget(age);
+        }
+        commitRow->addStretch(1);
+        info->addLayout(commitRow);
+    }
+    topLayout->addLayout(info, 1);
+
+    auto *actionsRow = new QHBoxLayout;
+    actionsRow->setContentsMargins(0, 0, 0, 0);
+    actionsRow->setSpacing(4);
+    QWidget *actionsCell = table->cellWidget(row, kRepoColActions);
+    const QList<QPushButton *> sources =
+        actionsCell ? actionsCell->findChildren<QPushButton *>(
+                          QString(), Qt::FindDirectChildrenOnly)
+                    : QList<QPushButton *>();
+    QList<QPushButton *> overflow;
+    for (int index = 0; index < sources.size(); ++index) {
+        QPushButton *source = sources.at(index);
+        if (index == 0) {
+            actionsRow->addWidget(reposNextCardButton(
+                source, current ? QStringLiteral("Open") : source->text(),
+                current ? "outline" : "inverse",
+                current ? Theme::Role::Fg : Theme::Role::Bg));
+        } else if (index <= 2 &&
+                   source->objectName() != QLatin1String("dangerButton")) {
+            actionsRow->addWidget(reposNextCardButton(source, source->text(), "ghost",
+                                                      Theme::Role::FgMuted));
+        } else {
+            overflow.append(source);
+        }
+    }
+    if (!overflow.isEmpty())
+        actionsRow->addWidget(reposNextMoreButton(overflow));
+    topLayout->addLayout(actionsRow);
+    topLayout->setAlignment(actionsRow, Qt::AlignTop);
+    cardLayout->addWidget(top);
+
+    auto *band = new QFrame;
+    band->setObjectName(QStringLiteral("reposNextCardBand"));
+    auto *bandLayout = new QHBoxLayout(band);
+    bandLayout->setContentsMargins(0, 0, 0, 0);
+    bandLayout->setSpacing(0);
+    bandLayout->addWidget(reposNextStatsCell(record, cellTip(kRepoColContents)), 11);
+    const auto chartTip = [table, row](int column) {
+        QWidget *chart = table->cellWidget(row, column);
+        if (chart)
+            return chart->toolTip();
+        const QTableWidgetItem *item = table->item(row, column);
+        return item ? item->toolTip() : QString();
+    };
+    bandLayout->addWidget(reposNextSparkCellFor(record, QStringLiteral("Commits"),
+                                                QStringLiteral("activityWeeks"),
+                                                QStringLiteral("commitCount"),
+                                                chartTip(kRepoColActivity)),
+                          10);
+    bandLayout->addWidget(reposNextSparkCellFor(record, QStringLiteral("Merges"),
+                                                QStringLiteral("mergeActivityWeeks"),
+                                                QStringLiteral("mergeCount"),
+                                                chartTip(kRepoColMergeActivity)),
+                          10);
+    bandLayout->addWidget(reposNextHostCell(record, table->item(row, kRepoColMirrors),
+                                            cellTip(kRepoColHost)),
+                          11);
+    cardLayout->addWidget(band);
+
+    return card;
+}
+
+void reposNextRebuildCards(QTableWidget *table, bool local)
+{
+    if (!Theme::isNext())
+        return;
+    QWidget *list = reposNextCardList(table);
+    auto *layout = list ? qobject_cast<QVBoxLayout *>(list->layout()) : nullptr;
+    if (!layout)
+        return;
+    for (QFrame *card : reposNextCards(list)) {
+        layout->removeWidget(card);
+        card->hide();
+        card->deleteLater();
+    }
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (QFrame *card = reposNextBuildCard(table, row, local))
+            layout->insertWidget(layout->count() - 1, card);
+    }
+}
+
+void reposNextSyncCardMirrors(QTableWidget *table, int row)
+{
+    if (!Theme::isNext() || !table)
+        return;
+    const QTableWidgetItem *item = table->item(row, kRepoColMirrors);
+    for (QFrame *card : reposNextCards(reposNextCardList(table))) {
+        if (card->property("reposRow").toInt() != row)
+            continue;
+        if (auto *label = card->findChild<QLabel *>(QStringLiteral("reposNextCardMirrors"))) {
+            label->setText(reposNextMirrorsText(item));
+            label->setToolTip(item ? item->toolTip() : QString());
+        }
+    }
+}
+
+void reposNextSyncLocalDirty(QTableWidget *table)
+{
+    if (!Theme::isNext() || !table)
+        return;
+    for (QFrame *card : reposNextCards(reposNextCardList(table))) {
+        const QTableWidgetItem *item =
+            table->item(card->property("reposRow").toInt(), kRepoColName);
+        auto *label = card->findChild<QLabel *>(QStringLiteral("reposNextCardDirty"));
+        if (!item || !label)
+            continue;
+        const QStringList compact =
+            item->data(kRepoCompactTextRole).toString().split(QStringLiteral(" | "));
+        const QString state = compact.size() > 1 ? compact.at(1) : QString();
+        label->setText(state);
+        label->setVisible(!state.isEmpty());
+        label->setProperty("tone", state.startsWith(QLatin1String("Dirty"))
+                                       ? QStringLiteral("warning")
+                                       : QStringLiteral("neutral"));
+        label->style()->unpolish(label);
+        label->style()->polish(label);
+    }
+}
+
+void reposNextApplyFilter(QTableWidget *table)
+{
+    if (!table || !Theme::isNext())
+        return;
+    const QString needle =
+        table->property("reposNextFilterText").toString().trimmed();
+    for (int row = 0; row < table->rowCount(); ++row) {
+        bool match = needle.isEmpty();
+        if (!match) {
+            if (const QTableWidgetItem *item = table->item(row, kRepoColName)) {
+                QString haystack = item->data(kRepoDetailedTextRole).toString();
+                if (haystack.isEmpty())
+                    haystack = item->text();
+                match = haystack.contains(needle, Qt::CaseInsensitive) ||
+                        item->data(Qt::UserRole).toString().contains(
+                            needle, Qt::CaseInsensitive);
+            }
+        }
+        table->setRowHidden(row, !match);
+    }
+    QWidget *list = reposNextCardList(table);
+    if (!list)
+        return;
+    int shown = 0;
+    for (QFrame *card : reposNextCards(list)) {
+        const int row = card->property("reposRow").toInt();
+        const bool visible = row >= 0 && row < table->rowCount() &&
+                             !table->isRowHidden(row);
+        card->setVisible(visible);
+        if (visible)
+            ++shown;
+    }
+    if (auto *empty = list->findChild<QLabel *>(QStringLiteral("reposNextCardEmpty"))) {
+        empty->setText(table->rowCount() == 0
+                           ? QStringLiteral("No repositories to show.")
+                           : QStringLiteral("No repositories match the filter."));
+        empty->setVisible(shown == 0);
+    }
+}
+
+void reposNextSetTabCount(QTableWidget *table, int count)
+{
+    if (!Theme::isNext() || !table)
+        return;
+    QWidget *tabPage = table->parentWidget();
+    QTabWidget *tabs = nullptr;
+    for (QWidget *widget = tabPage ? tabPage->parentWidget() : nullptr; widget;
+         widget = widget->parentWidget()) {
+        if ((tabs = qobject_cast<QTabWidget *>(widget)))
+            break;
+    }
+    if (!tabs)
+        return;
+    const int index = tabs->indexOf(tabPage);
+    if (index < 0)
+        return;
+    if (auto *pill = qobject_cast<QLabel *>(
+            tabs->tabBar()->tabButton(index, QTabBar::RightSide))) {
+        pill->setText(formatCount(count));
+        pill->setVisible(true);
+    }
+}
+
+QScrollArea *reposNextCardArea(const QString &objectName, QWidget *parent)
+{
+    auto *scroll = new QScrollArea(parent);
+    scroll->setObjectName(objectName);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *list = new QWidget;
+    list->setObjectName(QStringLiteral("reposNextCardList"));
+    auto *layout = new QVBoxLayout(list);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(12);
+    QLabel *empty = reposNextLabel(QStringLiteral("No repositories to show."),
+                                   "reposNextCardEmpty", list);
+    empty->setAlignment(Qt::AlignCenter);
+    layout->addWidget(empty);
+    layout->addStretch(1);
+    scroll->setWidget(list);
+    return scroll;
+}
+
+void reposNextApplyMode(QWidget *page, bool cards)
+{
+    if (!page)
+        return;
+    page->setProperty("reposNextCards", cards);
+    const auto tables = page->findChildren<QTableWidget *>();
+    for (QTableWidget *table : tables) {
+        if (!table->property("reposNext").toBool())
+            continue;
+        table->setMinimumHeight(0);
+        table->setMaximumHeight(cards ? 0 : QWIDGETSIZE_MAX);
+        QWidget *tabPage = table->parentWidget();
+        if (!tabPage)
+            continue;
+        const auto areas = tabPage->findChildren<QScrollArea *>(
+            QString(), Qt::FindDirectChildrenOnly);
+        for (QScrollArea *area : areas)
+            if (area->objectName().startsWith(QLatin1String("reposNextCards")))
+                area->setVisible(cards);
+    }
+}
 } // namespace
 
 QWidget *MainWindow::buildNetworkReposSection()
 {
+    const bool next = Theme::isNext();
     auto *page = new QWidget;
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(20, 18, 20, 20);
     outer->setSpacing(10);
+    if (next) {
+        page->setProperty("reposNextPage", true);
+        outer->setContentsMargins(24, 16, 24, 16);
+        outer->setSpacing(14);
+    }
 
     auto *header = new QHBoxLayout;
     header->setContentsMargins(0, 0, 0, 0);
     header->setSpacing(10);
+    QHBoxLayout *titleRow = header;
+    QVBoxLayout *titleColumn = nullptr;
+    if (next) {
+        header->setSpacing(6);
+        titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        titleRow = new QHBoxLayout;
+        titleRow->setContentsMargins(0, 0, 0, 0);
+        titleRow->setSpacing(6);
+        titleColumn->addLayout(titleRow);
+        header->addLayout(titleColumn, 1);
+    }
 
-    auto *title = new QLabel(QStringLiteral("Repos"));
+    auto *title = new QLabel(next ? QStringLiteral("Repositories")
+                                  : QStringLiteral("Repos"));
     title->setObjectName("sectionTitle");
     QFont titleFont = title->font();
     titleFont = forkmesh::resizedFont(titleFont, 4);
     titleFont.setBold(true);
+    if (next) {
+        titleFont = title->font();
+        titleFont.setPixelSize(15);
+        titleFont.setWeight(QFont::DemiBold);
+    }
     title->setFont(titleFont);
-    header->addWidget(title);
-    header->addStretch();
+    titleRow->addWidget(title);
+
+    // QStringLiteral would widen these UTF-8 bytes one by one into mojibake.
+    const QString pageDescription = QString::fromUtf8(
+        "Repositories grouped by user or organization across the active relay. "
+        "Mirror hosts are combined into one repository row \xE2\x80\x94 who and "
+        "what it is, what it contains, and the machine serving it, each on its "
+        "own line. Hover a cell for the URLs, digests and exact timestamps "
+        "behind it, or use a column's \xE2\x8B\xAF menu to hide or move it.");
+    if (next) {
+        titleRow->addWidget(reposNextHelpButton(
+            QStringLiteral("About repositories"), pageDescription));
+        titleRow->addStretch(1);
+        auto *summary = new QLabel(QStringLiteral(
+            "Grouped by owner across the active relay. Mirror hosts fold into "
+            "one row per repository."));
+        summary->setObjectName("mutedLabel");
+        summary->setProperty("reposRole", QStringLiteral("summary"));
+        summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        titleColumn->addWidget(summary);
+    } else {
+        header->addStretch();
+    }
 
     m_networkReposStatus = new QLabel(QStringLiteral("Not loaded"));
     m_networkReposStatus->setObjectName("mutedLabel");
-    header->addWidget(m_networkReposStatus);
+    if (!next)
+        header->addWidget(m_networkReposStatus);
 
     // fromUtf8, not QStringLiteral: the ellipsis was rendering as mojibake.
     auto *newRepoButton =
@@ -483,7 +1843,8 @@ QWidget *MainWindow::buildNetworkReposSection()
     setOcticon(newRepoButton, "repo", 14);
     connect(newRepoButton, &QPushButton::clicked, this,
             &MainWindow::createNewRepository);
-    header->addWidget(newRepoButton);
+    if (!next)
+        header->addWidget(newRepoButton);
 
     auto *importLocalButton = new QPushButton(
         QString::fromUtf8("Import folder\xE2\x80\xA6"));
@@ -494,7 +1855,8 @@ QWidget *MainWindow::buildNetworkReposSection()
     setOcticon(importLocalButton, "file-directory", 14);
     connect(importLocalButton, &QPushButton::clicked, this,
             &MainWindow::promptAddRepository);
-    header->addWidget(importLocalButton);
+    if (!next)
+        header->addWidget(importLocalButton);
 
     auto *viewButton = new QPushButton(QStringLiteral("Simple list"));
     viewButton->setObjectName("ghostButton");
@@ -503,7 +1865,8 @@ QWidget *MainWindow::buildNetworkReposSection()
     viewButton->setToolTip(QStringLiteral(
         "Switch between a one-line repository list and the full information grid"));
     setOcticon(viewButton, "list-unordered", 14);
-    header->addWidget(viewButton);
+    if (!next)
+        header->addWidget(viewButton);
 
     m_networkReposRefreshButton = new QPushButton(QStringLiteral("Refresh"));
     m_networkReposRefreshButton->setObjectName("ghostButton");
@@ -512,26 +1875,101 @@ QWidget *MainWindow::buildNetworkReposSection()
     setOcticon(m_networkReposRefreshButton, "sync", 14);
     connect(m_networkReposRefreshButton, &QPushButton::clicked, this,
             &MainWindow::refreshNetworkReposPage);
-    header->addWidget(m_networkReposRefreshButton);
+    QPushButton *cardsViewButton = nullptr;
+    if (next) {
+        auto *viewToggle = new QFrame;
+        viewToggle->setObjectName(QStringLiteral("reposNextViewToggle"));
+        auto *viewToggleLayout = new QHBoxLayout(viewToggle);
+        viewToggleLayout->setContentsMargins(2, 2, 2, 2);
+        viewToggleLayout->setSpacing(2);
+        auto *viewGroup = new QButtonGroup(viewToggle);
+        viewGroup->setExclusive(true);
+        const qreal ratio = page->devicePixelRatioF();
+        for (int index = 0; index < 2; ++index) {
+            auto *button = new QPushButton;
+            button->setObjectName(QStringLiteral("reposNextViewButton"));
+            button->setCheckable(true);
+            button->setCursor(Qt::PointingHandCursor);
+            button->setFixedSize(28, 28);
+            QIcon icon;
+            if (index == 0) {
+                icon.addPixmap(reposNextGridPixmap(Theme::color(Theme::Role::FgMuted), ratio),
+                               QIcon::Normal, QIcon::Off);
+                icon.addPixmap(reposNextGridPixmap(Theme::color(Theme::Role::Fg), ratio),
+                               QIcon::Normal, QIcon::On);
+                button->setToolTip(QStringLiteral("Cards"));
+                button->setAccessibleName(QStringLiteral("Cards"));
+                cardsViewButton = button;
+            } else {
+                icon.addPixmap(kit::tintedIcon(QStringLiteral("list-unordered"),
+                                               Theme::color(Theme::Role::FgMuted), 14, ratio),
+                               QIcon::Normal, QIcon::Off);
+                icon.addPixmap(kit::tintedIcon(QStringLiteral("list-unordered"),
+                                               Theme::color(Theme::Role::Fg), 14, ratio),
+                               QIcon::Normal, QIcon::On);
+                button->setToolTip(QStringLiteral(
+                    "Table: every column, with the column menu and Simple list"));
+                button->setAccessibleName(QStringLiteral("Table"));
+            }
+            button->setIcon(icon);
+            button->setIconSize(QSize(14, 14));
+            viewGroup->addButton(button);
+            viewToggleLayout->addWidget(button);
+        }
+        cardsViewButton->setChecked(true);
+        header->addWidget(viewToggle);
+        header->addSpacing(4);
+        for (QPushButton *button :
+             {viewButton, m_networkReposRefreshButton, importLocalButton}) {
+            reposNextButtonRole(button, "ghost", Theme::Role::FgMuted);
+            header->addWidget(button);
+        }
+        newRepoButton->setProperty("reposRole", QStringLiteral("inverse"));
+        newRepoButton->setProperty("nextIconRole", int(Theme::Role::Bg));
+        setOcticon(newRepoButton, "plus", 14);
+        header->addWidget(newRepoButton);
+    } else {
+        header->addWidget(m_networkReposRefreshButton);
+    }
     outer->addLayout(header);
 
-    // QStringLiteral would widen these UTF-8 bytes one by one into mojibake.
-    auto *subtitle = new QLabel(QString::fromUtf8(
-        "Repositories grouped by user or organization across the active relay. "
-        "Mirror hosts are combined into one repository row \xE2\x80\x94 who and "
-        "what it is, what it contains, and the machine serving it, each on its "
-        "own line. Hover a cell for the URLs, digests and exact timestamps "
-        "behind it, or use a column's \xE2\x8B\xAF menu to hide or move it."));
-    subtitle->setObjectName("mutedLabel");
-    subtitle->setWordWrap(true);
-    outer->addWidget(subtitle);
+    if (!next) {
+        auto *subtitle = new QLabel(pageDescription);
+        subtitle->setObjectName("mutedLabel");
+        subtitle->setWordWrap(true);
+        outer->addWidget(subtitle);
+    }
 
     auto *repoTabs = new QTabWidget;
     auto *remotePage = new QWidget;
     auto *remoteLayout = new QVBoxLayout(remotePage);
     remoteLayout->setContentsMargins(0, 8, 0, 0);
     remoteLayout->setSpacing(8);
-    remoteLayout->addWidget(m_networkReposStatus);
+    if (next) {
+        repoTabs->setProperty("reposNext", true);
+        remoteLayout->setContentsMargins(0, 16, 0, 0);
+        remoteLayout->setSpacing(12);
+        auto *remoteBar = new QHBoxLayout;
+        remoteBar->setContentsMargins(0, 0, 0, 0);
+        remoteBar->setSpacing(8);
+        QLineEdit *remoteFilter =
+            reposNextFilterField(QStringLiteral("reposNextFilter"), remotePage);
+        connect(remoteFilter, &QLineEdit::textChanged, this,
+                [this](const QString &text) {
+                    if (!m_networkReposTable)
+                        return;
+                    m_networkReposTable->setProperty("reposNextFilterText", text);
+                    reposNextApplyFilter(m_networkReposTable);
+                });
+        remoteBar->addWidget(remoteFilter);
+        remoteBar->addStretch(1);
+        m_networkReposStatus->setProperty("reposRole", QStringLiteral("status"));
+        m_networkReposStatus->setTextFormat(Qt::PlainText);
+        remoteBar->addWidget(m_networkReposStatus);
+        remoteLayout->addLayout(remoteBar);
+    } else {
+        remoteLayout->addWidget(m_networkReposStatus);
+    }
 
     m_networkReposTable = new QTableWidget(0, kRepoColCount);
     installColumnHeaderMenu(m_networkReposTable);
@@ -547,6 +1985,7 @@ QWidget *MainWindow::buildNetworkReposSection()
     m_networkReposTable->setItemDelegate(
         new NetworkRepoRowDelegate(m_networkReposTable));
     configureNetworkRepoGrid(m_networkReposTable);
+    reposNextStyleTable(m_networkReposTable);
     connect(m_networkReposTable, &QTableWidget::cellDoubleClicked, this,
             [this](int row, int column) {
                 if (column == kRepoColActions || !m_networkReposTable)
@@ -567,40 +2006,73 @@ QWidget *MainWindow::buildNetworkReposSection()
                                 item->data(Qt::UserRole + 2).toBool());
             });
     remoteLayout->addWidget(m_networkReposTable, 1);
-    repoTabs->addTab(remotePage, QStringLiteral("Remote repositories"));
+    if (next)
+        remoteLayout->addWidget(
+            reposNextCardArea(QStringLiteral("reposNextCards"), remotePage), 1);
+    repoTabs->addTab(remotePage, next ? QStringLiteral("Remote")
+                                      : QStringLiteral("Remote repositories"));
 
     // A private repository is never advertised, and a repository that was never
     // published is not in the catalog either, so neither can appear in the table
     // above no matter how long you refresh it. They are on this machine all the
     // same, so they get their own table with the same columns.
+    const QString localDescription = QString::fromUtf8(
+        "Repositories this machine holds that the relay does not list above "
+        "\xE2\x80\x94 private ones, which are never advertised publicly, and "
+        "local-only ones you have not published. Their contents are read from "
+        "the copy on this disk, so there is no host or mirror line to show.");
     auto *localHeader = new QHBoxLayout;
     localHeader->setContentsMargins(0, 6, 0, 0);
     localHeader->setSpacing(10);
-    auto *localTitle = new QLabel(QStringLiteral("Private & local"));
-    localTitle->setObjectName("sectionTitle");
-    QFont localTitleFont = localTitle->font();
-    localTitleFont = forkmesh::resizedFont(localTitleFont, 1);
-    localTitleFont.setBold(true);
-    localTitle->setFont(localTitleFont);
-    localHeader->addWidget(localTitle);
+    auto *localPage = new QWidget;
+    if (next) {
+        localHeader->setContentsMargins(0, 0, 0, 0);
+        localHeader->setSpacing(8);
+        QLineEdit *localFilter = reposNextFilterField(
+            QStringLiteral("reposNextLocalFilter"), localPage);
+        connect(localFilter, &QLineEdit::textChanged, this,
+                [this](const QString &text) {
+                    if (!m_localReposTable)
+                        return;
+                    m_localReposTable->setProperty("reposNextFilterText", text);
+                    reposNextApplyFilter(m_localReposTable);
+                });
+        localHeader->addWidget(localFilter);
+    } else {
+        auto *localTitle = new QLabel(QStringLiteral("Private & local"));
+        localTitle->setObjectName("sectionTitle");
+        QFont localTitleFont = localTitle->font();
+        localTitleFont = forkmesh::resizedFont(localTitleFont, 1);
+        localTitleFont.setBold(true);
+        localTitle->setFont(localTitleFont);
+        localHeader->addWidget(localTitle);
+    }
     localHeader->addStretch();
     m_localReposStatus = new QLabel(QStringLiteral("Not loaded"));
     m_localReposStatus->setObjectName("mutedLabel");
     localHeader->addWidget(m_localReposStatus);
-    auto *localPage = new QWidget;
+    if (next) {
+        m_localReposStatus->setProperty("reposRole", QStringLiteral("status"));
+        m_localReposStatus->setTextFormat(Qt::PlainText);
+        localHeader->addWidget(reposNextHelpButton(
+            QStringLiteral("About private and local repositories"),
+            localDescription));
+    }
     auto *localLayout = new QVBoxLayout(localPage);
     localLayout->setContentsMargins(0, 8, 0, 0);
     localLayout->setSpacing(8);
+    if (next) {
+        localLayout->setContentsMargins(0, 16, 0, 0);
+        localLayout->setSpacing(12);
+    }
     localLayout->addLayout(localHeader);
 
-    auto *localSubtitle = new QLabel(QString::fromUtf8(
-        "Repositories this machine holds that the relay does not list above "
-        "\xE2\x80\x94 private ones, which are never advertised publicly, and "
-        "local-only ones you have not published. Their contents are read from "
-        "the copy on this disk, so there is no host or mirror line to show."));
-    localSubtitle->setObjectName("mutedLabel");
-    localSubtitle->setWordWrap(true);
-    localLayout->addWidget(localSubtitle);
+    if (!next) {
+        auto *localSubtitle = new QLabel(localDescription);
+        localSubtitle->setObjectName("mutedLabel");
+        localSubtitle->setWordWrap(true);
+        localLayout->addWidget(localSubtitle);
+    }
 
     m_localReposTable = new QTableWidget(0, kRepoColCount);
     installColumnHeaderMenu(m_localReposTable);
@@ -616,6 +2088,7 @@ QWidget *MainWindow::buildNetworkReposSection()
     m_localReposTable->setItemDelegate(
         new NetworkRepoRowDelegate(m_localReposTable));
     configureNetworkRepoGrid(m_localReposTable);
+    reposNextStyleTable(m_localReposTable);
     connect(m_localReposTable, &QTableWidget::cellDoubleClicked, this,
             [this](int row, int column) {
                 if (column == kRepoColActions || !m_localReposTable)
@@ -631,8 +2104,27 @@ QWidget *MainWindow::buildNetworkReposSection()
                     openRepoDetail(index);
             });
     localLayout->addWidget(m_localReposTable, 1);
-    repoTabs->addTab(localPage, QStringLiteral("Private / local"));
+    if (next)
+        localLayout->addWidget(
+            reposNextCardArea(QStringLiteral("reposNextCardsLocal"), localPage), 1);
+    repoTabs->addTab(localPage, next ? QStringLiteral("Private and local")
+                                     : QStringLiteral("Private / local"));
     outer->addWidget(repoTabs, 1);
+    if (next) {
+        for (int index = 0; index < repoTabs->count(); ++index) {
+            QLabel *count = reposNextLabel(QString(), "reposNextTabCount");
+            count->setAlignment(Qt::AlignCenter);
+            count->setVisible(false);
+            repoTabs->tabBar()->setTabButton(index, QTabBar::RightSide, count);
+        }
+        const auto applyMode = [page, viewButton](bool cards) {
+            reposNextApplyMode(page, cards);
+            viewButton->setVisible(!cards);
+        };
+        connect(cardsViewButton, &QPushButton::toggled, page,
+                [applyMode](bool cards) { applyMode(cards); });
+        applyMode(true);
+    }
 
     connect(viewButton, &QPushButton::toggled, this,
             [this, viewButton](bool compact) {
@@ -664,11 +2156,14 @@ QWidget *MainWindow::buildNetworkReposSection()
                                                        QLatin1String("Switch"));
                         }
                     }
+                    const bool nextRows = Theme::isNext();
                     table->verticalHeader()->setDefaultSectionSize(
-                        compact ? qMax(30, table->fontMetrics().height() + 12)
+                        compact ? (nextRows ? kRepoNextCompactRowHeight
+                                            : qMax(30, table->fontMetrics().height() + 12))
                                 : networkRepoRowHeight(table->font()));
                     table->verticalHeader()->setMinimumSectionSize(
-                        compact ? 24 : networkRepoRowHeight(table->font()));
+                        compact ? (nextRows ? kRepoNextCompactRowHeight : 24)
+                                : networkRepoRowHeight(table->font()));
                     table->resizeRowsToContents();
                 }
             });
@@ -1062,6 +2557,11 @@ void MainWindow::renderNetworkRepos(const QJsonArray &repos)
             repoItem->setData(Qt::UserRole + 2, isPrivate);
             repoItem->setData(Qt::UserRole + 3, routeOwner);
             repoItem->setData(Qt::UserRole + 4, routeName);
+            if (Theme::isNext())
+                repoItem->setData(kRepoNextCurrentRole,
+                                  m_repoDetailIndex >= 0 &&
+                                      (m_repoDetailIndex == localFork ||
+                                       m_repoDetailIndex == mirroredIndex));
         }
 
         addNetworkRepoRowActions(row, routeOwner, routeName, cloneUrl, isPrivate,
@@ -1075,6 +2575,9 @@ void MainWindow::renderNetworkRepos(const QJsonArray &repos)
                        : QStringLiteral("%1 repositories").arg(formatCount(rows.size())));
     m_networkRepoRowCount = rows.size();
     renderLocalOnlyRepos();
+    reposNextRebuildCards(m_networkReposTable, false);
+    reposNextSetTabCount(m_networkReposTable, rows.size());
+    reposNextApplyFilter(m_networkReposTable);
 }
 
 // Deduplicate the advertised catalog records and group the copies of one
@@ -1420,7 +2923,9 @@ void MainWindow::addNetworkRepoRowActions(int row, const QString &routeOwner,
                 });
     }
     addNetworkRepoAction(actionGrid, deleteButton, 4);
+    reposNextStyleRowActions(actions);
     m_networkReposTable->setCellWidget(row, kRepoColActions, actions);
+    reposNextTrackCell(m_networkReposTable, actions);
 }
 
 // The catalog above can only ever show what the relay advertises. Everything
@@ -1565,6 +3070,8 @@ void MainWindow::renderLocalOnlyRepos()
             repoItem->setData(Qt::UserRole + 2, repo.isPrivate);
             repoItem->setData(Qt::UserRole + 3, repo.owner);
             repoItem->setData(Qt::UserRole + 4, repo.name);
+            if (Theme::isNext())
+                repoItem->setData(kRepoNextCurrentRole, index == m_repoDetailIndex);
         }
 
         // No relay row means no mirrors to count: this copy is the only one.
@@ -1634,7 +3141,9 @@ void MainWindow::renderLocalOnlyRepos()
                                        [this] { refreshNetworkReposPage(); });
                 });
         addNetworkRepoAction(actionGrid, deleteButton, 4);
+        reposNextStyleRowActions(actions);
         m_localReposTable->setCellWidget(row, kRepoColActions, actions);
+        reposNextTrackCell(m_localReposTable, actions);
     }
 
     // Dirty checks can be expensive on generated trees. Paint the list first,
@@ -1694,6 +3203,7 @@ void MainWindow::renderLocalOnlyRepos()
                 if (localTable->property("compactRepoList").toBool())
                     item->setText(compactText);
             }
+            reposNextSyncLocalDirty(localTable);
         });
 
     m_localReposStatus->setText(
@@ -1705,6 +3215,9 @@ void MainWindow::renderLocalOnlyRepos()
                        indexes.size() == 1 ? QStringLiteral("repository")
                                            : QStringLiteral("repositories")));
     m_localReposTable->setVisible(true);
+    reposNextRebuildCards(m_localReposTable, true);
+    reposNextSetTabCount(m_localReposTable, indexes.size());
+    reposNextApplyFilter(m_localReposTable);
 }
 
 // Shared by the catalog table and the private/local table below it, so a
@@ -1911,6 +3424,8 @@ void MainWindow::fillNetworkRepoDataCells(QTableWidget *table, int row,
         const QString compactText = compactParts.join(QStringLiteral(" | "));
         nameItem->setData(kRepoDetailedTextRole, detailed);
         nameItem->setData(kRepoCompactTextRole, compactText);
+        if (Theme::isNext())
+            nameItem->setData(kRepoNextRecordRole, repo);
         if (table->property("compactRepoList").toBool())
             nameItem->setText(compactText);
     }
@@ -2146,6 +3661,7 @@ void MainWindow::fetchNetworkRepoMirrors(const QString &owner, const QString &na
                         item->setText(QString::fromUtf8("\xE2\x80\x94"));
                         item->setToolTip(errorString);
                         item->setForeground(Theme::remapColor(QColor("#8b949e")));
+                        reposNextSyncCardMirrors(m_networkReposTable, row);
                     }
                     return;
                 }
@@ -2193,6 +3709,7 @@ void MainWindow::applyNetworkRepoMirrors(const QByteArray &body,
         mirrorsItem->setText(QString::fromUtf8("\xE2\x80\x94"));
         mirrorsItem->setToolTip(QString());
         mirrorsItem->setForeground(Theme::remapColor(QColor("#8b949e")));
+        reposNextSyncCardMirrors(m_networkReposTable, row);
         return;
     }
 
@@ -2240,6 +3757,7 @@ void MainWindow::applyNetworkRepoMirrors(const QByteArray &body,
                                 : mirrorToolTip.join('\n'));
     mirrorsItem->setForeground(count == 0 ? QBrush(Theme::remapColor(QColor("#8b949e")))
                                           : QBrush());
+    reposNextSyncCardMirrors(m_networkReposTable, row);
 }
 
 void MainWindow::openNetworkRepo(const QString &owner, const QString &name,

@@ -70,6 +70,10 @@ async function openCalendar(page, historyRequests) {
       sessionToken: "test-session",
       status: "active",
     }));
+    window.ForkMeshDashboard = {
+      _registrations: [["calendar", ({ builtinPage }) => builtinPage("calendar")]],
+      registerPage(pageId, initializer) { this._registrations.push([pageId, initializer]); },
+    };
   });
   await page.route("https://cdn.tailwindcss.com/**", (route) =>
     route.fulfill({ contentType: "text/javascript", body: "window.tailwind = {};" }),
@@ -106,8 +110,8 @@ async function openCalendar(page, historyRequests) {
     });
   });
   await page.goto("/dashboard/calendar");
-  await expect(page.locator("[data-calendar-status]")).not.toContainText(
-    "loading repository activity",
+  await expect(page.locator("[data-calendar-status]")).toHaveText(
+    /^[1-9]\d* events?$/,
     { timeout: 20_000 },
   );
 }

@@ -92,6 +92,8 @@ async def _current_approval_count(runtime, case):
     row = await runtime.d1_first(
         "SELECT COUNT(*) AS n FROM org_succession_approvals a "
         "JOIN org_members m ON m.org_bi=? AND m.member_bi=a.approver_bi "
+        "JOIN org_succession_case_approvers s "
+        "ON s.case_id=a.case_id AND s.approver_bi=a.approver_bi "
         "WHERE a.case_id=? AND m.role IN ('owner','admin','maintainer','member') "
         "AND a.approver_bi<>? AND a.approver_bi<>?",
         case["org_bi"],
@@ -495,6 +497,15 @@ async def _approve(runtime, context):
         case["owner_name"], case["successor_name"]):
         return _response(
             runtime, {"error": "independent_member_approval_required"},
+            status=403,
+        )
+    if not await runtime.d1_first(
+        "SELECT 1 AS ok FROM org_succession_case_approvers "
+        "WHERE case_id=? AND approver_bi=?",
+        case["case_id"], context["actorBi"],
+    ):
+        return _response(
+            runtime, {"error": "approver_joined_after_grace_opened"},
             status=403,
         )
     now = runtime.now()

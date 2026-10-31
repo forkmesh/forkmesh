@@ -7,7 +7,9 @@
 
 #include "AgentJail.h"
 #include "AgentResources.h"
+#include "AgentSummaryPreload.h"
 #include "VirtualMachineRuntime.h"
+#include "TranscriptCoverage.h"
 
 #include <QCoreApplication>
 #include <QJsonArray>
@@ -115,6 +117,13 @@ void ClaudeStreamSession::startRuntime(const AgentRuntimeLaunch &launch)
     m_sessionTitle = launch.options.value(QStringLiteral("sessionTitle")).toString();
     if (m_extraSettings.contains(QLatin1Char('\'')))
         m_extraSettings.clear(); // would break out of the quoted argument
+    m_mcpConfig = launch.options.value(QStringLiteral("mcpConfig")).toString();
+    if (m_mcpConfig.contains(QLatin1Char('\'')))
+        m_mcpConfig.clear();
+    m_mcpReadOnly.clear();
+    for (const QJsonValue &value : launch.options.value(QStringLiteral("mcpReadOnly")).toArray())
+        if (!value.toString().isEmpty())
+            m_mcpReadOnly.append(value.toString());
     start(launch.workingDirectory, launch.environment, launch.initialPrompt,
           launch.permissionMode, launch.resumeId, launch.model, launch.effort,
           launch.fallbackModels.value(0), launch.memoryLimitMb,
@@ -164,6 +173,7 @@ void ClaudeStreamSession::launch()
     m_proc->setWorkingDirectory(cwd);
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    forkmesh::agentsummary::applyEnvironment(env);
     for (const QString &kv : m_extraEnv) {
         const int eq = kv.indexOf(QLatin1Char('='));
         if (eq > 0)
@@ -211,6 +221,7 @@ void ClaudeStreamSession::launch()
     m_launchedPermissionMode = m_permissionMode;
     m_pendingPermissionMode.clear();
     m_pendingPermissionRequestId.clear();
+    m_unannouncedFromMode.clear();
     m_launchedBypassing = m_permissionMode == QLatin1String(kBypassPermissionsMode);
     if (m_launchedBypassing)
         cmd += QStringLiteral(" --dangerously-skip-permissions");
@@ -229,6 +240,8 @@ void ClaudeStreamSession::launch()
         cmd += QStringLiteral(" --tools '%1'").arg(m_availableTools.join(QLatin1Char(',')));
     if (!m_extraSettings.isEmpty())
         cmd += QStringLiteral(" --settings '%1'").arg(m_extraSettings);
+    if (!m_mcpConfig.isEmpty())
+        cmd += QStringLiteral(" --mcp-config '%1'").arg(m_mcpConfig);
     if (!m_fallbackModels.trimmed().isEmpty())
         cmd += QStringLiteral(" --fallback-model '%1'").arg(m_fallbackModels.trimmed());
     if (m_hostControl)
@@ -243,7 +256,7 @@ void ClaudeStreamSession::launch()
     const forkmesh::agentguard::LaunchCommand guarded =
         forkmesh::agentguard::restrictedCommand(
             QStringLiteral("bash"), {QStringLiteral("-lc"), cmd}, cwd,
-            m_guardrails, env);
+            m_guardrails, env, m_mcpReadOnly);
     if (!guarded.error.isEmpty()) {
         QProcess *failed = m_proc;
         m_proc = nullptr;
@@ -438,6 +451,12 @@ bool ClaudeStreamSession::setPermissionMode(const QString &permissionMode)
                           QStringLiteral("set_permission_mode")},
                          {QStringLiteral("mode"), mode}}}}))
         return false;
+    if (m_unannouncedFromMode.isEmpty())
+        m_unannouncedFromMode = m_permissionMode.isEmpty()
+                                    ? QStringLiteral("default")
+                                    : m_permissionMode;
+    else if (m_unannouncedFromMode == mode)
+        m_unannouncedFromMode.clear();
     m_permissionMode = mode;
     m_pendingPermissionMode = mode;
     m_pendingPermissionRequestId = requestId;
@@ -459,8 +478,10 @@ void ClaudeStreamSession::notePermissionModeResponse(const QJsonObject &ev)
     // what the process is really enforcing: the mode is stored on the session
     // either way, so the next launch still carries it.
     if (response.value(QStringLiteral("subtype")).toString() ==
-        QLatin1String("error"))
+        QLatin1String("error")) {
         m_permissionMode = m_launchedPermissionMode;
+        m_unannouncedFromMode.clear();
+    }
     m_pendingPermissionMode.clear();
     m_pendingPermissionRequestId.clear();
 }
@@ -469,7 +490,12 @@ bool ClaudeStreamSession::sendUserText(const QString &text)
 {
     if (text.trimmed().isEmpty())
         return true; // nothing to deliver, so nothing failed to arrive
-    return writeUserTurn(text);
+    const QString notice = forkmesh::claudecontrol::permissionModeChangeNotice(
+        m_unannouncedFromMode, m_permissionMode);
+    if (!writeUserTurn(notice + text))
+        return false;
+    m_unannouncedFromMode.clear();
+    return true;
 }
 
 bool ClaudeStreamSession::sendCommand(const AgentRuntimeCommand &command)
@@ -729,6 +755,13 @@ void ClaudeStreamSession::receiveParsedLine(quint64 sequence,
     deliverParsedLines();
 }
 
+void ClaudeStreamSession::noteDroppedLine(const QString &line)
+{
+    if (!forkmesh::transcriptcoverage::claudeLineGaps(line).isEmpty())
+        emit event(forkmesh::transcriptcoverage::droppedLineEvent(
+            QStringLiteral("claude"), line));
+}
+
 void ClaudeStreamSession::deliverParsedLines()
 {
     while (true) {
@@ -745,9 +778,13 @@ void ClaudeStreamSession::deliverParsedLines()
             if (parsed.opensConversation)
                 m_conversationOpened = true;
             notePermissionModeResponse(parsed.event);
-            if (m_hostControl && handleControlLine(parsed.event))
+            if (m_hostControl && handleControlLine(parsed.event)) {
+                noteDroppedLine(parsed.raw);
                 continue;
+            }
             emit event(parsed.event);
+        } else {
+            noteDroppedLine(parsed.raw);
         }
     }
     finishAfterParsing();

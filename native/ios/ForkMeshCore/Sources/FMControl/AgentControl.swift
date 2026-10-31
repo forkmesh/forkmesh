@@ -77,6 +77,8 @@ public struct AgentQuestion: Equatable, Sendable, Identifiable {
     public let id: String
     public let fields: [AgentQuestionField]
 
+    public static let composerHint = "Type your answer for the agent"
+
     init?(_ json: JSONObject) {
         id = json.str("id")
         fields = json.obj("input").maps("questions").enumerated().map { AgentQuestionField($0.element, index: $0.offset) }
@@ -137,6 +139,10 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
     public var createdAtMs = 0
     public var unread: Bool?
     public var backgroundTasks = 0
+    public var tokensIn = 0
+    public var tokensOut = 0
+    public var desktopKey = ""
+    public var elsewhere = false
 
     public init(
         id: String, badge: AgentTransportBadge, title: String, repoOwner: String, repoName: String, node: String,
@@ -321,6 +327,8 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
         unified.createdAtMs = session.createdAtMs
         unified.unread = row.unread
         unified.backgroundTasks = row.backgroundTasks
+        unified.tokensIn = row.tokensIn
+        unified.tokensOut = row.tokensOut
         return unified
     }
 
@@ -331,6 +339,18 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
             !row.outside && !row.merged && row.repoName == name && (row.repoOwner.isEmpty || row.repoOwner == owner)
                 && ((number > 0 && row.prNumber == number) || (!head.isEmpty && row.branchName == head))
         }
+    }
+
+    public static func forRoute(_ id: String, in rows: [UnifiedAgentRow]) -> UnifiedAgentRow? {
+        if let exact = rows.first(where: { $0.id == id }) { return exact }
+        if id.hasPrefix("node:") {
+            let session = String(id.dropFirst("node:".count))
+            if session.isEmpty { return nil }
+            return rows.first { !$0.isDesktop && !$0.outside && $0.cloudSessionId == session }
+        }
+        guard id.hasPrefix("desktop:") else { return nil }
+        let elsewhere = rows.filter { $0.elsewhere && $0.id.hasSuffix(":\(id)") }
+        return elsewhere.count == 1 ? elsewhere[0] : nil
     }
 
     /// A run on the relay queue.
@@ -395,15 +415,60 @@ public struct UnifiedAgentRow: Equatable, Sendable, Identifiable {
 public func mergeAgentRows(desktop: [UnifiedAgentRow], cloud: [UnifiedAgentRow], desktopName: String)
     -> [UnifiedAgentRow]
 {
-    let desktopIds = Set(desktop.map(\.localId))
     let name = desktopName.lowercased()
+    var held = Set(desktop.map { "\($0.node.lowercased())#\($0.localId)" })
+    if !name.isEmpty { held.formUnion(desktop.filter { !$0.elsewhere }.map { "\(name)#\($0.localId)" }) }
     let others = cloud.filter { row in
-        !(row.localId > 0 && !name.isEmpty && row.node.lowercased() == name && desktopIds.contains(row.localId))
+        !(row.localId > 0 && !row.node.isEmpty && held.contains("\(row.node.lowercased())#\(row.localId)"))
     }
     return (desktop + others).sorted { a, b in
         if a.isActive != b.isActive { return a.isActive }
         if a.updatedAtMs != b.updatedAtMs { return a.updatedAtMs > b.updatedAtMs }
         return a.id < b.id
+    }
+}
+
+public struct OtherDesktopAgents: Equatable, Sendable, Identifiable {
+    public let key: String
+    public let name: String
+    public let rows: [UnifiedAgentRow]
+    public let note: String
+
+    public init(key: String, name: String, rows: [UnifiedAgentRow], note: String = "") {
+        self.key = key
+        self.name = name
+        self.rows = rows
+        self.note = note
+    }
+
+    public var id: String { key }
+    public var running: Int { rows.filter(\.isActive).count }
+
+    public var summary: String {
+        if !note.isEmpty { return note }
+        if rows.isEmpty { return "No agents" }
+        let total = rows.count == 1 ? "1 agent" : "\(rows.count) agents"
+        return running > 0 ? "\(total) · \(running) running" : total
+    }
+
+    public nonisolated static func listed(
+        _ snapshot: LocalAgentsSnapshot, key: String, name: String, transport: ControlTransport
+    ) -> OtherDesktopAgents {
+        let rows = (snapshot.sessions.map { UnifiedAgentRow.fromDesktop($0, transport: transport, desktop: name) }
+            + snapshot.outside.map { UnifiedAgentRow.fromOutside($0, transport: transport, desktop: name) })
+            .map { (row: UnifiedAgentRow) -> UnifiedAgentRow in
+                var tagged = row
+                tagged.id = "\(key):\(row.id)"
+                tagged.desktopKey = key
+                tagged.elsewhere = true
+                return tagged
+            }
+            .sorted { a, b in
+                if a.isActive != b.isActive { return a.isActive }
+                if a.updatedAtMs != b.updatedAtMs { return a.updatedAtMs > b.updatedAtMs }
+                return a.id < b.id
+            }
+        return OtherDesktopAgents(key: key, name: name, rows: rows)
     }
 }
 
@@ -580,6 +645,13 @@ public final class AgentControlCenter: AgentControlling {
     public private(set) var desktopNote = ""
     public private(set) var cloudNote = ""
     public private(set) var promptNotice = ""
+    public private(set) var otherDesktops: [OtherDesktopAgents] = []
+
+    public nonisolated static let otherDesktopLimit = 4
+
+    public var otherDesktopNotes: [String] {
+        otherDesktops.filter { !$0.note.isEmpty }.map { "\($0.name): \($0.note)" }
+    }
 
     @ObservationIgnored private var tapId: UUID?
     @ObservationIgnored private var refreshing = false
@@ -590,6 +662,11 @@ public final class AgentControlCenter: AgentControlling {
     @ObservationIgnored private var cloudReads: [String: CloudRead] = [:]
     @ObservationIgnored private var cloudFull: [String: AgentLaunchSession] = [:]
     @ObservationIgnored private var cloudLive: [String: AgentLiveText] = [:]
+    @ObservationIgnored private var deskRows: [UnifiedAgentRow] = []
+    @ObservationIgnored private var nodeRows: [UnifiedAgentRow] = []
+    @ObservationIgnored private var otherTaps: [String: UUID] = [:]
+    @ObservationIgnored private var othersLoading = false
+    @ObservationIgnored private var othersAgain = false
 
     public nonisolated static let cloudReadReuse: TimeInterval = 30
 
@@ -629,6 +706,21 @@ public final class AgentControlCenter: AgentControlling {
         await reload(cloud: false)
     }
 
+    public func row(forRoute id: String) -> UnifiedAgentRow? {
+        if let row = UnifiedAgentRow.forRoute(id, in: rows) { return row }
+        guard id.hasPrefix("node:") else { return nil }
+        let session = String(id.dropFirst("node:".count))
+        guard let claimed = cloudSessions.first(where: { $0.sessionId == session }).map(UnifiedAgentRow.fromCloud),
+              claimed.localId > 0
+        else { return nil }
+        let node = claimed.node.lowercased()
+        let desktop = (hub.currentLink?.desktopName ?? "").lowercased()
+        return rows.first { row in
+            row.isDesktop && !row.outside && row.localId == claimed.localId
+                && (row.node.lowercased() == node || (!row.elsewhere && !desktop.isEmpty && desktop == node))
+        }
+    }
+
     public func resetForProjectSwitch() {
         epoch &+= 1
         rows = []
@@ -636,6 +728,13 @@ public final class AgentControlCenter: AgentControlling {
         desktopNote = ""
         cloudNote = ""
         promptNotice = ""
+        otherDesktops = []
+        deskRows = []
+        nodeRows = []
+        for id in otherTaps.values { hub.removeEventTap(id) }
+        otherTaps = [:]
+        othersLoading = false
+        othersAgain = false
         cloudSessions = []
         cloudReads = [:]
         cloudFull = [:]
@@ -680,10 +779,80 @@ public final class AgentControlCenter: AgentControlling {
             }
             if started != epoch { return }
             publish(desk, nodes)
+            if withCloud { await refreshOtherDesktops(started) }
         }
     }
 
+    private func refreshOtherDesktops(_ started: Int) async {
+        if othersLoading {
+            othersAgain = true
+            return
+        }
+        othersLoading = true
+        defer { if started == epoch { othersLoading = false } }
+        repeat {
+            othersAgain = false
+            await loadOtherDesktops(started)
+        } while othersAgain && started == epoch
+    }
+
+    private func listenToOtherDesktops(_ keys: [String]) {
+        for (key, id) in otherTaps where !keys.contains(key) {
+            hub.removeEventTap(id)
+            otherTaps[key] = nil
+        }
+        for key in keys where otherTaps[key] == nil {
+            otherTaps[key] = hub.addEventTap({ [weak self] name, _ in
+                guard let self, name == "agents.changed", key != self.hub.activeKey else { return }
+                let started = self.epoch
+                Task { await self.refreshOtherDesktops(started) }
+            }, for: key)
+        }
+    }
+
+    private func loadOtherDesktops(_ started: Int) async {
+        let targets = Array(hub.otherDesktops.prefix(Self.otherDesktopLimit))
+        listenToOtherDesktops(targets.map(\.key))
+        let hub = self.hub
+        let loads = targets.map { (target: PairedDesktop) in
+            Task { @MainActor () -> OtherDesktopAgents? in
+                do {
+                    let link = try await hub.link(to: target.key)
+                    let listed = try await link.request("agents.list", [:], timeout: 15)
+                    let name = link.desktopName.isEmpty ? target.name : link.desktopName
+                    return OtherDesktopAgents.listed(
+                        LocalAgentsSnapshot.fromJSON(listed), key: target.key, name: name, transport: link.transport)
+                } catch {
+                    if ControlErrorText.isCancellation(error) { return nil }
+                    return OtherDesktopAgents(key: target.key, name: target.name, rows: [], note: "Not reachable")
+                }
+            }
+        }
+        var out: [OtherDesktopAgents] = []
+        for (target, load) in zip(targets, loads) {
+            if let loaded = await load.value {
+                out.append(loaded)
+            } else if let kept = otherDesktops.first(where: { $0.key == target.key }) {
+                out.append(kept)
+            }
+        }
+        if started != epoch { return }
+        let active = hub.activeKey
+        out.removeAll { $0.key == active }
+        if out != otherDesktops { otherDesktops = out }
+        republish()
+    }
+
     private func publish(_ desk: [UnifiedAgentRow], _ nodes: [UnifiedAgentRow]) {
+        deskRows = desk
+        nodeRows = nodes
+        republish()
+    }
+
+    private func republish() {
+        let active = hub.activeKey
+        let desk = deskRows + otherDesktops.filter { $0.key != active }.flatMap(\.rows)
+        let nodes = nodeRows
         let merged = PerformanceMonitorService.section("agents.mergeRows") {
             mergeAgentRows(desktop: desk, cloud: nodes, desktopName: hub.currentLink?.desktopName ?? "")
         }
@@ -695,7 +864,9 @@ public final class AgentControlCenter: AgentControlling {
         onDelta: @escaping @MainActor (AgentTranscriptDelta) -> Void
     ) -> DesktopTranscriptStream? {
         guard row.isDesktop, row.localId != 0 else { return nil }
-        return DesktopTranscriptStream(hub: hub, sessionId: row.localId, since: since, onEnded: onEnded, onDelta: onDelta)
+        return DesktopTranscriptStream(
+            hub: hub, sessionId: row.localId, since: since, desktopKey: row.desktopKey, onEnded: onEnded,
+            onDelta: onDelta)
     }
 
     private func loadDesktop(_ started: Int) async -> [UnifiedAgentRow] {
@@ -710,14 +881,19 @@ public final class AgentControlCenter: AgentControlling {
             let link = try await hub.link()
             let listed = try await link.request("agents.list", [:])
             if started != epoch { return [] }
+            let key = hub.activeKey
             return PerformanceMonitorService.section("agents.desktopList") {
                 let snapshot = LocalAgentsSnapshot.fromJSON(listed)
                 if snapshot != desktopSnapshot { desktopSnapshot = snapshot }
                 if !desktopNote.isEmpty { desktopNote = "" }
-                return snapshot.sessions.map {
+                return (snapshot.sessions.map {
                     UnifiedAgentRow.fromDesktop($0, transport: link.transport, desktop: link.desktopName)
                 } + snapshot.outside.map {
                     UnifiedAgentRow.fromOutside($0, transport: link.transport, desktop: link.desktopName)
+                }).map { (row: UnifiedAgentRow) -> UnifiedAgentRow in
+                    var tagged = row
+                    tagged.desktopKey = key
+                    return tagged
                 }
             }
         } catch {
@@ -746,18 +922,20 @@ public final class AgentControlCenter: AgentControlling {
                 if note != cloudNote { cloudNote = note }
             }
         }
-        return cloudSessions.map(UnifiedAgentRow.fromCloud)
+        let nodes = cloudSessions.map(UnifiedAgentRow.fromCloud)
+        if started == epoch { publish(deskRows, nodes) }
+        return nodes
     }
 
     public func stop(_ row: UnifiedAgentRow) async throws {
         if row.outside {
             guard row.canStop else { throw LocalControlException("outside_stop_unsupported") }
-            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))])
+            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))], to: row.desktopKey)
             await refresh()
             return
         }
         if row.isDesktop {
-            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))])
+            _ = try await hub.request("agents.stop", ["id": .int(Int64(row.localId))], to: row.desktopKey)
         } else {
             guard let cloud else { throw LocalControlException("not_connected") }
             _ = try await cloud.stopAgentSession(row.repoOwner, row.repoName, row.cloudSessionId, orgScope: row.orgScope)
@@ -780,7 +958,8 @@ public final class AgentControlCenter: AgentControlling {
             let trimmed = text.dartTrimmed
             if trimmed.isEmpty { return }
             let answer = try await hub.request(
-                "agents.prompt", ["id": .int(Int64(row.localId)), "text": .string(trimmed)], timeout: 30)
+                "agents.prompt", ["id": .int(Int64(row.localId)), "text": .string(trimmed)], timeout: 30,
+                to: row.desktopKey)
             if answer.str("status") == "held_for_approval" {
                 promptNotice = ControlErrorText.describe(code: "held_for_approval")
             }
@@ -790,7 +969,7 @@ public final class AgentControlCenter: AgentControlling {
         let trimmed = promptOrPhotoNote(text.dartTrimmed, images)
         if trimmed.isEmpty { return }
         if row.isDesktop {
-            let link = try await hub.link()
+            let link = try await hub.link(to: row.desktopKey)
             var asked: JSONObject = ["id": .int(Int64(row.localId)), "text": .string(trimmed)]
             if row.offersModelChoice, !model.isEmpty { asked["model"] = .string(model) }
             if row.offersModelChoice, !provider.isEmpty, provider != row.provider {
@@ -822,7 +1001,8 @@ public final class AgentControlCenter: AgentControlling {
 
     public func questions(_ row: UnifiedAgentRow) async throws -> [AgentQuestion] {
         guard row.isDesktop, !row.outside, row.localId > 0 else { return [] }
-        let answer = try await hub.request("agents.questions", ["id": .int(Int64(row.localId))])
+        let answer = try await hub.request(
+            "agents.questions", ["id": .int(Int64(row.localId))], to: row.desktopKey)
         return answer.maps("questions").compactMap(AgentQuestion.init)
     }
 
@@ -833,7 +1013,7 @@ public final class AgentControlCenter: AgentControlling {
         _ = try await hub.request(
             "agents.answer",
             ["id": .int(Int64(row.localId)), "question": .string(question.id), "answer": .string(answer)],
-            timeout: 30)
+            timeout: 30, to: row.desktopKey)
         await refresh()
     }
 
@@ -847,7 +1027,7 @@ public final class AgentControlCenter: AgentControlling {
             return
         }
         guard row.isDesktop, !row.outside else { throw LocalControlException("unsupported") }
-        _ = try await hub.request("agents.continue", ["id": .int(Int64(row.localId))])
+        _ = try await hub.request("agents.continue", ["id": .int(Int64(row.localId))], to: row.desktopKey)
         await refresh()
     }
 
@@ -932,7 +1112,8 @@ public final class AgentControlCenter: AgentControlling {
             if since > 0 { params["since"] = .int(Int64(since)) }
             do {
                 return AgentTranscriptDelta.fromDesktop(
-                    try await hub.request("agents.transcript", params), since: since, sessionId: row.localId)
+                    try await hub.request("agents.transcript", params, to: row.desktopKey), since: since,
+                    sessionId: row.localId)
             } catch let refusal as LocalControlException where outsideTranscriptMissing.contains(refusal.code) {
                 if since > 0 && refusal.code == "unknown_session" {
                     return AgentTranscriptDelta(text: "", next: since, reset: false, active: false, status: "done")
@@ -946,7 +1127,8 @@ public final class AgentControlCenter: AgentControlling {
             var params: JSONObject = ["id": .int(Int64(row.localId))]
             if since > 0 { params["since"] = .int(Int64(since)) }
             return AgentTranscriptDelta.fromDesktop(
-                try await hub.request("agents.transcript", params), since: since, sessionId: row.localId)
+                try await hub.request("agents.transcript", params, to: row.desktopKey), since: since,
+                sessionId: row.localId)
         }
         guard let cloud else { throw LocalControlException("not_connected") }
         let session = try await cloud.agentLaunchSession(
@@ -1013,14 +1195,14 @@ public final class AgentControlCenter: AgentControlling {
     public var supportsQueue: Bool { queue != nil }
 
     public func queuePosition(_ row: UnifiedAgentRow) -> Int? {
-        guard row.isDesktop, !row.outside, row.localId > 0 else { return nil }
+        guard row.isDesktop, !row.outside, !row.elsewhere, row.localId > 0 else { return nil }
         return queue?.position(of: row.localId)
     }
 
     public var queuedRows: [UnifiedAgentRow] {
         guard let queue else { return [] }
         var byId: [Int: UnifiedAgentRow] = [:]
-        for row in rows where row.isDesktop && !row.outside && row.localId > 0 {
+        for row in rows where row.isDesktop && !row.outside && !row.elsewhere && row.localId > 0 {
             if byId[row.localId] == nil { byId[row.localId] = row }
         }
         return queue.order.compactMap { byId[$0] }

@@ -29,6 +29,7 @@ struct WorkflowEditorScreen: View {
     @State private var adding: WorkflowAddTarget?
     @State private var confirmDelete: Bool = false
     @State private var credentialsOpen: Bool = false
+    @State private var confirmDesktopRun: Bool = false
 
     init(store: WorkflowsStore, workflowId: String?, draft: WorkflowDraft?) {
         self.store = store
@@ -66,6 +67,17 @@ struct WorkflowEditorScreen: View {
             .sheet(item: $openedRun) { (run: WorkflowRun) in
                 WorkflowRunSheet(store: store, run: run, draft: draft ?? .blank)
                     .fmSheetStyle(fitsContent: false)
+            }
+            .fmDialog(isPresented: $confirmDesktopRun) {
+                FmConfirmDialog(
+                    title: "Run on your desktop?",
+                    message: desktopRunMessage,
+                    confirmLabel: "Run",
+                    onCancel: { confirmDesktopRun = false },
+                    onConfirm: {
+                        confirmDesktopRun = false
+                        Task { await runOnDesktop() }
+                    })
             }
             .fmDialog(isPresented: $confirmDelete) {
                 FmConfirmDialog(
@@ -209,12 +221,15 @@ struct WorkflowEditorScreen: View {
         let summary = store.catalog.summary(node)
         let subtitle = ([store.catalog.title(node.type), summary] + (inputs.isEmpty ? ["Not connected"] : inputs))
             .filter { !$0.isEmpty }.joined(separator: " · ")
-        let status = run.flatMap { $0.nodes[node.id]?.objectValue?.str("status") } ?? ""
+        let live = store.desktopRunning == draft.id && !draft.id.isEmpty ? store.desktopLive[node.id] ?? "waiting" : nil
+        let status = live ?? run.flatMap { $0.nodes[node.id]?.objectValue?.str("status") } ?? ""
         return FmListRow(
             title: node.name,
             subtitle: subtitle,
             leading: AnyView(FmIconTile(icon: WorkflowLook.stepIcon(node.type), tint: kindColor(node.type))),
-            trailing: status.isEmpty ? nil : AnyView(FmIcon(WorkflowLook.statusIcon(status), size: 18, color: statusColor(status))),
+            trailing: status.isEmpty || status == "waiting" ? nil
+                : status == "running" ? AnyView(FmCircularProgressIndicator(size: 18, strokeWidth: 2))
+                : AnyView(FmIcon(WorkflowLook.statusIcon(status), size: 18, color: statusColor(status))),
             onTap: { editingStep = node.id })
             .contextMenu {
                 Button("Add step after") {
@@ -225,16 +240,44 @@ struct WorkflowEditorScreen: View {
             .accessibilityIdentifier("workflow-step-\(node.id)")
     }
 
-    private func runSection(_ draft: WorkflowDraft) -> some View {
+    @ViewBuilder private func runSection(_ draft: WorkflowDraft) -> some View {
+        if WorkflowDesktopSteps.hasDesktopSteps(draft) {
+            desktopRunSection(draft)
+        } else {
+            anywhereRunSection(draft)
+        }
+    }
+
+    private func desktopRunSection(_ draft: WorkflowDraft) -> some View {
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            FmSectionHeader(title: "Run")
+            FmFilledButton(
+                busy == "desktop" ? "Running on your desktop…" : "Run on your desktop", icon: "desktop_windows_outlined",
+                fillWidth: true, busy: busy == "desktop",
+                onPressed: busy.isEmpty && store.canRunOnDesktop ? { confirmDesktopRun = true } : nil)
+                .accessibilityIdentifier("workflow-run-desktop")
+            Text(store.canRunOnDesktop ? WorkflowsText.desktopRunNote : WorkflowsText.desktopMissing)
+                .fmText(.bodySmall, color: fm.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var desktopRunMessage: String {
+        draft.map(WorkflowDesktopSteps.confirmation) ?? WorkflowsText.desktopRunNote
+    }
+
+    private func anywhereRunSection(_ draft: WorkflowDraft) -> some View {
         let missing = store.missingPhoneCredentials(draft)
         return VStack(alignment: .leading, spacing: FmSpace.x2) {
             FmSectionHeader(title: "Run")
             FmFilledButton(
                 busy == "phone" ? "Running on this phone…" : "Run on this phone", icon: "smartphone", fillWidth: true,
+                busy: busy == "phone",
                 onPressed: busy.isEmpty && store.canRunOnPhone ? { Task { await runOnPhone() } } : nil)
                 .accessibilityIdentifier("workflow-run-phone")
             FmOutlinedButton(
                 busy == "server" ? "Running on ForkMesh…" : "Run on ForkMesh", icon: "cloud_outlined", fillWidth: true,
+                busy: busy == "server",
                 onPressed: busy.isEmpty ? { Task { await runOnServer() } } : nil)
                 .accessibilityIdentifier("workflow-run-server")
             Text(store.canRunOnPhone ? WorkflowsText.phoneRunNote : WorkflowsText.phoneEngineMissing)
@@ -272,9 +315,9 @@ struct WorkflowEditorScreen: View {
     }
 
     private func runRow(_ run: WorkflowRun) -> some View {
-        let place = run.place == .phone ? "On this phone" : "On ForkMesh"
+        let place = run.place == .phone ? "On this phone" : run.place == .desktop ? "On your desktop" : "On ForkMesh"
         let when = run.startedAt > 0 ? Format.relativeTime(run.startedAt) : ""
-        let subtitle = [place, run.trigger.capitalized, when, run.error].filter { !$0.isEmpty }.joined(separator: " · ")
+        let subtitle = [place, run.place == .desktop ? "" : run.trigger.capitalized, when, run.error].filter { !$0.isEmpty }.joined(separator: " · ")
         return FmListRow(
             title: WorkflowsText.status(run.status),
             subtitle: subtitle,
@@ -367,6 +410,24 @@ struct WorkflowEditorScreen: View {
         busy = ""
         await refreshRuns()
         if !runs.contains(where: { $0.id == run.id }) { runs.insert(run, at: 0) }
+        openedRun = run
+    }
+
+    private func runOnDesktop() async {
+        if dirty || draft?.id.isEmpty != false {
+            guard await save() else { return }
+        }
+        guard let current = draft, busy.isEmpty else { return }
+        busy = "desktop"
+        let run = await store.runOnDesktop(current)
+        busy = ""
+        await refreshRuns()
+        if !runs.contains(where: { $0.id == run.id }) { runs.insert(run, at: 0) }
+        if run.succeeded {
+            show("Done on your desktop.")
+        } else {
+            show(run.error.isEmpty ? "The run failed on your desktop." : run.error, error: true)
+        }
         openedRun = run
     }
 

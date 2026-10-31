@@ -79,8 +79,10 @@ import com.forkmesh.nativeapp.ui.kit.FmSkeletonList
 import com.forkmesh.nativeapp.ui.kit.FmSliverFadeIn
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.FmTooltip
+import com.forkmesh.nativeapp.ui.navigation.LocalShellPaneOpen
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
+import com.forkmesh.nativeapp.ui.navigation.shellPaneSelected
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmColors
 import com.forkmesh.nativeapp.ui.theme.FmHaptics
@@ -269,8 +271,7 @@ internal class ReposScreen : Screen() {
                 Row(
                     Modifier
                         .fillMaxHeight()
-                        .horizontalScroll(state)
-                        .padding(end = FmSpace.x4),
+                        .horizontalScroll(state),
                     horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -287,7 +288,7 @@ internal class ReposScreen : Screen() {
                                     haptics.selection()
                                     filter = option
                                 }
-                                .padding(horizontal = FmSpace.x4),
+                                .padding(horizontal = 10.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
@@ -318,15 +319,14 @@ internal class ReposScreen : Screen() {
                         .border(1.dp, c.border, shape)
                         .clickable { open = true }
                         .semantics {
-                            contentDescription = "Sort repositories"
+                            contentDescription = "Sort repositories, ${sort.buttonLabel}"
                             role = Role.Button
                         }
-                        .padding(horizontal = FmSpace.x3),
+                        .width(36.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
                 ) {
                     FmIcon("sort", size = 16.dp, tint = c.textSecondary)
-                    Spacer(Modifier.width(FmSpace.x1))
-                    Text(sort.buttonLabel, style = Fm.text.labelMedium.copy(color = c.textSecondary))
                 }
             }
             FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -419,7 +419,7 @@ internal class ReposScreen : Screen() {
                                 FmSliverFadeIn(networkState) {
                                     Column {
                                         if (index > 0) FmRowDivider()
-                                        RepoTile(repo, localRecord(repo)) { navigator.push(RepoDetailScreen(repo)) }
+                                        RepoTile(repo, localRecord(repo), selected = paneOpens(repo)) { navigator.push(RepoDetailScreen(repo)) }
                                     }
                                 }
                             }
@@ -447,10 +447,11 @@ private fun CatalogError(message: String, onRetry: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RepoTile(repo: Repository, local: LocalRepoRecord?, onTap: () -> Unit) {
+private fun RepoTile(repo: Repository, local: LocalRepoRecord?, selected: Boolean = false, onTap: () -> Unit) {
     val c = Fm.colors
     val online = RepoCatalog.isOnline(repo)
     FmListRow(
+        modifier = Modifier.shellPaneSelected(selected),
         title = repo.fullName,
         minHeight = 64.dp,
         padding = PaddingValues(horizontal = FmSpace.x4, vertical = FmSpace.x3),
@@ -523,16 +524,17 @@ private fun DesktopReposSection(
         }
         rows.forEachIndexed { index, row ->
             if (index > 0) FmRowDivider()
-            DesktopRepoRow(row) { onOpen(row) }
+            DesktopRepoRow(row, selected = paneOpens(row.repository)) { onOpen(row) }
         }
         FmRowDivider(indent = 0.dp)
     }
 }
 
 @Composable
-private fun DesktopRepoRow(repo: DesktopRepo, onTap: () -> Unit) {
+private fun DesktopRepoRow(repo: DesktopRepo, selected: Boolean = false, onTap: () -> Unit) {
     val c = Fm.colors
     FmListRow(
+        modifier = Modifier.shellPaneSelected(selected),
         title = repo.slug,
         minHeight = 52.dp,
         padding = PaddingValues(horizontal = FmSpace.x4, vertical = FmSpace.x2),
@@ -588,4 +590,10 @@ internal fun RepoMeta(item: RepoMetaItem) {
     }
     val tooltip = item.tooltip
     if (tooltip == null) row() else FmTooltip(tooltip) { row() }
+}
+
+@Composable
+private fun paneOpens(repo: Repository): Boolean {
+    val open = LocalShellPaneOpen.current as? RepoDetailScreen ?: return false
+    return open.repo.owner.equals(repo.owner, ignoreCase = true) && open.repo.name.equals(repo.name, ignoreCase = true)
 }

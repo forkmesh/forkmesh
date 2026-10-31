@@ -435,7 +435,7 @@ def test_desktop_contact_rows_copy_an_outreach_prompt_for_their_sheet():
 
 
 def test_desktop_contact_table_is_sortable_hideable_reorderable_and_extensible():
-    setup = FEATURE.split("m_contactsTable = new QTableWidget(0, 0);", 1)[1]
+    setup = FEATURE.split("m_contactsTable = new ContactsTable(0, 0);", 1)[1]
     setup = setup.split("contactsPageLayout->addWidget(m_contactsBody)", 1)[0]
     # Drag to reorder, click to sort, right-click for the column menu.
     for call in ("setSectionsMovable(true)", "setSectionsClickable(true)",
@@ -644,7 +644,7 @@ def test_desktop_csv_import_confirms_the_column_mapping_before_writing():
 
 
 def test_desktop_contacts_multi_select_and_move_to_a_pipeline_from_a_right_click():
-    setup = FEATURE.split("m_contactsTable = new QTableWidget(0, 0);", 1)[1]
+    setup = FEATURE.split("m_contactsTable = new ContactsTable(0, 0);", 1)[1]
     setup = setup.split("contactsPageLayout->addWidget(m_contactsBody)", 1)[0]
     # Ctrl/Shift+click extends the selection; a modified click never opens
     # the cell editor or the email link.
@@ -1071,8 +1071,8 @@ def test_top_search_box_reaches_every_installed_package():
     assert "activateBuiltinPackageSearchHit(s1, s2);" in popup
     builtin = (REPO / "desktop" / "src" / "MainWindowSearch.cpp").read_text(encoding="utf-8")
     hits = builtin.split("MainWindow::builtinPackageSearchHits(", 1)[1].split("\n}\n", 1)[0]
-    for records in ("m_localNotes", "m_cloudNotes", "m_organizationTasks",
-                    "m_calendarEvents", "m_timersFeature->ordered(now)",
+    for records in ("m_organizationTasks",
+                    "chrome.widget->searchHits(query, limitPerPackage)",
                     "m_packageRegistry->isInstalled(manifest.id)"):
         assert records in hits, records
 
@@ -1232,8 +1232,10 @@ def test_desktop_detail_card_writes_an_investor_email_with_the_current_agent():
     assert "askNativePackageAgent(prompt, std::move(done));" in HOST
     ask = HOST.split("void MainWindow::askNativePackageAgent(", 1)[1].split("\n}\n", 1)[0]
     assert "defaultAgentProvider()" in ask
-    assert "new ClaudeStreamSession(this)" in ask and "new CodexAppServerSession(this)" in ask
-    assert "activeAgentAccountEnv(" in ask
+    assert "askNativePackageAgentWith(provider, prompt, 300000, std::move(done));" in ask
+    run = HOST.split("MainWindow::askNativePackageAgentWith(", 1)[1].split("\n}\n", 1)[0]
+    assert "new ClaudeStreamSession(this)" in run and "new CodexAppServerSession(this)" in run
+    assert "activeAgentAccountEnv(" in run
     assert "m_askAgent(host.askAgent)" in FEATURE
     detail = FEATURE.split("void CrmFeature::showContactDetail(", 1)[1].split("\n}\n", 1)[0]
     assert "draftInvestorEmail(contactById(contactId))" in detail
@@ -1350,3 +1352,24 @@ def test_the_desktop_card_shows_how_far_and_how_long_an_email_was_read():
     assert 'text(email, "readingReported") == QLatin1String("no")' in line
     assert "lines << (toots ? linkedEmailLine(email) : linkedEmailReport(email));" in FEATURE
     assert "history << QStringLiteral(\"- \") + linkedEmailLine(email);" in FEATURE
+
+
+def _feature_function(name):
+    return FEATURE.split(f"void CrmFeature::{name}(", 1)[1].split("\n}\n", 1)[0]
+
+
+def test_desktop_reads_a_first_page_of_contacts_then_the_rest_in_the_background():
+    load = _feature_function("loadOrganization")
+    assert 'summaryQuery.addQueryItem(QStringLiteral("contacts"), QString::number(kContactFirstPage));' in load
+    assert "const quint64 generation = ++m_contactsGeneration;" in load
+    assert "loadRemainingContacts(organization, next, generation);" in load
+    assert load.index("if (next.isEmpty()) {") < load.index("cacheSummary(payload);")
+    rest = _feature_function("loadRemainingContacts")
+    assert "if (generation != m_contactsGeneration || organization != m_shownOrganization)" in rest
+    assert 'query.addQueryItem(QStringLiteral("limit"), QString::number(kContactPageFetch));' in rest
+    assert "m_revision.clear();" in rest.split("if (!ok) {", 1)[1].split("return;", 1)[0]
+    assert "if (!known.contains(" in rest
+    assert rest.index("if (next.isEmpty()) {") < rest.index("cacheSummary(summary);")
+    assert "constexpr int kContactFirstPage = 250;" in FEATURE
+    assert "constexpr int kContactPageFetch = 1000;" in FEATURE
+    assert 'summaryObject.value(QStringLiteral("customers")).toInt(customers)' in FEATURE

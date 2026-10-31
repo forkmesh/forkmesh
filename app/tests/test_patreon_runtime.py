@@ -311,12 +311,14 @@ async def _noop(*_args, **_kwargs):
     return None
 
 
-def add_account(env, account_bi, email="", session_id="session-1"):
+def add_account(env, account_bi, email="", session_id="session-1",
+                email_verified=True):
     env.connection.execute(
         "INSERT INTO users(user_bi,data,email_bi) VALUES (?,?,?)",
         (
             account_bi,
-            encode({"name": account_bi, "status": "active", "kind": "user"}),
+            encode({"name": account_bi, "status": "active", "kind": "user",
+                    "email_verified": email_verified}),
             bi(email) if email else None,
         ),
     )
@@ -906,6 +908,25 @@ def test_webhook_email_fallback_matches_without_creating_link(runtime):
     assert runtime.connection.execute(
         "SELECT COUNT(*) FROM patreon_account_links"
     ).fetchone()[0] == 0
+
+
+def test_webhook_email_fallback_ignores_an_unconfirmed_email(runtime):
+    add_account(runtime, "squatter", "a@example.test", email_verified=False)
+
+    response = run(handler.patreon_webhook_handler(
+        runtime,
+        webhook_request(
+            runtime,
+            "members:pledge:create",
+            1000,
+            "unlinked-patreon-user",
+            "a@example.test",
+        ),
+    ))
+
+    assert response.status == 200
+    assert decode(response.body)["matched"] is False
+    assert active_roles(runtime, "squatter") == set()
 
 
 def test_unmatched_webhook_can_be_processed_after_later_link(runtime):

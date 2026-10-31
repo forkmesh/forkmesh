@@ -320,6 +320,7 @@ static void testLoopback()
               "approval reaches the phone");
         check(server->isPaired(phoneKey.publicKey), "remembered");
         check(server->isConnected(phoneKey.publicKey), "connected");
+        check(server->connectedLocally(phoneKey.publicKey), "connected on the network");
 
         phone.send({{"id", 2}, {"method", "agents.list"}, {"params", QJsonObject{{"x", 5}}}});
         check(waitFor([&] { return !phone.response(2).isEmpty(); }), "request answered");
@@ -631,6 +632,32 @@ static void testRelay()
     check(phone.response(3).value("error").toString() == "lan_only",
           "files stay on the LAN");
 
+    check(!server.connectedLocally(pairedPhone.publicKey), "relayed phone is not local");
+    int devicesChanged = 0;
+    server.onDevicesChanged = [&] { ++devicesChanged; };
+    server.setRemoteOff(true);
+    check(server.remoteOff() && devicesChanged == 1, "remote control off is announced");
+    phone.send({{"id", 900}, {"method", "agents.list"}});
+    deliver(phone);
+    check(phone.response(900).value("error").toString() == "remote_off",
+          "remote control off refuses requests");
+    server.broadcast("remote.test");
+    deliver(phone);
+    check(phone.event("remote.test").isEmpty(), "remote control off holds back events");
+    phone.send({{"id", 901}, {"method", "ping"}});
+    deliver(phone);
+    check(phone.response(901).contains("result"), "ping still answers while off");
+    server.setRemoteOff(false);
+    server.onDevicesChanged = nullptr;
+    phone.send({{"id", 902}, {"method", "agents.list"}});
+    deliver(phone);
+    check(phone.response(902).value("result").toObject().value("method").toString() ==
+              "agents.list",
+          "remote control back on routes requests");
+    server.broadcast("remote.test");
+    deliver(phone);
+    check(!phone.event("remote.test").isEmpty(), "remote control back on pushes events");
+
     // Gate 2 families: routed by the longest prefix, before onRequest and
     // before the built-in files.* methods, and never for a bare prefix.
     QStringList familyCalls;
@@ -901,6 +928,197 @@ static void testCodePairedUserStays()
           "a code-paired phone cannot rename its user to the owner");
 }
 
+static void testCodePairingCannotClaimOwner()
+{
+    QTemporaryDir dir;
+    SigningKey desktopKey;
+    SigningKey phoneKey;
+    SigningKey legacyKey;
+    const QString store = dir.filePath("paired.json");
+    writeStore(store, QJsonArray{QJsonObject{
+        {"key", legacyKey.publicKey}, {"name", "Old phone"},
+        {"user", "alice"}, {"pairedAtMs", 1.0}, {"approval", "code"}}});
+    LocalControlServer server(
+        desktopKey.publicKey,
+        [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
+    server.setDesktopInfo("desk", "alice");
+    server.setDeviceStorePath(store);
+    using Verdict = LocalControlServer::AccountCheck;
+    Verdict verdict = Verdict::NotOwned;
+    QStringList asked;
+    server.accountDeviceCheck = [&](const LocalControlServer::Device &device,
+                                    std::function<void(Verdict)> done) {
+        asked.append(device.key);
+        done(verdict);
+    };
+    int pairingConnection = 0;
+    QString promptUser;
+    server.onPairingRequested = [&](int id, const LocalControlServer::Device &device,
+                                    const QString &) {
+        pairingConnection = id;
+        promptUser = device.user;
+    };
+    QTcpServer listener;
+    check(listener.listen(QHostAddress::LocalHost, 0), "owner-claim listener");
+    QObject::connect(&listener, &QTcpServer::newConnection, [&] {
+        QTcpSocket *socket = listener.nextPendingConnection();
+        auto *buffer = new QByteArray;
+        QObject::connect(socket, &QTcpSocket::readyRead, socket, [=, &server] {
+            buffer->append(socket->readAll());
+            if (buffer->size() < 4)
+                return;
+            const quint32 length = qFromBigEndian<quint32>(
+                reinterpret_cast<const uchar *>(buffer->constData()));
+            if (buffer->size() < qsizetype(length) + 4)
+                return;
+            const QByteArray first = buffer->mid(4, length);
+            const QByteArray rest = buffer->mid(4 + length);
+            delete buffer;
+            socket->disconnect();
+            server.adopt(socket, first, rest);
+        });
+    });
+    const auto connected = [&](const QString &key) {
+        for (const LocalControlServer::Device &device : server.connectedDevices())
+            if (device.key == key)
+                return device;
+        return LocalControlServer::Device();
+    };
+    const auto ownerGate = [](const LocalControlServer::Device &device) {
+        return LocalControlServer::userVerified(device) &&
+               forkmesh::localcontrol::hosts::ownerMayManageHosts(device.user, "alice");
+    };
+
+    {
+        TestClient phone(phoneKey);
+        check(phone.connectTo(listener.serverPort()), "a phone naming the owner connects");
+        check(waitFor([&] { return pairingConnection != 0; }),
+              "the account does not list it, so the desktop asks for a code");
+        check(promptUser == "alice", "the prompt shows the name the phone claims");
+        server.approvePairing(pairingConnection);
+        check(server.isPaired(phoneKey.publicKey), "the owner approves the code");
+        check(!ownerGate(connected(phoneKey.publicKey)),
+              "a code approval does not make the phone the owner");
+        check(storedRecord(store, phoneKey.publicKey).value("user").toString().isEmpty(),
+              "the claimed owner name is not recorded");
+    }
+    check(waitFor([&] { return !server.isConnected(phoneKey.publicKey); }),
+          "the first channel closes");
+
+    asked.clear();
+    {
+        TestClient phone(phoneKey);
+        check(phone.connectTo(listener.serverPort()), "the guest reconnects");
+        check(waitFor([&] { return server.isConnected(phoneKey.publicKey); }),
+              "and is admitted as a guest");
+        check(asked.contains(phoneKey.publicKey), "its owner claim is checked with the account");
+        check(!ownerGate(connected(phoneKey.publicKey)),
+              "and stays a guest when the account does not list it");
+    }
+    check(waitFor([&] { return !server.isConnected(phoneKey.publicKey); }),
+          "the second channel closes");
+
+    {
+        TestClient phone(legacyKey);
+        check(phone.connectTo(listener.serverPort()), "an old code-paired owner record connects");
+        check(waitFor([&] { return server.isConnected(legacyKey.publicKey); }),
+              "and is admitted");
+        check(!ownerGate(connected(legacyKey.publicKey)),
+              "an owner name stored before the account confirmed it opens no owner family");
+    }
+    check(waitFor([&] { return !server.isConnected(legacyKey.publicKey); }),
+          "the legacy channel closes");
+
+    verdict = Verdict::Owned;
+    {
+        TestClient phone(phoneKey);
+        check(phone.connectTo(listener.serverPort()), "the phone reconnects once listed");
+        check(waitFor([&] { return server.isConnected(phoneKey.publicKey); }),
+              "and is admitted");
+        check(ownerGate(connected(phoneKey.publicKey)),
+              "an owner name the account confirms passes the owner gate");
+        check(storedRecord(store, phoneKey.publicKey).value("userConfirmed").toBool(),
+              "and the confirmation is remembered");
+    }
+}
+
+static void testCodePairedGuestSignsIn()
+{
+    QTemporaryDir dir;
+    SigningKey desktopKey;
+    SigningKey phoneKey;
+    const QString store = dir.filePath("paired.json");
+    writeStore(store, QJsonArray{QJsonObject{
+        {"key", phoneKey.publicKey}, {"name", "Guest 2307"},
+        {"user", ""}, {"pairedAtMs", 1.0}, {"approval", "code"}}});
+    QList<QJsonObject> outbox;
+    LocalControlServer server(
+        desktopKey.publicKey,
+        [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
+    server.setDesktopInfo("desk", "alice");
+    server.setDeviceStorePath(store);
+    server.setRelaySink([&](const QJsonObject &f) { outbox.append(f); return true; },
+                        "desk");
+    using Verdict = LocalControlServer::AccountCheck;
+    Verdict verdict = Verdict::NotOwned;
+    QStringList asked;
+    server.accountDeviceCheck = [&](const LocalControlServer::Device &device,
+                                    std::function<void(Verdict)> done) {
+        asked.append(device.key);
+        done(verdict);
+    };
+    const auto dial = [&](const QString &session) {
+        auto *phone = new RelayTestClient(phoneKey);
+        phone->session = session;
+        phone->server = &server;
+        phone->open();
+        for (int i = 0; i < 3; ++i) {
+            phone->fromDesktop.append(outbox);
+            outbox.clear();
+            phone->pump();
+        }
+        return phone;
+    };
+    const auto connectedUser = [&]() {
+        for (const LocalControlServer::Device &device : server.connectedDevices())
+            if (device.key == phoneKey.publicKey)
+                return device.user;
+        return QString();
+    };
+
+    std::unique_ptr<RelayTestClient> phone(dial("relay-session-guest-signin-1"));
+    check(asked == QStringList{phoneKey.publicKey},
+          "a code-paired phone naming a new account is checked with the account");
+    check(server.isConnected(phoneKey.publicKey),
+          "and still connects when the account does not list it");
+    check(storedRecord(store, phoneKey.publicKey).value("user").toString().isEmpty(),
+          "an unconfirmed account name is not recorded");
+    check(!forkmesh::localcontrol::hosts::ownerMayManageHosts(connectedUser(), "alice"),
+          "so it cannot manage the desktop's hosts");
+
+    verdict = Verdict::Unreachable;
+    phone.reset(dial("relay-session-guest-signin-2"));
+    check(server.isConnected(phoneKey.publicKey) &&
+              storedRecord(store, phoneKey.publicKey).value("user").toString().isEmpty(),
+          "an account that cannot be asked leaves the phone as it was");
+
+    verdict = Verdict::Owned;
+    phone.reset(dial("relay-session-guest-signin-3"));
+    check(server.isConnected(phoneKey.publicKey),
+          "a code-paired phone the account lists connects");
+    check(storedRecord(store, phoneKey.publicKey).value("user").toString() == "alice",
+          "and its signed-in account is recorded");
+    check(storedRecord(store, phoneKey.publicKey).value("approval").toString() == "code",
+          "while it stays approved in person");
+    check(forkmesh::localcontrol::hosts::ownerMayManageHosts(connectedUser(), "alice"),
+          "so the signed-in owner can manage the desktop's hosts");
+
+    asked.clear();
+    phone.reset(dial("relay-session-guest-signin-4"));
+    check(server.isConnected(phoneKey.publicKey) && asked.isEmpty(),
+          "a confirmed account is not asked about again");
+}
+
 static void testRelayResilience()
 {
     QTemporaryDir dir;
@@ -1037,7 +1255,8 @@ static void testAccountRevocation()
         QJsonObject{{"key", legacyPhone.publicKey}, {"name", "Legacy phone"},
                     {"pairedAtMs", 2.0}},
         QJsonObject{{"key", codePhone.publicKey}, {"name", "Code phone"},
-                    {"pairedAtMs", 3.0}, {"approval", "code"}}});
+                    {"user", "alice"}, {"pairedAtMs", 3.0}, {"approval", "code"},
+                    {"userConfirmed", true}}});
     QList<QJsonObject> outbox;
     LocalControlServer server(
         desktopKey.publicKey,
@@ -1527,6 +1746,8 @@ int main(int argc, char **argv)
     testAccountDevices();
     testRelayResilience();
     testCodePairedUserStays();
+    testCodePairingCannotClaimOwner();
+    testCodePairedGuestSignsIn();
     testAccountRevocation();
     testLanAdmitsBeforeAccountCheck();
     testHostPolicy();

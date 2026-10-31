@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -63,7 +64,12 @@ import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmIcon
+import com.forkmesh.nativeapp.feature.agents.opsIo
+import com.forkmesh.nativeapp.feature.agents.rememberOpsTick
+import com.forkmesh.nativeapp.workflows.DesktopWorkflowConfirmation
+import com.forkmesh.nativeapp.workflows.DesktopWorkflowsText
 import com.forkmesh.nativeapp.workflows.WorkflowCredential
+import com.forkmesh.nativeapp.workflows.WorkflowDesktopSteps
 import com.forkmesh.nativeapp.workflows.WorkflowDraft
 import com.forkmesh.nativeapp.workflows.WorkflowField
 import com.forkmesh.nativeapp.workflows.WorkflowNode
@@ -152,10 +158,16 @@ class WorkflowsScreen : Screen() {
     private var error by mutableStateOf("")
     private var generation by mutableIntStateOf(0)
     private var creating by mutableStateOf(false)
+    private var opening by mutableStateOf("")
+    private var accountPending by mutableStateOf<WorkflowDraft?>(null)
+    private var desktopPending by mutableStateOf<DesktopWorkflowConfirmation?>(null)
 
     @Composable
     override fun Content(navigator: Navigator) {
         val session = remember { WorkflowsSession.get() }
+        val desktop = remember { WorkflowsDesktop.store }
+        val status = rememberFmStatus()
+        val scope = rememberCoroutineScope()
         LaunchedEffect(generation) {
             val current = session ?: return@LaunchedEffect
             loading = true
@@ -170,8 +182,11 @@ class WorkflowsScreen : Screen() {
             }
             loading = false
         }
+        LaunchedEffect(generation, desktop) { desktop?.let { opsIo { it.refresh() } } }
         val top = navigator.top
         LaunchedEffect(top) { if (top === this@WorkflowsScreen) generation++ }
+        val tick = desktop?.let { rememberOpsTick(it) } ?: 0
+        val desktopRows = tick.let { desktop?.rows ?: emptyList() }
         Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar(WorkflowsText.TITLE, navigator) {
@@ -181,19 +196,46 @@ class WorkflowsScreen : Screen() {
                 }
                 when {
                     session == null -> FmEmptyState("account_tree", WorkflowsText.UNAVAILABLE)
-                    loading && workflows.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
-                    error.isNotEmpty() && workflows.isEmpty() -> FmEmptyState("error_outline", WorkflowsText.UNAVAILABLE, message = error)
-                    workflows.isEmpty() -> FmEmptyState("account_tree", WorkflowsText.EMPTY_TITLE, message = WorkflowsText.EMPTY_MESSAGE)
+                    loading && workflows.isEmpty() && desktopRows.isEmpty() ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
+                    error.isNotEmpty() && workflows.isEmpty() && desktop == null -> FmEmptyState("error_outline", WorkflowsText.UNAVAILABLE, message = error)
+                    workflows.isEmpty() && desktop == null -> FmEmptyState("account_tree", WorkflowsText.EMPTY_TITLE, message = WorkflowsText.EMPTY_MESSAGE)
                     else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+                        item { FmInlineStatus(status, Modifier.padding(horizontal = 16.dp)) }
+                        if (error.isNotEmpty() && workflows.isEmpty()) {
+                            item { Text(error, style = Fm.text.bodySmall, color = Fm.colors.danger, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                        }
+                        if (desktop != null) {
+                            item {
+                                FmGroupHeader(DesktopWorkflowsText.ACCOUNT_TITLE, count = workflows.size.takeIf { it > 0 })
+                                if (workflows.isEmpty() && !loading && error.isEmpty()) {
+                                    Text(WorkflowsText.EMPTY_MESSAGE, style = Fm.text.bodySmall, color = Fm.colors.textSecondary,
+                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                                }
+                            }
+                        }
                         items(workflows, key = { it.id }) { workflow ->
                             FmListRow(
                                 title = workflow.name,
                                 subtitle = subtitle(workflow),
                                 leading = { FmIconTile(WorkflowLook.triggerIcon(workflow.trigger), tint = WorkflowLook.statusColor(workflow.lastStatus)) },
-                                trailing = if (workflow.active) ({ FmStatusBadge("Active", Fm.colors.accent) }) else null,
+                                trailing = accountTrailing(session, workflow, status, scope),
                                 onTap = { navigator.push(WorkflowEditorScreen(session, workflow.id, null)) },
                             )
                             FmRowDivider()
+                        }
+                        if (desktop != null) {
+                            item {
+                                DesktopWorkflowsSection(desktop, desktopRows, onOpen = { navigator.push(DesktopWorkflowScreen(it.id)) }) { row ->
+                                    scope.launch {
+                                        try {
+                                            desktopPending = opsIo { desktop.prepare("run", row) }
+                                        } catch (thrown: Exception) {
+                                            status.error(DesktopWorkflowsText.describe(thrown))
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -213,6 +255,87 @@ class WorkflowsScreen : Screen() {
                 navigator.push(WorkflowEditorScreen(session, null, draft))
             }
         }
+        accountPending?.let { draft ->
+            FmConfirmDialog(
+                title = "Run on your desktop?",
+                body = WorkflowDesktopSteps.confirmMessage(draft),
+                confirmLabel = "Run",
+                onDismissRequest = { accountPending = null },
+                onConfirm = {
+                    accountPending = null
+                    if (session != null) scope.launch { runOnDesktop(session, draft, navigator, status) }
+                },
+            )
+        }
+        desktopPending?.let { confirmation ->
+            FmConfirmDialog(
+                title = "Run on the desktop?",
+                body = confirmation.summary.ifEmpty { null },
+                confirmLabel = "Run",
+                onDismissRequest = { desktopPending = null },
+                onConfirm = {
+                    desktopPending = null
+                    val store = desktop ?: return@FmConfirmDialog
+                    scope.launch {
+                        try {
+                            val message = opsIo { store.perform(confirmation) }
+                            status.show(message.ifEmpty { "Sent to the desktop." })
+                        } catch (thrown: Exception) {
+                            status.error(DesktopWorkflowsText.describe(thrown))
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    private fun accountTrailing(
+        session: WorkflowsSession,
+        workflow: WorkflowSummary,
+        status: com.forkmesh.nativeapp.ui.kit.FmStatus,
+        scope: kotlinx.coroutines.CoroutineScope,
+    ): (@Composable () -> Unit)? {
+        val running = session.desktopRunning.value == workflow.id || opening == workflow.id
+        if (!running && !workflow.runsOnDesktop) return if (workflow.active) ({ FmStatusBadge("Active", Fm.colors.accent) }) else null
+        return {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (workflow.active) FmStatusBadge("Active", Fm.colors.accent)
+                if (running) {
+                    FmCircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.padding(8.dp).size(20.dp))
+                } else {
+                    FmIconButton(
+                        "play_arrow", "Run ${workflow.name} on your desktop",
+                        onPressed = if (session.desktopRunning.value.isEmpty() && opening.isEmpty()) ({
+                            scope.launch { openForDesktop(session, workflow, status) }
+                        }) else null,
+                        color = Fm.colors.accent,
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun openForDesktop(session: WorkflowsSession, workflow: WorkflowSummary, status: com.forkmesh.nativeapp.ui.kit.FmStatus) {
+        if (!session.canRunOnDesktop) {
+            status.error(WorkflowsText.DESKTOP_MISSING)
+            return
+        }
+        opening = workflow.id
+        try {
+            accountPending = withContext(Dispatchers.IO) { session.api.open(workflow.id) }
+        } catch (thrown: Exception) {
+            status.error(WorkflowsText.describe(thrown, "This workflow could not be opened."))
+        } finally {
+            opening = ""
+        }
+    }
+
+    private suspend fun runOnDesktop(session: WorkflowsSession, draft: WorkflowDraft, navigator: Navigator, status: com.forkmesh.nativeapp.ui.kit.FmStatus) {
+        if (session.desktopRunning.value.isNotEmpty()) return
+        val run = withContext(Dispatchers.IO) { session.runOnDesktop(draft) }
+        if (run.succeeded) status.show("Done on your desktop.") else status.error(run.error.ifEmpty { "The run failed on your desktop." })
+        generation++
+        navigator.push(WorkflowRunScreen(run, draft))
     }
 
     private fun subtitle(workflow: WorkflowSummary): String {
@@ -287,6 +410,7 @@ class WorkflowEditorScreen(private val session: WorkflowsSession, private val wo
     private var loadError by mutableStateOf("")
     private var adding by mutableStateOf<Pair<String?, List<String>>?>(null)
     private var confirmDelete by mutableStateOf(false)
+    private var confirmDesktop by mutableStateOf(false)
     private var menu by mutableStateOf(false)
 
     private val dirty: Boolean get() = draft != null && draft != saved
@@ -352,6 +476,18 @@ class WorkflowEditorScreen(private val session: WorkflowsSession, private val wo
                 draft = next
                 navigator.push(WorkflowStepScreen(session, this, step.id))
             }
+        }
+        if (confirmDesktop) {
+            FmConfirmDialog(
+                title = "Run on your desktop?",
+                body = draft?.let { WorkflowDesktopSteps.confirmMessage(it) },
+                confirmLabel = "Run",
+                onDismissRequest = { confirmDesktop = false },
+                onConfirm = {
+                    confirmDesktop = false
+                    scope.launch { runOnDesktop(navigator, status) }
+                },
+            )
         }
         if (confirmDelete) {
             FmConfirmDialog(
@@ -431,24 +567,34 @@ class WorkflowEditorScreen(private val session: WorkflowsSession, private val wo
                 adding = anchor?.id to (anchor?.let { catalog.outputs(it.type) } ?: listOf("main"))
             }, icon = "add", modifier = Modifier.fillMaxWidth())
             FmSectionHeader("Run")
-            FmToneButton(
-                if (busy == "phone") "Running on this phone…" else "Run on this phone",
-                onPressed = if (busy.isEmpty() && session.engine != null) ({ scope.launch { runOnPhone(navigator) } }) else null,
-                icon = "smartphone", tone = FmTone.Accent, filled = true, modifier = Modifier.fillMaxWidth(),
-            )
-            FmToneButton(
-                if (busy == "server") "Running on ForkMesh…" else "Run on ForkMesh",
-                onPressed = if (busy.isEmpty()) ({ scope.launch { runOnServer(navigator, status) } }) else null,
-                icon = "cloud_outlined", modifier = Modifier.fillMaxWidth(),
-            )
-            Text(WorkflowsText.PHONE_RUN_NOTE, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
-            val missing = session.missingOnPhone(current)
-            if (missing.isNotEmpty()) {
-                FmCard(onTap = { navigator.push(WorkflowCredentialsScreen(session)) }) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FmIcon("lock_outline", size = 18.dp, tint = Fm.colors.warning)
-                        Text("Save a credential on this phone for ${missing.joinToString(", ")} to run those steps here.",
-                             style = Fm.text.bodySmall, color = Fm.colors.textPrimary)
+            if (WorkflowDesktopSteps.hasDesktopSteps(current)) {
+                FmToneButton(
+                    if (busy == "desktop") "Running on your desktop…" else "Run on your desktop",
+                    onPressed = if (busy.isEmpty() && session.canRunOnDesktop) ({ confirmDesktop = true }) else null,
+                    icon = "desktop_windows_outlined", tone = FmTone.Accent, filled = true, modifier = Modifier.fillMaxWidth(),
+                )
+                Text(if (session.canRunOnDesktop) WorkflowsText.DESKTOP_RUN_NOTE else WorkflowsText.DESKTOP_MISSING,
+                     style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+            } else {
+                FmToneButton(
+                    if (busy == "phone") "Running on this phone…" else "Run on this phone",
+                    onPressed = if (busy.isEmpty() && session.engine != null) ({ scope.launch { runOnPhone(navigator) } }) else null,
+                    icon = "smartphone", tone = FmTone.Accent, filled = true, modifier = Modifier.fillMaxWidth(),
+                )
+                FmToneButton(
+                    if (busy == "server") "Running on ForkMesh…" else "Run on ForkMesh",
+                    onPressed = if (busy.isEmpty()) ({ scope.launch { runOnServer(navigator, status) } }) else null,
+                    icon = "cloud_outlined", modifier = Modifier.fillMaxWidth(),
+                )
+                Text(WorkflowsText.PHONE_RUN_NOTE, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+                val missing = session.missingOnPhone(current)
+                if (missing.isNotEmpty()) {
+                    FmCard(onTap = { navigator.push(WorkflowCredentialsScreen(session)) }) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FmIcon("lock_outline", size = 18.dp, tint = Fm.colors.warning)
+                            Text("Save a credential on this phone for ${missing.joinToString(", ")} to run those steps here.",
+                                 style = Fm.text.bodySmall, color = Fm.colors.textPrimary)
+                        }
                     }
                 }
             }
@@ -460,7 +606,7 @@ class WorkflowEditorScreen(private val session: WorkflowsSession, private val wo
                             if (index > 0) FmRowDivider()
                             FmListRow(
                                 title = WorkflowsText.status(run.status),
-                                subtitle = listOf(if (run.phone) "On this phone" else "On ForkMesh",
+                                subtitle = listOf(if (run.phone) "On this phone" else if (run.desktop) "On your desktop" else "On ForkMesh",
                                                   if (run.startedAt > 0) relativeTime(run.startedAt) else "", run.error)
                                     .filter { it.isNotEmpty() }.joinToString(" · "),
                                 leading = { FmIcon(WorkflowLook.statusIcon(run.status), size = 22.dp, tint = WorkflowLook.statusColor(run.status)) },
@@ -480,12 +626,17 @@ class WorkflowEditorScreen(private val session: WorkflowsSession, private val wo
         val inputs = current.inputs(node.id).map { catalog.branch(it, current) }
         val subtitle = (listOf(catalog.title(node.type), catalog.summary(node)) + inputs.ifEmpty { listOf("Not connected") })
             .filter { it.isNotEmpty() }.joinToString(" · ")
-        val runStatus = (latest?.nodes?.get(node.id) as? Map<*, *>)?.get("status") as? String ?: ""
+        val live = if (current.id.isNotEmpty() && session.desktopRunning.value == current.id) session.desktopLive.value[node.id] ?: "waiting" else null
+        val runStatus = live ?: (latest?.nodes?.get(node.id) as? Map<*, *>)?.get("status") as? String ?: ""
         FmListRow(
             title = node.name,
             subtitle = subtitle,
             leading = { FmIconTile(WorkflowLook.stepIcon(node.type), tint = WorkflowLook.color(catalog.kind(node.type)?.color ?: "", Fm.colors.accent)) },
-            trailing = if (runStatus.isEmpty()) null else ({ FmIcon(WorkflowLook.statusIcon(runStatus), size = 18.dp, tint = WorkflowLook.statusColor(runStatus)) }),
+            trailing = when (runStatus) {
+                "", "waiting" -> null
+                "running" -> ({ FmCircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp)) })
+                else -> ({ FmIcon(WorkflowLook.statusIcon(runStatus), size = 18.dp, tint = WorkflowLook.statusColor(runStatus)) })
+            },
             onTap = { navigator.push(WorkflowStepScreen(session, this, node.id)) },
             onLongPress = { adding = node.id to catalog.outputs(node.type) },
         )
@@ -531,6 +682,24 @@ class WorkflowEditorScreen(private val session: WorkflowsSession, private val wo
         busy = ""
         refreshRuns()
         if (run != null) navigator.push(WorkflowRunScreen(run, current))
+    }
+
+    private suspend fun runOnDesktop(navigator: Navigator, status: com.forkmesh.nativeapp.ui.kit.FmStatus) {
+        if (dirty || draft?.id.isNullOrEmpty()) {
+            if (!save(status)) return
+        }
+        val current = draft ?: return
+        if (busy.isNotEmpty()) return
+        busy = "desktop"
+        val run = try {
+            withContext(Dispatchers.IO) { session.runOnDesktop(current) }
+        } finally {
+            busy = ""
+        }
+        refreshRuns()
+        if (runs.none { it.id == run.id }) runs = listOf(run) + runs
+        if (run.succeeded) status.show("Done on your desktop.") else status.error(run.error.ifEmpty { "The run failed on your desktop." })
+        navigator.push(WorkflowRunScreen(run, current))
     }
 
     private suspend fun runOnServer(navigator: Navigator, status: com.forkmesh.nativeapp.ui.kit.FmStatus) {
@@ -773,13 +942,17 @@ class WorkflowRunScreen(private val run: WorkflowRun, private val draft: Workflo
             ToolsAppBar(WorkflowsText.status(run.status), navigator, pluginMenu = false)
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FmIconTile(if (run.phone) "smartphone" else "cloud_outlined", tint = if (run.succeeded) Fm.colors.success else Fm.colors.danger)
+                    FmIconTile(
+                        if (run.phone) "smartphone" else if (run.desktop) "desktop_windows_outlined" else "cloud_outlined",
+                        tint = if (run.succeeded) Fm.colors.success else Fm.colors.danger,
+                    )
                     Column {
-                        Text(if (run.phone) "Ran on this phone" else "Ran on ForkMesh", style = Fm.text.titleMedium, color = Fm.colors.textPrimary)
+                        Text(if (run.phone) "Ran on this phone" else if (run.desktop) "Ran on your desktop" else "Ran on ForkMesh",
+                             style = Fm.text.titleMedium, color = Fm.colors.textPrimary)
                         val parts = mutableListOf<String>()
                         if (run.startedAt > 0) parts.add(relativeTime(run.startedAt))
                         if (run.startedAt > 0 && run.finishedAt >= run.startedAt) parts.add("${run.finishedAt - run.startedAt} ms")
-                        parts.add(if (run.requests == 1L) "1 request" else "${run.requests} requests")
+                        if (!run.desktop) parts.add(if (run.requests == 1L) "1 request" else "${run.requests} requests")
                         Text(parts.joinToString(" · "), style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
                     }
                 }
@@ -972,6 +1145,7 @@ private fun CredentialSheet(
                     }
                 }),
                 tone = FmTone.Accent, filled = true, modifier = Modifier.fillMaxWidth(),
+                busy = saving,
             )
             if (credential != null && credential.id in session.phoneIds.value) {
                 FmToneButton("Remove from this phone", onPressed = {

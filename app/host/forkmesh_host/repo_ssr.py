@@ -36,6 +36,7 @@ import time
 import urllib.parse
 
 from . import repo_code_ref
+from . import repo_moderation
 from . import repo_ssr_about
 
 PAGE_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/?$")
@@ -159,6 +160,12 @@ READER_BUDGET_SECONDS = 5.0
 READER_AGENTS = ("chatgpt-user", "oai-searchbot", "gptbot", "claude-user",
                  "claude-searchbot", "claudebot", "perplexity-user",
                  "perplexitybot", "mistralai-user")
+PREVIEW_AGENTS = ("slackbot", "twitterbot", "facebookexternalhit", "facebot",
+                  "discordbot", "linkedinbot", "telegrambot", "whatsapp",
+                  "mastodon", "pleroma", "akkoma", "misskey", "cardyb",
+                  "skypeuripreview", "iframely", "embedly", "redditbot",
+                  "zulip", "mattermost", "bitlybot", "pinterestbot",
+                  "applebot", "vkshare", "w3c_validator")
 DIFF_MAX_PAGE_BYTES = 4 * 1024 * 1024
 
 
@@ -176,12 +183,20 @@ def short_pull(scope):
     return (int(match.group(1)), match.group(2) or "") if match else (0, "")
 
 
-def reader_agent(scope):
+def _agent_in(scope, tokens):
     for name, value in scope.get("headers") or []:
         if name == b"user-agent":
             agent = value.decode("latin-1").lower()
-            return any(token in agent for token in READER_AGENTS)
+            return any(token in agent for token in tokens)
     return False
+
+
+def reader_agent(scope):
+    return _agent_in(scope, READER_AGENTS)
+
+
+def preview_agent(scope):
+    return _agent_in(scope, PREVIEW_AGENTS)
 
 
 def _view_bundle(fastpath, owner, repo, view, number):
@@ -281,7 +296,7 @@ def repo_info(blob):
 
 class ShortTicket:
     def __init__(self, fastpath, name, tab=None, issue=0, code=None, pull=0,
-                 section="", reader=False):
+                 section="", reader=False, preview=False):
         self.fastpath = fastpath
         self.name = name
         self.tab = tab
@@ -290,6 +305,8 @@ class ShortTicket:
         self.pull = pull
         self.section = section
         self.reader = reader
+        self.preview = preview
+        self.origin = ""
         self.bundle = None
         self.bundle_owner = _short_owners.get(name.lower()) \
             if issue or pull else None
@@ -318,14 +335,17 @@ class ViewTicket:
     """A pull request, issue or discussion page being rendered
     (repo_views): the bundle build and the tab it opens on."""
 
-    def __init__(self, task, section, target=None, root=None, reader=False):
+    def __init__(self, task, section, target=None, root=None, reader=False,
+                 preview=False):
         self.task = task
         self.section = section
         self.target = target
         self.root = root
         self.reader = reader
+        self.preview = preview
         self.origin = ""
         self.reactions = None
+        self.moderation = None
 
 
 _prerendered = {}   # (owner, repo) -> (monotonic time, data)
@@ -384,10 +404,14 @@ def start(fastpath, scope):
     if fastpath is None:
         return None
     forget_reactions(scope)
+    repo_moderation.forget(scope)
     key = micro_cache_key(scope)
     if key is not None:
         return key
-    from . import repo_views
+    from . import pull_card, repo_views
+    card = pull_card.card_target(scope)
+    if card is not None:
+        return pull_card.CardTicket(fastpath, *card)
     diff = repo_views.diff_target(scope)
     if diff is not None:
         return DiffTicket(fastpath, *diff)
@@ -404,7 +428,8 @@ def start(fastpath, scope):
         root = remembered_prerender(fastpath, owner, repo) \
             if name == "issue" and not section else None
         return ViewTicket(task, section, (owner, repo, name, number), root,
-                          reader_agent(scope))
+                          reader_agent(scope),
+                          name == "pull" and preview_agent(scope))
     target = page_target(scope)
     if target is None:
         name = short_target(scope)
@@ -423,7 +448,8 @@ def start(fastpath, scope):
             return ShortTicket(fastpath, sub[0], sub[1],
                                short_issue_number(scope) if sub[1] == "issues" else 0,
                                pull=pull, section=section,
-                               reader=reader_agent(scope))
+                               reader=reader_agent(scope),
+                               preview=bool(pull) and preview_agent(scope))
         return None
     return remembered_prerender(fastpath, *target)
 
@@ -436,7 +462,7 @@ def start(fastpath, scope):
 # background request refreshes them, for up to MICRO_STALE_SECONDS. A signed
 # in visitor (cookie or Authorization) always reaches the Worker, and a
 # write to the same path through this node drops the entry.
-MICRO_CACHE_RE = re.compile(r"^/api/repo/[^/]+/[^/]+/about$")
+MICRO_CACHE_RE = re.compile(r"^/api/repo/[^/]+/[^/]+/(?:about|mirror-quota)$")
 MICRO_FRESH_SECONDS = 15.0
 MICRO_STALE_SECONDS = 300.0
 MICRO_MAX_ENTRIES = 512
@@ -445,6 +471,8 @@ _micro = {}
 _micro_refreshing = set()
 ABOUT_MEMO_SECONDS = 24 * 3600.0
 _about_memo = {}   # "/api/repo/<owner>/<repo>/about" (lowercase) -> (time, about)
+_quota_memo = {}
+QUOTA_MEMO_SECONDS = MICRO_STALE_SECONDS
 _warmer = {}       # "fetch": the Worker fetch, "headers": a visitor's headers
 
 
@@ -459,11 +487,12 @@ def micro_cache_key(scope):
     method = scope.get("method", "GET").upper()
     if method != "GET":
         _micro.pop(path, None)  # a write: the next read goes to the Worker
+        _quota_memo.pop(path.lower(), None)
         for key in [k for k in _micro if k.startswith(path + "?")]:
             _micro.pop(key, None)
         return None
     for name, _value in scope.get("headers") or []:
-        if name in (b"cookie", b"authorization"):
+        if name in (b"cookie", b"authorization", b"origin"):
             return None
     query = (scope.get("query_string") or b"").decode("latin-1")
     return MicroKey(path + ("?" + query if query else ""))
@@ -475,6 +504,29 @@ def _micro_response(entry):
     return _js.Response(body, status, "", _js.Headers(dict(headers)))
 
 
+def _micro_stored_headers(headers):
+    kept, vary = [], []
+    for name, value in headers:
+        if name.startswith("access-control-") or name == "timing-allow-origin":
+            continue
+        if name == "vary":
+            vary += [item.strip() for item in str(value).split(",")
+                     if item.strip()]
+            continue
+        kept.append((name, value))
+    if "origin" not in {item.lower() for item in vary}:
+        vary.append("Origin")
+    kept.append(("vary", ", ".join(vary)))
+    return kept
+
+
+def _micro_forget(key):
+    _micro.pop(key, None)
+    path = str(key).lower()
+    _about_memo.pop(path, None)
+    _quota_memo.pop(path, None)
+
+
 async def _micro_store(key, response):
     from . import js as _js
     body = await response._read()
@@ -484,8 +536,11 @@ async def _micro_store(key, response):
         if len(_micro) >= MICRO_MAX_ENTRIES:
             _micro.clear()
         now = asyncio.get_running_loop().time()
-        _micro[key] = (now, 200, headers, body)
+        _micro[key] = (now, 200, _micro_stored_headers(headers), body)
         _remember_about(str(key), body, now)
+        _remember_quota(str(key), body, now)
+    elif int(response.status) in (404, 410):
+        _micro_forget(key)
     return _js.Response(body, response.status, "", _js.Headers(dict(headers)))
 
 
@@ -624,15 +679,45 @@ def _remember_about(path, body, now):
         _about_memo[path.lower()] = (now, about)
 
 
-def warm_about(owner, repo):
+def _remember_quota(path, body, now):
+    if "?" in path or not path.endswith("/mirror-quota"):
+        return
+    try:
+        data = json.loads(body)
+    except (TypeError, ValueError):
+        return
+    if isinstance(data, dict) and data.get("ok") and isinstance(data.get("mirrors"), list) \
+            and "viewer" not in data:
+        if len(_quota_memo) >= MICRO_MAX_ENTRIES:
+            _quota_memo.clear()
+        _quota_memo[path.lower()] = (now, data)
+
+
+def cached_quota(owner, repo):
+    path = "/api/repo/%s/%s/mirror-quota" % (owner, repo)
+    try:
+        now = asyncio.get_running_loop().time()
+    except RuntimeError:
+        return None
+    try:
+        warm_about(owner, repo, "mirror-quota", _quota_memo)
+    except Exception:
+        pass
+    entry = _quota_memo.get(path.lower())
+    if entry is None or now - entry[0] >= QUOTA_MEMO_SECONDS:
+        return None
+    return entry[1]
+
+
+def warm_about(owner, repo, action="about", memo=None):
     worker_fetch = _warmer.get("fetch")
     if worker_fetch is None:
         return
-    path = "/api/repo/%s/%s/about" % (urllib.parse.quote(owner, safe=""),
-                                      urllib.parse.quote(repo, safe=""))
+    path = "/api/repo/%s/%s/%s" % (urllib.parse.quote(owner, safe=""),
+                                   urllib.parse.quote(repo, safe=""), action)
     key = MicroKey(path)
     loop = asyncio.get_running_loop()
-    entry = _about_memo.get(path.lower())
+    entry = (_about_memo if memo is None else memo).get(path.lower())
     if (entry is not None and loop.time() - entry[0] < MICRO_FRESH_SECONDS) \
             or key in _micro_refreshing:
         return
@@ -722,6 +807,16 @@ async def _diff_response(ticket, worker_fetch, request):
 
 async def fetch(ticket, worker_fetch, request):
     """The Worker's answer, or the micro-cache's for an anonymous read."""
+    from . import pull_card
+    if isinstance(ticket, pull_card.CardTicket):
+        try:
+            answer = await pull_card.respond(ticket, worker_fetch, request)
+        except Exception as error:
+            print("pull card skipped: %r" % (error,))
+            answer = None
+        if answer is not None:
+            return answer
+        return await worker_fetch(request)
     if isinstance(ticket, DiffTicket):
         try:
             answer = await _diff_response(ticket, worker_fetch, request)
@@ -736,11 +831,14 @@ async def fetch(ticket, worker_fetch, request):
         if target:
             return repo_code_ref.response(target)
     if not isinstance(ticket, MicroKey):
-        if isinstance(ticket, ViewTicket):
+        if isinstance(ticket, (ViewTicket, ShortTicket)):
             ticket.origin = request_origin(request)
         if isinstance(ticket, ViewTicket) and ticket.target is not None:
             owner, repo, view, number = ticket.target
             ticket.reactions = read_reactions(
+                worker_fetch, request_origin(request), owner, repo, view,
+                number)
+            ticket.moderation = repo_moderation.read(
                 worker_fetch, request_origin(request), owner, repo, view,
                 number)
         if ticket is not None and not isinstance(ticket, ViewTicket):
@@ -767,7 +865,9 @@ async def fetch(ticket, worker_fetch, request):
 
 async def finish(task, response):
     """Add the rendered first view to the Worker's repository page."""
-    if task is None or isinstance(task, (MicroKey, CodeRefTicket, DiffTicket)):
+    from . import pull_card
+    if task is None or isinstance(task, (MicroKey, CodeRefTicket, DiffTicket,
+                                         pull_card.CardTicket)):
         return response
     view = task if isinstance(task, ViewTicket) else None
     if view is not None:
@@ -783,7 +883,8 @@ async def finish(task, response):
         try:
             data = await asyncio.wait_for(
                 asyncio.shield(task),
-                READER_BUDGET_SECONDS if view is not None and view.reader
+                READER_BUDGET_SECONDS if view is not None
+                and (view.reader or view.preview)
                 else (ISSUE_BUDGET_SECONDS if view.root is not None
                       else VIEW_BUDGET_SECONDS)
                 if view is not None else SSR_BUDGET_SECONDS)
@@ -806,12 +907,21 @@ async def finish(task, response):
         rendered = None
         reactions = await reactions_within(view.reactions) \
             if view is not None else None
+        moderation = await repo_moderation.within(view.moderation) \
+            if view is not None else None
         if view is not None and view.root is not None:
             root = await _within(view.root, ISSUE_BUDGET_SECONDS - (
                 asyncio.get_running_loop().time() - started))
             if root:
-                rendered = inject_issue(page, root, data, origin=view.origin,
-                                        reactions=reactions)
+                rendered = inject_issue_page(page, root, data, origin=view.origin,
+                                             reactions=reactions,
+                                             moderation=moderation)
+                if rendered is not None:
+                    headers = response.headers
+                    headers.set("cache-control", "no-cache")
+                    return rendered.response(response.status, headers)
+        if rendered is None and repo_moderation.active(moderation):
+            return _js.Response(body, response.status, "", response.headers)
         if rendered is None:
             rendered = inject_view(page, data, view.section, reactions,
                                    reader=view.reader, origin=view.origin) \
@@ -854,11 +964,13 @@ async def _finish_short(ticket, response):
         if ticket.pull:
             link = "/" + urllib.parse.quote(repo) if canonical else None
             bundle = await _within(bundle_task, READER_BUDGET_SECONDS
-                                   if ticket.reader else VIEW_BUDGET_SECONDS)
+                                   if ticket.reader or ticket.preview
+                                   else VIEW_BUDGET_SECONDS)
             if bundle is not None and (bundle.owner, bundle.repo.lower()) == (
                     owner, repo.lower()):
                 rendered = inject_view(page, bundle, ticket.section, None,
-                                       link=link, reader=ticket.reader)
+                                       link=link, reader=ticket.reader,
+                                       origin=ticket.origin)
             if rendered is not None:
                 return _finished_short(body, response, rendered)
         try:
@@ -874,7 +986,14 @@ async def _finish_short(ticket, response):
             bundle = await _within(bundle_task, ISSUE_BUDGET_SECONDS - (
                 loop.time() - started))
             if bundle is not None and (bundle.owner, bundle.repo) == (owner, repo):
-                rendered = inject_issue(page, data, bundle, short=canonical)
+                rendered = inject_issue_page(
+                    page, data, bundle, short=canonical,
+                    moderation=repo_moderation.cached(
+                        owner, repo, ticket.issue))
+                if rendered is not None:
+                    headers = response.headers
+                    headers.set("cache-control", "no-cache")
+                    return rendered.response(response.status, headers)
             if rendered is None:
                 rendered = inject_header(page, data, ticket.tab, short=canonical)
                 if rendered is not None:
@@ -936,6 +1055,9 @@ def inject(page, data, short=False):
     if about and isinstance(about.get("features"), dict):
         payload["features"] = {key: bool(value) for key, value in about["features"].items()
                                if key in ("issues", "pulls", "discussions")}
+    quota = cached_quota(data["owner"], data["repo"])
+    if quota is not None:
+        payload["mirrorQuota"] = quota
     head = (CHARSET + '\n    <script type="application/json" '
             'id="forkmesh-repo-ssr">' + _json_for_script(payload)
             + "</script>\n    " + STYLE)
@@ -947,7 +1069,8 @@ def inject(page, data, short=False):
         "></span>", ">public</span>"), 1)
     page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
         'class="inline-flex', 'class="hidden inline-flex'), 1)
-    return page.replace(PLACEHOLDER, render_view(data, short, about), 1)
+    return read_links(page.replace(PLACEHOLDER, render_view(data, short, about), 1),
+                      data["owner"], data["repo"])
 
 
 def inject_header(page, data, tab, short=False):
@@ -976,7 +1099,8 @@ def inject_header(page, data, tab, short=False):
 ISSUE_RENDER_SECONDS = 60.0
 
 
-def issue_article(bundle, data, short=False, origin="", reactions=None):
+def issue_article(bundle, data, short=False, origin="", reactions=None,
+                  moderation=None):
     from . import repo_ssr_issue, repo_views
     model = bundle.model or {}
     if not model.get("issue") or not model.get("issueJson"):
@@ -984,7 +1108,7 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
     origin = repo_ssr_issue.public_site_origin(origin)
     off = repo_ssr_issue.plugins_off()
     key = ("dashboard", bool(short), origin, repo_views.reactions_digest(reactions),
-           tuple(sorted(off)))
+           tuple(sorted(off)), repo_moderation.digest(moderation))
     now = time.time()
     kept = bundle.rendered.get(key)
     if kept and now - kept[0] < ISSUE_RENDER_SECONDS:
@@ -994,28 +1118,84 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
         urllib.parse.quote(owner), urllib.parse.quote(repo))
     ctx = repo_ssr_issue.Context(link, "/api/repo/%s/%s" % (
         urllib.parse.quote(owner, safe=""), urllib.parse.quote(repo, safe="")),
-        str(bundle.ref or data.get("ref") or "main"), origin=origin)
-    issue = repo_ssr_issue.parse_issue(model["issueJson"], bundle.number)
+        str(bundle.ref or data.get("ref") or "main"), origin=origin,
+        attachments=model.get("attachments"))
+    issue = repo_ssr_issue.parse_issue(
+        repo_moderation.apply(model["issueJson"], moderation), bundle.number)
     if issue["deleted"]:
         return None
-    article = repo_ssr_issue.render_issue(
+    article = repo_ssr_issue.render_issue_parts(
         issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
         index=repo_ssr_issue.index_rows(model.get("index")), now=now, repo=repo,
         prompt=repo_ssr_issue.prompt_template(model.get("settings")),
-        reactions=reactions, off=off)
-    if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
-        bundle.rendered.clear()
-    bundle.rendered[key] = (now, article)
+        reactions=reactions, off=off,
+        source=repo_ssr_issue.index_source_url(model.get("index"), bundle.number),
+        avatars=repo_ssr_issue.forge_avatars(model.get("index")))
+
+    def keep(text):
+        if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
+            bundle.rendered.clear()
+        bundle.rendered[key] = (now, text)
+    article.keep = keep
     return article
 
 
-def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
+class IssuePage:
+    def __init__(self, page, article):
+        self.article = article
+        if isinstance(article, str):
+            self.prefix, self.suffix = page, ""
+        else:
+            self.prefix, self.suffix = page.split(article.mark, 1)
+
+    def __str__(self):
+        if isinstance(self.article, str):
+            return self.prefix
+        rest = "".join(self.article.chunks())
+        self.article.keep(self.article.before + rest + self.article.after)
+        return self.prefix + rest + self.suffix
+
+    async def stream(self):
+        if isinstance(self.article, str):
+            yield self.prefix
+            return
+        yield self.prefix
+        rest = []
+        try:
+            for chunk in self.article.chunks():
+                await asyncio.sleep(0)
+                rest.append(chunk)
+                yield chunk
+        except Exception as error:
+            print("issue ssr stream cut: %r" % (error,))
+            rest = None
+        yield self.suffix
+        if rest is not None:
+            self.article.keep(self.article.before + "".join(rest) + self.article.after)
+
+    def response(self, status, headers):
+        from . import js as _js
+        if isinstance(self.article, str):
+            return _js.Response(self.prefix.encode("utf-8"), status, "", headers)
+        return _js.Response(_js.ReadableStream(self.stream()), status, "", headers)
+
+
+def inject_issue(page, data, bundle, short=False, origin="", reactions=None,
+                 moderation=None):
+    rendered = inject_issue_page(page, data, bundle, short, origin, reactions,
+                                 moderation)
+    return None if rendered is None else str(rendered)
+
+
+def inject_issue_page(page, data, bundle, short=False, origin="", reactions=None,
+                      moderation=None):
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page or bundle is None or bundle.view != "issue":
         return None
     from . import repo_ssr_issue
     try:
-        article = issue_article(bundle, data, short, origin, reactions)
+        article = issue_article(bundle, data, short, origin, reactions,
+                                moderation)
     except Exception as error:  # the header-only page is still correct
         print("issue ssr skipped: %r" % (error,))
         article = None
@@ -1031,7 +1211,7 @@ def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
         urllib.parse.quote(bundle.owner, safe=""),
         urllib.parse.quote(bundle.repo, safe=""))).lower(),
         "view": bundle.view, "number": bundle.number, "url": bundle.url()}
-    page = page.replace(CHARSET, _view_reads_head(meta) + reactions_seed(
+    page = page.replace(CHARSET, _view_reads_head(meta, True) + reactions_seed(
         meta["base"], reaction_subject("issue", bundle.number), reactions)
         + "\n    " + STYLE + repo_ssr_issue.VIEWER_STYLE, 1)
     page = page.replace(HEADER_CONTEXT, header_context(data, short), 1)
@@ -1041,15 +1221,24 @@ def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
         "></span>", ">public</span>"), 1)
     page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
         'class="inline-flex', 'class="hidden inline-flex'), 1)
-    return page.replace(PLACEHOLDER, (
+    if not isinstance(article, str) and article.mark in page + tabs:
+        article = str(article)
+    drawn = article if isinstance(article, str) \
+        else article.before + article.mark + article.after
+    return IssuePage(read_links(page.replace(PLACEHOLDER, (
         '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s%s</div>'
-        % (_icon_sprite(), tabs, repo_ssr_issue.FRAME % article)), 1)
+        % (_icon_sprite(), tabs, repo_ssr_issue.FRAME % drawn)), 1),
+        owner, repo, bundle.number), article)
 
 
-def _view_reads_head(meta):
+def _view_reads_head(meta, after_page=False):
+    start = ("new Promise(function(r){document.readyState==='loading'?"
+             "document.addEventListener('DOMContentLoaded',r,{once:true}):r()})"
+             ".then(function(){return fetch(" if after_page else "fetch(")
+    end = ")})" if after_page else ")"
     return (CHARSET + "\n    <script>window.__forkmeshView=" +
-            _json_for_script(meta) + ";window.__forkmeshView.pending=fetch("
-            "window.__forkmeshView.url,{headers:{accept:'application/json'}})"
+            _json_for_script(meta) + ";window.__forkmeshView.pending=" + start +
+            "window.__forkmeshView.url,{headers:{accept:'application/json'}}" + end +
             ".then(function(r){return r.ok?r.json():null})"
             ".catch(function(){return null});</script>")
 
@@ -1064,7 +1253,8 @@ def inject_view_reads(page, owner, repo, view, number):
         query.append(("number", str(number)))
     meta = {"base": base.lower(), "view": view, "number": number,
             "url": base + "/page-reads?" + urllib.parse.urlencode(query)}
-    return page.replace(CHARSET, _view_reads_head(meta), 1)
+    page = page.replace(CHARSET, _view_reads_head(meta), 1)
+    return read_links(page, owner, repo, number) if view in ("issues", "issue") else page
 
 
 def inject_view(page, bundle, section="", reactions=None, link=None,
@@ -1087,8 +1277,25 @@ def inject_view(page, bundle, section="", reactions=None, link=None,
     head = (_view_reads_head(meta) + reactions_seed(
         meta["base"], repo_views.reaction_subject(bundle), reactions)
         + "\n    " + STYLE + repo_views.VIEW_STYLE)
-    page = page.replace(CHARSET, head, 1)
-    return page.replace(PLACEHOLDER, view, 1)
+    page = page.replace(CHARSET, head, 1).replace(PLACEHOLDER, view, 1)
+    if bundle.view in ("issues", "issue"):
+        page = read_links(page, bundle.owner, bundle.repo, bundle.number)
+    if bundle.view == "pull":
+        from . import pull_card
+        page = pull_card.share_tags(page, bundle, origin, link)
+    return page
+
+
+BODY_RE = re.compile(r"<body\b[^>]*>")
+
+
+def read_links(page, owner, repo, number=0):
+    from . import read_surfaces, repo_ssr_issue
+    if read_surfaces.PLUGIN in repo_ssr_issue.plugins_off():
+        return page
+    page = page.replace(CHARSET, CHARSET + read_surfaces.head_links(owner, repo, number), 1)
+    return BODY_RE.sub(lambda match: match.group(0) + read_surfaces.noscript(
+        owner, repo, number), page, count=1)
 
 
 def _when(value):
@@ -1444,7 +1651,8 @@ def _contributors_html(people, base, raw):
     return str(total), "".join(avatars)
 
 
-def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
+def _about_rail(about, readme_href, info=None, values=None, base="", raw="", quota=None,
+                help_href=""):
     description = str((info or {}).get("about") or (about or {}).get("description")
                       or "").strip()
     website = str((info or {}).get("website") or "").strip()
@@ -1511,12 +1719,20 @@ def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
         '<div class="mt-4 border-t border-border pt-4"><div class="flex items-center '
         'justify-between gap-2 text-xs font-semibold text-foreground"><span '
         'class="inline-flex items-center gap-1.5">%sRepository logo</span>%s</div></div>'
-        '</aside>' % (
+        '%s</aside>' % (
             text, _icon("link", "h-3.5 w-3.5", "shrink-0"), html.escape(readme_href),
             _icon("book-open"), _icon("activity"), rows, bar, legend,
             html.escape(count), people,
             _icon("image-plus", "h-3.5 w-3.5", "text-muted-foreground"),
-            _icon("chevron-down", "h-3.5 w-3.5", "text-muted-foreground")))
+            _icon("chevron-down", "h-3.5 w-3.5", "text-muted-foreground"),
+            _mirror_quota_section(quota, help_href)))
+
+
+def _mirror_quota_section(quota, help_href=""):
+    from . import repo_ssr_issue, repo_ssr_mirrors
+    if "mirror-quota" in repo_ssr_issue.plugins_off():
+        return ""
+    return repo_ssr_mirrors.section_html(quota, None, help_href)
 
 
 def render_view(data, short=False, about=None):
@@ -1601,7 +1817,10 @@ def render_view(data, short=False, about=None):
             summary, "".join(rows), readme,
             _about_rail(about, readme_href, data.get("info"),
                         repo_ssr_about.rail_values(data.get("extras")),
-                        base, raw_prefix(data))))
+                        base, raw_prefix(data),
+                        cached_quota(data["owner"], data["repo"]),
+                        "/%s/%s/mirror" % (urllib.parse.quote(data["owner"]),
+                                           urllib.parse.quote(data["repo"])))))
 
 
 HEADER_CONTEXT = '<span data-dashboard-header-context class="min-w-0 truncate"></span>'
@@ -1742,6 +1961,12 @@ def _image_src(url, raw):
 def _image_html(alt, url, raw):
     hint = _SIZE_HINT.search(url)
     target = url[:hint.start()] if hint else url
+    from .repo_ssr_issue import MD_GITHUB_ATTACHMENT_URL, plugins_off
+    if "mirrored-attachments" not in plugins_off() and MD_GITHUB_ATTACHMENT_URL.match(target.strip()):
+        label = alt if alt and alt.lower() != "image" else ""
+        return ('<a href="%s" data-md-github-image="" rel="noopener noreferrer nofollow ugc">'
+                '%s</a>' % (html.escape(target.strip()), html.escape(
+                    "%s (image on GitHub)" % label if label else "image on GitHub")))
     source = _image_src(target, raw)
     if not source:
         return html.escape(alt)

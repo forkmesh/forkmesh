@@ -75,8 +75,10 @@ object RouteCodec {
             is Route.Marketing -> put("section", route.section)
             is Route.Analytics -> put("section", route.section)
             is Route.Ledger -> put("section", route.section)
+            is Route.Invoices -> { put("org", route.organization); put("id", route.invoice) }
             is Route.Vault -> put("section", route.section)
             is Route.InstanceFeed -> put("post", route.post)
+            is Route.Poker -> put("table", route.table)
             is Route.Cove -> put("id", route.id)
             is Route.Admin -> put("section", route.section)
             is Route.Settings -> put("section", route.section)
@@ -167,6 +169,7 @@ object RouteCodec {
             Route.Kind.Marketing -> Route.Marketing(s("section"))
             Route.Kind.Analytics -> Route.Analytics(s("section"))
             Route.Kind.Competitors -> Route.Competitors
+            Route.Kind.Invoices -> Route.Invoices(s("org"), s("id"))
             Route.Kind.Ads -> Route.Ads
             Route.Kind.Ledger -> Route.Ledger(s("section"))
             Route.Kind.Vault -> Route.Vault(s("section"))
@@ -179,6 +182,7 @@ object RouteCodec {
             Route.Kind.SugarBreak -> Route.SugarBreak
             Route.Kind.Stretch -> Route.Stretch
             Route.Kind.FoodGuide -> Route.FoodGuide
+            Route.Kind.Speech -> Route.Speech
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.PhoneSecurity -> Route.PhoneSecurity
             Route.Kind.Ember -> Route.Ember(repo)
@@ -191,6 +195,7 @@ object RouteCodec {
             Route.Kind.Usage -> Route.Usage
             Route.Kind.RssReader -> Route.RssReader
             Route.Kind.VideoMixDjStudio -> Route.VideoMixDjStudio
+            Route.Kind.Poker -> Route.Poker(s("table"))
             Route.Kind.InstanceFeed -> Route.InstanceFeed(s("post"))
             Route.Kind.SecureDrive -> Route.SecureDrive
             Route.Kind.Files -> Route.Files
@@ -198,6 +203,8 @@ object RouteCodec {
             Route.Kind.Workflows -> Route.Workflows
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity
+            Route.Kind.Logs -> Route.Logs
+            Route.Kind.Diagnostics -> Route.Diagnostics
             Route.Kind.Stats -> Route.Stats
             Route.Kind.Status -> Route.Status
             Route.Kind.Admin -> Route.Admin(s("section"))

@@ -6,7 +6,14 @@ import Foundation
 final class OtherAppCall: NSObject, CXCallObserverDelegate {
     static let shared: OtherAppCall = OtherAppCall()
 
-    static var inProgress: Bool { live(shared.observer.calls) }
+    static var inProgress: Bool { shared.own || live(shared.observer.calls) }
+
+    static var ownCall: Bool { shared.own }
+
+    static func deactivateSession() {
+        guard !ownCall else { return }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
 
     static var duckingOptions: AVAudioSession.CategoryOptions {
         inProgress ? [.mixWithOthers] : [.duckOthers]
@@ -14,12 +21,19 @@ final class OtherAppCall: NSObject, CXCallObserverDelegate {
 
     private let observer: CXCallObserver = CXCallObserver()
     private var active: Bool = false
+    private var own: Bool = false
     private var listeners: [@MainActor (Bool) -> Void] = []
 
     override private init() {
         super.init()
         observer.setDelegate(self, queue: .main)
         active = Self.live(observer.calls)
+    }
+
+    func setOwnCall(_ on: Bool) {
+        guard on != own else { return }
+        own = on
+        refresh()
     }
 
     func onChange(_ listener: @escaping @MainActor (Bool) -> Void) {
@@ -32,7 +46,7 @@ final class OtherAppCall: NSObject, CXCallObserverDelegate {
     }
 
     private func refresh() {
-        let now: Bool = Self.live(observer.calls)
+        let now: Bool = own || Self.live(observer.calls)
         guard now != active else { return }
         active = now
         if now {

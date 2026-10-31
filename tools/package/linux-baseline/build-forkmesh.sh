@@ -7,6 +7,7 @@ out="${FORKMESH_BASELINE_OUT:-/out}"
 version="${FORKMESH_BASELINE_VERSION:?}"
 commit="${FORKMESH_BASELINE_COMMIT:?}"
 channel="${FORKMESH_BASELINE_CHANNEL:-latest}"
+build_number="${FORKMESH_BASELINE_BUILD:-0}"
 jobs="${FORKMESH_BASELINE_JOBS:-4}"
 arch=x86_64
 asset="forkmesh-linux-$arch"
@@ -32,6 +33,7 @@ cmake -S "$src/desktop" -B "$build" -G Ninja \
   -DFORKMESH_BUILD_TESTS=OFF \
   -DFORKMESH_REQUIRE_OPENSSL_3_5=ON \
   -DFORKMESH_DISABLE_MOLD=ON \
+  -DFORKMESH_PACKAGE_MODULES=OFF \
   -DCMAKE_PREFIX_PATH="/opt/forkmesh/qt;/opt/forkmesh/deps" \
   -DOPENSSL_ROOT_DIR=/opt/forkmesh/openssl -DOPENSSL_USE_STATIC_LIBS=ON \
   -DFORKMESH_WEBP_LIBRARY=/usr/lib/x86_64-linux-gnu/libwebp.a \
@@ -58,7 +60,7 @@ fi
 readelf -Ws "$binary" > "$work/symbols.txt"
 grep -q ' nghttp3_conn_client_new' "$work/symbols.txt" || { echo "the release binary was built without HTTP/3" >&2; exit 1; }
 
-rm -f "$out/$asset" "$out/$asset.AppImage" "$out/$asset.AppImage.zsync"
+rm -f "$out/$asset" "$out/$asset.AppImage" "$out/$asset.AppImage.zsync" "$out/$asset.deb"
 install -m 0755 "$binary" "$out/$asset"
 (
   cd "$src"
@@ -69,5 +71,9 @@ install -m 0755 "$binary" "$out/$asset"
 [ -s "$out/$asset.AppImage" ] || { echo "no AppImage was produced" >&2; exit 1; }
 [ -s "$out/$asset.AppImage.zsync" ] || { echo "no AppImage zsync file was produced" >&2; exit 1; }
 [ "$("$out/$asset.AppImage" --version)" = "ForkMesh $version" ] || { echo "the AppImage does not report $version" >&2; exit 1; }
+FORKMESH_PKG_ARCH="$arch" FORKMESH_PKG_VERSION="$version" FORKMESH_PKG_BUILD="$build_number" \
+FORKMESH_PKG_INSTALL_ROOT="$install_root" \
+  bash "$tools/tools/package/deb.sh" "$out/$asset" "$out" >/dev/null
+[ -s "$out/$asset.deb" ] || { echo "no Debian package was produced" >&2; exit 1; }
 readelf -d "$out/$asset" | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p' | sort > "$out/$asset.needed"
 ls -l "$out"

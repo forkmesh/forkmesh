@@ -1,7 +1,10 @@
 # Group call end-to-end encryption (call e2ee v2)
 
 Status: v1 designed and built 2026-10-21 (commit fc5bdd5210); v2 built the
-same day on top of it. Not yet wired into the live calls. Idea 5 of "Beyond
+same day on top of it. Live in group calls on the newer call engine: the
+browser's [fmm-browser.md](../app/fmm-browser.md) (`fmm-e2ee.js`) and the
+iPhone's native group call (`NativeGroupCall.swift`, `FmmVerifyViews.swift`)
+run the keys and the verification round. Idea 5 of "Beyond
 FaceTime" in [fm-media.md](fm-media.md). Media keys come from a hybrid
 X25519 + ML-KEM-768 exchange on every epoch, with a new epoch on every join
 and leave. A short verification code is made safe by a commit-then-reveal
@@ -908,8 +911,8 @@ for the vector tests.
    worker's and the verifier's keys for that peer, rotates, rekeys and
    commits. Leaving the call calls `close()`.
 7. **Code and media state in the UI.** As in "UI text" and the media state
-   table. iOS shows it first, and the change is registered in
-   `docs/native/SYNC.md` for Android.
+   table. iOS and Android both show it (Android: `GroupCallFmm.kt`,
+   `GroupCallViews.kt`).
 8. **No fallback.** Every client switches at once, as chat v3 did. A client
    that speaks call e2ee ignores `group-call-key` frames without `e2ee` and
    any message with another version, so nobody can be downgraded.

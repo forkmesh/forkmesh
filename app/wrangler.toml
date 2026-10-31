@@ -48,6 +48,8 @@ run_worker_first = [
   "/",
   "/api",
   "/api/*",
+  "/apt",
+  "/apt/*",
   "/developers",
   "/health",
   "/simulate-sentry-error",

@@ -26,7 +26,6 @@ import com.forkmesh.nativeapp.feature.chat.DirectCallOverlay
 import com.forkmesh.nativeapp.feature.code.CodeFeature
 import com.forkmesh.nativeapp.feature.hosts.HostsFeature
 import com.forkmesh.nativeapp.feature.market.PackageGateFeature
-import com.forkmesh.nativeapp.feature.market.StarterPackScreen
 import com.forkmesh.nativeapp.feature.localrepos.LocalRepoAgentLauncher
 import com.forkmesh.nativeapp.feature.composer.ComposerFeature
 import com.forkmesh.nativeapp.feature.localrepos.LocalReposFeature
@@ -45,6 +44,7 @@ object Features {
     fun install(app: App) {
         AccountFeature.install(app)
         com.forkmesh.nativeapp.feature.market.PackageGateFeature.install(app)
+        com.forkmesh.nativeapp.feature.account.PermissionsIntro.install(com.forkmesh.nativeapp.feature.market.PackageGateFeature.needsStarterPack())
         LocalReposFeature.install(app)
         com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature.install(app)
         ChatFeature.install(app)
@@ -72,6 +72,7 @@ object Features {
         com.forkmesh.nativeapp.feature.usage.UsageFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
         com.forkmesh.nativeapp.feature.instancefeed.InstanceFeedFeature.install()
+        com.forkmesh.nativeapp.feature.poker.PokerFeature.install()
         com.forkmesh.nativeapp.feature.securedrive.SecureDriveFeature.install(app)
         com.forkmesh.nativeapp.feature.files.FilesFeature.install(app)
         com.forkmesh.nativeapp.feature.nexus.NexusFeature.install()
@@ -122,8 +123,9 @@ object Features {
         com.forkmesh.nativeapp.feature.account.settings.DataFolderAlert()
         AccountFeature.Gate {
             val starterPackPending by PackageGateFeature.starterPackPending.collectAsState()
-            if (starterPackPending) {
-                StarterPackScreen(onContinue = PackageGateFeature::chooseStarterPack)
+            val permissionsIntroPending by com.forkmesh.nativeapp.feature.account.PermissionsIntro.pending.collectAsState()
+            if (permissionsIntroPending || starterPackPending) {
+                com.forkmesh.nativeapp.feature.account.OnboardingFlow(permissionsIntroPending, starterPackPending)
             } else {
                 Box(Modifier.fillMaxSize(), propagateMinConstraints = true) {
                     NavigatorHost(navigator, onExit)
@@ -131,6 +133,7 @@ object Features {
                     com.forkmesh.nativeapp.feature.genie.GenieOverlay()
                     com.forkmesh.nativeapp.feature.genie.GenieAutoSendReviewHost()
                     DirectCallOverlay()
+                    com.forkmesh.nativeapp.feature.chat.GroupCallOverlay()
                     com.forkmesh.nativeapp.feature.pocket.PocketLockOverlay()
                 }
             }

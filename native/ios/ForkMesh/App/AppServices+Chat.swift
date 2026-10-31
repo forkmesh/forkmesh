@@ -31,7 +31,8 @@ struct ChatInstaller: AppServicesInstaller {
                     return ChatHistoryCodec.projectScope(
                         projectId: project.isEmpty ? settings.serverUrl : project, room: settings.room)
                 },
-                formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) })
+                formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) },
+                inBackground: true)
         }
         if let workspace = ChatInstaller.bindProject() { hub.workspace = workspace }
         if let switcher = Services.get(RelaySwitchController.self) {
@@ -221,12 +222,16 @@ struct ChatInstaller: AppServicesInstaller {
         Services.put(calls)
         #if canImport(WebRTC)
         NativeGroupCall.shared.office = hub.office
+        hub.office?.onRoomOpened = { (conversation: String, roomName: String) in
+            Task { _ = await NativeGroupCall.shared.channelRekeyed(conversation, chatRoom: roomName) }
+        }
         hub.onGroupCallFrame = { (frame: JSONObject, conversation: String) in
             NativeGroupCall.shared.handleFrame(frame, conversation: conversation)
         }
         #endif
         CallRinger.shared.attach(calls)
         DirectCallKit.shared.attach(calls, direct: direct)
+        DirectCallAudio.shared.attach(calls)
     }
 
     private func installLive(hub: ChatHub, direct: DirectMessageService) -> DirectLiveEngine {

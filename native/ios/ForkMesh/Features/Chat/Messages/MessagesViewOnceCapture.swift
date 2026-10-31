@@ -333,8 +333,10 @@ final class MessagesViewOnceVoiceModel: NSObject, AVAudioRecorderDelegate {
         let session: AVAudioSession = AVAudioSession.sharedInstance()
         let target: URL = MessagesViewOnceFiles.fresh("m4a")
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-            try session.setActive(true)
+            if !OtherAppCall.ownCall {
+                try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                try session.setActive(true)
+            }
             let settings: [String: Any] = [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 22_050, AVNumberOfChannelsKey: 1,
                 AVEncoderBitRateKey: 32_000,
@@ -379,7 +381,7 @@ final class MessagesViewOnceVoiceModel: NSObject, AVAudioRecorderDelegate {
         meter = nil
         recorder = nil
         startedAt = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        OtherAppCall.deactivateSession()
         guard let url else {
             phase = .idle
             return
@@ -407,7 +409,7 @@ final class MessagesViewOnceVoiceModel: NSObject, AVAudioRecorderDelegate {
             recorder?.stop()
             recorder = nil
             meter?.cancel()
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            OtherAppCall.deactivateSession()
         }
         MessagesViewOnceFiles.drop(url)
         url = nil
@@ -753,8 +755,10 @@ struct MessagesViewOnceReviewVoice: View {
             return
         }
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            if !OtherAppCall.ownCall {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                try AVAudioSession.sharedInstance().setActive(true)
+            }
             let made: AVAudioPlayer = try player ?? AVAudioPlayer(contentsOf: url)
             player = made
             made.play()

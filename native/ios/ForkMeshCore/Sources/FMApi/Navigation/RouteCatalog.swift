@@ -159,6 +159,7 @@ public enum RouteCatalog {
         case .marketing: return "Marketing"
         case .analytics: return "Analytics"
         case .competitors: return "Competitors"
+        case .invoices: return "Invoices"
         case .ads: return "Ad review"
         case .ledger: return "Ledger"
         case .vault: return "Vault"
@@ -183,6 +184,7 @@ public enum RouteCatalog {
         case .nexus: return "NEXUS"
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
+        case .poker: return "Poker"
         case .appStoreStatus: return "App Store Status"
         case .usage: return "Usage"
         case .rssReader: return "RSS Reader"
@@ -249,6 +251,7 @@ public enum RouteCatalog {
         case .marketing: return "megaphone"
         case .analytics: return "chart.xyaxis.line"
         case .competitors: return "binoculars"
+        case .invoices: return "receipt"
         case .ads: return "rectangle.and.text.magnifyingglass"
         case .ledger: return "creditcard"
         case .vault: return "key"
@@ -272,6 +275,7 @@ public enum RouteCatalog {
         case .nexus: return "network"
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
+        case .poker: return "suit.spade.fill"
         case .appStoreStatus: return "app.badge"
         case .usage: return "gauge.with.dots.needle.33percent"
         case .rssReader: return "dot.radiowaves.up.forward"
@@ -393,6 +397,7 @@ public enum HubCatalog {
         .destination(.marketing(section: nil), needsRegistration: true),
         .destination(.analytics(section: nil), needsRegistration: true),
         .destination(.competitors, needsRegistration: true),
+        .destination(.invoices(organization: nil, invoice: nil), needsRegistration: true),
         .destination(.ads, needsRegistration: true),
         .destination(.ledger(section: nil), needsRegistration: true),
     ]
@@ -414,6 +419,7 @@ public enum HubCatalog {
         .destination(.openWrtRouter),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
+        .destination(.poker(table: nil)),
         .destination(.rssReader),
         .destination(.instanceFeed(post: nil)),
         .destination(.secureDrive),

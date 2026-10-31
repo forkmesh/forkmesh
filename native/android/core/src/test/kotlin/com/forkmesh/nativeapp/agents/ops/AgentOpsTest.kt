@@ -534,6 +534,25 @@ class AgentOpsTest {
         expect(!model.mergeNow(), "a merged session cannot be merged again")
     }
 
+    fun testDirtyCheckoutOffersSetAsideAndTheNoteLands() {
+        val channel = FakeControlChannel()
+        channel.reply("agentops.prepare", confirmationJson("merge", typeToConfirm = "agent/fix"))
+        channel.failures["agentops.merge"] = LocalControlException("checkout_dirty", "main has uncommitted changes in a.txt")
+        val model = MergeCleanupModel(AgentOpsClient(channel), 7)
+        expect(!model.mergeNow())
+        assertEq(true, channel.params("agentops.merge")?.get("offerSetAside"))
+        expect(channel.params("agentops.merge")?.get("setAside") == null)
+        expect(model.canSetAside)
+        expect(model.errorText.contains("uncommitted"))
+        channel.failures.remove("agentops.merge")
+        channel.reply("agentops.merge", mapOf("branch" to "agent/fix", "merged" to true, "setAside" to "Your edits are back."))
+        expect(model.mergeNow(setAside = true))
+        assertEq(true, channel.params("agentops.merge")?.get("setAside"))
+        expect(!model.canSetAside)
+        assertEq("Your edits are back.", model.setAsideNote)
+        assertEq("Merged agent/fix and cleaned up. Your edits are back.", model.outcome?.message())
+    }
+
     fun testMergeNowStopsWhenPrepareFails() {
         val channel = FakeControlChannel()
         channel.failures["agentops.prepare"] = LocalControlException("agent_running")

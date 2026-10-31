@@ -1,5 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
+const RETAINED_KEY_ADVERTISEMENTS = 1;
+
 // A 64x64 VP8 clip (well under the 1 MiB attachment ceiling). It has to be a
 // real, decodable video: an undecodable one would fire the player's error
 // handler and be replaced by the plain download card.
@@ -95,7 +97,7 @@ test("clipboard images and documents stay encrypted and survive refresh", async 
   });
   await expect(documentCard).toBeVisible();
   await expect(documentCard.locator("a[download='release-notes.txt']")).toBeVisible();
-  await expect.poll(() => retainedFrames.length).toBe(2);
+  await expect.poll(() => retainedFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 2);
   expect(retainedFrames.join("\n")).not.toContain("release-notes.txt");
   expect(retainedFrames.join("\n")).not.toContain("private release notes");
 
@@ -107,7 +109,7 @@ test("clipboard images and documents stay encrypted and survive refresh", async 
   await expect(page.locator("#chat-attachment-feedback")).toContainText(
     "1 MiB or smaller",
   );
-  await expect.poll(() => retainedFrames.length).toBe(2);
+  await expect.poll(() => retainedFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 2);
 
   // adhoc #72: a shared video plays where it was posted instead of arriving
   // as one more file to download first.
@@ -126,7 +128,7 @@ test("clipboard images and documents stay encrypted and survive refresh", async 
   await expect
     .poll(() => player.evaluate((video) => video.readyState))
     .toBeGreaterThan(0);
-  await expect.poll(() => retainedFrames.length).toBe(3);
+  await expect.poll(() => retainedFrames.length).toBe(RETAINED_KEY_ADVERTISEMENTS + 3);
   expect(retainedFrames.join("\n")).not.toContain("screen-capture.webm");
 
   await page.reload();

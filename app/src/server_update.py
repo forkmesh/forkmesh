@@ -198,6 +198,8 @@ def freshness(current, upstream):
         return "behind"
     if latest.startswith(mine) or mine.startswith(latest):
         return "current"
+    if 0 < _int((upstream or {}).get("time")) < _int((current or {}).get("time")):
+        return "current"
     return "behind"
 
 

@@ -60,9 +60,11 @@ MAX_BUNDLES = 64
 BUNDLE_FRESH_SECONDS = 5.0
 BUNDLE_STALE_SECONDS = 300.0
 PUBLIC_CHECK_SECONDS = 5.0
+GONE_STATUSES = frozenset({403, 404, 410})
 MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 SEED_ERROR = "__seedError"
 NUMBERED = re.compile(r"^\d+$")
+MBOX_FROM = re.compile(r"^From [0-9a-f]{40} ", re.M)
 CLAIMED_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
@@ -404,6 +406,8 @@ def index_list_row(summary):
         "ts": created or "",
         "labels": [str(label) for label in summary.get("labels") or []][:20],
         "body": ("" if body is None else str(body))[:300],
+        "commenters": [str(name) for name in summary.get("recentCommenters") or []
+                       if isinstance(name, str)][:4],
     }
 
 
@@ -419,7 +423,10 @@ def _indexed_issues(index):
         1 for row in rows if row["number"] in legacy
         and row["state"] != "closed" and not row["deleted"])
     return {"rows": rows, "open": open_count,
-            "closed": int(index.get("closedFolders") or 0)}
+            "closed": int(index.get("closedFolders") or 0),
+            "avatars": [name for name in index.get("forgeAvatars") or []
+                        if isinstance(name, str)],
+            "avatarCommit": str(index.get("commit") or "")}
 
 
 async def plan_issues(reader, branch):
@@ -473,6 +480,17 @@ async def plan_issues(reader, branch):
     return {"rows": rows, "open": open_count, "closed": closed_count}
 
 
+async def _issue_attachments(reader, branch, number):
+    from . import repo_ssr_issue
+    path = repo_ssr_issue.attachments_path(number)
+    blob = (await _blobs(reader, [path], branch)).get(path)
+    try:
+        doc = json.loads(blob_text(blob) or "null") if blob else None
+    except ValueError:
+        doc = None
+    return repo_ssr_issue.attachment_files(doc)
+
+
 async def plan_issue(reader, branch, number):
     """loadRepoRecordDetail for an issue, plus the open-issue index it reads
     for mentions and sub-issues (loadRepoIssueRelationIndex)."""
@@ -496,6 +514,7 @@ async def plan_issue(reader, branch, number):
         return await _blobs(reader, [issue_path(n, "open") for n in numbers],
                             commit if is_commit(commit) else "")
     index = asyncio.ensure_future(relation_index())
+    attachments = asyncio.ensure_future(_issue_attachments(reader, branch, number))
     settings = asyncio.ensure_future(reader.get(
         "blobs", [("path", path) for path in COLLAB_SETTINGS_PATHS]
         + [("ref", branch)]))
@@ -503,10 +522,10 @@ async def plan_issue(reader, branch, number):
     blobs = await _blobs(reader, paths, branch)
     found = next((path for path in paths if blobs.get(path)), "")
     issue = issue_summary(blob_text(blobs[found]), number) if found else None
-    _root_done, open_issues, settings_data = await asyncio.gather(
-        root, index, settings)
+    _root_done, open_issues, settings_data, attached = await asyncio.gather(
+        root, index, settings, attachments)
     return {"issue": issue, "issueJson": blob_text(blobs[found]) if found else "",
-            "index": open_issues or {},
+            "index": open_issues or {}, "attachments": attached,
             "settings": (settings_data or {}).get("blobs") or {}}
 
 
@@ -598,21 +617,24 @@ async def plan_pull(reader, branch, number):
         return ""
 
     async def commits():
-        await reader.get("blob", [
+        data = await reader.get("blob", [
             ("path", "%s/%d/commits.mbox" % (PULLS_DIR, number)),
             ("ref", commit)], negative=True)
+        return len(MBOX_FROM.findall(blob_text(data)))
 
     # The branch list (repoPullBaseTip, merge base) is not in the bundle: on
     # a busy repository it is the gateway's most expensive listing (ahead and
     # behind for every branch) and only the merge controls need it.
-    diff, conversation, _c = await asyncio.gather(
+    diff, conversation, commit_count = await asyncio.gather(
         patch(), _pull_conversation(reader, number, commit), commits())
     settings_data = await settings if settings is not None else None
     await root
     return {"settings": (settings_data or {}).get("blobs") or {}, "pull": {
         "number": number, "title": values.get("title") or
         "pull request #%d" % number, "state": values.get("status") or "open",
-        "author": _record_author(values), "ts": values.get("ts") or values.get("createdAt") or "",
+        "author": _record_author(values), "authorKey": values.get("author", ""),
+        "draft": _is_draft(values), "commits": commit_count,
+        "ts": values.get("ts") or values.get("createdAt") or "",
         "base": values.get("base", ""), "head": values.get("head", ""),
         "body": body, "conversation": conversation, "patch": diff,
         "patchRef": patch_ref[0] if patch_ref else ""}}
@@ -729,7 +751,19 @@ async def still_public(fastpath, owner, repo):
     if len(_public) > 1024:
         _public.clear()
     _public[(owner, repo)] = (now, status == 200)
+    forget = getattr(fastpath, "forget_repository", None)
+    if status in GONE_STATUSES and forget is not None:
+        forget(owner, repo)
     return status == 200
+
+
+def recheck_public(owner, repo):
+    _public.pop((owner, repo), None)
+
+
+def known_not_public(owner, repo):
+    known = _public.get((owner, repo))
+    return known is not None and known[1] is False
 
 
 def _remember(bundle):
@@ -900,6 +934,7 @@ VIEW_STYLE = """<style>
 .fm-ssr-item>a{font-weight:600;color:rgb(var(--dashboard-foreground-rgb));font-size:15px}.fm-ssr-item .m{color:rgb(var(--dashboard-muted-foreground-rgb));font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fm-ssr-item .m.fm-ssr-m-chip{display:flex;flex-wrap:wrap;align-items:center;column-gap:4px;white-space:normal}
 .fm-ssr-pill{display:inline-block;border-radius:2em;padding:2px 10px;font-size:12px;font-weight:600;color:#fff;background:#238636;margin-right:8px;vertical-align:middle}.fm-ssr-pill.closed{background:#8957e5}.fm-ssr-pill.merged{background:#8957e5}
+.fm-ssr-item .p{float:right;display:flex;margin-top:1px}.fm-ssr-item .p>*{margin-left:-6px;box-shadow:0 0 0 2px rgb(var(--dashboard-canvas-rgb))}
 .fm-ssr-label{display:inline-block;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:2em;padding:0 7px;font-size:11px;margin-left:6px;color:rgb(var(--dashboard-muted-foreground-rgb))}
 .fm-ssr-h1{font-size:26px;font-weight:400;margin:0 0 8px;overflow-wrap:anywhere}.fm-ssr-h1 span{color:rgb(var(--dashboard-muted-foreground-rgb))}
 .fm-ssr-sub{color:rgb(var(--dashboard-muted-foreground-rgb));margin:0 0 16px;overflow-wrap:anywhere}.fm-ssr-sub code{font-family:ui-monospace,monospace;font-size:12px}
@@ -987,7 +1022,7 @@ def _same_author(change, target):
 def folded_conversation(events):
     rows = [e for e in events or [] if isinstance(e, dict)]
     by_id = {str(e["id"]): e for e in rows if e.get("id")}
-    edits, deleted = {}, set()
+    edits, deleted, cleared = {}, set(), set()
     for event in rows:
         if event.get("type") not in ("comment-edit", "comment-delete"):
             continue
@@ -997,7 +1032,10 @@ def folded_conversation(events):
                 or not _same_author(event, target):
             continue
         if event["type"] == "comment-delete":
-            if target.get("type") != "review":
+            if target.get("type") == "review" and target.get("state") in (
+                    "approved", "changes_requested"):
+                cleared.add(target_id)
+            else:
                 deleted.add(target_id)
         elif target_id not in edits or _timestamp(edits[target_id].get("ts")) \
                 <= _timestamp(event.get("ts")):
@@ -1007,6 +1045,9 @@ def folded_conversation(events):
         event_id = str(event.get("id") or "")
         if event.get("type") in ("comment-edit", "comment-delete") \
                 or event_id in deleted:
+            continue
+        if event_id in cleared:
+            folded.append(dict(event, body=""))
             continue
         edit = edits.get(event_id)
         folded.append(dict(event, body=edit.get("body", "")) if edit else event)
@@ -1197,14 +1238,29 @@ def _review_chip(review):
                 label))
 
 
+def _plugins_off():
+    from . import repo_ssr_issue
+    return repo_ssr_issue.plugins_off()
+
+
+def _created_ms(value):
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    if number != number or number in (float("inf"), float("-inf")):
+        return 0
+    return number * 1000 if 0 < number < 10_000_000_000 else number
+
+
 def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
     base = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
                                urllib.parse.quote(bundle.repo))
     if kind in ("pulls", "issues"):
         shown = [r for r in rows if str(r.get("state") or "open").lower()
                  == "open" and not r.get("deleted")]
-        if kind == "issues":
-            shown.sort(key=lambda r: -r["number"])
+        if kind == "issues" and "forum-list" not in _plugins_off():
+            shown.sort(key=lambda r: (-_created_ms(r.get("ts")), -r["number"]))
         if open_count is None:
             open_count = len(shown)
         if closed_count is None:
@@ -1230,18 +1286,33 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
             meta = '<span>%s</span>%s' % (meta, chip)
         labels = "".join('<span class="fm-ssr-label">%s</span>' % _esc(x)
                          for x in row.get("labels") or [])
+        faces = ""
+        if row.get("commenters") and "forum-list" not in _plugins_off():
+            from .repo_ssr_issue import avatar_html
+            faces = '<span class="p" data-repo-issue-row-commenters>%s</span>' % "".join(
+                avatar_html(name, name, "h-5 w-5", False, False)
+                for name in row["commenters"][:4])
         items.append(
-            '<div class="fm-ssr-item" data-ssr-record="%s"%s><a href="%s/%s/%d">'
+            '<div class="fm-ssr-item" data-ssr-record="%s"%s>%s<a href="%s/%s/%d">'
             '%s</a>%s<div class="m%s">%s</div></div>' % (
-                kind, " data-ssr-usable" if index == 0 else "", _esc(base),
+                kind, " data-ssr-usable" if index == 0 else "", faces, _esc(base),
                 "pull" if kind == "pulls" else kind, number,
                 _esc(row.get("title")), labels,
                 " fm-ssr-m-chip" if chip else "", meta))
     if not items:
         items.append('<div class="fm-ssr-item" data-ssr-usable>No open %s.'
                      '</div>' % {"pulls": "pull requests"}.get(kind, kind))
-    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s</div>' % (
-        head, "".join(items)), link)
+    feeds = ('<p class="fm-ssr-sub" data-repo-issue-feeds><a href="%s/issues.atom" '
+             'type="application/atom+xml">Feed</a> &middot; <a href="%s/lite">Lite view</a>'
+             '</p>' % (_esc(base), _esc(base))) \
+        if kind == "issues" and "read-surfaces" not in _plugins_off() else ""
+    banner = ""
+    if kind == "issues" and "mirror-quota" not in _plugins_off():
+        from . import mirror_help, repo_ssr
+        banner = mirror_help.dashboard_banner_for(base, repo_ssr.cached_quota(
+            bundle.owner, bundle.repo))
+    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s%s</div>%s' % (
+        banner, head, "".join(items), feeds), link)
 
 
 def _diff(patch, href="", usable=True):
@@ -1345,10 +1416,10 @@ def _review_prompt(bundle, pull, origin, link):
         return ""
     link = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
                                 urllib.parse.quote(bundle.repo))
+    patch = str(pull.get("patch") or "")
     values = pull_review_prompt.fields(
-        origin, link, pull["number"], pull,
-        bool(str(pull.get("patch") or "").strip()))
-    return pull_review_prompt.render(
+        origin, link, pull["number"], pull, bool(patch.strip()), patch)
+    return '<h3 class="fm-ssr-title">Diff and files</h3>' + pull_review_prompt.render(
         values, pull["number"], pull_review_prompt.template_from_blobs(
             (bundle.model or {}).get("settings")))
 
@@ -1361,8 +1432,18 @@ def _render(bundle, section="", reactions=None, link=None, reader=False, origin=
     if bundle.view in ("pulls", "discussions"):
         return _list(bundle, bundle.view, model.get("rows") or [], link=link)
     if bundle.view == "issues":
-        return _list(bundle, "issues", model.get("rows") or [],
-                     model.get("open"), model.get("closed"), link)
+        from . import repo_ssr_issue
+        ctx = repo_ssr_issue.Context(base, "/api/repo/%s/%s" % (
+            urllib.parse.quote(bundle.owner, safe=""),
+            urllib.parse.quote(bundle.repo, safe="")), str(bundle.ref or "main"))
+        token = repo_ssr_issue.FORGE_AVATARS.set((ctx, repo_ssr_issue.AvatarSet(
+            (name.lower() for name in model.get("avatars") or []),
+            model.get("avatarCommit"))))
+        try:
+            return _list(bundle, "issues", model.get("rows") or [],
+                         model.get("open"), model.get("closed"), link)
+        finally:
+            repo_ssr_issue.FORGE_AVATARS.reset(token)
     if bundle.view == "pull" and model.get("pull"):
         pull = model["pull"]
         tabs = "".join('<a href="%s/pull/%d%s"%s>%s</a>' % (

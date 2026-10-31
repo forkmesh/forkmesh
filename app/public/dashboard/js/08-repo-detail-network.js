@@ -70,7 +70,7 @@
       query: "",
       filters: {
         author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
-        mentions: "", involves: "", type: "", sort: "recently_updated",
+        mentions: "", involves: "", type: "", sort: issueDefaultSort(),
       },
     };
     state.pullsView = { filter: "open", query: "" };
@@ -196,7 +196,20 @@
     const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `
       <section data-dashboard-repo-tab-panel="settings" class="hidden">
-        <div class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
+       <div data-repo-rail-layout data-repo-settings-layout class="grid min-w-0 gap-4">
+        <nav data-repo-rail aria-label="Settings sections" class="mt-4 min-w-0 rounded-lg border border-border p-3 lg:mt-0">
+          <div data-repo-rail-inner>
+            <h2 class="fm-rail-title">Settings</h2>
+            <label class="mb-2 flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 text-muted-foreground focus-within:border-[var(--dashboard-link)]">
+              <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
+              <input data-repo-settings-search type="search" autocomplete="off" spellcheck="false" placeholder="Search settings" aria-label="Search settings" class="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground" />
+            </label>
+            <ul data-repo-settings-nav class="fm-rail-list"></ul>
+            <p data-repo-settings-search-empty hidden class="px-2 py-1 text-[12px] text-muted-foreground">No settings match.</p>
+          </div>
+        </nav>
+        <div data-repo-rail-main class="min-w-0">
+        <div id="settings-general" data-repo-settings-section="General" class="scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="settings" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository settings</span>
           </div>
@@ -232,14 +245,14 @@
           </form>
         </div>
         ${renderRepoAccessSettings(repo)}
-        ${repo.isPrivate ? "" : `<div data-repo-settings-logo class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        ${repo.isPrivate ? "" : `<div data-repo-settings-logo id="settings-logo" data-repo-settings-section="Logo" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="image" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
             <span class="font-mono text-[10px] text-muted-foreground">PNG · up to 256 KB</span>
           </div>
           <div class="grid gap-4 p-4">
             <div class="flex items-start gap-3">
-              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16")}</span>
+              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16") || instanceLogoFrameMarkup("h-16 w-16")}</span>
               <p class="text-[11px] leading-5 text-muted-foreground">Shown on repository cards and as the repository's fediverse avatar. A logo uploaded here comes first. Without one, ${escapeHtml(platformName())} uses the <span class="font-mono">logo.png</span> committed at the root of the repository, then approved artwork below, and never invents artwork for a project.</p>
             </div>
             <form data-repo-settings-logo-form class="grid gap-2">
@@ -262,7 +275,7 @@
             </div>
           </div>
         </div>`}
-        <div data-repo-pull-rules-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-pull-rules-card id="settings-pull-rules" data-repo-settings-section="Pull request rules" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Pull request rules</span>
             <span class="font-mono text-[10px] text-muted-foreground">.forkmesh/pull-rules.json</span>
@@ -272,7 +285,7 @@
             <div data-repo-pull-rules-editor class="text-xs text-muted-foreground">Loading rules…</div>
           </div>
         </div>
-        <div data-repo-webhooks-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-webhooks-card id="settings-webhooks" data-repo-settings-section="Webhooks" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="webhook" class="h-3.5 w-3.5 text-muted-foreground"></i>Webhooks</span>
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
@@ -302,14 +315,14 @@
             </div>
           </div>
         </div>
-        <div data-repo-actions-secrets-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-actions-secrets-card id="settings-secrets" data-repo-settings-section="Actions secrets" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="key-round" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions secrets</span>
             <span class="font-mono text-[10px] text-muted-foreground">secrets.NAME</span>
           </div>
           <div data-actions-secrets data-actions-secrets-scope="repo" data-actions-secrets-base="${escapeHtml(`${repoApiBase(repo)}/actions/secrets`)}" class="p-4 text-xs text-muted-foreground"></div>
         </div>
-        <div data-repo-forge-mirror-card id="mirror" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-forge-mirror-card id="mirror" data-repo-settings-section="Mirror to GitHub or GitLab" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror to GitHub or GitLab</span>
             <span data-repo-forge-mirror-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
@@ -320,7 +333,7 @@
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-archive-sync-card id="archive" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-archive-sync-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
             <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
@@ -331,7 +344,7 @@
             <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-danger-zone class="mt-5 overflow-hidden rounded-lg border border-destructive/50 bg-background">
+        <div data-repo-danger-zone id="settings-danger" data-repo-settings-section="Danger zone" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-destructive/50 bg-background">
           <div class="border-b border-destructive/30 px-4 py-3">
             <h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
           </div>
@@ -344,6 +357,8 @@
             <button type="button" data-repo-delete class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-destructive/60 px-3 text-xs font-semibold text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete repository</button>
           </div>
         </div>
+        </div>
+       </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
@@ -460,11 +475,11 @@
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
-            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
+            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div data-repo-actions class="mt-4 min-w-0 lg:mt-0"></div></section>
             <section data-dashboard-repo-tab-panel="insights" class="hidden"><div data-repo-insights class="min-w-0"></div></section>
             <section data-dashboard-repo-tab-panel="sizemap" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-pie" class="h-3.5 w-3.5 text-muted-foreground"></i>Size map</span><span class="font-mono text-[10px] text-muted-foreground">directory sizes · default branch</span></div><div data-repo-sizemap class="p-4"></div></div></section>
             <section data-dashboard-repo-tab-panel="mirrors" class="hidden"><div data-mirror-request hidden class="py-2"><label class="block text-[11px] font-medium text-foreground">Ask a node to mirror this repo</label><div class="flex items-center gap-2"><input data-mirror-request-target type="text" autocomplete="off" spellcheck="false" placeholder="node name" class="h-8 min-w-0 flex-1 rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" /><button type="button" data-mirror-request-send class="h-8 shrink-0 rounded-md bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70">Ask to mirror</button></div><p data-mirror-request-hint class="text-[11px] text-muted-foreground">They get a ping; if they accept, their node starts mirroring your repo.</p></div><div data-repo-mirrors></div></section>
-            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></section>` : ""}
+            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div data-repo-rail-layout class="grid min-w-0 gap-4"><nav data-repo-rail aria-label="Agent sessions" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Agents</h2><ul data-repo-agents-views class="fm-rail-list"></ul></div></nav><div data-repo-rail-main class="min-w-0"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background lg:mt-0"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></div></div></section>` : ""}
             ${settingsPanel}
           </div>
           <aside data-repo-about data-repo-about-rail class="min-w-0 self-start rounded-lg border border-border bg-background p-4">
@@ -557,6 +572,7 @@
               <p class="mt-2 text-[11px] leading-4 text-muted-foreground">Posts this repository published to its Mastodon followers. Deleting one sends a removal to every follower's server so it disappears from their timelines.</p>
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
+            ${repo.isPrivate ? "" : repoMirrorQuotaSection(repo)}
           </aside>
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
@@ -597,6 +613,7 @@
     if (initialTab === "security") void loadRepoSecurity(repo);
     hydrateNativeRepositoryLogos(detail.querySelector("[data-repo-title-row]"));
     if (initialTab === "settings") {
+      renderRepoSettingsRail();
       void loadRepoSettingsLogo(repo);
       void loadRepoCollaborators(repo);
     }
@@ -608,6 +625,7 @@
     const provenance = repoProvenanceHtml(repo, { forkButton: false });
     const websiteForkAvailable = !repo.isPrivate;
     const logo = nativeRepositoryLogoMarkup(repo, "h-6 w-6")
+      || instanceLogoFrameMarkup("h-6 w-6")
       || `<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">${escapeHtml(String(repo.owner || "F").slice(0, 1).toUpperCase())}</span>`;
     return `
         <div data-repo-title-row class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5">
@@ -650,6 +668,69 @@
           </div>
         </div>`;
   }
+
+  function renderRepoSettingsRail() {
+    const nav = $("[data-repo-settings-nav]");
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]"));
+    nav.innerHTML = sections.map((section) => `<li><button type="button" data-repo-rail-jump="${escapeHtml(section.id)}" class="fm-rail-item"><span class="min-w-0 truncate">${escapeHtml(section.dataset.repoSettingsSection || "")}</span></button></li>`).join("");
+    filterRepoSettings($("[data-repo-settings-search]")?.value || "");
+    markRepoRailSection();
+  }
+
+  function filterRepoSettings(query) {
+    const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]").forEach((section) => {
+      const text = `${section.dataset.repoSettingsSection} ${section.textContent} ${Array.from(section.querySelectorAll("input[placeholder]")).map((input) => input.placeholder).join(" ")}`.toLowerCase();
+      const match = words.every((word) => text.includes(word));
+      section.style.display = match ? "" : "none";
+      $(`[data-repo-settings-nav] [data-repo-rail-jump="${CSS.escape(section.id)}"]`)?.closest("li")?.toggleAttribute("hidden", !match);
+      if (match) shown += 1;
+    });
+    const empty = $("[data-repo-settings-search-empty]");
+    if (empty) empty.hidden = shown > 0;
+  }
+
+  function jumpToRepoRailSection(button) {
+    const target = document.getElementById(button.dataset.repoRailJump || "");
+    if (!target) return;
+    target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    button.closest("ul")?.querySelectorAll("[data-repo-rail-jump]").forEach((item) => {
+      if (item === button) item.setAttribute("aria-current", "true");
+      else item.removeAttribute("aria-current");
+    });
+  }
+
+  function markRepoRailSection() {
+    document.querySelectorAll("[data-dashboard-repo-tab-panel]:not(.hidden) [data-repo-rail]").forEach((rail) => {
+      const buttons = Array.from(rail.querySelectorAll("[data-repo-rail-jump]"));
+      if (!buttons.length) return;
+      let current = buttons[0];
+      buttons.forEach((button) => {
+        const target = document.getElementById(button.dataset.repoRailJump || "");
+        if (target && target.style.display !== "none" && target.getBoundingClientRect().top <= 140) current = button;
+      });
+      buttons.forEach((button) => {
+        if (button === current) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
+    });
+  }
+
+  let repoRailScrollFrame = 0;
+  document.addEventListener("scroll", () => {
+    if (repoRailScrollFrame) return;
+    repoRailScrollFrame = requestAnimationFrame(() => {
+      repoRailScrollFrame = 0;
+      markRepoRailSection();
+    });
+  }, { capture: true, passive: true });
+
+  document.addEventListener("input", (event) => {
+    const search = event.target.closest?.("[data-repo-settings-search]");
+    if (search) filterRepoSettings(search.value);
+  });
 
   function startRepoForkFromTitle(button) {
     const own = String(button?.dataset.repoForkOwnUrl || "");
@@ -1779,6 +1860,32 @@
     storeRepositoryCatalog(data.repositories);
     renderRepositories(data.repositories, state.session);
     recordInterfaceMetric("browse", startedAt, "remote");
+    if (!fresh) void refreshCatalogOnNewForks();
+  }
+
+  async function refreshCatalogOnNewForks() {
+    if (state.pinnedForkCountsChecked) return;
+    state.pinnedForkCountsChecked = true;
+    const groups = sidebarPinnedGroups(nestRepositoryForks(homeRepositoryEntries(), () => 0), () => []);
+    for (const group of groups) {
+      const repo = group.entry.repo;
+      if (!repo || repo.isPrivate) continue;
+      try {
+        const response = await fetch(`${repoApiBase(repo)}/forks`, { headers: { accept: "application/json" } });
+        const data = response.ok ? await response.json() : null;
+        const live = Number(data?.count) || 0;
+        const seenKey = `forkmesh.pinned-fork-count.v1:${repoKey(repo)}`;
+        let seen = 0;
+        try {
+          seen = Number(sessionStorage.getItem(seenKey)) || 0;
+          sessionStorage.setItem(seenKey, String(live));
+        } catch (_) {}
+        if (live > group.forks.length && live > seen) {
+          await loadRepositories({ fresh: true });
+          return;
+        }
+      } catch (_) {}
+    }
   }
 
   // Boot/shared-chrome loads take the cached path (browser + edge cache honor
@@ -1894,6 +2001,7 @@
       canonicalProfileReady = hydrateCanonicalProfile(session)
         .then((nextSession) => {
           if (bounceToVerification(nextSession)) return;
+          void backfillAdminUrl(nextSession);
           return loadNotifications();
         })
         .catch(() => {});
@@ -3207,14 +3315,12 @@
         "[data-repo-issue-contribution-dismiss]",
       );
       if (contributionDismissButton && state.selectedRepo) {
-        const scope = contributionDismissButton.dataset.repoIssueContributionDismiss;
-        try {
-          const key = scope === "all"
-            ? "forkmesh.issue-contribution-tip.v1:all"
-            : issueContributionTipStorageKey(state.selectedRepo);
-          localStorage.setItem(key, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
+        if (contributionDismissButton.dataset.repoIssueContributionDismiss === "all") {
+          try {
+            localStorage.setItem("forkmesh.issue-contribution-tip.v1:all", "1");
+          } catch (_) {}
+        } else {
+          dismissContributionTip("issue", state.selectedRepo);
         }
         contributionDismissButton.closest("[data-repo-issue-contribution-tip]")?.remove();
         return;
@@ -3333,11 +3439,7 @@
 
       const pullTipDismiss = event.target.closest("[data-repo-pull-contribution-dismiss]");
       if (pullTipDismiss && state.selectedRepo) {
-        try {
-          localStorage.setItem(`forkmesh.pull-contribution-tip.v1:${repoKey(state.selectedRepo)}`, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
-        }
+        dismissContributionTip("pull", state.selectedRepo);
         pullTipDismiss.closest("[data-repo-pull-contribution-tip]")?.remove();
         return;
       }
@@ -3906,6 +4008,21 @@
       const contextMenuAction = event.target.closest("[data-repo-tree-context-action]");
       if (contextMenuAction) {
         await handleRepoTreeContextAction(contextMenuAction);
+        return;
+      }
+
+      const agentsViewButton = event.target.closest("[data-repo-agents-view]");
+      if (agentsViewButton) {
+        state.agentsView.statusView = agentsViewButton.dataset.repoAgentsView || "all";
+        state.agentsView.selectedAgentId = null;
+        if ($("[data-org-agent-sessions]")) renderOrgAgentSessions();
+        else renderRepoAgentsList(state.agentsView.agents);
+        return;
+      }
+
+      const railJump = event.target.closest("[data-repo-rail-jump]");
+      if (railJump) {
+        jumpToRepoRailSection(railJump);
         return;
       }
 
@@ -4496,6 +4613,9 @@
   });
   $$("[data-new-repo-source]").forEach((btn) => {
     btn.addEventListener("click", () => setNewRepoSource(btn.dataset.newRepoSource));
+  });
+  $$("[data-new-repo-visibility]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoVisibilityNote);
   });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();

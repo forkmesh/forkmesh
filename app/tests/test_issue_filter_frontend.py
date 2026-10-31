@@ -602,9 +602,15 @@ def test_render_repo_issues_applies_the_search_filter_after_the_status_filter():
     # the only one that narrows it, so text left in the header search box can
     # no longer empty the list (issue #673).
     assert '}).filter((issue) => issueMatchesFilters(issue, issueFilterState()))' in render
-    assert '.filter((issue) => localFilterQueries(issuesView.query)' in render
+    assert '.filter((issue) => issueMatchesSearch(issue, issuesView.query));' in render
     assert 'pageFilterQueries(' not in render
-    assert '.every((query) => issueMatchesQuery(issue, query)));' in render
+    search = DASHBOARD_JS[
+        DASHBOARD_JS.index("function issueMatchesSearch")
+        : DASHBOARD_JS.index("function issueSearchState")
+    ]
+    assert 'const queries = localFilterQueries(query);' in search
+    assert 'pageFilterQueries(' not in search
+    assert 'queries.every((text) => issueMatchesQuery(issue, text))' in search
 
 
 def test_issue_metadata_dropdowns_are_real_filters_with_live_options():
@@ -872,7 +878,7 @@ def test_opening_a_different_repo_resets_the_issue_view_state():
         'items: []',
         'query: ""',
         'author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: ""',
-        'type: "", sort: "recently_updated"',
+        'type: "", sort: issueDefaultSort(),',
     ):
         assert marker in reset
     assert 'state.pullsView = { filter: "open", query: "" };' in render
@@ -999,7 +1005,19 @@ def test_label_filter_lives_in_the_address_bar():
 
 def test_hacktoberfest_label_gets_a_pumpkin_that_respects_reduced_motion():
     start = DASHBOARD_JS.index("function issueLabelSwatch(label)")
-    body = DASHBOARD_JS[start:DASHBOARD_JS.index("function renderCollectionViewsFooter()", start)]
+    body = DASHBOARD_JS[start:DASHBOARD_JS.index("function renderCollectionViewsHeader()", start)]
     assert "hacktoberfest" in body and "<animateTransform" in body
     assert "prefers-reduced-motion: reduce" in body
     assert "issueLabelSwatch(label), label, count" in DASHBOARD_JS
+
+
+def test_views_sidebar_collapses_from_an_icon_at_its_top():
+    for name in ("function renderIssueViewsNav()", "function renderPullViewsNav()"):
+        start = DASHBOARD_JS.index(name)
+        body = DASHBOARD_JS[start:DASHBOARD_JS.index("\n  }\n", start)]
+        assert body.index("renderCollectionViewsHeader()") < body.index("data-repo-collection-views-inner") + 80
+    assert "renderCollectionViewsFooter" not in DASHBOARD_JS
+    header = DASHBOARD_JS[DASHBOARD_JS.index("function renderCollectionViewsHeader()"):]
+    header = header[:header.index("\n  }\n")]
+    assert 'data-repo-issue-views-toggle aria-label="Collapse sidebar"' in header
+    assert 'data-lucide="panel-left-close"' in header

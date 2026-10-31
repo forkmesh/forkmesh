@@ -79,6 +79,8 @@ def test_folding_a_file_keeps_its_header_in_place_both_ways():
     edit = body.index("change();")
     assert pin < edit and no_anchor < edit
     assert "scroller.scrollTop += shift" in body
+    assert body.index("padPullDiffTail(block, scroller") < body.index("scroller.scrollTop += shift")
+    assert "data-repo-pull-diff-tail" in CONTENT
     assert 'block.style.contentVisibility = "auto"' in body[edit:]
     assert "scroller.style.overflowAnchor = anchor" in body[edit:]
     assert "keepPullDiffHeaderInPlace(block.firstElementChild" in CONTENT
@@ -287,8 +289,8 @@ def test_web_merge_waits_out_transient_refusals_with_the_same_request():
 
 
 def test_the_merge_panel_says_no_mirror_has_taken_the_job_yet():
-    assert "? \"Waiting for an online mirror to take this merge. No mirror has accepted it yet.\"" in CONTENT
-    assert "parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };" in CONTENT
+    assert "Waiting for an online mirror to pick this up (no mirror has accepted it yet)." in CONTENT
+    assert "parsed.pullMerge = repoPullMutationWaitState(parsed.pullMerge, accepted, payload);" in CONTENT
 
 
 def _function_source(name):
@@ -307,7 +309,7 @@ def test_reviews_before_a_force_push_are_marked_as_on_an_older_commit():
     node = shutil.which("node")
     if not node:
         pytest.skip("node is not installed")
-    script = _function_source("pullReviewSummary") + """
+    script = _function_source("pullReviewerKey") + _function_source("pullReviewSummary") + """
 const events = [
   {type: "review", author: "k1", authorName: "alice", state: "approved"},
   {type: "review", author: "k2", authorName: "carol", state: "commented"},
@@ -335,3 +337,58 @@ def test_force_push_events_render_with_both_commits_and_a_compare_link():
     assert 'ev.type === "force-push"' in renderer
     assert "data-repo-pull-force-push-compare" in renderer
     assert "data-repo-pull-review-older" in CONTENT
+
+
+def test_one_person_reviewing_with_two_keys_is_one_reviewer_and_one_vote():
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    script = _function_source("pullReviewerKey") + _function_source("pullReviewSummary") + _function_source("pullReviewPolicy") + """
+const events = [
+  {type: "review", author: "key-laptop", authorName: "alice", state: "changes_requested"},
+  {type: "review", author: "key-phone", authorName: "Alice", state: "changes_requested"},
+  {type: "review", author: "key-bob", authorName: "bob", state: "approved"},
+  {type: "review", author: "key-author", authorName: "carol", state: "approved"},
+];
+console.log(JSON.stringify({
+  rows: pullReviewSummary(events).map((row) => row.authorName),
+  policy: pullReviewPolicy(events, "carol"),
+}));
+"""
+    output = json.loads(subprocess.run([node, "-e", script], capture_output=True,
+                                       text=True, check=True, timeout=30).stdout)
+    assert len([name for name in output["rows"] if name.lower() == "alice"]) == 1
+    assert output["policy"] == {"approvals": 1, "blockers": 1, "ready": False}
+
+
+def test_unverified_reviewers_stay_apart_and_the_author_is_excluded_by_account():
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    script = _function_source("pullReviewerKey") + _function_source("pullReviewSummary") + _function_source("pullReviewPolicy") + """
+const events = [
+  {type: "review", author: "key-anon-1", authorName: "dave (unverified)", state: "changes_requested"},
+  {type: "review", author: "key-anon-2", authorName: "dave (unverified)", state: "approved"},
+  {type: "review", author: "key-carol-phone", authorName: "carol", state: "approved"},
+];
+console.log(JSON.stringify({
+  rows: pullReviewSummary(events).length,
+  policy: pullReviewPolicy(events, "key-carol-laptop", "carol"),
+}));
+"""
+    output = json.loads(subprocess.run([node, "-e", script], capture_output=True,
+                                       text=True, check=True, timeout=30).stdout)
+    assert output["rows"] == 3
+    assert output["policy"] == {"approvals": 1, "blockers": 1, "ready": False}

@@ -7,6 +7,8 @@
 // belong here in full. tools/mainwindow_split/split_internal_header.py moves
 // inline bodies that come back.
 
+#include "DesktopUi.h"
+#include "OcticonIcons.h"
 #include "PingSettings.h"
 #include "RailFolders.h"
 #include "StartupTrace.h"
@@ -52,6 +54,8 @@
 #include "DesignTokens.h"
 #include "NextShellHooks.h"
 #include "UiKit.h"
+#include "BusyRing.h"
+#include "VerticalIconButton.h"
 #include "VirtualMachineRuntime.h"
 
 #include <QAbstractButton>
@@ -213,9 +217,7 @@
 #include <unistd.h>
 #endif
 
-#ifndef FORKMESH_SOURCE_DIR
-#define FORKMESH_SOURCE_DIR ""
-#endif
+#include "SourceDir.h"
 
 namespace forkmesh::localcontrol::agentops {
 struct UsageWindow;
@@ -271,6 +273,8 @@ protected:
     }
 };
 
+bool diffBytesAreWebp(const QByteArray &bytes);
+QImage diffDecodeWebp(const QByteArray &bytes);
 QString openAiAuthHeader(const QString &apiKey);
 QNetworkRequest openAiRequest(const QUrl &url, const QString &apiKey);
 QString apiErrorSummary(QNetworkReply *reply, const QByteArray &body);
@@ -337,6 +341,8 @@ struct DiffRenderAppearance {
     qreal dpr = 1.0;
     QMap<QString, QString> colorRemap;
     QString treeIconDir;
+    bool changeArrows = false;
+    int changeArrowsStagedFiles = 0;
 };
 DiffRenderAppearance currentDiffRenderAppearance();
 // One compact score in the branch review's merge-health strip. Scores are
@@ -537,6 +543,7 @@ int diffPageCountForTest(QTextEdit *view);
 void showDiffPageForTest(QTextEdit *view, int page);
 int diffWindowFirstPageForTest(QTextEdit *view);
 int diffLoadedPageViewportYForTest(QTextEdit *view, int page);
+bool diffScrollBarGeometryForTest(QTextEdit *view, int *value, int *maximum);
 #endif
 bool autoMarkViewedOnScrollPref();
 void setAutoMarkViewedOnScrollPref(bool on);
@@ -853,16 +860,11 @@ const QLatin1String kIssueLinkScheme("forkmesh-issue:");
 
 const QLatin1String kTaskLinkScheme("forkmesh-task:");
 
-const QLatin1String kUserLinkScheme("forkmesh-user:");
-
 QString userProfileAccount(const QString &name);
-QString userProfileLinkHtml(const QString &account, const QString &shown = QString());
 
 QString branchLinkHtml(const QString &branch);
 
 const QLatin1String kRepoInfoPath(".forkmesh/info.json");
-
-const QLatin1String kAgentLinkScheme("forkmesh-agent:");
 
 // Sidebar values are painted in #statusLine's muted grey, which Qt folds into
 // the widget palette when it polishes the rule. An anchor placed inside one has
@@ -1901,6 +1903,9 @@ private:
 
 constexpr int kResourceSparklineSide = 34;
 constexpr int kResourceSparklineCompactSide = 19;
+constexpr int kDebugChartExpandedSide = 40;
+constexpr int kDebugTileQuadSide = 40;
+constexpr qint64 kDebugStallChartMaxMs = 2000;
 
 class ResourceSparkline : public QWidget
 {
@@ -2550,6 +2555,12 @@ void paintCaption(QPainter &p, const QWidget *widget,
 
 int widthFor(int columns, const QString &caption);
 
+constexpr int kAnimationIntervalMs = 60;
+
+QTimer *animationClock();
+
+void holdAnimationClock(bool *held, bool want);
+
 } // namespace ChromeDotGrid
 
 QColor agentRunningFireballColor();
@@ -2583,14 +2594,19 @@ public:
         setFixedWidth(0); // nothing to show until the first setDots()
         setCursor(Qt::PointingHandCursor);
         hide();
-        m_sweep = new QTimer(this);
-        m_sweep->setInterval(60);
-        connect(m_sweep, &QTimer::timeout, this, [this] {
+        connect(ChromeDotGrid::animationClock(), &QTimer::timeout, this, [this] {
+            if (!m_ticking)
+                return;
             m_phase += 0.045;
             if (m_phase >= 1.0)
                 m_phase -= 1.0;
             update();
         });
+    }
+
+    ~AgentDotMatrix() override
+    {
+        ChromeDotGrid::holdAnimationClock(&m_ticking, false);
     }
 
     void setDots(const QVector<Dot> &dots)
@@ -2601,6 +2617,10 @@ public:
         // An unchanged row is already on screen: leave it alone.
         if (dots == m_dots)
             return;
+        if (m_ticking && sameSquares(dots, m_dots)) {
+            m_dots = dots;
+            return;
+        }
         m_dots = dots;
         const int columns = (m_dots.size() + kRows - 1) / kRows;
         const int width =
@@ -2610,14 +2630,13 @@ public:
         bool anyRunning = false;
         for (const Dot &d : std::as_const(m_dots))
             anyRunning = anyRunning || d.running;
-        if (anyRunning && !m_sweep->isActive())
-            m_sweep->start();
-        else if (!anyRunning && m_sweep->isActive())
-            m_sweep->stop();
+        ChromeDotGrid::holdAnimationClock(&m_ticking, anyRunning);
         update();
     }
 
     int shownCount() const { return m_dots.size(); }
+
+    bool sweeping() const { return m_ticking; }
 
     std::function<void(int)> onDotClicked;
 
@@ -2668,6 +2687,18 @@ protected:
     }
 
 private:
+    static bool sameSquares(const QVector<Dot> &a, const QVector<Dot> &b)
+    {
+        if (a.size() != b.size())
+            return false;
+        for (qsizetype i = 0; i < a.size(); ++i)
+            if (a.at(i).sessionId != b.at(i).sessionId ||
+                a.at(i).color != b.at(i).color ||
+                a.at(i).running != b.at(i).running)
+                return false;
+        return true;
+    }
+
     QPointF cellCenter(int index) const
     {
         const int column = index / kRows;
@@ -2693,7 +2724,7 @@ private:
 
     QVector<Dot> m_dots;
     double m_phase = 0.0;      // 0..1 Larson sweep parameter
-    QTimer *m_sweep = nullptr; // only ticks while something is running
+    bool m_ticking = false;
 };
 
 class NodeDotMatrix : public QWidget
@@ -2840,13 +2871,19 @@ public:
         setFixedWidth(0);
         setCursor(Qt::PointingHandCursor);
         hide();
-        m_pulse = new QTimer(this);
-        connect(m_pulse, &QTimer::timeout, this, [this] {
-            m_phase += m_badges.isEmpty() ? 0.05 : kBreathStep;
+        connect(ChromeDotGrid::animationClock(), &QTimer::timeout, this, [this] {
+            if (!m_ticking)
+                return;
+            m_phase += m_badges.isEmpty() ? kCellPulsePhaseStep : kBreathStep;
             if (m_phase >= 1.0)
                 m_phase -= 1.0;
             update();
         });
+    }
+
+    ~ActionRunStrip() override
+    {
+        ChromeDotGrid::holdAnimationClock(&m_ticking, false);
     }
 
     void setCells(const QVector<Cell> &cells,
@@ -2872,11 +2909,7 @@ public:
         bool animate = !m_badges.isEmpty();
         for (const Cell &c : std::as_const(m_cells))
             animate = animate || c.running;
-        const int interval = m_badges.isEmpty() ? 90 : 40;
-        if (animate && (!m_pulse->isActive() || m_pulse->interval() != interval))
-            m_pulse->start(interval);
-        else if (!animate && m_pulse->isActive())
-            m_pulse->stop();
+        ChromeDotGrid::holdAnimationClock(&m_ticking, animate);
         update();
     }
 
@@ -3022,7 +3055,8 @@ private:
     static constexpr double kSide = 4.5;
     static constexpr double kPulseStep = 0.09;
     static constexpr int kGlyphPx = kBadgeSide;
-    static constexpr double kBreathStep = 0.0167;
+    static constexpr double kBreathStep = 0.025;
+    static constexpr double kCellPulsePhaseStep = 1.0 / 30;
     static constexpr double kBreathOffset = 0.17;
 
     QVector<Cell> m_cells;
@@ -3030,7 +3064,7 @@ private:
     QVector<QPixmap> m_glyphs;
     qreal m_glyphDpr = 0.0;
     double m_phase = 0.0;
-    QTimer *m_pulse = nullptr;
+    bool m_ticking = false;
 };
 
 // A workflow row is deliberately a widget instead of a wrapped text item: the
@@ -4207,6 +4241,8 @@ const QString kRailFoldersSetting = QStringLiteral("ui/railFolders");
 const QString kRailSortModeSetting = QStringLiteral("ui/railSortMode");
 const QString kRailGroupedSetting = QStringLiteral("ui/railGrouped");
 const QString kRailGroupsSetting = QStringLiteral("ui/railGroups");
+const QString kRailCollapsedGroupsSetting =
+    QStringLiteral("ui/railCollapsedGroups");
 const QString kRailOrderSetting = QStringLiteral("ui/railOrder");
 const QString kRailHiddenSetting = QStringLiteral("ui/railHidden");
 const QString kRailItemMimeType =
@@ -4225,6 +4261,8 @@ const QString kListenToNewAgentsSetting =
     QStringLiteral("agents/listenToNewRuns");
 const QString kShowDebugBarOnStartupSetting =
     QStringLiteral("ui/showDebugBarOnStartup");
+const QString kDebugChartsExpandedSetting =
+    QStringLiteral("ui/debugChartsExpanded");
 const QString kDiagnosticsReportBaselineSetting =
     QStringLiteral("diagnostics/selfFixReportBaseline");
 const QString kCloudLogMonitorSetting =
@@ -4573,6 +4611,8 @@ const QString kAgentWorkspaceNameModelSetting =
     QStringLiteral("agents/workspaceNameCloudflareModel");
 const QString kAgentTitleFromAgentSetting =
     QStringLiteral("agents/titleFromAgent");
+const QString kAgentCloudflareNamingSetting =
+    QStringLiteral("agents/cloudflareNaming");
 const QString kLocalLlamaModelSetting =
     QStringLiteral("agents/localLlamaModel");
 const QString kLocalLlamaEndpointSetting =
@@ -4757,10 +4797,6 @@ const QString kAccountAlertDeleteProof =
 // in entry.py.
 const QString kAccountAlertClearProof =
     QStringLiteral("forkmesh-account-alert-clear-v1");
-// A desktop timer's expiry raised as an account ping. Must stay
-// byte-identical to TIMER_PING_PROOF in app/src/timer_pings.py.
-const QString kTimerPingProof =
-    QStringLiteral("forkmesh-account-timer-ping-v1");
 // Canonical prefixes the Settings -> Organizations panel signs with this
 // machine's account key when it holds no session token. One prefix per
 // operation, and the canonical additionally binds the request path plus every
@@ -4841,6 +4877,7 @@ const QString kClaudeCodeProvider = QStringLiteral("claude-code");
 const QString kAgentDonePingKind = QStringLiteral("agent-done");
 constexpr int kAgentDoneSummaryChars = 400;
 const QString kAgentDoneAlertSetting = QStringLiteral("notifications/agentDone");
+const QString kClaudeDesktopSessionsSetting = QStringLiteral("agents/claudeDesktopSessions");
 const QString kAgentStartPingSetting = QStringLiteral("notifications/agentStart");
 
 bool agentIsClaudeProvider(const QString &provider);
@@ -6165,12 +6202,6 @@ QPixmap restartProgressPixmap(const QColor &color, double angleDeg, int size,
 QByteArray forkMeshAvatarPng(const QString &seed);
 
 QByteArray forkMeshNodeAvatarPng(const QString &seed);
-
-QPixmap roundedAvatar(const QPixmap &src, int side,
-                             qreal radiusRatio = 0.28);
-
-QPixmap roundedAvatar(const QByteArray &png, int side,
-                             qreal radiusRatio = 0.28);
 
 // A teammate's round portrait. Named avatars have their own artwork; the rest
 // fall back to the face of the model the teammate runs on. Shared by the
@@ -8491,9 +8522,6 @@ private:
 
 void applyStoredOcticon(QPushButton *button);
 
-void setOcticon(QPushButton *button, const QString &name, int size = 16,
-                       qreal rotationDeg = 0.0);
-
 void tintComposerActionButton(QPushButton *button);
 
 void applyStoredLabelOcticon(QLabel *label);
@@ -8852,307 +8880,6 @@ private:
     Qt::TextElideMode m_elideMode = Qt::ElideRight;
 };
 
-class VerticalIconButton : public QPushButton
-{
-public:
-    enum Form { Action, Tab, Bare };
-    explicit VerticalIconButton(const QString &text, Form form,
-                                QWidget *parent = nullptr)
-        : QPushButton(text, parent), m_form(form)
-    {
-        setCursor(Qt::PointingHandCursor);
-        setFlat(true);
-        setAttribute(Qt::WA_Hover, true);
-    }
-
-    QSize sizeHint() const override
-    {
-        const QSize hooked = tabButtonSizeHook(this, paintState());
-        if (hooked.isValid())
-            return hooked;
-        QFont f = font();
-        f.setPixelSize(10);
-        f.setWeight(QFont::DemiBold);
-        const int textW = QFontMetrics(f).horizontalAdvance(text());
-        const int badgesW = badgeStripWidth() + kIconPx / 2;
-        return QSize(qMax(44, qMax(qMax(kIconPx, textW), badgesW) + 16),
-                     tileHeight());
-    }
-    QSize minimumSizeHint() const override { return sizeHint(); }
-
-    // Lift the count clear of the glyph. A five-digit tally painted over the
-    // icon (the log's category chips reach 20,000) hides the very thing that
-    // says which category it counts, so those tiles give the badge its own
-    // band above the icon instead of overlapping it.
-    void setBadgeAboveIcon(bool above)
-    {
-        if (m_badgeAbove == above)
-            return;
-        m_badgeAbove = above;
-        updateGeometry();
-        update();
-    }
-
-    void setBadgeCount(qint64 count)
-    {
-        if (m_badge == count)
-            return;
-        m_badge = count;
-        updateGeometry(); // a longer count can need a wider tile
-        update();
-    }
-    qint64 badgeCount() const { return m_badge; }
-
-    void setAlertBadgeCount(qint64 count)
-    {
-        count = qMax<qint64>(0, count);
-        if (m_alertBadge == count)
-            return;
-        m_alertBadge = count;
-        updateGeometry();
-        update();
-    }
-    qint64 alertBadgeCount() const { return m_alertBadge; }
-
-    // A small live-work light for tabs whose contents need attention. Unlike
-    // an alert badge this is not an error or a count; it simply pulses while
-    // the underlying work is active.
-    void setAttentionLight(bool active)
-    {
-        if (m_attentionLight == active)
-            return;
-        m_attentionLight = active;
-        m_attentionLightOn = active;
-        if (active) {
-            if (!m_attentionTimer) {
-                m_attentionTimer = new QTimer(this);
-                m_attentionTimer->setInterval(650);
-                QObject::connect(m_attentionTimer, &QTimer::timeout, this,
-                                 [this] {
-                                     m_attentionLightOn = !m_attentionLightOn;
-                                     update();
-                                 });
-            }
-            m_attentionTimer->start();
-        } else if (m_attentionTimer) {
-            m_attentionTimer->stop();
-        }
-        update();
-    }
-    bool hasAttentionLight() const { return m_attentionLight; }
-
-    void setOcticonName(const QString &name)
-    {
-        if (m_iconName == name)
-            return;
-        m_iconName = name;
-        update();
-    }
-
-    void setAccentColor(const QColor &accent)
-    {
-        if (m_accent == accent)
-            return;
-        m_accent = accent;
-        update();
-    }
-    QColor accentColor() const { return m_accent; }
-
-    void setInRail(bool inRail)
-    {
-        if (m_inRail == inRail)
-            return;
-        m_inRail = inRail;
-        update();
-    }
-    bool inRail() const { return m_inRail; }
-
-    void setFooterWidget(QWidget *footer)
-    {
-        if (m_footer == footer)
-            return;
-        if (m_footer)
-            m_footer->deleteLater();
-        m_footer = footer;
-        if (footer) {
-            footer->setParent(this);
-            footer->show();
-        }
-        updateGeometry();
-        placeFooter();
-    }
-    QWidget *footerWidget() const { return m_footer; }
-
-protected:
-    void resizeEvent(QResizeEvent *event) override
-    {
-        QPushButton::resizeEvent(event);
-        placeFooter();
-    }
-
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-        if (paintTabButtonHook(this, p, paintState()))
-            return;
-        const bool dark = currentThemeIsDark();
-        const bool hovered = isEnabled() && underMouse();
-        QColor fg;
-        if (m_form == Action)
-            fg = dark ? Theme::remapColor(QColor("#e6edf3")) : Theme::remapColor(QColor("#1f2328"));
-        else
-            fg = dark ? QColor(isChecked() || hovered ? "#e6edf3" : "#8b949e")
-                      : QColor(isChecked() || hovered ? "#1f2328" : "#656d76");
-        if (!isEnabled())
-            fg = Theme::remapColor(QColor("#6e7681"));
-        const bool accented = m_accent.isValid() && isEnabled();
-        const QColor glyphColor = accented ? m_accent : fg;
-        const QColor captionColor =
-            accented && (isChecked() || hovered) ? m_accent : fg;
-
-        if (m_form == Action) {
-            if (hovered) {
-                p.setPen(Qt::NoPen);
-                p.setBrush(Theme::remapColor(QColor(dark ? "#21262d" : "#eaeef2")));
-                p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5),
-                                  6, 6);
-            }
-        } else if (m_form == Tab && isChecked()) {
-            const QColor bar = accented ? m_accent
-                                        : QColor(dark ? "#2ea043" : "#1f883d");
-            if (m_inRail)
-                p.fillRect(QRectF(0, 4, 2, height() - 8), bar);
-            else
-                p.fillRect(QRect(0, height() - 2, width(), 2), bar);
-        }
-
-        const QRect iconRect((width() - kIconPx) / 2, iconTop(), kIconPx,
-                             kIconPx);
-        if (m_iconName.isEmpty())
-            icon().paint(&p, iconRect, Qt::AlignCenter,
-                         isEnabled() ? QIcon::Normal : QIcon::Disabled);
-        else
-            p.drawPixmap(iconRect.topLeft(),
-                         tintedOcticonPixmap(m_iconName, glyphColor, kIconPx));
-
-        if (m_attentionLight) {
-            QColor light(QStringLiteral("#58a6ff"));
-            light.setAlpha(m_attentionLightOn ? 255 : 85);
-            p.setPen(Qt::NoPen);
-            p.setBrush(light);
-            p.drawEllipse(QRectF(iconRect.right() - 2, iconRect.top() - 2,
-                                 6, 6));
-        }
-
-        QFont f = font();
-        f.setPixelSize(10);
-        f.setWeight(QFont::DemiBold);
-        p.setFont(f);
-        p.setPen(captionColor);
-        p.drawText(QRect(2, iconRect.bottom() + 2, width() - 4, 14),
-                   Qt::AlignHCenter | Qt::AlignTop,
-                   QFontMetrics(f).elidedText(text(), Qt::ElideRight,
-                                              width() - 4));
-
-        // Hanging off the icon's right shoulder normally; centred over the
-        // tile once the badges have a band of their own, so a wide count reads
-        // as this tile's number rather than drifting towards the next one.
-        double rightEdge = m_badgeAbove
-                               ? (width() + badgeStripWidth()) / 2.0
-                               : iconRect.right() + kBadgeH / 2.0 + 2;
-        const auto paintBadge = [&](qint64 count, const QColor &fill) {
-            if (count <= 0)
-                return;
-            const QString badgeText = formatCount(count);
-            QFont bf = font();
-            bf.setPixelSize(9);
-            bf.setBold(true);
-            p.setFont(bf);
-            const int h = kBadgeH;
-            const int w = badgeWidth(count);
-            const QRectF badge(qMax(0.0, rightEdge - w),
-                               m_badgeAbove
-                                   ? 0.0
-                                   : qMax(0.0, double(iconRect.top() - 5)),
-                               w, h);
-            p.setPen(Qt::NoPen);
-            p.setBrush(fill);
-            p.drawRoundedRect(badge, h / 2.0, h / 2.0);
-            p.setPen(fill.lightness() > 155 ? Theme::remapColor(QColor("#0d1117"))
-                                            : QColor("#ffffff"));
-            p.drawText(badge, Qt::AlignCenter, badgeText);
-            rightEdge = badge.left() - 2;
-        };
-        paintBadge(m_badge, accented ? m_accent : QColor("#1f6feb"));
-        paintBadge(m_alertBadge, QColor(dark ? "#da3633" : "#cf222e"));
-    }
-
-private:
-    TabButtonPaintState paintState() const
-    {
-        TabButtonPaintState state;
-        state.form = int(m_form);
-        state.badge = m_badge;
-        state.alertBadge = m_alertBadge;
-        state.badgeAbove = m_badgeAbove;
-        state.attentionLight = m_attentionLight;
-        state.attentionLightOn = m_attentionLightOn;
-        state.inRail = m_inRail;
-        state.iconName = m_iconName;
-        state.accent = m_accent;
-        return state;
-    }
-
-    int badgeWidth(qint64 count) const
-    {
-        if (count <= 0)
-            return 0;
-        QFont bf = font();
-        bf.setPixelSize(9);
-        bf.setBold(true);
-        return qMax(kBadgeH,
-                    QFontMetrics(bf).horizontalAdvance(formatCount(count)) + 8);
-    }
-    int badgeStripWidth() const
-    {
-        const int blue = badgeWidth(m_badge);
-        const int red = badgeWidth(m_alertBadge);
-        return blue + red + (blue > 0 && red > 0 ? 2 : 0);
-    }
-    // The badge band pushes the glyph down by its own height, and the tile
-    // grows by the same amount so the caption keeps its room underneath.
-    int iconTop() const { return m_badgeAbove ? kBadgeH + 1 : 6; }
-    int bodyHeight() const { return m_badgeAbove ? kHeight + kBadgeH - 8 : kHeight; }
-    int footerHeight() const
-    {
-        return m_footer ? m_footer->sizeHint().height() : 0;
-    }
-    int tileHeight() const { return bodyHeight() + footerHeight(); }
-    void placeFooter()
-    {
-        if (!m_footer)
-            return;
-        const QSize size = m_footer->sizeHint();
-        m_footer->setGeometry((width() - size.width()) / 2, bodyHeight() - 2,
-                              size.width(), size.height());
-    }
-
-    static constexpr int kIconPx = 16;
-    static constexpr int kHeight = 44;
-    static constexpr int kBadgeH = 14; // badge height and rounded-end radius
-    Form m_form;
-    qint64 m_badge = 0;
-    qint64 m_alertBadge = 0;
-    bool m_badgeAbove = false; // badges in their own band, clear of the glyph
-    bool m_attentionLight = false;
-    bool m_attentionLightOn = false;
-    bool m_inRail = false;
-    QTimer *m_attentionTimer = nullptr;
-    QPointer<QWidget> m_footer;
-    QString m_iconName; // empty: paint the QIcon set by setOcticon instead
-    QColor m_accent;    // invalid: the rail's neutral grey/hover colours
-};
 
 class RatchetToggleButton : public QToolButton
 {
@@ -9242,6 +8969,8 @@ constexpr int kRailItemWidth = 42;
 constexpr int kRailItemHeight = 44; // 16px icon + 10px caption + breathing room
 constexpr int kRailItemHeightNoCaption = 30; // icon only, no caption line
 constexpr int kRailIconPx = 16;
+constexpr int kBadgeBesideIconLeft = 6;
+constexpr int kBadgeBesideOverlap = 4;
 constexpr int kRepoTabRowTopInset = 4;
 
 // Settings → Appearance can switch the rail captions off. Every rail metric
@@ -9281,17 +9010,18 @@ public:
             m_spinAngle = (m_spinAngle + 30) % 360;
             update();
         });
-        m_blinkTimer = new QTimer(this);
-        m_blinkTimer->setInterval(550);
-        connect(m_blinkTimer, &QTimer::timeout, this, [this] {
-            m_blinkOn = !m_blinkOn;
-            update();
-        });
         m_desktopOfflineTimer = new QTimer(this);
         m_desktopOfflineTimer->setInterval(80);
         connect(m_desktopOfflineTimer, &QTimer::timeout, this, [this] {
             m_desktopOfflineStep = (m_desktopOfflineStep + 1) % kDesktopOfflineSteps;
             update();
+        });
+        setProperty("fmBusyPaintsSelf", true);
+        m_ringTimer = new QTimer(this);
+        m_ringTimer->setInterval(busyring::kFrameMs);
+        connect(m_ringTimer, &QTimer::timeout, this, [this] {
+            if (!window()->isMinimized())
+                update();
         });
     }
 
@@ -9335,11 +9065,22 @@ public:
         update();
     }
 
+    void setBadgeBeside(bool beside)
+    {
+        if (m_badgeBeside == beside)
+            return;
+        m_badgeBeside = beside;
+        setFixedSize(railButtonWidth(), railButtonHeight());
+        update();
+    }
+
     void setBadgeCount(int count)
     {
         if (m_badge == count)
             return;
         m_badge = count;
+        if (m_badgeBeside)
+            setFixedSize(railButtonWidth(), railButtonHeight());
         update();
         if (m_badgeObserver)
             m_badgeObserver();
@@ -9352,6 +9093,7 @@ public:
     QString label() const { return m_label; }
     bool syncing() const { return m_syncing; }
     bool alertTint() const { return m_alert; }
+    bool dangerTint() const { return m_danger; }
     void setBadgeObserver(std::function<void()> observer)
     {
         m_badgeObserver = std::move(observer);
@@ -9412,6 +9154,14 @@ public:
         update();
     }
 
+    void setDangerTint(bool danger)
+    {
+        if (m_danger == danger)
+            return;
+        m_danger = danger;
+        update();
+    }
+
     void setAccentTint(bool accent)
     {
         if (m_accent == accent)
@@ -9437,14 +9187,22 @@ public:
         if (m_blink == on)
             return;
         m_blink = on;
-        m_blinkOn = true;
-        if (m_blink && isVisible())
-            m_blinkTimer->start();
-        else
-            m_blinkTimer->stop();
+        syncRingTimer();
         update();
     }
     bool activityBlink() const { return m_blink; }
+
+    void setRailActive(bool on)
+    {
+        if (m_active == on)
+            return;
+        m_active = on;
+        syncRingTimer();
+        update();
+    }
+    bool railActive() const { return m_active; }
+    bool busy() const { return m_busy; }
+    bool ringShown() const { return m_active || m_busy || m_blink; }
 
     void setDesktopOffline(bool on)
     {
@@ -9466,21 +9224,33 @@ public:
     }
 
 protected:
+    bool event(QEvent *e) override
+    {
+        if (e->type() == QEvent::DynamicPropertyChange &&
+            static_cast<QDynamicPropertyChangeEvent *>(e)->propertyName() == "fmBusy") {
+            const bool busy = property("fmBusy").toBool();
+            if (m_busy != busy) {
+                m_busy = busy;
+                syncRingTimer();
+                update();
+            }
+        }
+        return QPushButton::event(e);
+    }
     void showEvent(QShowEvent *e) override
     {
         if (m_syncing)
             m_spinTimer->start();
-        if (m_blink)
-            m_blinkTimer->start();
         if (m_desktopOffline)
             m_desktopOfflineTimer->start();
         QPushButton::showEvent(e);
+        syncRingTimer();
     }
     void hideEvent(QHideEvent *e) override
     {
         m_spinTimer->stop();
-        m_blinkTimer->stop();
         m_desktopOfflineTimer->stop();
+        m_ringTimer->stop();
         QPushButton::hideEvent(e);
     }
     void paintEvent(QPaintEvent *) override
@@ -9495,6 +9265,8 @@ protected:
         const QColor fg =
             !isEnabled() ? Theme::remapColor(QColor(dark ? "#484f58" : "#b6bdc4"))
                 : accentAction ? QColor("#ffffff")
+                : m_danger ? QColor(dark ? (lit ? "#ff7b72" : "#f85149")
+                                          : (lit ? "#a40e26" : "#cf222e"))
                 : m_alert ? QColor(dark ? (lit ? "#f0b72f" : "#d29922")
                                          : (lit ? "#7d4e00" : "#9a6700"))
                           : (dark ? Theme::remapColor(QColor(lit ? "#e6edf3" : "#8b949e"))
@@ -9508,13 +9280,20 @@ protected:
             p.setPen(Qt::NoPen);
             p.setBrush(fill);
             p.drawRoundedRect(QRectF(rect()).adjusted(1, 2, -1, -2), 6, 6);
+        } else if (isEnabled() && m_danger) {
+            QColor fill(dark ? "#f85149" : "#cf222e");
+            fill.setAlpha(lit ? 56 : 32);
+            p.setPen(Qt::NoPen);
+            p.setBrush(fill);
+            p.drawRoundedRect(QRectF(rect()).adjusted(1, 2, -1, -2), 6, 6);
         }
 
         if (isChecked() && !accentAction)
             p.fillRect(QRectF(0, 4, 2, height() - 8), QColor("#2ea043"));
 
         const int iconPx = kRailIconPx;
-        const QRect iconRect((width() - iconPx) / 2,
+        const QRect iconRect(m_badgeBeside ? kBadgeBesideIconLeft
+                                           : (width() - iconPx) / 2,
                              showLabel ? 6 : (height() - iconPx) / 2,
                              iconPx, iconPx);
         if (m_iconPainter)
@@ -9524,6 +9303,9 @@ protected:
         else
             p.drawPixmap(iconRect.topLeft(),
                          tintedOcticonPixmap(m_iconName, fg, iconPx));
+        if (ringShown())
+            busyring::paint(p, busyring::aroundIcon(iconRect), busyring::accent(),
+                            busyring::phase());
 
         // Commits waiting to sync: an amber "N↑" pill on the icon's left
         // shoulder, kept clear of the blue changed-files badge (or the sync
@@ -9590,7 +9372,8 @@ protected:
             const int h = 14;
             const int w = qMax(h, QFontMetrics(f).horizontalAdvance(text) + 8);
             const QRectF badge(
-                iconRect.right() - w + h / 2.0 + 2,
+                m_badgeBeside ? iconRect.right() - kBadgeBesideOverlap + 1.0
+                              : iconRect.right() - w + h / 2.0 + 2,
                 qMax(0.0, double(iconRect.top() - 5)),
                 w, h);
             p.setPen(Qt::NoPen);
@@ -9614,17 +9397,6 @@ protected:
                              m_stateGlyph,
                              isEnabled() && glyphColor.isValid() ? glyphColor : fg,
                              s));
-        }
-
-        if (m_blink && m_blinkOn) {
-            const int d = 8;
-            const QRect lamp(iconRect.right() - 2, iconRect.bottom() - d + 1,
-                             d, d);
-            p.setPen(Qt::NoPen);
-            p.setBrush(Theme::remapColor(QColor(dark ? "#0d1117" : "#ffffff")));
-            p.drawEllipse(lamp.adjusted(-2, -2, 2, 2));
-            p.setBrush(QColor("#3fb950"));
-            p.drawEllipse(lamp);
         }
 
         if (m_desktopOffline) {
@@ -9668,17 +9440,27 @@ private:
         state.spinAngle = m_spinAngle;
         state.badgeUrgent = m_badgeUrgent;
         state.alert = m_alert;
+        state.danger = m_danger;
         state.accent = m_accent;
         state.syncing = m_syncing;
         state.compact = m_compact;
+        state.badgeBeside = m_badgeBeside;
         state.captionAlwaysVisible = m_captionAlwaysVisible;
         state.captionVisible = captionVisible();
         state.blink = m_blink;
-        state.blinkOn = m_blinkOn;
+        state.busy = ringShown();
         state.desktopOffline = m_desktopOffline;
         state.desktopOfflineLevel = desktopOfflineLevel();
         state.iconPainter = m_iconPainter;
         return state;
+    }
+
+    void syncRingTimer()
+    {
+        if (ringShown() && isVisible())
+            m_ringTimer->start();
+        else
+            m_ringTimer->stop();
     }
 
     int railButtonWidth() const
@@ -9686,9 +9468,18 @@ private:
         const QSize hooked = railButtonSizeHook(this, paintState());
         if (hooked.isValid())
             return hooked.width();
-        return (!m_captionAlwaysVisible && railCaptionsHidden())
-                   ? kRailItemWidth
-                   : railCaptionItemWidth();
+        const int base = (!m_captionAlwaysVisible && railCaptionsHidden())
+                             ? kRailItemWidth
+                             : railCaptionItemWidth();
+        if (!m_badgeBeside || m_badge <= 0)
+            return base;
+        QFont f = font();
+        f.setPixelSize(9);
+        f.setBold(true);
+        const int pill = qMax(14, QFontMetrics(f).horizontalAdvance(
+                                      QString::number(m_badge)) + 10);
+        return qMax(base, kBadgeBesideIconLeft + kRailIconPx -
+                              kBadgeBesideOverlap + pill + 2);
     }
 
     int railButtonHeight() const
@@ -9712,18 +9503,21 @@ private:
     int m_pendingSync = 0;
     bool m_badgeUrgent = false;
     bool m_alert = false;
+    bool m_danger = false;
     bool m_accent = false;
     bool m_syncing = false;
     bool m_compact = false;
+    bool m_badgeBeside = false;
     bool m_captionAlwaysVisible = true;
     bool m_blink = false;
-    bool m_blinkOn = true;
+    bool m_active = false;
+    bool m_busy = false;
     bool m_desktopOffline = false;
     static constexpr int kDesktopOfflineSteps = 30;
     int m_desktopOfflineStep = 0;
     QTimer *m_spinTimer = nullptr;
-    QTimer *m_blinkTimer = nullptr;
     QTimer *m_desktopOfflineTimer = nullptr;
+    QTimer *m_ringTimer = nullptr;
     int m_spinAngle = 0;
     std::function<void()> m_badgeObserver;
     std::function<void()> m_badgeOrderObserver;
@@ -10201,6 +9995,28 @@ private:
     bool m_dragInside = false;
 };
 
+inline void paintRailGroupChevron(QPainter &painter, const QPointF &center,
+                                  bool collapsed, const QColor &color)
+{
+    const qreal r = 2.5;
+    const QPolygonF chevron =
+        collapsed ? QPolygonF{center + QPointF(-r / 2, -r),
+                              center + QPointF(r / 2, 0),
+                              center + QPointF(-r / 2, r)}
+                  : QPolygonF{center + QPointF(-r, -r / 2),
+                              center + QPointF(0, r / 2),
+                              center + QPointF(r, -r / 2)};
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(color, 1.4);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawPolyline(chevron);
+    painter.restore();
+}
+
 class RailGroupSeparator : public QWidget
 {
 public:
@@ -10211,6 +10027,8 @@ public:
         setObjectName(QStringLiteral("railGroupSeparator"));
         setProperty("forkmeshRailGroupId", id);
         setAcceptDrops(custom);
+        setAttribute(Qt::WA_Hover, true);
+        setCursor(Qt::PointingHandCursor);
         setName(name);
         followRailCaptionPreference();
     }
@@ -10218,21 +10036,40 @@ public:
     QString id() const { return m_id; }
     QString name() const { return m_name; }
     bool isCustom() const { return m_custom; }
+    bool isCollapsed() const { return m_collapsed; }
     std::function<void(const QString &)> onDropKey;
+    std::function<void()> onToggle;
+    QList<QPointer<QWidget>> collapsedItems;
+
+    void setCollapsed(bool collapsed)
+    {
+        if (m_collapsed == collapsed)
+            return;
+        m_collapsed = collapsed;
+        setProperty("railGroupCollapsed", collapsed);
+        setName(m_name);
+    }
 
     void setName(const QString &name)
     {
         m_name = name;
-        setAccessibleName(QStringLiteral("%1 group").arg(name));
+        setAccessibleName(
+            QStringLiteral("%1 group, %2")
+                .arg(name, m_collapsed ? QStringLiteral("collapsed")
+                                       : QStringLiteral("expanded")));
+        const QString click = m_collapsed ? QStringLiteral("Click to show its items.")
+                                          : QStringLiteral("Click to collapse it.");
         setToolTip(m_custom
-                       ? QStringLiteral("%1\nDrop a rail icon here to add it. "
+                       ? QStringLiteral("%1\n%2 Drop a rail icon here to add it. "
                                         "Right-click to rename, move or remove.")
-                             .arg(name)
-                       : QStringLiteral("%1\nRight-click to move this group or "
-                                        "add one of your own.")
-                             .arg(name));
+                             .arg(name, click)
+                       : QStringLiteral("%1\n%2 Right-click to move this group "
+                                        "or add one of your own.")
+                             .arg(name, click));
         update();
     }
+
+    bool chevronShown() const { return m_collapsed || underMouse(); }
 
     void followRailCaptionPreference()
     {
@@ -10245,6 +10082,44 @@ public:
     }
 
 protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton) {
+            m_pressed = true;
+            event->accept();
+            return;
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        const bool clicked = m_pressed && event->button() == Qt::LeftButton &&
+                             rect().contains(event->position().toPoint());
+        m_pressed = false;
+        if (!clicked) {
+            QWidget::mouseReleaseEvent(event);
+            return;
+        }
+        event->accept();
+        if (onToggle) {
+            const auto toggle = onToggle;
+            QTimer::singleShot(0, this, [toggle] { toggle(); });
+        }
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        QWidget::enterEvent(event);
+        update();
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QWidget::leaveEvent(event);
+        update();
+    }
+
     void dragEnterEvent(QDragEnterEvent *event) override
     {
         if (!m_custom || !event->mimeData()->hasFormat(kRailItemMimeType))
@@ -10283,7 +10158,16 @@ protected:
         const QColor text = Theme::remapColor(QColor(dark ? "#8b949e" : "#656d76"));
         const int midY = height() / 2;
         if (!captionShown()) {
-            p.fillRect(QRect(6, midY, width() - 12, 1), line);
+            if (!m_collapsed) {
+                p.fillRect(QRect(6, midY, width() - 12, 1), line);
+                return;
+            }
+            const int gap = 6;
+            const int center = width() / 2;
+            p.fillRect(QRect(6, midY, qMax(0, center - gap - 6), 1), line);
+            p.fillRect(QRect(center + gap, midY, qMax(0, width() - 6 - center - gap), 1),
+                       line);
+            paintRailGroupChevron(p, QPointF(center, height() / 2.0), true, text);
             return;
         }
         QFont f = font();
@@ -10292,16 +10176,21 @@ protected:
         f.setCapitalization(QFont::AllUppercase);
         p.setFont(f);
         const QFontMetrics fm(f);
+        const int chevron = chevronShown() ? 9 : 0;
         const QString caption =
-            fm.elidedText(m_name, Qt::ElideRight, qMax(0, width() - 8));
+            fm.elidedText(m_name, Qt::ElideRight, qMax(0, width() - 8 - chevron));
         const int textWidth = fm.horizontalAdvance(caption);
         const int left = 4;
         p.setPen(text);
         p.drawText(QRect(left, 0, textWidth + 1, height()),
                    Qt::AlignLeft | Qt::AlignVCenter, caption);
         const int lineLeft = left + textWidth + 3;
-        if (lineLeft < width() - 4)
-            p.fillRect(QRect(lineLeft, midY, width() - 4 - lineLeft, 1), line);
+        const int lineRight = width() - 4 - chevron;
+        if (lineLeft < lineRight)
+            p.fillRect(QRect(lineLeft, midY, lineRight - lineLeft, 1), line);
+        if (chevron)
+            paintRailGroupChevron(p, QPointF(width() - 4 - chevron / 2.0, height() / 2.0),
+                                  m_collapsed, text);
     }
 
 private:
@@ -10314,6 +10203,8 @@ private:
     QString m_name;
     bool m_custom = false;
     bool m_dropping = false;
+    bool m_collapsed = false;
+    bool m_pressed = false;
 };
 
 QString whisperDir();
@@ -10368,8 +10259,6 @@ void fitFileListToWidestEntry(QListWidget *list, int minW = 180, int maxW = 520)
 
 void fitTreeToWidestEntry(QTreeWidget *tree, int minW = 240, int maxW = 620);
 
-QString octiconMarkup(const QString &name, int size,
-                      const QColor &color = Theme::remapColor(QColor("#8b949e")));
 
 const QString kLogPromptAnchorPrefix = QStringLiteral("fmlogprompt:");
 const QString kLogPromptIconResource = QStringLiteral("logprompt://add");
@@ -10923,6 +10812,7 @@ bool runGitCaptureInput(const QString &dir, const QStringList &args,
                                const forkmesh::LogSource &source =
                                    forkmesh::logSourceHere());
 
+QString jsonBrokenByMergeResolution(const QString &dir);
 bool commitResolvedMerge(const QString &dir, QString *error);
 
 // `git worktree list --porcelain` for a checkout, served from a process-wide
@@ -11207,6 +11097,8 @@ QPixmap languageBarPixmap(const QList<QPair<QString, qint64>> &langs,
                           qint64 total, int shown, int w, int h);
 
 QPixmap letterFavicon(const QString &host, int side = 36);
+
+QPixmap currentProjectLogo(int side, QString *name = nullptr);
 
 QString builtinFaviconKey(const QString &host);
 

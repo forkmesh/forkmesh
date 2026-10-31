@@ -549,9 +549,12 @@ test("every branch behind the default one is updatable in one action", async ({
       }
       if (url.pathname === "/api/repo/alice/proj/branches/ops") {
         if (request.method() === "POST") {
-          updates.push(request.postDataJSON());
+          const body = request.postDataJSON();
+          updates.push(body);
+          const queuedCount = Array.isArray(body.ops) ? body.ops.length : 1;
+          return { body: { ok: true, queued: true, queuedCount, ops: [] } };
         }
-        return { body: { ok: true, queued: true, queuedCount: 3, ops: [] } };
+        return { body: { ok: true, ops: [] } };
       }
       return { body: { ok: true } };
     },
@@ -563,8 +566,10 @@ test("every branch behind the default one is updatable in one action", async ({
   await expect(updateAll).toContainText("Update 3 from main");
   page.once("dialog", (dialog) => dialog.accept());
   await updateAll.click();
-  await expect.poll(() => updates.length).toBe(1);
-  const ops = updates[0].ops;
+  await expect.poll(() => updates.length).toBe(2);
+  expect(updates[0].ops).toBeUndefined();
+  expect(updates[1].ops).toHaveLength(2);
+  const ops = [updates[0], ...updates[1].ops];
   expect(ops.map((update) => update.branch)).toEqual([
     "agent/merged-work", "feature/stale", "feature/clean",
   ]);

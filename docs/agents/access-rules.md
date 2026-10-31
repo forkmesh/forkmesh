@@ -117,8 +117,19 @@ patterns where recursive deletes run without asking:
 
 ### External calls
 
-`AgentNetworkGate.*` classifies Bash, WebFetch and WebSearch calls
+`AgentNetworkGate.*` classifies Bash, Monitor, WebFetch and WebSearch calls
 ([README.md](README.md#desktop-agent-sandboxing)).
+
+- **Monitor runs a shell command too.** Its `command` gets the same external
+  call and destructive command checks as a Bash command (`isShellTool`).
+  Claude Code before 2.1.314 never ran hooks that match only `Bash` on Monitor
+  commands, so a Monitor `curl` or `rm -rf` skipped the gate. From 2.1.314 a
+  `Bash` matcher also catches Monitor commands, and the hook sees them as
+  `tool_name: "Bash"`. The matcher names `Monitor` as well, which covers older
+  versions too. Checked on 2026-10-31 against 2.1.309 and 2.1.316: with
+  `Monitor` in the matcher both versions call the hook once with
+  `tool_name: "Monitor"`, never a second time as `Bash`, and a deny stops the
+  call. Tests: `testServer`, `testHookSettings`.
 
 - **Blocked destinations** are refused for every project, even one that
   allows all external calls.
@@ -133,7 +144,7 @@ patterns where recursive deletes run without asking:
 
 | Runtime | Folder lock | External calls and destructive commands | Tool policy |
 | --- | --- | --- | --- |
-| Claude Code (stream-json) | Landlock | PreToolUse hook on Bash, WebFetch, WebSearch whenever any rule needs it; Claude Code's own approvals (Ask, Edit and Plan modes) arrive over `--permission-prompt-tool stdio` as transcript cards | `--disallowedTools`, `--tools` with the allowlist |
+| Claude Code (stream-json) | Landlock | PreToolUse hook on Bash, Monitor, WebFetch, WebSearch whenever any rule needs it; Claude Code's own approvals (Ask, Edit and Plan modes) arrive over `--permission-prompt-tool stdio` as transcript cards | `--disallowedTools`, `--tools` with the allowlist |
 | Claude Code in the built-in terminal | Landlock | Same hook through `--settings` | `--disallowedTools=`, `--tools=` (the `=` form) |
 | Codex app-server | Landlock on Linux; elsewhere Codex's `workspace-write` sandbox over the same folders | Approval policy `never`; access failures are steered into the turn | `-c` overrides |
 | Legacy script providers (`claude` API, `local-llama`, `cloudflare-ai`) | Landlock | The scripts ask the gate socket before each shell or git tool call, failing closed | `FORKMESH_AGENT_DISABLED_TOOL_FAMILIES`, `FORKMESH_AGENT_ALLOWED_TOOL_FAMILIES` |
@@ -161,7 +172,8 @@ Teammate permissions enforced by the run
 
 Mode (`agentrules::teammateRunMode`): without `modify-code` or
 `run-unattended` a teammate plans. An empty mode is Auto only with
-`run-unattended`, otherwise Edit.
+`run-unattended`, otherwise Edit. A `ui-stalls` run always passes the empty
+mode, never the composer's ([../desktop/diagnostics.md](../desktop/diagnostics.md)).
 
 Narrow grants pre-approve specific commands
 (`agentrules::teammateAllowedToolRules`):

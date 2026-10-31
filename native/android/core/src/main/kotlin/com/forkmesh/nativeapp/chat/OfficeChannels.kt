@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.apps.AppBlocks
 import com.forkmesh.nativeapp.crypto.ChatNodeKey
+import com.forkmesh.nativeapp.crypto.ChatV3
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -291,6 +292,46 @@ class OfficeChannelService(
     @Volatile
     var onMessage: ((ChatMessage) -> Unit)? = null
 
+    @Volatile
+    var onLiveFrame: ((Map<String, Any?>, String) -> Unit)? = null
+    var onRoomOpened: ((String, String) -> Unit)? = null
+
+    fun sendLiveFrame(conversation: String, type: String, fields: Map<String, Any?>): Boolean {
+        if (type !in GroupCallFrames.LIVE_TYPES) return false
+        val room = room(conversation) ?: return false
+        if (!room.isPrivate || room.readOnly) return false
+        if (synchronized(lock) { sockets[room.id]?.socket == null } && !open(conversation)) return false
+        val holder = synchronized(lock) { sockets[room.id] } ?: return false
+        val socket = holder.socket ?: return false
+        val plain = frame(room, "", bot = false)
+        plain.remove("text")
+        plain["type"] = type
+        for ((key, value) in fields) if (key !in GroupCallFrames.RESERVED_FIELDS) plain[key] = value
+        return try {
+            val framed = holder.seal.seal(plain, now())
+            if (holder.seal.needsAdvertisement()) advertise(holder)
+            socket.sendText(Json.stringify(holder.crypto.encrypt(framed)))
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun callIdentity(conversation: String): GroupCallIdentity? {
+        val room = room(conversation) ?: return null
+        if (!room.isPrivate) return null
+        val seal = synchronized(lock) { sockets[room.id]?.takeIf { it.socket != null }?.seal } ?: return null
+        val acct = seal.acct.trim().lowercase()
+        if (!ChatV3.validAcct(acct)) return null
+        val keys = seal.keys
+        return GroupCallIdentity(call = seal.room, acct = acct, kid = keys.kid, idk = keys.idk.copyOf(), signer = keys::sign)
+    }
+
+    fun callTicket(conversation: String, body: Map<String, Any?> = emptyMap()): Map<String, Any?>? {
+        val room = room(conversation) ?: return null
+        if (!room.isPrivate) return null
+        return call("POST", "/api/chat/channels/${room.id}/call-ticket", body)
+    }
+
     fun addListener(listener: () -> Unit) {
         listeners.add(listener)
     }
@@ -315,17 +356,18 @@ class OfficeChannelService(
 
     fun restore(messages: List<ChatMessage>) {
         val changed = synchronized(lock) {
-            var any = false
+            val ids = HashMap<String, MutableSet<String>>()
+            val added = LinkedHashMap<String, MutableList<ChatMessage>>()
             for (message in messages) {
                 if (!OfficeFrames.isOffice(message.conversation)) continue
-                val list = history[message.conversation].orEmpty()
-                if (list.any { it.id == message.id }) continue
-                var next = insertSorted(list, message).toList()
-                if (next.size > OfficeFrames.MAX_MESSAGES_PER_ROOM) next = next.takeLast(OfficeFrames.MAX_MESSAGES_PER_ROOM)
-                history[message.conversation] = next
-                any = true
+                val known = ids.getOrPut(message.conversation) { history[message.conversation].orEmpty().mapTo(HashSet()) { it.id } }
+                if (!known.add(message.id)) continue
+                added.getOrPut(message.conversation) { ArrayList() }.add(message)
             }
-            any
+            for ((conversation, incoming) in added) {
+                history[conversation] = mergeSorted(history[conversation].orEmpty(), incoming).takeLast(OfficeFrames.MAX_MESSAGES_PER_ROOM)
+            }
+            added.isNotEmpty()
         }
         if (changed) notifyListeners()
     }
@@ -401,6 +443,16 @@ class OfficeChannelService(
 
     private fun sealAccount(): String = account().trim().lowercase().ifEmpty { selfId() }
 
+    private fun watchClaim(plain: Map<String, Any?>) {
+        val type = jsonText(plain["type"])
+        if (type != "chat" && type != "thread-reply") return
+        val node = jsonText(plain["senderId"])
+        val claim = jsonText(plain["ownerUser"] ?: plain["owner"])
+        if (node.isEmpty() || node == selfId() || claim.isBlank() || RelayFrames.isIntegration(plain)) return
+        val known = owners() ?: return
+        if (known.verified(node, claim).isEmpty()) known.watch(node, claim)
+    }
+
     fun loadHistory(conversation: String) {
         val room = room(conversation) ?: return
         try {
@@ -458,15 +510,21 @@ class OfficeChannelService(
                 copy.remove(RelayFrames.INTEGRATION_KEY)
                 opened.senderNode?.let { copy["senderId"] = it }
             }
+            plain = GroupCallE2ee.annotate(plain, opened.senderKid, opened.senderAcct)
         } else if (server) {
             val marked = LinkedHashMap(plain).also {
                 it.remove("private")
                 it["channel"] = "#${room.name}"
             }
-            plain = RelayFrames.serverFrame(mapOf("srv" to true), marked) ?: return
+            plain = RelayFrames.serverFrame(mapOf("srv" to true), GroupCallE2ee.annotate(marked, null, null)) ?: return
         } else {
             return
         }
+        if (jsonText(plain["type"]) in GroupCallFrames.LIVE_TYPES) {
+            if (room.isPrivate && live != null && !history) onLiveFrame?.invoke(plain, room.conversation)
+            return
+        }
+        watchClaim(plain)
         val message = OfficeFrames.chatMessage(plain, room.conversation, selfId(), recipients, ::botAccount) ?: return
         if (append(message, room.id) && live != null && !message.self) onMessage?.invoke(message)
     }
@@ -536,6 +594,7 @@ class OfficeChannelService(
             synchronized(lock) { sockets[room.id] = holder }
             advertise(holder)
             notifyListeners()
+            onRoomOpened?.invoke(room.conversation, roomName)
             return true
         } catch (error: Exception) {
             lastError = error.message ?: error.toString()

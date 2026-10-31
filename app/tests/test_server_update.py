@@ -132,6 +132,9 @@ def test_the_running_build_and_the_update_status_are_read_safely(tmp_path):
     assert server_update.freshness(current, {"commit": "abcdef123456" + "0" * 28}) == "current"
     assert server_update.freshness(current, {"commit": "f" * 40}) == "behind"
     assert server_update.freshness(current, {}) == "unknown"
+    built = {"commit": "abcdef123456", "time": 200}
+    assert server_update.freshness(built, {"commit": "f" * 40, "time": 100}) == "current"
+    assert server_update.freshness(built, {"commit": "f" * 40, "time": 300}) == "behind"
     upstream = server_update.core_upstream(json.dumps({
         "commit": "c" * 40, "time": 5, "subject": "x", "version": "2.0.0",
         "checkedAt": NOW}))

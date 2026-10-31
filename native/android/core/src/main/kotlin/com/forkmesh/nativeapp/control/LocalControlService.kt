@@ -87,6 +87,8 @@ data class LocalAgentRow(
     val stoppable: Boolean = false,
     val unread: Boolean? = null,
     val backgroundTasks: Int = 0,
+    val tokensIn: Int = maxOf(session.promptTokens, 0),
+    val tokensOut: Int = maxOf(session.completionTokens, 0),
 ) {
     val repoLabel: String get() = if (owner.isEmpty()) name else "$owner/$name"
 
@@ -101,15 +103,20 @@ data class LocalAgentRow(
     val canContinue: Boolean get() = !session.isActive && !session.merged
 
     companion object {
-        fun fromJson(json: JsonMap): LocalAgentRow = LocalAgentRow(
-            owner = jsonText(json["repositoryOwner"]),
-            name = jsonText(json["repositoryName"]),
-            session = AgentSession.fromJson(json),
-            prompt = jsonText(json["prompt"]),
-            stoppable = json["stoppable"] == true,
-            unread = json["unread"] as? Boolean,
-            backgroundTasks = maxOf((json["backgroundTasks"] as? Number)?.toInt() ?: 0, 0),
-        )
+        fun fromJson(json: JsonMap): LocalAgentRow {
+            val session = AgentSession.fromJson(json)
+            return LocalAgentRow(
+                owner = jsonText(json["repositoryOwner"]),
+                name = jsonText(json["repositoryName"]),
+                session = session,
+                prompt = jsonText(json["prompt"]),
+                stoppable = json["stoppable"] == true,
+                unread = json["unread"] as? Boolean,
+                backgroundTasks = maxOf((json["backgroundTasks"] as? Number)?.toInt() ?: 0, 0),
+                tokensIn = maxOf((json["tokensIn"] as? Number)?.toInt() ?: session.promptTokens, 0),
+                tokensOut = maxOf((json["tokensOut"] as? Number)?.toInt() ?: session.completionTokens, 0),
+            )
+        }
     }
 }
 
@@ -288,6 +295,7 @@ object ControlErrorText {
         "not_connected", "closed" -> "The desktop is not connected."
         "timeout" -> "The desktop did not answer in time."
         "not_paired" -> "Approve this phone on the desktop first."
+        "remote_off" -> "Remote control is off on the desktop. Turn it on in a session's Environment panel there."
         "pair_on_lan" -> "Sign this phone and the desktop in to the same ForkMesh account, or approve this phone on the desktop while both are on the same network; after that it works from anywhere."
         "not_owner" -> "Only the account that owns this desktop can manage its hosts."
         "confirmation_required", "confirmation_mismatch" -> "That change was not confirmed. Try again."

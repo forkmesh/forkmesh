@@ -26,10 +26,29 @@ QPushButton#ghostButton[scmCompose="menu"]::menu-indicator {
     image: none; width: 0px; height: 0px;
 }
 
-#scmControlsPanel QPushButton#primaryButton, #scmControlsPanel QPushButton#scmSyncButton {
+#scmControlsPanel QPushButton#scmSyncButton {
     min-height: 20px; max-height: 20px; padding: 3px 12px;
     font-size: 12px; border-radius: 6px;
 }
+#scmControlsPanel QPushButton#primaryButton {
+    min-height: 32px; max-height: 32px; padding: 0px 12px;
+    font-size: 13px; font-weight: 500; border-radius: 8px;
+    border-top-right-radius: 0px; border-bottom-right-radius: 0px;
+}
+QPushButton#scmNextCommitMore {
+    background-color: @accent; border: 1px solid @accent; border-left-color: @accentPressed;
+    color: @onAccent; padding: 0px;
+    min-height: 32px; max-height: 32px; min-width: 34px; max-width: 34px;
+    border-radius: 8px; border-top-left-radius: 0px; border-bottom-left-radius: 0px;
+}
+QPushButton#scmNextCommitMore:hover { background-color: @accentHover; border-color: @accentHover; border-left-color: @accentPressed; }
+QPushButton#scmNextCommitMore:pressed, QPushButton#scmNextCommitMore:open {
+    background-color: @accentPressed; border-color: @accentPressed;
+}
+QPushButton#scmNextCommitMore:disabled {
+    background-color: @surfaceRaised; border-color: @border; color: @fgSubtle;
+}
+QPushButton#scmNextCommitMore::menu-indicator { image: none; width: 0px; height: 0px; }
 #scmControlsPanel QPushButton#primaryButton[scmSecondary="true"] {
     background-color: @surfaceRaised; border: 1px solid @borderStrong;
     color: @fg; font-weight: 500;
@@ -80,6 +99,7 @@ QPushButton#ghostButton[scmCompose="menu"]::menu-indicator {
 
 #sourceControlPanel #fileTree {
     background: transparent; border: none; outline: none; font-size: 13px;
+    padding: 4px 6px;
 }
 #sourceControlPanel #fileTree::item {
     padding: 0px 4px; border: none; color: @fgSecondary;
@@ -93,12 +113,23 @@ QPushButton#ghostButton[scmCompose="menu"]::menu-indicator {
 #sourceControlPanel #fileTree QLabel { background: transparent; }
 #scmFileRow QWidget, QWidget[scmPart="groupRow"] { background: transparent; }
 #sourceControlPanel #fileTree QLabel[scmPart="group"] {
-    color: @fgSecondary; font-size: 12px; font-weight: 600;
+    color: @fgSubtle; font-size: 11px; font-weight: 500;
 }
+QWidget#scmGroupRow QPushButton#scmGroupAction {
+    background: transparent; border: none; border-radius: 4px;
+    color: @fgMuted; font-size: 12px; font-weight: 400;
+    min-height: 22px; max-height: 22px; padding: 0px 6px;
+}
+QWidget#scmGroupRow QPushButton#scmGroupAction:hover { color: @fg; background-color: @surfaceRaised; }
 #scmFileRow QLabel[scmPart="name"] { color: @fg; font-size: 13px; font-weight: 500; }
-#scmFileRow QLabel#statusLine { color: @fgMuted; font-size: 12px; font-weight: 400; }
-#scmFileRow QLabel[scmPart="status"] { color: @fgMuted; font-size: 11px; font-weight: 600; }
-#scmFileRow QLabel[scmStatus="M"], #scmFileRow QLabel[scmStatus="T"] { color: @warning; }
+#scmFileRow QLabel#statusLine { color: @fgSubtle; font-size: 13px; font-weight: 400; }
+#scmFileRow QLabel[scmPart="status"] {
+    color: @fgMuted; font-size: 12px; font-weight: 500; min-width: 12px;
+    font-family: "Geist Mono", "SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono",
+        "Liberation Mono", "Noto Sans Mono", monospace;
+}
+#scmFileRow QCheckBox#scmStageCheck { background: transparent; spacing: 0px; }
+#scmFileRow QLabel[scmStatus="M"], #scmFileRow QLabel[scmStatus="T"] { color: @fgMuted; }
 #scmFileRow QLabel[scmStatus="A"], #scmFileRow QLabel[scmStatus="?"] { color: @success; }
 #scmFileRow QLabel[scmStatus="D"], #scmFileRow QLabel[scmStatus="U"] { color: @danger; }
 #scmFileRow QLabel[scmStatus="R"], #scmFileRow QLabel[scmStatus="C"] { color: @accentFg; }
@@ -114,3 +145,52 @@ QPushButton#ghostButton[scmCompose="menu"]::menu-indicator {
 #commitsList::item, #commitsList::item:hover, #commitsList::item:selected {
     background: transparent; border: none;
 }
+
+#sourceControlPanel QLabel#statusLine[scmEmpty="true"] { padding: 12px; }
+QFrame#scmNextCommitRule { background-color: @border; border: none; }
+QLineEdit#scmSummaryInput {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; padding: 0px 10px;
+    selection-background-color: @selection; selection-color: @fg;
+}
+QPlainTextEdit#scmDescriptionInput {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; padding: 4px 6px;
+    selection-background-color: @selection; selection-color: @fg;
+}
+QLineEdit#scmSummaryInput:hover, QPlainTextEdit#scmDescriptionInput:hover { border-color: @borderStrong; }
+QLineEdit#scmSummaryInput:focus, QPlainTextEdit#scmDescriptionInput:focus { border-color: @accent; }
+QLineEdit#scmSummaryInput:disabled, QPlainTextEdit#scmDescriptionInput:disabled {
+    color: @fgSubtle; background-color: @surfaceRaised; border-color: @border;
+}
+
+QFrame#gitNextHeader { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+QFrame#gitNextHeader QLabel { background: transparent; }
+QLabel#gitNextTitle { color: @fg; font-size: 15px; font-weight: 600; }
+QLabel#gitNextSummary { color: @fgMuted; font-size: 12px; }
+QFrame#gitNextHeader QPushButton#ghostButton {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; font-weight: 500;
+    min-height: 28px; max-height: 28px; padding: 0px 10px;
+}
+QFrame#gitNextHeader QPushButton#ghostButton:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong; color: @fg;
+}
+QFrame#gitNextHeader QPushButton#ghostButton:pressed,
+QFrame#gitNextHeader QPushButton#ghostButton:open { background-color: @surfaceActive; }
+QFrame#gitNextHeader QPushButton#ghostButton:disabled {
+    background-color: transparent; border-color: @border; color: @fgSubtle;
+}
+QFrame#gitNextHeader QPushButton#gitNextTab {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0px; color: @fgMuted; font-size: 13px; font-weight: 500;
+    padding: 4px 2px 8px 2px; min-height: 0px;
+}
+QFrame#gitNextHeader QPushButton#gitNextTab:hover { color: @fg; }
+QFrame#gitNextHeader QPushButton#gitNextTab:checked { color: @fg; border-bottom-color: @accentFg; }
+QFrame#gitNextHeader QLabel#hintLabel { color: @fgSubtle; }
+
+QFrame#gitNextSide { background-color: @bg; border: none; border-right: 1px solid @border; }
+QScrollArea#gitNextSideScroll { background: transparent; border: none; }
+QScrollArea#gitNextSideScroll > QWidget#qt_scrollarea_viewport { background: transparent; }
+QWidget#gitNextSideContent { background: transparent; }

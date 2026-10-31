@@ -14,21 +14,29 @@ Topic pages in this folder:
 
 - [build-and-test.md](build-and-test.md): CMake, `run.sh`, Rebuild & restart, ctest, CI
 - [diagnostics.md](diagnostics.md): logs, stall watchdog, crash repair, inline notices, Health and Memory pages
+- [tmp-disk.md](tmp-disk.md): the TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings
 - [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
 - [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
-- [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in
-- [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch Auto agent, its prompt, and the cleanup of merged pull requests and branches
+- [claude-code-parity.md](claude-code-parity.md): what Claude Code desktop has that the Agents workspace has or lacks; workspace shortcuts, prompt drops, Open in, `.worktreeinclude`
+- [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in; reviewing a pull request there (comments, approve, request changes)
+- [git-change-arrows.md](git-change-arrows.md): the arrows between the two sides of the Git page's split diff that revert, stage or unstage one change block
+- [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch prompt it drafts in the composer, and the cleanup of merged pull requests and branches
+- [pull-review-all.md](pull-review-all.md): Review all with AI on the Pull requests list: the read-only review prompt, the report the agent writes, and the threads, verdicts and summary ForkMesh posts from it
 - [tasks-page.md](tasks-page.md): Tasks page layout, top-search filtering, row and detail design, task work items and delete cleanup
 - [saved-searches.md](saved-searches.md): saved searches, their pings, and the security-pertinent alarm
 - [ui-redesign.md](ui-redesign.md): the interface redesign plan: design tokens, components, welcome and sign-in, expanded sidebar, phases and rules
 - [windows.md](windows.md): Windows-only behaviour, installer, registry settings, Actions lock
 - [git-locking.md](git-locking.md): per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout
 - [package-modules.md](package-modules.md): optional packages built as shared modules, loaded only when installed
+- [shell.md](shell.md): the empty shell: a project with nothing installed, core services that start and stop with their packages, memory measurements and what is still core
 - [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window (including keeping the computer from sleeping)
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
 - [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
+- [browser.md](browser.md): the embedded browser (Browser tab and side browser), the Chromium switches and blocked hosts that ungoogle it, its profile
+- [busy-ring.md](busy-ring.md): the spinning ring around a button's icon while its work runs, and around an active left-rail icon, on desktop, web and phones
+- [side-rail-and-terminals.md](side-rail-and-terminals.md): the right-hand side rail (drag workflows, pages and links onto it), its small browser, terminal tabs and the MCP terminal tools for agents
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 
 ## Code map
@@ -48,6 +56,7 @@ Everything is in `desktop/`.
 | `src/AppPaths.*`, `src/ProjectRegistry.*`, `src/SingleInstance.*` | Project layout, project list, per-project lock and socket |
 | `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/BackgroundRunnerBadge.*`, `src/TrayMode.*`, `src/KeepAwake.*` | Running without a window (`--headless`), start at boot, the top-bar badge, the tray, keeping the computer awake ([lifecycle](lifecycle.md#running-without-a-window)) |
 | `src/PackageModules.*`, `cmake/ForkMeshPackageModules.cmake` | Optional packages built as lazily loaded shared modules ([package-modules](package-modules.md)) |
+| `src/CorePackageServices.*`, `src/MainWindowCorePackageServices.cpp` | Core background services that run only while one of their packages is installed ([shell](shell.md)) |
 | `src/Theme.h`, `src/DesignTokens.*`, `src/UiKit.*`, `resources/theme/` | Classic style sheets, design tokens and components of the new interface ([ui-redesign](ui-redesign.md)) |
 | `src/Agent*`, `src/ClaudeStreamSession.*`, `src/CodexAppServerSession.*` | Local agent runtimes, guardrails, worktrees, access gates |
 | `src/ProjectAgentAccess.*`, `src/AgentRunRules.*`, `src/AgentNetworkGate.*` | Agent access policy, run/ask/deny decisions, external-call and destructive-command gate |
@@ -107,6 +116,25 @@ Everything is in `desktop/`.
   new-project dialog no longer offers the current project's instances, which
   belong to it. Projects that already shared an instance before this rule are
   left as they are.
+- **Add project dialog (2026-10-25).** Matches the phone's New project sheet.
+  It takes a name, an optional instance address with a Check button, a logo,
+  "Use my account in this project" (off by default, so a new project is a new
+  account unless asked) and one of three plugin packs, the phone's
+  `StarterPack`: Minimal (`code`), Standard (`agents`, `chat`, `inbox`,
+  `code`, `tour`) and Everything (every bundled plugin but the organization
+  ones), each with its dependencies (`projects::starterPackages`). A fourth
+  pack, Empty (desktop only, 2026-10-28), installs nothing at all
+  ([shell.md](shell.md)). Check reads
+  `/api/version` (the `x-forkmesh-worker` header, or `ok` with `rev` and
+  `worker`) and then `/api/instance`, filling the name from the instance's
+  project name and the logo from its `logo` path or favicon; an instance
+  another project owns is refused there. Below, "Instances on ForkMesh" lists
+  forkmesh.com and every listed https instance from
+  `GET /api/start/instances` by project name and host, with Add to fill and
+  check it. A project created with a checked instance seeds it as
+  `project/instanceChosen` and connects to it on first start instead of
+  asking. The description field is gone from this dialog; Project settings
+  still edits it.
 - **Project menu.** The instance, account and repository live as rows in the
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no
@@ -126,8 +154,14 @@ Everything is in `desktop/`.
   beside the rail, split into labelled groups, and sorted (custom, by name, by
   use, or by badge count). Buttons can move between the rail, the repository
   tab bar and the Code toolbar, and any button that opens a page can be dropped
-  into the rail as a shortcut. All of this is stored as JSON under `ui/*`
-  settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`,
+  into the rail as a shortcut. Moving works by drag in both directions: a
+  repository tab or Code toolbar button dragged onto the rail moves there, and
+  a rail icon dragged onto the bar it may live in (the repository tab bar, or
+  the Code toolbar for a Code toolbar button) moves back
+  (`handleButtonPanelDrop`, which outlines the bar while the icon is over it
+  and calls `moveButtonToPanel`). A bar the icon may not live in refuses the
+  drag, so the drop keeps the same rules as the "Move to …" menu. All of this is stored as JSON under `ui/*`
+  settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`, `ui/railCollapsedGroups`,
   `ui/buttonPlacement`, `ui/railShortcuts`), keyed by stable rail keys.
 - **Hiding a rail item, keeping it on Home.** Right-click any rail item (a
   folder member, shortcut or plugin too, but not Home) and pick "Hide from
@@ -147,12 +181,32 @@ Everything is in `desktop/`.
   (`addHomeTileRailActions`). The left rail's background menu has a "Hidden
   from the rail" list to show one or all again. Moving the button to another
   bar, dropping it on the rail, or "Reset button placement" also shows it again.
+- **Folding a rail group.** With grouping on, clicking a group heading
+  (`RailGroupSeparator::onToggle`, `toggleRailGroupCollapsed`) folds the
+  group; clicking it again unfolds it. The folded group ids are a string list
+  in `ui/railCollapsedGroups`, removed when empty or when the group is deleted.
+  `applyRailOrder` keeps the heading and parks the group's buttons in
+  `railHiddenItems` the same way as hidden items, so their own visibility is
+  untouched and Home and the command palette still reach them; a folder in a
+  folded group stays in the layout but hidden, so its members keep their
+  place. The heading remembers its folded items (`collapsedItems`), and
+  `refreshRailGroupSeparators` keeps it shown while any of them is not
+  explicitly hidden, so a folded group can always be opened again.
 - **Pinned workflows.** Workflows (special agents among them) can be pinned to
-  four strips around the window: the top bar beside the activity indicators,
-  under the left rail, at the right edge and in the status bar
+  four places around the window: the top bar beside the activity indicators,
+  under the left rail, the side rail at the right edge and the status bar
   (`ui/workflowPins`, `src/MainWindowRepoWorkflows.cpp`;
   [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
-  A strip with no pins is hidden.
+  Right-rail pins have no strip of their own: they show among the side rail's
+  items ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
+  A strip with no pins is hidden. A pin can be dragged from any strip to any
+  other, or to another place in its own strip: while a pin is dragged the three
+  strips, even empty ones, and the side rail show a dashed outline, and a line
+  marks where it will land (`handleWorkflowPinEvent`; the side rail draws its
+  own accent line). The drop saves the new order with
+  `rw::movePin`, which keeps the pin's slot among the pins of the target strip.
+  Strips do not rebuild during a drag (`m_workflowPinDragging`), because a
+  rebuild deletes the pin buttons, the dragged one included.
 - **Popped-out pages.** Dragging a rail icon out of the window, or "Open in new
   window", moves the section's current page into its own top-level window. A
   placeholder keeps the page's index in the section stack, because the rail's
@@ -167,6 +221,11 @@ Everything is in `desktop/`.
   (`HomeBoard::setTileMenu`, `MainWindow::addHomeTilePackageActions`): the
   tile's rail button carries the package entrypoint, so Home offers exactly
   the plugins the rail does.
+- **Startup landing.** The app opens on the last repository (or the first one
+  available). With no repository to open it opens on Home
+  (`startupLandingSection`), never on an empty "Select a repository" page.
+  The repository section's placeholder before the detail is built is a blank
+  surface, so the moment before the restore runs shows no prompt.
 - **Packages.** Many features are Market packages hosted in the desktop and
   can be turned off per project; hiding a package hides its rail button, tabs
   and search hits. Rules: [../marketplace/core-plugins.md](../marketplace/core-plugins.md).
@@ -190,7 +249,12 @@ Everything is in `desktop/`.
   `MainWindowInternal.h` (`waitForGit`, `runOffThread`); a GUI-thread wait pumps
   the event loop, and Git on the GUI thread shows up in the stall log.
   Index-writing commands for one repository run one at a time through
-  `GitIndexQueue`; see [git-locking.md](git-locking.md).
+  `GitIndexQueue`; see [git-locking.md](git-locking.md). Timer-driven
+  refreshes load pulls with `reloadPullsInBackground()`. The mesh converge
+  completion reports failures too, so with the synchronous `reloadPulls()`
+  a repository whose mirrors were unreachable froze the window for 1-3 s
+  on every cycle, waiting on the Git index lock in `PullStore::baseTip()`
+  (2026-10-31, `tests/validate_pull_refresh_responsiveness.py`).
 - **No display polling.** The desktop has no timers that re-read the relay
   for display. Updates arrive over the account event socket
   (`MainWindowRepoSync.cpp` handles topics such as `cloud-agents`, `tasks`,
@@ -274,6 +338,54 @@ then rebuilds the GTK icon cache. It only acts when
 `~/.local/share/applications/forkmesh.desktop` exists, writes only files whose
 bytes differ, and does nothing on Windows or macOS.
 
+The prebuilt install (`www/public/install.sh` without a source checkout) never
+ran `desktop/install.sh`, so it left no app-menu entry: a user who closed the
+window had no way back except typing `~/.local/bin/forkmesh` in a terminal
+(onboarding feedback, 2026-10-28). The same startup step now writes
+`~/.local/share/applications/forkmesh.desktop` itself, with the same keys as
+`desktop/install.sh`, before the icon pass, so the icons follow at once. It
+writes the entry only when none exists and the running binary is the installed
+`~/.local/bin/forkmesh` (compared by canonical path), so a build-tree or
+AppImage run never adds a launcher, and a launcher the user edited is never
+overwritten. `forkmesh-launcher-icon-tests` covers both rules.
+
+A launcher written before the projects layout still ran
+`~/.local/share/forkmesh/src/qt_client/build/forkmesh`, a binary the in-app
+update never rebuilds. Clicking the icon started that months-old build, which
+stopped with "could not recover an interrupted mirror Actions configuration
+(configuration_lock_unavailable)" because its settings folder,
+`~/.config/ForkMesh`, is now a link into the project (2026-10-30). The same
+startup step therefore repairs an existing launcher: when the entry has
+`Name=ForkMesh` and its `Exec` names a missing binary or one inside the retired
+`~/.local/share/forkmesh` tree, it is rewritten to run the current client.
+The current client is `~/.local/bin/forkmesh` when installed, otherwise the
+primary checkout's `~/projects/forkmesh/src/desktop/build/forkmesh` when that
+is the running binary; a worktree build never qualifies. A launcher pointing at
+any other existing binary is left as it is.
+
+### Signing in
+
+The desktop signs in with the email and password the user types, sending the
+email as `identifier` (`AccountCapability::passwordLoginRequest`). It used to
+send the account name from the instance step as `nodeName`, and the relay's
+login (`app/src/entry.py` `_account_login`) checks the password of the account
+named by `nodeName` first and ignores the email. The instance step pre-fills a
+suggested name, so a user whose real username differed got "Incorrect email or
+password" for the right password, each try counted toward the lockout, and the
+same password kept working on the website (onboarding feedback, 2026-10-28).
+With the email as the identifier, a correct password for a different account
+gets through the password check; the device proof, signed for the selected
+name, then fails, the password-only fallback returns the real account, and
+the existing selected-account check revokes that session and says which
+username the email belongs to. Nothing is switched silently.
+
+The wrong-password message says the desktop and the website share one account.
+A `too_many_attempts` answer shows the relay's `retryAfterMs` as a wait time
+(`AccountCapability::loginLockoutMessage`) and says the password has not
+changed, so a pause no longer reads like a wrong password. Every desktop
+password box for the account (welcome card and classic dialog) has an eye
+button (`kit::addPasswordReveal`), like the website.
+
 ## Data layout and paths
 
 `src/AppPaths.cpp` resolves `~/projects/<project>/` (override with
@@ -342,8 +454,9 @@ Details, manual CMake, test targets and known failures:
   and changes nothing (or moves the checkout aside); a fresh clone runs only
   when there is no checkout, into a missing or empty folder.
   `app/tests/test_desktop_update_keeps_checkout.py` covers it.
-- **Hosts.** Network → Hosts installs, updates and removes ForkMesh on SSH
-  hosts; every host update also refreshes the host's agent CLIs
+- **Hosts.** The Hosts rail beside Network → Nodes installs, updates and
+  removes ForkMesh on SSH hosts, and each saved host is a row of the node list
+  ([networking.md](networking.md#network--nodes)); every host update also refreshes the host's agent CLIs
   ([../agents/README.md](../agents/README.md#agent-cli-refresh-on-hosts)).
 - Logs and diagnosis: [diagnostics.md](diagnostics.md).
 
@@ -409,10 +522,27 @@ The full description is in
   (`NativePackageExtension.*`).
 - Signed records and requests use the node key; the desktop never relies on
   cookies or a browser origin.
+- **Several desktops on one account.** Each desktop that signs in with its own
+  key becomes an enabled `desktop_node` device with `owner_sign`, so every one
+  of them may sign owner actions. Switching back to a cached account session
+  (`restoreCachedAccountSession` in `MainWindowAccounts.cpp`) used to keep
+  owner-signing only when the account's primary key (the first desktop's) was
+  this desktop's key, so the second desktop always lost it and the "Account
+  switched" dialog said owner-signed actions stayed disabled. When the primary
+  key differs, the desktop now reads `GET /api/accounts/desktops` with the same
+  session and restores signing when its key is on that list
+  (`SessionCache::mayRestoreDesktopCapability`). The dialog now says which of
+  the two states it ended in.
 - Agents are sandboxed as described in
   [Desktop agent sandboxing](#desktop-agent-sandboxing).
 - Actions steps run in a bubblewrap sandbox unless a workflow says
   `sandbox: false` ([below](#actions-outside-the-sandbox)).
+- A desktop Actions step stops after 90 minutes unless the step sets
+  `timeout-minutes` (1–1440, as on the instance runner), which replaces that
+  limit for the step; the run's 4-hour limit still caps it. Any other value
+  makes the workflow invalid. Before this the desktop ignored the key, so
+  `.forkmesh/desktop-ci.yml` could not get past 90 minutes
+  ([build-and-test.md](build-and-test.md#ci)).
 
 ### Actions outside the sandbox
 
@@ -483,6 +613,16 @@ request workflows ("CI tests", "Desktop client CI tests") filed two identical
 rows. The held runs are now collected and `notifyHeldActionRuns` files one row
 naming every held workflow, linked to the first held run.
 
+No re-ping for every held pull request on restart: `cancelSupersededRuns`
+treated any newer run of the same workflow in the repository as superseding, so
+pull request #90's held "CI tests" run cancelled #85's, and the cancelled run was
+deleted (`actions/autoDeleteCancelledRuns`). After a restart the check sweep
+(`applyPullCheckHeads`) found no run for those heads, queued them again, and
+pinged "Nth pull request needs your approval" for each one. A run now supersedes
+only runs of the same workflow for the same pull request (`pullNumber`, 0 for a
+push), so held runs survive and the sweep's already-ran check skips them. Test:
+`testSupersedeKeepsOtherPullsHeld` in `desktop/tests/test_window_resize.cpp`.
+
 The Actions page's approval pane says why a run is held. It used to show only
 the diff of the workflow file against the last approved copy, so a held pull
 request whose workflow was unchanged read "No changes from the approved
@@ -542,11 +682,30 @@ measured and keep the plain branch icon.
   only when `publishToNetwork` is set and the mirror folder exists; before the
   first publish they say "Not published yet", and "Delete mirror..." is only
   offered when there is a mirror to delete.
+- **An empty loose object breaks every mirror fetch.** An interrupted write
+  can leave a zero-byte loose object. Git then fails each fetch ("object
+  file … is empty", "invalid index-pack output") without naming a ref, and
+  `isTransientSyncError()` reads that as a host outage. Dropping refs does
+  not help: Git takes the empty file for the object and never fetches it
+  again. The sync failure path in `MainWindowRepoFetch.cpp` first removes
+  exactly the files Git named, only while they are still empty regular
+  files (`removeEmptyLooseObjects()`, `UpstreamCheckoutSync.cpp`), and
+  fetches again; a ref left on a removed object is then dropped by the
+  bad-ref repair. Only the `objects/xx/rest` tail of the reported path is
+  trusted, because the prefix depends on where Git ran.
 - **Pull timestamp units.** Legacy pull and event records can store Unix
   seconds while current records use milliseconds. Normalize them with
   `issueDisplayTimestampMs()` before ordering, formatting, or storing a
   display timestamp; compact PR list labels otherwise render current records
   as decades old.
+- **Ordering branches by age costs a stat per loose head.**
+  `readBranchRefFiles()` orders loose heads under `refs/heads` by
+  modification time; on a WSL checkout under `/mnt/c` with ~190 heads that
+  is 280 ms warm and over a second cold, and restoring the last repository
+  at startup froze for 1.1 s on it. `repoDefaultBranchFast()` sorts by
+  name, so it takes the names-only walk
+  (`walkBranchRefFiles(dir, false)`); a path that only needs names should
+  too.
 - **Qt never draws a tooltip on screen.** `Tooltips::install()`
   (`src/Tooltips.h`) marks Qt's `QTipLabel` `WA_DontShowOnScreen` and draws its
   text in its own `Tooltips::Window`, because Qt's tip inherited transparent
@@ -564,6 +723,13 @@ measured and keep the plain branch icon.
   font carries. `tests/test_font_sizing.cpp` covers the helpers and
   `tests/validate_error_log_regressions.py` rejects a raw
   `setPointSizeF(x.pointSizeF() ...)`.
+- **The splash is finished inside the main window's first paint.**
+  `MainWindow::paintEvent` calls `noteHostPainted()` and then finishes the
+  startup splash, a child widget. `StartupSplash::pump()` queues the frame
+  with `update()` while the host is inside a paint event
+  (`Qt::WA_WState_InPaintEvent`); a synchronous `repaint()` there logged
+  "QWidget::repaint: Recursive repaint detected" on every launch.
+  `tests/test_startup_splash.cpp` fails on that warning.
 - **`MainWindowInternal.h` is in the precompiled header.** Editing it, or
   `MainWindow.h`, recompiles every `MainWindow*.cpp`. New helper bodies go in
   `MainWindowInternal1-4.cpp` with only a declaration in the header. New shell
@@ -655,6 +821,14 @@ measured and keep the plain branch icon.
   "Private repository is unavailable or this account is not authorized". A
   record owned by `accountOwner()` with a local source now stays local and
   says it needs a signed-in account to publish.
+- **Mesh converge backs off a repository whose mirrors all fail.** A
+  registered repository whose network copy is gone failed the background
+  converge on every sweep, about once a minute, forever. When no route can
+  be read, `convergeSourceRepoFromMesh()` records a failure in
+  `m_pollBackoff` under `mesh-converge:<repo>`: background passes then wait
+  1, 2, 4 … up to 30 minutes, a skipped pass is not an attempt, and any
+  successful read clears it. A forced converge (opening the repository, an
+  explicit refresh) ignores it. `tests/validate_mesh_converge_backoff.py`.
 
 ## Related docs
 

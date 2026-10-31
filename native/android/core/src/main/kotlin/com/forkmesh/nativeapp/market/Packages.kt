@@ -128,8 +128,20 @@ class PackagesException(val code: String, val status: Int = 0, val fields: Map<S
         }
 
         fun from(reply: ApiJsonResult): PackagesException {
-            val fields = reply.body.obj("fields").mapValues { jsonText(it.value) }
+            val fields = LinkedHashMap(reply.body.obj("fields").mapValues { jsonText(it.value) })
+            val contact = reply.body.obj("contact")
+            if (PackagesText.isHexId(contact.str("id"))) {
+                fields["contactId"] = contact.str("id")
+                fields["contactName"] = contact.str("name")
+                fields["contactEmail"] = contact.str("email")
+            }
             return PackagesException(reply.body.str("error"), reply.statusCode, fields)
+        }
+
+        fun isTransient(error: Throwable): Boolean = when (error) {
+            is PackagesException -> error.status == 408 || error.status == 425 || error.status >= 500
+            is IOException -> true
+            else -> false
         }
 
         fun describe(error: Throwable): String = when (error) {
@@ -264,8 +276,14 @@ class PackagesClient(val transport: PackagesTransport) {
 
     fun crmOrganizations(): List<PackageOrganization> = PackageOrganization.list(call("GET", "/api/crm"))
 
-    fun crm(organization: String, since: String = "", offsetMinutes: Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000): CrmOrganizationData? {
-        val query = (if (since.isEmpty()) emptyList() else listOf("since" to since)) + ("tz" to offsetMinutes.toString())
+    fun crm(
+        organization: String,
+        since: String = "",
+        offsetMinutes: Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000,
+        contacts: Int = 0,
+    ): CrmOrganizationData? {
+        val query = (if (since.isEmpty()) emptyList() else listOf("since" to since)) + ("tz" to offsetMinutes.toString()) +
+            (if (contacts > 0) listOf("contacts" to contacts.toString()) else emptyList())
         val reply = call("GET", "/api/crm/" + segment(organization), query)
         if (reply.bool("unchanged")) return null
         return CrmOrganizationData.fromJson(reply)

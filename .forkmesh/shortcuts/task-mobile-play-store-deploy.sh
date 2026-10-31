@@ -9,13 +9,20 @@ tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)
 gradle=native/android/app/build.gradle.kts
 version=$(sed -n 's/.*versionName = versionNameOverride.ifEmpty { "\(.*\)" }.*/\1/p' "$gradle")
 code=$(sed -n 's/.*versionCode = versionCodeOverride ?: \([0-9]*\).*/\1/p' "$gradle")
-: "${FORKMESH_RELEASE_ASSIGNEE:?set FORKMESH_RELEASE_ASSIGNEE to the release maintainer account}"
-exec python3 -I - "$PWD" "$head" "$tag" "$version" "$code" "$FORKMESH_RELEASE_ASSIGNEE" <<'PY'
+exec python3 -I - "$PWD" "$head" "$tag" "$version" "$code" "${FORKMESH_RELEASE_ASSIGNEE:-}" <<'PY'
 import sys
 
 root, head, tag, version, code, assignee = sys.argv[1:7]
 sys.path.insert(0, root + "/tools")
 import forkmesh_mcp_server as mcp
+import forkmesh_paths
+
+assignee = assignee.strip()
+if not assignee:
+    saved = forkmesh_paths.resolve().config / "release-assignee"
+    assignee = saved.read_text().strip() if saved.is_file() else ""
+if not assignee:
+    print(f"No release maintainer set (FORKMESH_RELEASE_ASSIGNEE or {saved}); creating the task unassigned.", file=sys.stderr)
 
 details = f"""A reminder to deploy the Android app to the Google Play Store.
 
@@ -38,10 +45,9 @@ Guides: docs/native/ANDROID.md (application id, signing) and docs/native/README.
 task = mcp.create_task({
     "title": "Reminder: deploy the Android app to the Play Store",
     "details": details,
-    "assigneeKind": "user",
     "assignee": assignee,
     "repository": "forkmesh/forkmesh",
 })
 created = task.get("task") if isinstance(task.get("task"), dict) else task
-print(f"Created task {created.get('id', '')} for {created.get('assignee', '')}: {created.get('title', '')}")
+print(f"Created task {created.get('id', '')} for {created.get('assignee') or 'nobody yet'}: {created.get('title', '')}")
 PY

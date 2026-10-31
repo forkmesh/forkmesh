@@ -193,6 +193,7 @@ def _health_script(body):
     return "\n".join([
         _slice(HELPERS, "  function escapeHtml(value) {", "  // Loading placeholder"),
         "let countFormatter = null;",
+        "function platformName() { return \"ForkMesh\"; }",
         _slice(HELPERS, "  function formatCount(value) {", "  // Compose-identity chip"),
         _slice(CONTENT, "  function parseDiffFiles(rawText) {", "  function parsePatchStats("),
         _slice(CONTENT, "  const DIFF_LINE_FLAGS = {", "  // The review surface on the page"),
@@ -263,7 +264,7 @@ def test_health_scores_match_the_phone_app():
 def test_secret_scan_skips_placeholders_and_the_ignore_marker():
     out = _run_node(_health_script("""
         console.log(JSON.stringify([
-          diffLineFlags("a.py", 'api_key = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"'),  # forkmesh-secret-scan:ignore-line
+          diffLineFlags("a.py", 'api_key = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"'),  // forkmesh-secret-scan:ignore-line
           diffLineFlags("a.py", 'api_key = "your-api-key-goes-here-please"'),
           diffLineFlags("a.py", 'token = "ghp_' + "a".repeat(36) + '"  # forkmesh-secret-scan:ignore-line'),
           diffLineFlags("a.txt", "x".repeat(150) + " "),

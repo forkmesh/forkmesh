@@ -308,6 +308,8 @@ async def _find_user_by_email(env, email):
     rec = await decrypt_row(env, row.get("data", "")) or {}
     if not name_bi or not rec:
         return None, None
+    if rec.get("email_verified") is not True:
+        return None, None
     return name_bi, rec
 
 

@@ -2,6 +2,7 @@
 # Build and run ForkMesh locally.
 #
 #   ./run.sh          build (incremental) and launch the app
+#   ./run.sh launch   launch the last build without building
 #   ./run.sh clean    clear the build cache (removes build/)
 #   ./run.sh rebuild  clear the cache, then build and launch
 #   ./run.sh test     build and run the sub-minute critical contracts
@@ -105,7 +106,7 @@ check_stale_cache() {
     if { [ -n "$cached_src" ] && [ "$cached_src" != "$PWD" ]; } ||
        { [ -n "$cached_bin" ] && [ "$cached_bin" != "$PWD/build" ]; }; then
         echo "Stale build cache (generated in ${cached_src:-$cached_bin}); cleaning." >&2
-        fm_safe_rm_tree "$PWD" build
+        fm_wipe_build
         return 0
     fi
 
@@ -140,6 +141,69 @@ fm_now_ms() {
 FM_RESTART_CLOCK="$(fm_now_ms)"
 FM_STEP_TIMES=()
 FM_STEP_LOG=""
+FM_BUILD_LOCK="$PWD/build/.run-sh.lock"
+FM_BUILD_LOCK_HELD=0
+
+fm_release_build_lock() {
+    [ "$FM_BUILD_LOCK_HELD" = 1 ] || return 0
+    FM_BUILD_LOCK_HELD=0
+    rm -f "$FM_BUILD_LOCK/pid"
+    rmdir "$FM_BUILD_LOCK" 2>/dev/null || true
+}
+
+fm_take_build_lock() {
+    local holder announced=0 unknown=0
+    [ "$FM_BUILD_LOCK_HELD" = 1 ] && return 0
+    mkdir -p "$(dirname "$FM_BUILD_LOCK")"
+    until mkdir "$FM_BUILD_LOCK" 2>/dev/null; do
+        holder="$(cat "$FM_BUILD_LOCK/pid" 2>/dev/null || true)"
+        if [ -n "$holder" ]; then
+            unknown=0
+        else
+            unknown=$((unknown + 1))
+        fi
+        if { [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; } || [ "$unknown" -gt 5 ]; then
+            fm_log_restart "removing the stale build lock (pid ${holder:-unknown})"
+            rm -f "$FM_BUILD_LOCK/pid"
+            rmdir "$FM_BUILD_LOCK" 2>/dev/null || true
+            continue
+        fi
+        if [ "$announced" = 0 ]; then
+            fm_log_restart "waiting for the build already running in $PWD/build (pid ${holder:-unknown})"
+            printf '==> Waiting for the build already running in %s (pid %s)...\n' \
+                "$PWD/build" "${holder:-unknown}" >&2
+            announced=1
+        fi
+        sleep 1
+    done
+    printf '%s\n' "$$" > "$FM_BUILD_LOCK/pid"
+    FM_BUILD_LOCK_HELD=1
+}
+
+trap fm_release_build_lock EXIT
+
+fm_wipe_build() {
+    local held="$FM_BUILD_LOCK_HELD"
+    FM_BUILD_LOCK_HELD=0
+    fm_safe_rm_tree "$PWD" build
+    if [ "$held" = 1 ] && [ "${1:-}" != release ]; then
+        fm_take_build_lock
+    fi
+}
+
+fm_configure() {
+    local stamp="build/run-sh-configure.args" wanted
+    wanted="$(printf '%s\n' "$@" "ccache=$(command -v ccache || true)")"
+    if [ -f build/CMakeCache.txt ] && { [ -f build/build.ninja ] || [ -f build/Makefile ]; } &&
+       [ -f "$stamp" ] && ! [ build/CMakeCache.txt -nt "$stamp" ] &&
+       [ "$(cat "$stamp")" = "$wanted" ]; then
+        fm_log_restart "build tree already configured; skipping the configure step"
+        return 0
+    fi
+    fm_status "Configuring..."
+    fm_step configure cmake -B build "$@"
+    printf '%s\n' "$wanted" > "$stamp"
+}
 
 fm_log_restart() {
     [ "$FM_RUN_QUIET" = 1 ] && return 0
@@ -234,17 +298,18 @@ fm_launch() {
     fm_summary "Built"
     fm_status "Launching..."
     fm_log_restart "launching $bin"
+    fm_release_build_lock
     exec "$bin"
 }
 
 build() {
+    fm_take_build_lock
     check_stale_cache
     local args=() jobs
     while IFS= read -r -d '' arg; do
         args+=("$arg")
     done < <(cmake_args)
-    fm_status "Configuring..."
-    fm_step configure cmake -B build "${args[@]}"
+    fm_configure "${args[@]}"
     jobs="$(build_jobs)"
     fm_status "Rebuilding..."
     fm_build_pass "$jobs"
@@ -267,28 +332,43 @@ forkmesh_bin() {
 
 case "${1:-run}" in
     clean)
-        fm_safe_rm_tree "$PWD" build
+        fm_take_build_lock
+        fm_wipe_build release
         echo "Build cache cleared."
         ;;
     rebuild)
         fm_log_restart "run.sh rebuild: clean rebuild & launch started"
-        fm_safe_rm_tree "$PWD" build
+        fm_take_build_lock
+        fm_wipe_build
         build
         fm_launch
+        ;;
+    launch)
+        fm_log_restart "run.sh launch: launch without building started"
+        fm_take_build_lock
+        bin="$(forkmesh_bin)"
+        if [ ! -x "$bin" ]; then
+            fm_status "Nothing is built in $PWD/build yet; run ./run.sh to build and launch." error
+            exit 1
+        fi
+        fm_status "Launching..."
+        fm_log_restart "launching $bin"
+        fm_release_build_lock
+        exec "$bin"
         ;;
     test)
         fm_log_restart "run.sh test: build & run critical tests started"
         # Build and run only the critical trust, encrypted-mirror, and agent
         # transport contracts. Force the test option on so a cached
         # FORKMESH_BUILD_TESTS=OFF can't hide the targets.
+        fm_take_build_lock
         check_stale_cache
         args=()
         while IFS= read -r -d '' arg; do
             args+=("$arg")
         done < <(cmake_args)
         # Later -D wins, so this overrides the OFF in cmake_args.
-        fm_status "Configuring..."
-        fm_step configure cmake -B build "${args[@]}" -DFORKMESH_BUILD_TESTS=ON
+        fm_configure "${args[@]}" -DFORKMESH_BUILD_TESTS=ON
         # critical-tests tracks the "critical" CTest label in CMakeLists.txt;
         # naming the suites here let this list fall behind the label instead.
         jobs="$(build_jobs)"
@@ -297,6 +377,7 @@ case "${1:-run}" in
         fm_step build cmake --build build --parallel "$jobs" --target critical-tests
         fm_summary "Built"
         fm_status "Running the critical tests..."
+        fm_release_build_lock
         exec python3 ../tools/run_critical_tests.py qt --build-dir build
         ;;
     run)
@@ -305,7 +386,7 @@ case "${1:-run}" in
         fm_launch
         ;;
     *)
-        echo "Usage: $0 [--quiet] [run|clean|rebuild|test]" >&2
+        echo "Usage: $0 [--quiet] [run|launch|clean|rebuild|test]" >&2
         exit 2
         ;;
 esac

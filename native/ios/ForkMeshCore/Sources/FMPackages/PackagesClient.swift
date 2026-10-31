@@ -127,10 +127,12 @@ public final class PackagesClient {
     }
 
     public func crm(
-        _ organization: String, since: String = "", offsetMinutes: Int = TimeZone.current.secondsFromGMT() / 60
+        _ organization: String, since: String = "", offsetMinutes: Int = TimeZone.current.secondsFromGMT() / 60,
+        contacts: Int = 0
     ) async throws -> CrmOrganizationData? {
         var query = since.isEmpty ? [] : [("since", since)]
         query.append(("tz", String(offsetMinutes)))
+        if contacts > 0 { query.append(("contacts", String(contacts))) }
         let reply = try await call("GET", "/api/crm/" + Self.segment(organization), query: query)
         if reply.bool("unchanged") { return nil }
         return await Task.detached(priority: .userInitiated) { CrmOrganizationData(json: reply) }.value

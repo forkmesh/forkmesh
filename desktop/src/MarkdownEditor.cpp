@@ -1,9 +1,11 @@
 #include "MarkdownEditor.h"
+#include "ChatLinkText.h"
 #include "MarkdownDocument.h"
 #include "MarkdownRender.h"
 #include "PromptSpellCheckHighlighter.h"
 
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -55,7 +57,13 @@ MarkdownEditor::MarkdownEditor(QWidget *parent) : QWidget(parent)
     (new PromptSpellCheckHighlighter(m_source->document()))->attachTo(m_source);
     m_preview = new QTextBrowser;
     m_preview->setObjectName("markdownPreview");
-    m_preview->setOpenExternalLinks(true);
+    m_preview->setOpenExternalLinks(false);
+    m_preview->setOpenLinks(false);
+    connect(m_preview, &QTextBrowser::anchorClicked, this, [](const QUrl &link) {
+        if (const QUrl external = ChatLinkText::externalLinkUrl(link.toString());
+            external.isValid())
+            QDesktopServices::openUrl(external);
+    });
 
     auto *header = new QHBoxLayout;
     header->setContentsMargins(0, 0, 0, 0);
@@ -152,6 +160,8 @@ void MarkdownEditor::setPlaceholderText(const QString &text)
 void MarkdownEditor::focusEditor() { m_source->setFocus(); }
 
 void MarkdownEditor::showWriteArea() { showWrite(); }
+
+void MarkdownEditor::showPreviewArea() { showPreview(); }
 
 void MarkdownEditor::addImageFile(const QString &path)
 {

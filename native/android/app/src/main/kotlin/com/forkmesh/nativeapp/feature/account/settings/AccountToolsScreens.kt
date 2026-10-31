@@ -1,10 +1,12 @@
 package com.forkmesh.nativeapp.feature.account.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,10 +19,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
+import com.forkmesh.nativeapp.feature.people.ProfileTipContent
 import com.forkmesh.nativeapp.feature.tools.copyToClipboard
 import com.forkmesh.nativeapp.model.OrgSummary
 import com.forkmesh.nativeapp.settings.AccountDataModel
@@ -34,6 +38,7 @@ import com.forkmesh.nativeapp.settings.SecurityReportDraft
 import com.forkmesh.nativeapp.settings.SshKeyCheck
 import com.forkmesh.nativeapp.settings.SshKeys
 import com.forkmesh.nativeapp.settings.SshKeysModel
+import com.forkmesh.nativeapp.ui.kit.FmAvatar
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmListRow
@@ -45,6 +50,7 @@ import com.forkmesh.nativeapp.ui.kit.rememberFmStatus
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
+import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -106,7 +112,7 @@ class SshKeysScreen : Screen() {
                             }
                             revision++
                         }
-                    }, enabled = model.canAdd) { Text("Add key") }
+                    }, enabled = model.canAdd, busy = model.busy) { Text("Add key") }
                     FmInlineStatus(addStatus)
                 }
             }
@@ -210,7 +216,7 @@ class McpConnectorScreen : Screen() {
                 SettingsCard("Create a token") {
                     Row {
                         for (p in McpConnector.providers) {
-                            FmTextButton(onClick = { provider = p }, enabled = provider != p) { Text(McpConnector.providerLabel(p)) }
+                            FmTextButton(onClick = { provider = p }, enabled = provider != p, busy = false) { Text(McpConnector.providerLabel(p)) }
                         }
                     }
                     FmTextField(label, { label = it }, Modifier.fillMaxWidth(), hint = "Label (optional)")
@@ -315,6 +321,7 @@ class AccountProfileScreen(private val name: String) : Screen() {
             }
         }
         revision
+        val uri = LocalUriHandler.current
         SettingsPage("@${model?.name ?: name}", navigator) {
             val profile = model?.profile
             when {
@@ -326,38 +333,71 @@ class AccountProfileScreen(private val name: String) : Screen() {
                 else -> {
                     item {
                         SettingsCard {
-                            Text("@${profile.name}", style = Fm.text.titleMedium)
-                            SettingsNote("${profile.kindLabel} · ${profile.accountStatus}")
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FmSpace.x3)) {
+                                FmAvatar(profile.name, 56.dp, avatarPng = profile.avatar)
+                                Column {
+                                    Text("@${profile.name}", style = Fm.text.titleMedium)
+                                    SettingsNote("${profile.kindLabel} · ${profile.accountStatus}")
+                                }
+                            }
                             if (profile.bio.isNotEmpty()) Text(profile.bio, style = Fm.text.bodyMedium)
                             if (profile.location.isNotEmpty()) SettingsNote(profile.location)
                             SettingsNote("${profile.followers} followers · ${profile.following} following · ${profile.mirrorCount} mirrors")
+                            if (profile.createdAt > 0) SettingsNote("Joined ${AccountTime.label(profile.createdAt, System.currentTimeMillis())}")
                             SettingsNote(profile.linkedNodesLine)
+                        }
+                    }
+                    if (profile.links.isNotEmpty() || profile.mastodonUrl.isNotEmpty()) {
+                        item {
+                            SettingsCard("Links") {
+                                for (link in profile.links) {
+                                    FmListRow(
+                                        link.label,
+                                        subtitle = if (link.verified) "Verified · ${link.url}" else link.url,
+                                        onTap = { runCatching { uri.openUri(link.url) } },
+                                        minHeight = 44.dp,
+                                    )
+                                }
+                                if (profile.mastodonUrl.isNotEmpty()) {
+                                    FmListRow(
+                                        profile.mastodon.ifEmpty { "Mastodon" },
+                                        subtitle = "Mastodon",
+                                        onTap = { runCatching { uri.openUri(profile.mastodonUrl) } },
+                                        minHeight = 44.dp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (!profile.isNode) {
+                        item {
+                            SettingsCard("Tips") { ProfileTipContent(profile.name, profile.tipAddress) }
                         }
                     }
                     if (profile.nodes.isNotEmpty()) {
                         item {
                             SettingsCard("Nodes") {
-                                for (node in profile.nodes) FmListRow(node, showChevron = false, minHeight = 40.dp)
+                                for (node in profile.nodes) {
+                                    FmListRow(node, onTap = { navigator.push(AccountProfileScreen(node)) }, minHeight = 44.dp)
+                                }
                             }
                         }
                     }
-                    if (profile.identityQrText.isNotEmpty() || profile.walletQrText.isNotEmpty()) {
+                    if (profile.isNode && profile.owner.isNotEmpty()) {
                         item {
-                            SettingsCard("Codes") {
-                                Row(Modifier.fillMaxWidth()) {
-                                    if (profile.identityQrText.isNotEmpty()) {
-                                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                            QrImage(profile.identityQrText, size = 140.dp, description = "Identity QR code")
-                                            SettingsNote("Identity")
-                                        }
-                                    }
-                                    if (profile.walletQrText.isNotEmpty()) {
-                                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                            QrImage(profile.walletQrText, size = 140.dp, description = "Wallet QR code")
-                                            SettingsNote("Wallet")
-                                        }
-                                    }
+                            SettingsCard("Owner") {
+                                FmListRow("@${profile.owner}", subtitle = "The user this node belongs to", onTap = { navigator.push(AccountProfileScreen(profile.owner)) }, minHeight = 44.dp)
+                            }
+                        }
+                    }
+                    if (profile.identityQrText.isNotEmpty()) {
+                        item {
+                            SettingsCard("Keys") {
+                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    QrImage(profile.identityQrText, size = 140.dp, description = "Identity QR code")
+                                    SettingsNote("Identity")
                                 }
+                                SelectionContainer { Text(profile.pubkey, style = Fm.mono()) }
                             }
                         }
                     }

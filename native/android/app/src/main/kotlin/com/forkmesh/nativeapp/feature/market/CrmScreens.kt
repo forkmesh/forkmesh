@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,8 +55,8 @@ import com.forkmesh.nativeapp.market.CrmFlow
 import com.forkmesh.nativeapp.market.CrmFlowDraft
 import com.forkmesh.nativeapp.market.CrmFlowIcon
 import com.forkmesh.nativeapp.market.CrmModel
-import com.forkmesh.nativeapp.market.CrmNextContact
 import com.forkmesh.nativeapp.market.CrmOrganizationData
+import com.forkmesh.nativeapp.market.CrmSection as CrmArea
 import com.forkmesh.nativeapp.market.CrmSort
 import com.forkmesh.nativeapp.market.CrmStageLabel
 import com.forkmesh.nativeapp.market.CrmStageStat
@@ -66,7 +67,6 @@ import com.forkmesh.nativeapp.market.contactTabs
 import com.forkmesh.nativeapp.market.listViews
 import com.forkmesh.nativeapp.market.next
 import com.forkmesh.nativeapp.market.owners
-import com.forkmesh.nativeapp.market.pipelineValue
 import com.forkmesh.nativeapp.market.stats
 import com.forkmesh.nativeapp.market.tags
 import com.forkmesh.nativeapp.market.workspaceTabs
@@ -98,7 +98,7 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
     }
     private var loading by mutableStateOf(true)
     private var reload by mutableIntStateOf(1)
-    private var board by mutableStateOf(false)
+    private var openedFlow = false
     private var selecting by mutableStateOf(false)
     private var selection by mutableStateOf(setOf<String>())
     private var pendingDelete by mutableStateOf(listOf<String>())
@@ -126,6 +126,10 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
             loading = true
             withContext(Dispatchers.IO) { model.refresh() }
             loading = false
+            if (flow != null && !openedFlow) {
+                openedFlow = true
+                model.show(CrmArea.PIPELINE)
+            }
             CrmRevision.bump()
         }
         val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -141,8 +145,12 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
         @Suppress("UNUSED_EXPRESSION") CrmRevision.value
         val data = model.data
         var orgMenu by remember { mutableStateOf(false) }
-        var addMenu by remember { mutableStateOf(false) }
-        var moreMenu by remember { mutableStateOf(false) }
+        var sortMenu by remember { mutableStateOf(false) }
+        val launchImport = { importer.launch(arrayOf("text/*", "application/csv", "text/csv", "text/comma-separated-values")) }
+        val newContact = {
+            if (!model.activeTab.isContacts) model.select(model.defaultTab)
+            navigator.push(ContactEditorScreen(model, null, model.activeView?.takeIf { !it.isPipeline }?.id))
+        }
         Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 val plugin = rememberScreenPluginMenu()
@@ -167,40 +175,30 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
                             }
                         }
                         if (data != null) {
-                            Box {
-                                FmIconButton("add", "Add", onPressed = { addMenu = true }, color = Fm.colors.textPrimary)
-                                FmDropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
-                                    FmDropdownMenuItem("New contact", onClick = { addMenu = false; navigator.push(ContactEditorScreen(model, null, model.activeView?.takeIf { !it.isPipeline }?.id)) }, icon = "person_add")
-                                    FmDropdownMenuItem("New list", onClick = { addMenu = false; navigator.push(CrmNewListScreen(model)) }, icon = "playlist_add")
-                                    if (model.canManage) FmDropdownMenuItem("New pipeline", onClick = { addMenu = false; navigator.push(CrmPipelineEditorScreen(model, CrmFlowDraft())) }, icon = "account_tree")
-                                    FmDropdownMenuItem("Import CSV", onClick = { addMenu = false; importer.launch(arrayOf("text/*", "application/csv", "text/csv", "text/comma-separated-values")) }, icon = "upload")
-                                }
-                            }
-                            Box {
-                                FmIconButton("more_vert", "More", onPressed = { moreMenu = true }, color = Fm.colors.textPrimary)
-                                FmDropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
-                                    if (model.activeTab.isContacts) {
-                                        FmDropdownMenuItem("Select contacts", onClick = { moreMenu = false; selecting = true }, icon = "checklist")
-                                        if (model.activeFlow != null) FmDropdownMenuItem(if (board) "List layout" else "Board layout", onClick = { moreMenu = false; board = !board }, icon = if (board) "view_list" else "view_kanban")
+                            if (model.section == CrmArea.CONTACTS && model.activeTab.isContacts) {
+                                Box {
+                                    FmIconButton(
+                                        if (model.filter.isActive) "filter_alt" else "filter_list", "Sort and filter",
+                                        onPressed = { sortMenu = true }, color = Fm.colors.textPrimary,
+                                    )
+                                    FmDropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                                        FmDropdownMenuItem("Select contacts", onClick = { sortMenu = false; selecting = true }, icon = "checklist")
                                         data.contactTabs.firstOrNull { it.tab == model.activeTab }?.takeIf { it.view != null || it.flow != null }?.let { item ->
-                                            FmDropdownMenuItem("${item.title} settings", onClick = { moreMenu = false; navigator.push(CrmTabSettingsScreen(model, item)) }, icon = "tune")
+                                            FmDropdownMenuItem("${item.title} settings", onClick = { sortMenu = false; navigator.push(CrmTabSettingsScreen(model, item)) }, icon = "tune")
+                                        }
+                                        if (model.filter.isActive) {
+                                            FmDropdownMenuItem("Clear filters", onClick = {
+                                                sortMenu = false
+                                                model.filter = model.filter.copy(stage = "", owner = "", tag = "")
+                                                CrmRevision.bump()
+                                            }, icon = "close")
                                         }
                                     }
-                                    FmDropdownMenuItem("Pipelines", onClick = { moreMenu = false; navigator.push(CrmPipelinesScreen(model)) }, icon = "account_tree")
-                                    FmDropdownMenuItem(
-                                        model.noteDrafts.size.let { if (it == 0) "Unsent drafts" else "Unsent drafts ($it)" },
-                                        onClick = { moreMenu = false; navigator.push(CrmNoteDraftsScreen(model)) }, icon = "edit_note",
-                                    )
-                                    FmDropdownMenuItem("Export CSV", onClick = {
-                                        moreMenu = false
-                                        runner.run({ exportCsv() }) { file -> if (file != null) crmShare(context, file.second, file.first) }
-                                    }, icon = "download")
-                                    FmDropdownMenuItem("Sync mail", onClick = { moreMenu = false; runner.run({ syncMail() }) { url -> if (url != null) crmOpen(context, url) } }, icon = "sync")
-                                    FmDropdownMenuItem(if (data.settings.mailProvider == "gmail") "Open Gmail" else "Open Zoho Mail", onClick = { moreMenu = false; crmOpen(context, data.settings.composeUrl("")) }, icon = "mail")
-                                    FmDropdownMenuItem("CRM settings", onClick = { moreMenu = false; navigator.push(CrmSettingsScreen(model)) }, icon = "settings")
-                                    FmDropdownMenuItem("Refresh", onClick = { moreMenu = false; reload++ }, icon = "refresh")
-                                    plugin?.Items(close = { moreMenu = false }, divided = true)
                                 }
+                            }
+                            CrmModeMenu()
+                            Box(Modifier.testTag("crm-new-contact")) {
+                                FmIconButton("add", "New contact", onPressed = { newContact() }, color = Fm.colors.textPrimary)
                             }
                         }
                     }
@@ -217,23 +215,26 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
                     }
                     data == null -> FmEmptyState("contacts", "No CRM here yet", message = "Install the CRM package for an organization in the Market.")
                     else -> {
-                        CrmHeader(model, data, runner)
+                        CrmHeader(model, data, selecting)
                         if (!selecting) CrmRunnerStatus(runner, model, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                         val tab = model.activeTab
-                        when {
-                            tab.isContacts && board && !selecting && model.activeFlow != null ->
-                                CrmBoard(model, data, model.activeFlow!!, runner, navigator)
-                            tab.isContacts -> CrmContactList(
-                                model, data, runner, navigator, selecting, selection,
-                                onToggle = { id -> selection = if (id in selection) selection - id else selection + id },
-                                onDelete = { pendingDelete = it },
-                            )
-                            tab == CrmTab.Activity -> CrmActivityPane(model, data, navigator)
-                            tab == CrmTab.Mail -> CrmMailPane(model, data, runner)
-                            tab == CrmTab.Outreach -> CrmOutreachPane(model, data, runner, navigator)
-                            tab == CrmTab.Team -> CrmTeamPane(data)
-                            tab == CrmTab.Decks -> CrmDecksPane(model, data, runner, navigator)
-                            tab == CrmTab.Shared -> CrmSharedPane(model, data, navigator)
+                        when (model.section) {
+                            CrmArea.HOME -> CrmHomePane(model, data, runner, navigator)
+                            CrmArea.PIPELINE -> CrmPipelinePane(model, data, runner, navigator)
+                            CrmArea.MORE -> CrmMorePane(model, data, runner, navigator, plugin, onImport = { launchImport() }, onReload = { reload++ })
+                            CrmArea.CONTACTS, CrmArea.ACTIVITY -> when {
+                                tab.isContacts -> CrmContactList(
+                                    model, data, runner, navigator, selecting, selection,
+                                    onToggle = { id -> selection = if (id in selection) selection - id else selection + id },
+                                    onDelete = { pendingDelete = it },
+                                )
+                                tab == CrmTab.Activity -> CrmActivityPane(model, data, navigator)
+                                tab == CrmTab.Mail -> CrmMailPane(model, data, runner)
+                                tab == CrmTab.Outreach -> CrmOutreachPane(model, data, runner, navigator)
+                                tab == CrmTab.Team -> CrmTeamPane(data)
+                                tab == CrmTab.Decks -> CrmDecksPane(model, data, runner, navigator)
+                                tab == CrmTab.Shared -> CrmSharedPane(model, data, navigator)
+                            }
                         }
                     }
                 }
@@ -241,10 +242,10 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
             if (data != null && selecting) {
                 CrmBulkBar(model, data, runner, navigator, selection, model.visibleContacts.map { it.id }, Modifier.align(Alignment.BottomCenter),
                     onSelect = { selection = it }, onDelete = { pendingDelete = it }, onDone = { selection = emptySet() })
-            } else if (data != null && model.activeTab.isContacts) {
+            } else if (data != null && model.section == CrmArea.CONTACTS && model.activeTab.isContacts) {
                 FmExtendedFloatingActionButton(
                     "Contact",
-                    onClick = { navigator.push(ContactEditorScreen(model, null, model.activeView?.takeIf { !it.isPipeline }?.id)) },
+                    onClick = { newContact() },
                     modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                     icon = "person_add",
                 )
@@ -294,48 +295,30 @@ private fun CrmInstallPanel(model: CrmModel, installing: Boolean, onInstall: () 
 }
 
 @Composable
-private fun CrmHeader(model: CrmModel, data: CrmOrganizationData, runner: CrmRunner) {
-    Column(Modifier.fillMaxWidth().background(Fm.colors.bgRaised).padding(top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CrmStatTile("${data.contacts.size}", "Contacts", "groups", CrmColors.blue)
-            CrmStatTile(CrmText.money(data.pipelineValue), "Pipeline", "trending_up", CrmColors.green)
-            CrmStatTile("${data.activity.size}", "Emails", "send", CrmColors.purple)
-            CrmStatTile("${data.decks.count { it.active }}", "Decks", "slideshow", CrmColors.orange)
+private fun CrmHeader(model: CrmModel, data: CrmOrganizationData, selecting: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (!selecting) CrmSectionBar(model, data)
+        val contactsStatus = model.contactsStatus
+        if (contactsStatus.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("crm-contacts-loading"),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FmCircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                Text(contactsStatus, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+            }
         }
-        CrmZohoBar(model, data, runner, Modifier.padding(horizontal = 16.dp))
-        FmTextField(model.query, { model.query = it; CrmRevision.bump() }, Modifier.padding(horizontal = 16.dp), hint = "Search contacts")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp)) {
-            items(data.contactTabs, key = { it.tab.id }) { item -> CrmTabChip(model, item) }
-            item(key = "divider") { Box(Modifier.width(1.dp).height(30.dp).background(Fm.colors.border)) }
-            items(data.workspaceTabs, key = { it.tab.id }) { item -> CrmTabChip(model, item) }
-        }
-    }
-}
-
-@Composable
-private fun CrmTabChip(model: CrmModel, item: CrmTabItem) {
-    val active = model.activeTab == item.tab
-    val accent = Fm.colors.accent
-    Row(
-        Modifier.clip(RoundedCornerShape(50)).background(if (active) accent else Fm.colors.bgElevated)
-            .combinedClickableCompat({
-                model.select(item.tab)
+        if (model.section != CrmArea.MORE) {
+            FmTextField(model.query, { query ->
+                model.query = query
+                if (query.isNotEmpty() && model.section == CrmArea.HOME) model.show(CrmArea.CONTACTS)
                 CrmRevision.bump()
-                if (item.tab is CrmTab.Sheet) Thread { model.recordListView((item.tab as CrmTab.Sheet).viewId) }.start()
-            })
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        FmIcon(item.icon, size = 15.dp, tint = if (active) Color.White else Fm.colors.textSecondary)
-        Text(item.title, maxLines = 1, style = Fm.text.bodyMedium.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal), color = if (active) Color.White else Fm.colors.textPrimary)
-        item.count?.let { count ->
-            Text(
-                "$count",
-                Modifier.clip(RoundedCornerShape(50)).background(if (active) Color.White.copy(alpha = 0.25f) else Fm.colors.border).padding(horizontal = 6.dp, vertical = 1.dp),
-                style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = if (active) Color.White else Fm.colors.textSecondary,
-            )
+            }, Modifier.padding(horizontal = 16.dp), hint = if (model.section == CrmArea.ACTIVITY) "Search activity" else "Search contacts")
+        }
+        when (model.section) {
+            CrmArea.CONTACTS -> CrmTabChips(model, data.contactTabs)
+            CrmArea.ACTIVITY -> CrmTabChips(model, data.workspaceTabs)
+            else -> Unit
         }
     }
 }
@@ -417,60 +400,6 @@ private fun CrmFilterRow(model: CrmModel, data: CrmOrganizationData) {
 }
 
 @Composable
-private fun CrmNextContactCard(model: CrmModel, mode: CrmNextContact.Mode, runner: CrmRunner, navigator: Navigator) {
-    val context = LocalContext.current
-    @Suppress("UNUSED_EXPRESSION") CrmRevision.value
-    val next = model.nextContact(mode)
-    CrmCard(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FmIcon(if (mode == CrmNextContact.Mode.REACH_OUT) "person_add" else "reply", size = 16.dp, tint = CrmColors.blue)
-                Spacer(Modifier.width(6.dp))
-                Text(mode.title, Modifier.weight(1f), style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
-                if (next.due > 0) {
-                    Text(if (mode == CrmNextContact.Mode.REACH_OUT) "${next.due} never contacted" else "${next.due} due", style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
-                }
-            }
-            Text(mode.note, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
-            val contact = next.contact
-            if (contact == null) {
-                Text(
-                    when {
-                        model.nextSkipped.isNotEmpty() -> "Everyone here has been skipped for now."
-                        mode == CrmNextContact.Mode.REACH_OUT -> "No new leads: everyone reachable has been contacted, or the rest are at a won or ended stage."
-                        else -> "Nobody to follow up: no unanswered replies and nobody quiet for ${CrmNextContact.FOLLOW_UP_DAYS}+ days."
-                    },
-                    style = Fm.text.bodySmall, color = Fm.colors.textSecondary,
-                )
-                if (model.nextSkipped.isNotEmpty()) {
-                    FmToneButton("Show skipped again", onPressed = { model.nextSkipped.clear(); CrmRevision.bump() })
-                }
-            } else {
-                Column(
-                    Modifier.fillMaxWidth().combinedClickableCompat(onTap = { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) }),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(contact.displayName, style = Fm.text.bodyLarge.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
-                    if (contact.subtitle.isNotEmpty()) Text(contact.subtitle, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
-                    Text("Why them: " + next.reason, style = Fm.text.bodySmall, color = Fm.colors.textPrimary)
-                }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val mastodon = CrmText.profileUrl("mastodon", contact.mastodon)
-                    val twitter = CrmText.profileUrl("twitter", contact.twitter)
-                    when {
-                        '@' in contact.email -> FmToneButton("Email", onPressed = { navigator.push(CrmComposeScreen(model, CrmEmailDraft.of(contact), false)) }, tone = FmTone.Accent, filled = true)
-                        mastodon != null -> FmToneButton("Mastodon", onPressed = { crmOpen(context, mastodon) }, tone = FmTone.Accent, filled = true)
-                        twitter != null -> FmToneButton("X", onPressed = { crmOpen(context, twitter) }, tone = FmTone.Accent, filled = true)
-                    }
-                    FmToneButton("Contacted", onPressed = { runner.run({ markContacted(listOf(contact.id)) }) { ok -> if (ok) runner.status.show("Marked as contacted now.") } })
-                    FmToneButton("Skip", onPressed = { model.nextSkipped.add(contact.id); CrmRevision.bump() })
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun CrmContactList(
     model: CrmModel,
     data: CrmOrganizationData,
@@ -487,12 +416,7 @@ private fun CrmContactList(
     var menuFor by remember { mutableStateOf<String?>(null) }
     FmPullToRefreshBox(isRefreshing = runner.busy > 0, onRefresh = { runner.run({ load() }) }, modifier = Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize()) {
-            if (!selecting && model.tabContacts.isNotEmpty()) {
-                CrmNextContact.Mode.entries.forEach { mode ->
-                    item(key = "next-${mode.name}") { CrmNextContactCard(model, mode, runner, navigator) }
-                }
-            }
-            if (flow != null) item(key = "strip") { CrmStageStrip(model, flow, model.tabContacts) }
+            if (flow != null && !selecting) item(key = "strip") { CrmStageStrip(model, flow, model.tabContacts) }
             item(key = "filters") { CrmFilterRow(model, data) }
             if (rows.isEmpty()) {
                 item(key = "empty") {
@@ -659,7 +583,7 @@ private fun CrmBulkBar(
 }
 
 @Composable
-private fun CrmBoard(model: CrmModel, data: CrmOrganizationData, flow: CrmFlow, runner: CrmRunner, navigator: Navigator) {
+internal fun CrmBoard(model: CrmModel, data: CrmOrganizationData, flow: CrmFlow, runner: CrmRunner, navigator: Navigator) {
     val rows = model.visibleContacts
     var menuFor by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<CrmContact?>(null) }

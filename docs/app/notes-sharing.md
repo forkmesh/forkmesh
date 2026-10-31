@@ -44,6 +44,16 @@ signs each request with the account key, and that signature is scoped to
 `/api/notes` (`docs/desktop/notes.md`); the chat user search would refuse it.
 Filtering on the server also means every client leaves out the same people.
 
+## Who an organization share reaches
+
+A share with an organization reaches its insiders only: owners, admins,
+maintainers, members and auditors (`ORG_INSIDER_ROLE_SQL` in
+`app/src/organization_rbac.py`). Guests are outside collaborators and get
+nothing from it, neither in the list nor by id. An auditor is read-only, so an
+`editor` share opens the note for an auditor as `viewer`. `_role` and `_list`
+in `app/src/notes.py` apply both rules, so every note route (read, edit,
+versions, activity, the live socket) agrees.
+
 ## The access link
 
 A shared note is private: the published `/notes/<id>` page only reads public

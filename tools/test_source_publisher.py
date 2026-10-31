@@ -577,6 +577,48 @@ def test_publishing_failure_pings_with_a_fix_and_deduplicates_until_recovery(box
     assert len(requests) == 2
 
 
+def test_a_refused_pull_ledger_waits_for_the_desktop_before_it_pings(box):
+    write_key(box.identity_key)
+    box.settings_file.parent.mkdir(parents=True, exist_ok=True)
+    box.settings_file.write_text("nodeName=forkmesh\n")
+    box.fanout_gateways.parent.mkdir(parents=True, exist_ok=True)
+    box.fanout_gateways.write_text("cores https://app.example.invalid/forkmesh/forkmesh.git\n")
+    requests = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"pings":1}'
+
+    def opener(request, timeout):
+        requests.append(request)
+        return Response()
+
+    now = [1000.0]
+    ledger = {"ok": False, "fanout": {"ok": True}, "gateways": [{
+        "ok": False, "rejected": [
+            {"ref": "refs/heads/forkmesh/pulls", "reason": "fetch first"},
+            {"ref": "refs/heads/old-branch", "reason": "non-fast-forward"}]}]}
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    now[0] += sp.LEDGER_GRACE_SECONDS - 1
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    assert requests == []
+    now[0] += 2
+    sp.notify_publish_failure(box, ledger, opener=opener, clock=lambda: now[0])
+    assert len(requests) == 1
+    assert "refs/heads/forkmesh/pulls" in json.loads(requests[0].data)["body"]
+    sp.notify_publish_failure(box, {"ok": True}, opener=opener, clock=lambda: now[0])
+    main = {"ok": False, "fanout": {"ok": True}, "gateways": [{
+        "ok": False, "rejected": [{"ref": "refs/heads/main", "reason": "fetch first"}]}]}
+    sp.notify_publish_failure(box, main, opener=opener, clock=lambda: now[0])
+    assert len(requests) == 2
+
+
 def test_git_timing_out_on_the_proxy_port_is_reported_as_blocked_loopback(box):
     write_key(box.identity_key)
     calls = []
@@ -1483,3 +1525,46 @@ def test_publish_retries_a_failed_github_push_on_the_next_pass(box):
     assert len(calls) == 2
     assert sp.status_report(box, run=run)["github"] == [
         {"name": "github", "ok": True, "rejected": []}]
+
+
+def _three_cores(monkeypatch, mains):
+    urls = [{"name": "core %s" % name, "url": "https://%s.example/forkmesh/forkmesh.git" % name}
+            for name in mains]
+    monkeypatch.setattr(sp, "core_read_urls", lambda source: urls)
+    monkeypatch.setattr(sp, "cores_main", lambda url: mains[url.split("//")[1].split(".")[0]])
+
+
+def test_absorb_takes_main_only_when_a_second_core_serves_it(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "one-core-only")
+    before = sh("rev-parse", "main", cwd=box.source)
+    _three_cores(monkeypatch, {"n3": pushed, "n4": before, "n5": before})
+    refused = sp.absorb_cores(box.source, str(cores))
+    assert not refused["absorbed"] and refused["unconfirmed"]
+    assert "only 1 of 3 reachable cores" in refused["reason"]
+    assert sh("rev-parse", "main", cwd=box.source) == before
+    _three_cores(monkeypatch, {"n3": pushed, "n4": pushed, "n5": before})
+    outcome = sp.absorb_cores(box.source, str(cores))
+    assert outcome["absorbed"] and sh("rev-parse", "main", cwd=box.source) == pushed
+
+
+def test_absorb_accepts_the_only_reachable_core(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "lone-core")
+    _three_cores(monkeypatch, {"n3": pushed, "n4": "", "n5": ""})
+    assert sp.absorb_cores(box.source, str(cores))["absorbed"]
+    _, other = _cores_with(box, tmp_path / "again", "nobody-answers")
+    _three_cores(monkeypatch, {"n3": "", "n4": "", "n5": ""})
+    assert not sp.cores_agreement(box.source, other)[0]
+
+
+def test_watch_waits_for_a_second_core_before_taking_main(box, tmp_path, monkeypatch):
+    cores, pushed = _cores_with(box, tmp_path, "lagging-peers")
+    before = sh("rev-parse", "main", cwd=box.source)
+    _three_cores(monkeypatch, {"n3": pushed, "n4": before, "n5": before})
+    monkeypatch.setattr(sp, "read_gateways", lambda path, key: [])
+    passes = []
+    monkeypatch.setattr(sp, "publish", lambda paths, run=None, log=None: passes.append(1) or 0)
+    logs = []
+    assert sp.watch_cores(box, run=systemctl_fake(), log=logs.append) == 0
+    assert passes == [] and sh("rev-parse", "main", cwd=box.source) == before
+    assert any("not taking it: only 1 of 3 reachable cores" in line for line in logs)
+    assert not (box.publisher_state / "cores-watch.json").exists()

@@ -129,9 +129,12 @@ public:
         qint64 lastSeenMs = 0;
         QString approval;
         qint64 accountCheckedMs = 0;
+        bool userConfirmed = false;
     };
 
     enum class AccountCheck { Owned, NotOwned, Unreachable };
+
+    static bool userVerified(const Device &device);
 
     // `signer` returns the base64url Ed25519 signature of this desktop's
     // identity key (publicKey) over the given bytes.
@@ -170,7 +173,11 @@ public:
     // Devices with an authenticated connection open now, paired or waiting.
     QList<Device> connectedDevices() const;
     bool isConnected(const QString &key) const;
+    bool connectedLocally(const QString &key) const;
     void forget(const QString &key);
+
+    void setRemoteOff(bool off);
+    bool remoteOff() const { return m_remoteOff; }
 
     void approvePairing(int connectionId);
     void denyPairing(int connectionId);
@@ -281,6 +288,8 @@ private:
     void admitStored(Connection &conn);
     bool needsAccountCheck(const Connection &conn) const;
     bool admitsBeforeCheck(const Connection &conn) const;
+    bool claimsUnconfirmedUser(const Connection &conn) const;
+    void confirmClaimedUser(Connection &conn);
     void settleAccountCheck(Connection &conn, AccountCheck verdict);
     void refuseRelayed(Connection &conn, const QString &reason);
     void recheckAccount(int connectionId);
@@ -317,4 +326,5 @@ private:
     QStringList m_relayUndelivered;
     QStringList m_relayToldGone;
     QTimer *m_maintenanceTimer = nullptr;
+    bool m_remoteOff = false;
 };

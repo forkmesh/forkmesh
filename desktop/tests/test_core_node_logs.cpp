@@ -184,6 +184,20 @@ static void testFleetDiscovery()
           "the fleet (root) key is never used for logs");
     checkEqual(command.arguments.last(), QStringLiteral("follow lines 200"),
                "the request is the reader's protocol, not a shell command");
+    check(!command.arguments.join(QLatin1Char(' ')).contains(QLatin1String("Port=")),
+          "without a fleet file the feed uses port 22");
+    writeFile(root.path() + QStringLiteral("/forkmesh/src/deploy/fleet.toml"),
+              "ssh_key_name = \"fmnext-fleet\"\nssh_port = 822\n");
+    check(fleetSshPort() == 822, "the SSH port comes from fleet.toml");
+    const FeedCommand moved = buildFeedCommand(nodes.at(3), QString());
+    check(moved.arguments.contains(QStringLiteral("Port=822")) &&
+              moved.arguments.contains(QStringLiteral("HostKeyAlias=203.0.113.21")),
+          "the feed connects on the fleet port, host key pinned by address");
+    checkEqual(moved.arguments.last(), QStringLiteral("follow lines 200"),
+               "the request stays last");
+    const FeedCommand legacy = buildFeedCommand(nodes.at(3), QString(), true);
+    check(!legacy.arguments.join(QLatin1Char(' ')).contains(QLatin1String("Port=")),
+          "a legacy retry uses port 22 for a node not moved yet");
     VultrInventory inventory;
     inventory.fetchedMs = QDateTime::currentMSecsSinceEpoch() - 1000;
     inventory.failures = 2;
@@ -377,6 +391,17 @@ static void testClassification()
                QStringLiteral("error admin.api: request error error=loading config: "
                               "panic: runtime error"),
                "a Caddy JSON line reads as level, logger, message and error");
+    const JournalEntry altSvc = entry(
+        "caddy.service", "caddy", "6",
+        QStringLiteral("{\"level\":\"error\",\"ts\":1.5,\"logger\":\"http.log\","
+                       "\"msg\":\"setting HTTP/3 Alt-Svc header\",\"error\":\"no "
+                       "port can be announced, specify it explicitly using "
+                       "Server.Port or Server.Addr\"}"));
+    check(isCaddyReloadNoise(altSvc) && classify(altSvc).forward &&
+              classify(altSvc).severity == Severity::Warning &&
+              !isCaddyReloadNoise(caddyPanic) &&
+              classify(caddyPanic).severity == Severity::Error,
+          "a missing HTTP/3 advert while Caddy reloads is a warning, not an error");
     const JournalEntry goPanic = entry("forkmesh-mirror-node.service",
                                        "forkmesh-mirror-node", "6",
                                        QStringLiteral("panic: runtime error: index out of range"));

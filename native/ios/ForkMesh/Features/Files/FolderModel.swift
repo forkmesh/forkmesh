@@ -174,7 +174,7 @@ final class FolderModel {
         startTransfer("Downloading \(entry.name)…", reload: false) { [self] progress in
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("files-export-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let target = folder.appendingPathComponent(entry.name)
+            let target = try entry.localTarget(in: folder)
             try await source.download(entry.path, to: target, progress: progress)
             done(target)
         }

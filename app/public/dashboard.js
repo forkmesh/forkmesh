@@ -118,7 +118,7 @@
     // for the session list.
     // canViewSessions carries the last fetch's verdict so the list can redraw
     // itself under the header search filter without re-asking (adhoc #62).
-    agentsView: { agents: [], selectedAgentId: null, selectedAgentComposerMode: "", canViewSessions: false, canDeleteSessions: false, canQueueAgent: false, ownerScope: false, accessReason: "", notice: "", startPayload: null, desktopNotice: "", desktopNoticeTone: "" },
+    agentsView: { agents: [], statusView: "all", selectedAgentId: null, selectedAgentComposerMode: "", canViewSessions: false, canDeleteSessions: false, canQueueAgent: false, ownerScope: false, accessReason: "", notice: "", startPayload: null, desktopNotice: "", desktopNoticeTone: "" },
     homeAgentSessions: null,
     // Home right-rail "Latest from the blog" (adhoc #381): the newest posts
     // parsed from /blog/rss.xml. null until the feed read resolves so the card
@@ -565,25 +565,60 @@
     return theme === "light" ? "light" : "dark";
   }
 
-  function readDashboardTheme() {
+  function seasonActive(name) {
+    return document.documentElement.dataset.season === name;
+  }
+
+  function dashboardThemeChoice() {
     try {
       const cookieTheme = document.cookie
         .split(";")
         .map((part) => part.trim())
         .find((part) => part.startsWith("forkmesh_theme="))
         ?.slice("forkmesh_theme=".length);
-      return normalizeDashboardTheme(
-        localStorage.getItem(DASHBOARD_THEME_KEY) ||
+      const choice = localStorage.getItem(DASHBOARD_THEME_KEY) ||
         localStorage.getItem("forkmesh.theme") ||
-        cookieTheme
-      );
+        cookieTheme;
+      return ["light", "dark", "system"].includes(choice) ? choice : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function instanceColorMode() {
+    try {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue("--instance-color-mode").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function systemDashboardTheme() {
+    try {
+      return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     } catch (_) {
       return "dark";
     }
   }
 
+  function readDashboardTheme() {
+    const choice = dashboardThemeChoice();
+    if (choice === "light" || choice === "dark") return choice;
+    const mode = choice || instanceColorMode();
+    if (mode === "system") return systemDashboardTheme();
+    return normalizeDashboardTheme(mode);
+  }
+
+  function dashboardAppearanceChoice() {
+    const choice = dashboardThemeChoice();
+    if (choice) return choice;
+    return instanceColorMode() === "system" ? "system" : readDashboardTheme();
+  }
+
   function renderAppearanceTheme(theme = readDashboardTheme()) {
-    const current = normalizeDashboardTheme(theme);
+    const effective = normalizeDashboardTheme(theme);
+    const current = dashboardAppearanceChoice();
     $$("[data-appearance-theme]").forEach((button) => {
       const active = button.dataset.appearanceTheme === current;
       button.setAttribute("aria-checked", active ? "true" : "false");
@@ -594,9 +629,12 @@
     });
     const status = $("[data-appearance-theme-status]");
     if (status) {
-      status.textContent = current === "light"
+      const active = effective === "light"
         ? "Light mode is active for the dashboard."
         : "Dark mode is active for the dashboard.";
+      status.textContent = current === "system"
+        ? `Following your system setting. ${active}`
+        : active;
     }
   }
 
@@ -613,7 +651,7 @@
   }
 
   function saveDashboardTheme(theme) {
-    const nextTheme = normalizeDashboardTheme(theme);
+    const nextTheme = theme === "system" ? "system" : normalizeDashboardTheme(theme);
     try {
       localStorage.setItem(DASHBOARD_THEME_KEY, nextTheme);
       localStorage.setItem("forkmesh.theme", nextTheme);
@@ -623,7 +661,17 @@
       document.cookie = `forkmesh_theme=${nextTheme}; Path=/; Max-Age=31536000; SameSite=Lax${sharedDomain}`
         + (location.protocol === "https:" ? "; Secure" : "");
     } catch (_) {}
-    applyDashboardTheme(nextTheme);
+    applyDashboardTheme(readDashboardTheme());
+  }
+
+  function followSystemDashboardTheme() {
+    try {
+      matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        const choice = dashboardThemeChoice();
+        if (choice === "light" || choice === "dark") return;
+        applyDashboardTheme(readDashboardTheme());
+      });
+    } catch (_) {}
   }
 
   function renderGenieSetting() {
@@ -1053,6 +1101,9 @@
                 "forkmesh:mirror-signal", { detail: { catchUp: true } },
               ));
               window.dispatchEvent(new CustomEvent("forkmesh:cloud-agents"));
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: "", catchUp: true } },
+              ));
               void checkForDashboardUpdate(true);
             }
             connectedOnce = true;
@@ -1080,6 +1131,11 @@
             }
             if (topic === "direct-messages") {
               window.dispatchEvent(new CustomEvent("forkmesh:direct-messages"));
+            }
+            if (String(topic || "").startsWith("package:")) {
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: String(topic).slice(8) } },
+              ));
             }
           },
         });
@@ -1114,13 +1170,127 @@
       if (button._idleHtml === undefined) button._idleHtml = button.innerHTML;
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
-      button.innerHTML = loadingHtml(escapeHtml(label));
+      const icon = button.querySelector("svg, i[data-lucide]");
+      button.innerHTML = icon ? `${icon.outerHTML} ${escapeHtml(label)}` : loadingHtml(escapeHtml(label));
+      if (icon) setButtonBusyRing(button, true);
       return;
     }
     if (button._idleHtml !== undefined) button.innerHTML = button._idleHtml;
     button._idleHtml = undefined;
     button.disabled = false;
     button.removeAttribute("aria-busy");
+    setButtonBusyRing(button, false);
+  }
+
+  const BUSY_RING_CAP_MS = 60000;
+  const busyRings = new WeakMap();
+
+  function busyRingIcon(button) {
+    for (const icon of button.querySelectorAll("svg, i[data-lucide], img")) {
+      if (icon.closest(".fm-busy-ring")) continue;
+      const rect = icon.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return icon;
+    }
+    return null;
+  }
+
+  function placeBusyRing(button, ring) {
+    const icon = busyRingIcon(button);
+    if (!icon) {
+      ring.setAttribute("data-outline", "");
+      Object.assign(ring.style, { left: "0", top: "0", width: "100%", height: "100%" });
+      return;
+    }
+    ring.removeAttribute("data-outline");
+    const box = button.getBoundingClientRect();
+    const at = icon.getBoundingClientRect();
+    const side = Math.min(at.width, at.height) + 8;
+    Object.assign(ring.style, {
+      left: `${at.left - box.left - button.clientLeft + (at.width - side) / 2}px`,
+      top: `${at.top - box.top - button.clientTop + (at.height - side) / 2}px`,
+      width: `${side}px`,
+      height: `${side}px`,
+    });
+  }
+
+  function buttonStillBusy(button) {
+    return button.isConnected && (button.disabled || button.getAttribute("aria-busy") === "true");
+  }
+
+  function setButtonBusyRing(button, busy, editor = null) {
+    if (!button) return;
+    const entry = busyRings.get(button);
+    if (!busy) {
+      if (!entry) return;
+      busyRings.delete(button);
+      entry.observer.disconnect();
+      clearTimeout(entry.cap);
+      clearInterval(entry.editorWatch);
+      entry.ring.remove();
+      button.classList.remove("fm-busy-host");
+      return;
+    }
+    if (entry) {
+      if (!entry.ring.isConnected) button.append(entry.ring);
+      placeBusyRing(button, entry.ring);
+      return;
+    }
+    const ring = document.createElement("span");
+    ring.className = "fm-busy-ring";
+    ring.setAttribute("aria-hidden", "true");
+    if (getComputedStyle(button).position === "static") button.classList.add("fm-busy-host");
+    button.append(ring);
+    placeBusyRing(button, ring);
+    const observer = new MutationObserver(() => {
+      if (!buttonStillBusy(button)) {
+        setButtonBusyRing(button, false);
+      } else if (!ring.isConnected) {
+        button.append(ring);
+        placeBusyRing(button, ring);
+      }
+    });
+    observer.observe(button, { attributes: true, attributeFilter: ["disabled", "aria-busy"], childList: true });
+    const cap = setTimeout(() => setButtonBusyRing(button, false), BUSY_RING_CAP_MS);
+    const editorWatch = editor ? setInterval(() => {
+      if (busyEditorText(editor) === "") setButtonBusyRing(button, false);
+    }, 400) : 0;
+    busyRings.set(button, { ring, observer, cap, editorWatch });
+  }
+
+  let busyPressEditor = null;
+
+  function busyEditorText(element) {
+    if (!element) return null;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.value;
+    if (element.isContentEditable) return element.textContent || "";
+    return null;
+  }
+
+  function noteBusyPressEditor(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = document.activeElement;
+    busyPressEditor = button && busyEditorText(editor) ? editor : null;
+  }
+
+  function watchButtonBusy(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = busyPressEditor;
+    busyPressEditor = null;
+    if (!button || button.disabled || button.hasAttribute("data-no-busy") ||
+        button.getAttribute("role") === "switch" || button.hasAttribute("aria-haspopup")) return;
+    setTimeout(() => setTimeout(() => {
+      if (editor && busyEditorText(editor) === "") return;
+      if (buttonStillBusy(button) && !busyRings.has(button)) setButtonBusyRing(button, true, editor);
+    }, 0), 0);
+  }
+
+  document.addEventListener("pointerdown", noteBusyPressEditor, true);
+  document.addEventListener("click", watchButtonBusy, true);
+
+  function setNavWorking(nav, working) {
+    for (const icon of document.querySelectorAll(`[data-nav="${nav}"] .dashboard-nav-icon`)) {
+      icon.classList.toggle("is-working", Boolean(working));
+    }
   }
 
   // One formatter for the page: building an Intl.NumberFormat per call cost
@@ -1231,6 +1401,28 @@
     return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
   }
 
+  const forgeAvatarSets = new Map();
+  const forgeAvatarCommits = new Map();
+
+  function rememberForgeAvatars(repo, names, commit = "") {
+    if (!repo || !Array.isArray(names) || !names.length) return;
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    if (/^[0-9a-f]{40}$/.test(String(commit || ""))) forgeAvatarCommits.set(key, String(commit));
+    const known = forgeAvatarSets.get(key) || new Set();
+    names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
+    forgeAvatarSets.set(key, known);
+  }
+
+  function forgeAvatarSrc(forge) {
+    const repo = state.selectedRepo;
+    if (!repo || !forge) return "";
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key);
+    const login = forge.login.toLowerCase();
+    return known?.has(`${forge.provider}:${login}`)
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`, forgeAvatarCommits.get(key) || "") : "";
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
@@ -1241,11 +1433,12 @@
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
     const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
+    const forgePicture = forge ? forgeAvatarSrc(forge) : "";
     const inner = bot
       ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>${forgePicture ? `<img src="${escapeHtml(forgePicture)}" alt="" width="${pixels}" height="${pixels}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />` : ""}`;
     const override = bot && !agent ? issuePersonHandle(label) : "";
     const hydrate = (handle || override) && !ownAvatar
       ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
@@ -1297,12 +1490,45 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
+  const issueActorBatch = { names: new Set(), promise: null };
+
+  function issueActorKnown(key) {
+    issueActorBatch.names.add(key);
+    if (!issueActorBatch.promise) {
+      issueActorBatch.promise = new Promise((resolve) => setTimeout(resolve, 0)).then(async () => {
+        const names = [...issueActorBatch.names];
+        issueActorBatch.names = new Set();
+        issueActorBatch.promise = null;
+        const found = new Set();
+        for (let start = 0; start < names.length; start += USER_NAME_BATCH) {
+          const batch = names.slice(start, start + USER_NAME_BATCH);
+          try {
+            const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+              credentials: "omit",
+              headers: { accept: "application/json" },
+            });
+            const data = response.ok ? await response.json() : null;
+            if (!data || typeof data.names !== "object") return null;
+            Object.keys(data.names).forEach((name) => found.add(name.toLowerCase()));
+          } catch (_) {
+            return null;
+          }
+        }
+        return found;
+      });
+    }
+    return issueActorBatch.promise.then((found) => (found ? found.has(key) : true));
+  }
+
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
     if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
-      issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      issueActorAccounts.set(key, issueActorKnown(key)
+        .then((exists) => (exists
+          ? fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+            .then((response) => (response.ok ? response.json() : null))
+          : { exists: false }))
         .then((profile) => ({
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
@@ -2125,6 +2351,14 @@
     const info = await instanceInfo();
     const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
     return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOn(id) {
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === true;
   }
 
   function instancePluginOff(id) {
@@ -4243,7 +4477,7 @@
     }
     const ownPull = withPullAiModel(await signWebPull(repo, repo, title, body, base, head, head), aiModel);
     const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
-    return { ...data, pull: ownPull, targetRepo: repo };
+    return { ...data, pull: ownPull, targetRepo: repo, refusedBy: targetRepo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
@@ -4405,6 +4639,14 @@
     setHint("Signing and sending…");
     try {
       const result = await submitWebIssueComment(repo, number, body);
+      if (result?.pending === "review") {
+        stopSpinner();
+        if (bodyInput) bodyInput.value = "";
+        actionButtons.forEach((button) => { button.disabled = false; });
+        form._issueSubmitAction = "comment";
+        setHint(moderationPendingMessage(result));
+        return;
+      }
       // Show the comment straight away: it only reaches the mirror once the
       // maintainer's node drains the inbox, so the timeline can't reload it yet.
       // The composer sits in its own row of the conversation, so find the
@@ -4591,13 +4833,14 @@
     if (detail?.kind !== "issues" || !detail.repo) return;
     const container = $("[data-repo-issues]");
     if (!container) return;
-    container.innerHTML = renderRepoRecordDetail(
+    paintRepoIssueDetail(container, renderRepoRecordDetail(
       detail.repo,
       "issues",
       detail.number,
       detail.parsed,
-    );
+    ));
     mountIssueStickyHeader(container);
+    decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
 
@@ -4608,6 +4851,7 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
       return "Only the comment's author, the repository owner or an organization admin can change this comment.";
     }
@@ -4677,10 +4921,15 @@
     let result;
     try {
       if (action === "delete") {
-        if (!await confirmAccountAction({
-          title: "Delete this comment?",
+        const verdict = pullReviewKeepsVerdict(original);
+        if (!await confirmAccountAction(verdict ? {
+          title: "Delete this review's text?",
+          body: `Your ${original.state === "approved" ? "approval" : "change request"} stays on the pull request. Its Git history remains recoverable.`,
+          confirmLabel: "Delete text",
+        } : {
+          title: original.type === "review" ? "Delete this review?" : "Delete this comment?",
           body: "Its Git history remains recoverable.",
-          confirmLabel: "Delete comment",
+          confirmLabel: original.type === "review" ? "Delete review" : "Delete comment",
         })) return;
         result = await submitWebPullCommentDelete(repo, number, target);
       } else {
@@ -4699,6 +4948,8 @@
     if (state.repoRecordDetail !== detail) return;
     parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
     refreshPullConversationProjection();
+    refreshRepoPullDiff();
+    if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -4791,6 +5042,7 @@
         return;
       }
       renderCurrentWebIssueDetail();
+      if (action === "edit-comment") restoreCommentEditFocus(target);
     } catch (error) {
       showErrorNotice(webIssueActionError(error, action));
     }
@@ -5601,7 +5853,7 @@
       reply?.remove();
     } catch (error) {
       button.disabled = false;
-      window.alert(webDiscussionSubmitErrorText(error));
+      showErrorNotice(webDiscussionSubmitErrorText(error));
     }
   }
 
@@ -5867,6 +6119,39 @@
       }
       if (body.exists === false) return session;
       const nextSession = sessionFromAccountPayload(body, session);
+      writeSession(nextSession);
+      renderProfile(nextSession);
+      return nextSession;
+    } catch (_) {
+      return session;
+    }
+  }
+
+  async function backfillAdminUrl(session) {
+    if (!session?.isAdmin || session.adminUrl || session.adminUrlCheckedAt) return session;
+    try {
+      const token = String(session.sessionToken || "");
+      const response = await fetch("/api/accounts/sessions", {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          ...(token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) return session;
+      const account = (await response.json().catch(() => null))?.account;
+      const current = state.session || session;
+      if (!account || account.isAdmin !== true ||
+          String(account.nodeName || "").toLowerCase() !== String(current?.nodeName || "").toLowerCase()) {
+        return session;
+      }
+      const nextSession = {
+        ...current,
+        isAdmin: true,
+        adminUrl: String(account.adminUrl || ""),
+        adminUrlCheckedAt: Date.now(),
+      };
       writeSession(nextSession);
       renderProfile(nextSession);
       return nextSession;
@@ -6158,7 +6443,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "instance-sidebar", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -6171,8 +6456,23 @@
     return normalizeSettingsSection(parts[0] === "dashboard" && parts[1] === "settings" ? parts[2] || "" : "");
   }
 
+  function bindSettingsStickyHeader() {
+    const layout = $("[data-settings-layout]");
+    const header = $("[data-settings-account-header]");
+    if (!layout || !header || layout.dataset.settingsStickyBound) return;
+    layout.dataset.settingsStickyBound = "true";
+    const sync = () => {
+      const pinned = getComputedStyle(header).position === "sticky";
+      layout.style.setProperty("--settings-sticky-top", pinned ? `${header.offsetHeight}px` : "0px");
+    };
+    sync();
+    if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(header);
+    window.addEventListener("resize", sync);
+  }
+
   function setSettingsSection(section, { scroll = true, push = false } = {}) {
     const activeSection = normalizeSettingsSection(section);
+    bindSettingsStickyHeader();
     if (!state.settingsView) state.settingsView = {};
     state.settingsView.section = activeSection;
     if (push) {
@@ -6207,12 +6507,14 @@
     if (activeSection === "ssh-keys") loadSshKeys();
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
+    if (activeSection === "instance-sidebar") initInstanceSidebarSection();
     if (activeSection === "instance-theme") initInstanceThemeSection();
     else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
       bindAccountPasswordControls();
+      bindAccountRecoveryControls();
       loadAccountSessions({ force: true });
       loadAccountDevices({ force: true });
       loadPatreonConnection();
@@ -7171,6 +7473,139 @@
     else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
   }
 
+  function bindAccountRecoveryControls() {
+    const button = $("[data-account-recovery-new]");
+    if (!button || button.dataset.controlsBound === "true") return;
+    button.dataset.controlsBound = "true";
+    const status = (text, bad) => {
+      const node = $("[data-account-recovery-status]");
+      if (!node) return;
+      node.textContent = text || "";
+      node.className = "min-h-4 text-xs " + (bad ? "text-destructive" : "text-muted-foreground");
+    };
+    button.addEventListener("click", async () => {
+      const field = $("[data-account-recovery-password]");
+      const password = field?.value || "";
+      if (!password) {
+        status("Enter your current password.", true);
+        field?.focus();
+        return;
+      }
+      button.disabled = true;
+      try {
+        const token = state.session?.sessionToken || "";
+        const response = await fetch("/api/accounts/recovery-code", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            ...(token && token !== "cookie" ? { authorization: "Bearer " + token } : {}),
+          },
+          body: JSON.stringify({ password }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.recoveryCode) throw new Error(body.error || `http_${response.status}`);
+        if (field) field.value = "";
+        const code = $("[data-account-recovery-code]");
+        if (code) {
+          code.textContent = String(body.recoveryCode);
+          code.hidden = false;
+        }
+        status("This is your new recovery code. The old one no longer works.");
+      } catch (error) {
+        status(ACCOUNT_PASSWORD_ERRORS[error.message] || "Could not make a new code. Try again.", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  const INSTANCE_SIDEBAR_ERRORS = {
+    invalid_pinned: "Use repository names such as widgets or owner/name, one per line.",
+    too_many_pinned: "That is more pinned repositories than the setting holds.",
+    invalid_forks: "Forks shown must be a whole number from 0 to 50.",
+    invalid_devto: "A dev.to account name has only letters, digits and underscores.",
+    not_admin: "Only an admin of this instance can change Top repositories.",
+    unauthorized: "Sign in again to change Top repositories.",
+  };
+
+  function setInstanceSidebarStatus(text) {
+    const status = $("[data-instance-sidebar-status]");
+    if (status) status.textContent = text;
+  }
+
+  function instanceSidebarPinnedLines() {
+    return String($("[data-instance-sidebar-pinned]")?.value || "")
+      .split(/[\n,]/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  async function saveInstanceSidebar() {
+    const forks = Number($("[data-instance-sidebar-forks]")?.value);
+    if (!Number.isInteger(forks) || forks < 0 || forks > 50) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS.invalid_forks);
+      return;
+    }
+    setInstanceSidebarStatus("Saving…");
+    try {
+      const response = await fetch("/api/instance/sidebar", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ sessionToken: state.session?.sessionToken || "", sidebar: { pinned: instanceSidebarPinnedLines(), forks, devto: String($("[data-instance-sidebar-devto]")?.value || "").trim() } }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+      fillInstanceSidebarForm(data.sidebar);
+      state.sidebarSetting = data.sidebar;
+      try {
+        localStorage.setItem(SIDEBAR_SETTING_STORAGE_KEY, JSON.stringify(data.sidebar));
+      } catch (_) {}
+      renderSidebarRepositories(state.session);
+      renderHomeRepositories();
+      setInstanceSidebarStatus("Saved. Other visitors see it within a minute.");
+    } catch (error) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS[error?.message] || "That didn't save. Try again.");
+    }
+  }
+
+  function fillInstanceSidebarForm(sidebar) {
+    const pinned = $("[data-instance-sidebar-pinned]");
+    if (pinned) pinned.value = (Array.isArray(sidebar?.pinned) ? sidebar.pinned : []).join("\n");
+    const forks = $("[data-instance-sidebar-forks]");
+    if (forks) forks.value = String(Number.isInteger(sidebar?.forks) ? sidebar.forks : 3);
+    const devto = $("[data-instance-sidebar-devto]");
+    if (devto) devto.value = String(sidebar?.devto || "");
+  }
+
+  async function initInstanceSidebarSection() {
+    const form = $("[data-instance-sidebar-form]");
+    if (!form) return;
+    const allowed = state.session?.isAdmin === true && dashboardOnInstance();
+    const denied = $("[data-instance-sidebar-denied]");
+    if (denied) denied.hidden = allowed;
+    form.hidden = !allowed;
+    if (!allowed) return;
+    if (!form.dataset.bound) {
+      form.dataset.bound = "1";
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void saveInstanceSidebar();
+      });
+    }
+    setInstanceSidebarStatus("");
+    try {
+      const data = await fetchJson("/api/instance/sidebar", { fresh: true });
+      fillInstanceSidebarForm(data?.sidebar);
+      const max = $("[data-instance-sidebar-pinned-max]");
+      if (max && data?.limits?.pinned) max.textContent = String(data.limits.pinned);
+    } catch (error) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS[error?.message] || "Could not load the setting. Refresh to try again.");
+    }
+  }
+
   // ---- Nodes & devices (account_devices registry) ----------------------------
   // The web dashboard is the source of truth for every node key bound to the
   // account (desktop and mobile). Listing is session-gated like sessions; the
@@ -8017,6 +8452,7 @@
     renderOrgDetail(
       root, name, profile, members, teams, repos, fediverse, botTokens);
     void loadOrgPullRules(root, name);
+    void loadOrgModeration(root, name);
   }
 
   async function loadOrgPullRules(root, name) {
@@ -8406,6 +8842,11 @@
         '<h4 class="text-sm font-semibold text-foreground">Pull request rules</h4>' +
         '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Requirements every pull request on this organization\'s linked repositories must meet: tests, documentation, size, commit format, secrets, protected paths, or a required AI model. Each repository can add its own rules in <span class="font-mono">.forkmesh/pull-rules.json</span>. A failing rule is flagged on the pull request with how to fix it; a blocking one also locks the merge.</p>' +
         '<div data-org-pull-rules class="mt-3 text-xs text-muted-foreground">Loading rules…</div>' +
+      "</section>" +
+      '<section class="mt-6" data-org-moderation-section hidden>' +
+        '<h4 class="text-sm font-semibold text-foreground">Moderation</h4>' +
+        '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Posts waiting for review, the people who moderate this organization\'s repositories, and the accounts blocked from them.</p>' +
+        '<div data-org-moderation class="mt-3 text-xs text-muted-foreground">Loading moderation…</div>' +
       "</section>" +
       botTokenControls +
       (canManage
@@ -9399,7 +9840,9 @@
     let installed = [];
     if (account) {
       try {
-        installed = (await pluginRequest("/api/plugins/")).plugins || [];
+        const reply = await pluginRequest("/api/plugins/");
+        if (!Array.isArray(reply?.plugins)) throw new Error("plugin_list_missing");
+        installed = reply.plugins;
         window.ForkMeshAPI?.rememberPlugins?.(account, installed);
         window.ForkMeshAPI?.rememberStatusPage?.(
           account, installed.includes("status-page"));
@@ -11481,7 +11924,9 @@
     renderProfileReferrals(session);
     if (!session?.emailVerified) {
       state.nodeNameAvailability.available = false;
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
     } else if (!($("[data-profile-rename-input]")?.value || "").trim()) {
       state.nodeNameAvailability.available = false;
       setRenameStatus("Enter a new username to check availability.", "");
@@ -12325,7 +12770,9 @@
       return;
     }
     if (!state.session?.emailVerified) {
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(state.session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
       updateRenameButton();
       return;
     }
@@ -12474,6 +12921,31 @@
       "and hyphens, e.g. \"mirror-01\". You can also paste the node's 43-character public key.";
   }
 
+  function claimNodeAuthHeaders() {
+    const token = String(state.session?.sessionToken || "");
+    const headers = { "content-type": "application/json", accept: "application/json" };
+    if (token && token !== "cookie") headers.authorization = "Bearer " + token;
+    return headers;
+  }
+
+  function claimNodeAuthBody(password, extra) {
+    const body = {
+      identifier: state.session?.email || state.session?.nodeName || "",
+      password,
+      ...extra,
+    };
+    const totp = String($("[data-claim-node-totp]")?.value || "").replace(/\s+/g, "");
+    if (totp) body.totp = totp;
+    return body;
+  }
+
+  function revealClaimNodeTotp() {
+    const row = $("[data-claim-node-totp-row]");
+    if (row) row.classList.remove("hidden");
+    const field = $("[data-claim-node-totp]");
+    if (field) { field.value = ""; field.focus(); }
+  }
+
   async function claimNode() {
     const input = $("[data-claim-node-input]");
     // Not lowercased up front: a node's public-key ID is case-sensitive, and
@@ -12493,11 +12965,8 @@
     try {
       const response = await fetch("/api/accounts/claim-node", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -12516,8 +12985,11 @@
           "good");
       }
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         invalid_node_id: claimNodeIdHint(nodeId),
         cannot_claim_self: "You can't claim your own account.",
         no_such_node: `No node called "${nodeId}" has registered with the relay. Check the ID on the node itself - or, if you have not installed one yet, see "No node yet?" below.`,
@@ -12554,11 +13026,8 @@
     try {
       const response = await fetch("/api/accounts/claim-confirm", {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          identifier: state.session?.email || state.session?.nodeName || "",
-          password, nodeId, code,
-        }),
+        headers: claimNodeAuthHeaders(),
+        body: JSON.stringify(claimNodeAuthBody(password, { nodeId, code })),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
@@ -12577,8 +13046,11 @@
       if (codeInput) codeInput.value = "";
       setProfilePageHint("[data-claim-node-status]", `Linked "${nodeId}" to your account.`, "good");
     } catch (error) {
+      if (error.message === "bad_totp") revealClaimNodeTotp();
       const messages = {
         invalid_credentials: "Incorrect password.",
+        bad_totp: "Enter the 6-digit code from your authenticator app.",
+        too_many_attempts: "Too many failed attempts. Wait a few minutes and try again.",
         no_such_node: "No node with that ID was found.",
         no_pending_claim: "No pending claim for that node. Send a new claim code.",
         bad_code: "That code is incorrect.",
@@ -13156,12 +13628,29 @@
     return `${repoApiBase(repo)}/logo`;
   }
 
+  function instanceLogoUrl() {
+    const src = document.querySelector("header img.brand-mark")?.getAttribute("src") || "";
+    return /^\/(?!\/)[A-Za-z0-9._/-]+\.(?:svg|png|webp|jpe?g)(?:\?[A-Za-z0-9=&._-]*)?$/.test(src) ? src : "";
+  }
+
+  function instanceLogoFallbackMarkup() {
+    const src = instanceLogoUrl();
+    return src
+      ? `<img data-native-repo-logo-fallback src="${escapeHtml(src)}" alt="" decoding="async" class="h-full w-full object-contain p-[12%]" />`
+      : '<i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>';
+  }
+
+  function instanceLogoFrameMarkup(sizeClass = "h-10 w-10") {
+    if (!instanceLogoUrl()) return "";
+    return `<span data-instance-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary">${instanceLogoFallbackMarkup()}</span>`;
+  }
+
   function nativeRepositoryLogoMarkup(repo, sizeClass = "h-10 w-10") {
     const endpoint = nativeRepositoryLogoEndpoint(repo);
     if (!endpoint) return "";
     return `
       <span data-native-repo-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary text-muted-foreground">
-        <i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>
+        ${instanceLogoFallbackMarkup()}
         <img data-native-repo-logo data-logo-endpoint="${escapeHtml(endpoint)}" alt="" loading="lazy" decoding="async" class="absolute inset-0 hidden h-full w-full object-cover" />
       </span>
     `;
@@ -13842,7 +14331,16 @@
         </div>`;
   }
 
+  const SIDEBAR_SETTING_STORAGE_KEY = "forkmesh.sidebarSetting";
+
   function sidebarSetting() {
+    if (state.sidebarSetting === undefined) {
+      try {
+        state.sidebarSetting = JSON.parse(localStorage.getItem(SIDEBAR_SETTING_STORAGE_KEY) || "null");
+      } catch (_) {
+        state.sidebarSetting = null;
+      }
+    }
     const setting = state.sidebarSetting;
     return setting && typeof setting === "object" ? setting : null;
   }
@@ -13859,6 +14357,9 @@
       .then((info) => {
         if (!info?.sidebar) return;
         state.sidebarSetting = info.sidebar;
+        try {
+          localStorage.setItem(SIDEBAR_SETTING_STORAGE_KEY, JSON.stringify(info.sidebar));
+        } catch (_) {}
         renderSidebarRepositories(state.session);
         renderHomeRepositories();
       })
@@ -13872,7 +14373,7 @@
       const repo = group.entry.repo;
       const wanted = String(key).toLowerCase();
       if (repoMatchesKey(repo, wanted)) return true;
-      if (!wanted.includes("/")) return String(repo?.name || "").toLowerCase() === wanted;
+      if (!wanted.includes("/")) return !repoForkParent(repo) && String(repo?.name || "").toLowerCase() === wanted;
       return repositoryEntryLabel(group.entry).toLowerCase() === wanted
         || `${String(repoPublicOwner(repo) || repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}` === wanted;
     };
@@ -13880,10 +14381,13 @@
     pinned.forEach((key) => {
       const group = groups
         .filter((candidate) => !picked.includes(candidate) && matches(candidate, key))
-        .sort((a, b) => b.forks.length - a.forks.length)[0];
+        .sort((a, b) => Number(Boolean(repoForkParent(a.entry.repo))) - Number(Boolean(repoForkParent(b.entry.repo)))
+          || b.forks.length - a.forks.length)[0];
       if (group) picked.push(group);
     });
-    return picked.length ? picked : fallback(groups);
+    if (picked.length) return picked;
+    if (state.repositoriesLoading) return [];
+    return fallback(groups);
   }
 
   function renderSidebarRepositories(session) {
@@ -14148,13 +14652,17 @@
     `;
   }
 
+  const HALLOWEEN_PUMPKIN = '<svg viewBox="0 0 64 60" width="40" height="38" aria-hidden="true" class="shrink-0"><path d="M30 12C29 7 31 3 36 1l1.5 2.5C34 5 33 8 34 12z" fill="#4d7c2a"/><ellipse cx="18" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="46" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="32" cy="35" rx="15" ry="22" fill="#fa7a18"/><path d="M20 28l6-4 1 7zM44 28l-6-4-1 7z" fill="#3a1606"/><path d="M18 40q14 12 28 0l-4 1-2 4-4-3-4 5-4-5-4 3-2-4z" fill="#3a1606"/><path d="M21 29.5l4-2.5.5 3.5zM43 29.5l-4-2.5-.5 3.5z" fill="#fddf68"/></svg>';
+
   function renderHomeFeed() {
     const container = $("[data-home-feed]");
     if (!container) return;
     const cards = homeFeedItems().map(homeFeedCard);
     container.innerHTML = cards.length
       ? cards.join("")
-      : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
@@ -14220,7 +14728,7 @@
 
   function homeBlogPostCard(post) {
     return `
-      <a href="${escapeHtml(post.href)}" class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
+      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
         ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
         <span class="block px-3 py-2.5">
           ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
@@ -14243,8 +14751,61 @@
       : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
   }
 
+  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
+
+  function homeDevtoPost(article) {
+    let href = "";
+    let image = "";
+    try {
+      const link = new URL(String(article?.url || ""));
+      if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
+    } catch (_) {}
+    try {
+      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
+      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
+    } catch (_) {}
+    const when = Date.parse(String(article?.published_at || ""));
+    return {
+      title: String(article?.title || "").trim(),
+      href,
+      image,
+      meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
+    };
+  }
+
+  async function loadHomeDevtoPosts(user) {
+    const card = $("[data-home-blog-card]");
+    card?.removeAttribute("data-instance-plugin");
+    const viewAll = card?.querySelector("a[href]");
+    if (viewAll) {
+      viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
+      viewAll.target = "_blank";
+      viewAll.rel = "noopener";
+    }
+    try {
+      const response = await fetch(`https://dev.to/api/articles?username=${encodeURIComponent(user)}&per_page=${HOME_BLOG_POST_LIMIT}`, {
+        credentials: "omit",
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`dev.to returned ${response.status}`);
+      const articles = await response.json();
+      state.homeBlogPosts = (Array.isArray(articles) ? articles : [])
+        .map(homeDevtoPost)
+        .filter((post) => post.title && post.href)
+        .slice(0, HOME_BLOG_POST_LIMIT);
+    } catch (_) {
+      state.homeBlogPosts = [];
+    }
+    renderHomeBlogPosts();
+  }
+
   async function loadHomeBlogPosts() {
     if (!$("[data-home-blog-list]")) return;
+    const devto = String((await instanceInfo())?.sidebar?.devto || "");
+    if (/^[a-z0-9_]{1,30}$/.test(devto)) {
+      await loadHomeDevtoPosts(devto);
+      return;
+    }
     if (!(await instancePluginEnabled("blog"))) return;
     try {
       const response = await fetch(HOME_BLOG_FEED_URL, {
@@ -14354,7 +14915,9 @@
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
-      : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
+        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
   }
 
   async function loadHomeAgentSessions() {
@@ -14797,9 +15360,9 @@
       nodeName
         ? `Make sure ${mono(nodeName)} is online and still linked to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`
         : `Install the ${desktopBrand()}desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
-      `Open the desktop node's ${ui("Repos")} page, click ${ui("+ Add")}, then choose ${ui("Remote clone URL")}.`,
-      `${original ? `Paste ${mono(original)}` : "Paste the repository's clone URL"} and name it ${mono(name)}.`,
-      `Publish — the node clones and hosts the mirror.`,
+      `On that computer, clone ${original ? mono(original) : "the repository"} with git, signing in with your own account. A read-only token is enough if git asks for a password.`,
+      `Open the desktop node's ${ui("Repos")} page, choose ${ui("Import folder…")} and pick the cloned ${mono(name)} folder.`,
+      `Choose ${ui("Public")} or ${ui("Private")}. The node copies the folder to the network and keeps that copy updated while it runs; run ${mono("git pull")} in the folder to pick up new changes.`,
       `Back here, ${ui("Volunteer to mirror")} records that node as a volunteer so the importer can see a mirror is available.`,
     ];
   }
@@ -14980,11 +15543,30 @@
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
-    `Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ${desktopBrand()}desktop node.`;
+    `Copy a project's issues, pull requests and their history, once. This does not copy the code or keep anything up to date: to back up the code, follow the guide at /docs/back-up-a-github-repository/.`;
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
     `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+
+  const NEW_REPO_BACKUP_GUIDE =
+    `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
+
+  const NEW_REPO_CLONE_HINT =
+    `The ${escapeHtml(desktopBrand())}desktop app does not fetch from a URL. Clone the repository to your computer with git, signing in with your own GitHub account, then add that folder in the desktop app. It only reads the folder: nothing is pushed back to GitHub. If git asks for a password, a read-only token is enough, such as a GitHub fine-grained token for that one repository with Contents: Read-only. ${escapeHtml(platformName())} never needs permission to push to GitHub to make a backup. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`;
+
+  function renderNewRepoVisibilityNote() {
+    const note = $("[data-new-repo-visibility-note]");
+    if (!note) return;
+    const source = newRepoSource();
+    note.classList.toggle("hidden", source === "provider");
+    const privateText = hostedCoreMode() && (source === "empty" || source === "remote")
+      ? "only you and your organization's readers can see and clone it."
+      : "its contents stay encrypted and hidden from everyone else.";
+    note.innerHTML = newRepoVisibility() === "private"
+      ? `This repository will be <span class="font-medium text-foreground">Private</span>: ${privateText}`
+      : `This repository will be <span class="font-medium text-foreground">Public</span>: anyone can find, browse and clone it. Choose Private above to keep it hidden.`;
+  }
 
   function newRepoSubtitleFor(source) {
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
@@ -15119,17 +15701,18 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ${desktopBrand()}desktop node.`;
+      if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg or Gitea profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
+      if (hint) hint.innerHTML = `Paste a repository URL, or a GitLab group / Codeberg or Gitea profile to import every repository in it. This copies issues, pull requests and their history once. It does not copy the code and is not kept up to date, so it is not a backup. The transfer keeps going after setup and can resume where it stopped. To back up the code, see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
+      if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    renderNewRepoVisibilityNote();
   }
 
   function setNewRepoHint(text, cls) {
@@ -15143,17 +15726,24 @@
     const list = $("[data-new-repo-steps-list]");
     const panel = $("[data-new-repo-steps]");
     if (!list || !panel) return;
-    const sourceLabel = details.source === "local" ? "Local repository" : "Remote clone URL";
-    const pick = details.source === "local" ? "Select the local repository" : "Paste the clone URL";
-    const sourceValue = details.sourceValue
-      ? ` (<span class="font-mono text-foreground">${escapeHtml(details.sourceValue)}</span>)` : "";
-    const steps = [
-      `Open the ${desktopBrand()}desktop node and go to the <span class="text-foreground">Repos</span> page.`,
-      `Click <span class="text-foreground">+ Add</span>, then choose <span class="text-foreground">${sourceLabel}</span>.`,
-      `${pick}${sourceValue} and name it <span class="font-mono text-foreground">${escapeHtml(details.name)}</span>.`,
-      `Set visibility to <span class="text-foreground">${details.visibility === "private" ? "Private" : "Public"}</span>${details.description ? ` and add your description` : ""}.`,
-      `Publish — the node mirrors it and it appears here in your repositories.`,
-    ];
+    const ui = (text) => `<span class="text-foreground">${escapeHtml(text)}</span>`;
+    const mono = (text) => `<span class="font-mono text-foreground">${escapeHtml(text)}</span>`;
+    const visibility = ui(details.visibility === "private" ? "Private" : "Public");
+    const importStep = `Open the ${desktopBrand()}desktop app's ${ui("Repos")} page and choose ${ui("Import folder…")} (${ui("Add local repo…")} in some menus).`;
+    const steps = details.source === "local"
+      ? [
+        importStep,
+        `Pick the folder${details.sourceValue ? ` ${mono(details.sourceValue)}` : ""} and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. It then appears here in your repositories.`,
+      ]
+      : [
+        `On your computer, clone the repository with git, signing in with your own GitHub account${details.sourceValue ? `: ${mono(`git clone ${details.sourceValue}`)}` : ""}. A read-only token is enough if git asks for a password.`,
+        importStep,
+        `Pick the folder you cloned and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. To pick up new changes from GitHub, run ${mono("git pull")} in that folder; nothing is pushed back to GitHub. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`,
+      ];
     list.innerHTML = steps
       .map((step, index) => `<li class="flex gap-2"><span class="shrink-0 font-mono text-foreground">${index + 1}.</span><span>${step}</span></li>`)
       .join("");
@@ -15672,6 +16262,7 @@
     const contentGrid = detail.querySelector("[data-repo-content-grid]");
     const about = detail.querySelector("[data-repo-about]");
     const showAbout = tab === "code";
+    detail.querySelector("[data-repo-title-row]")?.classList.toggle("hidden", !showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);
     about?.classList.toggle("hidden", !showAbout);
@@ -15707,6 +16298,7 @@
       // Leaving the tab closes any open agent detail page (adhoc #259) so
       // returning to Agents lands on the session list, not a stale transcript.
       state.agentsView.selectedAgentId = null;
+      state.agentsView.statusView = "all";
     }
     if (!state.selectedRepo) return;
     // Record pages have no Back button: the tab is the way back to the list,
@@ -15737,6 +16329,7 @@
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
     if (tab === "security") void loadRepoSecurity(state.selectedRepo);
     if (tab === "settings") {
+      renderRepoSettingsRail();
       loadRepoFediverse(state.selectedRepo);
       void loadRepoSettingsLogo(state.selectedRepo);
       void loadRepoCollaborators(state.selectedRepo);
@@ -16219,8 +16812,8 @@
     return { kind: preview[0], mime: preview[1], label: preview[2] };
   }
 
-  function repoRawUrl(repo, path) {
-    return repoLiveUrl(repo, "raw", { path });
+  function repoRawUrl(repo, path, ref = "") {
+    return repoLiveUrl(repo, "raw", ref ? { path, ref } : { path });
   }
 
   function repoLiveUrl(repo, action, params = {}) {
@@ -17921,7 +18514,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by <span class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "font-medium text-foreground")}</span>` : "",
+      run.actor ? `Triggered by <span class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false)}${issuePersonNameHtml(run.actor, "font-medium text-foreground")}</span>` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -17986,7 +18579,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
-        run.actor ? `<span data-repo-actions-run-actor class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "")}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false)}${issuePersonNameHtml(run.actor, "")}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
@@ -18044,9 +18637,9 @@
       ? `${renderRepoActionsExecutor(repo, view)}${notice}${pending}${renderRepoActionsWorkflowBar(repo, view, workflow)}<div data-repo-actions-runs>${renderRepoActionsRuns(repo, view, workflow)}</div>`
       : `${notice}${renderRepoActionsEmptyState(view)}`;
     target.innerHTML = `
-      <div class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
-        <nav aria-label="Workflows" data-repo-actions-workflows class="grid content-start gap-0.5 border-b border-border p-2 md:border-b-0 md:border-r">${renderRepoActionsWorkflowList(view, repo)}</nav>
-        <div class="min-w-0">${main}</div>
+      <div data-repo-rail-layout class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
+        <nav data-repo-rail aria-label="Workflows" class="min-w-0 border-b border-border md:border-b-0 md:border-r"><div data-repo-rail-inner><h2 class="fm-rail-title hidden lg:block">Actions</h2><div data-repo-actions-workflows class="grid content-start gap-0.5 p-2 lg:p-0">${renderRepoActionsWorkflowList(view, repo)}</div></div></nav>
+        <div data-repo-rail-main class="min-w-0"><div class="overflow-hidden rounded-lg border border-border bg-background">${main}</div></div>
       </div>`;
     const nextRef = target.querySelector("[data-repo-actions-dispatch-ref]");
     if (nextRef && chosenRef && Array.from(nextRef.options).some((option) => option.value === chosenRef)) {
@@ -18381,6 +18974,57 @@
   const MD_DATA_IMAGE_URL =
     /^data:image\/(?:png|apng|jpeg|jpg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/]+={0,2}$/i;
 
+  const MD_GITHUB_ATTACHMENT_URL =
+    /^https?:\/\/(?:github\.com\/(?:user-attachments\/|[^/?#]+\/[^/?#]+\/(?:assets|files)\/)|(?:private-)?user-images\.githubusercontent\.com\/|objects\.githubusercontent\.com\/)/i;
+  const MD_ATTACHMENT_PATH = /^\.forkmesh\/attachments\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/;
+  const MD_ATTACHMENT_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', "#039": "'" };
+  const repoAttachmentFiles = new Map();
+
+  function mdAttachmentKey(url) {
+    return String(url || "").trim().replace(/&(amp|lt|gt|quot|#039);/g, (_, name) => MD_ATTACHMENT_ENTITIES[name]);
+  }
+
+  function mdAttachmentFile(url, context) {
+    if (!context?.repo) return null;
+    const entry = repoAttachmentFiles.get(repoKey(context.repo))?.get(mdAttachmentKey(url));
+    return entry && MD_ATTACHMENT_PATH.test(String(entry.path || "")) ? entry : null;
+  }
+
+  function mdAttachmentHref(entry, context) {
+    return escapeHtml(repoRawUrl(context.repo, entry.path));
+  }
+
+  function mdGithubImageHtml(alt, url) {
+    const source = String(url || "").trim();
+    const label = alt && alt.toLowerCase() !== "image" ? `${alt} (image on GitHub)` : "image on GitHub";
+    return `<a href="${mdSafeUrl(source)}" data-md-github-image="" title="${source}" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground" target="_blank" rel="noopener noreferrer nofollow ugc">${label}</a>`;
+  }
+
+  function repoIssueAttachmentsPath(number) {
+    return `.forkmesh/attachments/issues/${Number(number)}.json`;
+  }
+
+  async function loadRepoIssueAttachments(repo, number) {
+    const path = repoIssueAttachmentsPath(number);
+    let files = null;
+    try {
+      const blobs = await fetchRepoBlobs(repo, [path]);
+      const doc = blobs[path] ? JSON.parse(blobText(blobs[path]) || "null") : null;
+      if (doc?.schema === "forkmesh-attachments-issue-v1" && doc.files && typeof doc.files === "object") files = doc.files;
+    } catch (_) {
+      files = null;
+    }
+    if (!files) return;
+    const key = repoKey(repo);
+    const known = repoAttachmentFiles.get(key) || new Map();
+    Object.entries(files).forEach(([url, entry]) => {
+      if (entry && typeof entry === "object" && typeof entry.path === "string") {
+        known.set(url, { path: entry.path, type: String(entry.type || "") });
+      }
+    });
+    repoAttachmentFiles.set(key, known);
+  }
+
   // A markdown image URL that is a bare repo path ("logo.png") is not a URL
   // this origin serves; it resolves against the repository the README came
   // from, through the same /raw route the file viewer shows images with.
@@ -18415,6 +19059,10 @@
   function mdLinkHtml(labelHtml, url, context) {
     const linkClass = "dashboard-accent-link underline underline-offset-2 hover:text-foreground";
     const source = String(url || "").trim();
+    const attachment = mdAttachmentFile(source, context);
+    if (attachment) {
+      return `<a href="${mdAttachmentHref(attachment, context)}" data-md-attachment="" class="${linkClass}" target="_blank" rel="noopener noreferrer nofollow ugc">${labelHtml}</a>`;
+    }
     if (source.startsWith("#")) {
       const anchor = mdHeadingSlug(source.slice(1));
       return `<a href="${source}" data-repo-markdown-anchor="${anchor}" class="${linkClass}">${labelHtml}</a>`;
@@ -18459,10 +19107,15 @@
     }
     const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
-    const source = mdImageSource(target, context);
+    const attachment = mdAttachmentFile(target, context);
+    if (attachment && !attachment.type.startsWith("image/")) return mdLinkHtml(alt || "attachment", target, context);
+    if (!attachment && typeof instancePluginOn === "function" && instancePluginOn("mirrored-attachments")
+        && MD_GITHUB_ATTACHMENT_URL.test(String(target || "").trim())) return mdGithubImageHtml(alt, target);
+    const source = attachment ? mdAttachmentHref(attachment, context) : mdImageSource(target, context);
     if (!source || source === "#") return alt;
     if (!hint && MD_GIPHY_GIF.test(source)) return mdGifHtml(alt, source);
-    const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
+    const svg = attachment ? attachment.type === "image/svg+xml"
+      : Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
     const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
     const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
@@ -19343,6 +19996,13 @@
       .map((event) => String(event.target)));
     const commentCount = events.filter((event) => event?.type === "comment"
       && !deletedEventIds.has(String(event.id || ""))).length;
+    const recentCommenters = [];
+    for (let index = events.length - 1; index >= 0 && recentCommenters.length < 4; index -= 1) {
+      const event = events[index];
+      if (event?.type !== "comment" || deletedEventIds.has(String(event.id || ""))) continue;
+      const name = String(event.authorName || event.author || "").trim();
+      if (name && !recentCommenters.includes(name)) recentCommenters.push(name);
+    }
     return {
       number,
       events,
@@ -19357,6 +20017,7 @@
       meta: [status, labels, issue.milestone].filter(Boolean).join(" · "),
       body: effectiveOpen.body || issue.body || "",
       commentCount,
+      recentCommenters,
       wantsAgent: Boolean(issue.wantsAgent),
       milestone: String(issue.milestone || ""),
       priority: Number(issue.priority || 0) || 0,
@@ -19388,11 +20049,32 @@
     };
   }
 
+  const repoIssueSources = new Map();
+
+  function issueSourceUrlSafe(value) {
+    const url = String(value || "");
+    return url.length <= 500 && /^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/.test(url) ? url : "";
+  }
+
+  function repoIssueSourceUrl(repo, number, items = []) {
+    const own = (Array.isArray(items) ? items : []).find((issue) => Number(issue?.number) === Number(number));
+    return issueSourceUrlSafe(own?.sourceUrl) || repoIssueSources.get(`${repoKey(repo)}#${Number(number)}`) || "";
+  }
+
+  function renderIssueSourceLink(url) {
+    const safe = issueSourceUrlSafe(url);
+    if (!safe) return "";
+    const host = safe.slice(8).split(/[/:]/)[0].toLowerCase();
+    const label = host === "github.com" ? "View on GitHub" : `View on ${host}`;
+    return `<a data-repo-issue-source href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer nofollow" aria-label="${escapeHtml(label)}" title="Open the original issue in a new tab" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="external-link" class="h-4 w-4 text-muted-foreground"></i><span class="hidden sm:inline">${escapeHtml(label)}</span></a>`;
+  }
+
   async function fetchRepoIssueIndex(repo, options = {}) {
     try {
       const params = options.ref ? { ref: options.ref } : {};
       if (options.related) params.related = Number(options.related);
       const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
+      if (data && typeof rememberForgeAvatars === "function") rememberForgeAvatars(repo, data.forgeAvatars, data.commit);
       if (!data || data.truncated || !Array.isArray(data.issues)) return null;
       return data;
     } catch (_) {
@@ -19713,6 +20395,9 @@
       || await fetchRepoIssueIndex(repo);
     if (indexed) {
       const items = indexed.issues.map(issueFromIndex);
+      if (number && issueSourceUrlSafe(indexed.sourceUrl)) {
+        repoIssueSources.set(`${repoKey(repo)}#${Number(number)}`, issueSourceUrlSafe(indexed.sourceUrl));
+      }
       state.issueRelationIndex = { key, at: Date.now(), items };
       return items;
     }
@@ -19746,6 +20431,7 @@
       issueDependencies: dependencies,
       issueSubIssues: subIssues,
       issueMentions: issueMentionsOf(relationIndex, number),
+      issueSourceUrl: repoIssueSourceUrl(repo, number, relationIndex),
     };
   }
 
@@ -19764,7 +20450,7 @@
       if (!repoIssueDetailBusy(container)) {
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
-        container.innerHTML = renderRepoRecordDetail(repo, "issues", number, parsed);
+        paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
         mountIssueStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
@@ -20109,7 +20795,7 @@
     const fullWhen = formatRecordDateTime(ev.ts);
     const body = String(ev.body || "").trim();
     return `
-      <div data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+      <div${ev.id ? ` id="issuecomment-${escapeHtml(ev.id)}"` : ""} data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(who, ev.author, "h-10 w-10")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
@@ -20163,6 +20849,10 @@
   // detail view shows every action stored in the issue JSON (adhoc #45). The
   // opening event is omitted here since it's already shown as the issue body.
   function renderIssueTimeline(events) {
+    return issueTimelineEntries(events, arguments[1]).map((entry) => entry.html()).join("");
+  }
+
+  function issueTimelineEntries(events) {
     const options = arguments[1] || {};
     // Mentions from other issues join the history at the time they were
     // written. They are derived rows, flagged so no signed event is mistaken
@@ -20198,9 +20888,10 @@
         const href = options.repo
           ? repoRecordUrl(options.repo, "issues", ev.sourceNumber)
           : `#issue-${ev.sourceNumber}`;
-        items.push(renderIssueTimelineEvent("link", who, ev.author,
+        const html = renderIssueTimelineEvent("link", who, ev.author,
           `<span>mentioned this in</span><a href="${escapeHtml(href)}" class="min-w-0 font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(ev.sourceNumber)} ${escapeHtml(ev.sourceTitle || `issue #${ev.sourceNumber}`)}</a>${String(ev.sourceStatus).toLowerCase() === "closed" ? "<span>(closed)</span>" : ""}`,
-          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`));
+          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`);
+        items.push({ id: "", comment: false, html: () => html });
         continue;
       }
       if (ev.type === "comment") {
@@ -20213,28 +20904,198 @@
             const href = options.repo ? repoRecordUrl(options.repo, "pulls", match[2]) : `#pull-${match[2]}`;
             return `<span>${match[1] ? "unlinked" : "linked"} pull request</span><a href="${escapeHtml(href)}" class="font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(match[2])}</a>`;
           };
-          items.push(renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
+          const html = renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
             links.map(linkHtml).join('<span aria-hidden="true">,</span>'), ev.ts,
-            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`));
+            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`);
+          items.push({ id: "", comment: false, html: () => html });
           continue;
         }
-        ev = {
-          ...ev,
-          ...(edit ? { body: edit.body } : {}),
-          _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
-          _edited: Boolean(edit),
-          _reactions: ev.id
-            ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(ev.id),
-              reactionsByTarget.get(String(ev.id)), "px-4 pb-3")
-            : "",
-        };
-        items.push(renderIssueTimelineComment(ev));
+        const comment = ev;
+        items.push({
+          id: String(ev.id || ""),
+          comment: true,
+          html: () => renderIssueTimelineComment({
+            ...comment,
+            ...(edit ? { body: edit.body } : {}),
+            _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
+            _edited: Boolean(edit),
+            _reactions: comment.id
+              ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(comment.id),
+                reactionsByTarget.get(String(comment.id)), "px-4 pb-3")
+              : "",
+          }),
+        });
         continue;
       }
-      items.push(renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
-        issueEventDescriptionHtml(ev), ev.ts));
+      const html = renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
+        issueEventDescriptionHtml(ev), ev.ts);
+      items.push({ id: "", comment: false, html: () => html });
     }
-    return items.join("");
+    return items;
+  }
+
+  const ISSUE_TIMELINE_FIRST = 10;
+  const ISSUE_TIMELINE_BATCH = 15;
+  const ISSUE_DETAIL_KEPT_BLOCKS = [
+    "[data-repo-issue-sticky]", "[data-repo-record-hero]", "[data-repo-issue-opening]",
+    "[data-repo-record-sidebar]", "[data-repo-federated-thread]"];
+  const issueTimelineSignatures = new WeakMap();
+  let issueTimelineStream = null;
+  let issueTimelineScrolled = "";
+
+  function issueTimelineMoreHtml(rest) {
+    if (!rest.length) return "";
+    const comments = rest.filter((entry) => entry.comment).length;
+    const count = comments || rest.length;
+    const noun = `${comments ? "comment" : "event"}${count === 1 ? "" : "s"}`;
+    const bar = (width) => `<span class="block h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted-foreground/20 motion-reduce:animate-none"></span><span class="block h-3 ${width} max-w-full animate-pulse rounded bg-muted-foreground/20 motion-reduce:animate-none"></span>`;
+    return `<div data-repo-issue-more data-remaining="${rest.length}" role="status" aria-live="polite" class="grid gap-2 sm:ml-14"><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-72")}</div><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-56")}</div><p class="py-1.5 text-[14px] text-muted-foreground">Loading ${formatCount(count)} more ${noun}…</p></div>`;
+  }
+
+  function issueTimelineHashIndex(entries) {
+    const match = /^#issuecomment-(.+)$/.exec(String(location.hash || ""));
+    if (!match) return -1;
+    let id = match[1];
+    try { id = decodeURIComponent(id); } catch (_) { id = match[1]; }
+    return entries.findIndex((entry) => entry.comment
+      && (entry.id === id || entry.id === `forge-github-comment-${id}`));
+  }
+
+  function issueTimelineEagerCount(number, entries) {
+    const target = issueTimelineHashIndex(entries);
+    return Math.min(Math.max(ISSUE_TIMELINE_FIRST, target + 1), entries.length);
+  }
+
+  function queueIssueTimelineRest(number, entries, eager) {
+    const job = { number: String(number), rest: entries.slice(eager), next: 0, more: null, shown: [], added: 0 };
+    issueTimelineStream = job;
+    if (typeof window === "undefined") return;
+    const target = entries[issueTimelineHashIndex(entries)];
+    const scrollKey = target ? `${location.pathname}${location.hash}` : "";
+    if (target && issueTimelineScrolled !== scrollKey) {
+      issueTimelineScrolled = scrollKey;
+      window.setTimeout(() => {
+        document.getElementById(`issuecomment-${target.id}`)?.scrollIntoView({ block: "start" });
+      }, 0);
+    }
+    if (job.rest.length) scheduleIssueTimelineStream(job);
+  }
+
+  function scheduleIssueTimelineStream(job) {
+    const run = () => runIssueTimelineStream(job);
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(run, { timeout: 120 });
+    else window.setTimeout(run, 16);
+  }
+
+  function runIssueTimelineStream(job) {
+    if (issueTimelineStream !== job) return;
+    if (!job.more) {
+      const more = document.querySelector('[data-repo-record-detail="issues"] [data-repo-issue-timeline] > [data-repo-issue-more]');
+      if (!more || more.dataset.remaining !== String(job.rest.length)
+          || String(state.repoRecordDetail?.number) !== job.number) return;
+      job.more = more;
+    }
+    if (!job.more.isConnected) return;
+    const batch = job.rest.slice(job.next, job.next + ISSUE_TIMELINE_BATCH);
+    job.next += batch.length;
+    job.added += placeIssueTimelineItems(job, batch.map((entry) => entry.html()).join(""));
+    if (job.next < job.rest.length) {
+      scheduleIssueTimelineStream(job);
+      return;
+    }
+    job.shown.splice(0).forEach((node) => node.remove());
+    job.more.remove();
+    if (job.added) window.lucide?.createIcons();
+  }
+
+  function placeIssueTimelineItems(job, html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    let added = 0;
+    Array.from(template.content.children).forEach((node) => {
+      const signature = issueNodeSignature(node);
+      const at = job.shown.slice(0, ISSUE_TIMELINE_BATCH)
+        .findIndex((shown) => issueTimelineSignatures.get(shown) === signature);
+      if (at >= 0) {
+        job.shown.splice(0, at).forEach((stale) => stale.remove());
+        job.shown.shift();
+        return;
+      }
+      issueTimelineSignatures.set(node, signature);
+      (job.shown[0] || job.more).before(node);
+      added += 1;
+    });
+    return added;
+  }
+
+  function issueNodeSignature(node) {
+    let copy = node;
+    if (node.querySelector("svg.lucide")) {
+      copy = node.cloneNode(true);
+      copy.querySelectorAll("svg.lucide").forEach((svg) => {
+        const classes = Array.from(svg.classList);
+        const icon = document.createElement("i");
+        icon.setAttribute("data-lucide", (classes.find((name) => name.startsWith("lucide-")) || "").slice(7));
+        icon.setAttribute("class", classes.filter((name) => name !== "lucide" && !name.startsWith("lucide-")).join(" "));
+        svg.replaceWith(icon);
+      });
+    }
+    return copy.outerHTML.replace(/\s+/g, " ").trim();
+  }
+
+  function signIssueDetail(article) {
+    if (!article) return;
+    ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+      const block = article.querySelector(selector);
+      if (block) issueTimelineSignatures.set(block, issueNodeSignature(block));
+    });
+    Array.from(article.querySelector("[data-repo-issue-timeline]")?.children || [])
+      .filter((node) => !node.matches("[data-repo-issue-more]"))
+      .forEach((node) => issueTimelineSignatures.set(node, issueNodeSignature(node)));
+  }
+
+  function paintRepoIssueDetail(container, html) {
+    const article = '[data-repo-record-detail="issues"]';
+    const old = container.querySelector(`:scope > article${article}`);
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const fresh = template.content.querySelector(`article${article}`);
+    if (fresh) {
+      ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+        const after = fresh.querySelector(selector);
+        if (!after) return;
+        const before = old?.querySelector(selector);
+        const signature = issueNodeSignature(after);
+        if (before && issueTimelineSignatures.get(before) === signature) after.replaceWith(before);
+        else issueTimelineSignatures.set(after, signature);
+      });
+      const kept = new Map();
+      Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        const signature = issueTimelineSignatures.get(node);
+        if (!signature) return;
+        if (!kept.has(signature)) kept.set(signature, []);
+        kept.get(signature).push(node);
+      });
+      const used = new Set();
+      Array.from(fresh.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        if (node.matches("[data-repo-issue-more]")) return;
+        const signature = issueNodeSignature(node);
+        const match = kept.get(signature)?.shift();
+        if (match) {
+          used.add(match);
+          node.replaceWith(match);
+        } else issueTimelineSignatures.set(node, signature);
+      });
+      const more = fresh.querySelector("[data-repo-issue-timeline] > [data-repo-issue-more]");
+      const job = issueTimelineStream;
+      if (more && job && !job.more && job.number === String(state.repoRecordDetail?.number)) {
+        job.shown = Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || [])
+          .filter((node) => !used.has(node) && issueTimelineSignatures.has(node));
+        job.shown.forEach((node) => more.before(node));
+        more.hidden = job.shown.length >= job.rest.length;
+      }
+    }
+    container.replaceChildren(template.content);
   }
 
   function projectJsonPath(number) {
@@ -21280,6 +22141,15 @@
     return `<span data-repo-issue-row-assignees class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml([item.wantsAgent ? "Agent" : "", ...assignees].filter(Boolean).join(", "))}">${faces.join("")}</span>`;
   }
 
+  function renderIssueRowCommenters(item) {
+    if (!instancePluginOn("forum-list")) return "";
+    const names = (Array.isArray(item.recentCommenters) ? item.recentCommenters : [])
+      .map((name) => String(name || "").trim()).filter(Boolean).slice(0, 4);
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
   function pullStateIconHtml(stateLabel, extra = "") {
     const value = String(stateLabel || "open").toLowerCase();
     const [icon, tone] = value === "open" ? ["git-pull-request", "text-[var(--dashboard-open)]"]
@@ -21354,7 +22224,7 @@
       const content = isIssue ? `
           <i data-lucide="${item.status === "closed" ? "circle-check" : "circle-dot"}" class="mt-1 h-4 w-4 ${item.status === "closed" ? "text-muted-foreground" : "text-[var(--dashboard-open)]"}"></i>
           <span class="min-w-0">
-            <span class="block min-w-0 leading-6">
+            <span data-repo-record-title-line class="block min-w-0 leading-6">
               <span data-repo-issue-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
               ${item.deleted ? '<span class="issue-label ml-1 align-[2px]" style="--label-h:210;filter:saturate(0)" title="Deleted by its author.">deleted</span>' : ""}
               ${item.deleteAttempted ? '<span class="fm-label fm-label-attention ml-1 align-[2px]" title="Someone who did not open this issue tried to delete it; the deletion was not applied."><i data-lucide="triangle-alert" class="h-3 w-3"></i>unauthorized deletion</span>' : ""}
@@ -21371,10 +22241,11 @@
             <span class="hidden w-14 justify-end sm:flex">${Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px] text-muted-foreground" title="Priority ${Number(item.priority)} — 1 is highest">P${Number(item.priority)}</span>` : ""}</span>
             <span class="flex w-12 justify-end">${commentCount ? `<span class="inline-flex items-center gap-1 leading-5 hover:text-[var(--dashboard-link)]" title="${formatCount(commentCount)} comment${commentCount === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(commentCount)}</span>` : ""}</span>
             <span class="hidden w-[4.5rem] justify-end sm:flex">${renderIssueRowAvatars(item)}</span>
+            <span class="hidden w-16 justify-end md:flex">${renderIssueRowCommenters(item)}</span>
           </span>` : `
           ${pullStateIconHtml(stateLabel, "mt-1")}
           <span class="min-w-0">
-            <span class="block min-w-0 leading-6">
+            <span data-repo-record-title-line class="block min-w-0 leading-6">
               <span data-repo-pull-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
@@ -21795,12 +22666,43 @@
     change();
     if (header?.isConnected && before !== undefined) {
       const shift = header.getBoundingClientRect().top - before;
+      if (block) padPullDiffTail(block, scroller, scroller.scrollTop + shift);
       if (Math.abs(shift) >= 1) scroller.scrollTop += shift;
     }
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       if (block) block.style.contentVisibility = "auto";
       if (scroller) scroller.style.overflowAnchor = anchor;
     }));
+  }
+
+  const pullDiffTailScrollers = new WeakSet();
+
+  function padPullDiffTail(block, scroller, top) {
+    const list = block.parentElement;
+    if (!list) return;
+    let tail = list.querySelector(":scope > [data-repo-pull-diff-tail]");
+    const need = Math.ceil(top + scroller.clientHeight - (scroller.scrollHeight - (tail?.offsetHeight || 0)));
+    if (need <= 0) {
+      tail?.remove();
+      return;
+    }
+    if (!tail) {
+      tail = document.createElement("div");
+      tail.dataset.repoPullDiffTail = "";
+      tail.setAttribute("aria-hidden", "true");
+      list.append(tail);
+    }
+    tail.style.height = `${need}px`;
+    if (pullDiffTailScrollers.has(scroller)) return;
+    pullDiffTailScrollers.add(scroller);
+    const target = scroller === document.scrollingElement ? window : scroller;
+    target.addEventListener("scroll", () => {
+      const current = document.querySelector("[data-repo-pull-diff-tail]");
+      if (!current) return;
+      const shown = Math.ceil(scroller.scrollTop + scroller.clientHeight - (scroller.scrollHeight - current.offsetHeight));
+      if (shown <= 0) current.remove();
+      else if (shown < current.offsetHeight) current.style.height = `${shown}px`;
+    }, { passive: true });
   }
 
   function setRepoPullDiffBlockCollapsed(block, collapsed) {
@@ -22291,11 +23193,15 @@
     const placementBadge = placement
       ? `<span data-repo-pull-thread-placement="${anchor.placement}" title="${escapeHtml(event.patchset ? `Written against revision ${String(event.patchset).slice(0, 10)}` : "Written against an earlier revision")}" class="rounded border ${anchor.placement === "outdated" ? "border-border text-muted-foreground" : "border-sky-500/40 text-sky-400"} px-1.5 py-0.5 font-semibold uppercase">${escapeHtml(placement)}</span>`
       : "";
-    return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
+    const manage = Boolean(event.id && !event.draft && !event.pending && webSessionAuthored(event));
+    return `<article data-repo-pull-inline-comment-card class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${issuePersonNameHtml(author, "")}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
-        <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${issuePersonNameHtml(author, "")}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}${manage ? `<span class="ml-auto inline-flex items-center gap-0.5">
+          <button type="button" data-repo-pull-comment-edit="${escapeHtml(event.id)}" class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+          <button type="button" data-repo-pull-comment-delete="${escapeHtml(event.id)}" class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>
+        </span>` : ""}</div>
+        <div data-repo-pull-inline-comment-text class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
         ${commentReactionEventBar(event, "mt-2")}
       </div>
     </article>`;
@@ -23376,7 +24282,7 @@
       complexity: diffHealthEvidence(complexityBits, "No changed lines", "Estimated from churn, control flow, and concentration; no code was executed."),
       quality: diffHealthEvidence(qualityBits, "No quality findings", "Tests are inferred from paths and were not executed."),
       security: diffHealthEvidence(securityBits, "No high-confidence secrets or risky added-line patterns found", "Static heuristic only; it does not replace dependency or SAST scanning."),
-      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", "This is syntax analysis; ForkMesh sent no traffic for this check."),
+      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", `This is syntax analysis; ${platformName()} sent no traffic for this check.`),
       practices: diffHealthEvidence(practicesBits, "No unusual artifacts, conflict markers, or diff-hygiene issues found", "Checks only the files and added lines in this diff."),
     };
     const scores = { merge, complexity, quality, security, network, practices };
@@ -23935,7 +24841,8 @@
     if (ev.type === "suggestion-state") return { label: `suggestion ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
     if (ev.type === "force-push") return { label: "force-pushed", tone: neutral };
     if (ev.type === "synchronize") return { label: ev.forced ? "force-pushed" : "pushed", tone: neutral };
-    if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
+    if (ev.type === "merged") return { label: "merged this pull request", tone: "border-primary/40 text-primary" };
+    if (ev.type === "status") return { label: ev.state === "open" ? "reopened this pull request" : "closed this pull request", tone: neutral };
     if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
     if (ev.type === "revision") {
       return { label: ev.state ? `updated this pull request to revision ${ev.state}` : "updated this pull request", tone: neutral };
@@ -23946,6 +24853,11 @@
   // Approve/request-changes/comment state per reviewer, derived the same way
   // the desktop's PullStore::reviewSummary() does: the *last* review event
   // per author wins.
+  function pullReviewerKey(ev) {
+    const name = String(ev?.authorName || "").trim();
+    return (name && !name.endsWith(" (unverified)") ? name : String(ev?.author || "").trim()).toLowerCase();
+  }
+
   function pullReviewSummary(events) {
     const rows = Array.isArray(events) ? events : [];
     const byAuthor = new Map();
@@ -23955,7 +24867,7 @@
         continue;
       }
       if (ev.type !== "review" || !ev.state) continue;
-      const key = ev.author || ev.authorName || "";
+      const key = pullReviewerKey(ev);
       if (!key) continue;
       byAuthor.set(key, {
         author: ev.author || "",
@@ -23967,16 +24879,17 @@
     return Array.from(byAuthor.values());
   }
 
-  function pullReviewPolicy(events, pullAuthor = "") {
-    const authorKey = String(pullAuthor || "").trim();
+  function pullReviewPolicy(events, pullAuthor = "", pullAuthorName = "") {
+    const authorKeys = new Set([pullAuthor, pullAuthorName]
+      .map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
     const latest = new Map();
     for (const ev of Array.isArray(events) ? events : []) {
       // Inbox reviews are not authoritative merge evidence until the owner
       // node drains, validates, commits, and republishes them on the pinned
       // pull-metadata ref.
       if (ev?.type !== "review" || ev.pending === true) continue;
-      const key = String(ev.author || "").trim();
-      if (!key || key === authorKey) continue;
+      const key = pullReviewerKey(ev);
+      if (!key || authorKeys.has(key) || authorKeys.has(String(ev.author || "").trim().toLowerCase())) continue;
       if (ev.state === "approved" || ev.state === "changes_requested") {
         latest.set(key, ev.state);
       } else {
@@ -24000,9 +24913,9 @@
     commented: { icon: "message-square", tone: "text-muted-foreground", label: "Commented" },
   };
 
-  function renderPullReviewers(events, pullAuthor = "") {
+  function renderPullReviewers(events, pullAuthor = "", pullAuthorName = "") {
     const reviewers = pullReviewSummary(events);
-    const policy = pullReviewPolicy(events, pullAuthor);
+    const policy = pullReviewPolicy(events, pullAuthor, pullAuthorName);
     const gateLabel = policy.ready ? "Review requirement met" : "Independent review required";
     const counts = [
       policy.approvals ? `<span class="inline-flex items-center gap-0.5 text-success" title="${formatCount(policy.approvals)} approved"><i data-lucide="check" class="h-3.5 w-3.5"></i>${formatCount(policy.approvals)}</span>` : "",
@@ -24066,6 +24979,22 @@
         : "";
       return renderIssueTimelineEvent("git-branch", author, ev.author, `<span>force-pushed</span>${branch ? `<span class="font-mono text-[12px] text-foreground">${escapeHtml(branch)}</span>` : ""}${before && after ? `<span>from</span><span class="font-mono text-[12px]">${escapeHtml(before)}</span><span>to</span><span class="font-mono text-[12px]">${escapeHtml(after)}</span>` : ""}${compare}`, ev.ts);
     }
+    if (ev.type === "merged") {
+      const base = String(ev.base || "").trim();
+      const head = String(ev.head || "").trim();
+      const into = `${head ? `<span class="font-mono text-[12px] text-foreground">${escapeHtml(head)}</span><span>into</span>` : "<span>into</span>"}<span class="font-mono text-[12px] text-foreground">${escapeHtml(base || "main")}</span>`;
+      const who = String(ev.authorName || "").trim() || (ev.author ? `${String(ev.author).slice(0, 8)}…` : "");
+      if (who) {
+        return renderIssueTimelineEvent("git-merge", who, ev.author, `<span class="font-medium text-primary">merged</span>${into}`, ev.ts, "data-repo-pull-merged-event");
+      }
+      const fullWhen = formatRecordDateTime(ev.ts);
+      return `
+        <div data-repo-pull-merged-event data-repo-issue-event class="relative flex min-h-10 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 py-1.5 pl-12 text-[14px] text-muted-foreground sm:ml-14">
+          <span aria-hidden="true" class="absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[rgb(var(--dashboard-canvas-rgb))] bg-primary text-primary-foreground"><i data-lucide="git-merge" class="h-4 w-4"></i></span>
+          <span class="inline-flex min-w-0 flex-wrap items-center gap-1"><span class="font-medium text-primary">Merged</span>${into}</span>
+          ${ev.ts ? `<time datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>` : ""}
+        </div>`;
+    }
     if (ev.type === "commit") {
       return renderIssueTimelineEvent("git-commit-horizontal", author.replace(/\s*<[^>]*>\s*$/, "") || author, ev.author, `<span class="min-w-0 truncate text-foreground">${escapeHtml(body || "Commit")}</span>${commit ? `<span class="font-mono text-[12px]">${escapeHtml(commit)}</span>` : ""}`, ev.ts);
     }
@@ -24092,7 +25021,7 @@
             ${ev.type !== "review" && ev.type !== "comment" ? `<span class="ml-auto rounded-full border px-2 text-[12px] font-medium leading-5 ${meta.tone}">${escapeHtml(meta.label)}</span>` : ""}
             ${ev._canManage ? `<span class="${ev.type !== "review" && ev.type !== "comment" ? "" : "ml-auto "}inline-flex items-center gap-0.5">
               <button type="button" data-repo-pull-comment-edit="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-4 w-4"></i></button>
-              ${ev.type === "review" ? "" : `<button type="button" data-repo-pull-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-4 w-4"></i></button>`}
+              <button type="button" data-repo-pull-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="${ev.type === "review" ? "Delete review text" : "Delete comment"}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
             </span>` : ""}
           </div>
           <div data-repo-issue-comment-text class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
@@ -24375,19 +25304,24 @@
     return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
   }
 
+  function pullReviewKeepsVerdict(target) {
+    return target?.type === "review" && (target.state === "approved" || target.state === "changes_requested");
+  }
+
   function foldPullCommentChanges(events) {
     const rows = (Array.isArray(events) ? events : []).filter(Boolean);
     const byId = new Map(rows.filter((ev) => ev.id).map((ev) => [String(ev.id), ev]));
     const edits = new Map();
     const deleted = new Set();
+    const cleared = new Set();
     for (const ev of rows) {
       if (ev.type !== "comment-edit" && ev.type !== "comment-delete") continue;
       const id = String(ev.target || "");
       const target = byId.get(id);
       if (!pullCommentChangeApplies(ev, target)) continue;
       if (ev.type === "comment-delete") {
-        if (target.type === "review") continue;
-        deleted.add(id);
+        if (pullReviewKeepsVerdict(target)) cleared.add(id);
+        else deleted.add(id);
       } else if (!edits.has(id) || pullTimestamp(edits.get(id).ts) <= pullTimestamp(ev.ts)) {
         edits.set(id, ev);
       }
@@ -24396,6 +25330,7 @@
       .filter((ev) => ev.type !== "comment-edit" && ev.type !== "comment-delete")
       .filter((ev) => !deleted.has(String(ev.id || "")))
       .map((ev) => {
+        if (cleared.has(String(ev.id || ""))) return { ...ev, body: "" };
         const edit = edits.get(String(ev.id || ""));
         return edit ? { ...ev, body: edit.body, _edited: true } : ev;
       });
@@ -24410,9 +25345,34 @@
       ts: values?.ts || values?.createdAt || 0,
       body: "",
     };
-    return [opener, ...(commits || []), ...foldPullCommentChanges(conversation), ...(agents || [])]
+    const rows = [opener, ...(commits || []), ...foldPullCommentChanges(conversation), ...(agents || [])]
       .filter(Boolean)
       .sort((left, right) => pullTimestamp(left.ts) - pullTimestamp(right.ts));
+    const merged = repoPullMergedEvent(values);
+    if (merged && pullTimestamp(merged.ts) > 0) {
+      const at = rows.findIndex((row) => pullTimestamp(row.ts) > pullTimestamp(merged.ts));
+      rows.splice(at < 0 ? rows.length : at, 0, merged);
+    } else if (merged) {
+      rows.push(merged);
+    }
+    return rows;
+  }
+
+  function repoPullMergedEvent(values) {
+    const status = String(values?.status || "").trim().toLowerCase();
+    if (status !== "merged" && status !== "closed-merged") return null;
+    const by = String(values?.mergedBy || "").trim();
+    const author = String(values?.author || "").trim();
+    return {
+      id: "merged",
+      type: "merged",
+      author: by,
+      authorName: by && by === author ? recordAuthorName(values) || "" : "",
+      ts: Number(values?.mergedAt) || 0,
+      base: String(values?.base || "").trim(),
+      head: pullHeadBranchRef(values) || "",
+      body: "",
+    };
   }
 
   function stopRepoPullActivityRefresh() {
@@ -24525,7 +25485,7 @@
     if (commitPhrase) commitPhrase.innerHTML = pullCommitPhrase(commits.length);
     const reviewers = $("[data-repo-pull-reviewers]");
     if (reviewers) {
-      reviewers.innerHTML = renderPullReviewers(conversation, values.author || "");
+      reviewers.innerHTML = renderPullReviewers(conversation, values.author || "", values.authorName || "");
       window.lucide?.createIcons();
     }
     // Keep committed line threads in step with the activity poll. Do not tear
@@ -25199,14 +26159,26 @@
     window.addEventListener("resize", reposition);
   }
 
+  function visibleCommentEditButton(target, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
+    const matches = [...document.querySelectorAll(selector)]
+      .filter((node) => node.dataset[key] === String(target));
+    return matches.find((node) => node.getClientRects().length) || matches[0] || null;
+  }
+
+  function restoreCommentEditFocus(target, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    visibleCommentEditButton(target, selector, key)?.focus();
+  }
+
   function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
-    const button = [...document.querySelectorAll(selector)]
-      .find((node) => node.dataset[key] === String(target));
-    const card = button?.closest("[data-repo-issue-comment]");
-    const panel = card?.querySelector(".rounded-md.border");
+    const button = visibleCommentEditButton(target, selector, key);
+    const inline = button?.closest("[data-repo-pull-inline-comment-card]");
+    const card = inline || button?.closest("[data-repo-issue-comment]");
+    const panel = inline ? inline.querySelector("[data-repo-pull-inline-comment-text]")?.parentElement : card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
     panel.querySelector("[data-repo-issue-comment-editor]")?.remove();
-    const text = panel.querySelector("[data-repo-issue-comment-text]");
+    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text]");
     const form = document.createElement("form");
     form.dataset.repoIssueCommentEditor = "";
     form.className = "grid gap-2 p-3";
@@ -25220,8 +26192,10 @@
     input.setSelectionRange(input.value.length, input.value.length);
     return new Promise((resolve) => {
       const finish = (value) => {
+        const hadFocus = form.contains(document.activeElement);
         form.remove();
         if (text) text.hidden = false;
+        if (hadFocus && button?.isConnected) button.focus();
         resolve(value);
       };
       form.addEventListener("submit", (event) => {
@@ -25261,6 +26235,7 @@
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
+    const reviewable = String(parsed?.values?.status || "open").trim().toLowerCase() === "open";
     return `${renderPullRevisionPanel(number, parsed)}
       <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
@@ -25269,11 +26244,11 @@
           ${composeIdentityHtml(state.session, "Reviewing")}
           <textarea data-repo-pull-review-body data-mention-input="record" rows="4" aria-label="Review" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span></span>
+            <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">${reviewable ? "Sent to the maintainer's inbox for review." : "This pull request is no longer open: comments still reach the inbox, reviews and merges are off."}</span></span>
             <div class="flex flex-wrap items-center gap-2">
               ${renderPullLifecycleButtons(repo, parsed)}
-              <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>
-              <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="check" class="h-4 w-4 text-muted-foreground"></i>Approve</button>
+              ${reviewable ? `<button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>` : ""}
+              ${reviewable ? `<button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="check" class="h-4 w-4 text-muted-foreground"></i>Approve</button>` : ""}
               <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50">Comment</button>
             </div>
           </div>
@@ -25359,7 +26334,7 @@
     const count = $("[data-repo-pull-timeline-count]");
     if (count) count.textContent = formatCount(parsed.pullTimeline.length);
     const reviewers = document.querySelector("[data-repo-pull-reviewers]");
-    if (reviewers) reviewers.innerHTML = renderPullReviewers(conversation, parsed.values?.author || "");
+    if (reviewers) reviewers.innerHTML = renderPullReviewers(conversation, parsed.values?.author || "", parsed.values?.authorName || "");
     updateRepoPullMergePanel(repo, number, parsed);
   }
 
@@ -25403,6 +26378,8 @@
         author: result?.event?.author || "",
         body,
       });
+      renderRepoRecordDevelopment();
+      if (body) void linkPullCommentIssues(repo, number, body);
       if (bodyInput) bodyInput.value = "";
       buttons.forEach((button) => { button.disabled = false; });
       setHint(isReview ? "Review sent to the maintainer's inbox for review." : "Comment sent to the maintainer's inbox for review.", "good");
@@ -25431,6 +26408,18 @@
     } catch (_) {
       return false;
     }
+  }
+
+  const PULL_BRANCH_WRITER_PERMISSIONS = new Set(["write", "maintain", "admin"]);
+
+  async function loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized) {
+    if (mergeAuthorized === true) return true;
+    if (!repo || !state.session?.sessionToken || values?.derive !== "branch") return false;
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (me && pullHeadBranchRef(values).startsWith(`pr/${me}/`)) return true;
+    const known = await loadRepoViewerPermission(repo).catch(() => null);
+    return Boolean(known && (known.viewerCanAdmin === true
+      || PULL_BRANCH_WRITER_PERMISSIONS.has(String(known.permission || "").toLowerCase())));
   }
 
   async function loadRepoIssueMutationAuthorization(repo) {
@@ -26036,9 +27025,10 @@
   }
 
   const PULL_UPDATE_MESSAGES = {
-    forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can update this branch.",
+    forbidden: "Only someone who can push to this pull request's branch can update it.",
+    branch_protected: "This pull request's branch is protected, so it cannot be updated from here.",
     already_current: "This branch already contains the base branch.",
-    merge_conflict: "The base branch conflicts with this branch; resolve it locally and push.",
+    merge_conflict: "This branch has merge conflicts with the base branch. Resolve them locally, push, and the pull request updates.",
     stale_base: "The base branch moved again; reload to review the new state.",
     stale_head: "The head branch moved; reload before updating it again.",
     stale_pull_metadata: "The pull-request metadata changed; reload before updating.",
@@ -26061,12 +27051,28 @@
     "merge_queue_full",
   ]);
   const PULL_MUTATION_WAIT_MS = 150000;
+  const PULL_MUTATION_POLL_MS = [1000, 2000, 3000];
+
+  function repoPullMutationHidden() {
+    return globalThis.document?.visibilityState === "hidden";
+  }
+
+  const PULL_MUTATION_HIDDEN_POLL_MS = 10000;
+
+  function waitForRepoPullMutationVisible() {
+    if (!repoPullMutationHidden()) return Promise.resolve(0);
+    return new Promise((resolve) => {
+      window.setTimeout(() => resolve(PULL_MUTATION_HIDDEN_POLL_MS), PULL_MUTATION_HIDDEN_POLL_MS);
+    });
+  }
 
   // Submits one exact-OID pull mutation and follows it to an answer. Resolves
   // to the last response; `waiting` means the time budget ran out first.
   async function postRepoPullMutation(endpoint, request, onWait) {
-    const started = Date.now();
+    let started = Date.now();
     let backoff = 1000;
+    let polls = 0;
+    let phase = "";
     for (;;) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -26090,12 +27096,32 @@
       if (Date.now() - started >= PULL_MUTATION_WAIT_MS) {
         return { response, payload, waiting: true };
       }
-      onWait?.(processing);
-      await new Promise((resolve) => window.setTimeout(
-        resolve, processing ? 750 : backoff,
-      ));
+      const nextPhase = processing ? String(payload?.progress?.phase || "claimed") : "";
+      if (nextPhase !== phase) {
+        phase = nextPhase;
+        polls = 0;
+      }
+      onWait?.(processing, payload);
+      const delay = processing
+        ? PULL_MUTATION_POLL_MS[Math.min(polls, PULL_MUTATION_POLL_MS.length - 1)]
+        : backoff;
+      polls += 1;
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      started += await waitForRepoPullMutationVisible();
       if (!processing) backoff = Math.min(backoff * 2, 8000);
     }
+  }
+
+  function repoPullMutationWaitState(current, accepted, payload) {
+    const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : null;
+    const offline = !accepted && payload?.reason === "job_node_offline";
+    return {
+      ...current,
+      queued: !accepted && !offline,
+      queuedSince: !accepted && !offline ? current.queuedSince || Date.now() : 0,
+      offline,
+      progress: progress || (accepted || offline ? current.progress || null : null),
+    };
   }
 
   const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
@@ -26141,7 +27167,7 @@
     const values = parsed?.values || {};
     const readiness = parsed?.pullReadiness || {};
     const branchBacked = values.derive === "branch";
-    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "", values.authorName || "");
     const commits = Array.isArray(parsed?.pullCommits) ? parsed.pullCommits : [];
     const patch = String(parsed?.pullPatch?.patch || "");
     const series = commits.map((commit) => String(commit?.hash || "")).join(",");
@@ -26262,9 +27288,10 @@
     const branchBacked = values.derive === "branch";
     const readiness = parsed?.pullReadiness || { available: false };
     const authorized = parsed?.pullMergeAuthorized === true;
+    const updateAuthorized = authorized || parsed?.pullUpdateAuthorized === true;
     const merge = parsed?.pullMerge || {};
     const update = parsed?.pullUpdate || {};
-    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "", values.authorName || "");
     const rows = [];
 
     const reviewRow = { id: "review", actions: [] };
@@ -26337,27 +27364,35 @@
       branchRow.detail = branchBacked
         ? `Resolve the conflicts locally and push to ${headBranch}: git fetch origin && git switch ${shellWord(headBranch)} && git merge ${shellWord(`origin/${baseBranch}`)}, fix the files, commit, and git push.`
         : `This pull request was submitted as a patch series, so only its author can resolve the conflicts: rebase the change onto the newest ${baseBranch}, fix the files, and submit it again.`;
+      if (branchBacked && updateAuthorized) {
+        branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
+      }
+    } else if (readiness.behind > 0 && !branchBacked) {
+      const behind = readiness.behind;
+      branchRow.tone = "good";
+      branchRow.title = `Merges cleanly into ${baseBranch}`;
+      branchRow.detail = `${baseBranch} has ${formatCount(behind)} new commit${behind === 1 ? "" : "s"} since this pull request was sent. No update is needed: it was submitted as a patch series, and the mirror replays it onto the newest ${baseBranch} when it is merged. Update it only to resolve conflicts or to run the checks on the combined code.`;
     } else if (readiness.behind > 0) {
       const behind = readiness.behind;
       branchRow.tone = "warn";
       branchRow.title = `${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${baseBranch}`;
-      if (branchBacked) {
-        branchRow.detail = authorized
-          ? `It merges cleanly, so being behind does not block the merge. Update the branch to bring ${baseBranch} into ${headBranch} and re-run the checks on the combined code.`
-          : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge ${shellWord(`origin/${baseBranch}`)} && git push; an organization owner can also update the branch here.`;
-        if (authorized && repoPullUpdateContext(repo, number, values, parsed?.pullMetadataCommit || "", readiness)) {
-          branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
-        }
-      } else {
-        branchRow.detail = `It merges cleanly, so being behind does not block the merge: the mirror replays the submitted commits onto the newest ${baseBranch}. It was submitted as a patch series from the author's own copy, so there is no branch here to update; only the author can refresh it, by rebasing onto ${baseBranch} and submitting it again.`;
+      branchRow.detail = updateAuthorized
+        ? `It merges cleanly, so being behind does not block the merge. Update the branch to bring ${baseBranch} into ${headBranch} and re-run the checks on the combined code.`
+        : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge ${shellWord(`origin/${baseBranch}`)} && git push; anyone who can push to ${headBranch} can also update the branch here.`;
+      if (updateAuthorized && repoPullUpdateContext(repo, number, values, parsed?.pullMetadataCommit || "", readiness)) {
+        branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
       }
     } else {
       branchRow.tone = "good";
       branchRow.title = `Up to date with ${baseBranch}`;
       branchRow.detail = `This branch already contains ${baseBranch} and merges cleanly.`;
     }
+    const updateProgress = repoPullMutationProgressModel(repo, "update", update, baseBranch, headBranch);
+    if (updateProgress) branchRow.progress = updateProgress;
     if (update.state === "updated") {
-      branchRow.note = { tone: "good", text: "The branch was updated. Checks re-run on the new head." };
+      const at = update.at ? new Date(update.at) : null;
+      const when = at ? ` · ${at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : "";
+      branchRow.note = { tone: "good", text: `Synced this branch with ${baseBranch}${when}. Checks re-run on the new head.` };
     } else if (update.state === "current") {
       branchRow.note = { tone: "good", text: `This branch already contains the newest ${baseBranch}.` };
     } else if (update.state === "failed" && update.message) {
@@ -26393,6 +27428,8 @@
     const merged = merge.state === "merged" || status === "merged";
     const busy = merge.state === "processing";
     const footer = { tone: "muted", text: "", method: "merge" };
+    const mergeProgress = repoPullMutationProgressModel(repo, "merge", merge, baseBranch, headBranch);
+    if (mergeProgress) footer.progress = mergeProgress;
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
@@ -26451,6 +27488,221 @@
     };
   }
 
+  const PULL_MUTATION_STEPS = {
+    merge: ["queued", "claimed", "fetching", "verifying", "checking", "testing", "committing", "pushing", "publishing"],
+    update: ["queued", "claimed", "fetching", "verifying", "testing", "committing", "pushing", "publishing"],
+  };
+  const PULL_MUTATION_WAITING_NOTICE_MS = 8000;
+  const PULL_MUTATION_FAILED_PHASE = {
+    stale_pull_metadata: "fetching",
+    stale_base: "fetching",
+    stale_head: "verifying",
+    review_required: "verifying",
+    checks_required: "checking",
+    rules_required: "checking",
+    merge_conflict: "testing",
+    already_current: "verifying",
+  };
+
+  function pullMutationStepText(kind, phase, names) {
+    const merge = kind === "merge";
+    const texts = {
+      queued: ["Wait for an online mirror", "Waiting for an online mirror…"],
+      claimed: [names.node ? `Picked up by ${names.node}` : "Picked up by a mirror", names.node ? `${names.node} picked this up…` : "A mirror picked this up…"],
+      fetching: ["Fetch base and head", "Reading the base and head commits…"],
+      verifying: merge
+        ? ["Verify the reviewed commits", "Verifying the reviewed commits…"]
+        : ["Verify the branch tips", "Verifying the branch tips…"],
+      checking: ["Branch protection and required checks", "Checking branch protection and required checks…"],
+      testing: ["Test merge (conflict check)", "Test-merging to check for conflicts…"],
+      committing: merge
+        ? ["Create the merge commit", "Creating the merge commit…"]
+        : [`Merge ${names.base} into the branch`, `Merging ${names.base} into ${names.head}…`],
+      hooks: ["Pre-merge hooks", "Running pre-merge hooks…"],
+      pushing: merge
+        ? [`Merge into ${names.base}`, `Merging into ${names.base}…`]
+        : [`Update ${names.head}`, `Updating ${names.head}…`],
+      publishing: ["Publish to mirrors and the catalog", "Publishing…"],
+    };
+    const [label, now] = texts[phase] || [phase, "Working…"];
+    return { label, now };
+  }
+
+  function formatRepoPullElapsed(ms) {
+    const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  function formatRepoPullStepTime(ms) {
+    if (!(ms >= 0)) return "";
+    return ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : formatRepoPullElapsed(ms);
+  }
+
+  function repoPullMutationProgressModel(repo, kind, job, baseBranch, headBranch, now = Date.now()) {
+    const terminal = kind === "merge" ? "merged" : "updated";
+    const running = job?.state === "processing" && Boolean(job.request);
+    const ended = job?.state === terminal || (job?.state === "failed" && job.progress);
+    if (!running && !ended) return null;
+    const progress = job.progress && typeof job.progress === "object" ? job.progress : {};
+    const node = String(progress.node || "").slice(0, 64);
+    const names = { base: baseBranch, head: headBranch, node };
+    const order = PULL_MUTATION_STEPS[kind];
+    const reported = Array.isArray(progress.steps) ? progress.steps : [];
+    const at = {};
+    reported.forEach((step) => {
+      if (order.includes(step?.phase) && Number.isFinite(step.at) && !(step.phase in at)) at[step.phase] = step.at;
+    });
+    let phase = order.includes(progress.phase) ? progress.phase : "";
+    if (!phase) phase = running && job.queued !== false ? "queued" : "claimed";
+    const failedAt = PULL_MUTATION_FAILED_PHASE[job.error];
+    if (job.state === "failed" && order.includes(failedAt) && order.indexOf(failedAt) > order.indexOf(phase)) phase = failedAt;
+    if (job.state === terminal) phase = "";
+    const index = phase ? order.indexOf(phase) : order.length;
+    const failed = job.state === "failed";
+    const steps = order.map((step, position) => {
+      const later = order.slice(position + 1).find((next) => next in at);
+      return {
+        phase: step,
+        label: pullMutationStepText(kind, step, names).label,
+        state: position < index ? "done" : position === index ? (failed ? "failed" : "current") : "todo",
+        ms: step in at && later ? at[later] - at[step] : null,
+      };
+    });
+    const since = Number(job.startedAt) || now;
+    const model = { kind, node, steps, since, state: "running", headline: "", detail: "", lateAfter: 0, lateText: "", commit: null };
+    if (job.state === terminal) {
+      model.state = "done";
+      model.headline = kind === "merge" ? `Merged into ${baseBranch}` : `Updated ${headBranch} with ${baseBranch}`;
+      if (kind === "merge") model.detail = "The merged state is pinned as current and every mirror is syncing it.";
+      const oid = immutableGitCommit(job.commit);
+      if (oid) model.commit = { oid, label: kind === "merge" ? "Merged as" : "New head", href: repoCommitUrl(repo, oid) };
+      return model;
+    }
+    if (failed) {
+      model.state = "failed";
+      model.headline = job.message || "The mirror could not finish this.";
+      return model;
+    }
+    if (job.offline) {
+      model.state = "waiting";
+      model.headline = node
+        ? `Waiting for ${node} to answer again…`
+        : "Waiting for the mirror that took this to answer again…";
+      model.detail = "Only the mirror that took this job may finish it, so nothing can happen twice. It is asked again automatically while this page is open; on a single-server instance the node may be restarting.";
+      return model;
+    }
+    if (phase === "queued" && job.queued !== true) {
+      model.headline = "Handing this to an online mirror…";
+      return model;
+    }
+    if (phase === "queued") {
+      model.state = "waiting";
+      model.headline = "Waiting for an online mirror…";
+      model.lateAfter = Math.max(0, (Number(job.queuedSince) || since) + PULL_MUTATION_WAITING_NOTICE_MS - since);
+      model.lateText = "Waiting for an online mirror to pick this up (no mirror has accepted it yet).";
+      model.detail = "This keeps retrying automatically while the page is open, and a retry can never apply it twice. On a single-server instance the node may be restarting; it picks this up as soon as it is back.";
+      if (now - (Number(job.queuedSince) || since) >= PULL_MUTATION_WAITING_NOTICE_MS) model.headline = model.lateText;
+      return model;
+    }
+    model.headline = pullMutationStepText(kind, phase, names).now;
+    return model;
+  }
+
+  function renderRepoPullMutationProgress(model) {
+    if (!model) return "";
+    const icon = { done: "check", failed: "x", current: "", todo: "" };
+    const steps = model.steps.map((step) => `
+          <li class="fm-merge-step" data-step="${escapeHtml(step.phase)}" data-state="${escapeHtml(step.state)}">
+            <span class="fm-merge-step-mark" aria-hidden="true">${icon[step.state] ? `<i data-lucide="${icon[step.state]}"></i>` : ""}</span>
+            <span class="fm-merge-step-label">${escapeHtml(step.label)}<span class="sr-only">${step.state === "done" ? " (done)" : step.state === "current" ? " (in progress)" : step.state === "failed" ? " (failed)" : ""}</span></span>
+            ${step.ms !== null ? `<span class="fm-merge-step-time">${escapeHtml(formatRepoPullStepTime(step.ms))}</span>` : ""}
+          </li>`).join("");
+    const live = model.state === "running" || model.state === "waiting";
+    const elapsed = live
+      ? `<span class="fm-merge-progress-elapsed" data-repo-pull-merge-elapsed data-since="${escapeHtml(String(model.since))}" aria-hidden="true">${escapeHtml(formatRepoPullElapsed(Date.now() - model.since))}</span>`
+      : "";
+    const late = model.lateText
+      ? ` data-late-after="${escapeHtml(String(model.lateAfter))}" data-late-since="${escapeHtml(String(model.since))}" data-late-text="${escapeHtml(model.lateText)}"`
+      : "";
+    const mark = model.state === "done"
+      ? '<span class="fm-merge-progress-mark" data-state="done" aria-hidden="true"><i data-lucide="check"></i></span>'
+      : model.state === "failed"
+        ? '<span class="fm-merge-progress-mark" data-state="failed" aria-hidden="true"><i data-lucide="x"></i></span>'
+        : '<span class="fm-merge-spinner" aria-hidden="true"></span>';
+    const commit = model.commit
+      ? `<p class="fm-merge-progress-result">${escapeHtml(model.commit.label)} <a href="${escapeHtml(model.commit.href)}" data-dashboard-link><code>${escapeHtml(model.commit.oid.slice(0, 7))}</code></a></p>`
+      : "";
+    return `
+      <div class="fm-merge-progress" data-repo-pull-merge-progress="${escapeHtml(model.kind)}" data-state="${escapeHtml(model.state)}">
+        <div class="fm-merge-progress-head">
+          ${mark}
+          <p class="fm-merge-progress-now" data-repo-pull-merge-now role="status" aria-live="polite"${late}>${escapeHtml(model.headline)}</p>
+          ${elapsed}
+        </div>
+        <div data-repo-pull-merge-progress-body>
+          ${model.detail ? `<p class="fm-merge-progress-detail">${escapeHtml(model.detail)}</p>` : ""}
+          ${commit}
+          <ol class="fm-merge-steps" aria-label="Steps">${steps}</ol>
+          ${model.node ? `<p class="fm-merge-progress-node">Mirror <code>${escapeHtml(model.node)}</code></p>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function patchRepoPullMutationProgress(repo, number, parsed, kind) {
+    if (!pullDetailIsCurrent(repo, number)) return;
+    const slot = document.querySelector("[data-repo-pull-merge-slot]");
+    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
+    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const progress = kind === "merge"
+      ? model?.footer.progress
+      : model?.rows.find((row) => row.id === "branch")?.progress;
+    if (!block || !progress) {
+      updateRepoPullMergePanel(repo, number, parsed);
+      return;
+    }
+    const scratch = document.createElement("div");
+    scratch.innerHTML = renderRepoPullMutationProgress(progress);
+    const fresh = scratch.firstElementChild;
+    const now = block.querySelector("[data-repo-pull-merge-now]");
+    const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
+    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+      else now.removeAttribute(name);
+    });
+    block.dataset.state = fresh.dataset.state;
+    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
+    window.lucide?.createIcons();
+    startRepoPullMutationTicker();
+  }
+
+  let repoPullMutationTicker = 0;
+
+  function tickRepoPullMutationProgress() {
+    const clocks = document.querySelectorAll("[data-repo-pull-merge-elapsed]");
+    if (!clocks.length) {
+      window.clearInterval(repoPullMutationTicker);
+      repoPullMutationTicker = 0;
+      return;
+    }
+    const now = Date.now();
+    clocks.forEach((clock) => {
+      const text = formatRepoPullElapsed(now - Number(clock.dataset.since || now));
+      if (clock.textContent !== text) clock.textContent = text;
+    });
+    document.querySelectorAll("[data-late-text]").forEach((line) => {
+      const due = Number(line.dataset.lateSince || now) + Number(line.dataset.lateAfter || 0);
+      if (now >= due && line.textContent !== line.dataset.lateText) line.textContent = line.dataset.lateText;
+    });
+  }
+
+  function startRepoPullMutationTicker() {
+    if (repoPullMutationTicker || typeof window.setInterval !== "function") return;
+    if (!document.querySelector?.("[data-repo-pull-merge-elapsed]")) return;
+    repoPullMutationTicker = window.setInterval(tickRepoPullMutationProgress, 1000);
+  }
+
   const PULL_MERGE_ROW_ICONS = {
     good: "check-circle-2",
     warn: "alert-circle",
@@ -26479,9 +27731,33 @@
     return "";
   }
 
+  function renderRepoPullDoneBox(parsed, model) {
+    const values = parsed?.values || {};
+    const status = String(values.status || "").trim().toLowerCase();
+    if (!model.merged && status !== "closed") return "";
+    const base = String(values.base || "").trim() || "main";
+    const head = pullHeadBranchRef(values);
+    const title = model.merged ? "Pull request successfully merged and closed" : "Closed with unmerged commits";
+    const detail = model.merged
+      ? `${head ? `${head} is` : "These changes are"} in ${base}. Nothing more can be merged from this pull request; comments are still welcome.`
+      : "This pull request was closed without merging. Reviews and merges are off until it is reopened.";
+    const progress = model.merged && model.footer.progress ? renderRepoPullMutationProgress(model.footer.progress) : "";
+    return `
+      <section data-repo-pull-merge-box data-repo-pull-done="${model.merged ? "merged" : "closed"}" class="fm-merge-box" aria-label="${model.merged ? "Merged" : "Closed"}">
+        <div class="fm-merge-row" data-repo-pull-merge-row="done" data-tone="${model.merged ? "good" : "muted"}">
+          <span class="fm-merge-row-icon"><i data-lucide="${model.merged ? "git-merge" : "git-pull-request-closed"}"></i></span>
+          <div class="fm-merge-row-body">
+            <p class="fm-merge-row-title">${escapeHtml(title)}</p>
+            <p class="fm-merge-row-detail">${escapeHtml(detail)}</p>
+            ${progress}
+          </div>
+        </div>
+      </section>`;
+  }
+
   function renderRepoPullMergeBox(repo, number, parsed) {
     const model = repoPullMergeModel(repo, number, parsed);
-    if (!model.open && !model.merged) return "";
+    if (!model.open || model.merged) return renderRepoPullDoneBox(parsed, model);
     const rows = model.rows.map((row) => {
       const icon = PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted;
       const conflicts = row.conflicts?.length
@@ -26502,7 +27778,7 @@
             <p class="fm-merge-row-title">${escapeHtml(row.title)}</p>
             ${meta}
             <p class="fm-merge-row-detail">${escapeHtml(row.detail)}</p>
-            ${conflicts}${checkList}${note}
+            ${conflicts}${checkList}${row.progress ? renderRepoPullMutationProgress(row.progress) : ""}${note}
           </div>
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
@@ -26532,8 +27808,8 @@
       <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
         ${rows}
         ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
-          <p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>
+        <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
+          ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
         </div>
@@ -26579,6 +27855,9 @@
         count: blocking.length,
         detail,
       };
+    }
+    if (!model.authorized) {
+      return { tone: "muted", icon: "clock", label: "Waiting for a maintainer to merge", detail: [model.footer.text] };
     }
     return { tone: "good", icon: "check-circle-2", label: "Ready to merge", detail: [model.footer.text] };
   }
@@ -26628,6 +27907,7 @@
       restored.setSelectionRange(focused.start, focused.end);
     }
     window.lucide?.createIcons();
+    startRepoPullMutationTicker();
   }
 
   const PULL_QUICK_REPLY_PATH = ".forkmesh/review-replies.json";
@@ -27075,6 +28355,7 @@
         author: result?.event?.author || "",
         body,
       });
+      if (item.state === "approved") repoPullQuickReplyThanks(number);
     } catch (error) {
       if (String(error?.message || "") === "quick_reply_sent") {
         parsed.pullQuickReplyUi = { ...(parsed.pullQuickReplyUi || {}), sent: markSent(), sending: "", editing: "", draft: undefined, hint: { tone: "", text: "You already sent that reply on this commit." } };
@@ -27083,6 +28364,14 @@
       }
       if (pullDetailIsCurrent(repo, number)) updateRepoPullMergePanel(repo, number, parsed);
     }
+  }
+
+  function repoPullQuickReplyThanks(number) {
+    const subject = commentReactionSubject("pulls", number);
+    const bar = subject
+      ? document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="body"]`)
+      : null;
+    if (bar) sayCommentThanks(bar);
   }
 
   const repoPullQuickReplyPress = { timer: 0, id: "", fired: false, x: 0, y: 0 };
@@ -27129,6 +28418,7 @@
     const waive = overrideReview === true && !pullReviewPolicy(
       parsed.pullConversation || [],
       parsed.values?.author || "",
+      parsed.values?.authorName || "",
     ).ready;
     return {
       schemaVersion: 1,
@@ -27146,11 +28436,10 @@
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/merge`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request, (accepted) => {
+      result = await postRepoPullMutation(endpoint, request, (accepted, payload) => {
         if (parsed.pullMerge?.request?.requestId !== request.requestId) return;
-        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
-        parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };
-        updateRepoPullMergePanel(repo, number, parsed);
+        parsed.pullMerge = repoPullMutationWaitState(parsed.pullMerge, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "merge");
       });
     } catch (_) {
       return {
@@ -27178,7 +28467,7 @@
       && immutableGitCommit(payload.head) === request.expectedHeadOid
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
     ) {
-      return { state: "merged", request };
+      return { state: "merged", request, commit: immutableGitCommit(payload.baseAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -27204,7 +28493,8 @@
     const previous = parsed.pullMerge || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request };
+    const startedAt = Date.now();
+    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
@@ -27223,9 +28513,10 @@
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullMerge = { state: "processing", phase: "", request };
+      parsed.pullMerge = { state: "processing", phase: "", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       outcome = await sendRepoPullMerge(repo, number, parsed, request);
+      outcome = { ...outcome, progress: parsed.pullMerge?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"
@@ -27234,7 +28525,7 @@
       ) {
         break;
       }
-      parsed.pullMerge = { state: "processing", phase: "repinning" };
+      parsed.pullMerge = { state: "processing", phase: "repinning", startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
       if (!pullDetailIsCurrent(repo, number)) return;
@@ -27282,11 +28573,11 @@
     };
   }
 
-  async function sendRepoPullUpdate(repo, request) {
+  async function sendRepoPullUpdate(repo, request, onWait) {
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/update`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request);
+      result = await postRepoPullMutation(endpoint, request, onWait);
     } catch (_) {
       return {
         state: "failed",
@@ -27314,7 +28605,7 @@
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
       && immutableGitCommit(payload.headAfter)
     ) {
-      return { state: "updated", request };
+      return { state: "updated", request, at: Date.now(), commit: immutableGitCommit(payload.headAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -27322,7 +28613,7 @@
       error,
       resumable: PULL_MERGE_RESUMABLE_ERRORS.has(error),
       request,
-      message: PULL_UPDATE_MESSAGES[error] || "The mirror branch update could not be confirmed.",
+      message: PULL_UPDATE_MESSAGES[error] || payload?.message || "The mirror branch update could not be confirmed.",
     };
   }
 
@@ -27330,32 +28621,41 @@
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls") return;
     const parsed = detail.parsed || {};
-    if (!parsed.pullMergeAuthorized) return;
+    if (!parsed.pullMergeAuthorized && !parsed.pullUpdateAuthorized) return;
     const number = detail.number;
     const previous = parsed.pullUpdate || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullUpdate = { state: "processing", request };
+    const startedAt = Date.now();
+    parsed.pullUpdate = { state: "processing", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
       if (!pullDetailIsCurrent(repo, number)) return;
       request = changes.length ? null : buildRepoPullUpdateRequest(repo, number, parsed);
       if (!request) {
+        const readiness = parsed.pullReadiness || {};
         parsed.pullUpdate = changes.length
           ? { state: "failed", message: `Nothing was updated: ${changes.join(" ")}` }
-          : parsed.pullReadiness?.available && parsed.pullReadiness.behind <= 0
+          : readiness.available && readiness.behind <= 0
             ? { state: "current" }
-            : { state: "failed", message: "The branch cannot be updated right now; the merge trial on the mirror did not answer." };
+            : readiness.available && readiness.clean === false
+              ? { state: "failed", error: "merge_conflict", message: PULL_UPDATE_MESSAGES.merge_conflict }
+              : { state: "failed", message: "The branch cannot be updated right now; the merge trial on the mirror did not answer." };
         updateRepoPullMergePanel(repo, number, parsed);
         return;
       }
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullUpdate = { state: "processing", request };
+      parsed.pullUpdate = { state: "processing", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
-      outcome = await sendRepoPullUpdate(repo, request);
+      outcome = await sendRepoPullUpdate(repo, request, (accepted, payload) => {
+        if (parsed.pullUpdate?.request?.requestId !== request.requestId) return;
+        parsed.pullUpdate = repoPullMutationWaitState(parsed.pullUpdate, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "update");
+      });
+      outcome = { ...outcome, progress: parsed.pullUpdate?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"
@@ -27948,9 +29248,9 @@
               </div>` : ""}
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
-            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
             ${isPulls ? renderPullAiReviewSidebar(repo, number) : ""}
-            ${isPulls && stateKey === "open" ? sidebarSection("Review with your agent", renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) : ""}
+            ${isPulls && stateKey === "open" ? sidebarSection("Diff and files", renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
@@ -28234,7 +29534,7 @@
   function renderIssueAiPrompt(repo, number, title, template = "") {
     const prompt = issueAiPromptText(repo, number, title, template);
     return `<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">
-            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="line-clamp-2 min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
+            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
             <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button></span>
           </div>`;
   }
@@ -28247,8 +29547,11 @@
 
   const PULL_REVIEW_PROMPT_MAX = 6144;
   const PULL_REVIEW_FIELD_LIMITS = { title: 200, author: 80, base: 200, head: 200, repo: 120 };
-  const PULL_REVIEW_COLLAPSE_LINES = 5;
-  const PULL_REVIEW_COLLAPSE_CHARS = 360;
+  const PULL_SUMMARY_CHATGPT_URL = "https://chatgpt.com/";
+  const PULL_SUMMARY_URL_LIMIT = 14000;
+  const PULL_REVIEW_FILE_LINKS_MAX = 50;
+  const PULL_REVIEW_FILES_COLLAPSE = 5;
+  const PULL_REVIEW_PATH_LIMIT = 300;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PULL_REVIEW_PROMPT_DEFAULT = `Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -28291,10 +29594,32 @@ Your reply
     return limit ? Array.from(text).slice(0, limit).join("").replace(/ +$/, "") : text;
   }
 
+  function pullChangedFiles(patch) {
+    const files = [];
+    for (const line of String(patch || "").split("\n")) {
+      if (line.startsWith("diff --git ")) {
+        const at = line.indexOf(" b/");
+        files.push([at >= 0 ? line.slice(at + 3) : line.slice(11), false]);
+      } else if (files.length && line.startsWith("deleted file mode")) {
+        files[files.length - 1][1] = true;
+      }
+    }
+    return files;
+  }
+
   function pullReviewPromptFields(repo, number, values, pullPatch) {
     const origin = publicSiteOrigin();
     const url = `${origin}${repoRecordUrl(repo, "pulls", number)}`;
     const diffUrl = `${url}.diff`;
+    const head = cleanPullReviewField(values?.head, PULL_REVIEW_FIELD_LIMITS.head);
+    const changed = pullChangedFiles(pullPatch?.patch);
+    const files = changed.slice(0, PULL_REVIEW_FILE_LINKS_MAX).map(([path, deleted]) => {
+      const name = cleanPullReviewField(path, PULL_REVIEW_PATH_LIMIT);
+      const href = deleted || !head || head.includes(":")
+        ? ""
+        : `${origin}${repoLinkUrl(repo)}/blob/${name.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(head)}`;
+      return [name, href];
+    });
     return {
       url,
       number: String(Number(number)),
@@ -28302,14 +29627,43 @@ Your reply
       repo: cleanPullReviewField(repo?.name, PULL_REVIEW_FIELD_LIMITS.repo),
       host: origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/.*$/, ""),
       base: cleanPullReviewField(values?.base || "main", PULL_REVIEW_FIELD_LIMITS.base),
-      head: cleanPullReviewField(values?.head, PULL_REVIEW_FIELD_LIMITS.head),
+      head,
       author: cleanPullReviewField(values?.authorName || values?.author || "unknown", PULL_REVIEW_FIELD_LIMITS.author),
       cloneUrl: cloneUrl(repo),
       diffUrl,
       filesUrl: `${url}/files`,
       textUrl: `${url}.txt`,
       rawDiffUrl: String(pullPatch?.patch || "").trim() ? diffUrl : "",
+      patchUrl: `${url}.patch`,
+      files,
+      fileCount: changed.length,
     };
+  }
+
+  function pullSummaryText(fields, withFiles = true) {
+    const lines = [
+      `Summarize pull request #${fields.number} in ${fields.repo} on ${fields.host}: ${fields.url}`,
+      `Title: "${fields.title}"`,
+      `Author: ${fields.author}. Merges ${fields.head} into ${fields.base}.`,
+      "",
+      `Diff: ${fields.diffUrl}`,
+      `Patch: ${fields.patchUrl}`,
+      `Description, comments and diff as plain text: ${fields.textUrl}`,
+    ];
+    if (withFiles && fields.files.length) {
+      lines.push("", "Changed files:", ...fields.files.map(([path, href]) => `- ${path}${href ? `: ${href}` : ""}`));
+      if (fields.fileCount > fields.files.length) lines.push(`- and ${fields.fileCount - fields.files.length} more`);
+    }
+    lines.push("", "Reply with a short summary of what it changes and why, file by file.");
+    return lines.join("\n");
+  }
+
+  function pullSummaryChatGptUrl(fields) {
+    for (const withFiles of [true, false]) {
+      const url = `${PULL_SUMMARY_CHATGPT_URL}?q=${encodeURIComponent(pullSummaryText(fields, withFiles))}`;
+      if (url.length <= PULL_SUMMARY_URL_LIMIT) return url;
+    }
+    return PULL_SUMMARY_CHATGPT_URL;
   }
 
   function pullReviewPromptText(fields, template = "") {
@@ -28319,20 +29673,31 @@ Your reply
   }
 
   function renderPullReviewPrompt(fields, number, template = "") {
-    const prompt = pullReviewPromptText(fields, template);
-    const text = escapeHtml(prompt);
-    const toggle = (prompt.match(/\n/g) || []).length >= PULL_REVIEW_COLLAPSE_LINES || prompt.length > PULL_REVIEW_COLLAPSE_CHARS;
+    const prompt = escapeHtml(pullReviewPromptText(fields, template));
+    const files = fields.files || [];
+    const more = (fields.fileCount || 0) - files.length;
+    const toggle = files.length + (more > 0 ? 1 : 0) > PULL_REVIEW_FILES_COLLAPSE;
     const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
-    const diffButton = raw
-      ? `<button type="button" data-dashboard-copy="${escapeHtml(raw)}" aria-label="Copy the raw diff URL" title="${escapeHtml(raw)}" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="link" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy diff URL</span><span class="copy-check">Copied</span></button>`
+    const link = "font-medium text-[var(--dashboard-link)] hover:underline";
+    const button = "inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary";
+    const diffLinks = raw
+      ? `
+            <span class="flex items-center gap-3"><a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a></span>`
       : "";
     const toggleButton = toggle
       ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="chevron-down" class="h-3 w-3"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
       : "";
-    return `<div data-repo-pull-review-prompt aria-label="Review with your agent" class="grid min-w-0 gap-1.5">
-            <pre id="${boxId}" data-repo-pull-review-prompt-text class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden whitespace-pre-wrap rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]">${text}</pre>
-            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${text}" aria-label="Copy the review prompt for this pull request" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${diffButton}${toggleButton}</span>
+    let rows = files.map(([path, href]) => (href
+      ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${escapeHtml(path)}</a></li>`
+      : `<li class="truncate" title="${escapeHtml(path)}">${escapeHtml(path)}</li>`)).join("");
+    if (more > 0) rows += `<li class="text-muted-foreground">and ${more} more</li>`;
+    const listing = rows
+      ? `
+            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
+      : "";
+    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1.5 text-[12px]">${diffLinks}${listing}
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button><a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3 w-3"></i>Summarize in ChatGPT</a>${toggleButton}</span>
           </div>`;
   }
 
@@ -28368,12 +29733,16 @@ Your reply
     const stateLabel = closed ? "Closed" : status === "open" ? "Open" : status.charAt(0).toUpperCase() + status.slice(1);
     const issueUrl = `${publicSiteOrigin()}${repoRecordUrl(repo, "issues", number)}`;
 
-    const timeline = renderIssueTimeline(events, {
+    const timelineEntries = issueTimelineEntries(events, {
       canManage,
       mentions: parsed.issueMentions,
       repo,
       number,
     });
+    const eagerItems = issueTimelineEagerCount(number, timelineEntries);
+    const timeline = timelineEntries.slice(0, eagerItems).map((entry) => entry.html()).join("")
+      + issueTimelineMoreHtml(timelineEntries.slice(eagerItems));
+    queueIssueTimelineRest(number, timelineEntries, eagerItems);
     const bodyReactions = renderCommentReactionBar(commentReactionSubject("issues", number), "body",
       foldIssueReactions(events).get(String(parsed.issueOpenEventId || "")));
     const reactionRow = `<div data-repo-issue-reactions class="flex flex-wrap items-center gap-1.5 px-4 pb-4">
@@ -28504,7 +29873,7 @@ Your reply
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
               ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
-              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
+              ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
           </div>
@@ -28522,7 +29891,7 @@ Your reply
             <section data-repo-record-conversation class="grid min-w-0 gap-4">
               ${openingCard}
               ${subIssues}
-              <div data-repo-issue-timeline data-empty="${timeline ? "false" : "true"}" class="grid gap-2">${timeline}</div>
+              <div data-repo-issue-timeline data-empty="${timelineEntries.length ? "false" : "true"}" class="grid gap-2">${timeline}</div>
               ${renderIssueCommentForm(number)}
             </section>
             ${repo.isPrivate || instancePluginOff("fediverse-ui") ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
@@ -28629,6 +29998,7 @@ Your reply
   function keepRepoFirstViewIssue(detail) {
     const article = detail?.querySelector?.("article[data-repo-ssr-issue]");
     if (!article) return;
+    signIssueDetail(article);
     repoFirstViewIssue = {
       number: String(article.dataset.repoSsrIssue || ""),
       path: location.pathname,
@@ -29504,7 +30874,9 @@ Your reply
     if (kind === "issues") withPendingIssueStatus(repo, number, parsed);
     state.repoRecordDetail = { repo, kind, number, parsed };
     setRepoRecordOpen(kind, true);
-    container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+    const html = renderRepoRecordDetail(repo, kind, number, parsed);
+    if (kind === "issues") paintRepoIssueDetail(container, html);
+    else container.innerHTML = html;
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
@@ -29612,6 +30984,8 @@ Your reply
         ])
         : null;
       issueAccess?.catch(() => {});
+      const issueAttachments = kind === "issues" ? loadRepoIssueAttachments(repo, number) : null;
+      const issueModeration = kind === "issues" ? fetchIssueModeration(repo, number) : null;
       const collabSettings = kind === "discussions" ? null : loadRepoCollabSettings(repo);
       let blob;
       if (kind === "issues") {
@@ -29633,8 +31007,10 @@ Your reply
       // so parse them the same way the list does and map into the shape the
       // detail renderer expects. Any live mirror serving .forkmesh/issues/
       // answers this blob read, so the detail loads whenever the list does.
+      const moderation = kind === "issues" ? await issueModerationWithin(issueModeration) : null;
       const parsed = kind === "issues"
-        ? withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))
+        ? withPendingIssueStatus(repo, number, issueDetailParsed(
+          applyIssueModeration(blobText(blob), moderation), number))
         : parseFrontMatter(blobText(blob));
       let issueRelations = null;
       if (kind === "issues") {
@@ -29645,7 +31021,8 @@ Your reply
           Object.assign(parsed, early);
           issueRelations = null;
         } else {
-          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [] });
+          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [],
+            issueSourceUrl: repoIssueSourceUrl(repo, number, state.issuesView?.items) });
         }
       }
       if (collabSettings) parsed.repoCollabSettings = await collabSettings;
@@ -29670,6 +31047,7 @@ Your reply
         parsed.pullAgents = agents;
         parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
         parsed.pullMergeAuthorized = mergeAuthorized;
+        parsed.pullUpdateAuthorized = await loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized);
         parsed.pullReadiness = await readiness;
         parsed.pullMergeBase = mergeBase;
         parsed.pullChecks = checks;
@@ -29681,6 +31059,9 @@ Your reply
         parsed.issueMutationAuthorized = mutationAuthorized;
         parsed.issueSubscribed = subscription?.subscribed === true;
         parsed.issueSubscriptionReason = subscription?.reason || "";
+        await issueAttachments;
+        parsed.issueModeration = moderation;
+        if (moderation?.canModerate) parsed.issueMutationAuthorized = true;
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;
@@ -29700,10 +31081,13 @@ Your reply
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
-      container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+      const html = renderRepoRecordDetail(repo, kind, number, parsed);
+      if (kind === "issues") paintRepoIssueDetail(container, html);
+      else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
         if (commentBody) commentBody.value = commentDraft;
@@ -30240,12 +31624,16 @@ Your reply
   const ISSUE_FILTER_ME = "__forkmesh_me__";
   const ISSUE_FILTER_ASSIGNED = "__forkmesh_assigned__";
 
+  function issueDefaultSort() {
+    return instancePluginOn("forum-list") ? "newest" : "recently_updated";
+  }
+
   function issueFilterState() {
     const filters = state.issuesView?.filters;
     if (filters && typeof filters === "object") return filters;
     state.issuesView.filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     return state.issuesView.filters;
   }
@@ -30331,8 +31719,8 @@ Your reply
     }
     if (field === "sort") {
       return [
-        { value: "recently_updated", label: "Recently updated" },
         { value: "newest", label: "Newest" },
+        { value: "recently_updated", label: "Recently updated" },
         { value: "oldest", label: "Oldest" },
         { value: "priority", label: "Highest priority" },
         { value: "comments", label: "Most commented" },
@@ -30464,8 +31852,12 @@ Your reply
         || stamp(b, "updatedAtMs") - stamp(a, "updatedAtMs")
         || stableNewest(a, b));
     }
-    return items.sort((a, b) => stamp(b, "updatedAtMs")
-      - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    if (sort === "recently_updated") {
+      return items.sort((a, b) => stamp(b, "updatedAtMs")
+        - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    }
+    return items.sort((a, b) => stamp(b, "createdAtMs")
+      - stamp(a, "createdAtMs") || stableNewest(a, b));
   }
 
   // The Issues sidebar: GitHub's saved views, each a set of filters. A view is
@@ -30537,6 +31929,7 @@ Your reply
     const milestones = tally("milestone");
     const section = (title, rows) => rows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">${title}</h3>${rows.join("")}` : "";
     return `<div data-repo-collection-views-inner>
+      ${renderCollectionViewsHeader()}
       <div class="grid gap-0.5">
         ${ISSUE_VIEWS.map((view) => row(`data-repo-issue-view="${view.id}"`, current?.id === view.id,
           `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
@@ -30550,8 +31943,7 @@ Your reply
         ${section("Milestones", milestones.map(([milestone, count]) => row(`data-repo-issue-milestone-view="${escapeHtml(milestone)}"`,
           String(filters.milestone || "").toLowerCase() === milestone.toLowerCase(),
           `<i data-lucide="milestone" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, milestone, count)))}
-      </div>
-      ${renderCollectionViewsFooter()}</div>`;
+      </div></div>`;
   }
 
   function issueLabelSwatch(label) {
@@ -30563,9 +31955,9 @@ Your reply
     return `<svg aria-hidden="true" viewBox="0 0 32 32" class="h-4 w-4 shrink-0 overflow-visible"><g>${wiggle}<path d="M16 7.5V4.2c0-.9.6-1.6 1.5-1.8l1.3-.3" stroke="#4d7c0f" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M16 8c-2-1.8-6.5-1.6-9.5.8C3.2 11.4 2 15.2 2.6 19c.8 5 4.6 9 9.4 9 1.5 0 2.9-.4 4-1.1 1.1.7 2.5 1.1 4 1.1 4.8 0 8.6-4 9.4-9 .6-3.8-.6-7.6-3.9-10.2C22.5 6.4 18 6.2 16 8Z" fill="#f97316"/><path d="M16 8.5c-1.2 2.5-1.6 6.5-1 10.5.4 3 1 5.8 1 7.9M10.5 8.6c-2.4 2.6-3.3 6.8-2.8 11 .3 2.8 1.3 5.4 2.6 7M21.5 8.6c2.4 2.6 3.3 6.8 2.8 11-.3 2.8-1.3 5.4-2.6 7" stroke="#c2410c" stroke-width="1" fill="none" opacity=".55"/><path d="M7.5 14.5l3.4-2.6 1.8 3.9zM24.5 14.5l-3.4-2.6-1.8 3.9z" fill="#422006"/><path d="M8.5 20.5l2 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.9-1.6c-.6 2.6-3.6 4.3-7.4 4.3s-6.9-1.9-7.6-4.9z" fill="#422006"/></g></svg>`;
   }
 
-  function renderCollectionViewsFooter() {
-    return `<div class="mt-auto grid gap-0.5 pt-6">
-        <button type="button" data-repo-issue-views-toggle class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="panel-left-close" class="h-4 w-4 text-muted-foreground"></i>Collapse sidebar</button>
+  function renderCollectionViewsHeader() {
+    return `<div class="mb-1 flex justify-end">
+        <button type="button" data-repo-issue-views-toggle aria-label="Collapse sidebar" title="Collapse sidebar" class="h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"><i data-lucide="panel-left-close" class="h-4 w-4"></i></button>
       </div>`;
   }
 
@@ -30600,7 +31992,7 @@ Your reply
     if (filters.milestone === ISSUE_FILTER_NONE) parts.push("no:milestone");
     else if (filters.milestone) parts.push(`milestone:${issueQueryValue(filters.milestone)}`);
     if (filters.type) parts.push(`type:${filters.type}`);
-    if (filters.sort && filters.sort !== "recently_updated") {
+    if (filters.sort && filters.sort !== issueDefaultSort()) {
       parts.push(`sort:${ISSUE_QUERY_SORTS[filters.sort] || filters.sort}`);
     }
     const free = String(state.issuesView.query || "").trim();
@@ -30614,7 +32006,7 @@ Your reply
   function parseIssueQuery(text) {
     const filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     // With no state qualifier the search spans every issue, as on GitHub.
     let status = "all";
@@ -30768,7 +32160,7 @@ Your reply
       <div class="flex min-w-0 flex-wrap items-center gap-1">
         ${statusTabs.map(([stateName, icon, label, count]) => `<button type="button" data-dashboard-issue-filter="${stateName}" aria-pressed="${stateName === issuesView.filter ? "true" : "false"}" class="${issueStateTabClass(stateName === issuesView.filter)}"><i data-lucide="${icon}" class="h-4 w-4"></i>${label}<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px]">${formatCount(count)}</span></button>`).join("")}
       </div>
-      <div class="flex min-w-0 flex-wrap items-center justify-end">
+      <div data-repo-issue-list-filters class="flex min-w-0 flex-wrap items-center justify-end">
         ${listFilters.map(([label, field]) => renderRepoCollectionFilter(
           label, issueFilterOptions(field), field, true)).join("")}
       </div>
@@ -30806,11 +32198,12 @@ Your reply
       ? `<p data-repo-issue-search-pending role="status" class="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">${loadingHtml("Searching descriptions and comments...")}</p>`
       : "";
     setRepoIssueRecordOpen(false);
-    container.innerHTML = filterBar + warnBar + searchHint + (filtered.length
+    container.innerHTML = repoMirrorHelpSlot(state.selectedRepo) + filterBar + warnBar + searchHint + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
-        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint;
+        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint
+      + repoIssueFeedLinks(state.selectedRepo);
     const viewsNav = $("[data-repo-issue-views]");
     if (viewsNav) viewsNav.innerHTML = renderIssueViewsNav();
     const heading = $("[data-repo-issue-view-title]");
@@ -31474,7 +32867,7 @@ Your reply
       await submitWebProjectEvents(repo, number, specs);
       await loadRepoProjects(repo);
     } catch (error) {
-      window.alert(projectErrorText(error));
+      showErrorNotice(projectErrorText(error));
     }
   }
 
@@ -31873,6 +33266,7 @@ Your reply
         String(filters.base || "").toLowerCase() === base.toLowerCase(),
         `<i data-lucide="git-branch" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, base, count));
     return `<div data-repo-collection-views-inner>
+      ${renderCollectionViewsHeader()}
       <div class="grid gap-0.5">
         ${PULL_VIEWS.map((view) => row(`data-repo-pull-view="${view.id}"`, current?.id === view.id,
           `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
@@ -31881,8 +33275,7 @@ Your reply
       <div class="grid gap-0.5">
         <a${state.selectedRepo ? ` href="${escapeHtml(`${repoLinkUrl(state.selectedRepo)}/branches`)}"` : ""} data-dashboard-repo-tab="branches" class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="git-branch" class="h-4 w-4 text-muted-foreground"></i>Branches</a>
         ${baseRows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">Base branches</h3>${baseRows.join("")}` : ""}
-      </div>
-      ${renderCollectionViewsFooter()}</div>`;
+      </div></div>`;
   }
 
   function renderPullListHeader(loadedItems) {
@@ -32058,31 +33451,33 @@ Your reply
     };
     return `
       <section data-dashboard-repo-tab-panel="discussions" class="hidden">
-        <div data-repo-record-host="discussions" class="mx-auto mt-2 grid w-full min-w-0 max-w-[80rem] gap-6">
-          <div data-repo-collection-chrome class="flex min-w-0 flex-wrap items-center gap-2">
-            <label class="flex h-8 min-w-0 flex-1 basis-72 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
-              <span class="inline-flex w-8 shrink-0 items-center justify-center text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
-              <span class="relative min-w-0 flex-1 overflow-hidden">
-                <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pr-3 text-[14px] text-foreground"></span>
-                <input data-repo-filter-query="discussions" type="search" autocomplete="off" spellcheck="false" aria-label="Search all discussions" value="${escapeHtml(`${serializeDiscussionQuery()} `)}" placeholder="Search all discussions" class="relative h-full w-full bg-transparent pr-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
-              </span>
-            </label>
-            ${select("sort", DISCUSSION_SORTS, "Sort by:")}
-            ${select("status", DISCUSSION_STATUSES, "Filter:")}
-            <button type="button" data-repo-discussion-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</button>
-          </div>
-          <div data-repo-discussions-columns class="grid min-w-0 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <aside data-repo-collection-chrome class="grid min-w-0 content-start gap-4">
+        <div data-repo-record-host="discussions" data-repo-rail-layout class="mt-2 grid w-full min-w-0 gap-6">
+          <aside data-repo-rail data-repo-collection-chrome class="min-w-0">
+            <div data-repo-rail-inner class="grid min-w-0 content-start gap-4">
               <div>
-                <h2 class="mb-2 px-2 text-[16px] font-semibold text-foreground">Categories</h2>
+                <h2 class="fm-rail-title">Categories</h2>
                 <nav data-repo-discussion-categories aria-label="Discussion categories">${renderDiscussionCategoriesNav()}</nav>
               </div>
               <div class="rounded-md border border-border p-4">
-                <h3 class="text-[16px] font-semibold text-foreground">Signed conversations</h3>
+                <h3 class="text-[14px] font-semibold text-foreground">Signed conversations</h3>
                 <p class="mt-2 text-[12px] leading-5 text-muted-foreground">Every discussion and reply is signed by its author, from this website or the apps, and served by the repository's mirrors.</p>
               </div>
               <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="inline-flex items-center gap-2 px-2 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="heart-handshake" class="h-4 w-4"></i>Contributing guide</a>
-            </aside>
+            </div>
+          </aside>
+          <div data-repo-rail-main class="grid min-w-0 content-start gap-4">
+            <div data-repo-collection-chrome class="flex min-w-0 flex-wrap items-center gap-2">
+              <label class="flex h-8 min-w-0 flex-1 basis-72 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+                <span class="inline-flex w-8 shrink-0 items-center justify-center text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
+                <span class="relative min-w-0 flex-1 overflow-hidden">
+                  <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pr-3 text-[14px] text-foreground"></span>
+                  <input data-repo-filter-query="discussions" type="search" autocomplete="off" spellcheck="false" aria-label="Search all discussions" value="${escapeHtml(`${serializeDiscussionQuery()} `)}" placeholder="Search all discussions" class="relative h-full w-full bg-transparent pr-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
+                </span>
+              </label>
+              ${select("sort", DISCUSSION_SORTS, "Sort by:")}
+              ${select("status", DISCUSSION_STATUSES, "Filter:")}
+              <button type="button" data-repo-discussion-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</button>
+            </div>
             <div class="min-w-0">
               <h2 data-repo-collection-chrome data-repo-discussions-heading class="mb-2 text-[16px] font-semibold text-foreground">Discussions</h2>
               <div data-repo-collection-box class="overflow-clip rounded-md border border-border bg-background">
@@ -35133,6 +36528,7 @@ Your reply
     loadRepoAboutInfo(repo);
     loadRepoAboutRelease(repo);
     loadRepoAboutInsights(repo);
+    loadRepoMirrorQuota(repo);
   }
 
   function scheduleRepoAboutRail(repo) {
@@ -36210,6 +37606,38 @@ Your reply
   // Header-search page filter for the Agents tab (adhoc #62). One haystack for
   // both session renderers — they draw the same snapshots, just different
   // fields of them — so a hit is always something visible on the row.
+  const REPO_AGENT_STATUS_VIEWS = [
+    ["all", "All sessions", "bot"],
+    ["running", "Running", "loader-circle"],
+    ["finished", "Finished", "circle-check"],
+    ["failed", "Failed", "circle-x"],
+  ];
+
+  function repoAgentStatusGroup(agent) {
+    const status = String(agent?.status || "").toLowerCase();
+    if (REPO_AGENT_ACTIVE_STATUSES.has(status)) return "running";
+    if (["failed", "error", "stopped", "cancelled", "canceled"].includes(status)) return "failed";
+    return "finished";
+  }
+
+  function repoAgentsInStatusView(agents) {
+    const view = state.agentsView.statusView || "all";
+    const list = Array.isArray(agents) ? agents : [];
+    return view === "all" ? list : list.filter((agent) => repoAgentStatusGroup(agent) === view);
+  }
+
+  function renderRepoAgentsRail() {
+    const rail = $("[data-repo-agents-views]");
+    if (!rail) return;
+    const agents = Array.isArray(state.agentsView.agents) ? state.agentsView.agents : [];
+    const view = state.agentsView.statusView || "all";
+    rail.innerHTML = REPO_AGENT_STATUS_VIEWS.map(([id, label, icon]) => {
+      const count = id === "all" ? agents.length : agents.filter((agent) => repoAgentStatusGroup(agent) === id).length;
+      return `<li><button type="button" data-repo-agents-view="${id}" class="fm-rail-item"${id === view ? ' aria-current="true"' : ""}><i data-lucide="${icon}"></i><span class="min-w-0 truncate">${escapeHtml(label)}</span><span class="fm-counter">${formatCount(count)}</span></button></li>`;
+    }).join("");
+    window.lucide?.createIcons();
+  }
+
   function repoAgentsMatchingPageFilter(agents) {
     const queries = pageFilterQueries("");
     if (!queries.length) return agents;
@@ -36260,7 +37688,8 @@ Your reply
     if (selectedId != null) state.agentsView.selectedAgentId = null;
     // The "start a new agent" composer now lives in the header robot-button
     // modal (adhoc #62), so this list is just the sessions.
-    const visible = repoAgentsMatchingPageFilter(agents);
+    renderRepoAgentsRail();
+    const visible = repoAgentsMatchingPageFilter(repoAgentsInStatusView(agents));
     container.innerHTML = visible.length
       ? `<div class="divide-y divide-border">${visible.map(renderRepoAgentRow).join("")}</div>`
       : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyListHtml("No agent sessions yet. Start one from the robot button in the header, or from the desktop app.")}</div>`;
@@ -36409,6 +37838,8 @@ Your reply
   const USER_ACTIVITY_CARD_SYNC_MS = 60 * 1000;
   const USER_ACTIVITY_LIGHT = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
   const USER_ACTIVITY_DARK = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"];
+  const USER_ACTIVITY_HALLOWEEN_LIGHT = ["#ebedf0", "#ffee4a", "#ffc501", "#fe9600", "#03001c"];
+  const USER_ACTIVITY_HALLOWEEN_DARK = ["#2d333b", "#631c03", "#bd561d", "#fa7a18", "#fddf68"];
   const userActivity = {
     started: false,
     lastWheelMs: 0,
@@ -36635,7 +38066,10 @@ Your reply
     const kinds = userActivityOtherKinds();
     const summary = userActivitySummary(counts);
     const nowSlot = userActivitySlot();
-    const ramp = readDashboardTheme() === "light" ? USER_ACTIVITY_LIGHT : USER_ACTIVITY_DARK;
+    const light = readDashboardTheme() === "light";
+    const ramp = seasonActive("halloween")
+      ? (light ? USER_ACTIVITY_HALLOWEEN_LIGHT : USER_ACTIVITY_HALLOWEEN_DARK)
+      : (light ? USER_ACTIVITY_LIGHT : USER_ACTIVITY_DARK);
     const cells = [];
     for (let row = 0; row < USER_ACTIVITY_ROWS; row += 1) {
       for (let hour = 0; hour < 24; hour += 1) {
@@ -37527,7 +38961,7 @@ Your reply
       branchFacts.branch ? orgAgentOpsButton("diff", "git-compare-arrows", diffOpen ? "Transcript" : "Diff", { title: diffOpen ? "Back to the transcript" : "Show this agent's changes against its base" }) : "",
       branchFacts.active && canManage ? orgAgentOpsButton("stop", "square", "Stop", { tone: "danger" }) : "",
       branchFacts.canContinue && canManage ? orgAgentOpsButton("continue", "play", "Continue", { title: "Resume this agent where it left off" }) : "",
-      branchFacts.canMerge && canManage ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : `Merge the branch into its base on ${platformName()}, then remove the branch` }) : "",
+      branchFacts.canMerge && canManage && state.agentsView.canMergeBranches !== false ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : `Merge the branch into its base on ${platformName()}, then remove the branch` }) : "",
       branchFacts.canMerge && canManage && !branchFacts.merging && branchFacts.branch ? orgAgentOpsButton("update", "git-pull-request-arrow", `Update from ${branchFacts.base || repoDefaultBranch(repo)}`, { title: `Merge ${branchFacts.base || repoDefaultBranch(repo)} into ${branchFacts.branch} on ${platformName()}` }) : "",
       branchFacts.canCleanup && canManage ? orgAgentOpsButton("cleanup", "eraser", "Clean up", { title: "Remove the merged branch" }) : "",
       prNumber > 0 && canLink ? `<a data-org-agent-pull href="${escapeHtml(repoRecordUrl(repo, "pulls", prNumber))}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary" title="Open pull request #${prNumber}"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>PR #${prNumber}</a>` : "",
@@ -38035,8 +39469,9 @@ Your reply
       window.lucide?.createIcons();
       return;
     }
+    renderRepoAgentsRail();
     const visible = repoAgentsMatchingPageFilter(
-      Array.isArray(state.agentsView.agents) ? state.agentsView.agents : []);
+      repoAgentsInStatusView(state.agentsView.agents));
     // An open session keeps the pane only while its row is one the list would
     // show: a deleted session, or one the header search now excludes, drops the
     // reader back on the start composer rather than stranding them on a page
@@ -38254,6 +39689,8 @@ Your reply
         state.agentsView.canViewSessions = canViewAgentSessions;
         state.agentsView.canDeleteSessions =
           payload?.canDeleteAgentSessions === true;
+        state.agentsView.canMergeBranches =
+          payload?.canMergeAgentBranches === true;
         const accessReason = String(
           payload?.accessReason || payload?.message || "",
         ).trim();
@@ -39637,6 +41074,7 @@ Your reply
   function webIssueSubmitErrorText(error) {
     const code = String(error?.message || "");
     const status = Number(error?.status) || 0;
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "inbox_full") return "Issue delivery is temporarily full. Try again later.";
     if (code === "author_quota") return "You've reached the submission limit for this repository.";
     if (code === "issue_too_large" || code === "attachment_too_large"
@@ -39770,6 +41208,15 @@ Your reply
       const result = await submitWebIssue(
         repo, title, body, assignAgent, agentModel, agentProvider,
         { milestone, project }, updateSubmissionProgress);
+      if (result?.pending === "review") {
+        if (titleInput) titleInput.value = "";
+        if (bodyInput) bodyInput.value = "";
+        images.length = 0;
+        form.querySelector("[data-repo-issue-attachments]")?.replaceChildren();
+        setSubmitBusy(submit, false);
+        setHint(moderationPendingMessage(result), "good");
+        return;
+      }
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) {
         throw new Error("number_unavailable");
@@ -40000,6 +41447,10 @@ Your reply
             priority: it.priority,
             assignees: it.assignees,
           });
+        if (result?.pending === "review") {
+          ok++;
+          continue;
+        }
         const number = Number(result.number || 0);
         if (!Number.isInteger(number) || number <= 0) {
           throw new Error("number_unavailable");
@@ -40464,6 +41915,9 @@ Your reply
       }
       navigateHistory(detailUrl);
       await loadRepoRecordDetail(targetRepo, "pulls", number);
+      if (result.refusedBy) {
+        showErrorNotice(`${repoDisplayName(result.refusedBy)} is a read-only mirror here, so it cannot take pull requests. #${number} was opened on your fork instead. To send it upstream, open the pull request where ${repoDisplayName(result.refusedBy)} is hosted.`);
+      }
     } catch (error) {
       setSubmitBusy(submit, false);
       console.error("[forkmesh] pull request submission failed", error);
@@ -41394,7 +42848,7 @@ Your reply
           availability.classList.add("text-primary");
         }
       }
-      updateRepoLiveCounts(repo, { mirrors: mirrorCount });
+      updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });
       setRepoTabCount("mirrors", mirrorCount);
       state.repoMirrors = mirrors;
       // Where the repository has reached, in the forkmesh-sync-status-v1
@@ -41651,7 +43105,7 @@ Your reply
         </div>` : "";
     if (!visibility && !collaborators) return "";
     return `
-      <div data-repo-settings-access class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+      <div data-repo-settings-access id="settings-access" data-repo-settings-section="Access" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
         <div class="border-b border-border bg-secondary/50 px-4 py-3">
           <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield" class="h-3.5 w-3.5 text-muted-foreground"></i>Access</span>
         </div>
@@ -41949,7 +43403,7 @@ Your reply
       await releaseEditRequest(repo, { op: "asset-delete", tag, name, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -41959,7 +43413,7 @@ Your reply
       await releaseEditRequest(repo, { op: "delete", tag, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -42335,11 +43789,14 @@ Your reply
     }
   }
 
-  function updateRepoLiveCounts(repo, counts) {
+  function updateRepoLiveCounts(repo, counts, options = {}) {
     if (!counts || typeof counts !== "object") return;
+    const mirrorsListed = options.mirrorList !== true
+      && repoMirrorLoadedKey === repoKey(repo).toLowerCase();
     (["commits", "issues", "pulls", "discussions", "mirrors"]).forEach((key) => {
       const value = Number(counts[key]);
       if (!Number.isFinite(value) || value < 0) return;
+      if (key === "mirrors" && mirrorsListed) return;
       repo[key] = value;
       $$(`[data-dashboard-repo-count="${key}"]`).forEach((badge) => {
         badge.textContent = formatCount(value);
@@ -44203,17 +45660,40 @@ Your reply
       </label>`;
   }
 
-  function issueContributionTipStorageKey(repo) {
-    return `forkmesh.issue-contribution-tip.v1:${repoKey(repo)}`;
+  function contributionTipKeys(kind, repo) {
+    const name = String(repo?.name || "").trim();
+    const owners = [repo?.owner, ...repoLogicalOwners(repo).map((value) => value.owner)]
+      .map((owner) => String(owner || "").trim())
+      .filter(Boolean);
+    const known = new Set(owners.map((owner) => owner.toLowerCase()));
+    (state.repositories || []).forEach((row) => {
+      if (String(row?.name || "").trim().toLowerCase() !== name.toLowerCase()) return;
+      if (!repoLogicalOwners(row).some((value) => known.has(value.owner.toLowerCase()))) return;
+      const owner = String(row?.owner || "").trim();
+      if (owner) owners.push(owner);
+    });
+    return [...new Set(owners)].map((owner) => `forkmesh.${kind}-contribution-tip.v1:${owner}/${name}`);
+  }
+
+  function contributionTipDismissed(kind, repo) {
+    try {
+      return contributionTipKeys(kind, repo).some((key) => localStorage.getItem(key) === "1");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function dismissContributionTip(kind, repo) {
+    try {
+      contributionTipKeys(kind, repo).forEach((key) => localStorage.setItem(key, "1"));
+    } catch (_) {}
   }
 
   function issueContributionTipDismissed(repo) {
     try {
-      return localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1"
-        || localStorage.getItem(issueContributionTipStorageKey(repo)) === "1";
-    } catch (_) {
-      return false;
-    }
+      if (localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1") return true;
+    } catch (_) {}
+    return contributionTipDismissed("issue", repo);
   }
 
   function renderIssueContributionTip(repo) {
@@ -44226,13 +45706,15 @@ Your reply
           <span class="fm-flash-title">Want to contribute to ${escapeHtml(repository)}?</span>
           <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
-        <details class="fm-flash-actions relative text-left">
-          <summary class="fm-btn fm-btn-sm inline-flex list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
-          <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
-            <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
-            <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
-          </div>
-        </details>
+        <div class="fm-flash-actions relative inline-flex text-left">
+          <button type="button" data-repo-issue-contribution-dismiss="repository" title="Dismiss for this repository" class="fm-btn fm-btn-sm" style="border-top-right-radius:0;border-bottom-right-radius:0">Dismiss</button>
+          <details class="relative">
+            <summary aria-label="More ways to dismiss" class="fm-btn fm-btn-sm inline-flex list-none" style="margin-left:-1px;padding:0 6px;border-top-left-radius:0;border-bottom-left-radius:0"><i data-lucide="chevron-down"></i></summary>
+            <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
+              <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
+            </div>
+          </details>
+        </div>
       </aside>`;
   }
 
@@ -44339,11 +45821,7 @@ Your reply
   }
 
   function pullContributionTipDismissed(repo) {
-    try {
-      return localStorage.getItem(`forkmesh.pull-contribution-tip.v1:${repoKey(repo)}`) === "1";
-    } catch (_) {
-      return false;
-    }
+    return contributionTipDismissed("pull", repo);
   }
 
   const PULL_BATCH_FILE = ".forkmesh/pull-batch.json";
@@ -45447,12 +46925,12 @@ Your reply
         : "";
     const privateItems = Array.isArray(data.private) ? data.private : [];
     const privateSection = data.maintainer || privateItems.length ? `
-      <section data-security-private class="overflow-hidden rounded-md border border-border">
+      <section data-security-private id="security-private" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
         <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="lock" class="h-4 w-4 text-muted-foreground"></i>${data.maintainer ? "Reports and drafts" : "Your private reports"}<span class="fm-counter">${privateItems.length}</span><span class="ml-auto text-[12px] font-normal text-muted-foreground">Only visible to you${data.maintainer ? ", the reporters and collaborators" : " and the maintainers"}</span></div>
         ${securityList(repo, privateItems, "No reports are waiting for triage.")}
       </section>` : "";
     const settings = data.admin ? `
-      <section data-security-settings class="flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
+      <section data-security-settings id="security-settings" class="scroll-mt-4 flex flex-wrap items-center gap-3 rounded-md border border-border px-4 py-3">
         <i data-lucide="settings" class="h-4 w-4 text-muted-foreground"></i>
         <div class="min-w-0 flex-1">
           <p class="text-[14px] font-semibold text-foreground">Private vulnerability reporting</p>
@@ -45460,8 +46938,17 @@ Your reply
         </div>
         <button type="button" data-security-action="reporting" data-enable="${data.reportingEnabled ? "0" : "1"}" class="inline-flex h-8 items-center rounded-md border border-border px-3 text-[14px] text-foreground hover:bg-secondary">${data.reportingEnabled ? "Turn off" : "Turn on"}</button>
       </section>` : "";
+    const railItem = (target, icon, label, count = null) => `<li><button type="button" data-repo-rail-jump="${target}" class="fm-rail-item"><i data-lucide="${icon}"></i><span class="min-w-0 truncate">${escapeHtml(label)}</span>${count === null ? "" : `<span class="fm-counter">${formatCount(count)}</span>`}</button></li>`;
+    const rail = [
+      railItem("security-policy", "shield", "Security policy"),
+      railItem("security-published", "shield-check", "Advisories", (data.published || []).length),
+      privateSection ? railItem("security-private", "lock", data.maintainer ? "Reports" : "Your reports", privateItems.length) : "",
+      settings ? railItem("security-settings", "settings", "Settings") : "",
+    ].join("");
     container.innerHTML = `
-      <div data-security-overview class="grid gap-5 py-2">
+      <div data-security-overview data-repo-rail-layout class="grid gap-5 py-2">
+        <nav data-repo-rail aria-label="Security sections" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Security</h2><ul class="fm-rail-list">${rail}</ul></div></nav>
+        <div data-repo-rail-main class="grid min-w-0 content-start gap-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <h2 class="text-xl font-semibold text-foreground">Security</h2>
@@ -45469,16 +46956,17 @@ Your reply
           </div>
           <div class="flex flex-wrap gap-2">${reportButton}</div>
         </div>
-        <section class="overflow-hidden rounded-md border border-border">
+        <section id="security-policy" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield" class="h-4 w-4 text-muted-foreground"></i>Security policy<span data-security-policy-source class="ml-auto font-mono text-[12px] font-normal text-muted-foreground"></span></div>
           <div data-security-policy class="px-4 py-4 text-sm text-muted-foreground">${loadingHtml("Reading SECURITY.md...")}</div>
         </section>
-        <section data-security-published class="overflow-hidden rounded-md border border-border">
+        <section data-security-published id="security-published" class="scroll-mt-4 overflow-hidden rounded-md border border-border">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>Published advisories<span class="fm-counter">${(data.published || []).length}</span><a href="/advisories" class="ml-auto text-[12px] font-normal text-primary hover:underline">All advisories on this site</a></div>
           ${securityList(repo, data.published || [], "There are no published security advisories.")}
         </section>
         ${privateSection}
         ${settings}
+        </div>
       </div>`;
   }
 
@@ -45925,7 +47413,7 @@ Your reply
       query: "",
       filters: {
         author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
-        mentions: "", involves: "", type: "", sort: "recently_updated",
+        mentions: "", involves: "", type: "", sort: issueDefaultSort(),
       },
     };
     state.pullsView = { filter: "open", query: "" };
@@ -46051,7 +47539,20 @@ Your reply
     const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `
       <section data-dashboard-repo-tab-panel="settings" class="hidden">
-        <div class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
+       <div data-repo-rail-layout data-repo-settings-layout class="grid min-w-0 gap-4">
+        <nav data-repo-rail aria-label="Settings sections" class="mt-4 min-w-0 rounded-lg border border-border p-3 lg:mt-0">
+          <div data-repo-rail-inner>
+            <h2 class="fm-rail-title">Settings</h2>
+            <label class="mb-2 flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 text-muted-foreground focus-within:border-[var(--dashboard-link)]">
+              <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
+              <input data-repo-settings-search type="search" autocomplete="off" spellcheck="false" placeholder="Search settings" aria-label="Search settings" class="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground" />
+            </label>
+            <ul data-repo-settings-nav class="fm-rail-list"></ul>
+            <p data-repo-settings-search-empty hidden class="px-2 py-1 text-[12px] text-muted-foreground">No settings match.</p>
+          </div>
+        </nav>
+        <div data-repo-rail-main class="min-w-0">
+        <div id="settings-general" data-repo-settings-section="General" class="scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="settings" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository settings</span>
           </div>
@@ -46087,14 +47588,14 @@ Your reply
           </form>
         </div>
         ${renderRepoAccessSettings(repo)}
-        ${repo.isPrivate ? "" : `<div data-repo-settings-logo class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        ${repo.isPrivate ? "" : `<div data-repo-settings-logo id="settings-logo" data-repo-settings-section="Logo" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="image" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
             <span class="font-mono text-[10px] text-muted-foreground">PNG · up to 256 KB</span>
           </div>
           <div class="grid gap-4 p-4">
             <div class="flex items-start gap-3">
-              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16")}</span>
+              <span data-repo-settings-logo-current class="shrink-0">${nativeRepositoryLogoMarkup(repo, "h-16 w-16") || instanceLogoFrameMarkup("h-16 w-16")}</span>
               <p class="text-[11px] leading-5 text-muted-foreground">Shown on repository cards and as the repository's fediverse avatar. A logo uploaded here comes first. Without one, ${escapeHtml(platformName())} uses the <span class="font-mono">logo.png</span> committed at the root of the repository, then approved artwork below, and never invents artwork for a project.</p>
             </div>
             <form data-repo-settings-logo-form class="grid gap-2">
@@ -46117,7 +47618,7 @@ Your reply
             </div>
           </div>
         </div>`}
-        <div data-repo-pull-rules-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-pull-rules-card id="settings-pull-rules" data-repo-settings-section="Pull request rules" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Pull request rules</span>
             <span class="font-mono text-[10px] text-muted-foreground">.forkmesh/pull-rules.json</span>
@@ -46127,7 +47628,7 @@ Your reply
             <div data-repo-pull-rules-editor class="text-xs text-muted-foreground">Loading rules…</div>
           </div>
         </div>
-        <div data-repo-webhooks-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-webhooks-card id="settings-webhooks" data-repo-settings-section="Webhooks" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="webhook" class="h-3.5 w-3.5 text-muted-foreground"></i>Webhooks</span>
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
@@ -46157,14 +47658,14 @@ Your reply
             </div>
           </div>
         </div>
-        <div data-repo-actions-secrets-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-actions-secrets-card id="settings-secrets" data-repo-settings-section="Actions secrets" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="key-round" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions secrets</span>
             <span class="font-mono text-[10px] text-muted-foreground">secrets.NAME</span>
           </div>
           <div data-actions-secrets data-actions-secrets-scope="repo" data-actions-secrets-base="${escapeHtml(`${repoApiBase(repo)}/actions/secrets`)}" class="p-4 text-xs text-muted-foreground"></div>
         </div>
-        <div data-repo-forge-mirror-card id="mirror" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-forge-mirror-card id="mirror" data-repo-settings-section="Mirror to GitHub or GitLab" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror to GitHub or GitLab</span>
             <span data-repo-forge-mirror-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
@@ -46175,7 +47676,7 @@ Your reply
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-archive-sync-card id="archive" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+        <div data-repo-archive-sync-card id="archive" data-repo-settings-section="Internet Archive backup" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
             <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
@@ -46186,7 +47687,7 @@ Your reply
             <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
-        <div data-repo-danger-zone class="mt-5 overflow-hidden rounded-lg border border-destructive/50 bg-background">
+        <div data-repo-danger-zone id="settings-danger" data-repo-settings-section="Danger zone" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-destructive/50 bg-background">
           <div class="border-b border-destructive/30 px-4 py-3">
             <h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
           </div>
@@ -46199,6 +47700,8 @@ Your reply
             <button type="button" data-repo-delete class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-destructive/60 px-3 text-xs font-semibold text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete repository</button>
           </div>
         </div>
+        </div>
+       </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
@@ -46315,11 +47818,11 @@ Your reply
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
-            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
+            <section data-dashboard-repo-tab-panel="actions" class="hidden"><div data-repo-actions class="mt-4 min-w-0 lg:mt-0"></div></section>
             <section data-dashboard-repo-tab-panel="insights" class="hidden"><div data-repo-insights class="min-w-0"></div></section>
             <section data-dashboard-repo-tab-panel="sizemap" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-pie" class="h-3.5 w-3.5 text-muted-foreground"></i>Size map</span><span class="font-mono text-[10px] text-muted-foreground">directory sizes · default branch</span></div><div data-repo-sizemap class="p-4"></div></div></section>
             <section data-dashboard-repo-tab-panel="mirrors" class="hidden"><div data-mirror-request hidden class="py-2"><label class="block text-[11px] font-medium text-foreground">Ask a node to mirror this repo</label><div class="flex items-center gap-2"><input data-mirror-request-target type="text" autocomplete="off" spellcheck="false" placeholder="node name" class="h-8 min-w-0 flex-1 rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" /><button type="button" data-mirror-request-send class="h-8 shrink-0 rounded-md bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70">Ask to mirror</button></div><p data-mirror-request-hint class="text-[11px] text-muted-foreground">They get a ping; if they accept, their node starts mirroring your repo.</p></div><div data-repo-mirrors></div></section>
-            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></section>` : ""}
+            ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div data-repo-rail-layout class="grid min-w-0 gap-4"><nav data-repo-rail aria-label="Agent sessions" class="hidden min-w-0"><div data-repo-rail-inner><h2 class="fm-rail-title">Agents</h2><ul data-repo-agents-views class="fm-rail-list"></ul></div></nav><div data-repo-rail-main class="min-w-0"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background lg:mt-0"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></div></div></section>` : ""}
             ${settingsPanel}
           </div>
           <aside data-repo-about data-repo-about-rail class="min-w-0 self-start rounded-lg border border-border bg-background p-4">
@@ -46412,6 +47915,7 @@ Your reply
               <p class="mt-2 text-[11px] leading-4 text-muted-foreground">Posts this repository published to its Mastodon followers. Deleting one sends a removal to every follower's server so it disappears from their timelines.</p>
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
+            ${repo.isPrivate ? "" : repoMirrorQuotaSection(repo)}
           </aside>
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
@@ -46452,6 +47956,7 @@ Your reply
     if (initialTab === "security") void loadRepoSecurity(repo);
     hydrateNativeRepositoryLogos(detail.querySelector("[data-repo-title-row]"));
     if (initialTab === "settings") {
+      renderRepoSettingsRail();
       void loadRepoSettingsLogo(repo);
       void loadRepoCollaborators(repo);
     }
@@ -46463,6 +47968,7 @@ Your reply
     const provenance = repoProvenanceHtml(repo, { forkButton: false });
     const websiteForkAvailable = !repo.isPrivate;
     const logo = nativeRepositoryLogoMarkup(repo, "h-6 w-6")
+      || instanceLogoFrameMarkup("h-6 w-6")
       || `<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">${escapeHtml(String(repo.owner || "F").slice(0, 1).toUpperCase())}</span>`;
     return `
         <div data-repo-title-row class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5">
@@ -46505,6 +48011,69 @@ Your reply
           </div>
         </div>`;
   }
+
+  function renderRepoSettingsRail() {
+    const nav = $("[data-repo-settings-nav]");
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]"));
+    nav.innerHTML = sections.map((section) => `<li><button type="button" data-repo-rail-jump="${escapeHtml(section.id)}" class="fm-rail-item"><span class="min-w-0 truncate">${escapeHtml(section.dataset.repoSettingsSection || "")}</span></button></li>`).join("");
+    filterRepoSettings($("[data-repo-settings-search]")?.value || "");
+    markRepoRailSection();
+  }
+
+  function filterRepoSettings(query) {
+    const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    document.querySelectorAll("[data-dashboard-repo-tab-panel=\"settings\"] [data-repo-settings-section]").forEach((section) => {
+      const text = `${section.dataset.repoSettingsSection} ${section.textContent} ${Array.from(section.querySelectorAll("input[placeholder]")).map((input) => input.placeholder).join(" ")}`.toLowerCase();
+      const match = words.every((word) => text.includes(word));
+      section.style.display = match ? "" : "none";
+      $(`[data-repo-settings-nav] [data-repo-rail-jump="${CSS.escape(section.id)}"]`)?.closest("li")?.toggleAttribute("hidden", !match);
+      if (match) shown += 1;
+    });
+    const empty = $("[data-repo-settings-search-empty]");
+    if (empty) empty.hidden = shown > 0;
+  }
+
+  function jumpToRepoRailSection(button) {
+    const target = document.getElementById(button.dataset.repoRailJump || "");
+    if (!target) return;
+    target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    button.closest("ul")?.querySelectorAll("[data-repo-rail-jump]").forEach((item) => {
+      if (item === button) item.setAttribute("aria-current", "true");
+      else item.removeAttribute("aria-current");
+    });
+  }
+
+  function markRepoRailSection() {
+    document.querySelectorAll("[data-dashboard-repo-tab-panel]:not(.hidden) [data-repo-rail]").forEach((rail) => {
+      const buttons = Array.from(rail.querySelectorAll("[data-repo-rail-jump]"));
+      if (!buttons.length) return;
+      let current = buttons[0];
+      buttons.forEach((button) => {
+        const target = document.getElementById(button.dataset.repoRailJump || "");
+        if (target && target.style.display !== "none" && target.getBoundingClientRect().top <= 140) current = button;
+      });
+      buttons.forEach((button) => {
+        if (button === current) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
+    });
+  }
+
+  let repoRailScrollFrame = 0;
+  document.addEventListener("scroll", () => {
+    if (repoRailScrollFrame) return;
+    repoRailScrollFrame = requestAnimationFrame(() => {
+      repoRailScrollFrame = 0;
+      markRepoRailSection();
+    });
+  }, { capture: true, passive: true });
+
+  document.addEventListener("input", (event) => {
+    const search = event.target.closest?.("[data-repo-settings-search]");
+    if (search) filterRepoSettings(search.value);
+  });
 
   function startRepoForkFromTitle(button) {
     const own = String(button?.dataset.repoForkOwnUrl || "");
@@ -47634,6 +49203,32 @@ Your reply
     storeRepositoryCatalog(data.repositories);
     renderRepositories(data.repositories, state.session);
     recordInterfaceMetric("browse", startedAt, "remote");
+    if (!fresh) void refreshCatalogOnNewForks();
+  }
+
+  async function refreshCatalogOnNewForks() {
+    if (state.pinnedForkCountsChecked) return;
+    state.pinnedForkCountsChecked = true;
+    const groups = sidebarPinnedGroups(nestRepositoryForks(homeRepositoryEntries(), () => 0), () => []);
+    for (const group of groups) {
+      const repo = group.entry.repo;
+      if (!repo || repo.isPrivate) continue;
+      try {
+        const response = await fetch(`${repoApiBase(repo)}/forks`, { headers: { accept: "application/json" } });
+        const data = response.ok ? await response.json() : null;
+        const live = Number(data?.count) || 0;
+        const seenKey = `forkmesh.pinned-fork-count.v1:${repoKey(repo)}`;
+        let seen = 0;
+        try {
+          seen = Number(sessionStorage.getItem(seenKey)) || 0;
+          sessionStorage.setItem(seenKey, String(live));
+        } catch (_) {}
+        if (live > group.forks.length && live > seen) {
+          await loadRepositories({ fresh: true });
+          return;
+        }
+      } catch (_) {}
+    }
   }
 
   // Boot/shared-chrome loads take the cached path (browser + edge cache honor
@@ -47749,6 +49344,7 @@ Your reply
       canonicalProfileReady = hydrateCanonicalProfile(session)
         .then((nextSession) => {
           if (bounceToVerification(nextSession)) return;
+          void backfillAdminUrl(nextSession);
           return loadNotifications();
         })
         .catch(() => {});
@@ -49062,14 +50658,12 @@ Your reply
         "[data-repo-issue-contribution-dismiss]",
       );
       if (contributionDismissButton && state.selectedRepo) {
-        const scope = contributionDismissButton.dataset.repoIssueContributionDismiss;
-        try {
-          const key = scope === "all"
-            ? "forkmesh.issue-contribution-tip.v1:all"
-            : issueContributionTipStorageKey(state.selectedRepo);
-          localStorage.setItem(key, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
+        if (contributionDismissButton.dataset.repoIssueContributionDismiss === "all") {
+          try {
+            localStorage.setItem("forkmesh.issue-contribution-tip.v1:all", "1");
+          } catch (_) {}
+        } else {
+          dismissContributionTip("issue", state.selectedRepo);
         }
         contributionDismissButton.closest("[data-repo-issue-contribution-tip]")?.remove();
         return;
@@ -49188,11 +50782,7 @@ Your reply
 
       const pullTipDismiss = event.target.closest("[data-repo-pull-contribution-dismiss]");
       if (pullTipDismiss && state.selectedRepo) {
-        try {
-          localStorage.setItem(`forkmesh.pull-contribution-tip.v1:${repoKey(state.selectedRepo)}`, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
-        }
+        dismissContributionTip("pull", state.selectedRepo);
         pullTipDismiss.closest("[data-repo-pull-contribution-tip]")?.remove();
         return;
       }
@@ -49761,6 +51351,21 @@ Your reply
       const contextMenuAction = event.target.closest("[data-repo-tree-context-action]");
       if (contextMenuAction) {
         await handleRepoTreeContextAction(contextMenuAction);
+        return;
+      }
+
+      const agentsViewButton = event.target.closest("[data-repo-agents-view]");
+      if (agentsViewButton) {
+        state.agentsView.statusView = agentsViewButton.dataset.repoAgentsView || "all";
+        state.agentsView.selectedAgentId = null;
+        if ($("[data-org-agent-sessions]")) renderOrgAgentSessions();
+        else renderRepoAgentsList(state.agentsView.agents);
+        return;
+      }
+
+      const railJump = event.target.closest("[data-repo-rail-jump]");
+      if (railJump) {
+        jumpToRepoRailSection(railJump);
         return;
       }
 
@@ -50351,6 +51956,9 @@ Your reply
   });
   $$("[data-new-repo-source]").forEach((btn) => {
     btn.addEventListener("click", () => setNewRepoSource(btn.dataset.newRepoSource));
+  });
+  $$("[data-new-repo-visibility]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoVisibilityNote);
   });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -54341,6 +55949,642 @@ Your reply
     renderMicrojobsPage();
     $("[data-microjobs-refresh]")?.addEventListener("click", renderMicrojobsPage);
   }
+  const MIRROR_QUOTA_DOT = Object.freeze({
+    green: "bg-success",
+    yellow: "bg-attention",
+    red: "bg-destructive",
+    unknown: "bg-muted-foreground/40",
+  });
+  const MIRROR_QUOTA_WORD = Object.freeze({
+    green: "Healthy",
+    yellow: "Behind",
+    red: "Unreachable",
+    unknown: "Not checked",
+  });
+  const MIRROR_QUOTA_START_URL = "https://forkmesh.com/start";
+  const mirrorQuotaUi = { data: new Map(), loads: new Map(), dialog: null };
+
+  function mirrorQuotaRowHtml(row) {
+    const status = MIRROR_QUOTA_DOT[row?.status] ? row.status : "unknown";
+    const label = String(row?.label || row?.host || "");
+    const url = String(row?.url || "");
+    const href = /^https:\/\/[^\s"'<>]+$/.test(url) ? url : "";
+    const word = MIRROR_QUOTA_WORD[status];
+    const detail = String(row?.statusLabel || word);
+    const at = Number(row?.lastCheck?.at) || 0;
+    const checked = row?.id !== "self" && at > 0 ? ` · checked ${formatTimeAgo(at)}` : "";
+    const name = href
+      ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer nofollow" class="dashboard-accent-link block min-w-0 truncate">${escapeHtml(label)}</a>`
+      : `<span class="block min-w-0 truncate text-foreground" title="${escapeHtml(url)}">${escapeHtml(label)}</span>`;
+    const host = row?.host && row.host !== label ? `${escapeHtml(row.host)} · ` : "";
+    const remove = row?.canRemove && !row?.builtin
+      ? `<button type="button" data-mirror-quota-remove="${escapeHtml(row.id)}" aria-label="Remove ${escapeHtml(label)}" class="shrink-0 text-[11px] text-muted-foreground hover:text-destructive">Remove</button>`
+      : "";
+    return `<li data-mirror-quota-row="${escapeHtml(row?.id || "")}" data-mirror-status="${status}" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs"><span role="img" aria-label="${word}" title="${word}" class="h-2 w-2 shrink-0 rounded-full ${MIRROR_QUOTA_DOT[status]}"></span><span class="min-w-0 flex-1">${name}<span class="block truncate text-[11px] text-muted-foreground">${host}${escapeHtml(detail)}${escapeHtml(checked)}</span></span>${remove}</li>`;
+  }
+
+  const MIRROR_QUOTA_OVERALL_WORD = Object.freeze({
+    green: "Mirror goal met",
+    yellow: "At least half of the mirror goal",
+    red: "Below half of the mirror goal",
+    unknown: "No mirrors checked yet",
+  });
+
+  function mirrorQuotaOverall(healthy, target) {
+    if (target <= 0) return healthy > 0 ? "green" : "unknown";
+    if (healthy >= target) return "green";
+    return healthy * 2 >= target ? "yellow" : "red";
+  }
+
+  function renderRepoMirrorQuotaCard(data, viewer = null, helpHref = "") {
+    if (!data || typeof data !== "object" || !Array.isArray(data.mirrors)) return "";
+    const target = Math.max(0, Number(data.target) || 0);
+    const healthy = Math.max(0, Number(data.healthy) || 0);
+    const registered = Math.max(0, Number(data.registered) || 0);
+    const canSet = Boolean(viewer?.canSetTarget);
+    if (!target && !registered && !canSet) return "";
+    const count = target ? `${healthy} / ${target} healthy` : `${healthy} healthy`;
+    const overall = mirrorQuotaOverall(healthy, target);
+    const percent = target ? Math.min(100, Math.round((healthy * 100) / target)) : 0;
+    const missing = Math.max(0, target - healthy);
+    const help = helpHref && target && overall !== "green"
+      ? `<p data-mirror-quota-help class="mt-1.5 text-[11px] text-muted-foreground">Needs ${missing} more mirror${missing === 1 ? "" : "s"} &middot; <a href="${escapeHtml(helpHref)}" class="dashboard-accent-link">How to help &rarr;</a></p>`
+      : "";
+    const bar = (target
+      ? `<div role="progressbar" aria-label="Healthy mirrors" aria-valuemin="0" aria-valuemax="${target}" aria-valuenow="${Math.min(healthy, target)}" class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/20"><span class="block h-full rounded-full ${MIRROR_QUOTA_DOT[overall]}" style="width:${percent}%"></span></div>`
+      : "") + help;
+    const rows = data.mirrors.map((row) => mirrorQuotaRowHtml(row)).join("");
+    const goal = canSet
+      ? `<form data-mirror-quota-target-form class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground"><label class="inline-flex items-center gap-1.5">${target ? "Goal" : "Set a mirror goal"}<input name="target" type="number" inputmode="numeric" min="0" max="${Number(data.maxTarget) || 100}" value="${target || 10}" aria-label="Healthy mirrors wanted" class="h-control-sm w-14 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-primary" /></label><button type="submit" class="fm-btn fm-btn-sm">Set target</button><span data-mirror-quota-target-status role="status" class="min-w-0 truncate"></span></form>`
+      : "";
+    const summary = MIRROR_QUOTA_OVERALL_WORD[overall];
+    return `<div data-mirror-quota-overall="${overall}" class="flex items-center justify-between gap-3"><h4 class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><span role="img" aria-label="${summary}" title="${summary}" class="h-2 w-2 shrink-0 rounded-full ${MIRROR_QUOTA_DOT[overall]}"></span>Mirrors</h4><span data-mirror-quota-count class="font-mono text-[11px] text-muted-foreground">${count}</span></div>${bar}<ul class="-mx-2 mt-2 grid">${rows}</ul><div class="mt-2 flex flex-wrap items-center gap-2"><button type="button" data-mirror-quota-add class="fm-btn fm-btn-sm">Add a mirror</button><span data-mirror-quota-status role="status" class="min-w-0 truncate text-[11px] text-destructive"></span></div>${goal}`;
+  }
+
+  function mirrorQuotaKey(repo) {
+    return repo ? repoApiBase(repo).toLowerCase() : "";
+  }
+
+  function mirrorQuotaKnown(repo) {
+    const key = mirrorQuotaKey(repo);
+    if (!key) return null;
+    if (mirrorQuotaUi.data.has(key)) return mirrorQuotaUi.data.get(key);
+    const seeded = repoFirstViewSeed(repo)?.mirrorQuota;
+    return seeded && typeof seeded === "object" && Array.isArray(seeded.mirrors) ? seeded : null;
+  }
+
+  function repoMirrorQuotaSection(repo) {
+    if (!instancePluginOn("mirror-quota")) return "";
+    const data = mirrorQuotaKnown(repo);
+    const inner = renderRepoMirrorQuotaCard(data, data?.viewer || null, repoMirrorHelpHref(repo));
+    return `<section data-repo-mirror-quota aria-label="Mirrors" class="mt-3 border-t border-border pt-3"${inner ? "" : " hidden"}>${inner}</section>`;
+  }
+
+  function paintRepoMirrorQuota(repo) {
+    const section = document.querySelector("[data-repo-mirror-quota]");
+    if (!section || !repo) return;
+    const data = mirrorQuotaUi.data.get(mirrorQuotaKey(repo)) || null;
+    const inner = renderRepoMirrorQuotaCard(data, data?.viewer || null, repoMirrorHelpHref(repo));
+    section.innerHTML = inner;
+    section.hidden = !inner;
+  }
+
+  function mirrorQuotaCurrent(repo) {
+    const selected = state.selectedRepo;
+    return Boolean(selected && repo && mirrorQuotaKey(selected) === mirrorQuotaKey(repo));
+  }
+
+  async function loadRepoMirrorQuota(repo) {
+    const key = mirrorQuotaKey(repo);
+    if (!key || repo.isPrivate || !instancePluginOn("mirror-quota")) return null;
+    if (mirrorQuotaUi.loads.has(key)) return mirrorQuotaUi.loads.get(key);
+    const signedIn = Boolean(state.session?.sessionToken);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`${repoApiBase(repo)}/mirror-quota`, { fresh: signedIn });
+        if (!data || data.ok === false || !Array.isArray(data.mirrors)) return null;
+        mirrorQuotaUi.data.set(key, data);
+        if (mirrorQuotaCurrent(repo)) paintRepoMirrorQuota(repo);
+        return data;
+      } catch (_) {
+        return null;
+      } finally {
+        mirrorQuotaUi.loads.delete(key);
+      }
+    })();
+    mirrorQuotaUi.loads.set(key, load);
+    return load;
+  }
+
+  function mirrorQuotaErrorText(data, status) {
+    if (data?.message) return String(data.message);
+    if (status === 401) return "Sign in first.";
+    if (status === 403) return "You can't change this repository's mirrors.";
+    if (status === 429) return "Too many changes. Try again in a minute.";
+    return String(data?.error || `HTTP ${status}`).replace(/_/g, " ");
+  }
+
+  async function sendRepoMirrorQuota(repo, method, body = {}) {
+    const response = await fetch(`${repoApiBase(repo)}/mirror-quota`, {
+      method,
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(mirrorQuotaErrorText(data, response.status));
+    mirrorQuotaUi.data.set(mirrorQuotaKey(repo), data);
+    if (mirrorQuotaCurrent(repo)) paintRepoMirrorQuota(repo);
+    return data;
+  }
+
+  function mirrorQuotaRunHtml(data, repo) {
+    const clone = String(data?.cloneUrl || "") || `${publicSiteOrigin()}${repoLinkUrl(repo)}.git`;
+    const folder = `${String(repo?.name || "repository").replace(/[^A-Za-z0-9._-]/g, "")}.git`;
+    const commands = `git clone --mirror ${clone}\ncd ${folder} && git update-server-info`;
+    const cron = `*/15 * * * * cd /srv/${folder} && git remote update --prune && git update-server-info`;
+    const block = (text, label) => `<div class="mt-2 flex items-start gap-2"><pre class="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-secondary px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground">${escapeHtml(text)}</pre><button type="button" data-mirror-quota-copy="${escapeHtml(text)}" aria-label="${escapeHtml(label)}" class="fm-btn fm-btn-sm">Copy</button></div>`;
+    return `<p class="text-xs leading-5 text-muted-foreground">Every copy keeps this project reachable if this site or the original is blocked or taken down. Issues live in <code class="font-mono">.forkmesh/issues</code>, so a clone carries the whole forum, not only the code.</p>${repoMirrorHelpHref(repo) ? `<p class="mt-2 text-xs"><a href="${escapeHtml(repoMirrorHelpHref(repo))}" class="dashboard-accent-link font-semibold">Read the full guide: run a mirror, join the federation, register it &rarr;</a></p>` : ""}<h3 class="mt-3 text-xs font-semibold text-foreground">Run a mirror</h3>${block(commands, "Copy the clone commands")}<p class="mt-2 text-[11px] text-muted-foreground">Keep it fresh every 15 minutes with cron:</p>${block(cron, "Copy the cron line")}<p class="mt-2 text-[11px] leading-5 text-muted-foreground">Serve the folder over HTTPS with any web server, or push it to another forge. Or <a href="${MIRROR_QUOTA_START_URL}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link">start your own ForkMesh instance</a>.</p>`;
+  }
+
+  function mirrorQuotaFormHtml() {
+    if (!state.session?.sessionToken) {
+      return `<p class="mt-3 text-xs text-muted-foreground"><a href="/login?next=${encodeURIComponent(location.pathname)}" class="dashboard-accent-link">Sign in</a> to list your mirror here so it is checked and counted.</p>`;
+    }
+    return `<form data-mirror-quota-add-form class="mt-3 grid gap-2"><h3 class="text-xs font-semibold text-foreground">List your mirror</h3><input name="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" required maxlength="300" placeholder="https://example.org/example/forum.git" aria-label="Mirror address" class="h-control rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-primary" /><input name="label" type="text" autocomplete="off" maxlength="60" placeholder="Name (optional)" aria-label="Mirror name" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground outline-none focus:border-primary" /><p class="text-[11px] text-muted-foreground">https addresses are checked every 15 minutes. git:// and ssh addresses are listed but not checked.</p><span data-mirror-quota-add-status role="status" class="min-h-4 text-[11px] text-muted-foreground"></span></form>`;
+  }
+
+  function closeMirrorQuotaDialog() {
+    const dialog = mirrorQuotaUi.dialog;
+    if (!dialog) return;
+    mirrorQuotaUi.dialog = null;
+    document.removeEventListener("keydown", dialog.onKey, true);
+    dialog.overlay.remove();
+    if (dialog.previous?.isConnected && typeof dialog.previous.focus === "function") dialog.previous.focus();
+  }
+
+  function openMirrorQuotaDialog(repo) {
+    closeMirrorQuotaDialog();
+    const data = mirrorQuotaKnown(repo);
+    const overlay = document.createElement("div");
+    overlay.dataset.mirrorQuotaDialog = "";
+    overlay.className = "fixed inset-0 z-[90] flex items-start justify-center bg-background/70 p-4 pt-[10vh]";
+    const signedIn = Boolean(state.session?.sessionToken);
+    overlay.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="mirrorQuotaDialogTitle" class="fm-dialog w-full max-w-lg"><div class="fm-dialog-header"><h2 id="mirrorQuotaDialogTitle" class="fm-dialog-title">Add a mirror</h2><button type="button" data-mirror-quota-close aria-label="Close" class="fm-btn fm-btn-sm fm-btn-icon fm-btn-invisible"><i data-lucide="x"></i></button></div><div class="fm-dialog-body">${mirrorQuotaRunHtml(data, repo)}${mirrorQuotaFormHtml()}</div><div class="fm-dialog-footer"><button type="button" data-mirror-quota-close class="fm-btn fm-btn-sm">${signedIn ? "Cancel" : "Close"}</button>${signedIn ? `<button type="button" data-mirror-quota-submit class="fm-btn fm-btn-sm">Add mirror</button>` : ""}</div></div>`;
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeMirrorQuotaDialog();
+    };
+    mirrorQuotaUi.dialog = { overlay, onKey, repo, previous: document.activeElement };
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    window.lucide?.createIcons();
+    (overlay.querySelector("[data-mirror-quota-add-form] input[name=url]") || overlay.querySelector("[data-mirror-quota-close]"))?.focus();
+  }
+
+  async function submitMirrorQuotaDialog() {
+    const dialog = mirrorQuotaUi.dialog;
+    const form = dialog?.overlay.querySelector("[data-mirror-quota-add-form]");
+    if (!dialog || !form) return;
+    const status = form.querySelector("[data-mirror-quota-add-status]");
+    const button = dialog.overlay.querySelector("[data-mirror-quota-submit]");
+    const url = String(form.elements.url?.value || "").trim();
+    if (!url) {
+      if (status) status.textContent = "Enter the mirror's address.";
+      form.elements.url?.focus();
+      return;
+    }
+    if (button) button.disabled = true;
+    if (status) {
+      status.className = "min-h-4 text-[11px] text-muted-foreground";
+      status.textContent = "Adding...";
+    }
+    try {
+      await sendRepoMirrorQuota(dialog.repo, "POST", { url, label: String(form.elements.label?.value || "").trim() });
+      closeMirrorQuotaDialog();
+    } catch (error) {
+      if (status) {
+        status.className = "min-h-4 text-[11px] text-destructive";
+        status.textContent = error.message;
+      }
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function submitMirrorQuotaTarget(form) {
+    const repo = state.selectedRepo;
+    const status = form.querySelector("[data-mirror-quota-target-status]");
+    const target = Number(form.elements.target?.value);
+    if (!repo || !Number.isInteger(target) || target < 0) {
+      if (status) status.textContent = "Enter a whole number.";
+      return;
+    }
+    if (status) status.textContent = "Saving...";
+    try {
+      await sendRepoMirrorQuota(repo, "PUT", { target });
+    } catch (error) {
+      const fresh = document.querySelector("[data-mirror-quota-target-status]");
+      if (fresh) {
+        fresh.className = "min-w-0 truncate text-destructive";
+        fresh.textContent = error.message;
+      }
+    }
+  }
+
+  async function removeRepoMirror(button) {
+    const repo = state.selectedRepo;
+    const id = button.getAttribute("data-mirror-quota-remove") || "";
+    if (!repo || !id) return;
+    const ok = await confirmAccountAction({
+      title: "Remove this mirror?",
+      body: "It stops being checked and counted. The copy itself is not touched.",
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
+    try {
+      await sendRepoMirrorQuota(repo, "DELETE", { id });
+    } catch (error) {
+      const status = document.querySelector("[data-mirror-quota-status]");
+      if (status) status.textContent = error.message;
+    }
+  }
+
+  function initRepoMirrorQuota() {
+    document.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!target?.closest) return;
+      if (target.closest("[data-mirror-quota-add]")) {
+        event.preventDefault();
+        if (state.selectedRepo) openMirrorQuotaDialog(state.selectedRepo);
+        return;
+      }
+      const remove = target.closest("[data-mirror-quota-remove]");
+      if (remove) {
+        event.preventDefault();
+        removeRepoMirror(remove);
+        return;
+      }
+      const dialog = mirrorQuotaUi.dialog;
+      if (!dialog || !dialog.overlay.contains(target)) return;
+      if (target === dialog.overlay || target.closest("[data-mirror-quota-close]")) {
+        closeMirrorQuotaDialog();
+        return;
+      }
+      if (target.closest("[data-mirror-quota-submit]")) {
+        event.preventDefault();
+        submitMirrorQuotaDialog();
+        return;
+      }
+      const copy = target.closest("[data-mirror-quota-copy]");
+      if (copy) {
+        event.preventDefault();
+        if (await copyTextToClipboard(copy.getAttribute("data-mirror-quota-copy") || "")) copy.textContent = "Copied";
+      }
+    });
+    document.addEventListener("submit", (event) => {
+      const goal = event.target?.closest?.("[data-mirror-quota-target-form]");
+      if (goal) {
+        event.preventDefault();
+        submitMirrorQuotaTarget(goal);
+        return;
+      }
+      if (event.target?.closest?.("[data-mirror-quota-add-form]")) {
+        event.preventDefault();
+        submitMirrorQuotaDialog();
+      }
+    });
+  }
+  const MODERATION_HIDDEN_TEXT = "*This post was hidden by the moderators.*";
+  const MODERATION_WAIT_MS = 2000;
+  const MODERATION_EMPTY = Object.freeze({
+    hidden: [], hiddenAuthors: [], locked: false, canModerate: false, pendingMine: 0,
+  });
+
+  function moderationHeaders(json = false) {
+    const headers = { accept: "application/json" };
+    if (json) headers["content-type"] = "application/json";
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    return headers;
+  }
+
+  async function fetchIssueModeration(repo, number) {
+    if (!repo || !Number(number)) return MODERATION_EMPTY;
+    try {
+      const response = await fetch(
+        `${repoApiBase(repo)}/moderation?kind=issue&number=${encodeURIComponent(number)}`,
+        { credentials: "same-origin", cache: "no-store", headers: moderationHeaders() });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) return MODERATION_EMPTY;
+      return {
+        hidden: Array.isArray(data.hidden) ? data.hidden.map(String) : [],
+        hiddenAuthors: Array.isArray(data.hiddenAuthors)
+          ? data.hiddenAuthors.map((name) => String(name).toLowerCase()) : [],
+        locked: data.locked === true,
+        canModerate: data.canModerate === true,
+        pendingMine: Number(data.pendingMine || 0) || 0,
+      };
+    } catch (_) {
+      return MODERATION_EMPTY;
+    }
+  }
+
+  async function issueModerationWithin(pending) {
+    if (!pending) return MODERATION_EMPTY;
+    return Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve(MODERATION_EMPTY), MODERATION_WAIT_MS)),
+    ]);
+  }
+
+  function applyIssueModeration(text, moderation) {
+    const hidden = new Set((moderation?.hidden || []).map(String));
+    const authors = new Set((moderation?.hiddenAuthors || []).map((name) => String(name).toLowerCase()));
+    if (!hidden.size && !authors.size) return text;
+    let record;
+    try {
+      record = JSON.parse(String(text || ""));
+    } catch (_) {
+      return text;
+    }
+    if (!record || typeof record !== "object" || !Array.isArray(record.events)) return text;
+    const opened = record.events.find((event) => event && event.type === "open") || {};
+    const openId = String(opened.id || "");
+    const covered = new Set();
+    for (const event of record.events) {
+      if (!event || (event.type !== "open" && event.type !== "comment")) continue;
+      const id = String(event.id || "");
+      const author = String(event.authorName || "").toLowerCase();
+      if ((id && hidden.has(id)) || (event.type === "open" && hidden.has("body"))
+          || (author && authors.has(author))) covered.add(id);
+    }
+    if (hidden.has("body") && openId) covered.add(openId);
+    if (!covered.size) return text;
+    const originals = {};
+    record.events = record.events.map((event) => {
+      if (!event || typeof event !== "object") return event;
+      const id = String(event.id || "");
+      const target = String(event.target || "");
+      const hit = ((event.type === "open" || event.type === "comment") && covered.has(id))
+        || (event.type === "edit" && (covered.has(target) || (!target && covered.has(openId))));
+      if (!hit) return event;
+      if (event.type !== "edit") originals[id] = String(event.body || "");
+      else originals[target || openId] = String(event.body || "");
+      return { ...event, body: MODERATION_HIDDEN_TEXT, attachments: [], moderationHidden: true };
+    });
+    if (covered.has(openId) && "body" in record) record.body = MODERATION_HIDDEN_TEXT;
+    if (moderation?.canModerate) moderation.originals = originals;
+    return JSON.stringify(record);
+  }
+
+  async function postIssueModeration(repo, number, action, target = "") {
+    const response = await fetch(`${repoApiBase(repo)}/moderation`, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: moderationHeaders(true),
+      body: JSON.stringify({ action, kind: "issue", number: Number(number), target }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+    return data;
+  }
+
+  function moderationButtonHtml(attr, value, icon, label) {
+    return `<button type="button" ${attr}="${escapeHtml(value)}" class="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground" title="${escapeHtml(label)}"><i data-lucide="${icon}" class="h-4 w-4"></i><span class="hidden sm:inline">${escapeHtml(label)}</span></button>`;
+  }
+
+  function moderationNoticeHtml(icon, text) {
+    return `<div data-repo-issue-moderation-notice class="flex items-start gap-2 rounded-md border border-border bg-secondary/20 px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><i data-lucide="${icon}" class="mt-0.5 h-4 w-4 shrink-0"></i><span>${escapeHtml(text)}</span></div>`;
+  }
+
+  function decorateIssueModeration(container, repo, number, parsed) {
+    const moderation = parsed?.issueModeration;
+    if (!container || !moderation) return;
+    const hidden = new Set(moderation.hidden || []);
+    const form = container.querySelector("[data-repo-issue-comment-form]");
+    const formRow = form?.parentElement;
+    if (moderation.pendingMine > 0 && formRow) {
+      formRow.insertAdjacentHTML("beforebegin", moderationNoticeHtml("hourglass",
+        moderation.pendingMine === 1
+          ? "One of your posts here is waiting for a moderator. It appears once it is approved."
+          : `${moderation.pendingMine} of your posts here are waiting for a moderator.`));
+    }
+    if (moderation.locked) {
+      const text = moderation.canModerate
+        ? "This thread is locked. Only moderators can reply."
+        : "This thread is locked. New comments are turned off.";
+      if (!moderation.canModerate && formRow) {
+        formRow.outerHTML = moderationNoticeHtml("lock", text);
+      } else if (formRow) {
+        formRow.insertAdjacentHTML("beforebegin", moderationNoticeHtml("lock", text));
+      }
+    }
+    if (!moderation.canModerate) {
+      window.lucide?.createIcons();
+      return;
+    }
+    const actions = container.querySelector("[data-repo-issue-sidebar-actions]");
+    if (actions) {
+      actions.insertAdjacentHTML("beforeend", moderationButtonHtml(
+        "data-repo-issue-moderation-lock", moderation.locked ? "unlock" : "lock",
+        moderation.locked ? "lock-open" : "lock",
+        moderation.locked ? "Unlock thread" : "Lock thread"));
+    }
+    container.querySelectorAll("[data-repo-issue-comment-delete]").forEach((button) => {
+      const id = button.getAttribute("data-repo-issue-comment-delete") || "";
+      if (!id) return;
+      button.insertAdjacentHTML("beforebegin", moderationButtonHtml(
+        "data-repo-issue-moderation-hide", id, hidden.has(id) ? "eye" : "eye-off",
+        hidden.has(id) ? "Unhide" : "Hide"));
+    });
+    const opening = container.querySelector("[data-repo-issue-opening] .border-b");
+    if (opening) {
+      opening.insertAdjacentHTML("beforeend", moderationButtonHtml(
+        "data-repo-issue-moderation-hide", "body", hidden.has("body") ? "eye" : "eye-off",
+        hidden.has("body") ? "Unhide" : "Hide"));
+    }
+    const originals = moderation.originals || {};
+    container.querySelectorAll("[data-repo-issue-comment-delete]").forEach((button) => {
+      const id = button.getAttribute("data-repo-issue-comment-delete") || "";
+      const card = button.closest("[data-repo-issue-comment]");
+      if (!originals[id] || !card) return;
+      revealToggle(card.querySelector("[data-repo-issue-comment-text]"), originals[id]);
+    });
+    const openId = String(parsed.issueOpenEventId || "");
+    if (originals[openId]) {
+      revealToggle(container.querySelector("[data-repo-record-body]"), originals[openId]);
+    }
+    container.querySelectorAll("[data-repo-issue-moderation-hide], [data-repo-issue-moderation-lock]")
+      .forEach((button) => button.addEventListener("click", async () => {
+        const lock = button.getAttribute("data-repo-issue-moderation-lock");
+        const target = button.getAttribute("data-repo-issue-moderation-hide") || "";
+        const action = lock || (hidden.has(target) ? "unhide" : "hide");
+        button.disabled = true;
+        try {
+          await postIssueModeration(repo, number, action, target);
+          await refreshIssueModeration(container, repo, number);
+        } catch (error) {
+          button.disabled = false;
+          button.title = error.message || "Not saved";
+        }
+      }));
+    window.lucide?.createIcons();
+  }
+
+  function revealToggle(holder, original) {
+    if (!holder || holder.querySelector("[data-repo-issue-moderation-original]")) return;
+    holder.insertAdjacentHTML("beforeend", `<details data-repo-issue-moderation-original class="mt-2 text-[13px]"><summary class="cursor-pointer text-muted-foreground">Show the hidden text (moderators only)</summary><div class="mt-2 border-l-2 border-border pl-3">${renderRecordMarkdown(original)}</div></details>`);
+  }
+
+  async function refreshIssueModeration(container, repo, number) {
+    if (!container?.isConnected) return;
+    await loadRepoRecordDetail(repo, "issues", number);
+  }
+
+  function moderationRefusalText(code) {
+    return ({
+      account_required: "Sign in to post here.",
+      account_blocked: "A moderator has blocked this account from posting here.",
+      thread_locked: "This thread is locked. Only moderators can reply.",
+      new_account_limit: "New accounts can only post a few times a day. Try again tomorrow.",
+      review_queue_full: "Too many of your posts are already waiting for review.",
+    })[String(code || "")] || "";
+  }
+
+  function moderationPendingMessage(result) {
+    return String(result?.message || "Sent to the moderators. It appears once a moderator approves it.");
+  }
+
+  async function loadOrgModeration(root, name) {
+    const holder = root.querySelector("[data-org-moderation]");
+    const section = root.querySelector("[data-org-moderation-section]");
+    if (!holder || !section) return;
+    let data;
+    try {
+      data = await orgApiRequest("GET", `/api/orgs/${encodeURIComponent(name)}/moderation`);
+    } catch (error) {
+      if (["forbidden", "unauthorized", "http_403", "http_401"].includes(error.code)) {
+        section.hidden = true;
+        return;
+      }
+      holder.textContent = error.message;
+      return;
+    }
+    section.hidden = false;
+    holder.innerHTML = renderOrgModeration(data);
+    window.lucide?.createIcons();
+    wireOrgModeration(root, name, holder);
+  }
+
+  function moderationWhen(ms) {
+    return ms ? formatTimeAgo(ms) : "";
+  }
+
+  function renderOrgModeration(data) {
+    const row = (left, right) => `<div class="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-2">${left}<span class="flex-1"></span>${right}</div>`;
+    const empty = (text) => `<p class="text-xs text-muted-foreground">${escapeHtml(text)}</p>`;
+    const queue = (data.queue || []).map((item) => `
+      <div class="grid gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span class="font-medium text-foreground">${issuePersonNameHtml(item.author || "anonymous", "")}</span>
+          <span>${item.kind === "thread" ? "new thread in" : `comment on #${escapeHtml(item.number)} in`}</span>
+          <span class="font-mono">${escapeHtml(item.repo)}</span>
+          <span>${escapeHtml(moderationWhen(item.at))}</span>
+        </div>
+        ${item.title ? `<p class="text-sm font-semibold text-foreground">${escapeHtml(item.title)}</p>` : ""}
+        <div class="max-h-48 overflow-auto text-sm ${MD_BODY_CLASS}">${renderRecordMarkdown(item.body || "")}</div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-org-moderation-approve="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm">Approve</button>
+          <button type="button" data-org-moderation-reject="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm fm-btn-danger">Reject</button>
+        </div>
+      </div>`).join("");
+    const moderators = (data.moderators || []).map((item) => row(
+      `<span class="truncate text-sm font-medium text-foreground">${issuePersonNameHtml(item.name, "")}</span><span class="text-[11px] text-muted-foreground">added by ${escapeHtml(item.by || "an admin")}</span>`,
+      data.canManageModerators ? `<button type="button" data-org-moderation-unmod="${escapeHtml(item.name)}" class="fm-btn fm-btn-sm fm-btn-danger">Remove</button>` : "")).join("");
+    const blocked = (data.blocked || []).map((item) => row(
+      `<span class="truncate text-sm font-medium text-foreground">${issuePersonNameHtml(item.name, "")}</span><span class="text-[11px] text-muted-foreground">${item.hideContent ? "posts hidden" : "posts shown"}${item.reason ? ` · ${escapeHtml(item.reason)}` : ""}</span>`,
+      `<button type="button" data-org-moderation-unblock="${escapeHtml(item.name)}" class="fm-btn fm-btn-sm">Unblock</button>`)).join("");
+    const log = (data.log || []).slice(0, 50).map((item) => `<li><span class="text-foreground">${escapeHtml(item.actor || "")}</span> ${escapeHtml(String(item.action || "").replace(/_/g, " "))}${item.target ? ` <span class="text-foreground">${escapeHtml(item.target)}</span>` : ""}${item.detail?.repo ? ` · ${escapeHtml(item.detail.repo)}` : ""}${item.detail?.subject ? ` ${escapeHtml(item.detail.subject)}` : ""} <span>${escapeHtml(moderationWhen(item.at))}</span></li>`).join("");
+    const policy = data.policy || {};
+    const rules = [
+      policy.firstPostApproval ? "a new account's first post waits for approval" : "",
+      policy.accountRequired ? "only signed-in accounts can post" : "",
+      Number(policy.newThreadsPerDay) ? `new accounts open at most ${Number(policy.newThreadsPerDay)} threads a day` : "",
+      Number(policy.newCommentsPerDay) ? `and write at most ${Number(policy.newCommentsPerDay)} comments a day for ${Number(policy.newAccountDays)} days` : "",
+    ].filter(Boolean).join(", ");
+    return `
+      ${rules ? `<p class="text-xs text-muted-foreground">On this server ${escapeHtml(rules)}.</p>` : ""}
+      <p data-org-moderation-status class="mt-1 min-h-4 text-xs text-muted-foreground"></p>
+      <h5 class="mt-3 text-xs font-semibold text-foreground">Waiting for review (${(data.queue || []).length})</h5>
+      <div class="mt-2 grid gap-2">${queue || empty("Nothing is waiting.")}</div>
+      <h5 class="mt-4 text-xs font-semibold text-foreground">Moderators</h5>
+      <p class="mt-1 text-[11px] text-muted-foreground">Owners and admins always moderate. Moderators can approve posts, hide or delete any post, lock threads and block accounts here, but cannot change settings or members.</p>
+      <div class="mt-2 grid gap-2">${moderators || empty("No extra moderators.")}</div>
+      ${data.canManageModerators ? `<form data-org-moderation-add class="mt-2 flex flex-wrap gap-2"><input data-org-moderation-name placeholder="account name" autocomplete="off" class="${ORG_INPUT_CLASS} min-w-[12rem] flex-1" /><button type="submit" class="${ORG_BTN_SECONDARY}">Add moderator</button></form>` : ""}
+      <h5 class="mt-4 text-xs font-semibold text-foreground">Blocked accounts</h5>
+      <p class="mt-1 text-[11px] text-muted-foreground">A blocked account cannot post, comment, vote or react on this organization's repositories. Mirrored GitHub authors are not accounts: hide their posts on the issue instead.</p>
+      <div class="mt-2 grid gap-2">${blocked || empty("Nobody is blocked.")}</div>
+      <form data-org-moderation-block class="mt-2 flex flex-wrap items-center gap-2">
+        <input data-org-moderation-block-name placeholder="account name" autocomplete="off" class="${ORG_INPUT_CLASS} min-w-[10rem] flex-1" />
+        <input data-org-moderation-block-reason placeholder="reason (moderators only)" maxlength="280" autocomplete="off" class="${ORG_INPUT_CLASS} min-w-[10rem] flex-1" />
+        <label class="inline-flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" data-org-moderation-block-hide /> Hide their posts</label>
+        <button type="submit" class="${ORG_BTN_SECONDARY}">Block</button>
+      </form>
+      <details class="mt-4"><summary class="cursor-pointer text-xs font-semibold text-foreground">Moderation log</summary>
+        <ul class="mt-2 grid gap-1 text-xs text-muted-foreground">${log || "<li>No actions yet.</li>"}</ul>
+      </details>`;
+  }
+
+  function wireOrgModeration(root, name, holder) {
+    const path = `/api/orgs/${encodeURIComponent(name)}/moderation`;
+    const status = (text, ok) => {
+      const node = holder.querySelector("[data-org-moderation-status]");
+      if (!node) return;
+      node.textContent = text || "";
+      node.className = "mt-1 min-h-4 text-xs " + (ok ? "text-muted-foreground" : "text-destructive");
+    };
+    const act = async (body) => {
+      try {
+        const data = await orgApiRequest("POST", path, body);
+        holder.innerHTML = renderOrgModeration(data);
+        window.lucide?.createIcons();
+        wireOrgModeration(root, name, holder);
+        status("Done.", true);
+      } catch (error) {
+        status(error.data?.message || error.message, false);
+      }
+    };
+    const on = (selector, fn) => holder.querySelectorAll(selector).forEach((node) =>
+      node.addEventListener("click", () => fn(node)));
+    on("[data-org-moderation-approve]", (node) =>
+      act({ action: "approve", id: Number(node.getAttribute("data-org-moderation-approve")) }));
+    on("[data-org-moderation-reject]", (node) =>
+      act({ action: "reject", id: Number(node.getAttribute("data-org-moderation-reject")) }));
+    on("[data-org-moderation-unmod]", (node) =>
+      act({ action: "remove_moderator", name: node.getAttribute("data-org-moderation-unmod") }));
+    on("[data-org-moderation-unblock]", (node) =>
+      act({ action: "unblock", name: node.getAttribute("data-org-moderation-unblock") }));
+    holder.querySelector("[data-org-moderation-add]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = holder.querySelector("[data-org-moderation-name]")?.value.trim().toLowerCase();
+      if (value) act({ action: "add_moderator", name: value });
+    });
+    holder.querySelector("[data-org-moderation-block]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = holder.querySelector("[data-org-moderation-block-name]")?.value.trim().toLowerCase();
+      if (!value) return;
+      act({
+        action: "block",
+        name: value,
+        reason: holder.querySelector("[data-org-moderation-block-reason]")?.value.trim() || "",
+        hideContent: Boolean(holder.querySelector("[data-org-moderation-block-hide]")?.checked),
+      });
+    });
+  }
   // initNotesPage lives in 09-notes.js (a per-page chunk).
   function initNotesPage(...args) {
     return loadDashboardChunk("notes").then((chunk) => chunk.initNotesPage(...args));
@@ -54533,6 +56777,1325 @@ Your reply
       toggle?.focus();
     });
   }
+  const POST_TRANSLATE_PREFS_KEY = "forkmesh.postTranslate.v1";
+  const POST_TRANSLATE_SKIP = new Set(["PRE", "CODE", "KBD", "SAMP", "VAR", "SCRIPT", "STYLE", "TEXTAREA", "INPUT", "SELECT", "BUTTON", "SVG", "MATH", "IMG", "VIDEO", "AUDIO"]);
+  const POST_TRANSLATE_INLINE = new Set(["B", "STRONG", "I", "EM", "U", "S", "DEL", "INS", "MARK", "SMALL", "SUB", "SUP", "SPAN", "ABBR", "Q", "CITE", "DFN", "BDI", "BDO", "FONT"]);
+  const POST_TRANSLATE_NO_TRANSLATE = "pre, code, kbd, samp, var";
+  const POST_TRANSLATE_LANGUAGES = Object.freeze([
+    "en", "zh", "zh-Hant", "fa", "ar", "ru", "tk", "tr", "uk", "es", "fr", "de", "pt", "it", "ja", "ko",
+    "vi", "id", "hi", "bn", "ur", "he", "pl", "nl", "sv", "my", "th", "kk", "uz", "az",
+  ]);
+  const POST_TRANSLATE_DETECT_CHARS = 2000;
+  const POST_TRANSLATE_MIN_CONFIDENCE = 0.5;
+  const POST_TRANSLATE_CHECK_MS = 4000;
+  const POST_TRANSLATE_STALL_MS = 20000;
+  const POST_TRANSLATE_DETECTOR_MS = 8000;
+  const POST_TRANSLATE_WORDS = Object.freeze({
+    en: "the and is are was of to in that it for this with not on be you have but can from they will what about there a an as at by or if has we so do which would their been more some all just also only than how who",
+    es: "el la los las de que y en por para con una es no se del como pero más este esta también",
+    fr: "le la les de des et est une que pour dans pas sur avec il ce qui du ne sont mais aussi",
+    de: "der die das und ist nicht ein eine zu mit von den auf für ich es sich auch dass wird",
+    pt: "o os de que e do da em um uma para com não por mais se é dos das mas também",
+    it: "il la di che e è un una per non con del della sono si anche gli più come",
+    tr: "ve bir bu için ile de da çok ne olarak değil gibi ama daha var ben",
+    id: "yang dan di ini itu dengan untuk tidak ada dari saya akan juga bisa atau",
+    nl: "de het een en van is dat niet op te met voor zijn ook maar",
+    pl: "i w nie na się z że do to jest jak co ale czy przez",
+    tk: "we bilen üçin bu hem däl bolsa ýa-da ýaly bar",
+  });
+  const POST_TRANSLATE_LETTERS = Object.freeze({
+    de: /[ß]/g, es: /[ñ¿¡]/g, pt: /[ãõ]/g, tr: /[ğı]/g, pl: /[ąęłśźżń]/g, tk: /[ňýž]/g,
+  });
+  const POST_TRANSLATE_RUNNABLE = new Set(["available", "downloadable", "downloading", "unknown", "pending", "machine"]);
+  const POST_MACHINE_SCHEMA = "forkmesh-machine-translations-issue-v1";
+  const POST_TRANSLATE_HOVER_MS = 350;
+  const POST_TRANSLATE_SPARKLES = 12;
+  const POST_TRANSLATE_STYLE = `
+    .fm-xl-sparkle { position: fixed; z-index: 90; width: 16px; height: 16px; margin: -8px 0 0 -8px; pointer-events: none; color: rgb(var(--dashboard-primary-rgb, 9 105 218)); filter: drop-shadow(0 0 4px currentColor); animation: fm-xl-spark var(--fm-xl-life, 800ms) ease-out var(--fm-xl-delay, 0ms) both; }
+    .fm-xl-sparkle::before { content: ""; position: absolute; inset: 0; background: currentColor; clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); }
+    .fm-xl-sparkle:nth-child(3n) { color: rgb(var(--dashboard-accent-rgb, 130 80 223)); }
+    @keyframes fm-xl-spark { 0% { opacity: 0; transform: translate(0, 0) scale(.2) rotate(0deg); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--fm-xl-dx), var(--fm-xl-dy)) scale(var(--fm-xl-size, 1)) rotate(120deg); } }
+    .fm-xl-reveal { animation: fm-xl-reveal 650ms ease-out both; }
+    @keyframes fm-xl-reveal { 0% { opacity: .2; filter: blur(4px); } 60% { opacity: 1; filter: blur(0); } 100% { opacity: 1; filter: none; } }
+    [data-post-translate-hoverable] { transition: background-color .2s; border-radius: 6px; }
+    @media (hover: hover) { [data-post-translate-hoverable]:hover { background: rgb(var(--dashboard-primary-rgb, 9 105 218) / .04); } }
+    @media (prefers-reduced-motion: reduce) { .fm-xl-sparkle { display: none; } .fm-xl-reveal { animation: none; } }
+  `;
+  const POST_TRANSLATE_BODIES = "[data-repo-record-detail] [data-repo-record-body], [data-repo-record-detail] [data-repo-issue-comment-text]";
+  const postTranslateUi = {
+    posts: new WeakMap(),
+    translated: new Map(),
+    translators: new Map(),
+    cache: new Map(),
+    detector: null,
+    availability: new Map(),
+    failed: new Set(),
+    thread: "",
+    originals: false,
+    machine: new Map(),
+    hover: null,
+    pending: [],
+    scheduled: false,
+    iconsFrame: 0,
+    words: null,
+    names: new Map(),
+    observer: null,
+    queue: Promise.resolve(),
+  };
+
+  function postTranslateCanHover(scope = globalThis) {
+    try {
+      return scope.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches === true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function postTranslateApi(scope = globalThis) {
+    const translator = scope?.Translator;
+    const detector = scope?.LanguageDetector;
+    return {
+      translator: translator && typeof translator.create === "function" && typeof translator.availability === "function" ? translator : null,
+      detector: detector && typeof detector.create === "function" ? detector : null,
+    };
+  }
+
+  function postTranslateReadPrefs(storage = globalThis.localStorage) {
+    let saved = null;
+    try { saved = JSON.parse(storage?.getItem(POST_TRANSLATE_PREFS_KEY) || "null"); } catch (_) { saved = null; }
+    const target = postTranslateCode(saved?.target);
+    return { target, auto: saved?.auto === true, machine: saved?.machine !== false };
+  }
+
+  function postTranslateWritePrefs(prefs, storage = globalThis.localStorage) {
+    const clean = { target: postTranslateCode(prefs?.target), auto: prefs?.auto === true, machine: prefs?.machine !== false };
+    try { storage?.setItem(POST_TRANSLATE_PREFS_KEY, JSON.stringify(clean)); } catch (_) {}
+    return clean;
+  }
+
+  function postTranslateCode(value) {
+    const raw = String(value || "").trim().replace(/_/g, "-");
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/.test(raw)) return "";
+    const parts = raw.split("-");
+    const primary = parts[0].toLowerCase();
+    if (primary === "zh") {
+      const rest = parts.slice(1).map((part) => part.toLowerCase());
+      return rest.some((part) => ["hant", "tw", "hk", "mo"].includes(part)) ? "zh-Hant" : "zh";
+    }
+    if (primary === "iw") return "he";
+    if (primary === "pes" || primary === "prs") return "fa";
+    return primary;
+  }
+
+  function postTranslateSame(a, b) {
+    const left = postTranslateCode(a);
+    const right = postTranslateCode(b);
+    return Boolean(left) && left === right;
+  }
+
+  function postTranslateReaderLanguage(prefs = postTranslateReadPrefs(), nav = globalThis.navigator) {
+    if (prefs.target) return prefs.target;
+    const list = Array.isArray(nav?.languages) && nav.languages.length ? nav.languages : [nav?.language];
+    for (const item of list) {
+      const code = postTranslateCode(item);
+      if (code) return code;
+    }
+    return "en";
+  }
+
+  function postTranslateLanguageName(code, displayIn = "en") {
+    const clean = postTranslateCode(code);
+    if (!clean) return "";
+    const key = `${displayIn || "en"}\u0000${clean}`;
+    const names = postTranslateUi.names;
+    if (names.has(key)) return names.get(key);
+    let found = clean;
+    try {
+      const name = new Intl.DisplayNames([displayIn || "en"], { type: "language" }).of(clean);
+      if (name && name !== clean) found = name;
+    } catch (_) {}
+    names.set(key, found);
+    return found;
+  }
+
+  function postTranslateNativeName(code) {
+    return postTranslateLanguageName(code, postTranslateCode(code) || "en");
+  }
+
+  function postTranslateSkipped(element) {
+    if (!element || element.nodeType !== 1) return false;
+    if (POST_TRANSLATE_SKIP.has(String(element.tagName || "").toUpperCase())) return true;
+    if (element.getAttribute?.("translate") === "no") return true;
+    return element.hasAttribute?.("data-post-translate") === true;
+  }
+
+  function postTranslateSegments(root) {
+    const segments = [];
+    let open = false;
+    const walk = (element) => {
+      for (const child of Array.from(element.childNodes || [])) {
+        if (child.nodeType === 3) {
+          if (!open) {
+            segments.push([]);
+            open = true;
+          }
+          segments[segments.length - 1].push(child);
+          continue;
+        }
+        if (child.nodeType !== 1) continue;
+        if (postTranslateSkipped(child)) {
+          open = false;
+          continue;
+        }
+        if (POST_TRANSLATE_INLINE.has(String(child.tagName || "").toUpperCase())) {
+          walk(child);
+          continue;
+        }
+        open = false;
+        walk(child);
+        open = false;
+      }
+    };
+    if (root) walk(root);
+    return segments.filter((nodes) => postTranslateWorthy(nodes.map((node) => node.nodeValue || "").join("")));
+  }
+
+  function postTranslateWorthy(text) {
+    const value = String(text || "").trim();
+    if (!value || !/\p{L}/u.test(value)) return false;
+    if (/^(?:https?:\/\/|www\.)\S+$/i.test(value)) return false;
+    return !/^[@#][\w.-]+$/.test(value);
+  }
+
+  function postTranslatePlainText(root, limit = POST_TRANSLATE_DETECT_CHARS) {
+    let text = "";
+    for (const nodes of postTranslateSegments(root)) {
+      text += `${nodes.map((node) => node.nodeValue || "").join("").trim()}\n`;
+      if (text.length >= limit) break;
+    }
+    return text.slice(0, limit).trim();
+  }
+
+  function postTranslateProse(text) {
+    return String(text || "").slice(0, POST_TRANSLATE_DETECT_CHARS)
+      .replace(/(?:https?:\/\/|www\.)\S+|[@#][\w.-]+|\S*[\/_.]\S*[\/_.]\S*|\S*\d\S*/gi, " ");
+  }
+
+  function postTranslateScriptGuess(text) {
+    const sample = postTranslateProse(text);
+    const count = (pattern) => (sample.match(pattern) || []).length;
+    const letters = count(/\p{L}/gu);
+    if (!letters) return "";
+    const kana = count(/[぀-ヿ]/g);
+    const han = count(/\p{Script=Han}/gu);
+    const hangul = count(/\p{Script=Hangul}/gu);
+    const arabic = count(/\p{Script=Arabic}/gu);
+    const share = (value) => value / letters;
+    if (share(kana) > 0.1) return "ja";
+    if (share(hangul) > 0.3) return "ko";
+    if (share(han) > 0.3 || (han >= 12 && share(han) > 0.12)) return "zh";
+    if (share(arabic) > 0.5) {
+      const persian = count(/[پچژگکی]/g);
+      const arabicOnly = count(/[ةيىأإ]/g);
+      if (persian >= 2 && persian > arabicOnly) return "fa";
+      if (arabicOnly >= 2 && persian === 0) return "ar";
+      return "";
+    }
+    const cyrillic = count(/\p{Script=Cyrillic}/gu);
+    if (share(cyrillic) > 0.5) {
+      if (count(/[әғқңөұүһ]/gi) >= 2) return "kk";
+      const ukrainian = count(/[іїєґ]/gi);
+      const russian = count(/[ыэъё]/gi);
+      if (ukrainian >= 2 && ukrainian > russian) return "uk";
+      return ukrainian && !russian ? "" : "ru";
+    }
+    if (count(/[ăđơư]/gi) >= 2 && count(/[ạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/gi) >= 2) return "vi";
+    const scripts = [["th", /\p{Script=Thai}/gu], ["he", /\p{Script=Hebrew}/gu], ["el", /\p{Script=Greek}/gu],
+      ["my", /\p{Script=Myanmar}/gu], ["hy", /\p{Script=Armenian}/gu], ["ka", /\p{Script=Georgian}/gu]];
+    for (const [code, pattern] of scripts) {
+      if (share(count(pattern)) > 0.5) return code;
+    }
+    return "";
+  }
+
+  function postTranslateWordGuess(text) {
+    const words = postTranslateProse(text).toLowerCase().match(/\p{L}[\p{L}'’-]*/gu) || [];
+    if (words.length < 4) return "";
+    if (!postTranslateUi.words) {
+      postTranslateUi.words = Object.entries(POST_TRANSLATE_WORDS).map(([code, list]) => [code, new Set(list.split(" "))]);
+    }
+    const scores = postTranslateUi.words.map(([code, known]) => {
+      let hits = words.filter((word) => known.has(word)).length;
+      const letters = POST_TRANSLATE_LETTERS[code];
+      if (letters) hits += Math.min(3, (postTranslateProse(text).match(letters) || []).length);
+      return [code, hits / words.length, hits];
+    }).sort((a, b) => b[1] - a[1]);
+    const [best, second] = scores;
+    if (best[1] < 0.06 || best[2] < 2) return "";
+    return best[1] >= second[1] * 1.6 ? best[0] : "";
+  }
+
+  function postTranslateGuess(text) {
+    return postTranslateScriptGuess(text) || postTranslateWordGuess(text);
+  }
+
+  function postTranslateWithin(promise, ms, fallback) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(fallback), ms);
+      Promise.resolve(promise).then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      }, () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+    });
+  }
+
+  async function postTranslateDetectorInstance(api, gesture) {
+    const cached = postTranslateUi.detector;
+    if (cached?.api === api.detector && cached.instance) return cached.instance;
+    const availability = typeof api.detector.availability === "function"
+      ? await postTranslateWithin(api.detector.availability(), POST_TRANSLATE_CHECK_MS, "unknown") : "available";
+    if (availability === "unavailable") return null;
+    if (availability !== "available" && !gesture) return "later";
+    if (cached?.api === api.detector && cached.failed) return null;
+    postTranslateUi.detector = { api: api.detector, instance: null };
+    const instance = await postTranslateWithin(api.detector.create(), POST_TRANSLATE_DETECTOR_MS, null);
+    postTranslateUi.detector = { api: api.detector, instance, failed: !instance };
+    return instance;
+  }
+
+  async function postTranslateDetect(text, api = postTranslateApi(), gesture = false) {
+    const sample = String(text || "").trim();
+    if (!sample) return { language: "", confidence: 0, source: "none" };
+    let later = false;
+    if (api.detector) {
+      try {
+        const instance = await postTranslateDetectorInstance(api, gesture);
+        later = instance === "later";
+        if (instance && !later) {
+          const results = await instance.detect(sample);
+          const best = Array.isArray(results) ? results[0] : null;
+          const language = postTranslateCode(best?.detectedLanguage);
+          const confidence = Number(best?.confidence) || 0;
+          if (language && language !== "und" && confidence >= POST_TRANSLATE_MIN_CONFIDENCE) {
+            return { language, confidence, source: "detector" };
+          }
+        }
+      } catch (_) {}
+    }
+    const script = postTranslateScriptGuess(sample);
+    if (script) return { language: script, confidence: 0.6, source: "script" };
+    const words = postTranslateWordGuess(sample);
+    if (words) return { language: words, confidence: 0.55, source: "words" };
+    return { language: "", confidence: 0, source: later ? "later" : "none" };
+  }
+
+  async function postTranslateAvailability(source, target, api = postTranslateApi(), detection = "") {
+    if (!api.translator) return "no-api";
+    if (!target) return "unknown-source";
+    if (!source) return detection === "later" ? "unknown" : "unknown-source";
+    if (postTranslateSame(source, target)) return "same";
+    const key = `${source}>${target}`;
+    if (postTranslateUi.failed.has(key)) return "unavailable";
+    if (postTranslateUi.translators.has(key)) return "available";
+    const cached = postTranslateUi.availability.get(key);
+    if (cached?.api === api.translator) return cached.answer;
+    const answer = (async () => {
+      try {
+        const value = await postTranslateWithin(api.translator.availability({ sourceLanguage: source, targetLanguage: target }), POST_TRANSLATE_CHECK_MS, "unknown");
+        return ["available", "downloadable", "downloading", "unavailable", "unknown"].includes(value) ? value : "unavailable";
+      } catch (_) {
+        return "unavailable";
+      }
+    })();
+    postTranslateUi.availability.set(key, { api: api.translator, answer });
+    const value = await answer;
+    if (value === "unknown") postTranslateUi.availability.delete(key);
+    return value;
+  }
+
+  async function postTranslateSha256(text) {
+    const data = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(data), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function postMachineDoc() {
+    const detail = state.repoRecordDetail;
+    if (!detail?.repo || detail.kind !== "issues" || !Number(detail.number)) return Promise.resolve(null);
+    const key = `${repoKey(detail.repo)}#${Number(detail.number)}`;
+    if (!postTranslateUi.machine.has(key)) {
+      postTranslateUi.machine.set(key, (async () => {
+        const path = `.forkmesh/translations/issues/${Number(detail.number)}.json`;
+        try {
+          const blobs = await fetchRepoBlobs(detail.repo, [path]);
+          const doc = blobs[path] ? JSON.parse(blobText(blobs[path]) || "null") : null;
+          return doc?.schema === POST_MACHINE_SCHEMA && doc.posts && typeof doc.posts === "object" ? doc : null;
+        } catch (_) {
+          return null;
+        }
+      })());
+    }
+    return postTranslateUi.machine.get(key);
+  }
+
+  async function postMachineEntry(record) {
+    if (!record?.comment || !globalThis.crypto?.subtle) return null;
+    for (let attempt = 0; attempt < 20 && !state.repoRecordDetail?.parsed; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const doc = await postMachineDoc();
+    const entry = doc?.posts?.[record.comment];
+    if (!entry || typeof entry.text !== "string" || !postTranslateSame(doc.target, record.target)) return null;
+    if (!state.repoRecordDetail?.parsed) return null;
+    const text = postTranslationSourceText(record.comment);
+    if (!text || await postTranslateSha256(text) !== entry.hash) return null;
+    return { source: postTranslateCode(entry.source), text: entry.text };
+  }
+
+  function postTranslateStyleOnce() {
+    if (document.querySelector("style[data-post-translate-style]")) return;
+    const style = document.createElement("style");
+    style.setAttribute("data-post-translate-style", "");
+    style.textContent = POST_TRANSLATE_STYLE;
+    (document.head || document.documentElement).append(style);
+  }
+
+  function postTranslateSparkle(body, point) {
+    if (!body?.isConnected || globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    postTranslateStyleOnce();
+    const box = body.getBoundingClientRect();
+    const x = Number.isFinite(point?.x) ? point.x : box.left + Math.min(box.width, 240) / 2;
+    const y = Number.isFinite(point?.y) ? point.y : box.top + Math.min(box.height, 60) / 2;
+    const layer = document.createElement("div");
+    layer.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < POST_TRANSLATE_SPARKLES; index += 1) {
+      const spark = document.createElement("span");
+      const angle = (Math.PI * 2 * index) / POST_TRANSLATE_SPARKLES + Math.random() * 0.6;
+      const reach = 30 + Math.random() * 42;
+      spark.className = "fm-xl-sparkle";
+      spark.style.left = `${Math.round(x)}px`;
+      spark.style.top = `${Math.round(y)}px`;
+      spark.style.setProperty("--fm-xl-dx", `${Math.round(Math.cos(angle) * reach)}px`);
+      spark.style.setProperty("--fm-xl-dy", `${Math.round(Math.sin(angle) * reach - 10)}px`);
+      spark.style.setProperty("--fm-xl-size", (0.7 + Math.random() * 0.9).toFixed(2));
+      spark.style.setProperty("--fm-xl-delay", `${Math.round(Math.random() * 120)}ms`);
+      spark.style.setProperty("--fm-xl-life", `${Math.round(650 + Math.random() * 350)}ms`);
+      layer.append(spark);
+    }
+    document.body.append(layer);
+    setTimeout(() => layer.remove(), 1300);
+  }
+
+  function postTranslateReveal(body, point) {
+    if (!body?.isConnected) return;
+    postTranslateStyleOnce();
+    postTranslateSparkle(body, point);
+    body.classList.remove("fm-xl-reveal");
+    void body.offsetWidth;
+    body.classList.add("fm-xl-reveal");
+    setTimeout(() => body.classList.remove("fm-xl-reveal"), 800);
+  }
+
+  function postTranslateHoverable(record) {
+    return Boolean(record?.hover && record.showing === "original" && !record.busy && !record.hoverOff
+      && (record.machineEntry || record.availability === "available"));
+  }
+
+  function postTranslateMarkHover(body, record) {
+    if (postTranslateHoverable(record)) {
+      postTranslateStyleOnce();
+      body.setAttribute("data-post-translate-hoverable", "");
+    } else {
+      body.removeAttribute("data-post-translate-hoverable");
+    }
+  }
+
+  function postTranslateHoverStart(body, point) {
+    const record = postTranslateUi.posts.get(body);
+    if (!postTranslateHoverable(record)) return;
+    if (postTranslateUi.hover?.body === body) {
+      postTranslateUi.hover.point = point;
+      return;
+    }
+    postTranslateHoverStop();
+    const hover = { body, point, timer: 0 };
+    hover.timer = setTimeout(() => {
+      if (postTranslateUi.hover !== hover) return;
+      postTranslateUi.hover = null;
+      const current = postTranslateUi.posts.get(body);
+      if (!postTranslateHoverable(current)) return;
+      if (current.machineEntry) {
+        postMachineApply(body, current);
+        postTranslateReveal(body, hover.point);
+      } else {
+        void postTranslateRun(body, false).then((done) => {
+          if (done?.showing === "translation") postTranslateReveal(body, hover.point);
+        });
+      }
+    }, POST_TRANSLATE_HOVER_MS);
+    postTranslateUi.hover = hover;
+  }
+
+  function postTranslateHoverStop(body = null) {
+    const hover = postTranslateUi.hover;
+    if (!hover || (body && hover.body !== body)) return;
+    clearTimeout(hover.timer);
+    postTranslateUi.hover = null;
+  }
+
+  function postMachineApply(body, record) {
+    const entry = record.machineEntry;
+    if (!entry || record.showing === "translation") return;
+    record.originalHtml = body.innerHTML;
+    body.innerHTML = renderRecordMarkdown(entry.text, state.repoRecordDetail?.repo);
+    body.setAttribute("lang", record.target);
+    record.machine = entry;
+    record.showing = "translation";
+    record.saved = [];
+    body.removeAttribute("data-post-translate-hoverable");
+    postTranslatePaint(body);
+  }
+
+  async function postTranslateRecordAvailability(record, api) {
+    if (record.alsoIn && postTranslateSame(record.alsoIn, record.target)) return "same";
+    return postTranslateAvailability(record.source, record.target, api, record.detection);
+  }
+
+  async function postTranslateTranslator(source, target, api = postTranslateApi(), onProgress = null, stallMs = POST_TRANSLATE_STALL_MS) {
+    const key = `${source}>${target}`;
+    if (postTranslateUi.translators.has(key)) return postTranslateUi.translators.get(key);
+    let stall = null;
+    let fail = null;
+    const watch = () => {
+      clearTimeout(stall);
+      stall = setTimeout(() => fail?.(new Error("translator_stalled")), stallMs);
+    };
+    const created = new Promise((resolve, reject) => {
+      fail = reject;
+      watch();
+      Promise.resolve(api.translator.create({
+        sourceLanguage: source,
+        targetLanguage: target,
+        monitor(monitor) {
+          monitor?.addEventListener?.("downloadprogress", (event) => {
+            watch();
+            onProgress?.(Math.max(0, Math.min(1, Number(event?.loaded) || 0)));
+          });
+        },
+      })).then(resolve, reject);
+    }).finally(() => clearTimeout(stall));
+    postTranslateUi.translators.set(key, created);
+    try {
+      return await created;
+    } catch (error) {
+      postTranslateUi.translators.delete(key);
+      postTranslateUi.availability.delete(key);
+      postTranslateUi.failed.add(key);
+      throw error;
+    }
+  }
+
+  async function postTranslateText(translator, source, target, text) {
+    const key = `${source}>${target}\u0000${text}`;
+    if (postTranslateUi.cache.has(key)) return postTranslateUi.cache.get(key);
+    const result = String(await translator.translate(text));
+    postTranslateUi.cache.set(key, result);
+    return result;
+  }
+
+  async function postTranslateApply(root, record, translator) {
+    const saved = [];
+    try {
+      for (const nodes of postTranslateSegments(root)) {
+        const original = nodes.map((node) => node.nodeValue || "");
+        const joined = original.join("");
+        const lead = /^\s*/.exec(joined)[0];
+        const trail = /\s*$/.exec(joined.slice(lead.length))[0];
+        const core = joined.slice(lead.length, joined.length - trail.length);
+        const translated = await postTranslateText(translator, record.source, record.target, core);
+        nodes.forEach((node, index) => saved.push([node, original[index]]));
+        nodes[0].nodeValue = `${lead}${translated}${trail}`;
+        nodes.slice(1).forEach((node) => { node.nodeValue = ""; });
+      }
+    } catch (error) {
+      saved.forEach(([node, value]) => { node.nodeValue = value; });
+      throw error;
+    }
+    record.saved = saved;
+    record.showing = "translation";
+    root.setAttribute?.("lang", record.target);
+    return record;
+  }
+
+  function postTranslateRestore(root, record) {
+    (record.saved || []).forEach(([node, value]) => { node.nodeValue = value; });
+    record.saved = [];
+    if (record.machine && typeof record.originalHtml === "string") root.innerHTML = record.originalHtml;
+    record.machine = null;
+    record.originalHtml = null;
+    record.showing = "original";
+    if (record.source) root.setAttribute?.("lang", record.source);
+    else root.removeAttribute?.("lang");
+    return record;
+  }
+
+  function postTranslatePostKey(body) {
+    const card = body.closest?.("[data-repo-issue-comment]") || body.closest?.("[data-repo-record-description]") || body.parentElement;
+    const bar = card?.querySelector?.("[data-comment-reactions][data-comment-id]");
+    const article = body.closest?.("[data-repo-record-detail]");
+    const subject = bar?.getAttribute("data-comment-reactions") || `${article?.getAttribute("data-repo-record-detail") || "record"}:${location.pathname}`;
+    const comment = bar?.getAttribute("data-comment-id") || (body.hasAttribute("data-repo-record-body") ? "body" : "");
+    return { subject, comment, key: comment ? `${location.pathname}\u0000${subject}\u0000${comment}` : "" };
+  }
+
+  function postTranslateStatusText(record, availability) {
+    const from = postTranslateLanguageName(record.source);
+    if (record.showing === "translation" && record.machine) return `Machine translation from ${from || "another language"}`;
+    if (record.showing === "translation") return `Translated from ${from || "another language"} · on your device`;
+    if ((availability === "machine" || availability === "available") && record.hover && !record.hoverOff) {
+      return from ? `Written in ${from} · hover to translate` : "Hover to translate";
+    }
+    if (availability === "machine") return from ? `Written in ${from} · translation ready` : "Translation ready";
+    if (record.busy) return record.progress > 0 && record.progress < 1 ? `Downloading the ${from} model… ${Math.round(record.progress * 100)}%` : "Translating on your device…";
+    if (record.error) return record.error;
+    if (availability === "downloadable") return `${from} · the translation model downloads once to your device`;
+    return from ? `Written in ${from}` : "";
+  }
+
+  function postTranslateBarHtml(record) {
+    const target = postTranslateLanguageName(record.target);
+    const availability = record.availability;
+    const hidden = availability === "same" || availability === "pending" || availability === "unknown-source"
+      || (availability === "no-api" && !record.source);
+    const unsupported = availability === "no-api" || availability === "unavailable" || availability === "unknown-source";
+    const from = postTranslateLanguageName(record.source);
+    const marked = from ? ` This post is marked as ${from}, so the browser knows what to translate.` : "";
+    const hint = availability === "no-api"
+      ? `Your browser can't translate on-device; use its Translate page option.${marked}`
+      : availability === "unavailable"
+        ? `On-device translation from ${from || "this language"} to ${target} isn't available in this browser; use its Translate page option.${marked}`
+        : availability === "unknown-source"
+          ? "Couldn't tell which language this post is in; use your browser's Translate page option."
+          : "";
+    if (hidden) return `<div class="fm-xl-row"><span data-post-translations class="fm-xl-community"></span></div>`;
+    const thread = postTranslateUi.thread
+      ? `<button type="button" data-post-translate-originals class="fm-xl-button">Show all originals</button>`
+      : `<button type="button" data-post-translate-all class="fm-xl-button">Translate every post on this page</button>`;
+    const label = record.showing === "translation" ? "Show original" : `Translate to ${target}`;
+    const options = Array.from(new Set([record.target, ...POST_TRANSLATE_LANGUAGES])).map((code) => `<option value="${escapeHtml(code)}"${code === record.target ? " selected" : ""}>${escapeHtml(postTranslateNativeName(code))}${postTranslateNativeName(code) === postTranslateLanguageName(code) ? "" : ` · ${escapeHtml(postTranslateLanguageName(code))}`}</option>`).join("");
+    return `<div class="fm-xl-row"><button type="button" data-post-translate-toggle class="fm-xl-button"${unsupported ? ` aria-disabled="true" title="${escapeHtml(hint)}"` : ""}${record.busy ? " disabled" : ""}><i data-lucide="languages" class="h-4 w-4"></i><span>${escapeHtml(label)}</span></button>
+      <span data-post-translate-status class="fm-xl-note" role="status" aria-live="polite">${escapeHtml(record.hintShown && hint ? hint : postTranslateStatusText(record, availability))}</span>
+      <details data-post-translate-menu class="fm-xl-menu">
+        <summary aria-label="Translation settings" title="Translation settings" class="fm-xl-icon"><i data-lucide="settings-2" class="h-4 w-4"></i></summary>
+        <div class="fm-xl-pop" role="group" aria-label="Translation settings">
+          <label class="fm-xl-field"><span>Translate posts to</span><select data-post-translate-target translate="no" class="fm-xl-select">${options}</select></label>
+          <label class="fm-xl-check"><input type="checkbox" data-post-translate-machine${record.machineAuto !== false ? " checked" : ""} /><span>Use this site's translations</span></label>
+          <label class="fm-xl-check"><input type="checkbox" data-post-translate-auto${record.auto ? " checked" : ""} /><span>Translate right away instead of on hover</span></label>
+          ${thread}
+          <p class="fm-xl-fine">This site's translations are made on its own server with open translation models. Other translations run on your device with your browser's built-in translator. Nothing is sent to a translation service.</p>
+        </div>
+      </details>
+      <span data-post-translations class="fm-xl-community"></span></div>`;
+  }
+
+  function postTranslateRecordFor(body) {
+    let record = postTranslateUi.posts.get(body);
+    if (!record) {
+      const prefs = postTranslateReadPrefs();
+      const { key, subject, comment } = postTranslatePostKey(body);
+      record = { key, subject, comment, source: "", target: postTranslateReaderLanguage(prefs), auto: prefs.auto, machineAuto: prefs.machine, hover: postTranslateCanHover(), availability: "pending", showing: "original", saved: [] };
+      postTranslateUi.posts.set(body, record);
+    }
+    return record;
+  }
+
+  function postTranslateBarFor(body) {
+    const next = body.nextElementSibling;
+    return next?.hasAttribute?.("data-post-translate") ? next : null;
+  }
+
+  function postTranslatePaint(body) {
+    const record = postTranslateUi.posts.get(body);
+    const bar = postTranslateBarFor(body);
+    if (!record || !bar) return;
+    const open = bar.querySelector("[data-post-translate-menu]")?.open === true;
+    const community = bar.querySelector("[data-post-translations]")?.innerHTML || "";
+    const row = bar.querySelector(".fm-xl-row");
+    if (row) row.outerHTML = postTranslateBarHtml(record);
+    else bar.insertAdjacentHTML("afterbegin", postTranslateBarHtml(record));
+    const menu = bar.querySelector("[data-post-translate-menu]");
+    if (menu && open) menu.open = true;
+    const slot = bar.querySelector("[data-post-translations]");
+    if (slot) slot.innerHTML = community;
+    postTranslateMarkHover(body, record);
+    if (bar.querySelector("i[data-lucide]")) postTranslateIcons();
+  }
+
+  function postTranslateIcons() {
+    if (postTranslateUi.iconsFrame) return;
+    const run = () => {
+      postTranslateUi.iconsFrame = 0;
+      window.lucide?.createIcons?.();
+    };
+    postTranslateUi.iconsFrame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(run) : setTimeout(run, 16);
+  }
+
+  function postTranslatePrepareBody(body) {
+    if (!body.hasAttribute("dir")) body.setAttribute("dir", "auto");
+    body.setAttribute("translate", "yes");
+    body.querySelectorAll(POST_TRANSLATE_NO_TRANSLATE).forEach((node) => node.setAttribute("translate", "no"));
+  }
+
+  async function postTranslateDecorate(body) {
+    if (!body?.isConnected || postTranslateUi.posts.has(body)) return;
+    const record = postTranslateRecordFor(body);
+    postTranslatePrepareBody(body);
+    if (!postTranslateBarFor(body)) {
+      const bar = document.createElement("div");
+      bar.setAttribute("data-post-translate", "");
+      bar.className = "fm-xl-bar px-4 pb-2";
+      body.insertAdjacentElement("afterend", bar);
+    }
+    postTranslatePaint(body);
+    void postTranslationAttach(body);
+    const api = postTranslateApi();
+    record.machineEntry = record.machineAuto === false ? null : await postMachineEntry(record);
+    if (record.busy || record.showing === "translation") return;
+    if (record.machineEntry) {
+      record.source = record.machineEntry.source;
+      record.availability = "machine";
+      if (record.source && !body.hasAttribute("lang")) body.setAttribute("lang", record.source);
+      postTranslatePaint(body);
+      if (record.machineAuto !== false && !postTranslateUi.originals
+          && (record.auto || !record.hover || postTranslateUi.thread === record.target)) {
+        postMachineApply(body, record);
+      }
+      return;
+    }
+    const text = postTranslatePlainText(body);
+    const detected = await postTranslateDetect(text, api);
+    if (record.busy || record.showing === "translation") return;
+    record.source = detected.language;
+    record.detection = detected.source;
+    const whole = postTranslatePlainText(body, POST_TRANSLATE_DETECT_CHARS * 10);
+    record.alsoIn = "";
+    for (let start = 0; start < whole.length && !record.alsoIn; start += POST_TRANSLATE_DETECT_CHARS) {
+      const found = postTranslateWordGuess(whole.slice(start, start + POST_TRANSLATE_DETECT_CHARS));
+      if (postTranslateSame(found, record.target)) record.alsoIn = found;
+    }
+    if (record.source && !body.hasAttribute("lang")) body.setAttribute("lang", record.source);
+    const short = !record.source && (postTranslateProse(text).match(/\p{L}+/gu) || []).length < 12;
+    const availability = short ? "unknown-source" : await postTranslateRecordAvailability(record, api);
+    if (record.busy || record.showing === "translation") return;
+    record.availability = availability;
+    postTranslatePaint(body);
+    const remembered = record.key ? postTranslateUi.translated.get(record.key) : "";
+    const ready = record.availability === "available" || postTranslateUi.translators.has(`${record.source}>${record.target}`);
+    const thread = postTranslateUi.thread === record.target && record.availability !== "unavailable";
+    if (ready && (remembered === record.target || record.auto)) void postTranslateRun(body, false);
+    else if (thread && POST_TRANSLATE_RUNNABLE.has(record.availability)) void postTranslateRun(body, false);
+  }
+
+  function postTranslateRun(body, gesture = true) {
+    const record = postTranslateUi.posts.get(body);
+    if (!record || record.busy || record.showing === "translation") return Promise.resolve(record);
+    if (record.machineEntry) {
+      postMachineApply(body, record);
+      if (gesture && postTranslateUi.thread !== record.target) postTranslateThread(record.target);
+      return Promise.resolve(record);
+    }
+    const api = postTranslateApi();
+    if (!api.translator || !POST_TRANSLATE_RUNNABLE.has(record.availability)) {
+      record.hintShown = true;
+      postTranslatePaint(body);
+      return Promise.resolve(record);
+    }
+    record.busy = true;
+    record.error = "";
+    record.progress = 0;
+    postTranslatePaint(body);
+    const onProgress = (loaded) => {
+      record.progress = loaded;
+      const status = postTranslateBarFor(body)?.querySelector("[data-post-translate-status]");
+      if (status) status.textContent = postTranslateStatusText(record, record.availability);
+    };
+    const stallMs = record.availability === "unknown" ? POST_TRANSLATE_CHECK_MS * 2 : POST_TRANSLATE_STALL_MS;
+    const start = record.source
+      ? Promise.resolve(postTranslateTranslator(record.source, record.target, api, onProgress, stallMs))
+      : postTranslateResolve(body, record, api, gesture, onProgress);
+    start.catch(() => {});
+    const job = postTranslateUi.queue.then(async () => {
+      try {
+        const translator = await start;
+        if (!translator || !body.isConnected) return record;
+        await postTranslateApply(body, record, translator);
+        record.availability = "available";
+        if (record.key) postTranslateUi.translated.set(record.key, record.target);
+        if (gesture && postTranslateUi.thread !== record.target) postTranslateThread(record.target);
+      } catch (error) {
+        const stalled = String(error?.message || "") === "translator_stalled";
+        if (stalled || postTranslateUi.failed.has(`${record.source}>${record.target}`)) {
+          record.availability = "unavailable";
+          record.hintShown = true;
+          postTranslateRepaintPair(record.source, record.target, body);
+        }
+        record.error = gesture && !record.hintShown ? "The on-device translation didn't finish. Use your browser's Translate page option." : "";
+      } finally {
+        record.busy = false;
+        postTranslatePaint(body);
+      }
+      return record;
+    });
+    postTranslateUi.queue = job.catch(() => {});
+    return job;
+  }
+
+  async function postTranslateResolve(body, record, api, gesture, onProgress) {
+    if (!record.source) {
+      const detected = await postTranslateDetect(postTranslatePlainText(body), api, gesture);
+      record.source = detected.language;
+      record.detection = detected.source;
+      if (record.source && !body.hasAttribute("lang")) body.setAttribute("lang", record.source);
+    }
+    record.availability = await postTranslateRecordAvailability(record, api);
+    if (record.availability === "unknown" && record.source) record.availability = "downloadable";
+    if (!["available", "downloadable", "downloading"].includes(record.availability)) {
+      record.hintShown = record.availability !== "same";
+      return null;
+    }
+    return postTranslateTranslator(record.source, record.target, api, onProgress);
+  }
+
+  function postTranslateToggle(body) {
+    const record = postTranslateUi.posts.get(body);
+    if (!record) return;
+    if (record.showing === "translation") {
+      postTranslateRestore(body, record);
+      record.hoverOff = true;
+      if (record.key) postTranslateUi.translated.delete(record.key);
+      postTranslatePaint(body);
+      return;
+    }
+    record.hoverOff = false;
+    void postTranslateRun(body, true);
+  }
+
+  function postTranslateThread(target) {
+    postTranslateUi.thread = target;
+    postTranslateUi.originals = false;
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (!record) return;
+      postTranslatePaint(body);
+      if (record.showing !== "translation" && record.source && record.target === target
+          && POST_TRANSLATE_RUNNABLE.has(record.availability) && record.availability !== "pending") {
+        void postTranslateRun(body, false);
+      }
+    });
+  }
+
+  function postTranslateOriginals() {
+    postTranslateUi.thread = "";
+    postTranslateUi.originals = true;
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (!record) return;
+      if (record.showing === "translation") postTranslateRestore(body, record);
+      if (record.key) postTranslateUi.translated.delete(record.key);
+      postTranslatePaint(body);
+    });
+  }
+
+  function postTranslateRepaintPair(source, target, except) {
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (!record || body === except || record.source !== source || record.target !== target) return;
+      if (record.showing === "translation" || record.busy) return;
+      record.availability = "unavailable";
+      postTranslatePaint(body);
+    });
+  }
+
+  function postTranslateBodies(root = document) {
+    return Array.from(root.querySelectorAll?.(POST_TRANSLATE_BODIES) || []);
+  }
+
+  function postTranslateAll() {
+    const first = postTranslateBodies().map((body) => postTranslateUi.posts.get(body))
+      .find((record) => record && record.source && record.availability !== "same");
+    if (first) postTranslateUi.thread = first.target;
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (record && record.showing !== "translation" && record.availability !== "same") void postTranslateRun(body, true);
+    });
+    postTranslateUi.originals = false;
+    postTranslateBodies().forEach((body) => {
+      if (postTranslateUi.posts.has(body)) postTranslatePaint(body);
+    });
+  }
+
+  async function postTranslateRetarget(target, auto, machine = postTranslateReadPrefs().machine) {
+    const prefs = postTranslateWritePrefs({ ...postTranslateReadPrefs(), target, auto, machine });
+    const api = postTranslateApi();
+    for (const body of postTranslateBodies()) {
+      const record = postTranslateUi.posts.get(body);
+      if (!record) continue;
+      const changed = record.target !== postTranslateReaderLanguage(prefs);
+      if (changed) postTranslateUi.thread = "";
+      if (changed && record.showing === "translation") postTranslateRestore(body, record);
+      record.target = postTranslateReaderLanguage(prefs);
+      record.auto = prefs.auto;
+      record.machineAuto = prefs.machine;
+      record.hintShown = false;
+      if (changed) {
+        record.availability = await postTranslateRecordAvailability(record, api);
+        record.machineEntry = record.availability === "same" || !prefs.machine ? null : await postMachineEntry(record);
+        if (record.machineEntry) record.availability = "machine";
+      }
+      if (!prefs.machine && record.machine) postTranslateRestore(body, record);
+      postTranslatePaint(body);
+      if (prefs.machine && record.machineEntry && !postTranslateUi.originals && (prefs.auto || !record.hover)) {
+        postMachineApply(body, record);
+        continue;
+      }
+      if (record.auto && record.availability === "available") void postTranslateRun(body, false);
+    }
+  }
+
+  function postTranslateScan(root = document) {
+    const scope = root?.querySelectorAll ? root : document;
+    const bodies = scope.matches?.("[data-repo-record-body], [data-repo-issue-comment-text]") ? [scope] : [];
+    bodies.concat(postTranslateBodies(scope)).forEach((body) => {
+      if (body.closest("[data-repo-record-detail]") && !postTranslateUi.posts.has(body)) postTranslateUi.pending.push(body);
+    });
+    postTranslateSchedule();
+  }
+
+  function postTranslateSchedule() {
+    if (postTranslateUi.scheduled || !postTranslateUi.pending.length) return;
+    postTranslateUi.scheduled = true;
+    const slice = (deadline) => {
+      postTranslateUi.scheduled = false;
+      const started = Date.now();
+      let handled = 0;
+      while (postTranslateUi.pending.length) {
+        const left = typeof deadline?.timeRemaining === "function" ? deadline.timeRemaining() : 8 - (Date.now() - started);
+        if (left <= 1 && (handled || !deadline?.didTimeout)) break;
+        handled += 1;
+        const body = postTranslateUi.pending.shift();
+        if (body?.isConnected && !postTranslateUi.posts.has(body)) void postTranslateDecorate(body);
+      }
+      postTranslateSchedule();
+    };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(slice, { timeout: 500 });
+    else setTimeout(slice, 16);
+  }
+
+  function postTranslatePlaceMenu(menu) {
+    const summary = menu.querySelector("summary");
+    const pop = menu.querySelector(".fm-xl-pop");
+    if (!summary || !pop) return;
+    const anchor = summary.getBoundingClientRect();
+    const width = pop.offsetWidth || 280;
+    const height = pop.offsetHeight || 200;
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
+    const below = anchor.bottom + 4;
+    const top = below + height > window.innerHeight - 8 ? Math.max(8, anchor.top - height - 4) : below;
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  function initPostTranslate() {
+    if (postTranslateUi.observer || typeof MutationObserver !== "function" || !document.body) return;
+    postTranslateScan(document);
+    postTranslateUi.observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node.nodeType === 1 && !node.hasAttribute("data-post-translate") && !node.closest("[data-post-translate]")) postTranslateScan(node);
+        }
+      }
+    });
+    postTranslateUi.observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("click", (event) => {
+      const bar = event.target.closest?.("[data-post-translate]");
+      if (!bar) {
+        document.querySelectorAll("[data-post-translate-menu][open]").forEach((menu) => { menu.open = false; });
+        return;
+      }
+      const body = bar.previousElementSibling;
+      if (postTranslationClick(event, bar, body)) return;
+      if (event.target.closest("[data-post-translate-toggle]")) {
+        event.preventDefault();
+        postTranslateToggle(body);
+      } else if (event.target.closest("[data-post-translate-all]")) {
+        event.preventDefault();
+        bar.querySelector("[data-post-translate-menu]")?.removeAttribute("open");
+        postTranslateAll();
+      } else if (event.target.closest("[data-post-translate-originals]")) {
+        event.preventDefault();
+        bar.querySelector("[data-post-translate-menu]")?.removeAttribute("open");
+        postTranslateOriginals();
+      }
+    });
+    document.addEventListener("pointerover", (event) => {
+      if (event.pointerType && event.pointerType !== "mouse") return;
+      const body = event.target.closest?.("[data-post-translate-hoverable]");
+      if (body) postTranslateHoverStart(body, { x: event.clientX, y: event.clientY });
+    });
+    document.addEventListener("pointermove", (event) => {
+      const hover = postTranslateUi.hover;
+      if (hover) hover.point = { x: event.clientX, y: event.clientY };
+    }, { passive: true });
+    document.addEventListener("pointerout", (event) => {
+      const body = event.target.closest?.("[data-post-translate-hoverable]");
+      if (body && !body.contains(event.relatedTarget)) postTranslateHoverStop(body);
+    });
+    document.addEventListener("toggle", (event) => {
+      const menu = event.target;
+      if (menu?.matches?.("[data-post-translate-menu]") && menu.open) postTranslatePlaceMenu(menu);
+    }, true);
+    const closeMenus = () => document.querySelectorAll("[data-post-translate-menu][open]").forEach((menu) => { menu.open = false; });
+    window.addEventListener("resize", closeMenus);
+    window.addEventListener("scroll", closeMenus, { passive: true });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeMenus();
+    });
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest?.("[data-post-translation-form]");
+      if (!form) return;
+      event.preventDefault();
+      void postTranslationSubmit(form);
+    });
+    document.addEventListener("change", (event) => {
+      const langSelect = event.target.closest?.("[data-post-translation-lang]");
+      if (langSelect) {
+        langSelect.closest("form")?.querySelector("[data-post-translation-body]")?.setAttribute("lang", langSelect.value);
+        return;
+      }
+      const control = event.target.closest?.("[data-post-translate-target], [data-post-translate-auto], [data-post-translate-machine]");
+      if (!control) return;
+      const bar = control.closest("[data-post-translate]");
+      const target = bar?.querySelector("[data-post-translate-target]")?.value || "";
+      const auto = bar?.querySelector("[data-post-translate-auto]")?.checked === true;
+      const machine = bar?.querySelector("[data-post-translate-machine]")?.checked !== false;
+      void postTranslateRetarget(target, auto, machine);
+    });
+  }
+
+  const POST_TRANSLATION_PLUGIN = "community-translations";
+  const POST_TRANSLATION_MAX_BODY = 20000;
+  const postTranslationUi = { data: new Map(), loads: new Map() };
+
+  function postTranslationParts(subject) {
+    const match = /^(issue|pull|discussion):([1-9]\d{0,9})$/.exec(String(subject || ""));
+    return match ? { kind: match[1], number: Number(match[2]) } : null;
+  }
+
+  function postTranslationRepo() {
+    return state.repoRecordDetail?.repo || state.selectedRepo || null;
+  }
+
+  function postTranslationBase(repo) {
+    return repo ? repoApiBase(repo) : "";
+  }
+
+  function postTranslationSigningRepo(base) {
+    const parts = String(base || "").split("/");
+    return { owner: decodeURIComponent(parts[3] || ""), name: decodeURIComponent(parts[4] || "") };
+  }
+
+  function postTranslationSigningText(base, subject, comment, lang, pub, ts, bodyHash) {
+    const repo = postTranslationSigningRepo(base);
+    return ["forkmesh-translation-v1", `${repo.owner.trim().toLowerCase()}/${repo.name.trim().toLowerCase()}`,
+      subject, comment, lang, pub, String(ts), bodyHash].join("\n");
+  }
+
+  function postTranslationCleanBody(value) {
+    return String(value || "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").replace(/\s+$/, "");
+  }
+
+  function postTranslationLangCode(value) {
+    const raw = String(value || "").trim().replace(/_/g, "-");
+    if (!raw) return "";
+    const parts = raw.split("-");
+    parts[0] = parts[0].toLowerCase();
+    const code = parts.join("-");
+    return /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/.test(code) ? code : "";
+  }
+
+  function postTranslationSourceText(comment, parsed = state.repoRecordDetail?.parsed) {
+    if (!parsed) return "";
+    if (comment === "body") return String(parsed.body || "");
+    const events = Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [];
+    const original = events.find((event) => event && String(event.id || "") === comment);
+    if (!original) return "";
+    const edits = events.filter((event) => event?.type === "edit" && String(event.target || "") === comment);
+    return String((edits.length ? edits[edits.length - 1].body : original.body) || "");
+  }
+
+  function postTranslationLanguages(entries) {
+    const counts = new Map();
+    (entries || []).forEach((entry) => counts.set(entry.lang, (counts.get(entry.lang) || 0) + 1));
+    return Array.from(counts, ([lang, count]) => ({ lang, count }));
+  }
+
+  function postTranslationChipsHtml(entries, signedIn, openLang = "") {
+    const languages = postTranslationLanguages(entries);
+    const chips = languages.map(({ lang, count }) => `<button type="button" data-post-translation-chip="${escapeHtml(lang)}" aria-pressed="${lang === openLang ? "true" : "false"}" class="fm-xl-chip" lang="${escapeHtml(lang)}">${escapeHtml(postTranslateNativeName(lang) || lang)}${count > 1 ? ` <span aria-label="${count} translations">· ${count}</span>` : ""}</button>`).join("");
+    const label = languages.length ? `<span class="fm-xl-note">Community translations:</span>${chips}` : "";
+    const add = signedIn ? `<button type="button" data-post-translation-add class="fm-xl-link">${languages.length ? "Add yours" : "Add a translation"}</button>` : "";
+    return label + add;
+  }
+
+  function postTranslationEntryHtml(entry, options = {}) {
+    const lang = escapeHtml(entry.lang);
+    const name = postTranslateLanguageName(entry.lang) || entry.lang;
+    const stale = options.sourceHash && entry.source && entry.source !== options.sourceHash;
+    const when = entry.updatedAt ? formatTimeAgo(entry.updatedAt) : "";
+    const actions = [
+      entry.mine ? `<button type="button" data-post-translation-edit="${lang}" class="fm-xl-link">Edit</button>` : "",
+      entry.mine || options.canModerate ? `<button type="button" data-post-translation-remove="${lang}" data-post-translation-account="${escapeHtml(entry.mine ? "" : entry.name)}" class="fm-xl-link fm-xl-danger">Remove</button>` : "",
+    ].join("");
+    return `<div data-post-translation-entry="${lang}" class="grid gap-2">
+        <p class="fm-xl-meta"><span>Community translation into ${escapeHtml(name)} by ${escapeHtml(entry.name)}${entry.agent ? " (agent)" : ""}${when ? ` · ${escapeHtml(when)}` : ""}</span><span>· the original above is the source of truth</span>${stale ? `<span class="text-attention">· the original was edited after this translation</span>` : ""}${actions}</p>
+        <div class="${MD_BODY_CLASS}" lang="${lang}" dir="auto" translate="yes">${renderRecordMarkdown(entry.body, postTranslationRepo())}</div>
+      </div>`;
+  }
+
+  function postTranslationFormHtml(lang, body = "") {
+    const options = Array.from(new Set([lang, ...POST_TRANSLATE_LANGUAGES].filter(Boolean))).map((code) => `<option value="${escapeHtml(code)}"${code === lang ? " selected" : ""}>${escapeHtml(postTranslateNativeName(code))}</option>`).join("");
+    return `<form data-post-translation-form class="grid gap-2">
+        <label class="fm-xl-field"><span class="fm-xl-meta">Translate this post into</span><select data-post-translation-lang translate="no" class="fm-xl-select">${options}</select></label>
+        <textarea data-post-translation-body rows="8" maxlength="${POST_TRANSLATION_MAX_BODY}" dir="auto" lang="${escapeHtml(lang)}" class="fm-xl-textarea" aria-label="Translation (Markdown)" placeholder="Markdown. Keep links and code as they are.">${escapeHtml(body)}</textarea>
+        <p class="fm-xl-fine">Shown beside the original with your name, signed by this browser. It never replaces the post.</p>
+        <p data-post-translation-hint class="fm-xl-fine" role="status" aria-live="polite"></p>
+        <div class="fm-xl-actions"><button type="button" data-post-translation-cancel class="fm-xl-button">Cancel</button><button type="submit" class="fm-xl-button">Publish translation</button></div>
+      </form>`;
+  }
+
+  async function postTranslationLoad(subject, fresh = false) {
+    const parts = postTranslationParts(subject);
+    const base = postTranslationBase(postTranslationRepo());
+    if (!parts || !base) return null;
+    await instanceInfo();
+    if (instancePluginOff(POST_TRANSLATION_PLUGIN)) return null;
+    const key = `${base.toLowerCase()}|${subject}`;
+    if (!fresh && postTranslationUi.data.has(key)) return postTranslationUi.data.get(key);
+    if (!fresh && postTranslationUi.loads.has(key)) return postTranslationUi.loads.get(key);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`${base}/translations?kind=${parts.kind}&number=${parts.number}`, { fresh: fresh || Boolean(state.session?.sessionToken) });
+        if (!data || data.ok === false || typeof data.translations !== "object") return null;
+        const entry = { translations: data.translations || {}, signedIn: data.signedIn === true || Boolean(state.session?.sessionToken) };
+        postTranslationUi.data.set(key, entry);
+        return entry;
+      } catch (_) {
+        return null;
+      } finally {
+        postTranslationUi.loads.delete(key);
+      }
+    })();
+    postTranslationUi.loads.set(key, load);
+    return load;
+  }
+
+  function postTranslationPaintChips(body, entry) {
+    const record = postTranslateUi.posts.get(body);
+    const slot = postTranslateBarFor(body)?.querySelector("[data-post-translations]");
+    if (!record || !slot || !entry) return;
+    const open = postTranslateBarFor(body)?.querySelector("[data-post-translation-panel]")?.getAttribute("data-post-translation-panel") || "";
+    slot.innerHTML = postTranslationChipsHtml(entry.translations[record.comment] || [], entry.signedIn, open);
+  }
+
+  async function postTranslationAttach(body) {
+    const record = postTranslateUi.posts.get(body);
+    if (!record?.comment || !postTranslationParts(record.subject)) return;
+    for (let attempt = 0; attempt < 20 && !postTranslationRepo(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (!body.isConnected) return;
+    }
+    const entry = await postTranslationLoad(record.subject);
+    if (entry && body.isConnected) postTranslationPaintChips(body, entry);
+  }
+
+  function postTranslationRefreshSubject(subject, entry) {
+    postTranslateBodies().forEach((body) => {
+      if (postTranslateUi.posts.get(body)?.subject === subject) postTranslationPaintChips(body, entry);
+    });
+  }
+
+  function postTranslationPanel(bar, mode) {
+    let panel = bar.querySelector("[data-post-translation-panel]");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "fm-xl-panel";
+      bar.appendChild(panel);
+    }
+    panel.setAttribute("data-post-translation-panel", mode);
+    return panel;
+  }
+
+  function postTranslationClose(bar) {
+    bar.querySelector("[data-post-translation-panel]")?.remove();
+    bar.querySelectorAll("[data-post-translation-chip]").forEach((chip) => chip.setAttribute("aria-pressed", "false"));
+  }
+
+  async function postTranslationShow(body, lang) {
+    const record = postTranslateUi.posts.get(body);
+    const bar = postTranslateBarFor(body);
+    const parts = postTranslationParts(record?.subject);
+    const base = postTranslationBase(postTranslationRepo());
+    if (!record || !bar || !parts || !base) return;
+    if (bar.querySelector("[data-post-translation-panel]")?.getAttribute("data-post-translation-panel") === lang) {
+      postTranslationClose(bar);
+      return;
+    }
+    const panel = postTranslationPanel(bar, lang);
+    bar.querySelectorAll("[data-post-translation-chip]").forEach((chip) => chip.setAttribute("aria-pressed", chip.getAttribute("data-post-translation-chip") === lang ? "true" : "false"));
+    panel.innerHTML = `<p class="fm-xl-fine">Loading the translation…</p>`;
+    try {
+      const data = await fetchJson(`${base}/translations?kind=${parts.kind}&number=${parts.number}&comment=${encodeURIComponent(record.comment)}&lang=${encodeURIComponent(lang)}`, { fresh: true });
+      const entries = data?.translations?.[record.comment] || [];
+      const source = postTranslationSourceText(record.comment);
+      const sourceHash = source ? await sha256HexLower(source) : "";
+      const canModerate = Boolean(state.repoRecordDetail?.parsed?.issueMutationAuthorized);
+      if (panel.getAttribute("data-post-translation-panel") !== lang) return;
+      panel.innerHTML = entries.length
+        ? entries.map((entry) => postTranslationEntryHtml(entry, { sourceHash, canModerate })).join("")
+        : `<p class="fm-xl-fine">This translation was removed.</p>`;
+      panel._entries = entries;
+      window.lucide?.createIcons?.();
+    } catch (_) {
+      panel.innerHTML = `<p class="fm-xl-fine">The translation could not be loaded. Try again.</p>`;
+    }
+  }
+
+  function postTranslationOpenForm(body, lang = "", text = "") {
+    const record = postTranslateUi.posts.get(body);
+    const bar = postTranslateBarFor(body);
+    if (!record || !bar) return;
+    if (!state.session?.sessionToken) return;
+    const panel = postTranslationPanel(bar, "form");
+    const fallback = postTranslateSame(record.source, record.target) ? (postTranslateSame(record.source, "en") ? "zh" : "en") : record.target;
+    panel.innerHTML = postTranslationFormHtml(lang || fallback, text);
+    panel.querySelector("[data-post-translation-body]")?.focus();
+  }
+
+  function postTranslationErrorText(code) {
+    if (code === "rate_limited") return "Slow down a little and try again in a minute.";
+    if (code === "daily_limit") return "You've reached today's translation limit.";
+    if (code === "too_many_translations" || code === "record_full") return "This thread has reached its translation limit.";
+    if (code === "unauthorized") return "Sign in again to publish a translation.";
+    if (code === "bad_signature") return "This browser couldn't sign the translation.";
+    if (code === "invalid_body") return `Write the translation first (up to ${POST_TRANSLATION_MAX_BODY} characters).`;
+    if (code === "feature_disabled" || code === "plugin_disabled") return "Translations are switched off here.";
+    return "The translation didn't save. Try again.";
+  }
+
+  async function postTranslationSign(base, subject, comment, lang, text) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Date.now();
+    const canonical = postTranslationSigningText(base, subject, comment, lang, pub, ts, await sha256HexLower(text));
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    return { pub, sig, ts };
+  }
+
+  async function postTranslationSend(payload) {
+    const base = postTranslationBase(postTranslationRepo());
+    const response = await fetch(`${base}/translations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...payload, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+    return data;
+  }
+
+  async function postTranslationSubmit(form) {
+    const bar = form.closest("[data-post-translate]");
+    const body = bar?.previousElementSibling;
+    const record = body ? postTranslateUi.posts.get(body) : null;
+    const parts = postTranslationParts(record?.subject);
+    const base = postTranslationBase(postTranslationRepo());
+    const hint = form.querySelector("[data-post-translation-hint]");
+    const lang = postTranslationLangCode(form.querySelector("[data-post-translation-lang]")?.value);
+    const text = postTranslationCleanBody(form.querySelector("[data-post-translation-body]")?.value);
+    if (!record || !parts || !base || !lang) return;
+    if (!text.trim() || text.length > POST_TRANSLATION_MAX_BODY) {
+      if (hint) hint.textContent = postTranslationErrorText("invalid_body");
+      return;
+    }
+    const buttons = form.querySelectorAll("button");
+    buttons.forEach((button) => { button.disabled = true; });
+    if (hint) hint.textContent = "Signing and publishing…";
+    try {
+      const source = postTranslationSourceText(record.comment);
+      const signature = await postTranslationSign(base, record.subject, record.comment, lang, text);
+      await postTranslationSend({ kind: parts.kind, number: parts.number, comment: record.comment, lang, body: text,
+        source: source ? await sha256HexLower(source) : "", ...signature });
+      const entry = await postTranslationLoad(record.subject, true);
+      postTranslationClose(bar);
+      if (entry) postTranslationRefreshSubject(record.subject, entry);
+      await postTranslationShow(body, lang);
+    } catch (error) {
+      buttons.forEach((button) => { button.disabled = false; });
+      if (hint) hint.textContent = postTranslationErrorText(error?.message === "signing_unavailable" ? "bad_signature" : String(error?.message || ""));
+    }
+  }
+
+  async function postTranslationRemove(body, lang, account) {
+    const record = postTranslateUi.posts.get(body);
+    const parts = postTranslationParts(record?.subject);
+    const bar = postTranslateBarFor(body);
+    if (!record || !parts || !bar) return;
+    try {
+      await postTranslationSend({ kind: parts.kind, number: parts.number, comment: record.comment, lang, remove: true, ...(account ? { account } : {}) });
+      postTranslationClose(bar);
+      const entry = await postTranslationLoad(record.subject, true);
+      if (entry) postTranslationRefreshSubject(record.subject, entry);
+    } catch (error) {
+      const panel = bar.querySelector("[data-post-translation-panel]");
+      if (panel) panel.insertAdjacentHTML("beforeend", `<p class="fm-xl-fine" role="status">${escapeHtml(postTranslationErrorText(String(error?.message || "")))}</p>`);
+    }
+  }
+
+  function postTranslationClick(event, bar, body) {
+    const chip = event.target.closest("[data-post-translation-chip]");
+    if (chip) {
+      event.preventDefault();
+      void postTranslationShow(body, chip.getAttribute("data-post-translation-chip") || "");
+      return true;
+    }
+    if (event.target.closest("[data-post-translation-add]")) {
+      event.preventDefault();
+      postTranslationOpenForm(body);
+      return true;
+    }
+    if (event.target.closest("[data-post-translation-cancel]")) {
+      event.preventDefault();
+      postTranslationClose(bar);
+      return true;
+    }
+    const edit = event.target.closest("[data-post-translation-edit]");
+    if (edit) {
+      event.preventDefault();
+      const lang = edit.getAttribute("data-post-translation-edit") || "";
+      const mine = (bar.querySelector("[data-post-translation-panel]")?._entries || []).find((entry) => entry.mine && entry.lang === lang);
+      postTranslationOpenForm(body, lang, mine?.body || "");
+      return true;
+    }
+    const remove = event.target.closest("[data-post-translation-remove]");
+    if (remove) {
+      event.preventDefault();
+      void postTranslationRemove(body, remove.getAttribute("data-post-translation-remove") || "", remove.getAttribute("data-post-translation-account") || "");
+      return true;
+    }
+    return false;
+  }
+
   const reactionSettingsUi = { scopes: [], scope: "", reactions: [], editing: "", loaded: false };
 
   async function reactionSettingsPost(path, body) {
@@ -54780,6 +58343,89 @@ Your reply
       }
     });
   }
+
+  function repoReadSurfaceBase(repo) {
+    const owner = String(repoPublicOwner(repo) || repo?.owner || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim();
+    if (!owner || !name) return "";
+    return ["", owner, name].map(encodeURIComponent).join("/");
+  }
+
+  function repoIssueFeedLinks(repo) {
+    if (!instancePluginOn("read-surfaces")) return "";
+    const base = repoReadSurfaceBase(repo);
+    if (!base) return "";
+    const link = "text-[var(--dashboard-link)] hover:underline";
+    return `<p data-repo-issue-feeds class="border-t border-border px-4 py-2 text-[12px] text-muted-foreground"><a href="${escapeHtml(`${base}/issues.atom`)}" type="application/atom+xml" class="${link}">Feed</a> &middot; <a href="${escapeHtml(`${base}/lite`)}" class="${link}">Lite view</a></p>`;
+  }
+
+  function liteViewHref() {
+    const base = document.body?.dataset.page === "repo" ? repoReadSurfaceBase(state.selectedRepo) : "";
+    if (!base) return "/lite";
+    const issue = location.pathname.match(/\/issues\/([1-9]\d{0,8})\/?$/);
+    return issue ? `${base}/lite/issues/${issue[1]}` : `${base}/lite`;
+  }
+
+  document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a[data-lite-link]") : null;
+    if (link) link.setAttribute("href", liteViewHref());
+  }, true);
+
+  void instanceInfo().then(() => {
+    const on = instancePluginOn("read-surfaces");
+    document.querySelectorAll("a[data-lite-link]").forEach((link) => { link.hidden = !on; });
+  }).catch(() => {});
+  function repoMirrorHelpHref(repo) {
+    const base = repoReadSurfaceBase(repo);
+    return base ? `${base}/mirror` : "";
+  }
+
+  function repoMirrorHelpBanner(base, healthy, target) {
+    return `<div data-repo-mirror-help class="flex min-w-0 items-center gap-2 rounded-t-md border-b border-attention/40 bg-attention/10 px-3 py-1.5 text-xs text-foreground"><span aria-hidden="true" class="h-2 w-2 shrink-0 rounded-full bg-attention"></span><span class="min-w-0 flex-1 truncate"><b class="font-semibold">This forum needs your help</b> &mdash; ${healthy} of ${target} mirrors running. <a href="${escapeHtml(`${base}/mirror`)}" class="dashboard-accent-link font-semibold">Run a mirror or join the federation &rarr;</a></span><button type="button" data-repo-mirror-help-dismiss aria-label="Dismiss" class="shrink-0 text-muted-foreground hover:text-foreground">&times;</button></div>`;
+  }
+
+  function repoMirrorHelpDismissKey(base) {
+    return `forkmesh.mirrorHelpDismissed:${base}`;
+  }
+
+  function repoMirrorHelpDismissed(base) {
+    try {
+      return localStorage.getItem(repoMirrorHelpDismissKey(base)) === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function repoMirrorHelpFor(repo) {
+    const base = repoReadSurfaceBase(repo);
+    if (!base || repo?.isPrivate || repoMirrorHelpDismissed(base)) return "";
+    const data = mirrorQuotaKnown(repo);
+    const target = Math.max(0, Math.floor(Number(data?.target) || 0));
+    const healthy = Math.max(0, Math.floor(Number(data?.healthy) || 0));
+    if (!data || !target || healthy >= target) return "";
+    return repoMirrorHelpBanner(base, healthy, target);
+  }
+
+  function repoMirrorHelpSlot(repo) {
+    if (repo && !repo.isPrivate && !mirrorQuotaKnown(repo)) {
+      void loadRepoMirrorQuota(repo).then(() => {
+        const slot = document.querySelector("[data-repo-mirror-help-slot]");
+        if (slot && mirrorQuotaCurrent(repo)) slot.innerHTML = repoMirrorHelpFor(repo);
+      });
+    }
+    return `<div data-repo-mirror-help-slot>${repoMirrorHelpFor(repo)}</div>`;
+  }
+
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-repo-mirror-help-dismiss]") : null;
+    if (!button) return;
+    event.preventDefault();
+    const base = repoReadSurfaceBase(state.selectedRepo);
+    try {
+      if (base) localStorage.setItem(repoMirrorHelpDismissKey(base), "1");
+    } catch (_) {}
+    button.closest("[data-repo-mirror-help]")?.remove();
+  });
   const RECENT_PUSHES_URL = "/api/me/recent-pushes";
   const RECENT_PUSHES_CACHE_KEY = "forkmesh.recentPushes";
   const RECENT_PUSHES_DISMISSED_KEY = "forkmesh.recentPushes.dismissed";
@@ -56298,6 +59944,106 @@ Your reply
       }
     });
   }
+  const seasonUi = { loaded: false, busy: false, data: null };
+
+  async function seasonSettingsPost(body) {
+    const response = await fetch("/api/season/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+    return data;
+  }
+
+  function seasonDefaultUntil() {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), 10, 1, 0, 0, 0);
+    return end.getTime() > Date.now() + 60 * 60 * 1000 ? end.getTime() : Date.now() + 24 * 60 * 60 * 1000;
+  }
+
+  function seasonInputValue(ms) {
+    const date = new Date(ms);
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function seasonStatusText(data) {
+    if (data?.season !== "halloween") return `Off. Turn it on to dress up ${platformName()} for everyone.`;
+    const until = new Date(Number(data.until)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    return `On for everyone until ${until}${data.by ? `, turned on by @${data.by}` : ""}.`;
+  }
+
+  function seasonErrorText(error) {
+    return ({
+      forbidden: "Only platform administrators and moderators can change this.",
+      unauthorized: "Sign in again to change this.",
+      invalid_until: "Pick a time between 5 minutes and 60 days from now.",
+    })[String(error?.message || "")] || "That didn't save. Try again.";
+  }
+
+  function renderSeasonSetting(card, data) {
+    const on = data?.season === "halloween";
+    card.querySelector("[data-season-toggle]").setAttribute("aria-checked", on ? "true" : "false");
+    card.querySelector("[data-season-until]").value = seasonInputValue(on ? Number(data.until) : seasonDefaultUntil());
+    card.querySelector("[data-season-status]").textContent = seasonStatusText(data);
+  }
+
+  async function saveSeasonSetting(card, season) {
+    if (seasonUi.busy) return;
+    const status = card.querySelector("[data-season-status]");
+    const until = new Date(card.querySelector("[data-season-until]").value).getTime();
+    if (season && !Number.isFinite(until)) {
+      status.textContent = seasonErrorText(new Error("invalid_until"));
+      return;
+    }
+    seasonUi.busy = true;
+    status.textContent = "Saving…";
+    try {
+      const data = await seasonSettingsPost({ season, until: season ? until : 0 });
+      seasonUi.data = data;
+      renderSeasonSetting(card, data);
+      window.ForkMeshSeason?.set({ season: data.season || "", until: Number(data.until) || 0 });
+    } catch (error) {
+      renderSeasonSetting(card, seasonUi.data);
+      status.textContent = seasonErrorText(error);
+    } finally {
+      seasonUi.busy = false;
+    }
+  }
+
+  async function initSeasonSettings() {
+    const card = $("[data-season-setting]");
+    if (!card || seasonUi.loaded || !state.session?.sessionToken) return;
+    seasonUi.loaded = true;
+    let data = null;
+    try {
+      data = await fetchJson("/api/season/settings", { fresh: true });
+    } catch (_) {
+      return;
+    }
+    if (data?.ok !== true) return;
+    seasonUi.data = data;
+    card.hidden = false;
+    renderSeasonSetting(card, data);
+    window.lucide?.createIcons();
+    card.querySelector("[data-season-toggle]").addEventListener("click", () => {
+      void saveSeasonSetting(card, seasonUi.data?.season === "halloween" ? "" : "halloween");
+    });
+    card.querySelector("[data-season-until]").addEventListener("change", () => {
+      if (seasonUi.data?.season === "halloween") void saveSeasonSetting(card, "halloween");
+    });
+  }
+
+  function watchSeason() {
+    window.addEventListener("forkmesh:season", () => {
+      if ($("[data-home-feed]")) renderHomeFeed();
+      if ($("[data-home-agents]")) renderHomeAgentSessions();
+      $$("[data-user-activity-card]").forEach((card) => { card.outerHTML = renderUserActivityCard(); });
+      window.lucide?.createIcons();
+    });
+  }
   // initTasksPage lives in 09-tasks.js (a per-page chunk).
   function initTasksPage(...args) {
     return loadDashboardChunk("tasks").then((chunk) => chunk.initTasksPage(...args));
@@ -56404,7 +60150,7 @@ Your reply
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agent-profiles": "/dashboard-page-agent-profiles.js?v=5f1b0cdbc981",
-    "agents": "/dashboard-page-agents.js?v=8e608cb03ff4",
+    "agents": "/dashboard-page-agents.js?v=a3f434dc50d9",
     "apps": "/dashboard-page-apps.js?v=9e800893389a",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
@@ -56412,10 +60158,10 @@ Your reply
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=c59dced335d6",
+    "notes": "/dashboard-page-notes.js?v=9c271809708a",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "repo-activity": "/dashboard-page-repo-activity.js?v=2c7f0ec843a7",
-    "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
+    "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
+    "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
     "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
   };
   const dashboardChunkScope = {
@@ -56439,6 +60185,7 @@ Your reply
     hydrateRepoActivityGraphs,
     initSettingsRunners,
     issuePersonNameHtml,
+    issuePersonProfileHref,
     loadQrGenerator,
     loadRepoRecordDetail,
     loadRunnerAccountsPicker,
@@ -56471,6 +60218,7 @@ Your reply
     runnersEl,
     sendTextToPrompt,
     setAgentLoginStatus,
+    setNavWorking,
     setRepoTab,
     showAgentLoginModal,
     shownAccountName,
@@ -56734,6 +60482,7 @@ Your reply
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    followSystemDashboardTheme();
     applyPlatformName();
     void instanceInfo();
     watchGenieSetting();
@@ -56761,10 +60510,17 @@ Your reply
       initCommentTips();
       void initReactionSettings();
       void initAiReviewSettings();
+      void initSeasonSettings();
+      watchSeason();
+      initRepoMirrorQuota();
+      void instanceInfo().then(() => {
+        if (instancePluginOn("post-translate")) initPostTranslate();
+      }).catch(() => {});
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
       watchUserNames();
+      document.documentElement.dataset.composerHost = "1";
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

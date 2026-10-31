@@ -991,12 +991,32 @@ async def _credited_referrers_by_user(env):
     return mapping
 
 
-async def _credited_referrals_by_referrer(env, referrer_bi=""):
+async def _public_referral_bis(env, bis):
+    wanted = sorted({str(value) for value in bis or () if value})
+    if not wanted:
+        return set()
+    rows = await d1_all(
+        env,
+        "SELECT user_bi,data FROM users "
+        "WHERE user_bi IN (SELECT value FROM json_each(?))",
+        json.dumps(wanted),
+    )
+    public = set()
+    for row in rows or []:
+        rec = await decrypt_row(env, row.get("data", ""))
+        if _is_public_roster_member(rec):
+            public.add(str(row.get("user_bi") or ""))
+    return public
+
+
+async def _credited_referrals_by_referrer(env, referrer_bi="",
+                                          public_only=False):
     """Exact public usernames attached to automatically credited referrals."""
     if referrer_bi:
         rows = await d1_all(
             env,
-            "SELECT referrer_bi,referred_name FROM referral_attributions "
+            "SELECT referrer_bi,referred_bi,referred_name "
+            "FROM referral_attributions "
             "WHERE decision='credited' AND referrer_bi=? "
             "ORDER BY credited_at DESC,referred_name LIMIT ?",
             referrer_bi, 1000,
@@ -1004,17 +1024,25 @@ async def _credited_referrals_by_referrer(env, referrer_bi=""):
     else:
         rows = await d1_all(
             env,
-            "SELECT referrer_bi,referred_name FROM referral_attributions "
+            "SELECT referrer_bi,referred_bi,referred_name "
+            "FROM referral_attributions "
             "WHERE decision='credited' "
             "ORDER BY credited_at DESC,referred_name LIMIT ?",
             1000,
         )
+    public = None
+    if public_only:
+        public = await _public_referral_bis(
+            env, [row.get("referred_bi") for row in rows or []])
     out = {}
     for row in rows or []:
         key = str(row.get("referrer_bi") or "")
         name = clean_string(
             row.get("referred_name", ""), MAX_NODE_NAME).strip().lower()
         if not key or not valid_node_name(name):
+            continue
+        if public is not None and str(
+                row.get("referred_bi") or "") not in public:
             continue
         names = out.setdefault(key, [])
         if name not in names:
@@ -1025,7 +1053,8 @@ async def _credited_referrals_by_referrer(env, referrer_bi=""):
 async def _referral_public_summary(env, referrer_bi):
     """Public totals plus the exact identities retained by modern signups."""
     clicks, signups, last_ts = await _referral_counts(env, referrer_bi)
-    referred = await _credited_referrals_by_referrer(env, referrer_bi)
+    referred = await _credited_referrals_by_referrer(
+        env, referrer_bi, public_only=True)
     names = referred.get(str(referrer_bi or ""), [])
     legacy = await d1_first(
         env,
@@ -1063,9 +1092,13 @@ async def referral_leaderboard(env):
         "ORDER BY signups DESC,s.clicks DESC,s.name LIMIT ?",
         REFERRAL_LEADERBOARD_LIMIT,
     )
-    referred = await _credited_referrals_by_referrer(env)
+    referred = await _credited_referrals_by_referrer(env, public_only=True)
+    public_referrers = await _public_referral_bis(
+        env, [row.get("referrer_bi") for row in rows or []])
     board = []
     for row in rows or []:
+        if str(row.get("referrer_bi") or "") not in public_referrers:
+            continue
         names = referred.get(str(row.get("referrer_bi") or ""), [])
         signups = int(row.get("signups") or 0)
         board.append({
@@ -2104,6 +2137,9 @@ async def _account_users_directory(env, request, public_payload=False):
         rows.append((row, rec))
     activity_buckets = await _world_user_activity_buckets(env)
     commit_totals = await _contribution_commit_totals(env)
+    public_names = {
+        clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
+        for _row, rec in rows if _is_public_roster_member(rec)}
     for row, rec in rows:
         public_roster_member = True
         if not _is_public_roster_member(rec):
@@ -2133,14 +2169,20 @@ async def _account_users_directory(env, request, public_payload=False):
             achievement_badges=str(
                 row.get("achievement_badges") or "").split(","),
         )
-        user_payload["referredBy"] = credited_referrers.get(
+        referred_by = credited_referrers.get(
             str(row.get("user_bi") or ""), "")
+        user_payload["referredBy"] = (
+            referred_by if admin_actor or referred_by in public_names else "")
         if public_roster_member:
             # Copy before attaching any administrator-only identity or signup
             # fields below. The desktop feeds this array to shared Chat/World
             # presentation and the complete `users` array only to its guarded
             # administrator table.
-            public_out.append(dict(user_payload))
+            public_out.append({
+                **user_payload,
+                "referredBy": (
+                    referred_by if referred_by in public_names else ""),
+            })
         if admin_actor:
             signup_fields = dict(admin_signup_fields.get(
                 str(row.get("user_bi") or ""), {}))

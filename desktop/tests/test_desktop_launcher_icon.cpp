@@ -98,6 +98,125 @@ void testUnchangedIconsAreNotRewritten()
           "no unthemed fallback is created when there was none");
 }
 
+void testInstallsLauncherForInstalledCopy()
+{
+    QTemporaryDir dir;
+    const QString home = dir.path() + "/share";
+    const QString client = dir.path() + "/bin/forkmesh";
+    const QString other = dir.path() + "/build/forkmesh";
+    writeFile(client, "binary");
+    writeFile(other, "binary");
+
+    check(!installLauncher(home, client, other),
+          "a build that is not the installed copy writes no launcher");
+    check(!launcherInstalled(home), "no launcher after a build-tree run");
+    check(!installLauncher(home, dir.path() + "/bin/missing", dir.path() + "/bin/missing"),
+          "a missing installed copy writes no launcher");
+
+    check(installLauncher(home, client, client),
+          "the installed copy adds itself to the applications menu");
+    check(launcherInstalled(home), "the launcher file exists");
+    QFile entry(home + "/applications/forkmesh.desktop");
+    check(entry.open(QIODevice::ReadOnly) &&
+              entry.readAll() == launcherEntry(client),
+          "the launcher runs the installed copy");
+    check(launcherEntry(client).contains("Exec=\"" + client.toUtf8() + "\" %u\n"),
+          "the launcher quotes the installed path");
+
+    writeFile(home + "/applications/forkmesh.desktop", "[Desktop Entry]\nName=Custom\n");
+    check(!installLauncher(home, client, client),
+          "an existing launcher is never overwritten");
+}
+
+
+QByteArray retiredEntry(const QString &exec)
+{
+    return QStringLiteral("[Desktop Entry]\n"
+                          "Type=Application\n"
+                          "Version=1.0\n"
+                          "Name=ForkMesh\n"
+                          "Exec=%1\n"
+                          "Icon=forkmesh\n"
+                          "StartupWMClass=forkmesh\n")
+        .arg(exec)
+        .toUtf8();
+}
+
+QByteArray launcherBytes(const QString &home)
+{
+    QFile file(home + "/applications/forkmesh.desktop");
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
+void testLauncherTarget()
+{
+    check(launcherTarget(launcherEntry("/opt/a b/forkmesh")) == "/opt/a b/forkmesh",
+          "a quoted Exec path keeps its spaces");
+    check(launcherTarget(retiredEntry("/old/forkmesh --flag")) == "/old/forkmesh",
+          "an unquoted Exec path stops at the first space");
+    check(launcherTarget("[Desktop Entry]\nName=ForkMesh\n").isEmpty(),
+          "an entry without Exec has no target");
+}
+
+void testCurrentClient()
+{
+    QTemporaryDir dir;
+    const QString installed = dir.path() + "/bin/forkmesh";
+    const QString source = dir.path() + "/src/desktop/build/forkmesh";
+    const QString worktree = dir.path() + "/src/.worktrees/x/desktop/build/forkmesh";
+    writeFile(source, "binary");
+    writeFile(worktree, "binary");
+
+    check(currentClient(installed, source, source) == source,
+          "with nothing installed, the primary checkout's build is the client");
+    check(currentClient(installed, source, worktree).isEmpty(),
+          "a worktree build is never the client");
+    writeFile(installed, "binary");
+    check(currentClient(installed, source, source) == installed,
+          "the installed copy wins over the checkout's build");
+}
+
+void testRepairsRetiredLauncher()
+{
+    QTemporaryDir dir;
+    const QString home = dir.path() + "/share";
+    const QString retiredRoot = home + "/forkmesh";
+    const QString retiredBin = retiredRoot + "/src/qt_client/build/forkmesh";
+    const QString client = dir.path() + "/src/desktop/build/forkmesh";
+    const QString launcher = home + "/applications/forkmesh.desktop";
+    writeFile(retiredBin, "old binary");
+    writeFile(client, "binary");
+
+    check(!repairLauncher(home, retiredRoot, client), "no launcher means nothing to repair");
+
+    writeFile(launcher, retiredEntry(retiredBin));
+    check(repairLauncher(home, retiredRoot, client),
+          "a launcher running the retired install is repaired");
+    check(launcherBytes(home) == launcherEntry(client),
+          "the repaired launcher runs the current client");
+    check(!repairLauncher(home, retiredRoot, client), "a repaired launcher is left alone");
+
+    writeFile(launcher, retiredEntry(dir.path() + "/gone/forkmesh"));
+    check(repairLauncher(home, retiredRoot, client),
+          "a launcher whose binary is missing is repaired");
+
+    const QString other = dir.path() + "/opt/forkmesh";
+    writeFile(other, "binary");
+    writeFile(launcher, retiredEntry(other));
+    check(!repairLauncher(home, retiredRoot, client),
+          "a launcher running another existing binary is kept");
+
+    writeFile(launcher, "[Desktop Entry]\nName=Custom\nExec=" + retiredBin.toUtf8() + "\n");
+    check(!repairLauncher(home, retiredRoot, client),
+          "a launcher ForkMesh did not write is kept");
+
+    writeFile(launcher, retiredEntry(retiredBin));
+    check(!repairLauncher(home, retiredRoot, dir.path() + "/missing/forkmesh"),
+          "a missing client never replaces the launcher");
+    check(launcherBytes(home) == retiredEntry(retiredBin),
+          "the launcher is untouched when the client is missing");
+}
+
 }
 
 int main(int argc, char **argv)
@@ -106,6 +225,10 @@ int main(int argc, char **argv)
     testNothingWithoutLauncher();
     testReplacesOpaqueIcon();
     testUnchangedIconsAreNotRewritten();
+    testInstallsLauncherForInstalledCopy();
+    testLauncherTarget();
+    testCurrentClient();
+    testRepairsRetiredLauncher();
     if (failures == 0)
         std::printf("desktop launcher icon tests passed\n");
     return failures == 0 ? 0 : 1;

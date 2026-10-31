@@ -27,6 +27,7 @@ public:
 
     std::function<QList<corelogs::NodeRow>()> nodeSource;
     std::function<QString()> idleReasonSource;
+    std::function<void(const QString &table)> onTableClicked;
 
     void noteStatement(const QString &node, const QString &sql,
                        const QString &originFile, qint64 nowMs);
@@ -49,6 +50,8 @@ public:
         return m_verbCounts.value(group);
     }
     QString toolTipAt(const QPointF &point) const;
+    QString tableAt(const QPointF &point) const;
+    bool clickAt(const QPointF &point);
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -59,6 +62,7 @@ protected:
     void hideEvent(QHideEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
 
 private:
@@ -94,6 +98,7 @@ private:
     struct Hit {
         QRectF area;
         QString text;
+        QString table;
     };
 
     NodeState &nodeState(const QString &node);

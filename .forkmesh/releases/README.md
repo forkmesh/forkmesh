@@ -29,6 +29,9 @@ and the downloaded bytes are then verified by SHA-256.
   `forkmesh-linux-x86_64`, its `.AppImage` and `.AppImage.zsync`,
   `forkmesh-mirror-node-linux-x86_64`, `forkmesh-windows-x86_64-setup.exe`,
   `forkmesh-macos-arm64.dmg` and `forkmesh-android-universal.apk`.
+- `apt/` is not a channel: it holds the signed apt repository metadata for
+  `forkmesh-linux-x86_64.deb` in `latest`, rewritten on each promotion
+  (`docs/release/apt.md`).
 
 The macOS `.dmg` is built by the Codemagic `macos-desktop` workflow
 (`codemagic.yaml`), not by the Actions job or the release host, and is
@@ -105,8 +108,8 @@ compatibility shim for the older unit name). For the newest candidate held
 back only for host-built assets it:
 
 1. builds and signs each missing asset at the release's build commit: the APK
-   with versionCode `(MAJOR*10000 + MINOR*100 + PATCH) * 100 + BUILD` (v1.2.9
-   build 1 is 1020901; releases up to v1.2.8 used the code without the build,
+   with versionCode `(MAJOR*10000 + MINOR*100 + PATCH) * 100 + BUILD` (v1.5.0
+   build 0 is 1050000; releases up to v1.2.8 used the code without the build,
    v1.2.8 is 10208) so it installs over the previous build, signed with the v3 direct-distribution
    key `android-direct-distribution-v3.jks` in the same release folder (since
    v1.2.3; phones on a v2-signed APK reinstall once), and the Windows installer by
@@ -148,13 +151,14 @@ A platform can ship a new build of the current version without a new tag.
 rebuilds that platform from `main`, publishes it into the version's candidate
 and promotes it to `latest`; the `Deploy <platform> build` shortcuts run it.
 
-- Build numbers start at 1 for every version. `builds.json` in this folder
-  records the number each platform is on (`{"tag", "builds"}`), and
-  `--reset-builds` sets all of them back to 1 for a new tag.
+- Build numbers start at 0 for every version (1 before v1.5.0). `builds.json`
+  in this folder records the number each platform is on (`{"tag", "builds"}`),
+  and `--reset-builds` sets all of them back to 0 for a new tag. The first
+  build of a version is build 0, so its APK versionCode ends in `00`.
 - A rebuilt asset carries `"build": N` and `"commit": "<sha>"` in its
   `release.json` entry (`--build` / `--asset-commit` on the publisher). The
   manifest's `build_commit` stays the release commit; the other assets keep
-  their own entries. Assets without `build` are build 1 at `build_commit`.
+  their own entries. Assets without `build` are build 0 at `build_commit`.
 - The next number is one above both `builds.json` and the highest `build` in
   the signed manifest, so a reset never hands out a number again and the
   Android versionCode only grows. Build 99 is the last of a version.

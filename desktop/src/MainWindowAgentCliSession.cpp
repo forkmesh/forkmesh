@@ -21,6 +21,7 @@
 #include "AgentRuntimeRegistry.h"
 #include "AgentResumeIdentity.h"
 #include "AgentWorktree.h"
+#include "WorktreeInclude.h"
 #include "FlowLayout.h"
 #include "KebabHeaderView.h"
 #include "CodexAppServerSession.h"
@@ -29,6 +30,8 @@
 #include "UsageLimitCalendar.h"
 
 #include <QActionGroup>
+#include <QFutureWatcher>
+#include <QtConcurrent>
 #include <QComboBox>
 #include <QDebug>
 #include <QScrollArea>
@@ -1038,7 +1041,7 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         const QString scratch = forkmesh::vm::active()
                                     ? QString()
                                     : forkmesh::agentscratch::folderFor(workdir);
-        codexEnv << forkmesh::agentscratch::environment(scratch);
+        codexEnv << forkmesh::agentscratch::environment(scratch, workdir);
         int jailMb = 0;
         if (QSettings().value(kAgentJailSetting, false).toBool() ||
             guardrails.enforced()) {
@@ -1119,7 +1122,7 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         const QString scratch = forkmesh::vm::active()
                                     ? QString()
                                     : forkmesh::agentscratch::folderFor(workdir);
-        launchEnv << forkmesh::agentscratch::environment(scratch);
+        launchEnv << forkmesh::agentscratch::environment(scratch, workdir);
         int jailMb = 0;
         if (QSettings().value(kAgentJailSetting, false).toBool() ||
             guardrails.enforced()) {
@@ -1177,9 +1180,11 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
             claudeSettings = forkmesh::agentnet::claudeHookSettings(agentRunGatesCommands(sid));
         }
         claudeSettings = forkmesh::agentrules::claudeSettingsWithAllowRules(
-            claudeSettings, agentRunRules(sid).allowedToolRules);
+            forkmesh::agentrules::claudeSettingsWithReadGuard(claudeSettings),
+            agentRunRules(sid).allowedToolRules);
         if (!claudeSettings.isEmpty())
             runtimeLaunch.options.insert(QStringLiteral("claudeSettings"), claudeSettings);
+        addAgentRunMcpConfig(sid, runtimeLaunch.options);
         live->setGuardrails(guardrails);
         live->startRuntime(runtimeLaunch);
     };
@@ -1227,6 +1232,39 @@ void MainWindow::failCliTranscriptLaunch(int sid, const QString &why)
     maybeStartQueuedRebuild();
 }
 
+void MainWindow::copyWorktreeIncludes(
+    int sid, const QString &repoPath, const QString &wtPath,
+    const std::function<void(const QString &)> &launch)
+{
+    namespace include = forkmesh::worktreeinclude;
+    if (!QFileInfo(QDir(repoPath).filePath(QLatin1String(include::kFileName))).isFile()) {
+        launch(wtPath);
+        return;
+    }
+    auto *watcher = new QFutureWatcher<include::Result>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, sid, watcher, wtPath, launch] {
+                const include::Result result = watcher->result();
+                watcher->deleteLater();
+                if (AgentSession *as = findAgentSession(sid);
+                    as && (result.copied > 0 || !result.errors.isEmpty())) {
+                    QString line = QStringLiteral("== .worktreeinclude: copied %1 file%2")
+                                       .arg(result.copied)
+                                       .arg(result.copied == 1 ? QString()
+                                                               : QStringLiteral("s"));
+                    if (!result.errors.isEmpty())
+                        line += QStringLiteral("; could not copy %1")
+                                    .arg(result.errors.join(QStringLiteral(", ")));
+                    m_agentStore->appendLog(*as, line + QLatin1Char('\n'));
+                }
+                if (!m_streamSessions.value(sid) && !m_codexStreams.value(sid))
+                    return;
+                launch(wtPath);
+            });
+    watcher->setFuture(QtConcurrent::run(
+        [repoPath, wtPath] { return include::apply(repoPath, wtPath); }));
+}
+
 void MainWindow::startCliTranscriptWorktree(
     int sid, const QString &repoPath, const QString &worktreeName,
     int issueNumber, const QString &branchName, const QString &baseRef,
@@ -1265,8 +1303,8 @@ void MainWindow::startCliTranscriptWorktree(
         auto *add = new QProcess(this);
         add->setWorkingDirectory(repoPath);
         connect(add, &QProcess::finished, this,
-                [this, sid, add, wtPath, script, launch, failLaunch, runAdd,
-                 firstFailure, attemptsLeft](int, QProcess::ExitStatus) {
+                [this, sid, add, wtPath, repoPath, script, launch, failLaunch,
+                 runAdd, firstFailure, attemptsLeft](int, QProcess::ExitStatus) {
                     const QString out = QString::fromUtf8(
                                             add->readAllStandardOutput())
                                             .trimmed();
@@ -1283,7 +1321,7 @@ void MainWindow::startCliTranscriptWorktree(
                         m_streamWorktree[sid] = wtPath;
                         m_taskWorkItemSessionWorktree.insert(sid, wtPath);
                         attachOrgTaskWorkItemForSession(sid);
-                        launch(wtPath);
+                        copyWorktreeIncludes(sid, repoPath, wtPath, launch);
                         return;
                     }
                     if (!m_streamSessions.value(sid) && !m_codexStreams.value(sid))
@@ -1949,6 +1987,13 @@ QSet<QString> MainWindow::ownStreamCwds() const
     return out;
 }
 
+void MainWindow::retireStreamCwd(const QString &path)
+{
+    if (path.trimmed().isEmpty() || QFileInfo(path + QStringLiteral("/.git")).isDir())
+        return;
+    m_retiredStreamCwds.insert(QDir(path).absolutePath());
+}
+
 int MainWindow::externalTempIdFor(const QString &uuid)
 {
     auto it = m_externalTempId.constFind(uuid);
@@ -1957,6 +2002,37 @@ int MainWindow::externalTempIdFor(const QString &uuid)
     const int id = m_nextExternalTempId--; // -1000, -1001, … (all <= kExternalIdBase)
     m_externalTempId.insert(uuid, id);
     return id;
+}
+
+QStringList MainWindow::claudeTranscriptConfigDirs() const
+{
+    QStringList dirs{QDir::homePath() + QStringLiteral("/.claude"),
+                     agentAccountDefaultConfigDir(QStringLiteral("claude-code"))};
+    for (const AgentAccountProfile &profile :
+         agentAccountProfiles(QStringLiteral("claude-code")))
+        if (!profile.configDir.trimmed().isEmpty())
+            dirs.append(profile.configDir);
+    dirs.removeDuplicates();
+    return dirs;
+}
+
+void MainWindow::removeOrphanedClaudeTranscripts(const QString &worktreePath)
+{
+    if (worktreePath.trimmed().isEmpty())
+        return;
+    runOffThread<QStringList>(
+        [dirs = claudeTranscriptConfigDirs(), worktreePath] {
+            QStringList removed;
+            ClaudeSessionScan::removeOrphanedTranscripts(dirs, worktreePath, &removed);
+            return removed;
+        },
+        [this, worktreePath](QStringList removed) {
+            if (removed.isEmpty())
+                return;
+            logSystem(QStringLiteral("Agents: removed the Claude Code sessions of "
+                                     "deleted worktree %1: %2.")
+                          .arg(worktreePath, removed.join(QStringLiteral(", "))));
+        });
 }
 
 void MainWindow::scanExternalClaudeSessions()
@@ -1970,14 +2046,19 @@ void MainWindow::scanExternalClaudeSessions()
         return;
     constexpr qint64 kActiveWindowMs = 90 * 1000; // written within 90s == "running"
     const QString repoKey = repo.owner + QLatin1Char('/') + repo.name;
-    const QSet<QString> streamCwds = ownStreamCwds();
+    const QSet<QString> streamCwds = ownStreamCwds() | m_retiredStreamCwds;
+    QStringList accountDirs;
+    for (const AgentAccountProfile &profile :
+         agentAccountProfiles(QStringLiteral("claude-code")))
+        if (!profile.configDir.trimmed().isEmpty())
+            accountDirs.append(profile.configDir);
     const quint64 generation = ++m_externalClaudeScanGeneration;
     m_externalClaudeScanInFlight = true;
     runOffThread<QList<ExternalClaudeSession>>(
-        [repoPath = repo.localPath, streamCwds,
+        [repoPath = repo.localPath, streamCwds, accountDirs,
          activeWindowMs = kActiveWindowMs]() {
             return ClaudeSessionScan::scan(repoPath, streamCwds,
-                                           activeWindowMs);
+                                           activeWindowMs, accountDirs);
         },
         [this, generation, repoKey](QList<ExternalClaudeSession> sessions) {
             if (generation != m_externalClaudeScanGeneration)

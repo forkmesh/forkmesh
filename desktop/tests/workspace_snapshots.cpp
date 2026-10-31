@@ -5,7 +5,9 @@
 #include "ClaudeTranscriptView.h"
 #include "DesignTokens.h"
 #include "MainWindow.h"
+#include "GitLayout.h"
 #include "MainWindowNextAccess.h"
+#include "SessionSidePanels.h"
 #include "WorkspaceLayout.h"
 
 #include <QApplication>
@@ -507,6 +509,88 @@ int runWorkspaceSnapshots(MainWindow &window)
         if (grab(dir, QStringLiteral("workspace-conversation")))
             ++saved;
 
+        check(press("workspaceToggleDetails") && shown(dock) &&
+                  shown(named("workspaceDetailsHost")),
+              QStringLiteral("Details shows the session panels in the side "
+                             "panel (%1)")
+                  .arg(label));
+        if (grab(dir, QStringLiteral("workspace-details")))
+            ++saved;
+        {
+            forkmesh::ui::SessionSidePanels panels;
+            panels.resize(320, 1500);
+            panels.show();
+            forkmesh::ui::SessionSidePanels::Details details;
+            details.session = true;
+            details.machine = QStringLiteral("desk");
+            details.machineNote = QStringLiteral("this computer");
+            details.machineIcon = QStringLiteral("device-desktop");
+            details.branch = QStringLiteral("agent/9301-invoice");
+            details.agent = QStringLiteral("Claude Code · Opus 5.5");
+            details.contextUsed = 127500;
+            details.contextWindow = 1000000;
+            details.promptTokens = 412000;
+            details.completionTokens = 38000;
+            details.totalTokens = 450000;
+            details.turns = 14;
+            details.costUsd = 3.42;
+            details.remoteAvailable = true;
+            details.remotePhones = {QStringLiteral("Pixel 9")};
+            details.remoteLocal = true;
+            bool toggled = false;
+            panels.setRemoteActions([&toggled](bool on) { toggled = !on; }, [] {});
+            panels.setDetails(details);
+            settle();
+            QStringList rows;
+            for (QLabel *swatch : panels.findChildren<QLabel *>(
+                     QStringLiteral("sessionsDetailSwatch")))
+                if (swatch->isVisible())
+                    rows << swatch->parentWidget()
+                                ->findChild<QLabel *>(QStringLiteral("sessionsDetailText"))
+                                ->text();
+            check(rows == QStringList{QStringLiteral("Used"), QStringLiteral("Free space"),
+                                      QStringLiteral("Input tokens"),
+                                      QStringLiteral("Output tokens"), QStringLiteral("Turns"),
+                                      QStringLiteral("Cost")},
+                  QStringLiteral("the Context card lists coloured rows (%1): %2")
+                      .arg(label, rows.join(QStringLiteral(", "))));
+            auto *used = panels.findChild<QLabel *>(QStringLiteral("sessionsContextUsed"));
+            auto *status = panels.findChild<QLabel *>(QStringLiteral("sessionsRemoteStatus"));
+            auto *remote = panels.findChild<QAbstractButton *>(
+                QStringLiteral("sessionsRemoteSwitch"));
+            check(used && used->text() == QStringLiteral("13% used") && status &&
+                      status->text().contains(QStringLiteral("Pixel 9")) &&
+                      status->text().contains(QStringLiteral("on this network")) && remote &&
+                      remote->isChecked() && remote->isEnabled(),
+                  QStringLiteral("the Remote control switch shows the connected phone (%1)")
+                      .arg(label));
+            QDir().mkpath(dir);
+            if (panels.grab().save(
+                    QDir(dir).filePath(QStringLiteral("session-panels-phone.png"))))
+                ++saved;
+            if (remote)
+                remote->click();
+            check(toggled, QStringLiteral("clicking Remote control asks to turn it off (%1)")
+                               .arg(label));
+            details.remotePhones.clear();
+            panels.setDetails(details);
+            settle();
+            check(status && status->text().contains(QStringLiteral("Connect a phone")),
+                  QStringLiteral("with no phone the panel says how to connect one (%1)")
+                      .arg(label));
+            details.contextUsed = 960000;
+            details.remoteOn = false;
+            panels.setDetails(details);
+            settle();
+            check(remote && !remote->isChecked() && status &&
+                      status->text().startsWith(QStringLiteral("Off.")),
+                  QStringLiteral("Remote control off says phones are refused (%1)")
+                      .arg(label));
+            if (panels.grab().save(
+                    QDir(dir).filePath(QStringLiteral("session-panels-no-phone.png"))))
+                ++saved;
+        }
+
         check(press("workspaceToggleTerminal") && shown(dock) &&
                   shown(window.testWorkspaceTerminal()),
               QStringLiteral("Terminal brings the side panel back (%1)").arg(label));
@@ -565,10 +649,10 @@ int runWorkspaceSnapshots(MainWindow &window)
             toolbar = startAll->parentWidget();
         check(!forkmesh::ui::workspaceLayoutClassic() && shown(sidebar) &&
                   shown(header),
-              QStringLiteral("the new layout is the default in the new "
+              QStringLiteral("the Focus layout is the default in the new "
                              "interface"));
 
-        forkmesh::ui::setWorkspaceLayoutClassic(true);
+        forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::ControlTower);
         NextAccess::syncWorkspace(window);
         settle(20);
         check(Theme::isNext() && !shown(sidebar) && !shown(header) &&
@@ -576,22 +660,57 @@ int runWorkspaceSnapshots(MainWindow &window)
                   !shown(named("workspacePanelBar")) && shown(dock) &&
                   codePage && codePage->parentWidget() == codeSplit &&
                   !(table && table->property("workspaceCards").toBool()),
-              QStringLiteral("the Classic layout brings the earlier Agents "
-                             "page back inside the new interface"));
-        check(settings.value(QStringLiteral("agents/workspaceLayout"))
-                      .toString() == QLatin1String("classic"),
-              QStringLiteral("the layout choice is saved"));
+              QStringLiteral("the Control Tower layout brings the earlier "
+                             "Agents page back inside the new interface"));
+        check(settings.value(QStringLiteral("app/layoutMode")).toString() ==
+                      QLatin1String("controlTower") &&
+                  forkmesh::ui::gitLayoutCompact(),
+              QStringLiteral("the Control Tower choice is saved and covers the "
+                             "Git page too"));
         if (grab(dir, QStringLiteral("workspace-classic-layout")))
             ++saved;
+        const auto towerPanels = [codeSplit]() -> QWidget * {
+            return codeSplit ? codeSplit->findChild<QWidget *>(
+                                   QStringLiteral("sessionsDetails"),
+                                   Qt::FindDirectChildrenOnly)
+                             : nullptr;
+        };
+        const auto subSessionsCard = [&towerPanels]() -> QWidget * {
+            QWidget *panels = towerPanels();
+            if (!panels)
+                return nullptr;
+            for (QFrame *card : panels->findChildren<QFrame *>(
+                     QStringLiteral("sessionsDetailCard")))
+                if (card->property("sessionsPanel").toString() ==
+                    QLatin1String("subsessions"))
+                    return card;
+            return nullptr;
+        };
+        window.testSetAppViewMode(AppViewMode::Standard);
+        settle();
+        select(9301);
+        settle(20);
+        check(shown(towerPanels()) && shown(subSessionsCard()) &&
+                  !named("agentSubSessionStrip"),
+              QStringLiteral("Control Tower shows the side panels, Sub-sessions "
+                             "among them, beside the transcript instead of a "
+                             "strip above it"));
+        if (grab(dir, QStringLiteral("agents-control-tower")))
+            ++saved;
+        window.testSetAppViewMode(AppViewMode::Workspace);
+        settle(20);
 
-        forkmesh::ui::setWorkspaceLayoutClassic(false);
+        forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
         NextAccess::syncWorkspace(window);
         settle(20);
         check(shown(sidebar) && shown(header) && !shown(toolbar) &&
                   shown(named("workspaceSend")) && codePage &&
                   dock->isAncestorOf(codePage) &&
                   table && table->property("workspaceCards").toBool(),
-              QStringLiteral("switching back restores the new layout"));
+              QStringLiteral("switching back to Focus restores the new layout"));
+        check(!shown(towerPanels()),
+              QStringLiteral("Focus hides the Control Tower side panels and "
+                             "keeps them in its Details tab"));
         if (grab(dir, QStringLiteral("workspace-new-layout-again")))
             ++saved;
     }
@@ -607,7 +726,7 @@ int runWorkspaceSnapshots(MainWindow &window)
         else
             settings.remove(key);
     };
-    forkmesh::ui::setWorkspaceLayoutClassic(false);
+    forkmesh::ui::setLayoutMode(forkmesh::ui::LayoutMode::Focus);
     restore(QStringLiteral("app/design"), savedDesign);
     restore(QStringLiteral("app/theme"), savedTheme);
     MainWindow::applyTheme();

@@ -437,12 +437,29 @@
     return `${repoApiBase(repo)}/logo`;
   }
 
+  function instanceLogoUrl() {
+    const src = document.querySelector("header img.brand-mark")?.getAttribute("src") || "";
+    return /^\/(?!\/)[A-Za-z0-9._/-]+\.(?:svg|png|webp|jpe?g)(?:\?[A-Za-z0-9=&._-]*)?$/.test(src) ? src : "";
+  }
+
+  function instanceLogoFallbackMarkup() {
+    const src = instanceLogoUrl();
+    return src
+      ? `<img data-native-repo-logo-fallback src="${escapeHtml(src)}" alt="" decoding="async" class="h-full w-full object-contain p-[12%]" />`
+      : '<i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>';
+  }
+
+  function instanceLogoFrameMarkup(sizeClass = "h-10 w-10") {
+    if (!instanceLogoUrl()) return "";
+    return `<span data-instance-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary">${instanceLogoFallbackMarkup()}</span>`;
+  }
+
   function nativeRepositoryLogoMarkup(repo, sizeClass = "h-10 w-10") {
     const endpoint = nativeRepositoryLogoEndpoint(repo);
     if (!endpoint) return "";
     return `
       <span data-native-repo-logo-frame class="relative flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary text-muted-foreground">
-        <i data-native-repo-logo-fallback data-lucide="book-marked" class="h-4 w-4"></i>
+        ${instanceLogoFallbackMarkup()}
         <img data-native-repo-logo data-logo-endpoint="${escapeHtml(endpoint)}" alt="" loading="lazy" decoding="async" class="absolute inset-0 hidden h-full w-full object-cover" />
       </span>
     `;
@@ -1123,7 +1140,16 @@
         </div>`;
   }
 
+  const SIDEBAR_SETTING_STORAGE_KEY = "forkmesh.sidebarSetting";
+
   function sidebarSetting() {
+    if (state.sidebarSetting === undefined) {
+      try {
+        state.sidebarSetting = JSON.parse(localStorage.getItem(SIDEBAR_SETTING_STORAGE_KEY) || "null");
+      } catch (_) {
+        state.sidebarSetting = null;
+      }
+    }
     const setting = state.sidebarSetting;
     return setting && typeof setting === "object" ? setting : null;
   }
@@ -1140,6 +1166,9 @@
       .then((info) => {
         if (!info?.sidebar) return;
         state.sidebarSetting = info.sidebar;
+        try {
+          localStorage.setItem(SIDEBAR_SETTING_STORAGE_KEY, JSON.stringify(info.sidebar));
+        } catch (_) {}
         renderSidebarRepositories(state.session);
         renderHomeRepositories();
       })
@@ -1153,7 +1182,7 @@
       const repo = group.entry.repo;
       const wanted = String(key).toLowerCase();
       if (repoMatchesKey(repo, wanted)) return true;
-      if (!wanted.includes("/")) return String(repo?.name || "").toLowerCase() === wanted;
+      if (!wanted.includes("/")) return !repoForkParent(repo) && String(repo?.name || "").toLowerCase() === wanted;
       return repositoryEntryLabel(group.entry).toLowerCase() === wanted
         || `${String(repoPublicOwner(repo) || repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}` === wanted;
     };
@@ -1161,10 +1190,13 @@
     pinned.forEach((key) => {
       const group = groups
         .filter((candidate) => !picked.includes(candidate) && matches(candidate, key))
-        .sort((a, b) => b.forks.length - a.forks.length)[0];
+        .sort((a, b) => Number(Boolean(repoForkParent(a.entry.repo))) - Number(Boolean(repoForkParent(b.entry.repo)))
+          || b.forks.length - a.forks.length)[0];
       if (group) picked.push(group);
     });
-    return picked.length ? picked : fallback(groups);
+    if (picked.length) return picked;
+    if (state.repositoriesLoading) return [];
+    return fallback(groups);
   }
 
   function renderSidebarRepositories(session) {
@@ -1429,13 +1461,17 @@
     `;
   }
 
+  const HALLOWEEN_PUMPKIN = '<svg viewBox="0 0 64 60" width="40" height="38" aria-hidden="true" class="shrink-0"><path d="M30 12C29 7 31 3 36 1l1.5 2.5C34 5 33 8 34 12z" fill="#4d7c2a"/><ellipse cx="18" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="46" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="32" cy="35" rx="15" ry="22" fill="#fa7a18"/><path d="M20 28l6-4 1 7zM44 28l-6-4-1 7z" fill="#3a1606"/><path d="M18 40q14 12 28 0l-4 1-2 4-4-3-4 5-4-5-4 3-2-4z" fill="#3a1606"/><path d="M21 29.5l4-2.5.5 3.5zM43 29.5l-4-2.5-.5 3.5z" fill="#fddf68"/></svg>';
+
   function renderHomeFeed() {
     const container = $("[data-home-feed]");
     if (!container) return;
     const cards = homeFeedItems().map(homeFeedCard);
     container.innerHTML = cards.length
       ? cards.join("")
-      : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
@@ -1501,7 +1537,7 @@
 
   function homeBlogPostCard(post) {
     return `
-      <a href="${escapeHtml(post.href)}" class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
+      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
         ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
         <span class="block px-3 py-2.5">
           ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
@@ -1524,8 +1560,61 @@
       : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
   }
 
+  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
+
+  function homeDevtoPost(article) {
+    let href = "";
+    let image = "";
+    try {
+      const link = new URL(String(article?.url || ""));
+      if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
+    } catch (_) {}
+    try {
+      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
+      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
+    } catch (_) {}
+    const when = Date.parse(String(article?.published_at || ""));
+    return {
+      title: String(article?.title || "").trim(),
+      href,
+      image,
+      meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
+    };
+  }
+
+  async function loadHomeDevtoPosts(user) {
+    const card = $("[data-home-blog-card]");
+    card?.removeAttribute("data-instance-plugin");
+    const viewAll = card?.querySelector("a[href]");
+    if (viewAll) {
+      viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
+      viewAll.target = "_blank";
+      viewAll.rel = "noopener";
+    }
+    try {
+      const response = await fetch(`https://dev.to/api/articles?username=${encodeURIComponent(user)}&per_page=${HOME_BLOG_POST_LIMIT}`, {
+        credentials: "omit",
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`dev.to returned ${response.status}`);
+      const articles = await response.json();
+      state.homeBlogPosts = (Array.isArray(articles) ? articles : [])
+        .map(homeDevtoPost)
+        .filter((post) => post.title && post.href)
+        .slice(0, HOME_BLOG_POST_LIMIT);
+    } catch (_) {
+      state.homeBlogPosts = [];
+    }
+    renderHomeBlogPosts();
+  }
+
   async function loadHomeBlogPosts() {
     if (!$("[data-home-blog-list]")) return;
+    const devto = String((await instanceInfo())?.sidebar?.devto || "");
+    if (/^[a-z0-9_]{1,30}$/.test(devto)) {
+      await loadHomeDevtoPosts(devto);
+      return;
+    }
     if (!(await instancePluginEnabled("blog"))) return;
     try {
       const response = await fetch(HOME_BLOG_FEED_URL, {
@@ -1635,7 +1724,9 @@
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
-      : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
+        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
   }
 
   async function loadHomeAgentSessions() {
@@ -2078,9 +2169,9 @@
       nodeName
         ? `Make sure ${mono(nodeName)} is online and still linked to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`
         : `Install the ${desktopBrand()}desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
-      `Open the desktop node's ${ui("Repos")} page, click ${ui("+ Add")}, then choose ${ui("Remote clone URL")}.`,
-      `${original ? `Paste ${mono(original)}` : "Paste the repository's clone URL"} and name it ${mono(name)}.`,
-      `Publish — the node clones and hosts the mirror.`,
+      `On that computer, clone ${original ? mono(original) : "the repository"} with git, signing in with your own account. A read-only token is enough if git asks for a password.`,
+      `Open the desktop node's ${ui("Repos")} page, choose ${ui("Import folder…")} and pick the cloned ${mono(name)} folder.`,
+      `Choose ${ui("Public")} or ${ui("Private")}. The node copies the folder to the network and keeps that copy updated while it runs; run ${mono("git pull")} in the folder to pick up new changes.`,
       `Back here, ${ui("Volunteer to mirror")} records that node as a volunteer so the importer can see a mirror is available.`,
     ];
   }
@@ -2261,11 +2352,30 @@
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
-    `Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ${desktopBrand()}desktop node.`;
+    `Copy a project's issues, pull requests and their history, once. This does not copy the code or keep anything up to date: to back up the code, follow the guide at /docs/back-up-a-github-repository/.`;
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
     `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+
+  const NEW_REPO_BACKUP_GUIDE =
+    `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
+
+  const NEW_REPO_CLONE_HINT =
+    `The ${escapeHtml(desktopBrand())}desktop app does not fetch from a URL. Clone the repository to your computer with git, signing in with your own GitHub account, then add that folder in the desktop app. It only reads the folder: nothing is pushed back to GitHub. If git asks for a password, a read-only token is enough, such as a GitHub fine-grained token for that one repository with Contents: Read-only. ${escapeHtml(platformName())} never needs permission to push to GitHub to make a backup. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`;
+
+  function renderNewRepoVisibilityNote() {
+    const note = $("[data-new-repo-visibility-note]");
+    if (!note) return;
+    const source = newRepoSource();
+    note.classList.toggle("hidden", source === "provider");
+    const privateText = hostedCoreMode() && (source === "empty" || source === "remote")
+      ? "only you and your organization's readers can see and clone it."
+      : "its contents stay encrypted and hidden from everyone else.";
+    note.innerHTML = newRepoVisibility() === "private"
+      ? `This repository will be <span class="font-medium text-foreground">Private</span>: ${privateText}`
+      : `This repository will be <span class="font-medium text-foreground">Public</span>: anyone can find, browse and clone it. Choose Private above to keep it hidden.`;
+  }
 
   function newRepoSubtitleFor(source) {
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
@@ -2400,17 +2510,18 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ${desktopBrand()}desktop node.`;
+      if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg or Gitea profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
+      if (hint) hint.innerHTML = `Paste a repository URL, or a GitLab group / Codeberg or Gitea profile to import every repository in it. This copies issues, pull requests and their history once. It does not copy the code and is not kept up to date, so it is not a backup. The transfer keeps going after setup and can resume where it stopped. To back up the code, see ${NEW_REPO_BACKUP_GUIDE}.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
+      if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    renderNewRepoVisibilityNote();
   }
 
   function setNewRepoHint(text, cls) {
@@ -2424,17 +2535,24 @@
     const list = $("[data-new-repo-steps-list]");
     const panel = $("[data-new-repo-steps]");
     if (!list || !panel) return;
-    const sourceLabel = details.source === "local" ? "Local repository" : "Remote clone URL";
-    const pick = details.source === "local" ? "Select the local repository" : "Paste the clone URL";
-    const sourceValue = details.sourceValue
-      ? ` (<span class="font-mono text-foreground">${escapeHtml(details.sourceValue)}</span>)` : "";
-    const steps = [
-      `Open the ${desktopBrand()}desktop node and go to the <span class="text-foreground">Repos</span> page.`,
-      `Click <span class="text-foreground">+ Add</span>, then choose <span class="text-foreground">${sourceLabel}</span>.`,
-      `${pick}${sourceValue} and name it <span class="font-mono text-foreground">${escapeHtml(details.name)}</span>.`,
-      `Set visibility to <span class="text-foreground">${details.visibility === "private" ? "Private" : "Public"}</span>${details.description ? ` and add your description` : ""}.`,
-      `Publish — the node mirrors it and it appears here in your repositories.`,
-    ];
+    const ui = (text) => `<span class="text-foreground">${escapeHtml(text)}</span>`;
+    const mono = (text) => `<span class="font-mono text-foreground">${escapeHtml(text)}</span>`;
+    const visibility = ui(details.visibility === "private" ? "Private" : "Public");
+    const importStep = `Open the ${desktopBrand()}desktop app's ${ui("Repos")} page and choose ${ui("Import folder…")} (${ui("Add local repo…")} in some menus).`;
+    const steps = details.source === "local"
+      ? [
+        importStep,
+        `Pick the folder${details.sourceValue ? ` ${mono(details.sourceValue)}` : ""} and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. It then appears here in your repositories.`,
+      ]
+      : [
+        `On your computer, clone the repository with git, signing in with your own GitHub account${details.sourceValue ? `: ${mono(`git clone ${details.sourceValue}`)}` : ""}. A read-only token is enough if git asks for a password.`,
+        importStep,
+        `Pick the folder you cloned and name it ${mono(details.name)}.`,
+        `Choose ${visibility}${details.description ? ` and add your description` : ""}.`,
+        `The desktop app copies the folder to the network and keeps that copy updated while it runs. To pick up new changes from GitHub, run ${mono("git pull")} in that folder; nothing is pushed back to GitHub. Step by step: ${NEW_REPO_BACKUP_GUIDE}.`,
+      ];
     list.innerHTML = steps
       .map((step, index) => `<li class="flex gap-2"><span class="shrink-0 font-mono text-foreground">${index + 1}.</span><span>${step}</span></li>`)
       .join("");
@@ -2953,6 +3071,7 @@
     const contentGrid = detail.querySelector("[data-repo-content-grid]");
     const about = detail.querySelector("[data-repo-about]");
     const showAbout = tab === "code";
+    detail.querySelector("[data-repo-title-row]")?.classList.toggle("hidden", !showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);
     about?.classList.toggle("hidden", !showAbout);
@@ -2988,6 +3107,7 @@
       // Leaving the tab closes any open agent detail page (adhoc #259) so
       // returning to Agents lands on the session list, not a stale transcript.
       state.agentsView.selectedAgentId = null;
+      state.agentsView.statusView = "all";
     }
     if (!state.selectedRepo) return;
     // Record pages have no Back button: the tab is the way back to the list,
@@ -3018,6 +3138,7 @@
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
     if (tab === "security") void loadRepoSecurity(state.selectedRepo);
     if (tab === "settings") {
+      renderRepoSettingsRail();
       loadRepoFediverse(state.selectedRepo);
       void loadRepoSettingsLogo(state.selectedRepo);
       void loadRepoCollaborators(state.selectedRepo);
@@ -3500,8 +3621,8 @@
     return { kind: preview[0], mime: preview[1], label: preview[2] };
   }
 
-  function repoRawUrl(repo, path) {
-    return repoLiveUrl(repo, "raw", { path });
+  function repoRawUrl(repo, path, ref = "") {
+    return repoLiveUrl(repo, "raw", ref ? { path, ref } : { path });
   }
 
   function repoLiveUrl(repo, action, params = {}) {

@@ -34,6 +34,9 @@ import urllib.parse
 from . import d1_caller
 from . import error_log
 from . import js as _js
+from . import privacy
+from . import read_only
+from . import read_surfaces
 from . import repo_ssr
 from . import request_guard
 from .request_policy import RequestPolicy
@@ -187,6 +190,7 @@ class HostASGI:
         runtime.host_metrics = self.metrics
         self._fleet_api = None
         install_handshake_log_filter()
+        privacy.install_log_filters(runtime.env)
         self._born = time.monotonic()
         self.boot_unseal_waits = 0
 
@@ -295,6 +299,7 @@ class HostASGI:
         self._edge_client(scope, headers, method)
         if client and not headers.has("cf-connecting-ip"):
             headers.set("cf-connecting-ip", client[0])
+        privacy.scrub_headers(headers, self.runtime.env)
         country = headers.get("cf-ipcountry")
         cf = JsObject(country=country) if country else JsObject()
         cf["httpProtocol"] = "HTTP/" + str(scope.get("http_version", "1.1"))
@@ -434,6 +439,16 @@ class HostASGI:
                 body, status = {"ok": True}, 200
             except Exception as error:
                 body, status = {"ok": False, "error": repr(error)}, 500
+        elif path == "/_host/read-only":
+            query = dict(urllib.parse.parse_qsl(
+                (scope.get("query_string") or b"").decode("latin-1")))
+            if "on" in query:
+                self.runtime.read_only_override = (
+                    None if query["on"] == "auto" else query["on"] == "1")
+                self.runtime.sync_read_only()
+            body = {"readOnly": bool(self.runtime.read_only),
+                    "stats": dict(read_only.STATS)}
+            status = 200
         elif path == "/readyz":
             readiness = getattr(durable, "readiness", None)
             if readiness is None:
@@ -444,6 +459,11 @@ class HostASGI:
                 ok = False
                 reasons = ["sealed"] + [r for r in reasons if r != "sealed"]
             body = {"ok": ok, "reasons": reasons}
+            if self._serving_read_only(reasons):
+                body["ok"] = ok = False
+                body["readOnly"] = True
+                if "read_only" not in reasons:
+                    reasons.append("read_only")
             node = getattr(durable, "node_id", None)
             if node:
                 body["node"] = node
@@ -500,6 +520,35 @@ class HostASGI:
                                           "cache-control": "no-store"})),
             method)
 
+    def _serving_read_only(self, reasons):
+        if self.runtime.sealed or not getattr(self.runtime, "read_only",
+                                              False):
+            return False
+        return not any(str(reason).startswith(("rqlite_unreachable",
+                                               "quarantined", "sealed"))
+                       for reason in reasons)
+
+    async def _read_only_answer(self, scope, response):
+        state = read_only.current()
+        refused = bool(state and state["refused"])
+        if not refused and not getattr(self.runtime, "read_only", False):
+            return response
+        status = 500 if response is None else int(response.status)
+        writes = state is not None and not read_only.reads_only(
+            state["method"], state["path"])
+        if status < 500 and not refused and not (writes and status >= 400):
+            return response
+        read_only.STATS["answered"] += 1
+        stream = getattr(response, "_body", None)
+        if stream is not None and not isinstance(stream, (bytes, str)):
+            try:
+                await stream.cancel()
+            except Exception:
+                pass
+        status, headers, body = read_only.answer(
+            _headers_from_scope(scope).get("accept"))
+        return _js.Response(body, status, "", _js.Headers(headers))
+
     @staticmethod
     def _metrics_allowed(scope, durable):
         query = (scope.get("query_string") or b"").decode("latin-1")
@@ -532,6 +581,11 @@ class HostASGI:
 
     # -- HTTP --------------------------------------------------------------
     async def _http(self, scope, receive, send):
+        with read_only.request_scope(scope.get("method", "GET"),
+                                     scope.get("path", "/")):
+            await self._http_request(scope, receive, send)
+
+    async def _http_request(self, scope, receive, send):
         self.requests += 1
         method = scope.get("method", "GET").upper()
         path = scope.get("path", "/")
@@ -546,12 +600,13 @@ class HostASGI:
             await self._request_check(scope, send)
             return
         if path == "/readyz" or (self.debug_endpoints and path in (
-                "/_host/cluster", "/_host/scheduled")):
+                "/_host/cluster", "/_host/scheduled", "/_host/read-only")):
             await self._host_endpoint(path, scope, send, method)
             return
         if path.startswith("/api/fleet/"):
             await self._fleet(scope, receive, send, method, path)
             return
+        await privacy.load(self.runtime.env)
         denial = await self._policy_denial(scope, method, path)
         if denial is not None:
             await self._send_response(send, denial, method)
@@ -575,6 +630,16 @@ class HostASGI:
             await self._send_response(send, self._plain_response(
                 400, "Bad Request\n"), method)
             return
+        if (self.repo_fastpath is not None and method in ("GET", "HEAD")
+                and read_surfaces.target(scope) is not None):
+            origin = read_surfaces.origin_of(_url_from_scope(
+                scope, _headers_from_scope(scope), self.trust_forwarded))
+            try:
+                if await read_surfaces.handle(self.repo_fastpath, self.runtime.fetch,
+                                              scope, send, origin):
+                    return
+            except Exception as error:
+                error_log.report("read surface failed on %s" % path, error)
         if (self.serve_assets and method in ("GET", "HEAD")
                 and not self.rules.worker_first(path)):
             assets = getattr(self.runtime.env, "ASSETS", None)
@@ -631,7 +696,8 @@ class HostASGI:
                 413, "Payload Too Large\n", {"connection": "close"})
         elapsed = (time.perf_counter() - started) * 1000
         if elapsed > 250 and path not in HELD_REQUEST_PATHS:
-            print("slow request %.0fms %s %s" % (elapsed, method, path))
+            print("slow request %.0fms %s %s" % (
+                elapsed, method, privacy.log_path(self.runtime.env, path)))
         if response is None or response.status == 101:
             response = _js.Response(b"worker returned no response", 500, "",
                                     _js.Headers())
@@ -641,9 +707,13 @@ class HostASGI:
             if stale is not None:
                 await self.repo_fastpath.send_stale(scope, send, stale)
                 return
+        response = await self._read_only_answer(scope, response)
         extra = None
         if path.startswith("/api/"):
             extra = server_timing_headers(response, elapsed, db_count, db_ms)
+        if getattr(self.runtime, "read_only", False) and \
+                not response.headers.has(read_only.HEADER):
+            extra = (extra or []) + [(read_only.HEADER.encode(), b"1")]
         await self._send_response(send, response, method, extra)
 
     async def _fetch_response(self, ssr, request, method, path, body_state):
@@ -658,7 +728,8 @@ class HostASGI:
             if not body_state.get("too_large"):
                 self.errors += 1
                 error_log.report("worker fetch raised on %s %s -> 500"
-                                 % (method, path), error)
+                                 % (method, privacy.log_path(
+                                     self.runtime.env, path)), error)
             return _js.Response(
                 b"Internal Server Error", 500, "",
                 _js.Headers({"content-type": "text/plain; charset=utf-8"}))
@@ -756,6 +827,7 @@ class HostASGI:
             await self._deny(scope, send, self._sealed_response(
                 scope.get("path", "/")))
             return
+        await privacy.load(self.runtime.env)
         request = self._request(scope, receive, "GET", None)
         if not request.headers.has("upgrade"):
             request.headers.set("upgrade", "websocket")
@@ -764,12 +836,14 @@ class HostASGI:
         except Exception as error:
             self.errors += 1
             error_log.report("worker websocket fetch raised on %s -> 500"
-                             % (scope.get("path"),), error)
+                             % (privacy.log_path(self.runtime.env,
+                                                 scope.get("path")),), error)
             response = _js.Response(b"Internal Server Error", 500, "",
                                     _js.Headers())
         client = getattr(response, "webSocket", None)
         if response.status != 101 or client is None:
-            await self._deny(scope, send, response)
+            await self._deny(scope, send,
+                             await self._read_only_answer(scope, response))
             return
         accept = {"type": "websocket.accept"}
         protocol = response.headers.get("sec-websocket-protocol")

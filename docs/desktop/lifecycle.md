@@ -99,6 +99,13 @@ A run active at quit stays Running on disk and is re-queued on the next start
 (`requeueAfterDesktopInterruption`). The reaper only ensures the step's sandbox
 and its scope are gone.
 
+Stopping or timing out a step sends `systemctl --user kill --kill-whom=all`
+to its `forkmesh-action-<pid>-<run>-<step>.scope` as well as signalling the
+process group. The step has often already left its scope by then, and
+systemctl then prints `Failed to kill unit ... not loaded`. Nothing is wrong
+in that case, so the kill runs through `processreaper::startReleasedQuietly`
+with its output sent to the null device (2026-10-25).
+
 ## Limits
 
 - A second stop signal, `SIGKILL` or a crash skips the sweep; registered scopes
@@ -369,6 +376,10 @@ Three parts, code `desktop/src/KeepAwake.{h,cpp}` and
   lives in the readable application rules directory so an unprivileged
   desktop can verify its exact installed contents; it does not loosen the
   permissions on the administrator's `/etc/polkit-1/rules.d` directory.
+  **Let my phones restart this computer**, in the same box, installs a
+  second rule, `49-forkmesh-restart-<uid>.rules`, the same way; it grants
+  only `org.freedesktop.login1.reboot` and `reboot-multiple-sessions`
+  (`docs/native/DESKTOP_UPDATE.md`).
 - **Never let this computer go to sleep** (Settings → General → STARTUP).
   Runs `pkexec systemctl mask sleep.target suspend.target hibernate.target
   hybrid-sleep.target suspend-then-hibernate.target` (`unmask` to undo). A

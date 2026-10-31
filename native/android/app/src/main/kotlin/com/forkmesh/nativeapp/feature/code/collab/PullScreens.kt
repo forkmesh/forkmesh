@@ -37,6 +37,7 @@ import com.forkmesh.nativeapp.collab.PullTimeline
 import com.forkmesh.nativeapp.collab.THREAD_SUBSCRIPTION_NOTE
 import com.forkmesh.nativeapp.collab.dartErrorText
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.model.PublishedPull
 import com.forkmesh.nativeapp.model.Repository
 import com.forkmesh.nativeapp.shell.ShellPullsWatch
@@ -56,6 +57,26 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.forkmesh.nativeapp.collab.PullState
+import com.forkmesh.nativeapp.ui.theme.FmIcon
+import com.forkmesh.nativeapp.ui.theme.FmRadius
+import com.forkmesh.nativeapp.ui.theme.FmSpace
+import androidx.compose.material3.HorizontalDivider
+import com.forkmesh.nativeapp.ui.kit.FmCard
+import com.forkmesh.nativeapp.ui.kit.FmRowDivider
+import com.forkmesh.nativeapp.code.diff.PatchCommit
+import com.forkmesh.nativeapp.code.diff.parseFormatPatchSeries
+import com.forkmesh.nativeapp.code.diff.parseUnifiedDiff
 
 private val PUBLISH_RETRY_DELAYS_MS = listOf(1_500L, 3_000L, 6_000L, 12_000L, 24_000L)
 
@@ -133,6 +154,7 @@ internal class PullDetailScreen(
     private var loadStarted = initial != null
     private var loadJob: Job? = null
     private val subscribed = mutableStateOf(false)
+    private var commits by mutableStateOf<List<PatchCommit>>(emptyList())
 
     override val title: String get() = "PR #${pull?.number ?: number}"
 
@@ -144,6 +166,15 @@ internal class PullDetailScreen(
                 loadStarted = true
                 loadJob = env.launch { load() }
             }
+        }
+        val loadedNumber = pull?.number
+        LaunchedEffect(loadedNumber) {
+            if (loadedNumber == null) return@LaunchedEffect
+            val series = withContext(Dispatchers.IO) {
+                runCatching { env.api.pullCommits(repo.owner, repo.name, loadedNumber) }.getOrDefault("")
+            }
+            val parsed = withContext(Dispatchers.Default) { parseFormatPatchSeries(series) }
+            if (parsed.isNotEmpty() || commits.isEmpty()) commits = parsed
         }
         CollabScaffold(topBar = { CollabTopBar(navigator, title = title) }) {
             val current = pull
@@ -194,31 +225,38 @@ internal class PullDetailScreen(
                 }
             }
         }
+        val state = PullState.of(pull)
+        val reviewable = PullState.reviewable(pull)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp)) {
             item {
-                InfoCard(pull.title) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ChipView(CollabChip("label_outline", pull.status))
+                InfoCard(pull.title, Modifier.testTag("pull-header")) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                        PullStatePill(state)
+                        Text("#${pull.number}", style = Fm.text.bodyMedium.copy(color = colors.textTertiary))
                         if (pull.signed) ChipView(CollabChip("verified_outlined", "signed"))
-                        PullDetail.branchesChip(pull)?.let { ChipView(CollabChip("account_tree_outlined", it)) }
                     }
                     Spacer(Modifier.height(10.dp))
-                    FmInboxPendingNote()
-                    Spacer(Modifier.height(16.dp))
-                    SelectableBody(PullDetail.body(pull), style = LocalTextStyle.current.withHeight(1.45f), repo = RepoRef(repo.owner, repo.name))
+                    Text(PullState.summary(pull, commits.size), style = Fm.text.bodyMedium.copy(color = colors.textSecondary))
+                    PullDetail.branchesChip(pull)?.let {
+                        Spacer(Modifier.height(10.dp))
+                        ChipView(CollabChip("account_tree_outlined", it))
+                    }
+                    if (state == PullState.Open) {
+                        Spacer(Modifier.height(10.dp))
+                        FmInboxPendingNote()
+                    }
                 }
-            }
-            item {
-                Spacer(Modifier.height(12.dp))
-                com.forkmesh.nativeapp.feature.code.review.PullWorkflowCards(repo, pull, env.navigator)
             }
             if (pull.patch.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(12.dp))
-                    PatchFilesCard(pull.patch)
+                    PatchFilesCard(pull.patch, commits.size)
+                }
+            }
+            if (commits.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    PullCommitsCard(repo, commits, env.navigator)
                 }
             }
             item {
@@ -238,12 +276,53 @@ internal class PullDetailScreen(
             }
             item {
                 Spacer(Modifier.height(12.dp))
-                InfoCard("Timeline") { PullTimelineView(pull, RepoRef(repo.owner, repo.name)) }
+                InfoCard(PullDetail.CONVERSATION_TITLE, Modifier.testTag("pull-timeline")) { PullTimelineView(pull, RepoRef(repo.owner, repo.name)) }
             }
             if (!repo.isPrivate) {
                 item {
                     Spacer(Modifier.height(12.dp))
                     FederatedRepliesCard(repo, kind = "pull", number = pull.number)
+                }
+            }
+            item {
+                Spacer(Modifier.height(12.dp))
+                com.forkmesh.nativeapp.feature.code.review.PullWorkflowCards(repo, pull, env.navigator)
+            }
+            item {
+                Spacer(Modifier.height(12.dp))
+                InfoCard(if (reviewable) PullDetail.REVIEW_TITLE else PullDetail.COMMENT_TITLE) {
+                    Text(if (reviewable) PullDetail.REVIEW_COPY else PullDetail.DONE_REVIEW_COPY, color = colors.textSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    Text(THREAD_SUBSCRIPTION_NOTE)
+                    Spacer(Modifier.height(12.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (reviewable) {
+                            FmToneButton(
+                                "Approve",
+                                onPressed = { env.launch { reviewPublishedPull(repo, pull, "approve") } },
+                                icon = "check_circle_outline",
+                                tone = FmTone.Success,
+                                modifier = Modifier.testTag("pull-review-approve"),
+                            )
+                            FmToneButton(
+                                "Request changes",
+                                onPressed = { env.launch { reviewPublishedPull(repo, pull, "request-changes") } },
+                                icon = "cancel_outlined",
+                                tone = FmTone.Danger,
+                                modifier = Modifier.testTag("pull-review-request-changes"),
+                            )
+                        }
+                        FmToneButton(
+                            "Comment",
+                            onPressed = { env.launch { commentOnPublishedPull(repo, pull) } },
+                            icon = "chat_bubble_outline",
+                        )
+                        ThreadSubscriptionButton(env, repo, source = "pull", number = pull.number, subscribed = subscribed)
+                    }
+                    FmInlineStatus(env.status, Modifier.padding(top = 8.dp))
                 }
             }
             if (desktopRoute) item {
@@ -290,29 +369,6 @@ internal class PullDetailScreen(
                     FmInlineStatus(desktopStatus, Modifier.padding(top = 8.dp))
                 }
             }
-            item {
-                Spacer(Modifier.height(12.dp))
-                InfoCard("Review actions") {
-                    Text(PullDetail.REVIEW_ACTIONS_COPY)
-                    Spacer(Modifier.height(8.dp))
-                    FmInboxPendingNote()
-                    Spacer(Modifier.height(8.dp))
-                    Text(THREAD_SUBSCRIPTION_NOTE)
-                    Spacer(Modifier.height(12.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        CollabFilledButton(
-                            label = "Review / comment",
-                            icon = "rate_review_outlined",
-                            onClick = { env.launch { showPublishedPullActions(repo, pull) } },
-                        )
-                        ThreadSubscriptionButton(env, repo, source = "pull", number = pull.number, subscribed = subscribed)
-                    }
-                    FmInlineStatus(env.status, Modifier.padding(top = 8.dp))
-                }
-            }
             item { NavigationBarSpacer() }
         }
     }
@@ -320,21 +376,101 @@ internal class PullDetailScreen(
 
 @Composable
 private fun PullTimelineView(pull: PublishedPull, repo: RepoRef) {
-    if (pull.events.isEmpty()) {
-        Text(PullDetail.TIMELINE_EMPTY)
-        return
-    }
-    Column(Modifier.fillMaxWidth()) {
-        for (event in pull.events) {
+    val colors = Fm.colors
+    val events = PullTimeline.events(pull)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(FmRadius.lg))
+                .background(colors.bgBase)
+                .padding(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FmIcon("chat_bubble_outline", size = 18.dp, tint = colors.textTertiary)
+                Spacer(Modifier.width(10.dp))
+                Text(PullDetail.openedLine(pull), style = Fm.text.bodySmall.copy(color = colors.textSecondary), modifier = Modifier.openProfile(pull.authorName))
+            }
+            Spacer(Modifier.height(FmSpace.x2))
+            SelectableBody(PullDetail.body(pull), style = LocalTextStyle.current.withHeight(1.45f), repo = repo)
+        }
+        for (event in events) {
             TimelineTile(
                 icon = PullTimeline.icon(event),
                 iconTint = toneColor(PullTimeline.tone(event)),
                 title = event.displayTitle,
-                author = event.displayAuthor,
+                author = PullTimeline.author(event),
                 body = event.body,
                 repo = repo,
                 profile = event.authorName,
             )
+        }
+        if (events.isEmpty()) Text(PullDetail.TIMELINE_EMPTY, style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+    }
+}
+
+@Composable
+private fun PullCommitsCard(repo: Repository, commits: List<PatchCommit>, navigator: Navigator) {
+    val colors = Fm.colors
+    val ordered = remember(commits) { commits.reversed().map { it to parseUnifiedDiff(it.patch) } }
+    FmCard(Modifier.fillMaxWidth().testTag("pull-commits"), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
+        Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x3)) {
+                Text(PullDetail.COMMITS_TITLE, style = Fm.text.titleMedium.copy(color = colors.textPrimary))
+                Text(PullDetail.commitsLine(commits.size), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+            }
+            HorizontalDivider(thickness = 1.dp, color = colors.border)
+            ordered.forEachIndexed { index, (commit, files) ->
+                com.forkmesh.nativeapp.feature.code.PatchCommitRow(commit, files) {
+                    navigator.push(com.forkmesh.nativeapp.feature.code.PatchCommitScreen(repo, commit, files))
+                }
+                if (index != ordered.lastIndex) FmRowDivider(indent = 56.dp)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun PullStatePill(state: PullState) {
+    val colors = Fm.colors
+    Row(
+        Modifier
+            .height(30.dp)
+            .clip(RoundedCornerShape(FmRadius.full))
+            .background(toneColor(state.tone))
+            .padding(horizontal = FmSpace.x3)
+            .semantics(mergeDescendants = true) { contentDescription = "Status: ${state.label}" }
+            .testTag("pull-state-${state.raw}"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        FmIcon(state.icon, size = 16.dp, tint = colors.onAccent)
+        Text(state.label, style = Fm.text.labelLarge.copy(color = colors.onAccent))
+    }
+}
+
+@Composable
+internal fun PullDoneCard(pull: PublishedPull, state: PullState, footer: @Composable () -> Unit = {}) {
+    val colors = Fm.colors
+    val merged = state == PullState.Merged
+    val tone = toneColor(state.tone)
+    val shape = RoundedCornerShape(FmRadius.lg)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.bgRaised)
+            .border(1.dp, tone, shape)
+            .padding(FmSpace.x4)
+            .testTag(if (merged) "pull-merged-box" else "pull-closed-box"),
+        verticalAlignment = Alignment.Top,
+    ) {
+        FmIcon(state.icon, size = 22.dp, tint = tone)
+        Spacer(Modifier.width(FmSpace.x3))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
+            Text(if (merged) PullState.MERGED_TITLE else PullState.CLOSED_TITLE, style = Fm.text.titleSmall.copy(color = colors.textPrimary))
+            Text(if (merged) PullState.mergedCopy(pull) else PullState.CLOSED_COPY, style = Fm.text.bodyMedium.copy(color = colors.textSecondary))
+            footer()
         }
     }
 }

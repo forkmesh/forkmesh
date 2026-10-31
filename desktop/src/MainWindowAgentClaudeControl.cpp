@@ -5,13 +5,13 @@
 #include "ClaudeControlProtocol.h"
 #include "ClaudeElicitationDialog.h"
 #include "ClaudeStreamSession.h"
+#include "MainWindowNextAccess.h"
+#include "SessionSidePanels.h"
+#include "WorkspaceLayout.h"
 
-#include <QFrame>
-#include <QHBoxLayout>
 #include <QInputDialog>
-#include <QLabel>
-#include <QToolButton>
-#include <QVBoxLayout>
+#include <QSplitter>
+#include <QTimer>
 
 using namespace forkmesh::ui;
 
@@ -34,7 +34,9 @@ QString compactCount(qint64 value)
 
 QString MainWindow::claudeInitialSessionTitle(const AgentSession &session) const
 {
-    if (session.issueNumber > 0 || session.titledBy == kTitledByUser)
+    if (session.issueNumber > 0 || session.titledBy == kTitledByUser ||
+        forkmesh::agentwt::isPromptNamerLabel(session.titledBy,
+                                              agentProviderName(session.provider)))
         return session.issueTitle.trimmed();
     return QString();
 }
@@ -97,7 +99,9 @@ void MainWindow::requestClaudeSessionTitle(int sessionId)
     const AgentSession *session = findAgentSession(sessionId);
     if (!stream || !session || session->issueNumber > 0)
         return;
-    if (session->titledBy == kTitledByUser) {
+    if (session->titledBy == kTitledByUser ||
+        forkmesh::agentwt::isPromptNamerLabel(session->titledBy,
+                                              agentProviderName(session->provider))) {
         stream->renameSession(session->issueTitle);
         return;
     }
@@ -259,71 +263,88 @@ void MainWindow::closeClaudeElicitation(const QString &key)
     dialog->deleteLater();
 }
 
-QWidget *MainWindow::buildAgentSubSessionStrip()
+QWidget *MainWindow::buildAgentTowerPanels()
 {
-    auto *strip = new QFrame;
-    strip->setObjectName(QStringLiteral("agentSubSessionStrip"));
-    strip->setFrameShape(QFrame::StyledPanel);
-    auto *layout = new QVBoxLayout(strip);
-    layout->setContentsMargins(10, 6, 10, 6);
-    layout->setSpacing(4);
-    m_agentSubSessionHeader = new QLabel(strip);
-    m_agentSubSessionHeader->setObjectName(QStringLiteral("agentSubSessionHeader"));
-    QFont bold = m_agentSubSessionHeader->font();
-    bold.setBold(true);
-    m_agentSubSessionHeader->setFont(bold);
-    layout->addWidget(m_agentSubSessionHeader);
-    m_agentSubSessionRows = new QWidget(strip);
-    m_agentSubSessionRows->setObjectName(QStringLiteral("agentSubSessionRows"));
-    auto *rows = new QVBoxLayout(m_agentSubSessionRows);
-    rows->setContentsMargins(0, 0, 0, 0);
-    rows->setSpacing(2);
-    layout->addWidget(m_agentSubSessionRows);
-    strip->hide();
-    m_agentSubSessionStrip = strip;
-    return strip;
+    m_agentTowerPanels = new SessionSidePanels;
+    m_agentTowerPanels->setMinimumWidth(220);
+    m_agentTowerPanels->hide();
+    m_agentTowerPanelsTimer = new QTimer(this);
+    m_agentTowerPanelsTimer->setInterval(1000);
+    connect(m_agentTowerPanelsTimer, &QTimer::timeout, this,
+            &MainWindow::refreshAgentTowerPanels);
+    m_agentTowerPanelsTimer->start();
+    return m_agentTowerPanels;
+}
+
+void MainWindow::refreshAgentTowerPanels()
+{
+    if (!m_agentTowerPanels)
+        return;
+    const bool want = !workspaceLayoutNew() && m_selectedAgentSessionId != 0 &&
+                      findAgentSession(m_selectedAgentSessionId);
+    if (m_agentTowerPanels->isHidden() == want)
+        m_agentTowerPanels->setVisible(want);
+    if (!want || !m_agentTowerPanels->isVisible())
+        return;
+    if (!m_agentTowerPanelsSized && m_agentCodeSplit && m_agentCodeSplit->width() > 0) {
+        m_agentTowerPanelsSized = true;
+        const int index = m_agentCodeSplit->indexOf(m_agentTowerPanels);
+        QList<int> sizes = m_agentCodeSplit->sizes();
+        if (index >= 0 && index < sizes.size()) {
+            const int total = m_agentCodeSplit->width();
+            const int panel = qBound(220, total / 4, 320);
+            int rest = 0;
+            for (int at = 0; at < sizes.size(); ++at)
+                if (at != index)
+                    rest += sizes.at(at);
+            const int room = qMax(0, total - panel);
+            for (int at = 0; at < sizes.size(); ++at)
+                if (at != index)
+                    sizes[at] = rest > 0 ? sizes.at(at) * room / rest : 0;
+            sizes[index] = panel;
+            m_agentCodeSplit->setSizes(sizes);
+        }
+    }
+    NextAccess::feedSessionSidePanels(*this, m_agentTowerPanels, m_selectedAgentSessionId);
 }
 
 void MainWindow::refreshAgentSubSessions()
 {
-    if (!m_agentSubSessionStrip || !m_agentSubSessionRows)
+    if (m_agentTowerPanels && m_agentTowerPanels->isVisible())
+        fillAgentSubSessions(m_agentTowerPanels, m_selectedAgentSessionId);
+}
+
+void MainWindow::fillAgentSubSessions(SessionSidePanels *panels, int sessionId)
+{
+    if (!panels)
         return;
-    const int sessionId = m_selectedAgentSessionId;
     const auto ledger = m_agentCliTasks.constFind(sessionId);
     const QList<forkmesh::agentclitasks::Task> tasks =
         ledger == m_agentCliTasks.constEnd() ? QList<forkmesh::agentclitasks::Task>()
                                              : ledger->rows();
-    auto *rowsLayout = qobject_cast<QVBoxLayout *>(m_agentSubSessionRows->layout());
-    while (QLayoutItem *item = rowsLayout->takeAt(0)) {
-        if (QWidget *w = item->widget()) {
-            w->hide();
-            w->deleteLater();
-        }
-        delete item;
-    }
-    if (tasks.isEmpty()) {
-        m_agentSubSessionStrip->hide();
-        return;
-    }
     const ClaudeStreamSession *stream = m_streamSessions.value(sessionId);
     const bool canStop = stream && stream->running() && stream->hostControl();
-    m_agentSubSessionHeader->setText(
-        tasks.size() == 1 ? QStringLiteral("1 sub-session running")
-                          : QStringLiteral("%1 sub-sessions running").arg(tasks.size()));
+    QList<SessionSidePanels::SubSession> rows;
     for (const forkmesh::agentclitasks::Task &task : tasks) {
-        auto *row = new QWidget(m_agentSubSessionRows);
-        row->setObjectName(QStringLiteral("agentSubSessionRow"));
-        row->setProperty("taskId", task.id);
-        auto *h = new QHBoxLayout(row);
-        h->setContentsMargins(task.depth * 16, 0, 0, 0);
-        h->setSpacing(8);
-        QStringList facts;
+        SessionSidePanels::SubSession row;
+        row.id = task.id;
+        row.depth = task.depth;
+        QString kind;
         if (!task.subagentType.isEmpty())
-            facts << task.subagentType;
+            kind = task.subagentType;
         else if (task.taskType == QLatin1String("local_bash"))
-            facts << QStringLiteral("shell");
+            kind = QStringLiteral("shell");
         else if (task.taskType == QLatin1String("local_workflow"))
-            facts << QStringLiteral("workflow");
+            kind = QStringLiteral("workflow");
+        row.icon = task.taskType == QLatin1String("local_bash")       ? QStringLiteral("terminal")
+                   : task.taskType == QLatin1String("local_workflow") ? QStringLiteral("workflow")
+                                                                      : QStringLiteral("smart-toy");
+        row.text = task.description.isEmpty() ? QStringLiteral("Unnamed task")
+                                              : task.description.left(160);
+        row.trailing = task.tokens > 0 ? compactCount(task.tokens) : kind;
+        QStringList facts;
+        if (!kind.isEmpty())
+            facts << kind;
         if (task.backgrounded)
             facts << QStringLiteral("background");
         if (task.tokens > 0)
@@ -331,40 +352,23 @@ void MainWindow::refreshAgentSubSessions()
         if (task.toolUses > 0)
             facts << (task.toolUses == 1 ? QStringLiteral("1 tool call")
                                          : QStringLiteral("%1 tool calls").arg(task.toolUses));
-        QString text = QStringLiteral("<b>%1</b>")
-                           .arg((task.description.isEmpty() ? QStringLiteral("Unnamed task")
-                                                            : task.description)
-                                    .left(160)
-                                    .toHtmlEscaped());
-        if (!facts.isEmpty())
-            text += QStringLiteral(" · ") + facts.join(QStringLiteral(" · ")).toHtmlEscaped();
         const QString status = !task.summary.isEmpty()
                                    ? task.summary
                                    : (task.lastTool.isEmpty()
                                           ? QString()
                                           : QStringLiteral("using %1").arg(task.lastTool));
+        QStringList tip{row.text};
+        if (!facts.isEmpty())
+            tip << facts.join(QStringLiteral(" · "));
         if (!status.isEmpty())
-            text += QStringLiteral("<br>%1").arg(status.left(240).toHtmlEscaped());
-        auto *label = new QLabel(text, row);
-        label->setObjectName(QStringLiteral("agentSubSessionLabel"));
-        label->setTextFormat(Qt::RichText);
-        label->setWordWrap(true);
-        label->setToolTip(task.id);
-        h->addWidget(label, 1);
-        if (canStop) {
-            auto *stop = new QToolButton(row);
-            stop->setObjectName(QStringLiteral("agentSubSessionStopButton"));
-            stop->setText(QStringLiteral("Stop"));
-            stop->setToolTip(QStringLiteral("Stop this sub-session; the main session keeps going"));
-            const QString taskId = task.id;
-            connect(stop, &QToolButton::clicked, this, [this, sessionId, taskId] {
-                stopAgentSubSession(sessionId, taskId);
-            });
-            h->addWidget(stop, 0, Qt::AlignTop);
-        }
-        rowsLayout->addWidget(row);
+            tip << status.left(240);
+        row.tip = tip.join(QLatin1Char('\n'));
+        rows << row;
     }
-    m_agentSubSessionStrip->show();
+    MainWindow *self = this;
+    panels->setSubSessions(rows, canStop, [self, sessionId](const QString &taskId) {
+        self->stopAgentSubSession(sessionId, taskId);
+    });
 }
 
 void MainWindow::stopAgentSubSession(int sessionId, const QString &taskId)

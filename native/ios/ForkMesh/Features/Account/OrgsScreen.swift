@@ -49,7 +49,7 @@ struct OrgsScreen: View {
                 })
                 .fmSheetStyle(fitsContent: true, background: fm.bgRaised)
             }
-            .navigationDestination(item: $opened) { (name: String) in
+            .shellDetail(item: $opened) { (name: String) in
                 OrgDetailScreen(orgName: name)
                     .shellPageClearance()
             }

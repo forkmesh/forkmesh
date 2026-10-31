@@ -62,7 +62,14 @@ struct ThemedAppView: View {
     @Environment(\.scenePhase) var scenePhase
     let services: AppServices
 
+    private var showsFirstRun: Bool {
+        let settings: SettingsService = services.settings
+        let inApp: Bool = services.auth.hasAppAccess || settings.project.hasInstance == false
+        return !inApp || settings.needsPermissionsIntro || settings.needsStarterPack
+    }
+
     private var forcedDark: Bool? {
+        if showsFirstRun { return true }
         switch services.settings.themeMode {
         case .system: return nil
         case .light: return false
@@ -116,12 +123,18 @@ struct AppHomeView: View {
         Group {
             if updateCheck.blocksUse {
                 UpdateRequiredView(requirement: updateCheck.requirement, available: updateCheck.available)
-            } else if let settings, settings.needsStarterPack, auth.hasAppAccess || settings.project.hasInstance == false {
-                StarterPackView(settings: settings)
+            } else if let settings, settings.needsPermissionsIntro || settings.needsStarterPack,
+                auth.hasAppAccess || settings.project.hasInstance == false
+            {
+                OnboardingFlowView(settings: settings)
             } else if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
                     .relaySwitchScope()
-                    .overlay { DevPerformanceOverlay() }
+                    .overlay {
+                        if !StoreScreenshotLaunch.on {
+                            DevPerformanceOverlay()
+                        }
+                    }
                     .overlay { PingCelebrationOverlay() }
                     .directCallsRoot()
                     .groupCallsRoot()
@@ -129,10 +142,12 @@ struct AppHomeView: View {
                 AuthFlowView()
             }
         }
+        .onAppear { StoreScreenshotLaunch.prepare(auth: auth, settings: settings) }
         // A project switch replaces every view and view model underneath.
         .id(projects?.generation ?? 0)
         .dataFolderAlert()
         .background(fm.canvas.ignoresSafeArea())
+        .modifier(StoreCanvas())
         .task {
             await updateCheck.check()
             await updateCheck.checkStore()

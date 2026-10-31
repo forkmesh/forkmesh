@@ -1236,7 +1236,7 @@
     }
     const ownPull = withPullAiModel(await signWebPull(repo, repo, title, body, base, head, head), aiModel);
     const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
-    return { ...data, pull: ownPull, targetRepo: repo };
+    return { ...data, pull: ownPull, targetRepo: repo, refusedBy: targetRepo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
@@ -1398,6 +1398,14 @@
     setHint("Signing and sending…");
     try {
       const result = await submitWebIssueComment(repo, number, body);
+      if (result?.pending === "review") {
+        stopSpinner();
+        if (bodyInput) bodyInput.value = "";
+        actionButtons.forEach((button) => { button.disabled = false; });
+        form._issueSubmitAction = "comment";
+        setHint(moderationPendingMessage(result));
+        return;
+      }
       // Show the comment straight away: it only reaches the mirror once the
       // maintainer's node drains the inbox, so the timeline can't reload it yet.
       // The composer sits in its own row of the conversation, so find the
@@ -1584,13 +1592,14 @@
     if (detail?.kind !== "issues" || !detail.repo) return;
     const container = $("[data-repo-issues]");
     if (!container) return;
-    container.innerHTML = renderRepoRecordDetail(
+    paintRepoIssueDetail(container, renderRepoRecordDetail(
       detail.repo,
       "issues",
       detail.number,
       detail.parsed,
-    );
+    ));
     mountIssueStickyHeader(container);
+    decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
 
@@ -1601,6 +1610,7 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
       return "Only the comment's author, the repository owner or an organization admin can change this comment.";
     }
@@ -1670,10 +1680,15 @@
     let result;
     try {
       if (action === "delete") {
-        if (!await confirmAccountAction({
-          title: "Delete this comment?",
+        const verdict = pullReviewKeepsVerdict(original);
+        if (!await confirmAccountAction(verdict ? {
+          title: "Delete this review's text?",
+          body: `Your ${original.state === "approved" ? "approval" : "change request"} stays on the pull request. Its Git history remains recoverable.`,
+          confirmLabel: "Delete text",
+        } : {
+          title: original.type === "review" ? "Delete this review?" : "Delete this comment?",
           body: "Its Git history remains recoverable.",
-          confirmLabel: "Delete comment",
+          confirmLabel: original.type === "review" ? "Delete review" : "Delete comment",
         })) return;
         result = await submitWebPullCommentDelete(repo, number, target);
       } else {
@@ -1692,6 +1707,8 @@
     if (state.repoRecordDetail !== detail) return;
     parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
     refreshPullConversationProjection();
+    refreshRepoPullDiff();
+    if (action !== "delete") restoreCommentEditFocus(target, "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -1784,6 +1801,7 @@
         return;
       }
       renderCurrentWebIssueDetail();
+      if (action === "edit-comment") restoreCommentEditFocus(target);
     } catch (error) {
       showErrorNotice(webIssueActionError(error, action));
     }
@@ -2594,7 +2612,7 @@
       reply?.remove();
     } catch (error) {
       button.disabled = false;
-      window.alert(webDiscussionSubmitErrorText(error));
+      showErrorNotice(webDiscussionSubmitErrorText(error));
     }
   }
 
@@ -2860,6 +2878,39 @@
       }
       if (body.exists === false) return session;
       const nextSession = sessionFromAccountPayload(body, session);
+      writeSession(nextSession);
+      renderProfile(nextSession);
+      return nextSession;
+    } catch (_) {
+      return session;
+    }
+  }
+
+  async function backfillAdminUrl(session) {
+    if (!session?.isAdmin || session.adminUrl || session.adminUrlCheckedAt) return session;
+    try {
+      const token = String(session.sessionToken || "");
+      const response = await fetch("/api/accounts/sessions", {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          ...(token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) return session;
+      const account = (await response.json().catch(() => null))?.account;
+      const current = state.session || session;
+      if (!account || account.isAdmin !== true ||
+          String(account.nodeName || "").toLowerCase() !== String(current?.nodeName || "").toLowerCase()) {
+        return session;
+      }
+      const nextSession = {
+        ...current,
+        isAdmin: true,
+        adminUrl: String(account.adminUrl || ""),
+        adminUrlCheckedAt: Date.now(),
+      };
       writeSession(nextSession);
       renderProfile(nextSession);
       return nextSession;

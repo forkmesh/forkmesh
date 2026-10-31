@@ -1,7 +1,11 @@
 # Desktop: the Notes page
 
-Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowNotes.cpp`
-(`requestNotes()`, `refreshNotes()`, `renderNotesList()`), list-row rules in
+Part of [the desktop docs](README.md). Code: the Notes plugin's
+`marketplace/packages/notes/content/desktop/NotesPage.cpp` (`requestNotes()`,
+`refreshNotes()`, `renderNotesList()`), built as `notes.so` apart from the
+window since 2026-10-25 ([package modules](package-modules.md#plugins-built-apart-from-the-window));
+the quick-add "take a note", note links and the note-to-task/issue conversions
+reach it through `NativePackageHost`. List-row rules in
 `desktop/src/NoteListEntry.h`, request proof in `desktop/src/NoteRequestProof.h`,
 link parsing, filters and export naming in `desktop/src/NoteTools.h`.
 Server: `app/src/notes.py`, with the `_NotesRuntime` boundary in `app/src/entry.py`.
@@ -12,6 +16,14 @@ The page merges local notes (read from disk on every refresh) and cloud notes
 from `GET /api/notes`, the service the web Notes page uses. A local note with a
 `cloudId` hides its cloud twin. Cloud notes are not cached on disk; every open
 and Refresh reads the relay again.
+
+## Opening a note
+
+Opening a note shows its rendered Preview; Write switches to the Markdown
+source (`showOpenedNoteView()`). An empty note, and a new one, open on Write
+instead, since there is nothing to preview. The view only resets when another
+note is opened: reloading the open note (a refresh of the list) keeps
+whichever tab you were on.
 
 ## Filters and search
 
@@ -114,19 +126,28 @@ versions and times only. Local-only notes keep author-less snapshots on disk.
   GET signs no body; every other method signs the SHA-256 of the exact JSON
   body, including an empty DELETE body. Built with `signOrgTaskProof()`.
 
-On the server, `_NotesRuntime.session()` tries the password session first, then
-verifies the signature with `_plugin_scope_signed_session()` scoped to
-`/api/notes`; `_NotesRuntime.json_body()` keeps the raw body digest for it. A
-signed request carries no `Origin`, so `same_origin()` accepts requests with a
-`sig` parameter. A bad signature resolves to no account (401). Owner, share and
-visibility checks apply as for a session.
+On the server, a request with `node`, `ts` and `sig` is resolved only by
+`_plugin_scope_signed_session()` scoped to `/api/notes`, never by the browser
+cookie; `_NotesRuntime.json_body()` keeps the raw body digest for it. Any
+other request uses the password session. A signed request carries no
+`Origin`, so `same_origin()` accepts the complete `node`/`ts`/`sig` triple or
+a real bearer token (not the dashboard's `cookie` marker). Before this, any
+`sig` value lifted the origin check while the cookie still signed the request
+in. A bad signature resolves to no account (401). Owner, share and visibility
+checks apply as for a session.
+
+The live room (`/api/notes/<id>/ws`) is cookie-authenticated in the browser,
+and WebSocket handshakes are not covered by CORS, so `_NotesRuntime.realtime()`
+refuses a handshake whose `Origin` is not an allowed ForkMesh origin (403). The
+dashboard and World open it from their own origin; the desktop does not use it.
 
 ## Tests
 
 - `app/tests/test_notes.py`: version author names by role.
 - `app/tests/test_notes_signed_session.py`: key-signed requests resolve to the
   signer; altered method, path or body, another API scope, or a disabled
-  account are refused; a password session takes priority.
+  account are refused; an unsigned request uses the password session; a signed query never
+  falls back to the cookie; the live room needs an allowed `Origin`.
 - `desktop/tests/test_note_tools.cpp` (`forkmesh-note-tools-tests`): note
   link parsing and host check, built links, linked-issue references, export
   names, share query rules, filters, search and conflict detection.

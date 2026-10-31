@@ -120,3 +120,19 @@ One dated entry per run.
   answers 200 with the right page); gate 2, the test-account copy and
   credential-free clone, has not been run, so the X draft stays unposted
   and Herald does not make it the ready post yet.
+
+- **2026-10-30.** Herald reported X numbers stalled since 10-19 because X shows
+  "not connected". Read at 16:11 UTC, that mixes two things: "connected" is
+  only the API keys for posting from Marketing; the numbers come from the
+  browser extension's X profile sync, last run 2026-10-30 16:11 UTC (217
+  followers; the five 10-29 posts have 18 to 96 views). The 10-19 post went
+  out with the operator's own text as status 2111971537762893976 (22 views, 2
+  likes, 1 repost); its ready-post record was closed with no URL, which is why
+  it looked unmeasured. The 10-21 "agents context" post still reads 0 views:
+  the sync only updates posts on screen, so scroll the profile past 10-21
+  before **Sync now**. RM1: gate 1 still passes, gate 2 still needs the
+  operator's test-account copy (steps in the
+  [brief](campaigns/repo-mirrored-2026-10-09.md)). Plugin Race: three of six
+  gates now pass; the race has been open since 10-19 with 0 entrants and no
+  launch post, so the owner's three gates are the campaign's bottleneck
+  ([brief](campaigns/plugin-race-and-affiliates-2026-10-16.md)).

@@ -297,6 +297,7 @@
   function webIssueSubmitErrorText(error) {
     const code = String(error?.message || "");
     const status = Number(error?.status) || 0;
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "inbox_full") return "Issue delivery is temporarily full. Try again later.";
     if (code === "author_quota") return "You've reached the submission limit for this repository.";
     if (code === "issue_too_large" || code === "attachment_too_large"
@@ -430,6 +431,15 @@
       const result = await submitWebIssue(
         repo, title, body, assignAgent, agentModel, agentProvider,
         { milestone, project }, updateSubmissionProgress);
+      if (result?.pending === "review") {
+        if (titleInput) titleInput.value = "";
+        if (bodyInput) bodyInput.value = "";
+        images.length = 0;
+        form.querySelector("[data-repo-issue-attachments]")?.replaceChildren();
+        setSubmitBusy(submit, false);
+        setHint(moderationPendingMessage(result), "good");
+        return;
+      }
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) {
         throw new Error("number_unavailable");
@@ -660,6 +670,10 @@
             priority: it.priority,
             assignees: it.assignees,
           });
+        if (result?.pending === "review") {
+          ok++;
+          continue;
+        }
         const number = Number(result.number || 0);
         if (!Number.isInteger(number) || number <= 0) {
           throw new Error("number_unavailable");
@@ -1124,6 +1138,9 @@
       }
       navigateHistory(detailUrl);
       await loadRepoRecordDetail(targetRepo, "pulls", number);
+      if (result.refusedBy) {
+        showErrorNotice(`${repoDisplayName(result.refusedBy)} is a read-only mirror here, so it cannot take pull requests. #${number} was opened on your fork instead. To send it upstream, open the pull request where ${repoDisplayName(result.refusedBy)} is hosted.`);
+      }
     } catch (error) {
       setSubmitBusy(submit, false);
       console.error("[forkmesh] pull request submission failed", error);
@@ -2054,7 +2071,7 @@
           availability.classList.add("text-primary");
         }
       }
-      updateRepoLiveCounts(repo, { mirrors: mirrorCount });
+      updateRepoLiveCounts(repo, { mirrors: mirrorCount }, { mirrorList: true });
       setRepoTabCount("mirrors", mirrorCount);
       state.repoMirrors = mirrors;
       // Where the repository has reached, in the forkmesh-sync-status-v1
@@ -2311,7 +2328,7 @@
         </div>` : "";
     if (!visibility && !collaborators) return "";
     return `
-      <div data-repo-settings-access class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+      <div data-repo-settings-access id="settings-access" data-repo-settings-section="Access" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
         <div class="border-b border-border bg-secondary/50 px-4 py-3">
           <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield" class="h-3.5 w-3.5 text-muted-foreground"></i>Access</span>
         </div>
@@ -2609,7 +2626,7 @@
       await releaseEditRequest(repo, { op: "asset-delete", tag, name, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -2619,7 +2636,7 @@
       await releaseEditRequest(repo, { op: "delete", tag, branch: repoDefaultBranch(repo) || "main" });
       await loadRepoReleases(repo);
     } catch (error) {
-      window.alert(releaseErrorText(error));
+      showErrorNotice(releaseErrorText(error));
     }
   }
 
@@ -2995,11 +3012,14 @@
     }
   }
 
-  function updateRepoLiveCounts(repo, counts) {
+  function updateRepoLiveCounts(repo, counts, options = {}) {
     if (!counts || typeof counts !== "object") return;
+    const mirrorsListed = options.mirrorList !== true
+      && repoMirrorLoadedKey === repoKey(repo).toLowerCase();
     (["commits", "issues", "pulls", "discussions", "mirrors"]).forEach((key) => {
       const value = Number(counts[key]);
       if (!Number.isFinite(value) || value < 0) return;
+      if (key === "mirrors" && mirrorsListed) return;
       repo[key] = value;
       $$(`[data-dashboard-repo-count="${key}"]`).forEach((badge) => {
         badge.textContent = formatCount(value);
@@ -4863,17 +4883,40 @@
       </label>`;
   }
 
-  function issueContributionTipStorageKey(repo) {
-    return `forkmesh.issue-contribution-tip.v1:${repoKey(repo)}`;
+  function contributionTipKeys(kind, repo) {
+    const name = String(repo?.name || "").trim();
+    const owners = [repo?.owner, ...repoLogicalOwners(repo).map((value) => value.owner)]
+      .map((owner) => String(owner || "").trim())
+      .filter(Boolean);
+    const known = new Set(owners.map((owner) => owner.toLowerCase()));
+    (state.repositories || []).forEach((row) => {
+      if (String(row?.name || "").trim().toLowerCase() !== name.toLowerCase()) return;
+      if (!repoLogicalOwners(row).some((value) => known.has(value.owner.toLowerCase()))) return;
+      const owner = String(row?.owner || "").trim();
+      if (owner) owners.push(owner);
+    });
+    return [...new Set(owners)].map((owner) => `forkmesh.${kind}-contribution-tip.v1:${owner}/${name}`);
+  }
+
+  function contributionTipDismissed(kind, repo) {
+    try {
+      return contributionTipKeys(kind, repo).some((key) => localStorage.getItem(key) === "1");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function dismissContributionTip(kind, repo) {
+    try {
+      contributionTipKeys(kind, repo).forEach((key) => localStorage.setItem(key, "1"));
+    } catch (_) {}
   }
 
   function issueContributionTipDismissed(repo) {
     try {
-      return localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1"
-        || localStorage.getItem(issueContributionTipStorageKey(repo)) === "1";
-    } catch (_) {
-      return false;
-    }
+      if (localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1") return true;
+    } catch (_) {}
+    return contributionTipDismissed("issue", repo);
   }
 
   function renderIssueContributionTip(repo) {
@@ -4886,13 +4929,15 @@
           <span class="fm-flash-title">Want to contribute to ${escapeHtml(repository)}?</span>
           <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
-        <details class="fm-flash-actions relative text-left">
-          <summary class="fm-btn fm-btn-sm inline-flex list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
-          <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
-            <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
-            <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
-          </div>
-        </details>
+        <div class="fm-flash-actions relative inline-flex text-left">
+          <button type="button" data-repo-issue-contribution-dismiss="repository" title="Dismiss for this repository" class="fm-btn fm-btn-sm" style="border-top-right-radius:0;border-bottom-right-radius:0">Dismiss</button>
+          <details class="relative">
+            <summary aria-label="More ways to dismiss" class="fm-btn fm-btn-sm inline-flex list-none" style="margin-left:-1px;padding:0 6px;border-top-left-radius:0;border-bottom-left-radius:0"><i data-lucide="chevron-down"></i></summary>
+            <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
+              <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
+            </div>
+          </details>
+        </div>
       </aside>`;
   }
 
@@ -4999,9 +5044,5 @@
   }
 
   function pullContributionTipDismissed(repo) {
-    try {
-      return localStorage.getItem(`forkmesh.pull-contribution-tip.v1:${repoKey(repo)}`) === "1";
-    } catch (_) {
-      return false;
-    }
+    return contributionTipDismissed("pull", repo);
   }

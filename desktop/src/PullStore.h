@@ -375,7 +375,7 @@ public:
     bool addThreadComment(int number, const QString &path, const QString &side,
                           int lineStart, int lineEnd, const QString &body,
                           const QString &suggestionPatch, const PullAnchor &anchor,
-                          QString *error = nullptr);
+                          QString *error = nullptr, QString *threadId = nullptr);
     bool addThreadReply(int number, const QString &threadId,
                         const QString &parentId, const QString &body,
                         QString *error = nullptr);
@@ -397,6 +397,7 @@ public:
                                 const QString &body, bool remove) const;
     static bool isCommentChangeEvent(const PullEvent &ev);
     static bool isEditableComment(const PullEvent &ev);
+    static bool reviewKeepsVerdict(const PullEvent &ev);
     static bool commentChangeApplies(const PullEvent &change, const PullEvent &target);
     static QList<PullEvent> foldCommentChanges(const QList<PullEvent> &events,
                                                QSet<QString> *edited = nullptr);

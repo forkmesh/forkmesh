@@ -12,6 +12,8 @@ struct ShellSidebar: View {
     @Environment(\.fmPalette) private var fm
     let router: AppRouter
     let badges: [AppTab: Int]
+    var activeTabs: Set<AppTab> = []
+    var activeHub: Set<String> = []
     let guest: Bool
     let onSelectTab: (AppTab) -> Void
     let onOpen: (Route) -> Void
@@ -41,11 +43,20 @@ struct ShellSidebar: View {
             })
     }
 
+    private func row(_ title: String, symbol: String, active: Bool) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: symbol)
+                .fmBusyRing(active, size: 28)
+        }
+    }
+
     var body: some View {
         List(selection: selection) {
             Section {
                 ForEach(tabs, id: \.self) { (tab: AppTab) in
-                    Label(tab.title, systemImage: tab.symbol)
+                    row(tab.title, symbol: tab.symbol, active: activeTabs.contains(tab))
                         .badge(badges[tab] ?? 0)
                         .tag(ShellSidebarItem.tab(tab))
                         .accessibilityIdentifier("sidebar-\(tab.rawValue)")
@@ -55,7 +66,7 @@ struct ShellSidebar: View {
                 Section(group.title) {
                     ForEach(group.items) { (item: HubItem) in
                         if let route = item.route {
-                            Label(item.title, systemImage: item.symbol)
+                            row(item.title, symbol: item.symbol, active: activeHub.contains(item.id))
                                 .tag(ShellSidebarItem.route(route))
                                 .accessibilityIdentifier("sidebar-\(item.id)")
                         }

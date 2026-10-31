@@ -19,7 +19,7 @@ none of them unless a build explicitly adds them.
 A package is a **plugin** when it has a `content/` folder: code or material
 that some host builds or ships (desktop sources from `content/desktop/build.json`,
 a Worker module, dashboard or `www` pages, World modules, themes, agent
-descriptors, Workflows packs). There are 89.
+descriptors, Workflows packs). There are 90.
 
 A package without `content/` is a **switch**: it only turns a core feature on
 or off (Chat, Issues, Agents, the repository tabs, see
@@ -86,11 +86,29 @@ dropped, and so is a guide whose pack is gone.
   load at start (the 2026-10-15 measurement put that at about 30 ms and 3 MB
   together). They were compiled in to save that; being real plugins was the
   owner's call.
+- Qt WebEngine is a core module the same way (`packages/web-engine.so`, not a
+  Market package), loaded the first time a page opens
+  ([browser](../desktop/browser.md#the-engine-is-a-module)); the empty shell
+  and what is still core are on [shell](../desktop/shell.md).
 - macOS and Windows still link listed plugins into the app
   (`FORKMESH_PACKAGE_MODULES` defaults off there): a module resolves the
   window's symbols from the executable, which works through `-rdynamic` on
   Linux but needs a shared plugin SDK library on Windows. Unlisted plugins
   are left out on every platform.
+- **The Market card shows it** (2026-10-30). Every package with desktop code
+  has a line under its byline: **Separate from the core · 6.4 MB in memory**
+  (green) for a loaded module, **· not loaded yet** / **· no memory until
+  installed** for one that is not mapped, **· not loaded** with the reason in
+  the tooltip for a refused one, and **Built into the core** (muted) for a
+  core-linked plugin or any plugin on macOS and Windows. The figure is the
+  `Rss` of the module file's own mappings in `/proc/self/smaps`
+  (`modules::residentBytesByPackage`), read once per Market refresh: its code
+  and static data. Heap the plugin allocates while running cannot be told
+  apart from the app's, so the tooltip says it is counted with the app;
+  Linux only, elsewhere a loaded module just says "loaded". An installed
+  package with a page also gets an **Open** button beside Settings (in the
+  Next card's status row and its details pane too) that shows the page, as
+  its rail button does.
 
 ### Plugins the core still links
 
@@ -104,11 +122,21 @@ can only shrink.
 | `capture` | `MainWindowMarket.cpp` creates `CaptureFeature` |
 | `discord` | `MainWindowSetup.cpp` runs `DiscordClient` and shows Discord rooms in Chat |
 | `ledger` | `MainWindowLedger.cpp` (about 3,700 lines, payouts and tip transfers) uses `LedgerFeature` |
-| `timers` | `MainWindowTimers.cpp` and the top search use `TimersFeature` |
 | `tour` | `MainWindowOnboarding.cpp` creates `OnboardingTour` |
 
 Each one moves out by turning the window code that drives it into the plugin's
 own page or a socket in `NativePackageHost`, then dropping `coreLinked`.
+Timers moved out on 2026-10-25: its clock is a top-bar widget the plugin
+registers (`chromeFactory`), so it is a module now
+([package-modules](../desktop/package-modules.md#top-bar-widgets)).
+
+Tasks, Notes and Calendar were never `coreLinked`, but their desktop pages
+were window code (`MainWindowTasks.cpp`, `MainWindowNotes.cpp`,
+`MainWindowCalendar.cpp`) that every change to `MainWindow.h` recompiled. They
+are module pages now (`tasks.so`, `notes.so`, `calendar.so`); for Tasks the
+catalog and its signed requests stayed in the core as `OrganizationTaskStore`
+because agents, search, quick add and Stats read it
+([tasks-page](../desktop/tasks-page.md#page-and-window)).
 
 ## App
 

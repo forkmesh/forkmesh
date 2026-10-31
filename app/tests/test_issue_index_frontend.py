@@ -37,6 +37,11 @@ async function primeRepoViewReads() {}
 function isMissingMirrorFolder() { return false; }
 function immutableGitCommit(value) { return value; }
 function repoKey(repo) { return repo; }
+function repoViewKey(repo, view) { return `${repo}:${view}`; }
+function repoStaleReadMark() { return 0; }
+function repoReconnectActive() { return false; }
+function finishRepoRead() {}
+function handleRepoReadFailure() { return false; }
 function repoLiveUrl(repo, action, params = {}) {
   return `${action}?${new URLSearchParams(params).toString()}`;
 }
@@ -148,7 +153,8 @@ function $(selector) { return selector.includes("issue-list-header") ? {} : null
 """ % ("\n".join(_function(CONTENT, name) for name in (
         "issueFromIndex", "fetchRepoIssueIndex", "loadRepoIssueRelationIndex",
         "issueMatchesQuery", "issueMatchesSearch", "issueSearchState", "runIssueSearch",
-        "issueJsonPath")) + "\nconst ISSUE_SEARCH_DELAY_MS = 0;", body)
+        "issueJsonPath", "issueSourceUrlSafe", "repoIssueSourceUrl"))
+        + "\nconst ISSUE_SEARCH_DELAY_MS = 0;\nconst repoIssueSources = new Map();", body)
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True,
                             check=True)
     return json.loads(result.stdout)
@@ -165,6 +171,22 @@ console.log(JSON.stringify({ requests, related: related.map((i) => i.number), fa
 """)
     assert out["requests"] == ["issue-index?related=484", "issue-index?related=485", "issue-index?"]
     assert out["related"] == [3] and out["fallback"] == [9]
+
+
+def test_the_issue_page_learns_its_forge_original_from_either_index():
+    out = _node("""
+answers = { "issue-index?related=7": { ok: true, issues: [], related: 7,
+  sourceUrl: "https://github.com/example/forum/issues/70" } };
+await loadRepoIssueRelationIndex("o/r", 7);
+const fromRelated = repoIssueSourceUrl("o/r", 7, []);
+const fromList = repoIssueSourceUrl("o/r", 8, [issueFromIndex({ number: 8,
+  sourceUrl: "https://github.com/example/forum/issues/80" })]);
+const unsafe = repoIssueSourceUrl("o/r", 9, [{ number: 9, sourceUrl: "javascript:alert(1)" }]);
+console.log(JSON.stringify({ fromRelated, fromList, unsafe }));
+""")
+    assert out == {"fromRelated": "https://github.com/example/forum/issues/70",
+                   "fromList": "https://github.com/example/forum/issues/80",
+                   "unsafe": ""}
 
 
 def test_free_text_search_asks_the_gateway_for_bodies_and_comments():
@@ -202,6 +224,7 @@ const parsed = { body: "" };
 const state = { repoRecordDetail: { parsed } };
 function renderRepoRecordDetail(repo, kind, number, value) { return `rendered:${value.issueMentions.length}`; }
 function mountIssueStickyHeader() {}
+function paintRepoIssueDetail(target, html) { target.innerHTML = html; }
 %s
 %s
 (async () => {
@@ -212,3 +235,69 @@ function mountIssueStickyHeader() {}
     out = json.loads(subprocess.run(["node", "-e", script], capture_output=True,
                                     text=True, check=True).stdout)
     assert out == {"html": "rendered:2", "draft": "half typed"}
+
+
+HELPERS = (ROOT / "public" / "dashboard" / "js" / "02-helpers.js").read_text(encoding="utf-8")
+
+
+def test_issue_rows_stack_recent_commenters_with_imported_pictures():
+    from test_issue_timeline_people import _const
+    code = "\n".join(
+        [_const(HELPERS, name) for name in ("FORGE_PROFILES", "FORGE_IDENTITY_RE", "forgeAvatarSets",
+                                            "forgeAvatarCommits")]
+        + [HELPERS[HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
+                   HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5]]
+        + [_function(HELPERS, name) for name in (
+            "escapeHtml", "forgeIdentity", "forgeLinkAttrs", "issueActorPixels",
+            "botAvatarKind", "botAvatarSvg", "issueActorIsBot", "issuePersonHandle",
+            "rememberForgeAvatars", "forgeAvatarSrc", "issueActorAvatarHtml")]
+        + [_function(CONTENT, "renderIssueRowCommenters")])
+    script = """
+const state = { session: null, selectedRepo: { owner: "example", name: "forum" } };
+function instancePluginOn(id) { return id === "forum-list"; }
+const ISSUE_PERSON_HANDLE_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+function repoContributorIsBot() { return false; }
+function watchIssueActorAvatars() {}
+function repoRawUrl(repo, path) { return `/api/repo/${repo.owner}/${repo.name}/raw?path=${encodeURIComponent(path)}`; }
+%s
+rememberForgeAvatars(state.selectedRepo, ["github:bob"]);
+const html = renderIssueRowCommenters({ recentCommenters: ["github:Bob", "carol", "dan", "erin", "fay"] });
+console.log(JSON.stringify({ html, none: renderIssueRowCommenters({}) }));
+""" % code
+    out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
+                                    check=True).stdout)
+    html = out["html"]
+    assert out["none"] == ""
+    assert html.count("h-5 w-5") == 4 and "fay" not in html
+    assert html.count("<img") == 1
+    assert 'src="/api/repo/example/forum/raw?path=.forkmesh%2Fcontributors%2Fgithub-bob.png"' in html
+    assert 'loading="lazy"' in html and 'width="20" height="20"' in html
+    assert "<a " not in html and "github.com" not in html
+    assert 'title="Recent comments: @Bob, carol, dan, erin"' in html
+
+
+def test_the_issue_list_defaults_to_newest_created_like_github():
+    names = ("issueSortItems",)
+    script = """
+const state = { issuesView: { filters: { sort: "newest" } } };
+function issueFilterState() { return state.issuesView.filters; }
+%s
+const items = () => [
+  { number: 3, createdAtMs: 1700000000000, updatedAtMs: 1 },
+  { number: 9, createdAtMs: 1600000000000, updatedAtMs: 9e12 },
+  { number: 5, createdAtMs: 1700000000, updatedAtMs: 2 },
+  { number: 8, createdAtMs: 1700000000000, updatedAtMs: 3 }];
+console.log(JSON.stringify({
+  byDefault: issueSortItems(items()).map((i) => i.number),
+  unknown: issueSortItems(items(), "bogus").map((i) => i.number),
+  updated: issueSortItems(items(), "recently_updated").map((i) => i.number) }));
+""" % "\n".join(_function(CONTENT, name) for name in names)
+    out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
+                                    check=True).stdout)
+    assert out == {"byDefault": [8, 5, 3, 9], "unknown": [8, 5, 3, 9],
+                   "updated": [9, 8, 5, 3]}
+    content = (ROOT / "public" / "dashboard" / "js" / "06-repo-content.js").read_text(encoding="utf-8")
+    assert 'return instancePluginOn("forum-list") ? "newest" : "recently_updated";' in content
+    assert "sort: issueDefaultSort()," in content
+    assert '{ value: "newest", label: "Newest" },\n        { value: "recently_updated"' in CONTENT
+    assert 'filters.sort !== issueDefaultSort()' in CONTENT

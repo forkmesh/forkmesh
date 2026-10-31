@@ -74,6 +74,21 @@ extension DesktopControlHub: DesktopTerminalChannel {
     public var linkIdentity: ObjectIdentifier? { currentLink.map { ObjectIdentifier($0) } }
 }
 
+extension DesktopScopedChannel: DesktopTerminalChannel {
+    public var linkIdentity: ObjectIdentifier? { hub.openLink(for: desktopKey).map { ObjectIdentifier($0) } }
+
+    @discardableResult
+    public func addLinkListener(_ listener: @escaping @MainActor () -> Void) -> UUID { hub.addLinkListener(listener) }
+
+    public func removeLinkListener(_ id: UUID) { hub.removeLinkListener(id) }
+}
+
+extension DesktopControlHub {
+    public func terminalChannel(for desktopKey: String) -> any DesktopTerminalChannel {
+        desktopKey.isEmpty ? self : DesktopScopedChannel(hub: self, desktopKey: desktopKey)
+    }
+}
+
 @MainActor
 public enum DesktopTerminalSupport {
     public nonisolated static let capability = "terminal.agents"
@@ -86,9 +101,9 @@ public enum DesktopTerminalSupport {
         status.list("capabilities").contains { $0.stringValue == name }
     }
 
-    public static func check(_ hub: DesktopControlHub, _ name: String = capability) async -> Bool? {
-        if let link = hub.currentLink, let cached = known[ObjectIdentifier(link)] { return cached.contains(name) }
-        guard let link = try? await hub.link(),
+    public static func check(_ hub: DesktopControlHub, _ name: String = capability, desktopKey: String = "") async -> Bool? {
+        if let link = hub.openLink(for: desktopKey), let cached = known[ObjectIdentifier(link)] { return cached.contains(name) }
+        guard let link = try? await hub.link(to: desktopKey),
             let status = try? await link.request("status", [:], timeout: 10)
         else { return nil }
         let names = status.list("capabilities").compactMap { $0.stringValue }

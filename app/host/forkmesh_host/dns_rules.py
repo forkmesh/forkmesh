@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import http.client
 import ipaddress
+import json
 import socket
 import ssl
 
@@ -30,6 +31,9 @@ FAILS_TO_REMOVE = 3
 HEALTHY_TO_READD = 120.0
 MIN_CHANGE_INTERVAL = 300.0
 PROBE_INTERVAL = 30.0
+READY = "ready"
+READ_ONLY = "read_only"
+DOWN = "down"
 
 
 class DnsGuardError(ValueError):
@@ -134,6 +138,11 @@ def probe(ip, host, path="/readyz", timeout=5.0, context=None,
     """TLS-verified ``GET https://<host><path>`` connected to ``ip`` (like
     ``curl --resolve host:443:ip``): a node serving a stale or self-signed
     certificate, or answering 503 (sealed, no quorum), counts as down."""
+    return probe_state(ip, host, path, timeout, context, user_agent) == READY
+
+
+def probe_state(ip, host, path="/readyz", timeout=5.0, context=None,
+                user_agent="fmnext-dns-health/1"):
     context = context or ssl.create_default_context()
     try:
         with socket.create_connection((ip, 443), timeout=timeout) as raw:
@@ -144,10 +153,36 @@ def probe(ip, host, path="/readyz", timeout=5.0, context=None,
                 tls.sendall(request)
                 response = http.client.HTTPResponse(tls)
                 response.begin()
-                response.read(4096)
-                return 200 <= response.status < 300
+                body = response.read(4096)
+                if 200 <= response.status < 300:
+                    return READY
+                return READ_ONLY if response.status == 503 and \
+                    read_only_body(body) else DOWN
     except (OSError, ssl.SSLError, http.client.HTTPException):
+        return DOWN
+
+
+def read_only_body(body):
+    try:
+        data = json.loads(body.decode("utf-8", "replace"))
+    except ValueError:
         return False
+    return isinstance(data, dict) and data.get("readOnly") is True
+
+
+def state_of(value):
+    if value is True:
+        return READY
+    if value in (READY, READ_ONLY):
+        return value
+    return DOWN
+
+
+def serving(states):
+    states = {name: state_of(value) for name, value in states.items()}
+    floor = READY if READY in states.values() else READ_ONLY
+    return {name: state == READY or state == floor
+            for name, state in states.items()}
 
 
 class VoterState:

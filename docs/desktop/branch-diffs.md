@@ -40,3 +40,79 @@ therefore run on a worker, and the result streams into the view.
   Viewed tick during a stream re-renders rather than swapping in place.
 - The image-preview memo (`diffImageInlineFor()`) is locked because renders run
   on several threads.
+
+## Scrolling a paged diff
+
+A large diff is planned into bounded pages (about 96 K characters each), and
+the view only holds two of them at once. Scrolling past the edge of that window
+swaps one page out and the next one in, keeping the rows on screen where they
+were (`moveDiffWindowAtEdge()` in `desktop/src/MainWindowShared.cpp`).
+
+The scroll bar thumb is drawn for the whole diff, not for the two pages in the
+document. Before this, each page swap shrank the document under the scroll bar,
+so the thumb jumped back up every time the next page loaded.
+
+- **Thumb geometry** (`diffGlobalScrollGeometry()`): the position is the height
+  of the pages above the window plus the view's own scroll value. The range adds
+  the height of the pages below the window and the END OF DIFF runway if it is
+  not in the document yet. A page swap moves the window and the offset by the
+  same amount, so the thumb stays where it was.
+- **Page heights**: pages that have been on screen keep their measured height
+  (`measureResidentDiffPages()`). Pages not shown yet are estimated from their
+  character count at the measured pixels per character. A width change or a
+  restyle clears the measurements, and a Viewed fold clears the pages it
+  rewrote.
+- **Mouse on the bar**: the window filter paints the bar itself and handles
+  presses. Dragging the thumb or clicking the track maps the point to a page and
+  an offset inside it (`scrollDiffToGlobal()`). A point outside the window shows
+  that page (`showDiffPageAtScroll()`) with repaints held until it has streamed
+  in. A drag that arrives while a page is still streaming is kept and applied
+  once that page is in. The arrow buttons and the wheel work as before.
+
+Test: `checkDiffStreamResponsiveness()` in `desktop/tests/test_window_resize.cpp`
+(`forkmesh-window-tests --diff-stream-only`).
+
+## Reviewing a pull request in the Git view
+
+A pull request's "Changes in Git" tab opens its diff in this pane
+(`openPullDiffInGitView()`, PR mode: `m_branchDiffPullNumber`). The pull
+screen's own Files page is no longer reachable from that tab, so the pane
+carries the whole review, in both layout modes:
+
+- **Inline comments** work as on the pull screen: click or drag line numbers,
+  then Comment now or Add to review. Drafts show inline as "Pending".
+- **Review bar** (`buildBranchPullReviewBar()`, `updateBranchPullReviewBar()`
+  in `MainWindowPulls.cpp`), between the merge-health strip and the diff, shown
+  only in PR mode: "Reviewing PR #N" with the draft count, AI review (same rule
+  as the pull header: open, not archived, has a patch), Discard drafts, and
+  Review changes / Submit review (N). The bar is named `branchPullReviewBar`:
+  its buttons are plain card buttons, not the pull header's rail tiles, so the
+  window test's header-style check skips them.
+- **Review changes** (`openBranchPullReviewDialog()`) asks for an optional
+  summary and Comment, Approve or Request changes (the last two only on an
+  open pull). `finishBranchPullReview()` posts the drafts, then the review
+  event; a Comment with no drafts and no summary is refused. The composer's
+  own Submit review opens the same dialog while it sits on this pane. A
+  mirror without write access sends both through the pull inbox
+  (`postPullReviewEvent()`, shared with the conversation's Approve and
+  Request changes).
+- Leaving PR mode (a plain branch, a base change) hides the bar. An AI review
+  that finishes re-renders the pane when it still shows that pull.
+
+Test: the "Code on another machine" pull in `test_window_resize.cpp` opens in
+the Git view, queues a draft, approves, and checks both events in the pull
+store.
+
+## Opening a pull's changes from the list
+
+Hovering a row on the Pull requests list shows a round diff button at the end of
+the title (`PullRowDiffDelegate` in `desktop/src/MainWindowPulls.cpp`). A click
+opens that pull in the Git range view (`openPullDiffInGitView()`), the same
+place the pull's "Changes in Git" tab leads, without first opening the pull's
+conversation. The button is painted by the title column's delegate rather than
+held as a widget per row, so a long list costs nothing until the pointer is on
+a row; the delegate swallows the press, so the click does not also select the
+row. While the button is up, the row's background fades in beneath it to clear
+the end of the title. It is not drawn when the column is too narrow to fit it.
+
+Test: `testClickPullRowDiffButton()` in `desktop/tests/test_window_resize.cpp`.

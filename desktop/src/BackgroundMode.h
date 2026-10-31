@@ -29,6 +29,7 @@ struct StartStatus {
     bool afterLogout = false;
     bool sleepDisabled = false;
     bool bootSleepProtected = false;
+    bool restartAllowed = false;
 };
 
 struct RunnerDiagnostics {
@@ -89,6 +90,10 @@ public:
     QString bootSleepPolicy() const;
     bool bootSleepProtected() const;
     bool ensureBootSleepPermission(QString *error = nullptr) const;
+    QString restartPolicyPath() const;
+    QString restartPolicy() const;
+    bool restartAllowed() const;
+    bool allowRestart(bool on, QString *error = nullptr) const;
     bool keepAcrossLogout(const QString &binary, const QString &project,
                           QString *error = nullptr) const;
     void dropLogoutHandOver(const QString &project) const;
@@ -106,6 +111,7 @@ public:
 
 private:
     CommandResult call(const QString &program, const QStringList &arguments) const;
+    CommandResult installPolicy(const QString &tag, const QString &path, const QString &text) const;
     void enableLinger() const;
     void releaseLinger() const;
 };

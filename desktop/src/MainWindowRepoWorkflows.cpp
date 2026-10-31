@@ -1,20 +1,28 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "LocalControl.h"
 #include "LocalControlInsights.h"
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
 #include "TeammateStore.h"
 
+#include <QApplication>
 #include <QBoxLayout>
 #include <QBuffer>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDrag>
+#include <QDropEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMimeData>
 #include <QMenu>
+#include <QMessageBox>
+#include <QMouseEvent>
+#include <QPushButton>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPointer>
@@ -33,6 +41,26 @@ using forkmesh::teammates::Config;
 namespace {
 
 const QString kWorkflowPinsSetting = QStringLiteral("ui/workflowPins");
+const QString kWorkflowPinMimeType = QStringLiteral("application/x-forkmesh-workflow-pin");
+const QString kAccountWorkflowPinsSetting = QStringLiteral("ui/accountWorkflowPins");
+
+int workflowPinSide(const QString &rail)
+{
+    return rail == rw::kRailBottom ? 14 : (rail == rw::kRailTop ? 20 : 28);
+}
+
+bool draggedWorkflowPin(const QMimeData *mime, QString *repo, QString *workflowId)
+{
+    if (!mime || !mime->hasFormat(kWorkflowPinMimeType))
+        return false;
+    const QStringList parts =
+        QString::fromUtf8(mime->data(kWorkflowPinMimeType)).split(QLatin1Char('\n'));
+    if (parts.size() != 2 || parts.at(0).isEmpty() || parts.at(1).isEmpty())
+        return false;
+    *repo = parts.at(0);
+    *workflowId = parts.at(1);
+    return true;
+}
 const QString kHandleSession = QStringLiteral("session");
 const QString kHandleShortcut = QStringLiteral("shortcut");
 const QString kHandleProcess = QStringLiteral("process");
@@ -393,20 +421,10 @@ rw::StepStart MainWindow::startRepoWorkflowStep(const rw::StepRequest &request)
     }
 
     if (rw::isDesktopStepType(type)) {
-        QString script = checkout;
-        if (!QFileInfo(QDir(script).filePath(QStringLiteral("tools/free_disk_space.py"))).isFile()) {
-            script.clear();
-            for (const RepositoryRecord &repo : std::as_const(m_repositories)) {
-                if (!repo.previewOnly && !repo.localPath.isEmpty() &&
-                    QFileInfo(QDir(repo.localPath).filePath(QStringLiteral("tools/free_disk_space.py"))).isFile()) {
-                    script = repo.localPath;
-                    break;
-                }
-            }
-        }
-        if (script.isEmpty())
-            return finished(false, QStringLiteral("Add a checkout of forkmesh/forkmesh: this step runs its "
-                                                  "tools/free_disk_space.py."));
+        const QString script = QDir::cleanPath(QDir(forkmesh::sourceDir()).absoluteFilePath(QStringLiteral("..")));
+        if (!QFileInfo(QDir(script).filePath(QStringLiteral("tools/free_disk_space.py"))).isFile())
+            return finished(false, QStringLiteral("This desktop's own source folder has no "
+                                                  "tools/free_disk_space.py to run this step."));
         const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));
         if (python.isEmpty())
             return finished(false, QStringLiteral("python3 is not installed on this desktop."));
@@ -512,10 +530,13 @@ rw::StepPoll MainWindow::pollRepoWorkflowStep(const QString &type, int handleKey
         if (session->runInFlight() || session->status == AgentStatus::Queued ||
             !session->pendingSteerMessage.isEmpty() || !session->inFlightSteerMessage.isEmpty()) {
             handle.seenRunning = true;
+            result.output = teammateLatestOutput(session).trimmed();
             return result;
         }
-        if (!AgentStatus::isTerminal(session->status) && session->status != AgentStatus::Cleared)
+        if (!AgentStatus::isTerminal(session->status) && session->status != AgentStatus::Cleared) {
+            result.output = teammateLatestOutput(session).trimmed();
             return result;
+        }
         if (!handle.seenRunning && session->finishedAtMs < handle.startedAtMs - 1000 &&
             nowMs() - handle.startedAtMs < kContinueGraceMs)
             return result;
@@ -541,8 +562,11 @@ rw::StepPoll MainWindow::pollRepoWorkflowStep(const QString &type, int handleKey
             result.error = QStringLiteral("The shortcut run is gone.");
             return result;
         }
-        if (run->running)
+        if (run->running) {
+            lastLines(run->output, 40, &result.logs);
+            result.output = run->output.trimmed().right(kMaxShortcutOutputChars);
             return result;
+        }
         result.done = true;
         result.success = run->ok && !run->stopped;
         QStringList lines;
@@ -554,10 +578,10 @@ rw::StepPoll MainWindow::pollRepoWorkflowStep(const QString &type, int handleKey
         m_repoWorkflowHandles.erase(it);
         return result;
     }
-    if (!handle.finished && handle.process && handle.process->state() != QProcess::NotRunning)
+    if (!handle.finished && handle.process) {
+        result.output = lastLines(handle.output, 40, &result.logs);
         return result;
-    if (!handle.finished && handle.process)
-        return result;
+    }
     result.done = true;
     result.success = handle.ok;
     QStringList lines;
@@ -644,7 +668,8 @@ void MainWindow::checkRepoWorkflowSchedules()
             const qint64 last = runs.isEmpty() ? 0 : runs.first().startedAtMs;
             const Config schedule = rw::scheduleConfig(workflow, last);
             if (schedule.schedule.mode == forkmesh::teammates::kScheduleContinuous ||
-                !forkmesh::teammates::scheduleIsDue(schedule, now))
+                !forkmesh::teammates::scheduleIsDue(schedule, now) ||
+                !repoWorkflowApproved(index, listing.path, workflow.name))
                 continue;
             QString error;
             startRepoWorkflow(index, workflow,
@@ -667,13 +692,140 @@ void MainWindow::triggerRepoWorkflowsForEvent(const QString &eventName, int repo
         if (!listing.error.isEmpty() || workflow.isSpecialAgent() || repoWorkflowRunner()->isRunning(key, workflow.id))
             continue;
         const Config schedule = rw::scheduleConfig(workflow, 0);
-        if (!forkmesh::teammates::scheduleMatchesEvent(schedule, eventName) || !schedule.schedule.active)
+        if (!forkmesh::teammates::scheduleMatchesEvent(schedule, eventName) || !schedule.schedule.active ||
+            !repoWorkflowApproved(repoIndex, listing.path, workflow.name))
             continue;
         QString error;
         startRepoWorkflow(repoIndex, workflow,
                           QStringLiteral("Repository event · %1").arg(forkmesh::teammates::taskTypeLabel(eventName)),
                           eventName, QString(), &error);
     }
+}
+
+QString MainWindow::repoWorkflowPath(int repoIndex, const QString &workflowId) const
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return {};
+    for (const rw::Listing &listing : rw::listRepositoryWorkflows(m_repositories.at(repoIndex).localPath))
+        if (listing.workflow.id == workflowId)
+            return listing.path;
+    return {};
+}
+
+bool MainWindow::repoWorkflowApproved(int repoIndex, const QString &path, const QString &name)
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
+        return false;
+    const QString repository = shortcutRepoKey(repoIndex);
+    const QString checkout = m_repositories.at(repoIndex).localPath;
+    if (rw::isApproved(QSettings(), repository, checkout, path))
+        return true;
+    const QString digest = rw::approvalDigest(checkout, path);
+    if (digest.isEmpty())
+        return false;
+    const QString key = rw::approvalSettingsKey(repository, checkout, path);
+    m_pendingRepoWorkflowApprovals.insert(key, {repository, checkout, path, name, digest});
+    if (m_repoWorkflowApprovalNoticed.contains(key + QLatin1Char(':') + digest))
+        return false;
+    m_repoWorkflowApprovalNoticed.insert(key + QLatin1Char(':') + digest);
+    flashMessage(QStringLiteral("%1 in %2 did not run: this desktop has not approved that file. Review it "
+                                "to let it run.")
+                     .arg(name.isEmpty() ? QFileInfo(path).fileName() : name, repository),
+                 false, QStringLiteral("fm:workflows:approve"));
+    return false;
+}
+
+bool MainWindow::repoWorkflowFileApproved(int repoIndex, const QString &path) const
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
+        return false;
+    return rw::isApproved(QSettings(), shortcutRepoKey(repoIndex), m_repositories.at(repoIndex).localPath, path);
+}
+
+void MainWindow::approveRepoWorkflowFile(int repoIndex, const QString &path)
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size() || path.isEmpty())
+        return;
+    const QString repository = shortcutRepoKey(repoIndex);
+    const QString checkout = m_repositories.at(repoIndex).localPath;
+    QSettings settings;
+    if (rw::approve(settings, repository, checkout, path))
+        m_pendingRepoWorkflowApprovals.remove(rw::approvalSettingsKey(repository, checkout, path));
+}
+
+void MainWindow::approveRepoWorkflowFileFromPhone(int repoIndex, const QString &path, const QString &label,
+                                                  const QString &who)
+{
+    if (repoWorkflowFileApproved(repoIndex, path))
+        return;
+    approveRepoWorkflowFile(repoIndex, path);
+    if (repoWorkflowFileApproved(repoIndex, path))
+        logSystem(QStringLiteral("%1 approved on this desktop by a run from %2.").arg(label, who));
+}
+
+void MainWindow::reviewPendingRepoWorkflowApprovals()
+{
+    if (m_repoWorkflowApprovalPrompt) {
+        m_repoWorkflowApprovalPrompt->raise();
+        m_repoWorkflowApprovalPrompt->activateWindow();
+        return;
+    }
+    QList<PendingRepoWorkflowApproval> pending;
+    {
+        const QSettings settings;
+        for (auto it = m_pendingRepoWorkflowApprovals.begin(); it != m_pendingRepoWorkflowApprovals.end();) {
+            it->digest = rw::approvalDigest(it->checkout, it->path);
+            if (it->digest.isEmpty() || rw::isApproved(settings, it->repository, it->checkout, it->path)) {
+                it = m_pendingRepoWorkflowApprovals.erase(it);
+                continue;
+            }
+            pending.append(it.value());
+            ++it;
+        }
+    }
+    if (pending.isEmpty()) {
+        flashMessage(QStringLiteral("No repository workflows are waiting for approval."));
+        return;
+    }
+    QStringList rows;
+    for (const PendingRepoWorkflowApproval &item : std::as_const(pending))
+        rows.append(QStringLiteral("<li><b>%1</b> in %2 (%3)</li>")
+                        .arg(item.name.toHtmlEscaped(), item.repository.toHtmlEscaped(),
+                             QDir(item.checkout).relativeFilePath(item.path).toHtmlEscaped()));
+    auto *box = new QMessageBox(this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setIcon(QMessageBox::Question);
+    box->setWindowTitle(QStringLiteral("Allow repository workflows?"));
+    box->setTextFormat(Qt::RichText);
+    box->setText(QStringLiteral("These workflow and shortcut files are committed in repositories on this desktop "
+                                "and wait for your approval before they run:<ul>%1</ul>")
+                     .arg(rows.join(QString())));
+    box->setInformativeText(QStringLiteral("Allow only if you trust everyone who can change these files: they run "
+                                           "scripts and agents as you. A change to one of these files, or to a "
+                                           ".forkmesh/shortcuts script a workflow names, asks again. Programs and "
+                                           "files those scripts use in turn are not checked."));
+    QPushButton *allow = box->addButton(QStringLiteral("Allow"), QMessageBox::AcceptRole);
+    QPushButton *later = box->addButton(QStringLiteral("Not now"), QMessageBox::RejectRole);
+    box->setDefaultButton(later);
+    box->setEscapeButton(later);
+    box->setModal(false);
+    m_repoWorkflowApprovalPrompt = box;
+    connect(box, &QMessageBox::finished, this, [this, box, allow, pending] {
+        if (box->clickedButton() != allow)
+            return;
+        QSettings settings;
+        int approved = 0;
+        for (const PendingRepoWorkflowApproval &item : pending) {
+            if (!rw::approve(settings, item.repository, item.checkout, item.path, item.digest))
+                continue;
+            m_pendingRepoWorkflowApprovals.remove(rw::approvalSettingsKey(item.repository, item.checkout, item.path));
+            ++approved;
+        }
+        flashMessage(QStringLiteral("Approved %1 repository workflow%2.")
+                         .arg(approved)
+                         .arg(approved == 1 ? QString() : QStringLiteral("s")));
+    });
+    box->show();
 }
 
 QList<rw::Pin> MainWindow::workflowPins() const
@@ -698,6 +850,92 @@ void MainWindow::pinWorkflowToRail(const QString &repo, const QString &workflowI
 void MainWindow::unpinWorkflowFromRail(const QString &repo, const QString &workflowId)
 {
     saveWorkflowPins(rw::unpinWorkflow(workflowPins(), repo, workflowId));
+}
+
+QJsonObject MainWindow::accountWorkflowPinInfo(const QString &workflowId) const
+{
+    return QJsonDocument::fromJson(QSettings().value(kAccountWorkflowPinsSetting).toString().toUtf8())
+        .object()
+        .value(workflowId)
+        .toObject();
+}
+
+QPixmap MainWindow::accountWorkflowIcon(int side) const
+{
+    rw::Workflow sample;
+    sample.icon = QStringLiteral("workflow");
+    return repoWorkflowIcon(sample, side);
+}
+
+void MainWindow::runAccountWorkflowFromRail(const QString &workflowId)
+{
+    const QString name = text(accountWorkflowPinInfo(workflowId), "name");
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.id != QLatin1String("workflows") || !page.widget)
+            continue;
+        page.widget->activateSearchHit(QStringLiteral("run:") + workflowId);
+        flashMessage(QStringLiteral("%1 is running on ForkMesh.").arg(name.isEmpty() ? QStringLiteral("The workflow") : name));
+        return;
+    }
+    flashMessage(QStringLiteral("Install the Workflows plug-in from the Market to run workflows."), true);
+}
+
+void MainWindow::runAccountWorkflowAction(const QString &workflowId, const QString &action,
+                                          const QJsonObject &payload,
+                                          const forkmesh::market::NativePackageReplyHandler &done)
+{
+    const auto reply = [&done](bool ok, const QString &message) {
+        if (done)
+            done(ok, {}, message);
+    };
+    QJsonObject infos =
+        QJsonDocument::fromJson(QSettings().value(kAccountWorkflowPinsSetting).toString().toUtf8()).object();
+    const auto storeInfos = [&infos] {
+        QSettings().setValue(kAccountWorkflowPinsSetting,
+                             QString::fromUtf8(QJsonDocument(infos).toJson(QJsonDocument::Compact)));
+    };
+    if (action == QLatin1String("pin")) {
+        const QString rail = text(payload, "rail");
+        if (!rw::isRail(rail) || workflowId.isEmpty()) {
+            reply(false, QStringLiteral("Pick the top, left, right or bottom rail."));
+            return;
+        }
+        const QString name = text(payload, "name").trimmed().left(80);
+        infos.insert(workflowId, QJsonObject{{QStringLiteral("name"), name},
+                                             {QStringLiteral("status"), text(payload, "lastStatus")}});
+        storeInfos();
+        pinWorkflowToRail(rw::kAccountRepo, workflowId, rail);
+        reply(true, QStringLiteral("Pinned %1 to the %2.").arg(name, rw::railLabel(rail).toLower()));
+        return;
+    }
+    if (action == QLatin1String("unpin")) {
+        unpinWorkflowFromRail(rw::kAccountRepo, workflowId);
+        reply(true, QStringLiteral("Unpinned it."));
+        return;
+    }
+    if (action == QLatin1String("sync")) {
+        QJsonObject listed;
+        for (const QJsonValue &value : payload.value(QStringLiteral("workflows")).toArray()) {
+            const QJsonObject row = value.toObject();
+            if (!text(row, "id").isEmpty())
+                listed.insert(text(row, "id"), QJsonObject{{QStringLiteral("name"), text(row, "name").left(80)},
+                                                           {QStringLiteral("status"), text(row, "lastStatus")}});
+        }
+        QList<rw::Pin> pins = workflowPins();
+        const int before = int(pins.size());
+        for (const rw::Pin &pin : workflowPins())
+            if (pin.repo == rw::kAccountRepo && !listed.contains(pin.workflowId))
+                pins = rw::unpinWorkflow(pins, pin.repo, pin.workflowId);
+        if (listed != infos || pins.size() != before) {
+            infos = listed;
+            storeInfos();
+            QSettings().setValue(kWorkflowPinsSetting, rw::serializePins(pins));
+            refreshWorkflowPins();
+        }
+        reply(true, QString());
+        return;
+    }
+    reply(false, QStringLiteral("Workflows on ForkMesh run from the Workflows page."));
 }
 
 void MainWindow::addWorkflowPinActions(QMenu *menu, const QString &repo, const QString &workflowId)
@@ -777,6 +1015,11 @@ QWidget *MainWindow::buildWorkflowPinStrip(const QString &rail)
                 [this] { openWorkflowInPage(QString(), QString()); });
         menu.exec(strip->mapToGlobal(point));
     });
+    if (!m_workflowPinHook)
+        m_workflowPinHook = new RailEventHook(
+            [this](QObject *watched, QEvent *event) { return handleWorkflowPinEvent(watched, event); }, this);
+    strip->setAcceptDrops(true);
+    strip->installEventFilter(m_workflowPinHook);
     strip->hide();
     m_workflowPinStrips.insert(rail, strip);
     QTimer::singleShot(0, this, [this] { refreshWorkflowPins(); });
@@ -785,8 +1028,12 @@ QWidget *MainWindow::buildWorkflowPinStrip(const QString &rail)
 
 void MainWindow::refreshWorkflowPins()
 {
-    if (m_workflowPinStrips.isEmpty())
+    if (m_workflowPinDragging)
         return;
+    if (m_workflowPinStrips.isEmpty()) {
+        scheduleSideRailRefresh();
+        return;
+    }
     const QList<rw::Pin> pins = workflowPins();
     QHash<QString, QList<rw::Listing>> listings;
     for (auto stripIt = m_workflowPinStrips.cbegin(); stripIt != m_workflowPinStrips.cend(); ++stripIt) {
@@ -802,11 +1049,32 @@ void MainWindow::refreshWorkflowPins()
                 widget->deleteLater();
             delete item;
         }
-        const int side = rail == rw::kRailBottom ? 14 : (rail == rw::kRailTop ? 20 : 28);
+        const int side = workflowPinSide(rail);
         int shown = 0;
         for (const rw::Pin &pin : pins) {
             if (pin.rail != rail)
                 continue;
+            if (pin.repo == rw::kAccountRepo) {
+                const QJsonObject info = accountWorkflowPinInfo(pin.workflowId);
+                const QString name = text(info, "name").isEmpty() ? QStringLiteral("Workflow") : text(info, "name");
+                auto *button = new WorkflowPinButton(side, strip);
+                button->setProperty("workflowRepo", pin.repo);
+                button->setProperty("workflowId", pin.workflowId);
+                button->setToolTip(QStringLiteral("%1 · on ForkMesh\nClick to run · right-click for more").arg(name));
+                button->setAccessibleName(QStringLiteral("Run %1").arg(name));
+                button->setState(accountWorkflowIcon(side), text(info, "status"));
+                const QString repo = pin.repo;
+                const QString id = pin.workflowId;
+                connect(button, &QToolButton::clicked, this, [this, repo, id, rail] { runPinnedWorkflow(repo, id, rail); });
+                button->setContextMenuPolicy(Qt::CustomContextMenu);
+                connect(button, &QWidget::customContextMenuRequested, this, [this, button, repo, id](const QPoint &point) {
+                    showWorkflowPinMenu(repo, id, button->mapToGlobal(point));
+                });
+                button->installEventFilter(m_workflowPinHook);
+                layout->addWidget(button, 0, Qt::AlignCenter);
+                ++shown;
+                continue;
+            }
             const int repoIndex = repoIndexForKey(pin.repo);
             if (repoIndex < 0)
                 continue;
@@ -854,6 +1122,7 @@ void MainWindow::refreshWorkflowPins()
             connect(button, &QWidget::customContextMenuRequested, this, [this, button, repo, id](const QPoint &point) {
                 showWorkflowPinMenu(repo, id, button->mapToGlobal(point));
             });
+            button->installEventFilter(m_workflowPinHook);
             layout->addWidget(button, 0, Qt::AlignCenter);
             ++shown;
         }
@@ -861,10 +1130,212 @@ void MainWindow::refreshWorkflowPins()
             layout->addStretch(1);
         strip->setVisible(shown > 0);
     }
+    scheduleSideRailRefresh();
+}
+
+bool MainWindow::handleWorkflowPinEvent(QObject *watched, QEvent *event)
+{
+    auto *widget = qobject_cast<QWidget *>(watched);
+    if (!widget)
+        return false;
+    const QEvent::Type type = event->type();
+    const QString rail = widget->property("workflowRail").toString();
+    if (rail.isEmpty()) {
+        if (widget->objectName() != QLatin1String("workflowPinButton"))
+            return false;
+        if (type == QEvent::MouseButtonPress) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            m_workflowPinDragSource.clear();
+            if (mouse->button() == Qt::LeftButton) {
+                m_workflowPinDragSource = widget;
+                m_workflowPinDragStart = mouse->position().toPoint();
+            }
+        } else if (type == QEvent::MouseButtonRelease) {
+            m_workflowPinDragSource.clear();
+        } else if (type == QEvent::MouseMove) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (m_workflowPinDragSource != widget || !(mouse->buttons() & Qt::LeftButton) ||
+                (mouse->position().toPoint() - m_workflowPinDragStart).manhattanLength() <
+                    QApplication::startDragDistance())
+                return false;
+            m_workflowPinDragSource.clear();
+            startWorkflowPinDrag(widget, m_workflowPinDragStart);
+            return true;
+        }
+        return false;
+    }
+    if (type == QEvent::Resize) {
+        if (QWidget *outline = widget->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                                            Qt::FindDirectChildrenOnly))
+            outline->setGeometry(widget->rect());
+        return false;
+    }
+    if (type == QEvent::DragLeave) {
+        hideWorkflowPinDropIndicator();
+        return false;
+    }
+    if (type != QEvent::DragEnter && type != QEvent::DragMove && type != QEvent::Drop)
+        return false;
+    auto *drop = static_cast<QDropEvent *>(event);
+    QString repo;
+    QString workflowId;
+    if (!draggedWorkflowPin(drop->mimeData(), &repo, &workflowId))
+        return false;
+    const QPoint at = drop->position().toPoint();
+    const int slot = workflowPinSlotAt(widget, at, repo, workflowId);
+    drop->setDropAction(Qt::MoveAction);
+    drop->accept();
+    if (type != QEvent::Drop) {
+        showWorkflowPinDropIndicator(widget, at);
+        return true;
+    }
+    hideWorkflowPinDropIndicator();
+    const QList<rw::Pin> pins = rw::movePin(workflowPins(), {repo, workflowId, rail}, slot);
+    QSettings().setValue(kWorkflowPinsSetting, rw::serializePins(pins));
+    refreshWorkflowPins();
+    notifyRepoWorkflowsChanged();
+    return true;
+}
+
+void MainWindow::startWorkflowPinDrag(QWidget *button, const QPoint &hotSpot)
+{
+    if (auto *tool = qobject_cast<QAbstractButton *>(button))
+        tool->setDown(false);
+    auto *mime = new QMimeData;
+    mime->setData(kWorkflowPinMimeType, QStringLiteral("%1\n%2")
+                                            .arg(button->property("workflowRepo").toString(),
+                                                 button->property("workflowId").toString())
+                                            .toUtf8());
+    auto *drag = new QDrag(this);
+    drag->setMimeData(mime);
+    drag->setPixmap(button->grab());
+    drag->setHotSpot(hotSpot);
+    setWorkflowPinStripsOpen(true);
+    drag->exec(Qt::MoveAction);
+    setWorkflowPinStripsOpen(false);
+}
+
+void MainWindow::setWorkflowPinStripsOpen(bool open)
+{
+    m_workflowPinDragging = open;
+    const auto dropZone = [](QWidget *host) {
+        auto *frame = new QFrame(host);
+        frame->setObjectName(QStringLiteral("workflowPinDropZone"));
+        frame->setAttribute(Qt::WA_TransparentForMouseEvents);
+        frame->setStyleSheet(Theme::remapSheet(
+            QStringLiteral("QFrame#workflowPinDropZone { background: transparent;"
+                           " border: 1px dashed #2ea043; border-radius: 6px; }")));
+        return frame;
+    };
+    if (QWidget *side = m_sideRailItemsLayout ? m_sideRailItemsLayout->parentWidget() : nullptr) {
+        QWidget *outline =
+            side->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"), Qt::FindDirectChildrenOnly);
+        if (!open) {
+            delete outline;
+        } else {
+            if (!outline)
+                outline = dropZone(side);
+            outline->setGeometry(side->rect());
+            outline->raise();
+            outline->show();
+        }
+    }
+    for (auto it = m_workflowPinStrips.cbegin(); it != m_workflowPinStrips.cend(); ++it) {
+        QWidget *strip = it.value();
+        if (!strip)
+            continue;
+        QWidget *outline =
+            strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"), Qt::FindDirectChildrenOnly);
+        if (!open) {
+            strip->setMinimumSize(0, 0);
+            delete outline;
+            continue;
+        }
+        const QString rail = it.key();
+        const int button = workflowPinSide(rail) + 6;
+        const bool vertical = rail == rw::kRailLeft || rail == rw::kRailRight;
+        strip->setMinimumSize(vertical ? button + 8 : button * 3, vertical ? button * 3 : button);
+        if (!outline)
+            outline = dropZone(strip);
+        outline->setGeometry(strip->rect());
+        outline->show();
+        strip->show();
+    }
+    if (!open) {
+        hideWorkflowPinDropIndicator();
+        refreshWorkflowPins();
+    }
+}
+
+int MainWindow::workflowPinSlotAt(QWidget *strip, const QPoint &at, const QString &repo,
+                                  const QString &workflowId) const
+{
+    auto *layout = strip ? qobject_cast<QBoxLayout *>(strip->layout()) : nullptr;
+    if (!layout)
+        return 0;
+    const bool vertical = layout->direction() == QBoxLayout::TopToBottom;
+    int slot = 0;
+    for (int i = 0; i < layout->count(); ++i) {
+        QWidget *button = layout->itemAt(i)->widget();
+        if (!button || button->isHidden() || button->objectName() != QLatin1String("workflowPinButton"))
+            continue;
+        if (button->property("workflowId").toString() == workflowId &&
+            button->property("workflowRepo").toString().compare(repo, Qt::CaseInsensitive) == 0)
+            continue;
+        const QPoint centre = button->geometry().center();
+        if ((vertical ? centre.y() : centre.x()) < (vertical ? at.y() : at.x()))
+            ++slot;
+    }
+    return slot;
+}
+
+void MainWindow::showWorkflowPinDropIndicator(QWidget *strip, const QPoint &at)
+{
+    auto *layout = strip ? qobject_cast<QBoxLayout *>(strip->layout()) : nullptr;
+    if (!layout)
+        return;
+    if (!m_workflowPinDropIndicator) {
+        auto *line = new QFrame(strip);
+        line->setObjectName(QStringLiteral("workflowPinDropIndicator"));
+        line->setAttribute(Qt::WA_TransparentForMouseEvents);
+        line->setStyleSheet(Theme::remapSheet(QStringLiteral("background: #2ea043; border: none;")));
+        m_workflowPinDropIndicator = line;
+    }
+    if (m_workflowPinDropIndicator->parentWidget() != strip)
+        m_workflowPinDropIndicator->setParent(strip);
+    const bool vertical = layout->direction() == QBoxLayout::TopToBottom;
+    int edge = vertical ? layout->contentsMargins().top() : layout->contentsMargins().left();
+    for (int i = 0; i < layout->count(); ++i) {
+        QWidget *button = layout->itemAt(i)->widget();
+        if (!button || button->isHidden() || button->objectName() != QLatin1String("workflowPinButton"))
+            continue;
+        const QRect box = button->geometry();
+        if ((vertical ? box.center().y() : box.center().x()) >= (vertical ? at.y() : at.x())) {
+            edge = (vertical ? box.top() : box.left()) - 2;
+            break;
+        }
+        edge = (vertical ? box.bottom() : box.right()) + 2;
+    }
+    if (vertical)
+        m_workflowPinDropIndicator->setGeometry(2, qMax(0, edge - 1), qMax(8, strip->width() - 4), 2);
+    else
+        m_workflowPinDropIndicator->setGeometry(qMax(0, edge - 1), 2, 2, qMax(8, strip->height() - 4));
+    m_workflowPinDropIndicator->raise();
+    m_workflowPinDropIndicator->show();
+}
+
+void MainWindow::hideWorkflowPinDropIndicator()
+{
+    if (m_workflowPinDropIndicator)
+        m_workflowPinDropIndicator->hide();
 }
 
 void MainWindow::runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail)
 {
+    if (repo == rw::kAccountRepo) {
+        runAccountWorkflowFromRail(workflowId);
+        return;
+    }
     if (repoWorkflowRunner()->isRunning(repo, workflowId)) {
         openWorkflowInPage(repo, workflowId);
         return;
@@ -897,6 +1368,16 @@ void MainWindow::runPinnedWorkflow(const QString &repo, const QString &workflowI
 void MainWindow::showWorkflowPinMenu(const QString &repo, const QString &workflowId, const QPoint &globalPos)
 {
     QMenu menu(this);
+    if (repo == rw::kAccountRepo) {
+        connect(menu.addAction(QStringLiteral("Run now")), &QAction::triggered, this,
+                [this, workflowId] { runAccountWorkflowFromRail(workflowId); });
+        connect(menu.addAction(QStringLiteral("Open in Workflows")), &QAction::triggered, this,
+                [this, repo, workflowId] { openWorkflowInPage(repo, workflowId); });
+        menu.addSeparator();
+        addWorkflowPinActions(&menu, repo, workflowId);
+        menu.exec(globalPos);
+        return;
+    }
     const bool running = repoWorkflowRunner()->isRunning(repo, workflowId);
     const int repoIndex = repoIndexForKey(repo);
     rw::Workflow workflow;
@@ -944,6 +1425,8 @@ void MainWindow::notifyRepoWorkflowsChanged()
             for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
                 if (page.widget)
                     page.widget->repositoryWorkflowsChanged();
+            if (m_localControl)
+                m_localControl->broadcast(QStringLiteral("workflows.changed"));
         });
     }
     m_repoWorkflowNotifyTimer->start();
@@ -955,7 +1438,9 @@ void MainWindow::openWorkflowInPage(const QString &repo, const QString &workflow
         if (page.id != QLatin1String("workflows") || !page.widget)
             continue;
         showNativePackage(page.id);
-        if (!repo.isEmpty() && !workflowId.isEmpty())
+        if (repo == rw::kAccountRepo && !workflowId.isEmpty())
+            page.widget->activateSearchHit(workflowId);
+        else if (!repo.isEmpty() && !workflowId.isEmpty())
             page.widget->activateSearchHit(QStringLiteral("repo:%1|%2").arg(repo, workflowId));
         return;
     }
@@ -1129,6 +1614,10 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             if (done)
                 done(ok, data, message);
         };
+        if (repo == rw::kAccountRepo) {
+            runAccountWorkflowAction(workflowId, action, payload, done);
+            return;
+        }
         const int repoIndex = repoIndexForKey(repo);
         if (repoIndex < 0) {
             reply(false, {}, QStringLiteral("%1 has no checkout on this desktop.").arg(repo));
@@ -1140,8 +1629,13 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
         for (const rw::Listing &entry : listings)
             if (entry.workflow.id == workflowId)
                 listing = &entry;
+        const auto fileContent = [](const QString &path) {
+            QFile file(path);
+            return path.isEmpty() || !file.open(QIODevice::ReadOnly) ? QJsonObject()
+                                                                      : rw::approvalContent(file.readAll());
+        };
         const auto saved = [this, &reply, &repo](const rw::Workflow &workflow, const QString &path) {
-            refreshTeammateRail();
+            scheduleTeammateRailRefresh();
             if (m_sectionStack && m_sectionStack->currentIndex() == kTeamSectionIndex)
                 loadTeammatesPanel();
             notifyRepoWorkflowsChanged();
@@ -1174,12 +1668,16 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             } else if (listing) {
                 workflow.createdAtMs = listing->workflow.createdAtMs;
             }
+            const QJsonObject before = listing ? fileContent(listing->path) : QJsonObject();
+            const bool wasApproved = listing && repoWorkflowFileApproved(repoIndex, listing->path);
             QString path;
             const QString error = rw::writeWorkflow(checkout, workflow, nowMs(), &path);
             if (!error.isEmpty()) {
                 reply(false, {}, error);
                 return;
             }
+            if (!listing || wasApproved || fileContent(path) != before)
+                approveRepoWorkflowFile(repoIndex, path);
             saved(workflow, path);
             return;
         }
@@ -1203,9 +1701,35 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             reply(true, data, QString());
             return;
         }
+        if (action == QLatin1String("review")) {
+            if (repoWorkflowFileApproved(repoIndex, listing->path)) {
+                reply(true, {}, QStringLiteral("%1 is approved on this desktop.").arg(workflow.name));
+                return;
+            }
+            repoWorkflowApproved(repoIndex, listing->path, workflow.name);
+            reviewPendingRepoWorkflowApprovals();
+            const auto answer = [this, repo, path = listing->path, name = workflow.name, done] {
+                const bool approved = repoWorkflowFileApproved(repoIndexForKey(repo), path);
+                if (done)
+                    done(approved, {},
+                         approved ? QStringLiteral("Approved %1.").arg(name)
+                                  : QStringLiteral("%1 did not run: it is not approved on this desktop.").arg(name));
+            };
+            if (auto *box = qobject_cast<QMessageBox *>(m_repoWorkflowApprovalPrompt.data()))
+                connect(box, &QMessageBox::finished, this, answer);
+            else
+                answer();
+            return;
+        }
         if (action == QLatin1String("run")) {
             if (!listing->error.isEmpty()) {
                 reply(false, {}, listing->error);
+                return;
+            }
+            if (!repoWorkflowApproved(repoIndex, listing->path, workflow.name)) {
+                reply(false, {{QStringLiteral("code"), QStringLiteral("approval_required")}},
+                      QStringLiteral("Approve %1 on this desktop before it runs: use Review on the notice.")
+                          .arg(workflow.name));
                 return;
             }
             const QString trigger = text(payload, "trigger").isEmpty() ? QStringLiteral("By hand · Workflows page")
@@ -1215,13 +1739,16 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                 const int session =
                     runTeammate(workflowId, trigger, forkmesh::teammates::kTaskTypeOnDemand, repoIndex, assignment);
                 if (repoWorkflowRunner()->isRunning(repo, workflowId)) {
-                    reply(true, {{QStringLiteral("sessionId"), session}},
+                    reply(true,
+                          {{QStringLiteral("sessionId"), session},
+                           {QStringLiteral("runId"), repoWorkflowRunner()->activeRun(repo, workflowId).id}},
                           QStringLiteral("%1 is running.").arg(workflow.name));
                     return;
                 }
                 const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(repoIndex, workflowId));
                 const bool recent = !runs.isEmpty() && nowMs() - runs.first().startedAtMs < 5000;
-                reply(recent && runs.first().status == rw::kStatusSuccess, {},
+                reply(recent && runs.first().status == rw::kStatusSuccess,
+                      recent ? QJsonObject{{QStringLiteral("runId"), runs.first().id}} : QJsonObject(),
                       recent ? rw::runSummaryText(runs.first())
                              : QStringLiteral("%1 did not start. Check that it is turned on, may read repositories "
                                               "and is not already working.")
@@ -1257,7 +1784,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             if (workflow.isSpecialAgent())
                 clearTeammateRuntime(workflowId, repoIndex);
             saveWorkflowPins(rw::unpinWorkflow(workflowPins(), repo, workflowId));
-            refreshTeammateRail();
+            scheduleTeammateRailRefresh();
             reply(true, {}, QStringLiteral("Deleted %1.").arg(workflow.name));
             return;
         }
@@ -1277,6 +1804,17 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             return;
         }
         if (action == QLatin1String("setEnabled") || action == QLatin1String("setSchedule")) {
+            const bool wasApproved = repoWorkflowFileApproved(repoIndex, listing->path);
+            const bool turnsOn = payload.value(action == QLatin1String("setEnabled") ? QStringLiteral("enabled")
+                                                                                    : QStringLiteral("active"))
+                                     .toBool();
+            const auto keepApproval = [this, repoIndex, wasApproved, turnsOn](const QString &path,
+                                                                             const QString &name) {
+                if (wasApproved)
+                    approveRepoWorkflowFile(repoIndex, path);
+                else if (turnsOn)
+                    repoWorkflowApproved(repoIndex, path, name);
+            };
             if (listing->legacy && workflow.isSpecialAgent()) {
                 Config config;
                 rw::toTeammate(workflow, &config);
@@ -1291,7 +1829,10 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                 }
                 rw::Workflow moved;
                 findRepoWorkflow(repoIndex, workflowId, &moved);
-                saved(moved, QDir(checkout).filePath(rw::kFolder + QLatin1Char('/') + workflowId + QStringLiteral(".json")));
+                const QString movedPath =
+                    QDir(checkout).filePath(rw::kFolder + QLatin1Char('/') + workflowId + QStringLiteral(".json"));
+                keepApproval(movedPath, moved.name);
+                saved(moved, movedPath);
                 return;
             }
             rw::Workflow changed = workflow;
@@ -1315,6 +1856,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                 reply(false, {}, error);
                 return;
             }
+            keepApproval(path, changed.name);
             saved(changed, path);
             return;
         }

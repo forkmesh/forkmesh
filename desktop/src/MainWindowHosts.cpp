@@ -46,6 +46,9 @@
 #include <QLineEdit>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPainter>
+#include <QStyledItemDelegate>
+#include <QToolButton>
 #include <QJsonDocument>
 #include <memory>
 #include <QPlainTextEdit>
@@ -71,6 +74,146 @@ using namespace forkmesh::ui;
 namespace {
 const QString kVultrInstallAgentClisSetting =
     QStringLiteral("hosts/vultrProvision/installAgentClis");
+
+void compactRailButton(QPushButton *button, const QString &name)
+{
+    const QString tip = button->toolTip();
+    button->setAccessibleName(name);
+    button->setToolTip(tip.isEmpty() || tip == name ? name : name + QStringLiteral("\n") + tip);
+    button->setText(QString());
+    button->setProperty("buttonSize", "xs");
+    button->setFixedSize(26, 22);
+    button->setIconSize(QSize(14, 14));
+    button->setStyleSheet(QStringLiteral("QPushButton { padding: 0px; }"));
+}
+
+QWidget *hostsRailSection(const QString &key, const QString &title, QWidget *help,
+                          QWidget *body, bool expanded,
+                          const QList<QWidget *> &extras = {})
+{
+    auto *section = new QWidget;
+    section->setObjectName(QStringLiteral("hostsRailSection"));
+    section->setProperty("railSection", key);
+    auto *col = new QVBoxLayout(section);
+    col->setContentsMargins(0, 0, 0, 0);
+    col->setSpacing(4);
+    auto *head = new QHBoxLayout;
+    head->setContentsMargins(0, 0, 0, 0);
+    head->setSpacing(4);
+    auto *toggle = new QToolButton(section);
+    toggle->setObjectName(QStringLiteral("hostsRailSectionToggle"));
+    toggle->setText(title);
+    toggle->setAccessibleName(title);
+    toggle->setCheckable(true);
+    toggle->setAutoRaise(true);
+    toggle->setCursor(Qt::PointingHandCursor);
+    toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    toggle->setIconSize(QSize(12, 12));
+    toggle->setStyleSheet(QStringLiteral(
+        "QToolButton { border: none; background: transparent; padding: 2px 2px; }"));
+    QFont font = toggle->font();
+    font.setPixelSize(12);
+    font.setBold(true);
+    toggle->setFont(font);
+    head->addWidget(toggle);
+    if (help)
+        head->addWidget(help);
+    head->addStretch(1);
+    for (QWidget *extra : extras)
+        head->addWidget(extra);
+    col->addLayout(head);
+    col->addWidget(body);
+    const QString settingKey = QStringLiteral("network/hostsRail/") + key;
+    const bool open = QSettings().value(settingKey, expanded).toBool();
+    const auto apply = [toggle, body](bool on) {
+        body->setVisible(on);
+        toggle->setIcon(QIcon(kit::tintedIcon(on ? QStringLiteral("chevron-down")
+                                                  : QStringLiteral("chevron-right"),
+                                              Theme::color(Theme::Role::FgMuted), 12,
+                                              toggle->devicePixelRatioF())));
+        toggle->setToolTip(on ? QStringLiteral("Collapse") : QStringLiteral("Expand"));
+    };
+    toggle->setChecked(open);
+    apply(open);
+    QObject::connect(toggle, &QToolButton::toggled, section, [apply, settingKey](bool on) {
+        apply(on);
+        QSettings().setValue(settingKey, on);
+    });
+    return section;
+}
+
+void expandHostsRailSections(QWidget *child)
+{
+    for (QWidget *w = child ? child->parentWidget() : nullptr; w; w = w->parentWidget()) {
+        if (w->objectName() != QLatin1String("hostsRailSection"))
+            continue;
+        const QList<QToolButton *> toggles =
+            w->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly);
+        for (QToolButton *toggle : toggles) {
+            if (toggle->isCheckable() && !toggle->isChecked())
+                toggle->setChecked(true);
+        }
+    }
+}
+
+QWidget *hostsRailBody(QLayout *layout)
+{
+    auto *body = new QWidget;
+    layout->setContentsMargins(0, 0, 0, 0);
+    body->setLayout(layout);
+    return body;
+}
+
+class HostRailNameDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem base(option);
+        initStyleOption(&base, index);
+        base.text.clear();
+        base.icon = QIcon();
+        QStyle *style = base.widget ? base.widget->style() : QApplication::style();
+        style->drawPrimitive(QStyle::PE_PanelItemViewItem, &base, painter, base.widget);
+        painter->save();
+        const QRect cell = option.rect.adjusted(6, 0, -4, 0);
+        const int mid = cell.center().y();
+        QFont name = option.font;
+        name.setPixelSize(12);
+        name.setWeight(QFont::Medium);
+        painter->setFont(name);
+        painter->setPen(Theme::color(Theme::Role::Fg));
+        const QRect top(cell.left(), mid - 16, cell.width(), 16);
+        painter->drawText(top, Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(name).elidedText(index.data().toString(),
+                                                        Qt::ElideRight, cell.width()));
+        const QModelIndex statusIndex = index.siblingAtColumn(3);
+        QString status = statusIndex.data().toString().section(QLatin1Char('\n'), 0, 0);
+        const QString address = index.siblingAtColumn(1).data().toString();
+        if (!address.isEmpty())
+            status += QString::fromUtf8(" \xC2\xB7 ") + address;
+        QColor color = Theme::color(Theme::Role::FgMuted);
+        const QVariant foreground = statusIndex.data(Qt::ForegroundRole);
+        if (foreground.isValid())
+            color = foreground.value<QBrush>().color();
+        QFont small = option.font;
+        small.setPixelSize(10);
+        painter->setFont(small);
+        painter->setPen(color);
+        const QRect bottom(cell.left(), mid + 1, cell.width(), 14);
+        painter->drawText(bottom, Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(small).elidedText(status, Qt::ElideRight, cell.width()));
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        return QSize(QStyledItemDelegate::sizeHint(option, index).width(), 40);
+    }
+};
 } // namespace
 
 QString MainWindow::installScriptUrl() const
@@ -93,38 +236,51 @@ QString MainWindow::uninstallScriptUrl() const
 
 QWidget *MainWindow::buildHostsSection()
 {
-    auto *page = new QWidget;
-    auto *outer = new QVBoxLayout(page);
-    outer->setContentsMargins(0, 4, 0, 0);
-    outer->setSpacing(6);
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("networkHostsRail"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    auto *body = new QWidget;
+    body->setObjectName(QStringLiteral("hostsPageBody"));
+    body->setStyleSheet(QStringLiteral(
+        "QLineEdit { min-height: 22px; max-height: 24px; padding: 1px 6px; font-size: 12px; }"
+        "QCheckBox { font-size: 11px; }"
+        "QHeaderView::section { font-size: 11px; padding: 1px 4px; }"
+        "QTableWidget { font-size: 11px; }"));
+    auto *bodyCol = new QVBoxLayout(body);
+    bodyCol->setObjectName(QStringLiteral("hostsPageLayout"));
+    bodyCol->setContentsMargins(0, 0, 4, 0);
+    bodyCol->setSpacing(10);
 
     auto *titleRow = new QHBoxLayout;
     titleRow->setContentsMargins(0, 0, 0, 0);
-    titleRow->setSpacing(6);
-
+    titleRow->setSpacing(3);
     auto *hostsLabel = new QLabel(QStringLiteral("Hosts"));
     QFont hlf = hostsLabel->font();
     hlf.setBold(true);
+    hlf.setPixelSize(13);
     hostsLabel->setFont(hlf);
     titleRow->addWidget(hostsLabel);
     titleRow->addWidget(makeInlineHelpButton(
         QStringLiteral("About saved hosts"), QString::fromUtf8(
-            "Click Update on a saved host to re-run the installer and bring it up to "
-            "the latest ForkMesh release; it also refreshes the Claude Code and Codex "
-            "CLIs a mirror runs agents with. Click Uninstall to completely remove "
-            "ForkMesh \xE2\x80\x94 binary, launcher and ALL data \xE2\x80\x94 from "
-            "that host. Click Actions to enable its executor and optionally replace "
-            "its device-local variables through a one-shot SSH stdin request; secret "
-            "values are never saved by this controller. Click Logs to open a live "
-            "SSH tail for that host, or Size map to browse what is filling that "
-            "host's disk. Click Remove to drop a host from this list without "
-            "touching it \xE2\x80\x94 no SSH session is opened. Double-click a host "
-            "instead to reload it into the form below for editing.")));
-    m_hostsFleetSummary = new QLabel;
-    m_hostsFleetSummary->setObjectName(
-        QStringLiteral("hostsFleetHealthSummary"));
-    m_hostsFleetSummary->setWordWrap(false);
-    titleRow->addWidget(m_hostsFleetSummary);
+            "Every saved host is also a row in the node list beside this rail; "
+            "click its row to pick it here. The buttons on each host, left to "
+            "right: Update re-runs the installer and brings it up to the latest "
+            "ForkMesh release (it also refreshes the Claude Code and Codex CLIs a "
+            "mirror runs agents with); Install (binary) uploads this app's own "
+            "binary; Uninstall completely removes ForkMesh \xE2\x80\x94 binary, "
+            "launcher and ALL data \xE2\x80\x94 from that host; Destroy deletes its "
+            "Vultr server; Remove drops a host from this list without touching it "
+            "\xE2\x80\x94 no SSH session is opened. Second row: Logs opens a live SSH "
+            "tail; Size map browses what is filling that host's disk; Actions "
+            "enables its executor and optionally replaces its device-local "
+            "variables through a one-shot SSH stdin request (secret values are "
+            "never saved by this controller); Install Claude + Codex and Sign in "
+            "set up its agent CLIs. Double-click a host to reload it into the Add "
+            "a host form for editing. The buttons beside the Hosts title show the "
+            "live view, check every host now, and install, reinstall or update "
+            "every host at once.")));
     titleRow->addStretch(1);
     m_hostsLiveViewButton = new QPushButton(QStringLiteral("Live view"));
     m_hostsLiveViewButton->setObjectName(QStringLiteral("hostsLiveViewButton"));
@@ -134,6 +290,7 @@ QWidget *MainWindow::buildHostsSection()
         "Show every saved host side by side with a live tail of its node log "
         "and its network activity, each over its own SSH connection."));
     setOcticon(m_hostsLiveViewButton, QStringLiteral("broadcast"), 14);
+    compactRailButton(m_hostsLiveViewButton, QStringLiteral("Live view"));
     connect(m_hostsLiveViewButton, &QPushButton::toggled, this,
             &MainWindow::setHostsLiveViewActive);
     titleRow->addWidget(m_hostsLiveViewButton);
@@ -145,11 +302,13 @@ QWidget *MainWindow::buildHostsSection()
         "Check SSH reachability, ForkMesh, Claude, and Codex on every saved "
         "host."));
     setOcticon(m_hostsProbeButton, QStringLiteral("sync"), 14);
+    compactRailButton(m_hostsProbeButton, QStringLiteral("Check all now"));
     connect(m_hostsProbeButton, &QPushButton::clicked, this, [this] {
         probeSavedHosts();
     });
     titleRow->addWidget(m_hostsProbeButton);
     m_hostInstallAllButton = new QPushButton(QStringLiteral("Install from binary (all hosts)"));
+    m_hostInstallAllButton->setObjectName(QStringLiteral("hostsInstallAllButton"));
     m_hostInstallAllButton->setCursor(Qt::PointingHandCursor);
     m_hostInstallAllButton->setToolTip(QStringLiteral(
         "Install the published ForkMesh v" FORKMESH_VERSION
@@ -157,104 +316,101 @@ QWidget *MainWindow::buildHostsSection()
         "version and exact source commit, keeps its identity, keys and mirrored "
         "data, and restarts its node."));
     setOcticon(m_hostInstallAllButton, "download", 14);
+    compactRailButton(m_hostInstallAllButton,
+                      QStringLiteral("Install from binary (all hosts)"));
     connect(m_hostInstallAllButton, &QPushButton::clicked, this,
             &MainWindow::runHostInstallAllFromBinary);
     titleRow->addWidget(m_hostInstallAllButton);
     m_hostReinstallAllButton =
         new QPushButton(QStringLiteral("Uninstall + reinstall (all hosts)"));
+    m_hostReinstallAllButton->setObjectName(QStringLiteral("hostsReinstallAllButton"));
     m_hostReinstallAllButton->setCursor(Qt::PointingHandCursor);
     m_hostReinstallAllButton->setToolTip(QStringLiteral(
         "For every saved host: remove ForkMesh and ALL of its data, then "
         "install the published ForkMesh v" FORKMESH_VERSION
         " binary and re-link it to your account."));
-    setOcticon(m_hostReinstallAllButton, "sync", 14);
+    setOcticon(m_hostReinstallAllButton, "loop", 14);
+    compactRailButton(m_hostReinstallAllButton,
+                      QStringLiteral("Uninstall + reinstall (all hosts)"));
     connect(m_hostReinstallAllButton, &QPushButton::clicked, this,
             &MainWindow::runHostReinstallAllFromBinary);
     titleRow->addWidget(m_hostReinstallAllButton);
     m_hostUpdateAllSourceButton =
         new QPushButton(QStringLiteral("Update from source (all hosts)"));
+    m_hostUpdateAllSourceButton->setObjectName(QStringLiteral("hostsUpdateAllSourceButton"));
     m_hostUpdateAllSourceButton->setCursor(Qt::PointingHandCursor);
     m_hostUpdateAllSourceButton->setToolTip(QStringLiteral(
         "For every saved host: SSH in, pull the latest ForkMesh source, rebuild "
         "the client from it and restart the node — without publishing a release. "
         "The node's identity key and mirrored data are kept."));
-    setOcticon(m_hostUpdateAllSourceButton, "sync", 14);
+    setOcticon(m_hostUpdateAllSourceButton, "code", 14);
+    compactRailButton(m_hostUpdateAllSourceButton,
+                      QStringLiteral("Update from source (all hosts)"));
     connect(m_hostUpdateAllSourceButton, &QPushButton::clicked, this,
             &MainWindow::runHostUpdateAllFromSource);
     titleRow->addWidget(m_hostUpdateAllSourceButton);
-    outer->addLayout(titleRow);
+    bodyCol->addLayout(titleRow);
 
-    auto *scroll = new QScrollArea;
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    auto *body = new QWidget;
-    body->setObjectName(QStringLiteral("hostsPageBody"));
-    auto *bodyCol = new QVBoxLayout(body);
-    bodyCol->setObjectName(QStringLiteral("hostsPageLayout"));
-    bodyCol->setContentsMargins(0, 0, 0, 0);
-    bodyCol->setSpacing(10);
+    m_hostsFleetSummary = new QLabel;
+    m_hostsFleetSummary->setObjectName(
+        QStringLiteral("hostsFleetHealthSummary"));
+    m_hostsFleetSummary->setWordWrap(true);
+    bodyCol->addWidget(m_hostsFleetSummary);
 
-    auto *formCard = new QFrame;
-    formCard->setObjectName("leaderboardCard");
-    formCard->setFrameShape(QFrame::StyledPanel);
-    auto *formCol = new QVBoxLayout(formCard);
-    formCol->setContentsMargins(12, 10, 12, 10);
-    formCol->setSpacing(6);
-
-    auto *formTitleRow = new QHBoxLayout;
-    formTitleRow->setContentsMargins(0, 0, 0, 0);
-    formTitleRow->setSpacing(6);
-    auto *formTitle = new QLabel(QStringLiteral("Add a host"));
-    QFont ftf = formTitle->font();
-    ftf.setBold(true);
-    formTitle->setFont(ftf);
-    formTitleRow->addWidget(formTitle);
-    formTitleRow->addWidget(makeInlineHelpButton(
-        QStringLiteral("About adding a host"), QString::fromUtf8(
-            "Provision a remote machine onto the network. Enter its address and SSH "
-            "login and give it a node name, then click Add host to save it. With the "
-            "host saved, click Install ForkMesh and it will SSH in and run the hosted "
-            "installer in a plain shell. ForkMesh remembers the first host key in "
-            "its private trust store and rejects later mismatches. Your SSH agent, "
-            "default keys and ~/.ssh/config are used when the optional password is "
-            "blank; entered passwords remain in memory only. When installation "
-            "finishes the new node joins the network and shows up in each "
-            "Network > Nodes page. Install (binary) on one saved host "
-            "uploads this app's own binary. Install from binary (all hosts) instead "
-            "makes every host download and checksum-verify the current published "
-            "release, then confirms the installed version and exact source commit.")));
-    formTitleRow->addStretch(1);
-    formCol->addLayout(formTitleRow);
-
-    auto *form = new QFormLayout;
-    form->setLabelAlignment(Qt::AlignRight);
-    form->setSpacing(6);
+    m_hostsTable = new QTableWidget(0, 7);
+    installColumnHeaderMenu(m_hostsTable);
+    m_hostsTable->setObjectName("issueTable");
+    m_hostsTable->setHorizontalHeaderLabels(
+        {QStringLiteral("Host"), QStringLiteral("Address"),
+         QStringLiteral("User"), QStringLiteral("Status"),
+         QStringLiteral("Claude"), QStringLiteral("Codex"), QString()});
+    m_hostsTable->verticalHeader()->setVisible(false);
+    m_hostsTable->horizontalHeader()->setVisible(false);
+    m_hostsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_hostsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_hostsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_hostsTable->setShowGrid(false);
+    m_hostsTable->setWordWrap(false);
+    m_hostsTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_hostsTable->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_hostsTable->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
+    m_hostsTable->horizontalHeader()->setStretchLastSection(false);
+    m_hostsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_hostsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+    for (int column : {1, 2, 3, 4, 5})
+        m_hostsTable->setColumnHidden(column, true);
+    m_hostsTable->setItemDelegateForColumn(0, new HostRailNameDelegate(m_hostsTable));
+    connect(m_hostsTable, &QTableWidget::cellDoubleClicked, this,
+            &MainWindow::loadHostIntoForm);
+    bodyCol->addWidget(m_hostsTable);
 
     m_hostIpEdit = new QLineEdit;
-    m_hostIpEdit->setPlaceholderText(QStringLiteral("203.0.113.10"));
-    form->addRow(QStringLiteral("Host IP / address"), m_hostIpEdit);
-
+    m_hostIpEdit->setPlaceholderText(QStringLiteral("Host IP / address"));
+    m_hostIpEdit->setAccessibleName(QStringLiteral("Host IP / address"));
+    m_hostIpEdit->setToolTip(QStringLiteral("Host IP / address, for example 203.0.113.10"));
     m_hostUserEdit = new QLineEdit;
-    m_hostUserEdit->setPlaceholderText(QStringLiteral("root"));
-    form->addRow(QStringLiteral("SSH username"), m_hostUserEdit);
-
+    m_hostUserEdit->setPlaceholderText(QStringLiteral("SSH username (root)"));
+    m_hostUserEdit->setAccessibleName(QStringLiteral("SSH username"));
     m_hostPassEdit = new QLineEdit;
     m_hostPassEdit->setEchoMode(QLineEdit::Password);
-    m_hostPassEdit->setPlaceholderText(
-        QStringLiteral("Optional — the shared ForkMesh key is used first"));
+    m_hostPassEdit->setPlaceholderText(QStringLiteral("SSH password (optional)"));
+    m_hostPassEdit->setAccessibleName(QStringLiteral("SSH password (optional)"));
     m_hostPassEdit->setToolTip(QStringLiteral(
         "Leave blank when this host already authorizes the shared ForkMesh SSH "
         "key (every fleet host does); ForkMesh falls back to your SSH agent, "
         "default key, or ~/.ssh/config. A password entered here is only used "
         "if the shared key is refused, is kept until ForkMesh exits, and is "
         "never written to settings."));
-    form->addRow(QStringLiteral("SSH password (optional)"), m_hostPassEdit);
-
     m_hostNameEdit = new QLineEdit;
-    m_hostNameEdit->setPlaceholderText(QStringLiteral("my-mirror-1"));
-    form->addRow(QStringLiteral("Node name"), m_hostNameEdit);
-
+    m_hostNameEdit->setPlaceholderText(QStringLiteral("Node name (my-mirror-1)"));
+    m_hostNameEdit->setAccessibleName(QStringLiteral("Node name"));
+    auto *form = new QGridLayout;
+    form->setHorizontalSpacing(4);
+    form->setVerticalSpacing(4);
+    form->addWidget(m_hostIpEdit, 0, 0);
+    form->addWidget(m_hostUserEdit, 0, 1);
+    form->addWidget(m_hostPassEdit, 1, 0);
+    form->addWidget(m_hostNameEdit, 1, 1);
     m_hostUploadBinaryCheck =
         new QCheckBox(QStringLiteral("Upload the release from this app"));
     m_hostUploadBinaryCheck->setToolTip(QString::fromUtf8(
@@ -264,74 +420,58 @@ QWidget *MainWindow::buildHostsSection()
         "to push exactly the build you are running. If the host's OS or "
         "architecture does not match this machine, the installer falls back "
         "to the normal download."));
-    form->addRow(QString(), m_hostUploadBinaryCheck);
-    formCol->addLayout(form);
-
+    form->addWidget(m_hostUploadBinaryCheck, 2, 0, 1, 2);
     auto *runRow = new QHBoxLayout;
     runRow->setContentsMargins(0, 0, 0, 0);
+    runRow->setSpacing(4);
     m_hostAddButton = new QPushButton(QStringLiteral("Add host"));
     m_hostAddButton->setCursor(Qt::PointingHandCursor);
-    setOcticon(m_hostAddButton, "plus", 14);
+    m_hostAddButton->setProperty("buttonSize", "sm");
+    setOcticon(m_hostAddButton, "plus", 12);
     connect(m_hostAddButton, &QPushButton::clicked, this,
             &MainWindow::addHostFromForm);
     runRow->addWidget(m_hostAddButton);
     m_hostInstallButton = new QPushButton(QStringLiteral("Install ForkMesh"));
     m_hostInstallButton->setObjectName("primaryButton");
     m_hostInstallButton->setCursor(Qt::PointingHandCursor);
-    setOcticon(m_hostInstallButton, "rocket", 14);
+    m_hostInstallButton->setProperty("buttonSize", "sm");
+    setOcticon(m_hostInstallButton, "rocket", 12);
     connect(m_hostInstallButton, &QPushButton::clicked, this,
             [this] { runHostInstall(); });
     runRow->addWidget(m_hostInstallButton);
+    runRow->addStretch(1);
+    form->addLayout(runRow, 3, 0, 1, 2);
     m_hostInstallStatus = new QLabel;
     m_hostInstallStatus->setObjectName("mutedLabel");
     m_hostInstallStatus->setWordWrap(true);
-    runRow->addWidget(m_hostInstallStatus, 1);
-    formCol->addLayout(runRow);
+    form->addWidget(m_hostInstallStatus, 4, 0, 1, 2);
+    QWidget *addSection = hostsRailSection(
+        QStringLiteral("addHost"), QStringLiteral("Add a host"),
+        makeInlineHelpButton(
+            QStringLiteral("About adding a host"), QString::fromUtf8(
+                "Provision a remote machine onto the network. Enter its address and SSH "
+                "login and give it a node name, then click Add host to save it. With the "
+                "host saved, click Install ForkMesh and it will SSH in and run the hosted "
+                "installer in a plain shell. ForkMesh remembers the first host key in "
+                "its private trust store and rejects later mismatches. Your SSH agent, "
+                "default keys and ~/.ssh/config are used when the optional password is "
+                "blank; entered passwords remain in memory only. When installation "
+                "finishes the new node joins the network and shows up in the "
+                "Network > Nodes list. Install (binary) on one saved host "
+                "uploads this app's own binary. Install from binary (all hosts) instead "
+                "makes every host download and checksum-verify the current published "
+                "release, then confirms the installed version and exact source commit.")),
+        hostsRailBody(form), true);
+    bodyCol->addWidget(addSection);
 
-    auto *vultrCard = new QFrame;
-    vultrCard->setObjectName("leaderboardCard");
-    vultrCard->setFrameShape(QFrame::StyledPanel);
-    auto *vultrCol = new QVBoxLayout(vultrCard);
-    vultrCol->setContentsMargins(12, 10, 12, 10);
-    vultrCol->setSpacing(6);
-
-    auto *vultrTitleRow = new QHBoxLayout;
-    vultrTitleRow->setContentsMargins(0, 0, 0, 0);
-    vultrTitleRow->setSpacing(6);
-    auto *vultrTitle = new QLabel(QStringLiteral("Create a Vultr mirror"));
-    QFont vtf = vultrTitle->font();
-    vtf.setBold(true);
-    vultrTitle->setFont(vtf);
-    vultrTitleRow->addWidget(vultrTitle);
-    vultrTitleRow->addWidget(makeInlineHelpButton(
-        QStringLiteral("About Vultr mirrors"), QString::fromUtf8(
-            "One click deploys a brand-new cloud mirror on your Vultr account: "
-            "ForkMesh picks the cheapest available US IPv4 plan with at least 1 GB "
-            "RAM, preferring New Jersey/New York metro and then Atlanta (smaller "
-            "plans cannot hold the encrypted mirror's temporary working set; "
-            "Vultr's IPv6-only tiers are also unreachable for the mesh) running the "
-            "latest Debian, creates and manages the SSH key for it automatically, "
-            "boots the instance, installs ForkMesh over SSH and links the new node "
-            "to your account so it starts mirroring and syncing right away. The API "
-            "key (Vultr panel \xE2\x86\x92 Account \xE2\x86\x92 API) is saved once "
-            "Vultr accepts it \xE2\x80\x94 into this device's VULTR_API_KEY variable "
-            "(Settings \xE2\x86\x92 Variables / Secrets) and into "
-            "app/.env.production \xE2\x80\x94 so you never have to "
-            "enter it again; it travels only in the Authorization header of this "
-            "app's HTTPS calls to Vultr, never in a command line. When a "
-            "CLOUDFLARE_API_TOKEN device variable and a Cloudflare zone are "
-            "configured, the new node also gets a <node>.<zone> DNS record so it "
-            "joins the mesh under a stable name like your other mirrors. The "
-            "instance is billed by Vultr to your account until you destroy it there.")));
-    vultrTitleRow->addStretch(1);
-    vultrCol->addLayout(vultrTitleRow);
-
-    m_vultrProgressPanel = new QWidget(vultrCard);
+    auto *vultrCol = new QVBoxLayout;
+    vultrCol->setSpacing(4);
+    m_vultrProgressPanel = new QWidget;
     m_vultrProgressPanel->setObjectName(
         QStringLiteral("vultrDeployProgress"));
     auto *stageRow = new QHBoxLayout(m_vultrProgressPanel);
-    stageRow->setContentsMargins(0, 6, 0, 6);
-    stageRow->setSpacing(5);
+    stageRow->setContentsMargins(0, 2, 0, 2);
+    stageRow->setSpacing(1);
     m_vultrStageNumbers.clear();
     m_vultrStageLabels.clear();
     m_vultrStageDetails.clear();
@@ -346,29 +486,27 @@ QWidget *MainWindow::buildHostsSection()
     for (int i = 0; i < stageNames.size(); ++i) {
         auto *stage = new QWidget(m_vultrProgressPanel);
         stage->setObjectName(QStringLiteral("vultrDeployStage%1").arg(i + 1));
-        stage->setSizePolicy(QSizePolicy::Preferred,
+        stage->setSizePolicy(QSizePolicy::Ignored,
                              QSizePolicy::MinimumExpanding);
         auto *col = new QVBoxLayout(stage);
-        col->setContentsMargins(2, 0, 2, 0);
-        col->setSpacing(3);
+        col->setContentsMargins(0, 0, 0, 0);
+        col->setSpacing(2);
         auto *number = new QLabel(QString::number(i + 1), stage);
         number->setAlignment(Qt::AlignCenter);
-        number->setFixedSize(28, 28);
+        number->setFixedSize(20, 20);
         number->setAccessibleName(
             QStringLiteral("Deployment stage %1").arg(i + 1));
+        number->setToolTip(stageNames.at(i));
         auto *label = new QLabel(stageNames.at(i), stage);
         label->setAlignment(Qt::AlignCenter);
         label->setWordWrap(true);
-        label->setMinimumWidth(72);
+        label->setStyleSheet(QStringLiteral("font-size: 9px;"));
         auto *detail = new QLabel(stage);
         detail->setAlignment(Qt::AlignCenter);
         detail->setWordWrap(true);
-        detail->setMinimumWidth(72);
+        detail->setStyleSheet(QStringLiteral("font-size: 9px;"));
         detail->setVisible(false);
         col->addWidget(number, 0, Qt::AlignHCenter);
-        // Wrapped captions span the full column: an aligned layout item
-        // sizes to sizeHint() and drops height-for-width, which clipped
-        // multi-line stage details.
         col->addWidget(label);
         col->addWidget(detail);
         col->addStretch(1);
@@ -376,48 +514,44 @@ QWidget *MainWindow::buildHostsSection()
         m_vultrStageLabels.append(label);
         m_vultrStageDetails.append(detail);
         stageRow->addWidget(stage, 1);
-        if (i + 1 < stageNames.size()) {
-            auto *connector = new QFrame(m_vultrProgressPanel);
-            connector->setFrameShape(QFrame::HLine);
-            connector->setObjectName(QStringLiteral("vultrStageConnector"));
-            connector->setMaximumWidth(22);
-            stageRow->addWidget(connector);
-        }
     }
     vultrCol->addWidget(m_vultrProgressPanel);
-    m_vultrLiveBadge = new QLabel(vultrCard);
+    m_vultrLiveBadge = new QLabel;
     m_vultrLiveBadge->setObjectName(QStringLiteral("vultrMirrorLiveBadge"));
     m_vultrLiveBadge->setAlignment(Qt::AlignCenter);
+    m_vultrLiveBadge->setWordWrap(true);
     m_vultrLiveBadge->setVisible(false);
     vultrCol->addWidget(m_vultrLiveBadge);
 
-    auto *vultrForm = new QFormLayout;
-    vultrForm->setLabelAlignment(Qt::AlignRight);
-    vultrForm->setSpacing(6);
     m_vultrApiKeyEdit = new QLineEdit;
     m_vultrApiKeyEdit->setEchoMode(QLineEdit::Password);
-    m_vultrApiKeyEdit->setPlaceholderText(
+    m_vultrApiKeyEdit->setPlaceholderText(QStringLiteral("Vultr API key"));
+    m_vultrApiKeyEdit->setAccessibleName(QStringLiteral("Vultr API key"));
+    m_vultrApiKeyEdit->setToolTip(
         QStringLiteral("Vultr API key — saved after the first successful run"));
     m_vultrApiKeyEdit->setText(
         forkmesh::control::vultrApiKeyFromVariables(ActionStore::variables()));
-    vultrForm->addRow(QStringLiteral("Vultr API key"), m_vultrApiKeyEdit);
     m_vultrNameEdit = new QLineEdit;
-    m_vultrNameEdit->setPlaceholderText(QString::fromUtf8(
+    m_vultrNameEdit->setPlaceholderText(QStringLiteral("Node name (optional)"));
+    m_vultrNameEdit->setAccessibleName(QStringLiteral("Node name"));
+    m_vultrNameEdit->setToolTip(QString::fromUtf8(
         "Optional \xE2\x80\x94 defaults to the next free mirrorN "
         "(mirror5, mirror6, \xE2\x80\xA6)"));
-    vultrForm->addRow(QStringLiteral("Node name"), m_vultrNameEdit);
-
+    auto *vultrForm = new QHBoxLayout;
+    vultrForm->setSpacing(4);
+    vultrForm->addWidget(m_vultrApiKeyEdit, 1);
+    vultrForm->addWidget(m_vultrNameEdit, 1);
     vultrCol->addLayout(vultrForm);
 
     m_vultrAgentClisCheck = new QCheckBox(QString::fromUtf8(
-        "Also install Claude Code + Codex and sign them in with this device's "
-        "access"));
+        "Also install Claude Code + Codex"));
     m_vultrAgentClisCheck->setObjectName(
         QStringLiteral("vultrInstallAgentClisCheck"));
     m_vultrAgentClisCheck->setChecked(
         QSettings().value(kVultrInstallAgentClisSetting, false).toBool());
     m_vultrAgentClisCheck->setToolTip(QString::fromUtf8(
-        "After ForkMesh is installed, the official Claude Code and Codex CLIs "
+        "Also install Claude Code + Codex and sign them in with this device's "
+        "access. After ForkMesh is installed, the official Claude Code and Codex CLIs "
         "are installed on the new mirror and this device's own logins "
         "(~/.claude/.credentials.json, ~/.codex/auth.json, and the agent API "
         "keys from Settings for a provider you have no CLI login for) are "
@@ -431,20 +565,23 @@ QWidget *MainWindow::buildHostsSection()
 
     auto *vultrRow = new QHBoxLayout;
     vultrRow->setContentsMargins(0, 0, 0, 0);
+    vultrRow->setSpacing(4);
     m_vultrCreateButton = new QPushButton(QStringLiteral("Create Vultr mirror"));
     m_vultrCreateButton->setObjectName("primaryButton");
     m_vultrCreateButton->setCursor(Qt::PointingHandCursor);
+    m_vultrCreateButton->setProperty("buttonSize", "sm");
     m_vultrCreateButton->setToolTip(QStringLiteral(
         "Deploy the cheapest Debian instance on your Vultr account, install "
         "ForkMesh v" FORKMESH_VERSION " on it and link it to your account. "
         "Progress streams into Live output below."));
-    setOcticon(m_vultrCreateButton, "rocket", 14);
+    setOcticon(m_vultrCreateButton, "rocket", 12);
     connect(m_vultrCreateButton, &QPushButton::clicked, this,
             &MainWindow::createVultrMirrorFromForm);
     vultrRow->addWidget(m_vultrCreateButton);
     m_vultrEndDeploymentButton = new QPushButton(QStringLiteral("End deployment"));
     m_vultrEndDeploymentButton->setObjectName("ghostButton");
     m_vultrEndDeploymentButton->setCursor(Qt::PointingHandCursor);
+    m_vultrEndDeploymentButton->setProperty("buttonSize", "sm");
     m_vultrEndDeploymentButton->setToolTip(QStringLiteral(
         "Stop ForkMesh from tracking the current deployment attempt so you can "
         "start a fresh one. Any Vultr server already created for it keeps "
@@ -454,6 +591,8 @@ QWidget *MainWindow::buildHostsSection()
     connect(m_vultrEndDeploymentButton, &QPushButton::clicked, this,
             &MainWindow::endVultrProvision);
     vultrRow->addWidget(m_vultrEndDeploymentButton);
+    vultrRow->addStretch(1);
+    vultrCol->addLayout(vultrRow);
     m_vultrStatus = new QLabel;
     m_vultrStatus->setObjectName("mutedLabel");
     m_vultrStatus->setWordWrap(true);
@@ -461,96 +600,78 @@ QWidget *MainWindow::buildHostsSection()
                                      .arg(currentThemeIsDark()
                                               ? QStringLiteral("#c9d1d9")
                                               : QStringLiteral("#57606a"))));
-    vultrRow->addWidget(m_vultrStatus, 1);
-    vultrCol->addLayout(vultrRow);
-    auto *logLabel = new QLabel(QStringLiteral("Live output"));
-    QFont llf = logLabel->font();
-    llf.setBold(true);
-    logLabel->setFont(llf);
+    vultrCol->addWidget(m_vultrStatus);
+    QWidget *vultrSection = hostsRailSection(
+        QStringLiteral("vultr"), QStringLiteral("Create a Vultr mirror"),
+        makeInlineHelpButton(
+            QStringLiteral("About Vultr mirrors"), QString::fromUtf8(
+                "One click deploys a brand-new cloud mirror on your Vultr account: "
+                "ForkMesh picks the cheapest available US IPv4 plan with at least 1 GB "
+                "RAM, preferring New Jersey/New York metro and then Atlanta (smaller "
+                "plans cannot hold the encrypted mirror's temporary working set; "
+                "Vultr's IPv6-only tiers are also unreachable for the mesh) running the "
+                "latest Debian, creates and manages the SSH key for it automatically, "
+                "boots the instance, installs ForkMesh over SSH and links the new node "
+                "to your account so it starts mirroring and syncing right away. The API "
+                "key (Vultr panel \xE2\x86\x92 Account \xE2\x86\x92 API) is saved once "
+                "Vultr accepts it \xE2\x80\x94 into this device's VULTR_API_KEY variable "
+                "(Settings \xE2\x86\x92 Variables / Secrets) and into "
+                "app/.env.production \xE2\x80\x94 so you never have to "
+                "enter it again; it travels only in the Authorization header of this "
+                "app's HTTPS calls to Vultr, never in a command line. When a "
+                "CLOUDFLARE_API_TOKEN device variable and a Cloudflare zone are "
+                "configured, the new node also gets a <node>.<zone> DNS record so it "
+                "joins the mesh under a stable name like your other mirrors. The "
+                "instance is billed by Vultr to your account until you destroy it there.")),
+        hostsRailBody(vultrCol), false);
+    bodyCol->addWidget(vultrSection);
 
-    m_hostInstallLog = new QPlainTextEdit;
-    m_hostInstallLog->setObjectName("actionLog");
-    m_hostInstallLog->setReadOnly(true);
-    m_hostInstallLog->setLineWrapMode(QPlainTextEdit::NoWrap);
-    m_hostInstallLog->setMinimumHeight(170);
-    applyLogFont(m_hostInstallLog);
-    m_hostInstallLog->setPlaceholderText(QString::fromUtf8(
-        "The SSH session and installer output will stream here\xE2\x80\xA6"));
-
-    m_hostDeployLabel = new QLabel(QStringLiteral("Live output — per host"));
-    QFont dlf = m_hostDeployLabel->font();
-    dlf.setBold(true);
-    m_hostDeployLabel->setFont(dlf);
-    m_hostDeployLabel->setVisible(false);
-
-    m_hostDeployPanel = new QWidget;
-    m_hostDeployGrid = new QGridLayout(m_hostDeployPanel);
-    m_hostDeployGrid->setContentsMargins(0, 0, 0, 0);
-    m_hostDeployGrid->setSpacing(10);
-    m_hostDeployPanel->setVisible(false);
-
-    m_hostsTable = new QTableWidget(0, 7);
-    installColumnHeaderMenu(m_hostsTable);
-    m_hostsTable->setObjectName("issueTable");
-    m_hostsTable->setHorizontalHeaderLabels(
-        {QStringLiteral("Node name"), QStringLiteral("Address"),
-         QStringLiteral("User"), QStringLiteral("Status"),
-         QStringLiteral("Claude"), QStringLiteral("Codex"), QString()});
-    m_hostsTable->verticalHeader()->setVisible(false);
-    m_hostsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_hostsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_hostsTable->setShowGrid(false);
-    m_hostsTable->horizontalHeader()->setStretchLastSection(false);
-    m_hostsTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
-    m_hostsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-    m_hostsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
-    m_hostsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
-    makeColumnsResizable(m_hostsTable); // spreadsheet-style draggable columns (#263)
-    connect(m_hostsTable, &QTableWidget::cellDoubleClicked, this,
-            &MainWindow::loadHostIntoForm);
-
-    bodyCol->addWidget(m_hostsTable);
-    auto *runnersTitleRow = new QHBoxLayout;
-    runnersTitleRow->setContentsMargins(0, 8, 0, 0);
-    auto *runnersLabel = new QLabel(QStringLiteral("Runners"));
-    runnersLabel->setObjectName(QStringLiteral("hostsRunnersLabel"));
-    runnersLabel->setFont(hlf);
-    runnersTitleRow->addWidget(runnersLabel);
-    runnersTitleRow->addWidget(makeInlineHelpButton(
-        QStringLiteral("About runners"),
-        QStringLiteral(
-            "Runners are the app's cloud agent machines (for example "
-            "fmnext-n1). They are not saved hosts and are never added to the "
-            "list above. Each row shows whether its Claude Code and Codex "
-            "CLIs are installed and signed in, as the runner last reported. "
-            "Sign in runs the provider's own login on the runner and relays "
-            "its terminal here; the credential stays on the runner. Listed "
-            "for app admins, and for the account that registered a personal "
-            "runner.")));
-    runnersTitleRow->addStretch(1);
-    auto *runnersRefresh = new QPushButton(QStringLiteral("Refresh runners"));
-    runnersRefresh->setObjectName(QStringLiteral("hostsRunnersRefreshButton"));
-    runnersRefresh->setCursor(Qt::PointingHandCursor);
-    setOcticon(runnersRefresh, QStringLiteral("sync"), 14);
-    connect(runnersRefresh, &QPushButton::clicked, this,
-            [this] { refreshRunners(); });
-    runnersTitleRow->addWidget(runnersRefresh);
-    bodyCol->addLayout(runnersTitleRow);
+    auto *runnersCol = new QVBoxLayout;
+    runnersCol->setSpacing(4);
     m_runnersStatus = new QLabel;
     m_runnersStatus->setObjectName(QStringLiteral("hostsRunnersStatus"));
     m_runnersStatus->setWordWrap(true);
     m_runnersStatus->setStyleSheet(Theme::remapSheet(
         QStringLiteral("color:#8b949e; font-size:11px;")));
-    bodyCol->addWidget(m_runnersStatus);
+    runnersCol->addWidget(m_runnersStatus);
     m_runnersTable = new QTableWidget(0, forkmesh::runners::kRunnerColumnCount);
     m_runnersTable->setObjectName(QStringLiteral("hostsRunnersTable"));
     forkmesh::runners::setUpRunnersTable(m_runnersTable);
     m_runnersTable->setMinimumHeight(90);
-    bodyCol->addWidget(m_runnersTable);
+    runnersCol->addWidget(m_runnersTable);
+    auto *runnersRefresh = new QPushButton(QStringLiteral("Refresh runners"));
+    runnersRefresh->setObjectName(QStringLiteral("hostsRunnersRefreshButton"));
+    runnersRefresh->setCursor(Qt::PointingHandCursor);
+    setOcticon(runnersRefresh, QStringLiteral("sync"), 14);
+    compactRailButton(runnersRefresh, QStringLiteral("Refresh runners"));
+    connect(runnersRefresh, &QPushButton::clicked, this,
+            [this] { refreshRunners(); });
+    QWidget *runnersSection = hostsRailSection(
+        QStringLiteral("runners"), QStringLiteral("Runners"),
+        makeInlineHelpButton(
+            QStringLiteral("About runners"),
+            QStringLiteral(
+                "Runners are the app's cloud agent machines (for example "
+                "fmnext-n1). They are not saved hosts; they show in the node "
+                "list as runners. Each row here shows whether its Claude Code and "
+                "Codex CLIs are installed and signed in, as the runner last "
+                "reported. Sign in runs the provider's own login on the runner and "
+                "relays its terminal here; the credential stays on the runner. "
+                "Listed for app admins, and for the account that registered a "
+                "personal runner.")),
+        hostsRailBody(runnersCol), false, {runnersRefresh});
+    runnersSection->findChild<QToolButton *>(QStringLiteral("hostsRailSectionToggle"))
+        ->setObjectName(QStringLiteral("hostsRunnersLabel"));
+    bodyCol->addWidget(runnersSection);
+
+    auto *fleetCol = new QVBoxLayout;
+    fleetCol->setSpacing(4);
     auto *fleetLabel = new QLabel(QStringLiteral(
-        "ForkMesh fleet (cores, runners and autoscaled nodes; managed by the "
-        "fleet tools, operators can add and remove cores)"));
+        "Cores, runners and autoscaled nodes, managed by the fleet tools; "
+        "operators can add and remove cores. Each is also a row in the node list."));
+    fleetLabel->setWordWrap(true);
     fleetLabel->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#8b949e; font-size:11px;")));
+    fleetCol->addWidget(fleetLabel);
     m_fleetNodesTable = new QTableWidget(0, 6);
     m_fleetNodesTable->setObjectName(QStringLiteral("fleetNodesTable"));
     m_fleetNodesTable->setHorizontalHeaderLabels(
@@ -560,54 +681,83 @@ QWidget *MainWindow::buildHostsSection()
     m_fleetNodesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_fleetNodesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_fleetNodesTable->setShowGrid(false);
+    m_fleetNodesTable->verticalHeader()->setDefaultSectionSize(26);
+    m_fleetNodesTable->setColumnHidden(2, true);
+    m_fleetNodesTable->setColumnHidden(3, true);
     m_fleetNodesTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Stretch);
     m_fleetNodesTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
-    auto *fleetTitleRow = new QHBoxLayout;
-    fleetTitleRow->setContentsMargins(0, 8, 0, 0);
-    fleetTitleRow->addWidget(fleetLabel, 1);
+    fleetCol->addWidget(m_fleetNodesTable);
     m_addCoreNodeButton = new QPushButton(QStringLiteral("Add core node"));
     m_addCoreNodeButton->setObjectName(QStringLiteral("hostsAddCoreNodeButton"));
     m_addCoreNodeButton->setCursor(Qt::PointingHandCursor);
+    m_addCoreNodeButton->setProperty("buttonSize", "sm");
     m_addCoreNodeButton->setToolTip(QStringLiteral(
         "Create a new ForkMesh core on Vultr and join it to the fleet: WireGuard "
         "mesh, rqlite, secrets, IDS, mirror daemon, the served release and every "
         "repository, then DNS once it is healthy. Operators only."));
-    setOcticon(m_addCoreNodeButton, QStringLiteral("plus"), 14);
+    setOcticon(m_addCoreNodeButton, QStringLiteral("plus"), 12);
     connect(m_addCoreNodeButton, &QPushButton::clicked, this,
             &MainWindow::openAddCoreNodeDialog);
-    fleetTitleRow->addWidget(m_addCoreNodeButton);
-    bodyCol->addLayout(fleetTitleRow);
-    bodyCol->addWidget(m_fleetNodesTable);
+    fleetCol->addWidget(m_addCoreNodeButton, 0, Qt::AlignLeft);
+    auto *autoscalePanel = new FleetAutoscalePanel;
+    autoscalePanel->setScriptPath(forkmesh::control::findNextAutoscaleScript(
+        forkmesh::sourceDir(), QCoreApplication::applicationDirPath()));
+    fleetCol->addWidget(autoscalePanel);
+    bodyCol->addWidget(hostsRailSection(QStringLiteral("fleet"),
+                                        QStringLiteral("ForkMesh fleet"), nullptr,
+                                        hostsRailBody(fleetCol), false));
     if (QFileInfo::exists(forkmesh::corelogs::fleetInstancesPath())) {
         ensureAddCoreNodeController();
         ensureRemoveCoreNodeController();
     }
     updateAddCoreNodeButton();
-    auto *provisioningRow = new QHBoxLayout;
-    provisioningRow->setObjectName(QStringLiteral("hostsProvisioningRow"));
-    provisioningRow->setContentsMargins(0, 0, 0, 0);
-    provisioningRow->setSpacing(10);
-    provisioningRow->addWidget(vultrCard, 1);
-    provisioningRow->addWidget(formCard, 1);
-    auto *autoscalePanel = new FleetAutoscalePanel(body);
-    autoscalePanel->setScriptPath(forkmesh::control::findNextAutoscaleScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR), QCoreApplication::applicationDirPath()));
-    bodyCol->addWidget(autoscalePanel);
-    bodyCol->addLayout(provisioningRow);
-    bodyCol->addWidget(logLabel);
-    bodyCol->addWidget(m_hostInstallLog);
-    bodyCol->addWidget(m_hostDeployLabel);
-    bodyCol->addWidget(m_hostDeployPanel);
+
+    auto *logCol = new QVBoxLayout;
+    logCol->setSpacing(4);
+    m_hostInstallLog = new QPlainTextEdit;
+    m_hostInstallLog->setObjectName("actionLog");
+    m_hostInstallLog->setReadOnly(true);
+    m_hostInstallLog->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_hostInstallLog->setMinimumHeight(120);
+    applyLogFont(m_hostInstallLog);
+    m_hostInstallLog->setPlaceholderText(QString::fromUtf8(
+        "The SSH session and installer output will stream here\xE2\x80\xA6"));
+    logCol->addWidget(m_hostInstallLog);
+    m_hostDeployLabel = new QLabel(QStringLiteral("Live output — per host"));
+    QFont dlf = m_hostDeployLabel->font();
+    dlf.setBold(true);
+    m_hostDeployLabel->setFont(dlf);
+    m_hostDeployLabel->setVisible(false);
+    logCol->addWidget(m_hostDeployLabel);
+    m_hostDeployPanel = new QWidget;
+    m_hostDeployGrid = new QGridLayout(m_hostDeployPanel);
+    m_hostDeployGrid->setContentsMargins(0, 0, 0, 0);
+    m_hostDeployGrid->setSpacing(6);
+    m_hostDeployPanel->setVisible(false);
+    logCol->addWidget(m_hostDeployPanel);
+    QWidget *logSection = hostsRailSection(QStringLiteral("output"),
+                                           QStringLiteral("Live output"), nullptr,
+                                           hostsRailBody(logCol), true);
+    bodyCol->addWidget(logSection);
+    bodyCol->addStretch(1);
+
+    for (QLineEdit *edit : {m_hostIpEdit, m_hostNameEdit})
+        connect(edit, &QLineEdit::textChanged, this,
+                [this, edit] { revealHostsRailSection(edit); });
+    for (QLineEdit *edit : {m_vultrApiKeyEdit, m_vultrNameEdit})
+        connect(edit, &QLineEdit::textChanged, this,
+                [this, edit] { revealHostsRailSection(edit); });
+    connect(m_hostInstallLog, &QPlainTextEdit::textChanged, this, [this] {
+        if (!m_hostInstallLog->isVisibleTo(m_hostsRail) &&
+            !m_hostInstallLog->document()->isEmpty())
+            expandHostsRailSections(m_hostInstallLog);
+    });
+
     if (!m_hostProbeTimer) {
         m_hostProbeTimer = new QTimer(this);
         m_hostProbeTimer->setInterval(30000);
-        // Each probe is one SSH session per saved host, and the only things it
-        // feeds are the Hosts table and its fleet summary. Off-screen that is
-        // a remote process launch per host for nobody, so a hidden page does
-        // not probe at all; refreshHostsTable() probes when the page is shown
-        // and the page's Refresh button probes on demand.
         connect(m_hostProbeTimer, &QTimer::timeout, this, [this] {
-            if (m_hostsTable && m_hostsTable->isVisible()) {
+            if (hostsRailOnScreen()) {
                 probeSavedHosts();
                 refreshFleetNodesTable();
                 refreshRunners();
@@ -617,11 +767,6 @@ QWidget *MainWindow::buildHostsSection()
     }
 
     scroll->setWidget(body);
-    m_hostsViewStack = new QStackedWidget;
-    m_hostsViewStack->setObjectName(QStringLiteral("hostsViewStack"));
-    m_hostsViewStack->addWidget(scroll);
-    m_hostsViewStack->addWidget(buildHostsLiveView());
-    outer->addWidget(m_hostsViewStack, 1);
 
     refreshHostsTable();
     refreshFleetNodesTable();
@@ -629,8 +774,42 @@ QWidget *MainWindow::buildHostsSection()
     QTimer::singleShot(0, this, [this] { refreshRunners(); });
     renderVultrProvisionProgress();
     restoreVultrProvision();
+    if (!m_vultrEndDeploymentButton->isHidden())
+        revealHostsRailSection(m_vultrCreateButton);
     QTimer::singleShot(0, this, &MainWindow::probeSavedHosts);
-    return page;
+    return scroll;
+}
+
+bool MainWindow::hostsRailOnScreen() const
+{
+    return m_hostsViewStack && m_hostsViewStack->isVisible();
+}
+
+void MainWindow::revealHostsRailSection(QWidget *child)
+{
+    if (!child)
+        return;
+    expandHostsRailSections(child);
+    QPointer<QWidget> target(child);
+    QTimer::singleShot(0, this, [this, target] {
+        auto *rail = qobject_cast<QScrollArea *>(m_hostsRail);
+        if (rail && target && target->isVisible())
+            rail->ensureWidgetVisible(target, 0, 24);
+    });
+}
+
+void MainWindow::selectSavedHostInRail(const QString &hostKey)
+{
+    if (!m_hostsTable || hostKey.isEmpty())
+        return;
+    for (int row = 0; row < m_hostsTable->rowCount(); ++row) {
+        const QTableWidgetItem *item = m_hostsTable->item(row, 0);
+        if (!item || item->data(Qt::UserRole).toString() != hostKey)
+            continue;
+        m_hostsTable->selectRow(row);
+        revealHostsRailSection(m_hostsTable);
+        return;
+    }
 }
 
 void MainWindow::refreshHostsTable()
@@ -642,7 +821,7 @@ void MainWindow::refreshHostsTable()
         return;
     // Coming back to the page after the slow off-screen cadence: bring the
     // reachability column current straight away rather than at the next tick.
-    if (m_hostsTable->isVisible() && m_hostProbeTimer &&
+    if (hostsRailOnScreen() && m_hostProbeTimer &&
         QDateTime::currentMSecsSinceEpoch() - m_hostProbeLastMs >
             m_hostProbeTimer->interval())
         QTimer::singleShot(0, this, [this] { probeSavedHosts(); });
@@ -702,10 +881,14 @@ void MainWindow::refreshHostsTable()
                 m_hostCodexAvailability.value(
                     key, QString::fromUtf8("Checking\xE2\x80\xA6"))));
 
+        nameItem->setToolTip(QStringLiteral("%1\n%2@%3\nClaude: %4\nCodex: %5")
+                                 .arg(name, user, ip,
+                                      m_hostClaudeAvailability.value(
+                                          key, QString::fromUtf8("Checking\xE2\x80\xA6")),
+                                      m_hostCodexAvailability.value(
+                                          key, QString::fromUtf8("Checking\xE2\x80\xA6"))));
         auto *cell = new QWidget;
-        auto *cellRow = new QHBoxLayout(cell);
-        cellRow->setContentsMargins(4, 2, 4, 2);
-        cellRow->setSpacing(6);
+        auto *cellRow = new QHBoxLayout;
         auto *updateBtn = new QPushButton(QStringLiteral("Update"));
         updateBtn->setCursor(Qt::PointingHandCursor);
         setOcticon(updateBtn, "sync", 12);
@@ -860,8 +1043,20 @@ void MainWindow::refreshHostsTable()
             });
         });
         cellRow->addWidget(signInBtn);
-        for (QPushButton *b : cell->findChildren<QPushButton *>())
-            b->setProperty("buttonSize", "sm");
+        auto *cellGrid = new QGridLayout(cell);
+        cellGrid->setContentsMargins(2, 3, 2, 3);
+        cellGrid->setHorizontalSpacing(2);
+        cellGrid->setVerticalSpacing(2);
+        int slot = 0;
+        while (QLayoutItem *item = cellRow->takeAt(0)) {
+            if (auto *b = qobject_cast<QPushButton *>(item->widget())) {
+                compactRailButton(b, b->text());
+                cellGrid->addWidget(b, slot / 5, slot % 5);
+                ++slot;
+            }
+            delete item;
+        }
+        delete cellRow;
         m_hostsTable->setCellWidget(i, 6, cell);
     }
     if (!hosts.isEmpty()) {
@@ -871,8 +1066,8 @@ void MainWindow::refreshHostsTable()
                 return;
             m_hostsTable->horizontalHeader()->setSectionResizeMode(
                 6, QHeaderView::Interactive);
-            m_hostsTable->setColumnWidth(6, cell->sizeHint().width() + 16);
-            const int rowHeight = cell->sizeHint().height() + 12;
+            m_hostsTable->setColumnWidth(6, cell->sizeHint().width() + 4);
+            const int rowHeight = cell->sizeHint().height() + 2;
             for (int r = 0; r < m_hostsTable->rowCount(); ++r)
                 m_hostsTable->setRowHeight(r, rowHeight);
         });
@@ -880,6 +1075,7 @@ void MainWindow::refreshHostsTable()
 
     updateNetworkCounts(-1, -1, hosts.size());
     updateHostsFleetSummary();
+    scheduleNodesTableRefresh();
 }
 
 void MainWindow::updateAddCoreNodeButton()
@@ -887,7 +1083,7 @@ void MainWindow::updateAddCoreNodeButton()
     if (!m_addCoreNodeButton)
         return;
     const QString script = forkmesh::control::findNextFleetScript(
-        QStringLiteral(FORKMESH_SOURCE_DIR), QCoreApplication::applicationDirPath());
+        forkmesh::sourceDir(), QCoreApplication::applicationDirPath());
     const bool operatorDesktop =
         !script.isEmpty() &&
         QFileInfo::exists(forkmesh::corelogs::fleetInstancesPath());
@@ -908,7 +1104,7 @@ void MainWindow::ensureAddCoreNodeController()
         return;
     m_addCoreNodeController = new forkmesh::fleet::AddCoreNodeController(
         forkmesh::control::findNextFleetScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath()),
         this);
     m_addCoreNodeController->setRunDirectory(
@@ -974,7 +1170,7 @@ void MainWindow::ensureRemoveCoreNodeController()
         return;
     m_removeCoreNodeController = new forkmesh::fleet::RemoveCoreNodeController(
         forkmesh::control::findNextFleetScript(
-            QStringLiteral(FORKMESH_SOURCE_DIR),
+            forkmesh::sourceDir(),
             QCoreApplication::applicationDirPath()),
         this);
     m_removeCoreNodeController->setRunDirectory(
@@ -1020,7 +1216,7 @@ void MainWindow::refreshFleetNodesTable()
         forkmesh::corelogs::loadFleetNodes();
     const bool canRemove =
         m_isAdmin && QFileInfo::exists(forkmesh::corelogs::fleetInstancesPath()) &&
-        !forkmesh::control::findNextFleetScript(QStringLiteral(FORKMESH_SOURCE_DIR),
+        !forkmesh::control::findNextFleetScript(forkmesh::sourceDir(),
                                                 QCoreApplication::applicationDirPath())
              .isEmpty();
     int coreCount = 0;
@@ -1138,6 +1334,10 @@ void MainWindow::refreshFleetNodesTable()
                 const QTableWidgetItem *item = m_fleetNodesTable->item(row, 0);
                 if (item && item->text() == name)
                     m_fleetNodesTable->setItem(row, 4, new QTableWidgetItem(status));
+            }
+            if (m_fleetNodeReadiness.value(name) != status) {
+                m_fleetNodeReadiness.insert(name, status);
+                scheduleNodesTableRefresh();
             }
         });
     }
@@ -1280,6 +1480,7 @@ void MainWindow::probeSavedHost(const QString &name, const QString &ip,
         m_hostClaudeAvailability.insert(key, claude);
         m_hostCodexAvailability.insert(key, codex);
         updateHostsFleetSummary();
+        scheduleNodesTableRefresh();
         const int row = rowForKey(key);
         if (row < 0 || !m_hostsTable)
             return;
@@ -3063,8 +3264,12 @@ void MainWindow::setHostsLiveViewActive(bool active)
     if (m_hostsLiveViewButton) {
         const QSignalBlocker block(m_hostsLiveViewButton);
         m_hostsLiveViewButton->setChecked(active);
-        m_hostsLiveViewButton->setText(active ? QStringLiteral("Host list")
-                                              : QStringLiteral("Live view"));
+        m_hostsLiveViewButton->setAccessibleName(active ? QStringLiteral("Node list")
+                                                        : QStringLiteral("Live view"));
+        m_hostsLiveViewButton->setToolTip(
+            active ? QStringLiteral("Node list: back to the node list")
+                   : QStringLiteral("Live view: every saved host side by side with a "
+                                    "live tail of its node log and its network activity"));
         setOcticon(m_hostsLiveViewButton,
                    active ? QStringLiteral("arrow-left")
                           : QStringLiteral("broadcast"),
@@ -3448,6 +3653,13 @@ void MainWindow::forwardHostLogLine(const QString &node, int source,
                   forkmesh::logSourceRelativePath(FORKMESH_LOG_SOURCE_FILE),
                   FORKMESH_LOG_SOURCE_LINE, forkmesh::LogSeverity::Automatic,
                   QStringLiteral("MIRROR"));
+}
+
+void MainWindow::stopHostLogFeeds()
+{
+    for (const QSharedPointer<HostLogFeed> &feed : std::as_const(m_hostLogFeeds))
+        feed->stop();
+    m_hostLogFeeds.clear();
 }
 
 void MainWindow::syncHostLogFeeds()

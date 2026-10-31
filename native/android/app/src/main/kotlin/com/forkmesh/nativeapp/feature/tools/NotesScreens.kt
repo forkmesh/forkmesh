@@ -57,6 +57,7 @@ import com.forkmesh.nativeapp.feature.account.openExternalUrl
 import com.forkmesh.nativeapp.feature.docs.DocsBlockView
 import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.format.relativeTime
 import com.forkmesh.nativeapp.net.WebSocketClient
 import com.forkmesh.nativeapp.notes.JsonObject
@@ -406,7 +407,7 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
             FmNavBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", onBack = { navigator.handleBack() }) {
                 if (!loading && error.isEmpty()) {
                     val label = if (canEdit) NotesLogic.saveStateLabel(saveState, saveDetail) else NotesLogic.saveStateLabel(NoteSaveState.ReadOnly)
-                    FmTextButton(onClick = { saveSoon() }, enabled = canEdit && dirty && !saving && conflict == null) {
+                    FmTextButton(onClick = { saveSoon() }, enabled = canEdit && dirty && !saving && conflict == null, busy = saving) {
                         Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp))
                     }
                 }
@@ -694,7 +695,7 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
 @Composable
 private fun PresenceLine(label: String, peers: List<NotePeer>) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
-        for (peer in peers.take(4)) FmAvatar(peer.name, 18.dp, textStyle = Fm.text.labelSmall)
+        for (peer in peers.take(4)) FmAvatar(peer.name, 18.dp, Modifier.openProfile(peer.name), textStyle = Fm.text.labelSmall)
         Text(label, style = Fm.text.bodySmall.copy(color = Fm.colors.textSecondary))
     }
 }
@@ -931,7 +932,7 @@ private fun NoteShareSheet(
                     FmTextButton(enabled = !busy && NotesLogic.shareName(name).isNotEmpty(), onClick = {
                         val chosen = NotesLogic.shareName(name)
                         send({ api.addShare(noteId, type, chosen, role) }, NotesLogic.sharedNotice(chosen), true)
-                    }) { Text("Share") }
+                    }, busy = busy) { Text("Share") }
                 }
                 if (suggestions.isNotEmpty()) {
                     Column(
@@ -1058,7 +1059,7 @@ private fun NoteLinksSheet(
                             } else {
                                 send({ api.addLink(noteId, link) }, "Linked ${link.label}", true)
                             }
-                        }) { Text("Link") }
+                        }, busy = busy) { Text("Link") }
                     }
                 }
             }

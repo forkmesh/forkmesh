@@ -154,6 +154,59 @@ static void testEvents()
                {QStringLiteral("pre_tokens"), 1000}})}});
     check(systemNotice(compact).startsWith(QLatin1String("Conversation compacted (auto")),
           "compaction is announced");
+    QJsonObject vcs = obj(
+        {{QStringLiteral("type"), QStringLiteral("system")},
+         {QStringLiteral("subtype"), QStringLiteral("vcs_state_changed")},
+         {QStringLiteral("kind"), QStringLiteral("push")}});
+    check(systemNotice(vcs) == QStringLiteral("Version control state changed: push"),
+          "a VCS state change announces its kind");
+    vcs.insert(QStringLiteral("kind"), QStringLiteral("new_kind"));
+    check(systemNotice(vcs) == QStringLiteral("Version control state changed: new_kind"),
+          "an unfamiliar VCS kind is still announced");
+    vcs.remove(QStringLiteral("kind"));
+    check(systemNotice(vcs) == QStringLiteral("Version control state changed"),
+          "a VCS state change without a kind still draws a notice");
+    QJsonObject intent = obj(
+        {{QStringLiteral("type"), QStringLiteral("system")},
+         {QStringLiteral("subtype"), QStringLiteral("dev_intent")},
+         {QStringLiteral("kind"), QStringLiteral("ios_app")},
+         {QStringLiteral("trigger"), QStringLiteral("ios_command")}});
+    check(systemNotice(intent) ==
+              QStringLiteral("Development intent: ios_app (trigger: ios_command)"),
+          "development intent announces the kind and trigger");
+    intent.insert(QStringLiteral("kind"), QStringLiteral("future_kind"));
+    intent.insert(QStringLiteral("trigger"), QStringLiteral("future_trigger"));
+    check(systemNotice(intent) ==
+              QStringLiteral("Development intent: future_kind (trigger: future_trigger)"),
+          "unfamiliar development intent details are preserved");
+    intent.remove(QStringLiteral("kind"));
+    check(systemNotice(intent) ==
+              QStringLiteral("Development intent (trigger: future_trigger)"),
+          "a development intent trigger is shown without a kind");
+    intent.remove(QStringLiteral("trigger"));
+    check(systemNotice(intent) == QStringLiteral("Development intent"),
+          "development intent without details still draws a notice");
+    intent.insert(QStringLiteral("kind"), QStringLiteral("ios_app"));
+    check(systemNotice(intent) == QStringLiteral("Development intent: ios_app"),
+          "development intent without a trigger still shows its kind");
+    QJsonObject command = obj(
+        {{QStringLiteral("type"), QStringLiteral("command_lifecycle")},
+         {QStringLiteral("state"), QStringLiteral("started")},
+         {QStringLiteral("command_uuid"),
+          QStringLiteral("93c66aa5-4c31-4a8f-a5ce-cba3efef2609")}});
+    check(commandLifecycleNotice(command) ==
+              QStringLiteral("Command started: 93c66aa5-4c31-4a8f-a5ce-cba3efef2609"),
+          "a command lifecycle notice shows its state and identity");
+    command.remove(QStringLiteral("command_uuid"));
+    for (const QString &state : {QStringLiteral("done"), QStringLiteral("failed"),
+                                 QStringLiteral("future_state")}) {
+        command.insert(QStringLiteral("state"), state);
+        check(commandLifecycleNotice(command) == QStringLiteral("Command %1").arg(state),
+              "command lifecycle notices preserve every state without an identity");
+    }
+    command.remove(QStringLiteral("state"));
+    check(commandLifecycleNotice(command) == QStringLiteral("Command lifecycle update"),
+          "command lifecycle without details still draws a notice");
     check(systemNotice(obj({{QStringLiteral("type"), QStringLiteral("system")},
                             {QStringLiteral("subtype"), QStringLiteral("hook_response")}}))
               .isEmpty(),
@@ -188,6 +241,51 @@ static void testTokens()
     check(counter.add(message(QStringLiteral("m1"), 25)) == 15, "growth on a message counts");
     check(counter.add(message(QStringLiteral("m2"), 4)) == 4, "a new message counts");
     check(counter.add(message(QString(), 3)) == 3, "messages without an id count as they come");
+
+    InputTokenCounter input;
+    const auto sent = [](const QString &id, int fresh, int created, int read) {
+        return obj({{QStringLiteral("id"), id},
+                    {QStringLiteral("usage"),
+                     obj({{QStringLiteral("input_tokens"), fresh},
+                          {QStringLiteral("cache_creation_input_tokens"), created},
+                          {QStringLiteral("cache_read_input_tokens"), read}})}});
+    };
+    check(input.add(sent(QStringLiteral("m1"), 5, 100, 900)) == 1005,
+          "input counts fresh, cache-written and cache-read tokens");
+    check(input.add(sent(QStringLiteral("m1"), 5, 100, 900)) == 0,
+          "a message's input is counted once across its streamed blocks");
+    check(input.add(sent(QStringLiteral("m2"), 3, 0, 1005)) == 1008, "each new request counts");
+    check(input.add(obj({{QStringLiteral("id"), QStringLiteral("m3")}})) == 0,
+          "a message without usage counts nothing");
+
+    LiveTokenMeter meter;
+    const auto stream = [](const QJsonObject &inner) {
+        return obj({{QStringLiteral("type"), QStringLiteral("stream_event")},
+                    {QStringLiteral("event"), inner}});
+    };
+    const auto textDelta = [&](const QString &text) {
+        return stream(obj({{QStringLiteral("type"), QStringLiteral("content_block_delta")},
+                           {QStringLiteral("delta"), obj({{QStringLiteral("type"), QStringLiteral("text_delta")},
+                                                          {QStringLiteral("text"), text}})}}));
+    };
+    TokenStep step = meter.add(textDelta(QStringLiteral("before any message")));
+    check(step.in == 0 && step.out == 0, "a delta before a message starts counts nothing");
+    step = meter.add(stream(obj({{QStringLiteral("type"), QStringLiteral("message_start")},
+                                 {QStringLiteral("message"), sent(QStringLiteral("s1"), 5, 0, 995)}})));
+    check(step.in == 1000 && step.out == 0, "a message start counts the request's input");
+    step = meter.add(textDelta(QStringLiteral("abcdefgh")));
+    check(step.in == 0 && step.out == 2, "streamed text counts about four characters a token");
+    step = meter.add(textDelta(QStringLiteral("ij")));
+    check(step.out == 1, "the guess rounds up as text arrives");
+    step = meter.add(stream(obj({{QStringLiteral("type"), QStringLiteral("message_delta")},
+                                 {QStringLiteral("usage"), obj({{QStringLiteral("output_tokens"), 9}})}})));
+    check(step.in == 0 && step.out == 6, "the closing usage tops the guess up to the real count");
+    step = meter.add(obj({{QStringLiteral("type"), QStringLiteral("assistant")},
+                          {QStringLiteral("message"), message(QStringLiteral("s1"), 9)}}));
+    check(step.in == 0 && step.out == 0, "the finished message is not counted again");
+    step = meter.add(obj({{QStringLiteral("type"), QStringLiteral("_codex_agent_delta")},
+                          {QStringLiteral("delta"), QStringLiteral("12345678")}}));
+    check(step.in == 0 && step.out == 2, "Codex deltas count their text as it streams");
 }
 
 static void testWindowResults()

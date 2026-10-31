@@ -51,6 +51,20 @@ links are untagged so they keep the post's first touch
 | 2 | Not run. No record of a test-account copy anywhere. |
 | 3 | Waits on gate 2. The X draft is unchanged and unposted. |
 
+On 2026-10-30 16:14 UTC `/mirror`, bare and with the X tag, still answers 200
+with the same title and **Remote clone URL**, so gate 1 holds. Gate 2 still has
+no record: it needs a new account on the served site, which an agent does not
+create. The operator's check, in order:
+
+1. Sign up a throwaway account and, under **Remote clone URL**, paste the
+   `https://` URL of a small public repository you own, then press
+   **Create & mirror**.
+2. On a machine with no ForkMesh credential (or `GIT_TERMINAL_PROMPT=0` in a
+   fresh shell with no credential helper), `git clone` the copy's public URL
+   and check it has the original's branches and tags.
+3. Add a dated row here with the account name left out, the repository URL and
+   the clone result. Then Herald may make the X draft the ready post.
+
 ## X draft
 
 `www/tests/test_mirror_page.py` reads the block below and checks it fits 280

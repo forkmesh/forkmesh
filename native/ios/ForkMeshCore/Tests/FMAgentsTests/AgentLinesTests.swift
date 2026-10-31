@@ -148,7 +148,8 @@ final class AgentLinesTests: XCTestCase {
             "id": .int(7), "repositoryOwner": .string("forkmesh"), "repositoryName": .string("forkmesh"),
             "status": .string("running"), "provider": .string("claude-code"), "model": .string("claude-opus-5-5"),
             "branchName": .string("agent/7"), "worktree": .bool(true), "priority": .int(12),
-            "backgroundTasks": .int(2),
+            "backgroundTasks": .int(2), "tokensIn": .int(48_000), "tokensOut": .int(900),
+            "promptTokens": .int(10), "completionTokens": .int(20),
             "diffStats": .object([
                 "files": .int(4), "ahead": .int(2), "behind": .int(0), "added": .int(30), "removed": .int(5),
             ]),
@@ -171,10 +172,132 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(line.linesRemoved, 5)
         XCTAssertEqual(line.priority, 12)
         XCTAssertEqual(line.backgroundTasks, 2)
+        XCTAssertEqual(line.tokensIn, 48_000)
+        XCTAssertEqual(line.tokensOut, 900)
         XCTAssertTrue(line.accessibilitySummary.contains("2 background tasks"))
         XCTAssertEqual(line.thumbnail?.cacheKey, "desktop:7:0123456789abcdef0123456789abcdef")
         let quiet = LocalAgentRow.fromJSON(["id": .int(8), "status": .string("done")])
         XCTAssertEqual(AgentLines.line(UnifiedAgentRow.fromDesktop(quiet, transport: .lan, desktop: "studio")).backgroundTasks, 0)
+        let older = LocalAgentRow.fromJSON([
+            "id": .int(9), "status": .string("done"), "promptTokens": .int(70), "completionTokens": .int(30),
+        ])
+        let olderLine = AgentLines.line(UnifiedAgentRow.fromDesktop(older, transport: .lan, desktop: "studio"))
+        XCTAssertEqual(olderLine.tokensIn, 70)
+        XCTAssertEqual(olderLine.tokensOut, 30)
+    }
+
+    func testTileBadgesFollowTheListIconsMostUrgentFirst() {
+        var line = AgentLines.line(UnifiedAgentRow.fromDesktop(
+            LocalAgentRow.fromJSON(["id": .int(1), "status": .string("running")]), transport: .lan, desktop: "studio"))
+        XCTAssertEqual(AgentLineBadge.of(line), [])
+        line.branch = "agent/1"
+        line.hasWorktree = true
+        line.ahead = 2
+        line.behind = 3
+        line.prNumber = 9
+        line.cloud = true
+        XCTAssertEqual(AgentLineBadge.of(line), [.behind, .worktree, .branch, .ahead, .pull, .cloud])
+        line.conflicted = true
+        line.runner = "box"
+        XCTAssertEqual(AgentLineBadge.of(line), [.conflicted, .worktree, .branch, .ahead, .pull, .runner])
+    }
+
+    func testTokenPaceRisesWithSpeedAndInputCountsOnATenfoldScale() {
+        XCTAssertEqual(AgentTokenPace.of(perSecond: 0, input: false), .idle)
+        XCTAssertEqual(AgentTokenPace.of(perSecond: 5, input: false), .slow)
+        XCTAssertEqual(AgentTokenPace.of(perSecond: 30, input: false), .steady)
+        XCTAssertEqual(AgentTokenPace.of(perSecond: 100, input: false), .fast)
+        XCTAssertEqual(AgentTokenPace.of(perSecond: 500, input: false), .blazing)
+        XCTAssertEqual(AgentTokenPace.of(perSecond: 100, input: true), .slow)
+        XCTAssertEqual(AgentTokenPace.of(perSecond: 5_000, input: true), .blazing)
+        XCTAssertEqual(AgentTokenPace.allCases.map(\.travel), AgentTokenPace.allCases.map(\.travel).sorted())
+    }
+
+    func testTokenSamplerMeasuresGrowthFadesWhenItStopsAndCapsLongGaps() {
+        var sampler = AgentTokenSampler()
+        sampler.sample(tokensIn: 1_000, tokensOut: 100, atMs: 10_000)
+        XCTAssertEqual(sampler.outPace, .idle)
+        sampler.sample(tokensIn: 3_000, tokensOut: 200, atMs: 12_000)
+        XCTAssertEqual(sampler.inPerSecond, 1_000, accuracy: 0.001)
+        XCTAssertEqual(sampler.outPerSecond, 50, accuracy: 0.001)
+        XCTAssertEqual(sampler.outPace, .steady)
+        sampler.sample(tokensIn: 3_000, tokensOut: 200, atMs: 13_000)
+        let faded = 50 * pow(0.5, 1 / AgentTokenSampler.halfLifeSeconds)
+        XCTAssertEqual(sampler.outPerSecond, faded, accuracy: 0.001)
+        XCTAssertEqual(sampler.outPace, .steady)
+        sampler.sample(tokensIn: 3_000, tokensOut: 1_000, atMs: 73_000)
+        XCTAssertEqual(sampler.outPerSecond, (faded + 100) / 2, accuracy: 0.001)
+        for second in 1...20 {
+            sampler.sample(tokensIn: 3_000, tokensOut: 1_000, atMs: 73_000 + second * 1_000)
+        }
+        XCTAssertEqual(sampler.outPerSecond, 0)
+        XCTAssertEqual(sampler.outPace, .idle)
+        XCTAssertEqual(sampler.outTravel, 0)
+        sampler.sample(tokensIn: 3_000, tokensOut: 1_200, atMs: 95_000)
+        XCTAssertEqual(sampler.outPerSecond, 100, accuracy: 0.001)
+        XCTAssertEqual(sampler.outTravel, 12, accuracy: 0.001)
+        sampler.sample(tokensIn: 0, tokensOut: 0, atMs: 96_000)
+        XCTAssertEqual(sampler.inPerSecond, 0)
+        XCTAssertEqual(sampler.outPerSecond, 0)
+        sampler.sample(tokensIn: 10, tokensOut: 400, atMs: 97_000)
+        XCTAssertGreaterThan(sampler.outPerSecond, 0)
+        sampler.settle()
+        XCTAssertEqual(sampler.outPerSecond, 0)
+    }
+
+    func testTokenSamplerHoldFadesTheRateWithoutNewTotals() {
+        var sampler = AgentTokenSampler()
+        sampler.hold(atMs: 1_000)
+        XCTAssertEqual(sampler.outPerSecond, 0)
+        sampler.sample(tokensIn: 0, tokensOut: 0, atMs: 1_000)
+        sampler.sample(tokensIn: 0, tokensOut: 100, atMs: 2_000)
+        sampler.hold(atMs: 3_500)
+        XCTAssertEqual(sampler.outPerSecond, 50, accuracy: 0.001)
+        sampler.sample(tokensIn: 0, tokensOut: 150, atMs: 4_500)
+        XCTAssertEqual(sampler.outPerSecond, 50, accuracy: 0.001)
+    }
+
+    func testTokenTravelGrowsWithTheRateUpToACap() {
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 0.5, input: false), 0)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 1, input: false), 4, accuracy: 0.001)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 100, input: false), 12, accuracy: 0.001)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 1_000, input: true), 12, accuracy: 0.001)
+        XCTAssertEqual(AgentTokenPace.travel(perSecond: 1e9, input: false), AgentTokenPace.maxTravel)
+    }
+
+    func testTokenSeriesChartsPerSecondGrowthAcrossSources() {
+        var series = AgentTokenSeries()
+        series.tick(["desktop": [1_000, 50]])
+        XCTAssertEqual(series.input, [0])
+        XCTAssertEqual(series.output, [0])
+        series.tick(["desktop": [4_000, 80], "row:r": [500, 5]])
+        XCTAssertEqual(series.input, [0, 3_000])
+        XCTAssertEqual(series.output, [0, 30])
+        series.tick(["desktop": [3_000, 90], "row:r": [600, 9]])
+        XCTAssertEqual(series.input.last, 100)
+        XCTAssertEqual(series.output.last, 14)
+        for _ in 0..<(AgentTokenSeries.seconds + 3) { series.tick(["desktop": [3_000, 90]]) }
+        XCTAssertEqual(series.output.count, AgentTokenSeries.seconds)
+        XCTAssertEqual(series.output.last, 0)
+    }
+
+    func testTokenSeriesTotalsPreferTheDesktopFeedOverItsRows() {
+        var desk = UnifiedAgentRow(
+            id: "desktop:7", badge: .desktopLan, title: "t", repoOwner: "o", repoName: "r", node: "studio",
+            status: "running", statusLabel: "Running", isActive: true, localId: 7)
+        desk.tokensIn = 10
+        desk.tokensOut = 2
+        var cloud = UnifiedAgentRow(
+            id: "run:1", badge: .node, title: "c", repoOwner: "o", repoName: "r", node: "runner",
+            status: "running", statusLabel: "Running", isActive: true)
+        cloud.tokensIn = 30
+        cloud.tokensOut = 4
+        XCTAssertEqual(
+            AgentTokenSeries.totals(desktop: [], rows: [desk, cloud]),
+            ["row:desktop:7": [10, 2], "row:run:1": [30, 4]])
+        XCTAssertEqual(
+            AgentTokenSeries.totals(desktop: [900, 60], rows: [desk, cloud]),
+            ["desktop": [900, 60], "row:run:1": [30, 4]])
     }
 
     func testEagleDialogIsTheLatestFinishedProseTheAgentSaid() {
@@ -612,5 +735,31 @@ final class AgentLinesTests: XCTestCase {
         again.save(store)
         XCTAssertFalse(AgentFolderFolds.load(store).isCollapsed(open))
         XCTAssertEqual(store.stringList(forKey: AgentFolderFolds.collapsedKey), [])
+    }
+
+    func testAnAgentOnAnotherDesktopKeepsItsOwnKeysAndNeverMatchesThisDesktopsSessions() {
+        let repo = Repository(owner: "forkmesh", name: "app")
+        let here = UnifiedAgentRow(
+            id: "desktop:7", badge: .desktopLan, title: "here", repoOwner: "forkmesh", repoName: "app", node: "studio",
+            status: "done", statusLabel: "Done", isActive: false, localId: 7)
+        var there = here
+        there.id = "KEY:desktop:7"
+        there.title = "there"
+        there.node = "laptop"
+        there.desktopKey = "KEY"
+        there.elsewhere = true
+
+        let lines = AgentLines.merge(entries: [.desktop(repo, AgentSession(id: 7, status: "done"))], rows: [here, there])
+        XCTAssertEqual(lines.count, 2, "the pushed session matches this desktop's row only; the other desktop's is its own line")
+        let other = lines.first { if case .control(let row) = $0.source { return row.elsewhere } else { return false } }
+        XCTAssertEqual(other?.title, "there")
+        XCTAssertEqual(other.flatMap(AgentLines.deletionKey), "KEY:desktop:7")
+        XCTAssertEqual(AgentLines.deletionKey(AgentLines.line(here)), "desktop:7")
+        XCTAssertEqual(other?.desktop, "laptop")
+        XCTAssertEqual(other?.desktopSessionId, 0, "read marks are not sent to the wrong desktop")
+        XCTAssertNotEqual(AgentLines.readKey(there), AgentLines.readKey(here))
+        XCTAssertNil(other.flatMap(AgentLines.folderKey))
+        let host = other.flatMap { line in AgentLines.chips(line, nowMs: 0).first { $0.slot == .host }?.word }
+        XCTAssertEqual(host, "laptop")
     }
 }

@@ -112,7 +112,7 @@ object AgentsList {
         cover: com.forkmesh.nativeapp.control.DesktopListCover?,
     ): List<AgentRepoGroup> {
         if (cover == null) return groups
-        val live = rows.filter { it.isDesktop && !it.outside }.map { "${it.repoName.lowercase()}#${it.localId}" }.toSet()
+        val live = rows.filter { it.isDesktop && !it.outside && !it.elsewhere }.map { "${it.repoName.lowercase()}#${it.localId}" }.toSet()
         return visible(
             groups.map { g ->
                 g.copy(sessions = g.sessions.filter { "${g.repo.name.lowercase()}#${it.id}" in live || !cover.covers(it.createdAtMs) })

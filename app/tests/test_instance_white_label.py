@@ -121,7 +121,8 @@ def test_branded_email_names_the_instance_and_credits_forkmesh():
 
 def test_forkmesh_com_keeps_every_feature():
     plain = env()
-    assert instance_features.enabled_ids(plain) == set(instance_features.IDS)
+    assert instance_features.enabled_ids(plain) == set(instance_features.IDS) - \
+        instance_features.OPT_IN
     for path in ("/api/hackathon", "/world", "/api/world/state", "/about"):
         assert instance_features.blocked(plain, path) == ""
 
@@ -433,14 +434,40 @@ def test_the_changelog_link_shows_on_an_instance_and_the_page_is_bundled():
     assert 'href="/changelog"' not in instance_features.chrome_css(branded)
     off = [item for item in instance_features.describe(branded) if not item["enabled"]]
     assert "/changelog" not in {path for item in off for path in item["paths"]}
-    assert "changelog.html" in build_site_assets.BACKEND_ASSETS
+    assert {"changelog.html", "changelog.js"} <= set(build_site_assets.BACKEND_ASSETS)
     assert static_routes.external_site_delivery(
         "/changelog", "https://code.example.com", "https://code.example.com",
         ()) == ("local", "")
     page = (ROOT.parent / "www" / "public" / "changelog.html").read_text(encoding="utf-8")
     assert not re.search(r"""(?:src|href|fetch\()\s*=?\s*["']https?://(?:[a-z0-9-]+\.)*forkmesh\.com""",
                          page)
-    assert "changelog.json" not in page
-    entries = json.loads((ROOT.parent / "changelog" / "changelog.json").read_text(
-        encoding="utf-8"))["entries"]
-    assert entries and entries[0]["title"] in page
+    assert 'data-source="/changelog.json"' in page
+    assert '<script src="/changelog.js?v=${version}" defer></script>' in page
+
+
+def test_brand_tool_drops_forkmesh_property_links_from_the_chrome():
+    page = (ROOT / "public" / "dashboard" / "repo.html").read_text(encoding="utf-8")
+    assert "https://forkmesh.com/market" in apply_instance_brand.brand_page(page, "example", powered_by=False)
+    branded = apply_instance_brand.brand_page(page, "example", powered_by=False, white_label=True)
+    chrome = "".join(block.group(0) for block in
+                     apply_instance_brand.CHROME_BLOCK_RE.finditer(branded))
+    for gone in ("https://forkmesh.com/market", "https://forkmesh.com/#pricing",
+                 "https://forkmesh.com/#membership", "https://world.forkmesh.com/",
+                 'href="https://forkmesh.com/"', "data-forkmesh-membership"):
+        assert gone not in chrome, gone
+    assert '<a href="/"><span class="dashboard-nav-icon"><i data-lucide="house">' in chrome
+    assert 'href="/world" data-plugin-entry="world"' in chrome
+    assert 'href="/lite" data-lite-link' in chrome
+    assert apply_instance_brand.brand_page(branded, "example", powered_by=False) == branded
+    main = '<main><a href="https://forkmesh.com/market">user text</a></main>'
+    assert main in apply_instance_brand.brand_page(main, "example")
+
+
+def test_instance_stylesheet_hides_forkmesh_links_the_dashboard_draws_later():
+    assert "forkmesh.com/" not in instance_features.chrome_css(env(INSTANCE_NAME="example"))
+    css = instance_features.chrome_css(env(INSTANCE_NAME="example", INSTANCE_WHITE_LABEL="1"))
+    rule = css.split("\n")[1]
+    assert ':is(header, nav, aside, footer) a[href^="https://forkmesh.com/"]' \
+        ':not([href="https://forkmesh.com/"]):not([data-instance-powered-by] a)' in rule
+    assert "a[data-forkmesh-membership]" in rule and "patreon.com" in rule
+    assert "forkmesh.com/" not in instance_features.chrome_css(env())

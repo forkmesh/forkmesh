@@ -1,5 +1,7 @@
 #include "AgentWindows.h"
 
+#include "WebEngine.h"
+
 #include <QApplication>
 #include <QBuffer>
 #include <QCheckBox>
@@ -31,18 +33,6 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#ifdef FORKMESH_HAVE_WEBENGINE
-#include <QWebEngineDownloadRequest>
-#include <QWebEnginePage>
-#include <QWebEngineProfile>
-#include <QWebEngineHistory>
-#include <QWebEngineScript>
-#include <QWebEngineScriptCollection>
-#include <QWebEngineSettings>
-#include <QWebEngineUrlRequestInfo>
-#include <QWebEngineUrlRequestInterceptor>
-#include <QWebEngineView>
-#endif
 
 #include <functional>
 #include <memory>
@@ -99,105 +89,6 @@ public:
 private:
     QString m_workdir;
 };
-
-#ifdef FORKMESH_HAVE_WEBENGINE
-class BrowserPage : public QWebEnginePage
-{
-public:
-    using QWebEnginePage::QWebEnginePage;
-
-    QJsonArray consoleMessages() const
-    {
-        QJsonArray out;
-        for (const QJsonObject &message : m_console)
-            out.append(message);
-        return out;
-    }
-
-protected:
-    void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &message,
-                                  int lineNumber, const QString &sourceID) override
-    {
-        static const char *const names[] = {"info", "warning", "error"};
-        const int index = qBound(0, int(level), 2);
-        m_console.append(QJsonObject{
-            {QStringLiteral("level"), QString::fromLatin1(names[index])},
-            {QStringLiteral("message"), message.left(2000)},
-            {QStringLiteral("source"), sourceID.left(500)},
-            {QStringLiteral("line"), lineNumber},
-        });
-        while (m_console.size() > kMaxConsoleMessages)
-            m_console.removeFirst();
-    }
-
-    bool acceptNavigationRequest(const QUrl &url, NavigationType, bool isMainFrame) override
-    {
-        if (isMainFrame)
-            return browserUrlAllowed(url) || url.toString() == QLatin1String("about:blank");
-        return url.scheme().toLower() != QLatin1String("file");
-    }
-
-    QWebEnginePage *createWindow(WebWindowType) override
-    {
-        return this;
-    }
-
-private:
-    QList<QJsonObject> m_console;
-};
-
-class WidgetInterceptor : public QWebEngineUrlRequestInterceptor
-{
-public:
-    using QWebEngineUrlRequestInterceptor::QWebEngineUrlRequestInterceptor;
-
-    void interceptRequest(QWebEngineUrlRequestInfo &info) override
-    {
-        if (!widgetRequestAllowed(info.requestUrl()))
-            info.block(true);
-    }
-};
-
-class WidgetPage : public QWebEnginePage
-{
-public:
-    WidgetPage(QWebEngineProfile *profile, QObject *parent,
-               std::function<void(const QJsonValue &)> onEvent,
-               std::function<void(const QUrl &)> onLink)
-        : QWebEnginePage(profile, parent), m_onEvent(std::move(onEvent)),
-          m_onLink(std::move(onLink))
-    {
-    }
-
-protected:
-    void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel, const QString &message,
-                                  int, const QString &) override
-    {
-        QJsonValue event;
-        if (m_onEvent && widgetEventFromConsole(message, &event))
-            m_onEvent(event);
-    }
-
-    bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override
-    {
-        if (widgetRequestAllowed(url) && (type != NavigationTypeLinkClicked || url.hasFragment()))
-            return true;
-        if (isMainFrame && type == NavigationTypeLinkClicked && m_onLink &&
-            (browserUrlAllowed(url) || url.scheme().toLower() == QLatin1String("mailto")))
-            m_onLink(url);
-        return false;
-    }
-
-    QWebEnginePage *createWindow(WebWindowType) override
-    {
-        return nullptr;
-    }
-
-private:
-    std::function<void(const QJsonValue &)> m_onEvent;
-    std::function<void(const QUrl &)> m_onLink;
-};
-#endif
 
 class Frame : public QWidget
 {
@@ -860,11 +751,7 @@ QUrl browserUrlFromInput(const QString &text)
 
 bool embeddedBrowserAvailable()
 {
-#ifdef FORKMESH_HAVE_WEBENGINE
-    return true;
-#else
-    return false;
-#endif
+    return web::available();
 }
 
 QString actionFromLink(const QUrl &url)
@@ -1154,14 +1041,19 @@ void Registry::capture(int sessionId, const QJsonObject &params,
             QStringLiteral("The user turned off sharing this page with the agent.")));
         return;
     }
-#ifdef FORKMESH_HAVE_WEBENGINE
-    auto *view = it->widget->findChild<QWebEngineView *>(QStringLiteral("agentWindowWeb"));
+    if (!embeddedBrowserAvailable()) {
+        reply(agentintake::errorReply(QStringLiteral("no_browser"),
+                                      QStringLiteral("This desktop has no built-in browser.")));
+        return;
+    }
+    QWidget *viewWidget = it->widget->findChild<QWidget *>(QStringLiteral("agentWindowWeb"));
+    web::View *view = web::viewOf(viewWidget);
     if (!view) {
         reply(agentintake::errorReply(QStringLiteral("closed"),
                                       QStringLiteral("The browser window has no page.")));
         return;
     }
-    QPointer<QWebEngineView> guard(view);
+    QPointer<QWidget> guard(viewWidget);
     const QString windowId = request.windowId;
     auto done = std::make_shared<bool>(false);
     auto finish = [done, reply](const QJsonObject &answer) {
@@ -1174,10 +1066,11 @@ void Registry::capture(int sessionId, const QJsonObject &params,
         finish(agentintake::errorReply(QStringLiteral("capture_timeout"),
                                        QStringLiteral("The page did not answer in time.")));
     });
-    view->page()->runJavaScript(
-        pageCaptureScript(request), QWebEngineScript::ApplicationWorld,
+    view->runJavaScript(
+        pageCaptureScript(request), web::World::Application,
         [this, guard, windowId, request, finish](const QVariant &value) {
-            if (!guard) {
+            web::View *live = web::viewOf(guard.data());
+            if (!live) {
                 finish(agentintake::errorReply(QStringLiteral("closed"),
                                                QStringLiteral("The user closed the window.")));
                 return;
@@ -1185,10 +1078,9 @@ void Registry::capture(int sessionId, const QJsonObject &params,
             const QJsonObject page =
                 QJsonDocument::fromJson(value.toString().toUtf8()).object();
             QJsonObject answer = pageCaptureReply(windowId, page, request);
-            answer.insert(QStringLiteral("url"), guard->url().toString());
-            answer.insert(QStringLiteral("title"), guard->title());
-            if (auto *browserPage = dynamic_cast<BrowserPage *>(guard->page()))
-                answer.insert(QStringLiteral("console"), browserPage->consoleMessages());
+            answer.insert(QStringLiteral("url"), live->url().toString());
+            answer.insert(QStringLiteral("title"), live->title());
+            answer.insert(QStringLiteral("console"), live->consoleMessages());
             if (request.screenshot) {
                 QImage shot = guard->grab().toImage();
                 if (shot.width() > kMaxShotWidth)
@@ -1212,10 +1104,6 @@ void Registry::capture(int sessionId, const QJsonObject &params,
             }
             finish(answer);
         });
-#else
-    reply(agentintake::errorReply(QStringLiteral("no_browser"),
-                                  QStringLiteral("This desktop has no built-in browser.")));
-#endif
 }
 
 void Registry::setKind(const QString &windowId, const QString &kind)
@@ -1276,11 +1164,9 @@ QJsonObject Registry::widget(int sessionId, const QString &agentLabel,
                 QStringLiteral("closed"),
                 QStringLiteral("The user closed widget %1.").arg(request.windowId));
         it->widgetData = request.data;
-#ifdef FORKMESH_HAVE_WEBENGINE
-        if (auto *view = it->widget->findChild<QWebEngineView *>(QStringLiteral("agentWindowWeb")))
-            view->page()->runJavaScript(widgetDataScript(request.data),
-                                        QWebEngineScript::MainWorld);
-#endif
+        if (web::View *view = web::viewOf(
+                it->widget->findChild<QWidget *>(QStringLiteral("agentWindowWeb"))))
+            view->runJavaScript(widgetDataScript(request.data), web::World::Main, {});
         if (!request.title.isEmpty()) {
             it->request.title = request.title;
             it->widget->setWindowTitle(windowTitle(it->agentLabel, request.title));
@@ -1364,14 +1250,19 @@ void Registry::act(int sessionId, const QJsonObject &params,
             QStringLiteral("The user turned off sharing this page with the agent.")));
         return;
     }
-#ifdef FORKMESH_HAVE_WEBENGINE
-    auto *view = it->widget->findChild<QWebEngineView *>(QStringLiteral("agentWindowWeb"));
+    if (!embeddedBrowserAvailable()) {
+        reply(agentintake::errorReply(QStringLiteral("no_browser"),
+                                      QStringLiteral("This desktop has no built-in browser.")));
+        return;
+    }
+    QWidget *viewWidget = it->widget->findChild<QWidget *>(QStringLiteral("agentWindowWeb"));
+    web::View *view = web::viewOf(viewWidget);
     if (!view) {
         reply(agentintake::errorReply(QStringLiteral("closed"),
                                       QStringLiteral("The browser window has no page.")));
         return;
     }
-    QPointer<QWebEngineView> guard(view);
+    QPointer<QWidget> guard(viewWidget);
     const QString windowId = request.windowId;
     auto done = std::make_shared<bool>(false);
     auto waiter = std::make_shared<QPointer<QObject>>(new QObject(m_context.get()));
@@ -1386,9 +1277,9 @@ void Registry::act(int sessionId, const QJsonObject &params,
             answer.insert(QStringLiteral("kind"), QStringLiteral("action"));
             answer.insert(QStringLiteral("action"), request.action);
             answer.insert(QStringLiteral("open"), !guard.isNull());
-            if (guard) {
-                answer.insert(QStringLiteral("url"), guard->url().toString());
-                answer.insert(QStringLiteral("title"), guard->title());
+            if (web::View *live = web::viewOf(guard.data())) {
+                answer.insert(QStringLiteral("url"), live->url().toString());
+                answer.insert(QStringLiteral("title"), live->title());
             }
             noteAgentUse(windowId, actionSummary(request));
         }
@@ -1407,18 +1298,16 @@ void Registry::act(int sessionId, const QJsonObject &params,
                             request.action == QLatin1String("forward") ||
                             request.action == QLatin1String("reload");
     if (navigation) {
-        if ((request.action == QLatin1String("back") && !view->history()->canGoBack()) ||
-            (request.action == QLatin1String("forward") && !view->history()->canGoForward())) {
+        if ((request.action == QLatin1String("back") && !view->canGoBack()) ||
+            (request.action == QLatin1String("forward") && !view->canGoForward())) {
             finish(agentintake::errorReply(QStringLiteral("no_history"),
                                            QStringLiteral("There is no page to go %1 to.")
                                                .arg(request.action)));
             return;
         }
-        QObject::connect(view, &QWebEngineView::loadFinished, waiter->data(),
-                         [finish](bool ok) {
-                             finish(QJsonObject{{QStringLiteral("ok"), true},
-                                                {QStringLiteral("loaded"), ok}});
-                         });
+        view->onLoadFinished(waiter->data(), [finish](bool ok) {
+            finish(QJsonObject{{QStringLiteral("ok"), true}, {QStringLiteral("loaded"), ok}});
+        });
         QTimer::singleShot(wait, waiter->data(), [finish] {
             finish(QJsonObject{{QStringLiteral("ok"), true}, {QStringLiteral("loaded"), false}});
         });
@@ -1442,13 +1331,14 @@ void Registry::act(int sessionId, const QJsonObject &params,
             const auto poll = self.lock();
             if (*done || !poll)
                 return;
-            if (!guard) {
+            web::View *live = web::viewOf(guard.data());
+            if (!live) {
                 finish(agentintake::errorReply(QStringLiteral("closed"),
                                                QStringLiteral("The user closed the window.")));
                 return;
             }
-            guard->page()->runJavaScript(
-                script, QWebEngineScript::ApplicationWorld,
+            live->runJavaScript(
+                script, web::World::Application,
                 [finish, done, poll, started, wait, waiter](const QVariant &value) {
                     if (*done)
                         return;
@@ -1470,8 +1360,8 @@ void Registry::act(int sessionId, const QJsonObject &params,
         (*poll)();
         return;
     }
-    view->page()->runJavaScript(
-        script, QWebEngineScript::ApplicationWorld,
+    view->runJavaScript(
+        script, web::World::Application,
         [finish, waiter](const QVariant &value) {
             QJsonObject result = QJsonDocument::fromJson(value.toString().toUtf8()).object();
             if (result.isEmpty())
@@ -1496,10 +1386,6 @@ void Registry::act(int sessionId, const QJsonObject &params,
             QTimer::singleShot(kActionSettleMs, waiter->data(),
                                [finish, result] { finish(result); });
         });
-#else
-    reply(agentintake::errorReply(QStringLiteral("no_browser"),
-                                  QStringLiteral("This desktop has no built-in browser.")));
-#endif
 }
 
 void Registry::setPageState(const QString &windowId, const QUrl &url, const QString &title)
@@ -1669,24 +1555,28 @@ QWidget *Registry::frameFor(const QString &windowId, const WindowState &state)
 
 QObject *Registry::browserProfile()
 {
-#ifdef FORKMESH_HAVE_WEBENGINE
-    if (!m_browserProfile) {
-        auto *profile = new QWebEngineProfile;
-        profile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
-        profile->setPersistentCookiesPolicy(QWebEngineProfile::NoPersistentCookies);
-        QObject::connect(profile, &QWebEngineProfile::downloadRequested, profile,
-                         [](QWebEngineDownloadRequest *download) { download->cancel(); });
-        m_browserProfile = profile;
-    }
-#endif
+    if (!m_browserProfile)
+        m_browserProfile = web::createProfile(web::ProfileOptions());
     return m_browserProfile;
 }
 
 QWidget *Registry::buildBrowser(const QString &windowId, const WindowState &state)
 {
     QWidget *window = frameFor(windowId, state);
-#ifdef FORKMESH_HAVE_WEBENGINE
+    web::PageOptions options;
+    options.acceptNavigation = [](const QUrl &url, bool, bool isMainFrame) {
+        if (isMainFrame)
+            return browserUrlAllowed(url) || url.toString() == QLatin1String("about:blank");
+        return url.scheme().toLower() != QLatin1String("file");
+    };
+    options.newWindowsInPlace = true;
+    options.consoleLimit = kMaxConsoleMessages;
     auto *page = new QWidget(window);
+    web::View *view = web::createView(browserProfile(), options, page);
+    if (!view) {
+        delete page;
+        return window;
+    }
     page->setObjectName(QStringLiteral("agentWindowPage"));
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(6, 6, 6, 6);
@@ -1717,10 +1607,9 @@ QWidget *Registry::buildBrowser(const QString &windowId, const WindowState &stat
     bar->addWidget(external);
     layout->addLayout(bar);
 
-    auto *view = new QWebEngineView(page);
-    view->setObjectName(QStringLiteral("agentWindowWeb"));
-    view->setPage(new BrowserPage(static_cast<QWebEngineProfile *>(browserProfile()), view));
-    layout->addWidget(view, 1);
+    QWidget *viewWidget = view->widget();
+    viewWidget->setObjectName(QStringLiteral("agentWindowWeb"));
+    layout->addWidget(viewWidget, 1);
 
     auto *from = new QLabel(state.agentLabel.isEmpty()
                                 ? QString()
@@ -1748,89 +1637,80 @@ QWidget *Registry::buildBrowser(const QString &windowId, const WindowState &stat
     QObject::connect(share, &QCheckBox::toggled, m_context.get(),
                      [this, windowId](bool on) { setShared(windowId, on); });
 
-    QObject::connect(back, &QToolButton::clicked, view, &QWebEngineView::back);
-    QObject::connect(forward, &QToolButton::clicked, view, &QWebEngineView::forward);
-    QObject::connect(reload, &QToolButton::clicked, view, &QWebEngineView::reload);
-    QObject::connect(address, &QLineEdit::returnPressed, view, [view, address] {
+    QObject::connect(back, &QToolButton::clicked, viewWidget, [view] { view->back(); });
+    QObject::connect(forward, &QToolButton::clicked, viewWidget, [view] { view->forward(); });
+    QObject::connect(reload, &QToolButton::clicked, viewWidget, [view] { view->reload(); });
+    QObject::connect(address, &QLineEdit::returnPressed, viewWidget, [view, address] {
         const QUrl url = browserUrlFromInput(address->text());
         if (url.isValid())
             view->load(url);
     });
-    QObject::connect(external, &QPushButton::clicked, view, [this, view] {
+    QObject::connect(external, &QPushButton::clicked, viewWidget, [this, view] {
         if (m_externalOpener && browserUrlAllowed(view->url()))
             m_externalOpener(view->url());
     });
-    QObject::connect(view, &QWebEngineView::urlChanged, m_context.get(),
-                     [this, windowId, address](const QUrl &url) {
-                         address->setText(url.toString());
-                         setPageState(windowId, url, QString());
-                     });
-    QObject::connect(view, &QWebEngineView::titleChanged, m_context.get(),
-                     [this, windowId](const QString &title) {
-                         setPageState(windowId, QUrl(), title);
-                     });
+    view->onUrlChanged(m_context.get(), [this, windowId, address](const QUrl &url) {
+        address->setText(url.toString());
+        setPageState(windowId, url, QString());
+    });
+    view->onTitleChanged(m_context.get(), [this, windowId](const QString &title) {
+        setPageState(windowId, QUrl(), title);
+    });
     view->load(state.url);
     window->layout()->addWidget(page);
-#endif
     return window;
 }
 
 QObject *Registry::widgetProfile()
 {
-#ifdef FORKMESH_HAVE_WEBENGINE
     if (!m_widgetProfile) {
-        auto *profile = new QWebEngineProfile;
-        profile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
-        profile->setPersistentCookiesPolicy(QWebEngineProfile::NoPersistentCookies);
-        profile->setUrlRequestInterceptor(new WidgetInterceptor(profile));
-        QObject::connect(profile, &QWebEngineProfile::downloadRequested, profile,
-                         [](QWebEngineDownloadRequest *download) { download->cancel(); });
-        m_widgetProfile = profile;
+        web::ProfileOptions options;
+        options.requestAllowed = [](const QUrl &url) { return widgetRequestAllowed(url); };
+        m_widgetProfile = web::createProfile(options);
     }
-#endif
     return m_widgetProfile;
 }
 
 QWidget *Registry::buildWidgetWindow(const QString &windowId, const WindowState &state)
 {
     QWidget *window = frameFor(windowId, state);
-#ifdef FORKMESH_HAVE_WEBENGINE
+    QPointer<QObject> context = m_context.get();
+    web::PageOptions options;
+    options.onConsole = [this, context, windowId](const QString &message) {
+        QJsonValue event;
+        if (context && widgetEventFromConsole(message, &event))
+            addWidgetEvent(windowId, event);
+    };
+    options.acceptNavigation = [this, context](const QUrl &url, bool linkClicked,
+                                               bool isMainFrame) {
+        if (widgetRequestAllowed(url) && (!linkClicked || url.hasFragment()))
+            return true;
+        const bool mailto = url.scheme().toLower() == QLatin1String("mailto");
+        if (isMainFrame && linkClicked && context && (browserUrlAllowed(url) || mailto)) {
+            if (mailto)
+                QDesktopServices::openUrl(url);
+            else if (m_externalOpener)
+                m_externalOpener(url);
+        }
+        return false;
+    };
+    options.restricted = true;
+    options.documentScriptName = QStringLiteral("forkmesh-widget-bridge");
+    options.documentScript = widgetBridgeScript(state.widgetData);
     auto *page = new QWidget(window);
+    web::View *view = web::createView(widgetProfile(), options, page);
+    if (!view) {
+        delete page;
+        return window;
+    }
     page->setObjectName(QStringLiteral("agentWindowPage"));
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 6);
     layout->setSpacing(4);
 
-    auto *view = new QWebEngineView(page);
-    view->setObjectName(QStringLiteral("agentWindowWeb"));
-    QPointer<QObject> context = m_context.get();
-    auto *webPage = new WidgetPage(
-        static_cast<QWebEngineProfile *>(widgetProfile()), view,
-        [this, context, windowId](const QJsonValue &event) {
-            if (context)
-                addWidgetEvent(windowId, event);
-        },
-        [this](const QUrl &url) {
-            if (url.scheme().toLower() == QLatin1String("mailto"))
-                QDesktopServices::openUrl(url);
-            else if (m_externalOpener)
-                m_externalOpener(url);
-        });
-    QWebEngineSettings *settings = webPage->settings();
-    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, false);
-    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessFileUrls, false);
-    settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
-    settings->setAttribute(QWebEngineSettings::LocalStorageEnabled, false);
-    settings->setAttribute(QWebEngineSettings::PluginsEnabled, false);
-    QWebEngineScript bridge;
-    bridge.setName(QStringLiteral("forkmesh-widget-bridge"));
-    bridge.setInjectionPoint(QWebEngineScript::DocumentCreation);
-    bridge.setWorldId(QWebEngineScript::MainWorld);
-    bridge.setRunsOnSubFrames(false);
-    bridge.setSourceCode(widgetBridgeScript(state.widgetData));
-    webPage->scripts().insert(bridge);
-    view->setPage(webPage);
-    layout->addWidget(view, 1);
+    QWidget *viewWidget = view->widget();
+    viewWidget->setObjectName(QStringLiteral("agentWindowWeb"));
+    layout->addWidget(viewWidget, 1);
 
     auto *footer = new QHBoxLayout;
     footer->setContentsMargins(8, 0, 8, 0);
@@ -1843,9 +1723,8 @@ QWidget *Registry::buildWidgetWindow(const QString &windowId, const WindowState 
     footer->addWidget(from, 1);
     layout->addLayout(footer);
 
-    webPage->setHtml(state.widgetHtml, QUrl(QStringLiteral("about:blank")));
+    view->setHtml(state.widgetHtml, QUrl(QStringLiteral("about:blank")));
     window->layout()->addWidget(page);
-#endif
     return window;
 }
 

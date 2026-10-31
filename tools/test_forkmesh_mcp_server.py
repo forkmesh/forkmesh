@@ -970,6 +970,25 @@ def main():
     _, err = call("comment_on_issue", {"number": 99, "body": "x"})
     check("comment_on_issue unknown issue", err)
 
+    issue_bytes = ipath.read_bytes()
+    outside_issue = tmp / "outside-issue.json"
+    outside_issue.write_bytes(issue_bytes)
+    ipath.unlink()
+    os.symlink(outside_issue, ipath)
+    _, err = call("comment_on_issue", {"number": 3, "body": "through a link"})
+    check("comment_on_issue refuses a symlinked issue record",
+          err and outside_issue.read_bytes() == issue_bytes)
+    ipath.unlink()
+    ipath.write_bytes(issue_bytes)
+
+    outside_milestones = tmp / "outside-milestones.json"
+    milestones_link = repo / ".forkmesh/issues/milestones.json"
+    os.symlink(outside_milestones, milestones_link)
+    _, err = call("create_milestone", {"title": "Linked"})
+    check("create_milestone refuses a symlinked milestones file",
+          err and not outside_milestones.exists())
+    milestones_link.unlink()
+
     _, err = call("create_milestone", {"title": "Sprint A",
                                        "due": "2026-08-01",
                                        "description": "first sprint"})
@@ -1109,6 +1128,14 @@ def main():
     check("get_pr_diff refuses option-shaped refs from pull metadata",
           err and not any(tmp.glob("pwned-by-pull-metadata*")))
     pull_path.write_text(open_metadata)
+    outside_secret = tmp / "outside-secret.txt"
+    outside_secret.write_text("identity-key-bytes\n")
+    patch_link = repo / ".forkmesh/pulls/1/changes.patch"
+    os.symlink(outside_secret, patch_link)
+    text, err = call("get_pr_diff", {"number": 1})
+    check("get_pr_diff refuses a symlinked changes.patch",
+          err and "identity-key-bytes" not in text)
+    patch_link.unlink()
     injected = tmp / "pwned-by-pr-argument"
     text, err = call("open_pr_from_branch", {
         "branch": "feature", "base": f"--output={injected}"})

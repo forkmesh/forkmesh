@@ -1215,6 +1215,7 @@ function mountForkMeshDashboardChat(options = {}) {
     try {
       const sources = await discoverDiscordSources();
       const messages = [];
+      let refreshFailed = false;
       // Discord applies rate limits across related connector routes. Fetching
       // every channel concurrently turns one provider-wide 429 into a burst
       // of identical failures, so read channels serially and stop immediately
@@ -1239,6 +1240,7 @@ function mountForkMeshDashboardChat(options = {}) {
           );
         } catch (error) {
           if (error?.status === 429 || error?.status >= 500) throw error;
+          refreshFailed = true;
           // A missing channel is isolated; continue with the remaining
           // configured channels without putting the whole connector on ice.
         }
@@ -1421,6 +1423,18 @@ function mountForkMeshDashboardChat(options = {}) {
       : "";
     if (!name) return `<span class="${className}" ${status}>${label}</span>`;
     return `<a class="${className} hover:underline" href="${escapeHtml(mentionProfilePath(name))}" data-chat-author-profile="${escapeHtml(name)}" ${status}>${label}</a>`;
+  }
+
+  function linkAvatarToProfile(avatarEl, record) {
+    const name = authorProfileName(record);
+    if (!avatarEl || !name) return;
+    const link = document.createElement("a");
+    link.className = "chat-avatar-link flex shrink-0 rounded-full";
+    link.href = mentionProfilePath(name);
+    link.dataset.chatAvatarProfile = name;
+    link.setAttribute("aria-label", `${record.who} profile`);
+    avatarEl.replaceWith(link);
+    link.append(avatarEl);
   }
 
   function bindAuthorProfileCard(element) {
@@ -2427,6 +2441,7 @@ function mountForkMeshDashboardChat(options = {}) {
       avatarEl.setAttribute("aria-label", `${record.who} Discord avatar`);
     } else {
       hydrateChatAvatar(avatarEl, record.who);
+      linkAvatarToProfile(avatarEl, record);
     }
     if (record.sourceLabel) {
       const source = document.createElement("span");
@@ -3464,6 +3479,7 @@ function mountForkMeshDashboardChat(options = {}) {
         avatar.setAttribute("aria-label", "Discord");
       } else {
         hydrateChatAvatar(row.querySelector(".chat-message-avatar"), message.who);
+        linkAvatarToProfile(avatar, message);
       }
       const textEl = row.querySelector("p");
       if (textEl) {

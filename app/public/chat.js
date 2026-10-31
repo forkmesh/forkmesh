@@ -50,6 +50,12 @@ import {
 import { createFmmLocal } from "./fmm/fmm-local.js";
 import { moderateChatPlain, moderateChatText } from "./chat-moderation.js";
 import { celebrateNewMember, NEW_MEMBER_GREETING } from "./member-welcome.js";
+import {
+  GENIE_WELCOMES,
+  genieWelcomeIndex,
+  mountGenieWelcome,
+  pickGenieWelcome,
+} from "./chat-genie-welcome.js";
 import { createThreadStore } from "./chat-thread-model.js";
 import {
   CALL_FRAME_TYPES,
@@ -121,6 +127,9 @@ const PUBLIC_WORLD_CHAT_WS_PATH =
 const PRIVATE_CHANNELS_ENDPOINT = "/api/chat/channels";
 const EVERYONE_CHANNEL_ORDER = Object.freeze(["general", "random", "welcome"]);
 const EVERYONE_MEMBERS_REFRESH_MS = 5 * 60 * 1000;
+const WELCOME_CHANNEL_NAME = "welcome";
+const GENIE_WELCOME_COOLDOWN_MS = 5000;
+const GENIE_WELCOME_AUTOPLAY_MS = 10 * 60 * 1000;
 const DIRECT_MESSAGES_ENDPOINT = "/api/chat/direct-messages";
 const CHAT_READS_ENDPOINT = "/api/chat/reads";
 const READ_MARK_KEY_RE =
@@ -131,6 +140,7 @@ const READ_MARK_FUTURE_SLACK_MS = 24 * 60 * 60 * 1000;
 const CHAT_INVITES_ENDPOINT = "/api/chat/invites";
 const CHAT_INVITE_HASH_RE = /^#invite=([0-9a-f]{64})$/;
 const CHAT_ROOM_HASH_RE = /^#room=([0-9a-f]{32})$/;
+const CHAT_DIRECT_HASH_RE = /^#direct=([0-9a-f]{32})$/;
 const CALL_ICE_SERVERS = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const FORKBOT_ENDPOINT = "/api/forkbot/chat";
 // Cloudflare Workers AI models ForkBot can be pointed at, plus the picked one.
@@ -309,6 +319,7 @@ const channelVisibilityBadge = document.querySelector("#chat-channel-visibility-
 const directServerCopiesEl = document.querySelector("#chat-direct-server-copies");
 const channelCreateBtn = document.querySelector("#chat-channel-create");
 const channelManageBtn = document.querySelector("#chat-channel-manage");
+const genieWelcomeBtn = document.querySelector("#chat-genie-welcome");
 const chatRetentionSelect = document.querySelector("#chat-retention-select");
 const chatRetention = createChatRetention({
   request: (body) => privateChannelRequest(CHAT_RETENTION_ENDPOINT, {
@@ -395,7 +406,7 @@ const groupCalls = createGroupCalls({
   callSigner: groupCallSigner,
   callAccount: () => roomSeals?.account() || "",
   callId: (channelKey) => (roomTransport?.room?.scope === channelKey ? String(roomTransport?.access?.roomName || "") : ""),
-  prepareLocal: createFmmLocal(),
+  prepareLocal: createFmmLocal({ avatarImage: ownAvatarImage }),
 });
 
 async function groupCallSigner() {
@@ -567,6 +578,8 @@ const seen = new Set();
 // record's channel is the active one, so an edit or a (regular / admin) delete
 // can find and update or remove the right row.
 const rows = new Map();
+const playedGenieWelcomes = new Set();
+let lastGenieWelcome = null;
 const threads = createThreadStore();
 const threadRenderedRows = new Map();
 const threadDrafts = new Map();
@@ -729,6 +742,11 @@ function channelWireLabel(channel = activeChannel) {
 
 function isEveryoneChannel(record) {
   return record?.kind === "everyone";
+}
+
+function isWelcomeChannel(channel = activeChannel) {
+  const record = privateChannelForKey(channel);
+  return isEveryoneChannel(record) && record.name === WELCOME_CHANNEL_NAME;
 }
 
 function defaultChannelKey() {
@@ -1078,6 +1096,10 @@ function avatarColor(name) {
 // to letters before settling. This lets a repeat render paint the portrait in
 // the same tick it builds the row.
 const avatarPortraits = new Map();
+
+function ownAvatarImage() {
+  return avatarImageSource(userSession()?.avatarPng);
+}
 
 function avatarImageSource(png) {
   const value = String(png || "");
@@ -2092,6 +2114,7 @@ function updateChannelHeading() {
       : "";
   }
   renderDirectServerCopies();
+  if (genieWelcomeBtn) genieWelcomeBtn.hidden = !isWelcomeChannel() || !canJoinChannel();
 }
 
 function directServerCopiesText(stored, otherUser) {
@@ -2397,6 +2420,13 @@ function reconcilePrivateChannels(records, options = {}) {
   for (const id of previous.keys()) {
     if (!privateChannels.has(id)) releaseChannelMessages(privateChannelKey(id));
   }
+  for (const [id, record] of privateChannels) {
+    const old = previous.get(id);
+    if (old && old.keyVersion !== record.keyVersion) {
+      void groupCalls.channelRekeyed(
+        privateChannelKey(id), `chat-channel:${id}:v${record.keyVersion}`).catch(() => {});
+    }
+  }
 
   if (savedPrivateChannelId && !privateChannels.has(savedPrivateChannelId)) {
     savedPrivateChannelId = "";
@@ -2578,7 +2608,7 @@ function startAccountEventChannel() {
   }
   accountEvents = createAccountEventChannel({
     sessionToken: () => userSession()?.sessionToken || "",
-    onTopic: (topic) => {
+    onTopic: (topic, frame) => {
       // A new message in a conversation this browser is not sitting in, or a
       // conversation/channel that appeared because somebody else invited or
       // messaged us. Both lists used to be re-read every 30s to find these.
@@ -2589,6 +2619,8 @@ function startAccountEventChannel() {
       } else if (topic === "chat-read") {
         refreshReadMarks();
         refreshDirectMessages({ preserve: true, selectSaved: false });
+      } else if (topic === "calls") {
+        openRingingConversation(frame);
       }
     },
     // One catch-up per RE-connect: a DM that arrived while the channel was
@@ -2606,6 +2638,19 @@ function startAccountEventChannel() {
     },
   });
   accountEvents.start();
+}
+
+function openRingingConversation(frame) {
+  const key = String(frame?.conversation || "");
+  if (!isDirectMessageKey(key) || activeChannel === key || !callsSupported() || chatCalls.active()) return;
+  const open = () => {
+    if (directMessageForKey(key) && activeChannel !== key && !chatCalls.active()) setActiveChannel(key);
+  };
+  if (directMessageForKey(key)) {
+    open();
+    return;
+  }
+  Promise.resolve(refreshDirectMessages({ preserve: true, selectSaved: false })).then(open, () => {});
 }
 
 function newestMessageTs(channel) {
@@ -2971,7 +3016,15 @@ async function openChatLinkFromHash() {
   const room = CHAT_ROOM_HASH_RE.exec(hash);
   if (room) {
     clearChatLinkHash();
+    if (!privateChannels.has(room[1]) && userSession()) await refreshPrivateChannels({ selectSaved: false });
     if (privateChannels.has(room[1])) setActiveChannel(privateChannelKey(room[1]));
+    return;
+  }
+  const direct = CHAT_DIRECT_HASH_RE.exec(hash);
+  if (direct) {
+    clearChatLinkHash();
+    if (!directMessages.has(direct[1]) && userSession()) await refreshDirectMessages();
+    if (directMessages.has(direct[1])) setActiveChannel(directMessageKey(direct[1]));
     return;
   }
   const invite = CHAT_INVITE_HASH_RE.exec(hash);
@@ -5155,7 +5208,15 @@ function threadMessageHeader(record) {
       record.recipients, "chat-thread-recipients", record.recipientNames));
   }
   if (receipt) meta.append(makeReceipt(record));
-  header.append(avatar, meta);
+  if (isBot) {
+    header.append(avatar, meta);
+  } else {
+    const avatarLink = document.createElement("a");
+    avatarLink.className = "chat-avatar-link";
+    avatarLink.href = mentionProfilePath(record.sender);
+    avatarLink.append(avatar);
+    header.append(avatarLink, meta);
+  }
   return header;
 }
 
@@ -5708,6 +5769,7 @@ function buildRow(record, prev) {
   }
   const attachment = renderAttachment(record);
   if (attachment) main.append(attachment);
+  if (record.genieWelcome !== null && !record.deleted) main.append(renderGenieWelcome(record));
   const viewOnceBubble = renderViewOnceBubble(record, { onOpen: openViewOnceRecord });
   if (viewOnceBubble) main.append(viewOnceBubble);
   const threadSummary = document.createElement("button");
@@ -5791,6 +5853,14 @@ function buildRow(record, prev) {
   row.append(actions);
   bindTouchMessageActions(row);
   return row;
+}
+
+function renderGenieWelcome(record) {
+  return mountGenieWelcome(record.genieWelcome, {
+    autoplay: !playedGenieWelcomes.has(record.id) &&
+      (record.self || Date.now() - Number(record.ts) < GENIE_WELCOME_AUTOPLAY_MS),
+    onPlay: () => playedGenieWelcomes.add(record.id),
+  });
 }
 
 function renderActiveChannel() {
@@ -5916,6 +5986,7 @@ function appendMessage(
   viewOnce = null,
   relayed = false,
   serverVisible = false,
+  genieWelcome = null,
 ) {
   const channelKey = normalizeChannelKey(channel) || activeChannel;
   const record = {
@@ -5933,6 +6004,7 @@ function appendMessage(
     recipientNames: knownRecipientNames(recipientNames),
     relayed: Boolean(relayed),
     serverVisible: Boolean(serverVisible),
+    genieWelcome: genieWelcomeIndex(genieWelcome),
   };
   if (viewOnce) {
     record.viewOnce = viewOnce;
@@ -6169,6 +6241,7 @@ function renderChatEntry(
       viewOnce,
       true,
       isServerPlain(entry) && entry.serverVisible === true,
+      viewOnce ? null : entry.genieWelcome,
     );
   }
 }
@@ -6734,6 +6807,7 @@ const chatCalls = createChatCalls({
   partnerFor: (channelKey) => directMessageForKey(channelKey)?.otherUser || "",
   onMissed: sendMissedCallLine,
   requestStart: (media) => startDirectCall(media),
+  avatarImage: ownAvatarImage,
 });
 
 function offerRequestedCall(partner) {
@@ -7127,6 +7201,8 @@ function handleTransportState(state, detail) {
       return;
     }
     if (!officeAuthorizationExpired) showOfficeFailure("");
+    void groupCalls.channelRekeyed(
+      scope, String(roomTransport?.access?.roomName || "")).catch(() => {});
     const connectedChannel = scope === "public-world-general" ? "#general" : scope;
     // An open socket is not a loaded channel: the relay's retained backlog is
     // still on the wire. Marking the channel ready here painted the empty
@@ -8082,6 +8158,50 @@ async function sendCurrentMessage() {
   void sendAttachmentDraft();
 }
 
+function sendGenieWelcome() {
+  if (!canJoinChannel()) {
+    lockChatForNonUser();
+    return;
+  }
+  if (!isWelcomeChannel() || !genieWelcomeBtn || genieWelcomeBtn.disabled) return;
+  const index = pickGenieWelcome(lastGenieWelcome);
+  lastGenieWelcome = index;
+  genieWelcomeBtn.disabled = true;
+  setTimeout(() => {
+    genieWelcomeBtn.disabled = false;
+  }, GENIE_WELCOME_COOLDOWN_MS);
+  const channel = activeChannel;
+  const text = GENIE_WELCOMES[index].text;
+  runWhenConnected(() => {
+    if (channel !== activeChannel) return;
+    const plain = makePlain("chat", {
+      channel: channelWireLabel(channel),
+      text,
+      genieWelcome: index,
+    });
+    send(plain);
+    seen.add(plain.id);
+    appendMessage(
+      "self",
+      plain.sender,
+      text,
+      plain.id,
+      plain.senderId,
+      plain.ts,
+      channel,
+      null,
+      null,
+      null,
+      null,
+      [],
+      null,
+      false,
+      false,
+      index,
+    );
+  });
+}
+
 function suspendOfficeChat() {
   if (!isOfficeEmbed || chatSuspended) return;
   chatSuspended = true;
@@ -8109,6 +8229,7 @@ function wireChatControls() {
   if (chatControlsWired) return;
   chatControlsWired = true;
   sendBtn.addEventListener("click", sendCurrentMessage);
+  genieWelcomeBtn?.addEventListener("click", sendGenieWelcome);
   directCreateBtn?.addEventListener("click", () => openDirectMessageDialog("new"));
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
   callAudioBtn?.addEventListener("click", () => startCall("audio"));

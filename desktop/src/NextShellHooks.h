@@ -28,13 +28,15 @@ struct RailButtonPaintState {
     int spinAngle = 0;
     bool badgeUrgent = false;
     bool alert = false;
+    bool danger = false;
     bool accent = false;
     bool syncing = false;
     bool compact = false;
+    bool badgeBeside = false;
     bool captionAlwaysVisible = true;
     bool captionVisible = false;
     bool blink = false;
-    bool blinkOn = false;
+    bool busy = false;
     bool desktopOffline = false;
     double desktopOfflineLevel = 1.0;
     std::function<void(QPainter &, const QRect &, const QColor &)> iconPainter;

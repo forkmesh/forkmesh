@@ -181,25 +181,60 @@
     return theme === "light" ? "light" : "dark";
   }
 
-  function readDashboardTheme() {
+  function seasonActive(name) {
+    return document.documentElement.dataset.season === name;
+  }
+
+  function dashboardThemeChoice() {
     try {
       const cookieTheme = document.cookie
         .split(";")
         .map((part) => part.trim())
         .find((part) => part.startsWith("forkmesh_theme="))
         ?.slice("forkmesh_theme=".length);
-      return normalizeDashboardTheme(
-        localStorage.getItem(DASHBOARD_THEME_KEY) ||
+      const choice = localStorage.getItem(DASHBOARD_THEME_KEY) ||
         localStorage.getItem("forkmesh.theme") ||
-        cookieTheme
-      );
+        cookieTheme;
+      return ["light", "dark", "system"].includes(choice) ? choice : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function instanceColorMode() {
+    try {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue("--instance-color-mode").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function systemDashboardTheme() {
+    try {
+      return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     } catch (_) {
       return "dark";
     }
   }
 
+  function readDashboardTheme() {
+    const choice = dashboardThemeChoice();
+    if (choice === "light" || choice === "dark") return choice;
+    const mode = choice || instanceColorMode();
+    if (mode === "system") return systemDashboardTheme();
+    return normalizeDashboardTheme(mode);
+  }
+
+  function dashboardAppearanceChoice() {
+    const choice = dashboardThemeChoice();
+    if (choice) return choice;
+    return instanceColorMode() === "system" ? "system" : readDashboardTheme();
+  }
+
   function renderAppearanceTheme(theme = readDashboardTheme()) {
-    const current = normalizeDashboardTheme(theme);
+    const effective = normalizeDashboardTheme(theme);
+    const current = dashboardAppearanceChoice();
     $$("[data-appearance-theme]").forEach((button) => {
       const active = button.dataset.appearanceTheme === current;
       button.setAttribute("aria-checked", active ? "true" : "false");
@@ -210,9 +245,12 @@
     });
     const status = $("[data-appearance-theme-status]");
     if (status) {
-      status.textContent = current === "light"
+      const active = effective === "light"
         ? "Light mode is active for the dashboard."
         : "Dark mode is active for the dashboard.";
+      status.textContent = current === "system"
+        ? `Following your system setting. ${active}`
+        : active;
     }
   }
 
@@ -229,7 +267,7 @@
   }
 
   function saveDashboardTheme(theme) {
-    const nextTheme = normalizeDashboardTheme(theme);
+    const nextTheme = theme === "system" ? "system" : normalizeDashboardTheme(theme);
     try {
       localStorage.setItem(DASHBOARD_THEME_KEY, nextTheme);
       localStorage.setItem("forkmesh.theme", nextTheme);
@@ -239,7 +277,17 @@
       document.cookie = `forkmesh_theme=${nextTheme}; Path=/; Max-Age=31536000; SameSite=Lax${sharedDomain}`
         + (location.protocol === "https:" ? "; Secure" : "");
     } catch (_) {}
-    applyDashboardTheme(nextTheme);
+    applyDashboardTheme(readDashboardTheme());
+  }
+
+  function followSystemDashboardTheme() {
+    try {
+      matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        const choice = dashboardThemeChoice();
+        if (choice === "light" || choice === "dark") return;
+        applyDashboardTheme(readDashboardTheme());
+      });
+    } catch (_) {}
   }
 
   function renderGenieSetting() {
@@ -669,6 +717,9 @@
                 "forkmesh:mirror-signal", { detail: { catchUp: true } },
               ));
               window.dispatchEvent(new CustomEvent("forkmesh:cloud-agents"));
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: "", catchUp: true } },
+              ));
               void checkForDashboardUpdate(true);
             }
             connectedOnce = true;
@@ -696,6 +747,11 @@
             }
             if (topic === "direct-messages") {
               window.dispatchEvent(new CustomEvent("forkmesh:direct-messages"));
+            }
+            if (String(topic || "").startsWith("package:")) {
+              window.dispatchEvent(new CustomEvent(
+                "forkmesh:package-event", { detail: { id: String(topic).slice(8) } },
+              ));
             }
           },
         });
@@ -730,13 +786,127 @@
       if (button._idleHtml === undefined) button._idleHtml = button.innerHTML;
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
-      button.innerHTML = loadingHtml(escapeHtml(label));
+      const icon = button.querySelector("svg, i[data-lucide]");
+      button.innerHTML = icon ? `${icon.outerHTML} ${escapeHtml(label)}` : loadingHtml(escapeHtml(label));
+      if (icon) setButtonBusyRing(button, true);
       return;
     }
     if (button._idleHtml !== undefined) button.innerHTML = button._idleHtml;
     button._idleHtml = undefined;
     button.disabled = false;
     button.removeAttribute("aria-busy");
+    setButtonBusyRing(button, false);
+  }
+
+  const BUSY_RING_CAP_MS = 60000;
+  const busyRings = new WeakMap();
+
+  function busyRingIcon(button) {
+    for (const icon of button.querySelectorAll("svg, i[data-lucide], img")) {
+      if (icon.closest(".fm-busy-ring")) continue;
+      const rect = icon.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return icon;
+    }
+    return null;
+  }
+
+  function placeBusyRing(button, ring) {
+    const icon = busyRingIcon(button);
+    if (!icon) {
+      ring.setAttribute("data-outline", "");
+      Object.assign(ring.style, { left: "0", top: "0", width: "100%", height: "100%" });
+      return;
+    }
+    ring.removeAttribute("data-outline");
+    const box = button.getBoundingClientRect();
+    const at = icon.getBoundingClientRect();
+    const side = Math.min(at.width, at.height) + 8;
+    Object.assign(ring.style, {
+      left: `${at.left - box.left - button.clientLeft + (at.width - side) / 2}px`,
+      top: `${at.top - box.top - button.clientTop + (at.height - side) / 2}px`,
+      width: `${side}px`,
+      height: `${side}px`,
+    });
+  }
+
+  function buttonStillBusy(button) {
+    return button.isConnected && (button.disabled || button.getAttribute("aria-busy") === "true");
+  }
+
+  function setButtonBusyRing(button, busy, editor = null) {
+    if (!button) return;
+    const entry = busyRings.get(button);
+    if (!busy) {
+      if (!entry) return;
+      busyRings.delete(button);
+      entry.observer.disconnect();
+      clearTimeout(entry.cap);
+      clearInterval(entry.editorWatch);
+      entry.ring.remove();
+      button.classList.remove("fm-busy-host");
+      return;
+    }
+    if (entry) {
+      if (!entry.ring.isConnected) button.append(entry.ring);
+      placeBusyRing(button, entry.ring);
+      return;
+    }
+    const ring = document.createElement("span");
+    ring.className = "fm-busy-ring";
+    ring.setAttribute("aria-hidden", "true");
+    if (getComputedStyle(button).position === "static") button.classList.add("fm-busy-host");
+    button.append(ring);
+    placeBusyRing(button, ring);
+    const observer = new MutationObserver(() => {
+      if (!buttonStillBusy(button)) {
+        setButtonBusyRing(button, false);
+      } else if (!ring.isConnected) {
+        button.append(ring);
+        placeBusyRing(button, ring);
+      }
+    });
+    observer.observe(button, { attributes: true, attributeFilter: ["disabled", "aria-busy"], childList: true });
+    const cap = setTimeout(() => setButtonBusyRing(button, false), BUSY_RING_CAP_MS);
+    const editorWatch = editor ? setInterval(() => {
+      if (busyEditorText(editor) === "") setButtonBusyRing(button, false);
+    }, 400) : 0;
+    busyRings.set(button, { ring, observer, cap, editorWatch });
+  }
+
+  let busyPressEditor = null;
+
+  function busyEditorText(element) {
+    if (!element) return null;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.value;
+    if (element.isContentEditable) return element.textContent || "";
+    return null;
+  }
+
+  function noteBusyPressEditor(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = document.activeElement;
+    busyPressEditor = button && busyEditorText(editor) ? editor : null;
+  }
+
+  function watchButtonBusy(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = busyPressEditor;
+    busyPressEditor = null;
+    if (!button || button.disabled || button.hasAttribute("data-no-busy") ||
+        button.getAttribute("role") === "switch" || button.hasAttribute("aria-haspopup")) return;
+    setTimeout(() => setTimeout(() => {
+      if (editor && busyEditorText(editor) === "") return;
+      if (buttonStillBusy(button) && !busyRings.has(button)) setButtonBusyRing(button, true, editor);
+    }, 0), 0);
+  }
+
+  document.addEventListener("pointerdown", noteBusyPressEditor, true);
+  document.addEventListener("click", watchButtonBusy, true);
+
+  function setNavWorking(nav, working) {
+    for (const icon of document.querySelectorAll(`[data-nav="${nav}"] .dashboard-nav-icon`)) {
+      icon.classList.toggle("is-working", Boolean(working));
+    }
   }
 
   // One formatter for the page: building an Intl.NumberFormat per call cost
@@ -847,6 +1017,28 @@
     return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
   }
 
+  const forgeAvatarSets = new Map();
+  const forgeAvatarCommits = new Map();
+
+  function rememberForgeAvatars(repo, names, commit = "") {
+    if (!repo || !Array.isArray(names) || !names.length) return;
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    if (/^[0-9a-f]{40}$/.test(String(commit || ""))) forgeAvatarCommits.set(key, String(commit));
+    const known = forgeAvatarSets.get(key) || new Set();
+    names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
+    forgeAvatarSets.set(key, known);
+  }
+
+  function forgeAvatarSrc(forge) {
+    const repo = state.selectedRepo;
+    if (!repo || !forge) return "";
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key);
+    const login = forge.login.toLowerCase();
+    return known?.has(`${forge.provider}:${login}`)
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`, forgeAvatarCommits.get(key) || "") : "";
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
@@ -857,11 +1049,12 @@
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
     const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
+    const forgePicture = forge ? forgeAvatarSrc(forge) : "";
     const inner = bot
       ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>${forgePicture ? `<img src="${escapeHtml(forgePicture)}" alt="" width="${pixels}" height="${pixels}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />` : ""}`;
     const override = bot && !agent ? issuePersonHandle(label) : "";
     const hydrate = (handle || override) && !ownAvatar
       ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
@@ -913,12 +1106,45 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
+  const issueActorBatch = { names: new Set(), promise: null };
+
+  function issueActorKnown(key) {
+    issueActorBatch.names.add(key);
+    if (!issueActorBatch.promise) {
+      issueActorBatch.promise = new Promise((resolve) => setTimeout(resolve, 0)).then(async () => {
+        const names = [...issueActorBatch.names];
+        issueActorBatch.names = new Set();
+        issueActorBatch.promise = null;
+        const found = new Set();
+        for (let start = 0; start < names.length; start += USER_NAME_BATCH) {
+          const batch = names.slice(start, start + USER_NAME_BATCH);
+          try {
+            const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+              credentials: "omit",
+              headers: { accept: "application/json" },
+            });
+            const data = response.ok ? await response.json() : null;
+            if (!data || typeof data.names !== "object") return null;
+            Object.keys(data.names).forEach((name) => found.add(name.toLowerCase()));
+          } catch (_) {
+            return null;
+          }
+        }
+        return found;
+      });
+    }
+    return issueActorBatch.promise.then((found) => (found ? found.has(key) : true));
+  }
+
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
     if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
-      issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      issueActorAccounts.set(key, issueActorKnown(key)
+        .then((exists) => (exists
+          ? fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+            .then((response) => (response.ok ? response.json() : null))
+          : { exists: false }))
         .then((profile) => ({
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
@@ -1741,6 +1967,14 @@
     const info = await instanceInfo();
     const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
     return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOn(id) {
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === true;
   }
 
   function instancePluginOff(id) {

@@ -662,6 +662,59 @@ QString MainWindow::shortcutsDirPath() const
     return repo.localPath + QStringLiteral("/.forkmesh/shortcuts");
 }
 
+QStringList MainWindow::missingStarterShortcuts() const
+{
+    const QString dirPath = shortcutsDirPath();
+    if (dirPath.isEmpty())
+        return {};
+    QStringList missing;
+    const QStringList names =
+        QDir(QStringLiteral(":/starter-shortcuts")).entryList(QDir::Files, QDir::Name);
+    for (const QString &name : names) {
+        if (!QFileInfo::exists(QDir(dirPath).filePath(name)))
+            missing << name;
+    }
+    return missing;
+}
+
+void MainWindow::addStarterShortcuts()
+{
+    const QString dirPath = shortcutsDirPath();
+    if (dirPath.isEmpty()) {
+        setRepoDetailNotice(
+            "This is a read-only mirror; shortcuts can't be added here.", true);
+        return;
+    }
+    const QStringList missing = missingStarterShortcuts();
+    if (missing.isEmpty() || !QDir().mkpath(dirPath)) {
+        loadShortcutsPanel();
+        return;
+    }
+    QStringList added;
+    for (const QString &name : missing) {
+        QFile source(QStringLiteral(":/starter-shortcuts/") + name);
+        if (!source.open(QIODevice::ReadOnly))
+            continue;
+        const QByteArray text = source.readAll();
+        QSaveFile out(QDir(dirPath).filePath(name));
+        if (!out.open(QIODevice::WriteOnly) || out.write(text) != text.size() ||
+            !out.commit())
+            continue;
+        added << name;
+    }
+    if (added.isEmpty())
+        setRepoDetailNotice(
+            QStringLiteral("Couldn't write the starter shortcuts to %1.").arg(dirPath), true);
+    else
+        setRepoDetailNotice(
+            QStringLiteral("Added %1 starter shortcut%2 to .forkmesh/shortcuts. Commit "
+                           "them to share them with everyone who uses this repository.")
+                .arg(added.size())
+                .arg(added.size() == 1 ? QString() : QStringLiteral("s")),
+            added.size() != missing.size());
+    loadShortcutsPanel();
+}
+
 QWidget *MainWindow::buildShortcutsTab()
 {
     auto *page = new QWidget;
@@ -695,6 +748,13 @@ QWidget *MainWindow::buildShortcutsTab()
     setOcticon(newSkill, QStringLiteral("plus"), 16);
     connect(newSkill, &QPushButton::clicked, this,
             [this] { openSkillEditor(); });
+    m_shortcutsStarterButton = new QPushButton(QStringLiteral("Add starter shortcuts"));
+    m_shortcutsStarterButton->setObjectName(QStringLiteral("ghostButton"));
+    m_shortcutsStarterButton->setCursor(Qt::PointingHandCursor);
+    setOcticon(m_shortcutsStarterButton, QStringLiteral("download"), 16);
+    m_shortcutsStarterButton->setVisible(false);
+    connect(m_shortcutsStarterButton, &QPushButton::clicked, this,
+            &MainWindow::addStarterShortcuts);
     auto *refreshButton = new QPushButton("Refresh");
     refreshButton->setObjectName("ghostButton");
     refreshButton->setCursor(Qt::PointingHandCursor);
@@ -704,6 +764,7 @@ QWidget *MainWindow::buildShortcutsTab()
     addRefreshSpin(refreshButton);
     headerRow->addWidget(m_shortcutsSummary);
     headerRow->addStretch();
+    headerRow->addWidget(m_shortcutsStarterButton);
     headerRow->addWidget(newButton);
     headerRow->addWidget(newSkill);
     headerRow->addWidget(refreshButton);
@@ -1456,6 +1517,20 @@ void MainWindow::loadShortcutsPanel()
         }
         m_shortcutsSummary->setText(summary);
     }
+    if (m_shortcutsStarterButton) {
+        const QString dirPath = shortcutsDirPath();
+        const bool noShortcuts =
+            !dirPath.isEmpty() &&
+            QDir(dirPath).entryList(QDir::Files | QDir::Readable).isEmpty();
+        const int missingStarters = noShortcuts ? missingStarterShortcuts().size() : 0;
+        m_shortcutsStarterButton->setVisible(missingStarters > 0);
+        m_shortcutsStarterButton->setToolTip(
+            QStringLiteral("Copy %1 ready-made prompt shortcut%2 (review changes, UX audit, "
+                           "stale-code cleanup, docs refresh, feature retirement) into "
+                           "this repository's .forkmesh/shortcuts folder.")
+                .arg(missingStarters)
+                .arg(missingStarters == 1 ? QString() : QStringLiteral("s")));
+    }
 
     const auto runEntryLater = [this](const QString &path, const QString &scope, bool script) {
         QTimer::singleShot(0, this, [this, path, scope, script] {
@@ -1531,6 +1606,8 @@ void MainWindow::loadShortcutsPanel()
                         [runEntryLater, path = entry.path, scope = entry.scope, script] {
                             runEntryLater(path, scope, script);
                         });
+                if (script && shortcutRunning(entry.path))
+                    forkmesh::ui::busyring::setBusy(runButton, true);
                 m_shortcutsTable->setCellWidget(row, ShortcutRunButtonColumn, runButton);
             }
 
@@ -1698,6 +1775,8 @@ void MainWindow::loadShortcutsPanel()
         title->setAttribute(Qt::WA_TransparentForMouseEvents);
         titleRow->addWidget(icon);
         titleRow->addWidget(title, 1);
+        if (script && shortcutRunning(path))
+            forkmesh::ui::busyring::setBusy(card, true, icon);
 
         auto *editButton = new QPushButton;
         editButton->setObjectName("ghostButton");
@@ -1997,6 +2076,15 @@ QProcess *MainWindow::shortcutProcess(const QString &filePath) const
     return nullptr;
 }
 
+void MainWindow::refreshShortcutRailActivity()
+{
+    bool running = false;
+    for (const auto &run : std::as_const(m_shortcutRuns))
+        running = running || run.running;
+    if (auto *rail = dynamic_cast<ActivityRailButton *>(m_repoViewButton))
+        rail->setRailActive(running);
+}
+
 bool MainWindow::shortcutRunning(const QString &filePath) const
 {
     return shortcutProcess(filePath) != nullptr;
@@ -2052,6 +2140,7 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
     run.filePath = filePath;
     run.steps = meta.steps;
     m_shortcutRuns.append(run);
+    refreshShortcutRailActivity();
     for (qsizetype i = 0; m_shortcutRuns.size() > kKeptShortcutRuns && i < m_shortcutRuns.size();) {
         if (m_shortcutRuns.at(i).running)
             ++i;
@@ -2092,6 +2181,7 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
             run->stopped = process->property("shortcutStopRequested").toBool();
             run->message = message;
         }
+        refreshShortcutRailActivity();
         appendShortcutOutput(runId, message + QLatin1Char('\n'));
         if (runId == m_shortcutShownRun)
             showShortcutRun(runId);

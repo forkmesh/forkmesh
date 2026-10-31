@@ -16,7 +16,7 @@
 #promptWrapper QPushButton#promptWorktreeCheck,
 #promptWrapper QPushButton#promptVibeCheck,
 #promptWrapper QPushButton#promptResetButton,
-#promptWrapper QPushButton#promptDetachButton {
+#promptWrapper QPushButton#promptChannelButton {
     background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 0px;
 }
 #promptWrapper QPushButton#promptClearButton:hover,
@@ -24,18 +24,19 @@
 #promptWrapper QPushButton#promptWorktreeCheck:hover,
 #promptWrapper QPushButton#promptVibeCheck:hover,
 #promptWrapper QPushButton#promptResetButton:hover,
-#promptWrapper QPushButton#promptDetachButton:hover { background-color: @surfaceRaised; }
+#promptWrapper QPushButton#promptChannelButton:hover { background-color: @surfaceRaised; }
 #promptWrapper QPushButton#promptClearButton:pressed,
 #promptWrapper QPushButton#promptCloudButton:pressed,
 #promptWrapper QPushButton#promptWorktreeCheck:pressed,
 #promptWrapper QPushButton#promptVibeCheck:pressed,
 #promptWrapper QPushButton#promptResetButton:pressed,
-#promptWrapper QPushButton#promptDetachButton:pressed { background-color: @surfaceActive; }
+#promptWrapper QPushButton#promptChannelButton:pressed { background-color: @surfaceActive; }
 #promptWrapper QPushButton#promptCloudButton:checked,
 #promptWrapper QPushButton#promptWorktreeCheck:checked,
 #promptWrapper QPushButton#promptVibeCheck:checked {
     background-color: @accentSubtle; border-color: @accent;
 }
+#promptWrapper QPushButton#promptChannelButton { color: @fgMuted; padding: 0px 4px; }
 #promptWrapper QLabel#promptChatPreview {
     background: transparent; border: none; border-bottom: 1px solid @border;
     padding: 0px; font-size: 11px; color: @fgMuted;
@@ -114,13 +115,16 @@
     background-color: @surfaceActive; border-color: @borderStrong; color: @fg;
 }
 #promptWrapper QPushButton#quickAddSendIcon:pressed { background-color: @surface; }
-#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"] {
+#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"],
+#promptWrapper QPushButton#quickAddGenieButton[enterTarget="true"] {
     background-color: @accent; border-color: @accent; color: @onAccent; font-weight: 600;
 }
-#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:hover {
+#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:hover,
+#promptWrapper QPushButton#quickAddGenieButton[enterTarget="true"]:hover {
     background-color: @accentHover; border-color: @accentHover; color: @onAccent;
 }
-#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:pressed {
+#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:pressed,
+#promptWrapper QPushButton#quickAddGenieButton[enterTarget="true"]:pressed {
     background-color: @accentPressed; border-color: @accentPressed;
 }
 #promptWrapper QPushButton#quickAddSendIcon:disabled,

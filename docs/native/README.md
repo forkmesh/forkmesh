@@ -1,4 +1,4 @@
-# Native apps (iOS and Android)
+# Native apps (iOS, watchOS and Android)
 
 `native/ios` (Swift + SwiftUI) and `native/android` (Kotlin + Jetpack Compose)
 are the ForkMesh phone apps. Each signs in to a ForkMesh instance, browses and
@@ -15,11 +15,16 @@ desktop cannot tell them apart.
   local builds default to `com.forkmesh.nativeapp`, which installs beside it
   ([ANDROID.md](ANDROID.md), section 4).
 
+- The Apple Watch app (`native/ios/ForkMeshWatch`) ships inside the iOS app
+  and works through the iPhone over WatchConnectivity; a standalone mode is
+  phase 2 ([PARITY.md](PARITY.md), section 4).
+
+User guide for all the apps: [`www/docs/apps.md`](../../www/docs/apps.md).
+
 Topic pages:
 
 | Page | Covers |
 | --- | --- |
-| [SYNC.md](SYNC.md) | iOS → Android sync ledger: every iOS feature or UI change Android still has to match, and `tools/native_sync.py` |
 | [PARITY.md](PARITY.md) | Phone feature matrix, platform decisions, iOS workstream hooks, the watchOS app, bundle ids |
 | [DESKTOP_PARITY.md](DESKTOP_PARITY.md) | Parity with the Qt desktop, route contract, desktop control families, extension targets |
 | [NAVIGATION.md](NAVIGATION.md) | Tabs, routes, Home grid, bars, sitemap and URLs |
@@ -33,6 +38,8 @@ Topic pages:
 | [opus.md](opus.md) | Opus built from a pinned Xiph commit with DRED, deep PLC and OSCE (`native/opus/`): the pin and model weights, `build.sh` for iOS, Android and the host, options, sizes, output layout, smoke tests and how the call engines link it |
 | [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md) | Sounds, listening, ducking and Bluetooth held back while another app's call is up |
 | [DESKTOP_PINGS.md](DESKTOP_PINGS.md), [PING_QUICK_FIXES.md](PING_QUICK_FIXES.md), [PUSH_ICONS.md](PUSH_ICONS.md) | Desktop pings, one-tap fixes, banner icons |
+| [ONBOARDING.md](ONBOARDING.md) | The login and first-run screens: shared pieces, the order they show in, and their motion |
+| [PERMISSIONS.md](PERMISSIONS.md) | The permissions intro screen and when each system prompt comes up |
 | [MESH_PUSH.md](MESH_PUSH.md) | Wake pushes and local alerts for the `#mesh` room |
 | [PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md) | No banner, or no phone ping, for what is already on screen |
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |
@@ -70,6 +77,18 @@ Shortcuts (`.forkmesh/shortcuts/`):
 | `deploy-native-ios-ad-hoc-mac.sh`, `deploy-native-ios-app-store-mac.sh`, `build-desktop-macos-mac.sh` | The same builds on the office Mac ([MAC_BUILD.md](MAC_BUILD.md)) |
 | `ios-app-store-status.sh`, `testflight-feedback-to-tasks.sh` | Read-only App Store Connect report; TestFlight feedback to tasks ([IOS_RELEASE.md](IOS_RELEASE.md)) |
 | `task-mobile-app-store-deploy.sh`, `task-mobile-play-store-deploy.sh` | Create a signed reminder task with the version, tag, `main` head and the release steps for the App Store or the Play Store |
+
+The reminder goes to the release maintainer named by `FORKMESH_RELEASE_ASSIGNEE`
+or, when that is unset, by the one line in `release-assignee` in the core config
+folder (`~/projects/forkmesh/data/core/config/release-assignee`). The account is
+kept out of the public repository. With neither set the task is created
+unassigned and the shortcut says so; it used to stop with an error, which is all
+a shortcut run from the phone or desktop showed, because those runs do not
+export the variable.
+
+The Play Store path exists only as that reminder: no tool uploads to Google
+Play, and Android releases ship as the signed
+`forkmesh-android-universal.apk` in the release manifest.
 
 ## Architecture
 
@@ -195,6 +214,21 @@ Shortcuts (`.forkmesh/shortcuts/`):
   to it until a later read succeeds, a file that does not parse is renamed
   `*.unreadable-<ms>` instead of being replaced, and a file from a newer or
   older build (`v` other than 1) is read field by field instead of discarded.
+- **Sign-ins survive a phone restart (iOS, 2026-10-25).** After a reboot iOS
+  wakes the app in the background (PushKit re-registers, a call push arrives)
+  before the user has unlocked the phone once. Until that first unlock the
+  Keychain answers `errSecInteractionNotAllowed` and UserDefaults reads empty.
+  So the launch saw a phone with no preferences, took it for a fresh install
+  and tried to erase the Keychain (`FreshInstallReset`). It also rewrote the
+  instance list as the built-in relay alone (`RelayDirectory.restore`) and let
+  the Keychain fall back to memory for the rest of the process
+  (`FallbackSecureStore`). When the user opened the app later it showed the
+  sign-in screen and had forgotten every instance. `AppBoot.start` now waits
+  until protected data is available or the Keychain stops answering locked
+  (`KeychainBackend.isLockedUntilFirstUnlock`). Only then does it build any
+  service. `FreshInstallReset` also refuses to erase anything while the
+  Keychain is locked. Incoming calls still ring meanwhile, because
+  `DirectCallKit` reports them to CallKit without the services.
 
 ## Protocols and interfaces
 
@@ -219,6 +253,27 @@ Shortcuts (`.forkmesh/shortcuts/`):
   meeting; a phone outside that account needs a six-digit pairing code approved
   on the LAN. Frames are the twin of `desktop/src/LocalControl.{h,cpp}`, pinned
   by shared test vectors.
+- Owner-only families (hosts, agents, merge queue, ...) compare the account
+  name the desktop holds for the phone with its own account. A phone approved
+  by code keeps the name it had when approved, so a phone paired as a guest
+  used to be refused with "Only the account that owns this desktop can manage
+  its hosts" even after signing in to the owner's account. When a code-approved
+  phone now names an account its saved record lacks, the desktop asks
+  `devices/check`; only when the account lists the phone's key is the new name
+  recorded (the approval stays `code`, so signing out never forgets it). A
+  phone the account does not list keeps its old name, so a code-approved phone
+  cannot claim the owner's name on its own. The same holds at pairing time
+  (2026-10-28): the name a phone sends with its first hello is only a claim,
+  so the desktop's prompt reads "Guest phone (says it is alice)", and a code
+  approval drops a claimed name equal to the desktop's owner. Owner-only
+  families (and `hosts.*`) also require the device to be account-approved or
+  to have had its name confirmed by `devices/check` (`userConfirmed` in
+  `paired-devices.json`, `LocalControlServer::userVerified`). A record saved
+  before this change that names the owner without that confirmation is checked
+  with the account on its next connect and stays a guest until the account
+  lists its key. A guest still starts, steers and stops agents and sends
+  files, as the pairing prompt says; the phone shows the existing "Only the
+  account that owns this desktop ..." message for owner-only screens.
 - Cryptography is pinned by shared vectors across Kotlin, Swift and the
   desktop: [`native/ios/docs/FMCrypto.md`](../../native/ios/docs/FMCrypto.md).
 
@@ -378,6 +433,14 @@ avatar movement but does not silently change that saved feedback preference.
   Center, Notification Center, a system alert), not only after the
   background; gate it on age (`AccountPackagesStore.refreshIfStale`) or on
   a real return (`AppReturnGate`, used by chat).
+- Read and decode stored files off the main actor at launch, and restore a
+  list in one write: everything in `AppServices.start` after the identity
+  load runs on the main thread in one block. The chat history (megabytes
+  of messages) was read and decoded there, then put back one message at a
+  time, each insert copying its conversation and each direct message
+  rescheduling a save; `ChatHub.attachHistory(inBackground:)` and the
+  batched `restore`s replace that. Name every launch step
+  (`startup.<step>`) so the report says which one is slow.
 - Parse message text once per text, not once per redraw: `ChatLinkText` and
   the bubbles read `ChatTextCache`.
 - Compute derived lists once per body and pass them down.

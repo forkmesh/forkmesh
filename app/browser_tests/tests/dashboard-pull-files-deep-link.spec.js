@@ -144,6 +144,17 @@ async function mockRepoPage(page, submitted = []) {
           body: JSON.stringify({ ok: false, error: "not_found" }),
         });
       }
+    } else if (url.pathname === "/api/repo/acme/widgets/blobs") {
+      const contents = {
+        ".forkmesh/pulls/93/pull.md": PULL_MD,
+        ".forkmesh/pulls/93/changes.patch": PULL_PATCH,
+        ".forkmesh/pulls/93/0001-line-comment.md": INLINE_COMMENT_MD,
+      };
+      body = {
+        ok: true,
+        blobs: Object.fromEntries(url.searchParams.getAll("path")
+          .map((name) => [name, contents[name] ? { ok: true, content: contents[name] } : null])),
+      };
     } else if (url.pathname === "/api/repo/acme/widgets/tree") {
       body = blobPath === ".forkmesh/pulls/93"
         ? {

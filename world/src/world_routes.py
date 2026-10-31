@@ -1781,21 +1781,6 @@ async def world_admin_delete_node_handler(env, request):
             env, "DELETE FROM mirror_https_endpoints "
             "WHERE lower(node_name)=?",
             identifier)
-        # The public /status page builds its mirror roster from recorded
-        # samples (status_history), not from the live endpoint table, so a
-        # deleted node kept a "Mirror node — <name>" row with 30 days of
-        # history — and a permanent "down" verdict — long after every other
-        # trace of it was gone. Drop its samples too so deletion leaves none.
-        status_system = STATUS_MIRROR_PREFIX + identifier
-        await d1_run(
-            env, "DELETE FROM system_status_daily WHERE system=?",
-            status_system)
-        await d1_run(
-            env, "DELETE FROM system_status_hourly WHERE system=?",
-            status_system)
-        await d1_run(
-            env, "DELETE FROM system_status_minute WHERE system=?",
-            status_system)
     for identity_bi in identity_bis:
         cleanup_name = (
             target if identity_bi == target_bi else requested_target
@@ -3664,3 +3649,83 @@ async def world_mesh_visitor(env, request, visa="", arrival=False):
         "ticketNonce": nonce,
     }
     return visitor
+
+
+WORLD_VOICE_TICKET_MAX_BODY = 512
+
+
+def world_voice_scope(room, secret=""):
+    room = world_protocol.world_voice_room(room)
+    if not room or room == "channel":
+        return ""
+    if room.startswith("space:"):
+        space = room[len("space:"):]
+        if world_protocol.world_space(space, "") != space:
+            return ""
+        return room
+    if room.startswith("bubble:"):
+        secret = str(secret or "")
+        if not world_protocol.WORLD_VOICE_SECRET_RE.fullmatch(secret):
+            return ""
+        tag = hashlib.sha256(
+            ("forkmesh-world-bubble-v1\n" + secret).encode()).hexdigest()[:16]
+        if not hmac.compare_digest(tag, room[len("bubble:"):]):
+            return ""
+        return "bubble:" + secret
+    return room
+
+
+async def world_voice_ticket_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "POST"})
+    if not _request_origin_allowed(env, request):
+        return json_response(
+            {"error": "origin_not_allowed"}, status=403,
+            cache_control=no_store)
+    try:
+        payload = await bounded_json_request(
+            request, WORLD_VOICE_TICKET_MAX_BODY)
+    except RequestBodyTooLarge:
+        return json_response(
+            {"error": "payload_too_large"}, status=413,
+            cache_control=no_store)
+    except Exception:
+        return json_response(
+            {"error": "invalid_json"}, status=400, cache_control=no_store)
+    payload = payload if isinstance(payload, dict) else {}
+    try:
+        account_bi, record = await _account_session_record(env, request)
+    except Exception:
+        account_bi, record = "", None
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", str(account_bi or ""))
+        or not record
+        or record.get("status") != "active"
+        or _account_kind(record) != "user"
+    ):
+        return json_response(
+            {"error": "sign_in_required"}, status=401,
+            cache_control=no_store)
+    scope = world_voice_scope(payload.get("room"), payload.get("secret"))
+    if not scope:
+        return json_response(
+            {"error": "invalid_room"}, status=400, cache_control=no_store)
+    secret = str(getattr(env, "FORKMESH_CALLS_SECRET", "") or "")
+    nodes = chat_call_nodes(getattr(env, "FORKMESH_CALLS_NODES", "") or "")
+    if len(secret) < 32 or not nodes:
+        return json_response(
+            {"error": "calls_unavailable"}, status=503,
+            cache_control=no_store)
+    peer = bytes(js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
+    ticket = chat_call_ticket(
+        secret, "world-voice:" + scope, peer, int(Date.now()),
+        str(account_bi))
+    ticket["url"] = chat_call_pick(
+        ticket["room"], nodes, await _chat_call_healthy(nodes))
+    return json_response(
+        {**ticket, "voice": payload.get("room")},
+        cache_control=no_store,
+        extra_headers={"x-content-type-options": "nosniff"})

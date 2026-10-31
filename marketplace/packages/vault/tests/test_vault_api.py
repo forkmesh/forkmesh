@@ -251,6 +251,37 @@ def test_organization_shares_follow_membership():
     assert len(call(runtime, "GET", "/api/vault/items", "bob")["data"]["shared"]) == 1
 
 
+def test_organization_guests_are_never_recipients_or_readers():
+    runtime = ready("alice", "bob", "erin")
+    runtime.join("acme", "erin", "guest")
+    add_item(runtime)
+    target = {"kind": "organization", "name": "acme"}
+    path = f"/api/vault/items/{ITEM}/shares"
+    shared = call(runtime, "POST", path, "alice", {
+        "target": target, "permission": "read",
+        "grants": [{"recipient": "bob", "via": target, "grant": grant()}]})
+    assert shared["status"] == 200
+    members = call(runtime, "GET", "/api/vault/organizations/acme/members")["data"]["members"]
+    assert "erin" not in [m["name"] for m in members]
+    assert call(runtime, "GET", "/api/vault/organizations/acme/members", "erin")["status"] == 404
+    assert "acme" not in [o["name"] for o in call(
+        runtime, "GET", "/api/vault/organizations", "erin")["data"]["organizations"]]
+    add_item(runtime, "erin", "b" * 32)
+    guest_share = call(runtime, "POST", "/api/vault/items/" + "b" * 32 + "/shares", "erin", {
+        "target": target, "permission": "read", "grants": []})
+    assert guest_share["data"]["error"] == "organization_not_found"
+    pending = call(runtime, "GET", "/api/vault/pending")["data"]["pending"]
+    assert "erin" not in [m["name"] for p in pending for m in p["members"]]
+    sealed = call(runtime, "POST", f"/api/vault/items/{ITEM}/grants", "alice", {
+        "grants": [{"recipient": "erin", "via": target, "grant": grant("E")}]})
+    assert sealed["data"]["error"] == "invalid_grants"
+    runtime.db.execute(
+        "INSERT INTO vault_grants(item_id,recipient_bi,recipient_name,via_kind,via_bi,"
+        "created_at,data) SELECT item_id,?,?,via_kind,via_bi,created_at,data "
+        "FROM vault_grants WHERE recipient_bi=?", (bi("erin"), "erin", bi("bob")))
+    assert call(runtime, "GET", "/api/vault/items", "erin")["data"]["shared"] == []
+
+
 def test_unshare_removes_grants_and_rotation_replaces_every_grant():
     runtime = ready("alice", "bob", "carol")
     add_item(runtime)

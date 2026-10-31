@@ -40,6 +40,8 @@ import com.forkmesh.nativeapp.chat.DirectSafetyScan
 import com.forkmesh.nativeapp.chat.DirectTrustNotice
 import com.forkmesh.nativeapp.chat.DirectTrustText
 import com.forkmesh.nativeapp.feature.account.settings.QrScannerScreen
+import com.forkmesh.nativeapp.ui.kit.FmAlertDialog
+import com.forkmesh.nativeapp.ui.kit.FmDialogActions
 import com.forkmesh.nativeapp.ui.kit.FmElevatedButton
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
 import com.forkmesh.nativeapp.ui.kit.FmSectionHeader
@@ -137,19 +139,47 @@ fun PendingDeviceBanner(conversation: String, revision: Int) {
     val pending by produceState(emptyList<DirectTrustNotice>(), conversation, revision) {
         value = withContext(Dispatchers.IO) { ChatDepth.direct?.trustNotices(conversation).orEmpty() }
     }
-    if (pending.isEmpty()) return
+    val notice = pending.firstOrNull { it.asksApproval } ?: return
+    var working by remember(notice.id) { mutableStateOf(false) }
+    var confirmBlock by remember(notice.id) { mutableStateOf(false) }
     val colors = Fm.colors
-    Column(Modifier.fillMaxWidth().background(colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)) {
-        for (device in pending) {
-            Text(device.text, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
-            Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-                FmTextButton(onClick = {
-                    scope.launch(Dispatchers.IO) { ChatDepth.direct?.approveDevice(conversation, device.kid) }
-                }) { Text("Approve") }
-                FmTextButton(onClick = {
-                    scope.launch(Dispatchers.IO) { ChatDepth.direct?.blockDevice(conversation, device.kid) }
-                }, contentColor = colors.danger) { Text("Block") }
+    fun decide(approve: Boolean) {
+        if (working) return
+        working = true
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                val direct = ChatDepth.direct
+                for (kid in notice.kids) {
+                    if (approve) direct?.approveDevice(conversation, kid) else direct?.blockDevice(conversation, kid)
+                }
             }
+            working = false
+        }
+    }
+    Column(Modifier.fillMaxWidth().background(colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)) {
+        Text(notice.text, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
+        Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+            FmTextButton(onClick = { decide(approve = true) }, enabled = !working) { Text("Approve") }
+            FmTextButton(onClick = { confirmBlock = true }, enabled = !working, contentColor = colors.danger) { Text("Block") }
+        }
+    }
+    if (confirmBlock) {
+        FmAlertDialog(
+            onDismissRequest = { confirmBlock = false },
+            title = DirectTrustText.blockTitle(notice.kids.size),
+            actions = {
+                FmDialogActions(
+                    onCancel = { confirmBlock = false },
+                    onConfirm = {
+                        confirmBlock = false
+                        decide(approve = false)
+                    },
+                    confirmLabel = "Block",
+                    destructive = true,
+                )
+            },
+        ) {
+            Text(DirectTrustText.blockNote(notice.kids.size), style = Fm.text.bodyMedium.copy(color = colors.textSecondary))
         }
     }
 }

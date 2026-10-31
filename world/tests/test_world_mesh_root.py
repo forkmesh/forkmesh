@@ -80,6 +80,7 @@ const clearNeighbourFootprints = () => {};
 const removeInteractiveObject = () => {};
 const disposeObject3D = () => {};
 const ctx = { world: { userData: {}, add() {}, remove() {} }, interactive: [] };
+const fns = { registerWorldElement() {} };
 const BLT_SCENE = {
   v: 1,
   ground: { color: "#3a4550", accent: "#e74c3c", pattern: "circuit" },

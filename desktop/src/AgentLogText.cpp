@@ -209,7 +209,13 @@ namespace AgentLogText {
 
 QString toolLine(const QString &name, const QJsonObject &input)
 {
-    QString arg = input.value(QStringLiteral("file_path")).toString();
+    QStringList asked;
+    for (const QJsonValue &item : input.value(QStringLiteral("questions")).toArray())
+        asked.append(item.toObject().value(QStringLiteral("question")).toString().simplified());
+    asked.removeAll(QString());
+    QString arg = asked.join(QStringLiteral(" \u00B7 "));
+    if (arg.isEmpty())
+        arg = input.value(QStringLiteral("file_path")).toString();
     if (arg.isEmpty())
         arg = shellCommand(input.value(QStringLiteral("command")));
     if (arg.isEmpty())

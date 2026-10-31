@@ -287,12 +287,54 @@ void MainWindow::refreshAgentTaskGradeControl(const AgentSession *session)
                   .arg(grade));
 }
 
+void MainWindow::refreshAgentWorkflowLink(const AgentSession *session)
+{
+    if (!m_agentWorkflowLink)
+        return;
+    const QString key =
+        session && !session->teammateId.isEmpty()
+            ? QStringLiteral("%1|%2|%3/%4")
+                  .arg(QString::number(session->id), session->teammateId,
+                       session->owner, session->name)
+            : QString();
+    if (key == m_agentWorkflowLinkKey)
+        return;
+    m_agentWorkflowLinkKey = key;
+    m_agentWorkflowLink->hide();
+    m_agentWorkflowLink->setProperty("workflowRepo", QString());
+    m_agentWorkflowLink->setProperty("workflowId", QString());
+    if (key.isEmpty())
+        return;
+    const int repoIndex = repoIndexFor(session->owner, session->name);
+    if (repoIndex < 0 || m_repositories.at(repoIndex).localPath.isEmpty())
+        return;
+    for (const forkmesh::repoworkflows::Listing &listing :
+         forkmesh::repoworkflows::listRepositoryWorkflows(
+             m_repositories.at(repoIndex).localPath)) {
+        if (!listing.error.isEmpty() ||
+            !forkmesh::repoworkflows::runsAgent(listing.workflow, session->teammateId))
+            continue;
+        const QString name = listing.workflow.name.isEmpty() ? listing.workflow.id
+                                                             : listing.workflow.name;
+        m_agentWorkflowLink->setProperty("workflowRepo", shortcutRepoKey(repoIndex));
+        m_agentWorkflowLink->setProperty("workflowId", listing.workflow.id);
+        m_agentWorkflowLink->setText(
+            QStringLiteral("<a href=\"workflow\">%1 Workflow: %2</a>")
+                .arg(QString::fromUtf8("\xE2\x86\x90"), name.toHtmlEscaped()));
+        m_agentWorkflowLink->setToolTip(
+            QStringLiteral("Open %1 in Workflows").arg(name));
+        m_agentWorkflowLink->show();
+        return;
+    }
+}
+
 void MainWindow::refreshAgentDetailMeta(int sessionId, bool forceProcessRefresh)
 {
     if (!m_agentMeta)
         return;
     const AgentSession *liveSession = findAgentSession(sessionId);
     refreshAgentSyncControls(sessionId);
+    refreshAgentWorkflowLink(liveSession);
     if (!liveSession) {
         refreshAgentTaskGradeControl(nullptr);
         return;
@@ -682,7 +724,7 @@ void MainWindow::applyAgentMetaHtml(const QString &html)
 void MainWindow::showAgentSession(int sessionId)
 {
     m_selectedAgentSessionId = sessionId;
-    refreshAgentSubSessions();
+    refreshAgentTowerPanels();
     if (m_agentTable && m_agentTable->isVisible() && isActiveWindow()) {
         clearTeammateDoneUnseen(sessionId);
         markAgentSessionRead(sessionId);
@@ -705,6 +747,7 @@ void MainWindow::showAgentSession(int sessionId)
     updateQuickAddTargetAgentLabel();
     scheduleNavRecord();
     AgentSession *liveSession = findAgentSession(sessionId);
+    refreshAgentWorkflowLink(liveSession);
     if (!liveSession) {
         refreshAgentTaskGradeControl(nullptr);
         setAgentTitleText(m_agentTitle, QStringLiteral("Select a session"));

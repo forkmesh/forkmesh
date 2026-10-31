@@ -14,6 +14,8 @@ import com.forkmesh.nativeapp.chat.NodeOwners
 import com.forkmesh.nativeapp.chat.ChatHistoryCodec
 import com.forkmesh.nativeapp.chat.ChatHistoryStore
 import com.forkmesh.nativeapp.chat.ChatHub
+import com.forkmesh.nativeapp.chat.ChatLinkPreviewService
+import com.forkmesh.nativeapp.chat.ChatLinkUrlConnectionHttp
 import com.forkmesh.nativeapp.chat.ChatReadMarks
 import com.forkmesh.nativeapp.chat.ChatWelcomeAnnouncer
 import com.forkmesh.nativeapp.chat.DirectMeshLinks
@@ -98,6 +100,10 @@ object ChatDepth {
         private set
 
     @Volatile
+    var linkPreviews: ChatLinkPreviewService? = null
+        private set
+
+    @Volatile
     private var discordBridge: DiscordBridge? = null
 
     @Volatile
@@ -179,6 +185,20 @@ object ChatDepth {
         val historyDir = File(AppFiles.projectSupportDir(app, scopeInfo), "chat-history")
         chat.attachHistory(ChatHistoryStore(historyDir), formerScopes, historyScope)
         room.addListener { scheduleSave() }
+        val previewProject = scopeInfo.projectId.ifEmpty { settings.core.serverUrl }
+        val previews = ChatLinkPreviewService(
+            http = ChatLinkUrlConnectionHttp(),
+            prefs = prefs,
+            fileSource = { File(app.cacheDir, ChatLinkPreviewService.fileName(previewProject)) },
+            saveLater = { task ->
+                ProjectLifecycle.scope.launch(Dispatchers.IO) {
+                    delay(SAVE_DELAY_MS)
+                    task.run()
+                }
+            },
+        )
+        ChatLinkPreviewUi.bind(previews)
+        linkPreviews = previews
         if (prefs != null) groups = ChannelGroupsStore.forProject(prefs, scopeInfo.projectId, settings.core.serverUrl, settings.core.room)
 
         if (api != null && secrets != null) {
@@ -200,6 +220,7 @@ object ChatDepth {
             }
             office = service
             chat.office = service
+            GroupCallFeature.install(app, service) { auth?.session?.value?.nodeName.orEmpty() }
             val directService = DirectMessageService(
                 api = calling,
                 connector = WebSocketOfficeConnector,
@@ -244,7 +265,7 @@ object ChatDepth {
                     if (topic == DIRECT_MESSAGES_TOPIC && direct === directService) {
                         ProjectLifecycle.scope.launch(Dispatchers.IO) { directService.refresh() }
                     } else if (topic == ChatReadMarks.TOPIC && hub === chat) {
-                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks() }
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks(force = true) }
                     }
                 }
                 val previousEvent = channel.onEvent
@@ -287,7 +308,10 @@ object ChatDepth {
                 office?.closeAll()
                 direct?.closeAll()
                 discordBridge?.stopWatching()
+                previews.leaveProject()
             }
+            if (linkPreviews === previews) linkPreviews = null
+            ChatLinkPreviewUi.clear()
             room.frameObserver = null
             room.owners = null
             chat.calls = null
@@ -321,7 +345,7 @@ object ChatDepth {
                                 it.refresh()
                             }
                         }
-                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks()
+                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks(force = true)
                         room.owners?.clear()
                         chat.blocks?.let { if (token.isEmpty()) it.clear() else it.signedIn() }
                     }

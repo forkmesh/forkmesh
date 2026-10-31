@@ -291,6 +291,25 @@ func TestActionsPushFollowsDefaultBranchUnlessBranchesAreNamed(t *testing.T) {
 	}
 }
 
+func TestActionsContributorBranchPushRunsNothing(t *testing.T) {
+	f := newActionsFixture(t)
+	f.push("main", map[string]string{"README.md": "hello\n"})
+	f.runner.scanRefs(context.Background())
+	planted := "name: Planted\non:\n  push:\n    branches: [\"pr/**\", \"topic/**\"]\nsteps:\n  - run: echo planted\n"
+	f.push("pr/mallory/x", map[string]string{".forkmesh/planted.yml": planted})
+	f.runner.scanRefs(context.Background())
+	f.settle()
+	if runs := f.runs(); len(runs) != 0 {
+		t.Fatalf("a contributor branch ran the workflow it pushed: %#v", runs)
+	}
+	f.push("topic/x", map[string]string{"notes.txt": "topic\n"})
+	f.runner.scanRefs(context.Background())
+	f.settle()
+	if runs := f.runs(); len(runs) != 1 || runs[0].Ref != "refs/heads/topic/x" {
+		t.Fatalf("an ordinary branch push still runs its workflows: %#v", runs)
+	}
+}
+
 func TestActionsNeedsHoldsThenSkipsAfterAFailure(t *testing.T) {
 	f := newActionsFixture(t)
 	f.runner.scanRefs(context.Background())

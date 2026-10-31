@@ -652,6 +652,13 @@ void testClassifier()
         QStringLiteral("WebSearch"), QJsonObject{{QStringLiteral("query"), QStringLiteral("x")}},
         {});
     check(search.external, QStringLiteral("WebSearch is external"));
+    const agentnet::ExternalCall monitor = agentnet::classifyToolCall(
+        QStringLiteral("Monitor"),
+        QJsonObject{{QStringLiteral("command"),
+                     QStringLiteral("curl -s https://docs.example.org/feed")}},
+        {});
+    check(monitor.external && monitor.target == QLatin1String("docs.example.org"),
+          QStringLiteral("a Monitor command is classified like a Bash command"));
     check(!agentnet::classifyToolCall(QStringLiteral("Read"),
                                       QJsonObject{{QStringLiteral("file_path"),
                                                    QStringLiteral("/etc/hosts")}},
@@ -797,6 +804,17 @@ void testHookSettings()
                   .size() == 1,
           QStringLiteral("hook settings install one PreToolUse matcher"));
     check(object.value(QStringLiteral("hooks"))
+              .toObject()
+              .value(QStringLiteral("PreToolUse"))
+              .toArray()
+              .first()
+              .toObject()
+              .value(QStringLiteral("matcher"))
+              .toString()
+              .split(QLatin1Char('|'))
+              .contains(QStringLiteral("Monitor")),
+          QStringLiteral("the PreToolUse gate also matches the Monitor tool"));
+    check(object.value(QStringLiteral("hooks"))
                   .toObject()
                   .value(QStringLiteral("PostToolUseFailure"))
                   .toArray()
@@ -890,6 +908,19 @@ void testServer()
     check(seen.size() == 1 && seen.first().risk.destructive == QLatin1String("recursive delete") &&
               output.contains(QLatin1String("\"deny\"")),
           QStringLiteral("a destructive local command reaches the handler (%1)").arg(output));
+    seen.clear();
+
+    output = runHook(
+        server.socketPath(),
+        QJsonObject{{QStringLiteral("tool_name"), QStringLiteral("Monitor")},
+                    {QStringLiteral("tool_input"),
+                     QJsonObject{{QStringLiteral("command"), QStringLiteral("rm -rf build")},
+                                 {QStringLiteral("timeout_ms"), 30000}}},
+                    {QStringLiteral("cwd"), QDir::tempPath()}},
+        &exitCode);
+    check(seen.size() == 1 && seen.first().risk.destructive == QLatin1String("recursive delete") &&
+              output.contains(QLatin1String("\"deny\"")),
+          QStringLiteral("a destructive Monitor command reaches the handler (%1)").arg(output));
     seen.clear();
 
     QTemporaryDir agents;
@@ -1476,6 +1507,68 @@ void testDestructiveCommandHtml()
           QStringLiteral("gh subcommands link to their manual page"));
 }
 
+void testReadGuard()
+{
+    namespace agentrules = forkmesh::agentrules;
+    const QString hooks = forkmesh::agentnet::claudeHookSettings(true);
+    const QString guarded = agentrules::claudeSettingsWithReadGuard(hooks);
+    const QJsonArray pre = QJsonDocument::fromJson(guarded.toUtf8())
+                               .object()
+                               .value(QStringLiteral("hooks")).toObject()
+                               .value(QStringLiteral("PreToolUse")).toArray();
+    check(pre.size() == 2 &&
+              pre.at(1).toObject().value(QStringLiteral("matcher")).toString() ==
+                  QLatin1String("Read") &&
+              !guarded.contains(QLatin1Char('\'')),
+          QStringLiteral("the read guard joins the gate hooks without a single quote"));
+    check(agentrules::claudeSettingsWithReadGuard(guarded) == guarded,
+          QStringLiteral("adding the read guard twice keeps one copy"));
+    const QJsonObject alone =
+        QJsonDocument::fromJson(agentrules::claudeSettingsWithReadGuard(QString()).toUtf8())
+            .object();
+    check(alone.value(QStringLiteral("hooks")).toObject()
+                  .value(QStringLiteral("PreToolUse")).toArray().size() == 1,
+          QStringLiteral("the read guard installs without the network gate"));
+
+    const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+    if (python.isEmpty()) {
+        std::printf("skip - python3 not found; read guard script not run\n");
+        return;
+    }
+    QTemporaryDir dir;
+    const QString big = QDir(dir.path()).filePath(QStringLiteral("big.swift"));
+    const QString small = QDir(dir.path()).filePath(QStringLiteral("small.swift"));
+    {
+        QFile file(big);
+        file.open(QIODevice::WriteOnly);
+        for (int i = 0; i < 1000; ++i)
+            file.write(QByteArray(60, 'x') + '\n');
+        QFile little(small);
+        little.open(QIODevice::WriteOnly);
+        little.write("let a = 1\n");
+    }
+    const auto run = [&](const QJsonObject &input) {
+        QProcess process;
+        process.start(python, {QStringLiteral("-c"), agentrules::readGuardHookScript()});
+        process.write(QJsonDocument(QJsonObject{{QStringLiteral("tool_name"), QStringLiteral("Read")},
+                                                {QStringLiteral("tool_input"), input},
+                                                {QStringLiteral("cwd"), dir.path()}})
+                          .toJson(QJsonDocument::Compact));
+        process.closeWriteChannel();
+        process.waitForFinished(10000);
+        return QString::fromUtf8(process.readAllStandardOutput());
+    };
+    const QString refused = run({{QStringLiteral("file_path"), big}});
+    check(refused.contains(QStringLiteral("\"deny\"")) &&
+              refused.contains(QStringLiteral("big.swift is 1001 lines")) &&
+              refused.contains(QStringLiteral("too large to read whole")),
+          QStringLiteral("a whole Read of a large file is refused with its line count"));
+    check(run({{QStringLiteral("file_path"), big}, {QStringLiteral("limit"), 300}}).isEmpty() &&
+              run({{QStringLiteral("file_path"), QStringLiteral("small.swift")}}).isEmpty() &&
+              run({{QStringLiteral("file_path"), QStringLiteral("missing.swift")}}).isEmpty(),
+          QStringLiteral("ranged reads, small files and missing paths pass the read guard"));
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -1492,6 +1585,7 @@ int main(int argc, char **argv)
     testCommandRiskMatch();
     testScriptClassifier();
     testRunRules();
+    testReadGuard();
     testAlwaysAllowedDestructive();
     testDestructiveReview();
     testScratchDelete();

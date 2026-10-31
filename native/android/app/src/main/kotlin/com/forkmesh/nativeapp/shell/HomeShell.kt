@@ -25,6 +25,10 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
@@ -97,6 +101,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.feature.navigation.ShellMenuGrid
 import com.forkmesh.nativeapp.ui.kit.fmGlass
+import com.forkmesh.nativeapp.ui.kit.fmBusyRing
 import com.forkmesh.nativeapp.ui.kit.FmBackdropHost
 import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
 import androidx.compose.ui.unit.Dp
@@ -150,6 +155,7 @@ import com.forkmesh.nativeapp.feature.surfaces.RunningAgentAccessory
 import com.forkmesh.nativeapp.feature.surfaces.SurfacesFeature
 import com.forkmesh.nativeapp.feature.tools.ToolsFeature
 import com.forkmesh.nativeapp.navigation.AppTab
+import com.forkmesh.nativeapp.navigation.ShellPanes
 import com.forkmesh.nativeapp.navigation.CodeBarItem
 import com.forkmesh.nativeapp.navigation.CodeButton
 import com.forkmesh.nativeapp.navigation.CodeButtonPlan
@@ -167,6 +173,8 @@ import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.ui.navigation.LocalNavigator
 import com.forkmesh.nativeapp.ui.navigation.LocalScreen
+import com.forkmesh.nativeapp.ui.navigation.LocalShellPaneOpen
+import com.forkmesh.nativeapp.ui.navigation.PaneListNavigator
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
@@ -333,7 +341,10 @@ class HomeShell : Screen() {
         val runnerAttention by RunnerAttentionFeature.items.collectAsState()
         val badges by ShellBadges.counts.collectAsState()
         val rssUnread by ShellBadges.rssUnread.collectAsState()
+        val toursLeft by com.forkmesh.nativeapp.feature.navigation.ShellTour.left.collectAsState()
+        LaunchedEffect(Unit) { com.forkmesh.nativeapp.feature.navigation.ShellTour.refresh() }
         return mapOf(
+            Route.Kind.Tour to ShellMenuBadge(toursLeft),
             Route.Kind.AllAgents to ShellMenuBadge(activeAgents, running = true),
             Route.Kind.Timers to ShellMenuBadge(timers.count { it.isRunning }, running = true),
             Route.Kind.Hosts to ShellMenuBadge(runnerAttention.size),
@@ -577,7 +588,7 @@ class HomeShell : Screen() {
                                 barCandidates,
                             )
                         } else {
-                            TabStack(tabNav, holder, if (wide || keyboardUp || shellChromeHidden) 0.dp else ShellBar.clearance())
+                            TabPanes(selectedTab, tabNav, holder, if (wide || keyboardUp || shellChromeHidden) 0.dp else ShellBar.clearance())
                         }
                     }
                     ShellPrompt(
@@ -621,19 +632,23 @@ class HomeShell : Screen() {
                         modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
                         header = { if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, voice = voiceHold) },
                     ) {
+                        val hubActive = barCandidates.drop(baseCells.size).any { it.active }
                         barItems.forEach { item ->
                             val isSelected = item.selected
+                            val railActive = if (item === homeItem) hubActive else item.agents && item.badge > 0
                             NavigationRailItem(
                                 selected = isSelected,
                                 onClick = item.onClick,
                                 icon = {
-                                    BadgeIcon(
-                                        item.icon, item.badge, if (isSelected) Fm.colors.textPrimary else Fm.colors.textTertiary, 24,
-                                        badgeColor = if (item.agents && needsYou == 0) Fm.colors.accent else Fm.colors.danger,
-                                        pulse = if (item.agents) LaunchFlight.landings else 0,
-                                        modifier = if (item.agents) Modifier.launchTarget() else Modifier,
-                                        desktopOffline = item.agents && desktopOffline,
-                                    )
+                                    Box(Modifier.fmBusyRing(railActive, inset = (-5).dp)) {
+                                        BadgeIcon(
+                                            item.icon, item.badge, if (isSelected) Fm.colors.textPrimary else Fm.colors.textTertiary, 24,
+                                            badgeColor = if (item.agents && needsYou == 0) Fm.colors.accent else Fm.colors.danger,
+                                            pulse = if (item.agents) LaunchFlight.landings else 0,
+                                            modifier = if (item.agents) Modifier.launchTarget() else Modifier,
+                                            desktopOffline = item.agents && desktopOffline,
+                                        )
+                                    }
                                 },
                                 label = { Text(item.title) },
                                 colors = NavigationRailItemDefaults.colors(
@@ -651,7 +666,8 @@ class HomeShell : Screen() {
                     }
                     Box(Modifier.weight(1f)) {
                         body()
-                        StatusPageFeature.TopStrip(Modifier.align(Alignment.TopCenter))
+                        ShellIslandStatus(Modifier.align(Alignment.TopCenter))
+                        if (agentsOn) com.forkmesh.nativeapp.feature.agents.AgentTokenChartsOverlay(Modifier.align(Alignment.TopCenter))
                     }
                 }
             } else {
@@ -674,7 +690,8 @@ class HomeShell : Screen() {
                             .then(if (keyboardUp) Modifier else Modifier.consumeWindowInsets(WindowInsets.navigationBars)),
                     ) {
                         body()
-                        StatusPageFeature.TopStrip(Modifier.align(Alignment.TopCenter))
+                        ShellIslandStatus(Modifier.align(Alignment.TopCenter))
+                        if (agentsOn) com.forkmesh.nativeapp.feature.agents.AgentTokenChartsOverlay(Modifier.align(Alignment.TopCenter))
                     }
                 }
             }
@@ -698,7 +715,80 @@ class HomeShell : Screen() {
 }
 
 @Composable
-private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearance: Dp) {
+private fun TabPanes(tab: AppTab, navigator: Navigator, holder: SaveableStateHolder, clearance: Dp) {
+    val configuration = LocalConfiguration.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val panes = ShellPanes.metrics(
+            configuration.screenWidthDp.toDouble(),
+            configuration.screenHeightDp.toDouble(),
+            content = maxWidth.value.toDouble(),
+        )
+        if (!ShellPanes.splits(tab, panes)) {
+            TabStack(navigator, holder, clearance)
+            return@BoxWithConstraints
+        }
+        val root = navigator.stack.first()
+        val list = remember(navigator) { PaneListNavigator(navigator) }
+        Row(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .width(panes.list.dp)
+                    .fillMaxHeight()
+                    .background(Fm.colors.canvas)
+                    .padding(bottom = if (root.extendsUnderTabBar) 0.dp else clearance),
+            ) {
+                holder.SaveableStateProvider(root.key) {
+                    CompositionLocalProvider(
+                        LocalNavigator provides list,
+                        LocalScreen provides root,
+                        LocalShellClearance provides clearance,
+                        LocalShellPaneOpen provides navigator.stack.getOrNull(1),
+                    ) {
+                        root.Content(list)
+                    }
+                }
+            }
+            Box(Modifier.width(0.5.dp).fillMaxHeight().background(Fm.colors.border.copy(alpha = 0.7f)))
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                TabStack(navigator, holder, clearance, placeholder = { ShellPanePlaceholder(tab) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShellPanePlaceholder(tab: AppTab) {
+    val (title, hint) = when (tab) {
+        AppTab.Agents -> "Pick an agent" to "Its run, transcript and changes open here, beside the list."
+        AppTab.Inbox -> "Pick a ping" to "Reviews, mentions and approvals open here, beside the list."
+        AppTab.Code -> "Pick a repository" to "Its code, pull requests and issues open here, beside the list."
+        AppTab.Chat -> "Pick a conversation" to "The conversation opens here."
+    }
+    Column(
+        Modifier.fillMaxSize().background(Fm.colors.canvas).padding(FmSpace.x6),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.size(76.dp).fmGlass(CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            FmIcon(if (tab == AppTab.Code) "code" else if (tab == AppTab.Inbox) "inbox" else "auto_awesome", size = 34.dp, tint = Fm.colors.accent)
+        }
+        Spacer(Modifier.height(FmSpace.x3))
+        Text(title, textAlign = TextAlign.Center, style = Fm.text.titleMedium)
+        Spacer(Modifier.height(FmSpace.x2))
+        Text(
+            hint,
+            textAlign = TextAlign.Center,
+            style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
+            modifier = Modifier.widthIn(max = 300.dp),
+        )
+    }
+}
+
+@Composable
+private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearance: Dp, placeholder: (@Composable () -> Unit)? = null) {
     DisposableEffect(navigator) {
         navigator.onRemoved = { holder.removeState(it.key) }
         onDispose { navigator.onRemoved = {} }
@@ -729,7 +819,9 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearanc
                 val from = navigator.stack.indexOf(initialState)
                 val to = navigator.stack.indexOf(targetState)
                 val forward = from >= 0 && (to > from || to < 0)
-                if (forward) {
+                if (placeholder != null && from < 0 && to > 0) {
+                    fadeIn(FmMotion.push()) togetherWith fadeOut(FmMotion.push())
+                } else if (forward) {
                     (slideInHorizontally(FmMotion.push()) { it } togetherWith slideOutHorizontally(FmMotion.push()) { -it * 3 / 10 })
                         .apply { targetContentZIndex = 1f }
                 } else {
@@ -738,6 +830,10 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearanc
                 }
             },
         ) { screen ->
+            if (placeholder != null && screen === navigator.stack.firstOrNull()) {
+                placeholder()
+                return@AnimatedContent
+            }
             holder.SaveableStateProvider(screen.key) {
                 CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen, LocalShellClearance provides clearance) {
                     Box(Modifier.fillMaxSize().background(Fm.colors.canvas).padding(bottom = if (screen.extendsUnderTabBar) 0.dp else clearance)) {
@@ -770,7 +866,7 @@ private fun TopBar(
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(horizontal = FmSpace.x4, vertical = FmSpace.x1),
     ) {
-        ToolsFeature.TelemetryStripCompact(navigator, Modifier.align(Alignment.Center).padding(horizontal = 64.dp))
+        if (!rememberShellIslandEars()) ToolsFeature.TelemetryStripCompact(navigator, Modifier.align(Alignment.Center).padding(horizontal = 64.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { AccountFeature.ProjectSlot(onLongPress = onHome) }
             Spacer(Modifier.width(FmSpace.x3))
@@ -978,6 +1074,7 @@ object ShellBar {
     val height = 60.dp
     val cell = 52.dp
     val margin = 12.dp
+    val lensMargin = 10.dp
     val gap = 5.dp
     val homeIndicator = 34.dp
     val cornerOuter = 26.dp

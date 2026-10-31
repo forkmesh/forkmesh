@@ -39,7 +39,7 @@ def test_the_new_version_workflow_links_every_platform_in_order():
     assert subprocess.run(["bash", "-n", str(path)]).returncode == 0
     steps = _steps(path)
     assert steps[:3] == [("Cut the new version", ""), ("Wait for the release candidate", ""),
-                         ("Reset build numbers to 1", "")]
+                         ("Reset build numbers to 0", "")]
     assert [link for _, link in steps[3:]] == [
         f"deploy-build-{platform}.sh" for platform in PLATFORMS]
     text = path.read_text()

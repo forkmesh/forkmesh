@@ -8,19 +8,23 @@ import UIKit
 struct AgentLineDeleteRequest {
     let id: String
     let deletion: AgentLineDeletion
+    let desktopKey: String
+    let key: String
 
     init?(_ line: AgentLine) {
         guard let deletion = AgentLines.deletion(line) else { return nil }
         id = line.id
         self.deletion = deletion
+        if case .control(let row) = line.source { desktopKey = row.desktopKey } else { desktopKey = "" }
+        key = AgentLines.deletionKey(line) ?? deletion.key
     }
 
     init(id: String, deletion: AgentLineDeletion) {
         self.id = id
         self.deletion = deletion
+        desktopKey = ""
+        key = deletion.key
     }
-
-    var key: String { deletion.key }
 
     var asksFirst: Bool {
         if case .outside = deletion { return true }
@@ -30,13 +34,13 @@ struct AgentLineDeleteRequest {
     @MainActor func run() async -> AgentDeleteOutcome {
         switch deletion {
         case .outside(let id):
-            guard let client = AgentOpsFeature.client else { return .failed("The desktop is not in reach.") }
+            guard let client = AgentOpsFeature.client(desktopKey: desktopKey) else { return .failed("The desktop is not in reach.") }
             let model = AgentDeleteModel(client: client, sessionId: id)
             await model.prepare()
             if await model.run() { return .deleted("Ended and removed on the desktop.") }
             return .failed(model.errorText.isEmpty ? "Could not delete the agent." : model.errorText)
         case .desktop(let sessionId):
-            guard let client = AgentOpsFeature.client else { return .failed("The desktop is not in reach.") }
+            guard let client = AgentOpsFeature.client(desktopKey: desktopKey) else { return .failed("The desktop is not in reach.") }
             let model = AgentDeleteModel(client: client, sessionId: sessionId)
             await model.prepare()
             if await model.run() {

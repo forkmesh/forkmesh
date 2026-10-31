@@ -161,6 +161,8 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var historyScope: @MainActor () -> String = { "" }
     @ObservationIgnored public var historyFormerScopes: @MainActor () -> [String] = { [] }
     @ObservationIgnored private var loadedScope = ""
+    @ObservationIgnored private var loadingScope = ""
+    @ObservationIgnored private var historyLoad: Task<Void, Never>?
     @ObservationIgnored public private(set) var projectSuspended = false
     @ObservationIgnored private var historyToken: ListenerToken?
     @ObservationIgnored private var directRestore:
@@ -261,12 +263,16 @@ public final class ChatHub: ShellChatBridge {
 
     public func attachHistory(
         _ store: ChatHistoryStore, scope: @escaping @MainActor () -> String,
-        formerScopes: @escaping @MainActor () -> [String] = { [] }
+        formerScopes: @escaping @MainActor () -> [String] = { [] }, inBackground: Bool = false
     ) {
         history = store
         historyScope = scope
         historyFormerScopes = formerScopes
-        restoreHistoryIfNeeded()
+        if inBackground {
+            loadHistoryInBackground()
+        } else {
+            restoreHistoryIfNeeded()
+        }
         extras.onChange = { [weak self] in self?.persistSoon() }
         if let token = historyToken { relay.removeListener(token) }
         historyToken = relay.addListener { [weak self] in
@@ -275,6 +281,9 @@ public final class ChatHub: ShellChatBridge {
     }
 
     public func leaveProject() async {
+        historyLoad?.cancel()
+        historyLoad = nil
+        loadingScope = ""
         if !projectSuspended, let history {
             history.cancelScheduledSave()
             if !loadedScope.isEmpty { history.save(historySnapshot(), scope: loadedScope) }
@@ -317,14 +326,39 @@ public final class ChatHub: ShellChatBridge {
         Task { await mesh.enterProject() }
     }
 
+    public func historyLoaded() async {
+        await historyLoad?.value
+    }
+
+    private func loadHistoryInBackground() {
+        guard let history, !projectSuspended else { return }
+        let scope = historyScope()
+        if scope.isEmpty || scope == loadedScope || scope == loadingScope { return }
+        let former = historyFormerScopes()
+        loadingScope = scope
+        historyLoad = Task { [weak self] in
+            let load = await Task.detached(priority: .userInitiated) {
+                history.read(scope: scope, formerScopes: former)
+            }.value
+            guard let self, !Task.isCancelled, self.loadingScope == scope else { return }
+            self.loadingScope = ""
+            let restored = PerformanceMonitorService.section("chat.history.restore") {
+                self.restoreHistoryIfNeeded(preloaded: (scope, load))
+            }
+            if restored { self.persistSoon() }
+        }
+    }
+
     @discardableResult
-    private func restoreHistoryIfNeeded() -> Bool {
+    private func restoreHistoryIfNeeded(preloaded: (scope: String, load: ChatHistoryLoad)? = nil) -> Bool {
         guard let history, !projectSuspended else { return false }
         let scope = historyScope()
         if scope.isEmpty { return false }
         if scope == loadedScope { return true }
+        let ready: ChatHistoryLoad? = preloaded?.scope == scope ? preloaded?.load : nil
+        if ready == nil && scope == loadingScope { return false }
         let snapshot: ChatHistorySnapshot
-        switch history.read(scope: scope, formerScopes: historyFormerScopes()) {
+        switch ready ?? history.read(scope: scope, formerScopes: historyFormerScopes()) {
         case .unreadable:
             return false
         case .missing:
@@ -334,7 +368,7 @@ public final class ChatHub: ShellChatBridge {
             loadedScope = scope
             purgedChannels.formUnion(loaded.privateChannels)
             snapshot = loaded.withoutRelayPrivate
-            if snapshot != loaded { persistSoon() }
+            if snapshot.itemCount != loaded.itemCount { persistSoon() }
         }
         purgeRelayPrivateWorkspace()
         extras.restoreChannels(hiddenChannels: snapshot.hiddenChannels)

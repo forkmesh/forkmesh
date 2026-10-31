@@ -255,6 +255,77 @@ static void importTests(const QString &home, const QString &repo)
           "a session id that is not a plain id is refused");
 }
 
+static void orphanedTranscriptTests(const QString &home)
+{
+    const QString claude = home + QStringLiteral("/orphans/.claude");
+    const QString account = home + QStringLiteral("/orphans/account");
+    const QString repo = home + QStringLiteral("/orphans/repo");
+    const QString worktree = repo + QStringLiteral("/.worktrees/9-merged");
+    const QString sibling = worktree + QStringLiteral("-v2");
+    QDir().mkpath(worktree);
+    QDir().mkpath(sibling);
+    const auto seed = [](const QString &root, const QString &cwd, const QString &uuid) {
+        const QString dir =
+            root + QStringLiteral("/projects/") + ClaudeSessionScan::projectKey(cwd);
+        QDir().mkpath(dir + QLatin1Char('/') + uuid + QStringLiteral("/subagents"));
+        QFile f(dir + QLatin1Char('/') + uuid + QStringLiteral(".jsonl"));
+        f.open(QIODevice::WriteOnly);
+        f.write("{}\n");
+        QDir().mkpath(root + QStringLiteral("/file-history/") + uuid);
+        QDir().mkpath(root + QStringLiteral("/session-env/") + uuid);
+        return dir;
+    };
+    const QString agentDir = seed(claude, worktree, QStringLiteral("agent-1"));
+    seed(claude, worktree, QStringLiteral("shared-1"));
+    const QString repoDir = seed(claude, repo, QStringLiteral("user-1"));
+    const QString siblingDir = seed(claude, sibling, QStringLiteral("sibling-1"));
+    QFile copy(repoDir + QStringLiteral("/shared-1.jsonl"));
+    copy.open(QIODevice::WriteOnly);
+    copy.write("{}\n");
+    copy.close();
+    const QString accountDir = seed(account, worktree, QStringLiteral("account-1"));
+    const QString linkedTree = repo + QStringLiteral("/.worktrees/10-linked");
+    const QString linkedDir = seed(account, linkedTree, QStringLiteral("linked-1"));
+    const QString link =
+        claude + QStringLiteral("/projects/") + ClaudeSessionScan::projectKey(linkedTree);
+    QFile::link(linkedDir, link);
+    const QStringList dirs{claude, account, claude + QLatin1Char('/')};
+
+    check(ClaudeSessionScan::removeOrphanedTranscripts(dirs, worktree) == 0 &&
+              QFileInfo::exists(agentDir) && QFileInfo::exists(accountDir),
+          "a worktree still on disk keeps its Claude Code sessions");
+    check(ClaudeSessionScan::removeOrphanedTranscripts(dirs, QString()) == 0,
+          "an empty folder names no Claude Code sessions");
+
+    QDir(worktree).removeRecursively();
+    QStringList removed;
+    check(ClaudeSessionScan::removeOrphanedTranscripts(dirs, worktree, &removed) == 2,
+          "each config folder's sessions for a deleted worktree are removed once");
+    check(!QFileInfo::exists(agentDir) && !QFileInfo::exists(accountDir),
+          "the deleted worktree's transcripts and subagent folders are gone");
+    check(!QFileInfo::exists(claude + QStringLiteral("/file-history/agent-1")) &&
+              !QFileInfo::exists(claude + QStringLiteral("/session-env/agent-1")) &&
+              !QFileInfo::exists(account + QStringLiteral("/file-history/account-1")),
+          "the session's file history and environment go with it");
+    check(QFileInfo::exists(claude + QStringLiteral("/file-history/shared-1")),
+          "a session still listed under another folder keeps its file history");
+    check(QFileInfo::exists(repoDir) && QFileInfo::exists(siblingDir) &&
+              QFileInfo::exists(claude + QStringLiteral("/file-history/user-1")),
+          "the main checkout and a worktree sharing the name prefix keep their sessions");
+    check(removed.contains(agentDir) && removed.contains(accountDir),
+          "the removed folders are reported");
+    check(ClaudeSessionScan::removeOrphanedTranscripts(dirs, worktree) == 0,
+          "a second pass finds nothing left");
+    QDir(sibling).removeRecursively();
+    QDir(repo).removeRecursively();
+    check(ClaudeSessionScan::removeOrphanedTranscripts(dirs, linkedTree) == 2 &&
+              !QFileInfo(link).isSymLink() && !QFileInfo::exists(linkedDir) &&
+              !QFileInfo::exists(account + QStringLiteral("/file-history/linked-1")),
+          "a link the Claude app reads goes with the account folder it points at");
+    check(ClaudeSessionScan::removeOrphanedTranscripts(dirs, QStringLiteral("/")) == 0,
+          "the filesystem root is never a worktree");
+}
+
 int main(int argc, char **argv)
 {
     QTemporaryDir home;
@@ -327,7 +398,25 @@ int main(int argc, char **argv)
     check(detached && detached->gitBranch.isEmpty(),
           "a detached checkout names no branch, so refs/heads/HEAD is never probed");
 
+    const QString account = home.path() + QStringLiteral("/accounts/claude/a1");
+    const QString merged = repo + QStringLiteral("/.worktrees/8-merged");
+    QDir().mkpath(merged);
+    writeTranscript(account + QStringLiteral("/projects"), QStringLiteral("merged-agent"),
+                    {merged});
+    QFile::link(account + QStringLiteral("/projects/p-merged-agent"),
+                projects + QStringLiteral("/p-merged-agent"));
+    check(uuids(ClaudeSessionScan::scan(repo, QSet<QString>(), window))
+              .contains(QStringLiteral("merged-agent")),
+          "a transcript linked into ~/.claude/projects is seen without the account list");
+    check(!uuids(ClaudeSessionScan::scan(repo, QSet<QString>(), window, {account}))
+               .contains(QStringLiteral("merged-agent")),
+          "a ForkMesh agent's transcript linked in for the Claude app is never an external row");
+    check(!uuids(ClaudeSessionScan::scan(repo, QSet<QString>{merged}, window))
+               .contains(QStringLiteral("merged-agent")),
+          "a merged agent's worktree stays ForkMesh's own after its stream is gone");
+
     importTests(home.path(), repo);
+    orphanedTranscriptTests(home.path());
 
     if (failures == 0)
         std::cout << "claude session scan tests passed\n";

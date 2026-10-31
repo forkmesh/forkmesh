@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "BackgroundFileWriter.h"
 #include "AgentActivityFeed.h"
 #include "MainWindowInternal.h"
 #include "DiscordClient.h"
@@ -19,6 +20,7 @@
 #include "ChatVisitorPresence.h"
 #include "AppPaths.h"
 #include "QrCode.h"
+#include "TipSigner.h"
 #include "RoomSeal.h"
 
 #include <QApplication>
@@ -171,6 +173,89 @@ static QUrl chatMentionProfileUrl(const QString &serverInput,
         url.setPort(base.port());
     url.setPath(QStringLiteral("/@") + accountName.trimmed().toLower());
     return url;
+}
+
+static QStringList profileLinkLines(const QJsonObject &rec)
+{
+    QStringList lines;
+    auto add = [&lines](const QString &label, const QString &url) {
+        const QUrl parsed(url, QUrl::StrictMode);
+        if (!parsed.isValid() || parsed.host().isEmpty() ||
+            (parsed.scheme() != QStringLiteral("https") &&
+             parsed.scheme() != QStringLiteral("http")))
+            return;
+        lines << QStringLiteral("<a href=\"%1\">%2</a>")
+                     .arg(parsed.toString(QUrl::FullyEncoded).toHtmlEscaped(),
+                          label.toHtmlEscaped());
+    };
+    const QJsonArray links = rec.value(QStringLiteral("profileLinks")).toArray();
+    for (const QJsonValue &value : links) {
+        if (lines.size() >= 10)
+            break;
+        const QJsonObject link = value.toObject();
+        const QString url = link.value(QStringLiteral("url")).toString().trimmed();
+        QString label = link.value(QStringLiteral("label")).toString().trimmed().left(60);
+        if (label.isEmpty())
+            label = link.value(QStringLiteral("domain")).toString().trimmed();
+        add(label.isEmpty() ? url : label, url);
+    }
+    const QString mastodon = rec.value(QStringLiteral("mastodon")).toString().trimmed();
+    add(mastodon.isEmpty() ? QStringLiteral("Mastodon") : mastodon,
+        rec.value(QStringLiteral("mastodonUrl")).toString().trimmed());
+    return lines;
+}
+
+static QPixmap nextChatInitials(const QString &name, int side)
+{
+    const qreal dpr = iconDevicePixelRatio();
+    QPixmap pixmap(qMax(1, qRound(side * dpr)), qMax(1, qRound(side * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+    painter.drawEllipse(QRectF(0, 0, side, side));
+    QString initials;
+    for (const QString &part : name.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        initials += part.left(1).toUpper();
+        if (initials.size() >= 2)
+            break;
+    }
+    if (initials.isEmpty())
+        initials = QStringLiteral("?");
+    QFont font = painter.font();
+    font.setPixelSize(qMax(7, qRound(side * 0.4)));
+    font.setWeight(QFont::DemiBold);
+    painter.setFont(font);
+    painter.setPen(Theme::color(Theme::Role::FgMuted));
+    painter.drawText(QRect(0, 0, side, side), Qt::AlignCenter, initials);
+    return pixmap;
+}
+
+static QPixmap nextChatFacePile(const QList<QPixmap> &faces, int side)
+{
+    if (faces.isEmpty())
+        return QPixmap();
+    const qreal dpr = iconDevicePixelRatio();
+    const int step = side - 6;
+    const int width = side + step * int(faces.size() - 1);
+    QPixmap pile(qMax(1, qRound(width * dpr)), qMax(1, qRound(side * dpr)));
+    pile.setDevicePixelRatio(dpr);
+    pile.fill(Qt::transparent);
+    QPainter painter(&pile);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    for (int index = int(faces.size()) - 1; index >= 0; --index) {
+        const QRectF slot(index * step, 0, side, side);
+        painter.setCompositionMode(QPainter::CompositionMode_Clear);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Qt::black);
+        painter.drawEllipse(slot.adjusted(-1.5, -1.5, 1.5, 1.5));
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        painter.drawPixmap(slot, faces.at(index), QRectF(QPointF(0, 0), faces.at(index).size()));
+    }
+    return pile;
 }
 
 QString MainWindow::senderColor(const QString &sender) const
@@ -441,6 +526,25 @@ MessageRow *MainWindow::createMessageRow(const ChatMessage &message,
                              forkmesh::userstatus::tooltip(
                                  status, QDateTime::currentMSecsSinceEpoch()));
     }
+    if (Theme::isNext()) {
+        row->setProperty("chatSelfName",
+                         isDiscordConversation(message.conversation) && m_discordClient
+                             ? m_discordClient->botName()
+                             : chatDisplayName());
+        if (!threadSummary.isEmpty()) {
+            qint64 latestReplyMs = 0;
+            for (const ChatMessage &reply : m_history.value(message.conversation)) {
+                if (reply.threadRootId == message.id && !reply.deleted)
+                    latestReplyMs = qMax(latestReplyMs, reply.timestampMs);
+            }
+            if (auto *meta = row->findChild<QLabel *>(
+                    QStringLiteral("threadSummaryMeta")))
+                if (latestReplyMs > 0)
+                    meta->setText(QString::fromUtf8("\xC2\xB7 last ") +
+                                  MessageRow::chatStampLabel(
+                                      QDateTime::fromMSecsSinceEpoch(latestReplyMs)));
+        }
+    }
     if (m_reactions.contains(message.id))
         row->setReactions(m_reactions.value(message.id));
     row->setReceiptMark(chatReceiptMark(message));
@@ -526,6 +630,24 @@ MessageRow *MainWindow::createMessageRow(const ChatMessage &message,
 
 QWidget *MainWindow::chatDayDivider(const QDate &day)
 {
+    if (Theme::isNext()) {
+        auto *divider = new QWidget;
+        divider->setObjectName(QStringLiteral("chatDayDivider"));
+        const QDate today = QDate::currentDate();
+        auto *label = new QLabel(day == today ? QStringLiteral("Today")
+                                 : day == today.addDays(-1)
+                                     ? QStringLiteral("Yesterday")
+                                     : MessageRow::chatDayLabel(day));
+        label->setObjectName(QStringLiteral("chatDayDividerLabel"));
+        label->setAlignment(Qt::AlignCenter);
+        auto *layout = new QHBoxLayout(divider);
+        layout->setContentsMargins(0, 12, 0, 4);
+        layout->setSpacing(0);
+        layout->addStretch(1);
+        layout->addWidget(label, 0, Qt::AlignVCenter);
+        layout->addStretch(1);
+        return divider;
+    }
     auto *divider = new QWidget;
     divider->setObjectName(QStringLiteral("chatDayDivider"));
     auto *label = new QLabel(MessageRow::chatDayLabel(day));
@@ -955,7 +1077,6 @@ void MainWindow::onMessage(const ChatMessage &message)
     refreshChatListPreview(conversation);
 
     if (conversation == m_currentConversation) {
-        schedulePromptChatPreview();
         const bool wasAtBottom = m_stickToBottom;
         // A reply changes its root's summary row, and a message that landed
         // earlier than the one before it changes the order — both need the
@@ -1577,24 +1698,26 @@ void MainWindow::onAdminDeleteRequested(const QString &conversation,
 
 void MainWindow::onAvatar(const QString &peerId, const QByteArray &pngData)
 {
+    const QByteArray digest =
+        QCryptographicHash::hash(pngData, QCryptographicHash::Sha256);
+    const auto known = m_avatarSources.constFind(peerId);
+    const auto shown = m_avatars.constFind(peerId);
+    if (known != m_avatarSources.constEnd() && shown != m_avatars.constEnd() &&
+        known->first == digest && known->second == shown->cacheKey())
+        return;
     QPixmap pixmap;
+    ++m_avatarDecodes;
     if (!pixmap.loadFromData(pngData))
         return;
     m_avatars.insert(peerId, pixmap);
+    m_avatarSources.insert(peerId, {digest, pixmap.cacheKey()});
     const QString path = avatarCachePath(peerId);
-    if (!path.isEmpty()) {
-        QDir().mkpath(QFileInfo(path).absolutePath());
-        QFile f(path);
-        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            f.write(peerId.toUtf8());
-            f.write("\n");
-            f.write(pngData);
-        }
-    }
+    if (!path.isEmpty())
+        forkmesh::diskwrite::writeLater(path, peerId.toUtf8() + '\n' + pngData);
     refreshVisibleRowAvatars();
     refreshChatMembers();
     refreshIssueAvatars();
-    refreshOrganizationTaskPeopleFaces();
+    notifyPackagesAccountPicturesChanged();
     if (m_agentTable)
         refreshAgentTable();
 }
@@ -2217,7 +2340,7 @@ void MainWindow::mergeChatUserDirectory(const QJsonArray &users)
         // The issue list and the open issue were painted before this arrived,
         // so they are still wearing the seeded stand-in portraits.
         refreshIssueAvatars();
-        refreshOrganizationTaskPeopleFaces();
+        notifyPackagesAccountPicturesChanged();
     }
     renderUsersPage(m_usersDirectoryPayload);
     for (MemberInfo &member : m_homeRoster) {
@@ -2276,6 +2399,20 @@ void MainWindow::refreshChatMembers()
             m_chatMembersHeading->setText(
                 QStringLiteral("DISCORD PARTICIPANTS SEEN HERE — %1")
                     .arg(names.size()));
+        }
+        if (m_chatMembersButton && Theme::isNext()) {
+            QList<QPixmap> faces;
+            for (const QString &name : names) {
+                if (faces.size() >= 3)
+                    break;
+                faces.append(nextChatInitials(name, 20));
+            }
+            const QPixmap pile = nextChatFacePile(faces, 20);
+            if (!pile.isNull()) {
+                m_chatMembersButton->setProperty("forkmeshOcticon", QVariant());
+                m_chatMembersButton->setIcon(QIcon(pile));
+                m_chatMembersButton->setIconSize(pile.deviceIndependentSize().toSize());
+            }
         }
         if (m_chatMembersButton) {
             m_chatMembersButton->setText(QString::number(names.size()));
@@ -2633,6 +2770,23 @@ void MainWindow::refreshChatMembers()
                       "DATABASE USERS IN THIS ROOM \xE2\x80\x94 %1")
                       .arg(groups.size()));
     }
+    if (m_chatMembersButton && Theme::isNext()) {
+        QList<QPixmap> faces;
+        for (const ChatUserGroup &group : std::as_const(groups)) {
+            if (faces.size() >= 3)
+                break;
+            const QPixmap known =
+                chatSenderAvatarSource(group.primary.id, group.primary.name);
+            faces.append(known.isNull() ? nextChatInitials(group.primary.name, 20)
+                                        : roundedAvatar(known, 20, 0.5));
+        }
+        const QPixmap pile = nextChatFacePile(faces, 20);
+        if (!pile.isNull()) {
+            m_chatMembersButton->setProperty("forkmeshOcticon", QVariant());
+            m_chatMembersButton->setIcon(QIcon(pile));
+            m_chatMembersButton->setIconSize(pile.deviceIndependentSize().toSize());
+        }
+    }
     if (m_chatMembersButton) {
         const int shownCount =
             everyoneRoom ? qMax(everyoneCount, int(groups.size()))
@@ -2928,6 +3082,56 @@ void MainWindow::refreshChatMembers()
     }
 }
 
+namespace {
+
+class ProfileAvatarClickFilter : public QObject
+{
+public:
+    ProfileAvatarClickFilter(QObject *parent, std::function<void()> onClicked)
+        : QObject(parent), m_onClicked(std::move(onClicked))
+    {
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::MouseButtonRelease &&
+            static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+            auto callback = m_onClicked;
+            callback();
+            return true;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void()> m_onClicked;
+};
+
+} // namespace
+
+void MainWindow::linkAvatarToProfile(QWidget *avatar, const QString &account)
+{
+    const QString key = userProfileAccount(account);
+    if (!avatar || key.isEmpty() ||
+        avatar->property("profileAccount").toString() == key)
+        return;
+    if (auto *previous = avatar->property("profileAvatarFilter").value<QObject *>()) {
+        avatar->removeEventFilter(previous);
+        previous->deleteLater();
+    }
+    avatar->setCursor(Qt::PointingHandCursor);
+    avatar->setProperty("profileAccount", key);
+    if (avatar->toolTip().isEmpty() || avatar->property("profileAutoTip").toBool()) {
+        avatar->setToolTip(QStringLiteral("View @%1's profile").arg(key));
+        avatar->setProperty("profileAutoTip", true);
+    }
+    auto *filter = new ProfileAvatarClickFilter(
+        avatar, [this, key] { openUserProfile(key); });
+    avatar->installEventFilter(filter);
+    avatar->setProperty("profileAvatarFilter", QVariant::fromValue<QObject *>(filter));
+}
+
 bool MainWindow::openUserProfile(const QString &account, const QString &name)
 {
     const QString key = account.trimmed().toLower();
@@ -2938,11 +3142,16 @@ bool MainWindow::openUserProfile(const QString &account, const QString &name)
                               name.isEmpty() ? account.trimmed() : name);
         return true;
     }
-    const QUrl url = chatMentionProfileUrl(
-        m_serverUrlEdit ? m_serverUrlEdit->text() : QString(), key);
-    if (!url.isValid() || url.host().isEmpty())
+    if (!forkmesh::ui::isValidNodeName(key))
         return false;
-    QDesktopServices::openUrl(url);
+    MemberInfo member;
+    member.id = QStringLiteral("user:") + key;
+    member.name = name.trimmed().isEmpty() ? key : name.trimmed();
+    member.nodeName = key;
+    member.ownerUser = key;
+    member.accountKind = QStringLiteral("user");
+    member.self = !key.isEmpty() && key == chatTrustAccount().trimmed().toLower();
+    showChatUserProfile(member, {});
     return true;
 }
 
@@ -3180,6 +3389,50 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
     bioLabel->setWordWrap(true);
     bioLabel->setVisible(false);
     bioLabel->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#c9d1d9;")));
+    auto *linksLabel = new QLabel;
+    linksLabel->setObjectName(QStringLiteral("chatUserProfileLinks"));
+    linksLabel->setTextFormat(Qt::RichText);
+    linksLabel->setWordWrap(true);
+    linksLabel->setOpenExternalLinks(true);
+    linksLabel->setVisible(false);
+
+    auto *tipsBox = new QWidget;
+    tipsBox->setObjectName(QStringLiteral("chatUserProfileTips"));
+    tipsBox->setVisible(false);
+    auto *tipsLayout = new QVBoxLayout(tipsBox);
+    tipsLayout->setContentsMargins(0, 4, 0, 0);
+    tipsLayout->setSpacing(6);
+    auto *tipsTitle = new QLabel(QStringLiteral("Tips"));
+    tipsTitle->setStyleSheet(QStringLiteral("font-weight:700;"));
+    auto *tipsQr = new QLabel;
+    tipsQr->setObjectName(QStringLiteral("chatUserProfileTipQr"));
+    tipsQr->setAlignment(Qt::AlignCenter);
+    tipsQr->setVisible(false);
+    auto *tipsAddress = new QLabel;
+    tipsAddress->setObjectName(QStringLiteral("chatUserProfileTipAddress"));
+    tipsAddress->setAlignment(Qt::AlignCenter);
+    tipsAddress->setWordWrap(true);
+    tipsAddress->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    tipsAddress->setStyleSheet(QStringLiteral("font-family:monospace;"));
+    auto *tipsNote = new QLabel;
+    tipsNote->setObjectName(QStringLiteral("chatUserProfileTipNote"));
+    tipsNote->setAlignment(Qt::AlignCenter);
+    tipsNote->setWordWrap(true);
+    tipsNote->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#8b949e;")));
+    auto *tipsCopy = new QPushButton(QStringLiteral("Copy address"));
+    tipsCopy->setObjectName(QStringLiteral("ghostButton"));
+    tipsCopy->setCursor(Qt::PointingHandCursor);
+    tipsCopy->setVisible(false);
+    connect(tipsCopy, &QPushButton::clicked, tipsCopy, [tipsCopy, tipsAddress] {
+        QGuiApplication::clipboard()->setText(tipsAddress->text());
+        tipsCopy->setText(QStringLiteral("Address copied"));
+    });
+    tipsLayout->addWidget(tipsTitle);
+    tipsLayout->addWidget(tipsQr, 0, Qt::AlignHCenter);
+    tipsLayout->addWidget(tipsAddress);
+    tipsLayout->addWidget(tipsNote);
+    tipsLayout->addWidget(tipsCopy, 0, Qt::AlignHCenter);
+
     auto *loadingLabel = new QLabel(QString::fromUtf8("Loading profile\xE2\x80\xA6"));
     loadingLabel->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#8b949e; font-size:11px;")));
 
@@ -3258,6 +3511,8 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
     layout->addLayout(headRow);
     layout->addWidget(details);
     layout->addWidget(bioLabel);
+    layout->addWidget(linksLabel);
+    layout->addWidget(tipsBox);
     layout->addWidget(loadingLabel);
     layout->addStretch(1);
     layout->addLayout(buttonRow);
@@ -3269,9 +3524,12 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
         QPointer<QDialog> dialogGuard(dialog);
         QPointer<QLabel> bioGuard(bioLabel);
         QPointer<QLabel> loadingGuard(loadingLabel);
+        QPointer<QLabel> iconGuard(icon);
+        const bool hasLocalAvatar = !m_avatars.value(member.id).isNull();
         connect(reply, &QNetworkReply::finished, this,
-                [reply, dialogGuard, bioGuard, loadingGuard, facts,
-                 renderDetails] {
+                [reply, dialogGuard, bioGuard, loadingGuard, iconGuard,
+                 hasLocalAvatar, linksLabel, tipsBox, tipsQr, tipsAddress,
+                 tipsNote, tipsCopy, accountShown, facts, renderDetails] {
                     const QByteArray body = reply->readAll();
                     const bool ok = reply->error() == QNetworkReply::NoError;
                     reply->deleteLater();
@@ -3304,6 +3562,35 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
                         bioGuard->setText(bio.toHtmlEscaped());
                         bioGuard->setVisible(true);
                     }
+                    const QString avatarPng =
+                        rec.value(QStringLiteral("avatarPng")).toString();
+                    QPixmap fetchedAvatar;
+                    if (iconGuard && !hasLocalAvatar && !avatarPng.isEmpty() &&
+                        fetchedAvatar.loadFromData(
+                            QByteArray::fromBase64(avatarPng.toLatin1())))
+                        iconGuard->setPixmap(roundedRectPixmap(fetchedAvatar, 56, 28));
+                    const QStringList links = profileLinkLines(rec);
+                    linksLabel->setText(links.join(QStringLiteral("<br>")));
+                    linksLabel->setVisible(!links.isEmpty());
+                    if (rec.value(QStringLiteral("kind")).toString() == QStringLiteral("node"))
+                        return;
+                    const QString solana =
+                        rec.value(QStringLiteral("solana")).toString().trimmed();
+                    const bool hasTip = forkmesh::tips::isValidTipAddress(solana);
+                    const QImage qr = hasTip
+                        ? QrCode::encodeToImage(QStringLiteral("solana:%1").arg(solana), 4, 3)
+                        : QImage();
+                    if (!qr.isNull())
+                        tipsQr->setPixmap(QPixmap::fromImage(qr));
+                    tipsQr->setVisible(!qr.isNull());
+                    tipsAddress->setText(hasTip ? solana : QString());
+                    tipsAddress->setVisible(hasTip);
+                    tipsCopy->setVisible(hasTip);
+                    tipsNote->setText(
+                        hasTip ? QStringLiteral("Scan with a Solana wallet to tip @%1.").arg(accountShown)
+                               : QStringLiteral("@%1 has not entered a Solana address for tips.")
+                                     .arg(accountShown));
+                    tipsBox->setVisible(true);
                 });
     } else {
         loadingLabel->setVisible(false);
@@ -3751,6 +4038,7 @@ void MainWindow::refreshChatListPreview(const QString &conversation)
 {
     if (conversation.isEmpty())
         return;
+    schedulePromptChatPreview();
     const forkmesh::chatlist::Preview preview = chatListPreview(conversation);
     const auto apply = [&preview](auto &&read, auto &&write) {
         if (read(ChannelGroupTree::kPreviewRole).toString() != preview.text)
@@ -3812,6 +4100,37 @@ QPixmap MainWindow::chatListAvatar(const QString &peerId, const QString &name,
         QLatin1Char('|') +
         (away ? QLatin1Char('a') : online ? QLatin1Char('o') : QLatin1Char('-')) +
         faint.name();
+    if (Theme::isNext()) {
+        const QString nextKey = key + QStringLiteral("|next|") +
+                                Theme::hex(Theme::Role::SurfaceActive) +
+                                Theme::hex(Theme::Role::Success);
+        const QPixmap nextCached = m_chatMemberAvatarCache.value(nextKey);
+        if (!nextCached.isNull())
+            return nextCached;
+        constexpr int side = 20;
+        QPixmap face = source.isNull() ? nextChatInitials(name, side)
+                                       : roundedAvatar(source, side, 0.5);
+        if (face.isNull())
+            return face;
+        {
+            const QRectF dot(side - 7.5, side - 7.5, 8, 8);
+            QPainter painter(&face);
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setPen(Qt::NoPen);
+            painter.setCompositionMode(QPainter::CompositionMode_Clear);
+            painter.setBrush(Qt::black);
+            painter.drawEllipse(dot.adjusted(-2, -2, 2, 2));
+            painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            painter.setBrush(Theme::color(online ? (away ? Theme::Role::Warning
+                                                         : Theme::Role::Success)
+                                                 : Theme::Role::FgSubtle));
+            painter.drawEllipse(dot);
+        }
+        if (m_chatMemberAvatarCache.size() > 512)
+            m_chatMemberAvatarCache.clear();
+        m_chatMemberAvatarCache.insert(nextKey, face);
+        return face;
+    }
     const QPixmap cached = m_chatMemberAvatarCache.value(key);
     if (!cached.isNull())
         return cached;
@@ -3884,7 +4203,7 @@ void MainWindow::updateChatConversationHeading()
         if (QWidget *bar = m_channelTopicLabel->parentWidget()) {
             if (auto *divider = bar->findChild<QFrame *>(
                     QStringLiteral("channelTopicDivider")))
-                divider->setVisible(!topic.isEmpty());
+                divider->setVisible(!topic.isEmpty() && !Theme::isNext());
         }
     }
     if (m_serverCopiesLabel) {
@@ -3907,7 +4226,9 @@ void MainWindow::updateChatConversationHeading()
         m_officeChannelMirror->isServerVisibleConversation(
             m_currentConversation)) {
         m_encryptionLabel->setPixmap(tintedOcticonPixmap(
-            QStringLiteral("server"), QColor(QStringLiteral("#8b949e")), 16));
+            QStringLiteral("server"),
+            Theme::nextOr(Theme::Role::FgSubtle, QColor(QStringLiteral("#8b949e"))),
+            Theme::isNext() ? 14 : 16));
         m_encryptionLabel->setToolTip(
             QStringLiteral("Server-visible notices written by ForkMesh; not "
                            "end-to-end encrypted. Only you can see this "
@@ -3925,7 +4246,8 @@ void MainWindow::updateChatConversationHeading()
             discord ? QStringLiteral("server")
                     : publicChannel ? QStringLiteral("unlock")
                                     : QStringLiteral("lock"),
-            QColor(QStringLiteral("#8b949e")), 16));
+            Theme::nextOr(Theme::Role::FgSubtle, QColor(QStringLiteral("#8b949e"))),
+            Theme::isNext() ? 14 : 16));
         m_encryptionLabel->setToolTip(
             discord
                 ? QStringLiteral("Discord bot connection over TLS; Discord and "
@@ -3938,6 +4260,46 @@ void MainWindow::updateChatConversationHeading()
                           forkmesh::relayrules::RoomKind::Public).tooltip
                     : forkmesh::relayrules::roomBadge(
                           forkmesh::relayrules::RoomKind::Private).tooltip);
+    }
+    auto *footerText = m_channelList
+                           ? qobject_cast<QLabel *>(
+                                 m_channelList->property("chatEncryptionFooterText")
+                                     .value<QObject *>())
+                           : nullptr;
+    if (footerText && m_encryptionLabel) {
+        const bool serverVisible =
+            m_officeChannelMirror &&
+            m_officeChannelMirror->isServerVisibleConversation(m_currentConversation);
+        const bool discord = isDiscordConversation(m_currentConversation);
+        const bool mesh = isLocalMeshConversation(m_currentConversation);
+        const bool office = isOfficeConversation(m_currentConversation);
+        const bool publicChannel =
+            m_currentConversation.startsWith(QLatin1Char('#')) &&
+            !m_privateChannels.contains(m_currentConversation) &&
+            (!office || (m_officeChannelMirror &&
+                         !m_officeChannelMirror->isPrivateConversation(
+                             m_currentConversation)));
+        QString text;
+        bool sealed = false;
+        if (serverVisible)
+            text = QStringLiteral("Server-visible notices, not end-to-end encrypted");
+        else if (discord)
+            text = QStringLiteral("Discord connection: Discord can read this channel");
+        else if (mesh)
+            text = QStringLiteral("Nearby only: anyone nearby can read it");
+        else if (publicChannel) {
+            text = QStringLiteral("Sealed to this room's devices; the relay cannot "
+                                  "read it");
+            sealed = true;
+        } else {
+            text = QStringLiteral("End-to-end encrypted on every device");
+            sealed = true;
+        }
+        footerText->setText(text);
+        footerText->setToolTip(m_encryptionLabel->toolTip());
+        if (auto *footerIcon = qobject_cast<QWidget *>(
+                m_channelList->property("chatEncryptionFooterIcon").value<QObject *>()))
+            footerIcon->setVisible(sealed);
     }
 }
 
@@ -6183,6 +6545,20 @@ void MainWindow::refreshTypingLabel()
         names.append(name);
     names.removeDuplicates();
 
+    if (Theme::isNext()) {
+        const QString dots = QString::fromUtf8("\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2  ");
+        if (names.isEmpty())
+            m_typingLabel->clear();
+        else if (names.size() == 1)
+            m_typingLabel->setText(dots + names.first() + " is typing");
+        else if (names.size() == 2)
+            m_typingLabel->setText(dots + names.at(0) + " and " + names.at(1) +
+                                   " are typing");
+        else
+            m_typingLabel->setText(dots + QString::number(names.size()) +
+                                   " people are typing");
+        return;
+    }
     if (names.isEmpty()) {
         m_typingLabel->clear();
     } else if (names.size() == 1) {

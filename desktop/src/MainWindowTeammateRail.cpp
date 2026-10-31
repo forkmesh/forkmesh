@@ -38,9 +38,9 @@ constexpr int kTeammateRailInset = 2;
 constexpr int kTeammateRailSquare = kTeammateRailItemWidth - 2 * kTeammateRailInset;
 constexpr int kTeammateRailFaceRadius = 7;
 constexpr int kTeammateRailHud = 14;
+constexpr int kTeammateRailNextChip = 40;
 constexpr int kTeammateRailMood = 16;
 constexpr int kTeammateRailHudInset = 3;
-constexpr int kTeammateRailMinWindowWidth = 1000;
 constexpr int kTeammateTileMinWidth = 240;
 constexpr int kTeammateTileFace = 240;
 constexpr int kTeammateTileHud = 22;
@@ -972,90 +972,10 @@ AgentChoice MainWindow::promptAreaAgentChoice() const
     return {provider, model};
 }
 
-bool MainWindow::teammateRailEnabled() const
+void MainWindow::restoreTeammateRunState()
 {
-    return QSettings().value(kShowTeammateRailSetting, true).toBool();
-}
-
-void MainWindow::setTeammateRailEnabled(bool enabled)
-{
-    QSettings().setValue(kShowTeammateRailSetting, enabled);
-    if (m_teammateRailCheck && m_teammateRailCheck->isChecked() != enabled) {
-        const QSignalBlocker blocker(m_teammateRailCheck);
-        m_teammateRailCheck->setChecked(enabled);
-    }
-    applyTeammateRailVisibility();
-}
-
-void MainWindow::applyTeammateRailVisibility()
-{
-    if (!m_teammateRail)
+    if (m_teammateRailClock)
         return;
-    const bool visible = teammateRailEnabled() &&
-                         packageSurfaceShown(QStringLiteral("special-agents")) &&
-                         !appViewModeHidesShellChrome(m_viewMode) &&
-                         width() >= kTeammateRailMinWindowWidth;
-    if (visible == !m_teammateRail->isHidden())
-        return;
-    m_teammateRail->setVisible(visible);
-    if (visible)
-        scheduleTeammateRailRefresh();
-}
-
-QWidget *MainWindow::buildTeammateRail()
-{
-    auto *content = new QWidget;
-    content->setObjectName(QStringLiteral("teammateRailContent"));
-    content->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_teammateRailLayout = new QVBoxLayout(content);
-    m_teammateRailLayout->setContentsMargins(0, kRepoTabRowTopInset + 4, 0, 8);
-    m_teammateRailLayout->setSpacing(8);
-
-    auto *scroll = new QScrollArea;
-    scroll->setObjectName(QStringLiteral("teammateRail"));
-    scroll->setAccessibleName(QStringLiteral("Special Agents"));
-    scroll->setWidget(content);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    scroll->setFixedWidth(kTeammateRailWidth);
-    scroll->setMinimumHeight(0);
-    scroll->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Ignored);
-    m_teammateRail = scroll;
-
-    connect(content, &QWidget::customContextMenuRequested, this,
-            [this, content](const QPoint &pos) {
-                QMenu menu(this);
-                menu.addAction(QStringLiteral("Open Special Agents"), this, [this] {
-                    showSection(kTeamSectionIndex);
-                });
-                menu.addAction(QStringLiteral("Run all in one session"), this,
-                               [this] {
-                                   QTimer::singleShot(0, this, [this] {
-                                       runTeammatesInOneSessionNow();
-                                   });
-                               });
-                menu.addAction(QStringLiteral("Create needed special agent"), this,
-                               [this] { createNeededTeammate(); });
-                menu.addSeparator();
-                QAction *hide =
-                    menu.addAction(QStringLiteral("Hide special agents rail"));
-                hide->setObjectName(QStringLiteral("teammateRailHideAction"));
-                connect(hide, &QAction::triggered, this, [this] {
-                    setTeammateRailEnabled(false);
-                    flashMessage(QStringLiteral(
-                        "Special agents rail hidden. Turn it back on in Settings > "
-                        "Appearance."));
-                });
-                menu.exec(content->mapToGlobal(pos));
-            });
-
-    m_teammateRailRefreshTimer = new QTimer(this);
-    m_teammateRailRefreshTimer->setSingleShot(true);
-    m_teammateRailRefreshTimer->setInterval(250);
-    connect(m_teammateRailRefreshTimer, &QTimer::timeout, this,
-            [this] { refreshTeammateRail(); });
     m_teammateRailClock = new QTimer(this);
     m_teammateRailClock->setInterval(30 * 1000);
     connect(m_teammateRailClock, &QTimer::timeout, this,
@@ -1074,20 +994,12 @@ QWidget *MainWindow::buildTeammateRail()
         if (id.toInt() > 0)
             m_teammateDoneUnseen.insert(id.toInt());
     }
-
-    applyTeammateRailVisibility();
-    refreshTeammateRail();
-    return scroll;
 }
 
 void MainWindow::scheduleTeammateRailRefresh()
 {
     scheduleTeammateHomeRefresh();
-    if (!m_teammateRailRefreshTimer || !m_teammateRail ||
-        m_teammateRail->isHidden())
-        return;
-    if (!m_teammateRailRefreshTimer->isActive())
-        m_teammateRailRefreshTimer->start();
+    scheduleSideRailRefresh();
 }
 
 void MainWindow::markTeammateDoneUnseen(int sessionId)
@@ -1188,241 +1100,6 @@ MainWindow::assessTeammateMoods(const QList<Config> &teammates, qint64 nowMs)
                          history.value(row.config->id), team)));
     }
     return moods;
-}
-
-void MainWindow::refreshTeammateRail()
-{
-    if (!m_teammateRailLayout)
-        return;
-    if (QApplication::activePopupWidget()) {
-        scheduleTeammateRailRefresh();
-        return;
-    }
-    const int repoIndex = activeTeammateRepoIndex();
-    const QString directory = teammatesDirPath(repoIndex);
-    const LoadResult loaded =
-        directory.isEmpty() ? LoadResult{} : Store(directory).load();
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    const bool dark = currentThemeIsDark();
-    const AgentChoice recent = forkmesh::teammates::recentAgentChoice();
-    const int creatorSession = activeTeammateCreatorSession();
-
-    struct RailRow {
-        Config config;
-        QString status;
-        bool inFlight = false;
-        bool doneUnseen = false;
-        int sessionId = 0;
-        forkmesh::teammates::Mood mood;
-    };
-    QList<RailRow> rows;
-    QStringList signature{directory, dark ? QStringLiteral("dark")
-                                          : QStringLiteral("light"),
-                          recent.provider, recent.model,
-                          QString::number(creatorSession)};
-    for (const Config &saved : loaded.teammates) {
-        RailRow row;
-        row.config = teammateWithRuntime(saved, repoIndex);
-        const AgentSession *session =
-            row.config.lastSessionId > 0
-                ? findAgentSession(row.config.lastSessionId)
-                : nullptr;
-        row.status = teammateRosterStatus(row.config, session);
-        row.inFlight = railStatusInFlight(row.status);
-        if (!row.inFlight && row.config.enabled && session &&
-            session->status == AgentStatus::Failed)
-            row.status = QStringLiteral("Failed");
-        row.sessionId = session ? session->id : 0;
-        row.doneUnseen = !row.inFlight && row.sessionId > 0 &&
-                         session->status == AgentStatus::Success &&
-                         m_teammateDoneUnseen.contains(row.sessionId);
-        rows.append(row);
-    }
-    std::stable_sort(rows.begin(), rows.end(),
-                     [](const RailRow &left, const RailRow &right) {
-                         return forkmesh::teammates::ranMoreRecently(
-                             left.config, right.config);
-                     });
-    QList<Config> configs;
-    for (const RailRow &row : std::as_const(rows))
-        configs.append(row.config);
-    const QHash<QString, forkmesh::teammates::Mood> moods =
-        assessTeammateMoods(configs, nowMs);
-    for (RailRow &row : rows)
-        row.mood = moods.value(row.config.id);
-    for (const RailRow &row : std::as_const(rows)) {
-        signature << row.config.id << row.config.name << row.config.avatar
-                  << row.config.specialty << row.status
-                  << QString::number(row.sessionId)
-                  << (row.doneUnseen ? QStringLiteral("done") : QString())
-                  << compactAgo(row.config.lastRunAtMs, nowMs)
-                  << QString::number(qRound(
-                         forkmesh::teammates::runStaleness(
-                             row.config, QDateTime::fromMSecsSinceEpoch(nowMs)) *
-                         20))
-                  << (row.config.enabled ? QStringLiteral("on")
-                                         : QStringLiteral("off"))
-                  << (row.config.schedule.active ? QStringLiteral("sched")
-                                                 : QString())
-                  << QString::number(static_cast<int>(
-                         forkmesh::teammates::runWindowState(
-                             row.config,
-                             QDateTime::fromMSecsSinceEpoch(nowMs))))
-                  << row.mood.key << row.mood.reasons.join(QLatin1Char(','));
-    }
-    const QString joined = signature.join(QChar(0x1f));
-    if (joined == m_teammateRailSignature)
-        return;
-    m_teammateRailSignature = joined;
-
-    while (QLayoutItem *item = m_teammateRailLayout->takeAt(0)) {
-        if (QWidget *widget = item->widget())
-            widget->deleteLater();
-        delete item;
-    }
-
-    auto *title = new QLabel(QStringLiteral("Specials"));
-    title->setObjectName(QStringLiteral("teammateRailTitle"));
-    title->setAlignment(Qt::AlignHCenter);
-    m_teammateRailLayout->addWidget(title, 0, Qt::AlignHCenter);
-
-    for (const RailRow &row : std::as_const(rows)) {
-        const AgentSession *session =
-            row.sessionId > 0 ? findAgentSession(row.sessionId) : nullptr;
-        m_teammateRailLayout->addWidget(
-            buildTeammateRailItem(row.config, row.status, row.inFlight,
-                                  row.doneUnseen, session, row.mood),
-            0, Qt::AlignHCenter);
-    }
-
-    auto *create = new QPushButton;
-    create->setObjectName(QStringLiteral("teammateRailCreateButton"));
-    create->setCursor(Qt::PointingHandCursor);
-    create->setFixedSize(kTeammateRailFace, kTeammateRailFace);
-    create->setAccessibleName(QStringLiteral("Create needed special agent"));
-    create->setProperty("working", creatorSession > 0);
-    if (creatorSession > 0) {
-        setOcticon(create, QStringLiteral("sparkle"), 16);
-        create->setToolTip(
-            QStringLiteral("Looking through logs, commits, docs, errors and "
-                           "chats for the special agent this repository needs "
-                           "(session #%1). Click to watch.")
-                .arg(creatorSession));
-        connect(create, &QPushButton::clicked, this,
-                [this, creatorSession] { switchToAgentsTab(creatorSession); });
-    } else {
-        setOcticon(create, QStringLiteral("plus"), 16);
-        create->setToolTip(
-            directory.isEmpty()
-                ? QStringLiteral("Open a repository with a working tree to "
-                                 "create a special agent for it")
-                : QStringLiteral("Create needed special agent: an agent reads the "
-                                 "logs, commits, docs, errors, chats and past "
-                                 "agent runs, then adds the special agent this "
-                                 "repository is missing"));
-        create->setEnabled(!directory.isEmpty());
-        connect(create, &QPushButton::clicked, this,
-                [this] { createNeededTeammate(); });
-    }
-    auto *createCaption = new QLabel(creatorSession > 0
-                                         ? QStringLiteral("Finding…")
-                                         : QStringLiteral("Needed"));
-    createCaption->setObjectName(QStringLiteral("teammateRailLastRun"));
-    createCaption->setAlignment(Qt::AlignHCenter);
-    auto *createHost = new QWidget;
-    createHost->setObjectName(QStringLiteral("teammateRailCreate"));
-    auto *createLayout = new QVBoxLayout(createHost);
-    createLayout->setContentsMargins(0, 0, 0, 0);
-    createLayout->setSpacing(2);
-    createLayout->addWidget(create, 0, Qt::AlignHCenter);
-    createLayout->addWidget(createCaption, 0, Qt::AlignHCenter);
-    m_teammateRailLayout->addWidget(createHost, 0, Qt::AlignHCenter);
-    m_teammateRailLayout->addStretch(1);
-}
-
-QWidget *MainWindow::buildTeammateRailItem(const Config &config,
-                                           const QString &status,
-                                           bool inFlight,
-                                           bool doneUnseen,
-                                           const AgentSession *session,
-                                           const forkmesh::teammates::Mood &mood)
-{
-    const bool dark = currentThemeIsDark();
-    auto *item = new RailItem;
-    item->setObjectName(QStringLiteral("teammateRailItem"));
-    item->setProperty("teammateId", config.id);
-    item->setProperty("status", status);
-    item->setProperty("doneUnseen", doneUnseen);
-    const double staleness =
-        inFlight ? 0.0 : forkmesh::teammates::runStaleness(config);
-    item->setProperty("staleness", staleness);
-    item->setTint(config.enabled ? railFreshnessColor(staleness, dark)
-                                 : railStatusColor(QString(), dark),
-                  dark);
-    const AgentChoice primary = forkmesh::teammates::agentChoiceFor(config);
-    const int sessionId = session ? session->id : 0;
-    const QString modelLabel = agentModelLabel(primary.model).isEmpty()
-                                   ? agentProviderName(primary.provider)
-                                   : agentModelLabel(primary.model);
-    const RailFaceLook look =
-        railFaceLook(config, status, inFlight, doneUnseen, sessionId, mood,
-                     modelLabel, dark);
-    item->setProperty("runWindowState", static_cast<int>(look.windowState));
-    auto *avatar = new RailFaceButton(
-        teammateFacePixmap(config.avatar, primary.provider, primary.model,
-                           kTeammateRailSquare * 11 / 10),
-        look.ringColor, look.ring, dark, mood.motion, mood.intensity, look.phase,
-        kTeammateRailSquare);
-    avatar->setParent(item);
-    avatar->move(kTeammateRailInset, kTeammateRailInset);
-    avatar->setObjectName(QStringLiteral("teammateRailAvatar"));
-    avatar->setProperty("ring", static_cast<int>(look.ring));
-    avatar->setProperty("motion", forkmesh::teammates::moodMotionName(mood.motion));
-    avatar->setCursor(Qt::PointingHandCursor);
-    avatar->setAccessibleName(look.accessibleName);
-    avatar->setToolTip(look.tooltip);
-    avatar->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(avatar, &QPushButton::clicked, this,
-            [this, id = config.id] { openTeammateHome(id); });
-    connect(avatar, &QWidget::customContextMenuRequested, this,
-            [this, id = config.id] { showTeammateRailMenu(id, nullptr); });
-    item->setFixedSize(kTeammateRailItemWidth, kTeammateRailItemWidth);
-    item->setProperty("mood", mood.key);
-
-    auto *name = new QLabel(item);
-    name->setObjectName(QStringLiteral("teammateRailName"));
-    name->setAlignment(Qt::AlignHCenter);
-    name->setAttribute(Qt::WA_TransparentForMouseEvents);
-    name->ensurePolished();
-    name->setText(name->fontMetrics().elidedText(
-        config.name, Qt::ElideRight, kTeammateRailSquare - 6));
-    name->adjustSize();
-    name->resize(qMin(name->width(), kTeammateRailSquare), name->height());
-    name->move((kTeammateRailItemWidth - name->width()) / 2,
-               kTeammateRailInset + kTeammateRailSquare - name->height() - 2);
-
-    const QList<QPushButton *> hud =
-        addTeammateRailHud(item, config, inFlight, sessionId, mood,
-                           QStringLiteral("teammateRail"), kTeammateRailHud,
-                           kTeammateRailMood);
-    const auto place = [](QPushButton *button, int x, int y) {
-        button->move(x, y);
-        button->raise();
-    };
-    place(hud.at(0), kTeammateRailHudInset,
-          kTeammateRailHudInset + (kTeammateRailMood - kTeammateRailHud) / 2);
-    place(hud.at(1), (kTeammateRailItemWidth - kTeammateRailMood) / 2,
-          kTeammateRailHudInset);
-    place(hud.at(2),
-          kTeammateRailItemWidth - kTeammateRailHudInset - kTeammateRailHud,
-          kTeammateRailHudInset + (kTeammateRailMood - kTeammateRailHud) / 2);
-    if (hud.size() > 3) {
-        place(hud.at(3),
-              kTeammateRailItemWidth - kTeammateRailHudInset - kTeammateRailHud,
-              kTeammateRailHudInset + kTeammateRailMood + 2);
-        item->addHoverButton(hud.at(3));
-    }
-    return item;
 }
 
 QPushButton *MainWindow::buildTeammateVideoTile(const Config &config,
@@ -2016,7 +1693,6 @@ void MainWindow::createNeededTeammate()
                                 "for the special agent this repository needs · "
                                 "session #%1")
                      .arg(sessionId));
-    m_teammateRailSignature.clear();
     scheduleTeammateRailRefresh();
 }
 
@@ -2060,7 +1736,6 @@ bool MainWindow::adoptCreatedTeammate(int repoIndex, const QString &output,
     flashMessage(QStringLiteral("%1 joined the special agents as %2.")
                      .arg(teammate.name, teammate.specialty));
     loadTeammatesPanel();
-    m_teammateRailSignature.clear();
-    refreshTeammateRail();
+    scheduleTeammateRailRefresh();
     return true;
 }

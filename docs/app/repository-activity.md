@@ -96,9 +96,21 @@ list totals across repositories ([chat-member-stats.md](chat-member-stats.md)).
 | Review of someone else's pull request (once per reviewer and pull request) | 4 |
 | Issue closed (the person who closed it) | 3 |
 | Commit to the default branch, merges excluded (at most 5 a day) | 1 |
+| Pull request opened (at most 3 a day) | 2 |
 | Comment on an issue or pull request (at most 3 per thread, slash commands excluded) | 1 |
+| Issue opened (at most 3 a day) | 1 |
 
-Ties share a rank (1, 1, 3). Rank movement compares with the previous window
+Every rank is distinct. Equal scores are ordered by the work that is hardest
+to pad (`PULSE_TIE_BREAK`): merged pull requests, reviews, closed issues, then
+active days (UTC days in the window with any scored activity or commit), then
+commits, pull requests opened, issues opened and comments, and only then by
+name. Shared ranks (1, 1, 3) read as a bug to contributors and gave nobody a
+reason to do the harder work. Opening pull requests and issues scores so that
+newer contributors whose work is still in review show up; the daily cap keeps
+it from being padded. The payload's `scoring` carries `openedPerDay` and
+`tieBreak` so the "How the score works" note says the same thing as the
+server. The page shows the top three as a podium and each row's breakdown
+inline. Rank movement compares with the previous window
 of the same length; for all time, with the ranking a week earlier. People are
 matched by their case-folded name, so a git author name and a ledger account
 only merge when they are spelled the same.
@@ -129,6 +141,9 @@ One rule set in `tools/mirror_gateway.py` (`_pulse_is_automated`) decides:
   addresses);
 - the gateway's own node name (`config.node`), the one account kind the
   gateway knows without a lookup;
+- the node's own commit identity (`FORKMESH_COMMIT_NAME` and
+  `FORKMESH_COMMIT_EMAIL`, whitespace collapsed): an instance's merge and bot
+  commits carry it, and it is not a person;
 - `ACTIVITY_EXCLUDE_AUTHORS`: a comma list of globs (case-insensitive,
   `fnmatch`, so a literal `[` is written `[[]`) matched against the author
   name and email, for instance-specific accounts. Set it in the environment of

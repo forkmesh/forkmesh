@@ -56,13 +56,16 @@ def _run(body, tip_author="", motion=True):
             "ISSUE_REACTION_EMOJI", "COMMENT_REACTIONS", "COMMENT_REACTION_QUICK",
             "COMMENT_REACTION_KINDS", "COMMENT_REACTION_GRATITUDE",
             "COMMENT_REACTION_STICKERS", "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
-            "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS")
-    ] + [_function(HELPERS, "escapeHtml"), _function(HELPERS, "formatCount")]
+            "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_GITHUB_ATTACHMENT_URL",
+            "MD_ATTACHMENT_PATH", "MD_ATTACHMENT_ENTITIES", "repoAttachmentFiles")
+    ] + [_function(HELPERS, "escapeHtml"), _function(HELPERS, "formatCount"),
+         _function(HELPERS, "repoKey")]
         + [_function(CONTENT, name) for name in (
             "commentReactionSubject", "commentReactionLabel", "commentReactionKnown",
             "commentReactionSafeSrc", "commentReactionGlyph", "commentReactionTallies",
             "commentReactionWho", "renderCommentReactionChip", "renderCommentReactionExtras",
             "renderCommentReactionBar", "mdSafeUrl", "mdImageSource", "mdGifHtml",
+            "mdAttachmentKey", "mdAttachmentFile", "mdAttachmentHref", "mdGithubImageHtml",
             "mdImageHtml")]
         + [_function(REACTIONS, name) for name in (
             "commentReactionOptionHtml", "commentReactionSectionHtml",
@@ -197,8 +200,10 @@ def test_motion_is_off_under_reduced_motion():
         assert "animation: %s" % name in loops
         outside = SHELL.replace(loops, "")
         assert "animation: %s" % name not in outside
-    reduced = re.search(r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n      \}", SHELL, re.S).group(1)
-    assert "animation: none !important" in reduced and ".fm-reaction-thanks" in reduced
+    reduced = [block for block in re.findall(
+        r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n      \}", SHELL, re.S)
+        if ".fm-reaction-thanks" in block]
+    assert reduced and "animation: none !important" in reduced[0]
     assert "commentReactionMotionOk()" in _function(REACTIONS, "commentReactionAnimate")
     assert "commentReactionMotionOk()" in _function(GIFS, "gifPreviewHtml")
     assert "commentReactionMotionOk()" in _function(GIFS, "commentGifPlaying")

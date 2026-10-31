@@ -83,6 +83,53 @@ unsigned plan; `paid` records the matching finalized transaction signature;
 (`microjob_claims.subject_bi`) over the exact work item makes each issue, pull,
 or page claimable once.
 
+- A merged pull's key is its signed MCP marker (number, base, head, author,
+  ts), not the repository it was read from. Forks copy the pull ledger branch,
+  so a key that named the repository let one merged pull be paid again from
+  every fork.
+- A referral page's key (`referral_subject` in `app/src/microjobs.py`) names
+  the post, not the spelling of its URL, so one page cannot be claimed again
+  under a variant link, and two different posts stay two claims:
+  - When the fetched page has a `<link rel="canonical">` on the same site,
+    that URL is the key. Every key, canonical or not, then goes through the
+    steps below.
+  - The host is lowercased and `www.`, `old.`, `m.` and `mobile.` are dropped.
+    The path loses repeated and trailing slashes, and percent-encoding is
+    normalised. The fragment is dropped.
+  - On hosts that identify a post by query (`news.ycombinator.com`: `id`;
+    `youtube.com/watch`: `v`; `/playlist`: `list`) only those keys are kept.
+    On any other host the query is kept, sorted, without tracking keys
+    (`utm_*`, `ref`, `fbclid`, `gclid`, `si`, `s`, `t` and similar). Dropping
+    the whole query would merge every Hacker News item and every YouTube
+    video into one claim.
+  - `youtu.be/<id>`, `/shorts/<id>`, `/embed/<id>` and `/live/<id>` become
+    `youtube.com/watch?v=<id>`.
+  - Reddit (`*.reddit.com`, `redd.it`) is case-insensitive, so its path is
+    lowercased. A post becomes `reddit.com/comments/<post>[/<comment>]`,
+    without the subreddit or the slug Reddit ignores.
+  - On other hosts without a same-site canonical link, extra query keys that
+    aren't on the tracking list still make a separate key. A second key then
+    stops one account reusing its own page:
+    `microjob:referral_post:account:<account_bi>:<scheme://host/path>`, with
+    no query. That allows one claim per account per page path. Another
+    account can still claim the same path. Hosts on the allowlist, Reddit,
+    and pages whose canonical link sets the key take no second key.
+  - The second key is stored as a companion row in `microjob_claims`: same
+    account, `status='rejected'`, `amount_lamports=0`, and `data` naming the
+    claim it belongs to. One batch writes both rows. The claim insert refuses
+    when any of its keys, the companion key included, already exists. The
+    companion insert runs only if the claim row was written. The table's
+    UNIQUE `subject_bi` index settles any race.
+  - A companion row is never paid, counted against a cap, or batched into a
+    payout. The claimant's list and the public ledger only show rows with
+    `amount_lamports>0`.
+- Keys written before these rules still count as claimed. That means the
+  repository plus pull number, the full normalized URL, and the URL's own key
+  when the page's canonical link gave the claim a different one.
+- The claim insert is one conditional `INSERT ... SELECT` that re-checks the
+  subject and the open, daily-count and daily-amount caps. Requests running at
+  the same time on different cores cannot pass the caps together.
+
 ### Verification
 
 - **Issue reports.** Existing issues are read over the public mirror gateway, a

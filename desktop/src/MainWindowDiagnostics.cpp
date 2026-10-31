@@ -244,7 +244,8 @@ void MainWindow::startDiagnostics()
             QFile::rename(logPath, prev);
         }
         const QString buildInfo =
-            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src " FORKMESH_SOURCE_DIR ")");
+            QStringLiteral("ForkMesh v" FORKMESH_VERSION " (src ") + forkmesh::sourceDir() +
+            QStringLiteral(")");
         m_stallWatchdog->start(/*stallThresholdMs=*/500, logPath, buildInfo);
         if (!logPath.isEmpty())
             logSystem(QStringLiteral("UI-stall watchdog armed; reports append to %1")
@@ -375,6 +376,43 @@ void MainWindow::updateFooterDiagnostics()
     updateActivityTile(static_cast<ResourceSparkline *>(m_debugLogActivityTile),
                        m_debugAllLogCount, &m_debugLastLogActivityTotal,
                        QStringLiteral("Log"));
+    auto updateTokenTile = [](ResourceSparkline *tile, qint64 total,
+                              qint64 *previous, const QString &kind) {
+        if (!tile)
+            return;
+        const qint64 rate = *previous < 0 ? 0 : qMax<qint64>(0, total - *previous);
+        *previous = total;
+        const QString rateText =
+            rate >= 1000 ? QStringLiteral("%1k").arg(rate / 1000.0, 0, 'f', 1)
+                         : QString::number(rate);
+        tile->addSample(rate, qMax<qint64>(1000, rate * 2), rateText);
+        tile->setToolTip(
+            QStringLiteral("%1: %2 token%3 this second, %4 this session")
+                .arg(kind, formatCount(rate),
+                     rate == 1 ? QString() : QStringLiteral("s"),
+                     formatCount(total)));
+    };
+    updateTokenTile(static_cast<ResourceSparkline *>(m_debugTokensInTile),
+                    m_debugTokensInTotal, &m_debugLastTokensInTotal,
+                    QStringLiteral("Input tokens sent to agent models"));
+    updateTokenTile(static_cast<ResourceSparkline *>(m_debugTokensOutTile),
+                    m_debugTokensOutTotal, &m_debugLastTokensOutTotal,
+                    QStringLiteral("Output tokens received from agent models"));
+    if (auto *stall = static_cast<ResourceSparkline *>(m_debugStallTile)) {
+        const qint64 peak = m_debugStallPeakSinceSampleMs;
+        m_debugStallPeakSinceSampleMs = 0;
+        stall->addSample(qMin<qint64>(peak, kDebugStallChartMaxMs),
+                         kDebugStallChartMaxMs, QStringLiteral("%1ms").arg(peak));
+        QString tip = QStringLiteral("UI stalls: %1 this session").arg(m_stallCount);
+        if (m_stallCount > 0)
+            tip += QStringLiteral(" · longest %1 ms · last %2 ago")
+                       .arg(m_debugStallLongestMs)
+                       .arg(formatDuration(QDateTime::currentMSecsSinceEpoch() -
+                                           m_debugStallLastAtMs));
+        tip += QStringLiteral("\nThe longest time the window froze each second. "
+                              "Click to see the stalls in the Log");
+        stall->setToolTip(tip);
+    }
 
     const qint64 fdNow = QDateTime::currentMSecsSinceEpoch();
     if (fdNow - m_fdPressureLastCheckMs >= 15000) {
@@ -417,6 +455,10 @@ void MainWindow::updateFooterDiagnostics()
     }
 #endif
     m_debugLastCpuPercent = cpuPct;
+    if (cpuPct >= 0.0)
+        m_diagnosticsCpuAverage = m_diagnosticsCpuAverage < 0.0
+                                      ? cpuPct
+                                      : 0.8 * m_diagnosticsCpuAverage + 0.2 * cpuPct;
     auto *resources = static_cast<ResourceQuadrantSparkline *>(m_resourceChart);
     if (resources) {
         resources->addSample(ResourceQuadrantSparkline::Cpu,
@@ -520,6 +562,84 @@ void MainWindow::updateFooterDiagnostics()
         m_logActivityLights->setStallToolTip(stallTip);
     if (m_logActivityHeader)
         m_logActivityHeader->setStallToolTip(stallTip);
+    updateDiagnosticsAlert();
+}
+
+int MainWindow::crashBannerLineCount() const
+{
+    int count = 0;
+    for (const QString &line : std::as_const(m_networkLog))
+        if (line.contains(forkmesh::crashlog::kCrashBanner))
+            ++count;
+    return count;
+}
+
+void MainWindow::updateDiagnosticsAlert()
+{
+    auto *button = dynamic_cast<ActivityRailButton *>(m_debugDiagnosticsButton);
+    if (!button)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_diagnosticsAlertLastCheckMs > 0 && now - m_diagnosticsAlertLastCheckMs < 5000)
+        return;
+    m_diagnosticsAlertLastCheckMs = now;
+
+    const int crashes = crashBannerLineCount();
+    m_diagnosticsAckCrashes = qMin(m_diagnosticsAckCrashes, crashes);
+    m_diagnosticsAckStalls = qMin(m_diagnosticsAckStalls, m_stallCount);
+    m_diagnosticsAckSecurity = qMin(m_diagnosticsAckSecurity, m_securityIncidentCount);
+
+    forkmesh::diagreport::AlertInputs in;
+    in.crashes = crashes - m_diagnosticsAckCrashes;
+    in.stalls = m_stallCount - m_diagnosticsAckStalls;
+    in.securityIncidents = m_securityIncidentCount - m_diagnosticsAckSecurity;
+    if (in.securityIncidents > 0 && !m_securityIncidentLines.isEmpty())
+        in.securitySample = m_securityIncidentLines.last();
+    if (m_qtDiagnostics)
+        in.loopLagP95Ms = m_qtDiagnostics->snapshot().p95LoopLagMs;
+    in.cpuPercent = m_diagnosticsCpuAverage;
+    in.residentBytes = SystemStats::residentBytes();
+    in.hostMemoryTotal = SystemStats::totalMemoryBytes();
+    in.hostMemoryAvailable = SystemStats::availableMemoryBytes();
+    in.diskTotal = SystemStats::diskTotalBytes(QDir::homePath());
+    in.diskFree = SystemStats::diskFreeBytes(QDir::homePath());
+    in.openFiles = SystemStats::openFileCount();
+    in.openFileLimit = SystemStats::openFileSoftLimit();
+    const forkmesh::diagreport::Alert alert = forkmesh::diagreport::alert(in);
+
+    m_diagnosticsAlertDetected = alert.detected();
+    button->setDangerTint(m_diagnosticsAlertDetected);
+    const forkmesh::teammates::AgentChoice choice = promptAreaAgentChoice();
+    QString agent = agentProviderName(choice.provider);
+    if (const QString model = agentModelLabel(choice.model); !model.isEmpty())
+        agent += QStringLiteral(" (%1)").arg(model);
+    if (agent.trimmed().isEmpty())
+        agent = QStringLiteral("the selected agent");
+    const QString action =
+        QStringLiteral("Click to start %1 with a diagnostic snapshot to fix them. "
+                       "Right-click to copy the report instead.")
+            .arg(agent);
+    button->setToolTip(
+        m_diagnosticsAlertDetected
+            ? QStringLiteral("Diagnostics found issues:\n%1\n\n%2")
+                  .arg(alert.summary(), action)
+            : QStringLiteral("No performance, security or UI issues detected. "
+                             "Click to start %1 with a diagnostic snapshot to "
+                             "fix errors and optimize resource usage. "
+                             "Right-click to copy the report instead.")
+                  .arg(agent));
+    button->setAccessibleDescription(m_diagnosticsAlertDetected
+                                         ? alert.summary()
+                                         : QStringLiteral("No issues detected"));
+}
+
+void MainWindow::acknowledgeDiagnosticsAlert()
+{
+    m_diagnosticsAckCrashes = crashBannerLineCount();
+    m_diagnosticsAckStalls = m_stallCount;
+    m_diagnosticsAckSecurity = m_securityIncidentCount;
+    m_diagnosticsAlertLastCheckMs = 0;
+    updateDiagnosticsAlert();
 }
 
 void MainWindow::checkFileDescriptorPressure()
@@ -744,6 +864,9 @@ void MainWindow::onUiStall(qint64 peakMs, const QString &stallId,
                            const QString &report, qint64 startedAtMs)
 {
     ++m_stallCount;
+    m_debugStallPeakSinceSampleMs = qMax(m_debugStallPeakSinceSampleMs, peakMs);
+    m_debugStallLongestMs = qMax(m_debugStallLongestMs, peakMs);
+    m_debugStallLastAtMs = QDateTime::currentMSecsSinceEpoch();
     const QString when = QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss"));
     const QString marker =
         stallId.isEmpty()
@@ -1062,7 +1185,7 @@ int MainWindow::stallReportRepoIndex() const
     for (const RepositoryRecord &repo : m_repositories)
         checkouts.append(repo.localPath);
     const int own = forkmesh::paths::checkoutContaining(
-        checkouts, QStringLiteral(FORKMESH_SOURCE_DIR));
+        checkouts, forkmesh::sourceDir());
     return own >= 0 ? own : issuesRepoIndex();
 }
 
@@ -1251,7 +1374,7 @@ QString MainWindow::diagnosticsReport(bool advanceBaseline)
     dr::Snapshot s;
     s.takenAtMs = QDateTime::currentMSecsSinceEpoch();
     s.version = QStringLiteral(FORKMESH_VERSION);
-    s.sourceDir = QStringLiteral(FORKMESH_SOURCE_DIR);
+    s.sourceDir = forkmesh::sourceDir();
     s.platform = QStringLiteral("%1 (%2, kernel %3), %4")
                      .arg(QSysInfo::prettyProductName(),
                           QSysInfo::currentCpuArchitecture(),
@@ -1294,6 +1417,7 @@ QString MainWindow::diagnosticsReport(bool advanceBaseline)
         forkmesh::crashlog::parseCrashRecords(m_networkLog);
     for (int i = qMax(0, int(crashes.size()) - 3); i < crashes.size(); ++i)
         s.crashes.append(forkmesh::crashlog::describe(crashes.at(i)));
+    s.securityIncidents = m_securityIncidentLines;
     s.healthFindings =
         NodeDiagnostics::detailText(NodeDiagnostics::hostCollector().findings());
     s.logLocations = stallLogLocationsBlock();
@@ -1383,6 +1507,7 @@ void MainWindow::sendDiagnosticsReportToAgent()
                      true, QString(), forkmesh::kLocalOperationNoticeKind);
         return;
     }
+    acknowledgeDiagnosticsAlert();
     flashMessage(QStringLiteral("Diagnostic report sent to desktop agent #%1. Follow its progress in Agents.")
                      .arg(sessionId));
 }
@@ -1819,8 +1944,9 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         "that run in the Agent column, and “Stop agent” ends that run "
         "cleanly instead of killing one process out from under it. "
         "“Kill” requests a normal termination and “Kill all” does the "
-        "same for every listed process sharing that name; ForkMesh and PID 1 "
-        "are protected."));
+        "same for every listed process sharing that name. ForkMesh, its "
+        "helpers, whatever started it, the display server and PID 1 are "
+        "protected, since ending them would close ForkMesh too."));
     description->setWordWrap(true);
     layout->addWidget(description);
 
@@ -1873,7 +1999,8 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         "allowed to end. If host memory is still at 85% or more once that "
         "process exits (or after five seconds), it ends the next largest, and "
         "so on until memory drops below 85% or no listed process is left. "
-        "ForkMesh and PID 1 are never chosen. Opening the window yourself "
+        "ForkMesh, its helpers, whatever started it, the display server and "
+        "PID 1 are never chosen. Opening the window yourself "
         "never kills anything."));
     connect(autoKill, &QCheckBox::toggled, this, [this](bool enabled) {
         QSettings().setValue(kHighMemoryAutoKillSetting, enabled);
@@ -1902,6 +2029,7 @@ void MainWindow::showHighMemoryProcessPanel(bool activate)
         m_highMemoryProcessStatus = nullptr;
         m_highMemoryProcessQuery = nullptr;
         m_highMemoryRssHistory.clear();
+        m_highMemoryProtectedPids.clear();
     });
     auto *autoRefresh = new QTimer(dialog);
     autoRefresh->setInterval(5000);
@@ -2010,6 +2138,28 @@ void MainWindow::refreshHighMemoryProcessTable()
                         rows.append({pid, owner, rssKb, percent.toDouble(),
                                      name, commandLine});
                 }
+
+                QSet<QString> selfExecutables;
+                for (const QString &path :
+                     {SystemStats::executablePath(
+                          QCoreApplication::applicationPid()),
+                      QCoreApplication::applicationFilePath(),
+                      QFileInfo(QCoreApplication::applicationFilePath())
+                          .canonicalFilePath(),
+                      qEnvironmentVariable("APPIMAGE")}) {
+                    if (!path.isEmpty())
+                        selfExecutables.insert(path);
+                }
+                QHash<qint64, QString> executableOf;
+                for (const ProcessRow &process : rows) {
+                    QString executable = SystemStats::executablePath(process.pid);
+                    if (executable.isEmpty())
+                        executable = process.commandLine.section(QLatin1Char(' '), 0, 0);
+                    executableOf.insert(process.pid, executable);
+                }
+                m_highMemoryProtectedPids = SystemStats::killProtectedPids(
+                    QCoreApplication::applicationPid(), selfExecutables,
+                    parentOf, nameOf, executableOf);
 
                 QHash<qint64, QVector<double>> history;
                 history.reserve(rows.size());
@@ -2203,12 +2353,12 @@ void MainWindow::refreshHighMemoryProcessTable()
                     auto *kill = new QPushButton(QStringLiteral("Kill"));
                     kill->setProperty("buttonSize", "sm");
                     const bool protectedProcess =
-                        process.pid == 1 ||
-                        process.pid == QCoreApplication::applicationPid();
+                        isHighMemoryProtected(process.pid);
                     kill->setEnabled(!protectedProcess);
                     kill->setToolTip(
                         protectedProcess
-                            ? QStringLiteral("This process is protected")
+                            ? QStringLiteral("This process is protected: "
+                                             "ending it would close ForkMesh")
                             : QStringLiteral("Request that %1 terminate")
                                   .arg(process.name));
                     connect(kill, &QPushButton::clicked, this,
@@ -2219,8 +2369,7 @@ void MainWindow::refreshHighMemoryProcessTable()
                     const QList<qint64> family = pidsByName.value(process.name);
                     QList<qint64> killable;
                     for (qint64 candidate : family) {
-                        if (candidate <= 1 ||
-                            candidate == QCoreApplication::applicationPid())
+                        if (isHighMemoryProtected(candidate))
                             continue;
                         killable.append(candidate);
                     }
@@ -2281,8 +2430,10 @@ void MainWindow::refreshHighMemoryProcessTable()
                             .toBool()) {
                         QList<QPair<qint64, QString>> candidates;
                         candidates.reserve(rows.size());
-                        for (const ProcessRow &process : rows)
-                            candidates.append({process.pid, process.name});
+                        for (const ProcessRow &process : rows) {
+                            if (!isHighMemoryProtected(process.pid))
+                                candidates.append({process.pid, process.name});
+                        }
                         QTimer::singleShot(0, this, [this, candidates] {
                             autoKillTopHighMemoryProcess(candidates);
                         });
@@ -2324,9 +2475,15 @@ void MainWindow::refreshHighMemoryProcessTable()
     });
 }
 
+bool MainWindow::isHighMemoryProtected(qint64 pid) const
+{
+    return pid <= 1 || pid == QCoreApplication::applicationPid() ||
+           m_highMemoryProtectedPids.contains(pid);
+}
+
 void MainWindow::killHighMemoryProcess(qint64 pid, const QString &name)
 {
-    if (pid <= 1 || pid == QCoreApplication::applicationPid())
+    if (isHighMemoryProtected(pid))
         return;
     const auto answer = QMessageBox::warning(
         m_highMemoryDialog ? static_cast<QWidget *>(m_highMemoryDialog.data())
@@ -2391,7 +2548,7 @@ void MainWindow::autoKillTopHighMemoryProcess(
 #if defined(Q_OS_UNIX)
     QStringList skipped;
     for (const auto &[pid, name] : candidates) {
-        if (pid <= 1 || pid == QCoreApplication::applicationPid() ||
+        if (isHighMemoryProtected(pid) ||
             m_highMemoryAutoKilledPids.contains(pid))
             continue;
         if (::kill(static_cast<pid_t>(pid), SIGTERM) == 0) {
@@ -2531,7 +2688,7 @@ void MainWindow::killAllHighMemoryProcesses(const QString &name,
 {
     QList<qint64> targets;
     for (qint64 pid : pids) {
-        if (pid <= 1 || pid == QCoreApplication::applicationPid())
+        if (isHighMemoryProtected(pid))
             continue;
         targets.append(pid);
     }

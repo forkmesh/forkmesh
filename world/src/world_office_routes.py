@@ -1366,7 +1366,8 @@ class _OfficeMarketingTasksRuntime:
                 self.env, str(self.bot_context.get("org") or "")
             )
         configured = str(
-            getattr(self.env, "OFFICE_MARKETING_ORG", "") or "forkmesh"
+            getattr(self.env, "OFFICE_MARKETING_ORG", "")
+            or getattr(self.env, "INSTANCE_OWNER", "") or "forkmesh"
         ).strip().lower()
         if not valid_node_name(configured):
             return "", None

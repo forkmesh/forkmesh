@@ -1754,6 +1754,74 @@ def test_share_names_are_checked_against_accounts_when_the_host_can():
     assert call(empty.use("GET"), "/api/crm/-/shared/" + "0" * 32)["status"] == 404
 
 
+def test_org_guests_get_nothing_and_auditors_only_read():
+    runtime = Runtime()
+    runtime.accounts["dave"] = "bi:dave"
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:bob','guest','bob',1)")
+    runtime.db.execute("INSERT INTO org_members VALUES('org:acme','bi:dave','auditor','dave',1)")
+    created = call(runtime.use("POST", body={"name": "Ada Lovelace", "email": "ada@example.com"}),
+                   "/api/crm/acme/contacts")
+    assert created["status"] == 201
+    contact_id = created["data"]["contact"]["id"]
+    for path in ("/api/crm/acme", "/api/crm/acme/contacts", "/api/crm/acme/contacts/export"):
+        guest = call(runtime.use("GET", "bob"), path)
+        assert (guest["status"], guest["data"]["error"]) == (404, "organization_not_found")
+    assert call(runtime.use("DELETE", "bob"),
+                f"/api/crm/acme/contacts/{contact_id}")["status"] == 404
+    assert call(runtime.use("GET", "dave"), "/api/crm/acme/contacts")["status"] == 200
+    for method, path, body in (
+            ("POST", "/api/crm/acme/contacts", {"name": "Mallory"}),
+            ("PATCH", f"/api/crm/acme/contacts/{contact_id}", {"company": "x"}),
+            ("DELETE", f"/api/crm/acme/contacts/{contact_id}", {}),
+            ("POST", "/api/crm/acme/emails/send",
+             {"to": "v@example.com", "subject": "Hi", "text": "Hi"})):
+        refused = call(runtime.use(method, "dave", body), path)
+        assert (refused["status"], refused["data"]["error"]) == (403, "read_only_role")
+    assert runtime.db.execute("SELECT COUNT(*) FROM crm_contacts").fetchone()[0] == 1
+
+
+def test_one_off_send_is_gated_like_outreach_and_capped_per_sender():
+    runtime = Runtime()
+    assert call(runtime.use("PUT", body={
+        "fromEmail": "hello@acme.example", "fromName": "Acme Team",
+    }), "/api/crm/acme/settings")["status"] == 200
+    phish = {"to": "victim@example.com", "subject": "Reset your password",
+             "html": "<a href=https://evil.example>reset</a>",
+             "fromEmail": "security@forkmesh.com", "fromName": "ForkMesh Security"}
+    refused = call(runtime.use("POST", "charlie", phish), "/api/crm/acme/emails/send")
+    assert (refused["status"], refused["data"]["error"]) == (403, "outreach_forbidden")
+    assert runtime.mailtrap_calls == []
+
+    assert call(runtime.use("POST", body={"action": "add", "name": "charlie"}),
+                "/api/crm/acme/outreach/team")["status"] in (200, 201)
+    sent = call(runtime.use("POST", "charlie", phish), "/api/crm/acme/emails/send")
+    assert sent["status"] == 201
+    assert runtime.mailtrap_calls[-1][1]["from"] == {
+        "email": "hello@acme.example", "name": "Acme Team"}
+    assert (runtime.mailtrap_calls[-1][1]["organization"],
+            runtime.mailtrap_calls[-1][1]["account"]) == ("org:acme", "bi:charlie")
+
+    chosen = call(runtime.use("POST", body=dict(
+        phish, fromEmail="founder@acme.example", fromName="Founder")),
+        "/api/crm/acme/emails/send")
+    assert chosen["status"] == 201
+    assert runtime.mailtrap_calls[-1][1]["from"] == {
+        "email": "founder@acme.example", "name": "Founder"}
+
+    for index in range(crm.OUTREACH_DAILY_LIMIT - 1):
+        runtime.db.execute(
+            "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,sender_bi,"
+            "sender_name,transport,status,external_id,created_at,sent_at,status_at,data) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (f"seed{index:028x}", "org:acme", "acme", "", "bi:charlie", "charlie",
+             "mailtrap", "accepted", "", runtime.now(), runtime.now(), runtime.now(),
+             "sealed:{}"))
+    calls = len(runtime.mailtrap_calls)
+    capped = call(runtime.use("POST", "charlie", phish), "/api/crm/acme/emails/send")
+    assert (capped["status"], capped["data"]["error"]) == (429, "daily_limit_reached")
+    assert len(runtime.mailtrap_calls) == calls
+
+
 def _outreach_send(runtime, actor="alice", **overrides):
     body = {"to": "sponsor@example.com", "subject": "Sponsoring ForkMesh",
             "body": "Hi Sam, would Acme sponsor the relays?", "template": "sponsorship"}
@@ -1831,6 +1899,7 @@ def test_outreach_is_gated_by_role_or_roster_and_sends_from_the_org_sender():
     assert payload["from"] == {"email": "founders@acme.example", "name": "Acme Founders"}
     assert payload["to"] == [{"email": "sponsor@example.com"}]
     assert payload["category"] == "CRM outreach"
+    assert (payload["organization"], payload["account"]) == ("org:acme", "bi:charlie")
     assert "html" not in payload or not payload["html"]
     assert runtime.audits[-1][0][1] == "crm.outreach.send"
     # The recipient and subject only exist inside the sealed envelope.
@@ -2998,6 +3067,10 @@ def test_crm_activity_pings_the_member_and_the_organization_managers(monkeypatch
     assert [ping["push"] for ping in runtime.pings] == [True, True, False, False]
     assert len({ping["dedupe"] for ping in runtime.pings}) == 1
 
+    assert call(runtime.use("PUT", body={"fromEmail": "hello@acme.example"}),
+                "/api/crm/acme/settings")["status"] == 200
+    assert call(runtime.use("POST", body={"action": "add", "name": "charlie"}),
+                "/api/crm/acme/outreach/team")["status"] in (200, 201)
     runtime.pings.clear()
     sent = call(runtime.use("POST", "charlie", {
         "to": "linus@example.com", "subject": "Hello",
@@ -3193,3 +3266,50 @@ def test_crm_mastodon_hosts_match_the_manifest_origins():
     manifest = json.loads((CRM_PACKAGE / "manifest.json").read_text())
     origins = set(manifest["worker"]["outboundOrigins"])
     assert {"https://" + host for host in crm.MASTODON_HOSTS} <= origins
+
+
+def test_contacts_page_with_a_cursor_and_the_summary_sends_the_first_page():
+    runtime = Runtime()
+    names = ["Contact %02d" % index for index in range(7)]
+    call(runtime.use("POST", body={
+        "csv": "name,email\n" + "".join(
+            "%s,c%02d@example.com\n" % (name, index) for index, name in enumerate(names)),
+        "fileName": "people.csv"}), "/api/crm/acme/contacts/import")
+    everyone = call(runtime.use("GET"), "/api/crm/acme/contacts")["data"]
+    assert "next" not in everyone and len(everyone["contacts"]) == 7
+
+    seen, cursor, pages = [], "", 0
+    while True:
+        query = {"limit": "3"}
+        if cursor:
+            query["cursor"] = cursor
+        page = call(runtime.use("GET", query=query), "/api/crm/acme/contacts")["data"]
+        seen += [contact["id"] for contact in page["contacts"]]
+        pages += 1
+        cursor = page["next"]
+        if not cursor:
+            break
+    assert pages == 3
+    assert seen == [contact["id"] for contact in everyone["contacts"]]
+
+    summary = call(runtime.use("GET", query={"contacts": "2"}), "/api/crm/acme")["data"]
+    assert [contact["id"] for contact in summary["contacts"]] == seen[:2]
+    assert summary["contactsTotal"] == 7 and summary["summary"]["contacts"] == 7
+    assert summary["contactsNext"]
+    rest = call(runtime.use("GET", query={"limit": "1000", "cursor": summary["contactsNext"]}),
+                "/api/crm/acme/contacts")["data"]
+    assert [contact["id"] for contact in rest["contacts"]] == seen[2:] and rest["next"] == ""
+
+    revision = summary["revision"]
+    unchanged = call(runtime.use("GET", query={"contacts": "2", "since": revision}),
+                     "/api/crm/acme")["data"]
+    assert unchanged.get("unchanged") is True
+    last = everyone["contacts"][-1]["id"]
+    call(runtime.use("PATCH", body={"nextStep": "Call"}), f"/api/crm/acme/contacts/{last}")
+    changed = call(runtime.use("GET", query={"contacts": "2", "since": revision}),
+                   "/api/crm/acme")["data"]
+    assert not changed.get("unchanged") and changed["contacts"][0]["id"] == last
+
+    whole = call(runtime.use("GET"), "/api/crm/acme")["data"]
+    assert "contactsNext" not in whole and len(whole["contacts"]) == 7
+    assert "customers" in whole["summary"]

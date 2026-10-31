@@ -2867,6 +2867,11 @@ bool IssueStore::applyRemoteEvent(int number, const IssueEvent &ev,
             if (existing.id == ev.id)
                 return true;
     }
+    if (!ev.sig.isEmpty() && ev.sig != QLatin1String("relay-placeholder")) {
+        for (const IssueEvent &existing : std::as_const(issue.events))
+            if (existing.sig == ev.sig)
+                return true;
+    }
     issue.events.append(ev);
     recomputeMetadata(issue);
     writeRemoteAttachmentFiles(number, ev.attachments, attachments);

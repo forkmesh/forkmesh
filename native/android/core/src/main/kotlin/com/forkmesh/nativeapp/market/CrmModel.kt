@@ -11,6 +11,17 @@ import com.forkmesh.nativeapp.json.strings
 
 private fun PackagesClient.crmPath(organization: String, rest: String = "") = "/api/crm/" + segment(organization) + rest
 
+const val CRM_FIRST_CONTACTS = 250
+const val CRM_CONTACTS_PAGE = 1000
+
+data class CrmContactsPage(val contacts: List<CrmContact>, val next: String)
+
+fun PackagesClient.crmContactsPage(organization: String, cursor: String, limit: Int = CRM_CONTACTS_PAGE): CrmContactsPage {
+    val reply = call("GET", crmPath(organization, "/contacts"), listOf("limit" to limit.coerceIn(1, CRM_CONTACTS_PAGE).toString(), "cursor" to cursor))
+    val next = reply.str("next")
+    return CrmContactsPage(reply.maps("contacts").map(CrmContact::fromJson), if (next == cursor) "" else next)
+}
+
 fun PackagesClient.bulkUpdateCrmContacts(organization: String, edits: List<Map<String, Any?>>): Pair<List<CrmContact>, List<String>> {
     if (edits.isEmpty()) return emptyList<CrmContact>() to emptyList()
     val reply = call("POST", crmPath(organization, "/contacts/bulk"), body = mapOf("edits" to edits))
@@ -128,6 +139,11 @@ fun PackagesClient.revokeCrmDeckLink(organization: String, token: String) {
 }
 
 class CrmModel(private val client: PackagesClient, var organization: String = "", var flowId: String? = null) {
+    companion object {
+        fun newRequestId(): String = java.util.UUID.randomUUID().toString().replace("-", "").lowercase()
+    }
+
+
     var organizations: List<PackageOrganization> = emptyList()
         private set
     var data: CrmOrganizationData? = null
@@ -139,8 +155,18 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     var tab: CrmTab? = null
     var filter = CrmFilter()
     val nextSkipped = mutableSetOf<String>()
+    var existing: CrmContact? = null
+    var section: CrmSection = CrmSection.HOME
     var now: () -> Long = { System.currentTimeMillis() }
+    var retryDelays: List<Long> = listOf(400, 1_500)
+    var sleep: (Long) -> Unit = { Thread.sleep(it) }
     private val memory = HashMap<String, CrmOrganizationData>()
+    @Volatile private var contactsGeneration = 0
+    private val appendedPages = ArrayList<Pair<String, List<CrmContact>>>()
+    var contactsLoading: Boolean = false
+        private set
+    var background: (() -> Unit) -> Unit = { work -> Thread(work, "crm-contacts").apply { isDaemon = true }.start() }
+    var onContactsChanged: () -> Unit = {}
     private val listViewsRecorded = HashMap<String, Long>()
 
     val installedOrganizations: List<PackageOrganization> get() = organizations.filter { it.installed }
@@ -191,6 +217,21 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         data?.flowFor(next)?.let { flowId = it.id }
     }
 
+    val defaultTab: CrmTab get() = data?.contactTabs?.firstOrNull()?.tab ?: CrmTab.Activity
+
+    fun show(next: CrmSection) {
+        section = next
+        val data = data ?: return
+        when (next) {
+            CrmSection.CONTACTS -> if (!activeTab.isContacts) select(defaultTab)
+            CrmSection.PIPELINE -> if (activeFlow == null) data.contactTabs.firstOrNull { it.flow != null }?.let { select(it.tab) }
+            CrmSection.ACTIVITY -> if (activeTab.isContacts) select(CrmTab.Activity)
+            CrmSection.HOME, CrmSection.MORE -> Unit
+        }
+    }
+
+    val dashboard: CrmDashboard get() = CrmDashboard.of(data?.contacts.orEmpty(), now())
+
     fun recordListView(viewId: String) {
         val stamp = now()
         val last = listViewsRecorded[viewId]
@@ -214,21 +255,79 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         load()
     }
 
+    val contactsStatus: String
+        get() {
+            val data = data
+            if (!contactsLoading || data == null) return ""
+            val loaded = data.contacts.size
+            return "Loading contacts, %,d of %,d".format(loaded, maxOf(loaded, data.contactsTotal))
+        }
+
+    private fun stopContacts(): Int = synchronized(this) {
+        contactsGeneration++
+        contactsLoading = false
+        appendedPages.clear()
+        contactsGeneration
+    }
+
     fun load() {
+        val generation = stopContacts()
         if (!PackagesText.isOrgName(organization)) {
             data = null
             return
         }
-        val cached = memory[organization]
-        data = cached
+        val org = organization
+        val cached = memory[org]
+        if (cached != null || data?.organization != org) data = cached
         try {
-            client.crm(organization, cached?.revision ?: "")?.let { fresh ->
-                memory[organization] = fresh
-                data = fresh
+            val fresh = client.crm(org, cached?.revision ?: "", contacts = CRM_FIRST_CONTACTS)
+            synchronized(this) {
+                if (generation != contactsGeneration) return
+                if (fresh != null) {
+                    data = fresh
+                    if (fresh.contactsComplete) memory[org] = fresh else contactsLoading = true
+                }
+                errorText = ""
             }
-            errorText = ""
+            if (fresh != null && !fresh.contactsComplete) background { loadRemainingContacts(org, fresh.contactsNext, generation) }
         } catch (thrown: Exception) {
-            errorText = PackagesException.describe(thrown)
+            synchronized(this) {
+                if (generation == contactsGeneration) errorText = PackagesException.describe(thrown)
+            }
+        }
+    }
+
+    private fun loadRemainingContacts(org: String, first: String, generation: Int) {
+        var cursor = first
+        while (cursor.isNotEmpty()) {
+            val page = try {
+                client.crmContactsPage(org, cursor)
+            } catch (thrown: Exception) {
+                synchronized(this) {
+                    if (generation != contactsGeneration) return
+                    contactsLoading = false
+                    data = data?.copy(revision = "")
+                    memory[org]?.let { memory[org] = it.copy(revision = "") }
+                    errorText = "Some contacts did not load: ${PackagesException.describe(thrown)}"
+                }
+                onContactsChanged()
+                return
+            }
+            synchronized(this) {
+                if (generation != contactsGeneration) return
+                if (org != organization) {
+                    contactsLoading = false
+                    return
+                }
+                appendedPages.add(cursor to page.contacts)
+                data = data?.appendingContacts(page.contacts, page.next)
+                cursor = page.next
+                if (cursor.isEmpty()) {
+                    contactsLoading = false
+                    data?.let { memory[org] = it }
+                }
+            }
+            onContactsChanged()
         }
     }
 
@@ -236,11 +335,16 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
 
     fun clearError() {
         errorText = ""
+        existing = null
     }
 
-    private fun remember(next: CrmOrganizationData?) {
-        data = next
-        next?.let { memory[organization] = it }
+    private fun remember(next: CrmOrganizationData?) = synchronized(this) {
+        val current = data
+        val start = if (next != null && current != null && next.organization == current.organization &&
+            next.contactsNext != current.contactsNext) appendedPages.indexOfFirst { it.first == next.contactsNext } else -1
+        val caughtUp = if (start >= 0) next!!.appendingContacts(appendedPages.drop(start).flatMap { it.second }, current!!.contactsNext) else next
+        data = caughtUp
+        caughtUp?.takeIf { it.contactsComplete }?.let { memory[organization] = it }
     }
 
     private fun <T> perform(work: () -> T): T? {
@@ -253,22 +357,58 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         }
     }
 
-    fun save(edit: CrmContactEdit, original: CrmContact?, addTo: String? = null): CrmContact? {
+    fun save(edit: CrmContactEdit, original: CrmContact?, addTo: String? = null, requestId: String = ""): CrmContact? {
+        existing = null
         if (!edit.isValid || !PackagesText.isOrgName(organization)) {
             errorText = PackagesException.sentence("name_or_email_required")
             return null
         }
-        val saved = perform {
-            if (original != null) {
-                val changes = edit.changes(original)
-                if (changes.isEmpty()) original else client.updateCrmContact(CrmContactRef(organization, original.id), changes)
-            } else {
-                val fields = LinkedHashMap(edit.changes(null))
-                if (addTo != null && PackagesText.isHexId(addTo)) fields["views"] = listOf(addTo)
-                client.createCrmContact(organization, fields)
+        if (original != null) return update(original, edit.changes(original))
+        val org = organization
+        val fields = LinkedHashMap(edit.changes(null))
+        if (addTo != null && PackagesText.isHexId(addTo)) fields["views"] = listOf(addTo)
+        if (PackagesText.isHexId(requestId)) fields["requestId"] = requestId
+        var attempt = 0
+        while (true) {
+            try {
+                val saved = client.createCrmContact(org, fields)
+                errorText = ""
+                if (org != organization) return saved
+                remember(data?.replacing(saved))
+                return saved
+            } catch (thrown: Exception) {
+                val found = (thrown as? PackagesException)?.let(::duplicate)
+                if (found != null) {
+                    existing = found
+                    val label = found.name.ifEmpty { found.email }.ifEmpty { "A contact" }
+                    errorText = "$label already uses that email address, so they are already in the CRM."
+                    return null
+                }
+                if (!PackagesText.isHexId(requestId) || !PackagesException.isTransient(thrown) || attempt >= retryDelays.size) {
+                    errorText = PackagesException.describe(thrown)
+                    return null
+                }
+                sleep(retryDelays[attempt])
+                attempt++
             }
-        } ?: return null
-        remember(data?.replacing(saved))
+        }
+    }
+
+    private fun duplicate(error: PackagesException): CrmContact? {
+        val id = error.fields["contactId"].orEmpty()
+        if (error.code != "contact_email_exists" || !PackagesText.isHexId(id)) return null
+        return contact(id) ?: CrmContact(
+            id = id, organization = organization, name = error.fields["contactName"].orEmpty(), email = error.fields["contactEmail"].orEmpty(),
+        )
+    }
+
+    fun addDetails(edit: CrmContactEdit, found: CrmContact, addTo: String? = null): CrmContact? {
+        if (contact(found.id) == null) load()
+        val current = contact(found.id) ?: found
+        val changes = LinkedHashMap(edit.additions(current))
+        if (addTo != null && PackagesText.isHexId(addTo) && addTo !in current.views) changes["views"] = listOf(addTo)
+        val saved = update(current, changes)
+        if (saved != null) existing = null
         return saved
     }
 
@@ -365,6 +505,7 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     }
 
     fun forget() {
+        stopContacts()
         memory.clear()
         listViewsRecorded.clear()
         data = null
@@ -399,8 +540,8 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         return sent
     }
 
-    fun nextContact(mode: CrmNextContact.Mode): CrmNextContact =
-        CrmNextContact.pick(mode, tabContacts, data?.activity.orEmpty(), nextSkipped.toSet(), now())
+    fun nextContact(mode: CrmNextContact.Mode, everyone: Boolean = false): CrmNextContact =
+        CrmNextContact.pick(mode, if (everyone) data?.contacts.orEmpty() else tabContacts, data?.activity.orEmpty(), nextSkipped.toSet(), now())
 
     val noteDrafts: List<CrmNoteDraft> get() = CrmNoteDraft.drafts(data?.contacts.orEmpty(), data?.activity.orEmpty())
 

@@ -28,7 +28,7 @@ struct NotesScreen: View {
             .navigationTitle(NotesListModel.title)
             .navigationBarTitleDisplayMode(.inline)
             .background(fm.canvas)
-            .navigationDestination(isPresented: $editorOpen) {
+            .shellDetail(isPresented: $editorOpen, id: openedId) {
                 NoteEditorScreen(noteId: openedId)
                     .shellPageClearance()
             }
@@ -204,7 +204,7 @@ struct NoteEditorScreen: View {
         }
         ToolbarItemGroup(placement: .primaryAction) {
             if model.showsSave {
-                FmTextButton(model.saveLabel, onPressed: model.saveEnabled ? {
+                FmTextButton(model.saveLabel, busy: model.saving, onPressed: model.saveEnabled ? {
                     Task { apply(await model.save()) }
                 } : nil)
                 .accessibilityIdentifier("note-save")

@@ -208,6 +208,25 @@ def test_a_postfix_bounce_records_whether_the_recipient_is_missing(
                       "WHERE recipient_bi='rcpt'").fetchone()[0] == "bounce"
 
 
+def test_a_bounce_blaming_our_sender_setup_does_not_suppress_the_recipient(
+        db):
+    _seed(db, "current", NOW - 60_000)
+    routes = _routes(db)
+    event = {"event_id": "smtp:bounced", "event": "bounce",
+             "message_id": "msg-current", "dsn": "5.7.25",
+             "reason": "host mta6.am0.yahoodns.net[98.136.96.75] said: 550 "
+                       "5.7.25 Forward-confirmed reverse DNS failed tnmpmscs "
+                       "(in reply to MAIL FROM command)"}
+
+    asyncio.run(routes["record_core_mail_event"](None, event, NOW))
+
+    assert tuple(db.execute("SELECT status,dsn,cause FROM mail_sends "
+                            "WHERE send_id='current'").fetchone()) == (
+        "bounce", "5.7.25", "sender")
+    assert db.execute("SELECT reason FROM mail_suppressions "
+                      "WHERE recipient_bi='rcpt'").fetchone() is None
+
+
 @pytest.mark.parametrize("event,dsn,reason,cause", [
     ("bounce", "5.1.1", "550 5.1.1 No such user here", "recipient"),
     ("bounce", "5.2.1", "550 The email account that you tried to reach "
@@ -217,6 +236,14 @@ def test_a_postfix_bounce_records_whether_the_recipient_is_missing(
     ("bounce", "5.7.1", "550 5.7.1 <blockchain@example.com>: Recipient "
      "address rejected: User unknown", "recipient"),
     ("bounce", "", "550 user unknown", ""),
+    ("bounce", "5.7.25", "550 5.7.25 Forward-confirmed reverse DNS failed "
+     "tnmpmscs (in reply to MAIL FROM command)", "sender"),
+    ("bounce", "5.7.26", "550 5.7.26 Unauthenticated email is not accepted",
+     "sender"),
+    ("bounce", "5.7.515", "550 5.7.515 Access denied, sending domain does "
+     "not meet the required authentication level", "sender"),
+    ("soft bounce", "4.7.25", "421 4.7.25 reverse DNS failed", ""),
+    ("bounce", "5.7.28", "550 5.7.28 Flood of mail", ""),
 ])
 def test_bounce_cause_only_names_a_missing_recipient(event, dsn, reason,
                                                      cause):

@@ -1,8 +1,23 @@
 {
   "schema": "forkmesh-docs-dependencies-v1",
-  "generated": "2026-10-14",
+  "generated": "2026-10-29",
   "generator": "marketplace/tools/docs_dependencies.py",
   "dependencies": [
+    {
+      "ecosystem": "cpp",
+      "name": "gio-2.0",
+      "title": "gio-2.0",
+      "version": "",
+      "development": false,
+      "usedBy": [
+        "desktop/CMakeLists.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
     {
       "ecosystem": "cpp",
       "name": "libnghttp3",
@@ -139,7 +154,8 @@
       "version": "4.15.1",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "High-level concurrency and networking framework on top of asyncio or Trio",
       "repository": "https://github.com/agronholm/anyio",
@@ -182,7 +198,8 @@
       "version": "2026.7.22",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "Python package for providing Mozilla's CA Bundle.",
       "repository": "https://github.com/certifi/python-certifi",
@@ -225,7 +242,8 @@
       "version": "2.1.1",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "Foreign Function Interface for Python calling C code.",
       "repository": "https://github.com/python-cffi/cffi",
@@ -311,7 +329,8 @@
       "version": "50.0.1",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "cryptography is a package which provides cryptographic recipes and primitives to Python developers.",
       "repository": "https://github.com/pyca/cryptography",
@@ -354,7 +373,8 @@
       "version": "0.16.0",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1",
       "repository": "https://github.com/python-hyper/h11",
@@ -483,7 +503,8 @@
       "version": "1.0.9",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "A minimal low-level HTTP client.",
       "repository": "https://github.com/encode/httpcore",
@@ -569,7 +590,8 @@
       "version": "0.28.1",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "The next generation HTTP client.",
       "repository": "https://github.com/encode/httpx",
@@ -655,7 +677,8 @@
       "version": "3.20",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "Internationalized Domain Names in Applications (IDNA)",
       "repository": "https://github.com/kjd/idna",
@@ -801,7 +824,8 @@
       "version": "3.0",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "",
       "repository": "",
@@ -842,21 +866,6 @@
     },
     {
       "ecosystem": "python",
-      "name": "python-dotenv",
-      "title": "python-dotenv",
-      "version": "1.2.3",
-      "development": false,
-      "usedBy": [
-        "app/host/requirements.txt"
-      ],
-      "description": "",
-      "repository": "",
-      "authors": [],
-      "authorsNote": "",
-      "fetched": ""
-    },
-    {
-      "ecosystem": "python",
       "name": "PyYAML",
       "title": "PyYAML",
       "version": "6.0.3",
@@ -877,7 +886,8 @@
       "version": "4.16.0",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
       ],
       "description": "",
       "repository": "",
@@ -917,9 +927,9 @@
     },
     {
       "ecosystem": "python",
-      "name": "watchfiles",
-      "title": "watchfiles",
-      "version": "1.3.0",
+      "name": "websockets",
+      "title": "websockets",
+      "version": "17.1",
       "development": false,
       "usedBy": [
         "app/host/requirements.txt"
@@ -931,13 +941,73 @@
       "fetched": ""
     },
     {
-      "ecosystem": "python",
-      "name": "websockets",
-      "title": "websockets",
-      "version": "17.1",
+      "ecosystem": "go",
+      "name": "forkmesh.com/mirror-node",
+      "title": "forkmesh.com/mirror-node",
+      "version": "0.0.0",
       "development": false,
       "usedBy": [
-        "app/host/requirements.txt"
+        "native/fmm/go.mod"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "go",
+      "name": "golang.org/x/mobile",
+      "title": "golang.org/x/mobile",
+      "version": "0.0.0-20260209203831-923679eb55af",
+      "development": false,
+      "usedBy": [
+        "native/fmm/go.mod"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "go",
+      "name": "golang.org/x/mod",
+      "title": "golang.org/x/mod",
+      "version": "0.33.0",
+      "development": false,
+      "usedBy": [
+        "native/fmm/go.mod"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "go",
+      "name": "golang.org/x/sync",
+      "title": "golang.org/x/sync",
+      "version": "0.19.0",
+      "development": false,
+      "usedBy": [
+        "native/fmm/go.mod"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "go",
+      "name": "golang.org/x/tools",
+      "title": "golang.org/x/tools",
+      "version": "0.42.0",
+      "development": false,
+      "usedBy": [
+        "native/fmm/go.mod"
       ],
       "description": "",
       "repository": "",
@@ -999,21 +1069,6 @@
       "development": true,
       "usedBy": [
         "world/tools/package.json"
-      ],
-      "description": "",
-      "repository": "",
-      "authors": [],
-      "authorsNote": "",
-      "fetched": ""
-    },
-    {
-      "ecosystem": "npm",
-      "name": "three",
-      "title": "three",
-      "version": "0.184.0",
-      "development": true,
-      "usedBy": [
-        "world/browser_tests/package.json"
       ],
       "description": "",
       "repository": "",

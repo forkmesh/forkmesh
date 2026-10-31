@@ -83,7 +83,14 @@ change it on the website too.
 **Organization shares.** An organization share is a set of per-member grants.
 A member who joins, or creates a vault, later is listed as pending; the owner's
 client seals to them the next time it unlocks, because only a holder of the
-item key can.
+item key can. "Member" means an organization insider (owner, admin,
+maintainer, member or auditor): guests, the outside collaborators an
+organization adds for a few repositories, are never listed in an
+organization's roster or as pending, cannot be sealed to through an
+organization share, cannot share to that organization, and an organization
+grant is not served to them. Why: the owner's client seals to every pending
+member on unlock without asking, so the server's roster decides who receives
+the organization's passwords.
 
 ## One suite, four implementations
 

@@ -20,7 +20,9 @@
   const CLIENT_ERROR_ENDPOINT = "/api/client-errors";
   const CLIENT_ERROR_WINDOW_MS = 60_000;
   const CLIENT_ERROR_MAX_PER_WINDOW = 8;
+  const FORKMESH_HOSTS = new Set(["forkmesh.com", "www.forkmesh.com", "app.forkmesh.com", "world.forkmesh.com"]);
   let started = false;
+  let privacyMode = false;
   let clientErrorWindowStartedAt = 0;
   let clientErrorWindowCount = 0;
   const recentClientErrors = new Map();
@@ -168,6 +170,7 @@
   }
 
   function reportClientError(kind, error, fallbackMessage = "", source = "", line = 0, column = 0) {
+    if (privacyMode) return;
     // Classify before redaction, which rewrites the very URLs that say where a
     // frame came from. Dropped reports also must not spend the send budget.
     if (knownNonActionableBrowserError(error, fallbackMessage)) return;
@@ -373,7 +376,7 @@
   }
 
   function start() {
-    if (started || storedConsent() !== "granted" || privacySignalEnabled()) {
+    if (privacyMode || started || storedConsent() !== "granted" || privacySignalEnabled()) {
       return false;
     }
     started = true;
@@ -494,6 +497,7 @@
     @media (max-width: 480px) { .fm-consent { left: 8px; right: 8px; bottom: 8px; max-width: none; } }`;
 
   function promptWanted() {
+    if (privacyMode) return false;
     if (storedConsent() !== "unset" || privacySignalEnabled() || !publicSurface()) return false;
     if (location.pathname.replace(/\/+$/, "") === "/privacy") return false;
     if (navigator.webdriver) return false;
@@ -551,10 +555,40 @@
 
   // Default is off. This is the sole automatic start path and it requires a
   // previously stored explicit grant on this device.
-  if (storedConsent() === "granted" && !privacySignalEnabled()) start();
-  else if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", showPrompt, { once: true });
+  function boot() {
+    if (privacyMode) return;
+    if (storedConsent() === "granted" && !privacySignalEnabled()) start();
+    else if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", showPrompt, { once: true });
+    } else {
+      showPrompt();
+    }
+  }
+
+  function instanceInfo() {
+    const shared = window.__forkmeshInstanceInfo;
+    if (shared && typeof shared.then === "function") return shared;
+    if (FORKMESH_HOSTS.has(location.hostname)) return null;
+    try {
+      const request = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      window.__forkmeshInstanceInfo = request;
+      return request;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  const info = instanceInfo();
+  if (info) {
+    info
+      .then((data) => {
+        privacyMode = Boolean(data && data.privacyMode);
+        boot();
+      })
+      .catch(boot);
   } else {
-    showPrompt();
+    boot();
   }
 })();

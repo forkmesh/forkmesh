@@ -64,7 +64,11 @@ def test_dashboard_js_search_inputs_opt_out_of_autocomplete():
     assert inputs
     missing = [tag[:120] for tag in inputs if 'autocomplete="off"' not in tag]
     assert not missing, missing
-    assert not re.search(r"<input\b[^>]*\btype=\"password\"", dashboard_js)
+    for match in re.finditer(r"<input\b[^>]*\btype=\"password\"", dashboard_js):
+        before = dashboard_js[:match.start()]
+        opened, closed = before.rfind("<form"), before.rfind("</form>")
+        assert opened > closed and match.start() - opened < 4000, (
+            "password field outside its own <form>: " + match.group(0)[:120])
 
 
 def test_credential_scope_forms_never_submit():

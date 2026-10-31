@@ -23,7 +23,7 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
 | Examples | `app/src/workflow_templates.py` |
 | `.forkmesh` repository files on the canvas | `app/src/workflow_files.py` |
 | Page script | `app/public/dashboard/js/09-workflows.js` (rebuild with `app/tools/build_dashboard_assets.py`) |
-| Desktop page | `marketplace/packages/workflows/content/desktop/` (`WorkflowsModel`, `WorkflowsFeature`, `WorkflowsDialogs.cpp`); test `forkmesh-workflows-tests` |
+| Desktop page | `marketplace/packages/workflows/content/desktop/` (`WorkflowsModel`, `WorkflowsCards` for the list, thumbnail and compact cards, `WorkflowsRunFlow` for the animated run steps and the new-run sparkle, `WorkflowsFeature`, `WorkflowsDialogs.cpp`); test `forkmesh-workflows-tests` |
 | Plug-in and nested packages | `marketplace/packages/workflows`, `workflows-pack-*`, `workflows-examples`, `workflows-repository-files` |
 | Tables | `workflows`, `workflow_runs`, `workflow_credentials` (migration `0251_workflows.sql`) |
 | Tests | `app/tests/test_workflows.py`, `test_workflow_actions.py`, `test_workflow_script.py`, `test_workflow_formats.py`, `test_workflow_files.py`, `test_workflow_desktop.py` |
@@ -85,7 +85,7 @@ Writes need a user session. Errors are `{"ok": false, "error": "<code>"}`.
 | --- | --- |
 | `GET /api/workflows/catalog` | Core nodes, integrations, operators, and `requests`: each integration's base URL, credential placement, headers and per-operation path, query and body templates (public) |
 | `GET /api/workflows/desktop-script` | Source of `tools/free_disk_space.py` with each function's line range and the functions each desktop step runs (public); `script_unavailable` (404) when the server has no copy |
-| `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}` |
+| `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}`; a listed workflow with desktop steps carries `runsOn: "desktop"`, so the phones can offer Run on your desktop on its row without opening it |
 | `GET`/`POST /api/workflows/<id>` | Read / replace (`rotateHook: true` issues a new webhook token) |
 | `POST /api/workflows/<id>/run` | Run now (`payload` overrides trigger test data); `runs_on_desktop` (409) for a workflow with desktop steps |
 | `POST /api/workflows/<id>/record` | Store a run the browser drove on the desktop: `{startedAt, finishedAt, nodes, output: {freedBytes, freeBytes, totalBytes}}` |
@@ -181,9 +181,12 @@ steps that only the user's own desktop can run: the six parts of
 `tools/free_disk_space.py` ([../tools/free-disk-space.md](../tools/free-disk-space.md)),
 one step type each so each has its own icon.
 
-- **Who runs them.** Not the server and not the phones: the server engine and
-  both phone engines fail such a step with its `refusal` text, and
-  `POST /<id>/run` answers `runs_on_desktop`. **Run workflow** in the browser
+- **Who runs them.** Not the server and not the phone engines: the server
+  engine and both phone engines fail such a step with its `refusal` text, and
+  `POST /<id>/run` answers `runs_on_desktop`. The iPhone's **Run on your
+  desktop** drives the desktop the same way the browser does and records the
+  run ([../native/WORKFLOWS.md](../native/WORKFLOWS.md#the-desktops-workflows)).
+  **Run workflow** in the browser
   (`wfRunOnDesktop`) connects to the first linked desktop through
   `desktopControlHub()` ([desktop-agents-web.md](desktop-agents-web.md)), then
   for each step in graph order sends `diag.prepare` and `diag.run` with action
@@ -228,6 +231,8 @@ and schedules skip; data is kept. Nested packages add integration categories,
 examples and the Repository view.
 
 On the desktop the plugin is a native page too ([On the desktop](#on-the-desktop)).
+The phones also list the desktop's repository workflows and special agents
+and run them through the desktop's `workflows.` control family.
 On iPhone and Android the plugin is a native screen, and a phone can run a
 workflow itself: the package's `content/mobile/workflow-engine.js` runs in
 JavaScriptCore on iPhone, Android runs a Kotlin port, and both replay cases
@@ -252,18 +257,64 @@ and the phones showed workflows the desktop did not. A 401 or 403
 `plugin_not_installed` shows as a sentence in the status line (`errorText`
 maps every server error code).
 
-- **Dashboard.** Stats: workflows (and their step total), active (scheduled,
-  webhook, manual), runs (today), success rate (succeeded and failed),
-  average duration, last run with the last failed workflow, next scheduled
-  run. Your workflows lists name, trigger (a schedule shows its interval),
-  steps, on/off, last run and result, runs kept (failed count), next run and
-  last change, filtered by the box or the window's top search. Edit, Run,
-  Turn on/off, Duplicate (saved off, as "Copy of ...") and Delete act on the
-  selected row; a double click opens it. Recent runs merges the 30 kept runs
+- **Dashboard.** Stat tiles: workflows (and their step total), active
+  (scheduled, webhook, manual), runs (today), success rate (succeeded and
+  failed), average duration, last run with the last failed workflow, next
+  scheduled run; they count every workflow in the list, the desktop's too.
+  Below them is **one list** of every workflow: special agents, the
+  repositories' desktop workflows and the account's workflows on ForkMesh
+  (see [One list](#one-list-on-the-desktop)). Recent runs merges the 30 kept runs
   of every workflow that has run (`GET /<id>/runs`, at most four at a time,
   only for workflows with a `lastRunAt`), newest first, filtered by workflow
-  and result; selecting one shows each step's result, time, item count and
+  and result; selecting one shows the run's steps as an animated chain
+  (`RunFlow`, `workflowsRunFlow`), under it the run's output
+  (`workflowsRunOutput`): each step's output, log lines and error under its
+  name, and under that a table of each step's result, time, item count and
   error, first item or last log line, with the log in the tooltip.
+- **Run goes to Recent runs.** Run, Run with an assignment, a rail pin and the
+  editor's Run workflow all follow the new run (`followRun`): the run filters
+  reset (the workflow filter stays when it already names that workflow), the
+  runs pane grows to at least 40% of the page and the new run is
+  selected. A desktop run is matched by the `runId` the `run` action returns
+  (special agents return it too), else by the first run of that workflow
+  started within two minutes of the click. An account run has no id until
+  `POST /<id>/run` answers, so a "Running" placeholder row (`m_pendingRun`)
+  stands in for it until then. Every Run makes that placeholder at once
+  (`startPendingRun`), for an account run, a repository workflow and a run
+  of desktop steps alike, with the workflow's steps as Waiting when the page
+  knows them (`pendingSteps`), so the run appears and its steps show before
+  anything answers. It stays until the real run is in the list: an account
+  run swaps it for the run `POST /<id>/run` returns (`landPendingRun`), a
+  desktop run once a list holds the `runId` the `run` action returned, and a
+  pending one with a `runId` goes after two minutes. Desktop steps fill the
+  placeholder as each one starts and ends (`updateDesktopPending`).
+- **Run animation.** The user asked (2026-10-27) for a new run to sparkle into
+  Recent runs and for the right side to show the flow at once, each step
+  animated, with the log below. When the followed run's row first appears,
+  `RunSparkle::burst` puts a short-lived overlay on the table's viewport: a
+  white flash, a sweep across the row and stars, 1.4 s, then it deletes
+  itself. It finds the row by run id each frame and keeps the last place when
+  the placeholder is replaced. `RunFlow` draws one circle per step joined by
+  lines: Waiting is numbered, Running spins with a pulsing halo and a dot
+  running into it along the line, Succeeded, Failed, Skipped and Stopped get
+  a check, cross, dash or square with a pop and a ring, and a line fills in
+  green after a step succeeds. While a run is live with no running step (an
+  account run, which answers only when finished) a light runs along the whole
+  chain; with no steps yet it says Starting. When several steps change in
+  one update they turn one after another (160 ms apart), so an account run's
+  result plays through its steps. A new run's steps fade in one by one;
+  steps of the same run, or of the run that replaced the placeholder
+  (`m_flowAliasFrom`/`m_flowAliasTo`), keep their state and only animate what
+  changed. The timer runs at 30 fps only while something moves or the run is
+  live and the page is visible. The chain scrolls sideways past about 104 px
+  a step and keeps the running step in view; each circle's tooltip has the
+  step's result, time and detail.
+  waiting, the page asks the host for it (`get`, which returns the active run)
+  every second and redraws the steps and output, keeping the output scrolled
+  to the end unless you scrolled up. The runner fills a running step's
+  `output` and `logs` from each poll (an agent's latest reply, a shortcut's or
+  process's output so far) in memory only; the run file is still written
+  when a step starts or ends.
 - **Editor.** The graph is an ordered list of steps like the phones'
   (`Draft::ordered`, Kahn order). The form is built from the catalog fields:
   select, boolean, text/json/code (fixed-width for json and code),
@@ -280,6 +331,27 @@ maps every server error code).
   URL with Copy and New URL (`rotateHook`). Save posts the whole graph; Run
   workflow saves first; Download writes the `/export` n8n file; leaving with
   unsaved changes asks to Save, Discard or Cancel.
+- **Editor layout.** The user asked (2026-10-27) for a more compact editor
+  that shows more. It is three columns: the steps, the selected step's form,
+  and the runs (the runs table above the selected run's steps). Before, the
+  runs sat under the form at full width, the steps list took 40% of the
+  width, and most of the page was empty. Each step is a card painted by
+  `StepDelegate` (`WorkflowsCards`): a numbered badge on a line joining the
+  steps, coloured by kind (trigger accent, special agent purple, desktop
+  step teal, else grey, dashed when turned off), its name, its type and
+  summary, and what it runs after. "Not connected" shows in the attention
+  colour. A dot on the right gives that step's status in the latest run.
+  The item text keeps all three lines for accessibility. Under the name bar,
+  chips (`workflowsFact`, `renderEditorFacts`) show the state (off,
+  running, last run succeeded or failed), the trigger, the next and last
+  run, runs with the share that succeeded, the step count, and where the
+  workflow lives: its repository and file, or ForkMesh. Hovering the file
+  chip shows the desktop note that used to be a line of prose. Checkbox
+  groups with more than four options use four columns, so Days and Run on
+  events each take two rows. The runs table reads Started, Result,
+  Duration, Trigger, Output. A desktop run's step table names its fourth
+  column Session rather than Items. A special agent's icon slot shows its
+  portrait. The page subtitle is hidden while the editor is open.
 - **New workflow.** Blank (Manual trigger), any example from
   `/templates`, **Import file...** (`/convert`, files up to 2 MB) or
   **Import from link...** (`/import-url`). All open unsaved and off, and
@@ -301,6 +373,89 @@ maps every server error code).
   `/<id>/record` like a browser-driven run.
 - **Search and badge.** The top search box finds workflows by name; the rail
   badge counts workflows whose last run failed.
+
+### One list on the desktop
+
+The user asked (2026-10-24) for the special agents to join the account's
+workflows in one list, for every workflow to get the special agent features,
+and for a list, a thumbnail and a compact grid view with little controls and
+the latest output under each one. Before, the page had two tables: **On this
+desktop** (repository workflows and special agents) and **Your workflows**
+(the account's).
+
+- **Entries.** `unifiedWorkflows` (`WorkflowsModel.cpp`) turns both into one
+  entry shape: `key` (`local:<repo>|<id>` or `account:<id>`), `source`
+  (`local`, `account`), `kind` (`agent`, `desktop`, `account`) and its label
+  (Special agent, Desktop workflow, On ForkMesh), `place`, trigger text,
+  `enabled`, schedule, steps, last run and status, runs and failures, next
+  run, rail pin, and the latest output: a desktop run's caption or summary
+  (`lastSummary`) and output file, or the newest account run's
+  `runOutputText`. `statsWorkflows` maps entries to the stats input.
+- **Toolbar.** Chips filter by kind: All, Special agents, On this desktop, On
+  ForkMesh, Pinned, Needs attention (failed or broken) (`workflowMatches`, which
+  also matches the filter box against name, description, trigger,
+  repository, kind and output). Sort by name, last run, next run or kind
+  (`sortWorkflows`). Three view buttons pick List, Thumbnails or Compact grid;
+  the view and sort are kept in `workflows/viewMode` and `workflows/sort`.
+- **Cards** (`WorkflowsCards.*`). Thumbnails: a painted header tinted by kind
+  (violet special agents, blue desktop, teal ForkMesh) with the icon or
+  portrait, a small drawing of its steps, a state pill and the rail it is
+  pinned to; then name, kind chip, place and trigger, the latest output (two
+  lines) and run times. Compact grid: icon, name, kind and last run, a state
+  dot and one line of output. List: one row per workflow with its output,
+  trigger, state and next or last run under column headings. Cards flow into
+  as many columns as fit (`CardGrid`; 270 px thumbnails, 210 px compact).
+- **Controls under every card.** Run (Stop while it runs), Edit, Pin to rail,
+  Start or Pause schedule (desktop workflows with a schedule), Last output, an
+  on/off switch and More: Run now, Run with an assignment, Edit, Show the
+  last output, Agent home or Add a special agent step, Show file, Duplicate
+  (account), the rail submenu, Turn on/off, Delete. A double click edits; a
+  right click opens More; a card drags onto any rail.
+- **Special agent features for every workflow.** An account workflow runs
+  with an assignment: the page posts `{payload: {assignment}}` to
+  `/<id>/run`, so its steps read `{{ $trigger.assignment }}`. It pins to the
+  top, left, right or bottom rail like a desktop workflow (below). Last output
+  opens a desktop run's output file or selects the run in Recent runs. A desktop
+  workflow without an agent step gets **Add a special agent step**, which opens
+  it with an `agent.run` step after its last step (read-only permission) to
+  fill in and save.
+- **Details pane and its log.** The user asked (2026-10-27) that clicking a
+  workflow show its log at the bottom right and open a right-hand pane to see
+  and manage all of it. Clicking a card (`selectEntry`) now does three things:
+  it highlights the card, opens the details pane (`workflowsDetails`, a
+  splitter beside the cards under the toolbar; 360 to 440 px at first, then
+  the width you drag it to), and sets Recent runs' workflow filter to that
+  workflow. If the selected run is not one of the workflow's runs, its newest
+  run is selected, so its steps and log fill the bottom right. A workflow that
+  has never run gets an empty log and "<name> has not run yet". The pane
+  (`renderDetails`) shows the portrait, name, kind and place, a state chip,
+  the rail, description, file problem, Run now / Stop and Run with an
+  assignment. It also has a button for every action from the More menu: Edit
+  steps, Turn on/off, Start or Pause schedule, Pin to rail, Open output file,
+  Agent home or Add an agent step, and Show file for desktop workflows;
+  Duplicate and Open in browser for account ones; and Delete. Below those are
+  the facts (trigger, schedule, next and last run, running step, runs and
+  failures, steps, where, rail, file) and the latest output. Buttons look up
+  the entry by key when clicked, so a refresh between drawing and clicking
+  acts on current data. The pane redraws only when its entry, the busy flag
+  or the theme changes (`m_detailsShown`), and keeps its scroll position for
+  the same workflow. It closes on × or when its workflow is gone; × also sets
+  the run filter back to All workflows. Running from the pane keeps the
+  workflow filter: `followRun` resets it only when it names another workflow,
+  and Last output does the same.
+
+**Account workflow pins.** The host keeps them with the desktop's pins
+(`ui/workflowPins`) under the repository key `@account/workflows`
+(`rw::kAccountRepo`, `kAccountRepo` in the package; it has a slash so the
+side rail's workflow items accept it, and no repository key starts with `@`).
+`repositoryWorkflowAction("@account/workflows", id, ...)` answers `pin`
+(`{rail, name, lastStatus}`), `unpin` and `sync` (`{workflows: [{id, name,
+lastStatus}]}`); the page sends `sync` after each list load, which stores the
+names and last results in `ui/accountWorkflowPins` for the pin tooltips and
+rings and unpins workflows the account no longer has. Clicking such a pin
+calls the page's `activateSearchHit("run:<id>")`, which runs it like the Run
+button (desktop steps still ask first); its menu offers Run now, Open in
+Workflows and the rail actions.
 
 ## Desktop workflows and special agents
 
@@ -341,7 +496,7 @@ Limits: 60 steps, 120 connections, no loops, nothing connects into a trigger.
 | Run shortcut | `workflow.shortcut` | Runs a `.forkmesh/shortcuts` script (`bash`, with `FORKMESH_WORKFLOW_INPUT`, `FORKMESH_WORKFLOW` and `FORKMESH_WORKFLOW_RUN`) or prompt (an agent, Plan unless **may edit files**). **Wait** off starts it and moves on. |
 | Save output | `workflow.output` | Writes the run so far as Markdown; a path also saves it in the repository, never under `.git` or `.forkmesh` and never through a link out of the checkout. |
 | Note | `workflow.note` | Passes its input on. |
-| Desktop steps | `desktop.*` | The six `tools/free_disk_space.py` steps. |
+| Desktop steps | `desktop.*` | The six `tools/free_disk_space.py` steps, always the copy in this desktop's own source folder (`forkmesh::sourceDir()/..`), never one from the checkout that triggered the run: a repository could commit its own `tools/free_disk_space.py`. The phone's disk cleanup (`runLocalControlFreeDiskSpace`) uses the same copy. |
 
 **Runs.** `Runner` walks the steps in connection order, one at a time. A step
 runs when one of the steps before it succeeded (or failed with **Keep going if
@@ -359,32 +514,112 @@ schedules, events, monitors, mentions, Run team) starts the agent's workflow
 `startTeammateSession`, so the permission grant, `--disallowedTools`, the
 external-call gate, the run mode clamp and the guardrails are unchanged; the
 session is the step's runtime, filed in the **Workflows** agent folder. A run
-starts a fresh session. A mention or a direct prompt to an agent that already
+starts a fresh session. The user asked (2026-10-25) for a way back from such an
+agent to its workflow: the top of the agent pane shows **← Workflow: <name>**
+when the session's special agent id belongs to an agent step of a workflow in
+its repository (`rw::runsAgent`: the main agent step runs under the workflow
+id, any other under `rw::agentStepId`, `<workflow>-<step>`), and clicking it
+opens that workflow in the Workflows page (`openWorkflowInPage`). The lookup
+reads the repository's workflow files once per selected session
+(`refreshAgentWorkflowLink`); shared team runs have no single workflow and
+show no link. A mention or a direct prompt to an agent that already
 has a conversation is chat, not a run: it continues that session
 (`startTeammateSession`) without a workflow run. Shared "Run all in one session" runs are still
 one shared session. Schedules of workflows without an agent step are checked
 on the same 60 s tick (`checkRepoWorkflowSchedules`) across every local
 repository, and their event triggers fire from `triggerTeammatesForEvent`.
 
+**Approval before a workflow runs by itself.** A workflow file is code: a
+shortcut step runs a script with `bash`, and an agent step runs an agent with
+the file's instructions. Since 2026-10-27, a schedule or a repository event
+starts a workflow or special agent from a checkout only after the user has
+approved that file on this desktop. Before then, the author of any repository
+that ended up as a checkout (imported, forked, or changed by a merged pull
+request) could have run commands as the user within a minute of a repository
+page opening.
+- **The check.** `rw::approvalDigest` hashes the file's JSON without its
+  bookkeeping counters (`withoutBookkeeping`), plus the name and bytes of
+  every `.forkmesh/shortcuts` script its shortcut steps run. The digest is
+  stored in QSettings under `repoWorkflows/approved/<repository and path
+  hash>`. `checkRepoWorkflowSchedules`, `triggerRepoWorkflowsForEvent`,
+  `checkTeammateSchedules` and `triggerTeammatesForEvent` call
+  `repoWorkflowApproved` before they start anything.
+- **When the file changes.** Any change to the file, or to a
+  `.forkmesh/shortcuts` script one of its shortcut steps names, needs approval
+  again. Programs and files those scripts use in turn are not part of the
+  digest, and the review box says so.
+- **What the user sees.** An unapproved workflow is skipped and raises one
+  page notice per file version. Its **Review** button (`fm:workflows:approve`)
+  opens an Allow / Not now box that lists the pending files. Allow stores the
+  digest the box was opened with, so a file that changed while the box was
+  open is not approved.
+- **Saving in the editor.** The editor's `save` action approves the file it
+  writes only when it is new, or when its content differs from the committed
+  file (the user edited it). Saving an unchanged file keeps whatever approval
+  the file already had, so a package cannot approve a stranger's workflow by
+  saving it back.
+- **Turning a workflow on.** `setEnabled` and `setSchedule` change the file,
+  and with it the digest. A file that was approved before the toggle gets its
+  approval carried to the new digest. A file that was not approved stays
+  unapproved; turning it on raises the review notice instead.
+- **Runs from a package.** The package `run` action is not the user's own
+  click on the desktop, so it checks `repoWorkflowApproved` for a repository
+  workflow, the same as the phone. Otherwise it answers that the file needs
+  approval (`code: approval_required`) and raises the notice. The `review`
+  action opens the same Allow / Not now box for that file and answers once
+  it closes: ok when the file is now approved. Allow is still the user's
+  click in the desktop's own box, so a package cannot approve a file itself.
+- **Run on the Workflows page.** The user ran the CEO special agent from the
+  page on 2026-10-28 and saw nothing: the file was not approved, so `run`
+  refused it, the Running placeholder vanished and the reason showed only in
+  the status line. Now a Run that answers `approval_required` keeps the
+  placeholder ("waiting for your approval"), opens the box through `review`
+  and starts the run after Allow. A Run that does not start for any reason,
+  Not now included, turns the placeholder into a Failed row with the reason
+  in its summary and log (`failPendingRun`) instead of removing it; an
+  account run that `POST /<id>/run` refuses does the same. A special agent
+  that fails at once answers the failed run's `runId`, so the page selects it.
+- **Shortcuts from the phone.** `insights` `runShortcut` (script or prompt)
+  and `queueShortcut` run committed `.forkmesh/shortcuts` and
+  `.forkmesh/skills` files. They answer `approval_required` until that file is
+  approved. A non-JSON file's digest is SHA-256 over its bytes, and it shares
+  the same store and the same review box.
+- **What it does not cover.** Clicks on the desktop's own play buttons and
+  pins are not asked. Mentions in chat are not covered either.
+- **Runs from the phone.** `workflows.run` from a paired phone runs a
+  repository workflow only once its file is approved on this desktop, and
+  answers `approval_required` otherwise (the phone shows the desktop's
+  message). The phone sees a name, not the file's steps, so its confirmation
+  is not a review of the code. Account workflows are not repository files and
+  are not asked.
+- **This repository's special agents.** Their schedules are off in their
+  files (only `ux.json` is on), so nothing stops silently. A schedule a user
+  turns on outside the editor shows the notice once.
+
 **Rails.** A workflow can be pinned to the top bar, under the left rail, at the
 right edge or in the status bar (`ui/workflowPins`, at most 48 pins; one rail
 per workflow). A pin shows the workflow's icon (a special agent's portrait), a
 blue ring while it runs and a red one after a failure; clicking runs it (or
 opens it while it runs), right-click stops it, opens it, its agent's home or
-its last output, or moves it. The special agents rail menu and the page offer
-**Pin to rail** too.
+its last output, or moves it. The special agent menu and the page offer
+**Pin to rail** too. Right-rail pins show in the desktop's side rail, and a
+card on the Workflows page (or a pin on another rail) can be dragged onto the
+side rail or any pin strip to pin it there
+([../desktop/side-rail-and-terminals.md](../desktop/side-rail-and-terminals.md)).
+Account workflows pin the same way ([One list](#one-list-on-the-desktop)).
 
-**Page.** The native Workflows page lists these workflows under **On this
-desktop** with their icons, repository, trigger, state, last result and next
-run, with Run/Stop, Edit, Agent home, Pin to rail, schedule and on/off
-buttons; their runs join Recent runs, with the output file and agent session
+**Page.** The native Workflows page shows these workflows in its one list
+beside the account's ([One list](#one-list-on-the-desktop)), with their icons,
+repository, trigger, state, latest output and next run, and Run/Stop, Edit,
+Agent home, Pin to rail, schedule and on/off controls under each card; their
+runs join Recent runs, with the output file and agent session
 one click away. **New workflow** starts a special agent, a shortcut run, a
 blank desktop workflow or Free disk space in a chosen repository. The editor
 adds checkbox, line-list, portrait and shortcut fields. It needs the
 `desktop.workflows.run` permission, which gives the page the host's
 `repositoryWorkflows()` and `repositoryWorkflowAction(repo, id, action,
-payload, done)` (actions `get`, `save`, `run`, `stop`, `delete`, `pin`,
-`unpin`, `setEnabled`, `setSchedule`, `openAgent`, `openSession`,
+payload, done)` (actions `get`, `save`, `run`, `review`, `stop`, `delete`,
+`pin`, `unpin`, `setEnabled`, `setSchedule`, `openAgent`, `openSession`,
 `openOutput`, `readOutput`, `openFile`; see
 [../marketplace/README.md](../marketplace/README.md)).
 

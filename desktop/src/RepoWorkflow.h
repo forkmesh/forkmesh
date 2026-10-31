@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QPair>
+#include <QSettings>
 #include <QString>
 #include <QStringList>
 
@@ -27,6 +28,7 @@ inline const QString kRailTop = QStringLiteral("top");
 inline const QString kRailLeft = QStringLiteral("left");
 inline const QString kRailRight = QStringLiteral("right");
 inline const QString kRailBottom = QStringLiteral("bottom");
+inline const QString kAccountRepo = QStringLiteral("@account/workflows");
 
 inline const QString kStatusQueued = QStringLiteral("queued");
 inline const QString kStatusRunning = QStringLiteral("running");
@@ -84,6 +86,8 @@ QJsonObject nodeSpec(const QString &type);
 
 bool toTeammate(const Workflow &workflow, forkmesh::teammates::Config *config,
                 QString *error = nullptr);
+QString agentStepId(const Workflow &workflow, const QString &nodeId);
+bool runsAgent(const Workflow &workflow, const QString &agentId);
 forkmesh::teammates::Config agentConfig(const Workflow &workflow, const QString &nodeId,
                                         QString *error = nullptr);
 void applyTeammate(Workflow *workflow, const forkmesh::teammates::Config &config);
@@ -100,6 +104,13 @@ struct Listing {
 };
 
 QList<Listing> listRepositoryWorkflows(const QString &checkout);
+QJsonObject approvalContent(const QByteArray &bytes);
+QString approvalDigest(const QString &checkout, const QString &path);
+QString approvalSettingsKey(const QString &repository, const QString &checkout, const QString &path);
+bool isApproved(const QSettings &settings, const QString &repository, const QString &checkout,
+                const QString &path);
+bool approve(QSettings &settings, const QString &repository, const QString &checkout, const QString &path,
+             const QString &expectedDigest = QString());
 QString writeWorkflow(const QString &checkout, Workflow workflow, qint64 nowMs, QString *path = nullptr);
 bool removeWorkflowFiles(const QString &checkout, const QString &workflowId, QString *error = nullptr);
 QList<QPair<QString, QString>> avatarChoices();
@@ -176,6 +187,7 @@ bool isRail(const QString &rail);
 QList<Pin> parsePins(const QString &json);
 QString serializePins(const QList<Pin> &pins);
 QList<Pin> pinWorkflow(QList<Pin> pins, const Pin &pin);
+QList<Pin> movePin(QList<Pin> pins, const Pin &pin, int slot);
 QList<Pin> unpinWorkflow(QList<Pin> pins, const QString &repo, const QString &workflowId);
 QString pinnedRail(const QList<Pin> &pins, const QString &repo, const QString &workflowId);
 

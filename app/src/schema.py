@@ -325,12 +325,6 @@ SCHEMA_STATEMENTS = [
             ON DELETE CASCADE)""",
     "CREATE INDEX IF NOT EXISTS idx_marketplace_member_approvals_value "
     "ON marketplace_member_approvals(submission_id, value_lamports DESC, approved_at)",
-    # Live host presence: lets /api/network/stats report "hosts online" without
-    # probing every repo's tunnel Durable Object on every page view. repo_bi is a
-    # blind index (no plaintext repo name), ts is refreshed while a host is active
-    # and a staleness window self-heals rows left behind by a missed disconnect.
-    "CREATE TABLE IF NOT EXISTS host_presence (repo_bi TEXT PRIMARY KEY, ts INTEGER NOT NULL)",
-    "CREATE INDEX IF NOT EXISTS idx_host_presence_ts ON host_presence(ts)",
     # Direct HTTPS mirror endpoints. These rows contain only public routing
     # identity/health data and never repository bytes, wallet material, node
     # private keys, or private repository names. The node identity signature
@@ -452,8 +446,8 @@ SCHEMA_STATEMENTS = [
     # Per-repo round-robin cursor for clone fallbacks. When a repo's named host is
     # offline, a clone is redirected to one of its online mirrors; this counter is
     # bumped on each redirect so the picks rotate across every mirror instead of
-    # all piling onto the single freshest one. repo_bi is the same blind index
-    # host_presence uses; n is a monotonically increasing rotation cursor.
+    # all piling onto the single freshest one. repo_bi is the repository blind
+    # index (repositories.key_bi); n is a monotonically increasing rotation cursor.
     "CREATE TABLE IF NOT EXISTS clone_rr (repo_bi TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0)",
     # Which mirror is currently serving a downed repo's clones IN PLACE (same
     # URL, no redirect). git clones are two requests (info/refs then the
@@ -815,7 +809,7 @@ SCHEMA_STATEMENTS = [
     "CREATE TABLE IF NOT EXISTS central_fund (id INTEGER PRIMARY KEY, data TEXT NOT NULL)",
     # --- Leaderboard backing data (issue #11) -------------------------------
     # First time each repo's tunnel was ever seen live, so the "longest hosted"
-    # board can rank by age. repo_bi is the same blind index host_presence uses
+    # board can rank by age. repo_bi is the repository blind index
     # (== repositories.key_bi for published repos); written once and never
     # updated, so it survives the host going offline and coming back.
     "CREATE TABLE IF NOT EXISTS repo_first_hosted (repo_bi TEXT PRIMARY KEY, ts INTEGER NOT NULL)",
@@ -1005,33 +999,6 @@ SCHEMA_STATEMENTS = [
     "ON profile_follows(target_bi, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_profile_follows_follower "
     "ON profile_follows(follower_bi, created_at)",
-    # Legacy per-system /status aggregates.  New writes use the batch tables
-    # below so a larger mirror roster does not multiply D1 row writes; these
-    # remain readable during the bounded retention handoff from older workers.
-    """CREATE TABLE IF NOT EXISTS system_status_daily (
-        day_ts INTEGER NOT NULL, system TEXT NOT NULL,
-        checks INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (day_ts, system))""",
-    # Hourly breakdown backing the per-day sliver bars on /status. `reason` is a
-    # short human-readable note on the most recent failing check that hour (e.g.
-    # which path/host check failed), so hovering a degraded/down hour explains
-    # why instead of just showing a color.
-    """CREATE TABLE IF NOT EXISTS system_status_hourly (
-        hour_ts INTEGER NOT NULL, system TEXT NOT NULL,
-        checks INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
-        reason TEXT,
-        PRIMARY KEY (hour_ts, system))""",
-    # Per-minute detail backing the /status page's 60-minute strip. Unlike the
-    # daily/hourly rollups above (which only ever store a checks/failures
-    # counter, never the individual samples), a minute IS the individual
-    # sample, so this is one row per system per minute: ok=1/0 plus the same
-    # short failure reason. Short-retention (pruned well under an hour of
-    # slack past what the page displays) since nothing else needs history
-    # this granular once it has aged out of the visible window.
-    """CREATE TABLE IF NOT EXISTS system_status_minute (
-        minute_ts INTEGER NOT NULL, system TEXT NOT NULL,
-        ok INTEGER NOT NULL DEFAULT 1, reason TEXT,
-        PRIMARY KEY (minute_ts, system))""",
     # Roster-independent status storage. Each UTC bucket is one bounded JSON
     # object keyed by public system id, so a 50-node mirror fleet costs the
     # same number of D1 row writes as the base eleven checks. The INTEGER
@@ -1051,7 +1018,7 @@ SCHEMA_STATEMENTS = [
     # INSERTs this minute's row first owns the sample; later attempts skip it
     # instead of double-counting the hour. `claim` is a random token the winner
     # reads back to recognize itself (D1's Python client exposes no reliable
-    # changes() count). Pruned alongside system_status_minute.
+    # changes() count). Pruned alongside system_status_minute_batch.
     """CREATE TABLE IF NOT EXISTS system_status_sample_claim (
         minute_ts INTEGER PRIMARY KEY, claim TEXT NOT NULL,
         claimed_at INTEGER NOT NULL)""",
@@ -3006,6 +2973,10 @@ SCHEMA_STATEMENTS = [
         PRIMARY KEY (case_id, approver_bi))""",
     "CREATE INDEX IF NOT EXISTS idx_org_succession_approvals_case "
     "ON org_succession_approvals(case_id, approved_at)",
+    """CREATE TABLE IF NOT EXISTS org_succession_case_approvers (
+        case_id TEXT NOT NULL,
+        approver_bi TEXT NOT NULL,
+        PRIMARY KEY (case_id, approver_bi))""",
     """CREATE TABLE IF NOT EXISTS org_succession_events (
         event_id TEXT PRIMARY KEY,
         org_bi TEXT NOT NULL,
@@ -3035,6 +3006,8 @@ SCHEMA_STATEMENTS = [
                 SELECT 1 FROM org_succession_cases c
                 JOIN org_members m
                   ON m.org_bi=c.org_bi AND m.member_bi=NEW.approver_bi
+                JOIN org_succession_case_approvers s
+                  ON s.case_id=c.case_id AND s.approver_bi=NEW.approver_bi
                 WHERE c.case_id=NEW.case_id
                   AND c.status='grace'
                   AND NEW.approved_at<=c.grace_ends_at
@@ -3042,6 +3015,27 @@ SCHEMA_STATEMENTS = [
                   AND NEW.approver_bi<>c.owner_bi
                   AND NEW.approver_bi<>c.successor_bi
             );
+        END""",
+    """CREATE TRIGGER IF NOT EXISTS trg_org_succession_case_approver_snapshot
+        AFTER INSERT ON org_succession_cases
+        BEGIN
+            INSERT OR IGNORE INTO org_succession_case_approvers
+                (case_id, approver_bi)
+            SELECT NEW.case_id, m.member_bi FROM org_members m
+            WHERE m.org_bi=NEW.org_bi
+              AND m.role IN ('owner','admin','maintainer','member')
+              AND m.member_bi<>NEW.owner_bi
+              AND m.member_bi<>NEW.successor_bi;
+        END""",
+    """CREATE TRIGGER IF NOT EXISTS trg_org_succession_case_approver_no_update
+        BEFORE UPDATE ON org_succession_case_approvers
+        BEGIN
+            SELECT RAISE(ABORT, 'succession_approver_snapshot_immutable');
+        END""",
+    """CREATE TRIGGER IF NOT EXISTS trg_org_succession_case_approver_no_delete
+        BEFORE DELETE ON org_succession_case_approvers
+        BEGIN
+            SELECT RAISE(ABORT, 'succession_approver_snapshot_immutable');
         END""",
     """CREATE TRIGGER IF NOT EXISTS trg_org_succession_approval_no_update
         BEFORE UPDATE ON org_succession_approvals
@@ -3120,6 +3114,8 @@ SCHEMA_STATEMENTS = [
                 JOIN org_members m
                   ON m.org_bi=OLD.org_bi
                  AND m.member_bi=a.approver_bi
+                JOIN org_succession_case_approvers s
+                  ON s.case_id=a.case_id AND s.approver_bi=a.approver_bi
                 WHERE a.case_id=OLD.case_id
                   AND m.role IN ('owner','admin','maintainer','member')
                   AND a.approver_bi<>OLD.owner_bi
@@ -5007,6 +5003,18 @@ SCHEMA_STATEMENTS = [
         account_bi TEXT PRIMARY KEY,
         window_start INTEGER NOT NULL,
         count INTEGER NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS post_translations (
+        repo_bi TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        comment TEXT NOT NULL,
+        lang TEXT NOT NULL,
+        account_bi TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (repo_bi, subject, comment, lang, account_bi))""",
+    "CREATE INDEX IF NOT EXISTS idx_post_translations_account "
+    "ON post_translations(account_bi, updated_at)",
     """CREATE TABLE IF NOT EXISTS member_repo_activity (
         repo_bi TEXT NOT NULL,
         user_bi TEXT NOT NULL,
@@ -5207,4 +5215,77 @@ SCHEMA_STATEMENTS = [
         k TEXT PRIMARY KEY,
         day TEXT NOT NULL,
         count INTEGER NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS repo_mirror_quota (
+        repo_bi TEXT PRIMARY KEY,
+        target INTEGER NOT NULL DEFAULT 0 CHECK (target >= 0),
+        next_check_at INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        data TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_repo_mirror_quota_due "
+    "ON repo_mirror_quota(next_check_at)",
+    """CREATE TABLE IF NOT EXISTS repo_mirror_registry (
+        repo_bi TEXT NOT NULL,
+        mirror_id TEXT NOT NULL,
+        added_by_bi TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        next_check_at INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL,
+        PRIMARY KEY (repo_bi, mirror_id))""",
+    "CREATE INDEX IF NOT EXISTS idx_repo_mirror_registry_due "
+    "ON repo_mirror_registry(next_check_at)",
+    "CREATE INDEX IF NOT EXISTS idx_repo_mirror_registry_adder "
+    "ON repo_mirror_registry(added_by_bi, created_at)",
+    """CREATE TABLE IF NOT EXISTS moderation_roles (
+        scope_bi TEXT NOT NULL,
+        account_bi TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'moderator',
+        created_at INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (scope_bi, account_bi))""",
+    "CREATE INDEX IF NOT EXISTS idx_moderation_roles_account "
+    "ON moderation_roles(account_bi)",
+    """CREATE TABLE IF NOT EXISTS moderation_blocks (
+        scope_bi TEXT NOT NULL,
+        account_bi TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        hide_content INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL,
+        PRIMARY KEY (scope_bi, account_bi))""",
+    "CREATE INDEX IF NOT EXISTS idx_moderation_blocks_account "
+    "ON moderation_blocks(account_bi)",
+    """CREATE TABLE IF NOT EXISTS moderation_flags (
+        repo_bi TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        target TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('hide', 'lock')),
+        created_at INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (repo_bi, subject, target, kind))""",
+    """CREATE TABLE IF NOT EXISTS moderation_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_bi TEXT NOT NULL,
+        scope_bi TEXT NOT NULL,
+        author_bi TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        claimed_at INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_moderation_queue_scope "
+    "ON moderation_queue(scope_bi, id)",
+    "CREATE INDEX IF NOT EXISTS idx_moderation_queue_author "
+    "ON moderation_queue(author_bi, repo_bi)",
+    """CREATE TABLE IF NOT EXISTS moderation_post_counts (
+        account_bi TEXT NOT NULL,
+        day INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        PRIMARY KEY (account_bi, day, kind))""",
+    """CREATE TABLE IF NOT EXISTS moderation_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope_bi TEXT NOT NULL,
+        ts INTEGER NOT NULL,
+        data TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_moderation_log_scope "
+    "ON moderation_log(scope_bi, id)",
 ]

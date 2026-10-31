@@ -24,6 +24,7 @@ namespace forkmesh::agentresources {
 namespace {
 
 constexpr qint64 kGiB = qint64(1) << 30;
+constexpr qint64 kBuildJobBytes = 3 * kGiB / 2;
 constexpr int kProbeTimeoutMs = 8000;
 constexpr char kGradleIdleTimeoutMs[] = "600000";
 
@@ -171,7 +172,7 @@ Budget computeBudget(qint64 totalBytes, int cpuCount, int reservePercent,
     budget.agentHighBytes = budget.sliceHighBytes * 3 / 5;
     budget.agentMaxBytes = budget.sliceHighBytes * 4 / 5;
     const int cpus = qMax(1, cpuCount);
-    const int jobs = int(budget.agentHighBytes / (3 * kGiB));
+    const int jobs = int(budget.agentHighBytes / kBuildJobBytes);
     budget.jobsPerAgent = qBound(qMin(2, cpus), jobs, cpus);
     const int cpuPercent =
         qBound(kMinReservePercent, cpuReservePercent, kMaxReservePercent);
@@ -187,11 +188,16 @@ QString cpuCores(int quotaPercent)
     return QStringLiteral("%1 cores").arg(quotaPercent / 100.0, 0, 'f', 1);
 }
 
+Budget budgetFor(int reservePercent, int cpuReservePercent)
+{
+    return computeBudget(physicalMemoryBytes(), QThread::idealThreadCount(),
+                         reservePercent, cpuReservePercent);
+}
+
 Budget currentBudget()
 {
     const QSettings settings;
-    return computeBudget(
-        physicalMemoryBytes(), QThread::idealThreadCount(),
+    return budgetFor(
         settings.value(kReservePercentSetting, kDefaultReservePercent).toInt(),
         settings.value(kCpuReservePercentSetting, kDefaultCpuReservePercent)
             .toInt());
@@ -394,6 +400,18 @@ Status prepare()
 Status status()
 {
     QMutexLocker lock(&stateMutex());
+    return storedStatus();
+}
+
+Status setReservePercents(int reservePercent, int cpuReservePercent)
+{
+    const int memory = qBound(kMinReservePercent, reservePercent, kMaxReservePercent);
+    const int cpu = qBound(kMinReservePercent, cpuReservePercent, kMaxReservePercent);
+    QSettings settings;
+    settings.setValue(kReservePercentSetting, memory);
+    settings.setValue(kCpuReservePercentSetting, cpu);
+    QMutexLocker lock(&stateMutex());
+    storedStatus().budget = budgetFor(memory, cpu);
     return storedStatus();
 }
 

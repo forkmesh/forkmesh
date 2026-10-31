@@ -59,8 +59,11 @@ again (nobody here can push to their copy, `docs/app/pull-merge-box.md`).
 The branch, base and clone values are shell-quoted when a command is copied.
 
 `ai_missing` reads `repoCollabSettings.requireAiDisclosure` and the pull's
-`aiModel`; on a build without AI disclosure the setting is never present, so
-the reply never shows.
+stated model through `pullAiModel`: the `aiModel` field or an "AI model:" line
+in the description, as the disclosure chip does. Reading only the field
+offered the reply on pulls that stated their model in the description. On a
+build without AI disclosure the setting is never present, so the reply never
+shows.
 
 ### `.forkmesh/review-replies.json`
 
@@ -111,6 +114,12 @@ Quick replies always go to the relay route, not to a direct mirror, because
 the relay is what prevents repeats and pings the author. The request carries
 `quickReply: {id, head}` beside the signed event (not inside it; it is not
 part of the signature and is not stored in the ledger).
+
+On a build with comment reactions (`docs/app/comment-reactions.md`), an
+approving quick reply also adds the Thank you sticker to the pull request's
+description (`sayCommentThanks`, once per viewer), and `ai_missing` reads the
+stated model the way the AI disclosure chip does (`pullAiModel`: the `aiModel`
+field or an "AI model:" line in the description).
 
 ### One per commit
 

@@ -623,3 +623,72 @@ def test_card_accent_falls_back_to_the_named_themes_colours():
     assert accent_for({"preset": "blt"})
     assert accent_for({"preset": "blt", "dark": {"primary": "#123456"}}) == "#123456"
     assert accent_for({}) == ""
+
+
+PULL = {
+    "host": "forkmesh.com", "path": "forkmesh/forkmesh", "number": 2638,
+    "state": "open", "title": "Show reviews and code health on the share card",
+    "author": "alice", "head": "card", "base": "main",
+    "ts": str((NOW_S - 3 * 86400) * 1000), "commits": 4, "files": 12,
+    "additions": 1234, "deletions": 56, "comments": 9, "commenters": 4,
+    "review": {"state": "approved", "approvals": 2, "blockers": 0},
+    "health": [{"key": k, "label": k.title(), "score": s, "tone": t}
+               for k, s, t in (("merge", 80, "orange"), ("complexity", 92, "green"),
+                               ("quality", 72, "orange"), ("security", 100, "green"),
+                               ("network", 36, "red"), ("practices", 97, "green"))],
+    "reviews": [{"name": "bob", "key": "bob", "state": "approved", "text": "Ship it"},
+                {"name": "ForkBot", "state": "ai", "text": "Adds a card."}],
+    "people": [{"name": "alice", "key": "alice"}, {"name": "bob", "key": "bob"}],
+}
+PULL_LEFT = WIN + 40
+PULL_TOP = BAR_BOTTOM + 26
+
+
+def test_pull_card_is_an_og_sized_terminal_window():
+    w, h, rows = decode_png_rgb(og_card.render_pull_card(PULL, NOW_S))
+    assert (w, h) == (1200, 630)
+    middle = WIN + og_card.TERM_BAR_H // 2
+    for index, color in enumerate(og_card._TERM_DOTS):
+        assert pixel(rows, WIN + 28 + index * 24, middle) == color
+
+
+def test_pull_card_state_pill_takes_the_state_colour():
+    for state, color in (("open", og_card._PULL_GREEN), ("merged", og_card._PULL_PURPLE),
+                         ("closed", og_card._PULL_RED), ("draft", og_card._PULL_GRAY)):
+        _, _, rows = decode_png_rgb(og_card.render_pull_card(dict(PULL, state=state), NOW_S))
+        assert pixel(rows, PULL_LEFT + 6, _unscanned(PULL_TOP + 20)) == color, state
+
+
+def test_pull_card_draws_avatars_and_falls_back_to_initials():
+    size = og_card.PULL_AVATAR
+    face = bytes((10, 200, 240, 255)) * (size * size)
+    people = [{"name": "alice", "key": "alice", "avatars": {size: face}},
+              {"name": "bob", "key": "bob"}]
+    _, _, rows = decode_png_rgb(og_card.render_pull_card(dict(PULL, people=people), NOW_S))
+    top = WIN + (og_card.CARD_H - 2 * WIN) - 22 - size
+    centre = _unscanned(top + size // 2)
+    assert pixel(rows, PULL_LEFT + 3 + 12, centre) == (10, 200, 240)
+    second = pixel(rows, PULL_LEFT + 3 + size - 8 + size - 6, centre)
+    assert second == og_card._initial_color("bob")
+
+
+def test_pull_card_shows_what_it_is_given():
+    full = og_card.render_pull_card(PULL, NOW_S)
+    bare = og_card.render_pull_card({"number": 1, "title": "x"}, NOW_S)
+    assert full != bare
+    assert og_card.render_pull_card(dict(PULL, health=[]), NOW_S) != full
+    assert og_card.render_pull_card(dict(PULL, reviews=[]), NOW_S) != full
+    long = dict(PULL, title="“Quoted” " + "word " * 200,
+                author="a" * 200, head="h" * 300, base="b" * 300,
+                reviews=[{"name": "r%d" % n, "state": "commented", "text": "t" * 500}
+                         for n in range(30)],
+                people=[{"name": "p%d" % n} for n in range(40)])
+    assert decode_png_rgb(og_card.render_pull_card(long, NOW_S))[:2] == (1200, 630)
+
+
+def test_pull_review_label():
+    assert og_card.pull_review_label(PULL["review"]) == (
+        "approved by 2 reviewers", og_card._PULL_GREEN)
+    assert og_card.pull_review_label({"state": "changes_requested", "blockers": 1})[0] == \
+        "changes requested by 1"
+    assert og_card.pull_review_label(None) == ("", og_card._PULL_GRAY)

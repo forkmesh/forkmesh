@@ -270,32 +270,35 @@ def test_leaderboard_scores_breakdown_and_rank_movement(pulse_app):
     value = payload(app, "period=1w")
     weights = value["scoring"]["weights"]
     assert weights == {"merged": 10, "commits": 1, "issuesClosed": 3,
-                       "reviews": 4, "comments": 1}
+                       "reviews": 4, "comments": 1, "pullsOpened": 2,
+                       "issuesOpened": 1}
+    assert value["scoring"]["tieBreak"][:3] == [
+        "merged", "reviews", "issuesClosed"]
     rows = {row["name"]: row for row in value["leaderboard"]}
-    assert set(rows) == {"alice", "bob", "carol"}
+    assert set(rows) == {"alice", "bob", "carol", "dave", "erin", "frank"}
     assert rows["alice"]["breakdown"] == {
         "merged": 1, "commits": 7, "issuesClosed": 0, "reviews": 1,
-        "comments": 1}
-    assert rows["alice"]["score"] == 22
+        "comments": 1, "pullsOpened": 1, "issuesOpened": 0, "activeDays": 4}
+    assert rows["alice"]["score"] == 24
     assert rows["bob"]["breakdown"] == {
         "merged": 0, "commits": 1, "issuesClosed": 0, "reviews": 1,
-        "comments": 3}
+        "comments": 3, "pullsOpened": 0, "issuesOpened": 0, "activeDays": 2}
     assert rows["bob"]["score"] == 8
     assert rows["carol"]["breakdown"]["issuesClosed"] == 1
     assert rows["carol"]["score"] == 5
-    assert [row["rank"] for row in value["leaderboard"]] == [1, 2, 3]
+    assert [row["rank"] for row in value["leaderboard"]] == [1, 2, 3, 4, 5, 6]
     assert rows["alice"]["previousRank"] is None
     assert rows["carol"]["previousRank"] == 1
     assert rows["alice"]["streak"] == 3
     assert rows["alice"]["achievements"] == {
         "mergedPulls": 1, "reviews": 1, "bugsClosed": 0, "longestStreak": 3}
     assert rows["carol"]["achievements"]["bugsClosed"] == 1
-    assert value["leaderboardTotal"] == 3
+    assert value["leaderboardTotal"] == 6
     every = payload(app, "period=all")
     totals = {row["name"]: (row["rank"], row["score"], row["previousRank"])
               for row in every["leaderboard"]}
-    assert totals == {"alice": (1, 23, 1), "bob": (2, 8, None),
-                      "carol": (3, 6, 1)}
+    assert {name: totals[name] for name in ("alice", "bob", "carol")} == {
+        "alice": (1, 25, 2), "bob": (2, 10, 1), "carol": (3, 6, 3)}
 
 
 def test_newcomers_and_person_progress(pulse_app):
@@ -309,7 +312,7 @@ def test_newcomers_and_person_progress(pulse_app):
     assert "leaderboard" not in mine and "pulls" not in mine
     person = mine["person"]
     assert person["found"] is True and person["rank"] == 1
-    assert person["score"] == 22
+    assert person["score"] == 24
     assert person["totals"]["commits"] == 10
     assert person["totals"]["mergedPulls"] == 1
     assert person["totals"]["longestStreak"] == 3
@@ -429,7 +432,15 @@ def test_scoring_helpers_cap_and_rank():
         {"a": (5, {}), "b": (5, {}), "c": (2, {})},
         {"a": "Ann", "b": "Ben", "c": "Cy"})
     assert [(rank, key) for rank, key, _score, _parts in ranked] == [
-        (1, "a"), (1, "b"), (3, "c")]
+        (1, "a"), (2, "b"), (3, "c")]
+    ranked = gateway._pulse_ranking(
+        {"comments": (10, {"comments": 10, "activeDays": 9}),
+         "busy": (10, {"commits": 10, "activeDays": 1}),
+         "steady": (10, {"commits": 10, "activeDays": 5}),
+         "reviewer": (10, {"reviews": 2, "comments": 2})},
+        {})
+    assert [key for _rank, key, _score, _parts in ranked] == [
+        "reviewer", "comments", "steady", "busy"]
     for name in ("dependabot[bot]", "github-actions", "renovate", "ci-bot",
                  "release-actions", "", "Claude", "Claude Opus 5.5",
                  "claude code", "Codex", "OpenAI Codex", "ChatGPT", "GPT-5",
@@ -464,6 +475,11 @@ def test_scoring_helpers_cap_and_rank():
     assert gateway._pulse_is_automated("node-a", "", rules)
     assert not gateway._pulse_is_automated("Pat", "pat@example.test", rules)
     assert gateway.pulse_exclusion_rules("", {}) == ()
+    forge = gateway.pulse_exclusion_rules("", {
+        "FORKMESH_COMMIT_NAME": "Acme  Forge",
+        "FORKMESH_COMMIT_EMAIL": "noreply@git.example.org"})
+    assert forge == ("acme forge", "noreply@git.example.org")
+    assert gateway._pulse_is_automated("Acme Forge", "noreply@git.example.org", forge)
     assert gateway._pulse_ms("1700000000") == 1_700_000_000_000
     assert gateway._pulse_ms("bad") == 0
 
@@ -476,7 +492,7 @@ def test_configured_exclusions_and_the_gateway_node_are_never_ranked(
     try:
         value = json.loads(read(app, "period=1w").body)
         names = {row["name"] for row in value["leaderboard"]}
-        assert names == {"alice", "carol"}
+        assert names >= {"alice", "carol"} and "bob" not in names
         assert value["summary"]["main"] == 10
         assert value["summary"]["authors"] == 3
         assert value["scoring"]["excludesAutomated"] is True

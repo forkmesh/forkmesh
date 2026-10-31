@@ -10,6 +10,7 @@ and the rest of the desktop's Pings page.
 | Piece | Where |
 | --- | --- |
 | Which pings go, wire shape, phone-link rule, dedupe and storm gate | `desktop/src/DesktopPingForward.{h,cpp}`, `desktop/tests/test_desktop_ping_forward.cpp` |
+| Burst batching and summaries (OS cards, arrival sound, phone) | `desktop/src/PingBatch.{h,cpp}`, `desktop/tests/test_ping_batch.cpp`; `batchNativeNotificationCard`, `admitPingSound` (`MainWindowActions.cpp`), `flushPhonePingBatch` (`MainWindowPingForward.cpp`) |
 | Sending (signing, POST, on/off switch) | `desktop/src/MainWindowPingForward.cpp`; hook in `MainWindow::recordNotification` (`MainWindowActions.cpp`) |
 | Route | `app/src/desktop_pings.py` (`POST` and `DELETE /api/notifications/desktop`); tests `app/tests/test_desktop_pings.py` |
 | Ping kind | `desktop_ping` in `NOTIFICATION_KINDS`, `devices` group of `PING_KIND_CATALOG` ("Pings from your desktop") |
@@ -63,6 +64,40 @@ open ([PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md)). Power alarms always go.
 seconds (same agent session, or one ping's first 48 letters and digits inside
 the other's), and caps forwarding at 30 pings per 10 minutes. The relay's
 dedupe key is `desktop:<node>:<pingId>`, so a retried POST rewrites its row.
+
+### Bursts become summaries
+
+When pings come in one after another, sending each one is too much. Since
+2026-10-31, `pingbatch::Batcher` batches them on three rails, each with its own
+burst count: the desktop's OS cards (`postNotification` and
+`showPingTrayMessage`), the ping arrival sound, and the push to the phone.
+
+- A burst starts with the first ping after 30 quiet seconds (`kQuietMs`). Its
+  first three pings (`kSoloCards`) go out one by one as before.
+- The rest are held. One summary goes out when the burst reaches 10 pings,
+  again at 100, and after that at every further 100 (`nextThreshold`).
+- Pings still held go out when the burst has been quiet for 30 seconds, or 5
+  minutes after the first one was held (`kMaxHoldMs`), so a steady trickle is
+  not silent until the next threshold. If only one ping is held it goes out
+  as itself.
+- A summary's title is `N more pings`, plus `, K with a problem` when any were
+  warnings. The body has one line per kind of ping, problems first and then
+  the most frequent: a single ping shows its title and detail, and repeats
+  show as `8× Agent is done! — #4, #5, #6, #7, #8 +3`, so the numbers that
+  differ are still visible. `#<digits>` is taken out of the title to group
+  pings and shown as these numbers. More than four kinds fold into
+  `+ N more of K other kinds`, and the last line gives the burst total and
+  points to the Pings page, which still lists every ping. The OS card opens
+  that page (`fm:pings`) and stays up 10 seconds on the tray.
+- Bypass: dismiss-only (acknowledgement) cards and resident tray balloons
+  (`timeoutMs` 0) on the desktop; power alarms and dismiss-only pings on the
+  phone.
+- The sound rail plays the cue for the solo pings and once at each threshold.
+- A phone summary is sent as kind `desktop` with pingId
+  `<flushMs>-batch`. No desktop row holds that id, so deleting rows on the
+  desktop does not remove the summary from the phone. Held pings have no
+  `phonePingId`. Every send, summaries included, still goes through
+  `pingforward::Gate`; with batching a storm rarely gets near its cap.
 
 ### Agent-done text
 
@@ -158,6 +193,12 @@ the desktop's website-pings list and unread count (`pingforward::isOwnEcho`).
   (`notificationRowKey`: `local:<id>`, `web:<id>`, `run:<id>`), redraws only
   when its signature changes, and closes when the ping is gone. Esc or x closes
   it; widgets are replaced with `deleteLater`.
+- Each row in the list shows two small icons on its second line, right
+  aligned: the project's logo (`currentProjectLogo`, the instance logo a
+  project adopts) and where the ping lives, `device-desktop` for one raised on
+  this desktop or `cloud` for one from the account's ping inbox
+  (`kPingCloudRole` on the Type cell). Hovering them names both. Table mode
+  puts the same local/cloud icon in the Status cell.
 - Opening a website ping marks it read (`POST /api/notifications` with `ids`,
   signed with `kAccountAlertReadProof`).
 
@@ -227,6 +268,40 @@ session is not in the relay's agent list).
   `com.forkmesh.push.agent` extra; `PushFeature.open` marks the row read and
   opens `AgentRouteScreen`, which resolves `desktop:<n>` for a number and
   `node:<id>` otherwise.
+
+#### The agent page a tap opens loads instead of going blank (iOS, 2026-10-28)
+
+A tap often lands before the Agents list has loaded, most of all on a cold
+launch, when the phone still has to reach the desktop over the relay. The page
+(`AgentRouteLookup`, `Features/Agents/Remote/AgentRouteScreens.swift`) used to
+show a bare spinner, call `refresh()`, and give up on the first miss. That
+failed four ways:
+
+- `AgentControlCenter.reload` returns at once while another refresh is in
+  flight (the Agents tab or the shell started one), so the page decided "not
+  found" before the list arrived. It now waits for `center.loading` to clear.
+- Relay runs were published only after the desktop answered, so a runner
+  alert waited out the desktop link and `agents.list` timeouts (20 s each)
+  when the desktop was asleep. `loadCloud` now publishes the relay rows as
+  soon as they land, next to the desktop rows already shown; the desktop's
+  answer then folds in any run it took over.
+- The id only matched one exact row. `AgentControlCenter.row(forRoute:)`
+  (over `UnifiedAgentRow.forRoute`) also finds a ping from another paired
+  desktop (`<key>:desktop:<n>`, when only one desktop has that number), a
+  relay run by its `cloudSessionId`, and a relay run the active desktop took
+  over as its desktop row.
+- A later refresh where the desktop failed dropped the row and swapped the
+  open page for "Agent not found". The page now keeps the row it found; while
+  a load is still running it follows the row if its id changes (`.id(row.id)`
+  rebuilds the run screen), and after that it stays put, like a page opened
+  from the list.
+
+While it looks, the page shows a skeleton shaped like the agent page
+(`agent-route-loading`); when nothing matches it says why (the desktop's error
+when there is one) and offers Try again (`agent-route-missing`). Tests:
+`AgentControlTests.testAnAlertsAgentIdFindsItsRowOnAnyDesktopOrTheQueue`,
+`testNodeRunsShowBeforeTheDesktopAnswers`,
+`testARelayRunTheDesktopTookOpensAsItsDesktopRow`.
 
 A tap on an Actions ping opens that run. The APNs payload carries `runId`
 next to `href`; the iOS `NotificationDeepLink` keeps `actions/runs/<id>` as

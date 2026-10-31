@@ -7,12 +7,14 @@ import re
 
 import apps_core as core
 import apps_events as events
+from organization_rbac import ORG_INSIDER_ROLES
 
 
 MAX_BODY = 64 * 1024
 COMMAND_PATHS = ("/api/apps/commands", "/api/apps/commands/run",
                  "/api/apps/interact", "/api/apps/mentions")
 MANAGER_ROLES = ("owner", "admin")
+INSTALL_ROLES = tuple(role for role in ORG_INSIDER_ROLES if role != "auditor")
 
 ROUTES = (
     ("apps", re.compile(r"^/api/apps/?$")),
@@ -377,6 +379,11 @@ async def uninstall(runtime, install, actor, reason, notify=True):
                   "app_messages"):
         await runtime.d1_run(
             "DELETE FROM %s WHERE install_id=?" % table, install_id)
+    if install.get("target_kind") == core.TARGET_ORG:
+        await runtime.d1_run(
+            "DELETE FROM app_org_approvals WHERE org_bi=? AND app_id=?",
+            str(install.get("target_bi") or ""),
+            str(install.get("app_id") or ""))
     await runtime.audit(actor, "apps.install.revoke", "app_install",
                         install_id, details={"reason": reason,
                                              "appId": install.get("app_id")})
@@ -419,7 +426,7 @@ async def _app_visible_to(runtime, row, account_bi, name, org_bi=""):
     if hmac.compare_digest(str(row.get("owner_bi") or ""), account_bi):
         return True
     app_org = str(row.get("org_bi") or "")
-    if app_org and await runtime.org_role(app_org, name):
+    if app_org and await runtime.org_role(app_org, name) in ORG_INSIDER_ROLES:
         return not org_bi or org_bi == app_org
     return False
 
@@ -490,7 +497,7 @@ async def _authorize(runtime, account_bi, name, data, method):
         target_name = target[4:]
         org_bi = await runtime.org_lookup(target_name)
         role = await runtime.org_role(org_bi, name) if org_bi else ""
-        if not role:
+        if role not in INSTALL_ROLES:
             return _err(runtime, "not_org_member", 403)
         if not await _app_visible_to(runtime, row, account_bi, name, org_bi):
             return _err(runtime, "app_not_available", 403)

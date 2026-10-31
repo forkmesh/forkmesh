@@ -72,6 +72,14 @@ interpreter start before `main()` installs the handlers.
   both for an absent path and for a broken object store, so `blob`, `blobs`,
   `tree` and `raw` look the entry up with `ls-tree` on a literal pathspec and
   read the object by id.
+- A comparison past its bounds is a repository answer too (413
+  `comparison_too_large`), not an outage. `compare` and `cherry` turn
+  `MAX_COMPARE_COMMITS`, `MAX_CHERRY_UPSTREAM_COMMITS` and the
+  `MAX_COMPARE_BYTES` output limit (`_run_git` raises `GitOutputLimit`, a
+  `GitError`) into `ComparisonTooLarge`. It used to answer 503
+  `mirror_unavailable`: callers retried a request that can never succeed and
+  the compare page said the mirror was down. The dashboard already words a
+  413.
 - `tree` lists at most `MAX_TREE_ENTRIES` (500) entries of a code folder, with
   `truncated: true` past that. The collaboration folders
   (`COLLABORATION_TREE_ROOTS`: `.forkmesh/issues`, `pulls`, `discussions`,
@@ -80,6 +88,19 @@ interpreter start before `main()` installs the handlers.
   issue list reads `.forkmesh/issues/open` as one listing. With the 500 cap a
   mirror of a forge with 547 open issues showed "Open 500" and never loaded
   the rest.
+- A code folder's `tree` carries a dependency and coverage analysis
+  (`_analysis`), which takes seconds on a large repository. It reads only
+  code: every path outside `.forkmesh/`, plus coverage artifacts
+  (`COVERAGE_ARTIFACT_NAMES`) anywhere (`_analysis_path_skipped`). Issues,
+  pulls, reviews and the Send list live under `.forkmesh/` and move the
+  branch tip many times a day without touching code, so the analysis is
+  keyed on a digest of the `ls-tree` records it reads
+  (`_analysis_content_key`), and a tip whose key matches reuses the previous
+  value with only its `commit` changed. A push no longer drops the value; it
+  only forgets the commit. Until 2026-10-30 every new tip rebuilt it (8
+  seconds on the first view after each metadata commit), and the build
+  counted `.forkmesh/` files toward `MAX_ANALYSIS_REPOSITORY_FILES`, so new
+  metadata could push code files out of a large repository's window.
 - `sizes` folds each directory to its 40 largest entries plus a `summary`
   (`MAX_SIZES_CHILDREN`), except inside the collaboration folders, which list
   every entry (up to `MAX_COLLABORATION_TREE_ENTRIES`). The code map turned a

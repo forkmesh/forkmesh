@@ -47,6 +47,23 @@ class ChatHistoryPersistenceTest {
         { "https://app.forkmesh.com" }, { "me-node" }, { "Me" },
     )
 
+    fun testRestoresMergeOnceInOrderAndKeepTheNewest() {
+        assertEq(
+            listOf("a", "b", "c", "d", "e"),
+            mergeSorted(listOf(note("b", "#g", 20), note("d", "#g", 40)), listOf(note("e", "#g", 40), note("c", "#g", 30), note("a", "#g", 10))).map { it.id },
+        )
+        val direct = direct()
+        val count = DirectMessageFrames.MAX_MESSAGES_PER_ROOM + 50
+        direct.restore((0 until count).reversed().map { note("d$it", directConversation, 1_000L + it) } + note("d7", directConversation, 1_007), emptyMap())
+        assertEq((50 until count).map { "d$it" }, direct.messages(directConversation).map { it.id })
+        val office = office()
+        val room = "#office/general"
+        val rooms = OfficeFrames.MAX_MESSAGES_PER_ROOM + 10
+        office.restore((0 until rooms).reversed().map { note("o$it", room, 5_000L + it) })
+        office.restore(listOf(note("o${rooms - 1}", room, 5_000L + rooms - 1)))
+        assertEq((10 until rooms).map { "o$it" }, office.messages(room).map { it.id })
+    }
+
     fun testAFileFromANewerOrOlderBuildStillLoads() {
         val root = LinkedHashMap(Json.parseObject(ChatHistoryCodec.encode(snapshot(listOf(note("a", "#general"))))))
         root["v"] = 7L
@@ -80,6 +97,17 @@ class ChatHistoryPersistenceTest {
         assertEq(1, aside.size)
         assertEq("{\"truncated", File(dir, aside[0]).readText())
         assertEq(listOf("new"), store.load("s")?.messages?.map { it.id })
+    }
+
+    fun testErasingAProjectRemovesEveryHistoryFileAndNothingElse() = withDir("chat-history-erase") { dir ->
+        val store = ChatHistoryStore(dir)
+        store.save(snapshot(listOf(note("a", "#general"))), "project-1")
+        store.save(snapshot(listOf(note("b", "#general"))), "former")
+        File(dir, "keep.txt").writeText("other")
+        assertEq(2, store.eraseAll())
+        assertEq(listOf("keep.txt"), dir.list().orEmpty().toList())
+        assertEq(ChatHistoryLoad.Missing, store.read("project-1"))
+        assertEq(0, ChatHistoryStore(File(dir, "missing")).eraseAll())
     }
 
     fun testAFileThatCannotBeReadYetIsNeverOverwritten() = withDir("chat-history-locked") { dir ->

@@ -52,6 +52,8 @@ BURST_LABEL = "fmnext-burst-%d"
 AUTOSCALED_MAX = 9
 WG_KEY = re.compile(r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$")
 IDS_KEY = re.compile(r"^[A-Za-z0-9_-]{43}$")
+DEFAULT_SSH_PORT = 22
+FAIL2BAN_SSHD = "/etc/fail2ban/jail.d/fmnext-sshd.local"
 SSH_FINGERPRINT = re.compile(r"^SHA256:[A-Za-z0-9+/]{43}$")
 LOGREAD_PUBLIC_KEY = re.compile(r"^ssh-ed25519 (AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{48}) fmnext-logread$")
 LOGREAD_PROGRAM = "/opt/forkmesh-next/bin/fmnext-logread"
@@ -178,6 +180,13 @@ def load_fleet(path, state_path=None, state=None, instances=None,
             raise RenderError("rqlite_voter must be true or false: %r" % node["name"])
     if nodes and not any(node.get("rqlite_voter", True) for node in nodes):
         raise RenderError("at least one core must be an rqlite voter")
+    for node in nodes:
+        if "mail_relay" not in node:
+            continue
+        relay = next((n for n in nodes if n.get("name") == node["mail_relay"]), None)
+        if relay is None or relay is node or "mail_relay" in relay:
+            raise RenderError("mail_relay of %s must name another core that sends "
+                              "mail itself: %r" % (node["name"], node["mail_relay"]))
     for runner in fleet.get("runners") or []:
         if not RUNNER_NAME.match(str(runner.get("name"))):
             raise RenderError("runner name must look like r1: %r" % runner.get("name"))
@@ -195,6 +204,10 @@ def load_fleet(path, state_path=None, state=None, instances=None,
         raise RenderError("acme_issuer is gone: certificate issuance is "
                           "leaderless (deploy/core/certsync.py); remove it")
     check_production(fleet)
+    port = fleet.get("ssh_port", DEFAULT_SSH_PORT)
+    if isinstance(port, bool) or not isinstance(port, int) or \
+            not 1 <= port <= 65535 or port in (25, 53, 80, 443):
+        raise RenderError("ssh_port must be a free TCP port: %r" % (port,))
     dns = fleet.get("dns") or {}
     if dns.get("reconciler", "dry") not in ("on", "dry", "off"):
         raise RenderError("dns.reconciler must be on, dry or off")
@@ -531,7 +544,19 @@ def core_role_settings(fleet):
     return "\n".join(["", "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=%s" % names,
                       "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % hosted,
                       "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=%s" % owners,
-                      "FORKMESH_VAR_CORE_ADMIN_UPDATES=%s" % admin_updates])
+                      "FORKMESH_VAR_CORE_ADMIN_UPDATES=%s" % admin_updates,
+                      "FORKMESH_VAR_FORKMESH_PROBE_BAN_ALLOW=%s"
+                      % ",".join(probe_ban_allow(fleet))])
+
+
+def probe_ban_allow(fleet):
+    allowed = []
+    for runner in fleet.get("runners") or []:
+        allowed.append("%s/32" % ipaddress.IPv4Address(runner["public_ipv4"]))
+        if runner.get("public_ipv6"):
+            allowed.append(str(ipaddress.ip_network(
+                "%s/64" % runner["public_ipv6"], strict=False)))
+    return sorted(set(allowed))
 
 
 def public_hosts(fleet):
@@ -613,7 +638,9 @@ def caddy_binary_dropin(fleet):
         % (settings["version"], CADDY_DEBIAN_BIN, CADDY_BIN, CADDY_BIN))
 
 
-IDS_MAIL_CREDENTIALS = ("FMNEXT_IDS_MAIL_TOKEN", "FMNEXT_IDS_ALERT_EMAIL")
+IDS_MAIL_SMTP = "127.0.0.1:25"
+IDS_MAIL_TOKEN_FILE = "/etc/postfix/sasl_passwd"
+IDS_MAIL_ADDRESS = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,}$")
 IDS_STATE_DIR = "/var/lib/fmnext-ids"
 IDS_SEVERITIES = ("info", "alert", "lockdown")
 # Units the lockdown stops; each gets a drop-in that keeps it from starting
@@ -686,6 +713,15 @@ def ids_settings(fleet):
     url = ids.get("webhook_url", "")
     if url and not str(url).startswith("https://"):
         raise RenderError("ids.webhook_url must be https://")
+    if not isinstance(ids.get("direct_mail", False), bool):
+        raise RenderError("ids.direct_mail must be true or false")
+    if ids.get("direct_mail") and not IDS_MAIL_ADDRESS.match(
+            str(ids.get("mail_to", ""))):
+        raise RenderError("ids.mail_to must be the address IDS mail goes to "
+                          "when direct_mail = true")
+    sender = str(ids.get("mail_from", "") or "")
+    if sender and not IDS_MAIL_ADDRESS.match(sender):
+        raise RenderError("ids.mail_from must be an email address or empty")
     return ids
 
 
@@ -774,6 +810,14 @@ def access_log_snippet():
     return out
 
 
+def ssh_port(fleet):
+    return int(fleet.get("ssh_port", DEFAULT_SSH_PORT))
+
+
+def fail2ban_sshd(fleet, name):
+    return MANAGED % name + "[sshd]\nport = %d\n" % ssh_port(fleet)
+
+
 def ids_enabled(fleet):
     return ids_settings(fleet)["enabled"]
 
@@ -783,8 +827,6 @@ def ids_credential_names(fleet, role):
     names = [IDS_KEY_CREDENTIAL]
     if role == "core":
         names.append("RQLITE_PASSWORD")
-    if ids.get("direct_mail"):
-        names += list(IDS_MAIL_CREDENTIALS)
     return names
 
 
@@ -819,6 +861,7 @@ def ids_config(fleet, name, role, paths):
                                            or []) + [
             fp for fp in [logread_fingerprint(
                 logs_settings(fleet)["reader_public_key"])] if fp],
+                "port": ssh_port(fleet),
                 "allow": list(ids.get("ssh_allow") or []),
                 "foreign_ip_severity": ids.get("ssh_foreign_ip_severity",
                                                "alert")},
@@ -840,9 +883,10 @@ def ids_config(fleet, name, role, paths):
         "webhook": {"url": ids.get("webhook_url", "")},
     }
     if ids.get("direct_mail"):
-        config["mail"] = {"token_credential": IDS_MAIL_CREDENTIALS[0],
-                          "to_credential": IDS_MAIL_CREDENTIALS[1],
-                          "from": ids.get("mail_from", "")}
+        config["mail"] = {"to": ids["mail_to"],
+                          "from": ids.get("mail_from", ""),
+                          "smtp": IDS_MAIL_SMTP,
+                          "token_file": IDS_MAIL_TOKEN_FILE}
     if role == "core":
         turn_tcp, turn_udp = (turn_ports(fleet)[:2] if turn_enabled(fleet)
                               else ([], []))
@@ -884,7 +928,7 @@ def ids_config(fleet, name, role, paths):
                                     "fmnext-ids.service"],
             },
             "listeners": {
-                "tcp": sorted({22, 25, 80, 443, 53, int(rq.get("http_port", 4001)),
+                "tcp": sorted({ssh_port(fleet), 25, 80, 443, 53, int(rq.get("http_port", 4001)),
                                int(rq.get("raft_port", 4002)),
                                int(app.get("port", 8080)),
                                int(app.get("gateway_port", 8790)), 8791,
@@ -926,7 +970,7 @@ def ids_config(fleet, name, role, paths):
                 "protected_units": ["forkmesh-mirror-node.service",
                                     "fmnext-ids.service"],
             },
-            "listeners": {"tcp": [22, 53, 8791], "udp": [53, 68, 123, 323, 546],
+            "listeners": {"tcp": sorted({ssh_port(fleet), 53, 8791}), "udp": [53, 68, 123, 323, 546],
                           "udp_max_port": 10240,
                           "loopback_allow": [
                               {"user": JOB_USER, "units": ["run-*.scope"],
@@ -1339,7 +1383,9 @@ def calls_urls(fleet):
 
 
 def calls_origins(fleet):
-    hosts = ["https://" + served_app_host(fleet), "https://" + fleet["app_host"]]
+    hosts = ["https://" + host for host in (
+        served_app_host(fleet), fleet["app_host"],
+        served_world_host(fleet), fleet["world_host"])]
     return list(dict.fromkeys(hosts + list(calls_settings(fleet)["origins"])))
 
 
@@ -1896,6 +1942,11 @@ def replica_settings(fleet):
             % ",".join(shared_hosts(fleet)))
 
 
+def mail_senders(fleet):
+    return ",".join("%s.%s=%s" % (n["name"], fleet["domain"], n["public_ipv4"])
+                    for n in fleet["nodes"] if "mail_relay" not in n)
+
+
 def dns_settings(fleet):
     """app.env lines for the node DNS reconciler (dns_reconciler.py)."""
     mode = (fleet.get("dns") or {}).get("reconciler", "dry")
@@ -2068,6 +2119,7 @@ def render_core(fleet, node_name, replacement=False):
         "DNS_SETTINGS": replica_settings(fleet) if replica
         else dns_settings(fleet),
         "IDS_SETTINGS": ids_env_settings(fleet),
+        "MAIL_SENDERS": mail_senders(fleet),
         "PUBLIC_HOSTS": ",".join(public_hosts(fleet)),
         "PRODUCTION_SETTINGS": production_settings(fleet) + core_role_settings(fleet),
         "TURN_SETTINGS": turn_app_settings(fleet),
@@ -2119,11 +2171,12 @@ def render_core(fleet, node_name, replacement=False):
     add("/etc/default/earlyoom", template("earlyoom", values))
     add("/etc/systemd/journald.conf.d/60-forkmesh-next.conf",
         template("journald.conf", values))
+    add(FAIL2BAN_SSHD, fail2ban_sshd(fleet, node_name))
     mesh_ports = sorted({values["HTTP_PORT"], raft_port, values["MESH_PORT"],
-                         int(app.get("certsync_port", 8793)), 80})
+                         int(app.get("certsync_port", 8793)), 80, 25})
     # 80 on wg0: the HTTP-01 forwarder of every peer asks this Caddy.
     peers_agent = autoscale_enabled(fleet) and not replica
-    public_tcp, public_udp = [22, 80, 443], [443, wg_port]
+    public_tcp, public_udp = [ssh_port(fleet), 80, 443], [443, wg_port]
     if turn_enabled(fleet):
         turn_tcp, turn_udp, relay = turn_ports(fleet)
         public_tcp, public_udp = public_tcp + turn_tcp, public_udp + turn_udp + [relay]
@@ -2272,8 +2325,10 @@ def render_runner(fleet, runner_name):
     add("/etc/default/earlyoom", template("earlyoom", values))
     add("/etc/systemd/journald.conf.d/60-forkmesh-next.conf",
         template("journald.conf", values))
+    add(FAIL2BAN_SSHD, fail2ban_sshd(fleet, runner_name))
     add("/etc/nftables.conf", nftables_conf(
-        fleet, runner_name, [], [22], [], output_rules=runner_output_rules()),
+        fleet, runner_name, [], [ssh_port(fleet)], [],
+        output_rules=runner_output_rules()),
         0o755)
     add("/etc/forkmesh-next/runner.md",
         (RUNNER_TEMPLATES / "runner.md").read_text("utf-8"))

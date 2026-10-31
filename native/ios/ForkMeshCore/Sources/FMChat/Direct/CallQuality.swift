@@ -52,11 +52,15 @@ public struct CallQualitySample: Equatable, Sendable {
     public var limit: String
     public var micLevel: Double?
     public var peerLevel: Double?
+    public var faceFps: Double?
+    public var faceMs: Double?
+    public var faceLevel: Double?
 
     public init(
         at: Double = 0, rttMs: Double? = nil, lossPct: Double? = nil, jitterMs: Double? = nil, sendKbps: Double? = nil,
         recvKbps: Double? = nil, inWidth: Int? = nil, inHeight: Int? = nil, inFps: Double? = nil, outWidth: Int? = nil,
-        outHeight: Int? = nil, outFps: Double? = nil, limit: String = "", micLevel: Double? = nil, peerLevel: Double? = nil
+        outHeight: Int? = nil, outFps: Double? = nil, limit: String = "", micLevel: Double? = nil, peerLevel: Double? = nil,
+        faceFps: Double? = nil, faceMs: Double? = nil, faceLevel: Double? = nil
     ) {
         self.at = at
         self.rttMs = rttMs
@@ -73,6 +77,9 @@ public struct CallQualitySample: Equatable, Sendable {
         self.limit = limit
         self.micLevel = micLevel
         self.peerLevel = peerLevel
+        self.faceFps = faceFps
+        self.faceMs = faceMs
+        self.faceLevel = faceLevel
     }
 }
 
@@ -136,12 +143,11 @@ public enum CallQuality {
 
     public static func formatKbps(_ kbps: Double?) -> String {
         guard let kbps, kbps.isFinite else { return "" }
-        if kbps >= 1000 { return String(format: "%.1f Mb/s", kbps / 1000) }
-        return "\(Int(kbps.rounded())) kb/s"
+        return CallDiagnostics.formatKbps(kbps)
     }
 
     public static func formatLoss(_ lossPct: Double) -> String {
-        String(format: lossPct < 10 ? "%.1f" : "%.0f", lossPct) + "% loss"
+        CallDiagnostics.fixed(lossPct, lossPct < 10 ? 1 : 0) + "% loss"
     }
 
     public static func describeNetwork(_ sample: CallQualitySample?) -> String {
@@ -424,6 +430,9 @@ public struct CallQualityEvent: Equatable, Sendable {
         }
         sample.micLevel = levels.last?.mic
         sample.peerLevel = levels.last?.peer
+        sample.faceFps = number("faceFps")
+        sample.faceMs = number("faceMs")
+        sample.faceLevel = number("faceLevel")
     }
 }
 
@@ -466,6 +475,11 @@ public struct CallQualityHistory: Equatable, Sendable {
             samples.removeAll()
         }
         pending.append(contentsOf: event.levels)
+        if pending.count > Self.backlog { pending.removeFirst(pending.count - Self.backlog / 2) }
+    }
+
+    public mutating func queue(_ levels: [CallVoiceLevel]) {
+        pending.append(contentsOf: levels)
         if pending.count > Self.backlog { pending.removeFirst(pending.count - Self.backlog / 2) }
     }
 

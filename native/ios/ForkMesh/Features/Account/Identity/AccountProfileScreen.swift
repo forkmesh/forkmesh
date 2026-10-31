@@ -54,7 +54,7 @@ struct AccountProfileScreen: View {
                     SettingsCardBox {
                         VStack(alignment: .leading, spacing: FmSpace.x2) {
                             HStack(spacing: FmSpace.x3) {
-                                FmAvatar(name: profile.name, size: 48)
+                                FmAvatar(name: profile.name, avatarPng: profile.avatar, size: 56)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("@\(profile.name)").fmText(.titleMedium).lineLimit(1)
                                     Text(profile.accountStatus).fmText(.bodySmall, color: fm.textTertiary)
@@ -77,16 +77,26 @@ struct AccountProfileScreen: View {
                         }
                     }
                 }
-                SettingsSection(title: profile.isNode ? "Owner" : "Nodes") {
+                if !profile.links.isEmpty || !profile.mastodonUrl.isEmpty {
+                    SettingsSection(title: "Links") {
+                        SettingsCardBox(padded: false) { links(profile) }
+                    }
+                }
+                if !profile.isNode {
+                    SettingsSection(title: "Tips") {
+                        SettingsCardBox { ProfileTipContent(name: profile.name, address: profile.tipAddress) }
+                    }
+                }
+                SettingsSection(title: profile.isNode ? "Owner" : "Nodes", last: profile.pubkey.isEmpty) {
                     SettingsCardBox(padded: false) { nodes(profile) }
                 }
                 if !profile.pubkey.isEmpty {
                     SettingsSection(title: "Keys", last: true) {
                         SettingsCardBox {
-                            VStack(alignment: .leading, spacing: FmSpace.x3) {
-                                if !profile.pubkey.isEmpty {
-                                    CopyableValueRow(label: "Public key", value: profile.pubkey)
-                                }
+                            VStack(spacing: FmSpace.x3) {
+                                QrCodeImage(text: profile.identityQRText, size: 140)
+                                    .accessibilityLabel(Text("Identity QR code"))
+                                CopyableValueRow(label: "Public key", value: profile.pubkey)
                             }
                         }
                     }
@@ -95,6 +105,28 @@ struct AccountProfileScreen: View {
             .padding(FmSpace.x4)
         }
         .fmRefreshable { await model.load() }
+    }
+
+    @ViewBuilder
+    private func links(_ profile: AccountProfile) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(profile.links.enumerated()), id: \.offset) { (index: Int, link: ProfileLink) in
+                if index > 0 { FmHairline() }
+                if let url = URL(string: link.url) {
+                    Link(destination: url) {
+                        SettingsLinkRow(icon: link.verified ? "verified_outlined" : "link", title: link.label, subtitle: link.url)
+                    }
+                    .buttonStyle(FmPressStyle(highlight: fm.accentSubtle))
+                }
+            }
+            if let url = URL(string: profile.mastodonUrl), !profile.mastodonUrl.isEmpty {
+                if !profile.links.isEmpty { FmHairline() }
+                Link(destination: url) {
+                    SettingsLinkRow(icon: "alternate_email", title: profile.mastodon.isEmpty ? "Mastodon" : profile.mastodon, subtitle: "Mastodon")
+                }
+                .buttonStyle(FmPressStyle(highlight: fm.accentSubtle))
+            }
+        }
     }
 
     @ViewBuilder

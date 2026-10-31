@@ -29,6 +29,7 @@ change something are dry runs unless given `--execute`.
 | `next_backup.py` | Nightly age-encrypted rqlite backup: `run`, `prune`, `keygen`, `verify`, `restore` |
 | `next_rekey.py` | Offline re-key of a database copy ([REKEY.md](../REKEY.md)) |
 | `next_git_host.py`, `next_codemagic.py` | Private Git over HTTPS on the cores; native iOS builds cloned from it (full history: dumb HTTP has no shallow clones) |
+| `next_import.py` | Replays the old separate Next repository's history onto a branch here (`next-import`); refuses to rewind a diverged branch without `--force` |
 | `rqlite_migrate.py` | Applies `app/migrations/*.sql` to rqlite, keeping the `d1_migrations` ledger shape |
 | `source_publisher.py` | Publishes `forkmesh/forkmesh` from a checkout without the desktop ([source-publisher.md](source-publisher.md)) |
 | `prune_merged.py` | Prunes merged branches, worktrees and finished agent sessions ([prune-merged.md](prune-merged.md)) |
@@ -36,6 +37,12 @@ change something are dry runs unless given `--execute`.
 | `branch_inventory.py` | Classifies unmerged branches and saves daily snapshots ([branch-inventory.md](branch-inventory.md)) |
 | `grants_build.py` | Builds the grants CRM import and ranked page from `docs/finance/grants/grants.json` ([grants](../finance/grants/README.md)) |
 | `cutover_*.py`, `rehost.py` | Hostname and cutover tooling ([CUTOVER.md](../CUTOVER.md)) |
+
+**Forum reach** ([../app/forum-reach.md](../app/forum-reach.md)):
+`forum_static_export.py` writes a static, read-only, JavaScript-free copy of
+a repository's issue forum (threads, labels, Atom feed, mirrored files,
+`manifest.json`); `forum_static_publish.py` commits it on top of a branch of
+one or more git remotes (GitHub Pages, Codeberg Pages) without force.
 
 **Paths and layout** ([projects-layout.md](projects-layout.md)): `forkmesh_paths.py`
 (Python twin of `desktop/src/AppPaths.{h,cpp}`), `forkmesh-paths.sh` (the

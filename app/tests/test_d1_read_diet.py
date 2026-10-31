@@ -823,7 +823,8 @@ def test_the_minute_just_written_is_served_from_the_sampler_memo():
     assert reads == []
     # A different minute, or a window, still reads.
     asyncio.run(ns["_status_minute_records"](object(), 540_000, 540_000))
-    assert len(reads) == 2
+    assert len(reads) == 1
+    assert "FROM system_status_minute_batch" in reads[0][0]
 
 
 def test_settled_minutes_are_cached_so_the_status_window_reads_only_new_ones():

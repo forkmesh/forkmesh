@@ -47,8 +47,87 @@ not copied: it is end-to-end encrypted to the original two participants.
   end-to-end encrypted" and no longer claims peer-to-peer on its own.
 - **Flow**: fixed transceiver order (audio, video), the caller offers only
   after accept, trickle ICE with a pre-answer queue, `replaceTrack` instead of
-  renegotiation. Frames carry `to` so multi-device accounts converge on one
+  renegotiation (an ICE restart is the only renegotiation, see Resilience
+  below). Frames carry `to` so multi-device accounts converge on one
   answering device.
+- **Resilience** (2026-10-23). Real calls showed a callee stuck on
+  "Connecting…", a caller looking at a black box, and calls that went silent
+  mid-way until someone hung up. Each signaling frame was sent once, so one
+  lost frame on the relay stalled the call, and any network blip ended it.
+  `chat-calls.js` now follows the shared resilience spec, also used by the
+  iPhone engine. No new frame types: an old client that ignores the extra
+  frames still works.
+  - *Accept resend.* After `call-accept` the callee resends the same frame
+    every 2 s until the caller's `call-offer` arrives or the call ends, at
+    most 8 times.
+  - *Duplicate accept.* The caller answers a repeated accept from the device
+    it picked with its current offer (same SDP) while that offer has no
+    answer yet; an accept from another device, or one that arrives before the
+    offer exists, is ignored. Before, any accept after the first returned
+    early, so a lost offer was never sent again.
+  - *Offer resend.* The caller resends an unanswered offer every 3 s, at most
+    5 times per offer.
+  - *Duplicate offer.* The callee remembers the last offer it answered and
+    its answer; the same SDP again gets the stored answer back, a different
+    SDP from the same device is an ICE restart and is applied and answered.
+    Offers are handled one at a time, and ICE candidates that arrive while an
+    offer is being answered (or, on the caller, while its offer is
+    unanswered) wait in the queue, so a restart's candidates are not thrown
+    away against the old description.
+  - *Duplicate answer.* The caller ignores an answer when it has no
+    outstanding offer, the signaling state is already stable, or it is the
+    answer it already applied. A duplicate used to throw in
+    `setRemoteDescription` and end the call.
+  - *Connect timeout.* A call that was accepted but is not live 30 s later
+    ends with `call-bye` and shows "Could not connect · The call could not
+    connect. Try again." Before, it could sit on "Connecting…" forever.
+  - *Reconnect.* `failed` no longer ends the call at once and `disconnected`
+    no longer ends it after 8 s. The caller drives an ICE restart
+    (`restartIce()` and a fresh offer, with the resends above) when the
+    connection fails, or stays disconnected for 2 s, and tries again every
+    6 s while it is still down; the callee shows "Reconnecting…" and answers
+    the restart offer. Either side ends the call with `call-bye` and "Call
+    lost" when it has not come back within 30 s of the drop. Back to
+    `connected`, the state line returns to "Connected · end-to-end encrypted".
+  - *Media watchdog.* Once a second while live, the call reads `getStats()`
+    and sums `inbound-rtp` audio `packetsReceived`. If it has not grown for
+    4 s while the connection still says connected, that is a drop: the caller
+    restarts ICE, the callee shows "Reconnecting…", and the drop ends when
+    packets flow again. Opus runs without DTX, so a muted peer still sends
+    packets and does not trigger it. This is the "audio went completely
+    silent" case: the connection looked fine, so nothing used to react.
+  - *Microphone recovery.* When the outgoing microphone track ends (device
+    unplugged, an OS interruption, permission revoked) the call opens the
+    microphone again with the same constraints, swaps it into the local
+    stream and onto the audio sender with `replaceTrack` (rebuilding the
+    voice stage when a voice is on), keeps the mute state, and says
+    "Microphone reconnected"; when that fails the state line says to check
+    the microphone for five seconds.
+  - *Invites while answering.* The resent invite used to replace the pending
+    invite object, and accepting compared against the old object, so
+    pressing Accept while the camera permission prompt was open (longer than
+    the 3 s invite resend) silently did nothing: "I could not pick up". The
+    resent invite now only refreshes the 9 s stale timer, an invite stays up
+    while an accept is in progress, and if the caller hangs up meanwhile, or
+    the camera cannot open, the panel says so. An invite that arrives during
+    your own pre-call check now rings instead of answering "busy".
+  - *Declines say why.* The caller sees "Call declined" or "Busy" with the
+    reason (declined, on another call, camera or microphone unavailable)
+    instead of a panel that just closes. These end states close after 8 s
+    or on Close.
+  - *Rings reach a web callee in another conversation.* `/chat` keeps one
+    room socket, the open conversation's, so a ring for a DM you were not
+    looking at never arrived on the web. The `calls` account event
+    (`{topic: "calls", conversation: "direct:<id>"}`) now opens that
+    conversation (`openRingingConversation` in `chat.js`) when no call or
+    pre-call check is running; the next resent invite then shows the incoming
+    call. Signaling still needs that conversation open, so switching to
+    another conversation during a call stops its signaling; the mini window
+    below keeps you in the conversation instead.
+  - Every timer goes through the injected `setTimeoutImpl` /
+    `setIntervalImpl` and a per-call registry, and teardown clears all of
+    them; `app/tests/test_chat_call_resilience.py` drives each rule with a
+    fake clock and peer connection.
 - **Call rings reach the callee wherever they are** (added 2026-10-21; before
   that a ring reached only a device that already had that DM open, so a call
   to a phone sitting on another screen, or in the background, showed nothing).
@@ -145,10 +224,27 @@ not copied: it is end-to-end encrypted to the original two participants.
   page still shows the overlay and the notification.
 - **Quality.** `chat-call-quality.js` asks for 1280×720 at up to 30 fps and
   for echo cancellation, noise suppression and automatic gain at 48 kHz
-  mono. It caps the senders at 2.5 Mbps video and 96 kbps audio, with high
-  priority and `balanced` degradation where the browser allows it. It also
-  adds Opus in-band FEC, no DTX and a 96 kbps average to the SDP sent to the
-  other side, so each side's encoder sends full-band, loss-resilient voice.
+  mono. It caps the senders at 2.5 Mbps video and 128 kbps audio, with
+  `balanced` degradation where the browser allows it. It also adds Opus
+  in-band FEC, no DTX, mono, `maxplaybackrate=48000`, a 128 kbps average
+  and `sprop-maxcapturerate=48000` to the SDP sent to the other side, so
+  each side's encoder sends full-band, loss-resilient voice.
+  - *Richer audio* (2026-10-23). The audio cap went from 96 to 128 kbps
+    (`maxaveragebitrate` and the sender's `maxBitrate`), and
+    `sprop-maxcapturerate=48000` tells the far encoder the microphone really
+    captures full band. Audio senders get `priority` and `networkPriority`
+    "high" and video "medium" (both used to be "high"), so under congestion
+    the browser keeps the voice and lowers the picture. When the browser
+    lists `audio/red` in `RTCRtpSender.getCapabilities("audio")`,
+    `preferCallAudioCodecs` orders the audio transceiver's codecs RED, then
+    Opus, then the rest with `setCodecPreferences` (the caller before its
+    offer, the callee before its first answer): RED (RFC 2198) repeats the
+    previous Opus frame in each packet, so a lost packet costs no audio.
+    Browsers without RED or `setCodecPreferences` are left as they were. The
+    same constants are in `CallMediaTuning.swift` (`audioMaxBitrate`,
+    `audioPriority`, `videoPriority`, `audioCodecOrder`,
+    `orderedAudioCodecs`) and in the phone page glue (`AUDIO_MAX_BITRATE`,
+    `OPUS_FMTP`).
   The Face Changer and Voice Changer pages share these constraints through
   `call-studio.js`. The face stage draws at up to 30 fps and at most 960 px
   on the long side, so a filtered picture is limited by that, not by the
@@ -162,6 +258,38 @@ not copied: it is end-to-end encrypted to the original two participants.
   equally at 44 px tall, so they are easy to hit; the incoming call's Accept and Decline share
   the card's width. The phone apps' call screens follow the same idea
   (`native/ios/docs/FMChat.md`).
+- **Large view, Back to chat and the mini window** (2026-10-23). A live or
+  ringing video call (`.is-call.is-video`) fills most of the window (up to
+  1100 px wide, centred, remote video up to the window height less the
+  controls, your own video up to 220 px), so the call is not a 360 px box
+  in a corner. "Back to chat" in the panel's head (`#chat-call-minimize`)
+  turns it into a small floating window (`.is-mini`): the other person's
+  video (or their initial for a voice call), Mute, Hang up and Open. Click or
+  tap the window, or press Open, to make it large again. Drag it anywhere
+  with a mouse or a finger (pointer events, `touch-action: none`, movement
+  under 6 px counts as a tap); it stays 8 px inside the window, is placed
+  again when the window is resized, and its position is kept in
+  `localStorage` under `fm.call.miniPosition` (`{left, top}` in px; the
+  first time it sits 16 px from the bottom-right corner). The quality widget
+  stops drawing while the call is small or the tab is hidden. The self-view
+  corner drag works as before in the large view and is hidden in the mini
+  window. On screens up to 480 px the large view spans the width with 8 px
+  margins as before, and the mini window is 150 px (168 px for video).
+- **No blank screen** (2026-10-23). Until the first remote frame arrives,
+  and whenever the other side's video stops, the remote area shows the
+  partner's initial and "Waiting for @name's video…" (`#chat-call-placeholder`)
+  over the video instead of a black box, with your own camera still in its
+  corner. The remote video counts as showing when its track unmutes or the
+  element reports a frame size, and as stopped when the track mutes or the
+  once-a-second stats show fewer than 2 new decoded frames for 2 seconds
+  (a camera turned off sends about one black frame a second). Voice calls
+  show the initial and name. After the stream is attached the call calls
+  `play()`; if the browser blocks autoplay with sound (`NotAllowedError`)
+  it plays muted so the picture still shows and offers "Tap to turn on
+  sound" (`#chat-call-sound`), which unmutes and plays again.
+- **Pre-call check first.** The Voice call and Video call buttons still open
+  the pre-call check before anything rings; the camera picture is the first
+  thing in the panel, under the name, with the test clip and pickers below.
 - The desktop has no WebRTC stack; its call buttons open
   `/chat?dm=<name>&call=audio|video`, which asks for confirmation before
   ringing, so a link can never ring someone on its own.
@@ -197,6 +325,14 @@ not copied: it is end-to-end encrypted to the original two participants.
     least 1: 4 is a good connection, 1 a poor one, 2 and 3 fair. With no
     round-trip time and no loss yet it says "Measuring connection". The
     phone apps use the same thresholds.
+  - **Fewer writes.** The widget used to rewrite the pill's text, title,
+    `aria-label` and bars ten times a second; it now writes them only when
+    they change, redraws the charts only when a new stats sample arrives,
+    and skips drawing while it is not visible (the `visible` option; the
+    direct call passes "not minimized and the tab is shown"). The direct
+    call's route check, stats watchdog and quality meter share one
+    `getStats()` call a second (`sharedStats`, reused for 800 ms) instead of
+    each reading it.
   - **Phones.** `app/tools/sync_call_quality.py` inlines the module into both
     copies of `direct-call.html` as `window.FmCallQuality`;
     `app/tests/test_call_quality_meter.py` fails if a copy is stale. The page posts
@@ -206,9 +342,17 @@ not copied: it is end-to-end encrypted to the original two participants.
     samples taken since the last event, `live` is false during the preview
     (microphone only) and true once connected. The apps draw the widget
     natively (`native/ios/docs/FMChat.md`, `docs/native/ANDROID.md`).
-  - **Diagnostics** (2026-10-22). A small round button sits right of the
-    pill (`.fm-q-bar` holds both). It stays grey while the call is fine and
-    its dot turns red (`--danger`) when `diagnoseCall` finds a problem in
+  - **Diagnostics** (2026-10-22). A button sits right of the pill
+    (`.fm-q-bar` holds both). Until 2026-10-23 it was a 22 px grey circle
+    with a grey dot on a grey background and no text, shown only once the
+    call had stats, so people did not see it or did not know it was a
+    button. It now reads "Diagnose" next to its dot, in the foreground
+    colour with a stronger border, with `aria-label` "Call diagnostics"
+    before the first measurement (then the summary below); the dot is grey
+    while measuring and green (`--online`) when nothing is wrong. It shows
+    on every live call, and the Office widget uses the same label. Its dot
+    and text turn red (`--danger`), and on a severe problem the button gets
+    a light red fill, when `diagnoseCall` finds a problem in
     the last 8 samples (at least 3 needed): latency (median round trip
     300 ms or more, severe at 500), loss (mean 3 %, severe at 8),
     jitter (median 60 ms), video out limited by bandwidth or by CPU in most
@@ -276,6 +420,61 @@ and the voice code into both copies of `direct-call.html`;
 `app/tests/test_chat_call_faces.py` fails if a copy is stale. The hand-written
 glue `<script>` at the end of the page is not generated, but the two copies
 must stay byte-identical, so a glue change goes into both.
+
+#### Reconnects, media watchdog and the staged view (page glue, 2026-10-23)
+
+`setup` takes an eighth argument, an options object. A host that leaves it out
+(Android today) gets the old page exactly: it posts `closed` when the
+connection fails or stays `disconnected` for 8 s, and none of the events
+below. The iPhone host passes `{ resilient: true, staged: true }`, because its
+`DirectCallEngine` follows the Resilience rules under [Calls](#calls) (accept
+and offer resends, duplicate offers and answers, the 30 s connect timeout,
+caller-driven ICE restart) itself.
+
+- **`resilient`.** The page no longer closes on `failed` or `disconnected`;
+  it posts `{ event: "connection", state: "connected" | "disconnected" |
+  "failed" }` and lets native decide. `live` is still posted on every
+  `connected`, but the route watch and quality meter start only once per
+  connection, so a reconnect keeps the charts. Once connected, a 1 s
+  watchdog reads `getStats()`: when inbound audio `packetsReceived` has not
+  grown for 4 s while the connection says `connected`, it posts
+  `{ event: "connection", state: "stalled" }` once, and `connected` when
+  packets flow again (DTX is off, so a muted peer still sends packets). When
+  the outgoing microphone track ends (device gone, interruption, permission
+  revoked), the page asks `getUserMedia` for the same `AUDIO_CONSTRAINTS` up to
+  three times a second apart, swaps the new track into the stream, rebuilds the
+  voice stage when a voice is on, puts the result on the audio sender with
+  `replaceTrack`, keeps the mute (the page now remembers `mute`), and posts
+  `{ event: "mic", ok }`.
+- **New ops.** `restart` calls `pc.restartIce()` (when present), makes an
+  `iceRestart` offer, sets it, re-applies the sender caps and returns the
+  tuned offer like `offer`; a later `answer`/`accept` completes it, so the
+  callee's renegotiation reuses `answer`. `wake` plays both videos again and,
+  when resilient, re-acquires a microphone whose track has ended (native calls
+  it after an audio interruption and when the app comes back to the front).
+  `layout("mini" | "full")` toggles `body.mini`, which hides the self view
+  while the WebView sits in the floating mini window.
+- **`staged`.** The body gets `staged`, and `waiting` until the first remote
+  video frame (the watchdog sees `framesDecoded` rise): CSS then shows the
+  mirrored self view full screen and hides `#remote`, so a ringing or
+  connecting video call shows your own camera instead of black. After the
+  first frame the self view goes back to its corner. When fewer than 2 frames
+  are decoded over 2 s, or the remote video track mutes, the body gets
+  `remote-off` and `#remote` is hidden. Each change posts
+  `{ event: "remote-video", on, seen }`; the iPhone draws the partner's avatar
+  over the page while `on` is false. `setup` keeps `mini` across the class
+  reset.
+- **Media tuning in the glue (both hosts).** Audio senders get `priority` and
+  `networkPriority` `high`, video `medium` (was `high` for both), and the
+  audio transceiver prefers RED then Opus with `setCodecPreferences` when
+  `RTCRtpReceiver.getCapabilities("audio")` lists `audio/red`; otherwise
+  nothing changes.
+
+`app/tests/test_native_call_page_resilience.py` runs the glue in node with a
+fake `RTCPeerConnection`, media devices and timers and checks both hosts: the
+old self-close without options, the connection states, `restart`, the stall
+and remote-video events, microphone recovery with the mute kept, and
+`layout`.
 
 #### iOS TrueDepth camera (face depth)
 
@@ -1282,6 +1481,30 @@ Then run the native tests: `swift test --filter CallVoice` from
 `native/ios/ForkMeshCore` (`FM_ONLY=FMChat` keeps the build small), and
 `./gradlew --offline :core:coreTest -Pfilter=CallVoice` from `native/android`.
 
+### Your avatar as the face
+
+The face picker in a direct call offers "Your avatar" (id `avatar`, added
+2026-10-24) after "Your own face". It uses the account's profile picture
+(`userSession().avatarPng`, passed to `createChatCalls` as `avatarImage`) as
+the stand-in, through the same path as "Your photo…": `stageFaceFor` hands the
+stage the `custom` face with the avatar image, and the picker shows "Your
+avatar" while the stage reports `custom`. The option is hidden without a
+profile picture, and an avatar with no face the mesh can find says so and
+falls back to your own face, like an unusable photo. `createFmmLocal` reads
+the same saved choice, so group calls and the World's "send video" use it too
+(`avatarImage` and `faceChoice` options). `faceImageFor`, `photoFaceId` and
+`stageFaceFor` in `chat-call-face-custom.js` are the shared helpers.
+
+### Hand tracking
+
+`chat-call-hand-tracker.js` runs MediaPipe's palm detector and 21-point hand
+landmark model (`app/public/assets/hand-tracking/`, Apache 2.0) on the same
+WebGL runner and names gestures. The World uses it to move avatar arms and
+send reactions ([../world/voice.md](../world/voice.md), "Hands and
+reactions"). The converter now maps `FULLY_CONNECTED` on a 1 x 1 input to a
+1 x 1 convolution and knows fused `RELU6`, and the runner has `relu6`; the
+existing models convert to the same bytes.
+
 ### Preview and reuse outside a call
 
 `/chat`'s pre-call check (above) opens the camera through the same stage
@@ -1419,7 +1642,7 @@ centred box up to 78% of the window high instead of a pillarboxed strip in a
 `app/tools/call_video_harness.cjs` drives the real modules in headless
 Chromium (`render`, `native`, `models`; `PLAYWRIGHT_DIR` names a Playwright
 install, `--gpu` uses the machine GPU). `app/tools/call_video_metrics.py`
-reports landmark jitter and output stability. Test footage is kept out of the
+reports landmark jitter and output stability; it needs only Pillow. Test footage is kept out of the
 repository.
 
 ## Tests

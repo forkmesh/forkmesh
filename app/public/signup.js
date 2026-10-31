@@ -51,6 +51,18 @@
   const nameHint = $("#name-hint");
   const emailHint = $("#email-hint");
   const signupHint = $("#signup-hint");
+  const suggestButton = $("[data-signup-suggest]");
+  const signupPolicy = (() => {
+    try {
+      const parsed = JSON.parse(form.dataset.signupPolicy || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  })();
+  const emailOptional = signupPolicy.emailOptional === true;
+  const handleMode = ["suggest", "require"].includes(signupPolicy.handles)
+    ? signupPolicy.handles : "off";
 
   const challengeBox = $("#signup-turnstile");
   const CHALLENGE_FRESH_MS = 240 * 1000;
@@ -398,9 +410,13 @@
       && EMAIL_DOMAIN_RE.test(domain);
   }
 
+  function emailAcceptable(value) {
+    return (emailOptional && !value) || validEmail(value);
+  }
+
   function validateEmail(showError) {
     const value = emailInput.value.trim();
-    const ok = validEmail(value);
+    const ok = emailAcceptable(value);
     const displayError = Boolean(value) && !ok && showError;
     emailInput.setAttribute("aria-invalid", displayError ? "true" : "false");
     emailHint.textContent = displayError
@@ -417,7 +433,7 @@
     const referralCodeOk = !signupReferralCodeField
       || signupReferralCodeField.hidden
       || Boolean(signupReferralCodeInput.value.trim());
-    createButton.disabled = !(nameOk && validEmail(email) && password.length >= 8
+    createButton.disabled = !(nameOk && emailAcceptable(email) && password.length >= 8
       && termsAccepted() && referralCodeOk);
   }
 
@@ -646,6 +662,8 @@
           : body.error === "turnstile_stale_page" ? "This signup page was replaced by a newer one (another tab or a reload). Reload this page and try again."
           : body.error === "turnstile_unavailable" ? "Signup is temporarily unavailable (security check offline). Please try again in a few minutes."
           : body.error === "rate_limited" ? "Too many signups from this network right now. Please try again in an hour."
+          : body.error === "signup_closed" ? "Sign-up is closed on this instance."
+          : body.error === "random_handle_required" ? "This instance only accepts suggested random names. Press Suggest a random name."
           : "Could not create the account. Please try again.",
         "bad");
       return;
@@ -656,7 +674,84 @@
     } catch (_) {}
     storeSession(body);
     window.ForkMeshAnalytics?.recordProductAction?.("signup-completed");
+    if (body.recoveryCode) {
+      showRecoveryView(String(body.recoveryCode));
+      return;
+    }
+    if (!email) {
+      openEmailFreeAccount();
+      return;
+    }
     showVerifyView(nodeName, email);
+  }
+
+  function openEmailFreeAccount() {
+    location.href = "/dashboard";
+  }
+
+  function showRecoveryView(code) {
+    const signupView = $("#signup-view");
+    const recoveryView = $("#recovery-view");
+    if (!recoveryView) {
+      openEmailFreeAccount();
+      return;
+    }
+    $("#recovery-code").textContent = code;
+    const saved = $("#recovery-saved");
+    const next = $("#recovery-continue");
+    saved.addEventListener("change", () => { next.disabled = !saved.checked; });
+    next.addEventListener("click", openEmailFreeAccount);
+    $("#recovery-copy").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(code);
+        $("#recovery-copy").textContent = "Copied";
+      } catch (_) {
+        $("#recovery-copy").textContent = "Select the code above and copy it";
+      }
+    });
+    if (signupView) signupView.hidden = true;
+    recoveryView.hidden = false;
+    document.title = "Save your recovery code";
+    window.scrollTo(0, 0);
+  }
+
+  async function suggestHandle() {
+    if (!isLive) return;
+    suggestButton.disabled = true;
+    try {
+      const { ok, body } = await api("/api/accounts/handle-suggestion");
+      if (ok && body.handle) {
+        nameInput.value = String(body.handle);
+        validateName();
+      }
+    } catch (_) {
+      setNameHint("Couldn’t get a suggestion. Try again.", "bad");
+    } finally {
+      suggestButton.disabled = false;
+    }
+  }
+
+  function applySignupPolicy() {
+    if (signupPolicy.signup === "closed") {
+      form.hidden = true;
+      $("#signup-closed").hidden = false;
+      return;
+    }
+    if (emailOptional) {
+      emailInput.required = false;
+      emailInput.placeholder = "Optional";
+      document.querySelector("[data-signup-email-optional]").hidden = false;
+      document.querySelector("[data-signup-email-note]").hidden = false;
+    }
+    if (handleMode !== "off") {
+      suggestButton.hidden = false;
+      document.querySelector("[data-signup-handle-note]").hidden = false;
+      suggestButton.addEventListener("click", suggestHandle);
+      if (handleMode === "require") nameInput.readOnly = true;
+      if (!nameInput.value && signupPolicy.suggestion) {
+        nameInput.value = String(signupPolicy.suggestion);
+      }
+    }
   }
 
   // Popular webmail providers keyed by email domain, so the matching inbox
@@ -701,6 +796,7 @@
     window.scrollTo(0, 0);
   }
 
+  applySignupPolicy();
   nameInput.addEventListener("input", validateName);
   emailInput.addEventListener("input", () => {
     validateEmail(emailInput.getAttribute("aria-invalid") === "true");
@@ -711,7 +807,17 @@
     signupReferralCodeInput.addEventListener("input", updateCreateState);
   }
   termsAgree.addEventListener("change", updateCreateState);
-  form.addEventListener("submit", createAccount);
+  let creatingAccount = false;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (creatingAccount) return;
+    creatingAccount = true;
+    try {
+      await createAccount(event);
+    } finally {
+      creatingAccount = false;
+    }
+  });
 
   // Browser history can restore the visible username without replaying its
   // input event, leaving the transient availability state stale. Reconcile

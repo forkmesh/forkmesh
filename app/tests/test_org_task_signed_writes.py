@@ -637,11 +637,16 @@ def test_desktop_tasks_tab_signs_when_it_holds_no_session_token():
     shows an empty board to an operator who is signed in.
     """
     tab = (
-        ENTRY.parents[2] / "desktop" / "src" / "MainWindowTasks.cpp"
+        ENTRY.parents[2] / "desktop" / "src" / "OrganizationTaskStore.cpp"
     ).read_text(encoding="utf-8")
-    request = tab[tab.index("void MainWindow::requestOrganizationTasks("):]
-    request = request[:request.index("\nvoid MainWindow::")]
-    assert "authenticateOrgTaskRequest(" in request
+    bridge = (
+        ENTRY.parents[2] / "desktop" / "src" / "MainWindowTaskBridge.cpp"
+    ).read_text(encoding="utf-8")
+    request = tab[tab.index("void OrganizationTaskStore::request("):]
+    request = request[:request.index("\nvoid OrganizationTaskStore::")]
+    assert "m_transport.authenticate(url, request, proof, resource)" in request
+    wiring = bridge[bridge.index("void MainWindow::initOrganizationTaskStore("):]
+    assert "authenticateOrgTaskRequest(url, request, proof, resource)" in wiring
     assert "kOrgTaskListProof" in tab
     # And Delete must map to its own proof rather than demanding a password
     # sign-in from an install that holds the account key (adhoc #1426).
@@ -833,9 +838,13 @@ def test_work_items_update_signs_with_the_update_proof_and_body_digest():
 
 def test_desktop_attach_to_deleted_task_is_expected():
     src = ENTRY.parents[2] / "desktop" / "src"
-    tab = (src / "MainWindowTasks.cpp").read_text(encoding="utf-8")
-    request = tab[tab.index("void MainWindow::requestOrganizationTasks("):]
-    request = request[:request.index("\nvoid MainWindow::")]
+    store = (src / "OrganizationTaskStore.cpp").read_text(encoding="utf-8")
+    tab = (
+        ENTRY.parents[2] / "marketplace" / "packages" / "tasks" / "content"
+        / "desktop" / "TasksPage.cpp"
+    ).read_text(encoding="utf-8")
+    request = store[store.index("void OrganizationTaskStore::request("):]
+    request = request[:request.index("\nvoid OrganizationTaskStore::")]
     assert "forkmesh::markExpectedHttpStatus(request, expected)" in request
     assert "!ok && !expectedHttpStatuses.contains(status)" in request
     items = (src / "MainWindowTaskWorkItems.cpp").read_text(encoding="utf-8")
@@ -846,8 +855,8 @@ def test_desktop_attach_to_deleted_task_is_expected():
     assert "m_taskWorkItemAttachQueue.remove(taskId)" in gone
     assert "fail" not in gone.lower()
     assert "{404});" in attach
-    delete = tab[tab.index("void MainWindow::sendOrganizationTaskDelete("):]
-    delete = delete[:delete.index("\nvoid MainWindow::")]
+    delete = tab[tab.index("void TasksPage::sendOrganizationTaskDelete("):]
+    delete = delete[:delete.index("\nvoid TasksPage::")]
     assert "{404});" in delete
     launch = (src / "MainWindowAgentLaunch.cpp").read_text(encoding="utf-8")
     flow = launch[launch.index("void MainWindow::deleteAgentSessionOrgTask("):]

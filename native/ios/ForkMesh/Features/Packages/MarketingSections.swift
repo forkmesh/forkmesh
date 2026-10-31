@@ -279,6 +279,7 @@ struct MarketingReadyXSection: View {
     @State private var picture: (id: String, image: UIImage)?
     @State private var sharing: AgentShareItem?
     @State private var sharedId = ""
+    @State private var link = (id: "", url: "")
 
     var body: some View {
         let ready = model.readyX
@@ -354,9 +355,20 @@ struct MarketingReadyXSection: View {
         }
         .buttonStyle(.bordered)
         if overview.canCloseReadyPost {
+            TextField("Link to the post (optional)", text: Binding(
+                get: { link.id == post.id ? link.url : "" },
+                set: { link = (id: post.id, url: $0) }))
+                .keyboardType(.URL)
+                .textContentType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .accessibilityLabel("Link to the X post")
+                .disabled(model.isWorking("ready-post"))
             HStack {
                 Button {
-                    Task { await model.closeReadyPost(id: post.id, status: "posted") }
+                    let url = link.id == post.id ? link.url.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                    Task { await model.closeReadyPost(id: post.id, status: "posted", url: url) }
                 } label: {
                     Label("Mark posted", systemImage: "checkmark.circle").frame(maxWidth: .infinity)
                 }

@@ -13,28 +13,44 @@ Part of [the desktop docs](README.md). Code: `desktop/src/PullMergeAll.*`
 where this node has a working checkout.
 
 1. It takes every open pull request in the list, oldest first, up to 200.
-2. After the operator confirms, a worker finds the local branch for each one.
-   This is the same lookup **Fix** uses (`localPullAgentBranch`). A pull request
-   that arrived as a signed patch gets its `pr/<n>` branch built from the patch
-   first (`PullStore::ensurePullHeadRef`). Pull requests still without a
-   branch are then looked up in the cloud ([Pulling branches from the
+2. A worker finds the local branch for each one. This is the same lookup
+   **Fix** uses (`localPullAgentBranch`). A pull request that arrived as a
+   signed patch gets its `pr/<n>` branch built from the patch first
+   (`PullStore::ensurePullHeadRef`). Pull requests still without a branch are
+   then looked up in the cloud ([Pulling branches from the
    cloud](#pulling-branches-from-the-cloud)). A pull request is left out, with
-   a reason in the notice and the agent log, when its code is on neither this
-   node nor the cloud, its branch or base name fails `safeRefName`, or its
-   base is not a local branch.
-3. One agent starts through `startAdHocAgentForRepo` with
-   `directCheckout = true` and mode `Auto`. It runs in the repository's own
-   checkout with no agent branch, no worktree and no permission prompts, so its
-   merges land on the real base branch. Only Claude Code and Codex can run
-   without a worktree. If the default provider is anything else, the run uses
-   Claude Code.
-4. The agent reviews each pull request for security issues, bugs and code that
+   a reason in the notice, when its code is on neither this node nor the
+   cloud, its branch or base name fails `safeRefName`, or its base is not a
+   local branch.
+3. The button does not start the agent itself
+   (`draftPullMergeAllPrompt`). It writes the prompt into the composer,
+   points the composer at the repository, turns off the composer's
+   **Own branch and worktree** toggle, and picks Claude Code when the
+   composer is on a provider that cannot run without a worktree (only Claude
+   Code and Codex can). A copy of the button flies from the toolbar into the
+   composer (`flyToComposer`) so the operator sees where the prompt went. If
+   the composer is detached into its own window, the flight is skipped.
+4. The operator reviews the prompt, the agent mode and the model, and sends
+   it. The agent runs in the repository's own checkout with no agent branch
+   and no worktree, so its merges land on the real base branch.
+5. When the sent prompt still starts with the drafted heading, the repository
+   matches and the branch toggle was off (`pullmergeall::draftMatches`),
+   `adoptPullMergeAllDraft` saves the run for that session, as the old direct
+   launch did. A prompt sent with its own branch, or an unrelated prompt,
+   is just an ordinary agent.
+6. The agent reviews each pull request for security issues, bugs and code that
    breaks the repository's rules, fixes what it can in follow-up commits, merges
    with `git merge --no-ff`, and builds and tests before moving on. It skips a
    pull request that is malicious or cannot be fixed without changing what it
    is for.
-5. When the run finishes successfully, `notifyAgentDone` calls
+7. When the run finishes successfully, `notifyAgentDone` calls
    `finishPullMergeAllRun`, and ForkMesh cleans up (next section).
+
+Until 2026-10-31 the button asked for confirmation and started the agent at
+once in mode `Auto`, which left no chance to read or change the prompt. The
+phones still start it directly ([From a phone](#from-a-phone)), through
+`startPullMergeAll`, which shares the preparation step
+(`preparePullMergeAll`) with the button.
 
 ## Pulling branches from the cloud
 
@@ -64,6 +80,47 @@ signed patch does not apply to `main` and no node has published its branch;
 the author needs to rebase it". A branch pull says which branch is missing.
 `materializePullRef` returns without an error in that case, which is why the
 old message only ever said the code was not here.
+
+## Stacked patches whose earlier parts merged
+
+On 2026-10-24 Merge all left out twelve pull requests: #552 to #564 (parts 4
+to 16 of a 16-part series sent as signed patches) and #567. The series' author
+sent each part with only its own commit. Each patch was cut from the author's
+`main` with the earlier parts on top. Parts 1, 2, 3, 5 and 14 had arrived as
+branches rebased onto a newer `main` and were merged. So the files part 4
+expects (`index <pre>..` in its patch) existed nowhere here: neither on the
+base tip, nor in its history (`patchPreimageBaseCommit`), nor as blobs for
+`git am --3way`.
+
+`replayStackedPullSeries` in `PullStore.cpp` now rebuilds such a pull before
+it is given up:
+
+1. The patch's first commit gives the author's email and date. The author's
+   commits from the three days before it are found on the base branch and on
+   every `pr/*` branch, local or tracked (`git log -F --author=<email>`),
+   starting from the files the patch touches and widening to the files those
+   commits touch. One commit per author date and subject is kept, so a copy
+   rebuilt on a `pr/*` branch counts once. More than 30 commits means it is
+   not a short stack, and the search stops.
+2. The candidate bases are the last 40 first-parent commits of the base branch
+   committed before the patch was written. For each one, the author's commits
+   it does not contain are the stack. Files that no stacked commit touches
+   must already hold the blobs the patch expects.
+3. A scratch worktree at that base cherry-picks the stack in author-date
+   order. Only when every file then holds exactly the blob the patch names
+   does `git am` replay the patch on top. At most three bases are tried.
+
+The resulting `pr/<n>` branch forks from the author's base and carries the
+author's exact tree, so it conflicts with the current base tip just as the
+pull request does. That merge is what the agent resolves. Later parts find
+the rebuilt earlier part on its `pr/*` branch, so a whole series rebuilds in
+number order. A patch cut from a fork whose files this repository never had,
+such as #567 (generated pages of a fork with a different `main`), still
+cannot be rebuilt. It keeps the "the author needs to rebase it" reason.
+
+The twelve pull requests of 2026-10-24 were rebuilt by hand the same way on
+the node that runs Merge all. #567 was rebased onto `main` and its conflicts
+were resolved, because no commit here matches its fork's generated pages.
 
 ## Why ForkMesh cleans up, not the agent
 

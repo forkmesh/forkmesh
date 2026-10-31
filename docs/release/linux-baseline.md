@@ -1,7 +1,8 @@
 # Linux release baseline (Debian 12 container build)
 
 The Linux release assets (`forkmesh-linux-x86_64`,
-`forkmesh-linux-x86_64.AppImage` and its `.zsync`) are built inside a pinned
+`forkmesh-linux-x86_64.AppImage` and its `.zsync`, and
+`forkmesh-linux-x86_64.deb` for the [apt repository](apt.md)) are built inside a pinned
 Debian 12 (glibc 2.36) image so they run on Ubuntu 22.04+ and Debian 12+. The
 Go mirror daemon is fully static (`CGO_ENABLED=0`) and is built by the Actions
 job. Development builds are unaffected.
@@ -14,9 +15,9 @@ job. Development builds are unaffected.
 | `tools/package/linux-baseline/image.env` | every pin: base image digest, apt snapshot, toolchain versions and SHA-256s, the glibc ceiling |
 | `tools/package/linux-baseline/Containerfile` | the same stages as image layers for podman or docker |
 | `tools/package/linux-baseline/stage-*.sh` | image stages: packages, OpenSSL, Qt, nghttp3, AppImage tools |
-| `tools/package/linux-baseline/build-forkmesh.sh` | configure, build, install, provenance checks, AppImage |
+| `tools/package/linux-baseline/build-forkmesh.sh` | configure, build, install, provenance checks, AppImage, `.deb` (`--build N` sets the package's `+N`) |
 | `tools/package/linux-baseline/check_glibc.py` | fails when any ELF needs `GLIBC_` above the ceiling or `GLIBCXX_` above 3.4.30 |
-| `tools/package/linux-baseline/smoke-test.sh` | launch test inside Ubuntu 22.04, Ubuntu 24.04 and Debian 12 |
+| `tools/package/linux-baseline/smoke-test.sh` | launch test inside Ubuntu 22.04, Ubuntu 24.04 and Debian 12; the `.deb`'s dependencies and binary |
 | `tools/package/linux-baseline/oci_rootfs.py` | pulls an image by digest into a directory (bubblewrap engine), refusing unsafe layer members |
 | `tools/forkmesh-release-host.py` (`build_linux_assets`) | builds, checks, smoke-tests and publishes into the candidate |
 | `app/tests/test_linux_release_baseline.py` | checker, pins and recipe contracts |
@@ -71,3 +72,14 @@ The Linux assets are listed in the release host's `HOST_ASSETS` and required
 by the gate, so every new candidate is built by the host timer in a pristine
 worktree at the build commit, checked, smoke-tested and published into the
 candidate.
+
+The release build passes `-DFORKMESH_PACKAGE_MODULES=OFF`, so Market packages
+are compiled into the one `forkmesh-linux-x86_64` binary as they are on macOS
+and Windows. Modules are the Linux default since the empty-shell work, but a
+module is a shared object, and the static `libxcb-*.a` archives in the image
+are not built with `-fPIC`: v1.5.0's first build (2026-10-28) failed linking
+`packages/timers.so` with "relocation R_X86_64_PC32 against symbol
+`xcb_render_id` can not be used when making a shared object". The release
+asset is a single file, so loose module files would not have shipped anyway.
+The recipe comes from the release host's checkout, not the tag, so a fix here
+applies to the candidate being built.

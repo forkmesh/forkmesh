@@ -36,6 +36,8 @@ and the openssl binary only.
     asc_bundle_ids.py has-watch               exit 0 when an enabled Apple Watch is registered
     asc_bundle_ids.py latest-build            print the highest build number uploaded for the app
                                               (0 when there is none)
+    asc_bundle_ids.py next-build VERSION      print the next free build number for VERSION: one
+                                              above its highest upload, 0 for a version with none
 """
 
 from __future__ import annotations
@@ -179,6 +181,21 @@ def token() -> str:
     return signing_input + "." + b64url(der_to_raw(der))
 
 
+def api_error(method: str, path: str, code: int, detail: str) -> str:
+    try:
+        errors = json.loads(detail).get("errors") or []
+    except (ValueError, AttributeError):
+        errors = []
+    for entry in errors:
+        if isinstance(entry, dict) and str(entry.get("code", "")).startswith("FORBIDDEN_ERROR.PLA_NOT_ACCEPTED"):
+            return (
+                "ERROR: Apple is waiting for the latest Program License Agreement; no build can run until "
+                "the team's Account Holder accepts it at https://developer.apple.com/account "
+                f"(Apple: {entry.get('detail', '').strip()})"
+            )
+    return f"ERROR: App Store Connect {method} {path} answered {code}: {detail}"
+
+
 def call(bearer: str, method: str, path: str, body=None):
     request = urllib.request.Request(
         API + path,
@@ -191,7 +208,7 @@ def call(bearer: str, method: str, path: str, body=None):
             raw = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", "replace")
-        raise SystemExit(f"ERROR: App Store Connect {method} {path} answered {error.code}: {detail}")
+        raise SystemExit(api_error(method, path, error.code, detail))
     return json.loads(raw) if raw else {}
 
 
@@ -206,7 +223,7 @@ def download(bearer: str, path: str) -> bytes | None:
         detail = error.read().decode("utf-8", "replace")
         if error.code == 404:
             return None
-        raise SystemExit(f"ERROR: App Store Connect GET {path} answered {error.code}: {detail}")
+        raise SystemExit(api_error("GET", path, error.code, detail))
 
 
 def find_bundle_id(bearer: str, identifier: str):
@@ -288,20 +305,31 @@ def app_id() -> None:
             return
 
 
-def latest_build() -> None:
+def uploaded_builds(marketing_version: str = "") -> list[int]:
     bearer = token()
     query = urllib.parse.urlencode({"filter[bundleId]": APP_BUNDLE_ID, "limit": "200"})
     apps = [row["id"] for row in call(bearer, "GET", "/v1/apps?" + query).get("data", [])
             if row["attributes"]["bundleId"] == APP_BUNDLE_ID]
-    highest = 0
-    if apps:
-        query = urllib.parse.urlencode({"filter[app]": apps[0], "sort": "-uploadedDate",
-                                        "fields[builds]": "version", "limit": "200"})
-        for row in call(bearer, "GET", "/v1/builds?" + query).get("data", []):
-            version = str(row["attributes"].get("version", ""))
-            if version.isdigit():
-                highest = max(highest, int(version))
-    print(highest)
+    if not apps:
+        return []
+    params = {"filter[app]": apps[0], "sort": "-uploadedDate",
+              "fields[builds]": "version", "limit": "200"}
+    if marketing_version:
+        params["filter[preReleaseVersion.version]"] = marketing_version
+    rows = call(bearer, "GET", "/v1/builds?" + urllib.parse.urlencode(params)).get("data", [])
+    return [int(str(row["attributes"].get("version", ""))) for row in rows
+            if str(row["attributes"].get("version", "")).isdigit()]
+
+
+def latest_build() -> None:
+    print(max(uploaded_builds(), default=0))
+
+
+def next_build(marketing_version: str) -> None:
+    if not re.fullmatch(r"[0-9]+(\.[0-9]+){0,2}", marketing_version):
+        raise SystemExit(f"ERROR: {marketing_version!r} is not a MAJOR.MINOR.PATCH version")
+    builds = uploaded_builds(marketing_version)
+    print(max(builds) + 1 if builds else 0)
 
 
 def list_devices(bearer: str):
@@ -367,5 +395,7 @@ if __name__ == "__main__":
         has_watch()
     elif command == "latest-build":
         latest_build()
+    elif command == "next-build" and len(sys.argv) == 3:
+        next_build(sys.argv[2])
     else:
         raise SystemExit(__doc__)

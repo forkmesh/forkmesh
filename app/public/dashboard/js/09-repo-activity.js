@@ -22,12 +22,15 @@
     { id: "streak", badge: "daily_spinner", label: "Streak", metric: "longestStreak", one: "day in a row", unit: "days in a row" },
   ];
   const ACTIVITY_SCORE_PARTS = [
-    { key: "merged", one: "merged pull request", label: "merged pull requests", color: "var(--contribution-pulls)" },
-    { key: "commits", one: "commit to the default branch", label: "commits to the default branch", color: "var(--contribution-commits)" },
-    { key: "reviews", one: "review of someone else's pull request", label: "reviews", color: "var(--contribution-reviews)" },
-    { key: "issuesClosed", one: "issue closed", label: "issues closed", color: "var(--contribution-issues)" },
-    { key: "comments", one: "comment", label: "comments", color: "rgb(var(--dashboard-muted-foreground-rgb))" },
+    { key: "merged", one: "merged pull request", label: "merged pull requests", short: ["merged PR", "merged PRs"], color: "var(--contribution-pulls)" },
+    { key: "commits", one: "commit to the default branch", label: "commits to the default branch", short: ["commit", "commits"], color: "var(--contribution-commits)" },
+    { key: "reviews", one: "review of someone else's pull request", label: "reviews", short: ["review", "reviews"], color: "var(--contribution-reviews)" },
+    { key: "issuesClosed", one: "issue closed", label: "issues closed", short: ["closed issue", "closed issues"], color: "var(--contribution-issues)" },
+    { key: "comments", one: "comment", label: "comments", short: ["comment", "comments"], color: "rgb(var(--dashboard-muted-foreground-rgb))" },
+    { key: "pullsOpened", one: "pull request opened", label: "pull requests opened", short: ["opened PR", "opened PRs"], color: "var(--dashboard-link)" },
+    { key: "issuesOpened", one: "issue opened", label: "issues opened", short: ["opened issue", "opened issues"], color: "var(--dashboard-open)" },
   ];
+  const ACTIVITY_TIE_LABELS = { merged: "merged pull requests", reviews: "reviews", issuesClosed: "closed issues", activeDays: "active days", commits: "commits", pullsOpened: "pull requests opened", issuesOpened: "issues opened", comments: "comments" };
   const ACTIVITY_STYLE_ID = "fm-activity-style";
   const ACTIVITY_STYLE = `
 .fm-activity-nav a{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:6px;font-size:14px;color:rgb(var(--dashboard-muted-foreground-rgb));white-space:nowrap}
@@ -56,6 +59,19 @@
 .fm-activity-rank[data-podium="1"]{box-shadow:inset 0 0 0 2px #d4a72c}
 .fm-activity-rank[data-podium="2"]{box-shadow:inset 0 0 0 2px #8c959f}
 .fm-activity-rank[data-podium="3"]{box-shadow:inset 0 0 0 2px #b4693e}
+.fm-activity-podium{display:grid;gap:12px;padding:16px;border-bottom:1px solid rgb(var(--dashboard-border-rgb))}
+@media (min-width:640px){.fm-activity-podium{grid-template-columns:repeat(3,minmax(0,1fr));align-items:end}.fm-activity-podium-card[data-podium="1"]{order:2;padding-top:22px;padding-bottom:22px}.fm-activity-podium-card[data-podium="2"]{order:1}.fm-activity-podium-card[data-podium="3"]{order:3}}
+.fm-activity-podium-card{display:flex;min-width:0;flex-direction:column;align-items:center;gap:6px;padding:14px 12px;border-radius:10px;border:1px solid rgb(var(--dashboard-border-rgb));background:rgb(var(--dashboard-subtle-rgb));text-align:center}
+.fm-activity-podium-card[data-podium="1"]{border-color:#d4a72c;box-shadow:0 0 0 1px #d4a72c33}
+.fm-activity-podium-card[data-podium="2"]{border-color:#8c959f}
+.fm-activity-podium-card[data-podium="3"]{border-color:#b4693e}
+.fm-activity-podium-score{font-size:22px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:rgb(var(--dashboard-foreground-rgb))}
+.fm-activity-podium-card .fm-activity-rank{width:26px;height:26px}
+.fm-activity-podium-avatar{display:inline-flex}
+.fm-activity-podium-avatar>*{width:40px!important;height:40px!important;font-size:15px}
+.fm-activity-parts{display:flex;min-width:0;flex-wrap:wrap;align-items:center;gap:2px 10px;font-size:12px;color:rgb(var(--dashboard-muted-foreground-rgb))}
+.fm-activity-parts>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.fm-activity-podium-card .fm-activity-parts{justify-content:center}
 .fm-activity-tip-wrap{position:relative;display:inline-flex}
 .fm-activity-tip{position:absolute;right:0;bottom:calc(100% + 6px);z-index:30;display:none;width:max-content;max-width:min(18rem,80vw);text-align:left;white-space:normal}
 .fm-activity-tip-wrap:hover .fm-activity-tip,.fm-activity-tip-wrap:focus-within .fm-activity-tip{display:block}
@@ -244,9 +260,9 @@
 
   function activityShellHtml(repo) {
     const nav = ACTIVITY_VIEWS.map((item) => `<li><a href="${escapeHtml(activityHref(repo, item.id, activityView.period, activityView.scope))}" data-activity-view="${item.id}"${item.id === activityView.view ? ' aria-current="page"' : ""}><i data-lucide="${item.icon}" aria-hidden="true"></i><span>${escapeHtml(item.label)}</span></a></li>`).join("");
-    return `<div data-repo-activity class="grid min-w-0 gap-5 py-2 md:grid-cols-[16rem_minmax(0,1fr)]">
-      <nav class="fm-activity-nav min-w-0" aria-label="Activity views"><ul class="flex flex-wrap gap-1">${nav}</ul></nav>
-      <div data-activity-main class="grid min-w-0 content-start gap-5" aria-live="polite" aria-busy="true"></div>
+    return `<div data-repo-activity data-repo-rail-layout class="grid min-w-0 gap-5 py-2 md:grid-cols-[16rem_minmax(0,1fr)]">
+      <nav data-repo-rail class="fm-activity-nav min-w-0" aria-label="Activity views"><div data-repo-rail-inner><h2 class="fm-rail-title hidden lg:block">Insights</h2><ul class="flex flex-wrap gap-1">${nav}</ul></div></nav>
+      <div data-activity-main data-repo-rail-main class="grid min-w-0 content-start gap-5" aria-live="polite" aria-busy="true"></div>
     </div>`;
   }
 
@@ -492,19 +508,40 @@
     return `<span class="fm-activity-tip-wrap justify-end"><button type="button" class="fm-activity-score" aria-describedby="${tipId}">${bar}${formatCount(row.score)}<span class="sr-only"> points</span></button><span role="tooltip" id="${tipId}" class="fm-tooltip fm-activity-tip"><span class="grid gap-1">${tip || "No scored activity"}</span></span></span>`;
   }
 
+  function activityPartsHtml(row, limit = 4) {
+    const parts = ACTIVITY_SCORE_PARTS
+      .map((part) => ({ part, count: Number(row?.breakdown?.[part.key]) || 0 }))
+      .filter((item) => item.count)
+      .slice(0, limit);
+    if (!parts.length) return "";
+    return `<span class="fm-activity-parts" data-activity-parts>${parts.map(({ part, count }) => `<span><span class="fm-activity-swatch" style="background:${part.color}" aria-hidden="true"></span>${formatCount(count)} ${escapeHtml(part.short[count === 1 ? 0 : 1])}</span>`).join("")}</span>`;
+  }
+
+  function activityPodiumHtml(rows) {
+    return `<div class="fm-activity-podium" data-activity-podium>${rows.map((row) => `<div class="fm-activity-podium-card" data-podium="${row.rank}">
+        <span class="fm-activity-rank" data-podium="${row.rank}"><span class="sr-only">Rank </span>${formatCount(row.rank)}</span>
+        <span class="fm-activity-podium-avatar">${activityAvatarHtml(row)}</span>
+        <span class="flex min-w-0 max-w-full justify-center">${activityNameHtml(row.name)}</span>
+        <span class="fm-activity-podium-score">${formatCount(row.score)}<span class="ml-1 text-xs font-normal text-muted-foreground">pts</span></span>
+        ${activityPartsHtml(row, 3)}
+      </div>`).join("")}</div>`;
+  }
+
   function activityLeaderboardRowsHtml(data, scopeAll) {
-    const rows = Array.isArray(data?.leaderboard) ? data.leaderboard : [];
+    const all = Array.isArray(data?.leaderboard) ? data.leaderboard : [];
     const weights = data?.scoring?.weights || {};
-    if (!rows.length) {
+    const podium = all.length >= 3 ? all.slice(0, 3) : [];
+    const rows = all.slice(podium.length);
+    if (!all.length) {
       return `<div class="fm-blankslate"><i data-lucide="trophy" aria-hidden="true"></i><p class="fm-blankslate-title">No scored activity yet</p><p class="fm-blankslate-desc">Merged pull requests, commits, reviews, closed issues and comments ${scopeAll ? "in this repository" : escapeHtml(activityPeriod(activityView.period).phrase)} will rank contributors here.</p></div>`;
     }
-    return `<ol class="divide-y divide-border" data-activity-leaderboard-rows>${rows.map((row, index) => {
+    return `${podium.length ? activityPodiumHtml(podium) : ""}<ol class="divide-y divide-border" data-activity-leaderboard-rows>${rows.map((row, index) => {
       const streak = Number(row.streak) || 0;
       const medals = activityEarned(row.achievements).map((item) => activityMedalHtml(item.milestone, item.tier, 20, `${activityMilestoneTitle(item.milestone, item.tier)} — ${activityPlural(item.value, item.milestone.one, item.milestone.unit)}`)).join("");
       return `<li class="fm-activity-row px-4 py-2.5" data-activity-rank-row>
         <span class="fm-activity-rank"${row.rank <= 3 ? ` data-podium="${row.rank}"` : ""}><span class="sr-only">Rank </span>${formatCount(row.rank)}</span>
         <span class="fm-activity-move-wide items-center">${activityMoveHtml(row, scopeAll)}</span>
-        <span class="flex min-w-0 items-center gap-2">${activityAvatarHtml(row)}<span class="min-w-0"><span class="flex min-w-0 items-center gap-2">${activityNameHtml(row.name)}</span><span class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span class="fm-activity-move-narrow">${activityMoveHtml(row, scopeAll)}</span>${row.newcomer ? '<span class="fm-label fm-label-accent shrink-0"><i data-lucide="sparkles" aria-hidden="true"></i>New here</span>' : ""}${streak >= 2 ? `<span class="inline-flex items-center gap-1"><i data-lucide="flame" class="h-3.5 w-3.5 ${streak >= 3 ? "text-attention" : ""}" aria-hidden="true"></i>${formatCount(streak)}-day streak</span>` : ""}</span></span></span>
+        <span class="flex min-w-0 items-center gap-2">${activityAvatarHtml(row)}<span class="min-w-0"><span class="flex min-w-0 items-center gap-2">${activityNameHtml(row.name)}</span><span class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span class="fm-activity-move-narrow">${activityMoveHtml(row, scopeAll)}</span>${row.newcomer ? '<span class="fm-label fm-label-accent shrink-0"><i data-lucide="sparkles" aria-hidden="true"></i>New here</span>' : ""}${streak >= 2 ? `<span class="inline-flex items-center gap-1"><i data-lucide="flame" class="h-3.5 w-3.5 ${streak >= 3 ? "text-attention" : ""}" aria-hidden="true"></i>${formatCount(streak)}-day streak</span>` : ""}</span>${activityPartsHtml(row)}</span></span>
         <span class="fm-activity-medals items-center gap-1">${medals}</span>
         ${activityScoreHtml(row, weights, index)}
       </li>`;
@@ -517,7 +554,7 @@
     return `<details class="border-t border-border px-4 py-3 text-sm" data-activity-scoring>
       <summary class="cursor-pointer text-foreground">How the score works</summary>
       <ul class="mt-2 grid gap-1 text-muted-foreground">${ACTIVITY_SCORE_PARTS.map((part) => `<li class="flex items-center gap-2"><span class="fm-activity-swatch" style="background:${part.color}" aria-hidden="true"></span><strong class="text-foreground">${formatCount(weights[part.key] || 0)} ${Number(weights[part.key]) === 1 ? "point" : "points"}</strong> per ${escapeHtml(part.one)}</li>`).join("")}</ul>
-      <p class="mt-2 text-xs leading-5 text-muted-foreground">At most ${formatCount(scoring.commitsPerDay || 0)} commits a day and ${formatCount(scoring.commentsPerThread || 0)} comments per issue or pull request count, a review counts once per pull request and never on your own, and slash commands are not comments. Bots, AI agents and mirror nodes aren't ranked, and their commits are left out of the counts. Arrows compare with ${activityView.scope === "all" ? "the ranking a week ago" : "the previous period of the same length"}.</p>
+      <p class="mt-2 text-xs leading-5 text-muted-foreground">At most ${formatCount(scoring.commitsPerDay || 0)} commits a day and ${formatCount(scoring.commentsPerThread || 0)} comments per issue or pull request count, a review counts once per pull request and never on your own, slash commands are not comments, and at most ${formatCount(scoring.openedPerDay || 0)} pull requests and ${formatCount(scoring.openedPerDay || 0)} issues opened a day count. Equal scores are ordered by ${escapeHtml((scoring.tieBreak || []).map((key) => ACTIVITY_TIE_LABELS[key] || key).join(", then "))}, so no two people share a rank. Bots, AI agents and mirror nodes aren't ranked, and their commits are left out of the counts. Arrows compare with ${activityView.scope === "all" ? "the ranking a week ago" : "the previous period of the same length"}.</p>
     </details>`;
   }
 

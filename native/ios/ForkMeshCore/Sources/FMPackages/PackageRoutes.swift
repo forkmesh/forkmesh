@@ -75,6 +75,7 @@ public enum PackageRoutes {
         case "marketing": return .marketing(section: nil)
         case "analytics": return .analytics(section: nil)
         case "competitors": return .competitors
+        case "invoices": return .invoices(organization: nil, invoice: nil)
         case "ledger": return .ledger(section: nil)
         case "vault": return .vault(section: nil)
         case "calories": return .calories
@@ -95,6 +96,7 @@ public enum PackageRoutes {
         case "fileExplorer": return .fileExplorer
         case "faceChanger": return .faceChanger
         case "videoMixDjStudio": return .videoMixDjStudio
+        case "poker": return .poker(table: nil)
         case "appStoreStatus": return .appStoreStatus
         case "usage": return .usage
         case "rssReader": return .rssReader
@@ -135,13 +137,14 @@ public enum PackageRoutes {
         return MarketPackage.nativeDestinations.first { $0.value == id }?.key
     }
 
-    public static let businessPackageIds = ["crm", "marketing", "analytics", "competitor", "ledger"]
+    public static let businessPackageIds = ["crm", "marketing", "analytics", "competitor", "invoices", "ledger"]
 
     public static func hubRoutes(installed: Set<String>, adReviewer: Bool = false) -> [(id: String, title: String, route: Route)] {
         var rows: [(id: String, title: String, route: Route)] = [("market", "Market", .market(filter: nil))]
         let entries: [(String, String, Route)] = [
             ("crm", "CRM", .crm(pipeline: nil)), ("marketing", "Marketing", .marketing(section: nil)),
             ("analytics", "Analytics", .analytics(section: nil)), ("competitor", "Competitors", .competitors),
+            ("invoices", "Invoices", .invoices(organization: nil, invoice: nil)),
         ]
         for (id, title, route) in entries where installed.contains(id) { rows.append((id, title, route)) }
         if adReviewer { rows.append(("ads", "Ad review", .ads)) }
