@@ -993,6 +993,12 @@ switcher: tapping outside it or choosing an item closes it, and choosing an
 item pushes the destination onto the current tab. On iPad the same items are
 sidebar sections (§7).
 
+The controls sit in one soft card, each on a matching icon tile so their labels
+line up (`FmMenuTile` on Android). Account actions are equal-width buttons when
+they fit, and the version and diagnostics follow a hairline with no box behind
+them. The slowness warning is a tinted pill, so it reads as a notice rather than
+an error.
+
 | Group | Items |
 |---|---|
 | Header | Avatar, name, status and a small Set a status button on the same row; Pocket mode, Suggestion mode and the Diagnostics switch as compact rows |
