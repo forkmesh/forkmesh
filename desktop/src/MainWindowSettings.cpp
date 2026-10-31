@@ -9347,6 +9347,7 @@ int MainWindow::deleteLogCategory(const QString &badge)
         if (lights)
             lights->resetCategory(normalized);
     }
+    forgetLogTotal(normalized);
     rebuildLogFilterButtons();
     if (m_settingsLog && m_settingsLog->isVisible())
         rebuildNetworkLogView();
@@ -9754,10 +9755,39 @@ void MainWindow::rebuildLogFilterButtons()
     updateLogAggregationAvailability();
 }
 
-int MainWindow::logFilterChipCount(const QString &category) const
+qint64 MainWindow::logFilterChipCount(const QString &category) const
 {
-    return category.isEmpty() ? m_networkLog.size()
-                              : m_logFilterCounts.value(category);
+    return category.isEmpty()
+               ? qMax<qint64>(m_logTotalLines, m_networkLog.size())
+               : qMax<qint64>(m_logCategoryTotals.value(category),
+                              m_logFilterCounts.value(category));
+}
+
+void MainWindow::recountLogTotals()
+{
+    m_logCategoryTotals.clear();
+    for (const auto &bucket : std::as_const(m_networkLogDigest))
+        for (auto it = bucket.cbegin(); it != bucket.cend(); ++it)
+            m_logCategoryTotals[it.key()] += it.value();
+    QHash<QString, int> held;
+    for (const QString &line : std::as_const(m_networkLog))
+        ++held[logBadgeFor(line)];
+    for (auto it = held.cbegin(); it != held.cend(); ++it) {
+        qint64 &total = m_logCategoryTotals[it.key()];
+        total = qMax<qint64>(total, it.value());
+    }
+    m_logTotalLines = 0;
+    for (const qint64 total : std::as_const(m_logCategoryTotals))
+        m_logTotalLines += total;
+}
+
+void MainWindow::forgetLogTotal(const QString &badge)
+{
+    auto total = m_logCategoryTotals.find(badge);
+    if (total == m_logCategoryTotals.end())
+        return;
+    m_logTotalLines = qMax<qint64>(0, m_logTotalLines - total.value());
+    m_logCategoryTotals.erase(total);
 }
 
 void MainWindow::updateLogFilterChipCounts()
@@ -9853,6 +9883,8 @@ void MainWindow::testResetNetworkLog()
     m_networkLog.clear();
     clearLogStyleCache();
     m_logFilterCounts.clear(); // the chip counts describe the buffer we just emptied
+    m_logCategoryTotals.clear();
+    m_logTotalLines = 0;
     m_networkLogDiskLines = 0;
     m_networkLogDigest.clear();
     m_networkLogDigestBucket = -1;
@@ -10222,6 +10254,7 @@ void MainWindow::loadNetworkLogDigest()
         m_networkLogDigestDirty = true;
     if (m_networkLogDigestDirty)
         saveNetworkLogDigest();
+    recountLogTotals();
 }
 
 void MainWindow::persistNetworkLogOnShutdown()
@@ -10559,6 +10592,12 @@ int MainWindow::deleteNetworkLogLines(const QStringList &lines)
             m_logFilterCounts.erase(count);
             chipGone = true;
         }
+        if (auto total = m_logCategoryTotals.find(badge);
+            total != m_logCategoryTotals.end()) {
+            if (--total.value() <= 0)
+                m_logCategoryTotals.erase(total);
+            m_logTotalLines = qMax<qint64>(0, m_logTotalLines - 1);
+        }
 
         // The chart counted this line into its quarter-hour bucket; take it back
         // out so the 7- and 30-day views agree with what is left.
@@ -10718,6 +10757,8 @@ void MainWindow::logSystemFrom(const QString &text, const QString &sourcePath,
 
     if (++m_logFilterCounts[badge] == 1)
         chipsChanged = true;
+    ++m_logCategoryTotals[badge];
+    ++m_logTotalLines;
     if (!m_deferRichLogRendering) {
         if (chipsChanged)
             rebuildLogFilterButtons(); // no-ops until the log section is built

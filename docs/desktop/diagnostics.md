@@ -146,6 +146,26 @@ The desktop has no toasts or floating cards; information is shown inline.
   text. The card re-reads its tile every 250 ms while the pointer stays on it,
   so it is live, and moving to the next chart swaps it without the tooltip
   delay. The resource quadrants open the same card.
+- IN and OUT (`debugTokensInTile`, `debugTokensOutTile`, 2026-10-31) chart
+  agent tokens per second: IN is the input sent to the models, OUT the output
+  received. Both come from the per-event `LiveTokenMeter` step in
+  `applyTranscriptEvent`, summed over every live session into
+  `m_debugTokensInTotal`/`m_debugTokensOutTotal` and sampled by
+  `updateFooterDiagnostics`. They sit as a stacked pair after the TMP-disk
+  quad.
+- The chevron after the charts (`debugChartsExpandButton`, setting
+  `ui/debugChartsExpanded`) switches every chart between the compact quadrant
+  and full bar height (`kDebugChartExpandedSide`, 40 px) in one row, where each
+  chart has room for its caption and value. `setDebugChartsExpanded` re-lays the
+  quads in place; the bar scrolls sideways if the row is too wide.
+- The All button's count (`debugLogAllButton`) is drawn beside its icon, not
+  over it (`ActivityRailButton::setBadgeBeside`): the button widens as the
+  number grows and overlaps only the icon's top-right corner.
+- The Log page's category chips count every line on record, not just the
+  in-memory buffer (`kNetworkLogLimit`, 20,000 lines), so All no longer stops
+  at 20,000. `m_logCategoryTotals`/`m_logTotalLines` are seeded from the 30-day
+  digest and the buffer at load (`recountLogTotals`), grow with each line,
+  ignore buffer trims, and drop only for deletes and Clear.
 - STALL (`debugStallTile`, 2026-10-25) is a live chart of UI stalls: each
   second's point is the longest stall `StallWatchdog` reported in that second
   (`m_debugStallPeakSinceSampleMs`, set by `onUiStall`, read by

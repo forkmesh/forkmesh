@@ -79,6 +79,21 @@ into an update) instead of a `500`. A shared sheet's add still answers
 - Header menus delete a column outright (`POST /contacts/delete-column`): a
   custom column's values leave every contact; a built-in column (other than
   Name, Email, Flow and Stage) is blanked and hidden, and can be restored.
+- Copying a column (1.45.0, desktop and web): **Copy "<column>" column** heads
+  the header's right-click menu (also on a shared sheet) and copies every shown
+  row's value in that column, one per line, in table order. Pressing on a cell
+  and dragging up or down within the same column picks just those cells in
+  place of the usual row drag. A right click on a picked cell offers **Copy N
+  values**, and Ctrl/Cmd+C copies them too. Ctrl, Shift or Cmd with the press
+  keeps the row selection. The desktop does this in `ContactsTable`, a
+  `QTableWidget` subclass: it takes over the mouse moves once the drag has
+  moved to a new row in the same column. Its release skips `itemClicked`, so a
+  drag never opens an editor, the detail card or a compose window. The web
+  page tags each cell `data-crm-cell="<field>"`. It reads a cell's value from
+  its input or select, the name button, or its text, so computed columns and
+  shared sheets copy what is on screen. A pick is one column of single cells,
+  not whole rows, so the row actions (move, stage, mark contacted) see no
+  selected contact until the next plain click.
 - Filters: owner (**My contacts**, **Unassigned**, a member), **Next step
   set**, **Quiet 30+ days** (`CRM_QUIET_DAYS`), **Never contacted**, **My
   queue**, **Waiting on us** (newest linked email is inbound), **Possible

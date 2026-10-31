@@ -376,6 +376,28 @@ void MainWindow::updateFooterDiagnostics()
     updateActivityTile(static_cast<ResourceSparkline *>(m_debugLogActivityTile),
                        m_debugAllLogCount, &m_debugLastLogActivityTotal,
                        QStringLiteral("Log"));
+    auto updateTokenTile = [](ResourceSparkline *tile, qint64 total,
+                              qint64 *previous, const QString &kind) {
+        if (!tile)
+            return;
+        const qint64 rate = *previous < 0 ? 0 : qMax<qint64>(0, total - *previous);
+        *previous = total;
+        const QString rateText =
+            rate >= 1000 ? QStringLiteral("%1k").arg(rate / 1000.0, 0, 'f', 1)
+                         : QString::number(rate);
+        tile->addSample(rate, qMax<qint64>(1000, rate * 2), rateText);
+        tile->setToolTip(
+            QStringLiteral("%1: %2 token%3 this second, %4 this session")
+                .arg(kind, formatCount(rate),
+                     rate == 1 ? QString() : QStringLiteral("s"),
+                     formatCount(total)));
+    };
+    updateTokenTile(static_cast<ResourceSparkline *>(m_debugTokensInTile),
+                    m_debugTokensInTotal, &m_debugLastTokensInTotal,
+                    QStringLiteral("Input tokens sent to agent models"));
+    updateTokenTile(static_cast<ResourceSparkline *>(m_debugTokensOutTile),
+                    m_debugTokensOutTotal, &m_debugLastTokensOutTotal,
+                    QStringLiteral("Output tokens received from agent models"));
     if (auto *stall = static_cast<ResourceSparkline *>(m_debugStallTile)) {
         const qint64 peak = m_debugStallPeakSinceSampleMs;
         m_debugStallPeakSinceSampleMs = 0;

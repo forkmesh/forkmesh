@@ -502,6 +502,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowDiscussions.cpp
     src/MainWindowPulls.cpp
     src/MainWindowPullMergeAll.cpp
+    src/MainWindowPullReviewAll.cpp
     src/MainWindowMergeQueue.cpp
     src/MainWindowAgents.cpp
     src/MainWindowAgentSync.cpp
@@ -1032,6 +1033,8 @@ set(FORKMESH_APP_SOURCES
     src/PullReviewModel.cpp
     src/PullMergeAll.h
     src/PullMergeAll.cpp
+    src/PullReviewAll.h
+    src/PullReviewAll.cpp
     src/MergeSetAside.h
     src/MergeSetAside.cpp
     src/PullAiReview.h
@@ -5086,6 +5089,24 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-pull-merge-all-tests
         COMMAND forkmesh-pull-merge-all-tests)
+    qt_add_executable(forkmesh-pull-review-all-tests
+        tests/test_pull_review_all.cpp
+        src/PullReviewAll.h
+        src/PullReviewAll.cpp
+        src/PullMergeAll.h
+        src/PullMergeAll.cpp
+        src/PullAiReview.h
+        src/PullAiReview.cpp
+    )
+    target_include_directories(forkmesh-pull-review-all-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-pull-review-all-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-pull-review-all-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-pull-review-all-tests
+        COMMAND forkmesh-pull-review-all-tests)
     qt_add_executable(forkmesh-merge-set-aside-tests
         tests/test_merge_set_aside.cpp
         src/MergeSetAside.h

@@ -36,6 +36,7 @@ import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.code.rememberCopyText
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.navigation.RoutePage
+import com.forkmesh.nativeapp.feature.people.openProfile
 import com.forkmesh.nativeapp.inbox.DesktopPingFixes
 import com.forkmesh.nativeapp.inbox.InboxItem
 import com.forkmesh.nativeapp.inbox.InboxRoutes
@@ -160,7 +161,7 @@ class InboxItemScreen(private val item: InboxItem) : Screen() {
                 if (item.repo.isNotEmpty() || item.actor.isNotEmpty() || link.isNotEmpty()) {
                     Spacer(Modifier.height(FmSpace.x3))
                     if (item.repo.isNotEmpty()) FmKeyValueRow("Repository", item.repo)
-                    if (item.actor.isNotEmpty()) FmKeyValueRow("From", "@${item.actor}")
+                    if (item.actor.isNotEmpty()) FmKeyValueRow("From", "@${item.actor}", Modifier.openProfile(item.actor))
                     if (link.isNotEmpty()) FmKeyValueRow("Link", link)
                 }
                 Spacer(Modifier.height(FmSpace.x4))

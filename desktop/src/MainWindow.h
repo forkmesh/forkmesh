@@ -48,6 +48,7 @@
 #include "PullStore.h"
 #include "PullReviewModel.h"
 #include "PullMergeAll.h"
+#include "PullReviewAll.h"
 #include "MergeQueue.h"
 #include "CoveStore.h"
 #include "ActionStore.h"
@@ -1117,7 +1118,7 @@ public:
         return m_coreLogTally;
     }
     QPushButton *testLogFilterChip(const QString &category) const;
-    int testLogFilterChipCount(const QString &category) const
+    qint64 testLogFilterChipCount(const QString &category) const
     {
         return logFilterChipCount(category);
     }
@@ -3400,6 +3401,11 @@ public:
     QString testBranchDiffDragComment(const QString &path, int fromLine,
                                       int toLine);
     bool testSubmitBranchInlineComment(const QString &body, QString *error);
+    void testOpenPullDiffInGitView(int number) { openPullDiffInGitView(number); }
+    QString testBranchPullReviewBarText() const;
+    bool testQueueBranchPullInlineComment(const QString &body);
+    bool testFinishBranchPullReview(const QString &state, const QString &body,
+                                    QString *error);
     QList<PullEvent> testBranchReviewEvents(const QString &branch) const;
     // The diff toolbar's link back to the agent that wrote the branch: its
     // caption when it is offered, empty when the branch belongs to no agent.
@@ -4901,6 +4907,7 @@ private:
     void restartCloudLogMonitor();
     void releaseCloudLogMonitorProcess();
     void applyDebugBarStartupPreference();
+    void setDebugChartsExpanded(bool expanded);
     void readCloudLogMonitorOutput();
     void consumeCloudLogMonitorBytes(const QByteArray &chunk);
     void drainCloudLogMonitorRecords();
@@ -6410,6 +6417,17 @@ private:
     void submitPullInlineReviewBatch();
     void discardPullInlineReviewBatch();
     void updatePullInlineReviewBatchBar();
+    QStringList postPullInlineDrafts(int number);
+    int pullInlineDraftCount(int number) const;
+    void rerenderBranchPullDiff();
+    QWidget *buildBranchPullReviewBar();
+    const PullRequest *branchDiffPull() const;
+    void updateBranchPullReviewBar();
+    void openBranchPullReviewDialog();
+    bool finishBranchPullReview(int number, const QString &state,
+                                const QString &body, QString *error);
+    bool postPullReviewEvent(int number, const QString &state,
+                             const QString &body, QString *error);
     bool postPullInlineComment(int number, const QString &path,
                                const QString &side, int lineStart,
                                int lineEnd, const QString &body,
@@ -6730,10 +6748,38 @@ private:
     void startPullMergeAll(const QString &owner, const QString &name,
                            const QList<PullRequest> &open, bool switchToTab,
                            std::function<void(const forkmesh::pullmergeall::Launch &)> done);
+    void preparePullMergeAll(
+        const QString &owner, const QString &name, const QList<PullRequest> &open,
+        std::function<void(const QList<forkmesh::pullmergeall::Target> &,
+                           const QStringList &)> ready);
     forkmesh::pullmergeall::Launch launchPullMergeAllAgent(
         const QString &owner, const QString &name,
         const QList<forkmesh::pullmergeall::Target> &targets,
         const QStringList &skipped, bool switchToTab);
+    void recordPullMergeAllRun(int sessionId, const QString &owner, const QString &name,
+                               const QList<forkmesh::pullmergeall::Target> &targets,
+                               const QStringList &skipped);
+    void draftPullMergeAllPrompt(int repoIndex,
+                                 const QList<forkmesh::pullmergeall::Target> &targets,
+                                 const QStringList &skipped);
+    void fillComposerForPullDraft(int repoIndex, const QString &prompt,
+                                  const QString &notice, QWidget *from);
+    void adoptPullAgentDrafts(int sessionId, int repoIndex, const QString &prompt,
+                              bool directCheckout);
+    void adoptPullMergeAllDraft(int sessionId, const RepositoryRecord &repo,
+                                const QString &prompt);
+    void flyToComposer(QWidget *from);
+    void reviewAllPullsWithAgent();
+    QString pullReviewAllBlocker(int repoIndex);
+    void draftPullReviewAllPrompt(int repoIndex,
+                                  const QList<forkmesh::pullmergeall::Target> &targets,
+                                  const QStringList &skipped);
+    void adoptPullReviewAllDraft(int sessionId, const RepositoryRecord &repo,
+                                 const QString &prompt);
+    void finishPullReviewAllRun(int sessionId);
+    void loadPullReviewAllRuns();
+    void savePullReviewAllRuns();
+    int activePullReviewAllSession(const QString &owner, const QString &name);
     void handleLocalControlPullsRequest(int connectionId, int requestId,
                                         const QString &method, const QJsonObject &params);
     void answerLocalControlPullsRequest(int connectionId, int requestId,
@@ -10423,7 +10469,9 @@ private:
     QVector<LogTimelineSeries> logTimelineSeries() const;
     void rebuildLogFilterButtons(); // (re)build the category chip row
     void syncDebugActivityLightCategories();
-    int logFilterChipCount(const QString &category) const;
+    qint64 logFilterChipCount(const QString &category) const;
+    void recountLogTotals();
+    void forgetLogTotal(const QString &badge);
     void updateLogFilterChipCounts(); // refresh the counts without rebuilding
     void updateCloudLogFilterChip();
     void refreshLogTimelineChart();
@@ -10644,6 +10692,7 @@ private:
                                const QString &senderName);
     void showChatUserProfile(const MemberInfo &member, const QStringList &nodeLines);
     bool openUserProfile(const QString &account, const QString &name = QString());
+    void linkAvatarToProfile(QWidget *avatar, const QString &account);
     void promptAddChannel();
     void promptAddPrivateChannel();
     void showNewPrivateRoomDialog();
@@ -12711,6 +12760,16 @@ private:
     QWidget *m_debugNetworkActivityTile = nullptr;
     QWidget *m_debugLogActivityTile = nullptr;
     QWidget *m_debugStallTile = nullptr;
+    QWidget *m_debugTokensInTile = nullptr;
+    QWidget *m_debugTokensOutTile = nullptr;
+    qint64 m_debugTokensInTotal = 0;
+    qint64 m_debugTokensOutTotal = 0;
+    qint64 m_debugLastTokensInTotal = -1;
+    qint64 m_debugLastTokensOutTotal = -1;
+    QVector<QWidget *> m_debugChartTiles;
+    QVector<QWidget *> m_debugTileQuads;
+    QPushButton *m_debugChartsExpandButton = nullptr;
+    bool m_debugChartsExpanded = false;
     qint64 m_debugStallPeakSinceSampleMs = 0;
     qint64 m_debugStallLongestMs = 0;
     qint64 m_debugStallLastAtMs = 0;
@@ -13703,6 +13762,13 @@ private:
     QHash<int, forkmesh::pullmergeall::Run> m_pullMergeAllRuns;
     bool m_pullMergeAllRunsLoaded = false;
     bool m_pullMergeAllPreparing = false;
+    forkmesh::pullmergeall::Draft m_pullMergeAllDraft;
+    QPushButton *m_pullReviewAllAiButton = nullptr;
+    QHash<int, forkmesh::pullreviewall::Run> m_pullReviewAllRuns;
+    bool m_pullReviewAllRunsLoaded = false;
+    QSet<int> m_pullReviewAllPosting;
+    forkmesh::pullmergeall::Draft m_pullReviewAllDraft;
+    QString m_pullReviewAllDraftReport;
     QSet<int> m_pullMergeAllCleaning;
     QWidget *m_pullDetail = nullptr;
     QLabel *m_pullTitle = nullptr;
@@ -13759,6 +13825,11 @@ private:
     QLabel *m_pullInlineBatchLabel = nullptr;
     QPushButton *m_pullInlineBatchSubmitButton = nullptr;
     QPushButton *m_pullInlineBatchDiscardButton = nullptr;
+    QWidget *m_branchPullReviewBar = nullptr;
+    QLabel *m_branchPullReviewLabel = nullptr;
+    QPushButton *m_branchPullReviewAiButton = nullptr;
+    QPushButton *m_branchPullReviewDiscardButton = nullptr;
+    QPushButton *m_branchPullReviewSubmitButton = nullptr;
     QString m_pullInlinePath;
     QString m_pullInlineSide;
     int m_pullInlineStartLine = 0;
@@ -15851,6 +15922,8 @@ private:
     QHash<QString, QHash<QString, QString>> m_typing; // conversation -> peerId -> name
     QStringList m_networkLog;
     QHash<QString, int> m_logFilterCounts;
+    QHash<QString, qint64> m_logCategoryTotals;
+    qint64 m_logTotalLines = 0;
     int m_networkLogDiskLines = 0;              // lines in the live on-disk file
     qint64 m_networkLogClearedAtMs = 0;
     // Bucketed line counts for the whole 30-day retention window, including the
