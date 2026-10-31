@@ -1750,6 +1750,51 @@ void checkFooterOverlayGeometry(MainWindow &window)
                   prompt->geometry() == detachWindow->rect(),
               QStringLiteral("the popped-out window has no frame or margin: it "
                              "is just the prompt"));
+        if (detachWindow) {
+            const QRect mainFrame = window.geometry();
+            const QRect home = detachWindow->geometry();
+            detachWindow->move(mainFrame.topLeft());
+            QApplication::processEvents();
+            for (QWidget *edge : promptEdges) {
+                const auto edges =
+                    Qt::Edges::fromInt(edge->property("promptResizeEdges").toInt());
+                const QRect before = detachWindow->geometry();
+                const QPoint at = edge->mapToGlobal(
+                    QPoint(edge->width() / 2, edge->height() / 2));
+                const QPoint delta((edges & Qt::LeftEdge) ? -40 : 40,
+                                   (edges & Qt::TopEdge) ? -30 : 30);
+                const QPoint to = at + delta;
+                sendMouse(edge, QEvent::MouseButtonPress, at);
+                QWidget *target = QWidget::mouseGrabber() ? QWidget::mouseGrabber() : edge;
+                sendMouse(target, QEvent::MouseMove, to);
+                sendMouse(target, QEvent::MouseButtonRelease, to);
+                QApplication::processEvents();
+                QRect expected = before;
+                if (edges & Qt::LeftEdge)
+                    expected.setLeft(before.left() + delta.x());
+                if (edges & Qt::RightEdge)
+                    expected.setRight(before.right() + delta.x());
+                if (edges & Qt::TopEdge)
+                    expected.setTop(before.top() + delta.y());
+                if (edges & Qt::BottomEdge)
+                    expected.setBottom(before.bottom() + delta.y());
+                const QRect after = detachWindow->geometry();
+                check(after == expected && window.geometry() == mainFrame,
+                      QString("dragging edge %1 of the popped-out prompt resizes "
+                              "that window from that edge, even over the main "
+                              "window's border (before %2,%3 %4x%5, after "
+                              "%6,%7 %8x%9)")
+                          .arg(edges.toInt())
+                          .arg(before.x()).arg(before.y())
+                          .arg(before.width()).arg(before.height())
+                          .arg(after.x()).arg(after.y())
+                          .arg(after.width()).arg(after.height()));
+                detachWindow->setGeometry(before);
+                QApplication::processEvents();
+            }
+            detachWindow->setGeometry(home);
+            QApplication::processEvents();
+        }
         const QRect detachedFrame = detachWindow ? detachWindow->geometry() : QRect();
         const int topLevelsBefore = int(QApplication::topLevelWidgets().size());
         window.testFlashMessage(QStringLiteral("Mirror caught up again"));

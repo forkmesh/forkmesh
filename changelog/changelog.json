@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Desktop", "text": "A prompt window popped out of the app can now be resized from its left and top edges, not just the right and bottom."},
   {"date": "2026-10-31", "area": "Desktop", "text": "A pull request opened in the Git diff view now has the full review tools: draft line comments, AI review, and a Review changes button to comment, approve or request changes."},
   {"date": "2026-10-30", "area": "iPhone", "text": "The desktop icons in the phone app's top bar turn green while the desktop is connected, on iPhone and Android."},
   {"date": "2026-10-30", "area": "Projects", "text": "A repository's Files view opens faster after issues, reviews or other project activity, which no longer redo its code analysis."},
