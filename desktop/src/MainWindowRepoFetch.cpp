@@ -510,6 +510,44 @@ void MainWindow::startSyncFetch(int index, bool quiet, bool hasMirror,
                     }
                     constexpr int kUnreadableRefRepairs = 8;
                     constexpr qint64 kSkippedRefRetryMs = 30 * 60 * 1000;
+                    if (hasMirror && refRaceAttempt < kUnreadableRefRepairs &&
+                        !forkmesh::upstream::emptyLooseObjectsNamed(errors)
+                             .isEmpty()) {
+                        m_mirrorRefRaceRetries.insert(failedKey,
+                                                      refRaceAttempt + 1);
+                        const QString mirrorPath = repo.mirrorPath;
+                        auto removed = std::make_shared<QStringList>();
+                        QThread *repair = QThread::create(
+                            [mirrorPath, errors, removed] {
+                                *removed =
+                                    forkmesh::upstream::removeEmptyLooseObjects(
+                                        mirrorPath, errors);
+                            });
+                        connect(
+                            repair, &QThread::finished, this,
+                            [this, repair, removed, failedKey,
+                             resyncFailedRepo] {
+                                repair->deleteLater();
+                                if (removed->isEmpty()) {
+                                    logSystem(QStringLiteral(
+                                                  "Mirror: sync failed for %1: "
+                                                  "git reported empty object "
+                                                  "files that could not be "
+                                                  "removed.")
+                                                  .arg(failedKey));
+                                    return;
+                                }
+                                logSystem(QStringLiteral(
+                                              "Mirror: removed %1 empty "
+                                              "(corrupt) object file(s) from "
+                                              "the %2 mirror; fetching again.")
+                                              .arg(removed->size())
+                                              .arg(failedKey));
+                                resyncFailedRepo();
+                            });
+                        repair->start();
+                        return;
+                    }
                     const QStringList namedBadRefs =
                         hasMirror
                             ? forkmesh::upstream::refsNamedAsBadObjects(errors)

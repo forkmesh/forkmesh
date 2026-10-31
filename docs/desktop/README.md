@@ -670,6 +670,17 @@ measured and keep the plain branch icon.
   only when `publishToNetwork` is set and the mirror folder exists; before the
   first publish they say "Not published yet", and "Delete mirror..." is only
   offered when there is a mirror to delete.
+- **An empty loose object breaks every mirror fetch.** An interrupted write
+  can leave a zero-byte loose object. Git then fails each fetch ("object
+  file … is empty", "invalid index-pack output") without naming a ref, and
+  `isTransientSyncError()` reads that as a host outage. Dropping refs does
+  not help: Git takes the empty file for the object and never fetches it
+  again. The sync failure path in `MainWindowRepoFetch.cpp` first removes
+  exactly the files Git named, only while they are still empty regular
+  files (`removeEmptyLooseObjects()`, `UpstreamCheckoutSync.cpp`), and
+  fetches again; a ref left on a removed object is then dropped by the
+  bad-ref repair. Only the `objects/xx/rest` tail of the reported path is
+  trusted, because the prefix depends on where Git ran.
 - **Pull timestamp units.** Legacy pull and event records can store Unix
   seconds while current records use milliseconds. Normalize them with
   `issueDisplayTimestampMs()` before ordering, formatting, or storing a
