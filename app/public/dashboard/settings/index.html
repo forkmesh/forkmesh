@@ -1240,6 +1240,59 @@
         }
       }
 
+      @property --fm-busy-turn {
+        syntax: "<angle>";
+        inherits: false;
+        initial-value: 0deg;
+      }
+
+      .fm-busy-host {
+        position: relative;
+      }
+
+      .fm-busy-ring,
+      .dashboard-nav-icon.is-working::after {
+        position: absolute;
+        pointer-events: none;
+        box-sizing: border-box;
+        padding: 1.75px;
+        border-radius: 9999px;
+        background:
+          conic-gradient(from var(--fm-busy-turn), transparent 0 30%, var(--primary)) border-box,
+          linear-gradient(color-mix(in srgb, var(--primary) 14%, transparent), color-mix(in srgb, var(--primary) 14%, transparent)) border-box;
+        -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+        mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        animation: fm-busy-turn 1.6s linear infinite;
+      }
+
+      .fm-busy-ring[data-outline] {
+        border-radius: inherit;
+      }
+
+      .dashboard-nav-icon.is-working {
+        position: relative;
+      }
+
+      .dashboard-nav-icon.is-working::after {
+        content: "";
+        inset: -4px;
+      }
+
+      @keyframes fm-busy-turn {
+        to {
+          --fm-busy-turn: 360deg;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .fm-busy-ring,
+        .dashboard-nav-icon.is-working::after {
+          animation: none;
+          background: var(--primary) border-box;
+        }
+      }
+
       /* The sign-in terminal's dialog box. Hand-written because the pre-built
          dashboard/tailwind.css carries no rule for the arbitrary utilities this
          dialog needs (`h-[min(680px,calc(100vh-3rem))]`, `bg-background/85`,
@@ -4173,6 +4226,15 @@
         <div data-recent-pushes hidden class="flex-none"></div>
         <div id="content" class="flex-1 min-h-0 overflow-hidden">
           <section data-view="profile" class="view active h-full overflow-y-auto bg-background">
+            <style>
+              [data-settings-layout] { --settings-sticky-top: 0px; }
+              [data-settings-section-heading] { position: sticky; top: var(--settings-sticky-top); z-index: 10; margin-top: -.5rem; padding-block: .5rem; background: rgb(var(--dashboard-background-rgb)); }
+              [data-settings-section] [id] { scroll-margin-top: calc(var(--settings-sticky-top) + 3.5rem); }
+              [data-settings-main] { scroll-margin-top: var(--settings-sticky-top); }
+              @media (min-width: 768px) {
+                [data-settings-account-header] { position: sticky; top: 0; z-index: 20; margin-top: -.75rem; padding-block: .75rem; background: rgb(var(--dashboard-background-rgb)); }
+              }
+            </style>
             <div data-settings-layout class="mx-auto w-full max-w-[1360px] px-6 py-8">
               <div data-settings-account-header class="mb-7 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex min-w-0 items-center gap-4">
@@ -4296,7 +4358,7 @@
 
                 <main data-settings-main class="min-w-0 pb-16">
                   <section id="settings-public-profile" data-settings-section="public-profile" class="pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Public profile</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Public profile</h2>
                     <div class="mt-5 grid gap-10 xl:grid-cols-[minmax(0,42rem)_20rem]">
                       <div class="grid min-w-0 content-start gap-5">
                         <div class="grid gap-2">
@@ -4427,7 +4489,7 @@
                   </section>
 
                   <section id="settings-payout" data-settings-section="payout" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Verification and payout</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Verification and payout</h2>
                     <div class="mt-5 grid gap-5 xl:grid-cols-[minmax(0,42rem)_20rem]">
                       <div class="grid gap-4">
                         <div class="rounded-md border border-border bg-card p-4">
@@ -4516,13 +4578,11 @@
                       .ping-admin-table td { padding: .65rem 1rem; border-top: 1px solid var(--ps-border); text-align: center; }
                       .ping-admin-table td .ping-switch { display: inline-block; vertical-align: middle; }
                     </style>
-                    <div class="flex flex-wrap items-end justify-between gap-3">
-                      <div class="min-w-0">
-                        <h2 class="text-2xl font-semibold tracking-normal text-foreground">Pings</h2>
-                        <p class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Every ping setting for this account and its linked nodes, in one place. Changes save as you make them and apply on the web, desktop and phone.</p>
-                      </div>
+                    <div data-settings-section-heading class="flex flex-wrap items-end justify-between gap-3">
+                      <h2 class="min-w-0 text-2xl font-semibold tracking-normal text-foreground">Pings</h2>
                       <p data-ping-settings-status class="ping-save-status" role="status" aria-live="polite"></p>
                     </div>
+                    <p class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Every ping setting for this account and its linked nodes, in one place. Changes save as you make them and apply on the web, desktop and phone.</p>
                     <div class="mt-5 grid max-w-4xl gap-4">
                       <div data-ping-pause-form class="grid gap-3 rounded-md border border-border bg-card p-4">
                         <div class="flex items-start gap-3">
@@ -4666,7 +4726,7 @@
                   </section>
 
                   <section id="settings-account" data-settings-section="account" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Account</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Account</h2>
                     <p class="mt-1 text-sm leading-6 text-muted-foreground">Your node name is your public account and repository namespace. Change your username from the <button data-settings-section-link="public-profile" type="button" class="inline align-baseline font-semibold text-accent hover:underline focus:outline-none focus:ring-1 focus:ring-primary">Public profile</button> settings — renaming it moves owned repository URLs to the new namespace.</p>
                     <div class="mt-6 grid max-w-3xl gap-3 rounded-md border border-border bg-card p-4" data-patreon-connection data-instance-plugin="patreon">
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -4833,7 +4893,7 @@
                   </section>
 
                   <section id="settings-ssh-keys" data-settings-section="ssh-keys" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">SSH keys</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">SSH keys</h2>
                     <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Register a public key to clone or push through a configured ForkMesh SSH gateway. Repository owner and organization-team write permissions are checked again for every push.</p>
                     <div class="mt-5 grid max-w-3xl gap-5">
                       <div data-ssh-use-panel class="hidden grid gap-3 rounded-md border border-border bg-card p-4">
@@ -4886,7 +4946,7 @@
                   </section>
 
                   <section id="settings-nodes" data-settings-section="nodes" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Nodes</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Nodes</h2>
                     <p class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">A node is one ForkMesh install - the desktop app on your machine, or a headless node you deployed on a server. Nodes hold the repositories and drain this account's issues, comments, chats and pull requests off the relay, so linking at least one is what makes anything you write on the web actually sync.</p>
                     <div class="mt-5 grid max-w-2xl gap-4">
                       <div data-node-reconnect-callout class="hidden">
@@ -4968,7 +5028,7 @@
                   </section>
 
                   <section id="settings-organizations" data-settings-section="organizations" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Organizations</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Organizations</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Create organizations to serve your repos at <span class="font-mono">/&lt;org&gt;/&lt;repo&gt;</span>, invite members, group them into permission teams, and link the repos an org fronts.</p>
                     <div data-orgs-root class="mt-5 max-w-3xl">
                       <p class="text-sm text-muted-foreground">Loading organizations…</p>
@@ -4976,7 +5036,7 @@
                   </section>
 
                   <section id="settings-reactions" data-settings-section="reactions" data-reaction-settings class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Reactions, GIFs &amp; tips</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Reactions, GIFs &amp; tips</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Custom reactions for this instance (administrators) or for an organization you own, the GIPHY key behind the comment GIF picker, and which tokens comment tips offer.</p>
                     <div class="mt-5 grid max-w-3xl gap-5">
                       <div data-custom-reactions-card class="rounded-md border border-border bg-card">
@@ -5058,7 +5118,7 @@
                   </section>
 
                   <section id="settings-ai-review" data-settings-section="ai-review" data-ai-review-settings class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">AI review</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">AI review</h2>
                     <p class="mt-1 text-sm text-muted-foreground">An automated first-pass review of pull requests by Cloudflare Workers AI, posted as one ForkBot comment per head commit. It never approves, requests changes or merges. Only the pull request's text (title, description, commit messages, file list and diff) is sent, under this instance's Cloudflare account.</p>
                     <form data-ai-review-settings-form class="mt-5 grid min-w-0 max-w-3xl gap-4 rounded-md border border-border bg-card px-4 py-4 sm:grid-cols-2">
                       <label class="flex min-w-0 items-center gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-enabled type="checkbox" class="shrink-0"> Review pull requests automatically</label>
@@ -5094,7 +5154,7 @@
                   </section>
 
                   <section id="settings-apps" data-settings-section="apps" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Installed apps</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Installed apps</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Apps you installed, and the apps installed for organizations you run: what each may do, when it last acted, and a Revoke button that deletes its tokens at once. Organization owners and admins also approve members' app requests and set which apps members may request there.</p>
                     <div class="mt-5 flex flex-wrap gap-2">
                       <a href="/dashboard/apps" class="fm-btn fm-btn-sm">Manage installed apps</a>
@@ -5103,7 +5163,7 @@
                   </section>
 
                   <section id="settings-agents" data-settings-section="agents" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Agents &amp; runners</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Agents &amp; runners</h2>
                     <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">The Claude Code and Codex accounts your desktops and runners sign agents in with. Choose the account new agents use, add one, log in or out in a terminal streamed from the machine, open an agent terminal, and see how much of each account's limits is used.</p>
                     <div class="mt-5 grid max-w-4xl gap-8">
                       <div data-agent-profiles-panel class="grid gap-3">
@@ -5157,7 +5217,7 @@
                   </section>
 
                   <section id="settings-instance-theme" data-settings-section="instance-theme" data-instance-theme-panel class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Instance theme</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Instance theme</h2>
                     <p class="mt-1 text-sm text-muted-foreground">The look of every page on this instance, for everyone who visits. Only an admin can change it, and the change asks for your password.</p>
                     <div class="mt-5 grid max-w-4xl gap-4">
                       <p data-instance-theme-denied hidden class="fm-flash-neutral rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">Only an admin of this instance can change its theme.</p>
@@ -5184,7 +5244,7 @@
                   </section>
 
                   <section id="settings-instance-sidebar" data-settings-section="instance-sidebar" data-instance-sidebar-panel class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Top repositories</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Top repositories</h2>
                     <p class="mt-1 text-sm text-muted-foreground">What the sidebar and the Home card list under Top repositories, for everyone on this instance. Only an admin can change it.</p>
                     <div class="mt-5 grid max-w-2xl gap-4">
                       <p data-instance-sidebar-denied hidden class="fm-flash-neutral rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">Only an admin of this instance can change Top repositories.</p>
@@ -5209,7 +5269,7 @@
                   </section>
 
                   <section id="settings-appearance" data-settings-section="appearance" data-profile-appearance-panel class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Appearance</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Appearance</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Choose the dashboard theme for this device.</p>
                     <div class="mt-5 grid max-w-3xl gap-4">
                       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Dashboard theme">
@@ -5320,7 +5380,7 @@
                   </section>
 
                   <section id="settings-danger" data-settings-section="danger" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Danger zone</h2>
+                    <h2 data-settings-section-heading class="text-2xl font-semibold tracking-normal text-foreground">Danger zone</h2>
                     <div class="mt-5 grid max-w-2xl overflow-hidden rounded-md border border-destructive/40 bg-card">
                       <div class="grid gap-4 border-b border-destructive/30 p-4">
                         <p class="text-sm leading-6 text-muted-foreground">Deleting your account removes your login, public profile, owned repository records, and active dashboard session. You can register again later with the same node name or email.</p>

@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.feature.account.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -202,352 +204,314 @@ class SettingsScreen : AccountScreen() {
         }
 
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4)) {
-            item {
-                Section("Profile") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        Column(Modifier.fillMaxWidth()) {
-                            ProfileAccountCard(session, guest, userStatus)
-                            if (showsUserStatus(session, guest)) {
-                                VGap(FmSpace.x4)
-                                UserStatusControls(auth)
-                            }
+            section("Profile") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    Column(Modifier.fillMaxWidth()) {
+                        ProfileAccountCard(session, guest, userStatus)
+                        if (showsUserStatus(session, guest)) {
                             VGap(FmSpace.x4)
-                            AccountLabeledField(
-                                label = "Display name",
-                                value = name,
-                                onValueChange = {
-                                    name = it
-                                    settings.setDisplayName(it.trim())
-                                },
-                            )
-                            Text(
-                                "Node id: ${identity?.publicKeyB64url.orEmpty()}",
-                                overflow = TextOverflow.Ellipsis,
-                                style = Fm.text.bodySmall.copy(color = c.textTertiary),
-                            )
+                            UserStatusControls(auth)
                         }
+                        VGap(FmSpace.x4)
+                        AccountLabeledField(
+                            label = "Display name",
+                            value = name,
+                            onValueChange = {
+                                name = it
+                                settings.setDisplayName(it.trim())
+                            },
+                        )
+                        Text(
+                            "Node id: ${identity?.publicKeyB64url.orEmpty()}",
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.bodySmall.copy(color = c.textTertiary),
+                        )
                     }
                 }
             }
-            item {
-                Section("Membership") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                        Column(Modifier.fillMaxWidth()) {
-                            if (token.isNotEmpty() && !guest) {
-                                MembershipStatusRow(token)
-                                HorizontalDivider(thickness = 1.dp, color = c.border)
-                            }
-                            Text(
-                                "ForkMesh Core is free. Paid memberships fund public relays, signed releases, security " +
-                                    "work and maintenance.",
-                                modifier = Modifier
-                                    .padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x3),
-                                style = noteStyle(),
-                            )
+            section("Membership") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
+                    Column(Modifier.fillMaxWidth()) {
+                        if (token.isNotEmpty() && !guest) {
+                            MembershipStatusRow(token)
                             HorizontalDivider(thickness = 1.dp, color = c.border)
-                            FmListRow(
-                                title = "Become a member",
-                                modifier = Modifier.testTag("settings-membership-row"),
-                                subtitle = "See plans on forkmesh.com",
-                                leading = { FmIcon("favorite_outline_baseline", tint = c.textSecondary) },
-                                trailing = { FmIcon("open_in_new", size = 16.dp, tint = c.textTertiary) },
-                                showChevron = false,
-                                onTap = { openExternalUrl(context, com.forkmesh.nativeapp.feature.account.projects.ProjectActions.membershipUrl()) },
-                            )
                         }
+                        Text(
+                            "ForkMesh Core is free. Paid memberships fund public relays, signed releases, security " +
+                                "work and maintenance.",
+                            modifier = Modifier
+                                .padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x3),
+                            style = noteStyle(),
+                        )
+                        HorizontalDivider(thickness = 1.dp, color = c.border)
+                        FmListRow(
+                            title = "Become a member",
+                            modifier = Modifier.testTag("settings-membership-row"),
+                            subtitle = "See plans on forkmesh.com",
+                            leading = { FmIcon("favorite_outline_baseline", tint = c.textSecondary) },
+                            trailing = { FmIcon("open_in_new", size = 16.dp, tint = c.textTertiary) },
+                            showChevron = false,
+                            onTap = { openExternalUrl(context, com.forkmesh.nativeapp.feature.account.projects.ProjectActions.membershipUrl()) },
+                        )
                     }
                 }
             }
             if (showsUserStatus(session, guest)) {
-                item {
-                    Section("Chat") {
-                        FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                            Column(Modifier.fillMaxWidth()) {
-                                FmListRow(
-                                    title = "Chat messages disappear after",
-                                    modifier = Modifier.testTag("settings-chat-retention-row"),
-                                    subtitle = "${chatRetention.defaultLabel}. Long-press a channel or tap the timer in a chat to change one chat.",
-                                    leading = { FmIcon("timer_outlined", tint = c.textSecondary) },
-                                    onTap = {
-                                        scope.launch {
-                                            val choice = showChatRetentionSheet(
-                                                messenger,
-                                                "Chat messages disappear after",
-                                                ChatRetention.clamp(chatRetention.defaultMs),
-                                            ) ?: return@launch
-                                            chatStatus.clear()
-                                            try {
-                                                auth.updateChatRetention(ChatRetention.defaultBody(choice.ms))
-                                            } catch (refused: ChatRetentionException) {
-                                                chatStatus.error(refused.message ?: "Could not save when messages disappear.")
-                                            }
-                                        }
-                                    },
-                                )
-                                ChatLinkPreviewSettingRow()
-                            }
-                        }
-                        FmInlineStatus(chatStatus, Modifier.padding(top = FmSpace.x2))
-                    }
-                }
-            }
-            item {
-                Section("Appearance") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) { AppearanceCard(navigator) }
-                }
-            }
-            item {
-                Section("Funding and payouts") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                section("Chat") {
+                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
                         Column(Modifier.fillMaxWidth()) {
-                            FundingPayoutStatus(session)
-                            VGap(FmSpace.x3)
-                            AccountLabeledField(
-                                label = "Public Solana address (payouts/donations, optional)",
-                                value = solana,
-                                onValueChange = {
-                                    solana = it
-                                    settings.setSolanaAddress(it.trim())
+                            FmListRow(
+                                title = "Chat messages disappear after",
+                                modifier = Modifier.testTag("settings-chat-retention-row"),
+                                subtitle = "${chatRetention.defaultLabel}. Long-press a channel or tap the timer in a chat to change one chat.",
+                                leading = { FmIcon("timer_outlined", tint = c.textSecondary) },
+                                onTap = {
+                                    scope.launch {
+                                        val choice = showChatRetentionSheet(
+                                            messenger,
+                                            "Chat messages disappear after",
+                                            ChatRetention.clamp(chatRetention.defaultMs),
+                                        ) ?: return@launch
+                                        chatStatus.clear()
+                                        try {
+                                            auth.updateChatRetention(ChatRetention.defaultBody(choice.ms))
+                                        } catch (refused: ChatRetentionException) {
+                                            chatStatus.error(refused.message ?: "Could not save when messages disappear.")
+                                        }
+                                    }
                                 },
                             )
-                            VGap(FmSpace.x3)
-                            ChatTipsRow(settings)
-                            VGap(FmSpace.x3)
-                            Text(
-                                "Non-custodial: ForkMesh saves only this public payout address. Wallet keys and recovery " +
-                                    "phrases remain on your device. User-owned funds, the public community pool, pending " +
-                                    "allocations, and finalized transfers are separate states. Legacy Worker bounty wallets " +
-                                    "are frozen for offline migration; never fund one or paste a private key or seed phrase.",
-                                style = noteStyle(),
-                            )
+                            ChatLinkPreviewSettingRow()
                         }
                     }
+                    FmInlineStatus(chatStatus, Modifier.padding(top = FmSpace.x2))
                 }
             }
-            if (supports(RelayFeature.orgs)) item {
-                Section("Organizations") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                        FmListRow(
-                            title = "Manage organizations",
-                            modifier = Modifier.testTag("settings-organizations-row"),
-                            subtitle = "Orgs, members, teams, and linked repos",
-                            leading = { FmIcon("apartment_outlined", tint = c.textSecondary) },
-                            onTap = { navigator.push(OrgsScreen()) },
+            section("Appearance") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) { AppearanceCard(navigator) }
+            }
+            section("Funding and payouts") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    Column(Modifier.fillMaxWidth()) {
+                        FundingPayoutStatus(session)
+                        VGap(FmSpace.x3)
+                        AccountLabeledField(
+                            label = "Public Solana address (payouts/donations, optional)",
+                            value = solana,
+                            onValueChange = {
+                                solana = it
+                                settings.setSolanaAddress(it.trim())
+                            },
+                        )
+                        VGap(FmSpace.x3)
+                        ChatTipsRow(settings)
+                        VGap(FmSpace.x3)
+                        Text(
+                            "Non-custodial: ForkMesh saves only this public payout address. Wallet keys and recovery " +
+                                "phrases remain on your device. User-owned funds, the public community pool, pending " +
+                                "allocations, and finalized transfers are separate states. Legacy Worker bounty wallets " +
+                                "are frozen for offline migration; never fund one or paste a private key or seed phrase.",
+                            style = noteStyle(),
                         )
                     }
                 }
             }
-            if (!guest && hasRealSession(session)) item {
-                Section("Apps") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                        FmListRow(
-                            title = "Installed apps",
-                            modifier = Modifier.testTag("settings-installed-apps-row"),
-                            subtitle = "Apps that act for you or your organizations",
-                            leading = { FmIcon("extension", tint = c.textSecondary) },
-                            onTap = { navigator.push(AccountFeature.installedAppsScreen()) },
-                        )
-                    }
+            if (supports(RelayFeature.orgs)) section("Organizations") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
+                    FmListRow(
+                        title = "Manage organizations",
+                        modifier = Modifier.testTag("settings-organizations-row"),
+                        subtitle = "Orgs, members, teams, and linked repos",
+                        leading = { FmIcon("apartment_outlined", tint = c.textSecondary) },
+                        onTap = { navigator.push(OrgsScreen()) },
+                    )
                 }
             }
-            if (!guest && hasRealSession(session)) item {
-                Section("Apps") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                        FmListRow(
-                            title = "Installed apps",
-                            modifier = Modifier.testTag("settings-installed-apps-row"),
-                            subtitle = "Apps, bots and slash commands you or your orgs installed",
-                            leading = { FmIcon("extension_outlined", tint = c.textSecondary) },
-                            onTap = { navigator.push(AccountFeature.installedAppsScreen()) },
-                        )
-                    }
+            if (!guest && hasRealSession(session)) section("Apps") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
+                    FmListRow(
+                        title = "Installed apps",
+                        modifier = Modifier.testTag("settings-installed-apps-row"),
+                        subtitle = "Apps that act for you or your organizations",
+                        leading = { FmIcon("extension", tint = c.textSecondary) },
+                        onTap = { navigator.push(AccountFeature.installedAppsScreen()) },
+                    )
                 }
             }
-            item {
-                Section("This device") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        ThisDeviceCardView(session, identity, settings)
-                    }
-                    VGap(FmSpace.x3)
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        IdentityKeyCard(identity)
-                    }
+            if (!guest && hasRealSession(session)) section("Apps") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
+                    FmListRow(
+                        title = "Installed apps",
+                        modifier = Modifier.testTag("settings-installed-apps-row"),
+                        subtitle = "Apps, bots and slash commands you or your orgs installed",
+                        leading = { FmIcon("extension_outlined", tint = c.textSecondary) },
+                        onTap = { navigator.push(AccountFeature.installedAppsScreen()) },
+                    )
+                }
+            }
+            section("This device") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    ThisDeviceCardView(session, identity, settings)
+                }
+                VGap(FmSpace.x3)
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    IdentityKeyCard(identity)
                 }
             }
             if (showsPingSettings(session, guest)) {
-                item {
-                    Section("Pings") {
-                        FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
-                            FmListRow(
-                                title = PING_SETTINGS_TITLE,
-                                modifier = Modifier.testTag("settings-pings-row"),
-                                subtitle = PING_SETTINGS_SUBTITLE,
-                                leading = { FmIcon("tune_rounded", tint = c.textSecondary) },
-                                onTap = { navigator.push(AccountFeature.pingSettingsScreen()) },
-                            )
-                        }
+                section("Pings") {
+                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg, padding = PaddingValues(0.dp)) {
+                        FmListRow(
+                            title = PING_SETTINGS_TITLE,
+                            modifier = Modifier.testTag("settings-pings-row"),
+                            subtitle = PING_SETTINGS_SUBTITLE,
+                            leading = { FmIcon("tune_rounded", tint = c.textSecondary) },
+                            onTap = { navigator.push(AccountFeature.pingSettingsScreen()) },
+                        )
                     }
                 }
             }
             if (push != null && showsPushCard(push.supported, guest)) {
-                item {
-                    Section("Phone banners") {
-                        FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) { PushNotificationsCard(push) }
-                    }
+                section("Phone banners") {
+                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) { PushNotificationsCard(push) }
                 }
             }
-            if (supports(RelayFeature.devices)) item {
-                Section("Nodes on this account") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        AccountNodesCard(
-                            session = session,
-                            refreshed = devices,
-                            loading = devicesLoading,
-                            error = devicesError,
-                            onRefresh = { scope.launch { auth.refreshDevices() } },
-                            webUrl = webSettingsUrl(serverUrl),
-                        )
-                    }
+            if (supports(RelayFeature.devices)) section("Nodes on this account") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    AccountNodesCard(
+                        session = session,
+                        refreshed = devices,
+                        loading = devicesLoading,
+                        error = devicesError,
+                        onRefresh = { scope.launch { auth.refreshDevices() } },
+                        webUrl = webSettingsUrl(serverUrl),
+                    )
                 }
             }
             val signedIn = session
             if (signedIn != null && hasRealSession(signedIn) && signedIn.sessionKind != "preview") {
-                item {
-                    Section(AccountSignIns.TITLE) {
-                        FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                            AccountSessionsCard(signedIn.sessionToken, auth, accountStatus)
+                section(AccountSignIns.TITLE) {
+                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                        AccountSessionsCard(signedIn.sessionToken, auth, accountStatus)
+                    }
+                }
+            }
+            section("Projects") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    com.forkmesh.nativeapp.feature.account.projects.ProjectsCard(navigator)
+                }
+            }
+            section("Relay") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            "Environment: ${settings.core.env.describe(serverUrl)}",
+                            modifier = Modifier.padding(bottom = FmSpace.x3),
+                            style = Fm.text.bodySmall.copy(color = c.textSecondary),
+                        )
+                        AccountLabeledField(
+                            label = "Room",
+                            value = room,
+                            onValueChange = {
+                                room = it
+                                settings.setRoom(it.trim())
+                            },
+                        )
+                        AccountLabeledField(
+                            label = "Passphrase",
+                            value = passphrase,
+                            onValueChange = {
+                                passphrase = it
+                                val value = it.trim()
+                                saveSecret { settings.setPassphrase(value) }
+                            },
+                            obscure = true,
+                        )
+                        VGap(FmSpace.x2)
+                        Text(
+                            "Public #channels are controller-readable so ForkBot, MCP, and webhooks can participate. " +
+                                "Direct messages are automatically encrypted to known participant devices beyond the " +
+                                "controller room key. A brand-new device cannot open protected messages sent before " +
+                                "its first visit.",
+                            style = noteStyle(),
+                        )
+                        VGap(FmSpace.x2)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                            verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
+                        ) {
+                            AccountFilledButton(label = "Reconnect", icon = "refresh", onClick = { ChatFeature.reconnect() })
+                            AccountOutlinedButton(
+                                label = "Disconnect",
+                                onClick = if (relay.connection == RelayConnection.Offline) null else ::disconnectRelay,
+                                icon = "logout",
+                            )
+                            Box(Modifier.align(Alignment.CenterVertically)) { RelayStateBadge(relay.connection) }
                         }
                     }
                 }
             }
-            item {
-                Section("Projects") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        com.forkmesh.nativeapp.feature.account.projects.ProjectsCard(navigator)
-                    }
-                }
-            }
-            item {
-                Section("Relay") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(
-                                "Environment: ${settings.core.env.describe(serverUrl)}",
-                                modifier = Modifier.padding(bottom = FmSpace.x3),
-                                style = Fm.text.bodySmall.copy(color = c.textSecondary),
-                            )
-                            AccountLabeledField(
-                                label = "Room",
-                                value = room,
-                                onValueChange = {
-                                    room = it
-                                    settings.setRoom(it.trim())
-                                },
-                            )
-                            AccountLabeledField(
-                                label = "Passphrase",
-                                value = passphrase,
-                                onValueChange = {
-                                    passphrase = it
-                                    val value = it.trim()
-                                    saveSecret { settings.setPassphrase(value) }
-                                },
-                                obscure = true,
-                            )
-                            VGap(FmSpace.x2)
-                            Text(
-                                "Public #channels are controller-readable so ForkBot, MCP, and webhooks can participate. " +
-                                    "Direct messages are automatically encrypted to known participant devices beyond the " +
-                                    "controller room key. A brand-new device cannot open protected messages sent before " +
-                                    "its first visit.",
-                                style = noteStyle(),
-                            )
-                            VGap(FmSpace.x2)
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
-                                verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
-                            ) {
-                                AccountFilledButton(label = "Reconnect", icon = "refresh", onClick = { ChatFeature.reconnect() })
-                                AccountOutlinedButton(
-                                    label = "Disconnect",
-                                    onClick = if (relay.connection == RelayConnection.Offline) null else ::disconnectRelay,
-                                    icon = "logout",
-                                )
-                                Box(Modifier.align(Alignment.CenterVertically)) { RelayStateBadge(relay.connection) }
-                            }
-                        }
-                    }
-                }
-            }
-            if (supports(RelayFeature.imports)) item {
-                Section("Import tokens") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(
-                                "Personal access tokens used to authenticate clones when importing a repo from " +
-                                    "GitHub/GitLab (raises rate limits). Stored locally only.",
-                                style = noteStyle(),
-                            )
-                            VGap(FmSpace.x3)
-                            AccountLabeledField(
-                                label = "GitHub token",
-                                value = github,
-                                onValueChange = {
-                                    github = it
-                                    val value = it.trim()
-                                    saveSecret { settings.setGithubToken(value) }
-                                },
-                                obscure = true,
-                            )
-                            AccountLabeledField(
-                                label = "GitLab token",
-                                value = gitlab,
-                                onValueChange = {
-                                    gitlab = it
-                                    val value = it.trim()
-                                    saveSecret { settings.setGitlabToken(value) }
-                                },
-                                obscure = true,
-                            )
-                        }
-                    }
-                }
-            }
-            item {
-                Section("Account") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        when (accountCard(guest)) {
-                            AccountCard.Guest -> GuestAccountCard(onLeave = { auth.exitGuestMode() })
-                            AccountCard.SignOut -> SignOutCard(
-                                signedInAs = signedInAsName(session),
-                                onSignOut = { confirmSignOut(messenger, auth, accountStatus) },
-                            )
-                        }
-                    }
-                    if (showsDeleteAccount(session)) {
+            if (supports(RelayFeature.imports)) section("Import tokens") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            "Personal access tokens used to authenticate clones when importing a repo from " +
+                                "GitHub/GitLab (raises rate limits). Stored locally only.",
+                            style = noteStyle(),
+                        )
                         VGap(FmSpace.x3)
-                        FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                            DeleteAccountCard(onDelete = { confirmDeleteAccount(messenger, auth, accountStatus) })
-                        }
+                        AccountLabeledField(
+                            label = "GitHub token",
+                            value = github,
+                            onValueChange = {
+                                github = it
+                                val value = it.trim()
+                                saveSecret { settings.setGithubToken(value) }
+                            },
+                            obscure = true,
+                        )
+                        AccountLabeledField(
+                            label = "GitLab token",
+                            value = gitlab,
+                            onValueChange = {
+                                gitlab = it
+                                val value = it.trim()
+                                saveSecret { settings.setGitlabToken(value) }
+                            },
+                            obscure = true,
+                        )
                     }
-                    FmInlineStatus(accountStatus, Modifier.padding(top = FmSpace.x2))
                 }
             }
-            if (supports(RelayFeature.ads)) item {
-                Section("Sponsored messages") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        SponsoredMessagesRow(settings)
+            section("Account") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    when (accountCard(guest)) {
+                        AccountCard.Guest -> GuestAccountCard(onLeave = { auth.exitGuestMode() })
+                        AccountCard.SignOut -> SignOutCard(
+                            signedInAs = signedInAsName(session),
+                            onSignOut = { confirmSignOut(messenger, auth, accountStatus) },
+                        )
                     }
                 }
-            }
-            item {
-                Section("Legal", bottomGap = false) {
+                if (showsDeleteAccount(session)) {
+                    VGap(FmSpace.x3)
                     FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
-                        Column(Modifier.fillMaxWidth()) {
-                            LegalLinkRow("Terms of Service") { openExternalUrl(context, com.forkmesh.nativeapp.feature.account.projects.ProjectActions.termsUrl()) }
-                            HorizontalDivider(thickness = 1.dp, color = c.border)
-                            LegalLinkRow("Privacy Policy") { openExternalUrl(context, com.forkmesh.nativeapp.feature.account.projects.ProjectActions.privacyUrl()) }
-                        }
+                        DeleteAccountCard(onDelete = { confirmDeleteAccount(messenger, auth, accountStatus) })
+                    }
+                }
+                FmInlineStatus(accountStatus, Modifier.padding(top = FmSpace.x2))
+            }
+            if (supports(RelayFeature.ads)) section("Sponsored messages") {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    SponsoredMessagesRow(settings)
+                }
+            }
+            section("Legal", bottomGap = false) {
+                FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+                    Column(Modifier.fillMaxWidth()) {
+                        LegalLinkRow("Terms of Service") { openExternalUrl(context, com.forkmesh.nativeapp.feature.account.projects.ProjectActions.termsUrl()) }
+                        HorizontalDivider(thickness = 1.dp, color = c.border)
+                        LegalLinkRow("Privacy Policy") { openExternalUrl(context, com.forkmesh.nativeapp.feature.account.projects.ProjectActions.privacyUrl()) }
                     }
                 }
             }
@@ -590,13 +554,23 @@ class SettingsScreen : AccountScreen() {
     }
 }
 
-@Composable
-private fun Section(title: String, bottomGap: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        FmSectionHeader(title = title)
-        VGap(FmSpace.x2)
-        content()
-        if (bottomGap) VGap(FmSpace.x5)
+@OptIn(ExperimentalFoundationApi::class)
+private fun LazyListScope.section(title: String, bottomGap: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    stickyHeader(contentType = "settings-section-header") {
+        FmSectionHeader(
+            title = title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Fm.colors.canvas)
+                .padding(top = FmSpace.x1, bottom = FmSpace.x2)
+                .testTag("settings-section-header"),
+        )
+    }
+    item(contentType = "settings-section") {
+        Column(Modifier.fillMaxWidth()) {
+            content()
+            if (bottomGap) VGap(FmSpace.x5)
+        }
     }
 }
 

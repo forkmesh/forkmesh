@@ -83,7 +83,7 @@ class DataFolderScreen : Screen() {
                                     feature.restore(secret)
                                     if (feature.needsRestart) passphrase = ""
                                 }
-                            }, enabled = !feature.working && passphrase.length >= RecoveryKit.MIN_PASSPHRASE) {
+                            }, enabled = !feature.working && passphrase.length >= RecoveryKit.MIN_PASSPHRASE, busy = feature.working) {
                                 Text(if (feature.working) "Restoring…" else "Restore")
                             }
                             FmTextButton(onClick = { scope.launch { feature.startFresh() } }, enabled = !feature.working) {
@@ -110,7 +110,7 @@ class DataFolderScreen : Screen() {
                                     confirm = ""
                                 }
                             }
-                        }, enabled = !feature.working && RecoveryKit.validatePassphrase(passphrase, confirm) == null) {
+                        }, enabled = !feature.working && RecoveryKit.validatePassphrase(passphrase, confirm) == null, busy = feature.working) {
                             Text(if (feature.working) "Encrypting…" else "Save identity key")
                         }
                     }

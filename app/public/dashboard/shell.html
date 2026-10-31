@@ -1178,6 +1178,59 @@
         }
       }
 
+      @property --fm-busy-turn {
+        syntax: "<angle>";
+        inherits: false;
+        initial-value: 0deg;
+      }
+
+      .fm-busy-host {
+        position: relative;
+      }
+
+      .fm-busy-ring,
+      .dashboard-nav-icon.is-working::after {
+        position: absolute;
+        pointer-events: none;
+        box-sizing: border-box;
+        padding: 1.75px;
+        border-radius: 9999px;
+        background:
+          conic-gradient(from var(--fm-busy-turn), transparent 0 30%, var(--primary)) border-box,
+          linear-gradient(color-mix(in srgb, var(--primary) 14%, transparent), color-mix(in srgb, var(--primary) 14%, transparent)) border-box;
+        -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+        mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        animation: fm-busy-turn 1.6s linear infinite;
+      }
+
+      .fm-busy-ring[data-outline] {
+        border-radius: inherit;
+      }
+
+      .dashboard-nav-icon.is-working {
+        position: relative;
+      }
+
+      .dashboard-nav-icon.is-working::after {
+        content: "";
+        inset: -4px;
+      }
+
+      @keyframes fm-busy-turn {
+        to {
+          --fm-busy-turn: 360deg;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .fm-busy-ring,
+        .dashboard-nav-icon.is-working::after {
+          animation: none;
+          background: var(--primary) border-box;
+        }
+      }
+
       /* The sign-in terminal's dialog box. Hand-written because the pre-built
          dashboard/tailwind.css carries no rule for the arbitrary utilities this
          dialog needs (`h-[min(680px,calc(100vh-3rem))]`, `bg-background/85`,

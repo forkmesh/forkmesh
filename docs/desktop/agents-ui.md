@@ -1048,6 +1048,22 @@ and the panel folds them in 8 ms slices only while it is visible.
   first prompt, and every local launch (`startAgentRunner` calls
   `NextAccess::sessionStarted`) set `panelOpen` again even if it was hidden.
   The new-session screen shows the column too.
+- **Context (2026-10-31)** reads like Claude Code's context panel: "N% used"
+  and used / window above the bar, then rows with a coloured swatch, value and
+  share: Used (blue), Free space, Input and Output tokens (share of all tokens
+  in the session), Turns and Cost. Sessions that only report a total show one
+  Tokens used row. The bar and the Used swatch turn amber at 80% and red at 95%
+  (`sessionsLevel` on `sessionsContextBar`). The header's percentage shows only
+  while the card is folded, since the open card already says it.
+- **Environment** ends with a **Remote control** switch (2026-10-31), the
+  global phone-control switch (`localControl/remoteControl`, on by default;
+  `MainWindow::setRemoteControlOn`). Under it, a connected phone shows its name
+  and whether it reached the desktop on this network or through the relay; a
+  paired phone that is offline shows when it was last seen; with no phone
+  paired, a note explains how to connect one and links to Settings > Phone.
+  Off makes `LocalControlServer` answer every paired request with
+  `remote_off` and stop pushing events; pairing and `ping` still work so a
+  phone can tell the desktop is there. Both phone apps word `remote_off`.
 
 **Sources.** Local sessions render `m_streamEvents` (loaded with
 `ensureStreamEventsLoadedAsync`; a session with no events shows its prompt and

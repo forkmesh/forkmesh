@@ -1237,9 +1237,9 @@ struct ShellActivityHalo: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
-    static let turn: Double = 1.6
+    static let turn: Double = FmBusy.turn
     static let breath: Double = 2.4
-    static let arc: CGFloat = 0.7
+    static let arc: CGFloat = FmBusy.arc
 
     let size: CGFloat
 

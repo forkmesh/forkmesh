@@ -208,7 +208,15 @@ application event filter applied in Next and undone in Classic):
   `WA_TranslucentBackground`, `FramelessWindowHint` and `NoDropShadowWindowHint`
   before their native window exists (menus on `Polish`, combo popups on
   `ChildAdded`). Property `floatingSurface` tells the sheet whether corners can
-  be rounded.
+  be rounded. Qt sets `WA_NoSystemBackground` along with
+  `WA_TranslucentBackground`, which skips the sheet's background on a
+  top-level widget. Menus paint their own panel, but the app's popups
+  (`#agentMetaPopup`, `#reactionPicker`, `#slashActionsPopup`, `#mentionPopup`,
+  `#globalSearchPopup`, all `QFrame` or `QListWidget`) painted nothing, so their
+  text sat on the page behind them. The filter now paints their `PE_Widget`
+  background on `Paint` (`paintFloatingBackground`), which keeps the rounded,
+  see-through corners. `forkmesh-ui-kit-tests` checks each popup in Next light
+  and dark for an opaque inside and a transparent corner.
 - *Combo rows.* `kit::prepareComboPopup` swaps in a `QStyledItemDelegate` so
   `::item` rules apply.
 - *Tables.* Default-centred headers become left aligned; tables with property
@@ -1337,6 +1345,19 @@ design tokens.
   section title otherwise. Next paints it `accentFg` on `accentSubtle`; Classic
   uses the list's selection blue. Titles and sub-headings carry the same
   padding lit or not, so lighting one never moves the page.
+- **Pinned heading.** In October 2026 the user asked for the section heading
+  and the sub-heading being read to stay in view. `#settingsStickyHeader`, a
+  child of the scroll area's viewport (so it does not scroll), shows the
+  current section's icon and title once the real title has gone above the top
+  edge, and under it the lit sub-heading once that one has gone under the
+  bar (`SettingsSectionsView::updateSticky`, run from `updateCurrentSub`). The
+  next section pushes it up and out. It copies the lit state of the heading it
+  stands for, so the page and the list still agree. Sub-heading jumps and the
+  reading line that picks the lit sub-heading both allow for the bar's title
+  row (`stickyTitleHeight`), so a jump lands just under it. Clicking the
+  title returns to the top of the section, clicking the sub-heading to that
+  card. Both looks style it: `Theme.h` (Classic, dark and light) and
+  `20-settings.qss` (Next).
 - **Outline check.** `forkmesh-window-tests --settings-outline-only` (add
   `--next` for the new interface) opens every section and fails if a group
   card on the page has no heading in the list, if the list and the page

@@ -116,16 +116,20 @@ fun FmTextButton(
     minHeight: Dp = 44.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = FmSpace.x3),
     textStyle: TextStyle? = null,
+    busy: Boolean? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val tap = rememberFmBusyTap(enabled)
     TextButton(
         onClick = {
+            tap.tapped()
             FmSoundCues.play(SoundCue.CLICK)
             onClick()
         },
         modifier = modifier.defaultMinSize(minHeight = minHeight),
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(contentColor = contentColor),
+        border = fmBusyBorder(tap.busy(busy)),
         contentPadding = contentPadding,
     ) {
         if (textStyle != null) ProvideTextStyle(textStyle) { content() } else content()
@@ -137,11 +141,14 @@ fun FmElevatedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    busy: Boolean? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = Fm.colors
+    val tap = rememberFmBusyTap(enabled)
     Button(
         onClick = {
+            tap.tapped()
             FmSoundCues.play(SoundCue.CLICK)
             onClick()
         },
@@ -152,6 +159,7 @@ fun FmElevatedButton(
             contentColor = if (colors.dark) colors.bgBase else Color.White,
         ),
         elevation = null,
+        border = fmBusyBorder(tap.busy(busy)),
         content = content,
     )
 }
@@ -183,7 +191,9 @@ fun FmExtendedFloatingActionButton(
     modifier: Modifier = Modifier,
     icon: String? = null,
     expanded: Boolean = true,
+    busy: Boolean = false,
 ) {
+    val ring = if (icon == null) modifier.fmBusyRing(busy, MaterialTheme.shapes.large, color = Color.White) else modifier
     val press = {
         FmSoundCues.play(SoundCue.forLabel(text, SoundCue.OPEN))
         onClick()
@@ -191,7 +201,7 @@ fun FmExtendedFloatingActionButton(
     if (icon == null) {
         ExtendedFloatingActionButton(
             onClick = press,
-            modifier = modifier,
+            modifier = ring,
             shape = MaterialTheme.shapes.large,
             containerColor = Fm.colors.accent,
             contentColor = Color.White,
@@ -200,9 +210,9 @@ fun FmExtendedFloatingActionButton(
     } else {
         ExtendedFloatingActionButton(
             text = { Text(text) },
-            icon = { FmIcon(icon) },
+            icon = { FmIcon(icon, modifier = Modifier.fmBusyRing(busy, inset = (-5).dp, color = Color.White)) },
             onClick = press,
-            modifier = modifier,
+            modifier = ring,
             expanded = expanded,
             shape = MaterialTheme.shapes.large,
             containerColor = Fm.colors.accent,

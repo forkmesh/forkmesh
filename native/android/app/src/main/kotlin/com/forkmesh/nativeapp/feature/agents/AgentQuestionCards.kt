@@ -111,6 +111,7 @@ private fun AgentQuestionCard(question: AgentQuestion, busy: Boolean, submit: (A
             "Send answer",
             onClick = if (answer.isEmpty() || busy) null else ({ submit(question, answer) }),
             modifier = Modifier.testTag("agent-question-send"),
+            busy = busy,
         )
     }
 }
