@@ -1,9 +1,11 @@
 #include "ClaudeDesktopSessions.h"
+#include "ClaudeDesktopSidebar.h"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QUrlQuery>
@@ -148,6 +150,100 @@ static void testLatestSessionId()
     check(latestSessionId({}).isEmpty(), "no events, no id");
 }
 
+static const QString kScope = QStringLiteral("acct/org");
+
+static void writeRecord(const QString &root, const QString &id, const QString &cwd,
+                        const QString &title, qint64 activity, bool archived = false)
+{
+    QJsonObject o;
+    o.insert(QStringLiteral("sessionId"), QStringLiteral("local_") + id);
+    o.insert(QStringLiteral("cliSessionId"), id);
+    o.insert(QStringLiteral("cwd"), cwd);
+    o.insert(QStringLiteral("title"), title);
+    o.insert(QStringLiteral("createdAt"), double(activity - 10));
+    o.insert(QStringLiteral("lastActivityAt"), double(activity));
+    o.insert(QStringLiteral("isArchived"), archived);
+    writeFile(root + QStringLiteral("/claude-code-sessions/") + kScope + QStringLiteral("/local_") +
+                  id + QStringLiteral(".json"),
+              QJsonDocument(o).toJson());
+}
+
+static QString uuid(int n)
+{
+    return QStringLiteral("00000000-0000-4000-8000-%1").arg(n, 12, 10, QLatin1Char('0'));
+}
+
+static void testDesktopIndex()
+{
+    QTemporaryDir dir;
+    const QString desktop = dir.filePath(QStringLiteral("Claude"));
+    const QString home = dir.filePath(QStringLiteral("home"));
+    writeRecord(desktop, uuid(1), QStringLiteral("/r/src/.worktrees/15-qr"), QStringLiteral("QR codes"), 500);
+    writeRecord(desktop, uuid(2), QStringLiteral("/r/src/.worktrees/2625-sweep"), QStringLiteral("Sweep"), 900);
+    writeRecord(desktop, uuid(3), QStringLiteral("/r/src/.worktrees/2346-ssh"), QStringLiteral("SSH"), 100);
+    writeRecord(desktop, uuid(4), QStringLiteral("/r/src"), QStringLiteral("Old"), 50, true);
+    writeFile(desktop + QStringLiteral("/claude-code-sessions/") + kScope +
+                  QStringLiteral("/waiting-input/local_") + uuid(2),
+              "1");
+    writeFile(home + QStringLiteral("/projects/-r-src--worktrees-15-qr/") + uuid(1) +
+                  QStringLiteral(".jsonl"),
+              "{}\n");
+    const QByteArray config = QStringLiteral(R"({"preferences":{"epitaxyPrefs":{
+        "dframe-code-sections":{"acct/org":{"sections":[
+          {"id":"sessions","kind":"sessions","order":5,"shown":true},
+          {"id":"pinned","kind":"pinned","order":0,"shown":true},
+          {"id":"routines","kind":"routines","order":1,"shown":false},
+          {"id":"cg-empty","kind":"manual","name":"Desktop app","order":2,"shown":true,"members":[]},
+          {"id":"cg-infra","kind":"manual","name":"Infrastructure & fleet","order":3,"shown":true,"members":[]}]}},
+        "dframe-group-scopes":{"acct/org":{"groups":[{"id":"cg-infra","name":"Infrastructure & fleet"}],
+          "assignments":{"code:local_%1":"cg-infra"},"order":{"cg-infra":["code:local_%1"]}}},
+        "starred-local-code-sessions":[]}}})")
+                                .arg(uuid(3))
+                                .toUtf8();
+    writeFile(desktop + QStringLiteral("/claude_desktop_config.json"), config);
+
+    const DesktopIndex index = readDesktopIndex(desktop, home);
+    check(index.records.size() == 3, "archived record is left out");
+    QHash<QString, DesktopRecord> byId;
+    for (const DesktopRecord &record : index.records)
+        byId.insert(record.sessionId, record);
+    check(byId.value(uuid(1)).title == QLatin1String("QR codes"), "record title read");
+    check(byId.value(uuid(1)).transcript.endsWith(uuid(1) + QStringLiteral(".jsonl")),
+          "transcript found under the cwd's project folder");
+    check(byId.value(uuid(2)).transcript.isEmpty(), "missing transcript stays empty");
+    check(byId.value(uuid(2)).waiting, "waiting-input marker read");
+    check(!byId.value(uuid(1)).waiting, "no marker means not waiting");
+    check(index.sections.size() == 4, "routines and hidden sections dropped");
+    check(index.sections.first().kind == QLatin1String("pinned"), "sections follow their order");
+    check(index.sections.at(2).members == QStringList{QStringLiteral("local_") + uuid(3)},
+          "manual group members read from the group scopes");
+
+    QList<SidebarItem> items;
+    for (const DesktopRecord &record : index.records)
+        items.append({record.key, folderLabel(record.cwd), record.activityMs});
+    items.append({QString(), QStringLiteral("30-stall"), 1000});
+    items.append({QString(), QStringLiteral("15-qr"), 2000});
+    const QList<SidebarGroup> groups = arrangeSidebar(index, items);
+    QStringList labels;
+    for (const SidebarGroup &group : groups)
+        labels << group.label;
+    check(labels == QStringList({QStringLiteral("Infrastructure & fleet"), QStringLiteral("15-qr"),
+                                 QStringLiteral("30-stall"), QStringLiteral("2625-sweep")}),
+          "manual group first, then folders in natural order, empty groups hidden");
+    check(groups.first().key == QLatin1String("@claude:cg-infra"), "manual group key");
+    check(groups.at(1).items.size() == 2 && items.at(groups.at(1).items.first()).at == 2000,
+          "a folder lists its newest session first");
+}
+
+static void testNaturalOrder()
+{
+    check(naturalLess(QStringLiteral("30-a"), QStringLiteral("2625-b")), "30 before 2625");
+    check(naturalLess(QStringLiteral("forkmesh"), QStringLiteral("Src")), "case-insensitive");
+    check(!naturalLess(QStringLiteral("b"), QStringLiteral("a")), "b after a");
+    check(folderLabel(QStringLiteral("/r/src/.worktrees/15-qr/")) == QLatin1String("15-qr"),
+          "folder label is the last folder");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -159,6 +255,8 @@ int main(int argc, char **argv)
     testFileSymlinkIgnored();
     testExposeAccount();
     testLatestSessionId();
+    testDesktopIndex();
+    testNaturalOrder();
     if (failures == 0)
         std::cout << "claude desktop sessions: all checks passed\n";
     return failures == 0 ? 0 : 1;

@@ -494,6 +494,23 @@ bool LocalControlServer::isConnected(const QString &key) const
     return false;
 }
 
+bool LocalControlServer::connectedLocally(const QString &key) const
+{
+    for (const Connection *conn : m_connections)
+        if (conn->state == State::Paired && conn->device.key == key && !conn->relayed())
+            return true;
+    return false;
+}
+
+void LocalControlServer::setRemoteOff(bool off)
+{
+    if (m_remoteOff == off)
+        return;
+    m_remoteOff = off;
+    if (onDevicesChanged)
+        onDevicesChanged();
+}
+
 void LocalControlServer::forget(const QString &key)
 {
     if (!m_devices.remove(key))
@@ -1301,6 +1318,10 @@ void LocalControlServer::handleMessage(Connection &conn, const QJsonObject &mess
         respondError(conn.id, requestId, QStringLiteral("not_paired"));
         return;
     }
+    if (m_remoteOff) {
+        respondError(conn.id, requestId, QStringLiteral("remote_off"));
+        return;
+    }
     if (const QString family = familyFor(method); !family.isEmpty()) {
         const FamilyHandler handler = m_families.value(family);
         handler(conn.id, conn.device, requestId, method, params);
@@ -1492,6 +1513,8 @@ void LocalControlServer::respondError(int connectionId, int requestId,
 
 void LocalControlServer::broadcast(const QString &event, const QJsonObject &data)
 {
+    if (m_remoteOff)
+        return;
     for (Connection *conn : std::as_const(m_connections))
         if (conn->state == State::Paired)
             sendEvent(*conn, event, data);
@@ -1503,6 +1526,8 @@ bool LocalControlServer::sendEventTo(int connectionId, const QString &event,
     Connection *conn = connection(connectionId);
     if (!conn || conn->state != State::Paired)
         return false;
+    if (m_remoteOff)
+        return true;
     return writeJson(*conn, {{QStringLiteral("event"), event},
                              {QStringLiteral("data"), data}});
 }

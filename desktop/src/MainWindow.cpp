@@ -416,6 +416,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     forkmesh::hiddenterms::refreshVariableValues(ActionStore::variables());
     m_debugSessionUptime.start();
     logStartup(QStringLiteral("MainWindow ctor begin"));
+    forkmesh::ui::busyring::installClickWatcher();
+    forkmesh::ui::busyring::observe(this, [this] { refreshRailShortcutBusy(); });
     forkmesh::teammates::setRecentAgentChoiceSource(
         [this] { return promptAreaAgentChoice(); });
     if (supervisingSystemdUserServiceUnit() == QLatin1String(kSourceGuardUnit))

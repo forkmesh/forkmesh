@@ -2068,6 +2068,31 @@ void checkNotificationDefaultsAndDelivery(MainWindow &window)
               QStringLiteral("fm:agent:73002"),
           QStringLiteral("explicitly enabling native system notifications "
                          "opens their delivery gate"));
+    for (int i = 3; i <= 4; ++i)
+        window.testPostNotification(
+            QStringLiteral("Burst probe %1").arg(i),
+            QStringLiteral("burst body %1").arg(i),
+            QStringLiteral("fm:agent:7300%1").arg(i));
+    check(window.testDesktopNotificationHref() ==
+              QStringLiteral("fm:agent:73004"),
+          QStringLiteral("the first three cards of a burst show one by one"));
+    for (int i = 5; i <= 9; ++i)
+        window.testPostNotification(
+            QStringLiteral("Burst probe %1").arg(i),
+            QStringLiteral("burst body %1").arg(i),
+            QStringLiteral("fm:agent:7300%1").arg(i));
+    window.testPostNotification(QStringLiteral("Burst probe 10"),
+                                QStringLiteral("burst body 10"),
+                                QStringLiteral("fm:agent:73010"));
+    check(window.testDesktopNotificationHref() ==
+              QStringLiteral("fm:agent:73004"),
+          QStringLiteral("later cards of a burst are held"));
+    window.testPostNotification(QStringLiteral("Burst probe 11"),
+                                QStringLiteral("burst body 11"),
+                                QStringLiteral("fm:agent:73011"));
+    check(window.testDesktopNotificationHref() == QStringLiteral("fm:pings"),
+          QStringLiteral("the tenth ping of a burst raises one summary card "
+                         "that opens the Pings page"));
     settings.remove(forkmesh::ui::kNativeSystemNotificationsSetting);
 
     // A stale acknowledgement must not clear a newer pause selected while the
@@ -29649,6 +29674,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                                           QStringLiteral("Closed"),
                                           QStringLiteral("Merged"),
                                           QStringLiteral("All"),
+                                          QStringLiteral("Review all"),
                                           QStringLiteral("Merge all"),
                                           QStringLiteral("Delete closed and merged")};
             QStringList captions;
@@ -29809,12 +29835,22 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   {ledgerPull(13, QStringLiteral("open"))}),
               QStringLiteral("the pull list shows a loading row while the first "
                              "load runs and drops it once the rows arrive"));
+        check(window.testClickPullRowDiffButton(
+                  {ledgerPull(21, QStringLiteral("open")),
+                   ledgerPull(22, QStringLiteral("open"))},
+                  22) == 22,
+              QStringLiteral("hovering a pull row shows a button that opens that "
+                             "pull's changes in Git without selecting the row"));
     }
     bool prFixButtonFound = false;
     bool prHeaderStyleUniform = true;
+    QWidget *branchPullReviewBar =
+        window.findChild<QWidget *>(QStringLiteral("branchPullReviewBar"));
     for (QPushButton *b : window.findChildren<QPushButton *>()) {
         if (b->text() == QStringLiteral("Fix") && !b->menu())
             prFixButtonFound = true;
+        if (branchPullReviewBar && branchPullReviewBar->isAncestorOf(b))
+            continue;
         if (b->text() == QStringLiteral("AI review") ||
             b->text() == QStringLiteral("Fix all") ||
             b->text() == QStringLiteral("Merge") ||

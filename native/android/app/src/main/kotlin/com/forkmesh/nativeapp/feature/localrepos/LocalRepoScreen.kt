@@ -828,6 +828,7 @@ internal class LocalRepoScreen(
                         icon = "check",
                         tone = FmTone.Accent,
                         filled = true,
+                        busy = busyLabel != null,
                     )
                 }
             }
