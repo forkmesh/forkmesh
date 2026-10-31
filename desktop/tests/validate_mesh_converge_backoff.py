@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Guard the mesh-converge backoff for repositories whose mirrors all fail."""
-
 from pathlib import Path
 
 
