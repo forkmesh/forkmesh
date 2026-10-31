@@ -11,10 +11,16 @@ struct PlanningInstaller: AppServicesInstaller {
         PlanningTimersRuntime.shared()?.appBecameActive()
         services.routes.register(.notes, by: "WS15") { _ in AnyView(NotesScreen()) }
         services.routes.register(.note, by: "WS15") { route in
-            guard case let .note(id) = route else {
+            guard case let .note(id, comment) = route else {
                 return AnyView(RoutePlaceholderView(route: route))
             }
-            return AnyView(NoteEditorScreen(noteId: id.isEmpty ? nil : id))
+            return AnyView(NoteEditorScreen(noteId: id.isEmpty ? nil : id, openComment: comment))
+        }
+        services.routes.register(.notePage, by: "WS15") { route in
+            guard case let .notePage(id, note) = route, !id.isEmpty else {
+                return AnyView(RoutePlaceholderView(route: route))
+            }
+            return AnyView(NotePageScreen(pageId: id, noteId: note))
         }
         services.routes.register(.tasks, by: "WS15") { route in
             guard case let .tasks(filter) = route else {

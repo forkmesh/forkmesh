@@ -11926,6 +11926,34 @@ class _NotesRuntime(_WorldCommunityRuntime):
         )
         await self.env.FORKMESH_NOTE_ROOM.get(room_id).fetch(request)
 
+    async def presence(self, note_id, frame):
+        room_id = self.env.FORKMESH_NOTE_ROOM.idFromName(
+            "note:" + str(note_id))
+        request = JsRequest.new(
+            "https://forkmesh.internal/api/notes/" + str(note_id) + "/presence",
+            to_js({
+                "method": "POST",
+                "headers": {"content-type": "application/json"},
+                "body": json.dumps(frame or {}, separators=(",", ":")),
+            }),
+        )
+        response = await self.env.FORKMESH_NOTE_ROOM.get(room_id).fetch(request)
+        payload = json.loads(str(await response.text()) or "{}")
+        peers = payload.get("peers") if isinstance(payload, dict) else None
+        return peers if isinstance(peers, list) else []
+
+    async def notify(self, recipient, actor, note_id, comment_id, kind, title,
+                     excerpt):
+        heading = (actor + (" mentioned you in " if kind == "mention"
+                            else " replied in ") + "“" + title + "”")
+        await enqueue_notification(
+            self.env, recipient, "mention", heading, body=excerpt,
+            href="/dashboard/notes?note=" + str(note_id) + "&comment="
+            + str(comment_id),
+            actor=actor, source="note",
+            dedupe="note-comment:" + str(comment_id) + ":" + kind + ":"
+            + str(recipient))
+
 
 async def notes_handler(env, request, path):
     return await notes.handle(_NotesRuntime(env, request), path)
@@ -14056,7 +14084,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "6bcd259d635645255ef1b2b9f8e281fd1e6e80d1537cf8371f533c436651ca90"
+    "43155bc95879db379571b3fb5eaed011df8a14d9adc05bf124258679dce3f8ba"
 )
 
 
@@ -57695,6 +57723,76 @@ class ForkMeshNoteRoom(DurableObject):
     traffic_binding = "FORKMESH_NOTE_ROOM"
     _MAX_CLIENTS = 64
     _MAX_FRAME = 600 * 1024
+    _POLL_TTL_MS = 20000
+    _MAX_POLLED = 64
+
+    def _send_all(self, frame, skip=None):
+        payload = json.dumps(frame, separators=(",", ":"))
+        for peer in self._peers():
+            if peer is skip:
+                continue
+            try:
+                peer.send(payload)
+            except Exception:
+                pass
+
+    def _polled(self):
+        polled = getattr(self, "_poll_peers", None)
+        if polled is None:
+            polled = {}
+            self._poll_peers = polled
+        now = int(Date.now())
+        for key in [key for key, peer in polled.items()
+                    if now - peer["at"] > self._POLL_TTL_MS]:
+            polled.pop(key, None)
+        return polled
+
+    def _presence(self, frame):
+        polled = self._polled()
+        client_id = str((frame or {}).get("clientId") or "")[:64]
+        if client_id:
+            name = clean_string((frame or {}).get("name") or "", MAX_NODE_NAME)
+            state = str((frame or {}).get("state") or "")
+            if state not in ("viewing", "editing"):
+                if polled.pop(client_id, None):
+                    self._send_all({"type": "leave", "clientId": client_id,
+                                    "name": name})
+            elif client_id in polled or len(polled) < self._MAX_POLLED:
+                polled[client_id] = {"name": name, "state": state,
+                                     "at": int(Date.now())}
+                self._send_all({"type": "presence", "clientId": client_id,
+                                "name": name, "line": 0, "column": 0,
+                                "state": state})
+        peers = []
+        for ws in self._peers():
+            live_id = str(_ws_attr(ws, "clientId", "") or "")
+            if live_id:
+                peers.append({"clientId": live_id,
+                              "name": _ws_attr(ws, "actor", ""),
+                              "state": _ws_attr(ws, "state", "viewing"),
+                              "via": "live"})
+        for poll_id, peer in polled.items():
+            peers.append({"clientId": poll_id, "name": peer["name"],
+                          "state": peer["state"], "via": "poll"})
+        return peers
+
+    def _remember(self, ws, client_id, state):
+        if (_ws_attr(ws, "clientId", "") == client_id
+                and _ws_attr(ws, "state", "") == state):
+            return
+        values = {name: _ws_attr(ws, name) for name in (
+            "id", "start", "count", "role", "actor")}
+        values.update({"clientId": client_id, "state": state})
+        try:
+            ws.serializeAttachment(to_js(values))
+        except Exception:
+            pass
+
+    def _leave(self, ws):
+        client_id = str(_ws_attr(ws, "clientId", "") or "")
+        if client_id:
+            self._send_all({"type": "leave", "clientId": client_id,
+                            "name": _ws_attr(ws, "actor", "")}, skip=ws)
 
     async def fetch(self, request):
         if method_name(request) == "POST":
@@ -57703,9 +57801,12 @@ class ForkMeshNoteRoom(DurableObject):
                 frame = json.loads(body)
             except Exception:
                 return json_response({"error": "invalid_event"}, status=400)
+            if urlparse(request.url).path.endswith("/presence"):
+                return json_response({"ok": True, "peers": self._presence(
+                    frame if isinstance(frame, dict) else {})})
             if not isinstance(frame, dict) or frame.get("type") not in (
                     "note-updated", "note-deleted", "access-changed",
-                    "note-activity"):
+                    "note-activity", "note-comments"):
                 return json_response({"error": "invalid_event"}, status=400)
             payload = json.dumps(frame, separators=(",", ":"))
             for peer in self._peers():
@@ -57766,12 +57867,23 @@ class ForkMeshNoteRoom(DurableObject):
             column = max(0, min(1000000, int(frame.get("column") or 0)))
         except (TypeError, ValueError, OverflowError):
             line, column = 0, 0
+        client_id = str(frame.get("clientId") or "")[:64]
+        editor = _ws_attr(ws, "role", "viewer") in ("owner", "editor")
+        if frame["type"] == "draft":
+            state = "editing"
+        elif frame["type"] == "presence":
+            state = "editing" if frame.get("state") == "editing" and editor else "viewing"
+        else:
+            state = _ws_attr(ws, "state", "viewing") or "viewing"
+        if client_id:
+            self._remember(ws, client_id, state)
         safe_frame = {
             "type": frame["type"],
-            "clientId": str(frame.get("clientId") or "")[:64],
+            "clientId": client_id,
             "name": _ws_attr(ws, "actor", ""),
             "line": line,
             "column": column,
+            "state": state,
         }
         if frame["type"] == "draft":
             safe_frame["title"] = clean_string(
@@ -57793,12 +57905,14 @@ class ForkMeshNoteRoom(DurableObject):
                 pass
 
     async def webSocketClose(self, ws, _code, _reason, _clean):
+        self._leave(ws)
         try:
             ws.close(1000, "closed")
         except Exception:
             pass
 
     async def webSocketError(self, ws, _error):
+        self._leave(ws)
         try:
             ws.close(1011, "error")
         except Exception:
