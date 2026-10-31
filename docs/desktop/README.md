@@ -236,7 +236,12 @@ Everything is in `desktop/`.
   `MainWindowInternal.h` (`waitForGit`, `runOffThread`); a GUI-thread wait pumps
   the event loop, and Git on the GUI thread shows up in the stall log.
   Index-writing commands for one repository run one at a time through
-  `GitIndexQueue`; see [git-locking.md](git-locking.md).
+  `GitIndexQueue`; see [git-locking.md](git-locking.md). Timer-driven
+  refreshes load pulls with `reloadPullsInBackground()`. The mesh converge
+  completion reports failures too, so with the synchronous `reloadPulls()`
+  a repository whose mirrors were unreachable froze the window for 1-3 s
+  on every cycle, waiting on the Git index lock in `PullStore::baseTip()`
+  (2026-10-31, `tests/validate_pull_refresh_responsiveness.py`).
 - **No display polling.** The desktop has no timers that re-read the relay
   for display. Updates arrive over the account event socket
   (`MainWindowRepoSync.cpp` handles topics such as `cloud-agents`, `tasks`,

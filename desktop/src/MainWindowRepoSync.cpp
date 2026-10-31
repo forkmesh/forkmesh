@@ -1366,7 +1366,7 @@ void MainWindow::convergeSourceRepoFromMesh(int index, bool force)
                     // showing the snapshot loaded before this worker started.
                     reloadIssues();
                     if (*mirrorMoved || !checkoutSummary->isEmpty()) {
-                        reloadPulls();
+                        reloadPullsInBackground();
                         reloadDiscussions();
                     }
                 }
