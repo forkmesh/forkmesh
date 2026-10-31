@@ -647,8 +647,9 @@ default in new projects except the chosen starter pack
   `PackageGate.STARTER`: agents, chat, inbox, code, tour; `EVERYTHING` = every
   gated package except the organization packages) sits beside `STARTER` in
   `C/market/PackageGate.kt`. A new project with no `packages/starterPack` in
-  its prefs shows `A/feature/market/StarterPackScreen.kt` once ("Choose how to
-  start", Standard preselected, Continue) from `Features.Root`, driven by
+  its prefs shows `StarterPackPage` (`A/feature/market/StarterPackScreen.kt`)
+  once as a step of `A/feature/account/OnboardingFlow.kt` ("Choose how to
+  start", Standard preselected, "Start with <pack>") from `Features.Root`, driven by
   `PackageGateFeature.starterPackPending`; Continue stores the pack id
   (`PackageGateFeature.chooseStarterPack`) and republishes the gate. Unset
   reads as `STANDARD`; legacy projects are never asked. `MarketModel.starterPack`
@@ -2188,7 +2189,8 @@ build time, so Android always ships the same library as iOS.
   prefs. `PermissionsIntro.install` runs after the package gate with
   `freshInstall = needsStarterPack()`, so an install that predates this build
   never sees the screen and keeps its mesh starting at launch.
-  `PermissionsIntroScreen` shows before the starter pack. Android asked at
+  `PermissionsIntroPage` is the step before the starter pack in
+  `OnboardingFlow` (`docs/native/ONBOARDING.md`). Android asked at
   launch in two places: `PushFeature.PermissionPrompt` asked for
   `POST_NOTIFICATIONS` as soon as a session existed, and `ChatFeature`
   started the `#mesh` room at install, whose transport asked for

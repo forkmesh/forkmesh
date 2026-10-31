@@ -577,11 +577,14 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   `StarterPack` count as installed until the project removes them.
 - `ProjectLegacyMarker` is written once per project from existing per-project
   data; projects created on the phone are marked new.
-- **Starter pack.** A new project shows `StarterPackView` ("Choose how to
-  start": Minimal, Standard, Everything; Standard preselected; Continue) once,
-  from `AppHomeView` while `SettingsService.needsStarterPack` (new project, no
-  `<namespace>packages/starter-pack` yet). Continue stores the pack id
-  (`PhonePackages.chooseStarterPack`) and republishes the gate. Unset reads as
+- **Starter pack.** A new project shows `StarterPackPage` ("Choose how to
+  start": chips and a swipeable carousel of Minimal, Standard, Everything;
+  Standard preselected) once, as a step of `OnboardingFlowView`
+  ([ONBOARDING.md](ONBOARDING.md)), from `AppHomeView` while
+  `SettingsService.needsStarterPack` (new project, no
+  `<namespace>packages/starter-pack` yet). "Start with <pack>" stores the pack
+  id (`PhonePackages.chooseStarterPack`) and republishes the gate; Skip stores
+  the default pack. Unset reads as
   `standard`; legacy projects never see it.
 - Gated surfaces: Home, the bar, the iPad sidebar, the You hub, global search,
   the command palette, Genie routes, Home Screen quick actions, the new agent
