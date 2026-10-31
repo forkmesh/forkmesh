@@ -8,8 +8,10 @@ verified. Pin a release with `FORKMESH_EXPECTED_TAG` /
 [launch readiness packet](y-combinator-news-readiness.md). A step passes only
 when a dated transcript line shows it.
 
-Release measured on this page: tag `v1.2.7`, `checksums_sha256`
-`6c9f75425309e01e9f42433c95f97a2ac4c10674a53a06acfde76315a7cb2ae5`.
+Release measured on this page: tag `v1.5.0`, `checksums_sha256`
+`61872afbc33560807e531bf9e650141d9424c5e2c9f417d72b24decd1167fb9f`
+([checks](#v150-release-checks)). The earlier
+[v1.2.7 checks](#v127-release-checks) are kept below for history.
 
 ## Status
 
@@ -126,3 +128,28 @@ f5caed0e686e0ef66cb429c88f7702c5f355a177757182cca90cef45ec860c8c     13159125  E
 `forkmesh-macos-x86_64.dmg` has the same `blob_sha256` and size as
 `forkmesh-macos-arm64.dmg`. Every fresh-VM step in the status table is still
 **Missing proof** for this release.
+
+## v1.5.0 release checks
+
+Measured 2026-10-31 from the same blob route. `release.json`,
+`release.json.sig` and `SHASUMS256.txt` served at
+`https://forkmesh.com/api/repo/forkmesh/forkmesh/raw?path=.forkmesh/releases/latest/…&ref=main`
+(the `/desktop` page's manifest URL) are byte-identical to the repository
+copies; the signature verifies with the key in `install.sh`, and
+`sha256(SHASUMS256.txt)` equals `checksums_sha256`. Every hash and size below
+equals its manifest entry.
+
+```text
+9ca90fe0dc5f26f97abaa3fd26b4d898a652fe3868ab32e53e5393fc99358ebf    142611552  ELF 64-bit LSB pie executable, x86-64          forkmesh-linux-x86_64
+c4da0b5801fb0ca75deae158c61ac12b386ef7e9eb61ca87c5394a143f9c6378     14076218  ELF 64-bit LSB executable, x86-64, static     forkmesh-mirror-node-linux-x86_64
+7889aad7fd55d490d603ffe75603b50a0da1099fed7bf218b14ec317e29efbd6     96940752  PE32 executable (GUI)                         forkmesh-windows-x86_64-setup.exe
+8991bcc9e47c807b1ef5fd0d16ab2c643b050013ba3dc90736ed5c448d2f6040    214746483  zlib-compressed DMG                           forkmesh-macos-arm64.dmg
+```
+
+The setup executable's Authenticode signer is `CN=ForkMesh, O=ForkMesh`, SHA-256
+fingerprint `06:E0:93:EA:D7:0B:BD:A1:0B:4C:B6:0A:AE:B2:2C:8C:52:AA:ED:07:6E:21:F4:05:6E:45:2D:38:D1:BE:45:73`
+(the pinned `DEFAULT_WINDOWS_SIGNER_SHA256`), timestamped by DigiCert; Windows
+reports the chain as ending in an untrusted root, as expected for the
+self-issued certificate. The two macOS assets again share one digest.
+Every fresh-VM step in the status table is still **Missing proof** for this
+release.
