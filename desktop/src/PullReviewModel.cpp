@@ -221,7 +221,11 @@ QHash<QString, DiffSideIndex> indexDiffSides(const QString &patch)
             binary = false;
         } else if (!path.isEmpty() && !binary) {
             if (line.startsWith(QLatin1String("@@"))) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
                 const QRegularExpressionMatch m = hunkRe.matchView(line);
+#else
+                const QRegularExpressionMatch m = hunkRe.match(line);
+#endif
                 if (m.hasMatch()) {
                     oldNo = m.captured(1).toInt();
                     newNo = m.captured(2).toInt();

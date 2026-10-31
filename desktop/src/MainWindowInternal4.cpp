@@ -85,8 +85,8 @@ static QString packedRefTip(const QString &path, const QByteArray &fullRef)
             const qsizetype space = line.indexOf(' ');
             if (space != 40 && space != 64)
                 continue;
-            parsed.tips.insert(line.mid(space + 1).toByteArray(),
-                               QString::fromLatin1(line.left(space)));
+            parsed.tips.insert(line.sliced(space + 1).toByteArray(),
+                               QString::fromLatin1(line.first(space)));
         }
         if (cache.size() >= 32)
             cache.clear();

@@ -982,9 +982,10 @@ QString flowSlug(const QString &label)
     QString base = label.toLower();
     base.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral("-"));
     base.remove(QRegularExpression(QStringLiteral("^-+|-+$")));
-    if (!base.contains(QRegularExpression(QStringLiteral("^[a-z]"))))
-        base = (QStringLiteral("pipeline-") + base)
-                   .remove(QRegularExpression(QStringLiteral("-+$")));
+    if (!base.contains(QRegularExpression(QStringLiteral("^[a-z]")))) {
+        base.prepend(QStringLiteral("pipeline-"));
+        base.remove(QRegularExpression(QStringLiteral("-+$")));
+    }
     return base.left(34).remove(QRegularExpression(QStringLiteral("-+$")));
 }
 

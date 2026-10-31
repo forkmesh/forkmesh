@@ -331,6 +331,12 @@ delta search runs and the step stays within its CPU limit
   `QString::arg(value, width, base, fill)`. From Qt 6.9 (Homebrew's Qt on
   macOS), `char16_t` matches no `arg` overload, so the build fails there but
   still passes on Linux distributions that ship Qt 6.8.
+- Qt 6.4 is the floor (Ubuntu 24.04 and Debian 12 ship 6.4.2), so no Qt 6.5
+  API without a fallback: `QTimeZone::utc()`, not `QTimeZone::UTC`;
+  `QRegularExpression::matchView`/`globalMatchView` only behind
+  `#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)` with `match`/`globalMatch`
+  in the `#else`; `QByteArrayView::sliced`/`first`, not `mid`/`left`; and no
+  mutating call on the `const QString` that Qt 6.4's `operator+` returns.
 
 ## Known failures and traps
 

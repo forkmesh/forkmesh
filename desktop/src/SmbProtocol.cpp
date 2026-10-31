@@ -205,7 +205,7 @@ QDateTime fromFileTime(quint64 value)
 {
     if (value == 0)
         return {};
-    return QDateTime::fromMSecsSinceEpoch(qint64(value / 10000) - kFileTimeEpochOffsetMs, QTimeZone::UTC);
+    return QDateTime::fromMSecsSinceEpoch(qint64(value / 10000) - kFileTimeEpochOffsetMs, QTimeZone::utc());
 }
 
 quint64 toFileTime(const QDateTime &time)

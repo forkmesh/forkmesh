@@ -767,9 +767,9 @@ int main(int argc, char **argv)
           "a dependency missing from the catalog fails the install closed");
 
     const QDateTime beforeCutoff(QDate(2026, 10, 10), QTime(23, 30),
-                                 QTimeZone::UTC);
+                                 QTimeZone::utc());
     const QDateTime afterCutoff(QDate(2026, 10, 11), QTime(0, 0),
-                                QTimeZone::UTC);
+                                QTimeZone::utc());
     check(writeChainPackage(
               QStringLiteral("before-a"), QString(),
               QStringLiteral(
@@ -1016,14 +1016,14 @@ int main(int argc, char **argv)
           "a legacy account entry installs in a project from before the core "
           "plugins");
     const QDateTime beforeWorkflowsCutoff(QDate(2026, 10, 13), QTime(9, 0),
-                                          QTimeZone::UTC);
+                                          QTimeZone::utc());
     placed.setProjectCreated(beforeWorkflowsCutoff);
     check(hook && late && !placed.legacyEntryInstalled(*hook) &&
               placed.legacyEntryInstalled(*late),
           "a project made between the two dates keeps a package dated later "
           "but not one without a date");
     placed.setProjectCreated(
-        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::UTC));
+        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::utc()));
     check(hook && late && !placed.legacyEntryInstalled(*hook) &&
               !placed.legacyEntryInstalled(*late),
           "a legacy account entry does not install in a new project");
@@ -1099,7 +1099,7 @@ int main(int argc, char **argv)
     check(workflows.isShownHere(QStringLiteral("workflows")),
           "a project created before 2026-10-14 keeps Workflows");
     workflows.setProjectCreated(
-        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::UTC));
+        QDateTime(QDate(2026, 10, 14), QTime(0, 0), QTimeZone::utc()));
     bool workflowsFamilyOff = !workflows.isShownHere(QStringLiteral("workflows"));
     for (const QString &nested :
          workflows.nestedPackages(QStringLiteral("workflows")))
@@ -1135,7 +1135,7 @@ int main(int argc, char **argv)
           "a project.json with created is written");
     projectFile.close();
     check(forkmesh::market::PackageRegistry::readProjectCreated(projectDir) ==
-              QDateTime(QDate(2026, 10, 12), QTime(8, 15), QTimeZone::UTC),
+              QDateTime(QDate(2026, 10, 12), QTime(8, 15), QTimeZone::utc()),
           "project.json created is read as UTC");
 
     return failures == 0 ? 0 : 1;
