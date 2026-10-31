@@ -172,7 +172,7 @@ struct WorkflowCredentialForm: View {
                     }
                     FmFilledButton(
                         saving ? "Saving…" : (credential == nil ? "Save credential" : "Save on this phone"),
-                        fillWidth: true, onPressed: saving || kind == nil ? nil : { save() })
+                        fillWidth: true, busy: saving, onPressed: saving || kind == nil ? nil : { save() })
                     if let credential, store.phoneCredentialIds.contains(credential.id) {
                         FmOutlinedButton("Remove from this phone", foreground: fm.danger, fillWidth: true, onPressed: {
                             store.removePhoneCredential(credential.id)

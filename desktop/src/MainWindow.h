@@ -2875,6 +2875,7 @@ public:
     // "conflict ahead behind dirty worktree". Empty when no row shows it.
     QString testPullListBranchMeta(int number) const;
     QString testPullListRowTooltip(int number) const;
+    int testClickPullRowDiffButton(const QList<PullRequest> &pulls, int number);
     QString testPullConflictNoticeBody(const PullRequest &pull,
                                        const QStringList &conflictFiles) const
     {
@@ -7623,6 +7624,8 @@ private:
     RailShortcuts::State &railShortcutState();
     void saveRailShortcutState();
     void syncRailShortcutTiles();
+    void refreshRailShortcutBusy();
+    void refreshShortcutRailActivity();
     void activateRailShortcut(const QString &id);
     void removeRailShortcut(const QString &id);
     bool handlePageButtonEvent(QObject *watched, QEvent *event);

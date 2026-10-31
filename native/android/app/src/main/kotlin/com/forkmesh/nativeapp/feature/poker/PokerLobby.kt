@@ -282,7 +282,7 @@ private fun LobbyActions(model: PokerModel, onCreate: () -> Unit, open: (String)
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { model.joinByCode(code, open) }),
             )
-            FmToneButton("Join", onPressed = if (PokerApi.isCode(code) && !model.busy) ({ model.joinByCode(code, open) }) else null, tone = FmTone.Accent, height = 44.dp)
+            FmToneButton("Join", onPressed = if (PokerApi.isCode(code) && !model.busy) ({ model.joinByCode(code, open) }) else null, tone = FmTone.Accent, height = 44.dp, busy = model.busy)
         }
     }
 }
@@ -336,9 +336,9 @@ internal fun ChipIcon(denomination: Long, size: androidx.compose.ui.unit.Dp = 22
 internal fun Stepper(label: String, value: Int, range: IntRange, onChange: (Int) -> Unit, format: (Int) -> String = { it.toString() }) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = Fm.text.bodyMedium, color = Fm.colors.textPrimary, modifier = Modifier.weight(1f))
-        FmIconButton("remove", "Fewer", onPressed = if (value > range.first) ({ onChange(value - 1) }) else null)
+        FmIconButton("remove", "Fewer", onPressed = if (value > range.first) ({ onChange(value - 1) }) else null, busy = false)
         Text(format(value), style = Fm.text.titleSmall, color = Fm.colors.textPrimary, modifier = Modifier.width(44.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        FmIconButton("add", "More", onPressed = if (value < range.last) ({ onChange(value + 1) }) else null)
+        FmIconButton("add", "More", onPressed = if (value < range.last) ({ onChange(value + 1) }) else null, busy = false)
     }
 }
 
@@ -403,6 +403,7 @@ private fun CreateTableDialog(lobby: PokerLobby, busy: Boolean, onDismiss: () ->
                     onCreate(PokerTableDraft(name, stake.id, seats, private, turn, bots, if (watch || !canSit) 0 else buyIn.coerceIn(stake.minBuyIn, top)))
                 },
                 enabled = !busy && name.isNotBlank(),
+                busy = busy,
             ) { Text(if (busy) "Creating…" else "Create") }
         },
     ) {

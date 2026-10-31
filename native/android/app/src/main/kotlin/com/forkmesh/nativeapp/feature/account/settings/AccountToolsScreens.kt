@@ -112,7 +112,7 @@ class SshKeysScreen : Screen() {
                             }
                             revision++
                         }
-                    }, enabled = model.canAdd) { Text("Add key") }
+                    }, enabled = model.canAdd, busy = model.busy) { Text("Add key") }
                     FmInlineStatus(addStatus)
                 }
             }
@@ -216,7 +216,7 @@ class McpConnectorScreen : Screen() {
                 SettingsCard("Create a token") {
                     Row {
                         for (p in McpConnector.providers) {
-                            FmTextButton(onClick = { provider = p }, enabled = provider != p) { Text(McpConnector.providerLabel(p)) }
+                            FmTextButton(onClick = { provider = p }, enabled = provider != p, busy = false) { Text(McpConnector.providerLabel(p)) }
                         }
                     }
                     FmTextField(label, { label = it }, Modifier.fillMaxWidth(), hint = "Label (optional)")

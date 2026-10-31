@@ -210,8 +210,8 @@ private fun ScreenshotViewer(feedback: AppStoreFeedback, start: Int, onClose: ()
                     style = Fm.text.labelLarge.copy(color = Color.White),
                     textAlign = TextAlign.Center,
                 )
-                FmIconButton("chevron_left", "Previous screenshot", onPressed = if (index > 0) ({ index -= 1 }) else null, color = Color.White)
-                FmIconButton("chevron_right", "Next screenshot", onPressed = if (index < shots.size - 1) ({ index += 1 }) else null, color = Color.White)
+                FmIconButton("chevron_left", "Previous screenshot", onPressed = if (index > 0) ({ index -= 1 }) else null, color = Color.White, busy = false)
+                FmIconButton("chevron_right", "Next screenshot", onPressed = if (index < shots.size - 1) ({ index += 1 }) else null, color = Color.White, busy = false)
             }
             Column(Modifier.align(Alignment.BottomCenter).padding(FmSpace.x4), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (feedback.comment.isNotEmpty()) {

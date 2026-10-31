@@ -547,6 +547,7 @@ private suspend fun showTemplatePicker(messenger: FmMessenger, model: CovesModel
                         }
                     },
                     enabled = chosen != null && !working,
+                    busy = working,
                 ) { Text(if (working) "Creating…" else "Create") }
             }
             error?.let { Text(it, style = Fm.text.bodySmall.copy(color = c.danger)) }
@@ -639,6 +640,7 @@ private suspend fun showShareSheet(messenger: FmMessenger, model: CovesModel, co
                             }
                         },
                         enabled = !working && invitee.isNotBlank(),
+                        busy = working,
                     ) { Text(if (working) "Adding…" else "Add person") }
                 } else {
                     CoveNote("Only the cove creator can change sharing.")
