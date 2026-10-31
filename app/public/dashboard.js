@@ -29533,11 +29533,11 @@
       .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
   }
 
-  function renderIssueAiPrompt(repo, number, title, template = "") {
+  function renderIssueAiPrompt(repo, number, title, template = "", extraButtons = "") {
     const prompt = issueAiPromptText(repo, number, title, template);
     return `<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">
             <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
-            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button></span>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${extraButtons}</span>
           </div>`;
   }
 
@@ -29816,10 +29816,14 @@ Your reply
       }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
-    const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
+    const agentStatusValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
       ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-attention/40 px-1.5 font-mono text-[11px] leading-[18px] text-attention">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
-      : `<span class="text-muted-foreground">No agent assigned</span>`}
-        <button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy MCP prompt</button>`;
+      : `<span class="text-muted-foreground">No agent assigned</span>`}`;
+    const issueMcpButton = `<button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="h-3 w-3"></i>Copy MCP prompt</button>`;
+    const agentValue = `${agentStatusValue}
+        <div class="mt-2">${closed || instancePluginOff("issue-ai-prompt")
+          ? `<span class="flex flex-wrap items-center gap-1">${issueMcpButton}</span>`
+          : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "", issueMcpButton)}</div>`;
     const labelValue = labels.length
       ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>`
       : `<span class="text-muted-foreground">No labels</span>`;
@@ -29908,7 +29912,6 @@ Your reply
             <p data-repo-issue-metadata-hint role="status" aria-live="polite" class="mb-2 text-[11px] text-muted-foreground empty:hidden"></p>
             ${sidebarSection("Assignees", assigneeValue, "assignees")}
             ${sidebarSection("Agent", agentValue)}
-            ${closed || instancePluginOff("issue-ai-prompt") ? "" : sidebarSection("AI prompt", renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || ""))}
             ${sidebarSection("Labels", labelValue, "labels")}
             ${sidebarSection("Type", "Issue")}
             ${sidebarSection("Fields", fieldsValue, "fields")}
@@ -29985,8 +29988,7 @@ Your reply
           </div>
           <aside class="min-w-0 self-start">
             ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "font-semibold")}</span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
-            ${section("Agent", bar("w-2/3"))}
-            ${item && !closed && !instancePluginOff("issue-ai-prompt") ? section("AI prompt", renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")) : ""}
+            ${section("Agent", item && !closed && !instancePluginOff("issue-ai-prompt") ? `${bar("w-2/3")}<div class="mt-2">${renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")}</div>` : bar("w-2/3"))}
             ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
             ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
             ${section("Milestone", item ? (item.milestone ? `<span class="font-semibold">${escapeHtml(item.milestone)}</span>` : `<span class="text-muted-foreground">No milestone</span>`) : bar("w-2/3"))}
@@ -30882,6 +30884,7 @@ Your reply
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+    if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -31089,6 +31092,7 @@ Your reply
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
       if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
@@ -54339,9 +54343,16 @@ Your reply
     "--dashboard-accent-rgb", "--dashboard-attention-rgb", "--dashboard-destructive-rgb",
     "--dashboard-success-rgb", "--dashboard-primary-rgb",
   ]);
+  const COMMENT_REACTION_CHEER_KEY = "forkmesh.reactionCheer.v1";
+  const COMMENT_REACTION_CHEER_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+  const COMMENT_REACTION_CHEER_KEEP = 400;
+  const COMMENT_REACTION_CHEER_COMMENTS = 3;
+  const COMMENT_REACTION_CHEER_BITS = 54;
+  const COMMENT_REACTION_CHEER_NOTE_MS = 4200;
   const commentReactionUi = {
     inflight: new Set(),
     confetti: new Set(),
+    cheering: false,
     picker: null,
     who: null,
     whoChip: null,
@@ -54407,12 +54418,16 @@ Your reply
         const data = await fetchJson(`${repoApiBase(repo)}/reactions?kind=${parts.kind}&number=${parts.number}`, { fresh: signedIn });
         if (!data || data.ok === false || !data.reactions || typeof data.reactions !== "object") return null;
         if (!state.commentReactions) state.commentReactions = {};
-        state.commentReactions[subject] = { base, reactions: data.reactions, signedIn: data.signedIn === true };
+        state.commentReactions[subject] = {
+          base, reactions: data.reactions, signedIn: data.signedIn === true,
+          reactedAt: data.reactedAt && typeof data.reactedAt === "object" ? data.reactedAt : null,
+        };
         if (data.tips && typeof data.tips === "object") {
           if (!state.commentTips) state.commentTips = {};
           state.commentTips[subject] = data.tips;
         }
         refreshCommentReactionBars(subject);
+        scheduleCommentReactionCheer(subject);
         if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(subject);
         return data;
       } catch (_) {
@@ -54617,6 +54632,190 @@ Your reply
       ], { duration: 1100 + Math.random() * 500, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards" })
         .finished.catch(() => {}).then(() => piece.remove());
     }
+  }
+
+  function commentReactionCheerSeen(me) {
+    try {
+      const seen = JSON.parse(localStorage.getItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`) || "{}");
+      return seen && typeof seen === "object" && !Array.isArray(seen) ? seen : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function commentReactionCheerRemember(me, cheers) {
+    const seen = commentReactionCheerSeen(me);
+    for (const cheer of cheers) seen[cheer.key] = Math.max(Number(seen[cheer.key]) || 0, cheer.latest);
+    const kept = Object.entries(seen)
+      .filter(([, at]) => Number.isFinite(Number(at)))
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, COMMENT_REACTION_CHEER_KEEP);
+    try {
+      localStorage.setItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`, JSON.stringify(Object.fromEntries(kept)));
+    } catch (_) {}
+  }
+
+  function commentReactionCheers(subject, now = Date.now()) {
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    const entry = state.commentReactions?.[subject];
+    const detail = state.repoRecordDetail;
+    if (!me || !entry?.reactedAt || !detail?.parsed
+      || commentReactionSubject(detail.kind, detail.number) !== subject) return [];
+    const seen = commentReactionCheerSeen(me);
+    const cheers = [];
+    for (const [comment, emojis] of Object.entries(entry.reactedAt)) {
+      if (!emojis || typeof emojis !== "object") continue;
+      if (commentReactionAuthor(subject, comment).toLowerCase() !== me) continue;
+      const key = `${entry.base}|${subject}|${comment}`;
+      const since = Math.max(Number(seen[key]) || 0, now - COMMENT_REACTION_CHEER_WINDOW_MS);
+      const times = Object.entries(emojis).filter(([emoji, at]) => commentReactionKnown(emoji) && Number.isFinite(Number(at)));
+      const fresh = new Set(times.filter(([, at]) => Number(at) > since).map(([emoji]) => emoji));
+      const tallies = (Array.isArray(entry.reactions?.[comment]) ? entry.reactions[comment] : [])
+        .filter((tally) => fresh.has(tally.emoji));
+      if (!tallies.length) continue;
+      const bar = document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="${CSS.escape(comment)}"]`);
+      if (!bar) continue;
+      cheers.push({ comment, key, bar, tallies, latest: Math.max(...times.map(([, at]) => Number(at))) });
+    }
+    return cheers.sort((a, b) => (a.bar.compareDocumentPosition(b.bar) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  }
+
+  function scheduleCommentReactionCheer(subject) {
+    if (commentReactionUi.cheering) return;
+    if (document.hidden) {
+      document.addEventListener("visibilitychange", () => scheduleCommentReactionCheer(subject), { once: true });
+      return;
+    }
+    const cheers = commentReactionCheers(subject).slice(0, COMMENT_REACTION_CHEER_COMMENTS);
+    if (!cheers.length) return;
+    commentReactionCheerRemember(String(state.session.nodeName).toLowerCase(), cheers);
+    commentReactionUi.cheering = true;
+    void (async () => {
+      try {
+        for (const cheer of cheers) await playCommentReactionCheer(subject, cheer);
+      } finally {
+        commentReactionUi.cheering = false;
+      }
+    })();
+  }
+
+  function commentReactionCheerText(subject, cheer) {
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    const names = [];
+    for (const tally of cheer.tallies) {
+      for (const person of Array.isArray(tally.people) ? tally.people : []) {
+        const name = String(person?.name || "");
+        if (name && name.toLowerCase() !== me && !names.some((seen) => seen.toLowerCase() === name.toLowerCase())) names.push(name);
+      }
+    }
+    const kind = commentReactionParts(subject)?.kind;
+    const what = cheer.comment !== "body" ? "comment"
+      : ({ issue: "issue", pull: "pull request", discussion: "discussion" })[kind] || "post";
+    const rest = names.length - 2;
+    const who = !names.length ? "People"
+      : rest > 0 ? `${names.slice(0, 2).join(", ")} and ${rest} other${rest === 1 ? "" : "s"}`
+        : names.join(" and ");
+    return { who, what };
+  }
+
+  function showCommentReactionCheerNote(subject, cheer) {
+    const { who, what } = commentReactionCheerText(subject, cheer);
+    const glyphs = cheer.tallies.slice(0, 6).map((tally) => commentReactionGlyph(tally.emoji, tally.custom)).join("");
+    const note = document.createElement("div");
+    note.className = "fm-reaction-cheer-note";
+    note.setAttribute("role", "status");
+    note.setAttribute("aria-live", "polite");
+    note.innerHTML = `<span class="fm-reaction-cheer-glyphs" aria-hidden="true">${glyphs}</span><span><strong>${escapeHtml(who)}</strong> reacted to your ${escapeHtml(what)}</span>`;
+    document.querySelectorAll(".fm-reaction-cheer-note").forEach((old) => old.remove());
+    document.body.append(note);
+    setTimeout(() => note.remove(), COMMENT_REACTION_CHEER_NOTE_MS);
+  }
+
+  function commentReactionCheerWait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function playCommentReactionCheer(subject, cheer) {
+    const motion = commentReactionMotionOk();
+    let bar = cheer.bar.isConnected ? cheer.bar
+      : document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="${CSS.escape(cheer.comment)}"]`);
+    if (!bar) return;
+    let rect = bar.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      bar.scrollIntoView({ behavior: motion ? "smooth" : "auto", block: "center" });
+      if (motion) await commentReactionCheerWait(650);
+      rect = bar.getBoundingClientRect();
+    }
+    showCommentReactionCheerNote(subject, cheer);
+    const card = bar.parentElement || bar;
+    card.classList.remove("fm-reaction-cheer-glow");
+    void card.offsetWidth;
+    card.classList.add("fm-reaction-cheer-glow");
+    setTimeout(() => card.classList.remove("fm-reaction-cheer-glow"), 2600);
+    if (!motion || typeof Element.prototype.animate !== "function") {
+      await commentReactionCheerWait(1200);
+      return;
+    }
+    for (const tally of cheer.tallies) {
+      const chip = bar.querySelector(`[data-reaction="${CSS.escape(tally.emoji)}"]`);
+      if (!chip) continue;
+      chip.classList.remove("fm-reaction-pop");
+      void chip.offsetWidth;
+      chip.classList.add("fm-reaction-pop");
+      chip.addEventListener("animationend", () => chip.classList.remove("fm-reaction-pop"), { once: true });
+    }
+    const originX = Math.min(Math.max(rect.left + Math.min(rect.width, 160) / 2, 16), window.innerWidth - 16);
+    const originY = Math.min(Math.max(rect.top + rect.height / 2, 16), window.innerHeight - 16);
+    const layer = document.createElement("div");
+    layer.className = "fm-reaction-cheer";
+    layer.setAttribute("aria-hidden", "true");
+    document.body.append(layer);
+    const ring = document.createElement("span");
+    ring.className = "fm-reaction-cheer-ring";
+    ring.style.left = `${originX}px`;
+    ring.style.top = `${originY}px`;
+    layer.append(ring);
+    ring.animate([
+      { transform: "scale(.2)", opacity: .9 },
+      { transform: `scale(${Math.max(window.innerWidth, window.innerHeight) / 30})`, opacity: 0 },
+    ], { duration: 1100, easing: "cubic-bezier(.15,.7,.3,1)", fill: "forwards" });
+    const weights = cheer.tallies.map((tally) => Math.max(1, Number(tally.count) || 1));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const pool = [];
+    cheer.tallies.forEach((tally, index) => {
+      const share = Math.max(4, Math.round((COMMENT_REACTION_CHEER_BITS * weights[index]) / total));
+      for (let n = 0; n < share; n += 1) pool.push(commentReactionGlyph(tally.emoji, tally.custom));
+    });
+    const reach = Math.hypot(window.innerWidth, window.innerHeight);
+    const flights = pool.map((glyph, index) => {
+      const bit = document.createElement("span");
+      bit.className = "fm-reaction-cheer-bit";
+      bit.innerHTML = glyph;
+      bit.style.fontSize = `${Math.round(20 + Math.random() * 26)}px`;
+      layer.append(bit);
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7;
+      const distance = reach * (0.28 + Math.random() * 0.42);
+      const dx = Math.cos(angle) * distance;
+      const dy = Math.sin(angle) * distance;
+      const spin = (Math.random() - 0.5) * 720;
+      const at = (x, y) => `translate(calc(${originX + x}px - 50%), calc(${originY + y}px - 50%))`;
+      return bit.animate([
+        { transform: `${at(0, 0)} scale(.2) rotate(0deg)`, opacity: 0 },
+        { transform: `${at(dx * 0.18, dy * 0.18)} scale(1.15) rotate(${spin * 0.2}deg)`, opacity: 1, offset: 0.1 },
+        { transform: `${at(dx, dy)} scale(1) rotate(${spin * 0.7}deg)`, opacity: 1, offset: 0.6 },
+        { transform: `${at(dx * 1.1, dy + reach * 0.35)} scale(.8) rotate(${spin}deg)`, opacity: 0 },
+      ], {
+        duration: 1700 + Math.random() * 1100,
+        delay: (index % 3) * 140 + Math.random() * 220,
+        easing: "cubic-bezier(.12,.75,.35,1)",
+        fill: "both",
+      }).finished.catch(() => {});
+    });
+    const origin = { left: originX, top: originY, width: 0, height: 0 };
+    commentReactionConfetti(origin);
+    setTimeout(() => commentReactionConfetti(origin), 260);
+    await Promise.all(flights);
+    layer.remove();
   }
 
   function commentReactionPlace(el, anchor, prefer = "below") {

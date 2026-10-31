@@ -69,7 +69,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     loadedTabs: new Set(),
     taxonomy: { events: [], properties: [], personProperties: [] },
     objects: {}, objectLoads: {},
-    overview: null, overviewPick: { pages: "pages", referrals: "referringDomains", sources: "sources", tech: "devices" },
+    overview: null, overviewHost: "", overviewPick: { pages: "pages", referrals: "referringDomains", sources: "sources", tech: "devices" },
     conversions: { result: null, goals: [], goalId: "", chartAll: false, interval: "day" },
     insight: null, insightResult: null, insightPrevious: null,
     dashboardId: "",
@@ -730,6 +730,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
   async function selectProject(projectId) {
     resetProjectState();
+    state.overviewHost = "";
     state.projectId = projectId;
     state.project = (state.org?.projects || []).find((project) => project.id === projectId) || null;
     renderProjectSelect(); renderShell();
@@ -878,16 +879,19 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     ["sessions", "Sessions", fmtCompact, true], ["viewsPerSession", "Views / session", fmtNumber, true],
     ["bounceRate", "Bounce rate", (value) => fmtPct(value), false],
     ["averageSessionMs", "Avg. session", fmtDuration, true],
+    ["sites", "Sites", fmtInt, true],
   ];
   const BREAKDOWN_CARDS = [
-    { key: "pages", title: "Pages", picks: [["pages", "Top"], ["entryPages", "Entry"], ["exitPages", "Exit"]], column: "Path" },
-    { key: "referrals", title: "Referrals", picks: [["referringDomains", "Domain"], ["referringUrls", "Full URL"]], column: "Referrer" },
-    { key: "sources", title: "Campaigns", picks: [["sources", "Source"], ["mediums", "Medium"], ["campaigns", "Campaign"]], column: "Value" },
-    { key: "tech", title: "Technology", picks: [["devices", "Device"], ["browsers", "Browser"], ["os", "OS"], ["screens", "Screen"], ["languages", "Language"]], column: "Name" },
-    { key: "countries", title: "Countries", column: "Country" },
-    { key: "events", title: "Top events", column: "Event" },
+    { key: "sites", title: "Sites", hint: "Click one to filter", column: "Site", order: 3 },
+    { key: "pages", title: "Pages", picks: [["pages", "Top"], ["entryPages", "Entry"], ["exitPages", "Exit"]], column: "Path", order: 10 },
+    { key: "referrals", title: "Referrals", picks: [["referringDomains", "Domain"], ["referringUrls", "Link"], ["referralLandings", "Landing"]], column: "Referrer", order: 11 },
+    { key: "sources", title: "Campaigns", picks: [["sources", "Source"], ["mediums", "Medium"], ["campaigns", "Campaign"], ["terms", "Term"], ["contents", "Content"]], column: "Value", order: 12 },
+    { key: "countries", title: "Countries", column: "Country", order: 13 },
+    { key: "tech", title: "Technology", picks: [["devices", "Device"], ["browsers", "Browser"], ["os", "OS"], ["screens", "Screen"], ["languages", "Language"]], column: "Name", order: 20 },
+    { key: "events", title: "Top events", column: "Event", order: 21 },
+    { key: "outboundLinks", title: "Outbound links", hint: "Clicks to other sites", column: "Link", order: 22 },
   ];
-  const SESSION_PICKS = new Set(["entryPages", "exitPages", "referringDomains", "referringUrls"]);
+  const SESSION_PICKS = new Set(["entryPages", "exitPages", "referringDomains", "referringUrls", "referralLandings"]);
   const CHANNEL_ORDER = ["Direct", "Organic search", "Social", "Referral", "Paid", "Email", "Campaign", "Affiliate"];
   const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   // Core Web Vitals thresholds: [good up to, poor above, unit, digits].
@@ -895,8 +899,14 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   const VITAL_NAMES = { LCP: "Largest contentful paint", INP: "Interaction to next paint", CLS: "Cumulative layout shift", FCP: "First contentful paint", TTFB: "Time to first byte" };
 
   async function loadOverview() {
-    state.overview = await query("overview");
+    const host = state.overviewHost;
+    const pattern = `^(www\\.)?${host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(:\\d+)?$`;
+    state.overview = await query("overview", host ? { filters: [{ type: "event", property: "$host", operator: "regex", value: [pattern] }] } : {});
     renderOverview();
+  }
+  function filterSite(host) {
+    state.overviewHost = state.overviewHost === host ? "" : host;
+    void loadOverview().catch((error) => { if (!isAbort(error)) fail(error); });
   }
   function countryName(code) {
     const text = String(code || "");
@@ -968,16 +978,19 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     if (empty) { $(`[data-analytics-onboarding-snippet]`).textContent = snippetText(); return; }
 
     const trend = kpiSeries(data);
+    const live = totals.liveVisitors === undefined ? "" : `<div class="an-kpi" title="Visitors with an event in the last five minutes"><div class="an-kpi-label"><span class="an-live"></span>Live now</div><div class="an-kpi-value">${h(fmtInt(totals.liveVisitors))}</div><div class="an-kpi-delta">Last 5 minutes</div></div>`;
     $(`[data-analytics-kpis]`).innerHTML = KPI_TILES.map(([key, label, format, upIsGood]) => {
       const now = Number(totals[key]) || 0, before = Number(previous[key]) || 0;
       return `<div class="an-kpi"><div class="an-kpi-label">${h(label)}</div><div class="an-kpi-value">${h(format(now))}</div><div class="an-kpi-delta">${kpiDelta(now, before, format, upIsGood)}</div>${sparkline(trend[key])}</div>`;
-    }).join("");
+    }).join("") + live;
+    const siteFilter = state.overviewHost;
+    $(`[data-analytics-site-filter]`).innerHTML = siteFilter ? `<span class="an-chip">Site: ${h(siteFilter)}<button type="button" data-analytics-site="${h(siteFilter)}" aria-label="Show all sites">×</button></span>` : "";
 
     const series = data.timeseries || { labels: [], series: [] }, interval = series.interval || "day";
     $(`[data-analytics-overview-interval]`).textContent = `${rangeLabel()} · by ${interval}`;
     drawChart($(`[data-analytics-overview-chart]`), {
       type: "line", labels: series.labels || [], timeAxis: true, annotations: state.objects.annotation || [],
-      formatLabel: (label, long) => fmtBucket(label, interval, long), height: 210,
+      formatLabel: (label, long) => fmtBucket(label, interval, long), height: 150,
       label: `Visitors, pageviews, and sessions by ${interval}`,
       series: (series.series || []).map((item, index) => ({ name: item.name, data: item.data || [], total: item.total, color: PALETTE[index] })),
     });
@@ -1003,7 +1016,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     for (const [selector, rows, label] of [["[data-analytics-session-depth]", data.sessionDepth, "Sessions by pages viewed"], ["[data-analytics-session-length]", data.sessionLength, "Sessions by length"]]) {
       const list = rows || [];
       drawChart($(selector), {
-        type: "bar", labels: list.map((row) => row.value), height: 150, label, formatValue: fmtInt,
+        type: "bar", labels: list.map((row) => row.value), height: 110, label, formatValue: fmtInt,
         series: list.some((row) => row.count) ? [{ name: "Sessions", data: list.map((row) => row.count), color: PALETTE[0] }] : [],
       });
     }
@@ -1015,13 +1028,13 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     }).join("")}</tbody></table></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">No page leaves in this range.</p></div>`;
 
     const vitals = data.webVitals || {};
-    $(`[data-analytics-vitals]`).innerHTML = Object.keys(VITALS).some((key) => vitals[key]) ? `<div class="an-kpis">${Object.entries(VITALS).map(([key, [good, poor, unit, digits]]) => {
-      const entry = vitals[key];
-      if (!entry) return `<div class="an-kpi"><div class="an-kpi-label" title="${h(VITAL_NAMES[key])}">${h(key)} · ${h(VITAL_NAMES[key])}</div><div class="an-kpi-value">—</div><div class="an-kpi-delta">No samples</div></div>`;
+    $(`[data-analytics-vitals]`).innerHTML = Object.keys(VITALS).some((key) => vitals[key]) ? `<div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Metric</th><th scope="col" class="r">p75</th><th scope="col">Rating</th><th scope="col" class="r">Samples</th></tr></thead><tbody>${Object.entries(VITALS).map(([key, [good, poor, unit, digits]]) => {
+      const entry = vitals[key], name = `<th scope="row">${h(key)} <span class="an-hint">${h(VITAL_NAMES[key])}</span></th>`;
+      if (!entry) return `<tr>${name}<td class="r">—</td><td class="an-hint">No samples</td><td class="r">0</td></tr>`;
       const value = Number(entry.p75) || 0, level = value <= good ? "good" : value <= poor ? "warn" : "bad";
       const word = { good: "Good", warn: "Needs improvement", bad: "Poor" }[level];
-      return `<div class="an-kpi"><div class="an-kpi-label" title="${h(VITAL_NAMES[key])}">${h(key)} · ${h(VITAL_NAMES[key])}</div><div class="an-kpi-value">${h(value.toFixed(digits))}${unit ? ` <span class="an-hint">${unit}</span>` : ""}</div><div class="an-kpi-delta"><span class="an-dot an-dot-${level}"></span> ${word} · ${h(fmtInt(entry.samples))} samples</div></div>`;
-    }).join("")}</div>` : `<p class="an-hint" style="margin:0">No web vitals in this range. They are sent when “Web vitals” is on in Settings and a visitor leaves a page.</p>`;
+      return `<tr>${name}<td class="r"><b>${h(value.toFixed(digits))}</b>${unit ? ` <span class="an-hint">${unit}</span>` : ""}</td><td><span class="an-dot an-dot-${level}"></span> ${word}</td><td class="r">${h(fmtInt(entry.samples))}</td></tr>`;
+    }).join("")}</tbody></table></div>` : `<p class="an-hint an-pad" style="margin:0">No web vitals in this range. They are sent when “Web vitals” is on in Settings and a visitor leaves a page.</p>`;
   }
   function renderHours(grid) {
     const host = $(`[data-analytics-hours]`);
@@ -1039,7 +1052,24 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
   function breakdownUnit(pick) {
     if (pick === "events") return "Events";
+    if (pick === "outboundLinks") return "Clicks";
     return SESSION_PICKS.has(pick) ? "Sessions" : "Views";
+  }
+  function linkLabel(value) {
+    const match = /^https?:\/\/([^/]+)(.*)$/i.exec(String(value || ""));
+    if (!match) return `<span class="an-break">${h(value)}</span>`;
+    return `<span class="an-break" title="${h(value)}">${h(match[1].replace(/^www\./, ""))}</span>${match[2] && match[2] !== "/" ? `<span class="an-sub-cell">${h(match[2])}</span>` : ""}`;
+  }
+  function breakdownLabel(card, pick, row) {
+    if (card.key === "sites" && row.value !== "(unknown)") return `<button type="button" class="an-link an-break" data-analytics-site="${h(row.value)}" aria-pressed="${state.overviewHost === row.value}" title="Show only ${h(row.value)}">${h(row.value)}</button>`;
+    if (card.key === "pages") return `<button type="button" class="an-link an-break" data-analytics-heatmap-open="${h(row.value)}" title="Open the heatmap for this page">${h(row.value)}</button>`;
+    if (pick === "referringUrls" || pick === "outboundLinks") return linkLabel(row.value);
+    if (pick === "referralLandings") {
+      const [from, to] = String(row.value).split(" → ");
+      return `<span class="an-break">${h(from)}</span><span class="an-sub-cell">→ ${h(to || "")}</span>`;
+    }
+    const text = card.key === "countries" ? countryName(row.value) : card.key === "events" ? eventLabel(row.value) : row.value;
+    return `<span class="an-break">${h(text)}</span>`;
   }
   function renderBreakdowns() {
     const breakdowns = state.overview?.breakdowns || {};
@@ -1048,15 +1078,13 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       const rows = breakdowns[pick] || [], peak = Math.max(1, ...rows.map((row) => row.count || 0));
       const unit = breakdownUnit(pick), totals = state.overview?.totals || {};
       const total = unit === "Sessions" ? Number(totals.sessions) || 0 : unit === "Views" ? Number(totals.pageviews) || 0 : rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
-      const withVisitors = pick === "pages";
-      const picker = card.picks ? `<div class="an-seg" role="group" aria-label="${h(card.title)} breakdown">${card.picks.map(([value, label]) => `<button type="button" data-analytics-pick="${h(card.key)}:${h(value)}" aria-pressed="${value === pick}">${h(label)}</button>`).join("")}</div>` : "";
-      const body = rows.length ? `<div class="an-table-wrap an-scroll"><table class="an-table"><thead><tr><th scope="col">${h(card.column)}</th>${withVisitors ? `<th scope="col" class="r">Visitors</th>` : ""}<th scope="col" class="r">${unit}</th><th scope="col" class="r" title="Share of all ${unit.toLowerCase()}">Share</th></tr></thead><tbody>${rows.map((row) => {
-        const text = card.key === "countries" ? countryName(row.value) : card.key === "events" ? eventLabel(row.value) : row.value;
-        let label = `<span class="an-break">${h(text)}</span>`;
-        if (card.key === "pages") label = `<button type="button" class="an-link an-break" data-analytics-heatmap-open="${h(row.value)}" title="Open the heatmap for this page">${h(text)}</button>`;
-        return `<tr><th scope="row" class="an-bar-cell" style="--an-share:${((row.count || 0) / peak * 100).toFixed(1)}%">${label}</th>${withVisitors ? `<td class="r">${h(fmtInt(row.visitors))}</td>` : ""}<td class="r">${h(fmtInt(row.count))}</td><td class="r an-hint">${h(fmtPct(total ? Math.min(1, row.count / total) : 0, 0))}</td></tr>`;
-      }).join("")}</tbody></table></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">${pick.startsWith("referring") ? "No visits from other sites in this range." : "Nothing recorded."}</p></div>`;
-      return `<section class="an-card"><div class="an-card-head"><h3>${h(card.title)}</h3>${picker}</div>${body}</section>`;
+      const withVisitors = pick === "pages" || pick === "sites", withSessions = pick === "sites";
+      const picker = card.picks ? `<div class="an-seg" role="group" aria-label="${h(card.title)} breakdown">${card.picks.map(([value, label]) => `<button type="button" data-analytics-pick="${h(card.key)}:${h(value)}" aria-pressed="${value === pick}">${h(label)}</button>`).join("")}</div>` : card.hint ? `<span class="an-hint">${h(card.hint)}</span>` : "";
+      const empty = pick.startsWith("referr") ? "No visits from other sites in this range." : pick === "outboundLinks" ? "No clicks to other sites in this range. Clicks are recorded when autocapture is on." : "Nothing recorded.";
+      const body = rows.length ? `<div class="an-table-wrap an-scroll"><table class="an-table"><thead><tr><th scope="col">${h(card.column)}</th>${withVisitors ? `<th scope="col" class="r">Visitors</th>` : ""}${withSessions ? `<th scope="col" class="r">Sessions</th>` : ""}<th scope="col" class="r">${unit}</th><th scope="col" class="r" title="Share of all ${unit.toLowerCase()}">Share</th></tr></thead><tbody>${rows.map((row) => {
+        return `<tr><th scope="row" class="an-bar-cell" style="--an-share:${((row.count || 0) / peak * 100).toFixed(1)}%">${breakdownLabel(card, pick, row)}</th>${withVisitors ? `<td class="r">${h(fmtInt(row.visitors))}</td>` : ""}${withSessions ? `<td class="r">${h(fmtInt(row.sessions))}</td>` : ""}<td class="r">${h(fmtInt(row.count))}</td><td class="r an-hint">${h(fmtPct(total ? Math.min(1, row.count / total) : 0, 0))}</td></tr>`;
+      }).join("")}</tbody></table></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">${empty}</p></div>`;
+      return `<section class="an-card" style="order:${card.order}"><div class="an-card-head"><h3>${h(card.title)}</h3>${picker}</div>${body}</section>`;
     }).join("");
   }
 
@@ -2842,6 +2870,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     ["[data-analytics-sub]", (node) => { const [owner, name] = node.dataset.analyticsSub.split(":"); showTab(owner, name); }],
     ["[data-analytics-pick]", (node) => { const [key, value] = node.dataset.analyticsPick.split(":"); state.overviewPick[key] = value; renderBreakdowns(); }],
     ["[data-analytics-heatmap-open]", (node) => openHeatmap(node.dataset.analyticsHeatmapOpen)],
+    ["[data-analytics-site]", (node) => filterSite(node.dataset.analyticsSite)],
     ["[data-analytics-goal-new]", () => goalDialog()],
     ["[data-analytics-goal-edit]", (node) => goalDialog(node.dataset.analyticsGoalEdit)],
     ["[data-analytics-goal-pick]", (node) => { state.conversions.goalId = node.dataset.analyticsGoalPick; renderConversions(); }],
