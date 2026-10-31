@@ -3400,6 +3400,11 @@ public:
     QString testBranchDiffDragComment(const QString &path, int fromLine,
                                       int toLine);
     bool testSubmitBranchInlineComment(const QString &body, QString *error);
+    void testOpenPullDiffInGitView(int number) { openPullDiffInGitView(number); }
+    QString testBranchPullReviewBarText() const;
+    bool testQueueBranchPullInlineComment(const QString &body);
+    bool testFinishBranchPullReview(const QString &state, const QString &body,
+                                    QString *error);
     QList<PullEvent> testBranchReviewEvents(const QString &branch) const;
     // The diff toolbar's link back to the agent that wrote the branch: its
     // caption when it is offered, empty when the branch belongs to no agent.
@@ -6410,6 +6415,17 @@ private:
     void submitPullInlineReviewBatch();
     void discardPullInlineReviewBatch();
     void updatePullInlineReviewBatchBar();
+    QStringList postPullInlineDrafts(int number);
+    int pullInlineDraftCount(int number) const;
+    void rerenderBranchPullDiff();
+    QWidget *buildBranchPullReviewBar();
+    const PullRequest *branchDiffPull() const;
+    void updateBranchPullReviewBar();
+    void openBranchPullReviewDialog();
+    bool finishBranchPullReview(int number, const QString &state,
+                                const QString &body, QString *error);
+    bool postPullReviewEvent(int number, const QString &state,
+                             const QString &body, QString *error);
     bool postPullInlineComment(int number, const QString &path,
                                const QString &side, int lineStart,
                                int lineEnd, const QString &body,
@@ -13794,6 +13810,11 @@ private:
     QLabel *m_pullInlineBatchLabel = nullptr;
     QPushButton *m_pullInlineBatchSubmitButton = nullptr;
     QPushButton *m_pullInlineBatchDiscardButton = nullptr;
+    QWidget *m_branchPullReviewBar = nullptr;
+    QLabel *m_branchPullReviewLabel = nullptr;
+    QPushButton *m_branchPullReviewAiButton = nullptr;
+    QPushButton *m_branchPullReviewDiscardButton = nullptr;
+    QPushButton *m_branchPullReviewSubmitButton = nullptr;
     QString m_pullInlinePath;
     QString m_pullInlineSide;
     int m_pullInlineStartLine = 0;

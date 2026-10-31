@@ -71,3 +71,32 @@ so the thumb jumped back up every time the next page loaded.
 
 Test: `checkDiffStreamResponsiveness()` in `desktop/tests/test_window_resize.cpp`
 (`forkmesh-window-tests --diff-stream-only`).
+
+## Reviewing a pull request in the Git view
+
+A pull request's "Changes in Git" tab opens its diff in this pane
+(`openPullDiffInGitView()`, PR mode: `m_branchDiffPullNumber`). The pull
+screen's own Files page is no longer reachable from that tab, so the pane
+carries the whole review, in both layout modes:
+
+- **Inline comments** work as on the pull screen: click or drag line numbers,
+  then Comment now or Add to review. Drafts show inline as "Pending".
+- **Review bar** (`buildBranchPullReviewBar()`, `updateBranchPullReviewBar()`
+  in `MainWindowPulls.cpp`), between the merge-health strip and the diff, shown
+  only in PR mode: "Reviewing PR #N" with the draft count, AI review (same rule
+  as the pull header: open, not archived, has a patch), Discard drafts, and
+  Review changes / Submit review (N).
+- **Review changes** (`openBranchPullReviewDialog()`) asks for an optional
+  summary and Comment, Approve or Request changes (the last two only on an
+  open pull). `finishBranchPullReview()` posts the drafts, then the review
+  event; a Comment with no drafts and no summary is refused. The composer's
+  own Submit review opens the same dialog while it sits on this pane. A
+  mirror without write access sends both through the pull inbox
+  (`postPullReviewEvent()`, shared with the conversation's Approve and
+  Request changes).
+- Leaving PR mode (a plain branch, a base change) hides the bar. An AI review
+  that finishes re-renders the pane when it still shows that pull.
+
+Test: the "Code on another machine" pull in `test_window_resize.cpp` opens in
+the Git view, queues a draft, approves, and checks both events in the pull
+store.
