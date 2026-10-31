@@ -66,6 +66,8 @@ NS = _load(
     "cas_blob_relpath", "release_asset_line", "release_manifest_content",
     "release_signing_message", "generate_shasums", "release_semver_key",
     "resolve_latest_release", "asset_upload_decision",
+    "APT_REPOSITORY", "APT_METADATA_DIR", "APT_METADATA_RE", "APT_POOL_RE",
+    "apt_redirect_target",
 )
 valid_release_tag = NS["valid_release_tag"]
 valid_asset_name = NS["valid_asset_name"]
@@ -82,6 +84,7 @@ resolve_latest_release = NS["resolve_latest_release"]
 asset_upload_decision = NS["asset_upload_decision"]
 RELEASE_BLOB_RE = NS["RELEASE_BLOB_RE"]
 REPO_RELEASE_DOWNLOADS_RE = NS["REPO_RELEASE_DOWNLOADS_RE"]
+apt_redirect_target = NS["apt_redirect_target"]
 
 
 H1 = "a" * 64
@@ -302,3 +305,32 @@ def test_asset_upload_decision():
     assert asset_upload_decision("draft", existing, H2) == "replace"
     assert asset_upload_decision("published", existing, H2) == "conflict"
     assert asset_upload_decision("yanked", existing, H2) == "conflict"
+
+
+def test_apt_pool_path_redirects_to_the_release_blob():
+    target = apt_redirect_target(
+        "/apt/pool/sha256/" + H1 + "/forkmesh_1.5.0%2b3_amd64.deb")
+    assert target == "/api/repo/forkmesh/forkmesh/releases/blob/sha256/" + H1
+    assert RELEASE_BLOB_RE.match(target).group(3) == H1
+
+
+def test_apt_metadata_redirects_to_the_committed_file_on_main():
+    assert apt_redirect_target("/apt/dists/stable/InRelease") == (
+        "/api/repo/forkmesh/forkmesh/raw?path=.forkmesh%2Freleases%2Fapt"
+        "%2Fdists%2Fstable%2FInRelease&ref=main")
+    for name in ("Release", "Release.gpg", "main/binary-amd64/Packages"):
+        assert apt_redirect_target("/apt/dists/stable/" + name).endswith(
+            "%2F" + name.replace("/", "%2F") + "&ref=main")
+    for name in ("forkmesh-archive-keyring.asc", "forkmesh.sources"):
+        assert apt_redirect_target("/apt/" + name).endswith(
+            "apt%2F" + name + "&ref=main")
+
+
+def test_apt_redirect_rejects_everything_else():
+    for path in ("/apt", "/apt/", "/apt/dists/stable/../../../etc/passwd",
+                 "/apt/dists/unstable/InRelease", "/apt/dists/stable/Contents-amd64",
+                 "/apt/pool/sha256/" + H1 + "/../x.deb",
+                 "/apt/pool/sha256/" + H1 + "/forkmesh.tar",
+                 "/apt/pool/sha256/short/forkmesh.deb",
+                 "/apt/dists/stable/main/binary-amd64/Packages.gz", ""):
+        assert apt_redirect_target(path) == ""

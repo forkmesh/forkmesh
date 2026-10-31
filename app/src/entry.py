@@ -1290,6 +1290,7 @@ generate_shasums = _releases.export("generate_shasums")
 release_semver_key = _releases.export("release_semver_key")
 resolve_latest_release = _releases.export("resolve_latest_release")
 asset_upload_decision = _releases.export("asset_upload_decision")
+apt_redirect_target = _releases.export("apt_redirect_target")
 
 # Git wire helpers pull in gzip/io and are used only by clone/blob routes.
 _git_http = _LazyModule("git_http")

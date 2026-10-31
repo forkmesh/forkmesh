@@ -252,6 +252,63 @@ def test_the_linux_baseline_build_publishes_the_zsync_with_the_appimage():
     assert tool.LINUX_ASSETS == ("forkmesh-linux-x86_64", "forkmesh-linux-x86_64.AppImage")
 
 
+def test_the_linux_baseline_build_publishes_the_deb_with_the_binary():
+    source = TOOL.read_text()
+    assert "if LINUX_ASSET in missing:\n                    built[DEB_ASSET]" in source
+    assert '--build "$FORKMESH_LINUX_BUILD"' in tool.BUILD_LINUX_SCRIPT
+    assert tool.DEB_ASSET == "forkmesh-linux-x86_64.deb"
+    assert tool.DEB_ASSET not in tool.HOST_ASSETS
+
+
+def _apt_latest(digest):
+    return {"tag": "v1.5.1", "assets": [
+        {"name": "forkmesh-linux-x86_64", "blob_sha256": "1" * 64},
+        {"name": "forkmesh-linux-x86_64.deb", "blob_sha256": digest}]}
+
+
+def test_apt_refresh_skips_a_release_without_a_deb(tmp_path, monkeypatch):
+    monkeypatch.setattr(tool, "run", lambda *a, **k: pytest.fail("ran a command"))
+    assert tool.refresh_apt_repository(tmp_path, tmp_path, {"assets": []}) is False
+
+
+def test_apt_refresh_keeps_the_old_repository_without_a_signing_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("FORKMESH_APT_SIGNING_KEY", str(tmp_path / "missing.asc"))
+    monkeypatch.setattr(tool, "run", lambda *a, **k: pytest.fail("ran a command"))
+    assert tool.refresh_apt_repository(tmp_path, tmp_path, _apt_latest("2" * 64)) is False
+
+
+def test_apt_refresh_signs_the_promoted_deb_from_the_release_store(tmp_path, monkeypatch):
+    digest = "3" * 64
+    blob = tmp_path / "cas" / "sha256" / digest[:2] / digest
+    blob.mkdir(parents=True)
+    (blob / "data").write_bytes(b"deb")
+    key = tmp_path / "apt-signing-key.asc"
+    key.write_text("key")
+    monkeypatch.setenv("FORKMESH_APT_SIGNING_KEY", str(key))
+    calls = []
+    monkeypatch.setattr(tool, "run", lambda args, **k: calls.append([str(a) for a in args]))
+    monkeypatch.setattr(tool, "git", lambda tree, *args, **k: calls.append(list(args)))
+    tree = tmp_path / "tree"
+    assert tool.refresh_apt_repository(tree, tmp_path / "cas", _apt_latest(digest)) is True
+    publish, add = calls
+    assert publish[1:3] == [str(tree / "tools" / "forkmesh-apt-repo.py"), "publish"]
+    assert publish[publish.index("--deb") + 1] == str(blob / "data")
+    assert publish[publish.index("--sha256") + 1] == digest
+    assert publish[publish.index("--out") + 1] == str(tree / ".forkmesh/releases/apt")
+    assert publish[publish.index("--signing-key") + 1] == str(key)
+    assert add == ["add", "--", ".forkmesh/releases/apt"]
+
+
+def test_apt_refresh_fails_when_the_promoted_deb_is_not_in_the_store(tmp_path, monkeypatch):
+    key = tmp_path / "apt-signing-key.asc"
+    key.write_text("key")
+    monkeypatch.setenv("FORKMESH_APT_SIGNING_KEY", str(key))
+    with pytest.raises(tool.CompletionError, match="not in the release store"):
+        tool.refresh_apt_repository(tmp_path, tmp_path / "cas", _apt_latest("4" * 64))
+    with pytest.raises(tool.CompletionError, match="invalid hash"):
+        tool.refresh_apt_repository(tmp_path, tmp_path / "cas", _apt_latest("nope"))
+
+
 SIGNER = "6e4a2120fa222535b0a1500324f1fe77cb22b7d9132c4f8a48d73567882adf6c"
 
 

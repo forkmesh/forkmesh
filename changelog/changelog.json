@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Desktop", "text": "On Debian and Ubuntu you can now install ForkMesh with sudo apt install forkmesh after adding the ForkMesh apt repository, and sudo apt upgrade keeps it up to date."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The Sessions page now lists every session from the Claude app's Code tab and groups them the same way: pinned, your named groups, then one group per folder, with the Claude app's titles."},
   {"date": "2026-10-31", "area": "Desktop", "text": "When pings arrive in a burst, the desktop and your phone show the first three, then one summary at 10 and at 100 that lists each kind of ping and its numbers, instead of one notification per ping."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The Quality agent's UI stall repair now starts in Auto mode, whatever the composer's mode is set to."},
