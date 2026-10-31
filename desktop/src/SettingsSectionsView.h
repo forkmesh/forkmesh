@@ -142,6 +142,8 @@ private:
     void syncLitHeading();
     bool handleNavMouse(QEvent *event);
     void buildPendingAbove(int index);
+    int stickyTitleHeight();
+    void updateSticky();
 
     QLineEdit *m_search = nullptr;
     QListWidget *m_nav = nullptr;
@@ -151,6 +153,11 @@ private:
     QWidget *m_bottomSpacer = nullptr;
     QLabel *m_noMatches = nullptr;
     QWidget *m_hitOverlay = nullptr;
+    QWidget *m_sticky = nullptr;
+    QWidget *m_stickyTitleRow = nullptr;
+    QLabel *m_stickyIcon = nullptr;
+    QLabel *m_stickyTitle = nullptr;
+    QLabel *m_stickySub = nullptr;
     QTimer *m_searchTimer = nullptr;
     QVector<Section> m_sections;
     QList<QPointer<QWidget>> m_hits;

@@ -2875,6 +2875,7 @@ public:
     // "conflict ahead behind dirty worktree". Empty when no row shows it.
     QString testPullListBranchMeta(int number) const;
     QString testPullListRowTooltip(int number) const;
+    int testClickPullRowDiffButton(const QList<PullRequest> &pulls, int number);
     QString testPullConflictNoticeBody(const PullRequest &pull,
                                        const QStringList &conflictFiles) const
     {
@@ -3971,6 +3972,10 @@ private:
     void startLocalControl();
     // Creates the control server (LAN or relay, whichever reaches it first).
     bool ensureLocalControlServer();
+    bool remoteControlOn() const;
+    void setRemoteControlOn(bool on);
+    void refreshRemoteControlViews();
+    void openPhoneSettings();
     void handleLocalControlRequest(int connectionId, int requestId,
                                    const QString &method,
                                    const QJsonObject &params);
@@ -7619,6 +7624,8 @@ private:
     RailShortcuts::State &railShortcutState();
     void saveRailShortcutState();
     void syncRailShortcutTiles();
+    void refreshRailShortcutBusy();
+    void refreshShortcutRailActivity();
     void activateRailShortcut(const QString &id);
     void removeRailShortcut(const QString &id);
     bool handlePageButtonEvent(QObject *watched, QEvent *event);
@@ -12719,6 +12726,7 @@ private:
     QComboBox *m_voiceDeviceCombo = nullptr;
     SettingsSectionsView *m_settingsSections = nullptr;
     int m_voiceSettingsTabIndex = -1;
+    int m_phoneSettingsTabIndex = -1;
     int m_pingsSettingsTabIndex = -1;
     PingSettingsPanel *m_pingSettingsPanel = nullptr;
     // The administrator card on Settings > Pings, shown only to admins.

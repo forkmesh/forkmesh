@@ -20,7 +20,9 @@
 #include "MainWindowAgentsInternal.h"
 #include "MachineAgentScan.h"
 #include "MainWindowInternal.h"
+#include "MainWindowNextAccess.h"
 #include "NodeEventSocket.h"
+#include "SettingsSectionsView.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -158,7 +160,41 @@ QString localControlDefaultAgentMode(const QComboBox *selector)
         .trimmed();
 }
 
+constexpr char kRemoteControlSetting[] = "localControl/remoteControl";
+
 } // namespace
+
+bool MainWindow::remoteControlOn() const
+{
+    return QSettings().value(kRemoteControlSetting, true).toBool();
+}
+
+void MainWindow::setRemoteControlOn(bool on)
+{
+    QSettings().setValue(kRemoteControlSetting, on);
+    logSystem(on ? QStringLiteral("Remote control turned on: paired phones can steer this desktop.")
+                 : QStringLiteral("Remote control turned off: paired phones are refused."));
+    if (m_localControl)
+        m_localControl->setRemoteOff(!on);
+    if (on)
+        notifyLocalControlAgentsChanged();
+    refreshRemoteControlViews();
+}
+
+void MainWindow::refreshRemoteControlViews()
+{
+    refreshLocalControlTab();
+    refreshSessionsHeader();
+    refreshAgentTowerPanels();
+    forkmesh::ui::NextAccess::syncWorkspace(*this);
+}
+
+void MainWindow::openPhoneSettings()
+{
+    showSection(1);
+    if (m_settingsSections && m_phoneSettingsTabIndex >= 0)
+        m_settingsSections->setCurrentIndex(m_phoneSettingsTabIndex);
+}
 
 bool MainWindow::ensureLocalControlServer()
 {
@@ -203,7 +239,8 @@ bool MainWindow::ensureLocalControlServer()
             handleLocalControlRequest(connectionId, requestId, method, params);
         };
     registerLocalControlFamilies();
-    m_localControl->onDevicesChanged = [this] { refreshLocalControlTab(); };
+    m_localControl->setRemoteOff(!remoteControlOn());
+    m_localControl->onDevicesChanged = [this] { refreshRemoteControlViews(); };
     m_localControl->onConnectionClosed = [this](int connectionId) {
         closeLocalControlStreams(connectionId);
     };

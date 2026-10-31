@@ -274,7 +274,7 @@ internal fun EmberFilterSheet(
                     Text("Filters", style = Fm.text.titleMedium)
                     Text("$matching of ${Ember.number(snapshot.files.size)} files match", style = Fm.text.bodySmall)
                 }
-                FmTextButton(onClick = { onChange(EmberFilters()) }, enabled = filters.active) { Text("Reset") }
+                FmTextButton(onClick = { onChange(EmberFilters()) }, enabled = filters.active, busy = false) { Text("Reset") }
             }
             FmField("Search by filename") {
                 FmTextField(

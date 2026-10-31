@@ -10,6 +10,7 @@
 #include "ClaudeSessionScan.h"
 #include "ClaudeTranscriptView.h"
 #include "DesignTokens.h"
+#include "LocalControl.h"
 #include "SessionSidePanels.h"
 #include "UiKit.h"
 
@@ -1890,6 +1891,32 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
     SessionSidePanels::Details details;
     const AgentSession *session = sessionId != 0 ? window.findAgentSession(sessionId) : nullptr;
     window.fillAgentSubSessions(panels, session ? sessionId : 0);
+    QPointer<MainWindow> self(&window);
+    panels->setRemoteActions(
+        [self](bool on) {
+            if (self)
+                self->setRemoteControlOn(on);
+        },
+        [self] {
+            if (self)
+                self->openPhoneSettings();
+        });
+    details.remoteOn = window.remoteControlOn();
+    if (LocalControlServer *control = window.m_localControl) {
+        details.remoteAvailable = true;
+        const auto phoneName = [](const LocalControlServer::Device &device) {
+            return device.name.isEmpty() ? QStringLiteral("Phone") : device.name;
+        };
+        for (const LocalControlServer::Device &device : control->pairedDevices()) {
+            if (control->isConnected(device.key)) {
+                details.remotePhones << phoneName(device);
+                details.remoteLocal |= control->connectedLocally(device.key);
+            } else if (device.lastSeenMs >= details.remoteLastSeenMs) {
+                details.remotePaired = phoneName(device);
+                details.remoteLastSeenMs = device.lastSeenMs;
+            }
+        }
+    }
     if (!session) {
         panels->setDetails(details);
         return;
@@ -1937,6 +1964,9 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
     details.contextUsed = session->contextTokens;
     details.contextWindow = session->contextWindow;
     details.totalTokens = session->totalTokens;
+    details.promptTokens = session->promptTokens;
+    details.completionTokens = session->completionTokens;
+    details.turns = session->numTurns;
     details.costUsd = session->costUsd;
     details.files = stat.files;
     details.added = stat.added;

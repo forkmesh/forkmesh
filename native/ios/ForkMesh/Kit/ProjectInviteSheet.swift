@@ -82,6 +82,7 @@ struct ProjectInviteSheet: View {
             }
             FmFilledButton(
                 sending ? "Sending…" : "Send invite", icon: "send",
+                busy: sending,
                 onPressed: canInviteAccount && !sending ? { sendInvite() } : nil)
                 .accessibilityIdentifier("project-invite-send")
         }

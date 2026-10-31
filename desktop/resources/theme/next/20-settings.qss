@@ -139,3 +139,16 @@ QFrame[nextGroupBox="true"] QLabel#settingsPlacesName { color: @fg; font-size: 1
 #settingsSectionsContent QWidget QLabel#sectionLabel[settingsLit="true"] {
     color: @accentFg; background-color: @accentSubtle;
 }
+
+#settingsStickyHeader { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+#settingsStickyTitleRow, #settingsStickyIcon { background: transparent; }
+QLabel#settingsStickyTitle {
+    color: @fg; font-size: 16px; font-weight: 600; background: transparent;
+    padding: 1px 6px; border-radius: 6px;
+}
+QLabel#settingsStickySub {
+    color: @fgMuted; font-size: 11px; font-weight: 500; letter-spacing: 0.6px;
+    background: transparent; padding: 1px 6px 1px 30px; border-radius: 4px;
+}
+QLabel#settingsStickyTitle[settingsLit="true"],
+QLabel#settingsStickySub[settingsLit="true"] { color: @accentFg; background-color: @accentSubtle; }

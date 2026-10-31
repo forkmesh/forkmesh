@@ -7,6 +7,7 @@
 #include "MainWindow.h"
 #include "GitLayout.h"
 #include "MainWindowNextAccess.h"
+#include "SessionSidePanels.h"
 #include "WorkspaceLayout.h"
 
 #include <QApplication>
@@ -515,6 +516,80 @@ int runWorkspaceSnapshots(MainWindow &window)
                   .arg(label));
         if (grab(dir, QStringLiteral("workspace-details")))
             ++saved;
+        {
+            forkmesh::ui::SessionSidePanels panels;
+            panels.resize(320, 1500);
+            panels.show();
+            forkmesh::ui::SessionSidePanels::Details details;
+            details.session = true;
+            details.machine = QStringLiteral("desk");
+            details.machineNote = QStringLiteral("this computer");
+            details.machineIcon = QStringLiteral("device-desktop");
+            details.branch = QStringLiteral("agent/9301-invoice");
+            details.agent = QStringLiteral("Claude Code · Opus 5.5");
+            details.contextUsed = 127500;
+            details.contextWindow = 1000000;
+            details.promptTokens = 412000;
+            details.completionTokens = 38000;
+            details.totalTokens = 450000;
+            details.turns = 14;
+            details.costUsd = 3.42;
+            details.remoteAvailable = true;
+            details.remotePhones = {QStringLiteral("Pixel 9")};
+            details.remoteLocal = true;
+            bool toggled = false;
+            panels.setRemoteActions([&toggled](bool on) { toggled = !on; }, [] {});
+            panels.setDetails(details);
+            settle();
+            QStringList rows;
+            for (QLabel *swatch : panels.findChildren<QLabel *>(
+                     QStringLiteral("sessionsDetailSwatch")))
+                if (swatch->isVisible())
+                    rows << swatch->parentWidget()
+                                ->findChild<QLabel *>(QStringLiteral("sessionsDetailText"))
+                                ->text();
+            check(rows == QStringList{QStringLiteral("Used"), QStringLiteral("Free space"),
+                                      QStringLiteral("Input tokens"),
+                                      QStringLiteral("Output tokens"), QStringLiteral("Turns"),
+                                      QStringLiteral("Cost")},
+                  QStringLiteral("the Context card lists coloured rows (%1): %2")
+                      .arg(label, rows.join(QStringLiteral(", "))));
+            auto *used = panels.findChild<QLabel *>(QStringLiteral("sessionsContextUsed"));
+            auto *status = panels.findChild<QLabel *>(QStringLiteral("sessionsRemoteStatus"));
+            auto *remote = panels.findChild<QAbstractButton *>(
+                QStringLiteral("sessionsRemoteSwitch"));
+            check(used && used->text() == QStringLiteral("13% used") && status &&
+                      status->text().contains(QStringLiteral("Pixel 9")) &&
+                      status->text().contains(QStringLiteral("on this network")) && remote &&
+                      remote->isChecked() && remote->isEnabled(),
+                  QStringLiteral("the Remote control switch shows the connected phone (%1)")
+                      .arg(label));
+            QDir().mkpath(dir);
+            if (panels.grab().save(
+                    QDir(dir).filePath(QStringLiteral("session-panels-phone.png"))))
+                ++saved;
+            if (remote)
+                remote->click();
+            check(toggled, QStringLiteral("clicking Remote control asks to turn it off (%1)")
+                               .arg(label));
+            details.remotePhones.clear();
+            panels.setDetails(details);
+            settle();
+            check(status && status->text().contains(QStringLiteral("Connect a phone")),
+                  QStringLiteral("with no phone the panel says how to connect one (%1)")
+                      .arg(label));
+            details.contextUsed = 960000;
+            details.remoteOn = false;
+            panels.setDetails(details);
+            settle();
+            check(remote && !remote->isChecked() && status &&
+                      status->text().startsWith(QStringLiteral("Off.")),
+                  QStringLiteral("Remote control off says phones are refused (%1)")
+                      .arg(label));
+            if (panels.grab().save(
+                    QDir(dir).filePath(QStringLiteral("session-panels-no-phone.png"))))
+                ++saved;
+        }
 
         check(press("workspaceToggleTerminal") && shown(dock) &&
                   shown(window.testWorkspaceTerminal()),
