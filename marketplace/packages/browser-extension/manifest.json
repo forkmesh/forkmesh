@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Extensions",
-  "version": "2.27.0",
+  "version": "2.28.0",
   "summary": "The ForkMesh extension for Chrome. Fills Password Vault logins, links Gmail, Zoho Mail and Mastodon conversations to CRM contacts, feeds Marketing's Reddit desk and updates any Marketing channel from its page in one click. One sign-in.",
   "screenshots": [
     {
@@ -76,6 +76,11 @@
     {
       "id": "browser.x.profile.read",
       "label": "Read your organization's public X profile counts while you have the profile open, for the Marketing package",
+      "risk": "low"
+    },
+    {
+      "id": "browser.repository.read",
+      "label": "Read the public details of the GitHub, GitLab, Codeberg or Gitea repository open in the tab when you open the popup",
       "risk": "low"
     },
     {
