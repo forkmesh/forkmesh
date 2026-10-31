@@ -35,12 +35,14 @@
 #include <QItemSelectionModel>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -1635,6 +1637,113 @@ private:
     }
 };
 
+QModelIndexList pickedColumnCells(const QTableWidget *table)
+{
+    QModelIndexList cells = table->selectionModel()->selectedIndexes();
+    if (cells.isEmpty())
+        return {};
+    const int column = cells.first().column();
+    for (const QModelIndex &cell : std::as_const(cells)) {
+        if (cell.column() != column)
+            return {};
+    }
+    std::sort(cells.begin(), cells.end(),
+              [](const QModelIndex &a, const QModelIndex &b) { return a.row() < b.row(); });
+    return cells;
+}
+
+QStringList columnValues(const QTableWidget *table, const QModelIndexList &cells)
+{
+    QStringList values;
+    for (const QModelIndex &cell : cells) {
+        if (!table->isRowHidden(cell.row()))
+            values << cell.data(Qt::DisplayRole).toString();
+    }
+    return values;
+}
+
+class ContactsTable final : public QTableWidget
+{
+public:
+    using QTableWidget::QTableWidget;
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        m_columnDrag = false;
+        const bool plain = event->button() == Qt::LeftButton &&
+            !(event->modifiers() &
+              (Qt::ControlModifier | Qt::ShiftModifier | Qt::MetaModifier));
+        m_anchor = plain ? indexAt(event->position().toPoint()) : QModelIndex();
+        QTableWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (!(event->buttons() & Qt::LeftButton) || !m_anchor.isValid()) {
+            QTableWidget::mouseMoveEvent(event);
+            return;
+        }
+        const QPoint position = event->position().toPoint();
+        if (!m_columnDrag) {
+            const int row = rowAt(position.y());
+            if (row < 0 || row == m_anchor.row() ||
+                columnAt(position.x()) != m_anchor.column()) {
+                QTableWidget::mouseMoveEvent(event);
+                return;
+            }
+            m_columnDrag = true;
+        }
+        QScrollBar *scroll = verticalScrollBar();
+        if (position.y() < 0)
+            scroll->setValue(scroll->value() - scroll->singleStep());
+        else if (position.y() >= viewport()->height())
+            scroll->setValue(scroll->value() + scroll->singleStep());
+        const int y = std::clamp(position.y(), 0, viewport()->height() - 1);
+        int row = rowAt(y);
+        if (row < 0)
+            row = rowCount() - 1;
+        if (row < 0)
+            return;
+        const int column = m_anchor.column();
+        selectionModel()->select(
+            QItemSelection(model()->index(std::min(row, m_anchor.row()), column),
+                           model()->index(std::max(row, m_anchor.row()), column)),
+            QItemSelectionModel::ClearAndSelect);
+        event->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (!m_columnDrag) {
+            QTableWidget::mouseReleaseEvent(event);
+            return;
+        }
+        m_columnDrag = false;
+        m_anchor = QModelIndex();
+        setState(NoState);
+        event->accept();
+    }
+
+    void keyPressEvent(QKeyEvent *event) override
+    {
+        if (event->matches(QKeySequence::Copy)) {
+            const QModelIndexList cells = pickedColumnCells(this);
+            if (!cells.isEmpty()) {
+                if (QClipboard *clipboard = QGuiApplication::clipboard())
+                    clipboard->setText(columnValues(this, cells).join(QLatin1Char('\n')));
+                event->accept();
+                return;
+            }
+        }
+        QTableWidget::keyPressEvent(event);
+    }
+
+private:
+    QPersistentModelIndex m_anchor;
+    bool m_columnDrag = false;
+};
+
 } // namespace
 
 CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
@@ -1919,7 +2028,7 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     contactsLayout->addWidget(m_nextCard);
     contactsLayout->addWidget(m_stageStrip);
     contactsLayout->addLayout(filters);
-    m_contactsTable = new QTableWidget(0, 0);
+    m_contactsTable = new ContactsTable(0, 0);
     m_contactsTable->setObjectName(QStringLiteral("crmContactsTable"));
     // Row actions are a compact strip: only geometry is set here, so the
     // buttons keep the theme's colours (and Delete its red outline) in both
@@ -4795,6 +4904,13 @@ void CrmFeature::showColumnMenu(const QPoint &headerPosition)
     // The last visible field stays: a table with no heading left has nothing
     // to right-click to bring the others back.
     bool clickedActions = false;
+    if (hideable(clicked)) {
+        const QString id = m_columns.at(clicked).id;
+        menu.addAction(QString::fromUtf8("Copy \xE2\x80\x9C%1\xE2\x80\x9D column")
+                           .arg(m_columns.at(clicked).label),
+                       this, [this, id] { copyContactColumn(id); });
+        clickedActions = true;
+    }
     if (hideable(clicked) && !m_contactsTable->isColumnHidden(clicked) && shown > 1) {
         const QString id = m_columns.at(clicked).id;
         menu.addAction(QString::fromUtf8("Hide \xE2\x80\x9C%1\xE2\x80\x9D")
@@ -7280,12 +7396,45 @@ void CrmFeature::showSheetMenu(const QPoint &position)
     menu.exec(m_sheetsTable->viewport()->mapToGlobal(position));
 }
 
+void CrmFeature::copyContactColumn(const QString &columnId)
+{
+    const int column = columnIndexById(columnId);
+    if (column < 0 || column >= m_columns.size())
+        return;
+    QModelIndexList cells;
+    for (int row = 0; row < m_contactsTable->rowCount(); ++row)
+        cells << m_contactsTable->model()->index(row, column);
+    copyContactValues(columnValues(m_contactsTable, cells), m_columns.at(column).label);
+}
+
+void CrmFeature::copyContactValues(const QStringList &values, const QString &label)
+{
+    if (QClipboard *clipboard = QGuiApplication::clipboard())
+        clipboard->setText(values.join(QLatin1Char('\n')));
+    setStatus(values.size() == 1
+        ? QString::fromUtf8("Copied 1 value from \xE2\x80\x9C%1\xE2\x80\x9D.").arg(label)
+        : QString::fromUtf8("Copied %1 values from \xE2\x80\x9C%2\xE2\x80\x9D.")
+              .arg(QString::number(values.size()), label));
+}
+
 void CrmFeature::showContactMenu(const QPoint &position)
 {
     const QTableWidgetItem *item = m_contactsTable->itemAt(position);
     int row = item ? item->row() : m_contactsTable->rowAt(position.y());
     if (row < 0)
         return;
+    const QModelIndexList picked = pickedColumnCells(m_contactsTable);
+    if (picked.contains(m_contactsTable->indexAt(position))) {
+        const QStringList values = columnValues(m_contactsTable, picked);
+        const int column = picked.first().column();
+        const QString label = column < m_columns.size() ? m_columns.at(column).label : QString();
+        QMenu menu(this);
+        menu.addAction(values.size() == 1 ? QStringLiteral("Copy")
+                                          : QStringLiteral("Copy %1 values").arg(values.size()),
+                       this, [this, values, label] { copyContactValues(values, label); });
+        menu.exec(m_contactsTable->viewport()->mapToGlobal(position));
+        return;
+    }
     // A right click outside the selection acts on that row alone, the way
     // file managers do; inside it, on every selected contact. Not selectRow():
     // with Shift or Ctrl held it would extend or toggle instead.
