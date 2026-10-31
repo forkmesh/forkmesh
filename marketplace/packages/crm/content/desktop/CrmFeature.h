@@ -421,6 +421,8 @@ private:
     // pipeline (their flow), move them along its stages, or add them to,
     // move them to, or take them off a list.
     void showContactMenu(const QPoint &position);
+    void copyContactColumn(const QString &columnId);
+    void copyContactValues(const QStringList &values, const QString &label);
     void moveContactsToSheet(const QStringList &ids, const QString &sheetId);
     // "Move to list", as opposed to "Add to list": the target list and no
     // other. Only plain lists can be moved to, because belonging to a
