@@ -12,6 +12,13 @@
  ],
  "notes": [
   {"date": "2026-10-31", "area": "Projects", "text": "A repository you create for an organization now shows the organization as its owner everywhere: in lists, fork links, stars and notifications, and its old address under your name forwards to the organization's."},
+  {"date": "2026-10-31", "area": "Server", "text": "A self-hosted instance built from its own repository can merge the latest ForkMesh into that repository and update itself, at once or about once a day, from the Update page."},
+  {"date": "2026-10-31", "area": "Server", "text": "Site admin pages show your profile picture in the top bar and have a Back to dashboard button that takes you out of admin."},
+  {"date": "2026-10-31", "area": "Other improvements", "text": "The bell in the web dashboard now opens a Pings page that lists every ping with an Unread filter, Mark as read, Load more, and a link to each ping's settings."},
+  {"date": "2026-10-31", "area": "Market", "text": "Analytics: the overview is denser, so most of it fits on one screen. It adds a Sites card (click a site to filter the whole page), a live visitor count, which link each referral landed on, outbound link clicks, and campaign terms and content."},
+  {"date": "2026-10-31", "area": "Projects", "text": "When you open an issue, pull request or discussion after people reacted to your comment, their reactions burst out of that comment across the whole screen with confetti and a note saying who reacted."},
+  {"date": "2026-10-31", "area": "Projects", "text": "An issue's sidebar Agent section now holds the AI prompt with Copy prompt and Copy MCP prompt side by side, instead of a separate AI prompt section."},
+  {"date": "2026-10-31", "area": "Projects", "text": "Repositories can turn on Close stale pull requests in Settings: when a maintainer's comment or change request gets no reply, ForkBot reminds the author after 1, 3 and 7 days and closes the pull request after 8."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The debug bar's expand chevron now also grows the CPU, memory, swap and disk chart into four full-height charts, and says on hover whether it expands or collapses."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The Sessions list now matches the Claude app's sidebar: ungrouped sessions sit under one Recents list in the Claude app's order, and titles, order and ages update every two seconds."},
   {"date": "2026-10-31", "area": "Highlights", "text": "Notes can have their own emoji, and you can gather many notes into one shareable page with an outline on the left, sections, links, your own title, emoji and colour, on the web, desktop, iPhone and Android."},

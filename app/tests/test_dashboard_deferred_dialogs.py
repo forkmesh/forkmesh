@@ -40,7 +40,7 @@ def _function(source, name):
 
 
 DEFERRED_HOOKS = (
-    'id="agentModal"', 'id="notificationModal"', "data-profile-modal",
+    'id="agentModal"', "data-profile-modal",
     "data-profile-about-modal", "data-agent-login-modal", "data-feedback-modal",
 )
 
@@ -61,6 +61,7 @@ def test_page_documents_leave_the_dialogs_out():
         assert 'id="notificationToggle"' in html, meta["asset"]
     shell = _read(PUBLIC / "dashboard" / "shell.html")
     assert '<!--#include partial="modals"-->' not in shell
+    assert 'id="notificationModal"' not in _markup("dialogs")
 
 
 def test_each_template_is_in_the_bundle_verbatim():
@@ -105,7 +106,6 @@ def test_every_open_adds_the_markup_first():
     opens = {
         "04-account.js": {"setProfileModalOpen": "dialogs",
                           "setProfileAboutModalOpen": "dialogs"},
-        "08-repo-detail-network.js": {"setNotificationModalOpen": "dialogs"},
         "06-repo-content.js": {"showAgentLoginModal": "dialogs",
                                "setAgentModalOpen": "agent"},
         "09-feedback.js": {"setFeedbackModalOpen": "dialogs"},

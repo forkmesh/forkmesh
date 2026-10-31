@@ -93,9 +93,10 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/issue-assignment-deadline.md](app/issue-assignment-deadline.md): the optional assignee deadline bar on issues, set with `assignmentHours` in `.forkmesh/issues.json`.
 - [app/issue-assignment-limit.md](app/issue-assignment-limit.md): the issue page's Assign button and the one-open-issue rule for self-assignment (freed by a linked pull request), set with `assignmentLimit` in `.forkmesh/issues.json`.
 - [app/bot-avatars.md](app/bot-avatars.md): built-in avatars for bots and system accounts (Actions, git node, runners, AI review, `[bot]` names) and the account override.
-- [app/profile-avatar.md](app/profile-avatar.md): how profile and header avatars fall back to the account lookup and contributor rosters, like issue avatars.
+- [app/profile-avatar.md](app/profile-avatar.md): how profile and header avatars fall back to the account lookup and contributor rosters, like issue avatars, and the admin top bar's avatar and Back to dashboard button.
 - [app/ai-disclosure.md](app/ai-disclosure.md): the "AI model(s) used" field on pull requests (optionally required per repository) and the copyable AI prompt on open issues.
 - [app/pull-review-prompt.md](app/pull-review-prompt.md): the "Diff and files" box on open pull requests: diff, patch and file links, Summarize in ChatGPT, and the copyable review prompt with its security-minded default and `.forkmesh/pulls.json` `reviewPromptTemplate`.
+- [app/stale-pulls.md](app/stale-pulls.md): the optional per-repository rule that has ForkBot remind a pull request's author 1, 3 and 7 days after an unanswered maintainer comment or change request and close it after 8.
 - [PERF_PAGES.md](PERF_PAGES.md): page performance techniques.
 - [GIT_ERROR_MESSAGES.md](GIT_ERROR_MESSAGES.md): what failing Git commands show.
 - [Folder About boxes](../www/docs/folder-about.md): the `<folder>/.forkmesh/info.json` file format for a folder's own About box and logo (user guide); [app/directory-about.md](app/directory-about.md) has the API, caching and permissions.

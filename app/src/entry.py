@@ -14084,7 +14084,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "43155bc95879db379571b3fb5eaed011df8a14d9adc05bf124258679dce3f8ba"
+    "1fedcc6e32c5ad36228b7a434ebca84ce5f431fbaf6146d18d7a1e48a74137b4"
 )
 
 
@@ -16870,6 +16870,9 @@ pull_attention_handler = _pull_attention.export("handler")
 pull_attention_review_posted = _pull_attention.export("review_posted")
 pull_attention_record = _pull_attention.export("pull_record")
 pull_attention_claim_quick_reply = _pull_attention.export("claim_quick_reply")
+_stale_pulls = _LazyModule("stale_pulls")
+stale_pulls_enroll = _stale_pulls.export("enroll")
+stale_pulls_cron = _stale_pulls.export("cron")
 _moderation = _LazyModule("moderation")
 moderation_repo_handler = _moderation.export("repo_handler")
 moderation_org_handler = _moderation.export("org_handler")
@@ -17751,6 +17754,10 @@ async def repo_about_handler(env, request, owner, repo):
                 " data=excluded.data, updated_at=excluded.updated_at",
                 await _repo_features_bi(env, owner, repo),
                 json.dumps(features, sort_keys=True), int(Date.now()))
+        if features.get("stalePulls") or current_features.get("stalePulls"):
+            await _best_effort_inbox_side_effect(stale_pulls_enroll(
+                env, owner, repo, features,
+                public_owner=_pull_attention_public_owner(request, owner)))
     if text_changed:
         # Queue the edit for the owner's desktop node, which writes it into the
         # repo's committed .forkmesh/info.json (the same file the desktop app's
@@ -19573,6 +19580,8 @@ _REPO_SCOPED_TABLES = (
     ("repo_provider_mirror_links", "repo_bi"),
     ("repo_provider_mirror_outbox", "repo_bi"),
     ("repo_archive_syncs", "repo_bi"),
+    ("stale_pull_repos", "repo_bi"),
+    ("stale_pulls", "repo_bi"),
     ("world_fediverse_mentions", "repo_bi"),
     ("security_advisories", "repo_bi"),
     ("security_advisory_members", "repo_bi"),
@@ -36233,7 +36242,8 @@ AP_REPO_SETTING_DEFAULTS = {
 }
 
 REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
-                         "actions": True, "protectDefaultBranch": False}
+                         "actions": True, "protectDefaultBranch": False,
+                         "stalePulls": False, "stalePullsDeleteBranch": False}
 
 
 async def _repo_features_bi(env, owner, repo):
@@ -55301,6 +55311,8 @@ def _cron_due_phases(minute_slot):
         phases.append("probe-bans")
     if minute % 2 == 0:
         phases.append("pull-attention")
+    if minute % 5 == 1:
+        phases.append("stale-pulls")
     return tuple(phases)
 
 
@@ -55382,6 +55394,8 @@ async def _run_cron_phase(env, phase, minute_slot):
             env, PROVIDER_MIRROR_CRON_DELIVERIES)
     if phase == "pull-attention":
         return await pull_attention_cron(env)
+    if phase == "stale-pulls":
+        return await stale_pulls_cron(env)
     if phase == "self-deploy-pings":
         return await _deploy_approvals.announce(env)
     if phase == "mail-log":

@@ -358,6 +358,60 @@ a merge files no update, while the source branch is not protected.
 The operator's `instance-repo` stays a root-only bypass and never triggers
 an update.
 
+### Following ForkMesh
+
+An instance built from its own repository falls behind ForkMesh unless
+someone merges ForkMesh into that repository. **Follow ForkMesh** on the
+Update page does it on the server:
+
+1. Set `"followOwner": "<account>"` in `instance.json`: the account that
+   owns the `sourceUrl` repository (the `--owner` given to `instance-repo`).
+   `followUrl` (default `https://app.forkmesh.com/forkmesh/forkmesh`) and
+   `followRef` (default `main`) say what to merge. The installer keeps all
+   three on later updates.
+2. **Merge ForkMesh now** asks for one follow; **Turn on** writes
+   `/var/lib/forkmesh-instance/update/follow`, and the hourly
+   `forkmesh-instance-follow.timer` then asks for a follow once 20 hours
+   have passed since the last one, never while a runner is working on an
+   Actions job (a restart would cut it off); queued jobs do not hold it back.
+
+A follow (`tools/instance_follow.py`, run by `instance-update.sh`) merges
+`followUrl`'s branch into the source branch in
+`/var/lib/forkmesh-instance-update/follow`, a work tree of its own. It
+resolves only conflicts with one right answer: generated dashboard bundles
+are rebuilt, changelog entries from both sides are kept, a migration
+ForkMesh added gets the next number after the instance's own (the database
+applied the instance's numbering; when ForkMesh numbers a migration the
+instance already applied under its own number, the instance's copy stays), the
+schema fingerprint is restamped and
+`test_local_migrations.py` names the newest migration. Anything else stops
+the follow: the Update page lists the files, the source repository and the
+running build stay as they were, and a person syncs by hand. A clean merge
+is published to the source repository with `instance-repo` (a root-only
+push, like the operator's) and the ordinary update deploys it.
+
+Following pushes ForkMesh's code to the protected branch without a pull
+request, so turn it on only when the instance means to run whatever
+ForkMesh ships. Every follow also deploys whatever else is on the source
+branch, so the console refuses to turn following on while that branch is not
+protected, as it does for automatic updates; **Merge ForkMesh now**, like
+**Update**, is an admin's one-off and needs no protection. The check runs
+when following is turned on: unprotecting the branch later does not turn it
+off.
+
+The hourly tick runs as root but the request folder belongs to the app user,
+so it reads the `follow` flag without following links or blocking on a pipe,
+and writes its `follow` request through a fresh file opened with `O_EXCL` and
+`O_NOFOLLOW`: a link the app user planted at `request.new` is replaced, never
+written through. The app user also owns `/var/lib/forkmesh-instance`, so it
+could swap the `update` folder itself for a link; root therefore opens that
+folder once with `O_NOFOLLOW` and reads, writes, renames and removes the
+request (and reads the flag) relative to that handle, so nothing it does can
+land in another folder. The parent folder is root's, so the handle cannot be
+swapped in turn. The follow tool resets and cleans only a work tree it made
+itself (one with `refs/follow/` refs, or an empty one) and refuses any other
+folder given as `--work`.
+
 ## Named themes
 
 Customers wanted more than an accent colour and a radius, so an instance can
@@ -1097,7 +1151,7 @@ reinstall or restart.
 | `guestbook` | The agent guestbook in the instance's chat. |
 | `genie` | The tip spider at the bottom of each page. |
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
-| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" section in an open issue's sidebar, which readers copy into a coding agent. On by default. |
+| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" prompt in an open issue's Agent section, which readers copy into a coding agent. On by default. |
 | `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
 | `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
 | `forum-list` | Forum-style issue lists: newest first, with each row's last few commenters ([repo views](app/repo-views.md)). Opt-in (`OPT_IN`): off unless chosen, on forkmesh.com too. |

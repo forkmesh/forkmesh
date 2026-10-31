@@ -10616,11 +10616,11 @@
       .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
   }
 
-  function renderIssueAiPrompt(repo, number, title, template = "") {
+  function renderIssueAiPrompt(repo, number, title, template = "", extraButtons = "") {
     const prompt = issueAiPromptText(repo, number, title, template);
     return `<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">
             <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
-            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button></span>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${extraButtons}</span>
           </div>`;
   }
 
@@ -10899,10 +10899,14 @@ Your reply
       }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
-    const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
+    const agentStatusValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
       ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-attention/40 px-1.5 font-mono text-[11px] leading-[18px] text-attention">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
-      : `<span class="text-muted-foreground">No agent assigned</span>`}
-        <button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy MCP prompt</button>`;
+      : `<span class="text-muted-foreground">No agent assigned</span>`}`;
+    const issueMcpButton = `<button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="h-3 w-3"></i>Copy MCP prompt</button>`;
+    const agentValue = `${agentStatusValue}
+        <div class="mt-2">${closed || instancePluginOff("issue-ai-prompt")
+          ? `<span class="flex flex-wrap items-center gap-1">${issueMcpButton}</span>`
+          : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "", issueMcpButton)}</div>`;
     const labelValue = labels.length
       ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>`
       : `<span class="text-muted-foreground">No labels</span>`;
@@ -10991,7 +10995,6 @@ Your reply
             <p data-repo-issue-metadata-hint role="status" aria-live="polite" class="mb-2 text-[11px] text-muted-foreground empty:hidden"></p>
             ${sidebarSection("Assignees", assigneeValue, "assignees")}
             ${sidebarSection("Agent", agentValue)}
-            ${closed || instancePluginOff("issue-ai-prompt") ? "" : sidebarSection("AI prompt", renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || ""))}
             ${sidebarSection("Labels", labelValue, "labels")}
             ${sidebarSection("Type", "Issue")}
             ${sidebarSection("Fields", fieldsValue, "fields")}
@@ -11068,8 +11071,7 @@ Your reply
           </div>
           <aside class="min-w-0 self-start">
             ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "font-semibold")}</span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
-            ${section("Agent", bar("w-2/3"))}
-            ${item && !closed && !instancePluginOff("issue-ai-prompt") ? section("AI prompt", renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")) : ""}
+            ${section("Agent", item && !closed && !instancePluginOff("issue-ai-prompt") ? `${bar("w-2/3")}<div class="mt-2">${renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")}</div>` : bar("w-2/3"))}
             ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
             ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
             ${section("Milestone", item ? (item.milestone ? `<span class="font-semibold">${escapeHtml(item.milestone)}</span>` : `<span class="text-muted-foreground">No milestone</span>`) : bar("w-2/3"))}
@@ -11965,6 +11967,7 @@ Your reply
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+    if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -12172,6 +12175,7 @@ Your reply
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
       if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
@@ -15342,7 +15346,7 @@ Your reply
   }
 
   const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
-  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch", "stalePulls", "stalePullsDeleteBranch"];
 
   function repoFirstViewSeed(repo) {
     let seed = null;

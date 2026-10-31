@@ -1,0 +1,51 @@
+          <section data-view="pings" class="view active h-full overflow-y-auto">
+            <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+              <div data-pings-page class="grid gap-4">
+                <div class="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div class="min-w-0">
+                    <h1 class="text-2xl font-normal text-foreground">Pings</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Mentions, pull requests, assignments, shares, releases and host status changes for your account.</p>
+                  </div>
+                  <div data-pings-account-controls hidden class="flex shrink-0 flex-wrap items-center gap-2 self-start">
+                    <button data-pings-mark-all type="button" disabled class="fm-btn fm-btn-sm">
+                      <i data-lucide="check-check" aria-hidden="true"></i>
+                      Mark all as read
+                    </button>
+                    <a href="/dashboard/settings/notifications" data-ping-settings-link="" class="fm-btn fm-btn-sm">
+                      <i data-lucide="settings" aria-hidden="true"></i>
+                      Ping settings
+                    </a>
+                  </div>
+                </div>
+
+                <div data-pings-toolbar hidden class="flex flex-wrap items-center justify-between gap-2">
+                  <div role="group" aria-label="Show pings" class="fm-segmented inline-flex">
+                    <button data-pings-filter="all" type="button" aria-pressed="true">All</button>
+                    <button data-pings-filter="unread" type="button" aria-pressed="false" class="inline-flex items-center gap-1.5">Unread <span data-notification-count class="fm-counter">0</span></button>
+                  </div>
+                  <div data-ping-pause-form class="relative flex min-w-0 items-center gap-2">
+                    <span data-ping-pause-state class="truncate text-xs text-muted-foreground">Notifications are on</span>
+                    <button data-ping-pause-resume type="button" hidden class="fm-btn fm-btn-sm shrink-0">Resume</button>
+                    <button data-ping-pause-toggle type="button" class="fm-btn fm-btn-sm shrink-0">Pause notifications</button>
+                    <div data-ping-pause-menu hidden class="fm-popover absolute right-0 top-full z-50 mt-2 grid w-64 py-1">
+                      <button data-ping-pause-preset="3600000" type="button" class="fm-menu-item">For 1 hour</button>
+                      <button data-ping-pause-preset="86400000" type="button" class="fm-menu-item">For 1 day</button>
+                      <button data-ping-pause-preset="604800000" type="button" class="fm-menu-item">Until next week</button>
+                      <div class="flex items-center gap-2 px-2 pt-1">
+                        <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-control-sm min-w-0 flex-1 rounded-control border border-border bg-background px-2 text-xs text-foreground outline-none" />
+                        <button data-ping-pause-custom-apply type="button" class="fm-btn fm-btn-sm shrink-0">Set</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div data-pings-list aria-live="polite" class="overflow-hidden rounded-md border border-border bg-card">
+                  <p class="px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading pings...</p>
+                </div>
+
+                <div data-pings-more hidden class="flex justify-center">
+                  <button data-pings-load-more type="button" class="fm-btn fm-btn-sm">Load more</button>
+                </div>
+              </div>
+            </div>
+          </section>
