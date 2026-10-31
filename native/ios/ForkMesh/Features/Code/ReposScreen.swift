@@ -248,13 +248,12 @@ struct ReposCatalogControls: View {
         }) {
             Text(option.label)
                 .fmText(.labelMedium, color: selected ? fm.accent : fm.textSecondary)
-                .padding(.horizontal, FmSpace.x3)
+                .padding(.horizontal, 10)
                 .frame(height: 32)
-                .background(selected ? fm.accentSubtle : Color.clear)
+                .background(selected ? fm.accentSubtle : fm.bgRaised)
                 .clipShape(FmRoundedShape(radius: FmRadius.md))
-                .shellGlass(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
                 .overlay {
-                    FmRoundedShape(radius: FmRadius.md).strokeBorder(selected ? fm.accent : Color.clear, lineWidth: 1)
+                    FmRoundedShape(radius: FmRadius.md).strokeBorder(selected ? fm.accent : fm.border, lineWidth: 1)
                 }
         }
         .buttonStyle(.plain)
@@ -268,8 +267,6 @@ struct ReposCatalogControls: View {
                     chip(option)
                 }
             }
-            // Trailing room so the final chip can scroll clear of the fade.
-            .padding(.trailing, FmSpace.x4)
         }
         .frame(height: 36)
     }
@@ -286,16 +283,12 @@ struct ReposCatalogControls: View {
                 }
             }
         } label: {
-            HStack(spacing: FmSpace.x1) {
-                FmIcon("sort", size: 16, color: fm.textSecondary)
-                Text(sort.buttonLabel)
-                    .fmText(.labelMedium, color: fm.textSecondary)
-            }
-            .padding(.horizontal, FmSpace.x3)
-            .frame(height: 36)
-            .shellGlass(Capsule())
+            FmIcon("sort", size: 16, color: fm.textSecondary)
+                .frame(width: 36, height: 36)
+                .shellGlass(Circle())
         }
         .accessibilityLabel(Text("Sort repositories"))
+        .accessibilityValue(Text(sort.buttonLabel))
     }
 
     var body: some View {
