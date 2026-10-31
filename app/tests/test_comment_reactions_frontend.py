@@ -241,3 +241,82 @@ def test_selection_uses_the_accent_never_green():
     pressed = re.search(r'\.fm-reaction\[aria-pressed="true"\] \{([^}]*)\}', css).group(1)
     assert "--dashboard-accent-rgb" in pressed and "success" not in pressed and "cta" not in pressed
     assert "--dashboard-ring-rgb" in css
+
+
+@needs_node
+def test_authors_are_cheered_once_for_reactions_by_others():
+    code = "\n".join([
+        _const(CONTENT, "ISSUE_REACTION_EMOJI"), _const(CONTENT, "COMMENT_REACTIONS"),
+        _const(CONTENT, "COMMENT_REACTION_CUSTOM_RE"), _const(CONTENT, "COMMENT_REACTION_KINDS"),
+        _const(FRAGMENT, "COMMENT_REACTION_CHEER_KEY"),
+        _const(FRAGMENT, "COMMENT_REACTION_CHEER_WINDOW_MS"),
+        _const(FRAGMENT, "COMMENT_REACTION_CHEER_KEEP"),
+    ] + [_function(CONTENT, name) for name in (
+        "commentReactionSubject", "commentReactionKnown")]
+        + [_function(FRAGMENT, name) for name in (
+            "commentReactionParts", "commentReactionAuthor", "commentReactionCheerSeen",
+            "commentReactionCheerRemember", "commentReactionCheers", "commentReactionCheerText")])
+    script = """
+const store = {};
+globalThis.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+globalThis.CSS = { escape: (v) => v };
+globalThis.Node = { DOCUMENT_POSITION_FOLLOWING: 4 };
+const order = ["body", "c1", "c2"];
+const bars = Object.fromEntries(order.map((id) => [id, { id, compareDocumentPosition(other) { return order.indexOf(other.id) > order.indexOf(id) ? 4 : 2; } }]));
+globalThis.document = { querySelector: (sel) => bars[/data-comment-id="([^"]+)"/.exec(sel)[1]] || null };
+const NOW = 100 * 24 * 3600 * 1000;
+const state = {
+  session: { nodeName: "Bob" },
+  repoRecordDetail: { kind: "issues", number: 7, parsed: {
+    values: { authorName: "bob" },
+    issueEvents: [{ id: "c1", authorName: "bob" }, { id: "c2", authorName: "carol" }, { id: "c3", authorName: "bob" }] } },
+  commentReactions: { "issue:7": { base: "/api/repo/alice/app", reactions: {
+    body: [{ emoji: "celebrate", count: 2, people: [{ name: "carol" }, { name: "dave" }] }],
+    c1: [{ emoji: "like", count: 1, people: [{ name: "carol" }] }, { emoji: "rocket", count: 1, people: [{ name: "erin" }] }],
+    c2: [{ emoji: "love", count: 1, people: [{ name: "bob" }] }],
+  }, reactedAt: {
+    body: { celebrate: NOW - 1000 },
+    c1: { like: NOW - 30 * 24 * 3600 * 1000, rocket: NOW - 5000 },
+    c2: { love: NOW - 10 },
+  } } },
+};
+%s
+const out = {};
+const first = commentReactionCheers("issue:7", NOW);
+out.first = first.map((c) => [c.comment, c.tallies.map((t) => t.emoji), c.latest]);
+out.text = commentReactionCheerText("issue:7", first[0]);
+commentReactionCheerRemember("bob", first);
+out.again = commentReactionCheers("issue:7", NOW).length;
+state.commentReactions["issue:7"].reactedAt.c1.like = NOW;
+out.later = commentReactionCheers("issue:7", NOW + 1).map((c) => [c.comment, c.tallies.map((t) => t.emoji)]);
+state.session.nodeName = "";
+out.signedOut = commentReactionCheers("issue:7", NOW).length;
+process.stdout.write(JSON.stringify(out));
+""" % code
+    result = subprocess.run(["node", "-"], input=script, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr[-2000:]
+    out = json.loads(result.stdout)
+    day = 24 * 3600 * 1000
+    # Only the viewer's own comments, only reactions newer than two weeks, in page order.
+    assert out["first"] == [["body", ["celebrate"], 100 * day - 1000],
+                            ["c1", ["rocket"], 100 * day - 5000]]
+    assert out["text"] == {"who": "carol and dave", "what": "issue"}
+    assert out["again"] == 0
+    assert out["later"] == [["c1", ["like"]]]
+    assert out["signedOut"] == 0
+
+
+def test_cheer_plays_from_the_comment_and_respects_reduced_motion():
+    load = _function(FRAGMENT, "loadCommentReactions")
+    assert "scheduleCommentReactionCheer(subject);" in load
+    assert CONTENT.count("scheduleCommentReactionCheer(commentReactionSubject(kind, number));") == 2
+    play = _function(FRAGMENT, "playCommentReactionCheer")
+    assert play.index("showCommentReactionCheerNote") < play.index("if (!motion")
+    assert play.index("if (!motion") < play.index('layer.className = "fm-reaction-cheer"')
+    schedule = _function(FRAGMENT, "scheduleCommentReactionCheer")
+    assert schedule.index("commentReactionCheerRemember") < schedule.index("playCommentReactionCheer")
+    css = SHELL[SHELL.index(":where(.fm-reactions)"):]
+    reduced = css[css.index("@media (prefers-reduced-motion: reduce)"):]
+    reduced = reduced[:reduced.index("\n      }\n")]
+    assert ".fm-reaction-cheer { display: none; }" in reduced
+    assert "data-reaction" not in _function(FRAGMENT, "showCommentReactionCheerNote")
