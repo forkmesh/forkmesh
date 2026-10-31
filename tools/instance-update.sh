@@ -196,8 +196,35 @@ print(doc.get(sys.argv[2], sys.argv[3]) if isinstance(doc, dict) else sys.argv[3
 }
 
 follow_on() {
-  [ -f "$FOLLOW_FLAG" ] && [ ! -L "$FOLLOW_FLAG" ] &&
-    [ "$(head -c 8 "$FOLLOW_FLAG" | tr -cd 'a-z')" = "on" ]
+  python3 -I -c '
+import os, stat, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+except OSError:
+    sys.exit(1)
+with os.fdopen(fd, "rb") as handle:
+    if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+        sys.exit(1)
+    sys.exit(0 if handle.read(8).decode("ascii", "ignore").strip() == "on" else 1)
+' "$FOLLOW_FLAG"
+}
+
+request_follow() {
+  python3 -I -c '
+import os, sys
+path = sys.argv[1]
+tmp = path + ".new"
+folder = os.stat(os.path.dirname(path))
+try:
+    os.unlink(tmp)
+except FileNotFoundError:
+    pass
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+with os.fdopen(fd, "w", encoding="ascii") as handle:
+    os.fchown(handle.fileno(), folder.st_uid, folder.st_gid)
+    handle.write("follow\n")
+os.replace(tmp, path)
+' "$REQUEST"
 }
 
 actions_running() {
@@ -215,8 +242,7 @@ tick() {
   last="$(status_value followAt 0)"
   [ "$(( $(now) - ${last:-0} ))" -ge "$FOLLOW_EVERY" ] || return 0
   ! actions_running || return 0
-  printf 'follow\n' > "$REQUEST.new"
-  mv -f "$REQUEST.new" "$REQUEST"
+  request_follow
 }
 
 follow_fields() {
@@ -264,11 +290,12 @@ run_follow() {
   org="${path%%/*}"
   name="${path#*/}"
   if [[ ! "$org" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] || [[ ! "$name" =~ ^[A-Za-z0-9._-]{1,100}$ ]] ||
+      [[ ! "$ref" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || [[ "$ref" == -* ]] ||
       [[ ! "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] ||
       [[ ! "$follow_url" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9._/-]+$ ]] ||
       [[ ! "$follow_ref" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || [[ "$follow_ref" == -* ]]; then
     status state=failed finishedAt:int="$(now)" \
-      lastError="Set followOwner (the account that owns $path) and a valid followUrl and followRef in $INSTANCE_JSON."
+      lastError="Set followOwner (the account that owns $path) and a valid sourceRef, followUrl and followRef in $INSTANCE_JSON."
     return 0
   fi
   if [ "${org,,}" != "${owner,,}" ]; then org_args=(--organization "$org"); fi

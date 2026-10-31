@@ -361,8 +361,8 @@ def _follow_section(env, status, busy, csrf_field, admin_query, now):
         "Follow ForkMesh", on,
         "About once a day, merges the newest ForkMesh into this server's "
         "source and updates, never during an Actions job. A merge that needs "
-        'a person stops and lists its files. Needs <span class="mono">'
-        "followOwner</span> in instance.json.", rows, '<div class="form-row">%s</div>' % buttons)
+        "a person stops and lists its files. Needs a protected source branch "
+        'and <span class="mono">followOwner</span> in instance.json.', rows, '<div class="form-row">%s</div>' % buttons)
 
 
 async def render_update(env, csrf_field, admin_query, now):
@@ -746,6 +746,21 @@ async def _save_auto_update(env, form):
         "branch": wanted[2] if wanted else ""}
 
 
+async def _save_follow(env, form):
+    if server_update.mode(env) != "instance":
+        return "unavailable", {}
+    on = _first(form, "follow") == "1"
+    if on:
+        wanted = await _self_update.current_target(env)
+        if not wanted:
+            return "auto_no_target", {"follow": on}
+        if not await _self_update.source_protected(env, *wanted):
+            return "auto_unprotected", {"follow": on}
+    if not server_update.set_follow(env, on):
+        return "write_failed", {"follow": on}
+    return ("follow_on" if on else "follow_off"), {"follow": on}
+
+
 async def _handle_post(env, request, view, admin_query, account):
     try:
         raw = await request.text()
@@ -781,14 +796,7 @@ async def _handle_post(env, request, view, admin_query, account):
     elif action == "save_auto_update":
         notice, details = await _save_auto_update(env, form)
     elif action == "save_follow":
-        on = _first(form, "follow") == "1"
-        if server_update.mode(env) != "instance":
-            notice = "unavailable"
-        elif server_update.set_follow(env, on):
-            notice = "follow_on" if on else "follow_off"
-        else:
-            notice = "write_failed"
-        details = {"follow": on}
+        notice, details = await _save_follow(env, form)
     elif action in ("start_update", "start_follow") and \
             _first(form, "confirm") != "yes":
         return _redirect(location("unconfirmed"))

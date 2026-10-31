@@ -662,6 +662,7 @@ def test_the_merge_handler_hands_merges_to_the_self_update():
 
 
 def test_the_console_turns_following_on_and_starts_a_follow(tmp_path, monkeypatch):
+    world = SelfUpdateWorld(tmp_path, monkeypatch)
     audits = []
     (tmp_path / "status.json").write_text(json.dumps({
         "state": "failed", "followState": "conflict", "followAt": 1_799_999_000,
@@ -676,10 +677,9 @@ def test_the_console_turns_following_on_and_starts_a_follow(tmp_path, monkeypatc
         return {}
 
     monkeypatch.setattr(admin_shell, "nav_badges", nav_badges)
-    bind(monkeypatch, tmp_path, {"_audit_sensitive_action": audit})
-    env = SimpleNamespace(
-        ADMIN_PATH="secret", INSTANCE_UPDATE_REQUEST=str(tmp_path / "request"),
-        INSTANCE_UPDATE_STATUS=str(tmp_path / "status.json"))
+    bind(monkeypatch, tmp_path, {"_audit_sensitive_action": audit,
+                                 "_self_update": world.module})
+    env = SimpleNamespace(ADMIN_PATH="secret", **vars(world.env))
 
     def page():
         return asyncio.run(admin.admin_handler(
@@ -696,6 +696,11 @@ def test_the_console_turns_following_on_and_starts_a_follow(tmp_path, monkeypatc
     assert "Follow ForkMesh" in body and "Needs a manual sync" in body
     assert "12 new commits" in body and "app/src/entry.py" in body
     assert "docs/<x>.md" not in body and 'name="follow" value="1"' in body
+    world.protected = False
+    assert "notice=auto_unprotected" in post({"action": "save_follow",
+                                              "follow": "1"})
+    assert not (tmp_path / "follow").exists()
+    world.protected = True
     assert "notice=follow_on" in post({"action": "save_follow", "follow": "1"})
     assert (tmp_path / "follow").read_text() == "on\n"
     assert server_update.follow_on(env)
@@ -728,6 +733,26 @@ def test_the_hourly_tick_asks_for_a_follow_only_when_on_and_due(instance):
     assert not instance.request.exists()
     (instance.state / "status.json").write_text(json.dumps({"followAt": 1}))
     tick(instance)
+    assert instance.request.read_text() == "follow\n"
+
+
+def test_the_tick_never_writes_through_a_planted_link(instance, tmp_path):
+    flag = instance.request.parent / "follow"
+    victim = tmp_path / "victim"
+    victim.write_text("keep\n")
+    flag.symlink_to(victim)
+    victim.write_text("on\n")
+    assert tick(instance).returncode == 0 and not instance.request.exists()
+    flag.unlink()
+    os.mkfifo(flag)
+    assert tick(instance).returncode == 0 and not instance.request.exists()
+    flag.unlink()
+    flag.write_text("on\n")
+    victim.write_text("keep\n")
+    Path(str(instance.request) + ".new").symlink_to(victim)
+    assert tick(instance).returncode == 0
+    assert victim.read_text() == "keep\n"
+    assert not instance.request.is_symlink()
     assert instance.request.read_text() == "follow\n"
 
 
