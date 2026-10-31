@@ -794,6 +794,14 @@ measured and keep the plain branch icon.
   "Private repository is unavailable or this account is not authorized". A
   record owned by `accountOwner()` with a local source now stays local and
   says it needs a signed-in account to publish.
+- **Mesh converge backs off a repository whose mirrors all fail.** A
+  registered repository whose network copy is gone failed the background
+  converge on every sweep, about once a minute, forever. When no route can
+  be read, `convergeSourceRepoFromMesh()` records a failure in
+  `m_pollBackoff` under `mesh-converge:<repo>`: background passes then wait
+  1, 2, 4 … up to 30 minutes, a skipped pass is not an attempt, and any
+  successful read clears it. A forced converge (opening the repository, an
+  explicit refresh) ignores it. `tests/validate_mesh_converge_backoff.py`.
 
 ## Related docs
 

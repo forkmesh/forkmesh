@@ -23,6 +23,7 @@
   {"date": "2026-10-31", "area": "Desktop", "text": "The desktop app builds from source again on Qt 6.4, the version Ubuntu 24.04 and Debian 12 ship."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The desktop window no longer freezes for a second or more every couple of minutes while a repository's mirrors cannot be reached."},
   {"date": "2026-10-31", "area": "Desktop", "text": "A local mirror left with empty object files by an interrupted write now repairs itself instead of failing every sync as a server outage."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "Repositories whose network copy no longer exists are retried less and less often, up to every 30 minutes, instead of every minute."},
   {"date": "2026-10-30", "area": "iPhone", "text": "The desktop icons in the phone app's top bar turn green while the desktop is connected, on iPhone and Android."},
   {"date": "2026-10-30", "area": "Projects", "text": "A repository's Files view opens faster after issues, reviews or other project activity, which no longer redo its code analysis."},
   {"date": "2026-10-30", "area": "Projects", "text": "Sending an approving quick reply on a pull request also adds the Thank you sticker to its description."},
