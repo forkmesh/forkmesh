@@ -6,12 +6,14 @@ public struct PermissionReason: Equatable, Sendable, Identifiable {
     public let icon: String
     public let title: String
     public let reason: String
+    public let hint: String
 
-    public init(id: String, icon: String, title: String, reason: String) {
+    public init(id: String, icon: String, title: String, reason: String, hint: String) {
         self.id = id
         self.icon = icon
         self.title = title
         self.reason = reason
+        self.hint = hint
     }
 }
 
@@ -22,6 +24,7 @@ public enum PermissionPacing {
     public static let seen = "seen"
 
     public static let title = "We only ask when it matters"
+    public static let titleLines = ["We only ask", "when it matters"]
     public static let summary =
         "ForkMesh never asks for anything up front. Each permission comes up the first time a feature needs it, so you always know why."
     public static let footnote = "Say no to any of them and the rest of the app keeps working. You can change your mind in iOS Settings."
@@ -29,19 +32,19 @@ public enum PermissionPacing {
     public static let reasons: [PermissionReason] = [
         PermissionReason(
             id: "notifications", icon: "bell.badge.fill", title: "Notifications",
-            reason: "After you send your first message, so you hear when someone replies."),
+            reason: "After you send your first message, so you hear when someone replies.", hint: "After your first message"),
         PermissionReason(
             id: "nearby", icon: "dot.radiowaves.left.and.right", title: "Bluetooth and local network",
-            reason: "When you open #mesh, to chat with people nearby without the internet."),
+            reason: "When you open #mesh, to chat with people nearby without the internet.", hint: "When you open #mesh"),
         PermissionReason(
             id: "camera", icon: "video.fill", title: "Camera and microphone",
-            reason: "When you start a call, record a message or dictate."),
+            reason: "When you start a call, record a message or dictate.", hint: "When you start a call or record"),
         PermissionReason(
             id: "photos", icon: "photo.fill", title: "Photos",
-            reason: "When you attach or save a picture. Only the ones you pick."),
+            reason: "When you attach or save a picture. Only the ones you pick.", hint: "When you attach a picture"),
         PermissionReason(
             id: "health", icon: "heart.fill", title: "Health and motion",
-            reason: "Only if you turn on Pedometer, Water Intake or Sleep."),
+            reason: "Only if you turn on Pedometer, Water Intake or Sleep.", hint: "Only if you turn on a tracker"),
     ]
 
     public static func settle(_ prefs: KeyValueStore, freshInstall: Bool) {

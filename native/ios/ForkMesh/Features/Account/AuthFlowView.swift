@@ -82,11 +82,12 @@ struct AuthFlowView: View {
 
     var body: some View {
         ZStack {
+            FmAuroraBackground()
             page
                 .id(model.mode)
-                .transition(
-                    AnyTransition.opacity.combined(with: AnyTransition.offset(x: 8, y: 0)))
+                .transition(AnyTransition.opacity)
         }
+        .fmForcedDark()
         .sheet(item: $webPage) { page in
             AuthSafariView(url: page.url)
                 .ignoresSafeArea()
@@ -116,99 +117,51 @@ private struct AuthWelcomePage: View {
     let onSignup: () -> Void
     let onGuest: (() -> Void)?
 
-    private var background: some View {
-        ZStack {
-            Color(fmARGB: 0xFF050505)
-            RadialGradient(
-                gradient: Gradient(stops: [
-                    Gradient.Stop(color: Color(fmARGB: 0xFFEFEAFF), location: 0),
-                    Gradient.Stop(color: Color(fmARGB: 0xFF6F5AD9), location: 0.18),
-                    Gradient.Stop(color: Color(fmARGB: 0xFF050505), location: 0.48),
-                ]),
-                center: UnitPoint(x: 0.175, y: 0.09),
-                startRadius: 0,
-                endRadius: 720)
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    Gradient.Stop(color: Color(fmARGB: 0x00000000), location: 0),
-                    Gradient.Stop(color: Color(fmARGB: 0xFF050505), location: 0.44),
-                    Gradient.Stop(color: Color(fmARGB: 0xFF160F35), location: 0.68),
-                    Gradient.Stop(color: Color(fmARGB: 0xFF050505), location: 1),
-                ]),
-                startPoint: UnitPoint.topTrailing,
-                endPoint: UnitPoint.bottomLeading)
-        }
-        .ignoresSafeArea()
-    }
-
     private var copy: some View {
-        VStack(alignment: .leading, spacing: FmSpace.x5) {
-            Text(AuthCopy.welcomeHeadline)
-                .fmText(.displayLarge, color: Color.white)
-            Text(AuthCopy.welcomeBody)
-                .fmText(.bodyLarge, color: Color(fmARGB: 0xFFD8D5DF))
+        VStack(spacing: FmSpace.x4) {
+            FmRevealTitle(lines: AuthCopy.welcomeLines, role: .displayLarge, delay: 0.16)
+            FmRevealLine(
+                text: AuthCopy.welcomeBody, role: .bodyMedium, color: FmOnboarding.secondaryText, delay: 0.46, duration: 0.6
+            )
+            .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: 460, alignment: .leading)
+        .frame(maxWidth: 460)
     }
 
     private var buttons: some View {
-        HStack(spacing: 12) {
-            Button(action: onLogin) {
-                Text("Log in")
-                    .fmText(.labelLarge, color: Color.white)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .overlay { Capsule().strokeBorder(Color.white, lineWidth: 1.4) }
-                    .contentShape(Capsule())
+        VStack(spacing: 14) {
+            FmPillButton(label: "Log in", onPressed: onLogin)
+                .accessibilityIdentifier("welcome-log-in")
+            FmPillButton(label: "Sign up", onPressed: onSignup)
+                .accessibilityIdentifier("welcome-sign-up")
+            if let onGuest = onGuest {
+                FmPillButton(label: "Explore as guest", kind: .dark, onPressed: onGuest)
+                    .accessibilityIdentifier("continue-as-guest")
             }
-            .buttonStyle(FmPressStyle(highlight: Color.white.opacity(0.12), cornerRadius: 27))
-            Button(action: onSignup) {
-                Text("Sign up")
-                    .fmText(.labelLarge, color: Color.black)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .background(Color.white)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(FmPressStyle(highlight: Color.black.opacity(0.08), cornerRadius: 27))
         }
-    }
-
-    @ViewBuilder private var guest: some View {
-        if let onGuest = onGuest {
-            Button(action: onGuest) {
-                HStack(spacing: FmSpace.x2) {
-                    Text("Explore as guest")
-                        .fmText(.labelLarge, color: Color.white)
-                        .lineLimit(1)
-                    FmIcon("arrow_forward", size: 18, color: Color.white)
-                }
-                .padding(.horizontal, FmSpace.x3)
-                .frame(minHeight: 48)
-            }
-            .buttonStyle(FmPressStyle(highlight: Color.white.opacity(0.10), cornerRadius: 24))
-            .accessibilityIdentifier("continue-as-guest")
-            .frame(maxWidth: .infinity)
-            .padding(.top, 14)
-        }
+        .frame(maxWidth: 460)
+        .fmBrighten(delay: 0.3)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: FmSpace.x3) {
-                AuthLogo(size: 54, shadow: false)
+        VStack(spacing: 0) {
+            HStack {
                 Spacer(minLength: 0)
-                // A phone signed out of one project must still be able to get back to another.
                 ProjectSwitcherButton(onDark: true)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: FmSpace.x4)
+            FmGlassIcon(size: 148)
+                .fmReveal(delay: 0, rise: 26, scale: 0.9)
+            Spacer(minLength: FmSpace.x6)
             copy
             buttons
-                .padding(.top, 34)
-            guest
+                .padding(.top, 30)
+            AuthTermsCopy()
+                .padding(.top, FmSpace.x5)
+                .fmReveal(delay: 0.6, rise: 0, scale: 1)
         }
-        .padding(EdgeInsets(top: 28, leading: 28, bottom: 24, trailing: 28))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background { background }
-        .environment(\.colorScheme, ColorScheme.dark)
+        .padding(EdgeInsets(top: FmSpace.x3, leading: 28, bottom: FmSpace.x3, trailing: 28))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -252,8 +205,8 @@ private struct AuthLoginPage: View {
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: 24) {
-            AuthField(label: "Email or username") {
-                TextField("", text: $model.identifier, prompt: Text("you@example.com"))
+            FmPillField(label: "Email or username", focused: focus == LoginField.identifier) {
+                TextField("", text: $model.identifier, prompt: Text(verbatim: "you@example.com").fmPlaceholder())
                     .textContentType(.username)
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
@@ -262,8 +215,8 @@ private struct AuthLoginPage: View {
                     .focused($focus, equals: LoginField.identifier)
                     .onSubmit { focus = LoginField.password }
             }
-            AuthField(label: "Password") {
-                SecureField("", text: $model.password, prompt: Text("Your password"))
+            FmPillField(label: "Password", focused: focus == LoginField.password) {
+                SecureField("", text: $model.password, prompt: Text("Your password").fmPlaceholder())
                     .textContentType(.password)
                     .submitLabel(model.passwordSubmits ? .done : .next)
                     .focused($focus, equals: LoginField.password)
@@ -276,8 +229,8 @@ private struct AuthLoginPage: View {
                     }
             }
             if model.form.showTotp {
-                AuthField(label: "Authenticator code") {
-                    TextField("", text: $model.totp, prompt: Text("123456"))
+                FmPillField(label: "Authenticator code", focused: focus == LoginField.totp) {
+                    TextField("", text: $model.totp, prompt: Text("123456").fmPlaceholder())
                         .textContentType(.oneTimeCode)
                         .keyboardType(.numberPad)
                         .submitLabel(.done)
@@ -300,26 +253,30 @@ private struct AuthLoginPage: View {
 
     var body: some View {
         AuthPageScaffold(pageTitle: "Login", onBack: onBack) {
-            AuthLogo(size: 72, shadow: true)
+            FmGlassIcon(size: 92)
                 .frame(maxWidth: .infinity)
-                .padding(.top, 74)
+                .padding(.top, 38)
+                .fmReveal(rise: 22, scale: 0.9)
             AuthTitle(title: AuthCopy.loginTitle, subtitle: model.relaySubtitle)
-                .padding(.top, 28)
+                .padding(.top, 26)
             if model.revokedBanner {
                 AuthRevokedBanner()
-                    .padding(.top, 48)
+                    .padding(.top, 34)
             }
             fields
-                .padding(.top, model.revokedBanner ? 24 : 48)
+                .padding(.top, model.revokedBanner ? 24 : 34)
+                .fmReveal(delay: 0.28, rise: 14, scale: 1)
             hint
             AuthPrimaryButton(label: model.buttonLabel, onPressed: model.loading ? nil : { submit() })
-                .padding(.top, 42)
+                .padding(.top, 30)
             AuthSecondaryButton(label: AuthCopy.forgotPassword, onPressed: onForgotPassword)
-                .padding(.top, 18)
+                .padding(.top, 12)
+                .fmReveal(delay: 0.5, rise: 0, scale: 1)
             AuthSecondaryButton(label: "Create an account", onPressed: onSignup)
-                .padding(.top, 8)
+                .fmReveal(delay: 0.56, rise: 0, scale: 1)
             AuthTermsCopy()
-                .padding(.top, 72)
+                .padding(.top, 20)
+                .fmReveal(delay: 0.62, rise: 0, scale: 1)
         }
     }
 }
@@ -334,30 +291,33 @@ private struct AuthSignupPage: View {
 
     var body: some View {
         AuthPageScaffold(pageTitle: "Sign up", onBack: onBack) {
-            AuthLogo(size: 78, shadow: true)
+            FmGlassIcon(size: 110)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 58)
+                .fmReveal(rise: 22, scale: 0.9)
             AuthTitle(title: AuthCopy.signupTitle, subtitle: AuthCopy.signupSubtitle)
                 .padding(.top, 28)
-            Text(AuthCopy.signupBody)
-                .fmText(.bodyLarge, color: fm.textSecondary)
-                .padding(.top, 42)
+            FmRevealLine(
+                text: AuthCopy.signupBody, role: .bodyMedium, color: FmOnboarding.secondaryText, delay: 0.4, duration: 0.6
+            )
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 26)
             AuthPrimaryButton(label: "Open secure signup", onPressed: onOpenSignup)
                 .padding(.top, 32)
             AuthSecondaryButton(label: "I already have an account", onPressed: onLogin)
-                .padding(.top, 18)
+                .padding(.top, 12)
+                .fmReveal(delay: 0.5, rise: 0, scale: 1)
             AuthTermsCopy()
-                .padding(.top, 72)
+                .padding(.top, 28)
+                .fmReveal(delay: 0.58, rise: 0, scale: 1)
         }
     }
 }
 
 // MARK: Pieces
 
-/// A raised header with Back and
-/// the page title, then a scrolling column at most 520pt wide.
 private struct AuthPageScaffold<Content: View>: View {
-    @Environment(\.fmPalette) var fm
     let pageTitle: String
     let onBack: () -> Void
     let content: Content
@@ -369,10 +329,16 @@ private struct AuthPageScaffold<Content: View>: View {
     }
 
     private var header: some View {
-        FmPanelHeader(
-            title: pageTitle,
-            leading: FmIconButton(icon: "chevron_left", label: "Back", size: 30, onPressed: onBack).shellGlass(Circle()).fmAny,
-            trailing: ProjectSwitcherButton().fmAny)
+        HStack(spacing: FmSpace.x3) {
+            FmOnboardingBackButton(onPressed: onBack)
+            Text(pageTitle)
+                .fmText(.titleMedium, color: Color.white, weight: .semibold)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            ProjectSwitcherButton(onDark: true)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, FmSpace.x2)
     }
 
     var body: some View {
@@ -384,11 +350,10 @@ private struct AuthPageScaffold<Content: View>: View {
                 }
                 .frame(maxWidth: 520)
                 .frame(maxWidth: .infinity)
-                .padding(EdgeInsets(top: FmSpace.x4, leading: FmSpace.x4, bottom: FmSpace.x5, trailing: FmSpace.x4))
+                .padding(EdgeInsets(top: 0, leading: 24, bottom: FmSpace.x5, trailing: 24))
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .background(fm.canvas.ignoresSafeArea())
     }
 }
 
@@ -424,47 +389,18 @@ struct AuthLogo: View {
 }
 
 private struct AuthTitle: View {
-    @Environment(\.fmPalette) var fm
     let title: String
     let subtitle: String
 
     var body: some View {
         VStack(spacing: 10) {
-            Text(title)
-                .fmText(.displaySmall)
-                .multilineTextAlignment(.center)
-            Text(subtitle)
-                .fmText(.bodyLarge, color: fm.textSecondary)
-                .multilineTextAlignment(.center)
+            FmRevealTitle(lines: [title], delay: 0.1)
+            FmRevealLine(
+                text: subtitle, role: .bodyMedium, color: Color.white.opacity(0.72), delay: 0.24, duration: 0.6
+            )
+            .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// The label above a filled, borderless field that turns
-/// accent-edged on focus.
-private struct AuthField<Field: View>: View {
-    @Environment(\.fmPalette) var fm
-    let label: String
-    let field: Field
-
-    init(label: String, @ViewBuilder field: () -> Field) {
-        self.label = label
-        self.field = field()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FmSpace.x2) {
-            Text(label)
-                .fmText(.titleSmall)
-                .accessibilityHidden(true)
-            field
-                .fmText(.bodyLarge)
-                .padding(FmSpace.x4)
-                .background(fm.bgRaised)
-                .clipShape(FmRoundedShape(radius: FmRadius.md))
-                .accessibilityLabel(Text(label))
-        }
     }
 }
 
@@ -494,49 +430,35 @@ private struct AuthRevokedBanner: View {
 }
 
 private struct AuthPrimaryButton: View {
-    @Environment(\.fmPalette) var fm
     let label: String
     let onPressed: (() -> Void)?
 
     var body: some View {
-        FmFilledButton(
-            label,
-            background: fm.textPrimary,
-            foreground: fm.dark ? fm.bgBase : fm.bgRaised,
-            minHeight: 48,
-            radius: FmRadius.md,
-            fillWidth: true,
-            role: .titleMedium,
-            onPressed: onPressed)
+        FmPillButton(label: label, onPressed: onPressed)
             .accessibilityIdentifier("primary-auth-button-frame")
+            .fmBrighten(delay: 0.38)
     }
 }
 
 private struct AuthSecondaryButton: View {
-    @Environment(\.fmPalette) var fm
     let label: String
     let onPressed: () -> Void
 
     var body: some View {
-        FmTextButton(label, color: fm.textPrimary, fillWidth: true, onPressed: onPressed)
+        FmPillTextButton(label: label, onPressed: onPressed)
+            .frame(maxWidth: .infinity)
     }
 }
 
-/// "By continuing, you agree to our Terms of Service and have read our
-/// Privacy Policy." with both links live.
 private struct AuthTermsCopy: View {
-    @Environment(\.fmPalette) var fm
-
     private var text: AttributedString {
         var result: AttributedString = AttributedString("By continuing, you agree to our ")
         var terms: AttributedString = AttributedString("Terms of Service")
         terms.link = LegalLinks.terms
-        terms.foregroundColor = fm.accent
-        terms.underlineStyle = Text.LineStyle.single
+        terms.foregroundColor = Color.white
         var privacy: AttributedString = AttributedString("Privacy Policy")
         privacy.link = LegalLinks.privacy
-        privacy.foregroundColor = fm.accent
-        privacy.underlineStyle = Text.LineStyle.single
+        privacy.foregroundColor = Color.white
         result.append(terms)
         result.append(AttributedString(" and have read our "))
         result.append(privacy)
@@ -546,9 +468,10 @@ private struct AuthTermsCopy: View {
 
     var body: some View {
         Text(text)
-            .fmText(.bodyMedium, color: fm.textSecondary)
-            .tint(fm.accent)
-            .padding(EdgeInsets(top: 24, leading: 10, bottom: 0, trailing: 10))
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .fmText(.bodySmall, color: FmOnboarding.secondaryText)
+            .tint(Color.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, FmSpace.x3)
+            .frame(maxWidth: .infinity)
     }
 }

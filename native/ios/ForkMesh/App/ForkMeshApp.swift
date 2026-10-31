@@ -62,7 +62,14 @@ struct ThemedAppView: View {
     @Environment(\.scenePhase) var scenePhase
     let services: AppServices
 
+    private var showsFirstRun: Bool {
+        let settings: SettingsService = services.settings
+        let inApp: Bool = services.auth.hasAppAccess || settings.project.hasInstance == false
+        return !inApp || settings.needsPermissionsIntro || settings.needsStarterPack
+    }
+
     private var forcedDark: Bool? {
+        if showsFirstRun { return true }
         switch services.settings.themeMode {
         case .system: return nil
         case .light: return false
@@ -116,10 +123,10 @@ struct AppHomeView: View {
         Group {
             if updateCheck.blocksUse {
                 UpdateRequiredView(requirement: updateCheck.requirement, available: updateCheck.available)
-            } else if let settings, settings.needsPermissionsIntro, auth.hasAppAccess || settings.project.hasInstance == false {
-                PermissionsIntroView(settings: settings)
-            } else if let settings, settings.needsStarterPack, auth.hasAppAccess || settings.project.hasInstance == false {
-                StarterPackView(settings: settings)
+            } else if let settings, settings.needsPermissionsIntro || settings.needsStarterPack,
+                auth.hasAppAccess || settings.project.hasInstance == false
+            {
+                OnboardingFlowView(settings: settings)
             } else if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
                     .relaySwitchScope()
