@@ -25,7 +25,7 @@ class NavigationTest {
         Route.Release(repo, "v1/x"), Route.Project(repo, "p"), Route.Milestones(repo), Route.RepoSettings(repo, "git"),
         Route.LocalRepos, Route.LocalRepo("l1"), Route.QuickEdit("l1", "a.txt"), Route.Chat, Route.Channel("general"),
         Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Profile("bob"), Route.People, Route.Docs,
-        Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Note("n", "c1"), Route.Tasks("mine"), Route.Task("t"),
+        Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Note("n", "c1"), Route.NotePage("p1"), Route.NotePage("p1", "n1"), Route.Tasks("mine"), Route.Task("t"),
         Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Timers, Route.Desktops,
         Route.Desktop("d", "logs"), Route.Hosts, Route.Host("mirror35", null), Route.Provision("v1"), Route.Network(null),
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
@@ -111,6 +111,12 @@ class NavigationTest {
         assertEq(listOf(Route.Notes, Route.Note("n1", "c9")), RouteParser.parse("https://forkmesh.com/dashboard/notes/n1?comment=c9")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n2")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2&comment=")!!.stack)
         assertEq(mapOf("k" to "note", "id" to "n2", "comment" to "c9"), RouteCodec.toMap(Route.Note("n2", "c9")))
+        assertEq(listOf(Route.Notes, Route.NotePage("p7")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?page=p7")!!.stack)
+        assertEq(listOf(Route.Notes, Route.NotePage("p7", "n3")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?page=p7&note=n3")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n3")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?page=&note=n3")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes/n1?page=p7")!!.stack)
+        assertEq(mapOf("k" to "notePage", "id" to "p7", "note" to "n3"), RouteCodec.toMap(Route.NotePage("p7", "n3")))
+        assertEq(null, RouteCodec.decode("{\"k\":\"notePage\"}"))
         assertEq(listOf(Route.Ember(null)), RouteParser.parse("https://app.forkmesh.com/dashboard/ember")!!.stack)
         assertEq(listOf(Route.Strata(RepoRef("alice", "shop"))), RouteParser.parse("https://app.forkmesh.com/dashboard/strata?repo=alice/shop")!!.stack)
         assertEq(listOf(Route.Synapse(null)), RouteParser.parse("https://app.forkmesh.com/dashboard/synapse?repo=nonsense")!!.stack)
@@ -596,7 +602,7 @@ class NavigationTest {
 
     fun testGuestGateCoversEveryAccountRouteWhereverItComesFrom() {
         val gated = listOf(
-            Route.Notes, Route.Note(""), Route.Note("n1"), Route.Tasks(null), Route.Task("t"), Route.AllAgents,
+            Route.Notes, Route.Note(""), Route.Note("n1"), Route.NotePage("p1"), Route.Tasks(null), Route.Task("t"), Route.AllAgents,
             Route.Hosts, Route.Host("mirror35", null), Route.Crm(null), Route.Contact("c"), Route.CrmOrg("o"),
             Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Ads, Route.Vault(null),
             Route.Coves(null), Route.Cove("c1"), Route.Calories, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.Approval("7/a1"), Route.InstalledApps,

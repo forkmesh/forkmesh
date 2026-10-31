@@ -208,6 +208,52 @@ replaced after every change.
   wait. Reconnecting the socket reloads too, in case a frame was missed.
 - Errors show in the sheet in plain words (`NoteCommentText.error`).
 
+### Pages and note emoji
+
+The contract is `docs/app/notes-pages.md`. Core: `NotePages.kt`
+(`NoteEmoji`, `NotePage`, `PageEntry`, `PageNote`, `NotePageDetail`,
+`PageOutline`, `NotePagesApi`); views: `feature/tools/NotePagesScreens.kt`.
+
+- **Emoji.** `NoteEmoji.isValid` applies the server's rule on the device
+  (1–16 code points, at most 64 UTF-8 bytes, no whitespace, control
+  characters or ASCII letters, digits, `#` and `*` only as keycaps, with or
+  without U+FE0F before U+20E3). The emoji shows before the title in list
+  rows, the long-press sheet, the editor header (a button left of the title;
+  viewers see it without the button), the page outline and the page's note
+  view. The picker is a grid of 40 common emoji (`NoteEmoji.common`), a field
+  for any emoji with the error "Use a single emoji, such as 📝 or 🇫🇷.", and
+  **Remove**. A saved note changes it with `PATCH {baseVersion, emoji}`; a new
+  note sends it with the first save.
+- **Pages section.** Above the notes list (hidden while searching, and only
+  when `GET /api/notes/pages` answers): each page with its emoji tile in the
+  page colour, its title in that colour and "n entries"; **New page** creates
+  one and opens it with Customize.
+- **Page screen** (`NotePageScreen`): the emoji, title and Markdown
+  description in the page colour, then the outline as a list: sections (tap
+  to fold when they group entries), notes indented by depth with their emoji
+  (when `showEmoji`) and the unread dot, links (open in the app's browser) and
+  locked entries ("You don't have access to this note"). In the outline
+  layout tapping a note shows it with **Open in editor**, the last edit, and
+  previous / next buttons; Back returns to the outline. The continuous layout
+  shows every readable note in order under the outline, and tapping an
+  outline row scrolls to it. Showing or jumping to a note records a view and
+  clears its dot. A note without `markdown` (past the 4 MB budget) is fetched
+  on its own. Page colours: blue is the theme accent; the others are the iOS
+  system colours, darkened on light backgrounds so text stays readable.
+- **Customize** (owners and editors): title, emoji, description, colour,
+  layout, "Show note emoji in the outline", and the outline editor: add
+  notes (searching your notes by title), sections and `https://` links;
+  each row has a drag handle (long press and drag to reorder) and a menu with
+  Rename, Indent, Outdent, Move up, Move down and Remove, also offered as
+  TalkBack actions. Save sends every field with `baseVersion`; a conflict
+  offers **Reload**.
+- **Share** (owner) reuses the note share sheet (`NoteShareTarget`) with
+  "Also share the notes on this page" ticked by default (`includeNotes`).
+  The ⋯ menu has **Copy link** and, for the owner, **Delete page** (the notes
+  stay).
+- **Links.** `/dashboard/notes?page=<id>` opens `Route.NotePage`, and
+  `&note=<id>` picks that note (`NavigationTest`).
+
 ### Tests
 
 `NotesLogicTest` covers the list, the editor helpers and the existing frames.
@@ -221,7 +267,11 @@ a fixed clock in `America/New_York` (today, yesterday across a year end, this
 year, older, and the same instant in another zone), "· by <name>", the row
 fields, badges and "+N", clearing the dot locally, the view request, and the
 long-press header (roles, share lines, "Not shared", the full date "by").
-`NavigationTest` covers `?note=<id>&comment=<cid>` and the codec round trip.
+`NotePagesTest` covers the emoji rules and the common set, parsing pages and
+the page detail, outline rows with folding and locked notes, reading order,
+outline editing, the saved fields and links, and every page request.
+`NavigationTest` covers `?note=<id>&comment=<cid>`, `?page=<id>[&note=<id>]`
+and the codec round trip.
 
 ## iOS
 

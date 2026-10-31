@@ -45,8 +45,14 @@ class NotesApi(private val api: ApiService) {
 
     fun get(id: String): JsonObject = jsonObject(call("GET", "/$id")["note"])
 
-    fun create(title: String, markdown: String): JsonObject =
-        jsonObject(call("POST", "", linkedMapOf("title" to title.trim(), "markdown" to markdown, "visibility" to "private"))["note"])
+    fun create(title: String, markdown: String, emoji: String = ""): JsonObject {
+        val body = linkedMapOf<String, Any?>("title" to title.trim(), "markdown" to markdown, "visibility" to "private")
+        if (emoji.isNotBlank()) body["emoji"] = emoji.trim()
+        return jsonObject(call("POST", "", body)["note"])
+    }
+
+    fun setEmoji(id: String, baseVersion: Long, emoji: String): JsonObject =
+        jsonObject(call("PATCH", "/$id", linkedMapOf("baseVersion" to baseVersion, "emoji" to emoji.trim()))["note"])
 
     fun save(id: String, baseVersion: Long, title: String, markdown: String): JsonObject = try {
         jsonObject(call("PATCH", "/$id", linkedMapOf("baseVersion" to baseVersion, "title" to title.trim(), "markdown" to markdown))["note"])

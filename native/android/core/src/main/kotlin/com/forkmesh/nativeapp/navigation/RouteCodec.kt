@@ -58,6 +58,7 @@ object RouteCodec {
             is Route.Profile -> put("name", route.name)
             is Route.Search -> { put("q", route.query); put("scope", route.scope.raw) }
             is Route.Note -> { put("id", route.id); put("comment", route.comment) }
+            is Route.NotePage -> { put("id", route.id); put("note", route.note) }
             is Route.Tasks -> put("filter", route.filter)
             is Route.Task -> put("id", route.id)
             is Route.Calendar -> { put("date", route.date); put("mode", route.mode.raw) }
@@ -149,6 +150,7 @@ object RouteCodec {
             Route.Kind.Search -> Route.Search(s("q") ?: "", SearchScope.of(s("scope")) ?: SearchScope.Everything)
             Route.Kind.Notes -> Route.Notes
             Route.Kind.Note -> Route.Note(s("id") ?: "", s("comment")?.takeIf { it.isNotEmpty() })
+            Route.Kind.NotePage -> req("id")?.takeIf { it.isNotEmpty() }?.let { Route.NotePage(it, s("note")?.takeIf { n -> n.isNotEmpty() }) }
             Route.Kind.Tasks -> Route.Tasks(s("filter"))
             Route.Kind.Task -> req("id")?.let(Route::Task)
             Route.Kind.Calendar -> Route.Calendar(s("date"), CalendarMode.of(s("mode")) ?: CalendarMode.Month)

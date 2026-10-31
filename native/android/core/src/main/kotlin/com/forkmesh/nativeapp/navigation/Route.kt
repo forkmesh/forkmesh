@@ -145,6 +145,7 @@ sealed class Route {
     data class Search(val query: String, val scope: SearchScope) : Route() { override val kind get() = Kind.Search }
     data object Notes : Route() { override val kind get() = Kind.Notes }
     data class Note(val id: String, val comment: String? = null) : Route() { override val kind get() = Kind.Note }
+    data class NotePage(val id: String, val note: String? = null) : Route() { override val kind get() = Kind.NotePage }
     data class Tasks(val filter: String?) : Route() { override val kind get() = Kind.Tasks }
     data class Task(val id: String) : Route() { override val kind get() = Kind.Task }
     data class Calendar(val date: String?, val mode: CalendarMode) : Route() { override val kind get() = Kind.Calendar }
@@ -230,7 +231,7 @@ sealed class Route {
         Chat("chat", "WS13"), Channel("channel", "WS13"), Thread("thread", "WS13"), Dm("dm", "WS13"),
         Discord("discord", "WS13"),
         Profile("profile", "WS18"), People("people", "WS18"), Docs("docs", "existing"), Search("search", "WS8"),
-        Notes("notes", "WS15"), Note("note", "WS15"), Tasks("tasks", "WS15"), Task("task", "WS15"),
+        Notes("notes", "WS15"), Note("note", "WS15"), NotePage("notePage", "WS15"), Tasks("tasks", "WS15"), Task("task", "WS15"),
         Calendar("calendar", "WS15"), Event("event", "WS15"), Timers("timers", "WS15"),
         Desktops("desktops", "WS16"), Desktop("desktop", "WS16"), Hosts("hosts", "WS7"), Host("host", "WS7"),
         Provision("provision", "WS16"), Network("network", "WS20"), Node("node", "WS16"),

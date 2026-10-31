@@ -136,7 +136,7 @@ object RouteParser {
         is Route.TeammateEditor ->
             if (!route.id.isNullOrEmpty()) listOf(Route.Teammates, Route.Teammate(route.id), route)
             else listOf(Route.Teammates, route)
-        is Route.Note -> listOf(Route.Notes, route)
+        is Route.Note, is Route.NotePage -> listOf(Route.Notes, route)
         is Route.Task -> listOf(Route.Tasks(null), route)
         is Route.Host, is Route.Provision -> listOf(Route.Hosts, route)
         is Route.Node -> listOf(Route.Network(null), route)
@@ -240,7 +240,12 @@ object RouteParser {
             "notes" -> {
                 val id = first ?: query["note"]?.trim()?.takeIf { it.isNotEmpty() }
                 val comment = query["comment"]?.trim()?.takeIf { it.isNotEmpty() }
-                if (id != null) listOf(Route.Notes, Route.Note(id, comment)) else listOf(Route.Notes)
+                val page = query["page"]?.trim()?.takeIf { it.isNotEmpty() }
+                when {
+                    first == null && page != null -> listOf(Route.Notes, Route.NotePage(page, id))
+                    id != null -> listOf(Route.Notes, Route.Note(id, comment))
+                    else -> listOf(Route.Notes)
+                }
             }
             "tasks" -> if (first != null) listOf(Route.Tasks(null), Route.Task(first)) else listOf(Route.Tasks(query["filter"]))
             "calendar" -> listOf(Route.Calendar(query["date"], CalendarMode.of(query["mode"]) ?: CalendarMode.Month))
