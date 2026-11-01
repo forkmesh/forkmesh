@@ -231,11 +231,20 @@ private struct ChatTranscript<Drawer: View>: View {
         Group {
             if hub.inConversation {
                 MessagesConversationView(
-                    hub: hub, onBack: onOpenChannels, showsHeader: showsHeader, drawer: drawer,
+                    hub: hub, onBack: shell.sideColumn ? nil : onOpenChannels, showsHeader: showsHeader, drawer: drawer,
                     actions: { (row: ChatRow) in actions(for: row) }, onRoute: onRoute, draft: $draft,
                     focused: $composerFocused, onSend: { send() }, notice: $notice)
             } else {
                 roomLayout
+            }
+        }
+        .toolbar {
+            if shell.sideColumn, let onOpenChannels {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Channels", systemImage: "chevron.left", action: onOpenChannels)
+                        .tint(fm.textPrimary)
+                        .accessibilityIdentifier("chat-side-column-back")
+                }
             }
         }
         .onAppear {
@@ -380,7 +389,7 @@ private struct ChatTranscript<Drawer: View>: View {
 
     private var header: some View {
         HStack(spacing: FmSpace.x2) {
-            if let onOpenChannels = onOpenChannels {
+            if !shell.sideColumn, let onOpenChannels = onOpenChannels {
                 Button(action: onOpenChannels) {
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: "chevron.left")
@@ -695,6 +704,7 @@ private struct ChatTranscript<Drawer: View>: View {
 }
 
 struct ChatShellActions {
+    var sideColumn: Bool = false
     var onHub: (() -> Void)?
     var onNewAgent: (() -> Void)?
     var onPalette: () -> Void = {}

@@ -77,6 +77,8 @@ struct HomeShell: View {
     @State var live: ThrottledSnapshot<ShellLiveCounts>?
     @State var windowSize: CGSize = .zero
     @State var detailHost: ShellDetailHost = ShellDetailHost.shared
+    @State var foldRegion: CGRect?
+    @State var duoFolder: ShellDuoFolder?
 
     private let navigator: AppNavigator
     private let auth: AuthService?
@@ -120,7 +122,11 @@ struct HomeShell: View {
     private var panes: ShellPaneMetrics {
         ShellPanes.metrics(
             width: Double(windowSize.width), height: Double(windowSize.height),
-            pad: StoreScreenshotLaunch.pad)
+            pad: StoreScreenshotLaunch.pad, sideColumn: sideColumn)
+    }
+
+    private var sideColumn: Bool {
+        ShellDuo.device && ShellPanes.sideColumn(width: Double(windowSize.width), height: Double(windowSize.height))
     }
 
     private func paneLayout(_ tab: AppTab) -> ShellPaneLayout {
@@ -162,10 +168,10 @@ struct HomeShell: View {
             onOpenSearch: { openSearch("", scope: HomeShellCatalog.searchScope(for: router.selectedTab)) },
             onSignIn: { AccountFeature.openSignIn() },
             onHome: { openProjectHome() },
-            onNewAgent: newAgentAction,
+            onNewAgent: sideColumn ? nil : newAgentAction,
             onPalette: { openPalette() },
-            onVoice: voiceAction,
-            showsSearch: usesSplit || panes.wide,
+            onVoice: sideColumn ? nil : voiceAction,
+            showsSearch: (usesSplit || panes.wide) && !sideColumn,
             showsSignIn: PackageGateSync.isInstalled(PhonePackages.signIn))
     }
 
@@ -175,6 +181,18 @@ struct HomeShell: View {
 
     private var voiceAction: ((CGRect) -> Void)? {
         agentsOn ? { (origin: CGRect) -> Void in openVoice(from: origin) } : nil
+    }
+
+    private var duoBars: ShellDuoBars { duoBars(showsMore: true) }
+
+    private var duoPageBars: ShellDuoBars { duoBars(showsMore: false) }
+
+    private func duoBars(showsMore: Bool) -> ShellDuoBars {
+        let voice: ((CGRect) -> Void)? = voiceAction
+        let origin: CGRect = CGRect(x: windowSize.width - 40, y: 120, width: 1, height: 1)
+        return ShellDuoBars(
+            on: sideColumn, onNewAgent: newAgentAction, onPalette: { openPalette() },
+            onVoice: voice.map { (start: @escaping (CGRect) -> Void) in { start(origin) } }, showsMore: showsMore)
     }
 
     private var badges: [AppTab: Int] {
@@ -463,11 +481,13 @@ struct HomeShell: View {
     }
 
     private var showsBar: Bool {
-        !pageKeyboardUp && !usesSplit && !showsRail && (inSplit || !ShellChrome.shared.isBare(router.selectedTab))
+        !sideColumn && !pageKeyboardUp && !usesSplit && !showsRail && (inSplit || !ShellChrome.shared.isBare(router.selectedTab))
     }
 
     private var genieFloor: CGFloat? {
-        showsBar && barHeight > 0 ? barBottom - barHeight + capsuleTop - (dockLift > 0 ? dockLift + ShellDock.gap : 0) : nil
+        let lift: CGFloat = dockLift > 0 ? dockLift + ShellDock.gap : 0
+        if sideColumn { return windowSize.height - safeBottom - lift }
+        return showsBar && barHeight > 0 ? barBottom - barHeight + capsuleTop - lift : nil
     }
 
     private var barClearance: CGFloat {
@@ -532,10 +552,11 @@ struct HomeShell: View {
                 .environment(
                     \.chatShellActions,
                     ChatShellActions(
+                        sideColumn: sideColumn,
                         onHub: { openHub() },
-                        onNewAgent: newAgentAction,
+                        onNewAgent: sideColumn ? nil : newAgentAction,
                         onPalette: { openPalette() },
-                        onVoice: voiceAction,
+                        onVoice: sideColumn ? nil : voiceAction,
                         name: barState.name, avatarPng: auth?.session?.avatarPng ?? ""))
         case .inbox:
             RouteDestinationView(route: .inbox(.all))
@@ -549,14 +570,33 @@ struct HomeShell: View {
             tabRoot(tab)
                 .tabStackPage(tab, tops: stackTops)
                 .shellPageClearance()
-                .background { ShellRootBarHider(tab: tab) }
-                .toolbar(.hidden, for: .navigationBar)
+                .background { if !sideColumn { ShellRootBarHider(tab: tab) } }
+                .toolbar(sideColumn ? .visible : .hidden, for: .navigationBar)
+                .modifier(tab == .chat ? duoPageBars : duoBars)
                 .navigationDestination(for: Route.self) { (route: Route) in
                     RouteDestinationView(route: route)
                         .tabStackPage(tab, tops: stackTops)
                         .shellPageClearance()
+                        .modifier(duoPageBars)
+                }
+                .navigationDestination(isPresented: hostedBinding(tab)) {
+                    if let hosted = detailHost.page(tab) {
+                        hosted.view
+                            .id(hosted.id)
+                            .modifier(duoPageBars)
+                    }
                 }
         }
+    }
+
+    private func hostedBinding(_ tab: AppTab) -> Binding<Bool> {
+        let host: ShellDetailHost = detailHost
+        let wide: Bool = panes.wide
+        return Binding<Bool>(
+            get: { !wide && host.page(tab) != nil },
+            set: { (shown: Bool) in
+                if !shown { host.clear(tab) }
+            })
     }
 
     private func listBinding(_ tab: AppTab, _ layout: ShellPaneLayout) -> Binding<[Route]> {
@@ -609,11 +649,16 @@ struct HomeShell: View {
             }
             .tabStackPage(tab, tops: stackTops)
             .shellPageClearance()
+            .modifier(ShellDuoListBars())
+            .ignoresSafeArea(.container, edges: .trailing)
             .navigationDestination(for: Route.self) { (route: Route) in
                 RouteDestinationView(route: route)
                     .shellPageClearance()
+                    .modifier(ShellDuoListBars())
+                    .ignoresSafeArea(.container, edges: .trailing)
             }
         }
+        .ignoresSafeArea(.container, edges: .trailing)
         .id(list)
         .environment(\.shellPaneRole, .list)
         .environment(\.shellPaneOpen, ShellPanes.opened(layout))
@@ -627,12 +672,14 @@ struct HomeShell: View {
                         .id(hosted.id)
                 } else {
                     ShellPanePlaceholder(tab: tab, list: list)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .toolbar(sideColumn ? .visible : .hidden, for: .navigationBar)
                 }
             }
+            .modifier(duoBars)
             .navigationDestination(for: Route.self) { (route: Route) in
                 RouteDestinationView(route: route)
                     .shellPageClearance()
+                    .modifier(duoPageBars)
             }
         }
         .environment(\.shellPaneRole, .detail)
@@ -644,11 +691,17 @@ struct HomeShell: View {
             let layout: ShellPaneLayout = paneLayout(tab)
             HStack(spacing: 0) {
                 listColumn(tab, list: list, layout: layout)
-                    .frame(width: CGFloat(panes.list))
-                ShellPaneDivider()
+                    .frame(width: foldRegion?.minX ?? CGFloat(panes.list))
+                if let foldRegion {
+                    Color.clear
+                        .frame(width: foldRegion.width)
+                } else {
+                    ShellPaneDivider()
+                }
                 detailColumn(tab, list: list, layout: layout)
                     .frame(maxWidth: .infinity)
             }
+            .modifier(ShellFoldReader(fold: $foldRegion))
             .environment(\.horizontalSizeClass, .compact)
             .environment(\.shellPanes, ShellPaneMetrics(rail: panes.rail, wide: false, list: panes.list))
         case .stack, .full:
@@ -673,15 +726,131 @@ struct HomeShell: View {
         tab == router.selectedTab || mountedTabs.contains(tab)
     }
 
+    private static let duoSearch: String = "Search"
+    private static let duoFolderPrefix: String = "folder:"
+
+    private func duoTabs(_ all: [ShellBarItem]) -> [ShellDuoTab] {
+        let items: [ShellBarItem] = all.filter { $0.id != HomeShell.duoSearch }
+        return ShellBarPrefs.shared.entries(items).map { (entry: ShellBarEntry) -> ShellDuoTab in
+            switch entry.slot {
+            case let .item(item):
+                return ShellDuoTab(id: item.id, title: item.title, symbol: item.symbol, badge: item.badge, members: [])
+            case let .folder(folder, members):
+                return ShellDuoTab(
+                    id: HomeShell.duoFolderPrefix + folder.id, title: folder.name, symbol: "folder",
+                    badge: members.reduce(0) { $0 + $1.badge }, members: members)
+            }
+        }
+    }
+
+    private func duoHome(_ tab: AppTab) -> String {
+        switch tab {
+        case .agents: return "Agents"
+        case .inbox: return "Inbox"
+        case .chat: return "Chat"
+        case .code: return "Repos"
+        }
+    }
+
+    private func duoStack(_ id: String) -> AppTab? {
+        switch id {
+        case "Agents": return .agents
+        case "Inbox": return .inbox
+        case "Chat": return .chat
+        case "Repos", "currentRepo": return .code
+        case HomeShell.duoSearch: return router.selectedTab
+        default: return nil
+        }
+    }
+
+    private func duoSelection(_ tabs: [ShellDuoTab], _ all: [ShellBarItem]) -> String {
+        if page == nil, router.currentRoute?.kind == .search { return HomeShell.duoSearch }
+        let selected: ShellBarItem? = all.first(where: \.selected)
+        if let selected, tabs.contains(where: { $0.id == selected.id }) { return selected.id }
+        return page == nil ? duoHome(router.selectedTab) : ShellHome.homeId
+    }
+
+    private func duoPick(_ id: String, _ tabs: [ShellDuoTab], _ all: [ShellBarItem]) {
+        if let tab = tabs.first(where: { $0.id == id }), id.hasPrefix(HomeShell.duoFolderPrefix) {
+            duoFolder = ShellDuoFolder(id: id, title: tab.title, members: tab.members)
+            return
+        }
+        guard let item = all.first(where: { $0.id == id }) else { return }
+        ShellBottomBar.run(item, prefs: ShellBarPrefs.shared, reduceMotion: reduceMotion)
+    }
+
+    @available(iOS 18.0, *)
+    private func duoTabView(_ groups: [ShellMenuGroup]) -> some View {
+        let all: [ShellBarItem] = groups.flatMap(\.items)
+        let tabs: [ShellDuoTab] = duoTabs(all)
+        let current: String = duoSelection(tabs, all)
+        return TabView(
+            selection: Binding<String>(
+                get: { duoSelection(tabs, all) }, set: { (id: String) in duoPick(id, tabs, all) })
+        ) {
+            ForEach(tabs) { (item: ShellDuoTab) in
+                Tab(item.title, systemImage: item.symbol, value: item.id) {
+                    duoTabContent(item.id, current: current, groups)
+                }
+                .badge(item.badge)
+            }
+            Tab("Search", systemImage: "magnifyingglass", value: HomeShell.duoSearch, role: .search) {
+                duoTabContent(HomeShell.duoSearch, current: current, groups)
+            }
+        }
+        .tint(fm.textPrimary)
+        .confirmationDialog(
+            duoFolder?.title ?? "", isPresented: Binding<Bool>(
+                get: { duoFolder != nil },
+                set: { (shown: Bool) in
+                    if !shown { duoFolder = nil }
+                }),
+            titleVisibility: .visible, presenting: duoFolder
+        ) { (folder: ShellDuoFolder) in
+            ForEach(folder.members) { (item: ShellBarItem) in
+                Button(item.title) {
+                    ShellBottomBar.run(item, prefs: ShellBarPrefs.shared, reduceMotion: reduceMotion)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func duoTabContent(_ id: String, current: String, _ groups: [ShellMenuGroup]) -> some View {
+        Group {
+            if id == ShellHome.homeId {
+                NavigationStack {
+                    pageView(groups)
+                        .safeAreaPadding(.bottom, barClearance)
+                        .toolbar(sideColumn ? .visible : .hidden, for: .navigationBar)
+                        .modifier(duoBars)
+                }
+            } else if let stack = duoStack(id), duoOwner(stack, current: current) == id {
+                tab(stack)
+            } else {
+                Color.clear
+            }
+        }
+        .tint(fm.accent)
+        .toolbar(sideColumn ? .visible : .hidden, for: .tabBar)
+    }
+
+    private func duoOwner(_ stack: AppTab, current: String) -> String {
+        duoStack(current) == stack ? current : duoHome(stack)
+    }
+
     private var tabs: some View {
         let groups: [ShellMenuGroup] = barGroups
         return ZStack {
-            if mounted(.code) { tab(.code) }
-            if mounted(.agents) { tab(.agents) }
-            if mounted(.chat) { tab(.chat) }
-            if mounted(.inbox) { tab(.inbox) }
-            pageView(groups)
-                .safeAreaPadding(.bottom, barClearance)
+            if ShellDuo.device, #available(iOS 18.0, *) {
+                duoTabView(groups)
+            } else {
+                if mounted(.code) { tab(.code) }
+                if mounted(.agents) { tab(.agents) }
+                if mounted(.chat) { tab(.chat) }
+                if mounted(.inbox) { tab(.inbox) }
+                pageView(groups)
+                    .safeAreaPadding(.bottom, barClearance)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottom) {
@@ -897,14 +1066,10 @@ struct HomeShell: View {
 
     private func resize(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        let wasWide: Bool = panes.wide
         windowSize = size
         let wide: Bool = panes.wide
         if detailHost.active != wide {
             detailHost.active = wide
-        }
-        if wasWide && !wide {
-            detailHost.clearAll()
         }
         FmOrientationLock.allowRoomy(ShellPanes.roomy(width: Double(size.width), height: Double(size.height)))
     }
@@ -929,13 +1094,14 @@ struct HomeShell: View {
             .overlay { ShellLaunchSparkles(flight: ShellLaunchFlight.shared) }
             .overlay {
                 AquariumLayer(
-                    hidden: composer.isOpen || keyboardUp || voice.isOpen || StoreScreenshotLaunch.on, floor: genieFloor)
+                    hidden: composer.isOpen || keyboardUp || voice.isOpen || StoreScreenshotLaunch.on, floor: genieFloor,
+                    keepSides: sideColumn)
             }
             .overlay {
                 if !genie.spiderHidden && !StoreScreenshotLaunch.on {
                     GenieSpiderLayer(
                         hidden: composer.isOpen || keyboardUp || voice.isOpen || router.currentRoute?.kind == .spiderRoom,
-                        floor: genieFloor)
+                        floor: genieFloor, keepSides: sideColumn)
                 }
             }
             .overlay(alignment: .top) {

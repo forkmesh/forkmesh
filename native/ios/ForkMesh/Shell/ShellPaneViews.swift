@@ -84,11 +84,6 @@ final class ShellDetailHost {
         current.release()
     }
 
-    func clearAll() {
-        for tab in Array(pages.keys) {
-            clear(tab)
-        }
-    }
 }
 
 private struct ShellDetailDestination<Item: Hashable, Page: View>: ViewModifier {

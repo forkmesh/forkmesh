@@ -596,6 +596,9 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
 
 iOS features Android does not have, because they need an Apple-only API:
 
+- **iPhone Duo's side column**: iOS moves bars under the outer camera, a system
+  layout tied to that hardware. Android foldables have no camera column, so
+  they keep their bottom bar and rail.
 - **Cloud Dragon** (2026-11-01): the second Genie mascot on iPhone
   ([GENIE.md](GENIE.md#the-cloud-dragon)). It is iOS only until the owner asks
   for it on Android; the Android spider is unchanged and Android has no mascot

@@ -1153,11 +1153,13 @@ left, the detail on the right.
   `ShellPanes.metrics` (FMApi) turns on two panes on a phone whose window is at
   least 600 pt wide and 480 pt tall. The Duo's inner display (669 × 951 pt
   upright, 951 × 669 on its side) passes; the 466 pt cover screen, a 50/50
-  Split View and a landscape iPhone do not. The Duo reports "regular" width on
-  both displays, so the size class cannot tell them apart; the shell sets
+  Split View and a landscape iPhone do not. The shell sets
   `horizontalSizeClass` itself on phones (regular when wide, compact otherwise
   and inside each pane), and screens that branch on it (Chat's channel
-  sidebar, the issue board, project timelines) follow.
+  sidebar, the issue board, project timelines) follow. On 2026-11-02 the Duo
+  simulator reported `compact` on the cover from outside that override, so the
+  earlier report of "regular" on both displays does not hold there; the inner
+  display still needs the same check.
 - **Panes** (`HomeShell.tabPanes`, `ShellPanes.layout`). Each tab shows its list
   (Agents, Inbox, Repos) in a column of 280–380 pt (40% of the width), a
   hairline, then a `NavigationStack` for the detail (`ShellPanePlaceholder`
@@ -1178,16 +1180,47 @@ left, the detail on the right.
   `shellPaneOpen` (`ShellPanes.opened`); repository lists match it with
   `ShellPanes.opens`, Agents compare the line they opened, and the Inbox gives
   `shellPaneRowLink` an id compared with the hosted page.
-- **Bars.** On its side the Duo shows `ShellSideRail`, a vertical Liquid Glass
-  rail on the left with the bottom bar's items, folders, menus and style, and
-  no bottom bar. Upright, the bottom bar stays. The top bar spans both panes
-  and always shows Search.
+- **Side column.** The operator asked on 2026-11-01 for controls under the
+  camera, and chose the right side on the inner display so tabs keep their
+  place when the phone opens. Only `iPhone19,4` takes this path (`ShellDuo`):
+  `HomeShell.duoTabView` is a real `TabView` in every pose, so folding never
+  swaps the shell. System bars only move to the side for standard containers,
+  which is why the tabs are not a custom rail. `ShellPanes.sideColumn` is true
+  on the cover, on the inner display sideways and in Split View. There the
+  column shows Back, then new agent and page actions, then More, then the tab
+  capsule ending in Search, as system glass; the system picks the edge,
+  including the left one in Split View, and handles Live Activity overflow.
+  Six tabs, Search and three toolbar items do not fit the cover's height, and
+  the system then collapses the tabs to the current one; `.prefersTabBar` did
+  not change that on the iOS 27.2 simulator. So a page with Back shows Back and
+  new agent only, and More stays on root pages.
+  The top bar drops Search and new agent, and `ChatShellActions.sideColumn`
+  moves Chat's back button into the column.
+- **List pane.** The list column is a plain `NavigationStack` beside the detail,
+  and on the inner display sideways it took the side column's trailing inset,
+  so rows stopped about 85 pt short of the pane's edge. The column ignores that
+  inset (`ignoresSafeArea(.container, edges: .trailing)`), which is what fixed
+  the width; `toolbarVerticalBehavior(.disabled)` alone did not. `ShellDuoListBars`
+  stays so list bars are horizontal, as in Apple's split views.
+- **Inner display upright.** The `TabView` hides its tab bar and the custom
+  bottom bar shows on top of it, so this pose looks as it did. The top bar spans
+  both panes and shows Search.
+- **Tabs and stacks.** Tabs follow `ShellBarPrefs.entries`, so order, limit and
+  badges carry over. A bar folder is a tab that opens a list of its items,
+  because a tab bar cannot hold a folder. Repos and Code share one stack, and
+  Search opens in the current tab's stack; `duoOwner` lets exactly one tab show
+  a stack at a time, which remounts that stack when its owner changes.
+- **Fold.** `ShellFoldReader` reads the active `.division` reserved region, and
+  the list column ends at the fold with the detail starting after it, so the
+  fold is the divider. Composers already sit at the bottom, below the fold in
+  the laptop pose, so they need no move. Scrolling content may cross the fold.
 - **Rotation.** `ForkMesh-Info.plist` lists portrait and both landscapes for
   iPhone, because the Duo's inner display scales a portrait-only app. At run
   time `FmOrientationLock` keeps other iPhones in portrait; `allowRoomy`
   unlocks every orientation except upside down while the window's shorter
-  side is at least 600 pt. Hosted pages are dropped when the panes go away
-  (`ShellDetailHost.clearAll`).
+  side is at least 600 pt. A hosted page stays open across a fold: on the cover
+  `tabStack` pushes it and Back clears it. Its view is rebuilt there, so its own
+  scroll position and unsaved `@State` reset.
 - **Build.** Until the app is built with Xcode 27 (the iOS 27 SDK; the office
   Mac has Xcode 26.6), iOS runs it on the Duo in compatibility mode and the
   layout above does not show. Edge-to-edge and the system's vertical bars need
