@@ -218,6 +218,7 @@ object InboxFeature {
             number = ping.meta.int("number"),
             channel = ping.meta.str("channel"),
             runId = ping.meta.str("runId"),
+            head = ping.meta.str("head"),
         )
     }
 
@@ -289,6 +290,10 @@ object InboxFeature {
             is NotificationCommand.Approve -> NavigationFeature.open(Route.Approval("${command.sessionId}/${command.approvalId}"))
             is NotificationCommand.Merge -> NavigationFeature.open(Route.Agent(command.sessionId))
             is NotificationCommand.ApprovePull -> NavigationFeature.open(Route.Pull(command.repo, command.number, com.forkmesh.nativeapp.navigation.PullTab.Conversation))
+            is NotificationCommand.ApproveChecks -> {
+                com.forkmesh.nativeapp.feature.code.review.PendingChecksApproval.request(command)
+                NavigationFeature.open(Route.Pull(command.repo, command.number, com.forkmesh.nativeapp.navigation.PullTab.Checks))
+            }
             else -> runInBackground(command)
         }
     }

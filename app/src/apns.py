@@ -463,7 +463,8 @@ def alert_payload(alert, topic="", origin=""):
     thread = str(alert.get("threadId") or "").strip()
     if thread:
         payload["aps"]["thread-id"] = thread[:64]
-    for key in ("alertId", "href", "sessionId", "runId"):
+    for key in ("alertId", "href", "sessionId", "runId", "approvalId",
+                "repo", "number", "head"):
         value = str(alert.get(key) or "").strip()
         if value:
             payload[key] = value
@@ -494,6 +495,8 @@ def alert_payload(alert, topic="", origin=""):
     category = str(alert.get("category") or "").strip()
     if category:
         payload["aps"]["category"] = category[:40]
+    if category in ("agent-approval", "actions-approval"):
+        payload["aps"]["interruption-level"] = "time-sensitive"
     alarm = str(alert.get("alarm") or "").strip()
     if alarm in APNS_ALARM_SOUNDS:
         payload["aps"]["sound"] = APNS_ALARM_SOUNDS[alarm]

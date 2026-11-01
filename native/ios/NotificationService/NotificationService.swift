@@ -416,6 +416,7 @@ final class NotificationService: UNNotificationServiceExtension {
             if content.categoryIdentifier.isEmpty {
                 let categories: [String: String] = [
                     "agent_approval": "agent-approval", "pull_submitted": "pr-review", "mention": "mention",
+                    "action_approval": "actions-approval", "action_failed": "ci-failed",
                 ]
                 content.categoryIdentifier = categories[kind] ?? "ping"
             }

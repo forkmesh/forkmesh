@@ -18,15 +18,18 @@ public struct NotificationDeepLink: Equatable, Hashable, Sendable {
     /// A branch (`/owner/repo/commits/<branch>`, `/tree/<branch>`, or a `?branch=`/`?ref=`
     /// query): what a code-push ping links to. Branch names may hold slashes.
     public var branch: String
+    public var pullTab: PullTab
 
     public init(
-        repo: Repository, initialTab: RepoDetailTab, number: Int = 0, reference: String = "", branch: String = ""
+        repo: Repository, initialTab: RepoDetailTab, number: Int = 0, reference: String = "", branch: String = "",
+        pullTab: PullTab = .conversation
     ) {
         self.repo = repo
         self.initialTab = initialTab
         self.number = number
         self.reference = reference
         self.branch = branch
+        self.pullTab = pullTab
     }
 
     /// A code-push ping's target: the commits tab at a branch.
@@ -65,6 +68,7 @@ public struct NotificationDeepLink: Equatable, Hashable, Sendable {
         var tab = RepoDetailTab.code
         var number = 0
         var reference = ""
+        var pullTab = PullTab.conversation
         // Everything from `from` on, as one path (a branch may hold slashes).
         func rest(_ from: Int) -> String { parts.count > from ? parts[from...].joined(separator: "/") : "" }
         var branch = (Self.queryValue(query, "branch") ?? Self.queryValue(query, "ref") ?? "").dartTrimmed
@@ -76,6 +80,7 @@ public struct NotificationDeepLink: Equatable, Hashable, Sendable {
             case "pulls", "pull":
                 tab = .pulls
                 number = Self.number(parts)
+                if number > 0, parts.count >= 5, let named = PullTab(rawValue: parts[4]) { pullTab = named }
             case "discussions":
                 tab = .discussions
                 number = Self.number(parts)
@@ -111,7 +116,7 @@ public struct NotificationDeepLink: Equatable, Hashable, Sendable {
         }
         return NotificationDeepLink(
             repo: Repository(owner: owner, name: name), initialTab: tab, number: number, reference: reference,
-            branch: branch)
+            branch: branch, pullTab: pullTab)
     }
 
     /// One query parameter, decoded; nil when absent.

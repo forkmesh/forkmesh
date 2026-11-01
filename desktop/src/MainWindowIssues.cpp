@@ -8760,6 +8760,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             m_quickAddModeSelector->setCurrentIndex(
                 (m_quickAddModeSelector->currentIndex() + 1) %
                 m_quickAddModeSelector->count());
+            applyComposerModeToTargetSession();
             return true;
         }
         if (ke->text() == QLatin1String("/") &&
