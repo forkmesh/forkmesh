@@ -5,7 +5,9 @@
 
 The ForkMesh extension for Chrome, as its own Market package, so one
 extension with one sign-in serves several packages and can be released on its
-own. What it does is documented in `content/extension/README.md`:
+own. The user guide is [docs/browser-extension.md](../../../docs/browser-extension.md)
+and the internals are [docs/marketplace/browser-extension.md](../../../docs/marketplace/browser-extension.md);
+the feature reference is `content/extension/README.md`:
 
 - fills and saves logins from the Password Vault (`vault` package);
 - links Gmail, Zoho Mail and Mastodon conversations to CRM contacts, links
