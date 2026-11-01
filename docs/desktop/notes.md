@@ -204,10 +204,24 @@ published note also shows Copy public link beside "Live on the web".
 
 ## Links to a note
 
-`forkmesh://note/<id>`, `<relay>/dashboard/notes?note=<id>` and
-`<relay>/dashboard/notes/<id>` open the note in the app, both when clicked
-inside it (`openBodyReference()`, `openReferenceLink()`) and when the system
-hands the link to the app (`main.cpp`, `isLocalActionLink()`). A web link is
+`forkmesh://note/<id>`, `<relay>/dashboard/notes?note=<id>`,
+`<relay>/dashboard/notes/<id>` and the published page `<relay>/notes/<id>`
+open the note in the app, both when clicked inside it (`openBodyReference()`,
+`openReferenceLink()`) and when the system hands the link to the app
+(`main.cpp`, `isLocalActionLink()`). A published note is readable by anyone
+through `GET /api/notes/<id>` (role `public`), so its page link opens in the
+app too instead of leaving for the browser.
+
+A task converted from a note carries the note's published link in its details
+("Converted from the note … (published at …)"). The Tasks page sends every
+link in a task's detail and field panes through the window's
+`note.openLink` command first (`MainWindow::runWindowCommand()`), so a note link
+opens the Notes page and only other links go to the browser. The web Tasks page
+(`taskNoteLinkHref()` in `09-tasks.js`) opens such a link, or a
+`/dashboard/notes` link, on the dashboard Notes page in the same tab, and the
+phone apps route `/notes/<id>` (32 hex characters, the server's own match in
+`app_runtime.py`) to the note instead of reading it as an `owner/repo`
+shortcut. A web link is
 only taken when its host is the relay this app uses; a link to another host
 says so instead of opening something else. `forkmesh::notes::parseNoteLink()`
 is the single parser.

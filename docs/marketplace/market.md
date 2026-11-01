@@ -105,8 +105,10 @@ a user can manage a plugin without going back to the Market or Apps page:
 - **Send feedback or report a bug** posts to `/api/bug-reports` with
   `package: <id>`. The private report and any attachments are visible only to
   platform administrators in the Support inbox and the phones' Bug sheet
-  Reported tab (`GET /api/bug-reports/inbox`), labelled `plugin`. It works
-  without the `bug-reports` package.
+  Reported tab (`GET /api/bug-reports/inbox`), labelled `plugin`. A
+  signed-in reporter sees their own reports and their status in the Bug
+  sheet's My reports tab (`GET /api/bug-reports/mine`) and can confirm one is
+  fixed. It works without the `bug-reports` package.
 - **Uninstall** uses the surface's normal removal flow, including its
   confirmation and dependents.
 

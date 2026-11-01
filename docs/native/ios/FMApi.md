@@ -51,7 +51,12 @@ Owner-sealed envelopes (ML-KEM) are also opened off the main actor.
   (`wss://host/api/nodes/events?ticket=..&node=..`).
 - Push: `registerPushDevice(deviceToken:environment:)`, `sendTestPush()`,
   `unregisterPushDevice(token)` (30 s timeout).
-- `submitBugReport(...) -> BugReportResult`.
+- `submitBugReport(...) -> BugReportResult`. Admins: `bugReportInbox(status:offset:limit:)`,
+  `setBugReportStatus(id:status:)`, `bugReportAttachment(reportId:attachmentId:)`
+  (`/api/bug-reports/inbox`). The signed-in reporter: `myBugReports(offset:) -> MyBugReports`
+  (`GET /api/bug-reports/mine`, newest first, 50 a page) and `confirmBugReportFixed(id:) ->
+  MyBugReportConfirmation` (`POST /api/bug-reports/mine` `{report, fixed: true}`, closes the report
+  and stamps `confirmedFixedAt`; answers the updated `MyBugReport`).
 - Profile and status: `accountAvatarPng`, `accountUserStatus`, `updateUserStatus(changes)`.
 - Sessions and devices: `listDevices`, `listSessions`, `revokeSession(id)`.
 - `roomChatPassphrase()`.

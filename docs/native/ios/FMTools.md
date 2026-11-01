@@ -73,6 +73,11 @@ Models take a `ToolsApiCall` closure (tests) or an `ApiService` (convenience ini
   the model keeps its state and stays unloaded so the next appearance loads again, and
   pull-to-refresh runs the load in its own `Task`. A 404 without `report_missing` or
   `attachment_missing` means the relay has no inbox route, and the sheet says to update it.
+  Signed-in reporters who are not admins get a "My reports" tab instead, `MyBugReportsModel`
+  (`MyBugReportsView`): only their own reports, each with a status (Received, In progress, Closed,
+  or "Fixed, confirmed by you" once `confirmedFixedAt` is set) and a "Confirm it's fixed" button
+  that closes the report and replaces the row in place with the server's copy. It has no
+  navigator badge. Plugin feedback (a package set) shows neither tab.
 
 ### Health and wellbeing
 
