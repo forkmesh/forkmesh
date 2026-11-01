@@ -3087,6 +3087,32 @@ void MainWindow::applyComposerSelectionToAgentSession(int sessionId)
     }
 }
 
+void MainWindow::applyComposerModeToTargetSession()
+{
+    if (!m_quickAddModeSelector)
+        return;
+    const int onScreen = quickAddFollowUpAgentSessionId();
+    const int sessionId = onScreen >= 0 ? onScreen : m_selectedAgentSessionId;
+    if (sessionId < 0 || isCloudSession(sessionId) || isExternalSession(sessionId))
+        return;
+    AgentSession *session = findAgentSession(sessionId);
+    if (!session || session->associationOnly)
+        return;
+    const QString chosenMode = m_quickAddModeSelector->currentText();
+    if (chosenMode.isEmpty() || session->mode == chosenMode)
+        return;
+    session->mode = chosenMode;
+    if (m_agentStore)
+        m_agentStore->saveSession(*session);
+    if (m_streamSessionInfo.contains(sessionId))
+        m_streamSessionInfo[sessionId].mode = chosenMode;
+    if (ClaudeStreamSession *claude = m_streamSessions.value(sessionId))
+        syncLivePermissionMode(sessionId, claude);
+    if (sessionId == m_selectedAgentSessionId)
+        showAgentSession(sessionId);
+    scheduleAgentSessionsPush();
+}
+
 void MainWindow::sendPromptToSelectedAgent(const QString &prompt)
 {
     applyComposerSelectionToAgentSession(m_selectedAgentSessionId);
@@ -3134,6 +3160,9 @@ void MainWindow::answerAgentQuestion(int sessionId, const QString &toolUseId,
             /*error=*/true);
         return;
     }
+    const ClaudeStreamSession *claudeBefore = m_streamSessions.value(sessionId);
+    const QString cliModeBefore =
+        claudeBefore ? claudeBefore->permissionMode() : QString();
     if (runtime && runtime->running()) {
         AgentRuntimeCommand command{
             1, AgentRuntimeCommandTypes::RequestRespond, toolUseId, 0,
@@ -3186,7 +3215,7 @@ void MainWindow::answerAgentQuestion(int sessionId, const QString &toolUseId,
                     /*error=*/true);
             }
         }
-        syncClaudePermissionMode(sessionId);
+        syncClaudePermissionMode(sessionId, cliModeBefore);
         markAgentSessionRunning(sessionId);
         scheduleAgentSessionsPush();
         return;
