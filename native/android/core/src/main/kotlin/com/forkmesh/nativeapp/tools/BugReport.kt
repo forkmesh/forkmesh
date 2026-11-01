@@ -6,6 +6,9 @@ import com.forkmesh.nativeapp.api.BugReportInbox
 import com.forkmesh.nativeapp.api.BugReportInboxItem
 import com.forkmesh.nativeapp.api.BugReportStatusChange
 import com.forkmesh.nativeapp.api.BugReportResult
+import com.forkmesh.nativeapp.api.MyBugReport
+import com.forkmesh.nativeapp.api.MyBugReportConfirmation
+import com.forkmesh.nativeapp.api.MyBugReports
 import kotlin.math.max
 
 data class BugButtonPoint(val x: Float, val y: Float)
@@ -248,3 +251,86 @@ data class BugReportInboxState(
 
 fun loadBugReportInbox(api: ApiService?, status: String, offset: Int = 0, limit: Int = 0): BugReportInbox =
     api?.bugReportInbox(status, offset, limit) ?: BugReportInbox.failure(BugReportInboxCopy.UNAVAILABLE)
+
+enum class MyBugReportTone { Confirmed, InProgress, Plain }
+
+object MyBugReportsCopy {
+    const val TAB_MINE = "My reports"
+    const val EMPTY = "You haven't reported any bugs yet."
+    const val CONFIRM = "Confirm it's fixed"
+    const val CONFIRMING = "Confirming…"
+    const val REFRESH = "Refresh"
+    const val LOAD_MORE = BugReportInboxCopy.LOAD_MORE
+    const val UNAVAILABLE = "Your reported bugs are unavailable in this build."
+    const val RECEIVED = "Received"
+    const val IN_PROGRESS = "In progress"
+    const val CLOSED = "Closed"
+    const val CONFIRMED = "Fixed, confirmed by you"
+
+    fun statusLabel(report: MyBugReport): String = when {
+        report.confirmedFixed -> CONFIRMED
+        report.status == "triaged" -> IN_PROGRESS
+        report.status == "closed" -> CLOSED
+        else -> RECEIVED
+    }
+
+    fun statusTone(report: MyBugReport): MyBugReportTone = when {
+        report.confirmedFixed -> MyBugReportTone.Confirmed
+        report.status == "triaged" -> MyBugReportTone.InProgress
+        else -> MyBugReportTone.Plain
+    }
+
+    fun details(report: MyBugReport): String =
+        listOf(report.platform, report.appVersion, report.screen).filter { it.isNotEmpty() }.joinToString(" · ")
+
+    fun attachments(report: MyBugReport): String = report.attachments.joinToString(" · ") { it.name }
+}
+
+data class MyBugReportsState(
+    val reports: List<MyBugReport> = emptyList(),
+    val counts: Map<String, Int> = emptyMap(),
+    val nextOffset: Int? = null,
+    val problem: String = "",
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val confirming: Set<String> = emptySet(),
+) {
+    fun canConfirm(id: String): Boolean = id !in confirming && reports.any { it.id == id && !it.confirmedFixed }
+
+    fun confirmStarted(id: String): MyBugReportsState = copy(confirming = confirming + id)
+
+    fun confirmed(id: String, result: MyBugReportConfirmation): MyBugReportsState {
+        val done = copy(confirming = confirming - id)
+        val report = result.report
+        if (!result.ok || report == null) return done.copy(problem = result.message)
+        return done.copy(
+            problem = "",
+            counts = if (result.counts.isEmpty()) counts else result.counts,
+            reports = reports.map { if (it.id == id) report else it },
+        )
+    }
+
+    fun requesting(): MyBugReportsState = copy(loading = true)
+
+    fun received(page: MyBugReports, offset: Int): MyBugReportsState {
+        if (page.cancelled) return copy(loading = false)
+        if (!page.ok) {
+            return copy(loading = false, loaded = true, problem = page.message,
+                reports = if (offset == 0) emptyList() else reports, nextOffset = null)
+        }
+        return copy(
+            loading = false,
+            loaded = true,
+            problem = "",
+            counts = page.counts,
+            reports = if (offset == 0) page.reports else reports + page.reports,
+            nextOffset = page.nextOffset,
+        )
+    }
+}
+
+fun loadMyBugReports(api: ApiService?, offset: Int = 0): MyBugReports =
+    api?.myBugReports(offset) ?: MyBugReports.failure(MyBugReportsCopy.UNAVAILABLE)
+
+fun confirmMyBugReportFixed(api: ApiService?, id: String): MyBugReportConfirmation =
+    api?.confirmBugReportFixed(id) ?: MyBugReportConfirmation.failure(MyBugReportsCopy.UNAVAILABLE)
