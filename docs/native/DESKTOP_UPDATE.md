@@ -59,6 +59,37 @@ contains polkit's "Interactive authentication required" reaches the phone as a
 message naming that setting (`computerRestartFailure`,
 `desktop/src/LocalControlUpdate.cpp`); other failures keep systemctl's words.
 
+### "Access denied"
+
+On 2026-11-01 between 00:40 and 00:51 an iPhone showed "Could not request a
+computer restart: Call to Reboot failed: Access denied" three times, with the
+desktop's account active on seat0 and polkit allowing
+`org.freedesktop.login1.reboot`. systemd 257's logind (`verify_shutdown_creds`)
+refuses a reboot outright with `AccessDenied` "Access denied due to active
+block inhibitor" whenever any program, of any user and this account included,
+holds a `block` inhibitor on `shutdown`; sd-bus's `bus_error_message` shortens
+every `AccessDenied` to the bare "Access denied", and systemctl skips its own
+inhibitor check (which would name the program) when it is not on a terminal. A
+`block-weak` inhibitor is checked through polkit's `reboot-ignore-inhibit`
+instead and ends as "Interactive authentication required". The restart rule
+does not grant `reboot-ignore-inhibit` on purpose, so this stays a refusal.
+
+Now, when systemctl says "Access denied", the desktop reads logind's
+`ListInhibitors` (`busctl --json=short`) and the phone's message names each
+strong `shutdown` blocker and its reason (`computerRestartBlockers`,
+`desktop/src/LocalControlUpdate.cpp`). On GNOME the blocker is usually
+gnome-session itself (who: the account name, why: "user session inhibited"),
+taken when an app asks GNOME to hold off log-out (unsaved work, a file copy, an
+update); the desktop then asks `org.gnome.SessionManager` for its logout
+inhibitors (`GetInhibitors`, then `GetAppId`, `GetReason`, `GetFlags` with bit 1)
+and names those apps instead (`gnomeLogoutInhibitors`,
+`desktop/src/MainWindowLocalControlUpdate.cpp`). When nothing is blocking any
+more, the message says to try again: polkit also answers a flat no, shown the
+same way, when a rules script throws or rule evaluation runs past its 15 s
+runaway timeout, and the failures overlapped a full desktop rebuild that took the
+machine into swap. Non-root accounts cannot read the system journal on that
+box, so which of the two fired was not recorded.
+
 The protocol action is named `updateRestart`; on every desktop that has the
 `update.` family it runs the quick rebuild, never a pull. A failed pull must
 not block a restart the desktop's own Restart button could do.

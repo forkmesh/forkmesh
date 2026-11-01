@@ -43,6 +43,45 @@ static void testNames()
           "a silent failure reports the exit code");
 }
 
+static void testComputerRestartBlockers()
+{
+    const QString denied = QStringLiteral("Call to Reboot failed: Access denied\n");
+    check(computerRestartDenied(denied), "a bare Access denied is a refusal");
+    check(!computerRestartDenied(
+              QStringLiteral("Call to Reboot failed: Interactive authentication required.")),
+          "a polkit challenge is not the inhibitor refusal");
+
+    const QByteArray list = QByteArrayLiteral(
+        "{\"type\":\"a(ssssuu)\",\"data\":[["
+        "[\"sleep\",\"ForkMesh\",\"ForkMesh serves your phones and agents\",\"block\",1001,6443],"
+        "[\"shutdown\",\"GNOME Shell\",\"GNOME needs to save data\",\"delay\",1001,4008],"
+        "[\"shutdown:sleep\",\"PackageKit\",\"Updating the system\",\"block\",0,900],"
+        "[\"shutdown\",\"tool\",\"weak hold\",\"block-weak\",0,901],"
+        "[\"sleep:shutdown\",\"f\",\"user session inhibited\",\"block\",1001,4306]"
+        "]]}");
+    const QStringList plain = computerRestartBlockers(list);
+    check(plain.size() == 2, "only strong shutdown blocks count");
+    check(plain.value(0) == QLatin1String("PackageKit (Updating the system)"),
+          "a blocker is named with its reason");
+    check(plain.value(1) == QLatin1String("f (user session inhibited)"),
+          "gnome-session's lock stays when the session names no app");
+
+    const QStringList apps =
+        computerRestartBlockers(list, {QStringLiteral("org.gnome.Nautilus (Copying files)")});
+    check(apps.size() == 2 && apps.value(1) == QLatin1String("org.gnome.Nautilus (Copying files)"),
+          "gnome-session's lock is replaced by the app that asked for it");
+    check(computerRestartBlockers(QByteArrayLiteral("not json")).isEmpty(), "bad json, none");
+
+    const QString named = computerRestartFailure(1, denied, plain);
+    check(named.contains(QLatin1String("PackageKit (Updating the system)")) &&
+              named.contains(QLatin1String("holding off shutdown")),
+          "the refusal names what blocks shutdown");
+    const QString unnamed = computerRestartFailure(1, denied);
+    check(unnamed.contains(QLatin1String("systemd-inhibit --list")) &&
+              !unnamed.contains(QLatin1String("Let my phones")),
+          "a refusal with no blocker left says to try again, not to grant a permission");
+}
+
 static void testLinesSplitAndCarry()
 {
     ProgressFeed feed;
@@ -132,6 +171,7 @@ static void testStatusAndReset()
 int main()
 {
     testNames();
+    testComputerRestartBlockers();
     testLinesSplitAndCarry();
     testCleanLine();
     testBatches();
