@@ -603,8 +603,13 @@ returned, so summed frame totals overstate a function's own cost.
 - **Idle frame rate.** Separate animation timers that never align keep the
   window repainting at the compositor's frame rate while nobody uses it.
   - `AgentDotMatrix` stores a change that only moves a running square's meter
-    for the next sweep frame (`sameSquares`). The scanner tick calls
-    `refreshAgentDots()`, which leaves out `scheduleSessionsPageRefresh()`.
+    for the next sweep frame (`sameSquares`). The 45 ms scanner tick calls
+    `refreshAgentDotIntensities()`, which updates only the running squares'
+    meters from the matrix's current dots and leaves out
+    `scheduleSessionsPageRefresh()`; it falls back to `refreshAgentDots()`
+    when a session was added, removed or started or stopped running. Before
+    report #21 (2026-11-01) every tick rebuilt every session's square and the
+    status tally (`refreshAgentDots`, 512 ms stall).
   - The Agents squares and the Actions strip share one 60 ms clock
     (`ChromeDotGrid::animationClock`, held through `holdAnimationClock` while
     something runs), so their repaints land in the same frame.
@@ -689,6 +694,22 @@ returned, so summed frame totals overstate a function's own cost.
   `forkmesh::settings::put`, which skips unchanged values.
 - **No work for a link that is already down.** `ServerNode::shutdown` sends
   `bye` (one x25519 seal per room member) only while `m_wsReady`.
+- **Match a URL against a rule list once per URL.** The Network page's
+  endpoint table rebuilt every 120 ms while a row faded and matched each
+  endpoint against all 208 catalog patterns, and each match re-canonicalized
+  the URL through `QUrl::toString` (stalls of 2 to 7.7 s, report #21).
+  `firewallRuleMatchesFacts` (`BackoffNetworkAccessManager.cpp`) works from
+  the URL's scheme, host and port taken once, builds the exact-URL form only
+  for a `url:` rule, and keeps parsed `urlglob:` patterns in a per-thread
+  cache; `matchEndpointProfile` and `firewallDecision` use it (600 URLs
+  against the shipped catalog: 260 to 298 ms before, 21 to 29 ms after).
+  `refreshNetworkDiagnostics` also keeps each method and URL's catalog match
+  (`m_networkEndpointProfileIndex`), since the catalog is fixed. A request
+  no longer rebuilds the table at once: `endpointStatsChanged` queues one
+  rebuild per 250 ms (`m_networkDiagnosticsRefreshQueued`), and the
+  120 ms highlight fade only recolours the rows already there
+  (`fadeNetworkEndpointRows`). Test:
+  `forkmesh-tests` (crypto suite, firewall rule matching).
 - **Nothing to fix:** layout started by `setVisible` (`renderPageNotices`),
   text shaping, paint and style polish with no application frame, cached
   pixmap painting while the process is swapped out, and any stall sampled

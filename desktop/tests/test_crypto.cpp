@@ -3427,6 +3427,44 @@ int main(int argc, char *argv[])
                   profileFor("GET", "https://api.test/other") == 0 &&
                   profileFor("GET", "https://elsewhere.test/items/7") == -1,
               "a call matches its most specific profile, and a named method wins");
+        {
+            const auto matches = [](const char *rule, const char *url) {
+                return FW::firewallRuleMatches(QString::fromLatin1(rule),
+                                               QUrl(QString::fromLatin1(url)));
+            };
+            check(matches("*", "https://a.test/x") &&
+                      matches("host:a.test", "https://A.Test/x") &&
+                      !matches("host:a.test", "https://b.a.test/x") &&
+                      matches("hostport:a.test:443", "https://a.test/x") &&
+                      matches("hostport:a.test:80", "ws://a.test/x") &&
+                      !matches("hostport:a.test:8443", "https://a.test/x") &&
+                      matches("scheme:wss", "WSS://a.test/x") &&
+                      !matches("scheme:ws", "wss://a.test/x") &&
+                      matches("url:https://a.test/x?q=1", "https://A.test/x?q=1") &&
+                      !matches("url:https://a.test/x", "https://a.test/x?q=1") &&
+                      matches("url:https://a.test/", "https://a.test"),
+                  "host, port, scheme and exact-URL rules match as before");
+            check(matches("hostwild:a.test", "https://a.test/") &&
+                      matches("hostwild:a.test", "https://b.a.test/") &&
+                      !matches("hostwild:a.test", "https://ba.test/") &&
+                      matches("urlglob:*://*.a.test/x/*", "https://b.a.test/x") &&
+                      matches("urlglob:*://*.a.test/x/*", "http://a.test/x/y/z") &&
+                      !matches("urlglob:*://*.a.test/x/*", "https://ba.test/x/y") &&
+                      !matches("urlglob:https://a.test:8443/*", "https://a.test/") &&
+                      matches("urlglob:https://a.test:8443/*", "https://a.test:8443/") &&
+                      !matches("urlglob:fo*o.test/x", "https://foo.test/x"),
+                  "wildcard hosts stop at a label boundary and URL patterns keep their scheme and port");
+            check(matches("", "file:///tmp/x") && !matches("", "https://a.test/"),
+                  "an empty rule only matches a URL with no host, as before");
+            const QUrl url(QStringLiteral("https://api.test/items/7"));
+            int repeated = -2;
+            for (int i = 0; i < 3; ++i) {
+                const int index = FW::matchEndpointProfile(profiles, QStringLiteral("GET"), url);
+                check(repeated == -2 || index == repeated,
+                      "a cached URL pattern gives the same profile on every call");
+                repeated = index;
+            }
+        }
         FW::EndpointStats rateStats;
         rateStats.calls = 30;
         rateStats.firstCalledMs = 1000;

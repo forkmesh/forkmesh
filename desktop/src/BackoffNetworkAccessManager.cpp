@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -937,17 +938,126 @@ BackoffNetworkAccessManager::parseEndpointCatalog(const QByteArray &json,
     return profiles;
 }
 
+namespace {
+
+struct FirewallUrlFacts {
+    const QUrl &url;
+    QString scheme;
+    QString host;
+    int port = -1;
+    QString hostRule;
+    mutable QString exactRule;
+    mutable bool exactRuleReady = false;
+
+    const QString &exact() const
+    {
+        if (!exactRuleReady) {
+            exactRule = BackoffNetworkAccessManager::firewallRuleForExactUrl(url);
+            exactRuleReady = true;
+        }
+        return exactRule;
+    }
+};
+
+FirewallUrlFacts firewallUrlFacts(const QUrl &url)
+{
+    FirewallUrlFacts facts{url};
+    facts.scheme = url.scheme().toLower();
+    facts.host = url.host().trimmed().toLower();
+    facts.port = url.port();
+    if (facts.port <= 0)
+        facts.port = facts.scheme == QLatin1String("https") ||
+                             facts.scheme == QLatin1String("wss")
+                         ? 443
+                     : facts.scheme == QLatin1String("http") ||
+                             facts.scheme == QLatin1String("ws")
+                         ? 80
+                         : -1;
+    facts.hostRule = facts.host.isEmpty() ? QString()
+                                          : QStringLiteral("host:") + facts.host;
+    return facts;
+}
+
+const UrlGlob *cachedUrlGlob(const QString &pattern)
+{
+    thread_local QHash<QString, std::optional<UrlGlob>> cache;
+    auto it = cache.constFind(pattern);
+    if (it == cache.constEnd()) {
+        if (cache.size() > 4096)
+            cache.clear();
+        UrlGlob glob;
+        std::optional<UrlGlob> parsed;
+        if (parseUrlGlob(pattern, &glob))
+            parsed = glob;
+        it = cache.insert(pattern, parsed);
+    }
+    return it->has_value() ? &it->value() : nullptr;
+}
+
+bool firewallRuleMatchesFacts(const QString &rule, const FirewallUrlFacts &facts)
+{
+    if (rule == QLatin1String("*") || rule == facts.hostRule)
+        return true;
+    if (rule.isEmpty() || rule.startsWith(QLatin1String("url:")))
+        return rule == facts.exact();
+    if (rule.startsWith(QLatin1String("scheme:")))
+        return QStringView(rule).mid(7) == facts.scheme;
+    if (rule.startsWith(QLatin1String("urlglob:"))) {
+        const UrlGlob *glob = cachedUrlGlob(rule.mid(8));
+        if (!glob)
+            return false;
+        if (glob->scheme != QLatin1String("*") && glob->scheme != facts.scheme)
+            return false;
+        if (glob->port > 0 && glob->port != facts.port)
+            return false;
+        if (glob->host.startsWith(QLatin1String("*."))) {
+            const QStringView suffix = QStringView(glob->host).mid(2);
+            if (facts.host != suffix &&
+                !(facts.host.endsWith(suffix) &&
+                  facts.host.size() > suffix.size() &&
+                  facts.host.at(facts.host.size() - suffix.size() - 1) ==
+                      QLatin1Char('.')))
+                return false;
+        } else if (facts.host != glob->host) {
+            return false;
+        }
+        const QString path =
+            facts.url.path().isEmpty() ? QStringLiteral("/") : facts.url.path();
+        return wildcardMatch(glob->path, path) ||
+               (glob->path.endsWith(QLatin1String("/*")) &&
+                path == QStringView(glob->path).chopped(2));
+    }
+    if (rule.startsWith(QLatin1String("hostwild:"))) {
+        const QStringView suffix = QStringView(rule).mid(9);
+        return facts.host == suffix ||
+               (facts.host.endsWith(suffix) &&
+                facts.host.size() > suffix.size() &&
+                facts.host.at(facts.host.size() - suffix.size() - 1) ==
+                    QLatin1Char('.'));
+    }
+    if (rule.startsWith(QLatin1String("hostport:")) && facts.port > 0) {
+        const QStringView rest = QStringView(rule).mid(9);
+        const qsizetype colon = rest.lastIndexOf(QLatin1Char(':'));
+        return colon > 0 && rest.left(colon) == facts.host &&
+               rest.mid(colon + 1).toInt() == facts.port;
+    }
+    return false;
+}
+
+} // namespace
+
 int BackoffNetworkAccessManager::matchEndpointProfile(
     const QList<EndpointProfile> &profiles, const QString &method, const QUrl &url)
 {
     const QString wanted = method.trimmed().toUpper();
+    const FirewallUrlFacts facts = firewallUrlFacts(url);
     int best = -1;
     qint64 bestScore = -1;
     for (int i = 0; i < profiles.size(); ++i) {
         const EndpointProfile &profile = profiles.at(i);
         if (!profile.method.isEmpty() && profile.method != wanted)
             continue;
-        if (!firewallRuleMatches(profile.pattern, url))
+        if (!firewallRuleMatchesFacts(profile.pattern, facts))
             continue;
         // Specificity leaves the lowest digit for the scheme; the method gets
         // a bit above the whole key so a named method always wins a tie.
@@ -1294,47 +1404,7 @@ void BackoffNetworkAccessManager::noteEndpointFinished(Operation op, const QUrl 
 bool BackoffNetworkAccessManager::firewallRuleMatches(const QString &rule,
                                                       const QUrl &url)
 {
-    const QString scheme = url.scheme().toLower();
-    const QString host = normalizedHost(url.host());
-    const int port = normalizedPort(url);
-    if (rule == QLatin1String("*") || rule == firewallRuleForUrl(url) ||
-        rule == firewallRuleForExactUrl(url))
-        return true;
-    if (rule == QStringLiteral("scheme:") + scheme)
-        return true;
-    if (rule.startsWith(QStringLiteral("urlglob:"))) {
-        UrlGlob glob;
-        if (!parseUrlGlob(rule.mid(8), &glob))
-            return false;
-        if (glob.scheme != QLatin1String("*") && glob.scheme != scheme)
-            return false;
-        if (glob.port > 0 && glob.port != port)
-            return false;
-        if (glob.host.startsWith(QLatin1String("*."))) {
-            const QString suffix = glob.host.mid(2);
-            if (host != suffix && !host.endsWith(QLatin1Char('.') + suffix))
-                return false;
-        } else if (host != glob.host) {
-            return false;
-        }
-        const QString path = url.path().isEmpty() ? QStringLiteral("/") : url.path();
-        // "dir/*" also covers "dir" itself.
-        return wildcardMatch(glob.path, path) ||
-               (glob.path.endsWith(QLatin1String("/*")) && path == glob.path.chopped(2));
-    }
-    if (rule.startsWith(QStringLiteral("hostwild:"))) {
-        const QString suffix = rule.mid(9);
-        if (host == suffix || host.endsWith(QStringLiteral(".") + suffix))
-            return true;
-    }
-    if (rule.startsWith(QStringLiteral("hostport:")) && port > 0) {
-        const QString rest = rule.mid(9);
-        const int colon = rest.lastIndexOf(QLatin1Char(':'));
-        if (colon > 0 && rest.left(colon) == host &&
-            rest.mid(colon + 1).toInt() == port)
-            return true;
-    }
-    return false;
+    return firewallRuleMatchesFacts(rule, firewallUrlFacts(url));
 }
 
 BackoffNetworkAccessManager::FirewallMatch
@@ -1355,10 +1425,11 @@ BackoffNetworkAccessManager::firewallDecision(const QUrl &url,
     if (!url.isValid() || isOnThisMachine(url))
         return FirewallAllowed;
     // The most specific matching rule decides; a tie goes to deny.
+    const FirewallUrlFacts facts = firewallUrlFacts(url);
     QString denyRule;
     qint64 bestDeny = -1;
     for (const QString &rule : m_firewallDenyRules) {
-        if (!firewallRuleMatches(rule, url))
+        if (!firewallRuleMatchesFacts(rule, facts))
             continue;
         const qint64 specificity = firewallRuleSpecificity(rule);
         if (specificity > bestDeny) {
@@ -1369,7 +1440,7 @@ BackoffNetworkAccessManager::firewallDecision(const QUrl &url,
     QString allowRule;
     qint64 bestAllow = -1;
     for (const QString &rule : m_firewallRules) {
-        if (!firewallRuleMatches(rule, url))
+        if (!firewallRuleMatchesFacts(rule, facts))
             continue;
         const qint64 specificity = firewallRuleSpecificity(rule);
         if (specificity > bestAllow) {

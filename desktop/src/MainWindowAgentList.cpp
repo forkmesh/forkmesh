@@ -687,6 +687,35 @@ void MainWindow::refreshAgentDots()
     m_agentDotMatrix->setToolTip(tip);
 }
 
+void MainWindow::refreshAgentDotIntensities()
+{
+    if (!m_agentDotMatrix)
+        return;
+    QVector<AgentDotMatrix::Dot> dots = m_agentDotMatrix->dots();
+    if (dots.size() != m_agentSessions.size()) {
+        refreshAgentDots();
+        return;
+    }
+    for (int i = 0; i < m_agentSessions.size(); ++i) {
+        const AgentSession &session = m_agentSessions.at(i);
+        AgentDotMatrix::Dot &dot = dots[i];
+        if (dot.sessionId != session.id ||
+            dot.running != (session.status == AgentStatus::Running)) {
+            refreshAgentDots();
+            return;
+        }
+        if (!dot.running)
+            continue;
+        dot.intensity = m_scannerStates.value(session.id).intensity;
+        dot.throughput = qBound(
+            0.0,
+            agentTokensPerSecond(session, sessionTokenTotal(session)) /
+                kAgentFastTokensPerSecond,
+            1.0);
+    }
+    m_agentDotMatrix->setDots(dots);
+}
+
 #ifdef FORKMESH_WINDOW_TESTS
 int MainWindow::testAgentDotCount() const
 {
