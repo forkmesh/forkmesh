@@ -340,7 +340,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `status-check-*` packages ([status-page.md](status-page.md)), `sentry`,
   `app-store-status` ([app-store-status.md](app-store-status.md)),
   `backups`, `cleanup` ([cleanup.md](cleanup.md)), `computer-security`
-  ([computer-security.md](computer-security.md)), `phone-security`, its
+  ([computer-security.md](computer-security.md)), `apparmor` (see and manage
+  AppArmor profiles, confinement and denials on Linux;
+  [apparmor.md](apparmor.md)), `phone-security`, its
   iPhone and Android counterpart ([phone-security.md](phone-security.md)),
   `runners` (your agent runners on the desktop, iPhone and Android: status,
   provider sign-in, accounts, pause, resume and revoke;
@@ -536,5 +538,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [poker.md](poker.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md), [discourse-mirror.md](discourse-mirror.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [poker.md](poker.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [apparmor.md](apparmor.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md), [discourse-mirror.md](discourse-mirror.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).

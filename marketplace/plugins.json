@@ -4,6 +4,7 @@
     "agent-watch",
     "analytics",
     "app-store-status",
+    "apparmor",
     "aquarium",
     "backups",
     "browser-extension",
