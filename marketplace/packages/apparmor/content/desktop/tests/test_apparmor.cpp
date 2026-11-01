@@ -358,6 +358,54 @@ void testInstallScript()
     check(movedAside, QStringLiteral("rejected new file is kept in the backup folder"));
 }
 
+void testAdvice()
+{
+    check(programDescription(QStringLiteral("/usr/sbin/cupsd")).contains(QStringLiteral("printing")), QStringLiteral("path profile names are described"));
+    check(programDescription(QStringLiteral("libreoffice-soffice")).contains(QStringLiteral("LibreOffice")), QStringLiteral("prefix descriptions"));
+    check(programDescription(QStringLiteral("snap.firefox.firefox")).contains(QStringLiteral("Snap")), QStringLiteral("snap profiles are described"));
+    check(programDescription(QStringLiteral("codex")).isEmpty(), QStringLiteral("exact names do not match longer ones"));
+    check(!modeExplanation(Mode::Complain).isEmpty() && modeExplanation(Mode::Unknown).isEmpty(), QStringLiteral("mode explanations"));
+
+    ProfileFacts facts;
+    facts.hasFile = true;
+    facts.liveKnown = true;
+    facts.loaded = true;
+    facts.logKnown = true;
+    facts.mode = Mode::Enforce;
+    QList<Advice> advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().tone == AdviceTone::Good, QStringLiteral("quiet enforce profile is fine"));
+    facts.denied = 3;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Events && advice.first().text.contains(QStringLiteral("3 accesses")),
+          QStringLiteral("enforce with denials points at the events"));
+    facts.mode = Mode::Complain;
+    facts.denied = 0;
+    facts.processes = 2;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Enforce, QStringLiteral("quiet running complain profile suggests enforce"));
+    facts.allowed = 1;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Events && advice.first().text.contains(QStringLiteral("1 access ")),
+          QStringLiteral("complain with allowed accesses points at the events"));
+    facts.loaded = false;
+    facts.missed = 1;
+    advice = profileAdvice(facts);
+    check(advice.size() == 3 && advice.first().action == AdviceAction::Reload && advice.at(1).text.contains(QStringLiteral("1 running process")),
+          QStringLiteral("unloaded profile and missed processes"));
+    facts.logKnown = false;
+    advice = profileAdvice(facts);
+    check(advice.last().action == AdviceAction::LiveView, QStringLiteral("unreadable log suggests live view"));
+    facts.disabled = true;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::Enable, QStringLiteral("disabled profile suggests enable"));
+    facts.unconfinedFlag = true;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().action == AdviceAction::None, QStringLiteral("unconfined flag is left alone"));
+    facts.hasFile = false;
+    advice = profileAdvice(facts);
+    check(advice.size() == 1 && advice.first().text.contains(QStringLiteral("another tool")), QStringLiteral("profile without a file"));
+}
+
 }
 
 int main(int argc, char **argv)
@@ -372,6 +420,7 @@ int main(int argc, char **argv)
     testLabelsAndSections();
     testSnapshot();
     testInstallScript();
+    testAdvice();
     if (failures)
         qCritical("%d failure(s)", failures);
     return failures == 0 ? 0 : 1;

@@ -607,6 +607,7 @@ or they are bookkeeping:
 | `control_request`, `control_response`, `control_cancel_request`, `keep_alive` | Host control protocol; prompts arrive as their own card events |
 | `system` `task_started`, `task_updated`, `task_progress`, `background_tasks_changed` | The Sub-sessions list shows them |
 | `system/session_title_changed` | It renames the agent |
+| `system/commands_changed` | It refreshes the composer's `/` menu, which lists the commands and skills |
 | `system/status` other than `status: compacting` | Only update state; compacting has a row |
 | `summary`, `file-history-snapshot`, `queue-operation`, `custom-title`, `ai-title`, `last-prompt`, `isMeta` lines | Claude Code `.jsonl` bookkeeping |
 | Any event with a `parent_tool_use_id`, and sidechain events | The subagent's card summarises them |

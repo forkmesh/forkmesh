@@ -9964,6 +9964,7 @@ private:
     void moveSlashActionsSelection(int delta);
     void activateSlashActionRow(QWidget *row);
     void refreshClaudeSlashCommands();
+    void applyClaudeSlashCommands(const QJsonArray &commands);
     QStringList agentEffortLevels() const;
     void refreshQuickAddSpeedSelector();
     void refreshAgentModelSelectors();

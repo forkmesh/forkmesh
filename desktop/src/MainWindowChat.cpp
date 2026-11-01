@@ -7984,6 +7984,22 @@ void MainWindow::refreshClaudeEffortLevels()
     proc->start(probe.program, probe.arguments);
 }
 
+void MainWindow::applyClaudeSlashCommands(const QJsonArray &commands)
+{
+    m_claudeSlashCommands.clear();
+    for (const QJsonValue &v : commands) {
+        const QJsonObject c = v.toObject();
+        const QString name = c.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+        m_claudeSlashCommands.append({name, c.value(QStringLiteral("description")).toString(),
+                                      c.value(QStringLiteral("argumentHint")).toString()});
+    }
+    m_claudeSlashCommandsLoaded = true;
+    if (m_slashActionsPopup && m_slashActionsPopup->isVisible())
+        populateSlashActionsList();
+}
+
 // Probes the live `claude` CLI for its slash-command list via the same
 // control-protocol `initialize` request the VS Code extension sends
 // pipe one control_request in, read the control_response, then
@@ -8012,19 +8028,7 @@ void MainWindow::refreshClaudeSlashCommands()
                                              .toObject()
                                              .value(QStringLiteral("commands"))
                                              .toArray();
-            m_claudeSlashCommands.clear();
-            for (const QJsonValue &v : commands) {
-                const QJsonObject c = v.toObject();
-                const QString name = c.value(QStringLiteral("name")).toString();
-                if (name.isEmpty())
-                    continue;
-                m_claudeSlashCommands.append(
-                    {name, c.value(QStringLiteral("description")).toString(),
-                     c.value(QStringLiteral("argumentHint")).toString()});
-            }
-            m_claudeSlashCommandsLoaded = true;
-            if (m_slashActionsPopup && m_slashActionsPopup->isVisible())
-                populateSlashActionsList();
+            applyClaudeSlashCommands(commands);
             if (proc->state() != QProcess::NotRunning)
                 proc->kill(); // the initialize handshake is all we needed
         }
