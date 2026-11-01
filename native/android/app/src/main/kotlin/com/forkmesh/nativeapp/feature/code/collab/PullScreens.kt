@@ -247,6 +247,9 @@ internal class PullDetailScreen(
                     }
                 }
             }
+            item(key = "runner-checks") {
+                com.forkmesh.nativeapp.feature.code.review.RunnerChecksCard(repo, pull.number, env.navigator)
+            }
             if (pull.patch.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(12.dp))

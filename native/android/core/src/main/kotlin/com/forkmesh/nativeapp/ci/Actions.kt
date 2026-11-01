@@ -109,14 +109,17 @@ data class ActionsWorkflowSummary(
     val canDispatch: Boolean get() = manual && enabled && valid
 
     companion object {
+        const val MANUAL_EVENT = "workflow_dispatch"
+
         fun fromJson(json: Map<String, Any?>): ActionsWorkflowSummary? {
             val path = json.str("path")
             if (path.isEmpty()) return null
+            val events = json.strings("events")
             return ActionsWorkflowSummary(
                 path = path,
                 name = json.str("name"),
-                events = json.strings("events"),
-                manual = json["manual"] == true,
+                events = events,
+                manual = json["manual"] == true || MANUAL_EVENT in events,
                 enabled = json["enabled"] != false,
                 runsOn = json.strings("runsOn"),
                 valid = json["valid"] != false,
@@ -159,10 +162,17 @@ data class ActionsSummary(
     val workflows: List<ActionsWorkflowSummary> = emptyList(),
     val runs: List<ActionsRunSummary> = emptyList(),
     val controls: List<ActionsControlResult> = emptyList(),
+    val source: String = "",
 ) {
+    val isRunner: Boolean get() = source == RUNNER_SOURCE
+
     companion object {
+        const val RUNNER_SOURCE = "runner"
+
         fun fromJson(json: Map<String, Any?>): ActionsSummary {
             val v2 = modelInt(json["schemaVersion"]) == 2L
+            val runner = json.str("source") == RUNNER_SOURCE
+            val full = v2 || runner
             val runs = json.maps("runs").take(50).mapNotNull(ActionsRunSummary::fromJson)
                 .sortedWith(compareByDescending<ActionsRunSummary> { it.createdAtMs }.thenByDescending { it.id })
             return ActionsSummary(
@@ -170,11 +180,12 @@ data class ActionsSummary(
                 node = json.str("node").take(80),
                 updatedAtMs = maxOf(0L, modelInt(json["updatedAt"])),
                 schemaVersion = if (v2) 2 else 1,
-                controlAvailable = v2 && json["controlAvailable"] == true,
-                actionsEnabled = if (v2) json["actionsEnabled"] == true else null,
-                workflows = if (v2) json.maps("workflows").take(100).mapNotNull(ActionsWorkflowSummary::fromJson) else emptyList(),
+                controlAvailable = full && json["controlAvailable"] == true,
+                actionsEnabled = if (v2) json["actionsEnabled"] == true else json["actionsEnabled"] as? Boolean,
+                workflows = if (full) json.maps("workflows").take(100).mapNotNull(ActionsWorkflowSummary::fromJson) else emptyList(),
                 runs = runs,
                 controls = json.maps("controls").take(100).mapNotNull(ActionsControlResult::fromJson),
+                source = if (runner) RUNNER_SOURCE else json.str("source").take(40),
             )
         }
     }
@@ -192,6 +203,7 @@ enum class ActionsControlKind(val raw: String, val label: String) {
 
     val needsAuthentication: Boolean get() = this == Approve || this == Dispatch || this == SetRepositoryEnabled
     val isDestructive: Boolean get() = this == Cancel || this == Reject
+    val isSwitch: Boolean get() = this == SetWorkflowEnabled || this == SetRepositoryEnabled
 }
 
 data class ActionsControlRequest(
@@ -256,6 +268,8 @@ data class CiNotice(val text: String, val good: Boolean)
 object CiLog {
     const val MAX_BYTES = 16 * 1024
     const val MAX_LINES = 400
+    const val FULL_MAX_LINES = 20_000
+    const val CHUNK_LINES = 80
     private val ANSI = Regex("\u001B\\[[0-9;?]*[A-Za-z]")
 
     fun lines(text: String, maxLines: Int = MAX_LINES): List<String> {
@@ -269,6 +283,15 @@ object CiLog {
     }
 
     fun stripAnsi(line: String): String = ANSI.replace(line, "")
+
+    fun fullLines(text: String, maxLines: Int = FULL_MAX_LINES): List<String> {
+        val all = text.replace("\r\n", "\n").split("\n")
+        val trimmed = all.takeLast(maxLines).map(::stripAnsi).toMutableList()
+        while (trimmed.isNotEmpty() && trimmed.last().isBlank()) trimmed.removeAt(trimmed.lastIndex)
+        return trimmed
+    }
+
+    fun chunks(lines: List<String>, size: Int = CHUNK_LINES): List<String> = lines.chunked(size).map { it.joinToString("\n") }
 
     fun failureExcerpt(text: String, count: Int = 60): String {
         val all = lines(text)
@@ -374,6 +397,10 @@ class RepoActionsModel(
         private set
     @Volatile var desktopLogs: Map<Int, String> = emptyMap()
         private set
+    @Volatile var runnerLogs: Map<Int, RunnerRunLog> = emptyMap()
+        private set
+    @Volatile var logProblems: Map<Int, String> = emptyMap()
+        private set
     private var desktopTap: Any? = null
     @Volatile private var followed: Int? = null
     private val logNext = java.util.concurrent.ConcurrentHashMap<Int, Long>()
@@ -389,6 +416,9 @@ class RepoActionsModel(
 
     val workflows: List<ActionsWorkflowSummary> get() = summary?.workflows.orEmpty()
     val canControl: Boolean get() = summary?.controlAvailable == true && !summary?.node.isNullOrEmpty()
+    val isRunner: Boolean get() = !fromDesktop && summary?.isRunner == true
+    val showsSwitches: Boolean get() = canControl && !fromDesktop && summary?.isRunner != true
+    val canManageSecrets: Boolean get() = isRunner
     val dispatchableWorkflows: List<ActionsWorkflowSummary> get() = if (canControl) workflows.filter { it.canDispatch } else emptyList()
     val hasActiveRuns: Boolean get() = runs.any { it.status.isActive }
     val isUnavailable: Boolean get() = summary?.let { !it.available } ?: false
@@ -404,9 +434,13 @@ class RepoActionsModel(
 
     fun run(id: Int): ActionsRunSummary? {
         val run = summary?.runs?.firstOrNull { it.id == id } ?: return null
-        if (!fromDesktop) return run
+        if (!fromDesktop) return fullLog(id)?.let { run.copy(logTail = it) } ?: run
         return desktopLogs[id]?.let { run.copy(logTail = it) } ?: run
     }
+
+    fun fullLog(id: Int): String? = if (fromDesktop) null else runnerLogs[id]?.log?.takeIf { it.isNotEmpty() }
+
+    fun hasFullLog(id: Int): Boolean = fullLog(id) != null
 
     fun checks(pull: Int): PullChecksSummary = PullChecksSummary(summary?.runs.orEmpty(), pull)
 
@@ -490,6 +524,10 @@ class RepoActionsModel(
     }
 
     fun loadLog(runId: Int) {
+        if (isRunner) {
+            loadRunnerLog(runId)
+            return
+        }
         val desktop = desktop ?: return
         if (!fromDesktop) return
         val since = logNext[runId]
@@ -501,6 +539,16 @@ class RepoActionsModel(
         val base = if (since != null && !slice.reset && slice.from == since) desktopLogs[runId].orEmpty() else ""
         desktopLogs = desktopLogs + (runId to (base + slice.text).takeLast(DesktopActions.MAX_LOG_CHARS))
         logNext[runId] = slice.next
+    }
+
+    private fun loadRunnerLog(runId: Int) {
+        try {
+            val log = client.runLog(repo, runId)
+            runnerLogs = runnerLogs + (runId to log)
+            logProblems = logProblems - runId
+        } catch (failure: Exception) {
+            logProblems = logProblems + (runId to (failure.message ?: "$failure"))
+        }
     }
 
     fun actions(run: ActionsRunSummary): List<ActionsControlKind> {
@@ -530,6 +578,10 @@ class RepoActionsModel(
             notice = CiNotice("${kind.label}: this repository's node does not accept remote control.", false)
             return false
         }
+        if (kind.isSwitch && summary?.isRunner == true) {
+            notice = CiNotice("${kind.label}: this instance's runner does not take that switch.", false)
+            return false
+        }
         val request = ActionsControlRequest(
             requestId = makeRequestId(),
             kind = kind,
@@ -546,8 +598,13 @@ class RepoActionsModel(
         pending = pending + ActionsPendingControl(request, now())
         notice = null
         return try {
-            client.actionsControl(repo, request)
-            notice = CiNotice("${kind.label} sent to $node.", true)
+            val answer = client.actionsControl(repo, request)
+            if (answer.str("status") == "applied") {
+                pending = pending.filterNot { it.id == request.requestId }
+                notice = CiNotice("${kind.label} applied.", true)
+            } else {
+                notice = CiNotice("${kind.label} sent to $node.", true)
+            }
             true
         } catch (failure: Exception) {
             pending = pending.filterNot { it.id == request.requestId }
