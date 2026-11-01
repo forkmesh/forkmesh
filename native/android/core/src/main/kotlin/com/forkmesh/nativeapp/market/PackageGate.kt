@@ -36,7 +36,7 @@ object PackageGate {
     val DESKTOP_RELIANT: Set<String> = setOf(AGENTS, "desktops", "special-agents", "shortcuts", "hosts", "usage")
 
     val HUB_ITEMS: Map<String, String> = mapOf(
-        "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "timers" to "timers",
+        "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "booking" to "booking", "timers" to "timers",
         "desktops" to "desktops", "allAgents" to AGENTS, "teammates" to "special-agents", "shortcuts" to "shortcuts",
         "hosts" to "hosts", "network" to "network",
         "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices", "surveys" to "surveys",
@@ -62,6 +62,7 @@ object PackageGate {
         put("notes", Route.Kind.Notes, Route.Kind.Note, Route.Kind.NotePage)
         put("tasks", Route.Kind.Tasks, Route.Kind.Task)
         put("calendar", Route.Kind.Calendar, Route.Kind.Event)
+        put("booking", Route.Kind.Booking)
         put("timers", Route.Kind.Timers)
         put("desktops", Route.Kind.Desktops, Route.Kind.Desktop)
         put("special-agents", Route.Kind.Teammates, Route.Kind.Teammate, Route.Kind.TeammateEditor)

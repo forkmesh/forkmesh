@@ -3,19 +3,23 @@
 #include <QAction>
 #include <QColor>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QLibrary>
 #include <QLocale>
 #include <QMenu>
+#include <QMutex>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTextBlock>
 #include <QTextCharFormat>
+#include <QThreadPool>
 
 #include <algorithm>
+#include <atomic>
 #include <utility>
 
 namespace {
@@ -276,6 +280,57 @@ SystemDictionary &systemDictionary()
     return dictionary;
 }
 
+struct SystemDictionaryLoad {
+    QMutex mutex;
+    bool started = false;
+    std::atomic<SystemDictionary *> ready{nullptr};
+    QList<QPointer<QSyntaxHighlighter>> waiting;
+};
+
+SystemDictionaryLoad &systemDictionaryLoad()
+{
+    static SystemDictionaryLoad load;
+    return load;
+}
+
+SystemDictionary *loadedSystemDictionary(QSyntaxHighlighter *waiter)
+{
+    SystemDictionaryLoad &load = systemDictionaryLoad();
+    if (SystemDictionary *dictionary =
+            load.ready.load(std::memory_order_acquire))
+        return dictionary;
+    QMutexLocker lock(&load.mutex);
+    if (SystemDictionary *dictionary =
+            load.ready.load(std::memory_order_acquire))
+        return dictionary;
+    if (waiter && !load.waiting.contains(waiter))
+        load.waiting.append(waiter);
+    if (load.started)
+        return nullptr;
+    load.started = true;
+    QThreadPool::globalInstance()->start([] {
+        SystemDictionary &dictionary = systemDictionary();
+        SystemDictionaryLoad &load = systemDictionaryLoad();
+        QList<QPointer<QSyntaxHighlighter>> waiting;
+        {
+            QMutexLocker lock(&load.mutex);
+            load.ready.store(&dictionary, std::memory_order_release);
+            waiting.swap(load.waiting);
+        }
+        if (waiting.isEmpty() || !QCoreApplication::instance())
+            return;
+        QMetaObject::invokeMethod(
+            QCoreApplication::instance(),
+            [waiting] {
+                for (const QPointer<QSyntaxHighlighter> &highlighter : waiting)
+                    if (highlighter)
+                        highlighter->rehighlight();
+            },
+            Qt::QueuedConnection);
+    });
+    return nullptr;
+}
+
 const QSet<QString> &productWords()
 {
     static const QSet<QString> words = {
@@ -346,8 +401,16 @@ PromptSpellCheckHighlighter::PromptSpellCheckHighlighter(
 
 bool PromptSpellCheckHighlighter::spellCheckingAvailable() const
 {
-    return m_useSystemDictionary ? systemDictionary().available()
-                                 : !m_acceptedWords.isEmpty();
+    if (!m_useSystemDictionary)
+        return !m_acceptedWords.isEmpty();
+    const SystemDictionary *dictionary = loadedSystemDictionary(
+        const_cast<PromptSpellCheckHighlighter *>(this));
+    return dictionary && dictionary->available();
+}
+
+bool PromptSpellCheckHighlighter::systemDictionaryLoaded()
+{
+    return loadedSystemDictionary(nullptr) != nullptr;
 }
 
 bool PromptSpellCheckHighlighter::isMisspelled(const QString &word) const
@@ -370,9 +433,10 @@ bool PromptSpellCheckHighlighter::isMisspelled(const QString &word) const
         return false;
 
     if (m_useSystemDictionary) {
-        SystemDictionary &dictionary = systemDictionary();
-        return dictionary.available() && !dictionary.accepts(word) &&
-               !dictionary.accepts(normalized);
+        const SystemDictionary *dictionary = loadedSystemDictionary(
+            const_cast<PromptSpellCheckHighlighter *>(this));
+        return dictionary && dictionary->available() &&
+               !dictionary->accepts(word) && !dictionary->accepts(normalized);
     }
     return !m_acceptedWords.isEmpty() && !m_acceptedWords.contains(normalized);
 }
@@ -381,8 +445,10 @@ QStringList PromptSpellCheckHighlighter::suggestions(const QString &word) const
 {
     if (!isMisspelled(word))
         return {};
-    return m_useSystemDictionary ? systemDictionary().suggestions(word)
-                                 : nearestWords(word, m_acceptedWords);
+    if (!m_useSystemDictionary)
+        return nearestWords(word, m_acceptedWords);
+    const SystemDictionary *dictionary = loadedSystemDictionary(nullptr);
+    return dictionary ? dictionary->suggestions(word) : QStringList();
 }
 
 QList<QPair<int, int>>

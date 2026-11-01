@@ -168,6 +168,7 @@ sealed class Route {
     data object Competitors : Route() { override val kind get() = Kind.Competitors }
     data class Invoices(val organization: String?, val invoice: String?) : Route() { override val kind get() = Kind.Invoices }
     data class Surveys(val organization: String?, val survey: String?) : Route() { override val kind get() = Kind.Surveys }
+    data class Booking(val booking: String?) : Route() { override val kind get() = Kind.Booking }
     data object Ads : Route() { override val kind get() = Kind.Ads }
     data class Ledger(val section: String?) : Route() { override val kind get() = Kind.Ledger }
     data class Vault(val section: String?) : Route() { override val kind get() = Kind.Vault }
@@ -234,7 +235,7 @@ sealed class Route {
         Discord("discord", "WS13"),
         Profile("profile", "WS18"), People("people", "WS18"), Docs("docs", "existing"), Search("search", "WS8"),
         Notes("notes", "WS15"), Note("note", "WS15"), NotePage("notePage", "WS15"), Tasks("tasks", "WS15"), Task("task", "WS15"),
-        Calendar("calendar", "WS15"), Event("event", "WS15"), Timers("timers", "WS15"),
+        Calendar("calendar", "WS15"), Event("event", "WS15"), Booking("booking", "WS15"), Timers("timers", "WS15"),
         Desktops("desktops", "WS16"), Desktop("desktop", "WS16"), Hosts("hosts", "WS7"), Host("host", "WS7"),
         Provision("provision", "WS16"), Network("network", "WS20"), Node("node", "WS16"),
         Market("market", "WS19"), Package("package", "WS19"), Crm("crm", "WS19"), Contact("contact", "WS19"),

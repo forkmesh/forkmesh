@@ -355,7 +355,8 @@ public struct ActionsWorkflowSummary: Equatable, Hashable, Sendable, Identifiabl
         let path = json.str("path")
         guard !path.isEmpty else { return nil }
         self.init(
-            path: path, name: json.str("name"), events: json.strings("events"), manual: json.bool("manual"),
+            path: path, name: json.str("name"), events: json.strings("events"),
+            manual: json.bool("manual") || json.strings("events").contains("workflow_dispatch"),
             enabled: json["enabled"] != .bool(false), runsOn: json.strings("runsOn"), valid: json["valid"] != .bool(false))
     }
 
@@ -421,11 +422,12 @@ public struct ActionsSummary: Equatable, Hashable, Sendable {
     public var workflows: [ActionsWorkflowSummary]
     public var runs: [ActionsRunSummary]
     public var controls: [ActionsControlResult]
+    public var source: String
 
     public init(
         available: Bool = true, node: String = "", updatedAtMs: Int = 0, schemaVersion: Int = 1,
         controlAvailable: Bool = false, actionsEnabled: Bool? = nil, workflows: [ActionsWorkflowSummary] = [],
-        runs: [ActionsRunSummary] = [], controls: [ActionsControlResult] = []
+        runs: [ActionsRunSummary] = [], controls: [ActionsControlResult] = [], source: String = ""
     ) {
         self.available = available
         self.node = node
@@ -436,10 +438,20 @@ public struct ActionsSummary: Equatable, Hashable, Sendable {
         self.workflows = workflows
         self.runs = runs
         self.controls = controls
+        self.source = source
     }
+
+    public static let runnerSource = "runner"
+
+    public var isRunner: Bool { source == ActionsSummary.runnerSource }
 
     public init(json: JSONObject) {
         let v2 = ModelJSON.int(json["schemaVersion"]) == 2
+        let source = String(json.str("source").prefix(40))
+        let runner = source == ActionsSummary.runnerSource
+        let controllable = v2 || runner
+        let enabled: Bool? = runner ? json["actionsEnabled"].map { $0 == .bool(true) }
+            : v2 ? json["actionsEnabled"] == .bool(true) : nil
         let runs = json.maps("runs").prefix(50).compactMap(ActionsRunSummary.init(json:)).sorted {
             $0.createdAtMs != $1.createdAtMs ? $0.createdAtMs > $1.createdAtMs : $0.id > $1.id
         }
@@ -448,11 +460,12 @@ public struct ActionsSummary: Equatable, Hashable, Sendable {
             node: String(json.str("node").prefix(80)),
             updatedAtMs: max(0, ModelJSON.int(json["updatedAt"])),
             schemaVersion: v2 ? 2 : 1,
-            controlAvailable: v2 && json["controlAvailable"] == .bool(true),
-            actionsEnabled: v2 ? json["actionsEnabled"] == .bool(true) : nil,
-            workflows: v2 ? json.maps("workflows").prefix(100).compactMap(ActionsWorkflowSummary.init(json:)) : [],
+            controlAvailable: controllable && json["controlAvailable"] == .bool(true),
+            actionsEnabled: enabled,
+            workflows: controllable ? json.maps("workflows").prefix(100).compactMap(ActionsWorkflowSummary.init(json:)) : [],
             runs: Array(runs),
-            controls: json.maps("controls").prefix(100).compactMap(ActionsControlResult.init(json:))
+            controls: json.maps("controls").prefix(100).compactMap(ActionsControlResult.init(json:)),
+            source: source
         )
     }
 }

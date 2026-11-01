@@ -7,6 +7,9 @@
 #include "BackupHostFeed.h"
 #include "SafeDelete.h"
 
+#include <QPointer>
+#include <QThreadPool>
+
 #if defined(Q_OS_UNIX)
 #include <sys/resource.h>
 #include <unistd.h>
@@ -1133,23 +1136,46 @@ void MainWindow::takeBackupNow(bool automatic)
 
 void MainWindow::pruneOldBackups()
 {
+    QStringList doomed;
     const QList<forkmesh::BackupSnapshot> stale = forkmesh::backupsToPrune(
         forkmesh::listBackups(backupRoot()), backupKeepCount());
     for (const forkmesh::BackupSnapshot &snapshot : stale)
-        QFile::remove(snapshot.path);
-    removePartialBackups();
+        doomed << snapshot.path;
+    doomed << partialBackupPaths();
+    if (doomed.isEmpty())
+        return;
+    QPointer<MainWindow> self(this);
+    QThreadPool::globalInstance()->start([self, doomed] {
+        for (const QString &path : doomed)
+            QFile::remove(path);
+        QMetaObject::invokeMethod(
+            qApp,
+            [self] {
+                if (self)
+                    self->refreshBackupTable();
+            },
+            Qt::QueuedConnection);
+    });
 }
 
-void MainWindow::removePartialBackups()
+QStringList MainWindow::partialBackupPaths() const
 {
     if (m_backupProcess)
-        return;
+        return {};
+    QStringList paths;
     const QFileInfoList partials =
         QDir(backupRoot())
             .entryInfoList({QStringLiteral("forkmesh-backup-*.tar.gz.part")},
                            QDir::Files);
     for (const QFileInfo &fi : partials)
-        QFile::remove(fi.absoluteFilePath());
+        paths << fi.absoluteFilePath();
+    return paths;
+}
+
+void MainWindow::removePartialBackups()
+{
+    for (const QString &path : partialBackupPaths())
+        QFile::remove(path);
 }
 
 QStringList MainWindow::backupExcludeRoots() const

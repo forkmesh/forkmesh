@@ -1,0 +1,30 @@
+{
+  "name": "booking",
+  "version": "1.0.0",
+  "description": "A personal booking page: share one short link, people book a free time, and ForkMesh emails both of you the details.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["booking", "scheduling", "calendar", "meetings", "appointments"],
+  "interface": {
+    "displayName": "Booking Page",
+    "shortDescription": "Share a link people use to book meetings.",
+    "longDescription": "Share one short link to your calendar. People see only your free times, pick one and book; the meeting goes on your ForkMesh calendar and ForkMesh emails both of you the details, a reminder the day before, and any change.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "Who have I got meetings with this week?",
+      "Which meetings were cancelled recently?",
+      "How much of next week is booked?"
+    ],
+    "brandColor": "#2563EB"
+  }
+}

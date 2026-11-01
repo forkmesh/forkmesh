@@ -4608,6 +4608,7 @@
       { kind: "device_added", label: "New device signed in", email: false },
       { kind: "timer_finished", label: "Timers and alarms", email: false },
       { kind: "desktop_ping", label: "Pings from your desktop", email: false },
+      { kind: "agent_approval", label: "Agent approvals from your desktop", email: false },
       { kind: "plugin_activity", label: "App package activity", email: false },
     ] },
   ];

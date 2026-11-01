@@ -3228,6 +3228,10 @@ class Default:
                         "/api/notifications/desktop/"):
             return await desktop_ping_handler(self.env, request)
 
+        if url.path in ("/api/notifications/agent-approval",
+                        "/api/notifications/agent-approval/"):
+            return await agent_approval_ping_handler(self.env, request)
+
         if (url.path == "/api/calendar" or url.path == "/api/calendar/"
                 or url.path.startswith("/api/calendar/")):
             return await calendar_handler(self.env, request, url.path)

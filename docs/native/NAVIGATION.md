@@ -769,6 +769,13 @@ to offer three depths.
   records a clip of up to five minutes to save or share. The choices live in
   `FaceChangerStudio.shared.look` and are the ones the next call uses
   (`docs/app/chat-direct-calls.md`, Face Changer on the phones).
+- **Booking** (`.booking(id)`, `/dashboard/booking`, Workspace group after
+  Calendar): the account's booking page from `GET /api/booking`: the short
+  link and per-type links with copy, share and open, pause, totals, upcoming
+  and past meetings with cancel, and Booking settings (page, hours, meeting
+  types, email) saved with one `PUT /api/booking/page`
+  ([Booking Page](../marketplace/booking.md)). Android: `Route.Booking`,
+  `Booking.kt`, `feature/booking/`.
 - **App Store Status** (`.appStoreStatus`, `/dashboard/app-store-status`,
   Insights group): the App Store Connect snapshot the desktop last published,
   read from `GET /api/app-store-status` and drawn natively
@@ -1029,7 +1036,7 @@ an error.
 | Group | Items |
 |---|---|
 | Header | Avatar, name, status and a small Set a status button on the same row; Pocket mode, Suggestion mode and the Diagnostics switch as compact rows |
-| Workspace | Notes, Tasks, Calendar, Timers, Files, NEXUS |
+| Workspace | Notes, Tasks, Calendar, Booking, Timers, Files, NEXUS |
 | Operate | Desktops, Special agents (teammates), Shortcuts, Hosts & fleet, Network & nodes |
 | Business | Market, CRM, Marketing, Analytics, Competitors, Invoices, Surveys, Ad review (reviewers only), Ledger |
 | Personal | Vault, Coves, Calories, Steps, Water, Sleep, Sugar Break, Stretch Break, Glasses Alert, Food Guide, On-device AI, Activity |
@@ -1421,6 +1428,7 @@ current tab. Desktop-only capabilities have no destination.
 | Ledger | `.ledger(section)` | current | 11.8 |
 | Invoices, invoice | `.invoices(organization, invoice)`; `/dashboard/invoices?org=&invoice=` links (Pings) open one invoice | current | — |
 | Surveys, survey | `.surveys(organization, survey)`; `/dashboard/surveys?org=&survey=` links (Pings) open one survey | current | — |
+| Booking | `.booking(id)`; `/dashboard/booking?booking=` links (Pings) open the screen on that meeting | current | — |
 | Vault, coves, calories, on-device AI, activity | `.vault(…)`, `.coves(r)`, `.cove(id)`, `.calories`, `.localAI`, `.activity` | current | 2.33, 11.11-11.14, 16.1 |
 | Stats, status, admin | `.stats`, `.status`, `.admin(section)` | current | 12.1, 12.5-12.8 |
 | Settings and sections | `.settings(section)` | current | 13.x, 14.x |

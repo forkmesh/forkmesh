@@ -85,11 +85,31 @@ public struct ActionsNotice: Equatable, Sendable {
     public var good: Bool
 }
 
+public struct ActionsRunLog: Equatable, Sendable {
+    public var runId: Int
+    public var text: String
+    public var updatedAtMs: Int
+
+    public init(runId: Int, text: String, updatedAtMs: Int = 0) {
+        self.runId = runId
+        self.text = text
+        self.updatedAtMs = updatedAtMs
+    }
+
+    public init(json: JSONObject, runId: Int) {
+        let reported = ModelJSON.int(json["runId"])
+        self.init(runId: reported > 0 ? reported : runId, text: json.str("log"), updatedAtMs: max(0, ModelJSON.int(json["updatedAt"])))
+    }
+}
+
 public enum CILog {
     public static let maxBytes = 16 * 1024
     public static let maxLines = 400
+    public static let fullMaxBytes = 128 * 1024
+    public static let fullMaxLines = 2_000
+    public static let storedMaxBytes = 1024 * 1024
 
-    public static func lines(_ text: String, maxLines: Int = CILog.maxLines) -> [String] {
+    public static func lines(_ text: String, maxLines: Int = CILog.maxLines, maxBytes: Int = CILog.maxBytes) -> [String] {
         var clipped = text
         if clipped.utf8.count > maxBytes {
             clipped = String(decoding: Array(clipped.utf8.suffix(maxBytes)), as: UTF8.self)
@@ -181,12 +201,15 @@ public final class RepoActionsModel {
     public private(set) var fromDesktop = false
     public private(set) var desktopProblem: String?
     public private(set) var desktopLogs: [Int: String] = [:]
+    public private(set) var runnerLogs: [Int: String] = [:]
+    public private(set) var logProblem: String?
 
     @ObservationIgnored private let client: CIClient
     @ObservationIgnored private let desktop: DesktopActions?
     @ObservationIgnored private var desktopTap: UUID?
     @ObservationIgnored private var followed: Int?
     @ObservationIgnored private var logNext: [Int: Int] = [:]
+    @ObservationIgnored private var runnerLogFinal: Set<Int> = []
     @ObservationIgnored private let clock: Clock
     @ObservationIgnored private let makeRequestId: () -> String
     @ObservationIgnored private var generation = 0
@@ -241,8 +264,25 @@ public final class RepoActionsModel {
 
     public func run(_ id: Int) -> ActionsRunSummary? {
         guard var run = summary?.runs.first(where: { $0.id == id }) else { return nil }
-        if fromDesktop, let log = desktopLogs[id] { run.logTail = log }
+        if fromDesktop, let log = desktopLogs[id] {
+            run.logTail = log
+        } else if !fromDesktop, let log = runnerLogs[id], !log.isEmpty {
+            run.logTail = log
+        }
         return run
+    }
+
+    public func hasFullLog(_ id: Int) -> Bool { !fromDesktop && runnerLogs[id] != nil }
+
+    public func logLines(_ id: Int) -> [String] {
+        guard let run = run(id) else { return [] }
+        if hasFullLog(id) { return CILog.lines(run.logTail, maxLines: CILog.fullMaxLines, maxBytes: CILog.fullMaxBytes) }
+        return CILog.lines(run.logTail)
+    }
+
+    public func fullLog(_ id: Int) -> String {
+        guard let run = run(id) else { return "" }
+        return hasFullLog(id) ? run.logTail : CILog.lines(run.logTail).joined(separator: "\n")
     }
 
     public func checks(forPull number: Int) -> PullChecksSummary { PullChecksSummary(runs: summary?.runs ?? [], pull: number) }
@@ -263,7 +303,7 @@ public final class RepoActionsModel {
                 desktopProblem = DesktopActions.explain(error)
             }
         }
-        if let local, !local.runs.isEmpty {
+        if let local, !local.runs.isEmpty, followed.map({ id in local.runs.contains { $0.id == id } }) ?? true {
             apply(local, fromDesktop: true)
             loading = false
             return
@@ -313,11 +353,16 @@ public final class RepoActionsModel {
 
     public func follow(runId: Int) async {
         followed = runId
+        if summary != nil && summary?.runs.contains(where: { $0.id == runId }) != true { await load() }
         await loadLog(runId: runId)
     }
 
     public func loadLog(runId: Int) async {
-        guard fromDesktop, let desktop else { return }
+        if !fromDesktop {
+            await loadRunnerLog(runId: runId)
+            return
+        }
+        guard let desktop else { return }
         let since = logNext[runId]
         guard let slice = try? await desktop.log(repo, runId: runId, since: since) else { return }
         let base = since != nil && !slice.reset && slice.from == since ? desktopLogs[runId] ?? "" : ""
@@ -325,6 +370,23 @@ public final class RepoActionsModel {
         if text.count > DesktopActions.maxLogChars { text = String(text.suffix(DesktopActions.maxLogChars)) }
         desktopLogs[runId] = text
         logNext[runId] = slice.next
+    }
+
+    private func loadRunnerLog(runId: Int) async {
+        guard summary?.isRunner == true, runId > 0, !runnerLogFinal.contains(runId) else { return }
+        let finished = summary?.runs.first { $0.id == runId }?.status.isFinished ?? false
+        do {
+            let log = try await client.actionsRunLog(repo, runId: runId)
+            var text = log.text
+            if text.utf8.count > CILog.storedMaxBytes {
+                text = String(decoding: Array(text.utf8.suffix(CILog.storedMaxBytes)), as: UTF8.self)
+            }
+            if !text.isEmpty || runnerLogs[runId] == nil { runnerLogs[runId] = text }
+            if finished && !text.isEmpty { runnerLogFinal.insert(runId) }
+            logProblem = nil
+        } catch {
+            logProblem = "\(error)"
+        }
     }
 
     public func actions(for run: ActionsRunSummary) -> [ActionsControlKind] {
@@ -346,6 +408,10 @@ public final class RepoActionsModel {
         if fromDesktop, let desktop {
             return await sendToDesktop(desktop, kind, runId: runId, workflow: workflow, branch: branch, enabled: enabled)
         }
+        if summary?.isRunner == true && (kind == .setWorkflowEnabled || kind == .setRepositoryEnabled) {
+            notice = ActionsNotice(text: "\(kind.label): \(RepoActionsModel.runnerSwitchMessage)", good: false)
+            return false
+        }
         guard let node = summary?.node, canControl else {
             notice = ActionsNotice(text: "\(kind.label): this repository's node does not accept remote control.", good: false)
             return false
@@ -360,8 +426,15 @@ public final class RepoActionsModel {
         pending.append(ActionsPendingControl(request: request, sentAtMs: clock.nowMillis))
         notice = nil
         do {
-            try await client.actionsControl(repo, request)
-            notice = ActionsNotice(text: "\(kind.label) sent to \(node).", good: true)
+            let reply = try await client.actionsControl(repo, request)
+            if reply.str("status") == "applied" {
+                pending.removeAll { $0.id == request.requestId }
+                notice = ActionsNotice(text: "\(kind.label) applied.", good: true)
+                runnerLogFinal.remove(runId ?? 0)
+                await load()
+            } else {
+                notice = ActionsNotice(text: "\(kind.label) sent to \(node).", good: true)
+            }
             return true
         } catch {
             pending.removeAll { $0.id == request.requestId }
@@ -399,7 +472,17 @@ public final class RepoActionsModel {
         await send(.dispatch, workflow: workflow.path, branch: branch)
     }
 
-    public var canSwitchWorkflows: Bool { canControl }
+    public var canSwitchWorkflows: Bool { canControl && summary?.isRunner != true }
+    public var canSwitchRepository: Bool { canSwitchWorkflows }
+
+    public static let runnerSwitchMessage =
+        "This instance's runner runs every workflow in .forkmesh/. Remove a workflow file to stop it running."
+
+    public var switchesUnavailableMessage: String {
+        summary?.isRunner == true
+            ? RepoActionsModel.runnerSwitchMessage
+            : "This repository's node does not take remote changes, so workflows can only be run or turned off there."
+    }
 
     public func isSwitching(_ workflow: ActionsWorkflowSummary) -> Bool {
         pending.contains { $0.request.kind == .setWorkflowEnabled && $0.request.workflow == workflow.path }

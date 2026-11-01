@@ -259,6 +259,25 @@ def test_a_tap_on_a_desktop_ping_lands_on_its_run_or_agent():
     assert agent["href"] == "/jett/forkmesh/agents/12"
 
 
+def test_a_numbered_actions_ping_keeps_its_own_page():
+    ns = _load()
+    approval = ns["_push_alert_item"]({
+        "kind": "action_approval", "title": "Checks need your approval",
+        "repo": "mirror23/forkmesh", "source": "actions",
+        "href": "/mirror23/forkmesh/pull/7/checks",
+        "meta": {"category": "actions-approval", "number": 7,
+                 "head": "1" * 40, "runId": 700}},
+        {"mirror23/forkmesh": "forkmesh/forkmesh"})
+    assert approval["href"] == "/forkmesh/forkmesh/pull/7/checks"
+    assert approval["title"].endswith("#7 Checks need your approval")
+    failed = ns["_push_alert_item"]({
+        "kind": "action_failed", "title": "CI failed",
+        "repo": "jett/forkmesh", "source": "actions",
+        "href": "/jett/forkmesh/actions/runs/701",
+        "meta": {"category": "ci-failed", "number": 7, "runId": 701}})
+    assert failed["href"] == "/jett/forkmesh/actions/runs/701"
+
+
 def test_a_tap_without_a_repository_uses_only_a_same_site_stored_path():
     # Stored data: a full URL or a scheme-relative one would let a ping send
     # the app somewhere else entirely.

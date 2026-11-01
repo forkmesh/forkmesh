@@ -78,6 +78,7 @@ object RouteCodec {
             is Route.Ledger -> put("section", route.section)
             is Route.Invoices -> { put("org", route.organization); put("id", route.invoice) }
             is Route.Surveys -> { put("org", route.organization); put("id", route.survey) }
+            is Route.Booking -> put("id", route.booking)
             is Route.Vault -> put("section", route.section)
             is Route.InstanceFeed -> put("post", route.post)
             is Route.Poker -> put("table", route.table)
@@ -174,6 +175,7 @@ object RouteCodec {
             Route.Kind.Competitors -> Route.Competitors
             Route.Kind.Invoices -> Route.Invoices(s("org"), s("id"))
             Route.Kind.Surveys -> Route.Surveys(s("org"), s("id"))
+            Route.Kind.Booking -> Route.Booking(s("id"))
             Route.Kind.Ads -> Route.Ads
             Route.Kind.Ledger -> Route.Ledger(s("section"))
             Route.Kind.Vault -> Route.Vault(s("section"))

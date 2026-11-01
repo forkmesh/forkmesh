@@ -26,7 +26,7 @@ class NavigationTest {
         Route.LocalRepos, Route.LocalRepo("l1"), Route.QuickEdit("l1", "a.txt"), Route.Chat, Route.Channel("general"),
         Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Profile("bob"), Route.People, Route.Docs,
         Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Note("n", "c1"), Route.NotePage("p1"), Route.NotePage("p1", "n1"), Route.Tasks("mine"), Route.Task("t"),
-        Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Timers, Route.Desktops,
+        Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Booking(null), Route.Booking("0123456789abcdef0123456789abcdef"), Route.Timers, Route.Desktops,
         Route.Desktop("d", "logs"), Route.Hosts, Route.Host("mirror35", null), Route.Provision("v1"), Route.Network(null),
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Invoices(null, null),
@@ -615,7 +615,7 @@ class NavigationTest {
 
     fun testGuestGateCoversEveryAccountRouteWhereverItComesFrom() {
         val gated = listOf(
-            Route.Notes, Route.Note(""), Route.Note("n1"), Route.NotePage("p1"), Route.Tasks(null), Route.Task("t"), Route.AllAgents,
+            Route.Notes, Route.Note(""), Route.Note("n1"), Route.NotePage("p1"), Route.Tasks(null), Route.Task("t"), Route.Booking(null), Route.AllAgents,
             Route.Hosts, Route.Host("mirror35", null), Route.Crm(null), Route.Contact("c"), Route.CrmOrg("o"),
             Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Surveys(null, null), Route.Ads, Route.Vault(null),
             Route.Coves(null), Route.Cove("c1"), Route.Calories, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.Approval("7/a1"), Route.InstalledApps,

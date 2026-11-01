@@ -18,7 +18,6 @@
 class QAbstractButton;
 class QFrame;
 class QLabel;
-class QProgressBar;
 class QPushButton;
 class QToolButton;
 class QVBoxLayout;
@@ -136,12 +135,14 @@ private:
 
     Card &makeCard(const QString &key, const QString &title, const QString &hint);
     Row &addRow(Card &card);
+    Row makeRow(QWidget *parent, bool stop);
     void setRow(const Row &row, const Item &item);
     void fillList(Card &card, const QList<Item> &items, const QString &meta);
     void fillFixed(Card &card, const QList<Item> &items, const QString &meta);
     void refreshActivity();
     void refreshDetails();
     void refreshRemote();
+    void refreshMemory();
     void applyOrder();
     void applyCollapsed(Card &card);
     void saveLayout() const;
@@ -158,9 +159,20 @@ private:
     QSet<QString> m_hidden;
     QSet<QString> m_collapsed;
     QPointer<QWidget> m_contextBarRow;
-    QPointer<QProgressBar> m_contextBar;
+    QPointer<QWidget> m_contextBar;
     QPointer<QLabel> m_contextUsed;
     QPointer<QLabel> m_contextWindow;
+    QPointer<QWidget> m_contextGap;
+    QPointer<QPushButton> m_memoryToggle;
+    QPointer<QLabel> m_memoryChevron;
+    QPointer<QLabel> m_memoryCount;
+    QPointer<QWidget> m_memoryList;
+    QList<Row> m_memoryRows;
+    QList<sessioninsights::MemoryFile> m_memoryFiles;
+    QString m_memoryCwd;
+    qint64 m_memoryScannedMs = 0;
+    bool m_memoryOpen = false;
+    quint64 m_contextRevision = 0;
     QPointer<QWidget> m_remoteRow;
     QPointer<QAbstractButton> m_remoteSwitch;
     QPointer<QLabel> m_remoteStatus;
