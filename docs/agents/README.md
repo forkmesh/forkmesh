@@ -162,6 +162,24 @@ is and is not trusted to stop), [architecture](../architecture.md),
   resume the CLI conversation, which needed the worktree anyway. Not covered:
   Claude's hashed keys for paths over 200 characters, and Codex threads,
   which are not filed by folder.
+- **The Claude app's record goes too** (2026-11-01). Agents added to the
+  Claude app (`MainWindowClaudeDesktop.cpp`) kept a
+  `claude-code-sessions/<account>/<org>/local_<id>.json` record in the app's
+  config folder (`ClaudeSessionScan::desktopConfigRoot`), so a merged agent
+  stayed in the app's sidebar. The app then wrote title lines,
+  `cost-state` and `<id>.desktop-released.json` back into the projects
+  folder seconds after it was removed, so the folder came back. Now
+  `ClaudeSessionScan::removeOrphanedDesktopRecords` removes every record
+  whose `cwd` or `originCwd` is the deleted worktree or a folder inside it,
+  along with its `waiting-input` mark. It also writes the app's own
+  `deleted_<id>` tombstone (the time in milliseconds), the same file the app
+  writes when you delete a session there. Same guards as above: it acts
+  only on a folder that is gone, and never on `/`. `removeOrphanedClaudeTranscripts`
+  runs both removals, then again 45 s later, so it catches anything an
+  exiting CLI or the app wrote after the first pass. Deleting an agent also
+  drops any "open in the Claude app" link still queued for it
+  (`purgeSessionState`), so the app is not asked to resume a session that
+  was just removed.
 
 ## Desktop agent sandboxing
 

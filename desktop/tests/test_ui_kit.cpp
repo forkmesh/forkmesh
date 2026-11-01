@@ -8,6 +8,7 @@
 #include <QHeaderView>
 #include <QImage>
 #include <QLabel>
+#include <QListWidget>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -37,6 +38,32 @@ int main(int argc, char **argv)
 {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
+
+    {
+        const QFont original = QApplication::font();
+        QFont appFont = original;
+        appFont.setFamilies({QStringLiteral("Cantarell"),
+                             QStringLiteral("Noto Color Emoji")});
+        QApplication::setFont(appFont);
+        QFont themeListFont = appFont;
+        themeListFont.setFamilies({QStringLiteral("Cantarell")});
+        themeListFont.setPixelSize(15);
+        QApplication::setFont(themeListFont, "QListView");
+        QListWidget before;
+        before.ensurePolished();
+        check(!before.font().families().contains(QStringLiteral("Noto Color Emoji")),
+              "a platform theme's QListView font drops the emoji fallback");
+        Theme::adoptInterfaceFamiliesForWidgetClasses();
+        QListWidget after;
+        after.ensurePolished();
+        check(after.font().families() == appFont.families(),
+              "list views keep the app's colour emoji fallback");
+        check(after.font().pixelSize() == 15,
+              "list views keep the theme's size");
+        check(QApplication::font("QPushButton").families() == appFont.families(),
+              "classes the theme left alone still use the app font");
+        QApplication::setFont(original);
+    }
 
     check(kit::cellDisplayText(QStringLiteral("short")) == QStringLiteral("short"),
           "a short cell keeps its text");

@@ -9512,8 +9512,15 @@ void MainWindow::showRun(int runId)
         setDiffHtml(m_actionDiff, html);
     } else if (m_actionLog) {
         m_actionLog->setPlaceholderText(actionRunLogPlaceholder(*run));
-        m_actionLog->setPlainText(displaySafePlainLog(m_actionStore->readLog(*run)));
-        m_actionLog->moveCursor(QTextCursor::End);
+        const QString log = displaySafePlainLog(m_actionStore->readLog(*run));
+        const size_t shown = qHash(log);
+        if (m_actionLogShownRunId != run->id || m_actionLogShownHash != shown ||
+            m_actionLog->document()->characterCount() != log.size() + 1) {
+            m_actionLog->setPlainText(log);
+            m_actionLog->moveCursor(QTextCursor::End);
+            m_actionLogShownRunId = run->id;
+            m_actionLogShownHash = shown;
+        }
     }
 }
 

@@ -217,6 +217,8 @@ inline constexpr int kCellDisplayChars = 512;
 inline constexpr int kDataTableFitRows = 100;
 QString cellDisplayText(const QString &text, int maxChars = kCellDisplayChars);
 
+QPixmap shownPixels(const QWidget *widget);
+
 void installStockPolish();
 void syncStockWidgets();
 void prepareComboPopup(QComboBox *combo);

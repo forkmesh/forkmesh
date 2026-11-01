@@ -2565,8 +2565,7 @@ void forkmesh::ui::NextAccess::feedSessionSidePanels(MainWindow &window,
         panels->clearActivity();
         feed.consumed = 0;
     }
-    for (int index = feed.consumed; index < events->size(); ++index)
-        panels->append(events->at(index));
+    panels->appendActivity(events.value(), feed.consumed);
     feed.consumed = int(events->size());
 }
 

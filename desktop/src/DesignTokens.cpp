@@ -4,6 +4,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QApplication>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QRegularExpression>
@@ -451,6 +452,25 @@ QFont interfaceFont(Design design, const QFont &classicFont)
     }
     font.setFamilies(families);
     return font;
+}
+
+void adoptInterfaceFamiliesForWidgetClasses()
+{
+    if (!qobject_cast<QApplication *>(QCoreApplication::instance()))
+        return;
+    const QStringList families = QApplication::font().families();
+    for (const char *className :
+         {"QMenu", "QMenuBar", "QMenuItem", "QMessageBox", "QLabel", "QTipLabel",
+          "QStatusBar", "QMdiSubWindowTitleBar", "QDockWidgetTitle", "QPushButton",
+          "QCheckBox", "QRadioButton", "QToolButton", "QAbstractItemView",
+          "QListView", "QHeaderView", "QListBox", "QComboMenuItem",
+          "QComboLineEdit", "QSmallFont", "QMiniFont"}) {
+        QFont font = QApplication::font(className);
+        if (font.families() == families)
+            continue;
+        font.setFamilies(families);
+        QApplication::setFont(font, className);
+    }
 }
 
 QFont monospaceFont(const QFont &classicFont)
