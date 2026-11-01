@@ -798,7 +798,8 @@ QWidget *MainWindow::buildHomeGridSection()
         bar->setSpacing(2);
         hero->attach = makeComposerChip(QStringLiteral("plus"),
                                         QStringLiteral("homeComposerAttach"), false);
-        hero->attach->setToolTip(QStringLiteral("Attach files to the prompt"));
+        hero->attach->setToolTip(QStringLiteral(
+            "Add files or photos (Ctrl+U), a folder, slash commands, connectors or plugins"));
         hero->repo = makeComposerChip(QStringLiteral("repo"),
                                       QStringLiteral("homeComposerRepo"), true);
         hero->repo->setToolTip(QStringLiteral("Repository the session works in"));
@@ -962,10 +963,11 @@ QWidget *MainWindow::buildHomeGridSection()
             return branches.isEmpty() ? QString() : repoDefaultBranch(branches);
         };
 
-        connect(hero->attach, &QPushButton::clicked, this, [this] {
-            if (m_quickAddImageButton)
-                m_quickAddImageButton->click();
+        hero->input->setProperty("composerQueuesAttachments", true);
+        connect(hero->attach, &QPushButton::clicked, this, [this, hero] {
+            openComposerPlusMenu(hero->attach, hero->input);
         });
+        installComposerPlusShortcut(hero->input);
         connect(hero->mic, &QPushButton::clicked, this, [this, hero] {
             if (!m_quickAddMicButton)
                 return;
@@ -1353,10 +1355,11 @@ QWidget *MainWindow::buildHomeGridSection()
             hero->mic->setVisible(m_quickAddMicButton &&
                                   !m_quickAddMicButton->isHidden());
             setComposerChip(hero->mic, QString());
-            hero->attach->setVisible(m_quickAddImageButton != nullptr);
+            hero->attach->setVisible(m_quickAddPlusButton != nullptr);
             hero->attach->setToolTip(
                 m_quickAddImages.isEmpty()
-                    ? QStringLiteral("Attach files to the prompt")
+                    ? QStringLiteral("Add files or photos (Ctrl+U), a folder, slash "
+                                     "commands, connectors or plugins")
                     : QStringLiteral("%1 attached; click to add more")
                           .arg(m_quickAddImages.size()));
             setComposerChip(hero->attach,

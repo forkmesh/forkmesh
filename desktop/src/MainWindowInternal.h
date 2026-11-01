@@ -4724,6 +4724,8 @@ bool agentModeSkipsPermissions(const QString &modeLabel);
 // id, which callers read as "no mode recorded, use the global default".
 QString agentPermissionModeId(const QString &modeLabel);
 const QString kClaudeEffortSetting = QStringLiteral("agents/claudeEffort");
+const QString kDisabledComposerConnectorsSetting =
+    QStringLiteral("agents/disabledConnectors");
 const QString kClaudeEffortLevelsCacheSetting =
     QStringLiteral("agents/claudeEffortLevels");
 QStringList defaultAgentEffortLevels();

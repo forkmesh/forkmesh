@@ -3799,13 +3799,16 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddCreatePr->setToolTip(
         "When quick-add assigns an agent, create a pull request from its patch.");
     m_quickAddCreatePr->setVisible(false);
-    m_quickAddImageButton = new QPushButton;
-    m_quickAddImageButton->setObjectName("ghostButton");
-    m_quickAddImageButton->setCursor(Qt::PointingHandCursor);
-    setComposerIconTone(m_quickAddImageButton);
-    setOcticon(m_quickAddImageButton, "paperclip", 16);
-    connect(m_quickAddImageButton, &QPushButton::clicked, this,
-            &MainWindow::attachQuickAddMedia);
+    m_quickAddPlusButton = new QPushButton;
+    m_quickAddPlusButton->setObjectName("ghostButton");
+    m_quickAddPlusButton->setProperty("composerPlus", true);
+    m_quickAddPlusButton->setCursor(Qt::PointingHandCursor);
+    setComposerIconTone(m_quickAddPlusButton);
+    setOcticon(m_quickAddPlusButton, "plus", 16);
+    connect(m_quickAddPlusButton, &QPushButton::clicked, this, [this] {
+        openComposerPlusMenu(m_quickAddPlusButton, m_issueQuickAdd);
+    });
+    installComposerPlusShortcut(m_issueQuickAdd);
     m_quickAddAttachStrip = new QWidget;
     m_quickAddAttachStrip->setObjectName("quickAddAttachStrip");
     auto *attachStripRow = new QHBoxLayout(m_quickAddAttachStrip);
@@ -3907,15 +3910,6 @@ QWidget *MainWindow::buildNetworkLogDock()
             QStringLiteral("logDock: agent model selector"));
         refreshQuickAddAgentModelSelector();
     }
-
-    m_quickAddSlashButton = new QPushButton(QStringLiteral("/"));
-    m_quickAddSlashButton->setObjectName("quickAddSlashButton");
-    m_quickAddSlashButton->setCursor(Qt::PointingHandCursor);
-    m_quickAddSlashButton->setFixedSize(22, 22);
-    m_quickAddSlashButton->setToolTip(
-        "Agent commands and quick actions");
-    connect(m_quickAddSlashButton, &QPushButton::clicked, this,
-            &MainWindow::openQuickAddSlashActions);
 
     m_quickAddSendButton = new QPushButton(QStringLiteral("new"));
     m_quickAddSendButton->setObjectName("quickAddSendIcon");
@@ -4054,11 +4048,10 @@ QWidget *MainWindow::buildNetworkLogDock()
 
     if (next) {
         for (QPushButton *button :
-             {m_quickAddImageButton, m_quickAddMicButton, m_quickAddSlashButton}) {
+             {m_quickAddPlusButton, m_quickAddMicButton}) {
             button->setMinimumWidth(kComposerControlPx);
             button->setFixedHeight(kComposerControlPx);
         }
-        m_quickAddSlashButton->setFixedWidth(kComposerControlPx);
         for (QPushButton *button : {m_quickAddSendButton, m_quickAddSendToAgentButton,
                                     m_quickAddSendToChannelButton})
             button->setFixedHeight(kComposerControlPx);
@@ -4081,12 +4074,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *bottomBar = new QHBoxLayout;
     bottomBar->setContentsMargins(next ? 40 : 42, 4, next ? 4 : 6, next ? 4 : 0);
     bottomBar->setSpacing(next ? 4 : 5);
-    bottomBar->addWidget(m_quickAddImageButton, 0, Qt::AlignBottom);
+    bottomBar->addWidget(m_quickAddPlusButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_quickAddMicButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_voiceLevelMeter, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_quickAddAttachStrip, 0, Qt::AlignBottom);
     bottomBar->addStretch(1);
-    bottomBar->addWidget(m_quickAddSlashButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(agentBox, 0, Qt::AlignBottom);
     bottomBar->addStretch(1);
     bottomBar->addWidget(m_navCodexUsage, 0, Qt::AlignBottom);
@@ -6672,7 +6664,9 @@ void MainWindow::tickBackgroundQueue()
 
 void MainWindow::openQuickAddSlashActions()
 {
-    if (!m_quickAddSlashButton || !m_issueQuickAdd)
+    QWidget *anchor = m_composerMenuAnchor ? m_composerMenuAnchor.data()
+                                           : static_cast<QWidget *>(m_quickAddPlusButton);
+    if (!anchor || !composerTarget())
         return;
     if (!m_slashActionsPopup) {
         m_slashActionsPopup = new QFrame(this);
@@ -6722,7 +6716,7 @@ void MainWindow::openQuickAddSlashActions()
         refreshClaudeSlashCommands();
 
     m_slashActionsPopup->adjustSize();
-    const QPoint above = m_quickAddSlashButton->mapToGlobal(
+    const QPoint above = anchor->mapToGlobal(
         QPoint(0, -m_slashActionsPopup->sizeHint().height() - 4));
     m_slashActionsPopup->move(above);
     m_slashActionsPopup->show();
@@ -6947,15 +6941,18 @@ void MainWindow::activateSlashActionRow(QWidget *row)
 
     if (kind == QLatin1String("attachFile")) {
         closePopup();
-        attachQuickAddMedia();
+        addFilesToComposer(composerTarget());
     } else if (kind == QLatin1String("mentionFile")) {
         closePopup();
         mentionProjectFileInQuickAdd();
     } else if (kind == QLatin1String("clearConversation")) {
-        if (m_issueQuickAdd)
-            m_issueQuickAdd->clear();
-        clearQuickAddImages();
-        m_quickAddHistoryIndex = -1;
+        QPlainTextEdit *target = composerTarget();
+        if (target)
+            target->clear();
+        if (target == m_issueQuickAdd) {
+            clearQuickAddImages();
+            m_quickAddHistoryIndex = -1;
+        }
         closePopup();
     } else if (kind == QLatin1String("rewind")) {
         navigateQuickAddHistory(-1);
@@ -6986,18 +6983,19 @@ void MainWindow::activateSlashActionRow(QWidget *row)
         closePopup();
         openAgentsOverview();
     } else if (kind == QLatin1String("command")) {
-        if (m_issueQuickAdd) {
-            QTextCursor cursor = m_issueQuickAdd->textCursor();
+        QPlainTextEdit *target = composerTarget();
+        if (target) {
+            QTextCursor cursor = target->textCursor();
             cursor.movePosition(QTextCursor::End);
-            if (!m_issueQuickAdd->toPlainText().isEmpty() &&
-                !m_issueQuickAdd->toPlainText().endsWith(QLatin1Char('\n')))
+            if (!target->toPlainText().isEmpty() &&
+                !target->toPlainText().endsWith(QLatin1Char('\n')))
                 cursor.insertText(QStringLiteral("\n"));
             cursor.insertText(QStringLiteral("/%1 ").arg(value));
-            m_issueQuickAdd->setTextCursor(cursor);
+            target->setTextCursor(cursor);
         }
         closePopup();
-        if (m_issueQuickAdd)
-            m_issueQuickAdd->setFocus();
+        if (target)
+            target->setFocus();
     }
 }
 
@@ -8060,7 +8058,8 @@ void MainWindow::refreshClaudeSlashCommands()
 
 void MainWindow::mentionProjectFileInQuickAdd()
 {
-    if (!m_issueQuickAdd)
+    QPlainTextEdit *target = composerTarget();
+    if (!target)
         return;
     QString baseDir;
     const int idx = issuesRepoIndex();
@@ -8069,7 +8068,7 @@ void MainWindow::mentionProjectFileInQuickAdd()
     const QString path = QFileDialog::getOpenFileName(
         this, QStringLiteral("Mention a file from this project"), baseDir);
     if (path.isEmpty()) {
-        m_issueQuickAdd->setFocus();
+        target->setFocus();
         return;
     }
     QString mention = path;
@@ -8079,10 +8078,10 @@ void MainWindow::mentionProjectFileInQuickAdd()
         if (!rel.startsWith(QStringLiteral("..")))
             mention = rel;
     }
-    QTextCursor cursor = m_issueQuickAdd->textCursor();
+    QTextCursor cursor = target->textCursor();
     cursor.insertText(QStringLiteral("@%1 ").arg(mention));
-    m_issueQuickAdd->setTextCursor(cursor);
-    m_issueQuickAdd->setFocus();
+    target->setTextCursor(cursor);
+    target->setFocus();
 }
 
 

@@ -12131,6 +12131,19 @@ void checkWorkspaceDesign(MainWindow &window)
                                  "relative to the repository (%1)")
                       .arg(prompt->toPlainText()));
             prompt->clear();
+
+            int plusButtons = 0;
+            bool slashButton = false;
+            for (QPushButton *button : window.findChildren<QPushButton *>()) {
+                if (button->property("composerPlus").toBool())
+                    ++plusButtons;
+                if (button->objectName() == QLatin1String("quickAddSlashButton"))
+                    slashButton = true;
+            }
+            check(plusButtons == 1 && !slashButton,
+                  QStringLiteral("the prompt has one + menu in place of the paperclip "
+                                 "and / buttons (%1)")
+                      .arg(plusButtons));
         }
 
         QMenu sessionMenu;

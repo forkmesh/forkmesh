@@ -1982,11 +1982,6 @@ QCheckBox#quickAddAgentCheck::indicator:checked {
     font-size: 12px;
 }
 
-QPushButton#quickAddSlashButton {
-    background: #0d1117; border: 1px solid #30363d; border-radius: 5px;
-    color: #8b949e; font-weight: 600; font-size: 12px; padding: 0;
-}
-QPushButton#quickAddSlashButton:hover { border-color: #58a6ff; color: #e6edf3; }
 
 #slashActionsPopup {
     background: #161b22; border: 1px solid #30363d; border-radius: 8px;
@@ -4223,11 +4218,6 @@ QCheckBox#quickAddAgentCheck::indicator:checked {
     font-size: 12px;
 }
 
-QPushButton#quickAddSlashButton {
-    background: #ffffff; border: 1px solid #d0d7de; border-radius: 5px;
-    color: #57606a; font-weight: 600; font-size: 12px; padding: 0;
-}
-QPushButton#quickAddSlashButton:hover { border-color: #0969da; color: #1f2328; }
 #slashActionsPopup {
     background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
 }

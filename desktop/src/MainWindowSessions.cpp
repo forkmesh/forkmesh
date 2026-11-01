@@ -112,6 +112,7 @@ struct SessionsPageUi : public QObject {
     QPointer<QComboBox> repoCombo;
     QPointer<QComboBox> providerCombo;
     QPointer<QPushButton> send;
+    QPointer<QPushButton> plus;
     QPointer<QLabel> composerNote;
 
     QPointer<QPushButton> filterButton;
@@ -1160,6 +1161,21 @@ QWidget *MainWindow::buildSessionsSection()
 
     auto *controls = new QHBoxLayout;
     controls->setSpacing(8);
+    ui->plus = new QPushButton(composerBox);
+    ui->plus->setObjectName(next ? QStringLiteral("sessionsPlus")
+                                 : QStringLiteral("ghostButton"));
+    ui->plus->setCursor(Qt::PointingHandCursor);
+    ui->plus->setFixedSize(28, 28);
+    ui->plus->setToolTip(QStringLiteral(
+        "Add files or photos (Ctrl+U), a folder, slash commands, connectors or plugins"));
+    setOcticon(ui->plus, QStringLiteral("plus"), 16);
+    connect(ui->plus, &QPushButton::clicked, this,
+            [this, plus = ui->plus, input = ui->composer] {
+                if (plus && input)
+                    openComposerPlusMenu(plus, input);
+            });
+    installComposerPlusShortcut(ui->composer);
+    controls->addWidget(ui->plus);
     ui->targetRow = new QWidget(composerBox);
     auto *targetLayout = new QHBoxLayout(ui->targetRow);
     targetLayout->setContentsMargins(0, 0, 0, 0);
@@ -2430,6 +2446,8 @@ void MainWindow::refreshSessionsComposer()
         const bool canStart = ui->repoCombo->count() > 0;
         ui->composer->setEnabled(canStart);
         ui->send->setEnabled(canStart);
+        if (ui->plus)
+            ui->plus->setEnabled(canStart);
         ui->composer->setPlaceholderText(
             QString::fromUtf8("Describe the task for the new session\xE2\x80\xA6"));
         ui->composerNote->setText(
@@ -2459,6 +2477,8 @@ void MainWindow::refreshSessionsComposer()
     }
     ui->composer->setEnabled(enabled);
     ui->send->setEnabled(enabled);
+    if (ui->plus)
+        ui->plus->setEnabled(enabled);
     if (ui->composerModel && session) {
         QStringList parts;
         const QString mode = sessionsModeLabel(*session);

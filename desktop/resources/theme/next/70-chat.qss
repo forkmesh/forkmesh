@@ -155,6 +155,5 @@ QPushButton#quickAddSendIcon:hover { color: @accentFg; background: @accentSubtle
 QPushButton#quickAddSendIcon[enterTarget="true"] {
     border: 1px solid @accent; background: @accentSubtle;
 }
-QPushButton#quickAddSlashButton:hover { border-color: @fgSubtle; }
 
 #appStatusBar { background-color: @bgSubtle; }

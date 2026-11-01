@@ -859,6 +859,7 @@ set(FORKMESH_APP_SOURCES
     src/HomeLayout.h
     src/HomeLayout.cpp
     src/MainWindowHome.cpp
+    src/MainWindowComposerPlus.cpp
     src/BinarySize.h
     src/BinarySize.cpp
     src/BinarySizeMap.h
@@ -1085,6 +1086,7 @@ set(FORKMESH_APP_SOURCES
     src/AgentWorktree.h
     src/WorktreeInclude.h
     src/PromptDrop.h
+    src/ComposerConnectors.h
     src/WorkspaceOpenIn.h
     src/WorkspaceShortcuts.h
     src/AgentWorkspaceNameGate.h
@@ -2311,6 +2313,7 @@ if(FORKMESH_BUILD_TESTS)
 
     qt_add_executable(forkmesh-workspace-parity-tests
         tests/test_workspace_parity.cpp
+        src/ComposerConnectors.h
         src/LayoutMode.h
         src/PromptDrop.h
         src/WorkspaceOpenIn.h
