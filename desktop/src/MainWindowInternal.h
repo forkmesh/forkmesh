@@ -2678,6 +2678,8 @@ public:
         ChromeDotGrid::holdAnimationClock(&m_ticking, false);
     }
 
+    const QVector<Dot> &dots() const { return m_dots; }
+
     void setDots(const QVector<Dot> &dots)
     {
         // adhoc #2104: the scanner tick calls this on every beat whether or not

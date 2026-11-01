@@ -2667,7 +2667,7 @@ void MainWindow::onScannerTick()
             continue;
         anyActive = true;
     }
-    refreshAgentDots();
+    refreshAgentDotIntensities();
     if (!anyActive && m_scannerTimer)
         m_scannerTimer->stop();
 }

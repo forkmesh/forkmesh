@@ -594,8 +594,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         }
         m_debugNetworkRequestTotal = calls;
         if (m_sectionStack &&
-            m_sectionStack->currentIndex() == kNetworkDiagnosticsSectionIndex)
-            refreshNetworkDiagnostics();
+            m_sectionStack->currentIndex() == kNetworkDiagnosticsSectionIndex &&
+            !m_networkDiagnosticsRefreshQueued) {
+            m_networkDiagnosticsRefreshQueued = true;
+            QTimer::singleShot(250, this, [this] {
+                m_networkDiagnosticsRefreshQueued = false;
+                refreshNetworkDiagnostics();
+            });
+        }
         // The Stats page charts requests per destination with their firewall
         // status live. Coalesce a burst into one repaint a second; repaint
         // only, so the sampled per-refresh history keeps its cadence.
