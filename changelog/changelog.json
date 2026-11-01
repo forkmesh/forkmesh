@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Desktop", "text": "The Sessions page's right-click menus now match the Claude app: pin, mark as unread, rename, fork, move to a section and archive a session, and create, rename, reorder, fold, archive or delete whole sections from their header."},
   {"date": "2026-11-01", "area": "Agents", "text": "The agent composer's slash menu now picks up new Claude Code commands and skills during a session."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "The docs have new core pages on architecture, encryption, mirroring, self-hosting and censorship resilience, and every page is shorter and links to them."},
   {"date": "2026-11-01", "area": "Agents", "text": "The agent prompt, Home and Sessions composers have one + menu to add files or photos (Ctrl+U), add a folder, open slash commands, switch connectors on or off and add plugins."},

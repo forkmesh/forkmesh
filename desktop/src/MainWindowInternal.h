@@ -4300,6 +4300,8 @@ const QString kAgentSeenFinishedAtSetting =
     QStringLiteral("agents/seenFinishedAt");
 const QString kAgentReadBaselineSetting =
     QStringLiteral("agents/readBaselineMs");
+const QString kAgentMarkedUnreadSetting =
+    QStringLiteral("agents/markedUnread");
 // Order the left rail by how often each item is clicked, most clicked first
 // (MainWindow::applyRailOrder). The counts live under kRailClickCountsSetting,
 // keyed by a stable rail key rather than the caption, and are kept whether or
