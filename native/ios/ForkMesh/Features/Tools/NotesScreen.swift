@@ -375,6 +375,7 @@ private struct NotesList: View {
                         FmRowDivider()
                     }
                     NoteListRow(row: pair.element, onTap: { onOpen(pair.element.id) })
+                        .textSelection(.disabled)
                         .contextMenu {
                             menuItems(pair.element)
                         } preview: {

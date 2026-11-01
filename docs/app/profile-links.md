@@ -78,7 +78,7 @@ handler skips nested links) and in the fork popover when the fork has no
 published profile URL, and the home feed actor when the card has no link of
 its own. Names inside link or button rows go through the helper with
 `inLink` and stay plain: issue, pull and discussion list rows, commit list
-rows, ping rows in the bell menu and the pings window, home feed cards that
+rows, ping rows on the Pings page, home feed cards that
 are links, and the owner and fork rows of both Top repositories lists.
 
 Names now linked this way: pull and discussion hero lines, the issue hero,

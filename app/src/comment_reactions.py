@@ -132,6 +132,21 @@ async def summarize(env, rows, viewer_bi="", custom=None):
     return out
 
 
+def reacted_at(rows, viewer_bi):
+    out = {}
+    if not viewer_bi:
+        return out
+    for row in rows or []:
+        comment = str(row.get("comment") or "")
+        emoji = str(row.get("emoji") or "")
+        if str(row.get("account_bi") or "") == viewer_bi or \
+                not clean_comment(comment) or not known_emoji(emoji):
+            continue
+        slot = out.setdefault(comment, {})
+        slot[emoji] = max(slot.get(emoji, 0), int(row.get("created_at") or 0))
+    return out
+
+
 def _public_tally(tally, custom):
     out = {key: tally[key] for key in ("emoji", "count", "mine", "people")}
     if CUSTOM_RE.fullmatch(tally["emoji"]):
@@ -331,11 +346,14 @@ async def _read(env, request, owner, repo):
     rows = await _rows(env, access["repoBi"], subject_key(kind, number))
     shared = not viewer and access.get("visibility") == "public"
     custom = await _custom_catalog(env, owner, rows)
+    body = {"ok": True, "kind": kind, "number": number, "signedIn": bool(viewer),
+            "reactions": await summarize(env, rows, viewer_bi, custom),
+            "tips": await tip_counts(env, access["repoBi"],
+                                     subject_key(kind, number))}
+    if viewer_bi:
+        body["reactedAt"] = reacted_at(rows, viewer_bi)
     return json_response(
-        {"ok": True, "kind": kind, "number": number, "signedIn": bool(viewer),
-         "reactions": await summarize(env, rows, viewer_bi, custom),
-         "tips": await tip_counts(env, access["repoBi"],
-                                  subject_key(kind, number))},
+        body,
         cache_control=PUBLIC_CACHE if shared else PRIVATE_CACHE,
         extra_headers=VARY)
 

@@ -313,6 +313,7 @@ struct MessagesBubbleRow: View {
                             .offset(x: 6, y: -14)
                     }
                     .padding(.top, row.reactions.isEmpty && row.stickers.isEmpty ? 0 : 14)
+                    .textSelection(.disabled)
                     .contextMenu { menu }
                     .onTapGesture(count: 2) { if actions.onReact != nil { onTapback() } }
                 if !mine { Spacer(minLength: 56) }

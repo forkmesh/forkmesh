@@ -281,6 +281,7 @@ private struct SugarBreakContent: View {
                             Task { await model.undo(row.id) }
                         })
                     }
+                    .textSelection(.disabled)
                     .contextMenu {
                         Button(role: .destructive) {
                             Task { await model.undo(row.id) }

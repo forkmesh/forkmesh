@@ -360,6 +360,7 @@ struct CrmContactList: View {
         NavigationLink(value: Route.contact(id: contact.routeId)) {
             CrmContactRow(contact: contact, flow: flow, showStage: showStage, columns: columns)
         }
+        .textSelection(.disabled)
         .contextMenu {
             CrmContactActions(model: model, data: data, contact: contact, present: present, onDelete: { pendingDelete = [$0.id] })
         }
@@ -591,6 +592,7 @@ struct CrmBoard: View {
         .draggable(contact.id) {
             CrmChip(text: contact.displayName, icon: "person.fill", tint: .accentColor, filled: true)
         }
+        .textSelection(.disabled)
         .contextMenu {
             CrmContactActions(model: model, data: data, contact: contact, present: present, onDelete: { pendingDelete = $0 })
         }

@@ -1658,7 +1658,6 @@
           return (Array.isArray(data?.repos) ? data.repos : []).map((item) => ({
             owner,
             name: String(item?.repo || "").trim(),
-            linkedNode: String(item?.node || "").trim(),
             source: "organization-alias",
             organizationOwned: true,
             cloneOnline: true,

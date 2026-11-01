@@ -55,6 +55,7 @@ import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
@@ -91,17 +92,19 @@ private fun PaneColumn(content: @Composable androidx.compose.foundation.layout.C
 
 @Composable
 private fun MailRow(message: CrmMailMessage, contact: CrmContact?, onTap: () -> Unit, onLongPress: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().combinedClickableCompat(onTap, onLongPress).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
-        CrmAvatar(contact?.displayName ?: message.who, 30)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(contact?.displayName ?: message.who, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
-                if (message.hasAttachment) FmIcon("attach_file", size = 13.dp, tint = Fm.colors.textSecondary)
-                Text(relativeTime(message.receivedAt), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
+    FmHoldArea(onLongPress != null) {
+        Row(Modifier.fillMaxWidth().combinedClickableCompat(onTap, onLongPress).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
+            CrmAvatar(contact?.displayName ?: message.who, 30)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(contact?.displayName ?: message.who, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
+                    if (message.hasAttachment) FmIcon("attach_file", size = 13.dp, tint = Fm.colors.textSecondary)
+                    Text(relativeTime(message.receivedAt), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
+                }
+                Text(message.subject.ifEmpty { "(no subject)" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textPrimary)
+                if (message.summary.isNotEmpty()) Text(message.summary, maxLines = 2, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
             }
-            Text(message.subject.ifEmpty { "(no subject)" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textPrimary)
-            if (message.summary.isNotEmpty()) Text(message.summary, maxLines = 2, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.agentwatch
 
+import androidx.compose.foundation.text.selection.DisableSelection
 import com.forkmesh.nativeapp.agentwatch.AgentWatchDefaults
 import android.graphics.BitmapFactory
 import android.os.Handler
@@ -259,33 +260,35 @@ internal class AgentWatchScreen(
             )
             Box {
                 FmIconButton("more_vert", "View", onPressed = { menuOpen = true }, color = fg)
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.fmTapSounds()) {
-                    DropdownMenuItem(
-                        text = { Text((if (showSounds) "✓ " else "") + "Sounds") },
-                        onClick = {
-                            showSounds = !showSounds
-                            prefs.putBool(WatchPrefs.LIST, showSounds)
-                            menuOpen = false
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text((if (controller.workingOnly) "✓ " else "") + "Working only") },
-                        onClick = {
-                            controller.workingOnly = !controller.workingOnly
-                            prefs.putBool(WatchPrefs.WORKING_ONLY, controller.workingOnly)
-                            animating = true
-                            menuOpen = false
-                        },
-                    )
-                    for (choice in WatchBackdrop.entries) {
+                DisableSelection {
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.fmTapSounds()) {
                         DropdownMenuItem(
-                            text = { Text((if (backdrop == choice) "✓ " else "") + "Backdrop: ${choice.label}") },
+                            text = { Text((if (showSounds) "✓ " else "") + "Sounds") },
                             onClick = {
-                                backdrop = choice
-                                prefs.putString(WatchPrefs.BACKDROP, choice.label)
+                                showSounds = !showSounds
+                                prefs.putBool(WatchPrefs.LIST, showSounds)
                                 menuOpen = false
                             },
                         )
+                        DropdownMenuItem(
+                            text = { Text((if (controller.workingOnly) "✓ " else "") + "Working only") },
+                            onClick = {
+                                controller.workingOnly = !controller.workingOnly
+                                prefs.putBool(WatchPrefs.WORKING_ONLY, controller.workingOnly)
+                                animating = true
+                                menuOpen = false
+                            },
+                        )
+                        for (choice in WatchBackdrop.entries) {
+                            DropdownMenuItem(
+                                text = { Text((if (backdrop == choice) "✓ " else "") + "Backdrop: ${choice.label}") },
+                                onClick = {
+                                    backdrop = choice
+                                    prefs.putString(WatchPrefs.BACKDROP, choice.label)
+                                    menuOpen = false
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -13,6 +13,7 @@ struct DjNowPlayingChip: View {
                     .contentShape(Circle())
             }
             .buttonStyle(ShellBarButtonStyle())
+            .textSelection(.disabled)
             .contextMenu {
                 Button("Stop the Music", systemImage: "stop.fill") { model.stopAll() }
             }

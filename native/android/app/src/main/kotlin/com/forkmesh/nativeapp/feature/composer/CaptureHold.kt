@@ -205,8 +205,9 @@ internal object CaptureHold {
                 config.getOrNull(SemanticsActions.OnLongClick) != null ||
                 config.getOrNull(SemanticsActions.SetText) != null
             )
-        val labelled = config.getOrNull(SemanticsProperties.Text) != null || config.getOrNull(SemanticsProperties.ContentDescription) != null
-        if (actionable || labelled) out += CaptureHit(bounds.width.toDouble(), bounds.height.toDouble(), actionable)
+        val text = config.getOrNull(SemanticsProperties.Text) != null || config.getOrNull(SemanticsProperties.EditableText) != null
+        val labelled = text || config.getOrNull(SemanticsProperties.ContentDescription) != null
+        if (actionable || labelled) out += CaptureHit(bounds.width.toDouble(), bounds.height.toDouble(), actionable, text)
         for (child in node.children) collect(child, x, y, out)
     }
 

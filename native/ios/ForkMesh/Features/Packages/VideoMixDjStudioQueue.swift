@@ -134,6 +134,7 @@ struct DjQueueThumb: View {
                     DjTheme.tick()
                     choosing = true
                 }
+                .textSelection(.disabled)
                 .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 8) {
                     DjTheme.tick()
                     choosing = true

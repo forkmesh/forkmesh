@@ -284,6 +284,7 @@ struct GenieSpiderLayer: View {
         content
             .contentShape(Circle().scale(0.82))
             .onTapGesture { tapped() }
+            .textSelection(.disabled)
             .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 10) {
                 CaptureHold.noteHandled()
                 hub.openMenu()

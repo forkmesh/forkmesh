@@ -406,6 +406,7 @@ struct RSSReaderScreen: View {
                 RSSCountLabel(count: model.unread(scope))
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             if scope != .starred {
                 Button {
@@ -487,6 +488,7 @@ struct RSSReaderScreen: View {
                 }
                 .padding(.leading, indented ? 28 : 0)
             }
+            .textSelection(.disabled)
             .contextMenu { feedMenu(feed) }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button(role: .destructive) {
@@ -533,6 +535,7 @@ struct RSSReaderScreen: View {
                     RSSCountLabel(count: unread)
                 }
             }
+            .textSelection(.disabled)
             .contextMenu {
                 Button {
                     askMarkAll(.folder(folder.id))
@@ -840,6 +843,7 @@ struct RSSFeedInfoSheet: View {
                         .onSubmit { _ = saveAddress() }
                         .accessibilityIdentifier("rss-feed-address")
                 }
+                .textSelection(.disabled)
                 .contextMenu {
                     Button {
                         UIPasteboard.general.string = feed.url

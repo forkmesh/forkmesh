@@ -428,6 +428,7 @@ struct ChatChannelSidebar: View {
             count: hub.workspace.isMuted(conversation) ? 0 : (row?.unread ?? 0), online: row?.online,
             preview: preview?.text ?? hub.listFallback(conversation), time: preview.map { hub.listTimeLabel($0) } ?? "",
             quiet: preview == nil, avatar: person ? (row?.name ?? String(title.drop(while: { $0 == "@" }))) : nil)
+            .textSelection(.disabled)
             .contextMenu {
                 conversationMenu(conversation)
                 if person || conversation == meshConversation {
@@ -493,6 +494,7 @@ struct ChatChannelSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             if !row.automatic {
                 Button(action: {
@@ -519,6 +521,7 @@ struct ChatChannelSidebar: View {
             draft: hub.workspace.hasDraft(channel) && hub.currentConversation != channel,
             preview: preview?.text ?? hub.listFallback(channel), time: preview.map { hub.listTimeLabel($0) } ?? "",
             quiet: preview == nil)
+            .textSelection(.disabled)
             .contextMenu {
                 conversationMenu(channel)
                 Button(action: { moving = channel }) { Label("Move to group", systemImage: "folder") }
@@ -791,6 +794,7 @@ struct ChatMemberRow: View {
         .background(selected ? fm.accentSubtle : Color.clear)
         .clipShape(FmRoundedShape(radius: FmRadius.md))
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .contextMenu {
             if !group.isSelf && !visitor {
                 Button(action: onProfile) { Label("View profile", systemImage: "person.crop.circle") }

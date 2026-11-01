@@ -303,6 +303,7 @@ struct ShellSideRail: View {
         switch entry.slot {
         case let .item(item):
             cell(item)
+                .textSelection(.disabled)
                 .contextMenu {
                     ShellBarItemMenu(
                         item: item, items: items, prefs: prefs,

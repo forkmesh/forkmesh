@@ -423,6 +423,7 @@ struct CrmContactScreen: View {
                 }
                 Spacer(minLength: 0)
             }
+            .textSelection(.disabled)
             .contextMenu {
                 Button("Copy", systemImage: "doc.on.doc") { CrmClipboard.copy(value) }
             }

@@ -111,6 +111,7 @@ struct SecureDriveFilesView: View {
             }
         }
         .disabled(model.busy)
+        .textSelection(.disabled)
         .contextMenu { menu(entry) }
         .swipeActions(edge: .trailing) {
             if canWrite {

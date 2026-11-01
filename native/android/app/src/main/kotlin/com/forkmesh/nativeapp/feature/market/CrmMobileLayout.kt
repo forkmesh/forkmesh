@@ -80,6 +80,7 @@ import com.forkmesh.nativeapp.settings.ThemeModeChoice
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
@@ -409,22 +410,24 @@ private fun CrmNextRow(model: CrmModel, mode: CrmNextContact.Mode, runner: CrmRu
     var menu by remember { mutableStateOf(false) }
     Box {
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                Modifier.weight(1f).combinedClickableCompat(
-                    { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
-                    { menu = true },
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                CrmAvatar(contact.name.ifEmpty { contact.email }, if (dense) 34 else 40)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(contact.displayName, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
-                        CrmChip(mode.title, if (mode == CrmNextContact.Mode.REACH_OUT) CrmColors.blue else CrmColors.orange)
+            FmHoldArea {
+                Row(
+                    Modifier.weight(1f).combinedClickableCompat(
+                        { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
+                        { menu = true },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CrmAvatar(contact.name.ifEmpty { contact.email }, if (dense) 34 else 40)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text(contact.displayName, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textPrimary)
+                            CrmChip(mode.title, if (mode == CrmNextContact.Mode.REACH_OUT) CrmColors.blue else CrmColors.orange)
+                        }
+                        Text(next.reason, maxLines = if (dense) 1 else 2, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
                     }
-                    Text(next.reason, maxLines = if (dense) 1 else 2, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
                 }
             }
             val mastodon = CrmText.profileUrl("mastodon", contact.mastodon) ?: CrmText.profileUrl("twitter", contact.twitter)
@@ -575,18 +578,20 @@ private fun CrmStageList(model: CrmModel, data: CrmOrganizationData, flow: CrmFl
                         if (expanded) {
                             group.forEach { contact ->
                                 Box {
-                                    Row(
-                                        Modifier.fillMaxWidth().combinedClickableCompat(
-                                            { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
-                                            { menuFor = contact.id },
-                                        ),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Box(Modifier.weight(1f)) { CrmContactRowContent(contact, flow, showStage = false, dense = false) }
-                                        flow.next(contact.stage)?.let { next ->
-                                            CrmChip("→ ${CrmStageLabel.title(next)}", CrmColors.stage(next, flow), Modifier.padding(end = 12.dp), onTap = {
-                                                runner.run({ move(contact, next) }) { ok -> if (ok) haptics.selection() }
-                                            })
+                                    FmHoldArea {
+                                        Row(
+                                            Modifier.fillMaxWidth().combinedClickableCompat(
+                                                { navigator.push(ContactScreen(CrmContactRef(model.organization, contact.id))) },
+                                                { menuFor = contact.id },
+                                            ),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Box(Modifier.weight(1f)) { CrmContactRowContent(contact, flow, showStage = false, dense = false) }
+                                            flow.next(contact.stage)?.let { next ->
+                                                CrmChip("→ ${CrmStageLabel.title(next)}", CrmColors.stage(next, flow), Modifier.padding(end = 12.dp), onTap = {
+                                                    runner.run({ move(contact, next) }) { ok -> if (ok) haptics.selection() }
+                                                })
+                                            }
                                         }
                                     }
                                     CrmContactMenu(model, data, runner, navigator, contact, expanded = menuFor == contact.id, onDismiss = { menuFor = null }, onDelete = { pendingDelete = it })

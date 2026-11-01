@@ -177,6 +177,20 @@ def test_toggle_is_explicit_idempotent_and_marks_mine(rt):
     assert rt.d1.count() == 1
 
 
+def test_signed_in_readers_learn_when_others_last_reacted(rt):
+    rt.clock.now = 1000
+    post("alice", "app", "bob")
+    rt.clock.now = 2000
+    post("alice", "app", "carol")
+    post("alice", "app", "carol", emoji="celebrate", comment="body")
+    rt.clock.now = 3000
+    post("alice", "app", "alice", emoji="rocket")
+    mine = get("alice", "app", "kind=issue&number=7", account="alice")
+    assert mine.data["reactedAt"] == {"c1": {"like": 2000}, "body": {"celebrate": 2000}}
+    assert mine.cache_control == "private, no-store"
+    assert "reactedAt" not in get("alice", "app", "kind=issue&number=7").data
+
+
 def test_tallies_keep_the_order_of_the_first_reaction(rt):
     post("alice", "app", "bob", emoji="rocket")
     rt.clock.now += 1000

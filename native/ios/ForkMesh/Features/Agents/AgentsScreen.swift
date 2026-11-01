@@ -492,6 +492,7 @@ struct AgentsScreen: View {
                             let request: AgentLineDeleteRequest? = AgentLineDeleteRequest(line)
                             lineRow(line, nowMs: nowMs)
                                 .contentShape(.contextMenuPreview, FmRoundedShape(radius: FmRadius.sm))
+                                .textSelection(.disabled)
                                 .contextMenu { lineMenu(line, request) }
                                 .agentSwipeToDelete(id: line.id, openId: $swipedOpen, enabled: request != nil && !deleting.contains(line.id)) {
                                     if let request { ask(request) }

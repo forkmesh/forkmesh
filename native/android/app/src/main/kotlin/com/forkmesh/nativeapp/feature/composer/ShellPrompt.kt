@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.shell.LaunchFlight
 import com.forkmesh.nativeapp.ui.SoundCue
@@ -312,57 +313,59 @@ fun PromptButton(
     val hasDraft = remember(tabLabel) { !drafts?.load(PromptDraftStore.SHELL).isNullOrBlank() }
     val accent = Fm.colors.accent
     val glow = accent.copy(alpha = 0.35f + minOf(running, 8) / 8f * 0.25f)
-    Box(modifier) {
-        Box(
-            Modifier
-                .size(size)
-                .onGloballyPositioned { bounds = it.boundsInRoot() }
-                .graphicsLayer {
-                    scaleX = squeeze
-                    scaleY = squeeze
-                }
-                .shadow(10.dp, CircleShape, ambientColor = glow, spotColor = glow)
-                .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.95f), accent, accent.copy(alpha = 0.7f))))
-                .drawBehind {
-                    val stars = minOf(running, 8)
-                    for (i in 0 until stars) {
-                        val angle = i * 2.399963f
-                        val r = this.size.minDimension * (0.22f + 0.05f * (i % 3))
-                        val center = Offset(this.size.width / 2 + r * kotlin.math.cos(angle), this.size.height / 2 + r * kotlin.math.sin(angle))
-                        drawSparkle(center, this.size.minDimension * 0.07f, Color.White.copy(alpha = 0.85f))
-                    }
-                }
-                .then(
-                    if (voice != null) {
-                        Modifier
-                            .holdToTalk(voice, { bounds }, { latestClick() }, { down = it })
-                            .semantics {
-                                role = Role.Button
-                                onClick { latestClick(); true }
-                                onLongClick("Speak a prompt") { voice.onHold(bounds, false); true }
-                            }
-                    } else {
-                        Modifier.combinedClickable(
-                            role = Role.Button,
-                            onClick = onClick,
-                            onLongClick = onLongClick,
-                            onLongClickLabel = onLongClick?.let { "Command palette" },
-                        )
-                    },
-                )
-                .semantics { contentDescription = "New agent" },
-            contentAlignment = Alignment.Center,
-        ) {
-            FmIcon("add", size = size * 0.62f, tint = Color.White)
-        }
-        if (hasDraft) {
+    FmHoldArea {
+        Box(modifier) {
             Box(
                 Modifier
-                    .align(Alignment.TopEnd)
-                    .size(10.dp)
-                    .background(Fm.colors.warning, CircleShape),
-            )
+                    .size(size)
+                    .onGloballyPositioned { bounds = it.boundsInRoot() }
+                    .graphicsLayer {
+                        scaleX = squeeze
+                        scaleY = squeeze
+                    }
+                    .shadow(10.dp, CircleShape, ambientColor = glow, spotColor = glow)
+                    .clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.95f), accent, accent.copy(alpha = 0.7f))))
+                    .drawBehind {
+                        val stars = minOf(running, 8)
+                        for (i in 0 until stars) {
+                            val angle = i * 2.399963f
+                            val r = this.size.minDimension * (0.22f + 0.05f * (i % 3))
+                            val center = Offset(this.size.width / 2 + r * kotlin.math.cos(angle), this.size.height / 2 + r * kotlin.math.sin(angle))
+                            drawSparkle(center, this.size.minDimension * 0.07f, Color.White.copy(alpha = 0.85f))
+                        }
+                    }
+                    .then(
+                        if (voice != null) {
+                            Modifier
+                                .holdToTalk(voice, { bounds }, { latestClick() }, { down = it })
+                                .semantics {
+                                    role = Role.Button
+                                    onClick { latestClick(); true }
+                                    onLongClick("Speak a prompt") { voice.onHold(bounds, false); true }
+                                }
+                        } else {
+                            Modifier.combinedClickable(
+                                role = Role.Button,
+                                onClick = onClick,
+                                onLongClick = onLongClick,
+                                onLongClickLabel = onLongClick?.let { "Command palette" },
+                            )
+                        },
+                    )
+                    .semantics { contentDescription = "New agent" },
+                contentAlignment = Alignment.Center,
+            ) {
+                FmIcon("add", size = size * 0.62f, tint = Color.White)
+            }
+            if (hasDraft) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .size(10.dp)
+                        .background(Fm.colors.warning, CircleShape),
+                )
+            }
         }
     }
 }

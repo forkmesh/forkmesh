@@ -12,6 +12,15 @@ STATUS="$STATE/status.json"
 LOG="$STATE/update.log"
 INSTALLER="$STATE/install-instance.sh"
 STAGE="$STATE/.check"
+VAR="${FORKMESH_INSTANCE_VAR:-/var/lib/forkmesh-instance}"
+VENV="${FORKMESH_INSTANCE_VENV:-/opt/forkmesh-instance/venv}"
+APP_ENV="${FORKMESH_INSTANCE_ENV:-/etc/forkmesh-instance/app.env}"
+UPDATE_UNIT="${FORKMESH_UPDATE_UNIT:-forkmesh-instance-update.service}"
+FOLLOW_FLAG="$(dirname "$REQUEST")/follow"
+FOLLOW_TOOL="${FORKMESH_FOLLOW_TOOL:-$(dirname "$0")/instance_follow.py}"
+FOLLOW_WORK="$STATE/follow"
+FOLLOW_BARE="$STATE/follow.git"
+FOLLOW_EVERY="${FORKMESH_FOLLOW_EVERY:-72000}"
 
 now() { date +%s; }
 
@@ -53,14 +62,31 @@ print(str(doc.get(sys.argv[2]) or sys.argv[3]) if isinstance(doc, dict) else sys
 }
 
 read_request() {
-  local action=""
-  if [ -L "$REQUEST" ]; then
-    rm -f "$REQUEST"
-  elif [ -f "$REQUEST" ]; then
-    action="$(head -c 32 "$REQUEST" | tr -cd 'a-z')"
-    rm -f "$REQUEST"
-  fi
-  printf '%s' "$action"
+  python3 -I -c '
+import os, stat, sys
+path = sys.argv[1]
+try:
+    folder = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+except OSError:
+    sys.exit(0)
+name = os.path.basename(path)
+action = ""
+try:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
+except OSError:
+    fd = -1
+if fd >= 0:
+    with os.fdopen(fd, "rb") as handle:
+        if stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            action = "".join(c for c in handle.read(32).decode("ascii", "ignore")
+                             if "a" <= c <= "z")
+try:
+    os.unlink(name, dir_fd=folder)
+except OSError:
+    pass
+os.close(folder)
+sys.stdout.write(action)
+' "$REQUEST"
 }
 
 commit_fields() {
@@ -147,7 +173,7 @@ run_update() {
     status state=failed finishedAt:int="$(now)"
     return 0
   fi
-  if [ "$trigger" = "merge" ] && [ "$(git -C "$SRC" rev-parse FETCH_HEAD)" = "$(git -C "$SRC" rev-parse HEAD)" ]; then
+  if [ "$trigger" != "admin" ] && [ "$(git -C "$SRC" rev-parse FETCH_HEAD)" = "$(git -C "$SRC" rev-parse HEAD)" ]; then
     status state=done exitCode:int=0 finishedAt:int="$(now)" toCommit="$(git -C "$SRC" rev-parse HEAD)" step=
     return 0
   fi
@@ -174,12 +200,167 @@ run_update() {
   fi
 }
 
+status_value() {
+  python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        doc = json.load(handle)
+except (OSError, ValueError):
+    doc = {}
+print(doc.get(sys.argv[2], sys.argv[3]) if isinstance(doc, dict) else sys.argv[3])
+' "$STATUS" "$1" "$2"
+}
+
+follow_on() {
+  python3 -I -c '
+import os, stat, sys
+path = sys.argv[1]
+try:
+    folder = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    fd = os.open(os.path.basename(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                 dir_fd=folder)
+except OSError:
+    sys.exit(1)
+os.close(folder)
+with os.fdopen(fd, "rb") as handle:
+    if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+        sys.exit(1)
+    sys.exit(0 if handle.read(8).decode("ascii", "ignore").strip() == "on" else 1)
+' "$FOLLOW_FLAG"
+}
+
+request_follow() {
+  python3 -I -c '
+import os, sys
+path = sys.argv[1]
+folder = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+owner = os.fstat(folder)
+name = os.path.basename(path)
+tmp = name + ".new"
+try:
+    os.unlink(tmp, dir_fd=folder)
+except FileNotFoundError:
+    pass
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640, dir_fd=folder)
+with os.fdopen(fd, "w", encoding="ascii") as handle:
+    os.fchown(handle.fileno(), owner.st_uid, owner.st_gid)
+    handle.write("follow\n")
+os.replace(tmp, name, src_dir_fd=folder, dst_dir_fd=folder)
+os.close(folder)
+' "$REQUEST"
+}
+
+actions_running() {
+  local count
+  count="$(sqlite3 -readonly "$VAR/app.db" "SELECT count(*) FROM repo_action_jobs WHERE status = 'running' AND runner != '' AND expires_at > $(( $(now) * 1000 ))" 2>/dev/null || echo 0)"
+  [ "${count:-0}" != "0" ]
+}
+
+tick() {
+  follow_on || return 0
+  [ ! -e "$REQUEST" ] || return 0
+  ! systemctl is-active --quiet "$UPDATE_UNIT" 2>/dev/null || return 0
+  ! systemctl is-active --quiet "$SETUP_UNIT" 2>/dev/null || return 0
+  local last
+  last="$(status_value followAt 0)"
+  [ "$(( $(now) - ${last:-0} ))" -ge "$FOLLOW_EVERY" ] || return 0
+  ! actions_running || return 0
+  request_follow
+}
+
+follow_fields() {
+  python3 -c '
+import json, sys
+try:
+    doc = json.loads(sys.argv[1])
+except ValueError:
+    doc = {"state": "failed", "message": "The follow tool gave no result."}
+if not isinstance(doc, dict):
+    doc = {}
+state = doc.get("state") if doc.get("state") in ("current", "merged", "conflict", "failed") else "failed"
+print("followState=" + state)
+print("followUpstream=" + str(doc.get("upstream") or "")[:64])
+print("followCommit=" + str(doc.get("commit") or "")[:64])
+print("followBehind:int=" + str(int(doc.get("behind") or 0)))
+print("followMessage=" + str(doc.get("message") or "").replace("\n", " ")[:300])
+print("followFiles=" + " ".join(str(f) for f in (doc.get("files") or [])[:20])[:480])
+' "$1"
+}
+
+run_follow() {
+  status state=updating action=follow trigger=follow startedAt:int="$(now)" finishedAt:int=0 \
+    step=follow stepState=running lastError= exitCode:int=0 toCommit= \
+    fromCommit="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || true)"
+  local url ref follow_url follow_ref owner domain path org name result state
+  local org_args=()
+  if systemctl is-active --quiet "$SETUP_UNIT" 2>/dev/null; then
+    status state=failed finishedAt:int="$(now)" \
+      lastError="A setup or update started on the server is still running; try again when it ends."
+    return 0
+  fi
+  ref="$(setting sourceRef main)"
+  domain="$(setting domain '')"
+  follow_url="$(setting followUrl https://app.forkmesh.com/forkmesh/forkmesh)"
+  follow_ref="$(setting followRef main)"
+  owner="$(setting followOwner '')"
+  if ! url="$(source_url)" || [[ ! "$domain" =~ ^[a-z0-9.-]+$ ]] || [[ "$url" != "https://$domain/"* ]]; then
+    status state=failed finishedAt:int="$(now)" \
+      lastError="Following ForkMesh needs sourceUrl in $INSTANCE_JSON to be a repository on this instance."
+    return 0
+  fi
+  path="${url#https://"$domain"/}"
+  path="${path%.git}"
+  org="${path%%/*}"
+  name="${path#*/}"
+  if [[ ! "$org" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] || [[ ! "$name" =~ ^[A-Za-z0-9._-]{1,100}$ ]] ||
+      [[ ! "$ref" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || [[ "$ref" == -* ]] ||
+      [[ ! "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] ||
+      [[ ! "$follow_url" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9._/-]+$ ]] ||
+      [[ ! "$follow_ref" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || [[ "$follow_ref" == -* ]]; then
+    status state=failed finishedAt:int="$(now)" \
+      lastError="Set followOwner (the account that owns $path) and a valid sourceRef, followUrl and followRef in $INSTANCE_JSON."
+    return 0
+  fi
+  if [ "${org,,}" != "${owner,,}" ]; then org_args=(--organization "$org"); fi
+  [ -d "$FOLLOW_BARE" ] || git init --quiet --bare "$FOLLOW_BARE"
+  if [ -s "$LOG" ]; then mv -f "$LOG" "$LOG.1"; fi
+  (umask 077 && : > "$LOG")
+  result="$(python3 -I "$FOLLOW_TOOL" --work "$FOLLOW_WORK" --source-url "$url" \
+    --source-ref "$ref" --follow-url "$follow_url" --follow-ref "$follow_ref" \
+    --resolve "$domain:443:127.0.0.1" --publish "$FOLLOW_BARE" \
+    --name "ForkMesh follow" --email "noreply@$domain" 2>>"$LOG" | tail -n 1)" || true
+  printf '%s\n' "$result" >> "$LOG"
+  local fields=()
+  mapfile -t fields < <(follow_fields "$result")
+  status "${fields[@]}" followAt:int="$(now)"
+  state="$(status_value followState failed)"
+  case "$state" in
+    merged)
+      if ! (cd "$SRC/app/host" && "$VENV/bin/python" -m forkmesh_host instance-repo \
+          --owner "$owner" "${org_args[@]}" --name "$name" --from "$FOLLOW_BARE" \
+          --env-file "$APP_ENV" --db "sqlite:$VAR/app.db" --data-dir "$VAR/data") >>"$LOG" 2>&1; then
+        status state=failed finishedAt:int="$(now)" followState=failed \
+          lastError="The ForkMesh merge could not be published to $path; see $LOG."
+        return 0
+      fi
+      run_update follow ;;
+    current)
+      run_update follow ;;
+    *)
+      status state=failed finishedAt:int="$(now)" \
+        lastError="Following ForkMesh stopped: $(status_value followMessage 'see the log')" ;;
+  esac
+}
+
 main() {
   [ -d "$STATE" ] || { printf 'Missing %s\n' "$STATE" >&2; exit 1; }
   [ -d "$SRC/.git" ] || { status state=failed lastError="No ForkMesh source at $SRC."; exit 0; }
+  if [ "${1:-}" = "--tick" ]; then tick; return 0; fi
   local action
   action="$(read_request)"
   case "$action" in
+    follow) run_follow ;;
     check) run_check ;;
     update) run_update admin ;;
     auto) run_update merge ;;
@@ -187,6 +368,6 @@ main() {
   esac
 }
 
-main
+main "$@"
 exit 0
 }

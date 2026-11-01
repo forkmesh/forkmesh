@@ -237,7 +237,7 @@ lte is_set is_not_set`; a cohort filter's `value` is the cohort id. A
 
 | kind | Request fields | `result` |
 | --- | --- | --- |
-| `overview` | — | `totals`, `previous` (`visitors pageviews sessions bounceRate averageSessionMs events`), `timeseries` (a trends result), `sessionSeries` (`bounceRate averageSessionMs`, aligned to `timeseries.labels`), `breakdowns` (`pages referrers sources mediums campaigns browsers os devices screens languages countries entryPages exitPages events`, counted per pageview, and `channels referringDomains referringUrls`, counted per session; each `[{value, count}]`), `visitorKinds` (`new returning`), `sessionDepth`, `sessionLength` (`[{value, count}]` histograms), `hours` (7×24 pageviews, Monday first, in `tzOffsetMinutes`), `engagement` (`[{value, count, medianMs, scroll}]` from page leaves), `webVitals` |
+| `overview` | — | `totals`, `previous` (`visitors pageviews sessions sites bounceRate averageSessionMs events`; `totals.liveVisitors` when the range ends now), `timeseries` (a trends result), `sessionSeries` (`bounceRate averageSessionMs`, aligned to `timeseries.labels`), `breakdowns` (`pages referrers sources mediums campaigns browsers os devices screens languages countries entryPages exitPages events`, counted per pageview, and `channels referringDomains referringUrls referralLandings`, counted per session; `sites` with `visitors` and `sessions`; `outboundLinks` per click; `terms contents` per pageview; each `[{value, count}]`), `visitorKinds` (`new returning`), `sessionDepth`, `sessionLength` (`[{value, count}]` histograms), `hours` (7×24 pageviews, Monday first, in `tzOffsetMinutes`), `engagement` (`[{value, count, medianMs, scroll}]` from page leaves), `webVitals` |
 | `trends` | `series`, `interval`, `breakdown {type, property, groupType}` | `labels` (bucket start ms), `series: [{name, breakdown, data, total}]` |
 | `funnel` | `steps` (series), `windowSeconds`, `order`, `breakdown` | `steps: [{name, count, conversion, stepConversion, dropoff, medianTimeMs, averageTimeMs}]`, `breakdown?` |
 | `retention` | `targetEvent`, `returningEvent`, `period`, `periods`, `retentionType` | `rows: [{start, size, values, percentages}]` |
@@ -354,6 +354,28 @@ bar next to the traffic chart, a Referrals card (Domain / Full URL), a
 weekday-by-hour heatmap, a new-and-returning split, pages-per-session and
 session-length histograms, and a page engagement table. Referrer URLs are
 printed as text, never as links: a visitor controls `$referrer`.
+
+Since 1.8.2 the overview is one dense grid (four columns on a wide screen) so
+most of it fits above the fold, and it reports more:
+
+- `breakdowns.sites`: pageviews per bare `$host` with `visitors` and
+  `sessions` (a session counts for every site it viewed), up to 20 rows, and
+  `totals.sites`, the number of sites with a pageview. Clicking a site
+  reloads the overview with an event filter on `$host` (a regex that also
+  accepts `www.` and a port), shown as a chip on the Traffic card.
+- `breakdowns.referralLandings`: `"<referring domain> → <host><path>"` per
+  referred session, the Referrals card's Landing view.
+- `breakdowns.outboundLinks`: autocaptured clicks whose nearest `<a>` has an
+  `href` on another host, as that URL without its fragment.
+- `breakdowns.terms` and `contents`: `utm_term` and `utm_content` per
+  pageview, the Campaigns card's Term and Content views.
+- `totals.liveVisitors`: visitors with an event in the last five minutes,
+  present only when the range ends within five minutes of now.
+
+The breakdown cards render into a `display: contents` wrapper inside the
+`.an-dash` grid, so each card's `order` places it among the fixed cards.
+Outbound links, like referrer URLs, are shown as text (host, then path
+underneath), never as links: a visitor controls `$elements` and `$referrer`.
 
 ### Campaign results (1.1.0)
 
