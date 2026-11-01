@@ -152,7 +152,9 @@ manage the plugin they are looking at:
   `package: <id>`. The private report and any attachments are visible only to
   platform administrators in the Support inbox and in the Bug sheet's
   Reported tab on the phones (`GET /api/bug-reports/inbox`), and are
-  labelled `plugin`.
+  labelled `plugin`. A signed-in reporter sees their own reports and
+  their status in the Bug sheet's My reports tab
+  (`GET /api/bug-reports/mine`) and can confirm one is fixed.
   It does not depend on the `bug-reports` package being
   installed.
 - **Uninstall** uses the surface's normal removal flow, including its

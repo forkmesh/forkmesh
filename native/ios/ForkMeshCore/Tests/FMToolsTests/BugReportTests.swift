@@ -325,4 +325,101 @@ final class BugReportTests: XCTestCase {
         XCTAssertEqual(BugReportInboxModel.sizeLabel(6), "6 B")
         XCTAssertEqual(BugReportInboxModel.sizeLabel(2_621_440), "2.5 MB")
     }
+
+    @MainActor
+    func testMyReportsLoadAndPage() async {
+        var asked: [Int] = []
+        let model = MyBugReportsModel(load: { offset in
+            asked.append(offset)
+            if offset == 0 {
+                return MyBugReports(ok: true, reports: [MyBugReport(json: ["id": "a", "message": "Broken."])],
+                                    counts: ["new": 2], nextOffset: 50)
+            }
+            return MyBugReports(ok: true, reports: [MyBugReport(json: ["id": "b"])], counts: ["new": 2])
+        })
+        await model.reload()
+        XCTAssertTrue(model.loaded)
+        XCTAssertEqual(model.reports.map(\.id), ["a"])
+        XCTAssertEqual(model.nextOffset, 50)
+        await model.more()
+        XCTAssertEqual(model.reports.map(\.id), ["a", "b"])
+        XCTAssertNil(model.nextOffset)
+        XCTAssertEqual(asked, [0, 50])
+        await model.reload()
+        XCTAssertEqual(model.reports.map(\.id), ["a"])
+    }
+
+    @MainActor
+    func testMyReportsShowARefusalAndACancelIsNotOne() async {
+        let refused = MyBugReportsModel(load: { _ in .failure("Sign in to see the bugs you reported.") })
+        await refused.reload()
+        XCTAssertTrue(refused.loaded)
+        XCTAssertEqual(refused.problem, "Sign in to see the bugs you reported.")
+        let missing = MyBugReportsModel(load: nil)
+        await missing.reload()
+        XCTAssertFalse(missing.problem.isEmpty)
+        let cancelled = MyBugReportsModel(load: { _ in .cancelledLoad })
+        await cancelled.reload()
+        XCTAssertFalse(cancelled.loaded)
+        XCTAssertEqual(cancelled.problem, "")
+    }
+
+    @MainActor
+    func testConfirmingAFixReplacesTheReportInPlace() async {
+        var confirmed: [String] = []
+        let model = MyBugReportsModel(
+            load: { _ in
+                MyBugReports(ok: true, reports: [
+                    MyBugReport(json: ["id": "a", "status": "triaged", "message": "One."]),
+                    MyBugReport(json: ["id": "b", "status": "new", "message": "Two."]),
+                ], counts: ["new": 1, "triaged": 1])
+            },
+            confirm: { id in
+                confirmed.append(id)
+                return MyBugReportConfirmation(
+                    ok: true,
+                    report: MyBugReport(json: ["id": .string(id), "status": "closed", "message": "One.",
+                                               "confirmedFixedAt": 1_783_500_000_000]),
+                    previous: "triaged", counts: ["new": 1, "triaged": 0, "closed": 1])
+            })
+        await model.reload()
+        await model.confirmFixed("a")
+        XCTAssertEqual(confirmed, ["a"])
+        XCTAssertEqual(model.reports.map(\.id), ["a", "b"])
+        XCTAssertEqual(model.reports[0].status, "closed")
+        XCTAssertEqual(model.reports[0].confirmedFixedAt, 1_783_500_000_000)
+        XCTAssertEqual(model.reports[1].status, "new")
+        XCTAssertEqual(model.counts["closed"], 1)
+        XCTAssertTrue(model.confirming.isEmpty)
+        XCTAssertEqual(MyBugReportsModel.statusLabel(model.reports[0]), "Fixed, confirmed by you")
+        await model.confirmFixed("a")
+        XCTAssertEqual(confirmed, ["a"])
+    }
+
+    @MainActor
+    func testAConfirmRefusalIsShownAndTheReportStays() async {
+        let model = MyBugReportsModel(
+            load: { _ in MyBugReports(ok: true, reports: [MyBugReport(json: ["id": "a", "status": "new"])]) },
+            confirm: { _ in .failure("That report no longer exists.") })
+        await model.reload()
+        await model.confirmFixed("a")
+        XCTAssertEqual(model.problem, "That report no longer exists.")
+        XCTAssertEqual(model.reports.first?.status, "new")
+        XCTAssertEqual(model.reports.first?.confirmedFixedAt, 0)
+        XCTAssertTrue(model.confirming.isEmpty)
+    }
+
+    @MainActor
+    func testMyReportStatusLabelsAndDetails() {
+        XCTAssertEqual(MyBugReportsModel.statusLabel(MyBugReport(json: ["status": "new"])), "Received")
+        XCTAssertEqual(MyBugReportsModel.statusLabel(MyBugReport(json: ["status": "triaged"])), "In progress")
+        XCTAssertEqual(MyBugReportsModel.statusLabel(MyBugReport(json: ["status": "closed"])), "Closed")
+        XCTAssertEqual(MyBugReportsModel.statusLabel(MyBugReport(json: ["status": "new", "confirmedFixedAt": 5])),
+                       "Fixed, confirmed by you")
+        XCTAssertEqual(MyBugReportsModel.details(MyBugReport(json: [
+            "platform": "ios", "appVersion": "1.2.2+13", "screen": "code",
+        ])), "ios · 1.2.2+13 · code")
+        XCTAssertEqual(MyBugReportsModel.details(MyBugReport(json: ["platform": "ios", "screen": "code"])), "ios · code")
+        XCTAssertEqual(MyBugReportsModel.details(MyBugReport(json: [:])), "")
+    }
 }
