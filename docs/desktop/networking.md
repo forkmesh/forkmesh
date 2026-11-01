@@ -341,6 +341,19 @@ as `direct-sealed` frames to the other person's linked, approved devices
 ([chat.md](chat.md#direct-delivery)); iPhones that left the room are woken via
 push ([../native/MESH_PUSH.md](../native/MESH_PUSH.md)).
 
+`startLocalMesh()` waits for a chat session (`m_backend`, set by
+`startSession`, which builds the on-demand Chat page first) and does nothing
+while the window is closing. The network-reachability handler calls it on any
+change, so before this a reachability change at startup, while the deferred
+start sat in `getAccountSync`'s nested event loop, started the mesh before
+Chat existed; `setChannels` then reached `refreshChannelList` with a null
+`m_channelList` and crashed in `QTreeWidget::clear` (report #19,
+2026-11-01). `refreshChannelList` and `setChannels` also keep the sidebar rows
+and skip the widget work when Chat is not built. Test:
+`forkmesh-local-mesh-gate-window-tests` (`--local-mesh-gate-only`). Window
+tests build Chat eagerly, so the null-list guards themselves are not reached
+there.
+
 ### Mesh links v3
 
 Every LAN and Bluetooth link runs the `fm-link-hello` / `fm-link-auth`

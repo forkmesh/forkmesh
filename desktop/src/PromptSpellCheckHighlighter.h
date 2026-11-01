@@ -23,6 +23,7 @@ public:
                                 const QSet<QString> &acceptedWords);
 
     bool spellCheckingAvailable() const;
+    static bool systemDictionaryLoaded();
     bool isMisspelled(const QString &word) const;
     QStringList suggestions(const QString &word) const;
 
