@@ -124,6 +124,20 @@ answers them without running the Worker. Static responses carry
   schema references are resolved; Git history dates each page. Code and tests
   reference many `docs/**` paths directly, so move or rename a page only
   together with every reference ([writing docs](../README.md#writing-docs)).
+- Reading a docs page (`www/public/docs-page.js`): the "On this page" rail
+  highlights the section in view and slides a marker to it, highlights the
+  parent of an active subsection, and scrolls itself so the highlight stays
+  visible. The active section is the last heading above a line just below the
+  sticky toolbar, never above the headings' `scroll-margin-top`, so a clicked
+  link lands on its own entry; at the bottom of the page the last heading
+  visible wins, and a click holds its section for 900 ms while the smooth
+  scroll runs. The address follows with `history.replaceState` (no history
+  entries), `[` and `]` step between sections, a thin bar under the toolbar
+  shows reading progress, and below 1024 px, where the rail is hidden, a
+  sticky "On this page" bar names the current section and opens the outline.
+  A scroll listener batched to one `requestAnimationFrame` replaced the old
+  `IntersectionObserver` band, which only changed when a heading crossed it
+  and so went stale while scrolling up through a long section.
 - `/api/home-availability`: JSON for the homepage availability strip.
 - `x-forkmesh-edge-client: v1,<ip>,<country>,<ts>,<mac>`
   ([edge client](edge-client.md)).

@@ -46,6 +46,7 @@
     "sentry",
     "shortcuts",
     "sleep",
+    "spreadsheets",
     "status-check-api",
     "status-check-cores",
     "status-check-database",

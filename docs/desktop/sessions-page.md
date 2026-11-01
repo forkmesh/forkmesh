@@ -40,8 +40,8 @@ Rail **Sessions** (`sessionsNavButton`, rail key `sessions`, section
   then Queued) and **Recent** (newest first, at most 300). A delegate paints
   each row: status dot, title, repository · branch · model, age, unread dot
   and a `⇄ N` badge when the session sent or received messages from other
-  sessions. Right-click: Open in Agents, Continue, Stop, Send message to
-  another session…, Send its last reply to…, Delete (confirms through `deleteAgentSessionFromRow`).
+  sessions. Right-click a row for its menu ([Row and header
+  menus](#row-and-header-menus)).
 - **Grouping.** The filter menu's **Group by** offers **Like the Claude app**
   (the default), **Repository** and **Status**, kept in `sessions/groupBy`.
   Like the Claude app lays the list out as the Claude desktop app's Code tab
@@ -110,8 +110,50 @@ ForkMesh registers its own agents there is in
 - Opening a Claude app row reads its transcript like an outside session
   (`sessionsOutsideSession` gives the path); sending to it is refused with
   the reason.
-  Right-click: **Open in Claude app** (the `claude://resume` link) and
-  **Send its last reply to…**.
+  Its row menu opens it in the Claude app (the `claude://resume` link) and
+  offers **Send its last reply to…**; Rename, Fork, Mark as unread and Delete
+  are off, as those belong to the Claude app.
+
+## Row and header menus
+
+`buildSessionsContextMenu` and `buildSessionsHeaderMenu` follow the Claude
+app's Code tab menus.
+
+- **Row:** Open in (Agents, Claude app), Continue, Stop, Pin (P), Mark as
+  unread (U), Rename… (R), Fork (F), Move to section, Send message to another
+  session…, Send its last reply to…, Archive (A), Delete… (D). The letters work while the menu is open
+  (`SessionsMenuKeys`, since Qt does not fire shortcuts of a stand-alone
+  popup). A disabled entry's tooltip says why. The list allows
+  Ctrl/Shift-click; when the clicked row is in a selection of several, Pin,
+  Mark as unread, Move to section, Archive and Delete act on all of them.
+- **Header:** New session (with the repository picked under Group by
+  Repository), New section…, Rename section…, Move up, Move down, Select all,
+  Collapse all, Expand all, Archive all (N), Delete all sessions (N) (one
+  confirmation, `deleteAgentSessionsConfirmed`), Delete section. Only
+  sections made in ForkMesh can be renamed, moved or deleted; the Claude
+  app's own are read-only, because ForkMesh never writes the Claude app's
+  config.
+- **State.** Pins, section placement, ForkMesh sections and archived
+  sessions are ForkMesh's own (`sessions/pins`, `sessions/sectionOf`,
+  `sessions/sections`, `sessions/archived`), keyed by `agentReadKey` or, for
+  a Claude app row, `claude-app:<record>`. They override the Claude app's
+  pins and groups for that session, so unpinning a session the Claude app
+  pinned works. All three groupings show Pinned and the sections first;
+  Like the Claude app passes them to `arrangeSidebar`, and a ForkMesh section
+  shows while empty (`DesktopSection::keepEmpty`). Archived sessions leave the
+  list; the filter menu's **Archived sessions** shows them under an Archived
+  heading at the bottom.
+- **Mark as unread** adds the session to `agents/markedUnread`, which
+  `agentSessionUnread` honours until the session is next opened, so the open
+  session stays unread instead of being marked read by the next refresh.
+- **Fork** (local Claude Code sessions only) makes a new session that resumes
+  the source's conversation with `--fork-session`, through the import path
+  (`claudeImportId`/`claudeImportPath`; `ClaudeSessionImport::stage` copies
+  the transcript into the new run). The fork gets its own branch, created at
+  the source branch's last commit, and its own worktree on the next run, so
+  deleting it never touches the source's. Uncommitted changes in the source
+  worktree are not carried over. The fork keeps a copy of the source's
+  transcript and opens ready for the next message.
 
 ## Side panels
 
@@ -242,7 +284,7 @@ at most 200).
 ## Tests
 
 `forkmesh-window-tests --sessions-only` (rail placement, list, live
-transcript, composer, relays), `forkmesh-session-insights-tests`,
+transcript, composer, relays, row and header menus), `forkmesh-session-insights-tests`,
 `forkmesh-claude-desktop-sessions-tests`.
 
 ## New interface

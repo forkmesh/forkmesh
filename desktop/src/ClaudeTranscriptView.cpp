@@ -11,6 +11,7 @@
 #include "Theme.h"
 #include "DesignTokens.h"
 #include "Tooltips.h"
+#include "UiKit.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -3722,7 +3723,7 @@ void ClaudeTranscriptView::beginBatchBuild()
             m_heldFrame = new HeldFrame(this);
         m_heldFrame->setStyleSheet(
             QStringLiteral("background:%1;").arg(m_p.canvas));
-        m_heldFrame->setPixmap(grab());
+        m_heldFrame->setPixmap(forkmesh::ui::kit::shownPixels(this));
         m_heldFrame->setGeometry(rect());
         m_heldFrame->raise();
         m_heldFrame->show();

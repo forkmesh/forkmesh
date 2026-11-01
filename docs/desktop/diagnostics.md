@@ -689,6 +689,58 @@ returned, so summed frame totals overstate a function's own cost.
   `forkmesh::settings::put`, which skips unchanged values.
 - **No work for a link that is already down.** `ServerNode::shutdown` sends
   `bye` (one x25519 seal per room member) only while `m_wsReady`.
+- **Do not `grab()` a widget inside the main window.** On a visible widget,
+  `QWidget::grab` first delivers pending resize events to every widget in the
+  window that has never been shown, which polishes and lays out hidden rich-text
+  labels everywhere (`STALL-20261101T154849825-p1962648-0051`: a ~700 ms rich-text layout under
+  `prepareToRender`). Copy the pixels already on screen with
+  `forkmesh::ui::kit::shownPixels`, which reads the window's backing store. The
+  transcript's held frame uses it and falls back to the blank canvas;
+  `flyToComposer` falls back to `grab()` only if the backing store cannot be read.
+  Drag pixmaps and test grabs can still use `grab()`.
+- **Create a view inside its parent.** Under the application style sheet, moving
+  a built `QTableWidget` into a parent restyles it and its headers, scroll
+  bars and viewport. `buildRewardPoolControlCard` creates its two tables with
+  the card as parent (`…-p970989-0017`). The Control Node tabs still build each
+  card unparented and move it about four times (body, scroll area, tabs).
+- **Delete row widgets instead of hiding them.** `QTreeWidget::clear` hides
+  each item widget before its `deleteLater`. When accessibility is on, each
+  hide builds an accessible interface for the widget and every child, about
+  1 s for a big range (`…-p1962648-0065`). `clearScmTree` deletes the
+  Source Control rows outright. When a menu or modal dialog is open it uses a
+  plain `clear()` instead, because a nested event loop may still be running a
+  row's handler. The working-tree rebuild also keeps `clear()`, because its
+  rows' stage buttons start it.
+- **Repo workflow runs are written in the background.** `repoWorkflowRunChanged`
+  merges the run into `m_repoWorkflowRunsCache` (`rw::mergeRun`) and queues the
+  JSON with `diskwrite::writeLater`; readers go through `repoWorkflowRuns`, so
+  they see the queued state. The run's Markdown output is queued the same way
+  (`…-0064`: the `QSaveFile` fsync took ~700 ms).
+- **Hand the side panels the event list, not one event at a time.**
+  `SessionSidePanels::appendActivity` shares the session's event list and starts
+  its sliced ingest at the first event it has not seen. Copying every event of
+  a long session on a switch touched pages the process had swapped out
+  (`…-0060`, 1.2 s).
+- **Measure colour emoji once.** For a bitmap colour font (Noto Color Emoji),
+  Qt decodes the glyph's PNG each time it measures it, so every `elidedText`
+  and `drawText` over an emoji repeats the decode. `ChatPreviewLabel` (the prompt
+  bar's chat preview) draws its rows into a pixmap. It redraws that pixmap only
+  when the lines, size, font or colours change. Its `sizeHint` no longer lays
+  out the hidden rich-text copy, since the `Ignored` width policy discards
+  that width (`…-p970989-0005`, `-0010`, `-0012`, `-0013`).
+- **Do not re-set an unchanged run log.** `showRun` keeps the run id and a hash
+  of the log it showed, and skips `setPlainText` and the scroll to the end when
+  the same run comes back with the same text and the view still holds all of it.
+  Building the Actions tab shows the latest run and the notification click shows
+  it again, and each layout of emoji lines repeats the colour-glyph decode
+  above (`…-p970989-0016`).
+- **Spin only the rows on screen.** `animateRunningAgentIcons` rebuilds a
+  running row's spinner pixmap only when the table is shown and the row is in
+  the viewport; progress and ticker text still update on every tick
+  (`…-p970989-0009`).
+- **Off the GUI thread:** reading the Genie CRM summary (`GenieCrmCounts::read`,
+  `GenieCrmDigest::read`, `…-p970989-0006`). The Workflows package's
+  `loadLocal` stops when the host's payload has not changed.
 - **Nothing to fix:** layout started by `setVisible` (`renderPageNotices`),
   text shaping, paint and style polish with no application frame, cached
   pixmap painting while the process is swapped out, and any stall sampled

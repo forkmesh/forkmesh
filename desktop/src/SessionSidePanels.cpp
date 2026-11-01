@@ -1034,6 +1034,19 @@ void SessionSidePanels::replaceActivity(const QList<QJsonObject> &events)
     scheduleSlice();
 }
 
+void SessionSidePanels::appendActivity(const QList<QJsonObject> &events, qsizetype from)
+{
+    if (from < 0 || from >= events.size())
+        return;
+    if (m_queue.isEmpty()) {
+        m_queue = events;
+        m_cursor = from;
+    } else {
+        m_queue.append(events.mid(from));
+    }
+    scheduleSlice();
+}
+
 void SessionSidePanels::scheduleSlice()
 {
     if (m_sliceQueued || m_cursor >= m_queue.size() || !isVisible())

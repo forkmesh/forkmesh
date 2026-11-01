@@ -163,6 +163,7 @@ Planned extractions are described in
 | [`face-changer`](packages/face-changer/manifest.json) | Web page with the call face, outfit, background and voice changer, also opened inside the iPhone and Android apps: record and share a clip, snapshot, pop out. Video never reaches the server. |
 | [`speech`](packages/speech/README.md) | On-device text to speech in the iPhone app. |
 | [`crm`](packages/crm/manifest.json), [`marketing`](packages/marketing/manifest.json) | Organization packages with web and desktop pages and a worker API. |
+| [`spreadsheets`](packages/spreadsheets/README.md) | Spreadsheet editor on the web and desktop: sheets, 235 functions, formatting, charts, filters, pivot tables and an AI assistant; opens and saves Excel `.xls` and `.xlsx`, OpenDocument and CSV in the browser, stored sealed per account. |
 | [`booking`](packages/booking/README.md) | Personal booking page at one short link (`/meet?<name>`): people book a free time, the meeting lands on your ForkMesh calendar, and ForkMesh emails both sides. |
 | [`invoices`](packages/invoices/README.md) | Organization invoices linked to CRM contacts, emailed with a private view-and-pay link, with open, view, pay-click and overdue tracking. |
 | [`surveys`](packages/surveys/README.md) | Organization surveys with choice, text and rating questions, a private link anyone can answer, live results, response management and CSV export on the web, desktop and phones. |
