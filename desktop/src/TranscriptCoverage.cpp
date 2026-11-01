@@ -71,7 +71,8 @@ const QSet<QString> &unshownSystemSubtypes()
         QStringLiteral("task_updated"),
         QStringLiteral("task_progress"),
         QStringLiteral("background_tasks_changed"),
-        QStringLiteral("session_title_changed")};
+        QStringLiteral("session_title_changed"),
+        QStringLiteral("commands_changed")};
     return subtypes;
 }
 
