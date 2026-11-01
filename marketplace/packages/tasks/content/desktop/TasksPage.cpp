@@ -3050,8 +3050,11 @@ QWidget *TasksPage::buildOrganizationTasksSection()
         QTextOption::WrapAtWordBoundaryOrAnywhere);
     const auto openDetailLink = [this](const QUrl &url) {
         const QString href = url.toString();
-        if (forkmesh::taskmarkdown::isSafeLink(href))
-            QDesktopServices::openUrl(url);
+        if (forkmesh::taskmarkdown::isSafeLink(href)) {
+            if (!windowCommand(QStringLiteral("note.openLink"),
+                               {{QStringLiteral("href"), href}}))
+                QDesktopServices::openUrl(url);
+        }
         else if (href.startsWith(kAgentLinkScheme))
             windowCommand(QStringLiteral("agent.show"),
                           {{QStringLiteral("id"),
