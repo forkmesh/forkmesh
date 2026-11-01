@@ -451,6 +451,7 @@ struct FmIconButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .background {
                 Circle()
                     .fill(highlight)

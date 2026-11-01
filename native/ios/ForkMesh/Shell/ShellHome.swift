@@ -312,6 +312,7 @@ struct ShellHome: View {
     private var backgroundHold: some View {
         Color.clear
             .contentShape(Rectangle())
+            .textSelection(.disabled)
             .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10) {
                 guard prefs.drag == nil else { return }
                 CaptureHold.noteHandled()
@@ -375,6 +376,7 @@ struct ShellHome: View {
             ShellLayoutMemory.remember(.homeHeader, height)
         }
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .contextMenu {
             homeMenuItems(hiding: group)
         }
@@ -640,6 +642,7 @@ struct ShellHome: View {
         }
         .buttonStyle(ShellHomeButtonStyle())
         .opacity(prefs.drag == ShellBarDrag(id: item.id, fromBar: false) ? 0.35 : 1)
+        .textSelection(.disabled)
         .contextMenu {
             ShellBarItemMenu(
                 item: item, items: layout.barItems, prefs: prefs, inBar: false,
@@ -689,6 +692,7 @@ struct ShellHomeButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .opacity(configuration.isPressed ? 0.75 : 1)
             .scaleEffect(configuration.isPressed ? 0.9 : 1)
             .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)

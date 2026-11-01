@@ -63,6 +63,19 @@ KEYWORDS = re.compile(
     r"|prune=now|filter-branch")
 
 ALLOW: list[tuple[str, str, str]] = [
+    ("tools/instance_follow.py",
+     'git\\(work, "push", "--quiet", "--force", args.publish,',
+     'publishes into the follow tool\'s own scratch bare repository, which nothing '
+     'else writes; instance-repo imports it without --force, so the forge still '
+     'refuses anything that is not a fast-forward'),
+    ("tools/instance_follow.py",
+     'git\\(work, "checkout", "--force", "--quiet", "-B", "main",',
+     'resets the follow tool\'s own work tree to the fetched source; prepare refuses a '
+     'folder that is neither empty nor holds the tool\'s refs/follow refs'),
+    ("tools/instance_follow.py",
+     'git\\(work, "clean", "-fdxq"\\)',
+     'cleans the follow tool\'s own work tree before a merge; prepare refuses a folder '
+     'that is neither empty nor holds the tool\'s refs/follow refs'),
     ("app/public/dashboard.js",
      'may force-push (them|any branch).*\\(use (<span class="font-mono">)?git push --force-with-lease',
      'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),

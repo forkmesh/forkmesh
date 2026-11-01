@@ -746,6 +746,7 @@ struct ShellBottomBar: View {
         switch entry.slot {
         case let .item(item):
             cell(item, shape: shape, width: width, height: side, heat: heat[item.id] ?? 0)
+                .textSelection(.disabled)
                 .contextMenu {
                     ShellBarItemMenu(
                         item: item, items: items, prefs: prefs,
@@ -1335,6 +1336,7 @@ struct ShellBarDropDelegate: DropDelegate {
 struct ShellBarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .opacity(configuration.isPressed ? 0.7 : 1)
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
     }

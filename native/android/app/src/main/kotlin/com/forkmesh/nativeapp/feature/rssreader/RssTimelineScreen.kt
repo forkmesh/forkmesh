@@ -45,6 +45,7 @@ import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
 import com.forkmesh.nativeapp.ui.kit.FmTextField
@@ -243,48 +244,50 @@ private fun ArticleRow(
     var menu by remember { mutableStateOf(false) }
     val service = RssReaderFeature.service
     Box {
-        Column(Modifier.fillMaxWidth().background(c.bgRaised).combinedClickable(onClick = onTap, onLongClick = { menu = true })) {
-            Row(Modifier.fillMaxWidth().padding(start = FmSpace.x1, end = FmSpace.x4, top = FmSpace.x3, bottom = FmSpace.x3)) {
-                Column(Modifier.width(18.dp).padding(top = 5.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    UnreadDot(!article.read)
-                    if (article.starred) FmIcon("star", size = 12.dp, tint = RssColors.star)
-                }
-                Spacer(Modifier.width(FmSpace.x1))
-                if (settings.showFeedIcons) {
-                    Box(Modifier.padding(top = 2.dp)) { FeedIcon(feed, 26.dp, 6.dp) }
-                    Spacer(Modifier.width(FmSpace.x3))
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        article.title.ifEmpty { "Untitled" },
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        style = Fm.text.titleSmall.copy(fontWeight = FontWeight.SemiBold, color = if (article.read) c.textTertiary else c.textPrimary),
-                    )
-                    if (settings.timelineLines > 0 && article.summary.isNotEmpty()) {
+        FmHoldArea {
+            Column(Modifier.fillMaxWidth().background(c.bgRaised).combinedClickable(onClick = onTap, onLongClick = { menu = true })) {
+                Row(Modifier.fillMaxWidth().padding(start = FmSpace.x1, end = FmSpace.x4, top = FmSpace.x3, bottom = FmSpace.x3)) {
+                    Column(Modifier.width(18.dp).padding(top = 5.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        UnreadDot(!article.read)
+                        if (article.starred) FmIcon("star", size = 12.dp, tint = RssColors.star)
+                    }
+                    Spacer(Modifier.width(FmSpace.x1))
+                    if (settings.showFeedIcons) {
+                        Box(Modifier.padding(top = 2.dp)) { FeedIcon(feed, 26.dp, 6.dp) }
+                        Spacer(Modifier.width(FmSpace.x3))
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(
-                            article.summary,
-                            maxLines = settings.timelineLines,
+                            article.title.ifEmpty { "Untitled" },
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodyMedium.copy(color = if (article.read) c.textTertiary else c.textSecondary),
+                            style = Fm.text.titleSmall.copy(fontWeight = FontWeight.SemiBold, color = if (article.read) c.textTertiary else c.textPrimary),
                         )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val byline = if (article.author.isEmpty() || article.author == feed?.displayTitle) {
-                            feed?.displayTitle.orEmpty()
-                        } else if (showFeedName) {
-                            listOfNotNull(feed?.displayTitle, article.author).joinToString(" · ")
-                        } else {
-                            article.author
+                        if (settings.timelineLines > 0 && article.summary.isNotEmpty()) {
+                            Text(
+                                article.summary,
+                                maxLines = settings.timelineLines,
+                                overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodyMedium.copy(color = if (article.read) c.textTertiary else c.textSecondary),
+                            )
                         }
-                        Text(byline, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = c.textTertiary))
-                        Spacer(Modifier.width(FmSpace.x2))
-                        Text(RssFormat.short(article.published, now), style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val byline = if (article.author.isEmpty() || article.author == feed?.displayTitle) {
+                                feed?.displayTitle.orEmpty()
+                            } else if (showFeedName) {
+                                listOfNotNull(feed?.displayTitle, article.author).joinToString(" · ")
+                            } else {
+                                article.author
+                            }
+                            Text(byline, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                            Spacer(Modifier.width(FmSpace.x2))
+                            Text(RssFormat.short(article.published, now), style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                        }
                     }
+                    if (settings.showThumbnails && settings.loadRemoteImages && article.image.isNotEmpty()) RssThumbnail(article.image)
                 }
-                if (settings.showThumbnails && settings.loadRemoteImages && article.image.isNotEmpty()) RssThumbnail(article.image)
+                HorizontalDivider(Modifier.padding(start = if (settings.showFeedIcons) 60.dp else 22.dp), thickness = 1.dp, color = c.border)
             }
-            HorizontalDivider(Modifier.padding(start = if (settings.showFeedIcons) 60.dp else 22.dp), thickness = 1.dp, color = c.border)
         }
         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             FmDropdownMenuItem(

@@ -306,6 +306,7 @@
       "forkmesh.analyticsConsent.v1",
       "forkmesh.apiOrigin",
       "forkmesh.dashboard.theme",
+      "forkmesh.genie.mascot",
       "forkmesh.genie.off",
       "forkmesh.theme",
     ]);

@@ -38,6 +38,7 @@ import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.theme.FmHaptics
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -50,26 +51,28 @@ fun DjNowPlayingChip() {
     AnimatedVisibility(deck != null, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
         val shown = deck ?: return@AnimatedVisibility
         Box {
-            Box(
-                Modifier
-                    .clip(CircleShape)
-                    .combinedClickable(
-                        onClick = {
-                            haptics.selection()
-                            NavigationFeature.open(Route.VideoMixDjStudio)
+            FmHoldArea {
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = {
+                                haptics.selection()
+                                NavigationFeature.open(Route.VideoMixDjStudio)
+                            },
+                            onLongClick = {
+                                haptics.palette()
+                                menu = true
+                            },
+                        )
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = (if (shown.title.isEmpty()) "Deck ${shown.side.label} is playing" else "Deck ${shown.side.label} is playing ${shown.title}") + ". Opens Video Mix DJ Studio"
+                            testTag = "top-dj-now-playing"
                         },
-                        onLongClick = {
-                            haptics.palette()
-                            menu = true
-                        },
-                    )
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = (if (shown.title.isEmpty()) "Deck ${shown.side.label} is playing" else "Deck ${shown.side.label} is playing ${shown.title}") + ". Opens Video Mix DJ Studio"
-                        testTag = "top-dj-now-playing"
-                    },
-            ) {
-                DjMiniRecord(shown, 44.dp)
+                ) {
+                    DjMiniRecord(shown, 44.dp)
+                }
             }
             FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 FmDropdownMenuItem("Stop the Music", icon = "stop", onClick = {

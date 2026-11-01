@@ -95,6 +95,7 @@ struct AgentPromptDeck: View {
             withAnimation(spring) { expanded.toggle() }
         }
         .gesture(swipe)
+        .textSelection(.disabled)
         .contextMenu {
             Button {
                 UIPasteboard.general.string = deck.prompt(at: shown)

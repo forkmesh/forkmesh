@@ -67,6 +67,7 @@ import com.forkmesh.nativeapp.chat.ChatLinkSites
 import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import com.forkmesh.nativeapp.ui.kit.rememberLinkOpener
@@ -205,62 +206,64 @@ private fun PreviewCard(preview: ChatLinkPreview, url: URI, service: ChatLinkPre
     var menu by remember { mutableStateOf(false) }
     val link = url.toString()
     Box(modifier) {
-        Column(
-            Modifier
-                .widthIn(max = 520.dp)
-                .fillMaxWidth()
-                .clip(cardShape)
-                .background(cardFill())
-                .border(1.dp, colors.border, cardShape)
-                .combinedClickable(onClickLabel = "Opens the link", onClick = { open(link) }, onLongClick = { menu = true })
-                .semantics(mergeDescendants = true) { contentDescription = "${preview.siteName}: ${preview.title}" }
-                .testTag("chat-link-preview"),
-        ) {
-            if (preview.kind != ChatLinkKind.Image || preview.imageUrl.isEmpty() || preview.title.isNotEmpty()) {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    if (preview.title.isNotEmpty()) {
-                        Text(
-                            preview.title,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodyLarge.copy(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary),
-                        )
-                    }
-                    if (preview.author.isNotEmpty()) {
-                        Text(
-                            preview.author,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodyMedium.copy(fontSize = 15.sp, color = colors.textSecondary),
-                        )
-                    }
-                    if (preview.detail.isNotEmpty() && (preview.author.isEmpty() || preview.imageUrl.isEmpty()) && !preview.isVideo) {
-                        Text(
-                            preview.detail,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp, color = colors.textSecondary),
-                        )
-                    }
-                    Row(
-                        Modifier.padding(top = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+        FmHoldArea {
+            Column(
+                Modifier
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth()
+                    .clip(cardShape)
+                    .background(cardFill())
+                    .border(1.dp, colors.border, cardShape)
+                    .combinedClickable(onClickLabel = "Opens the link", onClick = { open(link) }, onLongClick = { menu = true })
+                    .semantics(mergeDescendants = true) { contentDescription = "${preview.siteName}: ${preview.title}" }
+                    .testTag("chat-link-preview"),
+            ) {
+                if (preview.kind != ChatLinkKind.Image || preview.imageUrl.isEmpty() || preview.title.isNotEmpty()) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
-                        ChatLinkSiteBadge(preview.site)
-                        Text(
-                            preview.siteName,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodyMedium.copy(fontSize = 14.sp, color = colors.textSecondary),
-                        )
+                        if (preview.title.isNotEmpty()) {
+                            Text(
+                                preview.title,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodyLarge.copy(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary),
+                            )
+                        }
+                        if (preview.author.isNotEmpty()) {
+                            Text(
+                                preview.author,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodyMedium.copy(fontSize = 15.sp, color = colors.textSecondary),
+                            )
+                        }
+                        if (preview.detail.isNotEmpty() && (preview.author.isEmpty() || preview.imageUrl.isEmpty()) && !preview.isVideo) {
+                            Text(
+                                preview.detail,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp, color = colors.textSecondary),
+                            )
+                        }
+                        Row(
+                            Modifier.padding(top = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ChatLinkSiteBadge(preview.site)
+                            Text(
+                                preview.siteName,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodyMedium.copy(fontSize = 14.sp, color = colors.textSecondary),
+                            )
+                        }
                     }
                 }
+                if (preview.imageUrl.isNotEmpty()) PreviewImage(preview.imageUrl, preview.isVideo, service)
             }
-            if (preview.imageUrl.isNotEmpty()) PreviewImage(preview.imageUrl, preview.isVideo, service)
         }
         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             FmDropdownMenuItem("Open link", icon = "open_in_new", onClick = {

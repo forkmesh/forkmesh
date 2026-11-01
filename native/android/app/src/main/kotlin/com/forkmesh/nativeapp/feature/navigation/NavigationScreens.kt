@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.navigation
 
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.ui.kit.fmScrollEdge
@@ -577,39 +580,41 @@ fun CommandPaletteSheet(
         }
     }
     FmSoundOnShow()
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        modifier = Modifier.fmTapSounds(),
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.bgRaised,
-        shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
-    ) {
-        Column(Modifier.padding(horizontal = FmSpace.x3)) {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(FmRadius.md)).background(c.bgBase).padding(FmSpace.x3),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FmIcon("keyboard_command_key", size = 20.dp, tint = c.textTertiary)
-                Spacer(Modifier.width(FmSpace.x2))
-                Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) Text("Type a command, owner/repo#12 or @name", style = Fm.text.bodyLarge.copy(color = c.textTertiary))
-                    BasicTextField(
-                        value = query,
-                        onValueChange = FmSafeInput.typing { query = it },
-                        singleLine = true,
-                        textStyle = Fm.text.bodyLarge.copy(color = c.textPrimary),
-                        cursorBrush = SolidColor(c.accent),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(onGo = { sections.firstOrNull()?.entries?.firstOrNull()?.let { run(it.command) } }),
-                        modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Command" },
-                    )
+    DisableSelection {
+        ModalBottomSheet(
+            onDismissRequest = onClose,
+            modifier = Modifier.fmTapSounds(),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = c.bgRaised,
+            shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
+        ) {
+            Column(Modifier.padding(horizontal = FmSpace.x3)) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(FmRadius.md)).background(c.bgBase).padding(FmSpace.x3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FmIcon("keyboard_command_key", size = 20.dp, tint = c.textTertiary)
+                    Spacer(Modifier.width(FmSpace.x2))
+                    Box(Modifier.weight(1f)) {
+                        if (query.isEmpty()) Text("Type a command, owner/repo#12 or @name", style = Fm.text.bodyLarge.copy(color = c.textTertiary))
+                        BasicTextField(
+                            value = query,
+                            onValueChange = FmSafeInput.typing { query = it },
+                            singleLine = true,
+                            textStyle = Fm.text.bodyLarge.copy(color = c.textPrimary),
+                            cursorBrush = SolidColor(c.accent),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = { sections.firstOrNull()?.entries?.firstOrNull()?.let { run(it.command) } }),
+                            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Command" },
+                        )
+                    }
                 }
-            }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp), contentPadding = PaddingValues(bottom = FmSpace.x5)) {
-                sections.forEach { section ->
-                    item(key = "s:${section.id}") { FmSectionHeader(section.title) }
-                    items(section.entries, key = { "${section.id}:${it.id}" }) { entry ->
-                        ResultRow(entry.icon, entry.title, entry.subtitle) { run(entry.command) }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp), contentPadding = PaddingValues(bottom = FmSpace.x5)) {
+                    sections.forEach { section ->
+                        item(key = "s:${section.id}") { FmSectionHeader(section.title) }
+                        items(section.entries, key = { "${section.id}:${it.id}" }) { entry ->
+                            ResultRow(entry.icon, entry.title, entry.subtitle) { run(entry.command) }
+                        }
                     }
                 }
             }
@@ -720,13 +725,15 @@ fun YouHubPanel(open: Boolean, onClose: () -> Unit, scope: CoroutineScope) {
             containerColor = if (c.dark) c.bgOverlay else c.bgRaised,
             shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
         ) {
-            if (page == HubPage.WhatsNew) {
-                WhatsNewPage(onBack = { page = HubPage.Main })
-            } else {
-                DiagnosticsSendPage(onBack = { page = HubPage.Main }, onSent = {
-                    page = HubPage.Main
-                    onClose()
-                })
+            SelectionContainer {
+                if (page == HubPage.WhatsNew) {
+                    WhatsNewPage(onBack = { page = HubPage.Main })
+                } else {
+                    DiagnosticsSendPage(onBack = { page = HubPage.Main }, onSent = {
+                        page = HubPage.Main
+                        onClose()
+                    })
+                }
             }
         }
     }
@@ -876,14 +883,16 @@ fun ShellMenuSheet(
     scope: CoroutineScope,
 ) {
     FmSoundOnShow()
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        modifier = Modifier.fmTapSounds(),
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Fm.colors.bgRaised,
-        shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
-    ) {
-        ShellMenuGrid(main, hubBadges, onClose, scope, Modifier.fillMaxSize(), PaddingValues(start = FmSpace.x3, end = FmSpace.x3, bottom = FmSpace.x6))
+    DisableSelection {
+        ModalBottomSheet(
+            onDismissRequest = onClose,
+            modifier = Modifier.fmTapSounds(),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Fm.colors.bgRaised,
+            shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
+        ) {
+            ShellMenuGrid(main, hubBadges, onClose, scope, Modifier.fillMaxSize(), PaddingValues(start = FmSpace.x3, end = FmSpace.x3, bottom = FmSpace.x6))
+        }
     }
 }
 
@@ -1045,112 +1054,114 @@ internal fun ShellHomeTile(
     val iconSize = ShellHomeMetrics.iconSize
     val inset = (box - iconSize) / 2
     val corner = box * 0.3f
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .height(tileHeight)
-            .combinedClickable(onLongClick = onLongClick, onClick = onClick)
-            .semantics(mergeDescendants = true) {
-                role = Role.Button
-                contentDescription = listOfNotNull(
-                    title,
-                    if (spinning) "Loading" else null,
-                    if (badge > 0 && !spinning) "$badge ${if (running) "running" else "new"}" else null,
-                    if (desktopOffline) "desktop offline" else null,
-                ).joinToString(", ")
-            },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(Modifier.size(box), contentAlignment = Alignment.Center) {
-            if (heat > 0 && !tiled) {
-                val h = heat.toFloat()
-                Box(
-                    Modifier
-                        .size(box * 1.6f)
-                        .drawBehind {
-                            drawCircle(
-                                Brush.radialGradient(
-                                    listOf(c.accent.copy(alpha = 0.1f + 0.3f * h), c.accent.copy(alpha = 0f)),
-                                    center = center,
+    FmHoldArea(onLongClick != null) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .height(tileHeight)
+                .combinedClickable(onLongClick = onLongClick, onClick = onClick)
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = listOfNotNull(
+                        title,
+                        if (spinning) "Loading" else null,
+                        if (badge > 0 && !spinning) "$badge ${if (running) "running" else "new"}" else null,
+                        if (desktopOffline) "desktop offline" else null,
+                    ).joinToString(", ")
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(Modifier.size(box), contentAlignment = Alignment.Center) {
+                if (heat > 0 && !tiled) {
+                    val h = heat.toFloat()
+                    Box(
+                        Modifier
+                            .size(box * 1.6f)
+                            .drawBehind {
+                                drawCircle(
+                                    Brush.radialGradient(
+                                        listOf(c.accent.copy(alpha = 0.1f + 0.3f * h), c.accent.copy(alpha = 0f)),
+                                        center = center,
+                                        radius = box.toPx() * (0.5f + 0.25f * h),
+                                    ),
                                     radius = box.toPx() * (0.5f + 0.25f * h),
-                                ),
-                                radius = box.toPx() * (0.5f + 0.25f * h),
+                                )
+                            },
+                    )
+                }
+                if (tiled) {
+                    val raised = if (c.dark) c.bgElevated else c.bgRaised
+                    val shape = RoundedCornerShape(corner)
+                    val shadow = Color.Black.copy(alpha = if (c.dark) 0.5f else 0.1f)
+                    Box(
+                        Modifier
+                            .size(box)
+                            .shadow(3.dp, shape, clip = false, ambientColor = shadow, spotColor = shadow)
+                            .clip(shape)
+                            .background(Brush.verticalGradient(listOf(raised, c.bgOverlay)))
+                            .then(
+                                if (heat > 0) {
+                                    Modifier.background(Brush.radialGradient(listOf(c.accent.copy(alpha = 0.06f + 0.22f * heat.toFloat()), c.accent.copy(alpha = 0f))))
+                                } else {
+                                    Modifier
+                                },
                             )
-                        },
-                )
-            }
-            if (tiled) {
-                val raised = if (c.dark) c.bgElevated else c.bgRaised
-                val shape = RoundedCornerShape(corner)
-                val shadow = Color.Black.copy(alpha = if (c.dark) 0.5f else 0.1f)
+                            .border(0.75.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (c.dark) 0.16f else 0.9f), Color.White.copy(alpha = if (c.dark) 0.03f else 0.2f))), shape),
+                    )
+                }
                 Box(
                     Modifier
-                        .size(box)
-                        .shadow(3.dp, shape, clip = false, ambientColor = shadow, spotColor = shadow)
-                        .clip(shape)
-                        .background(Brush.verticalGradient(listOf(raised, c.bgOverlay)))
-                        .then(
-                            if (heat > 0) {
-                                Modifier.background(Brush.radialGradient(listOf(c.accent.copy(alpha = 0.06f + 0.22f * heat.toFloat()), c.accent.copy(alpha = 0f))))
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .border(0.75.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (c.dark) 0.16f else 0.9f), Color.White.copy(alpha = if (c.dark) 0.03f else 0.2f))), shape),
+                        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(Brush.verticalGradient(listOf(top, bottom)), blendMode = BlendMode.SrcIn)
+                        },
+                ) {
+                    FmIcon(
+                        icon,
+                        size = if (tiled) ShellHomeMetrics.glyph * 0.92f else ShellHomeMetrics.glyph,
+                        tint = top,
+                        outlined = iconStyle != ShellHomeIconStyle.filled,
+                    )
+                }
+                if (desktopOffline) {
+                    val d = if (tiled) corner * 0.3f else inset
+                    DesktopOfflineDot(Modifier.align(Alignment.TopStart).offset(x = d - 5.dp, y = box - d - 5.dp))
+                }
+                if (updated) {
+                    val d = if (tiled) corner * 0.3f else inset
+                    ShellHomeUpdateDot(Modifier.align(Alignment.TopStart).offset(x = box - d - 4.5.dp, y = box - d - 4.5.dp))
+                }
+                val anchor = Modifier.align(Alignment.TopStart).offset(
+                    x = box - if (tiled) minOf(12.dp, box * 0.28f) else inset + iconSize * 0.12f,
+                    y = -ShellHomeMetrics.anchorRise,
                 )
+                if (spinning) {
+                    ShellHomeCountSpinner(anchor)
+                } else if (badge > 0) {
+                    ShellHomeCountMark(
+                        if (badge > 9999) "${badge / 1000}k" else "%,d".format(badge),
+                        unread = !running,
+                        modifier = anchor,
+                    )
+                }
             }
-            Box(
-                Modifier
-                    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                    .drawWithContent {
-                        drawContent()
-                        drawRect(Brush.verticalGradient(listOf(top, bottom)), blendMode = BlendMode.SrcIn)
-                    },
-            ) {
-                FmIcon(
-                    icon,
-                    size = if (tiled) ShellHomeMetrics.glyph * 0.92f else ShellHomeMetrics.glyph,
-                    tint = top,
-                    outlined = iconStyle != ShellHomeIconStyle.filled,
-                )
-            }
-            if (desktopOffline) {
-                val d = if (tiled) corner * 0.3f else inset
-                DesktopOfflineDot(Modifier.align(Alignment.TopStart).offset(x = d - 5.dp, y = box - d - 5.dp))
-            }
-            if (updated) {
-                val d = if (tiled) corner * 0.3f else inset
-                ShellHomeUpdateDot(Modifier.align(Alignment.TopStart).offset(x = box - d - 4.5.dp, y = box - d - 4.5.dp))
-            }
-            val anchor = Modifier.align(Alignment.TopStart).offset(
-                x = box - if (tiled) minOf(12.dp, box * 0.28f) else inset + iconSize * 0.12f,
-                y = -ShellHomeMetrics.anchorRise,
+            Spacer(Modifier.height(ShellHomeMetrics.gap))
+            Text(
+                title,
+                style = TextStyle(
+                    fontFamily = FmType.ui,
+                    fontSize = 12.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (selected) c.accent else c.textSecondary,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 2.dp),
             )
-            if (spinning) {
-                ShellHomeCountSpinner(anchor)
-            } else if (badge > 0) {
-                ShellHomeCountMark(
-                    if (badge > 9999) "${badge / 1000}k" else "%,d".format(badge),
-                    unread = !running,
-                    modifier = anchor,
-                )
-            }
         }
-        Spacer(Modifier.height(ShellHomeMetrics.gap))
-        Text(
-            title,
-            style = TextStyle(
-                fontFamily = FmType.ui,
-                fontSize = 12.sp,
-                lineHeight = 14.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (selected) c.accent else c.textSecondary,
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 2.dp),
-        )
     }
 }
 

@@ -297,6 +297,10 @@
     const ready = typeof genie?.isOff === "function";
     toggle.setAttribute("aria-checked", ready && genie.isOff() ? "false" : "true");
     toggle.disabled = !ready;
+    const mascot = $("[data-genie-mascot]");
+    if (!mascot) return;
+    mascot.disabled = typeof genie?.setMascot !== "function";
+    if (!mascot.disabled) mascot.value = genie.mascot();
   }
 
   function saveGenieSetting(shown) {
@@ -308,6 +312,10 @@
 
   function watchGenieSetting() {
     window.addEventListener("forkmesh:genie", renderGenieSetting);
+    document.addEventListener("change", (event) => {
+      const mascot = event.target.closest?.("[data-genie-mascot]");
+      if (mascot) window.ForkMeshGenie?.setMascot?.(mascot.value);
+    });
     if (document.readyState !== "complete") {
       document.addEventListener("DOMContentLoaded", renderGenieSetting, { once: true });
     }
@@ -559,6 +567,7 @@
       "forkmesh.analyticsConsent.v1",
       "forkmesh.apiOrigin",
       "forkmesh.dashboard.theme",
+      "forkmesh.genie.mascot",
       "forkmesh.genie.off",
       "forkmesh.theme",
     ]);
@@ -1646,6 +1655,11 @@
     if (repoKey(repo).toLowerCase() === wanted || repoCanonicalKey(repo).toLowerCase() === wanted) {
       return true;
     }
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (name && repoLogicalOwners(repo).some((value) =>
+      value.kind === "organization" && `${value.owner.toLowerCase()}/${name}` === wanted)) {
+      return true;
+    }
     return Array.isArray(repo?._repoAliases) && repo._repoAliases.includes(wanted);
   }
 
@@ -1667,6 +1681,15 @@
     const currentName = String(repo?.name || "").trim().toLowerCase();
     if (owner === currentOwner && name === currentName) return null;
     return { owner, name, key: `${owner}/${name}` };
+  }
+
+  function repoForkParentRepository(parent) {
+    if (!parent?.key || typeof findRepository !== "function") return null;
+    try {
+      return findRepository(parent.key);
+    } catch (_) {
+      return null;
+    }
   }
 
   function repoMirrorOf(repo) {
@@ -1723,8 +1746,11 @@
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(repoDisplayName(parent.key))}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>${contribute}`;
+      const parentRepo = repoForkParentRepository(parent);
+      const parentLabel = parentRepo ? repoDisplayName(parentRepo) : repoDisplayName(parent.key);
+      const parentHref = repoLinkUrl(parentRepo || { owner: parent.owner, name: parent.name });
+      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(parentLabel)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(parentHref)}" class="${linkClass}">${escapeHtml(parentLabel)}</a></span>${contribute}`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();

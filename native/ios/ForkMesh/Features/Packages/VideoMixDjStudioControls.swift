@@ -70,6 +70,7 @@ struct DjRoundFace<Label: View>: View {
 struct DjPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .brightness(configuration.isPressed ? 0.12 : 0)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
     }
@@ -509,6 +510,7 @@ struct DjPitchStrip: View {
                         .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 3 * u, style: .continuous))
                 }
                 .buttonStyle(DjPressStyle())
+                .textSelection(.disabled)
                 .contextMenu {
                     Button("Detect BPM", systemImage: "waveform") { model.detectBpm(deck.side) }
                     Button("Clear BPM", systemImage: "xmark") { model.clearBpm(deck.side) }
@@ -571,6 +573,7 @@ struct DjHoldButton: View {
             .foregroundStyle(held ? DjTheme.active : DjTheme.muted)
             .frame(width: 26 * u, height: 26 * u)
             .contentShape(Rectangle())
+            .textSelection(.disabled)
             .gesture(DragGesture(minimumDistance: 0).updating($held) { _, state, _ in state = true })
             .onChange(of: held) { _, now in changed(now) }
             .accessibilityElement()
@@ -821,6 +824,7 @@ struct DjAutomixButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(DjPressStyle())
+        .textSelection(.disabled)
         .contextMenu {
             Button(model.automixing ? "Stop the Fade" : "Mix to the Other Deck Now", systemImage: "arrow.left.arrow.right") { model.mixNow() }
             Menu {

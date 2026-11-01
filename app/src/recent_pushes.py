@@ -83,10 +83,12 @@ async def _target(env, owner, repo, public_owner, record):
         parent_record = None
         read_only = False
         try:
+            parent_node = await _org_repo_node(
+                env, parent_owner, parent_repo) or parent_owner
             parent_record = await _repo_catalog_record(
-                env, parent_owner, parent_repo)
+                env, parent_node, parent_repo)
             fields = await _read_only_mirror_fields(
-                env, parent_owner, parent_repo, record=parent_record)
+                env, parent_node, parent_repo, record=parent_record)
             read_only = bool((fields or {}).get("readOnly"))
         except Exception:
             parent_record = None

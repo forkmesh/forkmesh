@@ -146,6 +146,7 @@ struct StrataRulesView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             if let target {
                 Button {

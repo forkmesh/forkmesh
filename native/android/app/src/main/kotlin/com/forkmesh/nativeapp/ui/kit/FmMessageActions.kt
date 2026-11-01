@@ -43,18 +43,20 @@ fun FmMessageActions(
     val scope = rememberCoroutineScope()
     val status = rememberFmStatus()
     Column(modifier) {
-        Box(
-            Modifier.combinedClickable(
-                enabled = text.isNotEmpty(),
-                onClick = {},
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    scope.launch { messageTextActionsFlow(messenger, context, text, status) }
-                },
-            ),
-            contentAlignment = contentAlignment,
-        ) {
-            content()
+        FmHoldArea {
+            Box(
+                Modifier.combinedClickable(
+                    enabled = text.isNotEmpty(),
+                    onClick = {},
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        scope.launch { messageTextActionsFlow(messenger, context, text, status) }
+                    },
+                ),
+                contentAlignment = contentAlignment,
+            ) {
+                content()
+            }
         }
         FmInlineStatus(status, Modifier.padding(top = FmSpace.x1))
     }

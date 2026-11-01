@@ -231,6 +231,7 @@ struct WorkflowEditorScreen: View {
                 : status == "running" ? AnyView(FmCircularProgressIndicator(size: 18, strokeWidth: 2))
                 : AnyView(FmIcon(WorkflowLook.statusIcon(status), size: 18, color: statusColor(status))),
             onTap: { editingStep = node.id })
+            .textSelection(.disabled)
             .contextMenu {
                 Button("Add step after") {
                     adding = WorkflowAddTarget(after: node.id, outputs: store.catalog.outputs(node.type))
