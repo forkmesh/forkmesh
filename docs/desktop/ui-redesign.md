@@ -76,6 +76,16 @@ bundled Geist and Geist Mono (`desktop/resources/fonts`, SIL OFL, registered by
 `Theme::ensureBundledFonts()`). The base `QWidget` rule must set no font family
 (a family there beats every monospace `setFont`).
 
+**Colour emoji.** `main.cpp` puts Noto Color Emoji, Apple Color Emoji and Segoe
+UI Emoji after the UI face in the application font's family list. A platform
+theme (GNOME, KDE, macOS, Windows) also gives Qt one font per widget class
+(`QListView`, `QLabel`, `QPushButton`, menus…), each with a single family, and
+Qt refills that table on every `setStyleSheet`. Those widgets lost both Geist
+and the emoji fallback, so fontconfig drew emoji in monochrome Symbola (the
+sessions list showed `[50%] … 🔄` as a black outline). `applyTheme()` calls
+`Theme::adoptInterfaceFamiliesForWidgetClasses()` after the sheet, which keeps
+each class font's size and swaps in the application's families.
+
 **Shape and space.** Radii 4, 6, 8, 12, 16 and full; spacing 4–32; control
 heights 28, 32, 36. Buttons: primary is accent with white text, secondary a
 raised neutral, ghost borderless with a hover fill, danger/success coloured text

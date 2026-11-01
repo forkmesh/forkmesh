@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Desktop", "text": "Emoji in the sessions list, buttons, labels and menus draw in full colour on Linux instead of black outlines, and those widgets now use the interface font."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "The docs have new core pages on architecture, encryption, mirroring, self-hosting and censorship resilience, and every page is shorter and links to them."},
   {"date": "2026-11-01", "area": "Agents", "text": "The agent prompt, Home and Sessions composers have one + menu to add files or photos (Ctrl+U), add a folder, open slash commands, switch connectors on or off and add plugins."},
   {"date": "2026-11-01", "area": "iPhone", "text": "Notices on iPhone and Android close themselves after a few seconds, with a ring around the close button counting down, and tapping a notice or alert message opens it in the composer instead of showing copy and send icons."},
