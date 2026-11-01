@@ -74,6 +74,7 @@ QString uiFontFamily();
 QString monoFontFamily();
 QFont interfaceFont(Design design, const QFont &classicFont);
 QFont monospaceFont(const QFont &classicFont);
+void adoptInterfaceFamiliesForWidgetClasses();
 
 QMap<QString, QString> nextPalette(bool dark);
 QString expandTokens(const QString &text, Design design, bool dark);
