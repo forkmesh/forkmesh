@@ -264,6 +264,15 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   package parallelism follows it. That datagram test now checks each
   connection against its own starting window: without the exemption the
   window falls to half or less, and with it the window never shrinks.
+- **Loopback calls in tests need room for a throttled sandbox.** Run 9289
+  (2026-11-01, main at a2c330f1) failed the same way: the merge executor's
+  daemon wake, a loopback POST with a 3 s client timeout, never reached the
+  `httptest` server in `TestExecutorRegisterRecordsGenerationAndWakesDaemon`
+  (`wakes=0`, test time 3.11 s). The wake stays best effort at 3 s in
+  production; `PullMutationExecutor.DaemonWakeTimeout` overrides it and the
+  test sets 30 s, so a throttled burst delays the test instead of failing it.
+  The full log of a desktop-run job is in
+  `~/projects/<project>/data/actions/runs/<repository>/<run>/log.txt`.
 - **A timeout on a busy desktop gets one retry.** The CI step shares the host
   with agent sessions, builds and auto-deploy tests, at `CPUWeight=20`. Even
   with `GOMAXPROCS` capped, one in-process loopback exchange sometimes waits
