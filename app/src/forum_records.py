@@ -326,7 +326,7 @@ class Forum:
     def __init__(self, read, event, ctx):
         self.read = read
         self.event = event
-        self.ctx = ctx
+        self.context = ctx
         self.changes = {}
         self.result = {}
 
@@ -341,7 +341,7 @@ class Forum:
     async def forum(self):
         forum = await self.get("forum.json")
         if not isinstance(forum, dict):
-            forum = new_forum(self.ctx.get("repoTitle") or "Forum")
+            forum = new_forum(self.context.get("repoTitle") or "Forum")
             self.put("forum.json", forum)
             self.put("categories.json", [dict(DEFAULT_CATEGORY)])
         return forum
@@ -354,7 +354,7 @@ class Forum:
     async def silenced(self, account):
         moderation = await self.get("moderation.json") or {}
         entry = (moderation.get("silenced") or {}).get(account)
-        return bool(entry) and int(entry.get("until") or 0) > self.ctx["now"]
+        return bool(entry) and int(entry.get("until") or 0) > self.context["now"]
 
     async def topic_files(self, tid):
         base = "topics/%s/" % tid
@@ -421,20 +421,20 @@ class Forum:
         self.put("forum.json", forum)
 
     def post_record(self, key, body, reply_to=""):
-        now = iso(self.ctx["now"])
-        return {"key": key, "post_number": 0, "post_type": 1, "username": self.ctx["account"],
+        now = iso(self.context["now"])
+        return {"key": key, "post_number": 0, "post_type": 1, "username": self.context["account"],
                 "name": "", "author": self.event["author"], "created_at": now, "updated_at": now,
                 "reply_to": reply_to, "format": "markdown", "raw": body, "origin": "forkmesh",
                 "event": self.event["id"]}
 
     def poster(self):
-        return {"username": self.ctx["account"], "name": "", "description": "Poster"}
+        return {"username": self.context["account"], "name": "", "description": "Poster"}
 
     async def apply(self):
         kind = self.event["type"]
-        if kind in OPERATOR_TYPES and not self.ctx.get("moderator"):
+        if kind in OPERATOR_TYPES and not self.context.get("moderator"):
             raise RecordError("not_moderator", "Only the forum's operators can do that.", 403)
-        if kind in AUTHOR_TYPES and not self.ctx.get("moderator") and await self.silenced(self.ctx["account"]):
+        if kind in AUTHOR_TYPES and not self.context.get("moderator") and await self.silenced(self.context["account"]):
             raise RecordError("silenced", "An operator has silenced you in this forum for now.", 403)
         handler = {
             "topic": self.create_topic, "post": self.create_post, "edit": self.edit_post,
@@ -447,7 +447,7 @@ class Forum:
         if await self.get(path) is not None:
             raise RecordError("duplicate", "This forum event was already saved.", 409)
         await handler()
-        self.put(path, dict(self.event, authorName=self.ctx["account"], receivedAt=self.ctx["now"]))
+        self.put(path, dict(self.event, authorName=self.context["account"], receivedAt=self.context["now"]))
         return self.changes, self.result
 
     async def create_topic(self):
@@ -463,13 +463,13 @@ class Forum:
         tid = "n%d" % number
         native["next"] = number + 1
         self.put("native.json", native)
-        now = iso(self.ctx["now"])
+        now = iso(self.context["now"])
         row = {"id": tid, "title": content["title"], "slug": slug(content["title"]), "category_id": category,
                "tags": list(content.get("tags") or []), "created_at": now, "bumped_at": now,
                "last_posted_at": now, "posts_count": 1, "reply_count": 0, "views": 0, "like_count": 0,
                "pinned": False, "pinned_globally": False, "closed": False, "archived": False, "visible": True,
                "excerpt": content["body"][:300], "posters": [dict(self.poster(), description="Original Poster")],
-               "last_poster_username": self.ctx["account"], "origin": "forkmesh", "author": self.event["author"]}
+               "last_poster_username": self.context["account"], "origin": "forkmesh", "author": self.event["author"]}
         base = "topics/%s/" % tid
         self.put(base + "topic.json", dict(row, origin="forkmesh", source="", chunks=1, uploads={}, posts=[],
                                            highest_post_number=0, participant_count=1, link_count=0))
@@ -482,7 +482,7 @@ class Forum:
         tid = self.event["topic"]
         base, header, local, state = await self.topic_files(tid)
         row = await self.row(tid, header, state)
-        if (row.get("closed") or row.get("archived")) and not self.ctx.get("moderator"):
+        if (row.get("closed") or row.get("archived")) and not self.context.get("moderator"):
             raise RecordError("topic_closed", "This topic is closed for new replies.", 403)
         posts = list(local.get("posts") or [])
         if len(posts) >= MAX_LOCAL_POSTS:
@@ -491,26 +491,26 @@ class Forum:
         key = "l%d" % number
         posts.append(self.post_record(key, self.event["content"]["body"], self.event["content"].get("replyTo", "")))
         self.put(base + "local.json", {"posts": posts, "next": number + 1})
-        now = iso(self.ctx["now"])
+        now = iso(self.context["now"])
         if tid.startswith("n"):
             row.update(posts_count=int(row.get("posts_count") or 0) + 1,
                        reply_count=int(row.get("reply_count") or 0) + 1, bumped_at=now,
-                       last_posted_at=now, last_poster_username=self.ctx["account"])
+                       last_posted_at=now, last_poster_username=self.context["account"])
             posters = list(row.get("posters") or [])
-            if all(item.get("username") != self.ctx["account"] for item in posters):
+            if all(item.get("username") != self.context["account"] for item in posters):
                 posters.append(self.poster())
             row["posters"] = posters[:5]
         else:
             state = dict(state)
             state["local_posts"] = int(state.get("local_posts") or 0) + 1
             state["bumped_at"] = now
-            state["last_poster_username"] = self.ctx["account"]
+            state["last_poster_username"] = self.context["account"]
             posters = list(state.get("posters") or [])
-            if all(item.get("username") != self.ctx["account"] for item in posters):
+            if all(item.get("username") != self.context["account"] for item in posters):
                 posters.append(self.poster())
             state["posters"] = posters[:5]
             self.put(base + "state.json", state)
-            row.update(bumped_at=now, last_posted_at=now, last_poster_username=self.ctx["account"],
+            row.update(bumped_at=now, last_posted_at=now, last_poster_username=self.context["account"],
                        posts_count=int(row.get("posts_count") or 0) + 1,
                        reply_count=int(row.get("reply_count") or 0) + 1)
         await self.save_row(tid, row)
@@ -526,7 +526,7 @@ class Forum:
         raise RecordError("post_not_found", "That post is not in the topic.", 404)
 
     def may_change(self, post):
-        return self.ctx.get("moderator") or post.get("author") == self.event["author"]
+        return self.context.get("moderator") or post.get("author") == self.event["author"]
 
     async def edit_post(self):
         tid, key = self.event["topic"], self.event["post"]
@@ -537,7 +537,7 @@ class Forum:
             raise RecordError("not_yours", "You can only edit your own posts.", 403)
         content = self.event["content"]
         if "body" in content:
-            post.update(raw=content["body"], updated_at=iso(self.ctx["now"]))
+            post.update(raw=content["body"], updated_at=iso(self.context["now"]))
         self.put(base + "local.json", dict(local, posts=posts))
         if "title" in content:
             if not tid.startswith("n") or key != "l1":
@@ -554,7 +554,7 @@ class Forum:
             base, header, local, state, posts, post = await self.local_post(tid, key)
             if not self.may_change(post):
                 raise RecordError("not_yours", "You can only delete your own posts.", 403)
-            post.update(deleted=True, raw="", updated_at=iso(self.ctx["now"]), deleted_by=self.ctx["account"])
+            post.update(deleted=True, raw="", updated_at=iso(self.context["now"]), deleted_by=self.context["account"])
             self.put(base + "local.json", dict(local, posts=posts))
             if tid.startswith("n") and key == "l1":
                 row = await self.row(tid, header, state)
@@ -562,7 +562,7 @@ class Forum:
                 await self.save_row(tid, row, remove=True)
                 await self.bump_counts(topics=-1)
         else:
-            if not self.ctx.get("moderator"):
+            if not self.context.get("moderator"):
                 raise RecordError("not_moderator", "Only the forum's operators can remove copied posts.", 403)
             base, header, local, state = await self.topic_files(tid)
             deleted = sorted(set(state.get("deleted") or []) | {key})
@@ -574,12 +574,12 @@ class Forum:
         base, header, local, state = await self.topic_files(tid)
         if key.startswith("l"):
             _base, _h, _l, _s, _posts, post = await self.local_post(tid, key)
-            if post.get("author") == self.event["author"] or post.get("username") == self.ctx["account"]:
+            if post.get("author") == self.event["author"] or post.get("username") == self.context["account"]:
                 raise RecordError("own_post", "You cannot like your own post.", 403)
         likes = dict(await self.get(base + "likes.json") or {})
-        names = [name for name in likes.get(key) or [] if name != self.ctx["account"]]
+        names = [name for name in likes.get(key) or [] if name != self.context["account"]]
         if self.event["type"] == "like":
-            names.append(self.ctx["account"])
+            names.append(self.context["account"])
         if names:
             likes[key] = sorted(names)[:MAX_LIKERS]
         else:
@@ -695,8 +695,8 @@ class Forum:
         moderation = dict(await self.get("moderation.json") or {})
         silenced = dict(moderation.get("silenced") or {})
         if self.event["type"] == "silence":
-            silenced[content["account"]] = {"until": self.ctx["now"] + content["days"] * 86_400_000,
-                                            "by": self.ctx["account"]}
+            silenced[content["account"]] = {"until": self.context["now"] + content["days"] * 86_400_000,
+                                            "by": self.context["account"]}
         else:
             silenced.pop(content["account"], None)
         moderation["silenced"] = silenced
