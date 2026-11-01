@@ -112,9 +112,7 @@ struct ReposScreen: View {
                 await reloadNetwork()
                 await desktop.load()
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                header
-            }
+            .modifier(ReposPinnedHeader(background: fm.listSurface) { header })
             .onTabReselect(.code) {
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(TabTopAnchor.id, anchor: .top) }
             }
@@ -387,5 +385,22 @@ struct ReposErrorView: View {
             }
         }
         .padding(FmSpace.x4)
+    }
+}
+
+private struct ReposPinnedHeader<Header: View>: ViewModifier {
+    let background: Color
+    @ViewBuilder let header: () -> Header
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .safeAreaBar(edge: .top, spacing: 0, content: header)
+                .scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0) {
+                header().background(background)
+            }
+        }
     }
 }
