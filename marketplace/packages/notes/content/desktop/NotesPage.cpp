@@ -7,6 +7,8 @@
 #include "OcticonIcons.h"
 #include "Theme.h"
 #include "NoteCommentsPanel.h"
+#include "NoteDocument.h"
+#include "NoteDocumentRender.h"
 #include "NotePageDialogs.h"
 #include "NotePageView.h"
 #include "NotePages.h"
@@ -54,6 +56,7 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSaveFile>
 #include <QSizePolicy>
 #include <QSplitter>
@@ -76,6 +79,37 @@
 using namespace forkmesh::ui;
 
 namespace forkmesh::notes {
+
+class NotePreviewResizeWatch : public QObject
+{
+public:
+    NotePreviewResizeWatch(std::function<void()> changed, QObject *parent)
+        : QObject(parent), m_changed(std::move(changed))
+    {
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Resize) {
+            const auto *resize = static_cast<QResizeEvent *>(event);
+            if (resize->oldSize().width() != resize->size().width())
+                m_changed();
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void()> m_changed;
+};
+
+struct NotePreviewState {
+    QString token = noteObjectToken();
+    QList<NotePart> objects;
+    NoteRenderCache cache;
+    QPointer<QTimer> resizeTimer;
+    QPointer<QObject> resizeWatch;
+};
 
 namespace {
 constexpr int kNoteIdRole = Qt::UserRole;
@@ -598,6 +632,12 @@ NotesPage::~NotesPage()
 {
     m_presencePaused = true;
     leaveNotePresence();
+    if (m_notePreview) {
+        delete m_notePreview->resizeWatch.data();
+        delete m_notePreview->resizeTimer.data();
+    }
+    if (m_noteEditor)
+        m_noteEditor->setPreviewHooks({}, {});
 }
 
 void NotesPage::showEvent(QShowEvent *event)
@@ -963,6 +1003,8 @@ void NotesPage::buildNotesSection()
     moreMenu->addSeparator();
     moreMenu->addAction(QStringLiteral("Export Markdown…"), this,
                         &NotesPage::exportNote);
+    moreMenu->addAction(QStringLiteral("Export PDF…"), this,
+                        &NotesPage::exportPdf);
     connect(moreMenu, &QMenu::aboutToShow, this,
             [this, copyLink, copyPublic, openPublic] {
         const bool cloud = !selectedNoteCloudId().isEmpty();
@@ -1214,6 +1256,7 @@ void NotesPage::buildNotesSection()
     m_noteEditor->setPlaceholderText(QStringLiteral(
         "Write Markdown. Preview it with the Preview tab."));
     editorLayout->addWidget(m_noteEditor, 1);
+    setupNotePreview();
     m_noteLinkedItems = new QLabel;
     m_noteLinkedItems->setObjectName(QStringLiteral("mutedLabel"));
     m_noteLinkedItems->setTextFormat(Qt::RichText);
@@ -2253,6 +2296,157 @@ void NotesPage::exportNote()
                          .arg(QDir::toNativeSeparators(path)),
                      true, QString(), forkmesh::kLocalOperationNoticeKind);
         return;
+    }
+    flashMessage(QStringLiteral("Exported to %1")
+                     .arg(QDir::toNativeSeparators(path)),
+                 false, QString(), forkmesh::kLocalOperationNoticeKind);
+}
+
+void NotesPage::setupNotePreview()
+{
+    m_notePreview = std::make_unique<NotePreviewState>();
+    auto *preview = m_noteEditor->findChild<QTextBrowser *>(
+        QStringLiteral("markdownPreview"));
+    if (!preview)
+        return;
+    NotePreviewState *state = m_notePreview.get();
+    auto finish = [state](QTextBrowser *view) {
+        NotePreviewStyle style;
+        style.columnWidth = view->viewport()->width() -
+                            2 * view->document()->documentMargin() - 8;
+        style.devicePixelRatio = view->devicePixelRatioF();
+        style.muted = Theme::color(Theme::Role::FgMuted);
+        style.font = view->font();
+        applyNotePreviewObjects(view->document(), state->token, state->objects,
+                                style, state->cache);
+    };
+    auto *timer = new QTimer(preview);
+    timer->setSingleShot(true);
+    timer->setInterval(80);
+    MarkdownEditor *editor = m_noteEditor;
+    connect(timer, &QTimer::timeout, editor, [editor] { editor->refreshPreview(); });
+    state->resizeTimer = timer;
+    auto *watch = new NotePreviewResizeWatch([timer] { timer->start(); }, preview);
+    preview->viewport()->installEventFilter(watch);
+    state->resizeWatch = watch;
+    m_noteEditor->setPreviewHooks(
+        [state](const QString &markdown) {
+            PlaceholderMarkdown out = withObjectPlaceholders(markdown, state->token);
+            state->objects = out.objects;
+            return out.markdown;
+        },
+        finish);
+}
+
+void NotesPage::exportPdf()
+{
+    if (m_selectedNote.isEmpty() || !m_noteTitle || !m_noteEditor) {
+        flashMessage(QStringLiteral("Select a note to export."), true,
+                     QString(), forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    const PageLayout current = notePageLayout(m_noteEditor->markdown());
+    const bool canEdit = noteCanEdit(selectedNoteRole());
+
+    QDialog dialog(this);
+    dialog.setObjectName(QStringLiteral("notePdfDialog"));
+    dialog.setWindowTitle(QStringLiteral("Export PDF"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *form = new QFormLayout;
+    auto *paper = new QComboBox;
+    paper->setObjectName(QStringLiteral("notePdfPaper"));
+    for (const PaperSize size : {PaperSize::A4, PaperSize::Letter, PaperSize::Legal})
+        paper->addItem(paperSizeLabel(size), int(size));
+    paper->setCurrentIndex(paper->findData(int(current.size)));
+    form->addRow(QStringLiteral("Paper"), paper);
+    auto *orientation = new QComboBox;
+    orientation->setObjectName(QStringLiteral("notePdfOrientation"));
+    for (const PaperOrientation value :
+         {PaperOrientation::Portrait, PaperOrientation::Landscape})
+        orientation->addItem(orientationLabel(value), int(value));
+    orientation->setCurrentIndex(orientation->findData(int(current.orientation)));
+    form->addRow(QStringLiteral("Orientation"), orientation);
+    auto *margins = new QComboBox;
+    margins->setObjectName(QStringLiteral("notePdfMargins"));
+    for (const PageMargins value :
+         {PageMargins::Narrow, PageMargins::Normal, PageMargins::Wide})
+        margins->addItem(marginsLabel(value), int(value));
+    margins->setCurrentIndex(margins->findData(int(current.margins)));
+    form->addRow(QStringLiteral("Margins"), margins);
+    layout->addLayout(form);
+    auto *cover = new QCheckBox(QStringLiteral("Cover page"));
+    cover->setObjectName(QStringLiteral("notePdfCover"));
+    cover->setChecked(current.cover);
+    layout->addWidget(cover);
+    auto *contents = new QCheckBox(QStringLiteral("Contents"));
+    contents->setObjectName(QStringLiteral("notePdfContents"));
+    contents->setChecked(current.contents);
+    layout->addWidget(contents);
+    auto *numbers = new QCheckBox(QStringLiteral("Page numbers"));
+    numbers->setObjectName(QStringLiteral("notePdfNumbers"));
+    numbers->setChecked(current.numbers);
+    layout->addWidget(numbers);
+    auto *save = new QCheckBox(QStringLiteral("Save as this note's page layout"));
+    save->setObjectName(QStringLiteral("notePdfSaveLayout"));
+    save->setChecked(canEdit);
+    save->setVisible(canEdit);
+    layout->addWidget(save);
+    auto *buttons = new QDialogButtonBox;
+    QPushButton *exportButton =
+        buttons->addButton(QStringLiteral("Export PDF"), QDialogButtonBox::AcceptRole);
+    exportButton->setObjectName(QStringLiteral("primaryButton"));
+    exportButton->setDefault(true);
+    buttons->addButton(QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    PageLayout chosen;
+    chosen.size = PaperSize(paper->currentData().toInt());
+    chosen.orientation = PaperOrientation(orientation->currentData().toInt());
+    chosen.margins = PageMargins(margins->currentData().toInt());
+    chosen.cover = cover->isChecked();
+    chosen.contents = contents->isChecked();
+    chosen.numbers = numbers->isChecked();
+    const bool saveLayout = canEdit && save->isChecked();
+
+    const QString title = m_noteTitle->text();
+    const QString folder = QStandardPaths::writableLocation(
+        QStandardPaths::DocumentsLocation);
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Export note as PDF"),
+        QDir(folder).filePath(pdfFileName(title)),
+        QStringLiteral("PDF (*.pdf);;All files (*)"));
+    if (path.isEmpty())
+        return;
+
+    NotePdfInput input;
+    input.title = title;
+    input.emoji = m_selectedNote.value(QStringLiteral("emoji")).toString();
+    input.markdown = m_noteEditor->markdown();
+    input.layout = chosen;
+    input.date = QDate::currentDate();
+    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+    const NotePdfResult result = writeNotePdfFile(path, input);
+    QGuiApplication::restoreOverrideCursor();
+    if (!result.ok) {
+        flashMessage(QStringLiteral("Could not write %1")
+                         .arg(QDir::toNativeSeparators(path)),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    if (saveLayout) {
+        const QString text = m_noteEditor->markdown();
+        const QString updated = withLayout(text, chosen);
+        if (updated != text) {
+            QTextCursor cursor(m_noteEditor->sourceEdit()->document());
+            cursor.beginEditBlock();
+            cursor.select(QTextCursor::Document);
+            cursor.insertText(updated);
+            cursor.endEditBlock();
+        }
     }
     flashMessage(QStringLiteral("Exported to %1")
                      .arg(QDir::toNativeSeparators(path)),

@@ -3662,6 +3662,7 @@ public:
     }
     QMenu *testAgentTaskLinkMenu(int sessionId);
     QString testAgentViewTaskButtonState(int sessionId);
+    QString testAgentWorkflowButtonState(int sessionId);
     bool testAgentDetailTitleWraps() const;
     QString testRenderAgentDetailTitle(const QString &text);
     QString testAgentStatusCellBadges(int sessionId, const AgentDiffStat &stat) const;
@@ -7057,6 +7058,7 @@ private:
     bool agentSessionHasLiveTransport(int sessionId) const;
     bool handOffAgentSessionToProvider(int sessionId, const QString &provider);
     void applyComposerSelectionToAgentSession(int sessionId);
+    void applyComposerModeToTargetSession();
     void sendPromptToSelectedAgent(const QString &prompt);
 
     void sendPromptToAgentSession(int sessionId, const QString &prompt);
@@ -9904,6 +9906,15 @@ private:
     // Images and video both; the queue and everything downstream of it takes
     // either (see promptAttachmentLine).
     void attachQuickAddMedia();
+    void openComposerPlusMenu(QWidget *anchor, QPlainTextEdit *input);
+    void installComposerPlusShortcut(QPlainTextEdit *input);
+    QPlainTextEdit *composerTarget() const;
+    void addFilesToComposer(QPlainTextEdit *input);
+    void addFolderToComposer(QPlainTextEdit *input);
+    void addPathsToComposer(QPlainTextEdit *input, const QStringList &paths);
+    QStringList composerMentionRoots() const;
+    void populateComposerConnectorsMenu(QMenu *menu);
+    void openMcpSettings();
     // Plays a queued video attachment, in-app where this build has a decoder.
     void showAttachedVideoDetail(const QString &path);
     bool tryPasteImageIntoQuickAdd();
@@ -9944,8 +9955,8 @@ private:
     bool navigateQuickAddHistory(int direction);
     // Write the composer's pending draft to disk now (no-op when unchanged).
     void saveQuickAddDraft();
-    // Footer slash-actions menu: the "/" button left of the Agent
-    // checkbox opens a filterable popup mirroring the Claude Code extension's
+    // Footer slash-actions menu: "Slash commands" in the composer's plus menu
+    // (or "/" typed into an empty prompt) opens a filterable popup mirroring the Claude Code extension's
     // actions menu (Context/Model sections plus the CLI's own slash commands,
     // pulled live from `claude` via a control-protocol initialize probe).
     void openQuickAddSlashActions();
@@ -12617,14 +12628,14 @@ private:
     QPushButton *m_quickAddSendToAgentButton = nullptr;
     QPushButton *m_quickAddSendToChannelButton = nullptr;
     QPushButton *m_quickAddSendButton = nullptr;
-    QPushButton *m_quickAddImageButton = nullptr;
+    QPushButton *m_quickAddPlusButton = nullptr;
+    QPointer<QPlainTextEdit> m_composerTarget;
+    QPointer<QWidget> m_composerMenuAnchor;
     QStringList m_quickAddImages;               // image paths queued for next send
     QWidget *m_quickAddAttachStrip = nullptr;   // chips w/ thumbnail + "x" remove
-    // Slash-actions menu: the "/" button left of the Agent checkbox
-    // and its popup — a filter box over Context/Model action rows plus the
+    // Slash-actions popup — a filter box over Context/Model action rows plus the
     // Claude Code CLI's slash commands. The command list is probed live from
     // `claude` (control-protocol initialize) the first time the popup opens.
-    QPushButton *m_quickAddSlashButton = nullptr;
     QFrame *m_slashActionsPopup = nullptr;
     QLineEdit *m_slashActionsFilter = nullptr;
     QScrollArea *m_slashActionsScroll = nullptr;
@@ -14473,8 +14484,8 @@ private:
     QToolButton *m_agentStatusPill = nullptr; // compact model + outcome control
     QLabel *m_agentMeta = nullptr;
     QFrame *m_agentMetaPopup = nullptr;
-    QLabel *m_agentWorkflowLink = nullptr;
-    QString m_agentWorkflowLinkKey;
+    QPushButton *m_agentWorkflowButton = nullptr;
+    QString m_agentWorkflowButtonKey;
     QPushButton *m_agentPopOutButton = nullptr;
     QLabel *m_agentNetPanel = nullptr;   // live API-traffic graphic
     QPushButton *m_agentViewPrButton = nullptr;
@@ -15481,7 +15492,7 @@ private:
                               const QString &titledBy);
     void renameAgentSessionInteractive(int sessionId);
     QString claudeInitialSessionTitle(const AgentSession &session) const;
-    void syncClaudePermissionMode(int sessionId);
+    void syncClaudePermissionMode(int sessionId, const QString &cliModeBefore);
     void showClaudeElicitation(int sessionId, const QJsonObject &event);
     void answerClaudeElicitation(int sessionId, const QString &key,
                                  const QString &action, const QJsonObject &content);

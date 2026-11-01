@@ -230,9 +230,8 @@ struct FmEmptyState: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, FmSpace.x2)
             }
-            FmMessageTools(message.map { "\(title)\n\($0)" } ?? title)
-                .padding(.top, FmSpace.x2)
         }
+        .fmMessageTools(message.map { "\(title)\n\($0)" } ?? title)
         .padding(.horizontal, FmSpace.x5)
         .padding(.vertical, FmSpace.x7)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -490,7 +489,7 @@ struct FmConnectionBanner: View {
             Text("You are offline. Messages and live updates are paused.")
                 .fmText(.bodyMedium, weight: FmType.medium)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools("You are offline. Messages and live updates are paused.")
+                .fmMessageTools("You are offline. Messages and live updates are paused.")
             if let onRetry = onRetry {
                 FmTextButton("Retry", onPressed: onRetry)
             }

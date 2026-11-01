@@ -49,8 +49,7 @@ struct TeamUnavailableView: View {
             Label(title, systemImage: "person.3")
         } description: {
             Text("Sign in, then pair your desktop on the same network.")
-        } actions: {
-            FmMessageTools("\(title). Sign in, then pair your desktop on the same network.")
+                .fmMessageTools("\(title). Sign in, then pair your desktop on the same network.")
         }
     }
 }

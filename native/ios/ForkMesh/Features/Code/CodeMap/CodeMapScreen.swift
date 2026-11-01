@@ -48,8 +48,7 @@ struct CodeMapScreen: View {
                     Label("No code map", systemImage: "square.grid.3x3")
                 } description: {
                     Text(error)
-                } actions: {
-                    FmMessageTools(error)
+                        .fmMessageTools(error)
                 }
             } else {
                 ProgressView("Measuring the repository…").frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -34,6 +34,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 const QStringList kImageSuffixes = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"};
@@ -354,9 +355,25 @@ void MarkdownEditor::updatePreview()
         previewMarkdown.replace(m_attachmentPlaceholders.at(i),
                                 QUrl::fromLocalFile(m_attachments.at(i)).toString());
     }
+    if (m_previewSource)
+        previewMarkdown = m_previewSource(previewMarkdown);
     m_preview->setMarkdown(MarkdownRender::forPreview(previewMarkdown));
     if (m_stack && m_stack->currentWidget() == m_preview)
         forkmesh::ui::styleReadmeDocument(m_preview);
+    if (m_previewFinish)
+        m_previewFinish(m_preview);
+}
+
+void MarkdownEditor::setPreviewHooks(PreviewSource source, PreviewFinish finish)
+{
+    m_previewSource = std::move(source);
+    m_previewFinish = std::move(finish);
+}
+
+void MarkdownEditor::refreshPreview()
+{
+    if (m_previewFinish)
+        m_previewFinish(m_preview);
 }
 
 void MarkdownEditor::wrapSelection(const QString &left, const QString &right)

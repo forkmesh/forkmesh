@@ -66,7 +66,7 @@ struct DiffImagePreview: View {
                 Text(message)
                     .fmText(.bodySmall, color: fm.textSecondary)
                     .multilineTextAlignment(.center)
-                FmMessageTools("\(message) (\(path))")
+                    .fmMessageTools("\(message) (\(path))")
             }
             .padding(FmSpace.x2)
         case .loaded(let data):
@@ -83,7 +83,7 @@ struct DiffImagePreview: View {
                     Text(DiffImages.unreadable)
                         .fmText(.bodySmall, color: fm.textSecondary)
                         .multilineTextAlignment(.center)
-                    FmMessageTools("\(DiffImages.unreadable) (\(path))")
+                        .fmMessageTools("\(DiffImages.unreadable) (\(path))")
                 }
                 .padding(FmSpace.x2)
             }

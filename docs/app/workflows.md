@@ -419,13 +419,19 @@ schedules, events, monitors, mentions, Run team) starts the agent's workflow
 (`runTeammateWorkflow`). The agent step still starts through
 `startTeammateSession`, so the permission grant, `--disallowedTools`, the
 external-call gate, the run mode clamp and the guardrails are unchanged; each
-run is a fresh session filed in the **Workflows** agent folder. The agent pane
-shows **← Workflow: <name>** (`refreshAgentWorkflowLink`, `rw::runsAgent`; the
-main agent step runs under the workflow id, others under `rw::agentStepId`,
-`<workflow>-<step>`) and opens it with `openWorkflowInPage`; shared team runs
-show no link. A mention or direct prompt to an agent with a conversation
-continues that session without a workflow run. Schedules of workflows without
-an agent step are checked on the same 60 s tick
+run is a fresh session filed in the **Workflows** agent folder. The agent
+pane's header action row (beside Add task and Stop) shows a **Workflow**
+button (`agentWorkflowButton`, its tooltip names the workflow) when the
+session's special agent id belongs to an agent step of a workflow in its
+repository (`rw::runsAgent`: the main agent step runs under the workflow id,
+others under `rw::agentStepId`, `<workflow>-<step>`); it opens that workflow
+in the Workflows page (`openWorkflowInPage`). In the Focus layout the header
+row is parked, so the session's More menu lists **Open workflow** instead.
+The lookup reads the repository's workflow files once per selected session
+(`refreshAgentWorkflowLink`); shared team runs show no button. A mention or
+direct prompt to an agent with a conversation continues that session
+(`startTeammateSession`) without a workflow run. Schedules of workflows
+without an agent step are checked on the same 60 s tick
 (`checkRepoWorkflowSchedules`) across every local repository; their event
 triggers fire from `triggerTeammatesForEvent`.
 

@@ -40,6 +40,7 @@ documentation; the package format, lifecycle and publishing rules are in
 | [secure-drive.md](secure-drive.md) | `secure-drive`: the encrypted shared drive format (`fmsd1`) |
 | [invoices.md](invoices.md) | `invoices`: CRM-linked invoices with open, view and payment tracking |
 | [booking.md](booking.md) | `booking`: a personal booking page at one short link, confirmations emailed |
+| [surveys.md](surveys.md) | `surveys`: surveys answered through a private link, with results and CSV export |
 | [rss-reader.md](rss-reader.md) | `rss-reader`: a local-only feed reader |
 | [instance-feed.md](instance-feed.md) | `instance-feed` (Feed): one instance's timeline; `feed` (Network Feed) |
 | [mastodon.md](mastodon.md) | `mastodon`: the Mastodon client on the web, phones and desktop |

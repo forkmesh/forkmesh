@@ -140,6 +140,11 @@ QToolButton#sessionsForward::menu-indicator { image: none; width: 0px; }
 QFrame#sessionsComposer[sessionsHosted="true"] QToolButton#sessionsForward {
     border-color: transparent; border-radius: 6px; padding: 0px 8px; min-height: 26px;
 }
+QPushButton#sessionsPlus {
+    background: transparent; border: 1px solid @border; border-radius: 14px; padding: 0px;
+}
+QPushButton#sessionsPlus:hover { background-color: @surfaceRaised; }
+QPushButton#sessionsPlus:disabled { background: transparent; }
 QPushButton#sessionsSend {
     background-color: @accent; border: 1px solid @accent; color: @onAccent;
     border-radius: 8px; padding: 4px 14px; font-size: 12px; font-weight: 600;

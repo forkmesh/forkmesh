@@ -99,6 +99,27 @@ comments sheet, the faces and the "Here now" list.
 - **Export Markdown** opens the system Save dialog (`CreateDocument`,
   `text/markdown`) with `<slug>.md` and writes `# <title>` plus the body, as
   the web download does.
+- **Diagrams and page breaks** ([notes-documents.md](../app/notes-documents.md)).
+  Preview splits the note with `NoteDocument` (core): a ```` ```svg ```` block
+  that passes the contract's check is a `NoteFigureView`, a `<!-- pagebreak -->`
+  line is a dashed rule labelled "Page break", and the `<!-- page: … -->` line
+  is hidden. The figure is a `data:image/svg+xml;base64` `<img>` in a small
+  `WebView` with JavaScript, file and content access and network loads off,
+  on a white card at the size `NoteDocument.figureBox` reads from the SVG
+  (scaled down to the column), with the caption under it; touches go to the
+  list, not the web view. A figure the web view cannot create falls back to
+  its source. A page's description keeps the plain preview.
+- **Export PDF** sits right after Export Markdown. The bottom sheet has
+  Paper, Orientation and Margins choices and Cover page, Contents and Page
+  numbers switches, prefilled by `NoteDocument.layout`, and for owners and
+  editors **Save as this note's page layout**, which writes the line with
+  `NoteDocument.withLayout` into the editor so it autosaves. **Export PDF**
+  loads `NoteDocument.printHtml` into an off-screen `WebView` (JavaScript off)
+  and hands `createPrintDocumentAdapter` to the system print service with the
+  chosen paper and orientation, named `NoteDocument.pdfFileName(title)`; the
+  user picks **Save as PDF** there. Android's WebView is Chromium, so the CSS
+  `@page` margins and the "N / M" bottom-centre numbers apply as on the web.
+  Views: `NoteDocumentViews.kt`; tests: `NoteDocumentTest`.
 - History shows author names; restore, publish / make private, delete with
   confirmation and Turn into a task / issue are unchanged.
 
@@ -374,6 +395,32 @@ presence line and the comments sheet. Every request goes through the `ToolsApiCa
   `NoteLinkRef.parse`.
 - **Export Markdown** is a `ShareLink` whose item writes `<slug>.md` (`# title`
   then the body) to the temporary folder when shared.
+- **Diagrams and page breaks** ([notes-documents.md](../app/notes-documents.md)).
+  Preview reads the note through `NoteDocument.parts` (FMTools): a
+  ```` ```svg ```` block whose body starts with `<svg` and is at most 262144
+  bytes is drawn as an image, a `<!-- pagebreak -->` line is a dashed rule
+  labelled "Page break", and the `<!-- page: … -->` line is hidden. The SVG is
+  loaded as a `data:image/svg+xml;base64` `<img>` in a small `WKWebView` with
+  JavaScript off and a `default-src 'none'; img-src data:` policy, so a shared
+  diagram cannot run code. It sits on a white card, centred, at the size from
+  its `width`/`height`/`viewBox` (`NoteFigureSize`, scaled down to the column;
+  a `viewBox` alone fills it), with the caption under it. A page's description
+  keeps the plain preview.
+- **Export PDF** sits right after Export Markdown. Its sheet has Paper,
+  Orientation and Margins menus and Cover page, Contents and Page numbers
+  switches, prefilled from the note's layout line (`NoteDocument.layout`), and
+  for owners and editors **Save as this note's page layout**, which writes the
+  line with `NoteDocument.withLayout` into the editor text so it autosaves.
+  **Export PDF** builds the print document (`NoteDocument.printHTML`,
+  `nativeMargins: true`), loads it into an off-screen `WKWebView` with
+  JavaScript off and paginates it with a `UIPrintPageRenderer` whose
+  `paperRect` is the chosen paper and whose `printableRect` is that paper inset
+  by the margins; the PDF is written with `UIGraphicsBeginPDFContextToData`.
+  "N / M" is drawn centred in the bottom margin of every page except the cover
+  (a `drawPage` override), because WebKit does not draw `@page` margin boxes.
+  The file `NoteDocument.pdfFileName(title)` goes to the temporary folder and
+  the system share sheet. Views: `NoteDocumentViews.swift`; tests:
+  `NoteDocumentTests`.
 
 ### Sharing
 

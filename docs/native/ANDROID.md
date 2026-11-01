@@ -1336,13 +1336,19 @@ button:
   labels in both themes (`onAccent` was near-black in dark mode); confirm
   dialogs have 14 dp corners; `FmBottomBar` is a glass capsule (50 dp, 8 dp side
   and 4 dp vertical margin).
-- **Copy and send to agent (S008).** Messages carry two 13 dp icons
-  (`ui/kit/FmMessageTools.kt`): `FmEmptyState`, `FmInlineStatus`,
-  `FmConnectionBanner` and `FmConfirmDialog` include them. Send to agent opens
-  the composer with `C/navigation/MessageHandoff.agentPrompt` ("The ForkMesh
-  Android app showed this message: …"); `NavigationFeature.install` sets the
-  hook (`FmMessageHandoff.compose`) so the kit does not depend on feature code.
+- **Tap a message to open it in the composer (S008).** As on iOS, messages
+  carry no copy or send icons: `Modifier.fmMessageTools(text)`
+  (`ui/kit/FmMessageTools.kt`) makes the message a tap target that opens the
+  composer with `C/navigation/MessageHandoff.agentPrompt` ("The ForkMesh
+  Android app showed this message: …"). `FmEmptyState`, `FmInlineStatus`,
+  `FmConnectionBanner` and `FmConfirmDialog` use it; `NavigationFeature.install`
+  sets the hook (`FmMessageHandoff.compose`) so the kit does not depend on
+  feature code.
   `FmMessageTools` takes an optional `handoff` (section 27, S144).
+- **Notices close themselves.** A dismissible `FmInlineStatusLine` closes
+  after 6 seconds (10 for an error, `FmNoticeTiming`); `FmCountdownClose`
+  draws a ring around the X that empties over that time and restarts when the
+  message changes. Tapping the notice opens the composer and dismisses it.
 - **Haptics.** `FmHaptics` has `send`, `palette`, `success`, `warning` and
   `error`; success and error use the platform `Confirm` and `Reject` patterns.
 - **Menus.** `FmDropdownMenu` is the iOS 26 pull-down: an opaque panel (22 dp

@@ -142,6 +142,17 @@
             .notes-preview ul { list-style: disc; padding-left: 1.4rem; }
             .notes-preview ol { list-style: decimal; padding-left: 1.4rem; }
             .notes-preview-empty { color: var(--nt-faint); font-style: italic; }
+            .notes-preview .note-figure { margin: 1rem 0; border: 1px solid var(--nt-border); border-radius: 8px; background: #fff; padding: .75rem; text-align: center; break-inside: avoid; }
+            .notes-preview .note-figure img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+            .notes-preview .note-figure figcaption { margin-top: .5rem; font-size: .78rem; line-height: 1.4; color: #57606a; }
+            .notes-preview .note-page-break { display: flex; align-items: center; gap: .6rem; margin: 1.25rem 0; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--nt-faint); }
+            .notes-preview .note-page-break::before, .notes-preview .note-page-break::after { content: ""; flex: 1; border-top: 1px dashed var(--nt-border); }
+            .notes-pdf-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem .75rem; }
+            .notes-pdf-grid label { font-size: var(--dashboard-control-font); color: var(--nt-muted); }
+            .notes-pdf-grid select { height: var(--dashboard-control-height); border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding: 0 .5rem; font-size: var(--dashboard-control-font); color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-pdf-grid select:focus { outline: 1px solid rgb(var(--dashboard-primary-rgb)); outline-offset: -1px; }
+            .notes-pdf-checks { display: grid; gap: .4rem; margin-top: .8rem; }
+            .notes-pdf-save { margin-top: .8rem; border-top: 1px solid var(--nt-soft); padding-top: .7rem; }
             .notes-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; border-top: 1px solid var(--nt-soft); padding: .3rem 1rem; font-size: .68rem; color: var(--nt-faint); font-variant-numeric: tabular-nums; }
             .notes-pop { position: absolute; z-index: 30; border: 1px solid var(--nt-border); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-popover-foreground-rgb)); box-shadow: 0 8px 24px rgb(1 4 9 / .4); }
             .notes-share { top: 2.9rem; right: .75rem; width: min(25rem, calc(100% - 1.5rem)); }
@@ -555,6 +566,7 @@
                   <button data-note-to-issue type="button" role="menuitem"><i data-lucide="circle-dot"></i>Turn into an issue</button>
                   <hr />
                   <button data-note-export type="button" role="menuitem"><i data-lucide="download"></i>Download Markdown</button>
+                  <button data-note-export-pdf type="button" role="menuitem"><i data-lucide="file-text"></i>Export PDF</button>
                   <hr data-note-delete-sep />
                   <button data-note-delete type="button" role="menuitem"><i data-lucide="trash-2"></i>Delete note</button>
                 </div>
@@ -700,6 +712,36 @@
               <div class="fm-dialog-footer">
                 <button value="cancel" class="fm-btn fm-btn-sm">Cancel</button>
                 <button value="delete" data-note-delete-confirm class="fm-btn fm-btn-sm fm-btn-danger">Delete note</button>
+              </div>
+            </form>
+          </dialog>
+
+          <dialog data-note-pdf-dialog class="notes-modal" aria-labelledby="note-pdf-title">
+            <form data-note-pdf-form class="fm-dialog">
+              <div class="fm-dialog-header">
+                <h2 id="note-pdf-title" class="fm-dialog-title">Export PDF</h2>
+                <button data-note-pdf-cancel type="button" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon" aria-label="Close"><i data-lucide="x"></i></button>
+              </div>
+              <div class="fm-dialog-body">
+                <div class="notes-pdf-grid">
+                  <label for="note-pdf-size">Paper</label>
+                  <select id="note-pdf-size" data-note-pdf-field="size"><option value="a4">A4</option><option value="letter">Letter</option><option value="legal">Legal</option></select>
+                  <label for="note-pdf-orientation">Orientation</label>
+                  <select id="note-pdf-orientation" data-note-pdf-field="orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select>
+                  <label for="note-pdf-margins">Margins</label>
+                  <select id="note-pdf-margins" data-note-pdf-field="margins"><option value="narrow">Narrow</option><option value="normal">Normal</option><option value="wide">Wide</option></select>
+                </div>
+                <div class="notes-pdf-checks">
+                  <label class="notes-page-check"><input data-note-pdf-field="cover" type="checkbox" />Cover page</label>
+                  <label class="notes-page-check"><input data-note-pdf-field="contents" type="checkbox" />Contents</label>
+                  <label class="notes-page-check"><input data-note-pdf-field="numbers" type="checkbox" />Page numbers</label>
+                </div>
+                <label data-note-pdf-save-row class="notes-page-check notes-pdf-save"><input data-note-pdf-save type="checkbox" checked />Save as this note's page layout</label>
+                <p class="mt-3 text-xs text-muted-foreground">Your browser's print dialog opens. Choose Save as PDF.</p>
+              </div>
+              <div class="fm-dialog-footer">
+                <button data-note-pdf-cancel type="button" class="fm-btn fm-btn-sm">Cancel</button>
+                <button data-note-pdf-confirm type="submit" class="fm-btn fm-btn-sm">Export PDF</button>
               </div>
             </form>
           </dialog>

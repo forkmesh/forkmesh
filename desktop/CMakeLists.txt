@@ -859,6 +859,7 @@ set(FORKMESH_APP_SOURCES
     src/HomeLayout.h
     src/HomeLayout.cpp
     src/MainWindowHome.cpp
+    src/MainWindowComposerPlus.cpp
     src/BinarySize.h
     src/BinarySize.cpp
     src/BinarySizeMap.h
@@ -1085,6 +1086,7 @@ set(FORKMESH_APP_SOURCES
     src/AgentWorktree.h
     src/WorktreeInclude.h
     src/PromptDrop.h
+    src/ComposerConnectors.h
     src/WorkspaceOpenIn.h
     src/WorkspaceShortcuts.h
     src/AgentWorkspaceNameGate.h
@@ -2311,6 +2313,7 @@ if(FORKMESH_BUILD_TESTS)
 
     qt_add_executable(forkmesh-workspace-parity-tests
         tests/test_workspace_parity.cpp
+        src/ComposerConnectors.h
         src/LayoutMode.h
         src/PromptDrop.h
         src/WorkspaceOpenIn.h
@@ -2721,6 +2724,21 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-note-comments-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-note-comments-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-note-document-tests
+        tests/test_note_document.cpp
+        src/NoteDocument.h
+        src/NoteDocumentRender.h
+        src/NoteTools.h
+        src/MarkdownRender.h
+    )
+    target_include_directories(forkmesh-note-document-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-note-document-tests PRIVATE Qt6::Gui Qt6::Svg)
+    if(APPLE)
+        set_target_properties(forkmesh-note-document-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -4777,6 +4795,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-note-comments-tests)
     add_test(NAME forkmesh-note-pages-tests
              COMMAND forkmesh-note-pages-tests)
+    add_test(NAME forkmesh-note-document-tests
+             COMMAND forkmesh-note-document-tests)
+    set_tests_properties(forkmesh-note-document-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-tip-tests COMMAND forkmesh-tip-tests)
     add_test(NAME forkmesh-window-tests COMMAND forkmesh-window-tests)
     add_test(NAME forkmesh-startup-splash-tests

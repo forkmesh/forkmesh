@@ -15,6 +15,7 @@
 #include "ClaudeTranscriptView.h"
 #include "CodexAppServerSession.h"
 #include "CommandVariables.h"
+#include "ComposerConnectors.h"
 #include "DestructiveCommandReview.h"
 #include "NetworkLogArchive.h"
 #include "ProjectAgentAccess.h"
@@ -245,7 +246,12 @@ QJsonObject MainWindow::agentRunLaunchOptions(int sid, bool codex) const
         (!forkmesh::projects::webSearchAllowed(rules.access) || rules.externalBlocked))
         disabled << QStringLiteral("web_search");
     options = AgentToolPolicy::optionsWithDisabledFamilies(options, disabled);
-    const QStringList names = forkmesh::agentrules::teammateDisallowedTools(rules.deniedPermissions);
+    QStringList names = forkmesh::agentrules::teammateDisallowedTools(rules.deniedPermissions);
+    if (!codex)
+        for (const QString &tool : forkmesh::composerconnectors::disallowedTools(
+                 QSettings().value(kDisabledComposerConnectorsSetting).toStringList()))
+            if (!names.contains(tool))
+                names << tool;
     if (!names.isEmpty())
         options.insert(QStringLiteral("disallowedToolNames"), QJsonArray::fromStringList(names));
     if (!codex)

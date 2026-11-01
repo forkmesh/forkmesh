@@ -646,6 +646,7 @@ public final class NoteEditorModel {
         var items: [(value: String, label: String)] = [("history", "History"), ("copy_link", "Copy link")]
         if isPublic { items.append(("open_public", "Open published page")) }
         items.append(("export", "Export Markdown"))
+        items.append(("export_pdf", NoteDocument.menuLabel))
         if isOwner {
             items.append(("share", "Share"))
             items.append(isPublic ? ("unpublish", "Make private") : ("publish", "Publish"))

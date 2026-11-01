@@ -653,7 +653,7 @@ struct GenieSpiderMenu: View {
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
-                    .fmMessageTools(problem, color: Color.white.opacity(0.7))
+                    .fmMessageTools(problem)
             }
             row(crawler.wanders ? "pause.circle" : "figure.walk", crawler.wanders ? "Stay put" : "Crawl around", id: "genie-menu-wander") {
                 crawler.setWanders(!crawler.wanders)

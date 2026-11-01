@@ -154,7 +154,9 @@ fun FmEmptyState(
 ) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.padding(horizontal = FmSpace.x5, vertical = FmSpace.x7),
+            Modifier
+                .padding(horizontal = FmSpace.x5, vertical = FmSpace.x7)
+                .fmMessageTools(message?.let { "$title\n$it" } ?: title),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             FmIcon(icon, size = 40.dp, tint = Fm.colors.textTertiary)
@@ -168,7 +170,6 @@ fun FmEmptyState(
                     style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
                 )
             }
-            FmMessageTools(message?.let { "$title\n$it" } ?: title, Modifier.padding(top = FmSpace.x1))
         }
     }
 }
@@ -341,10 +342,11 @@ fun FmConnectionBanner(
         Spacer(Modifier.width(FmSpace.x3))
         Text(
             "You are offline. Messages and live updates are paused.",
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .fmMessageTools("You are offline. Messages and live updates are paused."),
             style = Fm.text.bodyMedium.copy(fontWeight = FmType.medium),
         )
-        FmMessageTools("You are offline. Messages and live updates are paused.")
         if (onRetry != null) {
             FmTextButton(onClick = onRetry) { Text("Retry") }
         }

@@ -266,15 +266,21 @@ The app is `com.forkmesh.forkmesh` (`APP_BUNDLE_ID` in
   run `tools/check_swift_syntax.sh`.
 - **Tests** are XCTest, in `Tests/<Module>Tests`, sharing vectors and cases
   with the Kotlin ones (`native/android/core/src/test`).
-- **Every message can be copied or handed to an agent.** Alerts, errors,
-  warnings, notices and status lines carry copy and send-to-agent icons
-  (`Kit/FmMessageTools.swift`; use `FmMessageTools(text)` or
-  `.fmMessageTools(text)`). `FmNoticeLine`, `FmEmptyState`, `FmDialog`,
-  `FmConnectionBanner` and `FmNeedsDesktopNote` include them; a system
-  `.alert` showing an error gets "Copy" and "Send to agent" buttons. Send to
-  agent opens the composer with `MessageHandoff.agentPrompt`
-  (`ForkMeshCore/Sources/FMApi/Navigation`). Chat and transcript bubbles keep
+- **Tapping a message opens it in the composer.** Alerts, errors, warnings,
+  notices and status lines have no copy or send icons (removed 2026-11-01 at
+  the user's request): `.fmMessageTools(text)` (`Kit/FmMessageTools.swift`)
+  makes the message itself a tap target that opens the composer with
+  `MessageHandoff.agentPrompt` (`ForkMeshCore/Sources/FMApi/Navigation`).
+  `FmNoticeLine`, `FmEmptyState`,
+  `FmDialog`, `FmConnectionBanner` and `FmNeedsDesktopNote` do this; text
+  stays selectable with a long press. A system `.alert` showing an error
+  gets "Copy" and "Send to agent" buttons. Chat and transcript bubbles keep
   their long-press menu (`Kit/FmMessageActions.swift`).
+- **Notices close themselves.** A dismissible `FmNoticeLine` closes after
+  6 seconds (10 for an error); `FmCountdownClose` draws a ring around the X
+  that empties over that time, and the timer restarts when the message
+  changes. Tapping the notice opens the composer and dismisses it. A notice
+  without `onDismiss` stays until its screen clears it.
 - **Only the home shell shows the composer.** `Route.compose` has no screen
   of its own: `RouteDestinationView(route: .compose(...))` in a sheet shows
   the "New agent is not in this version of the app yet" placeholder. Hand a

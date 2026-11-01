@@ -811,10 +811,18 @@ runs. Phones expose the same switches through `agents.start`.
 ### Typing, drops and modes
 
 - **Shift+Tab** moves `quickAddModeSelector` to its next mode, wrapping, the
-  same as picking it (the setting is saved and a live run gets the new mode
-  on its next message). The key is not taken when the mode picker is hidden.
+  same as picking it. The key is not taken when the mode picker is hidden.
+- **A picked mode sticks to the session.** Picking a mode in the dropdown, or
+  with Shift+Tab, stores it on the session the composer is aimed at right away
+  (`applyComposerModeToTargetSession`) and switches a live Claude Code process
+  to it when the CLI allows, so a redraw of the session
+  (`syncQuickAddControlsToAgentSession`) keeps it. Answering a permission card
+  copies the CLI's mode back onto the session (`syncClaudePermissionMode`)
+  only when that answer changed the CLI's mode (for example leaving plan
+  mode); a process launched under Edit cannot become Auto mid-turn, so Auto
+  stays stored and the next launch runs under it.
 - **`/` opens the command menu.** When the prompt is empty, no chat room is
-  open and the "/" button is visible, typing `/` puts the `/` in the prompt
+  open and the composer's **+** button is visible, typing `/` puts the `/` in the prompt
   and opens the "/" menu (`openQuickAddSlashActions`) with its filter
   focused, so the next letters filter the list. Picking a row removes that
   `/` first. Closing the menu without picking (Esc) puts what was typed in the

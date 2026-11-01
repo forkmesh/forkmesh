@@ -120,6 +120,7 @@ One page per topic. Each links back here.
 | [comment-reactions](comment-reactions.md) | Comment reactions, GIFs and stickers in comments, Solana Pay tips |
 | [tasks](tasks.md) | Organization tasks: Tasks page, Markdown text, progress and work items, trash, pings, email |
 | [notes](notes.md) | Web Notes: sharing and access link, activity log, note to task or issue, body search, platform differences |
+| [notes-documents](notes-documents.md) | Notes as documents: diagrams, page layout and PDF export |
 | [notes-comments](notes-comments.md) | Inline comments on notes, replies, mentions, resolving, and who is here |
 | [notes-pages](notes-pages.md) | Note emoji and pages that gather many notes under one outline |
 | [notifications](notifications.md) | Thread notifications, new issue pings, notification email send claims, collaboration author display |

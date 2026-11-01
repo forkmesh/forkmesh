@@ -87,6 +87,7 @@ object MarketFeature {
         NavigationFeature.register(Route.Kind.Analytics, OWNER) { analyticsScreen() }
         NavigationFeature.register(Route.Kind.Competitors, OWNER) { competitorsScreen() }
         NavigationFeature.register(Route.Kind.Invoices, OWNER) { route -> (route as Route.Invoices).let { invoicesScreen(it.organization, it.invoice) } }
+        NavigationFeature.register(Route.Kind.Surveys, OWNER) { route -> (route as Route.Surveys).let { surveysScreen(it.organization, it.survey) } }
         NavigationFeature.register(Route.Kind.Ads, OWNER) { adsScreen() }
         NavigationFeature.register(Route.Kind.Ledger, OWNER) { route -> ledgerScreen(LedgerSection.of((route as Route.Ledger).section)) }
     }
@@ -106,6 +107,8 @@ object MarketFeature {
     fun competitorsScreen(): Screen = CompetitorsScreen()
 
     fun invoicesScreen(organization: String? = null, invoice: String? = null): Screen = InvoicesScreen(organization, invoice)
+
+    fun surveysScreen(organization: String? = null, survey: String? = null): Screen = SurveysScreen(organization, survey)
 
     fun adsScreen(): Screen = AdsScreen()
 
