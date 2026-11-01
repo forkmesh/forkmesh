@@ -31717,6 +31717,39 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             QApplication::processEvents();
         }
     }
+    {
+        QComboBox *modeSelector =
+            window.findChild<QComboBox *>(QStringLiteral("quickAddModeSelector"));
+        AgentSession picking;
+        picking.id = 133903;
+        picking.owner = QStringLiteral("mode-pick-fixture");
+        picking.name = QStringLiteral("no-such-repo");
+        picking.provider = QStringLiteral("claude-code");
+        picking.model = QStringLiteral("claude-opus-5");
+        picking.prompt = QStringLiteral("Mode pick fixture");
+        picking.mode = QStringLiteral("Edit");
+        picking.status = AgentStatus::Running;
+        window.testAddAgentSession(picking);
+        window.testShowAgentSession(picking.id);
+        QApplication::processEvents();
+        const int autoIndex =
+            modeSelector ? modeSelector->findText(QStringLiteral("Auto")) : -1;
+        if (autoIndex >= 0) {
+            modeSelector->setCurrentIndex(autoIndex);
+            emit modeSelector->activated(autoIndex);
+        }
+        QApplication::processEvents();
+        const QString stored = window.testAgentSessionMode(picking.id);
+        window.testShowAgentSession(picking.id);
+        QApplication::processEvents();
+        const QString shown = modeSelector ? modeSelector->currentText() : QString();
+        check(autoIndex >= 0 && stored == QStringLiteral("Auto") &&
+                  shown == QStringLiteral("Auto"),
+              QString("Auto picked from Edit in the mode dropdown stays Auto when "
+                      "the session is redrawn (stored = %1, shown = %2)")
+                  .arg(stored, shown));
+        window.testRemoveAgentSession(picking.id);
+    }
     // Switching the combined prompt-bar selector is an immediate routing
     // decision. A still-live old CLI must not keep the next prompt merely
     // because completed transports stay open for follow-ups; the session also

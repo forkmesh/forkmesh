@@ -7048,6 +7048,7 @@ private:
     bool agentSessionHasLiveTransport(int sessionId) const;
     bool handOffAgentSessionToProvider(int sessionId, const QString &provider);
     void applyComposerSelectionToAgentSession(int sessionId);
+    void applyComposerModeToTargetSession();
     void sendPromptToSelectedAgent(const QString &prompt);
 
     void sendPromptToAgentSession(int sessionId, const QString &prompt);
@@ -15469,7 +15470,7 @@ private:
                               const QString &titledBy);
     void renameAgentSessionInteractive(int sessionId);
     QString claudeInitialSessionTitle(const AgentSession &session) const;
-    void syncClaudePermissionMode(int sessionId);
+    void syncClaudePermissionMode(int sessionId, const QString &cliModeBefore);
     void showClaudeElicitation(int sessionId, const QJsonObject &event);
     void answerClaudeElicitation(int sessionId, const QString &key,
                                  const QString &action, const QJsonObject &content);
