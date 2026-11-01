@@ -1586,14 +1586,20 @@ void NextAccess::syncWorkspace(MainWindow &window)
             window.m_quickAddSendToAgentButton &&
             window.m_quickAddSendToAgentButton->property("enterTarget").toBool();
         const QString label = chat ? QStringLiteral("Add") : QString();
-        if (chrome->composerSend->text() != label) {
+        const bool package = chat && window.quickAddPackageAppliesToOpen();
+        const QString tip =
+            package ? window.m_quickAddSendToAgentButton->toolTip()
+            : chat  ? QStringLiteral("Add to the agent open above (Enter)")
+                    : QStringLiteral("Send (Enter)");
+        if (chrome->composerSend->text() != label ||
+            chrome->composerSend->toolTip() != tip) {
             chrome->composerSend->setText(label);
             chrome->composerSend->setFixedSize(chat ? 78 : 34, 34);
-            chrome->composerSend->setToolTip(
-                chat ? QStringLiteral("Add to the agent open above (Enter)")
-                     : QStringLiteral("Send (Enter)"));
+            chrome->composerSend->setToolTip(tip);
             chrome->composerSend->setAccessibleName(
-                chat ? QStringLiteral("Add to agent") : QStringLiteral("Send"));
+                package ? window.m_quickAddSendToAgentButton->accessibleName()
+                : chat  ? QStringLiteral("Add to agent")
+                        : QStringLiteral("Send"));
             setFlag(chrome->composerSend, "workspaceChat", chat);
             chrome->composerSend->setIcon(
                 glyph(QStringLiteral("arrow-up"),

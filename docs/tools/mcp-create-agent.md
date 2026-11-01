@@ -56,6 +56,56 @@ the new agent sees only that prompt.
 To hand over a branch as well, pass it as `branch` and stop working on it:
 the new agent reuses the agent worktree that holds it.
 
+## Linking a branch to your own session: `link_branch`
+
+A session the desktop starts directly in the checkout (`directCheckout`) has
+no branch (`branchName` empty), so when its agent later moves the work to a
+branch (`git switch -c ...` in the checkout, or a worktree it added) the
+desktop cannot see it: the agent detail shows no **Branch** button, and
+**Code**, the merge actions and the task link have nothing to work on. The
+session lives in memory and `AgentStore::saveSession()` rewrites
+`meta.json` whole, so editing the file does not stick. `link_branch` is the
+way to attach the branch.
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `branch` | yes | The branch, valid per `handoffRefNameValid` and present locally in the session's repository |
+| `worktree` | no | Absolute path of the worktree of that repository that has `branch` checked out |
+
+The MCP tool sends `agents.link_branch` and is listed only when the desktop's
+intake variables are set. The desktop (`parseLinkBranchRequest`,
+`linkBranchRefusal`, `MainWindow::linkBranchFromIntake`) applies it to the
+calling session, named by the token, so an agent can only link its own
+session:
+
+- The session must exist and be local (`no_session`) and running or waiting
+  on approval (`not_running`).
+- `main`, `master`, `trunk`, `HEAD`, `refs/...`, `release/...`, the
+  session's base branch and, when the session has none, the repository's
+  default branch are refused (`protected_branch`). The checkout's current
+  branch is allowed, because that is where a direct-checkout agent usually
+  creates its branch.
+- A session the desktop started in its own worktree keeps that branch: any
+  other branch is refused (`has_branch`). A direct-checkout session can link
+  again to move to another branch.
+- The branch must exist locally (`branch_not_found`); nothing is fetched.
+- A `worktree` goes through the same checks as `create_agent`'s
+  (`verifyIntakeWorktree`): it must be a directory with a branch checked out
+  (`bad_worktree`), that branch must be `branch` and git must list it as the
+  worktree holding it (`worktree_mismatch`). Unlike `create_agent`, it need
+  not be under the agent worktree root.
+
+On success the desktop sets `branchName`, `worktreeName` (the worktree's
+folder name) when a worktree is given, and `baseBranch` when it was empty
+(the open repository's configured default, else `main` or `master`). It
+leaves `directCheckout` and the running process's working directory alone,
+saves the session, logs `==> Linked branch X`, refreshes the list and detail
+pane and pushes the sessions to phones. If the session is linked to an
+organization task, the branch (and worktree, if any) is attached to the task
+as a work item, as for worktree sessions. The reply is
+`{"ok": true, "branch", "worktree"}`. Other refusals: `bad_branch`,
+`bad_request`, `no_checkout`, `not_saved`.
+
 ## Transport and authentication
 
 The MCP server runs inside an agent the desktop launched and inherits its

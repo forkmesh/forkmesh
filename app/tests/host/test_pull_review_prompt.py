@@ -9,6 +9,7 @@ handling, the same prompt, the same markup. Icons are compared by name.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import re
 import shutil
@@ -261,6 +262,47 @@ def test_a_long_file_list_is_left_out_of_the_chatgpt_link():
 
 # -- first view ----------------------------------------------------------------
 
+def _chatgpt(markup):
+    link = re.search(r'<a href="https://chatgpt\.com/\?q=([^"]*)" target="_blank" '
+                     r'rel="noopener noreferrer"([^>]*data-repo-pull-review-chatgpt[^>]*)>', markup)
+    assert link, markup
+    return urllib.parse.unquote(html.unescape(link.group(1))), link.group(2)
+
+
+def test_the_box_opens_chatgpt_with_the_prompt():
+    markup = prp.render(values(), 12)
+    query, attrs = _chatgpt(_box(markup))
+    assert query == prp.prompt_text(values(), "")
+    assert query.startswith("Review pull request #12 in bolt on git.example.test: "
+                            "https://git.example.test/acme/bolt/pull/12\n")
+    assert 'aria-label="Review with ChatGPT: opens ChatGPT with the review prompt filled in"' in attrs
+    assert "data-dashboard-copy" not in attrs
+    assert "<span>Review with ChatGPT</span></a>" in markup and "lucide-bot" in markup
+    assert markup.index("Copy review prompt") < markup.index("Review with ChatGPT")
+    assert markup.index("Review with ChatGPT") < markup.index("Summarize in ChatGPT")
+
+
+def test_a_long_prompt_is_cut_to_fit_and_copied_whole():
+    template = "Look at this.\n" + "word " * 3000 + "\nend {url}"
+    prompt = prp.prompt_text(values(), prp.normalize_template(template))
+    markup = prp.render(values(), 12, prp.normalize_template(template))
+    query, attrs = _chatgpt(markup)
+    url = "https://git.example.test/acme/bolt/pull/12"
+    assert query.startswith(url + "\n\nLook at this.\nword ") and query.endswith("\u2026")
+    assert len(urllib.parse.quote(query, safe="-_.!~*'()")) <= prp.CHATGPT_PROMPT_LIMIT
+    assert 'data-dashboard-copy="%s"' % html.escape(prompt).replace("&#x27;", "&#039;") in attrs
+    assert "copies the full prompt" in attrs and "too long for a link" in attrs
+    short = prp.chatgpt_prompt("x " * 4000 + url, url)[0]
+    assert short.startswith(url + "\n\nx x") and short.count(url) == 1
+    kept = prp.chatgpt_prompt(url + " " + "x " * 4000, url)[0]
+    assert kept.startswith(url + " x") and kept.count(url) == 1
+
+
+def test_the_dashboard_bundle_has_the_chatgpt_link():
+    assert "function renderPullReviewChatGptLink(" in BUNDLE
+    assert "${renderPullReviewChatGptLink(text, fields.url, button)}" in BUNDLE
+
+
 def build(number, settings=None, monkeypatch=None):
     if settings is not None:
         main = dict(FILES[repo_views_main()])
@@ -362,12 +404,14 @@ JS_PRELUDE = "\n".join(
     [_function("escapeHtml", HELPERS)]
     + [_const(name) for name in (
         "PULL_REVIEW_PROMPT_MAX", "PULL_REVIEW_FIELD_LIMITS", "PULL_SUMMARY_CHATGPT_URL",
-        "PULL_SUMMARY_URL_LIMIT", "PULL_REVIEW_FILE_LINKS_MAX", "PULL_REVIEW_FILES_COLLAPSE",
-        "PULL_REVIEW_PATH_LIMIT", "PULL_REVIEW_INVISIBLE", "PULL_REVIEW_PROMPT_DEFAULT")]
+        "PULL_SUMMARY_URL_LIMIT", "PULL_REVIEW_CHATGPT_MAX", "PULL_REVIEW_FILE_LINKS_MAX",
+        "PULL_REVIEW_FILES_COLLAPSE", "PULL_REVIEW_PATH_LIMIT", "PULL_REVIEW_LONE_SURROGATE", "PULL_REVIEW_INVISIBLE",
+        "PULL_REVIEW_PROMPT_DEFAULT")]
     + [_function(name) for name in (
         "normalizePullReviewTemplate", "cleanPullReviewField",
         "pullChangedFiles", "pullReviewPromptFields", "pullSummaryText",
-        "pullSummaryChatGptUrl", "pullReviewPromptText", "renderPullReviewPrompt")]
+        "pullSummaryChatGptUrl", "pullReviewPromptText", "pullReviewChatGptPrompt",
+        "renderPullReviewChatGptLink", "renderPullReviewPrompt")]
     + ["""
 let ORIGIN = "";
 function publicSiteOrigin() { return ORIGIN; }
@@ -410,6 +454,8 @@ CASES = [
      "link": LINK, "origin": ORIGIN},
     {"pull": dict(PULL, title="\U0001F600" * 300), "patch": "  \n", "template":
      "\U0001F600" * 7000, "link": LINK, "origin": ORIGIN},
+    {"pull": dict(PULL, title="a\ud800b"), "patch": "", "template": "{title} \udc00 {url} " + "y " * 2500,
+     "link": LINK, "origin": ORIGIN},
 ]
 
 

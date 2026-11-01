@@ -284,6 +284,12 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   `TestDatagramLossExemptKeepsTheWindowOpen` checks each connection against
   its own starting window: without the exemption the window falls to half or
   less, with it the window never shrinks.
+- **Loopback calls in tests need room for a throttled sandbox.** The merge
+  executor's daemon wake is a loopback POST, best effort at 3 s in production;
+  `PullMutationExecutor.DaemonWakeTimeout` overrides it, and
+  `TestExecutorRegisterRecordsGenerationAndWakesDaemon` sets 30 s so a
+  throttled burst delays the test instead of failing it. A desktop-run job's
+  full log is in `~/projects/<project>/data/actions/runs/<repository>/<run>/log.txt`.
 - **A timeout under load gets one retry.** The CI step shares the host with
   agent sessions and builds at `CPUWeight=20`, and one in-process loopback
   exchange sometimes waits out its whole timeout while the package otherwise

@@ -589,6 +589,10 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
 
 iOS features Android does not have, because they need an Apple-only API:
 
+- **Cloud Dragon** (2026-11-01): the second Genie mascot on iPhone
+  ([GENIE.md](GENIE.md#the-cloud-dragon)). It is iOS only until the owner asks
+  for it on Android; the Android spider is unchanged and Android has no mascot
+  choice yet.
 - **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
 - **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
   new dependency.

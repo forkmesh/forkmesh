@@ -33,6 +33,7 @@
 #include <QShowEvent>
 #include <QStackedWidget>
 #include <QTextBrowser>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QUrl>
 #include <QFile>
@@ -730,6 +731,128 @@ bool NotesPage::hostCommand(const QString &command, const QJsonObject &args)
         return true;
     }
     return false;
+}
+
+bool NotesPage::noteAiEditAvailable() const
+{
+    return m_host.askAgent && m_noteEditor && m_noteTitle &&
+           !m_selectedNote.isEmpty() && !pageShown() &&
+           forkmesh::notes::noteCanEdit(selectedNoteRole());
+}
+
+forkmesh::market::NativePackagePromptTarget NotesPage::hostPromptTarget() const
+{
+    if (!noteAiEditAvailable())
+        return {};
+    const QString agent = m_host.agentName ? m_host.agentName() : QString();
+    return {m_aiEditNoteId.isEmpty()
+                ? QStringLiteral("edit this note with AI: turn it into a checklist, "
+                                 "fix the spelling, add a summary at the top")
+                : QStringLiteral("AI is editing this note…"),
+            agent.isEmpty() ? QStringLiteral("Edit this note with AI")
+                            : QStringLiteral("Edit this note with %1").arg(agent),
+            true};
+}
+
+bool NotesPage::submitHostPrompt(const QString &text, const QStringList &attachments)
+{
+    if (!noteAiEditAvailable())
+        return false;
+    const auto refuse = [this](const QString &message) {
+        flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return false;
+    };
+    if (!m_aiEditNoteId.isEmpty())
+        return refuse(QStringLiteral("AI is still editing this note."));
+    if (!attachments.isEmpty())
+        return refuse(QStringLiteral("Attachments cannot be used to edit a note. "
+                                     "Remove them and send the text on its own."));
+    const QString instruction = text.trimmed();
+    if (instruction.isEmpty())
+        return refuse(QStringLiteral("Type what to change in this note."));
+    if (!m_noteConflict.isEmpty())
+        return refuse(QStringLiteral("Resolve the save conflict on this note first."));
+    if (m_host.agentName && m_host.agentName().isEmpty())
+        return refuse(QStringLiteral("Pick Claude Code or Codex as the default agent "
+                                     "in Settings to edit notes with AI."));
+    m_aiEditNoteId = m_selectedNote.value(QStringLiteral("id")).toString();
+    m_aiEditBase = m_noteEditor->markdown();
+    m_aiEditBaseTitle = m_noteTitle->text();
+    const int sequence = ++m_aiEditSequence;
+    m_noteEditor->sourceEdit()->setReadOnly(true);
+    m_noteTitle->setReadOnly(true);
+    setNoteSaveState(QStringLiteral("AI is editing…"));
+    promptTargetChanged();
+    QPointer<NotesPage> guard(this);
+    m_host.askAgent(
+        forkmesh::notes::noteAiEditPrompt(m_aiEditBaseTitle, m_aiEditBase, instruction),
+        [guard, sequence](const QString &reply, const QString &error) {
+            if (guard && guard->m_aiEditSequence == sequence)
+                guard->applyNoteAiEdit(reply, error);
+        });
+    return true;
+}
+
+void NotesPage::applyNoteAiEdit(const QString &reply, const QString &error)
+{
+    const QString noteId = m_aiEditNoteId;
+    const QString base = m_aiEditBase;
+    const QString baseTitle = m_aiEditBaseTitle;
+    stopNoteAiEdit();
+    const auto tell = [this](const QString &message, bool failed) {
+        flashMessage(message, failed, QString(), forkmesh::kLocalOperationNoticeKind);
+    };
+    if (!error.isEmpty())
+        return tell(QStringLiteral("AI could not edit the note: %1").arg(error), true);
+    if (m_selectedNote.value(QStringLiteral("id")).toString() != noteId)
+        return;
+    if (m_noteEditor->markdown() != base || m_noteTitle->text() != baseTitle)
+        return tell(QStringLiteral("The note changed while AI was working, so its "
+                                   "edit was not applied. Try again."),
+                    true);
+    const forkmesh::notes::NoteAiEdit edit = forkmesh::notes::parseNoteAiEdit(reply);
+    if (!edit.ok())
+        return tell(edit.error, true);
+    const bool retitled = !edit.title.isEmpty() && edit.title != baseTitle.trimmed();
+    if (edit.markdown == base && !retitled)
+        return tell(QStringLiteral("AI left the note as it was."), false);
+    if (edit.markdown != base) {
+        QTextCursor cursor(m_noteEditor->sourceEdit()->document());
+        cursor.beginEditBlock();
+        cursor.select(QTextCursor::Document);
+        cursor.insertText(edit.markdown);
+        cursor.endEditBlock();
+    }
+    if (retitled)
+        m_noteTitle->setText(edit.title);
+    if (!noteAutosaveApplies())
+        saveNote();
+    tell(QStringLiteral("AI edited this note. Ctrl+Z in Write undoes it; "
+                        "Versions keeps the earlier copy."),
+         false);
+}
+
+void NotesPage::stopNoteAiEdit()
+{
+    if (m_aiEditNoteId.isEmpty())
+        return;
+    ++m_aiEditSequence;
+    m_aiEditNoteId.clear();
+    m_aiEditBase.clear();
+    m_aiEditBaseTitle.clear();
+    m_noteEditor->sourceEdit()->setReadOnly(false);
+    m_noteTitle->setReadOnly(false);
+    setNoteSaveState(!m_noteConflict.isEmpty()
+                         ? QStringLiteral("Not saved — resolve the conflict")
+                     : m_noteDirty ? QStringLiteral("Unsaved changes")
+                                   : QString());
+    promptTargetChanged();
+}
+
+void NotesPage::promptTargetChanged()
+{
+    if (m_host.promptTargetChanged)
+        m_host.promptTargetChanged();
 }
 
 void NotesPage::buildNotesSection()
@@ -1505,8 +1628,10 @@ void NotesPage::selectNote(const QString &id, const QString &storage)
     }
     const bool opening =
         id != m_selectedNote.value(QStringLiteral("id")).toString();
-    if (opening)
+    if (opening) {
         clearNoteConflict();
+        stopNoteAiEdit();
+    }
     if (storage == QLatin1String("local")) {
         const int index = localNoteIndex(m_localNotes, id);
         if (index < 0)
@@ -1529,6 +1654,7 @@ void NotesPage::selectNote(const QString &id, const QString &storage)
         if (opening)
             showOpenedNoteView();
         syncNoteCollab();
+        promptTargetChanged();
         runPendingRowAction();
         return;
     }
@@ -1567,6 +1693,7 @@ void NotesPage::selectNote(const QString &id, const QString &storage)
             }
         }
         syncNoteCollab();
+        promptTargetChanged();
         runPendingRowAction();
     });
 }
@@ -1600,6 +1727,7 @@ void NotesPage::openNoteFromSearch(const QString &id, const QString &storage)
 
 void NotesPage::createNote()
 {
+    stopNoteAiEdit();
     showEditorPane();
     m_selectedNote = QJsonObject{
         {QStringLiteral("id"), newNoteId()},
@@ -1622,6 +1750,7 @@ void NotesPage::createNote()
     setNoteSaveState(QStringLiteral("Unsaved changes"));
     renderNoteLinkedItems();
     syncNoteCollab();
+    promptTargetChanged();
     m_noteTitle->selectAll();
     m_noteTitle->setFocus();
 }
@@ -2166,10 +2295,12 @@ void NotesPage::deleteNote()
                     m_cloudNotes.removeAt(i);
             }
         }
+        stopNoteAiEdit();
         m_selectedNote = {};
         m_selectedNoteStorage.clear();
         m_noteDirty = false;
         syncNoteCollab();
+        promptTargetChanged();
         renderNotesList();
         refreshNotes();
     };
@@ -3439,6 +3570,7 @@ void NotesPage::showEditorPane()
         widget->setVisible(true);
     updateCommentControls();
     schedulePresencePoll(0);
+    promptTargetChanged();
 }
 
 void NotesPage::openPage(const QString &pageId, const QString &noteId)
@@ -3453,6 +3585,7 @@ void NotesPage::openPage(const QString &pageId, const QString &noteId)
         for (QWidget *widget : std::as_const(m_noteActionButtons))
             widget->setVisible(false);
         updateCommentControls();
+        promptTargetChanged();
         if (m_notesList) {
             const QSignalBlocker blocker(m_notesList);
             m_notesList->clearSelection();

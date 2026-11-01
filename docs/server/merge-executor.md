@@ -59,8 +59,10 @@ Home: [Go daemon](README.md); why mirrors can take writes:
    no branch"). The Python executor in
    `tools/headless_mirror_refresh.py` (`_merge_atomic_update`) does the same.
 7. It rewrites `expectedRefsSha256` for every gateway entry sharing the Git
-   directory, rings the daemon's `/v1/control/sync`, and returns a node-signed
-   refs attestation. The App admits that digest into the pin history and
+   directory, rings the daemon's `/v1/control/sync` (best effort, 3 s by
+   default, `DaemonWakeTimeout`; the daemon converges on its next cycle if
+   the ring is lost), and returns a node-signed refs attestation. The App
+   admits that digest into the pin history and
    pushes a `commits` event so the other mirrors converge. The event goes
    out even when the digest is not admitted, and it reaches every core
    ([core push](../operations/core-push.md), "Every core is woken at once").

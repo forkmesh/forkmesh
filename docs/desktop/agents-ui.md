@@ -164,6 +164,21 @@ adds rows through the private intake socket.
 - Phones can change the limit and queue order (`agents.queue.limit`,
   `agents.queue.move`; see [DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)).
 
+A running agent can also link a branch it created to its own session with the
+MCP `link_branch` tool (`agents.link_branch`,
+[../tools/mcp-create-agent.md](../tools/mcp-create-agent.md#linking-a-branch-to-your-own-session-link_branch)).
+This is for a session started directly in the checkout (`directCheckout`,
+which has `branchName` empty) that later moved its work to a branch: after
+the link the **Branch** button, **Code**, the merge actions and the task link
+use that branch. `directCheckout` stays set, so the run and its follow-ups
+keep working in the checkout; `cachedSessionWorktree` and
+`cachedSessionWorktreeForUi` skip the live working directory
+(`m_streamWorktree`, the checkout) for such a session
+(`sessionLinkedFromCheckout`) and resolve the worktree that holds the branch
+instead, or none when the branch is checked out in the checkout itself.
+`m_streamWorktree` is left alone, so finishing the run never treats the linked
+worktree as the run's own folder to clean up.
+
 ## Imported and external Claude Code sessions
 
 ### Importing Claude Code sessions
