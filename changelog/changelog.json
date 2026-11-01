@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Desktop", "text": "The desktop no longer crashes when the network changes during startup, and automatic Actions approval and the spell-check dictionary no longer freeze the window while they load."},
   {"date": "2026-11-01", "area": "Agents", "text": "On the phone apps, the Agents tab shows a loading list until your desktop answers instead of briefly saying there are no agent sessions."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The desktop CRM's All view now shows a list's own columns, order and names, as the web does, so imported columns such as a fit score or tier are no longer pushed far to the right."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "Choose the Cloud Dragon, a fluffy new mascot that burns, freezes and perches on page elements, from the mascot menu or Appearance settings."},

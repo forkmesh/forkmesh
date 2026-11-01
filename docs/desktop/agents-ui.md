@@ -677,6 +677,12 @@ list (`transcriptcoverage::isCodexToolItem`), so the two cannot drift.
 
 The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 `src/AgentPromptImages.*`) keeps drafts, spell-checks and takes images.
+The system dictionary (Hunspell, or a plain word list) loads on the global
+thread pool the first time any highlighter asks for it; until it is ready a
+highlighter marks nothing, and every highlighter that asked is rehighlighted
+when it arrives. Loading it inline cost about a second on the GUI thread the
+first time the log dock's editor was built at startup (report #19,
+2026-11-01).
 
 | Control | Setting | Effect |
 | --- | --- | --- |
