@@ -610,15 +610,14 @@ def test_init_secrets_never_generates_a_data_key_next_to_the_key_file(sandbox):
 
 
 def test_fleet_toml_keeps_production_and_leaves_addresses_to_instances(tmp_path):
-    current = ('[production]\napp_host = "app.forkmesh.com"\n'
-               'world_host = "world.forkmesh.com"\n\n[production.vars]\n'
+    current = ('[production]\n\n[production.vars]\n'
                'API_ORIGIN = "https://app.forkmesh.com"\n\n[dns]\nreconciler = "dry"\n')
     instances = {label: {"id": IDS[label], "ip": "207.0.113.%d" % n,
                          "ipv6": "2001:19f0:0:%d::1" % n}
                  for n, label in enumerate(sorted(IDS), start=1)}
     text = next_fleet.fleet_toml_text(instances, {}, current=current)
     data = tomllib.loads(text)
-    assert data["production"]["app_host"] == "app.forkmesh.com"
+    assert "app_host" not in data["production"]
     assert data["production"]["vars"]["API_ORIGIN"] == "https://app.forkmesh.com"
     assert "public_ipv" not in text
     assert text == next_fleet.fleet_toml_text(instances, {}, current=text)

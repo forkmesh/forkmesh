@@ -6687,7 +6687,8 @@ void MainWindow::publishQuickAddToActivityPub(const QString &prompt)
 
 void MainWindow::quickAddIssue()
 {
-    if (!m_issueQuickAdd || submitQuickAddToPackage())
+    if (!m_issueQuickAdd ||
+        (!quickAddPackageAppliesToOpen() && submitQuickAddToPackage()))
         return;
     const QString title = m_issueQuickAdd->toPlainText().trimmed();
     if (title.isEmpty() && m_quickAddImages.isEmpty())

@@ -29,6 +29,7 @@ public enum RouteParser {
 
     private static let safeSegment = try! NSRegularExpression(pattern: "^[A-Za-z0-9._-]+$")
     private static let commitHash = try! NSRegularExpression(pattern: "^[0-9a-f]{7,64}$")
+    private static let publishedNoteId = try! NSRegularExpression(pattern: "^[0-9a-f]{32}$")
     private static let packageIdPattern = try! NSRegularExpression(pattern: "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
     static let marketReservedSegments: Set<String> = ["previews"]
 
@@ -72,6 +73,8 @@ public enum RouteParser {
         }
         switch first.lowercased() {
         case "dashboard": return dashboard(Array(segments.dropFirst()), query: query, me: me)
+        case "notes" where first == "notes" && segments.count == 2 && matches(publishedNoteId, segments[1]):
+            return [.notes, .note(id: segments[1])]
         case "ledger.html": return segments.count == 1 ? [.ledger(section: nil)] : nil
         case "market.html": return segments.count == 1 ? [.market(filter: nil)] : nil
         case "status.html": return segments.count == 1 ? [.status] : nil

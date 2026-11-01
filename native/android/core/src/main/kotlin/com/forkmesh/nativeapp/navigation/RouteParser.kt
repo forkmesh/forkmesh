@@ -30,6 +30,7 @@ object RouteParser {
         "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "oauth",
     )
     private val safeSegment = Regex("^[A-Za-z0-9._-]+$")
+    private val publishedNoteId = Regex("^[0-9a-f]{32}$")
     private val commitHash = Regex("^[0-9a-f]{7,64}$")
     private val marketPackage = Regex("^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
     private const val MARKET_PACKAGE_MAX = 96
@@ -97,6 +98,9 @@ object RouteParser {
         }
         when (first.lowercase()) {
             "dashboard" -> return dashboard(segments.drop(1), query, me)
+            "notes" -> if (first == "notes" && segments.size == 2 && publishedNoteId.matches(segments[1])) {
+                return listOf(Route.Notes, Route.Note(segments[1]))
+            }
             "ledger.html" -> return if (segments.size == 1) listOf(Route.Ledger(null)) else null
             "market.html" -> return if (segments.size == 1) listOf(Route.Market(null)) else null
             "status.html" -> return if (segments.size == 1) listOf(Route.Status) else null

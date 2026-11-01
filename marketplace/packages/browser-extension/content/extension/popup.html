@@ -117,6 +117,11 @@
         <p data-repo-ok class="ok" hidden></p>
         <p data-repo-error class="error" hidden></p>
       </div>
+      <div data-forum class="row here" hidden>
+        <div class="refresh-title"><b data-forum-title></b><span>Discourse</span></div>
+        <p class="muted">Keep a read-only copy of <span data-forum-host></span> in a repository's Forum tab on your own ForkMesh instance.</p>
+        <div class="actions"><button data-forum-mirror class="primary" type="button">Mirror this forum</button></div>
+      </div>
       <div data-here class="row here" hidden></div>
       <div class="row" data-vault-section>
         <h2>Password Vault</h2>
@@ -264,6 +269,7 @@
   <script src="panel.js"></script>
   <script src="popup-vault.js"></script>
   <script src="popup-repo.js"></script>
+  <script src="popup-forum.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

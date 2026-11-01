@@ -58,8 +58,9 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
         "Restart computer on a paired phone works on its own only while your login is the "
         "one on the screen. This lets your account restart the computer when you are logged "
         "out, switched away to another user, or another user is logged in too; their "
-        "unsaved work is lost. Applies to every program you run, agents included. Asks for "
-        "an administrator password."));
+        "unsaved work is lost. It also lets the restart go through when a program is holding "
+        "off shutdown. Applies to every program you run, agents included. Asks for an "
+        "administrator password."));
     m_status = new QLabel;
     m_status->setObjectName(QStringLiteral("modeHint"));
     m_status->setWordWrap(true);
