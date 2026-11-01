@@ -11055,6 +11055,7 @@
       { kind: "device_added", label: "New device signed in", email: false },
       { kind: "timer_finished", label: "Timers and alarms", email: false },
       { kind: "desktop_ping", label: "Pings from your desktop", email: false },
+      { kind: "agent_approval", label: "Agent approvals from your desktop", email: false },
       { kind: "plugin_activity", label: "App package activity", email: false },
     ] },
   ];
@@ -48673,6 +48674,7 @@ Your reply
       plugin_activity: "puzzle",
       timer_finished: "timer",
       desktop_ping: "monitor",
+      agent_approval: "hand",
       hackathon_squad: "users",
       hackathon_reward: "gift",
       badge: "award",

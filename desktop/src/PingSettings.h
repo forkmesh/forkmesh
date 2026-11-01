@@ -106,6 +106,8 @@ inline const QList<KindInfo> &kinds()
         {"device_added", "devices", "New device signed in", false, false},
         {"timer_finished", "devices", "Timers and alarms", false, false},
         {"desktop_ping", "devices", "Pings from your desktop", false, false},
+        {"agent_approval", "devices", "Agent approvals from your desktop", false,
+         false},
         {"plugin_activity", "devices", "App package activity", false, false},
         {"operational_alert", "admin", "Operational alerts", false, false},
         {"error_group", "admin", "New error groups", false, false},

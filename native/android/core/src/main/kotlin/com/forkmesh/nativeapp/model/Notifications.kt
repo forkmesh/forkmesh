@@ -139,6 +139,7 @@ data class ForkNotification(
             "badge" -> "Badge"
             "timer_finished" -> "Timer"
             "desktop_ping" -> "Desktop"
+            "agent_approval" -> "Approval"
             "repo_activity" -> "Repo activity"
             "code_push" -> "Code push"
             else -> "Notification"
@@ -154,7 +155,8 @@ data class ForkNotification(
                 kind == "bounty_paid" ||
                 kind == "credits_refilled" ||
                 kind == "timer_finished" ||
-                kind == "desktop_ping"
+                kind == "desktop_ping" ||
+                kind == "agent_approval"
             ) {
                 return "System"
             }

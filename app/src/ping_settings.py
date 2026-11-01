@@ -78,6 +78,7 @@ PING_KIND_CATALOG = (
     ("device_added", "devices", "New device signed in"),
     ("timer_finished", "devices", "Timers and alarms"),
     ("desktop_ping", "devices", "Pings from your desktop"),
+    ("agent_approval", "devices", "Agent approvals from your desktop"),
     ("plugin_activity", "devices", "App package activity"),
     ("operational_alert", "admin", "Operational alerts"),
     ("error_group", "admin", "New error groups"),

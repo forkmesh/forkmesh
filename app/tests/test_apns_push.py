@@ -1806,3 +1806,17 @@ def test_the_schema_and_migration_carry_the_bundle_id_column():
     assert ("ALTER TABLE apns_device_tokens ADD COLUMN bundle_id TEXT NOT NULL "
             "DEFAULT ''") in migration
     assert "ADD COLUMN bundle_id" in (SRC / "entry.py").read_text()
+
+
+def test_an_agent_approval_carries_its_approval_and_breaks_through(apns):
+    alert = dict(_PING, category="agent-approval", sessionId="12",
+                 approvalId="0123456789abcdef0123456789abcdef")
+    payload = json.loads(apns.alert_payload(alert, "pings"))
+    assert payload["aps"]["category"] == "agent-approval"
+    assert payload["aps"]["interruption-level"] == "time-sensitive"
+    assert payload["approvalId"] == "0123456789abcdef0123456789abcdef"
+    assert payload["sessionId"] == "12"
+    finished = json.loads(apns.alert_payload(
+        dict(_PING, category="agent-finished"), "pings"))
+    assert "interruption-level" not in finished["aps"]
+    assert "approvalId" not in finished

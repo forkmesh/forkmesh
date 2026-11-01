@@ -1308,6 +1308,7 @@
       plugin_activity: "puzzle",
       timer_finished: "timer",
       desktop_ping: "monitor",
+      agent_approval: "hand",
       hackathon_squad: "users",
       hackathon_reward: "gift",
       badge: "award",

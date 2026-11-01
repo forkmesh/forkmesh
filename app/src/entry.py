@@ -908,6 +908,7 @@ NOTIFICATION_KINDS = frozenset({
     # account's own desktop raises it, into its own inbox (timer_pings.py).
     "timer_finished",
     "desktop_ping",
+    "agent_approval",
     # Something moved in a repository you host or help run, with nothing
     # filed in an inbox to show for it (adhoc #295): a push, a merged pull
     # request. Issues, pull requests and comments keep their own kinds.
@@ -3595,6 +3596,13 @@ async def _apns_ping_alert(env, record):
         alert["sessionId"] = clean_string(meta.get("sessionId", ""), 12)
         alert["runId"] = clean_string(meta.get("runId", ""), 12)
         alert["alarm"] = clean_string(meta.get("alarm", ""), 20)
+    if record.get("kind") == "agent_approval" and isinstance(meta, dict):
+        session = clean_string(meta.get("sessionId", ""), 64)
+        alert["category"] = "agent-approval"
+        alert["sessionId"] = session
+        alert["approvalId"] = clean_string(meta.get("approvalId", ""), 64)
+        if session:
+            alert["threadId"] = "agent-approval:" + session
     return alert
 
 
@@ -12965,6 +12973,8 @@ _direct_reminders = _LazyModule("direct_reminders")
 send_direct_unread_reminders = _direct_reminders.export("send_reminders")
 _desktop_pings = _LazyModule("desktop_pings")
 desktop_ping_handler = _desktop_pings.export("desktop_ping_handler")
+agent_approval_ping_handler = _desktop_pings.export(
+    "agent_approval_ping_handler")
 _mesh_push = _LazyModule("mesh_push")
 mesh_wake_handler = _mesh_push.export("mesh_wake_handler")
 mesh_wake_mint_handler = _mesh_push.export("mesh_wake_mint_handler")

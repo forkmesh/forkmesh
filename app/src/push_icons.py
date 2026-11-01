@@ -40,6 +40,7 @@ PUSH_KIND_ICONS = {
     "plugin_activity": "\U0001F9E9",
     "timer_finished": "\u231B",
     "desktop_ping": "\U0001F4BB",
+    "agent_approval": "\u270B",
     "repo_activity": "\U0001F4E6",
     "code_push": "\U0001F4E4",
     "security_alert": "\U0001F6A8",

@@ -125,6 +125,7 @@ public struct ForkNotification: Equatable, Hashable, Sendable, Identifiable {
         case "badge": return "Badge"
         case "timer_finished": return "Timer"
         case "desktop_ping": return "Desktop"
+        case "agent_approval": return "Approval"
         case "repo_activity": return "Repo activity"
         case "code_push": return "Code push"
         default: return "Notification"
@@ -139,7 +140,7 @@ public struct ForkNotification: Equatable, Hashable, Sendable, Identifiable {
         case "mention":
             return .mentions
         case "host_online", "host_offline", "release_published", "bounty_funded", "bounty_paid",
-             "credits_refilled", "timer_finished", "desktop_ping":
+             "credits_refilled", "timer_finished", "desktop_ping", "agent_approval":
             return .system
         default:
             return .repo

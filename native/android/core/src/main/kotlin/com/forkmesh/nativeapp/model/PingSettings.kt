@@ -195,6 +195,7 @@ val PING_KIND_FALLBACK_CATALOG: List<PingKindGroup> = listOf(
             PingKind("device_added", "New device signed in", false),
             PingKind("timer_finished", "Timers and alarms", false),
             PingKind("desktop_ping", "Pings from your desktop", false),
+            PingKind("agent_approval", "Agent approvals from your desktop", false),
             PingKind("plugin_activity", "App package activity", false),
         ),
     ),
