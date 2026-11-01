@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Desktop", "text": "The session side panels are flatter and closer together, and the Context panel now shows what fills the window: messages, tool calls, memory files, system prompt and free space, with the memory files listed."},
   {"date": "2026-11-01", "area": "Projects", "text": "Manage Actions from your phone: get a ping when a pull request's checks wait for your approval or a workflow run fails, approve with one tap, choose to always run a contributor's checks, read full run logs and manage Actions secrets on iPhone and Android."},
   {"date": "2026-11-01", "area": "Agents", "text": "Approve or deny an agent's request from your phone's notification: approvals waiting on your desktop now reach your phone with Approve and Deny buttons."},
   {"date": "2026-11-01", "area": "Desktop", "text": "New AppArmor package for Linux: see which programs AppArmor confines and what it blocks, then switch profiles between enforce and complain, edit or create them, and allow a denial with one confirmed click."},
