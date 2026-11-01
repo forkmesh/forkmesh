@@ -10634,6 +10634,7 @@
   const PULL_REVIEW_FIELD_LIMITS = { title: 200, author: 80, base: 200, head: 200, repo: 120 };
   const PULL_SUMMARY_CHATGPT_URL = "https://chatgpt.com/";
   const PULL_SUMMARY_URL_LIMIT = 14000;
+  const PULL_REVIEW_CHATGPT_MAX = 8000;
   const PULL_REVIEW_FILE_LINKS_MAX = 50;
   const PULL_REVIEW_FILES_COLLAPSE = 5;
   const PULL_REVIEW_PATH_LIMIT = 300;
@@ -10757,8 +10758,36 @@ Your reply
       .replace(/^[ \n]+|[ \n]+$/g, "");
   }
 
+  function pullReviewChatGptPrompt(value, url) {
+    const prompt = value.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd");
+    if (encodeURIComponent(prompt).length <= PULL_REVIEW_CHATGPT_MAX) return { text: prompt, shortened: false };
+    const head = `${url}\n\n`;
+    let budget = PULL_REVIEW_CHATGPT_MAX - encodeURIComponent(head).length - encodeURIComponent("\u2026").length;
+    let cut = "";
+    for (const ch of prompt) {
+      budget -= encodeURIComponent(ch).length;
+      if (budget < 0) break;
+      cut += ch;
+    }
+    return { text: `${cut.includes(url) ? "" : head}${cut}\u2026`, shortened: true };
+  }
+
+  function renderPullReviewChatGptLink(prompt, url, button) {
+    const chat = pullReviewChatGptPrompt(prompt, url);
+    const href = escapeHtml(`${PULL_SUMMARY_CHATGPT_URL}?q=${encodeURIComponent(chat.text)}`);
+    const copy = chat.shortened ? ` data-dashboard-copy="${escapeHtml(prompt)}"` : "";
+    const label = chat.shortened
+      ? "Review with ChatGPT: opens ChatGPT with the start of the review prompt and copies the full prompt"
+      : "Review with ChatGPT: opens ChatGPT with the review prompt filled in";
+    const title = chat.shortened
+      ? "The prompt is too long for a link: ChatGPT opens with its start, and the full prompt is copied to paste instead"
+      : "Open ChatGPT in a new tab with this prompt";
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="${button}"><i data-lucide="bot" class="h-3 w-3"></i><span>Review with ChatGPT</span></a>`;
+  }
+
   function renderPullReviewPrompt(fields, number, template = "") {
-    const prompt = escapeHtml(pullReviewPromptText(fields, template));
+    const text = pullReviewPromptText(fields, template);
+    const prompt = escapeHtml(text);
     const files = fields.files || [];
     const more = (fields.fileCount || 0) - files.length;
     const toggle = files.length + (more > 0 ? 1 : 0) > PULL_REVIEW_FILES_COLLAPSE;
@@ -10782,7 +10811,7 @@ Your reply
             <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
       : "";
     return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1.5 text-[12px]">${diffLinks}${listing}
-            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button><a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3 w-3"></i>Summarize in ChatGPT</a>${toggleButton}</span>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button>${renderPullReviewChatGptLink(text, fields.url, button)}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3 w-3"></i>Summarize in ChatGPT</a>${toggleButton}</span>
           </div>`;
   }
 
