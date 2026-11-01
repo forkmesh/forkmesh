@@ -41,9 +41,10 @@ it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
 | Mode remembered per folder | One global mode (`agents/cliPermissionMode`) | Partly |
 | Ctrl+Shift+M / I / E open the mode, model and effort menus | The same keys open the composer's pickers *(2026-10-25)* | Yes |
 | Model and effort pickers, changeable mid-session | Model and Speed pickers; a change applies from the next turn | Yes |
-| Typing `/` lists commands and skills | The "/" menu also opens when `/` is the first key in an empty prompt *(2026-10-25)* | Yes |
+| Typing `/` lists commands and skills | The "/" menu also opens when `/` is the first key in an empty prompt *(2026-10-25)*; **+** > Slash commands opens it too *(2026-11-01)* | Yes |
 | `@` file completion while typing | "Mention file from this project…" opens a file dialog; `@` completes people | Partly |
-| Attach files, drag and drop into the prompt | Paperclip, paste an image; dropping files attaches images and videos and mentions anything else *(2026-10-25)* | Yes |
+| Attach files, drag and drop into the prompt | **+** > Add files or photos (Ctrl+U) and Add folder, paste an image; dropping files attaches images and videos and mentions anything else *(2026-10-25, plus menu 2026-11-01)* | Yes |
+| Plus menu: files, folder, slash commands, connectors, plugins | The same **+** menu on the agent prompt, Home and Sessions composers *(2026-11-01)*, see below | Yes |
 | Typing while the agent runs queues the message; Esc stops | Follow-ups steer the live run; Stop button | Partly |
 | Prompt suggestions as ghost text (Tab accepts) | Suggestion chips on Home only | No |
 
@@ -80,7 +81,7 @@ it, **No** = missing. Rows marked *(2026-10-25)* were added on this branch.
 | Remote Control from the phone | iOS and Android list, start, steer and stop desktop agents | Yes |
 | Cross-session tools (list, read, message sessions) | `list_agents`, `send_agent_message` | Yes |
 | Suggested tasks (Start, Do it here, Start all) | `suggest_session` with Start session | Partly |
-| Connectors, skills and plugins manager | ForkMesh MCP config per run, skills on special agents | Partly |
+| Connectors, skills and plugins manager | **+** > Connectors switches each Claude Code MCP server on or off; Add plugins opens the Market; skills on special agents | Partly |
 | Computer use | Agents drive their own browser windows only | No |
 
 ## What was added on 2026-10-25
@@ -117,7 +118,7 @@ used to turn a session switched to Auto back into Edit; now Auto stays stored
 and the next launch runs under it.
 
 **`/` opens the command menu.** When the prompt is empty, no chat room is
-open and the "/" button is visible, typing `/` puts the `/` in the prompt and
+open and the composer's **+** button is visible, typing `/` puts the `/` in the prompt and
 opens the "/" menu (`openQuickAddSlashActions`) with its filter focused, so
 the next letters filter the list. Picking a row removes that `/` first.
 Closing the menu without picking (Esc) puts what was typed in the filter back
@@ -158,7 +159,40 @@ copied, since the worktree already has them. Without the file nothing changes.
 
 Tests: `forkmesh-workspace-parity-tests` (`tests/test_workspace_parity.cpp`)
 checks the shortcut table has no duplicate keys, editor detection, the drop
-plan, and `.worktreeinclude` end to end in a scratch Git repository.
+plan, the connector list and its disallowed tool names, and `.worktreeinclude` end to end in a scratch Git repository.
+
+## Plus menu (2026-11-01)
+
+The paperclip and "/" buttons in the agent prompt became one **+** button
+(`m_quickAddPlusButton`, which still shows the attachment count). The Home
+composer's **+** chip and a new **+** button on the Sessions composer open the
+same menu (`MainWindow::openComposerPlusMenu`, `MainWindowComposerPlus.cpp`).
+Whatever the menu does acts on the composer it was opened from
+(`composerTarget()`), including rows picked in the "/" popup.
+
+- **Add files or photos** (Ctrl+U in any of the three prompts): any file.
+  Images and videos are queued as attachments on the agent prompt and Home
+  (Home shares the agent prompt's queue and sends it); on the Sessions
+  composer they go into the text as `Attached image:` / `Attached video:`
+  lines, which is what a queued attachment becomes when it is sent. Other
+  files become `@` mentions, the same plan as a drop (`PromptDrop.h`).
+- **Add folder** inserts an `@folder/` mention, relative to the session's
+  worktree or repository when it is inside one.
+- **Slash commands** opens the "/" popup anchored on the **+** button.
+- **Connectors** lists ForkMesh (built in, always on) and every MCP server
+  Claude Code would load: `mcpServers` in `~/.claude.json`, the project's
+  entry under `projects` there, and the repository's `.mcp.json`
+  (`ComposerConnectors.h`). Unticking one stores its name in
+  `agents/disabledConnectors`; `agentRunLaunchOptions` then adds
+  `mcp__<server>` to the run's disallowed tools, which denies every tool of
+  that server, for Claude Code runs started or resumed afterwards. Server
+  names are normalised the way Claude Code does (anything outside
+  `A-Za-z0-9_-` becomes `_`), and the stream session's tool-name check now
+  accepts `-`. Codex runs are not affected. **Manage connectors…** opens
+  Settings > MCP.
+- **Add plugins** opens the Market, where ForkMesh plugins are installed.
+
+Ctrl+U is listed on the shortcut sheet as an in-prompt key, like Shift+Tab.
 
 ## Next candidates
 

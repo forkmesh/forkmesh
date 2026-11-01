@@ -1,3 +1,4 @@
+#include "ComposerConnectors.h"
 #include "LayoutMode.h"
 #include "PromptDrop.h"
 #include "WorkspaceOpenIn.h"
@@ -139,6 +140,37 @@ void dropPlan(const QString &root)
                {QStringLiteral("/tmp/b.txt")}, "only local files are dropped");
 }
 
+void composerConnectors()
+{
+    using namespace forkmesh::composerconnectors;
+    const QByteArray user = R"({"mcpServers":{"github":{},"forkmesh":{}},
+        "projects":{"/work/repo":{"mcpServers":{"linear":{},"github":{}}},
+                    "/elsewhere":{"mcpServers":{"other":{}}}}})";
+    const QByteArray project = R"({"mcpServers":{"my server":{},"linear":{}}})";
+    QStringList names;
+    QStringList sources;
+    for (const Connector &connector :
+         claudeConnectors(user, QStringLiteral("/work/repo"), project)) {
+        names << connector.name;
+        sources << connector.source;
+    }
+    expectList(names,
+               {QStringLiteral("github"), QStringLiteral("linear"),
+                QStringLiteral("my server")},
+               "user, project-local and .mcp.json servers, once each, built-in left out");
+    expect(sources.size() == 3 && sources.at(0) != sources.at(1) &&
+               sources.at(1) != sources.at(2),
+           "each connector names where it is set up");
+    expect(claudeConnectors("not json", QString(), QByteArray()).isEmpty(),
+           "unreadable settings list nothing");
+    expectList(disallowedTools({QStringLiteral("github"), QStringLiteral("my server"),
+                                QStringLiteral("forkmesh"), QStringLiteral("github"),
+                                QStringLiteral("a.b-c")}),
+               {QStringLiteral("mcp__github"), QStringLiteral("mcp__my_server"),
+                QStringLiteral("mcp__a_b-c")},
+               "a switched-off connector denies every tool of its server");
+}
+
 void includeList()
 {
     using namespace forkmesh::worktreeinclude;
@@ -249,6 +281,7 @@ int main(int argc, char **argv)
     shortcutTable();
     editorDetection();
     dropPlan(root.path());
+    composerConnectors();
     includeList();
     includeCopy(root.path());
     layoutModeMigration(root.path());

@@ -20,6 +20,7 @@ enum class Action {
     ModelMenu,
     EffortMenu,
     CycleMode,
+    AddFiles,
     ShowShortcuts,
 };
 
@@ -70,6 +71,8 @@ inline QList<Binding> bindings()
          QStringLiteral("Effort menu")},
         {Action::CycleMode, QKeySequence(Qt::SHIFT | Qt::Key_Backtab),
          QStringLiteral("Next permission mode (in the prompt)"), false},
+        {Action::AddFiles, QKeySequence(Qt::CTRL | Qt::Key_U),
+         QStringLiteral("Add files or photos (in the prompt)"), false},
         {Action::ShowShortcuts, QKeySequence(Qt::CTRL | Qt::Key_Slash),
          QStringLiteral("Show keyboard shortcuts")},
     };

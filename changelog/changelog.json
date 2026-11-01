@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Agents", "text": "The agent prompt, Home and Sessions composers have one + menu to add files or photos (Ctrl+U), add a folder, open slash commands, switch connectors on or off and add plugins."},
   {"date": "2026-11-01", "area": "iPhone", "text": "Notices on iPhone and Android close themselves after a few seconds, with a ring around the close button counting down, and tapping a notice or alert message opens it in the composer instead of showing copy and send icons."},
   {"date": "2026-11-01", "area": "Projects", "text": "Notes can hold diagrams (svg code blocks drawn as figures), page breaks and a page layout, and Export PDF turns a note into a paginated PDF with an optional cover page, contents and page numbers on the web, desktop, iPhone and Android."},
   {"date": "2026-11-01", "area": "Agents", "text": "Switching an agent to Auto from the mode dropdown now sticks instead of going back to Edit."},
