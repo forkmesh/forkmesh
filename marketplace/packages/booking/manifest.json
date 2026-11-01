@@ -1,0 +1,123 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "booking",
+  "name": "Booking Page",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.0.0",
+  "summary": "Share one short link to your calendar. People pick a free time and book a meeting, it lands on your ForkMesh calendar, and ForkMesh emails both of you the details.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A booking page with the host's name, meeting types, a month calendar with free days and a column of open times"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "desktop": "builtin:booking",
+    "worker": "content/worker/booking.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "www-page": "content/www/meet.html",
+    "www-script": "content/www/meet.js",
+    "www-style": "content/www/meet.css",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/booking",
+        "title": "Booking",
+        "description": "Your booking link, meeting types, weekly hours and the meetings people have booked.",
+        "script": "dashboard-script",
+        "navigation": { "label": "Booking", "icon": "calendar-clock", "order": 21 }
+      }
+    },
+    {
+      "id": "public-booking",
+      "socket": "www.page",
+      "entrypoint": "www-page",
+      "config": {
+        "route": "/meet",
+        "title": "Book a meeting",
+        "assets": ["www-script", "www-style"]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.booking.read",
+      "label": "Read your booking page settings and the meetings booked with you, encrypted under your account's own key",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.booking.write",
+      "label": "Change your booking link, meeting types and hours, and cancel meetings",
+      "risk": "sensitive"
+    },
+    {
+      "id": "booking.public.link",
+      "label": "Let anyone with your booking link see your free times and book a meeting with you",
+      "risk": "sensitive"
+    },
+    {
+      "id": "calendar.events.read",
+      "label": "Check your ForkMesh calendar so busy times are never offered",
+      "risk": "sensitive"
+    },
+    {
+      "id": "calendar.events.write",
+      "label": "Add booked meetings to your ForkMesh calendar and move or remove them when they change",
+      "risk": "sensitive"
+    },
+    {
+      "id": "email.send",
+      "label": "Email confirmations, changes, cancellations and reminders to you and the person who booked",
+      "risk": "high"
+    },
+    {
+      "id": "notifications.plugin.send",
+      "label": "Ping you when someone books, moves or cancels a meeting",
+      "risk": "low"
+    },
+    {
+      "id": "chrome.rail.button",
+      "label": "Add a Booking page to the desktop rail",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "places": ["desktop", "web"]
+  },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "account" },
+  "worker": {
+    "module": "booking",
+    "api": "/api/booking",
+    "outboundOrigins": []
+  }
+}

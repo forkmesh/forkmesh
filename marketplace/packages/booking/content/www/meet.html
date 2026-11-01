@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Book a meeting</title>
+    <meta name="description" content="Pick a time and book a meeting. Booked with ForkMesh." />
+    <meta name="theme-color" content="#0b0b0d" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/meet/meet.css?v=${version}" />
+    <script src="/meet/meet.js?v=${version}" defer></script>
+  </head>
+  <body class="bk-body">
+    <main class="bk-wrap">
+      <div class="bk-card bk-card-loading" data-bk-root aria-live="polite">
+        <div class="bk-loading" role="status"><span class="bk-spinner" aria-hidden="true"></span><span>Loading the booking page…</span></div>
+      </div>
+      <noscript><p class="bk-noscript">This booking page needs JavaScript to show open times.</p></noscript>
+      <p class="bk-credit">Scheduling by <a href="https://forkmesh.com">ForkMesh</a></p>
+    </main>
+  </body>
+</html>
