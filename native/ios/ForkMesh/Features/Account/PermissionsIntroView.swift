@@ -10,24 +10,14 @@ struct PermissionsIntroPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    PermissionsHeroCard(enter: enter)
-                        .padding(.top, FmSpace.x3)
-                        .fmReveal(delay: enter, rise: 26, scale: 0.96)
-                    FmRevealTitle(lines: PermissionPacing.titleLines, delay: enter + 0.12)
-                        .padding(.top, FmSpace.x5)
-                    FmRevealLine(
-                        text: PermissionPacing.footnote, role: .bodySmall, color: FmOnboarding.secondaryText,
-                        delay: enter + 0.42, duration: 0.6
-                    )
-                    .multilineTextAlignment(.center)
-                    .padding(.top, FmSpace.x3)
+            ViewThatFits(in: .vertical) {
+                content(compact: false)
+                content(compact: true)
+                ScrollView(showsIndicators: false) {
+                    content(compact: true)
                 }
-                .frame(maxWidth: 520)
-                .padding(.horizontal, 28)
-                .frame(maxWidth: .infinity)
             }
+            .frame(maxHeight: .infinity, alignment: .top)
             VStack(spacing: FmSpace.x1) {
                 FmPillButton(label: "Let's Get Started", onPressed: onContinue)
                     .accessibilityIdentifier("permissions-intro-continue")
@@ -41,11 +31,31 @@ struct PermissionsIntroPage: View {
             .padding(.top, FmSpace.x3)
         }
     }
+
+    private func content(compact: Bool) -> some View {
+        VStack(spacing: 0) {
+            PermissionsHeroCard(enter: enter, compact: compact)
+                .padding(.top, FmSpace.x3)
+                .fmReveal(delay: enter, rise: 26, scale: 0.96)
+            FmRevealTitle(lines: PermissionPacing.titleLines, delay: enter + 0.12)
+                .padding(.top, FmSpace.x5)
+            FmRevealLine(
+                text: PermissionPacing.footnote, role: .bodySmall, color: FmOnboarding.secondaryText,
+                delay: enter + 0.42, duration: 0.6
+            )
+            .multilineTextAlignment(.center)
+            .padding(.top, FmSpace.x3)
+        }
+        .frame(maxWidth: 520)
+        .padding(.horizontal, 28)
+        .frame(maxWidth: .infinity)
+    }
 }
 
 private struct PermissionsHeroCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let enter: Double
+    let compact: Bool
     @State private var asked: Int = PermissionPacing.reasons.count
     @State private var floating = false
 
@@ -158,8 +168,10 @@ private struct PermissionsHeroCard: View {
 
     private var band: some View {
         VStack(spacing: 6) {
-            strip
-            counter
+            if !compact {
+                strip
+                counter
+            }
             list
         }
         .padding(5)
@@ -171,7 +183,9 @@ private struct PermissionsHeroCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            top
+            if !compact {
+                top
+            }
             band
         }
         .padding(5)
@@ -190,7 +204,7 @@ private struct PermissionsHeroCard: View {
             withAnimation(.easeInOut(duration: 3.4).repeatForever(autoreverses: true)) { floating = true }
         }
         .task {
-            guard !reduceMotion else { return }
+            guard !reduceMotion, !compact else { return }
             try? await Task.sleep(for: .seconds(enter + 0.5))
             while asked > 0, !Task.isCancelled {
                 withAnimation(.easeOut(duration: 0.18)) { asked -= 1 }

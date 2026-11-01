@@ -24,6 +24,7 @@ import UIKit
 @MainActor
 struct HomeShell: View {
     @Environment(\.fmPalette) var fm
+    @Environment(\.colorScheme) var colorScheme
     @Environment(\.openURL) var openURL
     @Environment(\.horizontalSizeClass) var sizeClass
     @Environment(\.scenePhase) var scenePhase
@@ -1127,6 +1128,7 @@ struct HomeShell: View {
             }
             .sheet(isPresented: $showTour) {
                 TourView(onFinish: { showTour = false }, onJump: { (jump: TourJump) in tourJump(jump) })
+                    .preferredColorScheme(colorScheme)
             }
             .sheet(isPresented: $genie.sheetShown, onDismiss: genieClosed) {
                 if let session = genie.session {
