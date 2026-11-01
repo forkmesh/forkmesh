@@ -7,6 +7,7 @@ import UIKit
 struct GenieSpiderLayer: View {
     var hidden: Bool = false
     var floor: CGFloat? = nil
+    var keepSides: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -70,7 +71,7 @@ struct GenieSpiderLayer: View {
             .onAppear { area = proxy.size }
             .onChange(of: proxy.size) { (_: CGSize, next: CGSize) in area = next }
         }
-        .ignoresSafeArea()
+        .ignoresSafeArea(edges: keepSides ? .vertical : .all)
         .overlay(alignment: .top) { spoken }
         .opacity(hidden ? 0 : 1)
         .allowsHitTesting(!hidden)
