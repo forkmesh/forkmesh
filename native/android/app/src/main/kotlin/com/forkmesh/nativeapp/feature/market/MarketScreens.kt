@@ -156,6 +156,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "videoMixDjStudio" -> Route.VideoMixDjStudio
     "poker" -> Route.Poker(null)
     "instanceFeed" -> Route.InstanceFeed(null)
+    "mastodon" -> Route.Mastodon
     "secureDrive" -> Route.SecureDrive
     "files", "fileExplorer" -> Route.Files
     "workflows" -> Route.Workflows

@@ -35,3 +35,4 @@
 /reset-password https://app.forkmesh.com/reset-password 308
 /signup https://app.forkmesh.com/signup 308
 /start https://app.forkmesh.com/start 308
+/start-discourse-mirror https://app.forkmesh.com/start-discourse-mirror 308

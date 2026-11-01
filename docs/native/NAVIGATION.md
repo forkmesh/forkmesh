@@ -802,6 +802,12 @@ to offer three depths.
   The About screen credits NetNewsWire
   ([RSS Reader](../marketplace/rss-reader.md)). Android: `Route.RssReader`,
   `feature/rssreader/`.
+- **Mastodon** (`.mastodon`, `/dashboard/mastodon`, `forkmesh://mastodon`,
+  Personal group): a native Mastodon client that signs in to the user's own
+  server and talks to it directly (`Mastodon*.swift` in FMPackages and
+  `Features/Packages/`). `forkmesh://mastodon/callback` is the OAuth
+  redirect, not a route ([Mastodon](../marketplace/mastodon.md#on-the-phone)).
+  Android: `Route.Mastodon`, `feature/mastodon/`.
 - **People** (`.people`, `/dashboard/people`): a campfire of five engagement
   rings with Follow and Message ([People](../marketplace/people.md)).
 - **Docs** (`.docs`): the public documentation library bundled with the app.

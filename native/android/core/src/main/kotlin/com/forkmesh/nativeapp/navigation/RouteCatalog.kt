@@ -167,6 +167,7 @@ object RouteCatalog {
         Route.Kind.VideoMixDjStudio -> "Video Mix DJ Studio"
         Route.Kind.Poker -> "Poker"
         Route.Kind.InstanceFeed -> "Feed"
+        Route.Kind.Mastodon -> "Mastodon"
         Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Files -> "Files"
         Route.Kind.Nexus -> "NEXUS"
@@ -256,6 +257,7 @@ object RouteCatalog {
         Route.Kind.VideoMixDjStudio -> "album"
         Route.Kind.Poker -> "casino"
         Route.Kind.InstanceFeed -> "comment"
+        Route.Kind.Mastodon -> "alternate_email"
         Route.Kind.SecureDrive -> "lock"
         Route.Kind.Files -> "folder"
         Route.Kind.Nexus -> "lan"
@@ -377,6 +379,7 @@ object HubCatalog {
         HubItem.destination(Route.VideoMixDjStudio),
         HubItem.destination(Route.Poker(null), needsRegistration = true, guestAction = "play poker"),
         HubItem.destination(Route.InstanceFeed(null), needsRegistration = true),
+        HubItem.destination(Route.Mastodon),
         HubItem.destination(Route.SecureDrive),
         HubItem.destination(Route.Files),
         HubItem.destination(Route.LocalAI, needsRegistration = true),
