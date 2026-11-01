@@ -22,6 +22,7 @@ documentation; the package format, lifecycle and publishing rules are in
 
 | Page | Covers |
 | --- | --- |
+| [browser-extension.md](browser-extension.md) | `browser-extension`: the Chrome extension for the vault, CRM, Marketing and repository mirroring ([user guide](../browser-extension.md)) |
 | [codebase-analysis.md](codebase-analysis.md) | `code-map`, `size-map` and the analysis engine shared by Strata, Ember and Synapse, on desktop and phones |
 | [strata.md](strata.md) | `strata`: architecture and complexity (modules, cycles, rules, debt, quality gates) |
 | [ember.md](ember.md) | `ember`: file-level hotspots |

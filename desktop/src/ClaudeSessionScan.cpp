@@ -323,6 +323,60 @@ int removeOrphanedTranscripts(const QStringList &configDirs, const QString &cwd,
     return count;
 }
 
+int removeOrphanedDesktopRecords(const QString &desktopRoot, const QString &cwd,
+                                 QStringList *removed)
+{
+    if (desktopRoot.trimmed().isEmpty() || cwd.trimmed().isEmpty())
+        return 0;
+    const QString folder = QDir::cleanPath(QDir(cwd).absolutePath());
+    if (folder == QLatin1String("/") || QFileInfo::exists(folder))
+        return 0;
+    const auto within = [&folder](const QString &path) {
+        if (path.trimmed().isEmpty())
+            return false;
+        const QString clean = QDir::cleanPath(path);
+        return clean == folder || clean.startsWith(folder + QLatin1Char('/'));
+    };
+    const QDir root(QDir(desktopRoot).filePath(QStringLiteral("claude-code-sessions")));
+    if (!root.exists())
+        return 0;
+    int count = 0;
+    for (const QFileInfo &account : root.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        for (const QFileInfo &org :
+             QDir(account.absoluteFilePath()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            const QDir orgDir(org.absoluteFilePath());
+            for (const QFileInfo &fi :
+                 orgDir.entryInfoList({QStringLiteral("local_*.json")}, QDir::Files)) {
+                QFile f(fi.absoluteFilePath());
+                if (fi.size() > 16 * 1024 * 1024 || !f.open(QIODevice::ReadOnly))
+                    continue;
+                const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+                f.close();
+                if (!within(o.value(QStringLiteral("cwd")).toString()) &&
+                    !within(o.value(QStringLiteral("originCwd")).toString()))
+                    continue;
+                QString key = o.value(QStringLiteral("sessionId")).toString().trimmed();
+                if (key.isEmpty())
+                    key = fi.completeBaseName();
+                if (key.startsWith(QLatin1String("local_")))
+                    key = key.mid(6);
+                if (!QFile::remove(fi.absoluteFilePath()))
+                    continue;
+                ++count;
+                if (removed)
+                    removed->append(fi.absoluteFilePath());
+                QFile::remove(orgDir.filePath(QStringLiteral("waiting-input/") + fi.fileName()));
+                if (key.isEmpty() || key.contains(QLatin1Char('/')))
+                    continue;
+                QFile tombstone(orgDir.filePath(QStringLiteral("deleted_") + key));
+                if (!tombstone.exists() && tombstone.open(QIODevice::WriteOnly))
+                    tombstone.write(QByteArray::number(QDateTime::currentMSecsSinceEpoch()));
+            }
+        }
+    }
+    return count;
+}
+
 // code-health: allow(dir-walk-in-loop) only called from runOffThread in MainWindow::scanExternalClaudeSessions()
 QList<ExternalClaudeSession> scan(const QString &repoLocalPath,
                                   const QSet<QString> &excludeCwds,
