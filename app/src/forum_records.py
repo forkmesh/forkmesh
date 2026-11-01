@@ -17,6 +17,7 @@ MAX_BODY = 32_000
 MAX_LOCAL_POSTS = 2000
 MAX_LIKERS = 5000
 MAX_ATTEMPTS = 3
+MAX_FILE_BYTES = 1_500_000
 TOPIC_RE = re.compile(r"^(?:[1-9]\d{0,9}|n[1-9]\d{0,8})$")
 POST_RE = re.compile(r"^(?:[1-9]\d{0,6}|l[1-9]\d{0,6})$")
 EVENT_ID_RE = re.compile(r"^[a-z][a-z-]{1,20}-[0-9a-z-]{4,60}$")
@@ -726,34 +727,51 @@ async def read_forum(env, owner, repo, branch):
         if path not in cache:
             blob = await edits._blob(env, owner, repo, FORUM_PATH + "/" + path, commit)
             value = None
-            if (isinstance(blob, dict) and not blob.get("truncated")
-                    and str(blob.get("encoding") or "utf8") == "utf8"
-                    and isinstance(blob.get("content"), str)):
+            if isinstance(blob, dict) and isinstance(blob.get("content"), str):
+                if blob.get("truncated") or str(blob.get("encoding") or "utf8") != "utf8":
+                    raise RecordError("forum_unreadable", "Part of the forum is too large to change here.", 409)
                 try:
                     value = json.loads(blob["content"])
-                except ValueError:
-                    value = None
+                except ValueError as error:
+                    raise RecordError("forum_unreadable", "Part of the forum could not be read.", 409) from error
             cache[path] = value
         return cache[path]
 
     return commit, read
 
 
-async def commit_records(env, owner, repo, branch, commit, changes, account, message):
-    files = {FORUM_PATH + "/" + path: encode(value) for path, value in changes.items()}
+def check_sizes(changes):
+    for path, value in changes.items():
+        if len(encode(value)) > MAX_FILE_BYTES:
+            raise RecordError("forum_full", "This part of the forum is full; start a new topic.", 409)
+
+
+async def forum_listings(env, owner, repo, commit, paths):
     listings = {}
-    directories = set()
-    for path in sorted(files):
-        directory = path.rpartition("/")[0]
-        if directory in directories:
-            continue
-        directories.add(directory)
-        found_commit, found, _create = await edits._listings(
-            env, owner, repo, branch, path, "", allow_missing=True)
-        if found_commit != commit:
-            raise Conflict()
-        for name, entries in found.items():
-            listings.setdefault(name, entries)
+    for path in sorted(paths):
+        parts = path.split("/")
+        for depth in range(len(parts)):
+            directory = "/".join(parts[:depth])
+            if directory in listings:
+                continue
+            parent = "/".join(parts[:depth - 1]) if depth else None
+            if parent is not None and not any(
+                    entry.get("name") == parts[depth - 1] for entry in listings.get(parent) or []):
+                listings[directory] = []
+                continue
+            listing = await edits._tree(env, owner, repo, directory, commit)
+            if listing is None or str(listing.get("commit") or commit).lower() != commit:
+                raise Conflict()
+            if listing.get("truncated"):
+                raise RecordError("forum_unreadable", "A folder of the forum is too large to change here.", 409)
+            listings[directory] = listing["entries"]
+    return listings
+
+
+async def commit_records(env, owner, repo, branch, commit, changes, account, message):
+    check_sizes(changes)
+    files = {FORUM_PATH + "/" + path: encode(value) for path, value in changes.items()}
+    listings = await forum_listings(env, owner, repo, commit, files)
     objects = []
     tree_changes = {}
     for path, blob in files.items():

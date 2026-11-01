@@ -208,6 +208,20 @@ topics/<id>/state.json             operator overrides (pinned, closed, archived,
 - ForkMesh posts are Markdown, drawn by the dashboard's `renderMarkdown`,
   which escapes first.
 
+**Limits that protect the data**
+- The writer rebuilds every folder it touches from the gateway's listing of it.
+  So it refuses to commit, with `forum_unreadable`, when a listing or a file
+  it must change comes back truncated or is not JSON. Writing anyway would
+  drop the entries it was not shown.
+- Gateways list `.forkmesh/forum` up to 50,000 entries, like the other
+  collaboration folders (`COLLABORATION_TREE_ROOTS` in
+  `tools/mirror_gateway.py`; [gateways](../server/gateways.md)).
+- No file the writer produces may be over 1.5 MB (`forum_full`). This bounds,
+  for example:
+  - a topic's ForkMesh replies, at most 2,000 in `local.json`;
+  - `native.json`, about 1,500 topics made on ForkMesh. A larger native
+    forum needs that index split, which is not done yet.
+
 **Lists**
 - **A forum made on ForkMesh** (`forum.json` `source.type` is `forkmesh`): every
   write rebuilds every list page, the category counts and the tags from

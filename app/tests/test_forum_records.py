@@ -392,3 +392,40 @@ def test_the_forum_api_is_routed():
     assert '"REPO_FORUM_RE"' in (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
     source = (ROOT / "src" / "forum_records.py").read_text(encoding="utf-8")
     assert 'credential="forum-record"' in source and 'FORUM_PATH + "/" + path' in source
+
+
+def test_a_truncated_file_or_folder_stops_the_write_instead_of_losing_data(monkeypatch):
+    commit = "a" * 40
+    tree = {"": {"commit": commit, "entries": [{"name": ".forkmesh"}]},
+            ".forkmesh": {"commit": commit, "entries": [{"name": "forum"}]},
+            ".forkmesh/forum": {"commit": commit, "entries": [{"name": "topics"}]},
+            ".forkmesh/forum/topics": {"commit": commit, "entries": [{"name": "1"}], "truncated": True}}
+    blobs = {".forkmesh/forum/topics/1/local.json": {"content": '{"posts": [', "truncated": True}}
+
+    async def fake_tree(env, owner, repo, path, ref):
+        return tree.get(path)
+
+    async def fake_blob(env, owner, repo, path, ref):
+        return blobs.get(path)
+
+    monkeypatch.setattr(records.edits, "_tree", fake_tree)
+    monkeypatch.setattr(records.edits, "_blob", fake_blob)
+    _commit, read = run(records.read_forum(None, "ada", "forum", "main"))
+    assert run(read("topics/9/local.json")) is None
+    with pytest.raises(records.RecordError) as error:
+        run(read("topics/1/local.json"))
+    assert error.value.code == "forum_unreadable"
+    with pytest.raises(records.RecordError) as error:
+        run(records.forum_listings(None, "ada", "forum", commit, [".forkmesh/forum/topics/1/local.json"]))
+    assert error.value.code == "forum_unreadable"
+    listings = run(records.forum_listings(None, "ada", "forum", commit, [".forkmesh/forum/new/a.json"]))
+    assert listings[".forkmesh/forum/new"] == [] and listings[".forkmesh/forum"] == [{"name": "topics"}]
+    with pytest.raises(records.RecordError) as error:
+        records.check_sizes({"topics/1/local.json": {"posts": ["x" * records.MAX_FILE_BYTES]}})
+    assert error.value.code == "forum_full"
+
+
+def test_mirrors_list_forum_folders_like_other_collaboration_records():
+    source = (ROOT.parent / "tools" / "mirror_gateway.py").read_text(encoding="utf-8")
+    roots = source.split("COLLABORATION_TREE_ROOTS = frozenset({", 1)[1].split("})", 1)[0]
+    assert '".forkmesh/forum"' in roots
