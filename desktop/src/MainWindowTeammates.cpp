@@ -7647,8 +7647,10 @@ int MainWindow::startTeammateSession(Config teammate, const QString &trigger,
     if (teammate.lowCostModel)
         taskAgent = forkmesh::teammates::lowCostAgentChoice(taskAgent);
     const QString provider = taskAgent.provider;
+    const bool composerMode = m_quickAddModeSelector &&
+                              taskType != forkmesh::teammates::kTaskTypeUiStalls;
     QString runMode = forkmesh::agentrules::teammateRunMode(
-        m_quickAddModeSelector ? m_quickAddModeSelector->currentText() : QString(),
+        composerMode ? m_quickAddModeSelector->currentText() : QString(),
         grantedPermissions, kClaudeAutoModeLabel, QStringLiteral("Edit"),
         QStringLiteral("Plan"));
     if (!teammate.permissions.contains(QStringLiteral("run-unattended")) &&

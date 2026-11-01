@@ -1071,23 +1071,39 @@ void checkFooterOverlayGeometry(MainWindow &window)
         auto *chartsExpand = window.findChild<QPushButton *>(
             QStringLiteral("debugChartsExpandButton"));
         auto *stallTile = window.findChild<QWidget *>(QStringLiteral("debugStallTile"));
+        auto *resourceChart =
+            window.findChild<QWidget *>(QStringLiteral("debugResourceChart"));
+        const QString compactTip = chartsExpand ? chartsExpand->toolTip() : QString();
         if (chartsExpand)
             chartsExpand->click();
         QApplication::processEvents();
-        const QSize fullSide(forkmesh::ui::kDebugChartExpandedSide,
-                             forkmesh::ui::kDebugChartExpandedSide);
+        const int expandedSide = forkmesh::ui::kDebugChartExpandedSide;
+        const QSize fullSide(expandedSide, expandedSide);
+        const QString expandedTip = chartsExpand ? chartsExpand->toolTip() : QString();
         const bool expandedFull = chartsExpand && chartsExpand->isChecked() &&
                                   stallTile && stallTile->size() == fullSide &&
-                                  tokensOut && tokensOut->size() == fullSide;
+                                  tokensOut && tokensOut->size() == fullSide &&
+                                  resourceChart &&
+                                  resourceChart->height() == expandedSide &&
+                                  resourceChart->width() >= 4 * expandedSide;
         if (chartsExpand)
             chartsExpand->click();
         QApplication::processEvents();
         check(expandedFull && !chartsExpand->isChecked() && stallTile &&
                   stallTile->size() ==
                       QSize(forkmesh::ui::kResourceSparklineCompactSide,
-                            forkmesh::ui::kResourceSparklineCompactSide),
-              QStringLiteral("the debug strip's expand button grows every chart "
-                             "to full height and back to compact"));
+                            forkmesh::ui::kResourceSparklineCompactSide) &&
+                  resourceChart &&
+                  resourceChart->size() == QSize(forkmesh::ui::kDebugTileQuadSide,
+                                                 forkmesh::ui::kDebugTileQuadSide),
+              QStringLiteral("the debug strip's expand button grows every chart, "
+                             "the CPU/memory/swap/disk chart included, to full "
+                             "height and back to compact"));
+        check(compactTip.startsWith(QStringLiteral("Expand")) &&
+                  expandedTip.startsWith(QStringLiteral("Collapse")) &&
+                  chartsExpand->toolTip() == compactTip,
+              QStringLiteral("the debug strip's chevron says on hover whether it "
+                             "expands or collapses the charts"));
 
         auto *allRail = dynamic_cast<forkmesh::ui::ActivityRailButton *>(
             window.findChild<QPushButton *>(QStringLiteral("debugLogAllButton")));
@@ -2068,6 +2084,31 @@ void checkNotificationDefaultsAndDelivery(MainWindow &window)
               QStringLiteral("fm:agent:73002"),
           QStringLiteral("explicitly enabling native system notifications "
                          "opens their delivery gate"));
+    for (int i = 3; i <= 4; ++i)
+        window.testPostNotification(
+            QStringLiteral("Burst probe %1").arg(i),
+            QStringLiteral("burst body %1").arg(i),
+            QStringLiteral("fm:agent:7300%1").arg(i));
+    check(window.testDesktopNotificationHref() ==
+              QStringLiteral("fm:agent:73004"),
+          QStringLiteral("the first three cards of a burst show one by one"));
+    for (int i = 5; i <= 9; ++i)
+        window.testPostNotification(
+            QStringLiteral("Burst probe %1").arg(i),
+            QStringLiteral("burst body %1").arg(i),
+            QStringLiteral("fm:agent:7300%1").arg(i));
+    window.testPostNotification(QStringLiteral("Burst probe 10"),
+                                QStringLiteral("burst body 10"),
+                                QStringLiteral("fm:agent:73010"));
+    check(window.testDesktopNotificationHref() ==
+              QStringLiteral("fm:agent:73004"),
+          QStringLiteral("later cards of a burst are held"));
+    window.testPostNotification(QStringLiteral("Burst probe 11"),
+                                QStringLiteral("burst body 11"),
+                                QStringLiteral("fm:agent:73011"));
+    check(window.testDesktopNotificationHref() == QStringLiteral("fm:pings"),
+          QStringLiteral("the tenth ping of a burst raises one summary card "
+                         "that opens the Pings page"));
     settings.remove(forkmesh::ui::kNativeSystemNotificationsSetting);
 
     // A stale acknowledgement must not clear a newer pause selected while the
@@ -29649,6 +29690,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                                           QStringLiteral("Closed"),
                                           QStringLiteral("Merged"),
                                           QStringLiteral("All"),
+                                          QStringLiteral("Review all"),
                                           QStringLiteral("Merge all"),
                                           QStringLiteral("Delete closed and merged")};
             QStringList captions;
@@ -29809,12 +29851,22 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                   {ledgerPull(13, QStringLiteral("open"))}),
               QStringLiteral("the pull list shows a loading row while the first "
                              "load runs and drops it once the rows arrive"));
+        check(window.testClickPullRowDiffButton(
+                  {ledgerPull(21, QStringLiteral("open")),
+                   ledgerPull(22, QStringLiteral("open"))},
+                  22) == 22,
+              QStringLiteral("hovering a pull row shows a button that opens that "
+                             "pull's changes in Git without selecting the row"));
     }
     bool prFixButtonFound = false;
     bool prHeaderStyleUniform = true;
+    QWidget *branchPullReviewBar =
+        window.findChild<QWidget *>(QStringLiteral("branchPullReviewBar"));
     for (QPushButton *b : window.findChildren<QPushButton *>()) {
         if (b->text() == QStringLiteral("Fix") && !b->menu())
             prFixButtonFound = true;
+        if (branchPullReviewBar && branchPullReviewBar->isAncestorOf(b))
+            continue;
         if (b->text() == QStringLiteral("AI review") ||
             b->text() == QStringLiteral("Fix all") ||
             b->text() == QStringLiteral("Merge") ||

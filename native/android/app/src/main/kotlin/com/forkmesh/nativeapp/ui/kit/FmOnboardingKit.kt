@@ -120,10 +120,12 @@ fun FmPillButton(
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     kind: FmPillKind = FmPillKind.Primary,
+    busy: Boolean? = null,
 ) {
     val haptics = FmHaptics.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val tap = rememberFmBusyTap(onClick != null)
     val still = Fm.reducedMotion
     val grow by animateFloatAsState(if (pressed && !still) 1.03f else 1f, tween(140, easing = FmMotion.easeOutCubic), label = "pill-press")
     val shape = CircleShape
@@ -136,24 +138,28 @@ fun FmPillButton(
             .fillMaxWidth()
             .scale(grow)
             .heightIn(min = 58.dp)
+            .fmBusyRing(tap.busy(busy), shape)
             .graphicsLayer { alpha = if (onClick == null) 0.55f else 1f }
             .clip(shape)
             .background(fill, shape)
             .border(1.dp, Color.White.copy(alpha = if (kind == FmPillKind.Primary) 0.6f else 0.05f), shape)
             .clickable(interactionSource = interaction, indication = null, enabled = onClick != null, role = Role.Button) {
+                tap.tapped()
                 haptics.tap()
                 onClick?.invoke()
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            maxLines = 1,
-            style = Fm.text.titleMedium.copy(
-                color = if (kind == FmPillKind.Primary) Color.Black else Color.White,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
+        FmHoldArea {
+            Text(
+                label,
+                maxLines = 1,
+                style = Fm.text.titleMedium.copy(
+                    color = if (kind == FmPillKind.Primary) Color.Black else Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            )
+        }
     }
 }
 
@@ -171,7 +177,7 @@ fun FmPillTextButton(label: String, onClick: () -> Unit, modifier: Modifier = Mo
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = Fm.text.labelLarge.copy(color = color, fontWeight = FontWeight.Medium))
+        FmHoldArea { Text(label, style = Fm.text.labelLarge.copy(color = color, fontWeight = FontWeight.Medium)) }
     }
 }
 

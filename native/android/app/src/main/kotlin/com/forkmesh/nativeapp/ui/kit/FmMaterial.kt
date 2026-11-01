@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -98,7 +99,7 @@ fun FmTooltip(message: String, modifier: Modifier = Modifier, content: @Composab
                 containerColor = if (colors.dark) colors.bgElevated else colors.textPrimary,
                 contentColor = if (colors.dark) colors.textPrimary else Color.White,
             ) {
-                Text(message, style = TextStyle(fontFamily = FmType.ui, fontSize = FmType.meta, fontWeight = FmType.medium))
+                DisableSelection { Text(message, style = TextStyle(fontFamily = FmType.ui, fontSize = FmType.meta, fontWeight = FmType.medium)) }
             }
         },
         state = rememberTooltipState(),
@@ -116,19 +117,23 @@ fun FmTextButton(
     minHeight: Dp = 44.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = FmSpace.x3),
     textStyle: TextStyle? = null,
+    busy: Boolean? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val tap = rememberFmBusyTap(enabled)
     TextButton(
         onClick = {
+            tap.tapped()
             FmSoundCues.play(SoundCue.CLICK)
             onClick()
         },
         modifier = modifier.defaultMinSize(minHeight = minHeight),
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(contentColor = contentColor),
+        border = fmBusyBorder(tap.busy(busy)),
         contentPadding = contentPadding,
     ) {
-        if (textStyle != null) ProvideTextStyle(textStyle) { content() } else content()
+        DisableSelection { if (textStyle != null) ProvideTextStyle(textStyle) { content() } else content() }
     }
 }
 
@@ -137,11 +142,14 @@ fun FmElevatedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    busy: Boolean? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = Fm.colors
+    val tap = rememberFmBusyTap(enabled)
     Button(
         onClick = {
+            tap.tapped()
             FmSoundCues.play(SoundCue.CLICK)
             onClick()
         },
@@ -152,8 +160,10 @@ fun FmElevatedButton(
             contentColor = if (colors.dark) colors.bgBase else Color.White,
         ),
         elevation = null,
-        content = content,
-    )
+        border = fmBusyBorder(tap.busy(busy)),
+    ) {
+        DisableSelection { content() }
+    }
 }
 
 @Composable
@@ -172,8 +182,9 @@ fun FmFloatingActionButton(
         containerColor = Fm.colors.accent,
         contentColor = Color.White,
         elevation = fmFabElevation(),
-        content = content,
-    )
+    ) {
+        DisableSelection { content() }
+    }
 }
 
 @Composable
@@ -183,7 +194,9 @@ fun FmExtendedFloatingActionButton(
     modifier: Modifier = Modifier,
     icon: String? = null,
     expanded: Boolean = true,
+    busy: Boolean = false,
 ) {
+    val ring = if (icon == null) modifier.fmBusyRing(busy, MaterialTheme.shapes.large, color = Color.White) else modifier
     val press = {
         FmSoundCues.play(SoundCue.forLabel(text, SoundCue.OPEN))
         onClick()
@@ -191,18 +204,18 @@ fun FmExtendedFloatingActionButton(
     if (icon == null) {
         ExtendedFloatingActionButton(
             onClick = press,
-            modifier = modifier,
+            modifier = ring,
             shape = MaterialTheme.shapes.large,
             containerColor = Fm.colors.accent,
             contentColor = Color.White,
             elevation = fmFabElevation(),
-        ) { Text(text) }
+        ) { DisableSelection { Text(text) } }
     } else {
         ExtendedFloatingActionButton(
-            text = { Text(text) },
-            icon = { FmIcon(icon) },
+            text = { DisableSelection { Text(text) } },
+            icon = { FmIcon(icon, modifier = Modifier.fmBusyRing(busy, inset = (-5).dp, color = Color.White)) },
             onClick = press,
-            modifier = modifier,
+            modifier = ring,
             expanded = expanded,
             shape = MaterialTheme.shapes.large,
             containerColor = Fm.colors.accent,
@@ -417,8 +430,9 @@ fun FmDropdownMenu(
         tonalElevation = 0.dp,
         shadowElevation = 8.dp,
         border = BorderStroke(0.5.dp, if (c.dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)),
-        content = content,
-    )
+    ) {
+        DisableSelection { content() }
+    }
 }
 
 @Composable
@@ -538,7 +552,9 @@ fun FmActionMenu(
         shadowElevation = 8.dp,
         border = BorderStroke(0.5.dp, if (c.dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)),
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        DisableSelection {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        }
     }
 }
 
@@ -559,13 +575,15 @@ fun FmActionMenuButton(text: String, onClick: () -> Unit, destructive: Boolean =
             .semantics { role = Role.Button },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text,
-            Modifier.padding(horizontal = FmSpace.x4),
-            style = FmMaterialTypography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp, color = if (!enabled) c.textDisabled else if (destructive) c.danger else c.accent),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        DisableSelection {
+            Text(
+                text,
+                Modifier.padding(horizontal = FmSpace.x4),
+                style = FmMaterialTypography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp, color = if (!enabled) c.textDisabled else if (destructive) c.danger else c.accent),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

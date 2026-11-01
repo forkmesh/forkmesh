@@ -4,6 +4,7 @@
 #include "LocalControl.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "PingBatch.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -15,9 +16,11 @@
 #include <QSettings>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QTimer>
 #include <QUrlQuery>
 
 namespace pingforward = forkmesh::pingforward;
+namespace pingbatch = forkmesh::pingbatch;
 
 namespace {
 
@@ -30,6 +33,9 @@ public:
     }
 
     pingforward::Gate gate;
+    pingbatch::Batcher batch;
+    pingforward::Ping lastHeld;
+    QTimer *flushTimer = nullptr;
 };
 
 PingForwardState *pingForwardState(QObject *window)
@@ -105,12 +111,76 @@ QString MainWindow::forwardPingToPhones(const AppNotification &item)
     if (!pingforward::valid(ping))
         return {};
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (!pingForwardState(this)->gate.admit(ping, now))
+    PingForwardState *state = pingForwardState(this);
+    if (forkmesh::poweralert::isPowerKind(item.kind) || item.dismissOnly) {
+        if (!state->gate.admit(ping, now) || !sendPingToPhones(ping))
+            return {};
+        return ping.pingId;
+    }
+    if (state->batch.due(now))
+        flushPhonePingBatch();
+    pingbatch::Item held;
+    held.title = ping.title;
+    held.body = ping.body;
+    held.warning = ping.warning;
+    held.atMs = now;
+    switch (state->batch.offer(held, now)) {
+    case pingbatch::Step::Show:
+        if (!state->gate.admit(ping, now) || !sendPingToPhones(ping))
+            return {};
+        return ping.pingId;
+    case pingbatch::Step::Summarize:
+        state->lastHeld = ping;
+        flushPhonePingBatch();
         return {};
+    case pingbatch::Step::Hold:
+        break;
+    }
+    state->lastHeld = ping;
+    if (!state->flushTimer) {
+        state->flushTimer = new QTimer(state);
+        state->flushTimer->setSingleShot(true);
+        connect(state->flushTimer, &QTimer::timeout, this,
+                [this] { flushPhonePingBatch(); });
+    }
+    state->flushTimer->start(int(std::max<qint64>(0, state->batch.dueAtMs() - now)));
+    return {};
+}
+
+void MainWindow::flushPhonePingBatch()
+{
+    PingForwardState *state = pingForwardState(this);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (state->batch.held() == 0)
+        return;
+    if (state->flushTimer)
+        state->flushTimer->stop();
+    const pingbatch::Card card = state->batch.take();
+    pingforward::Ping ping = state->lastHeld;
+    if (card.summary) {
+        ping.pingId = QStringLiteral("%1-batch").arg(now);
+        ping.kind = QStringLiteral("desktop");
+        ping.category.clear();
+        ping.sessionId.clear();
+        ping.runId.clear();
+        ping.repo.clear();
+        ping.warning = card.warning;
+        ping.title = pingforward::fitText(card.title, pingforward::kTitleMax, true);
+        ping.body = pingforward::fitText(card.body, pingforward::kBodyMax, false);
+    }
+    if (!pingforward::valid(ping) || !state->gate.admit(ping, now))
+        return;
+    sendPingToPhones(ping);
+}
+
+bool MainWindow::sendPingToPhones(const pingforward::Ping &ping)
+{
+    if (!m_networkAccess)
+        return false;
     QNetworkRequest request;
     QByteArray payload;
     if (!preparePingForwardRequest(ping, &request, &payload))
-        return {};
+        return false;
     QNetworkReply *reply = m_networkAccess->post(request, payload);
     const QString title = ping.title.isEmpty() ? ping.body : ping.title;
     connect(reply, &QNetworkReply::finished, this, [this, reply, title] {
@@ -123,7 +193,7 @@ QString MainWindow::forwardPingToPhones(const AppNotification &item)
                       .arg(title.left(80), status > 0 ? QString::number(status)
                                                        : reply->errorString()));
     });
-    return ping.pingId;
+    return true;
 }
 
 void MainWindow::deleteForwardedPings(const QStringList &pingIds)

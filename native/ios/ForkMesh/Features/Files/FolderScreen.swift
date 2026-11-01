@@ -162,6 +162,7 @@ struct FolderScreen: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("files-row-\(entry.name)")
+        .textSelection(.disabled)
         .contextMenu { actions(entry) }
         .swipeActions(edge: .trailing) {
             Button("Delete", role: .destructive) { deleting = entry }

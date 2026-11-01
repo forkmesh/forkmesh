@@ -15733,8 +15733,14 @@ void MainWindow::addRefreshSpin(QPushButton *button)
 
 void MainWindow::startButtonSpin(QPushButton *button)
 {
-    if (!button || button->property("fmSpinning").toBool())
+    if (!button || button->property("fmSpinning").toBool() ||
+        button->property("fmSpinRing").toBool())
         return;
+    if (!button->property("fmRestartProgress").isValid()) {
+        button->setProperty("fmSpinRing", true);
+        forkmesh::ui::busyring::setBusy(button, true);
+        return;
+    }
     button->setProperty("fmSpinning", true);
     button->setProperty("fmSpinIcon", QVariant::fromValue(button->icon()));
     const int size = button->iconSize().width() > 0 ? button->iconSize().width() : 16;
@@ -15763,6 +15769,11 @@ void MainWindow::startButtonSpin(QPushButton *button)
 
 void MainWindow::stopButtonSpin(QPushButton *button)
 {
+    if (button && button->property("fmSpinRing").toBool()) {
+        button->setProperty("fmSpinRing", false);
+        forkmesh::ui::busyring::setBusy(button, false);
+        return;
+    }
     if (!button || !button->property("fmSpinning").toBool())
         return;
     if (auto *timer = button->findChild<QTimer *>(QStringLiteral("fmSpinTimer"))) {

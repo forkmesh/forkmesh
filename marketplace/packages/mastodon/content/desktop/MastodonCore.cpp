@@ -55,11 +55,17 @@ QString decodeEntities(const QString &text)
 
 QString attribute(const QString &attributes, const QString &name)
 {
-    const QRegularExpression pattern(
-        QStringLiteral("(?:^|\\s)%1\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))")
-            .arg(QRegularExpression::escape(name)),
-        QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpressionMatch match = pattern.match(attributes);
+    if (!attributes.contains(name, Qt::CaseInsensitive))
+        return {};
+    thread_local QHash<QString, QRegularExpression> patterns;
+    auto found = patterns.constFind(name);
+    if (found == patterns.cend()) {
+        found = patterns.insert(name, QRegularExpression(
+            QStringLiteral("(?:^|\\s)%1\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))")
+                .arg(QRegularExpression::escape(name)),
+            QRegularExpression::CaseInsensitiveOption));
+    }
+    const QRegularExpressionMatch match = found->match(attributes);
     if (!match.hasMatch())
         return {};
     for (int group = 1; group <= 3; ++group) {

@@ -88,6 +88,8 @@ struct FmToneButton: View {
     private let filled: Bool
     private let tooltip: String?
     private let height: CGFloat
+    private let busy: Bool?
+    @State private var tap: FmBusyTap = FmBusyTap()
 
     init(
         label: String,
@@ -96,6 +98,7 @@ struct FmToneButton: View {
         filled: Bool = false,
         tooltip: String? = nil,
         height: CGFloat = 34,
+        busy: Bool? = nil,
         onPressed: (() -> Void)?
     ) {
         self.label = label
@@ -104,7 +107,12 @@ struct FmToneButton: View {
         self.filled = filled
         self.tooltip = tooltip
         self.height = height
+        self.busy = busy
         self.onPressed = onPressed
+    }
+
+    private var working: Bool {
+        return busy ?? tap.busy
     }
 
     private var toneColor: Color {
@@ -138,6 +146,7 @@ struct FmToneButton: View {
         HStack(spacing: 6) {
             if let icon = icon {
                 FmIcon(icon, size: 16, color: foreground)
+                    .fmBusyRing(working, size: 24, color: filled ? foreground : nil)
             }
             Text(label)
                 .fmText(.labelMedium, color: foreground, height: 1)
@@ -148,13 +157,15 @@ struct FmToneButton: View {
         .frame(height: height)
         .background(background)
         .clipShape(FmRoundedShape(radius: FmRadius.md))
+        .fmBusyRing(working && icon == nil, corner: FmRadius.md, color: filled ? foreground : nil)
     }
 
     private func press() {
-        guard let onPressed = onPressed else {
+        guard let onPressed = onPressed, !working else {
             return
         }
         FmHaptics.tap(.forLabel(label, fallback: .click))
+        tap.mark()
         onPressed()
     }
 
@@ -163,8 +174,9 @@ struct FmToneButton: View {
             face
         }
         .buttonStyle(FmPressStyle(highlight: foreground.opacity(0.12), cornerRadius: FmRadius.md))
-        .disabled(onPressed == nil)
-        .opacity(onPressed == nil ? 0.45 : 1)
+        .disabled(onPressed == nil || working)
+        .opacity(onPressed == nil && !working ? 0.45 : 1)
+        .fmBusyTracking($tap, enabled: onPressed != nil)
         .accessibilityLabel(Text(tooltip ?? label))
     }
 }

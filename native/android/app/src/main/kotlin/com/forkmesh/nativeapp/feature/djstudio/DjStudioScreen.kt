@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import kotlin.math.max
@@ -55,7 +56,9 @@ class DjStudioScreen : Screen() {
                 model.onLeave = null
             }
         }
-        DjStudioView(model)
+        FmHoldArea {
+            DjStudioView(model)
+        }
     }
 
     override fun onBack(): Boolean {

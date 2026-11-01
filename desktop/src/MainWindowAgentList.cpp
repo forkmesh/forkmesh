@@ -610,8 +610,10 @@ void MainWindow::updateAgentsNavBadge()
             ++cloudRunning;
     }
     if (auto *railButton =
-            dynamic_cast<ActivityRailButton *>(m_agentsNavButton))
+            dynamic_cast<ActivityRailButton *>(m_agentsNavButton)) {
         railButton->setBadgeCount(total);
+        railButton->setRailActive(running > 0);
+    }
     if (total > 0) {
         // The count is every repository's, and so is the cloud tail: a mirror
         // run belongs to whichever repository its job named, which is rarely

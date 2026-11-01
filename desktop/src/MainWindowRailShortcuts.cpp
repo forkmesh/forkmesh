@@ -203,6 +203,7 @@ void MainWindow::syncRailShortcutTiles()
         m_railShortcutButtons.insert(shortcut.id, tile);
         m_appNavigationRailLayout->addWidget(tile, 0, Qt::AlignLeft);
     }
+    refreshRailShortcutBusy();
     for (auto it = m_railShortcutButtons.begin(); it != m_railShortcutButtons.end();) {
         if (live.contains(it.key()) && it.value()) {
             ++it;
@@ -628,7 +629,18 @@ void MainWindow::clickPageButton(QAbstractButton *button)
         top->raise();
         top->activateWindow();
     }
+    forkmesh::ui::busyring::watchClick(button);
     button->click();
+}
+
+void MainWindow::refreshRailShortcutBusy()
+{
+    for (const RailShortcuts::Shortcut &shortcut : railShortcutState()) {
+        ActivityRailButton *tile = m_railShortcutButtons.value(shortcut.id);
+        if (tile)
+            forkmesh::ui::busyring::setBusy(
+                tile, forkmesh::ui::busyring::isBusy(pageButtonForShortcut(shortcut)));
+    }
 }
 
 #ifdef FORKMESH_WINDOW_TESTS

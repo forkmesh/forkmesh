@@ -96,8 +96,10 @@ Markdown export, delete, and turning a note into a task or an issue.
 
 Known differences:
 
-- Live presence runs on the web, iOS and Android. The desktop does not link
-  QtWebSockets, so it shows changes on Refresh instead.
+- Live presence and inline comments run everywhere
+  (`docs/app/notes-comments.md`). The web and phones use the note's socket;
+  the desktop does not link QtWebSockets, so it polls
+  `/api/notes/<id>/presence` every 5 seconds instead.
 - The desktop editor has Write and Preview tabs but no split view; phones
   have no room for one.
 - The desktop autosaves Cloud-only notes. Local and Local + cloud notes save

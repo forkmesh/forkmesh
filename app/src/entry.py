@@ -1290,6 +1290,7 @@ generate_shasums = _releases.export("generate_shasums")
 release_semver_key = _releases.export("release_semver_key")
 resolve_latest_release = _releases.export("resolve_latest_release")
 asset_upload_decision = _releases.export("asset_upload_decision")
+apt_redirect_target = _releases.export("apt_redirect_target")
 
 # Git wire helpers pull in gzip/io and are used only by clone/blob routes.
 _git_http = _LazyModule("git_http")
@@ -11925,6 +11926,34 @@ class _NotesRuntime(_WorldCommunityRuntime):
         )
         await self.env.FORKMESH_NOTE_ROOM.get(room_id).fetch(request)
 
+    async def presence(self, note_id, frame):
+        room_id = self.env.FORKMESH_NOTE_ROOM.idFromName(
+            "note:" + str(note_id))
+        request = JsRequest.new(
+            "https://forkmesh.internal/api/notes/" + str(note_id) + "/presence",
+            to_js({
+                "method": "POST",
+                "headers": {"content-type": "application/json"},
+                "body": json.dumps(frame or {}, separators=(",", ":")),
+            }),
+        )
+        response = await self.env.FORKMESH_NOTE_ROOM.get(room_id).fetch(request)
+        payload = json.loads(str(await response.text()) or "{}")
+        peers = payload.get("peers") if isinstance(payload, dict) else None
+        return peers if isinstance(peers, list) else []
+
+    async def notify(self, recipient, actor, note_id, comment_id, kind, title,
+                     excerpt):
+        heading = (actor + (" mentioned you in " if kind == "mention"
+                            else " replied in ") + "“" + title + "”")
+        await enqueue_notification(
+            self.env, recipient, "mention", heading, body=excerpt,
+            href="/dashboard/notes?note=" + str(note_id) + "&comment="
+            + str(comment_id),
+            actor=actor, source="note",
+            dedupe="note-comment:" + str(comment_id) + ":" + kind + ":"
+            + str(recipient))
+
 
 async def notes_handler(env, request, path):
     return await notes.handle(_NotesRuntime(env, request), path)
@@ -14055,7 +14084,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "6bcd259d635645255ef1b2b9f8e281fd1e6e80d1537cf8371f533c436651ca90"
+    "1fedcc6e32c5ad36228b7a434ebca84ce5f431fbaf6146d18d7a1e48a74137b4"
 )
 
 
@@ -16688,14 +16717,14 @@ async def _catalog_logical_owners(env, repository_rows):
     routes = list(dict.fromkeys(
         (
             clean_string(record.get("owner"), MAX_NODE_NAME).strip().lower(),
-            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip(),
+            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip().lower(),
         )
         for record, _owner_bi in rows
     ))
     for offset in range(0, len(routes), 40):
         chunk = routes[offset:offset + 40]
         where = " OR ".join(
-            "(r.node_owner=? AND r.repo=?)" for _route in chunk)
+            "(r.node_owner=? AND lower(r.repo)=?)" for _route in chunk)
         arguments = [
             item for route in chunk for item in route
         ]
@@ -16710,7 +16739,8 @@ async def _catalog_logical_owners(env, repository_rows):
             route = (
                 clean_string(
                     value.get("node_owner"), MAX_NODE_NAME).strip().lower(),
-                clean_string(value.get("repo"), MAX_REPO_SEGMENT).strip(),
+                clean_string(
+                    value.get("repo"), MAX_REPO_SEGMENT).strip().lower(),
             )
             organization = clean_string(
                 value.get("name"), MAX_NODE_NAME).strip().lower()
@@ -16721,13 +16751,14 @@ async def _catalog_logical_owners(env, repository_rows):
     for record, owner_bi in rows:
         route = (
             clean_string(record.get("owner"), MAX_NODE_NAME).strip().lower(),
-            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip(),
+            clean_string(record.get("name"), MAX_REPO_SEGMENT).strip().lower(),
         )
         logical = []
         user_owner = user_by_owner_bi.get(owner_bi, "")
-        if user_owner:
+        organizations = organization_by_route.get(route, [])
+        if user_owner and len(organizations) != 1:
             logical.append({"kind": "user", "owner": user_owner})
-        for organization in organization_by_route.get(route, []):
+        for organization in organizations:
             if not any(
                     value["kind"] == "organization"
                     and value["owner"] == organization
@@ -16839,6 +16870,9 @@ pull_attention_handler = _pull_attention.export("handler")
 pull_attention_review_posted = _pull_attention.export("review_posted")
 pull_attention_record = _pull_attention.export("pull_record")
 pull_attention_claim_quick_reply = _pull_attention.export("claim_quick_reply")
+_stale_pulls = _LazyModule("stale_pulls")
+stale_pulls_enroll = _stale_pulls.export("enroll")
+stale_pulls_cron = _stale_pulls.export("cron")
 _moderation = _LazyModule("moderation")
 moderation_repo_handler = _moderation.export("repo_handler")
 moderation_org_handler = _moderation.export("org_handler")
@@ -17394,6 +17428,8 @@ async def _repo_about_public(env, request, owner, repo):
         if callable(group_record_resolver) else rec
     )
     origin = _ap_origin(env, request)
+    if display_owner == owner:
+        display_owner = await _repo_organization(env, owner, repo) or owner
     handle = ap.repo_handle(str(display_owner).lower(), str(repo).lower())
     logo_url = ""
     banner_url = ""
@@ -17718,6 +17754,10 @@ async def repo_about_handler(env, request, owner, repo):
                 " data=excluded.data, updated_at=excluded.updated_at",
                 await _repo_features_bi(env, owner, repo),
                 json.dumps(features, sort_keys=True), int(Date.now()))
+        if features.get("stalePulls") or current_features.get("stalePulls"):
+            await _best_effort_inbox_side_effect(stale_pulls_enroll(
+                env, owner, repo, features,
+                public_owner=_pull_attention_public_owner(request, owner)))
     if text_changed:
         # Queue the edit for the owner's desktop node, which writes it into the
         # repo's committed .forkmesh/info.json (the same file the desktop app's
@@ -19540,6 +19580,8 @@ _REPO_SCOPED_TABLES = (
     ("repo_provider_mirror_links", "repo_bi"),
     ("repo_provider_mirror_outbox", "repo_bi"),
     ("repo_archive_syncs", "repo_bi"),
+    ("stale_pull_repos", "repo_bi"),
+    ("stale_pulls", "repo_bi"),
     ("world_fediverse_mentions", "repo_bi"),
     ("security_advisories", "repo_bi"),
     ("security_advisory_members", "repo_bi"),
@@ -29431,6 +29473,43 @@ async def _org_repo_node(env, org, repo):
         return ""
 
 
+async def _repo_organization(env, node, repo):
+    node = str(node or "").strip().lower()
+    repo = str(repo or "").strip().lower()
+    if not valid_node_name(node) or not repo:
+        return ""
+    now = int(Date.now())
+    key = "\x00" + node + "/" + repo
+    hit = _ORG_ALIAS_MEMO.get(key)
+    if hit and now - hit[1] < ORG_ALIAS_MEMO_TTL_MS:
+        return hit[0]
+    try:
+        await ensure_schema(env)
+        rows = await d1_all(
+            env, "SELECT o.name AS name FROM org_repos r JOIN orgs o ON "
+            "o.org_bi=r.org_bi WHERE r.node_owner=? AND lower(r.repo)=? LIMIT 2",
+            node, repo)
+    except Exception:
+        return ""
+    names = [str(row.get("name") or "").strip().lower()
+             for row in rows or []]
+    organization = names[0] if (
+        len(names) == 1 and valid_node_name(names[0])
+        and names[0] != node) else ""
+    if len(_ORG_ALIAS_MEMO) >= ORG_ALIAS_MEMO_MAX:
+        _ORG_ALIAS_MEMO.clear()
+    _ORG_ALIAS_MEMO[key] = (organization, now)
+    return organization
+
+
+async def _repo_public_key(env, key):
+    owner, _, name = str(key or "").strip().partition("/")
+    if not owner or not name or "/" in name:
+        return str(key or "").strip()
+    organization = await _repo_organization(env, owner, name)
+    return (organization or owner) + "/" + name
+
+
 async def org_alias_rewrite(env, request, url):
     # Organization repo aliases (issue #388): the /<org>/<repo> git endpoints
     # and every /api/repo/<org>/<repo>/... path serve the linked node's repo
@@ -36164,7 +36243,8 @@ AP_REPO_SETTING_DEFAULTS = {
 
 REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
                          "forum": False, "actions": True,
-                         "protectDefaultBranch": False}
+                         "protectDefaultBranch": False,
+                         "stalePulls": False, "stalePullsDeleteBranch": False}
 
 
 async def _repo_features_bi(env, owner, repo):
@@ -36554,6 +36634,8 @@ async def repo_card_handler(env, request, owner, repo):
                     env, candidate_owner, candidate_repo) == owner:
                 display_owner = candidate_owner
             display_repo = candidate_repo
+    if display_owner == owner:
+        display_owner = await _repo_organization(env, owner, repo) or owner
     card_version = parse_qs(parts.query).get("v", [""])[0]
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", card_version):
         card_version = ""
@@ -36574,7 +36656,8 @@ async def repo_card_handler(env, request, owner, repo):
         return json_response({"error": "not_found"}, status=404)
     rec = (await decrypt_row(env, row.get("data"))) or {}
     stars_row = await d1_first(
-        env, "SELECT COUNT(*) AS n FROM repo_stars WHERE repo_bi=?", repo_bi)
+        env, "SELECT COUNT(*) AS n FROM repo_stars WHERE repo_bi=?",
+        await blind_index(env, (display_owner + "/" + repo).lower()))
     followers = 0
     if await _ap_enabled(env):
         handle = ap.repo_handle(
@@ -36665,7 +36748,7 @@ async def _public_repo_owner(env, request, owner, repo, pattern):
             return requested_owner
     except Exception:
         pass
-    return public_owner
+    return await _repo_organization(env, public_owner, repo) or public_owner
 
 
 async def _index_repo_fork_edge(env, record, prior, account_bi, repo_bi):
@@ -36686,6 +36769,8 @@ async def _index_repo_fork_edge(env, record, prior, account_bi, repo_bi):
         was_fork = bool(clean_string((prior or {}).get("forkedFrom", ""), 130))
         if not parent and not was_fork:
             return
+        if parent:
+            parent = await _repo_public_key(env, parent)
         fork_owner = clean_string(record.get("owner", ""), MAX_REPO_SEGMENT)
         fork_name = clean_string(record.get("name", ""), MAX_REPO_SEGMENT)
         if (
@@ -36881,8 +36966,8 @@ async def _web_fork_create(env, request, source_owner, source_name,
         catalog = await decrypt_row(env, row.get("data"))
         if (
             isinstance(catalog, dict)
-            and clean_string(catalog.get("forkedFrom", ""), 170).lower()
-            == parent
+            and await _repo_public_key(env, clean_string(
+                catalog.get("forkedFrom", ""), 170).lower()) == parent
         ):
             existing = _web_fork_job_response({
                 "sourceOwner": source_owner,
@@ -38301,6 +38386,13 @@ async def enqueue_notification(env, recipient, kind, title, body="", repo="",
     public_href = globals().get("_repo_public_href")
     if callable(public_href):
         href = await public_href(env, href)
+    public_key = globals().get("_repo_public_key")
+    if callable(public_key) and repo and repo.count("/") == 1:
+        shown = await public_key(env, repo)
+        if shown != repo:
+            title = str(title or "").replace(repo, shown)
+            body = str(body or "").replace(repo, shown)
+            repo = shown
     payload = notification_payload(
         kind, title, body=body, repo=repo, href=href, actor=actor,
         source=source, ts=now, meta=meta)
@@ -54342,8 +54434,10 @@ async def _repo_canonical_path(env, path, query="", public_only=True):
     setting = await _repo_short_setting_row(env)
     owner = repo_short_urls.canonical_owner(setting)
     parts = [p for p in str(path or "").split("/") if p]
-    if not owner or len(parts) < 2:
+    if len(parts) < 2:
         return None
+    if not owner:
+        return await _repo_organization_path(env, parts, query, public_only)
     first = unquote(parts[0]).lower()
     if first != owner:
         name = unquote(parts[1])
@@ -54358,6 +54452,20 @@ async def _repo_canonical_path(env, path, query="", public_only=True):
     if hit is None or await _repo_name_is_account(env, hit[1], True):
         return None
     return hit[0]
+
+
+async def _repo_organization_path(env, parts, query, public_only):
+    first = unquote(parts[0]).lower()
+    name = unquote(parts[1])
+    if not repo_short_urls.OWNER_RE.fullmatch(first):
+        return None
+    organization = await _repo_organization(env, first, name)
+    if not organization or organization == first:
+        return None
+    if public_only and await _repo_is_private(env, first, name):
+        return None
+    return "/" + "/".join([quote(organization, safe="")] + parts[1:]) + (
+        "?" + query if query else "")
 
 
 async def _short_repo_board(env, rows):
@@ -55204,6 +55312,8 @@ def _cron_due_phases(minute_slot):
         phases.append("probe-bans")
     if minute % 2 == 0:
         phases.append("pull-attention")
+    if minute % 5 == 1:
+        phases.append("stale-pulls")
     return tuple(phases)
 
 
@@ -55285,6 +55395,8 @@ async def _run_cron_phase(env, phase, minute_slot):
             env, PROVIDER_MIRROR_CRON_DELIVERIES)
     if phase == "pull-attention":
         return await pull_attention_cron(env)
+    if phase == "stale-pulls":
+        return await stale_pulls_cron(env)
     if phase == "self-deploy-pings":
         return await _deploy_approvals.announce(env)
     if phase == "mail-log":
@@ -57695,6 +57807,76 @@ class ForkMeshNoteRoom(DurableObject):
     traffic_binding = "FORKMESH_NOTE_ROOM"
     _MAX_CLIENTS = 64
     _MAX_FRAME = 600 * 1024
+    _POLL_TTL_MS = 20000
+    _MAX_POLLED = 64
+
+    def _send_all(self, frame, skip=None):
+        payload = json.dumps(frame, separators=(",", ":"))
+        for peer in self._peers():
+            if peer is skip:
+                continue
+            try:
+                peer.send(payload)
+            except Exception:
+                pass
+
+    def _polled(self):
+        polled = getattr(self, "_poll_peers", None)
+        if polled is None:
+            polled = {}
+            self._poll_peers = polled
+        now = int(Date.now())
+        for key in [key for key, peer in polled.items()
+                    if now - peer["at"] > self._POLL_TTL_MS]:
+            polled.pop(key, None)
+        return polled
+
+    def _presence(self, frame):
+        polled = self._polled()
+        client_id = str((frame or {}).get("clientId") or "")[:64]
+        if client_id:
+            name = clean_string((frame or {}).get("name") or "", MAX_NODE_NAME)
+            state = str((frame or {}).get("state") or "")
+            if state not in ("viewing", "editing"):
+                if polled.pop(client_id, None):
+                    self._send_all({"type": "leave", "clientId": client_id,
+                                    "name": name})
+            elif client_id in polled or len(polled) < self._MAX_POLLED:
+                polled[client_id] = {"name": name, "state": state,
+                                     "at": int(Date.now())}
+                self._send_all({"type": "presence", "clientId": client_id,
+                                "name": name, "line": 0, "column": 0,
+                                "state": state})
+        peers = []
+        for ws in self._peers():
+            live_id = str(_ws_attr(ws, "clientId", "") or "")
+            if live_id:
+                peers.append({"clientId": live_id,
+                              "name": _ws_attr(ws, "actor", ""),
+                              "state": _ws_attr(ws, "state", "viewing"),
+                              "via": "live"})
+        for poll_id, peer in polled.items():
+            peers.append({"clientId": poll_id, "name": peer["name"],
+                          "state": peer["state"], "via": "poll"})
+        return peers
+
+    def _remember(self, ws, client_id, state):
+        if (_ws_attr(ws, "clientId", "") == client_id
+                and _ws_attr(ws, "state", "") == state):
+            return
+        values = {name: _ws_attr(ws, name) for name in (
+            "id", "start", "count", "role", "actor")}
+        values.update({"clientId": client_id, "state": state})
+        try:
+            ws.serializeAttachment(to_js(values))
+        except Exception:
+            pass
+
+    def _leave(self, ws):
+        client_id = str(_ws_attr(ws, "clientId", "") or "")
+        if client_id:
+            self._send_all({"type": "leave", "clientId": client_id,
+                            "name": _ws_attr(ws, "actor", "")}, skip=ws)
 
     async def fetch(self, request):
         if method_name(request) == "POST":
@@ -57703,9 +57885,12 @@ class ForkMeshNoteRoom(DurableObject):
                 frame = json.loads(body)
             except Exception:
                 return json_response({"error": "invalid_event"}, status=400)
+            if urlparse(request.url).path.endswith("/presence"):
+                return json_response({"ok": True, "peers": self._presence(
+                    frame if isinstance(frame, dict) else {})})
             if not isinstance(frame, dict) or frame.get("type") not in (
                     "note-updated", "note-deleted", "access-changed",
-                    "note-activity"):
+                    "note-activity", "note-comments"):
                 return json_response({"error": "invalid_event"}, status=400)
             payload = json.dumps(frame, separators=(",", ":"))
             for peer in self._peers():
@@ -57766,12 +57951,23 @@ class ForkMeshNoteRoom(DurableObject):
             column = max(0, min(1000000, int(frame.get("column") or 0)))
         except (TypeError, ValueError, OverflowError):
             line, column = 0, 0
+        client_id = str(frame.get("clientId") or "")[:64]
+        editor = _ws_attr(ws, "role", "viewer") in ("owner", "editor")
+        if frame["type"] == "draft":
+            state = "editing"
+        elif frame["type"] == "presence":
+            state = "editing" if frame.get("state") == "editing" and editor else "viewing"
+        else:
+            state = _ws_attr(ws, "state", "viewing") or "viewing"
+        if client_id:
+            self._remember(ws, client_id, state)
         safe_frame = {
             "type": frame["type"],
-            "clientId": str(frame.get("clientId") or "")[:64],
+            "clientId": client_id,
             "name": _ws_attr(ws, "actor", ""),
             "line": line,
             "column": column,
+            "state": state,
         }
         if frame["type"] == "draft":
             safe_frame["title"] = clean_string(
@@ -57793,12 +57989,14 @@ class ForkMeshNoteRoom(DurableObject):
                 pass
 
     async def webSocketClose(self, ws, _code, _reason, _clean):
+        self._leave(ws)
         try:
             ws.close(1000, "closed")
         except Exception:
             pass
 
     async def webSocketError(self, ws, _error):
+        self._leave(ws)
         try:
             ws.close(1011, "error")
         except Exception:

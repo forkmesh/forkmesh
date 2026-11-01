@@ -18,7 +18,8 @@ and publisher flags are documented beside the data in
 | `tools/forkmesh-release-promote.py` | promotion gate from a candidate to `latest`; regenerates the appcast |
 | `tools/forkmesh-release-host.py`, `tools/release-host/*` | builds what the Actions sandbox cannot, promotes, seeds mirrors, rolls out the daemon, submits iOS, checks the homepage |
 | `tools/package/linux-baseline.sh`, `tools/package/linux-baseline/` | Linux build in a pinned Debian 12 container ([linux-baseline.md](linux-baseline.md)) |
-| `tools/package/` | per-platform packaging (`appimage.sh`, `macos.sh`, `windows.sh`, NSIS, appcast) |
+| `tools/package/` | per-platform packaging (`appimage.sh`, `deb.sh`, `macos.sh`, `windows.sh`, NSIS, appcast) |
+| `tools/forkmesh-apt-repo.py`, `.forkmesh/releases/apt/` | the signed apt repository ([apt.md](apt.md)) |
 | `tools/package/macos_universal_on_mac.sh` | universal (arm64 + x86_64) `.dmg` build on a Mac |
 | `codemagic.yaml` (`macos-desktop`, `ios-native-release`), `native/ios/tools/asc_appstore.py` | cloud Mac fallback for the `.dmg`; iOS archive, upload, TestFlight and App Store submission |
 | `.forkmesh/releases/<channel>/` | `SHASUMS256.txt`, `release.json`, `release.json.sig`, `appcast.xml` |
@@ -136,6 +137,9 @@ version, so an old signed release could be replayed to roll a machine back.
 - **Linux:** static Qt and OpenSSL in a Debian 12 container; a release fails if
   any ELF needs glibc above 2.35, so binaries run on Ubuntu 22.04+ and
   Debian 12+.
+  The same build makes `forkmesh-linux-x86_64.deb`, which the apt repository
+  serves, so `sudo apt install forkmesh` and `sudo apt upgrade` work once the
+  source is added ([apt.md](apt.md)).
 - **Windows:** cross-built with MinGW-w64; NSIS installer, Authenticode-signed
   with osslsigncode; the uninstaller deletes only files in its manifest.
 - **macOS:** one ad-hoc signed universal `.dmg`, published under both arm64 and

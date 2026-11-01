@@ -727,6 +727,7 @@ struct PushNotificationsCard: View {
                 FmOutlinedButton(
                     model.sendLabel,
                     icon: "send_outlined",
+                    busy: model.sending,
                     onPressed: model.canSendTest
                         ? {
                             notice = nil

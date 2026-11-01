@@ -250,7 +250,7 @@ class LinkNodeScreen : Screen() {
                         FmTextButton(onClick = {
                             model.review(link)
                             revision++
-                        }, enabled = link.isNotBlank() && !model.busy) { Text("Review") }
+                        }, enabled = link.isNotBlank() && !model.busy, busy = model.busy) { Text("Review") }
                         FmTextButton(onClick = {
                             navigator.push(QrScannerScreen("Scan the desktop's code") { scanned.value = it })
                         }, enabled = !model.busy) { Text("Scan code") }

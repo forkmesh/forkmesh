@@ -274,6 +274,7 @@ struct ShellNewAgentButton: View {
 
     private var pressable: some View {
         face
+            .textSelection(.disabled)
             .gesture(touch)
             .onChange(of: touching) { (_: Bool, now: Bool) in
                 if !now { released(cancelled: true) }

@@ -143,11 +143,15 @@ none, and nothing otherwise.
 
 ## Issue AI prompt
 
-Open issues show a box under the title row with the prompt in one truncated
-line (full text in the tooltip) and a **Copy prompt** button. Copying uses the
-dashboard's shared `data-dashboard-copy` handler (Clipboard API with a
-textarea fallback) and swaps the label to **Copied**. Closed issues show no
-box. Signed-out visitors see and copy it too.
+Open issues show the prompt in the sidebar's **Agent** section, under the
+agent's status: the whole prompt in small monospaced text, then a compact
+**Copy prompt** button beside **Copy MCP prompt**. A separate AI prompt
+section repeated what the Agent section is for, so the two were folded into
+one. Copying uses the dashboard's shared `data-dashboard-copy` handler
+(Clipboard API with a textarea fallback) and swaps the label to **Copied**.
+Closed issues, and instances with the `issue-ai-prompt` plugin off, show no
+prompt and keep **Copy MCP prompt**. Signed-out visitors see and copy the
+prompt too.
 
 The default is agent-neutral:
 

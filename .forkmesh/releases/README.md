@@ -29,6 +29,9 @@ and the downloaded bytes are then verified by SHA-256.
   `forkmesh-linux-x86_64`, its `.AppImage` and `.AppImage.zsync`,
   `forkmesh-mirror-node-linux-x86_64`, `forkmesh-windows-x86_64-setup.exe`,
   `forkmesh-macos-arm64.dmg` and `forkmesh-android-universal.apk`.
+- `apt/` is not a channel: it holds the signed apt repository metadata for
+  `forkmesh-linux-x86_64.deb` in `latest`, rewritten on each promotion
+  (`docs/release/apt.md`).
 
 The macOS `.dmg` is built by the Codemagic `macos-desktop` workflow
 (`codemagic.yaml`), not by the Actions job or the release host, and is

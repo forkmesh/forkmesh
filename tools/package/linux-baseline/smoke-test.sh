@@ -34,4 +34,19 @@ for target in "$asset" "$asset.AppImage"; do
   fi
   rm -rf "$home"
 done
+deb="$asset.deb"
+if [ -f "$deb" ]; then
+  if dpkg --dry-run -i "$deb" > /tmp/forkmesh-deb-dry-run.log 2>&1; then
+    pass "deb: every dependency is installable ($(dpkg-deb -f "$deb" Version))"
+  else
+    fail "deb: dpkg would not install it: $(tail -n 5 /tmp/forkmesh-deb-dry-run.log | tr '\n' ' ')"
+  fi
+  home="$(mktemp -d /tmp/forkmesh-smoke.XXXXXX)"
+  dpkg-deb -x "$deb" "$home/root"
+  got="$(sandbox_env "$home" "$home/root/usr/bin/forkmesh" --version 2>&1 | tail -n1)"
+  [ "$got" = "ForkMesh $version" ] && pass "deb /usr/bin/forkmesh --version: $got" || fail "deb /usr/bin/forkmesh --version: $got"
+  rm -rf "$home"
+else
+  fail "deb: $deb is missing"
+fi
 exit "$failed"

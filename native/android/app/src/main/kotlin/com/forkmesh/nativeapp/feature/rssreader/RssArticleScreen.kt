@@ -114,8 +114,8 @@ internal class RssArticleScreen(
             navigator,
             unread = unread,
             actions = {
-                FmIconButton("keyboard_arrow_up", "Previous Article", onPressed = if (index > 0) ({ open(order[index - 1], -1) }) else null, iconSize = 28.dp)
-                FmIconButton("keyboard_arrow_down", "Next Article", onPressed = if (index >= 0 && index < order.size - 1) ({ open(order[index + 1]) }) else null, iconSize = 28.dp)
+                FmIconButton("keyboard_arrow_up", "Previous Article", onPressed = if (index > 0) ({ open(order[index - 1], -1) }) else null, iconSize = 28.dp, busy = false)
+                FmIconButton("keyboard_arrow_down", "Next Article", onPressed = if (index >= 0 && index < order.size - 1) ({ open(order[index + 1]) }) else null, iconSize = 28.dp, busy = false)
             },
             bottomBar = {
                 val accent = Fm.colors.accent

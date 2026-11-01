@@ -631,6 +631,12 @@ QPushButton#repoTab:checked { color: #e6edf3; border-bottom: 2px solid #fd8c73; 
 #settingsSectionHeader { background: transparent; }
 QToolButton#settingsSectionToggle { border: none; border-radius: 4px; background: transparent; padding: 0; }
 QToolButton#settingsSectionToggle:hover { background-color: #21262d; }
+#settingsStickyHeader { border-bottom: 1px solid #21262d; }
+#settingsStickyTitleRow, #settingsStickyIcon { background: transparent; }
+#settingsStickyTitle { font-size: 17px; font-weight: 600; color: #e6edf3; padding: 1px 6px; border-radius: 6px; background: transparent; }
+#settingsStickyTitle[settingsLit="true"] { color: #58a6ff; background-color: rgba(56, 139, 253, 0.15); }
+#settingsStickySub { color: #8b949e; font-size: 11px; font-weight: 700; letter-spacing: 1px; padding: 1px 6px 1px 56px; background: transparent; }
+#settingsStickySub[settingsLit="true"] { color: #58a6ff; }
 #settingsNoMatches { color: #8b949e; padding: 12px 2px; }
 #settingsSearchHits { background: transparent; }
 #codeEditor {
@@ -2825,6 +2831,12 @@ QPushButton#repoTab:checked { color: #1f2328; border-bottom: 2px solid #fd8c73; 
 #settingsSectionHeader { background: transparent; }
 QToolButton#settingsSectionToggle { border: none; border-radius: 4px; background: transparent; padding: 0; }
 QToolButton#settingsSectionToggle:hover { background-color: #eaeef2; }
+#settingsStickyHeader { border-bottom: 1px solid #d8dee4; }
+#settingsStickyTitleRow, #settingsStickyIcon { background: transparent; }
+#settingsStickyTitle { font-size: 17px; font-weight: 600; color: #1f2328; padding: 1px 6px; border-radius: 6px; background: transparent; }
+#settingsStickyTitle[settingsLit="true"] { color: #0969da; background-color: rgba(9, 105, 218, 0.1); }
+#settingsStickySub { color: #656d76; font-size: 11px; font-weight: 700; letter-spacing: 1px; padding: 1px 6px 1px 56px; background: transparent; }
+#settingsStickySub[settingsLit="true"] { color: #0969da; }
 #settingsNoMatches { color: #656d76; padding: 12px 2px; }
 #settingsSearchHits { background: transparent; }
 #codeEditor {

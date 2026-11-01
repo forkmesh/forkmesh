@@ -231,6 +231,19 @@ router key. A mirror never receives the session row or password material.
 
 `www/docs/portable-identities.md`, `www/docs/security/organization-roles.md`.
 
+## Settings pinned header
+
+The account header (avatar, name and the page buttons) and the open section's
+title stay at the top while the settings page scrolls, at the user's request
+(2026-10-31). A `<style>` block at the top of `partials/views/settings.html`
+makes `[data-settings-account-header]` sticky from 768 px up, where it is a
+single row, and every `[data-settings-section-heading]` (a section's `h2`, or
+the Pings title row with its save status) sticky at all widths.
+`bindSettingsStickyHeader` in `04-account.js` keeps
+`--settings-sticky-top` at the header's height while it is sticky (0 on
+phones, where it would take a quarter of the screen), so the section title
+pins right under it, and anchors scrolled into view clear both.
+
 ## Settings feedback and confirmations
 
 The settings page (`partials/views/settings.html`, `04-account.js`) reports

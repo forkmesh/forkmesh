@@ -1,7 +1,8 @@
 # Linux release baseline (Debian 12 container build)
 
 The Linux release assets (`forkmesh-linux-x86_64`,
-`forkmesh-linux-x86_64.AppImage` and its `.zsync`) are built inside a pinned
+`forkmesh-linux-x86_64.AppImage` and its `.zsync`, and
+`forkmesh-linux-x86_64.deb` for the [apt repository](apt.md)) are built inside a pinned
 Debian 12 (glibc 2.36) image so they run on Ubuntu 22.04+ and Debian 12+. The
 Go mirror daemon is fully static (`CGO_ENABLED=0`) and is built by the Actions
 job. Development builds are unaffected.
@@ -14,9 +15,9 @@ job. Development builds are unaffected.
 | `tools/package/linux-baseline/image.env` | every pin: base image digest, apt snapshot, toolchain versions and SHA-256s, the glibc ceiling |
 | `tools/package/linux-baseline/Containerfile` | the same stages as image layers for podman or docker |
 | `tools/package/linux-baseline/stage-*.sh` | image stages: packages, OpenSSL, Qt, nghttp3, AppImage tools |
-| `tools/package/linux-baseline/build-forkmesh.sh` | configure, build, install, provenance checks, AppImage |
+| `tools/package/linux-baseline/build-forkmesh.sh` | configure, build, install, provenance checks, AppImage, `.deb` (`--build N` sets the package's `+N`) |
 | `tools/package/linux-baseline/check_glibc.py` | fails when any ELF needs `GLIBC_` above the ceiling or `GLIBCXX_` above 3.4.30 |
-| `tools/package/linux-baseline/smoke-test.sh` | launch test inside Ubuntu 22.04, Ubuntu 24.04 and Debian 12 |
+| `tools/package/linux-baseline/smoke-test.sh` | launch test inside Ubuntu 22.04, Ubuntu 24.04 and Debian 12; the `.deb`'s dependencies and binary |
 | `tools/package/linux-baseline/oci_rootfs.py` | pulls an image by digest into a directory (bubblewrap engine), refusing unsafe layer members |
 | `tools/forkmesh-release-host.py` (`build_linux_assets`) | builds, checks, smoke-tests and publishes into the candidate |
 | `app/tests/test_linux_release_baseline.py` | checker, pins and recipe contracts |

@@ -1261,6 +1261,7 @@ struct PackageDetailScreen: View {
                         Task { await account.removeMonitor(monitor.id) }
                     }
                 }
+                .textSelection(.disabled)
                 .contextMenu {
                     Button("Remove", systemImage: "trash", role: .destructive) {
                         Task { await account.removeMonitor(monitor.id) }

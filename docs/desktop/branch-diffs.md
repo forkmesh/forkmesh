@@ -85,7 +85,9 @@ carries the whole review, in both layout modes:
   in `MainWindowPulls.cpp`), between the merge-health strip and the diff, shown
   only in PR mode: "Reviewing PR #N" with the draft count, AI review (same rule
   as the pull header: open, not archived, has a patch), Discard drafts, and
-  Review changes / Submit review (N).
+  Review changes / Submit review (N). The bar is named `branchPullReviewBar`:
+  its buttons are plain card buttons, not the pull header's rail tiles, so the
+  window test's header-style check skips them.
 - **Review changes** (`openBranchPullReviewDialog()`) asks for an optional
   summary and Comment, Approve or Request changes (the last two only on an
   open pull). `finishBranchPullReview()` posts the drafts, then the review
@@ -100,3 +102,17 @@ carries the whole review, in both layout modes:
 Test: the "Code on another machine" pull in `test_window_resize.cpp` opens in
 the Git view, queues a draft, approves, and checks both events in the pull
 store.
+
+## Opening a pull's changes from the list
+
+Hovering a row on the Pull requests list shows a round diff button at the end of
+the title (`PullRowDiffDelegate` in `desktop/src/MainWindowPulls.cpp`). A click
+opens that pull in the Git range view (`openPullDiffInGitView()`), the same
+place the pull's "Changes in Git" tab leads, without first opening the pull's
+conversation. The button is painted by the title column's delegate rather than
+held as a widget per row, so a long list costs nothing until the pointer is on
+a row; the delegate swallows the press, so the click does not also select the
+row. While the button is up, the row's background fades in beneath it to clear
+the end of the title. It is not drawn when the column is too narrow to fit it.
+
+Test: `testClickPullRowDiffButton()` in `desktop/tests/test_window_resize.cpp`.

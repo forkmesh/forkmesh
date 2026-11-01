@@ -67,4 +67,10 @@ final class CaptureAreaTests: XCTestCase {
         XCTAssertFalse(CaptureAreaRules.isContent(elementWidth: 390, elementHeight: 600, boundsWidth: 390, boundsHeight: 844))
         XCTAssertFalse(CaptureAreaRules.isContent(elementWidth: 0, elementHeight: 44, boundsWidth: 390, boundsHeight: 844))
     }
+
+    func testTextCountsAsContentAtAnySize() {
+        XCTAssertTrue(
+            CaptureAreaRules.isContent(elementWidth: 390, elementHeight: 700, boundsWidth: 390, boundsHeight: 844, isText: true))
+        XCTAssertFalse(CaptureAreaRules.isContent(elementWidth: 0, elementHeight: 0, boundsWidth: 390, boundsHeight: 844, isText: true))
+    }
 }

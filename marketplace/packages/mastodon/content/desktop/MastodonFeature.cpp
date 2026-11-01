@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QCursor>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QFile>
 #include <QFileInfo>
@@ -40,6 +41,7 @@ constexpr int kCountRole = Qt::UserRole + 3;
 constexpr int kHeaderRole = Qt::UserRole + 4;
 constexpr int kIconRole = Qt::UserRole + 5;
 constexpr int kMaxSeenStatuses = 600;
+constexpr qint64 kCardBatchBudgetMs = 12;
 
 class NavDelegate : public QStyledItemDelegate
 {
@@ -1473,6 +1475,7 @@ void MastodonFeature::addHeaderAction(QWidget *widget)
 
 void MastodonFeature::clearList()
 {
+    ++m_listEpoch;
     while (QLayoutItem *item = m_list->takeAt(0)) {
         if (QWidget *widget = item->widget()) {
             widget->hide();
@@ -1560,30 +1563,53 @@ void MastodonFeature::showStatuses(const Result &result, quint64 generation, con
         setEmpty(empty);
         return;
     }
-    CardContextPtr context2 = cardContext();
-    for (const QJsonValue &value : statuses) {
-        const QJsonObject status = value.toObject();
-        bool hide = false;
-        filterHideReason(shownStatus(status), context, &hide);
-        if (hide)
-            continue;
-        addRow(new PostCard(status, context2));
-        if (m_seenStatuses.size() >= kMaxSeenStatuses)
-            m_seenStatuses.clear();
-        m_seenStatuses.insert(shownStatus(status).value(QStringLiteral("id")).toString(), shownStatus(status));
-    }
+    std::function<void()> done;
     if (result.next.isValid() && !statuses.isEmpty()) {
         const QUrl next = result.next;
-        setLoadMore([this, next, context, empty] {
-            const quint64 page = m_generation;
-            setLoading(true);
-            m_client->getUrl(next, [this, page, context, empty](const Result &more) {
-                if (current(page))
-                    showStatuses(more, page, context, empty, true);
+        done = [this, next, context, empty] {
+            setLoadMore([this, next, context, empty] {
+                const quint64 page = m_generation;
+                setLoading(true);
+                m_client->getUrl(next, [this, page, context, empty](const Result &more) {
+                    if (current(page))
+                        showStatuses(more, page, context, empty, true);
+                });
             });
-        });
+        };
     }
-    Q_UNUSED(generation);
+    appendStatusCards(statuses, 0, generation, m_listEpoch, context, cardContext(), std::move(done));
+}
+
+void MastodonFeature::appendStatusCards(const QJsonArray &statuses, qsizetype from, quint64 generation,
+                                        quint64 epoch, const QString &context, const CardContextPtr &cards,
+                                        std::function<void()> done)
+{
+    if (!current(generation) || epoch != m_listEpoch)
+        return;
+    QElapsedTimer budget;
+    budget.start();
+    qsizetype index = from;
+    while (index < statuses.size() && (index == from || budget.elapsed() < kCardBatchBudgetMs)) {
+        const QJsonObject status = statuses.at(index++).toObject();
+        const QJsonObject shown = shownStatus(status);
+        bool hide = false;
+        filterHideReason(shown, context, &hide);
+        if (hide)
+            continue;
+        addRow(new PostCard(status, cards));
+        if (m_seenStatuses.size() >= kMaxSeenStatuses)
+            m_seenStatuses.clear();
+        m_seenStatuses.insert(shown.value(QStringLiteral("id")).toString(), shown);
+    }
+    if (index < statuses.size()) {
+        QTimer::singleShot(0, this, [this, statuses, index, generation, epoch, context, cards,
+                                     done = std::move(done)]() mutable {
+            appendStatusCards(statuses, index, generation, epoch, context, cards, std::move(done));
+        });
+        return;
+    }
+    if (done)
+        done();
 }
 
 void MastodonFeature::loadAccountList(const QString &path, const QUrlQuery &query, const QString &empty, const QString &mode)

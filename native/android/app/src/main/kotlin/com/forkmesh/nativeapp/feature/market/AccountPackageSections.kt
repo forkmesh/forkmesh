@@ -381,6 +381,7 @@ private fun StatusMonitorsSection(store: StatusMonitorsStore) {
                 onPressed = if (!adding && !list.full && name.isNotBlank() && url.isNotBlank() && issue == null) ({ add() }) else null,
                 tone = FmTone.Accent,
                 filled = true,
+                busy = adding,
             )
         }
     }

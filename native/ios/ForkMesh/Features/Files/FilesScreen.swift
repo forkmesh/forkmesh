@@ -52,6 +52,7 @@ struct FilesScreen: View {
                         Button("Remove", role: .destructive) { library.removeShare(share) }
                         Button("Edit") { editing = share }
                     }
+                    .textSelection(.disabled)
                     .contextMenu {
                         Button("Edit") { editing = share }
                         Button("Remove", role: .destructive) { library.removeShare(share) }

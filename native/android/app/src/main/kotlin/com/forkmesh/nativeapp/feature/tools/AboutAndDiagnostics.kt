@@ -376,6 +376,7 @@ fun DiagnosticsSendPage(onBack: () -> Unit, onSent: () -> Unit) {
                     }
                 },
                 enabled = !sending && preview.isNotEmpty(),
+                busy = sending,
             ) { Text(if (sending) "Sending…" else "Send") }
         }
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x6)) {

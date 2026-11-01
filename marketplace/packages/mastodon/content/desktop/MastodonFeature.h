@@ -160,6 +160,8 @@ private:
     void loadStatuses(const QString &path, const QUrlQuery &query, const QString &context, const QString &empty);
     void showStatuses(const Result &result, quint64 generation, const QString &context, const QString &empty,
                       bool append);
+    void appendStatusCards(const QJsonArray &statuses, qsizetype from, quint64 generation, quint64 epoch,
+                           const QString &context, const CardContextPtr &cards, std::function<void()> done);
     void loadAccountList(const QString &path, const QUrlQuery &query, const QString &empty,
                          const QString &mode);
     void showAccounts(const Result &result, quint64 generation, const QString &empty, const QString &mode, bool append);
@@ -223,6 +225,7 @@ private:
     Page m_page;
     QList<Page> m_history;
     quint64 m_generation = 0;
+    quint64 m_listEpoch = 0;
     std::function<void()> m_loadMore;
     CardContextPtr m_cardContext;
     QString m_lastNotificationId;

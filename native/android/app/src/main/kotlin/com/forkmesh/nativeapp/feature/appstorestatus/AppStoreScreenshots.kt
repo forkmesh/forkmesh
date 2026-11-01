@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -160,67 +161,69 @@ private fun ScreenshotViewer(feedback: AppStoreFeedback, start: Int, onClose: ()
         }
     }
     FmSoundOnShow()
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(
-            Modifier
-                .fmTapSounds()
-                .fillMaxSize()
-                .background(Color.Black),
-            contentAlignment = Alignment.Center,
-        ) {
-            val current = image
-            val failed = failure
-            when {
-                current != null -> Image(
-                    current,
-                    AppStoreStatus.screenshotTitle(index, shots.size),
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(shot.id) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(1f, 6f)
-                                offset = if (scale == 1f) Offset.Zero else offset + pan
-                            }
-                        }
-                        .pointerInput(shot.id) {
-                            detectTapGestures(onDoubleTap = {
-                                scale = if (scale > 1f) 1f else 2.5f
-                                offset = Offset.Zero
-                            })
-                        }
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            translationX = offset.x
-                            translationY = offset.y
-                        },
-                    contentScale = ContentScale.Fit,
-                )
-                failed != null -> FmInlineStatusLine(failed, isError = true, modifier = Modifier.padding(FmSpace.x5))
-                else -> FmCircularProgressIndicator(Modifier.size(24.dp))
-            }
-            Row(
-                Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(FmSpace.x3),
-                verticalAlignment = Alignment.CenterVertically,
+    DisableSelection {
+        Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(
+                Modifier
+                    .fmTapSounds()
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center,
             ) {
-                FmIconButton("close", "Close", onPressed = onClose, color = Color.White)
-                Text(
-                    AppStoreStatus.screenshotTitle(index, shots.size),
-                    Modifier.weight(1f),
-                    style = Fm.text.labelLarge.copy(color = Color.White),
-                    textAlign = TextAlign.Center,
-                )
-                FmIconButton("chevron_left", "Previous screenshot", onPressed = if (index > 0) ({ index -= 1 }) else null, color = Color.White)
-                FmIconButton("chevron_right", "Next screenshot", onPressed = if (index < shots.size - 1) ({ index += 1 }) else null, color = Color.White)
-            }
-            Column(Modifier.align(Alignment.BottomCenter).padding(FmSpace.x4), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (feedback.comment.isNotEmpty()) {
-                    Text(feedback.comment, style = Fm.text.bodySmall.copy(color = Color.White), textAlign = TextAlign.Center, maxLines = 3)
+                val current = image
+                val failed = failure
+                when {
+                    current != null -> Image(
+                        current,
+                        AppStoreStatus.screenshotTitle(index, shots.size),
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(shot.id) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 6f)
+                                    offset = if (scale == 1f) Offset.Zero else offset + pan
+                                }
+                            }
+                            .pointerInput(shot.id) {
+                                detectTapGestures(onDoubleTap = {
+                                    scale = if (scale > 1f) 1f else 2.5f
+                                    offset = Offset.Zero
+                                })
+                            }
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                translationX = offset.x
+                                translationY = offset.y
+                            },
+                        contentScale = ContentScale.Fit,
+                    )
+                    failed != null -> FmInlineStatusLine(failed, isError = true, modifier = Modifier.padding(FmSpace.x5))
+                    else -> FmCircularProgressIndicator(Modifier.size(24.dp))
                 }
-                Text(
-                    listOf(feedback.from, feedback.device).filter { it.isNotEmpty() }.joinToString(" · "),
-                    style = Fm.text.labelSmall.copy(color = Color.White.copy(alpha = .7f)),
-                )
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(FmSpace.x3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FmIconButton("close", "Close", onPressed = onClose, color = Color.White)
+                    Text(
+                        AppStoreStatus.screenshotTitle(index, shots.size),
+                        Modifier.weight(1f),
+                        style = Fm.text.labelLarge.copy(color = Color.White),
+                        textAlign = TextAlign.Center,
+                    )
+                    FmIconButton("chevron_left", "Previous screenshot", onPressed = if (index > 0) ({ index -= 1 }) else null, color = Color.White, busy = false)
+                    FmIconButton("chevron_right", "Next screenshot", onPressed = if (index < shots.size - 1) ({ index += 1 }) else null, color = Color.White, busy = false)
+                }
+                Column(Modifier.align(Alignment.BottomCenter).padding(FmSpace.x4), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (feedback.comment.isNotEmpty()) {
+                        Text(feedback.comment, style = Fm.text.bodySmall.copy(color = Color.White), textAlign = TextAlign.Center, maxLines = 3)
+                    }
+                    Text(
+                        listOf(feedback.from, feedback.device).filter { it.isNotEmpty() }.joinToString(" · "),
+                        style = Fm.text.labelSmall.copy(color = Color.White.copy(alpha = .7f)),
+                    )
+                }
             }
         }
     }

@@ -210,6 +210,7 @@ struct AgentStartCard: View {
                 tone: .accent,
                 filled: true,
                 height: 40,
+                busy: model.busy,
                 onPressed: model.canStart ? { Task { await start() } } : nil
             )
         }

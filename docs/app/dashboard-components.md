@@ -123,3 +123,10 @@ clone popover, where the read-only URL field is focused and selected as soon
 as the popover opens; on a field the thin outline reads as a highlighted
 border rather than a halo. Checkboxes, radios, ranges and file pickers keep the
 shared ring.
+
+## Busy ring
+
+A button that disables itself right after a click shows a spinning ring
+around its icon until it is enabled again, and a sidebar icon can ring while
+its section has work running. See
+[../desktop/busy-ring.md](../desktop/busy-ring.md#web-dashboard).

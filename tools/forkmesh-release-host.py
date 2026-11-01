@@ -6,7 +6,7 @@ have neither the Android toolchain and upload keystore nor a Windows
 cross toolchain and Authenticode certificate. Every candidate it publishes
 therefore lacks the host-built assets:
 
-  forkmesh-linux-x86_64               Debian 12 container build (+ AppImage, .zsync)
+  forkmesh-linux-x86_64               Debian 12 container build (+ AppImage, .zsync, .deb)
   forkmesh-android-universal.apk      native Android app (native/android, Gradle),
                                       signed with the direct-distribution key
   forkmesh-windows-x86_64-setup.exe   MinGW cross build, NSIS, Authenticode
@@ -72,6 +72,7 @@ from pathlib import Path
 LINUX_ASSET = "forkmesh-linux-x86_64"
 APPIMAGE_ASSET = "forkmesh-linux-x86_64.AppImage"
 ZSYNC_ASSET = "forkmesh-linux-x86_64.AppImage.zsync"
+DEB_ASSET = "forkmesh-linux-x86_64.deb"
 LINUX_ASSETS = (LINUX_ASSET, APPIMAGE_ASSET)
 APK_ASSET = "forkmesh-android-universal.apk"
 APK_APPLICATION_ID = "com.forkmesh.forkmesh"
@@ -119,6 +120,7 @@ MACHO_THIN_64 = b"\xcf\xfa\xed\xfe"
 SCAN_OVERLAP = 256
 RELEASES = ".forkmesh/releases"
 BUILDS_FILE = f"{RELEASES}/builds.json"
+APT_DIR = f"{RELEASES}/apt"
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import forkmesh_paths  # noqa: E402  (sibling module; tools run as scripts)
@@ -1698,13 +1700,13 @@ BUILD_LINUX_SCRIPT = r"""
 set -euo pipefail
 "$FORKMESH_LINUX_DRIVER" build --source . --out "$FORKMESH_LINUX_OUT" \
   --version "$FORKMESH_LINUX_VERSION" --commit "$FORKMESH_LINUX_COMMIT" \
-  --channel "$FORKMESH_LINUX_CHANNEL"
+  --channel "$FORKMESH_LINUX_CHANNEL" --build "$FORKMESH_LINUX_BUILD"
 "$FORKMESH_LINUX_DRIVER" smoke --out "$FORKMESH_LINUX_OUT" --version "$FORKMESH_LINUX_VERSION"
 """
 
 
 def build_linux_assets(repo: Path, work: Path, tag: str, commit: str,
-                       channel: str) -> dict[str, Path]:
+                       channel: str, build: int = 0) -> dict[str, Path]:
     tree = build_tree(repo, work, "linux", tag, commit)
     out = work / f"linux-out-{tag}"
     forkmesh_safe_delete.remove_tree(out, work, ignore_errors=True)
@@ -1723,9 +1725,10 @@ def build_linux_assets(repo: Path, work: Path, tag: str, commit: str,
         f"container; log: {build_log}")
     env.update(FORKMESH_LINUX_DRIVER=str(driver), FORKMESH_LINUX_OUT=str(out),
                FORKMESH_LINUX_VERSION=version, FORKMESH_LINUX_COMMIT=commit,
-               FORKMESH_LINUX_CHANNEL=channel)
+               FORKMESH_LINUX_CHANNEL=channel, FORKMESH_LINUX_BUILD=str(build))
     run_build(BUILD_LINUX_SCRIPT, tree, env, build_log, 4 * 60 * 60)
-    built = {name: out / name for name in (LINUX_ASSET, APPIMAGE_ASSET, ZSYNC_ASSET)}
+    built = {name: out / name
+             for name in (LINUX_ASSET, APPIMAGE_ASSET, ZSYNC_ASSET, DEB_ASSET)}
     for name, path in built.items():
         if not path.is_file() or path.stat().st_size == 0:
             raise CompletionError(f"{name} was not produced by the Linux baseline build")
@@ -2146,6 +2149,8 @@ def complete_release(args: argparse.Namespace) -> int:
                         built[name] = linux[name]
                 if APPIMAGE_ASSET in missing:
                     built[ZSYNC_ASSET] = linux[ZSYNC_ASSET]
+                if LINUX_ASSET in missing:
+                    built[DEB_ASSET] = linux[DEB_ASSET]
             if APK_ASSET in missing:
                 built[APK_ASSET] = build_apk(repo, work, tag, build_commit,
                                              android_version_code(tag), args.signer_sha256)
@@ -2314,8 +2319,8 @@ def check_homepage(args: argparse.Namespace, fetch=None, now=None) -> int:
 def build_platform(plan: dict, repo: Path, work: Path, args: argparse.Namespace) -> dict[str, Path]:
     platform, tag, commit, channel = plan["platform"], plan["tag"], plan["commit"], plan["channel"]
     if platform == "linux":
-        linux = build_linux_assets(repo, work, tag, commit, channel)
-        return {name: linux[name] for name in (*LINUX_ASSETS, ZSYNC_ASSET)}
+        linux = build_linux_assets(repo, work, tag, commit, channel, plan["build"])
+        return {name: linux[name] for name in (*LINUX_ASSETS, ZSYNC_ASSET, DEB_ASSET)}
     if platform == "android":
         return {APK_ASSET: build_apk(repo, work, tag, commit,
                                      android_version_code(tag, plan["build"]),
@@ -2376,7 +2381,7 @@ def deploy_build(args: argparse.Namespace) -> int:
         log(f"{label} {tag} already has build {plan['build']}; nothing to build")
         return 0
     built_names = frozenset(plan["assets"]) | (
-        frozenset({ZSYNC_ASSET}) if plan["platform"] == "linux" else frozenset())
+        frozenset({ZSYNC_ASSET, DEB_ASSET}) if plan["platform"] == "linux" else frozenset())
     blockers = promotion_blockers(manifests.get("latest"),
                                   asset_names(candidate) | built_names, required)
     if args.dry_run:
@@ -2629,6 +2634,32 @@ def bring_release_onto_main(tree: Path, tag: str, tag_commit: str) -> bool:
     return True
 
 
+def apt_signing_key() -> Path:
+    return Path(os.environ.get("FORKMESH_APT_SIGNING_KEY",
+                               FORKMESH_DATA / "release" / "apt-signing-key.asc")).expanduser()
+
+
+def refresh_apt_repository(tree: Path, cas: Path, latest: dict) -> bool:
+    digest = next((str(asset.get("blob_sha256", "")).lower()
+                   for asset in latest.get("assets", []) if asset.get("name") == DEB_ASSET), "")
+    if not digest:
+        return False
+    if not HASH_RE.match(digest):
+        raise CompletionError(f"latest names {DEB_ASSET} with an invalid hash")
+    key = apt_signing_key()
+    if not key.is_file():
+        log(f"no apt signing key at {key}; the apt repository keeps its previous release")
+        return False
+    blob = cas / "sha256" / digest[:2] / digest / "data"
+    if not blob.is_file():
+        raise CompletionError(f"{DEB_ASSET} {digest[:12]} is not in the release store {cas}")
+    run([sys.executable, tree / "tools" / "forkmesh-apt-repo.py", "publish", "--deb", blob,
+         "--sha256", digest, "--out", tree / APT_DIR, "--signing-key", key], cwd=tree)
+    git(tree, "add", "--", APT_DIR)
+    log(f"apt repository now serves {DEB_ASSET} {digest[:12]}")
+    return True
+
+
 def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
                         channel: str, tag: str, tag_commit: str, build_commit: str,
                         cas: Path, built: dict[str, Path], digests: dict[str, str],
@@ -2697,6 +2728,7 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
             or any(assets.get(name) != digest for name, digest in digests.items())
             or hashlib.sha256(shasums).hexdigest() != latest.get("checksums_sha256")):
         raise CompletionError("the promoted latest manifest does not describe the built assets")
+    refresh_apt_repository(promote_tree, cas, latest)
     git(promote_tree, "add", "--", f"{RELEASES}/{channel}", f"{RELEASES}/latest")
     summary = "\n".join(f"{name} {digest[:12]}" for name, digest in sorted(digests.items()))
     git(promote_tree, "-c", "user.name=ForkMesh Actions",

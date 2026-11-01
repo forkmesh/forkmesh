@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
 import android.graphics.BitmapFactory
@@ -96,6 +97,7 @@ import com.forkmesh.nativeapp.model.UserStatus
 import com.forkmesh.nativeapp.ui.kit.FmAvatar
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmSoundOnShow
@@ -132,102 +134,104 @@ fun ChatMessageRow(
     val haptics = LocalHapticFeedback.current
     val message = row.message
     val grouped = row.continuesGroup
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = {},
-                onLongClick = onLongPress?.let {
-                    {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        it()
-                    }
-                },
-            )
-            .padding(start = FmSpace.x3, end = FmSpace.x3, top = if (grouped) 1.dp else FmSpace.x3, bottom = 1.dp),
-    ) {
-        if (grouped) {
-            Spacer(Modifier.width(28.dp + FmSpace.x2))
-        } else {
-            Box(Modifier.openSenderProfile(row)) { ChatSenderAvatar(message) }
-            Spacer(Modifier.width(FmSpace.x2))
-        }
-        Column(Modifier.weight(1f)) {
-            if (!grouped) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (message.self) "${message.senderName} (you)" else message.senderName,
-                        modifier = Modifier.weight(1f, fill = false).openSenderProfile(row),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = Fm.text.titleSmall.copy(color = FmColors.senderColor(message.senderName)),
-                    )
-                    if (row.visitor) Text(" visitor", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
-                    if (message.serverVisible) Text(" server-visible", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
-                    if (message.ephemeral) {
-                        Text(" ${AppsText.EPHEMERAL_NOTE}", maxLines = 1, style = Fm.text.bodySmall.copy(color = colors.textTertiary))
-                    }
-                    ChatSenderStatus(message, liveStatus)
-                    Spacer(Modifier.width(FmSpace.x2))
-                    Text(messageTime(message.timestamp), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
-                    row.receipt?.let {
-                        Spacer(Modifier.width(FmSpace.x1))
-                        ChatReceiptMark(it)
-                    }
-                    val recipientsLabel = OfficeFrames.recipientsLabel(message.recipients)
-                    val recipientsDescription = OfficeFrames.recipientsDescription(message.recipients)
-                    if (recipientsLabel != null && recipientsDescription != null) {
-                        Spacer(Modifier.width(FmSpace.x1))
+    FmHoldArea(onLongPress != null) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = onLongPress?.let {
+                        {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            it()
+                        }
+                    },
+                )
+                .padding(start = FmSpace.x3, end = FmSpace.x3, top = if (grouped) 1.dp else FmSpace.x3, bottom = 1.dp),
+        ) {
+            if (grouped) {
+                Spacer(Modifier.width(28.dp + FmSpace.x2))
+            } else {
+                Box(Modifier.openSenderProfile(row)) { ChatSenderAvatar(message) }
+                Spacer(Modifier.width(FmSpace.x2))
+            }
+            Column(Modifier.weight(1f)) {
+                if (!grouped) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            recipientsLabel,
-                            modifier = Modifier.semantics { contentDescription = recipientsDescription },
-                            style = Fm.text.bodySmall.copy(color = colors.textTertiary),
+                            if (message.self) "${message.senderName} (you)" else message.senderName,
+                            modifier = Modifier.weight(1f, fill = false).openSenderProfile(row),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.titleSmall.copy(color = FmColors.senderColor(message.senderName)),
+                        )
+                        if (row.visitor) Text(" visitor", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+                        if (message.serverVisible) Text(" server-visible", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+                        if (message.ephemeral) {
+                            Text(" ${AppsText.EPHEMERAL_NOTE}", maxLines = 1, style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+                        }
+                        ChatSenderStatus(message, liveStatus)
+                        Spacer(Modifier.width(FmSpace.x2))
+                        Text(messageTime(message.timestamp), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+                        row.receipt?.let {
+                            Spacer(Modifier.width(FmSpace.x1))
+                            ChatReceiptMark(it)
+                        }
+                        val recipientsLabel = OfficeFrames.recipientsLabel(message.recipients)
+                        val recipientsDescription = OfficeFrames.recipientsDescription(message.recipients)
+                        if (recipientsLabel != null && recipientsDescription != null) {
+                            Spacer(Modifier.width(FmSpace.x1))
+                            Text(
+                                recipientsLabel,
+                                modifier = Modifier.semantics { contentDescription = recipientsDescription },
+                                style = Fm.text.bodySmall.copy(color = colors.textTertiary),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                }
+                Box(Modifier.fillMaxWidth()) {
+                    Column {
+                        if (row.text.isNotEmpty()) ChatMessageBody(row.text)
+                        if (message.blocks.isNotEmpty()) AppBlocksView(message)
+                        if (row.edited) Text("(edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+                        val attachment = row.attachment
+                        val viewOnce = row.viewOnce
+                        if (viewOnce != null) {
+                            ViewOnceBubble(viewOnce)
+                        } else if (attachment != null) {
+                            ChatAttachmentView(attachment)
+                        } else if (message.fileName.isNotEmpty()) {
+                            Row(Modifier.padding(top = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
+                                FmIcon("attach_file", size = 14.dp, tint = colors.textTertiary)
+                                Spacer(Modifier.width(FmSpace.x1))
+                                Text(message.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(color = colors.accent))
+                            }
+                        }
+                    }
+                    if (row.stickers.isNotEmpty()) {
+                        ChatStickers(
+                            row.stickers,
+                            onToggle = onToggleSticker,
+                            modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-10).dp).zIndex(1f),
                         )
                     }
                 }
-                Spacer(Modifier.height(2.dp))
-            }
-            Box(Modifier.fillMaxWidth()) {
-                Column {
-                    if (row.text.isNotEmpty()) ChatMessageBody(row.text)
-                    if (message.blocks.isNotEmpty()) AppBlocksView(message)
-                    if (row.edited) Text("(edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
-                    val attachment = row.attachment
-                    val viewOnce = row.viewOnce
-                    if (viewOnce != null) {
-                        ViewOnceBubble(viewOnce)
-                    } else if (attachment != null) {
-                        ChatAttachmentView(attachment)
-                    } else if (message.fileName.isNotEmpty()) {
-                        Row(Modifier.padding(top = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
-                            FmIcon("attach_file", size = 14.dp, tint = colors.textTertiary)
-                            Spacer(Modifier.width(FmSpace.x1))
-                            Text(message.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(color = colors.accent))
-                        }
-                    }
-                }
-                if (row.stickers.isNotEmpty()) {
-                    ChatStickers(
-                        row.stickers,
-                        onToggle = onToggleSticker,
-                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-10).dp).zIndex(1f),
+                if (queued) {
+                    Text(
+                        "Queued · goes to the next device that joins",
+                        modifier = Modifier.padding(top = 2.dp),
+                        style = Fm.text.bodySmall.copy(color = colors.warning),
                     )
                 }
+                if (row.reactions.isNotEmpty() && onToggleReaction != null) ChatReactionChips(row.reactions, onToggleReaction)
+                val thread = row.thread
+                if (thread != null && onOpenThread != null) ChatThreadSummaryButton(thread, onOpenThread)
             }
-            if (queued) {
-                Text(
-                    "Queued · goes to the next device that joins",
-                    modifier = Modifier.padding(top = 2.dp),
-                    style = Fm.text.bodySmall.copy(color = colors.warning),
-                )
+            val receipt = row.receipt
+            if (grouped && receipt != null) {
+                ChatReceiptMark(receipt, Modifier.align(Alignment.Bottom).padding(start = FmSpace.x1, bottom = 3.dp))
             }
-            if (row.reactions.isNotEmpty() && onToggleReaction != null) ChatReactionChips(row.reactions, onToggleReaction)
-            val thread = row.thread
-            if (thread != null && onOpenThread != null) ChatThreadSummaryButton(thread, onOpenThread)
-        }
-        val receipt = row.receipt
-        if (grouped && receipt != null) {
-            ChatReceiptMark(receipt, Modifier.align(Alignment.Bottom).padding(start = FmSpace.x1, bottom = 3.dp))
         }
     }
 }
@@ -296,19 +300,21 @@ fun ChatStickerBadge(
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(6.dp)
-    Text(
-        label,
-        modifier = modifier
-            .rotate(entry.tilt)
-            .shadow(3.dp, shape)
-            .background(Color(entry.color), shape)
-            .border(2.dp, Color.White, shape)
-            .combinedClickable(enabled = onTap != null || onLongPress != null, onClick = { onTap?.invoke() }, onLongClick = onLongPress)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-            .semantics { contentDescription = description },
-        maxLines = 1,
-        style = Fm.text.labelSmall.copy(color = Color.White, fontWeight = FontWeight.Bold),
-    )
+    FmHoldArea(onLongPress != null) {
+        Text(
+            label,
+            modifier = modifier
+                .rotate(entry.tilt)
+                .shadow(3.dp, shape)
+                .background(Color(entry.color), shape)
+                .border(2.dp, Color.White, shape)
+                .combinedClickable(enabled = onTap != null || onLongPress != null, onClick = { onTap?.invoke() }, onLongClick = onLongPress)
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+                .semantics { contentDescription = description },
+            maxLines = 1,
+            style = Fm.text.labelSmall.copy(color = Color.White, fontWeight = FontWeight.Bold),
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -414,12 +420,14 @@ fun ChatAttachmentView(attachment: ChatAttachment) {
                     )
                     if (full) {
                         FmSoundOnShow()
-                        Dialog(onDismissRequest = { full = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-                            Box(Modifier.fmTapSounds().fillMaxSize().background(colors.bgBase).clickable { full = false }, contentAlignment = Alignment.Center) {
-                                Image(bitmap = bitmap, contentDescription = attachment.fileName, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-                                Row(Modifier.align(Alignment.TopEnd).padding(FmSpace.x3)) {
-                                    FmIconButton(icon = "download", label = "Save image", onPressed = { save.launch(attachment.fileName) })
-                                    FmIconButton(icon = "close", label = "Close", onPressed = { full = false })
+                        DisableSelection {
+                            Dialog(onDismissRequest = { full = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                                Box(Modifier.fmTapSounds().fillMaxSize().background(colors.bgBase).clickable { full = false }, contentAlignment = Alignment.Center) {
+                                    Image(bitmap = bitmap, contentDescription = attachment.fileName, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                                    Row(Modifier.align(Alignment.TopEnd).padding(FmSpace.x3)) {
+                                        FmIconButton(icon = "download", label = "Save image", onPressed = { save.launch(attachment.fileName) })
+                                        FmIconButton(icon = "close", label = "Close", onPressed = { full = false })
+                                    }
                                 }
                             }
                         }

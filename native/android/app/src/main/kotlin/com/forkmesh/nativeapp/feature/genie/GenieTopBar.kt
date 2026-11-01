@@ -62,6 +62,7 @@ import com.forkmesh.nativeapp.genie.GenieAutoSendReceipt
 import com.forkmesh.nativeapp.genie.GenieAutoSendStage
 import com.forkmesh.nativeapp.genie.GenieOutreachChannel
 import com.forkmesh.nativeapp.navigation.Route
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatusLine
 import com.forkmesh.nativeapp.ui.kit.LocalFmMessenger
 import com.forkmesh.nativeapp.ui.kit.confirmAction
@@ -149,64 +150,66 @@ fun ShellMailChip() {
             }
         }
     }
-    Box(
-        Modifier
-            .size(MailChip.size)
-            .combinedClickable(
-                onClick = {
-                    haptics.tap()
-                    ShellSuggestions.contactTapped()
-                },
-                onLongClick = {
-                    haptics.commit()
-                    toggleAutoSend()
-                },
-            )
-            .semantics {
-                role = Role.Button
-                contentDescription = described
-                testTag = "top-suggestion-contact"
-                customActions = listOf(
-                    CustomAccessibilityAction(toggleLabel) { toggleAutoSend(); true },
-                    CustomAccessibilityAction("Not now") { ShellSuggestions.skipContact(); true },
-                    CustomAccessibilityAction("Open the CRM") { NavigationFeature.open(Route.Crm(null)); true },
+    FmHoldArea {
+        Box(
+            Modifier
+                .size(MailChip.size)
+                .combinedClickable(
+                    onClick = {
+                        haptics.tap()
+                        ShellSuggestions.contactTapped()
+                    },
+                    onLongClick = {
+                        haptics.commit()
+                        toggleAutoSend()
+                    },
                 )
-            },
-    ) {
-        Box(Modifier.fillMaxSize().clip(CircleShape), contentAlignment = Alignment.Center) {
-            val image = suggestion?.image
-            if (pick != null && image != null) {
-                Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            } else {
-                Box(Modifier.fillMaxSize().background(c.accent.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
-                    if (pick != null) {
-                        Text(pick.contact.initials, color = c.accent, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    } else {
-                        FmIcon("mail", size = 18.dp, tint = c.accent)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = described
+                    testTag = "top-suggestion-contact"
+                    customActions = listOf(
+                        CustomAccessibilityAction(toggleLabel) { toggleAutoSend(); true },
+                        CustomAccessibilityAction("Not now") { ShellSuggestions.skipContact(); true },
+                        CustomAccessibilityAction("Open the CRM") { NavigationFeature.open(Route.Crm(null)); true },
+                    )
+                },
+        ) {
+            Box(Modifier.fillMaxSize().clip(CircleShape), contentAlignment = Alignment.Center) {
+                val image = suggestion?.image
+                if (pick != null && image != null) {
+                    Image(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Box(Modifier.fillMaxSize().background(c.accent.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+                        if (pick != null) {
+                            Text(pick.contact.initials, color = c.accent, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        } else {
+                            FmIcon("mail", size = 18.dp, tint = c.accent)
+                        }
                     }
                 }
             }
-        }
-        if (autoOn) Box(Modifier.fillMaxSize().border(2.5.dp, c.accent, CircleShape))
-        if (autoOn || sentToday > 0) {
-            Box(Modifier.align(Alignment.TopEnd).offset(3.dp, (-3).dp), contentAlignment = Alignment.Center) {
-                if (autoOn && !busy) CountdownRing(MailChip.count + MailChip.ringGap)
-                Box(
-                    Modifier.size(MailChip.count).background(if (autoOn) c.accent else c.textSecondary, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("$sentToday", color = Color.White, fontSize = if (sentToday > 99) 7.sp else 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            if (autoOn) Box(Modifier.fillMaxSize().border(2.5.dp, c.accent, CircleShape))
+            if (autoOn || sentToday > 0) {
+                Box(Modifier.align(Alignment.TopEnd).offset(3.dp, (-3).dp), contentAlignment = Alignment.Center) {
+                    if (autoOn && !busy) CountdownRing(MailChip.count + MailChip.ringGap)
+                    Box(
+                        Modifier.size(MailChip.count).background(if (autoOn) c.accent else c.textSecondary, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("$sentToday", color = Color.White, fontSize = if (sentToday > 99) 7.sp else 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
                 }
             }
-        }
-        if (pick != null || stage != null || paused) {
-            Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp), contentAlignment = Alignment.Center) {
-                if (busy) MailSpinner(MailChip.badge + MailChip.ringGap)
-                Box(
-                    Modifier.size(MailChip.badge).background(if (stage == null && paused) c.warning else c.accent, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    FmIcon(symbol(stage, paused, pick?.channel), size = 10.dp, tint = Color.White)
+            if (pick != null || stage != null || paused) {
+                Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp), contentAlignment = Alignment.Center) {
+                    if (busy) MailSpinner(MailChip.badge + MailChip.ringGap)
+                    Box(
+                        Modifier.size(MailChip.badge).background(if (stage == null && paused) c.warning else c.accent, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        FmIcon(symbol(stage, paused, pick?.channel), size = 10.dp, tint = Color.White)
+                    }
                 }
             }
         }
@@ -308,6 +311,7 @@ private fun GenieAutoSendReview(receipt: GenieAutoSendReceipt, onDone: () -> Uni
                 },
                 enabled = rating > 0 && !saving,
                 modifier = Modifier.semantics { testTag = "auto-send-review-save" },
+                busy = saving,
             ) { Text("Save") }
         }
         Column(

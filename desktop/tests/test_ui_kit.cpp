@@ -4,10 +4,14 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QFrame>
 #include <QHeaderView>
+#include <QImage>
+#include <QLabel>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
+#include <QVBoxLayout>
 
 #include <cstdio>
 
@@ -134,6 +138,42 @@ int main(int argc, char **argv)
     check(narrow.horizontalHeader()->resizeContentsPrecision() == 20,
           "a data table keeps a smaller fit bound its page already chose");
     gridHeader->setResizeContentsPrecision(kit::kDataTableFitRows);
+
+    for (const bool dark : {false, true}) {
+        Theme::setActiveDesign(Theme::Design::Next, dark);
+        qApp->setStyleSheet(Theme::nextStyleSheet(dark));
+        QWidget host;
+        host.resize(400, 300);
+        host.show();
+        QApplication::processEvents();
+        for (const char *name : {"agentMetaPopup", "reactionPicker",
+                                 "slashActionsPopup", "mentionPopup",
+                                 "globalSearchPopup"}) {
+            auto *popup = new QFrame(&host, Qt::Popup);
+            popup->setObjectName(QString::fromLatin1(name));
+            auto *layout = new QVBoxLayout(popup);
+            layout->setContentsMargins(12, 10, 12, 10);
+            layout->addWidget(new QLabel(QStringLiteral("Agent  Claude Code")));
+            popup->adjustSize();
+            popup->resize(240, 120);
+            popup->show();
+            QApplication::processEvents();
+            const QImage image = popup->grab().toImage();
+            const QColor inside = image.pixelColor(image.width() / 2,
+                                                   image.height() - 4);
+            const QByteArray what =
+                QByteArray("a Next ") + (dark ? "dark " : "light ") + name +
+                " paints a solid background inside its rounded corners";
+            check(popup->testAttribute(Qt::WA_TranslucentBackground) &&
+                      inside.alpha() == 255 &&
+                      image.pixelColor(0, 0).alpha() < 255,
+                  what.constData());
+            popup->hide();
+            delete popup;
+        }
+    }
+    qApp->setStyleSheet(QString());
+
     Theme::setActiveDesign(Theme::Design::Classic, true);
     kit::syncStockWidgets();
     check(gridHeader->resizeContentsPrecision() == 1000 &&

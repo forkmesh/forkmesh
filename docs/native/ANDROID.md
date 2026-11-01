@@ -1662,6 +1662,25 @@ cited iOS commit; wire and storage formats are unchanged.
   `CrmZohoCode.of(status)` prefills the client ID and data centre; the secret
   field reads "Saved secret (leave blank to keep)" and may stay empty while
   the client ID is the saved one (`usesSavedSecret`), as iOS `CrmZohoCode`.
+- **CRM contact paging (CRM 1.46.0).** Both phones open the CRM with
+  `GET /api/crm/<org>?contacts=250` (iOS `PackagesClient.crmFirstContacts`,
+  Android `CRM_FIRST_CONTACTS`), show those contacts, then read the rest
+  1000 at a time (`crmContactsPage`, following `next`) in the background and
+  append them, skipping ids already shown; the header reads "Loading
+  contacts, N of M" meanwhile. The summary leaves out `customers` when it
+  pages, so `CrmOrganizationData` counts stage `customer` itself
+  (`countsCustomers`). Every `load()` bumps a generation (iOS also cancels
+  `contactsTask`), so a refresh or an organization switch drops an older
+  load's pages. A failed page stops the load, shows "Some contacts did not
+  load" and clears the revision, because the summary's `since` would
+  otherwise answer unchanged while contacts are missing. The in-memory
+  organization cache is written only once every page is in. iOS runs the
+  pages in a main-actor `Task`; Android in a background thread
+  (`CrmModel.background`) that calls `onContactsChanged` after each page,
+  which the app posts to the main thread as `CrmRevision.bump()`. Callers
+  outside the CRM screen (Genie, the toolbox, navigator counts) still read
+  every contact in one summary. Tests: iOS `CrmPagingTests`, Android
+  `CrmPagingTest`.
 - **App Store Status desktop fallback (S035).** `AppStoreStatusLoader.load`
   in `C/market/AppStoreStatus.kt` is iOS `AppStoreStatusModel.load`: it asks
   the paired desktop (`stats.appStoreStatus`, 120 s, through
@@ -2487,6 +2506,38 @@ reads "Running, N percent" to TalkBack. The bar reads
 `TeammatesFeature.startedShortcuts`, so it never starts the shortcuts store
 itself; it looks for it every 2 s until something opens Shortcuts.
 
+### Busy ring on buttons and the side rail
+
+`ui/kit/FmBusyRing.kt` draws the halo's turning arc without the glow: a
+faint accent track with a 70 % sweep that turns once every 1.6 s
+(`ShellActivityHalo` takes its turn time and arc from `FmBusyRing`). It only
+draws, so it takes no touches and TalkBack does not see it; with reduced
+motion the arc stands still. The rule matches the desktop and iOS: a button
+that turns disabled within 1 s of being tapped is working, and the ring turns
+around its icon until the button is enabled again, or for 60 s at most. A
+button with no icon gets the sweep around its rounded outline instead. The
+kit buttons (`FmIconButton`, `FmToneButton`, `FmTextButton`,
+`FmElevatedButton`, `FmPillButton`, and `FmFilledButton`/`FmOutlinedButton`
+in `feature/code/RepoCommon.kt`) record the tap time and watch `enabled`
+(`rememberFmBusyTap`), so screens that write `enabled = !busy` or
+`onPressed = if (busy) null else ...` get the ring with no change. Each also
+takes `busy: Boolean?`: left at `null` the tap guess decides, and `true` or
+`false` replaces the guess. A button can also turn disabled right after a tap
+for another reason: a send button whose field the send empties, a stepper
+that reaches its limit, Move up on the first row, Undo with nothing left to
+undo, a choice button that turns itself off once chosen. A condition such as
+`enabled = !sending && text.isNotBlank()` stays false after the send ends, so
+the guess would spin for the full 60 s. Those call sites pass the real flag
+(`busy = sending`), or `busy = false` when the tap starts no work.
+`FmExtendedFloatingActionButton` is always enabled, so it shows the ring only
+when its `busy` is set. Material buttons draw the sweep as their border
+(`fmBusyBorder`), so it follows the visible shape inside the 48 dp touch
+target; the drawn kit buttons use `Modifier.fmBusyRing`. Nothing animates
+while no button is busy. On a tablet or in landscape the side rail draws the same ring around
+the icon of an active item: Agents while agents run (the bar's `active`), and
+Home while a hub page the bar would mark active (a timer, a running shortcut)
+is running, since those pages are not rail items.
+
 ### Home search, custom order and drag (S010, S012)
 
 - **Custom order.** `ShellMenuLayout` (core, iOS `ShellMenuLayout`, key
@@ -3234,3 +3285,22 @@ edit or delete as somebody else. Nothing here talks to older builds.
   `HubCatalog.workspace` lists `Route.Nexus`, `/dashboard/nexus` opens it, and
   the Scan tab fills an empty target from `LocalNetwork.current()` with a
   "Use this network" row (`NexusTest.testLocalNetworkSuggestion`).
+
+## 37. Pinned Settings headings (2026-10-31)
+
+The user asked for the Settings header and the heading of the section being
+read to stay in view on every platform.
+
+- **iPhone.** `SettingsScreen` already keeps "Settings" in the navigation bar;
+  the search field now stays under it (`navigationBarDrawer(displayMode:
+  .always)`). Each `SettingsSection` reports its frame
+  (`settingsSectionFrame`, `SettingsSectionFramesKey`), and the page's scroll
+  view draws the heading of the section crossing its top edge over the page
+  (`settingsPinnedHeaders`, `SettingsPinnedHeader.swift`). The next section's
+  heading pushes it up and out (`SettingsPinnedSection.pick`). The pinned copy
+  is hidden from VoiceOver, which reads the real heading.
+- **Android.** `SettingsScreen` builds each section with
+  `LazyListScope.section`: the heading is a `stickyHeader` on the canvas
+  colour (`settings-section-header`) and the body an item after it, so Compose
+  pins and pushes it. The hub's search field (`SettingsHubScreen`) is a
+  `stickyHeader` too; the app bar sits outside the list and never scrolled.

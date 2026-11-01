@@ -59,7 +59,8 @@
                     "create-branches",
                     "review-prs",
                     "manage-issues",
-                    "external-tools"
+                    "external-tools",
+                    "run-unattended"
                 ],
                 "relayChannel": "",
                 "runWindowHours": 0,

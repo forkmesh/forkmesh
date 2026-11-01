@@ -624,7 +624,7 @@ private struct FeedComposer: View {
                 Text("\(model.remaining)")
                     .fmText(.labelMedium, color: model.remaining < 0 ? fm.danger : fm.textTertiary, tabular: true)
                     .accessibilityLabel("\(model.remaining) characters left")
-                FmFilledButton(model.posting ? "Posting…" : "Post", onPressed: postAction)
+                FmFilledButton(model.posting ? "Posting…" : "Post", busy: model.posting, onPressed: postAction)
                     .accessibilityIdentifier("feed-compose-post")
             }
         }

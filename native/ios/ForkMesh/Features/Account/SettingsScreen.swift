@@ -215,7 +215,8 @@ struct SettingsScreen: View {
                 .padding(FmSpace.x4)
             }
             .scrollDismissesKeyboard(.interactively)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
+            .settingsPinnedHeaders()
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search settings")
             .onAppear {
                 form.adoptAccountName(session)
                 rememberAccount(session)
@@ -825,6 +826,7 @@ struct SettingsSection<Content: View>: View {
             content
         }
         .padding(.bottom, last ? 0 : FmSpace.x5)
+        .settingsSectionFrame(title)
     }
 }
 

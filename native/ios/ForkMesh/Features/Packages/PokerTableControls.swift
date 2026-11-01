@@ -627,7 +627,7 @@ struct PokerInviteSheet: View {
                     Text("Or share the code \(code).").font(.footnote).foregroundStyle(.secondary)
                 }
                 FmFilledButton(
-                    "Send invitations", fillWidth: true,
+                    "Send invitations", fillWidth: true, busy: model.busy,
                     onPressed: PokerModel.inviteNames(names).isEmpty || model.busy ? nil : { invite() })
                 Spacer(minLength: 0)
             }

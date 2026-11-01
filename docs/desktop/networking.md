@@ -476,6 +476,10 @@ moves files, without relaying content in clear.
   and re-posts the relay snapshot, so the phone drops or re-adds the row
   without a manual refresh. Before this, an idle agent deleted on the desktop
   stayed in the phone's list until the user pulled to refresh.
+- The Remote control switch at the bottom of a session's Environment card
+  (`LocalControlServer::setRemoteOff`) refuses every paired request with
+  `remote_off` and holds back events while it is off; see
+  [agents-ui.md](agents-ui.md), "Side panels".
 - Test vectors are pinned in `desktop/tests/test_local_control.cpp` and
   `native/ios/ForkMeshCore/Tests/FMChatTests/LocalControlTests.swift`; change
   both together. Tests: `forkmesh-local-control-tests`.

@@ -58,6 +58,7 @@ REPO_DOCUMENT_ROUTES = frozenset({
 
 CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "api",
+    "apt",
     "assets",
     "favicon",
     "dashboard",
@@ -174,6 +175,7 @@ DASHBOARD_PAGE_ASSETS = {
     "/dashboard/links": "dashboard/links/index.html",
     "/dashboard/achievements": "dashboard/achievements/index.html",
     "/dashboard/runners": "dashboard/runners/index.html",
+    "/dashboard/pings": "dashboard/pings/index.html",
     "/dashboard/docs": "dashboard/docs/index.html",
     "/dashboard/apps": "dashboard/apps/index.html",
     "/dashboard/apps/build": "dashboard/apps/build/index.html",
@@ -335,6 +337,7 @@ BLOCKED_STATIC_HTML_PATHS = frozenset({
     "/dashboard/links/index.html",
     "/dashboard/achievements/index.html",
     "/dashboard/runners/index.html",
+    "/dashboard/pings/index.html",
     "/dashboard/docs/index.html",
     "/dashboard/apps/index.html",
     "/dashboard/apps/build/index.html",

@@ -2808,8 +2808,9 @@ def test_dashboard_network_chat_uses_real_room_integration_without_mock_messages
     assert "const fullMessages" not in dashboard
     assert "const sideMessages" not in dashboard
     assert "notificationToggle" in visible
-    assert "notificationModal" in deferred_dialogs()
-    assert "data-notification-count" in visible
+    assert 'href="/dashboard/pings"' in visible
+    assert "notificationModal" not in deferred_dialogs()
+    assert "data-notification-count" in assembled_dashboard_page("pings")
     for mock in (
         "alice-node",
         "relay-eu-1",

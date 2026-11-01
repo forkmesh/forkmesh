@@ -692,7 +692,7 @@ private struct LocalChangesTab: View {
                 Spacer(minLength: 0)
                 FmToneButton(
                     label: model.status.staged.isEmpty ? "Commit" : "Commit \(model.status.staged.count)",
-                    icon: "check", tone: .accent, filled: true,
+                    icon: "check", tone: .accent, filled: true, busy: model.busyLabel == "Committing",
                     onPressed: model.canCommit ? { onGate("commit") { await model.commit() } } : nil)
             }
         }

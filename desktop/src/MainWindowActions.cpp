@@ -8,6 +8,7 @@
 #include "ProcessReaper.h"
 #include "MainWindowInternal.h"
 #include "DesktopPingForward.h"
+#include "PingBatch.h"
 #include "ReleaseManifestTag.h"
 #include "ActionFailureSummary.h"
 #include "ActionPushRange.h"
@@ -7903,6 +7904,122 @@ void MainWindow::postNotification(const QString &title, const QString &body,
     // suppresses is the OS card that interrupts whatever the user is doing.
     if (pingsPaused() || !nativeSystemNotificationsEnabled())
         return;
+    if (dismissOnly ||
+        batchNativeNotificationCard(title, body, warning, icon, activateHref))
+        showNativeNotificationCard(title, body, warning, icon, activateHref,
+                                   dismissOnly);
+}
+
+namespace {
+
+class PingCardBatchState : public QObject
+{
+public:
+    explicit PingCardBatchState(QObject *parent) : QObject(parent)
+    {
+        setObjectName(QStringLiteral("forkmeshPingCardBatchState"));
+        flushTimer = new QTimer(this);
+        flushTimer->setSingleShot(true);
+    }
+
+    forkmesh::pingbatch::Batcher cards;
+    forkmesh::pingbatch::Batcher sounds;
+    QString lastIcon;
+    QTimer *flushTimer = nullptr;
+    bool wired = false;
+};
+
+PingCardBatchState *pingCardBatchState(QObject *window)
+{
+    QObject *found = window->findChild<QObject *>(
+        QStringLiteral("forkmeshPingCardBatchState"), Qt::FindDirectChildrenOnly);
+    if (auto *state = dynamic_cast<PingCardBatchState *>(found))
+        return state;
+    return new PingCardBatchState(window);
+}
+
+}
+
+bool MainWindow::batchNativeNotificationCard(const QString &title,
+                                             const QString &body, bool warning,
+                                             const QString &icon,
+                                             const QString &activateHref)
+{
+    PingCardBatchState *state = pingCardBatchState(this);
+    if (!state->wired) {
+        state->wired = true;
+        connect(state->flushTimer, &QTimer::timeout, this,
+                [this] { flushNativeNotificationBatch(); });
+    }
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (state->cards.due(now))
+        flushNativeNotificationBatch();
+    forkmesh::pingbatch::Item item;
+    item.title = title;
+    item.body = body;
+    item.warning = warning;
+    item.href = activateHref;
+    item.atMs = now;
+    switch (state->cards.offer(item, now)) {
+    case forkmesh::pingbatch::Step::Show:
+        return true;
+    case forkmesh::pingbatch::Step::Summarize:
+        state->lastIcon = icon;
+        flushNativeNotificationBatch();
+        return false;
+    case forkmesh::pingbatch::Step::Hold:
+        break;
+    }
+    state->lastIcon = icon;
+    state->flushTimer->start(
+        int(std::max<qint64>(0, state->cards.dueAtMs() - now)));
+    return false;
+}
+
+void MainWindow::flushNativeNotificationBatch()
+{
+    PingCardBatchState *state = pingCardBatchState(this);
+    state->flushTimer->stop();
+    if (state->cards.held() == 0)
+        return;
+    const forkmesh::pingbatch::Card card = state->cards.take();
+    if (pingsPaused() || !nativeSystemNotificationsEnabled())
+        return;
+    if (card.summary)
+        showNativeNotificationCard(card.title, card.body, card.warning,
+                                   QString(), QStringLiteral("fm:pings"), false,
+                                   10000);
+    else
+        showNativeNotificationCard(card.title, card.body, card.warning,
+                                   state->lastIcon, card.href, false);
+}
+
+bool MainWindow::admitPingSound()
+{
+    PingCardBatchState *state = pingCardBatchState(this);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (state->sounds.due(now))
+        state->sounds.take();
+    forkmesh::pingbatch::Item item;
+    item.atMs = now;
+    switch (state->sounds.offer(item, now)) {
+    case forkmesh::pingbatch::Step::Show:
+        return true;
+    case forkmesh::pingbatch::Step::Summarize:
+        state->sounds.take();
+        return true;
+    case forkmesh::pingbatch::Step::Hold:
+        break;
+    }
+    return false;
+}
+
+void MainWindow::showNativeNotificationCard(const QString &title,
+                                            const QString &body, bool warning,
+                                            const QString &icon,
+                                            const QString &activateHref,
+                                            bool dismissOnly, int trayTimeoutMs)
+{
     m_desktopNotificationHref = activateHref;
 #ifdef FORKMESH_WINDOW_TESTS
     // The window tests drive the real notifyAgentDone/postNotification path, and
@@ -7975,13 +8092,13 @@ void MainWindow::postNotification(const QString &title, const QString &body,
         const QFileInfo iconFile(icon);
         if (!warning && iconFile.isAbsolute() && iconFile.isFile())
             m_trayIcon->showMessage(title, body, QIcon(icon),
-                                    dismissOnly ? 0 : 6000);
+                                    dismissOnly ? 0 : trayTimeoutMs);
         else
             m_trayIcon->showMessage(
                 title, body,
                 warning ? QSystemTrayIcon::Warning
                         : QSystemTrayIcon::Information,
-                dismissOnly ? 0 : 6000);
+                dismissOnly ? 0 : trayTimeoutMs);
     }
 }
 
@@ -7994,6 +8111,9 @@ void MainWindow::showPingTrayMessage(const QString &title, const QString &body,
     // stop it here as well.
     if (pingsPaused() || !nativeSystemNotificationsEnabled() || !m_trayIcon ||
         !QSystemTrayIcon::supportsMessages())
+        return;
+    if (timeoutMs != 0 &&
+        !batchNativeNotificationCard(title, body, warning, QString(), QString()))
         return;
     m_trayIcon->showMessage(
         title, body,
@@ -8403,6 +8523,16 @@ qint64 MainWindow::estimatedRunDurationMs(const ActionRun &run) const
 
 void MainWindow::updateAgentsTabIndicator()
 {
+    if (auto *rail = dynamic_cast<ActivityRailButton *>(m_agentsNavButton)) {
+        bool anyAgentRunning = false;
+        for (const AgentSession &s : std::as_const(m_agentSessions)) {
+            if (!s.merged && s.status == AgentStatus::Running) {
+                anyAgentRunning = true;
+                break;
+            }
+        }
+        rail->setRailActive(anyAgentRunning);
+    }
     QString owner, name;
     if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
         owner = m_repositories.at(m_repoDetailIndex).owner;

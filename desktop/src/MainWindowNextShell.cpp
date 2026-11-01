@@ -363,6 +363,9 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
     else
         painter.drawPixmap(iconRect.topLeft(),
                            tintedOcticonPixmap(state.iconName, fg, iconPx));
+    if (state.busy)
+        busyring::paint(painter, busyring::aroundIcon(iconRect), busyring::accent(),
+                        busyring::phase());
 
     const QString badgeText =
         state.badge > 0 ? QString::number(state.badge) : QString();
@@ -490,16 +493,6 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
                                     enabled && glyphColor.isValid() ? glyphColor
                                                                     : fg,
                                     s));
-    }
-
-    if (state.blink && state.blinkOn) {
-        const int d = 8;
-        const QRect lamp(iconRect.right() - 2, iconRect.bottom() - d + 1, d, d);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(canvas);
-        painter.drawEllipse(lamp.adjusted(-2, -2, 2, 2));
-        painter.setBrush(Theme::color(Theme::Role::Success));
-        painter.drawEllipse(lamp);
     }
 
     if (state.desktopOffline) {

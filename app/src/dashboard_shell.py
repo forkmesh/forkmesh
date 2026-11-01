@@ -224,6 +224,15 @@ PAGES = {
         "title": "Runners - ForkMesh",
         "description": "Agent runners and the sign-in of their Claude Code and Codex CLIs.",
     },
+    "pings": {
+        "view": "pings",
+        "section": "pings",
+        "nav": None,
+        "route": "/dashboard/pings",
+        "asset": "dashboard/pings/index.html",
+        "title": "Pings - ForkMesh",
+        "description": "Your ForkMesh pings: mentions, pull requests, assignments, shares, releases and host status changes, with unread filtering and mark as read.",
+    },
     "docs": {
         "view": "docs",
         "section": "docs",

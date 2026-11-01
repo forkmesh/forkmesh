@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.account.settings
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,6 +72,7 @@ class SettingsHubScreen(private val focus: SettingsSectionId? = null) : Screen()
         )
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     override fun Content(navigator: Navigator) {
         revision
@@ -80,8 +83,8 @@ class SettingsHubScreen(private val focus: SettingsSectionId? = null) : Screen()
         val nag = backupStore?.state?.showsNag(key, System.currentTimeMillis()) == true && SettingsArea.signedIn
         val sections = SettingsCatalog.visible(query, available())
         SettingsPage("Settings", navigator) {
-            item {
-                FmTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), hint = "Search settings")
+            stickyHeader(contentType = "settings-search") {
+                FmTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth().background(Fm.colors.canvas), hint = "Search settings")
             }
             if (nag && query.isBlank()) {
                 item {

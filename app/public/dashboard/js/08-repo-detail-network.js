@@ -223,6 +223,8 @@
               <label class="inline-flex items-start gap-2"><input data-repo-feature="forum" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Forum (a Discourse-style forum kept in <code>.forkmesh/forum</code>)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="actions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Actions (run this repository's workflows)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="protectDefaultBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Protect the default branch: it changes only by merging a pull request an organization owner or admin approved</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Close stale pull requests: when a maintainer's comment or change request gets no reply from the author, ForkBot reminds them after 1, 3 and 7 days and closes the pull request after 8</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePullsDeleteBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />When ForkBot closes a stale pull request, also delete its head branch if that branch is in this repository and is not the default or a protected branch</label>
             </fieldset>
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
@@ -1336,44 +1338,62 @@
     return formatDate(value);
   }
 
-  function renderNotificationPreview() {
-    const countEl = $("[data-notification-count]");
-    const badge = $("[data-notification-badge]");
-    const list = $("[data-notification-preview-list]");
+  function renderNotificationBadge() {
     const unread = Number(state.notificationUnread) || 0;
-    if (countEl) countEl.textContent = unread === 1 ? "1 new" : `${unread} new`;
-    badge?.classList.toggle("hidden", unread <= 0);
-    if (!list) return;
-    const items = state.notifications.slice(0, 5);
-    if (!items.length) {
-      list.innerHTML = '<div class="px-3 py-4 text-xs text-muted-foreground">No pings yet. Mentions, PRs, assignments, shares, bounties, releases, and host status changes will appear here.</div>';
-      return;
-    }
-    list.innerHTML = items.map((item) => {
-      const lead = notificationLead(item);
-      const unreadItem = !item.readAt;
-      const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
-      const avatar = lead.actor
-        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(lead.actor.replace(/^@/, "")) ? botAvatarSvg(botAvatarKind(lead.actor.replace(/^@/, "")), "h-4 w-4") : escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+    $("[data-notification-badge]")?.classList.toggle("hidden", unread <= 0);
+    $$("[data-notification-count]").forEach((el) => {
+      el.textContent = String(unread);
+    });
+    const bell = $("#notificationToggle");
+    if (bell) bell.setAttribute("aria-label", unread > 0 ? `Pings, ${unread} unread` : "Pings");
+  }
+
+  function notificationAvatarHtml(item, lead) {
+    const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+    const login = lead.actor.replace(/^@/, "");
+    return lead.actor
+      ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(login) ? botAvatarSvg(botAvatarKind(login), "h-4 w-4") : escapeHtml(login.charAt(0) || "?")}</span>
           <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
-        : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
-      return `
-      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
-        <div class="flex items-start gap-2.5">
-          <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${avatar}</span></span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
-              <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
-              ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
-            </div>
-            <p class="mt-0.5 line-clamp-2 break-words text-xs leading-5 ${unreadItem ? "text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</p>
-          </div>
+      : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
+  }
+
+  function notificationTargetHref(item) {
+    return item?.href ? repoPublicHref(homeFeedHref(item)) : "";
+  }
+
+  function notificationRowHtml(item, { expanded = false } = {}) {
+    const id = escapeHtml(item.id || "");
+    const lead = notificationLead(item);
+    const unreadItem = !item.readAt;
+    const href = notificationTargetHref(item);
+    const tag = href ? "a" : "button";
+    const target = href ? `href="${escapeHtml(href)}"` : `type="button" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}"`;
+    const kindLabel = pingKindLabel(item.kind);
+    const settingsTitle = kindLabel ? `${kindLabel}: ping settings` : "Ping settings";
+    const when = Number(item.ts) || 0;
+    return `
+      <li data-notification-row data-ping-id="${id}" data-ping-unread="${unreadItem ? "true" : "false"}" class="${unreadItem ? "bg-background" : "bg-card"}">
+        <div class="flex items-start gap-1 px-2 py-2">
+          <${tag} ${target} data-notification-open="${id}" class="flex min-w-0 flex-1 items-start gap-3 rounded-md px-1 py-1 text-left">
+            <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${notificationAvatarHtml(item, lead)}</span></span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-2">
+                <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <time ${when ? `datetime="${escapeHtml(new Date(when).toISOString())}"` : ""} class="shrink-0 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</time>
+                ${unreadItem ? '<span data-notification-unread-dot class="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" role="img"></span>' : ""}
+              </span>
+              <span class="mt-0.5 block line-clamp-2 break-words text-sm leading-5 ${unreadItem ? "font-medium text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</span>
+            </span>
+          </${tag}>
+          <span class="flex shrink-0 items-center">
+            ${unreadItem ? `<button type="button" data-ping-mark-read="${id}" title="Mark as read" aria-label="Mark as read" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="check" aria-hidden="true"></i></button>` : ""}
+            <button type="button" data-ping-row-toggle="${id}" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}" title="${expanded ? "Hide details" : "Show details"}" aria-label="${expanded ? "Hide details" : "Show details"}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="${expanded ? "chevron-up" : "chevron-down"}" aria-hidden="true"></i></button>
+            <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(kindLabel ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="settings" aria-hidden="true"></i></a>
+          </span>
         </div>
-      </button>
+        ${expanded ? `<div id="ping-detail-${id}" data-ping-row-detail class="border-t border-border px-4 py-4">${notificationDetailHtml(item)}</div>` : ""}
+      </li>
     `;
-    }).join("");
-    window.lucide?.createIcons();
   }
 
   function notificationLead(item) {
@@ -1393,14 +1413,9 @@
       : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
-  function renderNotificationDetail(item) {
-    const detail = $("[data-notification-modal-detail]");
-    if (!detail) return;
-    if (!item) {
-      detail.innerHTML = '<div class="text-sm text-muted-foreground">Select a ping to read it.</div>';
-      return;
-    }
-    detail.innerHTML = `
+  function notificationDetailHtml(item) {
+    const href = notificationTargetHref(item);
+    return `
       <div class="flex items-start gap-3">
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
@@ -1410,15 +1425,14 @@
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
+      <p class="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
-      <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        ${href ? `<a href="${escapeHtml(href)}" data-notification-open="${escapeHtml(item.id || "")}" class="fm-btn fm-btn-sm">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
-    window.lucide?.createIcons();
   }
 
   // Where a ping's settings live: its own row on the Pings settings page when
@@ -1590,56 +1604,15 @@
     form.hidden = !isRepoOwner(repo);
   }
 
-  function renderNotificationModal() {
-    const list = $("[data-notification-modal-list]");
-    if (!list) return;
-    if (!state.notifications.length) {
-      list.innerHTML = '<div class="p-3 text-xs text-muted-foreground">No pings yet.</div>';
-      renderNotificationDetail(null);
-      return;
-    }
-    const selected = state.notifications.find((item) => item.id === state.selectedNotificationId)
-      || state.notifications[0];
-    state.selectedNotificationId = selected?.id || "";
-    list.innerHTML = state.notifications.map((item) => {
-      const active = item.id === state.selectedNotificationId;
-      const lead = notificationLead(item);
-      const settingsTitle = pingKindLabel(item.kind)
-        ? `${pingKindLabel(item.kind)}: ping settings`
-        : "Ping settings";
-      // The trailing gear is the "settings" column: it opens this kind's row
-      // on the Pings settings page, where it can be switched off.
-      return `
-        <div data-notification-row class="mb-1 flex items-stretch gap-1 rounded-md ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
-          <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="min-w-0 flex-1 rounded-md px-3 py-2 text-left transition-colors">
-            <span class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">
-                ${notificationInstanceLogoHtml()}
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-                  <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
-                </span>
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
-                <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
-              </span>
-            </span>
-          </button>
-          <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(pingKindLabel(item.kind) ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="flex w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground transition-colors">
-            <i data-lucide="settings" class="h-3.5 w-3.5"></i>
-          </a>
-        </div>
-      `;
-    }).join("");
-    renderNotificationDetail(selected);
-  }
-
   async function loadNotifications() {
     const node = state.session?.nodeName || "";
     if (!node) {
       state.notifications = [];
       state.notificationUnread = 0;
-      renderNotificationPreview();
+      state.notificationTotal = 0;
+      state.notificationsLoaded = true;
+      renderNotificationBadge();
+      renderPingsPage();
       renderHomeFeed();
       return;
     }
@@ -1647,6 +1620,8 @@
       const data = await fetchJson(`/api/notifications?node=${encodeURIComponent(node)}`);
       state.notifications = Array.isArray(data.notifications) ? data.notifications : [];
       state.notificationUnread = Number(data.unread) || 0;
+      state.notificationTotal = Number(data.total) || state.notifications.length;
+      state.notificationsFailed = false;
       // The relay owns the pause deadline, so this refresh is how a pause set
       // on another surface (the desktop app) reaches an open dashboard.
       state.session = {
@@ -1657,9 +1632,12 @@
     } catch (_) {
       state.notifications = [];
       state.notificationUnread = 0;
+      state.notificationTotal = 0;
+      state.notificationsFailed = true;
     }
-    renderNotificationPreview();
-    renderNotificationModal();
+    state.notificationsLoaded = true;
+    renderNotificationBadge();
+    renderPingsPage();
     renderPingPause();
     renderHomeFeed();
     celebrateNewPings(state.notifications);
@@ -1673,30 +1651,11 @@
       .catch(() => {});
   }
 
-  function setNotificationDropdownOpen(open) {
-    const toggle = $("#notificationToggle");
-    const dropdown = $("#notificationDropdown");
-    dropdown?.classList.toggle("hidden", !open);
-    toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-    // The pause presets are a submenu of this dropdown, so they collapse with
-    // it rather than being left open behind the next thing that opens.
-    if (!open) setPingPauseMenuOpen(false);
-  }
-
   function setAccountMenuOpen(open) {
     const toggle = $("#accountMenuToggle");
     const dropdown = $("#accountMenuDropdown");
     dropdown?.classList.toggle("hidden", !open);
     toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-
-  function setNotificationModalOpen(open) {
-    if (open) ensureDeferredMarkup("dialogs");
-    const modal = $("#notificationModal");
-    if (!modal) return;
-    modal.classList.toggle("hidden", !open);
-    modal.classList.toggle("flex", open);
-    if (open) renderNotificationModal();
   }
 
   async function markNotificationsRead(ids = [], all = false) {
@@ -1705,6 +1664,7 @@
     try {
       await fetch("/api/notifications", {
         method: "POST",
+        keepalive: true,
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           node, ids, all,
@@ -1713,18 +1673,6 @@
       });
     } catch (_) {}
     await loadNotifications();
-  }
-
-  async function openNotification(id, modal = false) {
-    const item = state.notifications.find((candidate) => candidate.id === id);
-    if (!item) return;
-    state.selectedNotificationId = id;
-    renderNotificationModal();
-    if (!item.readAt) await markNotificationsRead([id]);
-    if (modal) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-    }
   }
 
   // Each page is its own document (marked <body data-page="...">). Boot runs
@@ -2375,15 +2323,6 @@
       return;
     }
 
-    const notificationToggle = event.target.closest("#notificationToggle");
-    if (notificationToggle) {
-      event.stopPropagation();
-      const dropdown = $("#notificationDropdown");
-      setNotificationDropdownOpen(dropdown?.classList.contains("hidden"));
-      if (state.session?.nodeName) loadNotifications();
-      return;
-    }
-
     const accountMenuToggle = event.target.closest("#accountMenuToggle");
     if (accountMenuToggle) {
       event.stopPropagation();
@@ -2449,29 +2388,15 @@
       return;
     }
 
-    // Ping settings gear (bell footer, pings modal header, each modal row, the
-    // detail pane): a real link to /dashboard/settings/notifications, switched
-    // in place when this already is the settings page.
     const pingSettingsLink = event.target.closest("[data-ping-settings-link]");
     if (pingSettingsLink) {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(false);
       if (openPingSettingsInPlace(pingSettingsLink)) event.preventDefault();
       return;
     }
 
     if (handlePingSettingsClick(event)) {
       event.stopPropagation();
-      return;
-    }
-
-    const notificationOpen = event.target.closest("[data-notification-open]");
-    if (notificationOpen) {
-      await openNotification(
-        notificationOpen.dataset.notificationOpen || "",
-        !event.target.closest("#notificationModal"),
-      );
       return;
     }
 
@@ -2502,17 +2427,6 @@
     if (pauseToggle) {
       event.stopPropagation();
       setPingPauseMenuOpen($("[data-ping-pause-menu]")?.hidden !== false);
-      return;
-    }
-
-    if (event.target.closest("[data-show-all-notifications]")) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-      return;
-    }
-
-    if (event.target.closest("[data-close-notification-modal], [data-notification-modal-backdrop]")) {
-      setNotificationModalOpen(false);
       return;
     }
 
@@ -2687,8 +2601,8 @@
       $("[data-profile-popover]")?.classList.add("hidden");
       $("[data-profile-toggle]")?.setAttribute("aria-expanded", "false");
     }
-    if (!event.target.closest("#notificationToggle, #notificationDropdown")) {
-      setNotificationDropdownOpen(false);
+    if (!event.target.closest("[data-ping-pause-form]")) {
+      setPingPauseMenuOpen(false);
     }
     if (!event.target.closest("#accountMenuToggle, #accountMenuDropdown")) {
       setAccountMenuOpen(false);
@@ -4816,8 +4730,7 @@
 	    }
 	    if (event.key === "Escape") {
 	      setProfileModalOpen(false);
-	      setNotificationDropdownOpen(false);
-	      setNotificationModalOpen(false);
+	      setPingPauseMenuOpen(false);
 	      setAgentModalOpen(false);
 	      setNewRepoModalOpen(false);
 	      closeRepoBranchMenus();

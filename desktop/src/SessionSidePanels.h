@@ -2,6 +2,7 @@
 
 #include "SessionInsights.h"
 
+#include <QColor>
 #include <QHash>
 #include <QJsonObject>
 #include <QList>
@@ -14,6 +15,7 @@
 
 #include <functional>
 
+class QAbstractButton;
 class QFrame;
 class QLabel;
 class QProgressBar;
@@ -40,6 +42,9 @@ public:
         qint64 contextUsed = 0;
         qint64 contextWindow = 0;
         qint64 totalTokens = 0;
+        qint64 promptTokens = 0;
+        qint64 completionTokens = 0;
+        int turns = 0;
         double costUsd = 0.0;
         int files = -1;
         int added = -1;
@@ -47,6 +52,12 @@ public:
         int dirty = -1;
         int prNumber = 0;
         bool conflicted = false;
+        bool remoteAvailable = false;
+        bool remoteOn = true;
+        QStringList remotePhones;
+        bool remoteLocal = false;
+        QString remotePaired;
+        qint64 remoteLastSeenMs = 0;
     };
 
     struct SubSession {
@@ -71,6 +82,7 @@ public:
     void append(const QJsonObject &event);
     void replaceActivity(const QList<QJsonObject> &events);
     void setDetails(const Details &details);
+    void setRemoteActions(std::function<void(bool)> toggle, std::function<void()> connect);
     void setSubSessions(const QList<SubSession> &subSessions, bool canStop,
                         std::function<void(const QString &)> stop);
     Feed &feed() { return m_feed; }
@@ -93,9 +105,11 @@ protected:
 private:
     struct Row {
         QPointer<QWidget> row;
+        QPointer<QLabel> swatch;
         QPointer<QLabel> icon;
         QPointer<QLabel> text;
         QPointer<QLabel> trailing;
+        QPointer<QLabel> share;
         QPointer<QToolButton> stop;
     };
     struct Item {
@@ -104,6 +118,8 @@ private:
         QString trailing;
         QString tip;
         QString open;
+        QColor swatch = QColor();
+        QString share = QString();
     };
     struct Card {
         QString key;
@@ -125,6 +141,7 @@ private:
     void fillFixed(Card &card, const QList<Item> &items, const QString &meta);
     void refreshActivity();
     void refreshDetails();
+    void refreshRemote();
     void applyOrder();
     void applyCollapsed(Card &card);
     void saveLayout() const;
@@ -142,6 +159,13 @@ private:
     QSet<QString> m_collapsed;
     QPointer<QWidget> m_contextBarRow;
     QPointer<QProgressBar> m_contextBar;
+    QPointer<QLabel> m_contextUsed;
+    QPointer<QLabel> m_contextWindow;
+    QPointer<QWidget> m_remoteRow;
+    QPointer<QAbstractButton> m_remoteSwitch;
+    QPointer<QLabel> m_remoteStatus;
+    std::function<void(bool)> m_remoteToggle;
+    std::function<void()> m_remoteConnect;
     Details m_details;
     Feed m_feed;
     std::function<void(const QString &)> m_stopSubSession;

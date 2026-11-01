@@ -1,6 +1,7 @@
 # Diff and files: the pull request summary link and review prompt
 
-Open pull requests show a **Diff and files** box under the merge line. It
+Open pull requests show a **Diff and files** section in the sidebar, after
+Reviewers. It
 links the pull request's diff, patch and changed files, opens ChatGPT with a
 request to summarize the pull request, and copies a review prompt for a
 coding agent. It is the review-side counterpart of the issue prompt
@@ -13,24 +14,30 @@ those directions, for a ChatGPT button that gives a summary, and for the diff,
 the patch and links to the files instead. The prompt is still one click away
 (**Copy review prompt**) but is no longer drawn.
 
+Until October 2026 it was a box between the merge line and the tabs. It
+moved to the sidebar, with compact `h-6` buttons and 11px text, so the
+header goes straight from the title to the conversation; the issue AI
+prompt moved to the sidebar at the same time.
+
 ## What the page shows
 
-- A header row: **Diff and files**; **Diff** (`<pull>.diff`) and **Patch**
-  (`<pull>.patch`) links when the page has a diff to show; **Show all** when
-  the file list is longer than five rows; **Summarize in ChatGPT**; and
-  **Copy review prompt**, which turns into **Copied**.
+- **Diff** (`<pull>.diff`) and **Patch** (`<pull>.patch`) links when the
+  page has a diff to show.
 - The changed files, one per row, monospaced, collapsed to about five rows
   (`max-h-28`). **Show all** expands the list and becomes **Show less**; the
   button carries `aria-expanded` and `aria-controls`. At most 50 files are
   listed, then "and N more".
+- A row of buttons: **Copy review prompt**, which turns into **Copied**;
+  **Summarize in ChatGPT**; and **Show all** when the file list is longer
+  than five rows.
 - Each file links to the file at the pull request's head branch,
   `<repo>/blob/<path>?ref=<head>` (the file page's own address). A deleted
   file, or every file of a pull request whose head is on another node
   (`owner:branch`, a branch this repository does not have), is listed without
   a link.
 - Only on open pull requests. Closed and merged ones have no box.
-- For everyone, signed-out visitors included. The box sits in the header, so
-  it is there on every tab (Conversation, Commits, Checks, Files changed).
+- For everyone, signed-out visitors included, on the Conversation tab (the
+  sidebar is hidden on the other tabs; Files changed lists the files itself).
 
 Links use the `primary` link colour (`--dashboard-link`); the buttons are
 plain secondary buttons, since green is kept for the page's one create button.
@@ -214,8 +221,9 @@ Your reply
 `repo_views.plan_pull` reads `.forkmesh/issues.json`, `.forkmesh/pulls.json`
 and `AI_POLICY.md` on the default branch in the same `blobs` request the
 dashboard makes (`loadRepoCollabSettings`), so the template is in the bundle
-the dashboard seeds from. `repo_views.render` draws the box between the
-merge line and the tabs with the request's public origin
+the dashboard seeds from. `repo_views.render` draws the section, under a
+**Diff and files** heading, after the conversation on the Conversation tab,
+with the request's public origin
 (`repo_ssr.request_origin`, official service hosts spelled
 `https://forkmesh.com`), and keeps renders per origin. The box uses the same
 markup and Tailwind utilities as the dashboard's `renderPullReviewPrompt`.

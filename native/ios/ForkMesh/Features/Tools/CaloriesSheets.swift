@@ -553,7 +553,7 @@ struct CaloriesGoalsTab: View {
 
     private var reminders: some View {
         VStack(alignment: .leading, spacing: FmSpace.x2) {
-            FmSectionHeader(title: "Reminders", trailing: FmTextButton("Add", onPressed: form.canAddReminder ? {
+            FmSectionHeader(title: "Reminders", trailing: FmTextButton("Add", busy: false, onPressed: form.canAddReminder ? {
                 addingReminder = true
             } : nil).fmAny)
             Text(CaloriesGoalsModel.remindersNote)

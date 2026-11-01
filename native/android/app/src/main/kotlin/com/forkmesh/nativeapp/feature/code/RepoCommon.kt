@@ -75,6 +75,9 @@ import com.forkmesh.nativeapp.ui.kit.FmRowDivider
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.fmScrollEdge
+import com.forkmesh.nativeapp.ui.kit.fmBusyBorder
+import com.forkmesh.nativeapp.ui.kit.fmBusyRing
+import com.forkmesh.nativeapp.ui.kit.rememberFmBusyTap
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.rememberFmStatus
@@ -219,16 +222,20 @@ internal fun DetailScaffold(
 }
 
 @Composable
-internal fun FmFilledButton(label: String, onClick: (() -> Unit)?, modifier: Modifier = Modifier, icon: String? = null) {
+internal fun FmFilledButton(label: String, onClick: (() -> Unit)?, modifier: Modifier = Modifier, icon: String? = null, busy: Boolean? = null) {
     val c = Fm.colors
+    val tap = rememberFmBusyTap(onClick != null)
+    val working = tap.busy(busy)
     Button(
         onClick = {
+            tap.tapped()
             FmSoundCues.play(SoundCue.forLabel(label, SoundCue.CLICK))
             onClick?.invoke()
         },
         modifier = modifier.heightIn(min = 40.dp),
         enabled = onClick != null,
         shape = RoundedCornerShape(50),
+        border = fmBusyBorder(working && icon == null),
         colors = ButtonDefaults.buttonColors(
             containerColor = c.textPrimary,
             contentColor = if (c.dark) c.bgBase else Color.White,
@@ -239,7 +246,7 @@ internal fun FmFilledButton(label: String, onClick: (() -> Unit)?, modifier: Mod
         contentPadding = if (icon == null) PaddingValues(horizontal = 24.dp) else PaddingValues(start = 16.dp, end = 24.dp),
     ) {
         if (icon != null) {
-            FmIcon(icon, size = 18.dp)
+            FmIcon(icon, size = 18.dp, modifier = Modifier.fmBusyRing(working, inset = (-5).dp))
             Spacer(Modifier.width(FmSpace.x2))
         }
         Text(label)
@@ -247,18 +254,21 @@ internal fun FmFilledButton(label: String, onClick: (() -> Unit)?, modifier: Mod
 }
 
 @Composable
-internal fun FmOutlinedButton(label: String, onClick: (() -> Unit)?, modifier: Modifier = Modifier, icon: String? = null) {
+internal fun FmOutlinedButton(label: String, onClick: (() -> Unit)?, modifier: Modifier = Modifier, icon: String? = null, busy: Boolean? = null) {
     val c = Fm.colors
     val enabled = onClick != null
+    val tap = rememberFmBusyTap(enabled)
+    val working = tap.busy(busy)
     OutlinedButton(
         onClick = {
+            tap.tapped()
             FmSoundCues.play(SoundCue.forLabel(label, SoundCue.CLICK))
             onClick?.invoke()
         },
         modifier = modifier.heightIn(min = 40.dp),
         enabled = enabled,
         shape = RoundedCornerShape(50),
-        border = BorderStroke(1.dp, if (enabled) c.border else c.textPrimary.copy(alpha = .12f)),
+        border = fmBusyBorder(working && icon == null) ?: BorderStroke(1.dp, if (enabled) c.border else c.textPrimary.copy(alpha = .12f)),
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = c.textPrimary,
             disabledContentColor = c.textPrimary.copy(alpha = .38f),
@@ -266,7 +276,7 @@ internal fun FmOutlinedButton(label: String, onClick: (() -> Unit)?, modifier: M
         contentPadding = if (icon == null) PaddingValues(horizontal = 24.dp) else PaddingValues(start = 16.dp, end = 24.dp),
     ) {
         if (icon != null) {
-            FmIcon(icon, size = 18.dp)
+            FmIcon(icon, size = 18.dp, modifier = Modifier.fmBusyRing(working, inset = (-5).dp))
             Spacer(Modifier.width(FmSpace.x2))
         }
         Text(label)

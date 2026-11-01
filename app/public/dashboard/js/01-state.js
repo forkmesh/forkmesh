@@ -85,7 +85,9 @@
     },
     notifications: [],
     notificationUnread: 0,
-    selectedNotificationId: "",
+    notificationTotal: 0,
+    notificationsLoaded: false,
+    notificationsFailed: false,
     issuesView: {
       filter: "open",
       items: [],

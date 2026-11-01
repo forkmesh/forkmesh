@@ -65,6 +65,7 @@ import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmSectionHeader
@@ -96,19 +97,21 @@ private fun DetailLine(label: String, value: String, icon: String, url: String? 
     if (value.isEmpty()) return
     val context = LocalContext.current
     val dense = crmDense()
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = if (dense) 36.dp else 44.dp)
-            .combinedClickableCompat({ if (url != null) crmOpen(context, url) else crmCopy(context, value) }, { crmCopy(context, value) })
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        FmIcon(icon, size = 16.dp, tint = Fm.colors.textSecondary, modifier = Modifier.width(20.dp))
-        Text(label, Modifier.width(78.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
-        Text(
-            value, Modifier.weight(1f), style = Fm.text.bodyMedium, color = if (url != null) Fm.colors.accent else Fm.colors.textPrimary,
-            maxLines = if (url != null) 1 else 2, overflow = TextOverflow.Ellipsis,
-        )
+    FmHoldArea {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = if (dense) 36.dp else 44.dp)
+                .combinedClickableCompat({ if (url != null) crmOpen(context, url) else crmCopy(context, value) }, { crmCopy(context, value) })
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            FmIcon(icon, size = 16.dp, tint = Fm.colors.textSecondary, modifier = Modifier.width(20.dp))
+            Text(label, Modifier.width(78.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
+            Text(
+                value, Modifier.weight(1f), style = Fm.text.bodyMedium, color = if (url != null) Fm.colors.accent else Fm.colors.textPrimary,
+                maxLines = if (url != null) 1 else 2, overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

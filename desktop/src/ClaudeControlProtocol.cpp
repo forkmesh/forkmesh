@@ -52,7 +52,8 @@ QJsonObject card(const QString &title, const QString &header, const QString &que
 
 QString toolDetail(const QString &tool, const QJsonObject &input)
 {
-    if (tool == QLatin1String("Bash") || tool == QLatin1String("PowerShell"))
+    if (tool == QLatin1String("Bash") || tool == QLatin1String("PowerShell") ||
+        tool == QLatin1String("Monitor"))
         return str(input, "command");
     if (tool == QLatin1String("Write") || tool == QLatin1String("Edit") ||
         tool == QLatin1String("MultiEdit") || tool == QLatin1String("Read") ||

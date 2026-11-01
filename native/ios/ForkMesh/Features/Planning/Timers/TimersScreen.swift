@@ -196,6 +196,7 @@ struct TimerRow: View {
                 .tint(fm.accent)
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             if timer.kind == .stopwatch && !timer.isFinished {
                 Button("Stop") {

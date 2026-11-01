@@ -615,7 +615,7 @@ struct PokerJoinSheet: View {
                     }
                     .onSubmit { join() }
                     .accessibilityIdentifier("poker-code-field")
-                FmFilledButton("Join table", fillWidth: true, onPressed: PokerIds.normalizedCode(code) == nil || model.busy ? nil : { join() })
+                FmFilledButton("Join table", fillWidth: true, busy: model.busy, onPressed: PokerIds.normalizedCode(code) == nil || model.busy ? nil : { join() })
                 Spacer()
             }
             .padding(FmSpace.x5)

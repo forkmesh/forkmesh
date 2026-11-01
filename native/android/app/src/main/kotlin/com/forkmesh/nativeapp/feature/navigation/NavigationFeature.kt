@@ -27,6 +27,7 @@ import com.forkmesh.nativeapp.feature.market.MarketFeature
 import com.forkmesh.nativeapp.feature.tools.ActivityScreen
 import com.forkmesh.nativeapp.feature.tools.CaloriesScreen
 import com.forkmesh.nativeapp.feature.tools.NoteEditorScreen
+import com.forkmesh.nativeapp.feature.tools.NotePageScreen
 import com.forkmesh.nativeapp.feature.tools.NotesScreen
 import com.forkmesh.nativeapp.feature.tools.TasksScreen
 import com.forkmesh.nativeapp.feature.tools.vault.VaultScreen
@@ -436,7 +437,8 @@ object NavigationFeature {
         }
         register(Route.Kind.Release, base) { route -> repoTarget((route as Route.Release).repo, RepoDetailTab.Releases) }
         register(Route.Kind.Notes, base) { NotesScreen() }
-        register(Route.Kind.Note, base) { route -> NoteEditorScreen((route as Route.Note).id.ifEmpty { null }) }
+        register(Route.Kind.Note, base) { route -> (route as Route.Note).let { NoteEditorScreen(it.id.ifEmpty { null }, it.comment) } }
+        register(Route.Kind.NotePage, base) { route -> (route as Route.NotePage).let { NotePageScreen(it.id, it.note) } }
         register(Route.Kind.Tasks, base) { TasksScreen() }
         register(Route.Kind.Task, base) { TasksScreen() }
         register(Route.Kind.Vault, base) { VaultScreen() }

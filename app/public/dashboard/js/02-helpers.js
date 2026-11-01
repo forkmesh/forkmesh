@@ -297,6 +297,10 @@
     const ready = typeof genie?.isOff === "function";
     toggle.setAttribute("aria-checked", ready && genie.isOff() ? "false" : "true");
     toggle.disabled = !ready;
+    const mascot = $("[data-genie-mascot]");
+    if (!mascot) return;
+    mascot.disabled = typeof genie?.setMascot !== "function";
+    if (!mascot.disabled) mascot.value = genie.mascot();
   }
 
   function saveGenieSetting(shown) {
@@ -308,6 +312,10 @@
 
   function watchGenieSetting() {
     window.addEventListener("forkmesh:genie", renderGenieSetting);
+    document.addEventListener("change", (event) => {
+      const mascot = event.target.closest?.("[data-genie-mascot]");
+      if (mascot) window.ForkMeshGenie?.setMascot?.(mascot.value);
+    });
     if (document.readyState !== "complete") {
       document.addEventListener("DOMContentLoaded", renderGenieSetting, { once: true });
     }
@@ -559,6 +567,7 @@
       "forkmesh.analyticsConsent.v1",
       "forkmesh.apiOrigin",
       "forkmesh.dashboard.theme",
+      "forkmesh.genie.mascot",
       "forkmesh.genie.off",
       "forkmesh.theme",
     ]);
@@ -786,13 +795,127 @@
       if (button._idleHtml === undefined) button._idleHtml = button.innerHTML;
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
-      button.innerHTML = loadingHtml(escapeHtml(label));
+      const icon = button.querySelector("svg, i[data-lucide]");
+      button.innerHTML = icon ? `${icon.outerHTML} ${escapeHtml(label)}` : loadingHtml(escapeHtml(label));
+      if (icon) setButtonBusyRing(button, true);
       return;
     }
     if (button._idleHtml !== undefined) button.innerHTML = button._idleHtml;
     button._idleHtml = undefined;
     button.disabled = false;
     button.removeAttribute("aria-busy");
+    setButtonBusyRing(button, false);
+  }
+
+  const BUSY_RING_CAP_MS = 60000;
+  const busyRings = new WeakMap();
+
+  function busyRingIcon(button) {
+    for (const icon of button.querySelectorAll("svg, i[data-lucide], img")) {
+      if (icon.closest(".fm-busy-ring")) continue;
+      const rect = icon.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return icon;
+    }
+    return null;
+  }
+
+  function placeBusyRing(button, ring) {
+    const icon = busyRingIcon(button);
+    if (!icon) {
+      ring.setAttribute("data-outline", "");
+      Object.assign(ring.style, { left: "0", top: "0", width: "100%", height: "100%" });
+      return;
+    }
+    ring.removeAttribute("data-outline");
+    const box = button.getBoundingClientRect();
+    const at = icon.getBoundingClientRect();
+    const side = Math.min(at.width, at.height) + 8;
+    Object.assign(ring.style, {
+      left: `${at.left - box.left - button.clientLeft + (at.width - side) / 2}px`,
+      top: `${at.top - box.top - button.clientTop + (at.height - side) / 2}px`,
+      width: `${side}px`,
+      height: `${side}px`,
+    });
+  }
+
+  function buttonStillBusy(button) {
+    return button.isConnected && (button.disabled || button.getAttribute("aria-busy") === "true");
+  }
+
+  function setButtonBusyRing(button, busy, editor = null) {
+    if (!button) return;
+    const entry = busyRings.get(button);
+    if (!busy) {
+      if (!entry) return;
+      busyRings.delete(button);
+      entry.observer.disconnect();
+      clearTimeout(entry.cap);
+      clearInterval(entry.editorWatch);
+      entry.ring.remove();
+      button.classList.remove("fm-busy-host");
+      return;
+    }
+    if (entry) {
+      if (!entry.ring.isConnected) button.append(entry.ring);
+      placeBusyRing(button, entry.ring);
+      return;
+    }
+    const ring = document.createElement("span");
+    ring.className = "fm-busy-ring";
+    ring.setAttribute("aria-hidden", "true");
+    if (getComputedStyle(button).position === "static") button.classList.add("fm-busy-host");
+    button.append(ring);
+    placeBusyRing(button, ring);
+    const observer = new MutationObserver(() => {
+      if (!buttonStillBusy(button)) {
+        setButtonBusyRing(button, false);
+      } else if (!ring.isConnected) {
+        button.append(ring);
+        placeBusyRing(button, ring);
+      }
+    });
+    observer.observe(button, { attributes: true, attributeFilter: ["disabled", "aria-busy"], childList: true });
+    const cap = setTimeout(() => setButtonBusyRing(button, false), BUSY_RING_CAP_MS);
+    const editorWatch = editor ? setInterval(() => {
+      if (busyEditorText(editor) === "") setButtonBusyRing(button, false);
+    }, 400) : 0;
+    busyRings.set(button, { ring, observer, cap, editorWatch });
+  }
+
+  let busyPressEditor = null;
+
+  function busyEditorText(element) {
+    if (!element) return null;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.value;
+    if (element.isContentEditable) return element.textContent || "";
+    return null;
+  }
+
+  function noteBusyPressEditor(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = document.activeElement;
+    busyPressEditor = button && busyEditorText(editor) ? editor : null;
+  }
+
+  function watchButtonBusy(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = busyPressEditor;
+    busyPressEditor = null;
+    if (!button || button.disabled || button.hasAttribute("data-no-busy") ||
+        button.getAttribute("role") === "switch" || button.hasAttribute("aria-haspopup")) return;
+    setTimeout(() => setTimeout(() => {
+      if (editor && busyEditorText(editor) === "") return;
+      if (buttonStillBusy(button) && !busyRings.has(button)) setButtonBusyRing(button, true, editor);
+    }, 0), 0);
+  }
+
+  document.addEventListener("pointerdown", noteBusyPressEditor, true);
+  document.addEventListener("click", watchButtonBusy, true);
+
+  function setNavWorking(nav, working) {
+    for (const icon of document.querySelectorAll(`[data-nav="${nav}"] .dashboard-nav-icon`)) {
+      icon.classList.toggle("is-working", Boolean(working));
+    }
   }
 
   // One formatter for the page: building an Intl.NumberFormat per call cost
@@ -1532,6 +1655,11 @@
     if (repoKey(repo).toLowerCase() === wanted || repoCanonicalKey(repo).toLowerCase() === wanted) {
       return true;
     }
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (name && repoLogicalOwners(repo).some((value) =>
+      value.kind === "organization" && `${value.owner.toLowerCase()}/${name}` === wanted)) {
+      return true;
+    }
     return Array.isArray(repo?._repoAliases) && repo._repoAliases.includes(wanted);
   }
 
@@ -1553,6 +1681,15 @@
     const currentName = String(repo?.name || "").trim().toLowerCase();
     if (owner === currentOwner && name === currentName) return null;
     return { owner, name, key: `${owner}/${name}` };
+  }
+
+  function repoForkParentRepository(parent) {
+    if (!parent?.key || typeof findRepository !== "function") return null;
+    try {
+      return findRepository(parent.key);
+    } catch (_) {
+      return null;
+    }
   }
 
   function repoMirrorOf(repo) {
@@ -1609,8 +1746,11 @@
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(repoDisplayName(parent.key))}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>${contribute}`;
+      const parentRepo = repoForkParentRepository(parent);
+      const parentLabel = parentRepo ? repoDisplayName(parentRepo) : repoDisplayName(parent.key);
+      const parentHref = repoLinkUrl(parentRepo || { owner: parent.owner, name: parent.name });
+      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(parentLabel)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(parentHref)}" class="${linkClass}">${escapeHtml(parentLabel)}</a></span>${contribute}`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();

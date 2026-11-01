@@ -746,6 +746,7 @@ struct ShellBottomBar: View {
         switch entry.slot {
         case let .item(item):
             cell(item, shape: shape, width: width, height: side, heat: heat[item.id] ?? 0)
+                .textSelection(.disabled)
                 .contextMenu {
                     ShellBarItemMenu(
                         item: item, items: items, prefs: prefs,
@@ -1237,9 +1238,9 @@ struct ShellActivityHalo: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
-    static let turn: Double = 1.6
+    static let turn: Double = FmBusy.turn
     static let breath: Double = 2.4
-    static let arc: CGFloat = 0.7
+    static let arc: CGFloat = FmBusy.arc
 
     let size: CGFloat
 
@@ -1335,6 +1336,7 @@ struct ShellBarDropDelegate: DropDelegate {
 struct ShellBarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .opacity(configuration.isPressed ? 0.7 : 1)
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
     }
