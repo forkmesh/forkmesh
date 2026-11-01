@@ -104,4 +104,46 @@ struct HourBucket {
 
 QList<HourBucket> hourlyBuckets(const QList<Event> &events, const QDateTime &end, int hours);
 
+enum class AdviceTone {
+    Good,
+    Info,
+    Warning,
+    Problem,
+};
+
+enum class AdviceAction {
+    None,
+    Enforce,
+    Complain,
+    Enable,
+    Reload,
+    Events,
+    LiveView,
+};
+
+struct Advice {
+    AdviceTone tone = AdviceTone::Info;
+    QString text;
+    AdviceAction action = AdviceAction::None;
+};
+
+struct ProfileFacts {
+    Mode mode = Mode::Unknown;
+    bool hasFile = false;
+    bool editable = true;
+    bool disabled = false;
+    bool liveKnown = false;
+    bool loaded = false;
+    bool unconfinedFlag = false;
+    bool logKnown = false;
+    int processes = 0;
+    int missed = 0;
+    int denied = 0;
+    int allowed = 0;
+};
+
+QString programDescription(const QString &profileName);
+QString modeExplanation(Mode mode);
+QList<Advice> profileAdvice(const ProfileFacts &facts);
+
 }

@@ -17,7 +17,6 @@ class QComboBox;
 class QLabel;
 class QPlainTextEdit;
 class QPushButton;
-class QTabWidget;
 class QTemporaryFile;
 class QThread;
 class QTreeWidget;
@@ -26,7 +25,9 @@ class QWidget;
 
 namespace forkmesh::apparmor {
 
+class CoverageRing;
 class ModeBar;
+class RankBars;
 class TimelineChart;
 
 struct ProfileRow {
@@ -51,12 +52,16 @@ public:
     void setHostSearchQuery(const QString &query) override;
     QList<forkmesh::market::NativePackageSearchHit> searchHits(const QString &query, int limit) const override;
     void activateSearchHit(const QString &id) override;
+    void themeChanged() override;
 
 private:
     QWidget *buildOverview();
     QWidget *buildProfiles();
+    QWidget *buildDetails();
     QWidget *buildProcesses();
     QWidget *buildEvents();
+    QWidget *buildSuggestions();
+    void applyStyle();
 
     void rebuildRows();
     void render();
@@ -76,6 +81,7 @@ private:
     QString displayMode(const ProfileRow &row) const;
     QString displayState(const ProfileRow &row) const;
     QString profileFor(const ProcessInfo &process) const;
+    ProfileFacts factsFor(const ProfileRow &row) const;
     bool matchesQuery(const QStringList &values) const;
 
     void readLive();
@@ -114,21 +120,31 @@ private:
     QPushButton *m_live = nullptr;
     QPushButton *m_newProfile = nullptr;
     QPushButton *m_reloadAll = nullptr;
-    QTabWidget *m_tabs = nullptr;
 
-    QTreeWidget *m_checks = nullptr;
+    QLabel *m_checks = nullptr;
+    CoverageRing *m_coverage = nullptr;
     ModeBar *m_profileBar = nullptr;
     ModeBar *m_processBar = nullptr;
     TimelineChart *m_timeline = nullptr;
     QLabel *m_timelineCaption = nullptr;
-    QTreeWidget *m_attention = nullptr;
+    RankBars *m_busiest = nullptr;
+    QLabel *m_busiestCaption = nullptr;
+    QLabel *m_attention = nullptr;
+    QLabel *m_attentionCount = nullptr;
 
     QComboBox *m_profileFilter = nullptr;
     QTreeWidget *m_profiles = nullptr;
+    QLabel *m_profilesCount = nullptr;
     QWidget *m_profileDetails = nullptr;
+    QLabel *m_profileEmpty = nullptr;
     QLabel *m_profileTitle = nullptr;
+    QLabel *m_profileMode = nullptr;
+    QLabel *m_profileAbout = nullptr;
+    QLabel *m_profileAdvice = nullptr;
+    TimelineChart *m_profileTimeline = nullptr;
     QLabel *m_profileInfo = nullptr;
     QLabel *m_profileHint = nullptr;
+    QPushButton *m_showFile = nullptr;
     QPushButton *m_enforce = nullptr;
     QPushButton *m_complain = nullptr;
     QPushButton *m_toggleDisabled = nullptr;
@@ -137,17 +153,18 @@ private:
     QPushButton *m_edit = nullptr;
     QPushButton *m_profileEvents = nullptr;
     QPlainTextEdit *m_profileText = nullptr;
+    AdviceAction m_recommended = AdviceAction::None;
 
     QComboBox *m_processFilter = nullptr;
     QTreeWidget *m_processes = nullptr;
-    QLabel *m_processNote = nullptr;
+    QLabel *m_processesCount = nullptr;
 
     QComboBox *m_eventFilter = nullptr;
+    QLabel *m_eventsCount = nullptr;
     QLabel *m_eventScope = nullptr;
     QPushButton *m_eventScopeClear = nullptr;
     QLabel *m_eventEmpty = nullptr;
     QTreeWidget *m_events = nullptr;
-    QLabel *m_eventDetail = nullptr;
     QLabel *m_eventRule = nullptr;
     QPushButton *m_allow = nullptr;
 };

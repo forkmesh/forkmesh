@@ -10,14 +10,34 @@ this package is where you manage AppArmor itself.
 
 ## What the page shows
 
-| Tab | Content |
+One screen, no tabs: a strip of charts on top and three columns of panes
+below, so the state, the selected profile and its log are in view together.
+
+| Pane | Content |
 | --- | --- |
-| Overview | Profiles by mode and running processes by confinement as stacked bars; a 24-hour chart of denials (red) and accesses complain mode let through (amber), with a tooltip per hour; a status table (kernel, security module list, `apparmor_parser`, policy files, loaded profiles, log source); **Worth a look**: the noisiest profiles, programs running unconfined although a profile matches them, profiles in complain mode, and profiles with a file that are not loaded. A click there opens the profile or its events. |
-| Profiles | One row per top-level profile in `/etc/apparmor.d` and `/var/lib/snapd/apparmor/profiles`, plus loaded profiles that have no file. Mode, state, running processes, denials, file. The details pane shows the flags, the `local/` additions file and the file text, with the actions below. |
-| Processes | Every process with a command line: its label, mode, and a note when it runs unconfined although a profile's attachment matches its executable. Double-click opens the profile. |
-| Events | The AppArmor log for the last 7 days, newest first (at most 5,000 rows): denied, allowed (complain mode), and profile loads. Selecting events shows the rule that would allow them. |
+| Coverage | A ring with the share of running processes AppArmor confines, and stacked bars of profiles by mode and processes by confinement. |
+| Last 24 hours | Denials (red) and accesses complain mode let through (amber) per hour, with a tooltip per hour and the 7-day totals. |
+| Busiest profiles | The five profiles with the most events in 7 days as bars; a click selects the profile and filters Events to it. |
+| Profiles | One row per top-level profile in `/etc/apparmor.d` and `/var/lib/snapd/apparmor/profiles`, plus loaded profiles that have no file: a coloured mode dot (with the state when it is not the usual one), running processes, denials. The tooltip names the program. |
+| Selected profile | What the program is (`programDescription`, a short list of common profile names), what its mode means, **suggestions** for it, a 7-day chart of its own events, the actions, the attachment, file, flags and `local/` additions file, and **Show file** for the rules. |
+| Processes | Every process with a command line: mode, label, and "Restart to confine" when it runs unconfined although a profile's attachment matches its executable. Double-click opens the profile. |
+| Events | The AppArmor log for the last 7 days, newest first (at most 5,000 rows): denied, allowed (complain mode), and profile loads, optionally only the selected profile's. Selecting events shows the rule that would allow them beside **Allow…**. |
+| Suggestions | The page-wide to-do list, each with a link: read the log, the profiles that block the most, complain profiles that let accesses through or are ready to enforce, processes that started before their profile, profiles only logging, profiles not loaded, and the busiest unconfined programs. |
+| System | Kernel, security modules, `apparmor_parser`, policy files, loaded profiles and log source, each with a tick or a cross. |
 
 The top search box filters all three tables and finds profiles.
+
+### Suggestions for one profile
+
+`profileAdvice` (in `AppArmorModel`) turns a profile's facts (mode, file,
+disabled, loaded, unconfined flag, whether the log was read, processes,
+processes that started before it, denials, accesses let through) into
+plain-language advice, each with a tone and an optional action. The first
+action is shown as the primary button: Enable for a disabled profile, Reload
+for one that is not loaded, Show events when an enforce profile blocked
+something or a complain profile let something through, Enforce for a running
+complain profile with a quiet log. Profiles flagged `unconfined`, Snap's and
+those without a file get an explanation instead of an action.
 
 ## What is readable without a password
 
@@ -120,13 +140,14 @@ containing spaces.
 
 | File | Responsibility |
 | --- | --- |
-| `AppArmorModel.{h,cpp}` | Pure parsing and editing: profile declarations, flags, rule insertion, templates, globs, log events, process labels, hourly buckets. |
+| `AppArmorModel.{h,cpp}` | Pure parsing and editing: profile declarations, flags, rule insertion, templates, globs, log events, process labels, hourly buckets, program descriptions and per-profile advice. |
 | `AppArmorSystem.{h,cpp}` | Reads a snapshot from a root folder (`/` in the app, a fixture tree in tests) and holds the administrator scripts. |
-| `AppArmorFeature.{h,cpp}` | The page, the two chart widgets (`ModeBar`, `TimelineChart`), dialogs and the pkexec runner. |
+| `AppArmorFeature.{h,cpp}` | The page and its panes, the chart widgets (`CoverageRing`, `ModeBar`, `TimelineChart`, `RankBars`, coloured with the theme's success, warning and danger roles), dialogs and the pkexec runner. |
 
 `forkmesh-apparmor-tests` (`tests/test_apparmor.cpp`) covers the parser on
 real-world profile shapes, mode rewriting, rule insertion, templates, globs,
-every suggested-rule kind and the injection refusals, a fixture snapshot
+every suggested-rule kind and the injection refusals, program descriptions
+and per-profile advice, a fixture snapshot
 (leftover `.dpkg-old` files, `disable/` links, Snap profiles, kernel threads),
 and runs the install script against a fake `apparmor_parser` to check the
 backup and the rollback.
