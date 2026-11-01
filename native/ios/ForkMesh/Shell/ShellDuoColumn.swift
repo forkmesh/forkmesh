@@ -1,8 +1,14 @@
 import FMApi
 import SwiftUI
 
+@MainActor
 enum ShellDuo {
     static let device: Bool = ShellPanes.isDuo(model: DeviceInfoProvider.machineIdentifier())
+
+    static let nativeTabs: Bool = {
+        guard #available(iOS 26.0, *) else { return device }
+        return device || UIDevice.current.userInterfaceIdiom == .phone
+    }()
 }
 
 struct ShellDuoTab: Identifiable {

@@ -110,6 +110,8 @@ struct HomeShell: View {
     }
 
     static let offlineGrace: TimeInterval = 4
+    static let nativeBarLift: CGFloat = 62
+    static let compactTabs: Int = 5
     static let barMargin: CGFloat = FmSpace.x6
     static let hubDrop: CGFloat = 54
     static let hubWidth: CGFloat = 320
@@ -171,7 +173,7 @@ struct HomeShell: View {
             onNewAgent: sideColumn ? nil : newAgentAction,
             onPalette: { openPalette() },
             onVoice: sideColumn ? nil : voiceAction,
-            showsSearch: (usesSplit || panes.wide) && !sideColumn,
+            showsSearch: (usesSplit || panes.wide || ShellDuo.nativeTabs) && !sideColumn,
             showsSignIn: PackageGateSync.isInstalled(PhonePackages.signIn))
     }
 
@@ -481,12 +483,23 @@ struct HomeShell: View {
     }
 
     private var showsBar: Bool {
-        !sideColumn && !pageKeyboardUp && !usesSplit && !showsRail && (inSplit || !ShellChrome.shared.isBare(router.selectedTab))
+        !ShellDuo.nativeTabs && !pageKeyboardUp && !usesSplit && !showsRail
+            && (inSplit || !ShellChrome.shared.isBare(router.selectedTab))
+    }
+
+    private var roomyTabs: Bool {
+        sideColumn || panes.wide
+    }
+
+    private var nativeBarShown: Bool {
+        sideColumn || (!pageKeyboardUp && (inSplit || !ShellChrome.shared.isBare(router.selectedTab)))
     }
 
     private var genieFloor: CGFloat? {
         let lift: CGFloat = dockLift > 0 ? dockLift + ShellDock.gap : 0
-        if sideColumn { return windowSize.height - safeBottom - lift }
+        if ShellDuo.nativeTabs {
+            return windowSize.height - safeBottom - lift - (nativeBarShown && !sideColumn ? HomeShell.nativeBarLift : 0)
+        }
         return showsBar && barHeight > 0 ? barBottom - barHeight + capsuleTop - lift : nil
     }
 
@@ -730,8 +743,9 @@ struct HomeShell: View {
     private static let duoFolderPrefix: String = "folder:"
 
     private func duoTabs(_ all: [ShellBarItem]) -> [ShellDuoTab] {
-        let items: [ShellBarItem] = all.filter { $0.id != HomeShell.duoSearch }
-        return ShellBarPrefs.shared.entries(items).map { (entry: ShellBarEntry) -> ShellDuoTab in
+        let items: [ShellBarItem] = all.filter { $0.id != HomeShell.duoSearch && (roomyTabs || $0.id != "currentRepo") }
+        let entries: [ShellBarEntry] = ShellBarPrefs.shared.entries(items)
+        return (roomyTabs ? entries : Array(entries.prefix(HomeShell.compactTabs))).map { (entry: ShellBarEntry) -> ShellDuoTab in
             switch entry.slot {
             case let .item(item):
                 return ShellDuoTab(id: item.id, title: item.title, symbol: item.symbol, badge: item.badge, members: [])
@@ -794,8 +808,10 @@ struct HomeShell: View {
                 }
                 .badge(item.badge)
             }
-            Tab("Search", systemImage: "magnifyingglass", value: HomeShell.duoSearch, role: .search) {
-                duoTabContent(HomeShell.duoSearch, current: current, groups)
+            if roomyTabs {
+                Tab("Search", systemImage: "magnifyingglass", value: HomeShell.duoSearch, role: .search) {
+                    duoTabContent(HomeShell.duoSearch, current: current, groups)
+                }
             }
         }
         .tint(fm.textPrimary)
@@ -831,7 +847,7 @@ struct HomeShell: View {
             }
         }
         .tint(fm.accent)
-        .toolbar(sideColumn ? .visible : .hidden, for: .tabBar)
+        .toolbar(nativeBarShown ? .visible : .hidden, for: .tabBar)
     }
 
     private func duoOwner(_ stack: AppTab, current: String) -> String {
@@ -841,7 +857,7 @@ struct HomeShell: View {
     private var tabs: some View {
         let groups: [ShellMenuGroup] = barGroups
         return ZStack {
-            if ShellDuo.device, #available(iOS 18.0, *) {
+            if ShellDuo.nativeTabs, #available(iOS 18.0, *) {
                 duoTabView(groups)
             } else {
                 if mounted(.code) { tab(.code) }

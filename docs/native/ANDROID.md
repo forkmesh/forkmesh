@@ -596,6 +596,9 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
 
 iOS features Android does not have, because they need an Apple-only API:
 
+- **System tab bar on iPhone**: iOS 26 draws it as Liquid Glass with its own
+  animation, which Android has no equivalent for, so Android keeps its custom
+  glass bar.
 - **iPhone Duo's side column**: iOS moves bars under the outer camera, a system
   layout tied to that hardware. Android foldables have no camera column, so
   they keep their bottom bar and rail.

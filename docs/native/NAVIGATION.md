@@ -1202,9 +1202,16 @@ left, the detail on the right.
   inset (`ignoresSafeArea(.container, edges: .trailing)`), which is what fixed
   the width; `toolbarVerticalBehavior(.disabled)` alone did not. `ShellDuoListBars`
   stays so list bars are horizontal, as in Apple's split views.
-- **Inner display upright.** The `TabView` hides its tab bar and the custom
-  bottom bar shows on top of it, so this pose looks as it did. The top bar spans
-  both panes and shows Search.
+- **Native tab bar on iPhone.** The operator asked on 2026-11-02 for the system
+  tab bar everywhere, for its glass animation and because the custom bar ran the
+  full width of a wide display. `ShellDuo.nativeTabs` puts every iPhone on iOS 26
+  or later on the `TabView`; older iOS and iPad keep what they had. The system
+  counts Search as a tab and turns a sixth into More, so compact iPhones show
+  Home, Agents, Inbox, Repos and Chat, Search moves to the top bar, and Code is
+  reached through Repos. The bar's style settings and its long-press menu do not
+  apply to the system bar.
+- **Inner display upright.** The native bar shows here, sized to its tabs. The
+  top bar spans both panes and shows Search.
 - **Tabs and stacks.** Tabs follow `ShellBarPrefs.entries`, so order, limit and
   badges carry over. A bar folder is a tab that opens a list of its items,
   because a tab bar cannot hold a folder. Repos and Code share one stack, and
