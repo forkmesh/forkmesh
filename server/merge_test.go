@@ -620,6 +620,7 @@ func TestExecutorRegisterRecordsGenerationAndWakesDaemon(t *testing.T) {
 	}))
 	defer server.Close()
 	f.executor.DaemonBaseURL = server.URL
+	f.executor.DaemonWakeTimeout = 30 * time.Second
 	if gatewayServesCurrentGeneration(f.gatewayPath) {
 		t.Fatal("generation marker present before register")
 	}

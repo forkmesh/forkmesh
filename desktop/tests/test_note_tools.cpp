@@ -81,9 +81,21 @@ void testWebLinks()
                   .host == QStringLiteral("elsewhere.example"),
           "the parsed host is reported for the caller to check");
     check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId,
+                         hosts) == kId,
+          "the published page link opens the note in the app");
+    check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId +
+                             QStringLiteral("/"),
+                         hosts) == kId,
+          "a published page link with a trailing slash opens the note");
+    check(noteIdFromLink(QStringLiteral("https://elsewhere.example/notes/") + kId,
                          hosts)
               .isEmpty(),
-          "the public page is not a dashboard link");
+          "a published page on another host is not opened in the app");
+    check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId +
+                             QStringLiteral("/extra"),
+                         hosts)
+              .isEmpty(),
+          "a longer path under /notes/ is not a note");
     check(noteIdFromLink(
               QStringLiteral("https://app.forkmesh.com/dashboard/notes"), hosts)
               .isEmpty(),
@@ -452,9 +464,43 @@ void testListRow()
           "comment count wording");
 }
 
+void testAiEdit()
+{
+    const QString prompt = noteAiEditPrompt(QStringLiteral("  Trip \n plan "),
+                                            QStringLiteral("- tent\n- stove"),
+                                            QStringLiteral(" make it a checklist "));
+    check(prompt.contains(QStringLiteral("Instruction:\nmake it a checklist\n")) &&
+              prompt.contains(QStringLiteral("NOTE TITLE: Trip plan\n")) &&
+              prompt.contains(QStringLiteral(
+                  "-----BEGIN NOTE-----\n- tent\n- stove\n-----END NOTE-----")),
+          "the prompt carries the instruction, the title and the whole body");
+
+    NoteAiEdit edit = parseNoteAiEdit(QStringLiteral(
+        "```json\n{\"title\": \" Trip  plan \", \"markdown\": \"- [ ] tent\\n- [ ] stove\"}\n```"));
+    check(edit.ok() && edit.title == QStringLiteral("Trip plan") &&
+              edit.markdown == QStringLiteral("- [ ] tent\n- [ ] stove"),
+          "a fenced JSON answer is read, the title simplified");
+    edit = parseNoteAiEdit(QStringLiteral("Here you go: {\"markdown\": \"\"} done"));
+    check(edit.ok() && edit.title.isEmpty() && edit.markdown.isEmpty(),
+          "text around the object is ignored, an emptied body is allowed");
+    check(!parseNoteAiEdit(QStringLiteral("I changed the note for you.")).ok(),
+          "an answer without JSON is refused");
+    check(!parseNoteAiEdit(QStringLiteral("{\"title\": \"x\"}")).ok(),
+          "an answer without markdown is refused");
+    check(!parseNoteAiEdit(QStringLiteral("{\"markdown\": 3}")).ok(),
+          "a markdown that is not text is refused");
+    check(!parseNoteAiEdit(QStringLiteral("{\"markdown\": \"a\"")).ok(),
+          "a cut-off answer is refused");
+    check(parseNoteAiEdit(QStringLiteral("{\"title\": \"") + QString(300, QLatin1Char('t')) +
+                          QStringLiteral("\", \"markdown\": \"a\"}"))
+                  .title.size() == 200,
+          "a long title is cut to 200 characters");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    testAiEdit();
     testAppLinks();
     testWebLinks();
     testCommentLinks();

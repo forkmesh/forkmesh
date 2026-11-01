@@ -1014,14 +1014,24 @@ void MainWindow::updateQuickAddEnterTarget()
         const QString action = prompt.action.isEmpty() ? prompt.placeholder
                                                        : prompt.action;
         if (m_quickAddSendToAgentButton) {
-            m_quickAddSendToAgentButton->setProperty("enterTarget", false);
-            m_quickAddSendToAgentButton->setToolTip(QStringLiteral(
-                "Send to the agent open above, as a follow-up message"));
+            m_quickAddSendToAgentButton->setProperty("enterTarget",
+                                                     prompt.appliesToOpen);
+            m_quickAddSendToAgentButton->setToolTip(
+                prompt.appliesToOpen
+                    ? action + QStringLiteral(" (Enter)")
+                    : QStringLiteral(
+                          "Send to the agent open above, as a follow-up message"));
+            m_quickAddSendToAgentButton->setAccessibleName(
+                prompt.appliesToOpen ? action : QStringLiteral("Add to agent"));
         }
         if (m_quickAddSendButton) {
-            m_quickAddSendButton->setProperty("enterTarget", true);
-            m_quickAddSendButton->setToolTip(action + QStringLiteral(" (Enter)"));
-            m_quickAddSendButton->setAccessibleName(action);
+            const QString fresh = prompt.appliesToOpen
+                                      ? QStringLiteral("Start something new from this prompt")
+                                      : action;
+            m_quickAddSendButton->setProperty("enterTarget", !prompt.appliesToOpen);
+            m_quickAddSendButton->setToolTip(
+                prompt.appliesToOpen ? fresh : action + QStringLiteral(" (Enter)"));
+            m_quickAddSendButton->setAccessibleName(fresh);
         }
         for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton}) {
             if (button && button->style()) {
@@ -1091,6 +1101,8 @@ void MainWindow::updateQuickAddEnterTarget()
               : QStringLiteral(
                     "Send to the agent open above, as a follow-up message"));
     apply(m_quickAddSendButton, !toAgent && !room, newPromptTooltip);
+    if (m_quickAddSendToAgentButton)
+        m_quickAddSendToAgentButton->setAccessibleName(QStringLiteral("Add to agent"));
     refreshQuickAddSendToChannelButton();
     if (m_quickAddSendButton)
         m_quickAddSendButton->setAccessibleName(newPromptTooltip);
