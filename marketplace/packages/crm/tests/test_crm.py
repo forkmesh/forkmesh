@@ -2453,6 +2453,26 @@ def test_table_views_are_saved_in_settings_by_any_member():
     assert cleared["data"]["settings"]["tableViews"] == []
 
 
+def test_any_member_picks_the_view_lists_open_in():
+    runtime = Runtime()
+    path = "/api/crm/acme/settings"
+    assert call(runtime.use("GET"), path)["data"]["settings"]["defaultTableView"] == ""
+    views = [{"id": "outreach", "name": "Outreach", "columns": ["name", "email"]}]
+    saved = call(runtime.use("PUT", "charlie", {"tableViews": views,
+                                                 "defaultTableView": "outreach"}), path)
+    assert saved["status"] == 200
+    assert saved["data"]["settings"]["defaultTableView"] == "outreach"
+    assert call(runtime.use("PUT", "charlie", {"defaultTableView": "all"}),
+                path)["data"]["settings"]["defaultTableView"] == "all"
+    assert call(runtime.use("PUT", "charlie", {"defaultTableView": "gone"}),
+                path)["data"]["settings"]["defaultTableView"] == ""
+    call(runtime.use("PUT", "charlie", {"defaultTableView": "outreach"}), path)
+    kept = call(runtime.use("PUT", body={"fromName": "Acme"}), path)["data"]["settings"]
+    assert kept["defaultTableView"] == "outreach"
+    dropped = call(runtime.use("PUT", "charlie", {"tableViews": []}), path)
+    assert dropped["data"]["settings"]["defaultTableView"] == ""
+
+
 def test_lists_sharing_a_pipeline_never_hold_the_same_contact():
     views = [{"id": "a", "flow": "investors"}, {"id": "b", "flow": "investors"},
              {"id": "plain", "flow": ""}, {"id": "c", "flow": "customers"}]

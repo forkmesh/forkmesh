@@ -1353,11 +1353,17 @@ window.ForkMeshDashboard.registerPage("crm", ({
   let crmTableViewChoice = "";
   let crmTableViewDraft = null;
 
+  function crmDefaultTableViewId() {
+    const id = state.crmView.settings?.defaultTableView || "default";
+    return id === "all" || crmTableViews().some((view) => view.id === id) ? id : "default";
+  }
+
   function crmTableViewId() {
     let id = crmTableViewChoice;
     try { id = localStorage.getItem(crmTableViewKey()) || id; }
     catch { /* a browser with no storage keeps the choice for this page */ }
-    return id === "all" || crmTableViews().some((view) => view.id === id) ? id : "default";
+    return CRM_BUILTIN_TABLE_VIEWS.some((view) => view.id === id) || crmTableViews().some((view) => view.id === id)
+      ? id : crmDefaultTableViewId();
   }
 
   function crmBuiltinTableView() {
@@ -1393,7 +1399,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function selectCrmTableView(id) {
     if (id !== crmTableViewId()) crmTableViewDraft = null;
     crmTableViewChoice = id;
-    try { localStorage.setItem(crmTableViewKey(), id); }
+    try {
+      if (id === crmDefaultTableViewId()) localStorage.removeItem(crmTableViewKey());
+      else localStorage.setItem(crmTableViewKey(), id);
+    }
     catch { /* a browser with no storage keeps the choice for this page */ }
     renderCrmTableViews();
     renderCrmContacts();
@@ -1421,7 +1430,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
     renderCrmContacts();
     try {
       const payload = await crmRequest(crmOrganizationPath("/settings"), "PUT", { tableViews: views });
-      state.crmView.settings = { ...state.crmView.settings, tableViews: payload.settings?.tableViews || views };
+      state.crmView.settings = {
+        ...state.crmView.settings, tableViews: payload.settings?.tableViews || views,
+        defaultTableView: payload.settings?.defaultTableView ?? state.crmView.settings?.defaultTableView,
+      };
       renderCrmTableViews();
       renderCrmContacts();
       if (done) crmMessage("notice", done);
@@ -1478,11 +1490,35 @@ window.ForkMeshDashboard.registerPage("crm", ({
     await saveCrmTableViews(crmTableViews().filter((item) => item.id !== id), `View "${view.name}" deleted.`);
   }
 
+  async function makeCrmTableViewDefault() {
+    const id = crmTableViewId();
+    const view = [...CRM_BUILTIN_TABLE_VIEWS, ...crmTableViews()].find((item) => item.id === id);
+    const previous = state.crmView.settings?.defaultTableView || "";
+    const wanted = id === "default" ? "" : id;
+    state.crmView.settings = { ...state.crmView.settings, defaultTableView: wanted };
+    try { localStorage.removeItem(crmTableViewKey()); }
+    catch { /* a browser with no storage keeps the choice for this page */ }
+    renderCrmTableViews();
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/settings"), "PUT", { defaultTableView: wanted });
+      state.crmView.settings = { ...state.crmView.settings, defaultTableView: payload.settings?.defaultTableView ?? wanted };
+      renderCrmTableViews();
+      crmMessage("notice", `Lists now open in "${view?.name || "Default"}".`);
+    } catch (error) {
+      state.crmView.settings = { ...state.crmView.settings, defaultTableView: previous };
+      renderCrmTableViews();
+      crmMessage("error", `Could not change the default view: ${error.message}`);
+    }
+  }
+
   function crmTableViewMenuItems() {
     const custom = !crmBuiltinTableView();
+    const opensFirst = crmTableViewId() === crmDefaultTableViewId();
     return [
       { heading: "View" },
       { label: "New view…", run: () => void createCrmTableView(crmVisibleColumns().map((column) => column.field)) },
+      { label: opensFirst ? "Lists open in this view" : "Make default view", disabled: opensFirst || Boolean(crmTableViewDraftFields()),
+        run: () => void makeCrmTableViewDefault() },
       { label: "Rename view…", disabled: !custom, run: () => void renameCrmTableView() },
       { label: "Delete view…", disabled: !custom, danger: true, run: () => void deleteCrmTableView() },
     ];

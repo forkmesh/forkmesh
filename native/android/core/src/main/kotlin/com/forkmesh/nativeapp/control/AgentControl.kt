@@ -519,6 +519,10 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
         private set
 
     @Volatile
+    var listed = false
+        private set
+
+    @Volatile
     var desktopNote = ""
         private set
 
@@ -698,6 +702,7 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
                         cloudSessions.map(UnifiedAgentRow::fromCloud)
                     }
                 } ?: cloudSessions.map(UnifiedAgentRow::fromCloud)
+                if (withCloud) listed = true
                 publish(desk, nodes)
                 if (withCloud) refreshOtherDesktops()
             }

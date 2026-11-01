@@ -3169,6 +3169,8 @@ void CrmFeature::applyOrganization(const QJsonObject &payload)
     m_decks = payload.value(QStringLiteral("decks")).toArray();
     m_viewerName = text(payload.value(QStringLiteral("outreach")).toObject(), "name");
     m_settings = payload.value(QStringLiteral("settings")).toObject();
+    if (!m_tableViewPicked)
+        m_tableViewId = defaultTableViewId();
     renderTableViews();
     m_role = text(payload, "role");
     m_canManageSettings =
@@ -4709,8 +4711,11 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     const QJsonObject custom = contact.value(QStringLiteral("fields")).toObject();
     for (auto entry = custom.constBegin(); entry != custom.constEnd(); ++entry) {
         const QString value = entry.value().toString().trimmed();
-        if (!value.isEmpty())
-            addField(customColumnLabel(entry.key()), valueLabel(value, {}), false);
+        if (!value.isEmpty()) {
+            const QString label = sheetColumnLabel(entry.key());
+            addField(label.isEmpty() ? customColumnLabel(entry.key()) : label,
+                     valueLabel(value, {}), false);
+        }
     }
     const int emails = int(m_contactEmails.value(contactId).size());
     const int toots = int(m_contactToots.value(contactId).size());
@@ -6985,21 +6990,66 @@ bool CrmFeature::sheetCarriesField(const QString &field) const
     return false;
 }
 
+QStringList CrmFeature::sheetLayoutFields() const
+{
+    const QJsonObject sheet = activeSheet();
+    if (!storedSheet(sheet))
+        return {};
+    QStringList fields;
+    for (const QJsonValue &value : sheet.value(QStringLiteral("columns")).toArray()) {
+        const QJsonObject column = value.toObject();
+        const QString field = text(column, "field");
+        if (field.isEmpty() || column.value(QStringLiteral("hidden")).toBool() ||
+            fields.contains(field))
+            continue;
+        const bool shown = std::any_of(m_columns.cbegin(), m_columns.cend(),
+                                       [this, &field](const ContactColumnSpec &spec) {
+            return viewField(spec) == field;
+        });
+        if (shown)
+            fields << field;
+    }
+    return fields;
+}
+
+QString CrmFeature::sheetColumnLabel(const QString &field) const
+{
+    const QJsonObject sheet = activeSheet();
+    if (!storedSheet(sheet) || field.isEmpty())
+        return QString();
+    for (const QJsonValue &value : sheet.value(QStringLiteral("columns")).toArray()) {
+        const QJsonObject column = value.toObject();
+        if (text(column, "field") == field)
+            return text(column, "label").trimmed();
+    }
+    return QString();
+}
+
 bool CrmFeature::columnHiddenInView(const ContactColumnSpec &column) const
 {
     if (column.kind == ContactColumnSpec::Actions ||
         column.kind == ContactColumnSpec::AddColumn)
         return false;
-    if (allColumnsView())
+    if (allColumnsView()) {
+        const QStringList layout = sheetLayoutFields();
+        if (!layout.isEmpty())
+            return !layout.contains(viewField(column));
         return column.kind == ContactColumnSpec::CustomField &&
                !sheetCarriesField(column.key);
+    }
     return !tableViewFields().contains(viewField(column));
 }
 
 void CrmFeature::applyColumnVisibility()
 {
-    for (int index = 0; index < m_columns.size(); ++index)
-        m_contactsTable->setColumnHidden(index, columnHiddenInView(m_columns.at(index)));
+    for (int index = 0; index < m_columns.size(); ++index) {
+        const ContactColumnSpec &column = m_columns.at(index);
+        m_contactsTable->setColumnHidden(index, columnHiddenInView(column));
+        if (QTableWidgetItem *header = m_contactsTable->horizontalHeaderItem(index)) {
+            const QString label = sheetColumnLabel(sheetField(column));
+            header->setText(label.isEmpty() ? column.label : label);
+        }
+    }
     applyColumnOrder();
 }
 
@@ -7007,9 +7057,27 @@ void CrmFeature::applyColumnOrder()
 {
     QHeaderView *header = m_contactsTable->horizontalHeader();
     m_orderingColumns = true;
-    if (allColumnsView()) {
+    const QStringList layout = allColumnsView() ? sheetLayoutFields() : QStringList();
+    if (allColumnsView() && layout.isEmpty()) {
         for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical)
             header->moveSection(header->visualIndex(logical), logical);
+    } else if (!layout.isEmpty()) {
+        QList<int> placed;
+        int target = 0;
+        for (const QString &field : layout) {
+            for (int logical = 0; logical < m_columns.size() && logical < header->count();
+                 ++logical) {
+                if (placed.contains(logical) || viewField(m_columns.at(logical)) != field)
+                    continue;
+                header->moveSection(header->visualIndex(logical), target++);
+                placed << logical;
+                break;
+            }
+        }
+        for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical) {
+            if (!placed.contains(logical))
+                header->moveSection(header->visualIndex(logical), target++);
+        }
     } else {
         int target = 0;
         for (const QString &field : tableViewFields()) {
@@ -7028,6 +7096,18 @@ void CrmFeature::applyColumnOrder()
 QJsonArray CrmFeature::tableViews() const
 {
     return m_settings.value(QStringLiteral("tableViews")).toArray();
+}
+
+QString CrmFeature::defaultTableViewId() const
+{
+    const QString id = text(m_settings, "defaultTableView");
+    if (id == QLatin1String(kAllTableView))
+        return id;
+    for (const QJsonValue &value : tableViews()) {
+        if (text(value.toObject(), "id") == id)
+            return id;
+    }
+    return QString::fromLatin1(kDefaultTableView);
 }
 
 bool CrmFeature::builtinTableView() const
@@ -7051,6 +7131,9 @@ QStringList CrmFeature::builtinViewFields() const
     };
     QStringList fields;
     if (m_tableViewId == QLatin1String(kAllTableView)) {
+        const QStringList layout = sheetLayoutFields();
+        if (!layout.isEmpty())
+            return layout;
         for (const ContactColumnSpec &column : m_columns) {
             const QString field = viewField(column);
             if (field.isEmpty() || fields.contains(field) ||
@@ -7115,9 +7198,9 @@ void CrmFeature::renderTableViews()
     }
     int index = m_tableView->findData(m_tableViewId);
     if (index < 0) {
-        m_tableViewId = QString::fromLatin1(kDefaultTableView);
+        m_tableViewId = defaultTableViewId();
         m_tableViewDraft.clear();
-        index = 0;
+        index = std::max(0, m_tableView->findData(m_tableViewId));
     }
     const bool modified = builtinTableView() && !m_tableViewDraft.isEmpty();
     if (modified)
@@ -7135,6 +7218,7 @@ void CrmFeature::selectTableView(const QString &id)
     if (id != m_tableViewId)
         m_tableViewDraft.clear();
     m_tableViewId = id;
+    m_tableViewPicked = true;
     renderTableViews();
     applyColumnVisibility();
 }
@@ -7150,6 +7234,11 @@ void CrmFeature::showTableViewMenu()
     menu.addAction(QString::fromUtf8("Delete view\xE2\x80\xA6"), this,
                    [this] { deleteTableView(); })
         ->setEnabled(!builtinTableView());
+    const bool opensFirst = m_tableViewId == defaultTableViewId();
+    menu.addAction(opensFirst ? QStringLiteral("Lists open in this view")
+                              : QStringLiteral("Make default view"),
+                   this, [this] { makeTableViewDefault(); })
+        ->setEnabled(!opensFirst && !(builtinTableView() && !m_tableViewDraft.isEmpty()));
     menu.exec(m_tableViewMenu->mapToGlobal(QPoint(0, m_tableViewMenu->height())));
 }
 
@@ -7233,6 +7322,7 @@ void CrmFeature::addTableView(const QString &name, const QStringList &fields, co
                              {QStringLiteral("name"), name},
                              {QStringLiteral("columns"), QJsonArray::fromStringList(fields)}});
     m_tableViewId = id;
+    m_tableViewPicked = true;
     m_tableViewDraft.clear();
     saveTableViews(views, done);
     applyColumnVisibility();
@@ -7283,6 +7373,26 @@ void CrmFeature::deleteTableView()
     }
 }
 
+void CrmFeature::makeTableViewDefault()
+{
+    const QString id = m_tableViewId == QLatin1String(kDefaultTableView) ? QString() : m_tableViewId;
+    const QString name = m_tableView ? m_tableView->currentText() : QString();
+    m_settings.insert(QStringLiteral("defaultTableView"), id);
+    request(QByteArrayLiteral("PUT"), organizationPath(QStringLiteral("/settings")),
+            QJsonObject{{QStringLiteral("defaultTableView"), id}},
+            [this, name](bool ok, const QJsonObject &payload, const QString &error) {
+        if (!ok) {
+            setStatus(QStringLiteral("The default view was not saved: %1").arg(error), true);
+            loadOrganization();
+            return;
+        }
+        m_settings.insert(QStringLiteral("defaultTableView"),
+                          text(payload.value(QStringLiteral("settings")).toObject(),
+                               "defaultTableView"));
+        setStatus(QString::fromUtf8("Lists now open in \xE2\x80\x9C%1\xE2\x80\x9D.").arg(name));
+    });
+}
+
 void CrmFeature::saveTableViews(const QJsonArray &views, const QString &done)
 {
     m_settings.insert(QStringLiteral("tableViews"), views);
@@ -7295,9 +7405,11 @@ void CrmFeature::saveTableViews(const QJsonArray &views, const QString &done)
             loadOrganization();
             return;
         }
+        const QJsonObject settings = payload.value(QStringLiteral("settings")).toObject();
         m_settings.insert(QStringLiteral("tableViews"),
-                          payload.value(QStringLiteral("settings")).toObject()
-                              .value(QStringLiteral("tableViews")).toArray());
+                          settings.value(QStringLiteral("tableViews")).toArray());
+        m_settings.insert(QStringLiteral("defaultTableView"),
+                          text(settings, "defaultTableView"));
         renderTableViews();
         applyColumnVisibility();
         if (!done.isEmpty())

@@ -976,6 +976,7 @@ def _removed_columns(value):
 TABLE_VIEW_BUILTINS = ("default", "all")
 TABLE_VIEW_COLUMN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 MAX_TABLE_VIEWS = 40
+TABLE_VIEW_SETTINGS = frozenset({"tableViews", "defaultTableView"})
 
 
 def _table_views(value):
@@ -997,6 +998,11 @@ def _table_views(value):
                 columns.append(field)
         views.append({"id": view_id, "name": name, "columns": columns})
     return views
+
+
+def _default_table_view(value, views):
+    view_id = _slug(value)
+    return view_id if view_id == "all" or any(view["id"] == view_id for view in views) else ""
 
 
 def _mail_boxes(value):
@@ -1367,6 +1373,8 @@ def _settings_data(data, existing=None):
         data.get("removedColumns", result.get("removedColumns")))
     result["tableViews"] = _table_views(
         data.get("tableViews", result.get("tableViews")))
+    result["defaultTableView"] = _default_table_view(
+        data.get("defaultTableView", result.get("defaultTableView")), result["tableViews"])
     if data.get("zohoDisconnect"):
         result.pop("zoho", None)
     elif "zoho" in data:
@@ -2473,7 +2481,7 @@ async def _org_settings(runtime, org_bi):
             "fromEmail": "", "mailProvider": MAIL_PROVIDERS[0], "messageBrief": "",
             "updatedBy": "", "updatedAt": 0,
             "flows": _default_flows(), "mailBoxes": list(DEFAULT_MAIL_BOXES),
-            "removedColumns": [], "tableViews": [],
+            "removedColumns": [], "tableViews": [], "defaultTableView": "",
             "zoho": _zoho_project(runtime, {}),
             "mastodon": _mastodon_project({}),
             "mailtrapConfigured": bool(runtime.mailtrap_configured()),
@@ -8234,7 +8242,7 @@ def _activity_rule(resource, item, method, data):
     data = data if isinstance(data, dict) else {}
     if (resource, shape) == ("emails", "link") and data.get("provider") == "mastodon":
         rule = ACTIVITY_MASTODON_LINK
-    if data.get("preview") or resource == "settings" and set(data) <= {"tableViews"}:
+    if data.get("preview") or resource == "settings" and set(data) <= TABLE_VIEW_SETTINGS:
         return None
     if resource == "zoho" and data.get("mine"):
         return None
@@ -8544,9 +8552,9 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 "canManageSettings": role in MANAGER_ROLES,
             })
         if role not in MANAGER_ROLES:
-            if "tableViews" not in data:
+            if not TABLE_VIEW_SETTINGS & set(data):
                 return _response(runtime, {"error": "organization_admin_required"}, 403)
-            data = {"tableViews": data.get("tableViews")}
+            data = {key: data[key] for key in TABLE_VIEW_SETTINGS if key in data}
         return await _save_settings(runtime, org_bi, account_bi, actor, data)
     if resource == "contacts":
         if not item:

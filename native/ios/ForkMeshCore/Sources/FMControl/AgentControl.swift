@@ -641,6 +641,7 @@ public final class AgentControlCenter: AgentControlling {
     public private(set) var rows: [UnifiedAgentRow] = []
     public private(set) var desktopSnapshot: LocalAgentsSnapshot?
     public private(set) var loading = false
+    public private(set) var listed = false
     /// Why the desktop's half is missing, when it is ("" when it loaded or no desktop is paired).
     public private(set) var desktopNote = ""
     public private(set) var cloudNote = ""
@@ -743,6 +744,7 @@ public final class AgentControlCenter: AgentControlling {
         wantCloud = false
         refreshing = false
         loading = false
+        listed = false
     }
 
     private func reload(cloud: Bool) async {
@@ -779,6 +781,7 @@ public final class AgentControlCenter: AgentControlling {
             }
             if started != epoch { return }
             publish(desk, nodes)
+            if withCloud && !listed { listed = true }
             if withCloud { await refreshOtherDesktops(started) }
         }
     }

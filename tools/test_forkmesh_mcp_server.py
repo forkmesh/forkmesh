@@ -31,6 +31,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey)
 
+for _name in ("FORKMESH_AGENT_INTAKE", "FORKMESH_AGENT_INTAKE_TOKEN"):
+    os.environ.pop(_name, None)
+
 HERE = Path(__file__).resolve().parent
 SERVER = HERE / "forkmesh_mcp_server.py"
 
@@ -535,7 +538,8 @@ def main():
         "list_releases", "create_release", "publish_release",
         "record_expense", "send_email", "suggest_session", "list_agents",
         "send_agent_message", "list_runners", "notify_user", "show_widget",
-        "browser_action"})
+        "browser_action", "list_terminals", "open_terminal", "read_terminal",
+        "type_in_terminal", "run_in_terminal", "close_terminal"})
     check("work item attach merges on repository, branch and node",
           work_item_merge_cases())
     check("persistent reminder rides its own signed task PATCH",

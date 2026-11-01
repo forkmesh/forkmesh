@@ -63,6 +63,7 @@ def target_inputs(target):
             "www/public/favicon",
             "www/public/assets/fediverse-avatar.png",
             "www/public/assets/fediverse-banner.png",
+            "www/public/assets/cloud-dragon",
             "www/public/assets/fonts",
             "www/public/assets/video",
             "www/public/assets/jett.webp",

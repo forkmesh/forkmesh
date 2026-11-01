@@ -48,6 +48,7 @@ The page reaches the window through `NativePackageHost`:
 | `windowQuery` | `task.agentSessions` | the local agent sessions linked to a task (id, provider, model, status, branch) for badges, spinners and the branch column |
 | `windowQuery` | `task.repositoryLogos` | the `logo.*` file at the root of each local checkout |
 | `windowCommand` | `prompt.append` | adds the task's text to the prompt box |
+| `windowCommand` | `note.openLink` | opens a note link from the task's details on the Notes page; false sends the link to the browser |
 | `windowCommand` | `agent.show` | opens an agent session |
 | `windowCommand` | `issue.show` | opens an issue in the repository view |
 | `windowCommand` | `task.cleanupWork` | cleans this desktop's work items of a deleted task |

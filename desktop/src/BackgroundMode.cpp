@@ -541,7 +541,8 @@ QString StartManager::restartPolicy() const
     return QStringLiteral(
         "polkit.addRule(function(action, subject) {\n"
         "    if ((action.id === \"org.freedesktop.login1.reboot\" ||\n"
-        "         action.id === \"org.freedesktop.login1.reboot-multiple-sessions\") &&\n"
+        "         action.id === \"org.freedesktop.login1.reboot-multiple-sessions\" ||\n"
+        "         action.id === \"org.freedesktop.login1.reboot-ignore-inhibit\") &&\n"
         "        subject.user === %1)\n"
         "        return polkit.Result.YES;\n"
         "});\n").arg(scriptString(account));
