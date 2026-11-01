@@ -8,6 +8,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.ExperimentalFoundationApi
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -519,121 +520,123 @@ private fun ShellBarCellView(
     }
     val labelSize = ((if (lensed) 11 else 10) * style.size.scale).roundToInt()
     val homeMarks = style.marks == ShellBarMarks.home
-    Box(
-        Modifier
-            .size(slot, side)
-            .graphicsLayer {
-                val k = if (pressed) 0.94f else 1f
-                scaleX = k
-                scaleY = k
-                alpha = if (pressed) 0.7f else 1f
-            }
-            .shellBarSlotChrome(shape, style, cell.selected)
-            .then(if (interactive) Modifier.shellBarDropSlot(cell.id) else Modifier)
-            .graphicsLayer { alpha = if (ShellDrag.isDragging(cell.id, bar = true)) 0.35f else 1f }
-            .shellDragSource(
-                cell.id, cell.icon, fromBar = true, enabled = interactive && cell.id !in ShellBarStore.keep,
-                onStart = {
-                    menu = false
-                    haptics.selection()
-                },
-                onDrop = { at ->
-                    if (ShellDrag.overBar) {
-                        val target = ShellDrag.barSlotAt(at)
-                        if (target != null && target != cell.id) {
-                            if (ShellBarStore.putInBar(cell.id, target, cells)) haptics.success() else haptics.warning()
+    FmHoldArea {
+        Box(
+            Modifier
+                .size(slot, side)
+                .graphicsLayer {
+                    val k = if (pressed) 0.94f else 1f
+                    scaleX = k
+                    scaleY = k
+                    alpha = if (pressed) 0.7f else 1f
+                }
+                .shellBarSlotChrome(shape, style, cell.selected)
+                .then(if (interactive) Modifier.shellBarDropSlot(cell.id) else Modifier)
+                .graphicsLayer { alpha = if (ShellDrag.isDragging(cell.id, bar = true)) 0.35f else 1f }
+                .shellDragSource(
+                    cell.id, cell.icon, fromBar = true, enabled = interactive && cell.id !in ShellBarStore.keep,
+                    onStart = {
+                        menu = false
+                        haptics.selection()
+                    },
+                    onDrop = { at ->
+                        if (ShellDrag.overBar) {
+                            val target = ShellDrag.barSlotAt(at)
+                            if (target != null && target != cell.id) {
+                                if (ShellBarStore.putInBar(cell.id, target, cells)) haptics.success() else haptics.warning()
+                            }
+                        } else {
+                            ShellBarStore.removeFromBar(listOf(cell.id), cells)
+                            haptics.success()
                         }
-                    } else {
-                        ShellBarStore.removeFromBar(listOf(cell.id), cells)
-                        haptics.success()
-                    }
-                },
-            )
-            .then(
-                if (interactive) {
-                    Modifier.combinedClickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        onLongClick = {
-                            haptics.palette()
-                            menu = true
-                        },
-                        onClick = {
-                            haptics.selection()
-                            ShellBarStore.use(cell.id)
-                            onRan()
-                            cell.onClick()
-                        },
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .semantics(mergeDescendants = true) {
-                role = Role.Tab
-                selected = cell.selected
-                contentDescription = cell.description
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Box(contentAlignment = Alignment.Center, modifier = if (tiled) Modifier.size(tile) else Modifier.size(glyph + 4.dp)) {
-                val ringShown = cell.progress != null && style.showActivity
-                if (cell.active && style.showActivity && !ringShown) ShellActivityHaloView((if (tiled) tile else glyph) + 10.dp)
-                if (tiled) ShellBarTile(tile, cell.selected)
-                if (ringShown) ShellBarProgressRing(cell.progress!!, if (tiled) tile - 5.dp else glyph + 10.dp, if (tiled) 1.75f else 2f)
-                val shrink by androidx.compose.animation.core.animateFloatAsState(if (ringShown) 0.78f else 1f, label = "shellRingGlyph")
-                Box(cell.modifier.graphicsLayer { scaleX = shrink; scaleY = shrink }) {
-                    FmIcon(
-                        cell.icon,
-                        size = if (tiled) (glyph.value * 0.82f).dp else glyph,
-                        tint = tint,
-                        outlined = style.icons != ShellHomeIconStyle.filled && !cell.selected,
-                    )
-                }
-                if (cell.badge > 0) {
-                    val text = if (style.showCounts || homeMarks) (if (cell.badge > 9999) "${cell.badge / 1000}k" else "%,d".format(cell.badge)) else if (cell.badge > 999) "999+" else "${cell.badge}"
-                    if (homeMarks) {
-                        ShellHomeCountMark(
-                            text,
-                            unread = !cell.running,
-                            modifier = Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-8).dp),
-                        )
-                    } else {
-                        Text(
-                            text,
-                            Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-6).dp),
-                            style = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold, color = c.count, fontFeatureSettings = "tnum"),
-                        )
-                    }
-                }
-                if (cell.desktopOffline) {
-                    DesktopOfflineDot(Modifier.align(Alignment.BottomStart).offset(x = (-4).dp, y = 4.dp))
-                }
-            }
-            if (style.labels.shows(cell.selected)) {
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    cell.title,
-                    style = TextStyle(
-                        fontFamily = FmType.ui,
-                        fontSize = labelSize.sp,
-                        lineHeight = (labelSize + 2).sp,
-                        fontWeight = if (cell.selected) FontWeight.SemiBold else FontWeight.Medium,
-                        color = when {
-                            cell.selected && lensed -> c.textPrimary
-                            cell.selected -> c.accent
-                            else -> c.textSecondary
-                        },
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    },
                 )
+                .then(
+                    if (interactive) {
+                        Modifier.combinedClickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            onLongClick = {
+                                haptics.palette()
+                                menu = true
+                            },
+                            onClick = {
+                                haptics.selection()
+                                ShellBarStore.use(cell.id)
+                                onRan()
+                                cell.onClick()
+                            },
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
+                .semantics(mergeDescendants = true) {
+                    role = Role.Tab
+                    selected = cell.selected
+                    contentDescription = cell.description
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Box(contentAlignment = Alignment.Center, modifier = if (tiled) Modifier.size(tile) else Modifier.size(glyph + 4.dp)) {
+                    val ringShown = cell.progress != null && style.showActivity
+                    if (cell.active && style.showActivity && !ringShown) ShellActivityHaloView((if (tiled) tile else glyph) + 10.dp)
+                    if (tiled) ShellBarTile(tile, cell.selected)
+                    if (ringShown) ShellBarProgressRing(cell.progress!!, if (tiled) tile - 5.dp else glyph + 10.dp, if (tiled) 1.75f else 2f)
+                    val shrink by androidx.compose.animation.core.animateFloatAsState(if (ringShown) 0.78f else 1f, label = "shellRingGlyph")
+                    Box(cell.modifier.graphicsLayer { scaleX = shrink; scaleY = shrink }) {
+                        FmIcon(
+                            cell.icon,
+                            size = if (tiled) (glyph.value * 0.82f).dp else glyph,
+                            tint = tint,
+                            outlined = style.icons != ShellHomeIconStyle.filled && !cell.selected,
+                        )
+                    }
+                    if (cell.badge > 0) {
+                        val text = if (style.showCounts || homeMarks) (if (cell.badge > 9999) "${cell.badge / 1000}k" else "%,d".format(cell.badge)) else if (cell.badge > 999) "999+" else "${cell.badge}"
+                        if (homeMarks) {
+                            ShellHomeCountMark(
+                                text,
+                                unread = !cell.running,
+                                modifier = Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-8).dp),
+                            )
+                        } else {
+                            Text(
+                                text,
+                                Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-6).dp),
+                                style = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold, color = c.count, fontFeatureSettings = "tnum"),
+                            )
+                        }
+                    }
+                    if (cell.desktopOffline) {
+                        DesktopOfflineDot(Modifier.align(Alignment.BottomStart).offset(x = (-4).dp, y = 4.dp))
+                    }
+                }
+                if (style.labels.shows(cell.selected)) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        cell.title,
+                        style = TextStyle(
+                            fontFamily = FmType.ui,
+                            fontSize = labelSize.sp,
+                            lineHeight = (labelSize + 2).sp,
+                            fontWeight = if (cell.selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = when {
+                                cell.selected && lensed -> c.textPrimary
+                                cell.selected -> c.accent
+                                else -> c.textSecondary
+                            },
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-        }
-        if (interactive) {
-            FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                ShellBarItemMenu(cell, cells, onSettings) { menu = false }
+            if (interactive) {
+                FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    ShellBarItemMenu(cell, cells, onSettings) { menu = false }
+                }
             }
         }
     }
@@ -1153,113 +1156,115 @@ private fun ShellBarFolderView(
     val badge = members.sumOf { it.badge }
     val glyph = (ShellBarBase.ICON * style.size.scale).roundToInt().dp
     val mini = maxOf(7.dp, glyph * 0.42f)
-    Box(
-        Modifier
-            .size(slot, side)
-            .shellBarSlotChrome(shape, style, selected || open)
-            .then(if (interactive) Modifier.shellBarDropSlot(folder.slotId) else Modifier)
-            .then(
-                if (interactive) {
-                    Modifier.combinedClickable(
-                        onLongClick = {
-                            haptics.palette()
-                            menu = true
-                        },
-                        onClick = {
-                            haptics.selection()
-                            open = !open
-                        },
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .semantics(mergeDescendants = true) {
-                role = Role.Button
-                contentDescription = "${folder.name} folder, " + members.joinToString(", ") { it.title }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box {
-                Column(
-                    Modifier
-                        .size(glyph + 6.dp, glyph + 4.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (selected) c.accent.copy(alpha = 0.18f) else c.textPrimary.copy(alpha = 0.08f)),
-                    verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    members.take(4).chunked(2).forEach { pair ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            pair.forEach { member -> FmIcon(member.icon, size = mini + 2.dp, tint = if (member.selected) c.accent else c.textPrimary, outlined = !member.selected) }
-                        }
-                    }
-                }
-                if (badge > 0) {
-                    ShellHomeCountMark(if (badge > 999) "999+" else "$badge", unread = true, modifier = Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-8).dp))
-                }
-            }
-            if (style.labels.shows(selected)) {
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    folder.name,
-                    style = TextStyle(
-                        fontFamily = FmType.ui,
-                        fontSize = (10 * style.size.scale).roundToInt().sp,
-                        lineHeight = ((10 * style.size.scale).roundToInt() + 2).sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (selected) c.accent else c.textSecondary,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+    FmHoldArea {
+        Box(
+            Modifier
+                .size(slot, side)
+                .shellBarSlotChrome(shape, style, selected || open)
+                .then(if (interactive) Modifier.shellBarDropSlot(folder.slotId) else Modifier)
+                .then(
+                    if (interactive) {
+                        Modifier.combinedClickable(
+                            onLongClick = {
+                                haptics.palette()
+                                menu = true
+                            },
+                            onClick = {
+                                haptics.selection()
+                                open = !open
+                            },
+                        )
+                    } else {
+                        Modifier
+                    },
                 )
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = "${folder.name} folder, " + members.joinToString(", ") { it.title }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box {
+                    Column(
+                        Modifier
+                            .size(glyph + 6.dp, glyph + 4.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (selected) c.accent.copy(alpha = 0.18f) else c.textPrimary.copy(alpha = 0.08f)),
+                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        members.take(4).chunked(2).forEach { pair ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                pair.forEach { member -> FmIcon(member.icon, size = mini + 2.dp, tint = if (member.selected) c.accent else c.textPrimary, outlined = !member.selected) }
+                            }
+                        }
+                    }
+                    if (badge > 0) {
+                        ShellHomeCountMark(if (badge > 999) "999+" else "$badge", unread = true, modifier = Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-8).dp))
+                    }
+                }
+                if (style.labels.shows(selected)) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        folder.name,
+                        style = TextStyle(
+                            fontFamily = FmType.ui,
+                            fontSize = (10 * style.size.scale).roundToInt().sp,
+                            lineHeight = ((10 * style.size.scale).roundToInt() + 2).sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (selected) c.accent else c.textSecondary,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-        }
-        if (interactive) {
-            FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                Text(folder.name, Modifier.padding(start = FmSpace.x3, bottom = FmSpace.x1), style = Fm.text.labelSmall)
-                val popoverStyle = style.copy(labels = ShellBarLabels.always, shape = ShellBarShape.capsule, selection = ShellBarSelection.fill)
-                members.chunked(4).forEach { row ->
-                    Row(Modifier.padding(horizontal = FmSpace.x2), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        row.forEach { member ->
-                            ShellBarCellView(member, popoverStyle, maxOf(slot, side), side, CircleShape, true, cells, onSettings, onRan = { open = false })
+            if (interactive) {
+                FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    Text(folder.name, Modifier.padding(start = FmSpace.x3, bottom = FmSpace.x1), style = Fm.text.labelSmall)
+                    val popoverStyle = style.copy(labels = ShellBarLabels.always, shape = ShellBarShape.capsule, selection = ShellBarSelection.fill)
+                    members.chunked(4).forEach { row ->
+                        Row(Modifier.padding(horizontal = FmSpace.x2), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            row.forEach { member ->
+                                ShellBarCellView(member, popoverStyle, maxOf(slot, side), side, CircleShape, true, cells, onSettings, onRan = { open = false })
+                            }
                         }
                     }
                 }
-            }
-            FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                FmDropdownMenuItem("Open ${folder.name}", onClick = {
-                    menu = false
-                    open = true
-                }, icon = "folder_open")
-                ShellBarStepItems(folder.slotId, cells) { menu = false }
-                FmDropdownMenuItem("Rename folder…", onClick = {
-                    menu = false
-                    scope.launch {
-                        val name = ShellBarLayout.cleanName(messenger.showPromptDialog("Rename folder", hint = "Folder name", initialValue = folder.name, confirmLabel = "Rename") ?: return@launch)
-                        if (name.isNotEmpty()) ShellBarStore.arrange { renameFolder(folder.id, name) }
-                    }
-                }, icon = "edit")
-                FmDropdownMenuItem("New folder…", onClick = {
-                    menu = false
-                    scope.launch {
-                        val name = ShellBarLayout.cleanName(messenger.showPromptDialog("New folder", hint = "Folder name", confirmLabel = "Create") ?: return@launch)
-                        if (name.isNotEmpty()) ShellBarStore.arrange { createFolder(name, null) }
-                    }
-                }, icon = "create_new_folder")
-                FmDropdownMenuItem("Remove folder from bar", onClick = {
-                    menu = false
-                    ShellBarStore.removeFromBar(folder.items, cells)
-                }, icon = "remove_circle_outline")
-                FmDropdownMenuItem("Remove folder (keeps its items)", onClick = {
-                    menu = false
-                    ShellBarStore.arrange { removeFolder(folder.id) }
-                }, icon = "folder_delete", textColor = c.danger)
-                FmDropdownMenuItem("Bottom bar settings…", onClick = {
-                    menu = false
-                    onSettings()
-                }, icon = "tune")
+                FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    FmDropdownMenuItem("Open ${folder.name}", onClick = {
+                        menu = false
+                        open = true
+                    }, icon = "folder_open")
+                    ShellBarStepItems(folder.slotId, cells) { menu = false }
+                    FmDropdownMenuItem("Rename folder…", onClick = {
+                        menu = false
+                        scope.launch {
+                            val name = ShellBarLayout.cleanName(messenger.showPromptDialog("Rename folder", hint = "Folder name", initialValue = folder.name, confirmLabel = "Rename") ?: return@launch)
+                            if (name.isNotEmpty()) ShellBarStore.arrange { renameFolder(folder.id, name) }
+                        }
+                    }, icon = "edit")
+                    FmDropdownMenuItem("New folder…", onClick = {
+                        menu = false
+                        scope.launch {
+                            val name = ShellBarLayout.cleanName(messenger.showPromptDialog("New folder", hint = "Folder name", confirmLabel = "Create") ?: return@launch)
+                            if (name.isNotEmpty()) ShellBarStore.arrange { createFolder(name, null) }
+                        }
+                    }, icon = "create_new_folder")
+                    FmDropdownMenuItem("Remove folder from bar", onClick = {
+                        menu = false
+                        ShellBarStore.removeFromBar(folder.items, cells)
+                    }, icon = "remove_circle_outline")
+                    FmDropdownMenuItem("Remove folder (keeps its items)", onClick = {
+                        menu = false
+                        ShellBarStore.arrange { removeFolder(folder.id) }
+                    }, icon = "folder_delete", textColor = c.danger)
+                    FmDropdownMenuItem("Bottom bar settings…", onClick = {
+                        menu = false
+                        onSettings()
+                    }, icon = "tune")
+                }
             }
         }
     }

@@ -150,6 +150,7 @@ struct DjLoadSheet: View {
                 ?? model.shownQueue.contains { $0.videoId == result.id }, plays: plays)
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             DjPlaylistMenu(model: model, id: result.id)
             Button("Tags and Playlists…", systemImage: "tag") { model.editSong(result.id) }
@@ -294,6 +295,7 @@ struct DjPadsSheet: View {
                         ) {
                             model.playSection(index)
                         }
+                        .textSelection(.disabled)
                         .contextMenu {
                             if section != nil {
                                 Button("Clear Sample \(index + 1)", systemImage: "trash", role: .destructive) { model.clearSection(index) }
@@ -339,6 +341,7 @@ struct DjPad: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
         .opacity(enabled ? 1 : 0.45)
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .gesture(DragGesture(minimumDistance: 0).updating($pressed) { _, state, _ in state = true })
         .onChange(of: pressed) { _, now in if now, enabled { action() } }
         .accessibilityElement(children: .combine)

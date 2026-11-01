@@ -148,6 +148,7 @@ struct LedgerEntryRow: View {
             .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+        .textSelection(.disabled)
         .contextMenu {
             if let url = URL(string: entry.explorerUrl), !entry.explorerUrl.isEmpty {
                 Link(destination: url) { Label("Open in explorer", systemImage: "safari") }

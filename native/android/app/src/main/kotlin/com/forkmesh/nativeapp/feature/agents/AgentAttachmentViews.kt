@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -200,31 +201,33 @@ private fun AttachmentViewer(ref: AgentAttachmentRef, onClose: () -> Unit) {
         }
     }
     FmSoundOnShow()
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(
-            Modifier
-                .fmTapSounds()
-                .fillMaxSize()
-                .background(androidx.compose.ui.graphics.Color.Black),
-            contentAlignment = Alignment.Center,
-        ) {
-            val current = image
-            val failed = failure
-            if (current != null) {
-                Image(current, ref.name, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
-            } else if (failed != null) {
-                FmInlineStatusLine(failed, isError = true, modifier = Modifier.padding(FmSpace.x5))
-            } else {
-                FmCircularProgressIndicator(Modifier.size(24.dp))
+    DisableSelection {
+        Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(
+                Modifier
+                    .fmTapSounds()
+                    .fillMaxSize()
+                    .background(androidx.compose.ui.graphics.Color.Black),
+                contentAlignment = Alignment.Center,
+            ) {
+                val current = image
+                val failed = failure
+                if (current != null) {
+                    Image(current, ref.name, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+                } else if (failed != null) {
+                    FmInlineStatusLine(failed, isError = true, modifier = Modifier.padding(FmSpace.x5))
+                } else {
+                    FmCircularProgressIndicator(Modifier.size(24.dp))
+                }
+                Box(Modifier.align(Alignment.TopEnd).padding(FmSpace.x3)) {
+                    FmIconButton("close", "Close", onPressed = onClose, color = androidx.compose.ui.graphics.Color.White)
+                }
+                Text(
+                    ref.name,
+                    Modifier.align(Alignment.BottomCenter).padding(FmSpace.x4),
+                    style = Fm.text.bodySmall.copy(color = androidx.compose.ui.graphics.Color.White),
+                )
             }
-            Box(Modifier.align(Alignment.TopEnd).padding(FmSpace.x3)) {
-                FmIconButton("close", "Close", onPressed = onClose, color = androidx.compose.ui.graphics.Color.White)
-            }
-            Text(
-                ref.name,
-                Modifier.align(Alignment.BottomCenter).padding(FmSpace.x4),
-                style = Fm.text.bodySmall.copy(color = androidx.compose.ui.graphics.Color.White),
-            )
         }
     }
 }

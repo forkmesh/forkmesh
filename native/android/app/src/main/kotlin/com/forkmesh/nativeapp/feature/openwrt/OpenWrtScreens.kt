@@ -24,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -171,12 +172,14 @@ private fun Choice(label: String, choices: List<OpenWrtChoice>, value: String, o
     var open by remember { mutableStateOf(false) }
     Box {
         Row2(label, OpenWrtModel.choiceLabel(choices, value), onClick = { open = true })
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            for (choice in choices) {
-                DropdownMenuItem(text = { Text(choice.label) }, onClick = {
-                    open = false
-                    onChange(choice.value)
-                })
+        DisableSelection {
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                for (choice in choices) {
+                    DropdownMenuItem(text = { Text(choice.label) }, onClick = {
+                        open = false
+                        onChange(choice.value)
+                    })
+                }
             }
         }
     }
@@ -191,30 +194,36 @@ private fun Actions(content: @Composable () -> Unit) {
 
 @Composable
 private fun Confirm(title: String, text: String, action: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(action) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    DisableSelection {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(title) },
+            text = { SelectionContainer { Text(text) } },
+            confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(action) } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
 private fun Prompt(title: String, text: String, initial: String, action: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var value by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column {
-                Text(text)
-                OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, modifier = Modifier.padding(top = FmSpace.x2))
-            }
-        },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value.trim()) }) { Text(action) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    DisableSelection {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(title) },
+            text = {
+                SelectionContainer {
+                    Column {
+                        Text(text)
+                        OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, modifier = Modifier.padding(top = FmSpace.x2))
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value.trim()) }) { Text(action) } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+    }
 }
 
 class OpenWrtScreen : Screen() {
@@ -229,12 +238,14 @@ class OpenWrtScreen : Screen() {
         state.attach(LocalContext.current)
         val scope = rememberCoroutineScope()
         if (reviewing) {
-            AlertDialog(
-                onDismissRequest = { reviewing = false },
-                title = { Text("Waiting changes") },
-                text = { Text(state.snapshot.pendingLines.joinToString("\n"), fontFamily = FmType.mono) },
-                confirmButton = { TextButton(onClick = { reviewing = false }) { Text("Done") } },
-            )
+            DisableSelection {
+                AlertDialog(
+                    onDismissRequest = { reviewing = false },
+                    title = { Text("Waiting changes") },
+                    text = { SelectionContainer { Text(state.snapshot.pendingLines.joinToString("\n"), fontFamily = FmType.mono) } },
+                    confirmButton = { TextButton(onClick = { reviewing = false }) { Text("Done") } },
+                )
+            }
         }
         if (discarding) {
             Confirm("Discard changes?", "The ${state.snapshot.pendingCount} changes you have not applied will be thrown away.", "Discard",
@@ -252,19 +263,23 @@ class OpenWrtScreen : Screen() {
             VaultUnlockDialog(vault, prompt.purpose, onUnlocked = { scope.guard { state.vaultUnlocked() } }, onCancel = { state.vaultPromptCancelled() })
         }
         if (state.vaultChoices.isNotEmpty()) {
-            AlertDialog(
-                onDismissRequest = { state.vaultChoices = emptyList() },
-                title = { Text("Choose an account") },
-                text = {
-                    Column {
-                        Text("Password Vault has more than one account for this router.")
-                        for (item in state.vaultChoices) {
-                            TextButton(onClick = { scope.guard { state.useVaultLogin(item) } }) { Text(item.username.ifEmpty { "root" }) }
+            DisableSelection {
+                AlertDialog(
+                    onDismissRequest = { state.vaultChoices = emptyList() },
+                    title = { Text("Choose an account") },
+                    text = {
+                        SelectionContainer {
+                            Column {
+                                Text("Password Vault has more than one account for this router.")
+                                for (item in state.vaultChoices) {
+                                    TextButton(onClick = { scope.guard { state.useVaultLogin(item) } }) { Text(item.username.ifEmpty { "root" }) }
+                                }
+                            }
                         }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { state.vaultChoices = emptyList() }) { Text("Cancel") } },
-            )
+                    },
+                    confirmButton = { TextButton(onClick = { state.vaultChoices = emptyList() }) { Text("Cancel") } },
+                )
+            }
         }
         val vaultOffered = vault != null && vaultPhase != null && vaultPhase != VaultPhase.SignedOut
         RouterPage("Router", navigator, root = true) {
@@ -470,28 +485,32 @@ class OpenWrtWifiScreen : Screen() {
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         addingTo?.let { radio ->
-            AlertDialog(
-                onDismissRequest = { addingTo = null },
-                title = { Text("Add Wi-Fi network") },
-                text = {
-                    Column {
-                        Text("The new network uses WPA2/WPA3 and connects to the local network.")
-                        OutlinedTextField(newSsid, FmSafeInput.text<String> { newSsid = it }, label = { Text("Network name") }, singleLine = true)
-                        OutlinedTextField(newKey, { newKey = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        addingTo = null
-                        scope.guard {
-                            val networks = state.snapshot.interfaceSections.map { it.name }
-                            val values = OpenWrtModel.newWifiValues(radio, if ("lan" in networks) "lan" else networks.firstOrNull() ?: "lan", newSsid, newKey)
-                            state.add("wireless", "wifi-iface", values, "Wi-Fi network $newSsid")
+            DisableSelection {
+                AlertDialog(
+                    onDismissRequest = { addingTo = null },
+                    title = { Text("Add Wi-Fi network") },
+                    text = {
+                        SelectionContainer {
+                            Column {
+                                Text("The new network uses WPA2/WPA3 and connects to the local network.")
+                                OutlinedTextField(newSsid, FmSafeInput.text<String> { newSsid = it }, label = { Text("Network name") }, singleLine = true)
+                                OutlinedTextField(newKey, { newKey = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                            }
                         }
-                    }) { Text("Add") }
-                },
-                dismissButton = { TextButton(onClick = { addingTo = null }) { Text("Cancel") } },
-            )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            addingTo = null
+                            scope.guard {
+                                val networks = state.snapshot.interfaceSections.map { it.name }
+                                val values = OpenWrtModel.newWifiValues(radio, if ("lan" in networks) "lan" else networks.firstOrNull() ?: "lan", newSsid, newKey)
+                                state.add("wireless", "wifi-iface", values, "Wi-Fi network $newSsid")
+                            }
+                        }) { Text("Add") }
+                    },
+                    dismissButton = { TextButton(onClick = { addingTo = null }) { Text("Cancel") } },
+                )
+            }
         }
         RouterPage(title, navigator) {
             if (state.snapshot.radios.isEmpty()) item(key = "none") { Note("This router has no Wi-Fi radios, or the wireless settings could not be read.") }
@@ -888,12 +907,14 @@ class OpenWrtServicesScreen : Screen() {
             items(state.snapshot.services, key = { it.name }) { service ->
                 Box {
                     Row2(service.name, "${if (service.running) "Running" else "Stopped"}${if (service.enabled) " · starts at boot" else ""}", onClick = { menuFor = service.name })
-                    DropdownMenu(expanded = menuFor == service.name, onDismissRequest = { menuFor = null }) {
-                        DropdownMenuItem(text = { Text("Start") }, onClick = { run(service.name, "start") })
-                        DropdownMenuItem(text = { Text("Restart") }, onClick = { run(service.name, "restart") })
-                        DropdownMenuItem(text = { Text("Stop") }, onClick = { run(service.name, "stop") })
-                        DropdownMenuItem(text = { Text("Start at boot") }, onClick = { run(service.name, "enable") })
-                        DropdownMenuItem(text = { Text("Don't start at boot") }, onClick = { run(service.name, "disable") })
+                    DisableSelection {
+                        DropdownMenu(expanded = menuFor == service.name, onDismissRequest = { menuFor = null }) {
+                            DropdownMenuItem(text = { Text("Start") }, onClick = { run(service.name, "start") })
+                            DropdownMenuItem(text = { Text("Restart") }, onClick = { run(service.name, "restart") })
+                            DropdownMenuItem(text = { Text("Stop") }, onClick = { run(service.name, "stop") })
+                            DropdownMenuItem(text = { Text("Start at boot") }, onClick = { run(service.name, "enable") })
+                            DropdownMenuItem(text = { Text("Don't start at boot") }, onClick = { run(service.name, "disable") })
+                        }
                     }
                 }
             }

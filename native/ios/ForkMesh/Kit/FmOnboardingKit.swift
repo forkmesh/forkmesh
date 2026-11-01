@@ -23,6 +23,7 @@ struct FmPillPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let pressed: Bool = configuration.isPressed && !reduceMotion
         configuration.label
+            .textSelection(.disabled)
             .scaleEffect(pressed ? 1.03 : 1)
             .shadow(color: Color.white.opacity(pressed && kind == .primary ? 0.34 : 0), radius: 20)
             .animation(FmMotion.easeOutCubic(0.14, reduceMotion: reduceMotion), value: configuration.isPressed)

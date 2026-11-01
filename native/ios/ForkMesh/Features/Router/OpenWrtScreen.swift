@@ -755,6 +755,7 @@ struct OpenWrtStorageScreen: View {
                         Text(disk.title).font(.headline)
                         Text(diskDetail(disk)).font(.caption).foregroundStyle(.secondary)
                     }
+                    .textSelection(.disabled)
                     .contextMenu { diskActions(disk) }
                     .swipeActions { diskActions(disk) }
                 }

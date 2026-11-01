@@ -107,73 +107,75 @@ fun FmListRow(
     val wash = colors.accentSubtle
     val rowWash = remember(wash) { FmPressIndication(wash) }
     CompositionLocalProvider(LocalIndication provides if (interactive) rowWash else outerIndication) {
-        Row(
-            modifier
-                .fillMaxWidth()
-                .then(
-                    if (interactive) {
-                        Modifier.combinedClickable(
-                            hapticFeedbackEnabled = false,
-                            onLongClick = onLongPress?.let { longPress ->
-                                {
-                                    haptics.commit(SoundCue.OPEN)
-                                    longPress()
-                                }
-                            },
-                            onClick = {
-                                if (onTap != null) {
-                                    haptics.tap()
-                                    onTap()
-                                }
-                            },
-                        )
-                    } else {
-                        Modifier
-                    },
-                )
-                .heightIn(min = minHeight)
-                .padding(padding),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CompositionLocalProvider(LocalIndication provides outerIndication) {
-                if (leading != null) {
-                    leading()
-                    Spacer(Modifier.width(FmSpace.x3))
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                    if (titleContent != null) {
-                        titleContent()
-                    } else {
-                        Text(
-                            title,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.titleSmall.let { if (titleColor != null) it.copy(color = titleColor) else it },
-                        )
+        FmHoldArea(onLongPress != null) {
+            Row(
+                modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (interactive) {
+                            Modifier.combinedClickable(
+                                hapticFeedbackEnabled = false,
+                                onLongClick = onLongPress?.let { longPress ->
+                                    {
+                                        haptics.commit(SoundCue.OPEN)
+                                        longPress()
+                                    }
+                                },
+                                onClick = {
+                                    if (onTap != null) {
+                                        haptics.tap()
+                                        onTap()
+                                    }
+                                },
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .heightIn(min = minHeight)
+                    .padding(padding),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CompositionLocalProvider(LocalIndication provides outerIndication) {
+                    if (leading != null) {
+                        leading()
+                        Spacer(Modifier.width(FmSpace.x3))
                     }
-                    if (subtitleContent != null) {
-                        Spacer(Modifier.height(3.dp))
-                        subtitleContent()
-                    } else if (!subtitle.isNullOrEmpty()) {
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            subtitle,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = Fm.text.bodySmall.copy(
-                                color = colors.textTertiary,
-                                lineHeight = FmType.meta * FmType.leadingTight,
-                            ),
-                        )
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                        if (titleContent != null) {
+                            titleContent()
+                        } else {
+                            Text(
+                                title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.titleSmall.let { if (titleColor != null) it.copy(color = titleColor) else it },
+                            )
+                        }
+                        if (subtitleContent != null) {
+                            Spacer(Modifier.height(3.dp))
+                            subtitleContent()
+                        } else if (!subtitle.isNullOrEmpty()) {
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                subtitle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = Fm.text.bodySmall.copy(
+                                    color = colors.textTertiary,
+                                    lineHeight = FmType.meta * FmType.leadingTight,
+                                ),
+                            )
+                        }
                     }
-                }
-                if (trailing != null) {
-                    Spacer(Modifier.width(FmSpace.x2))
-                    trailing()
-                }
-                if (showChevron) {
-                    Spacer(Modifier.width(FmSpace.x1))
-                    FmIcon("chevron_right", size = 20.dp, tint = colors.textDisabled)
+                    if (trailing != null) {
+                        Spacer(Modifier.width(FmSpace.x2))
+                        trailing()
+                    }
+                    if (showChevron) {
+                        Spacer(Modifier.width(FmSpace.x1))
+                        FmIcon("chevron_right", size = 20.dp, tint = colors.textDisabled)
+                    }
                 }
             }
         }
@@ -223,15 +225,17 @@ fun FmSegmentTabBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
     ) {
-        Row(
-            Modifier
-                .fillMaxHeight()
-                .fmGlass(RoundedCornerShape(FmRadius.lg), shadow = false)
-                .padding(horizontal = FmSpace.x1),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            tabs.forEachIndexed { i, tab ->
-                SegmentTabItem(tab = tab, selected = i == index, onTap = { onChanged(i) })
+        FmHoldArea {
+            Row(
+                Modifier
+                    .fillMaxHeight()
+                    .fmGlass(RoundedCornerShape(FmRadius.lg), shadow = false)
+                    .padding(horizontal = FmSpace.x1),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                tabs.forEachIndexed { i, tab ->
+                    SegmentTabItem(tab = tab, selected = i == index, onTap = { onChanged(i) })
+                }
             }
         }
         Spacer(Modifier.weight(1f))
@@ -400,32 +404,34 @@ fun FmToneButton(
     }
     val shape = RoundedCornerShape(FmRadius.md)
     val button: @Composable () -> Unit = {
-        Row(
-            modifier
-                .height(height)
-                .fmBusyRing(working && icon == null, shape)
-                .clip(shape)
-                .clickable(enabled = enabled, role = Role.Button) {
-                    tap.tapped()
-                    haptics.tap(SoundCue.forLabel(label, SoundCue.CLICK))
-                    onPressed?.invoke()
+        FmHoldArea {
+            Row(
+                modifier
+                    .height(height)
+                    .fmBusyRing(working && icon == null, shape)
+                    .clip(shape)
+                    .clickable(enabled = enabled, role = Role.Button) {
+                        tap.tapped()
+                        haptics.tap(SoundCue.forLabel(label, SoundCue.CLICK))
+                        onPressed?.invoke()
+                    }
+                    .clearAndSetSemantics { contentDescription = tooltip ?: label }
+                    .alpha(if (enabled || working) 1f else .45f)
+                    .background(background)
+                    .padding(horizontal = if (icon == null) 12.dp else 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (icon != null) {
+                    FmIcon(icon, size = 16.dp, tint = foreground, modifier = Modifier.fmBusyRing(working, inset = (-5).dp))
+                    Spacer(Modifier.width(6.dp))
                 }
-                .clearAndSetSemantics { contentDescription = tooltip ?: label }
-                .alpha(if (enabled || working) 1f else .45f)
-                .background(background)
-                .padding(horizontal = if (icon == null) 12.dp else 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (icon != null) {
-                FmIcon(icon, size = 16.dp, tint = foreground, modifier = Modifier.fmBusyRing(working, inset = (-5).dp))
-                Spacer(Modifier.width(6.dp))
+                Text(
+                    label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = Fm.text.labelMedium.copy(color = foreground, lineHeight = FmType.small),
+                )
             }
-            Text(
-                label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = Fm.text.labelMedium.copy(color = foreground, lineHeight = FmType.small),
-            )
         }
     }
     if (tooltip == null) button() else FmTooltip(tooltip) { button() }

@@ -599,6 +599,7 @@ struct PokerSeatView: View {
                 Capsule().fill(Color.black.opacity(0.7))
                     .overlay(Capsule().strokeBorder(seat.isTurn ? PokerColors.clockGreen : (mine ? PokerColors.gold.opacity(0.7) : Color.white.opacity(0.15)), lineWidth: seat.isTurn ? 1.5 : 0.8)))
         }
+        .textSelection(.disabled)
         .contextMenu {
             if table.ownerIsMe && seat.bot {
                 Button("Remove \(seat.displayName)", systemImage: "person.fill.xmark", role: .destructive) {

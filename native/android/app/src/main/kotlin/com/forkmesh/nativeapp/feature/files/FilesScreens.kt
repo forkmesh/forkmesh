@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.files
 
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import android.content.ActivityNotFoundException
@@ -156,41 +158,49 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
 private fun NamePrompt(title: String, initial: String, action: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var value by remember { mutableStateOf(initial) }
     val problem = FilesModel.nameProblem(value)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column {
-                OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, label = { Text("Name") })
-                if (problem != null && value.isNotEmpty()) Text(problem, style = Fm.text.bodySmall, color = Fm.colors.danger, modifier = Modifier.padding(top = FmSpace.x1))
-            }
-        },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value.trim()) }, enabled = problem == null) { Text(action) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    DisableSelection {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(title) },
+            text = {
+                SelectionContainer {
+                    Column {
+                        OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, label = { Text("Name") })
+                        if (problem != null && value.isNotEmpty()) Text(problem, style = Fm.text.bodySmall, color = Fm.colors.danger, modifier = Modifier.padding(top = FmSpace.x1))
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value.trim()) }, enabled = problem == null) { Text(action) } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
 private fun PasswordPrompt(share: SavedShare, onConfirm: (String, Boolean) -> Unit, onDismiss: () -> Unit) {
     var value by remember { mutableStateOf("") }
     var keep by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(share.title) },
-        text = {
-            Column {
-                Text(if (share.user.isEmpty()) "Password" else "Password for ${share.user}", style = Fm.text.bodyMedium)
-                OutlinedTextField(value = value, onValueChange = { value = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), modifier = Modifier.padding(top = FmSpace.x2))
-                Row(Modifier.clickable { keep = !keep }.padding(top = FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Remember password", style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
-                    FmSwitch(checked = keep, onCheckedChange = { keep = it })
+    DisableSelection {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(share.title) },
+            text = {
+                SelectionContainer {
+                    Column {
+                        Text(if (share.user.isEmpty()) "Password" else "Password for ${share.user}", style = Fm.text.bodyMedium)
+                        OutlinedTextField(value = value, onValueChange = { value = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), modifier = Modifier.padding(top = FmSpace.x2))
+                        Row(Modifier.clickable { keep = !keep }.padding(top = FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Remember password", style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
+                            FmSwitch(checked = keep, onCheckedChange = { keep = it })
+                        }
+                    }
                 }
-            }
-        },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value, keep) }) { Text("Connect") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+            },
+            confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value, keep) }) { Text("Connect") } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+    }
 }
 
 private fun displayName(context: Context, uri: Uri): String {
@@ -248,11 +258,13 @@ class FilesHomeScreen : Screen() {
                     Box {
                         FmListRow(folder.name, subtitle = "Folder on this phone", leading = { FmIcon("folder", tint = Fm.colors.textSecondary) },
                             onTap = { navigator.push(FolderScreen(store.folderSource(folder), "")) }, onLongPress = { menuFolder = folder })
-                        DropdownMenu(expanded = menuFolder == folder, onDismissRequest = { menuFolder = null }) {
-                            DropdownMenuItem(text = { Text("Remove") }, onClick = {
-                                menuFolder = null
-                                store.removeFolder(folder)
-                            })
+                        DisableSelection {
+                            DropdownMenu(expanded = menuFolder == folder, onDismissRequest = { menuFolder = null }) {
+                                DropdownMenuItem(text = { Text("Remove") }, onClick = {
+                                    menuFolder = null
+                                    store.removeFolder(folder)
+                                })
+                            }
                         }
                     }
                 }
@@ -269,15 +281,17 @@ class FilesHomeScreen : Screen() {
                                 if (store.needsPassword(share)) passwordFor = share else navigator.push(FolderScreen(store.shareSource(share), "", share))
                             },
                             onLongPress = { menuShare = share })
-                        DropdownMenu(expanded = menuShare == share, onDismissRequest = { menuShare = null }) {
-                            DropdownMenuItem(text = { Text("Edit") }, onClick = {
-                                menuShare = null
-                                navigator.push(AddShareScreen(share.host, share.share, share))
-                            })
-                            DropdownMenuItem(text = { Text("Remove") }, onClick = {
-                                menuShare = null
-                                store.removeShare(share)
-                            })
+                        DisableSelection {
+                            DropdownMenu(expanded = menuShare == share, onDismissRequest = { menuShare = null }) {
+                                DropdownMenuItem(text = { Text("Edit") }, onClick = {
+                                    menuShare = null
+                                    navigator.push(AddShareScreen(share.host, share.share, share))
+                                })
+                                DropdownMenuItem(text = { Text("Remove") }, onClick = {
+                                    menuShare = null
+                                    store.removeShare(share)
+                                })
+                            }
                         }
                     }
                 }
@@ -582,69 +596,79 @@ class FolderScreen(val source: FileSource, val path: String, private val share: 
             }, { creating = null })
         }
         deleting?.let { item ->
-            AlertDialog(
-                onDismissRequest = { deleting = null },
-                title = { Text(FilesModel.deletePrompt(item)) },
-                text = { Text(if (share != null) "It is deleted from the network share. This cannot be undone." else "This cannot be undone.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        deleting = null
-                        scope.launch { task("Deleting ${item.name}…", "Deleted ${item.name}.") { withContext(Dispatchers.IO) { source.delete(item.path) } } }
-                    }) { Text("Delete", color = Fm.colors.danger) }
-                },
-                dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
-            )
+            DisableSelection {
+                AlertDialog(
+                    onDismissRequest = { deleting = null },
+                    title = { Text(FilesModel.deletePrompt(item)) },
+                    text = { SelectionContainer { Text(if (share != null) "It is deleted from the network share. This cannot be undone." else "This cannot be undone.") } },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            deleting = null
+                            scope.launch { task("Deleting ${item.name}…", "Deleted ${item.name}.") { withContext(Dispatchers.IO) { source.delete(item.path) } } }
+                        }) { Text("Delete", color = Fm.colors.danger) }
+                    },
+                    dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+                )
+            }
         }
         info?.let { item ->
             val where = source.location(item.path)
-            AlertDialog(
-                onDismissRequest = { info = null },
-                title = { Text(item.name) },
-                text = {
-                    Column {
-                        listOf(
-                            "Kind" to FilesModel.kindLabel(item),
-                            "Size" to if (item.isFolder) "" else "${FilesModel.formatSize(item.size)} (${item.size} bytes)",
-                            "Modified" to FilesModel.formatDate(item.modified),
-                            "Where" to where,
-                        ).filter { it.second.isNotEmpty() }.forEach { (label, value) ->
-                            Text(label, style = Fm.text.bodySmall, color = Fm.colors.textTertiary, modifier = Modifier.padding(top = FmSpace.x2))
-                            Text(value, style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
+            DisableSelection {
+                AlertDialog(
+                    onDismissRequest = { info = null },
+                    title = { Text(item.name) },
+                    text = {
+                        SelectionContainer {
+                            Column {
+                                listOf(
+                                    "Kind" to FilesModel.kindLabel(item),
+                                    "Size" to if (item.isFolder) "" else "${FilesModel.formatSize(item.size)} (${item.size} bytes)",
+                                    "Modified" to FilesModel.formatDate(item.modified),
+                                    "Where" to where,
+                                ).filter { it.second.isNotEmpty() }.forEach { (label, value) ->
+                                    Text(label, style = Fm.text.bodySmall, color = Fm.colors.textTertiary, modifier = Modifier.padding(top = FmSpace.x2))
+                                    Text(value, style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
+                                }
+                            }
                         }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { info = null }) { Text("Done") } },
-                dismissButton = { TextButton(onClick = { copyToClipboard(context, where); info = null }) { Text("Copy path") } },
-            )
+                    },
+                    confirmButton = { TextButton(onClick = { info = null }) { Text("Done") } },
+                    dismissButton = { TextButton(onClick = { copyToClipboard(context, where); info = null }) { Text("Copy path") } },
+                )
+            }
         }
         Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false) {
                 Box {
                     TextButton(onClick = { sortMenu = true }) { Text(store.sort.label) }
-                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                        FileSort.entries.forEach { sort ->
-                            DropdownMenuItem(text = { Text(if (sort == store.sort) "${sort.label} ✓" else sort.label) }, onClick = {
-                                sortMenu = false
-                                store.updateSort(sort)
-                            })
+                    DisableSelection {
+                        DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                            FileSort.entries.forEach { sort ->
+                                DropdownMenuItem(text = { Text(if (sort == store.sort) "${sort.label} ✓" else sort.label) }, onClick = {
+                                    sortMenu = false
+                                    store.updateSort(sort)
+                                })
+                            }
                         }
                     }
                 }
                 Box {
                     TextButton(onClick = { overflow = true }) { FmIcon("more_vert", tint = Fm.colors.textPrimary) }
-                    DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
-                        DropdownMenuItem(text = { Text("New folder") }, onClick = { overflow = false; creating = true })
-                        DropdownMenuItem(text = { Text("New file") }, onClick = { overflow = false; creating = false })
-                        DropdownMenuItem(text = { Text("Upload") }, onClick = { overflow = false; upload.launch(arrayOf("*/*")) })
-                        store.clip?.let { clip ->
-                            DropdownMenuItem(text = { Text("Paste ${clip.item.name}") }, onClick = { overflow = false; paste() })
+                    DisableSelection {
+                        DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+                            DropdownMenuItem(text = { Text("New folder") }, onClick = { overflow = false; creating = true })
+                            DropdownMenuItem(text = { Text("New file") }, onClick = { overflow = false; creating = false })
+                            DropdownMenuItem(text = { Text("Upload") }, onClick = { overflow = false; upload.launch(arrayOf("*/*")) })
+                            store.clip?.let { clip ->
+                                DropdownMenuItem(text = { Text("Paste ${clip.item.name}") }, onClick = { overflow = false; paste() })
+                            }
+                            DropdownMenuItem(text = { Text("Filter") }, onClick = { overflow = false; searching = !searching; if (!searching) filter = "" })
+                            DropdownMenuItem(text = { Text(if (store.showHidden) "Hide hidden files" else "Show hidden files") }, onClick = {
+                                overflow = false
+                                store.updateShowHidden(!store.showHidden)
+                            })
+                            DropdownMenuItem(text = { Text("Refresh") }, onClick = { overflow = false; scope.launch { load() } })
                         }
-                        DropdownMenuItem(text = { Text("Filter") }, onClick = { overflow = false; searching = !searching; if (!searching) filter = "" })
-                        DropdownMenuItem(text = { Text(if (store.showHidden) "Hide hidden files" else "Show hidden files") }, onClick = {
-                            overflow = false
-                            store.updateShowHidden(!store.showHidden)
-                        })
-                        DropdownMenuItem(text = { Text("Refresh") }, onClick = { overflow = false; scope.launch { load() } })
                     }
                 }
             }
@@ -689,19 +713,21 @@ class FolderScreen(val source: FileSource, val path: String, private val share: 
                             Box {
                                 FmListRow(item.name, subtitle = FilesModel.detail(item), leading = { FmIcon(iconFor(item), tint = if (item.isFolder) Fm.colors.accent else Fm.colors.textSecondary) },
                                     showChevron = item.isFolder, onTap = { open(item) }, onLongPress = { menuFor = item })
-                                DropdownMenu(expanded = menuFor == item, onDismissRequest = { menuFor = null }) {
-                                    @Composable
-                                    fun act(label: String, action: () -> Unit) = DropdownMenuItem(text = { Text(label) }, onClick = { menuFor = null; action() })
-                                    act("Open") { open(item) }
-                                    act("Rename") { renaming = item }
-                                    act("Copy") { store.clip = FilesClip(source, item, false); show("Copied ${item.name}. Open a folder and choose Paste.") }
-                                    act("Move") { store.clip = FilesClip(source, item, true); show("Moving ${item.name}. Open a folder and choose Paste.") }
-                                    if (!item.isFolder) {
-                                        act("Download") { downloading = item; download.launch(item.name) }
-                                        act("Share") { openExternally(item, true) }
+                                DisableSelection {
+                                    DropdownMenu(expanded = menuFor == item, onDismissRequest = { menuFor = null }) {
+                                        @Composable
+                                        fun act(label: String, action: () -> Unit) = DropdownMenuItem(text = { Text(label) }, onClick = { menuFor = null; action() })
+                                        act("Open") { open(item) }
+                                        act("Rename") { renaming = item }
+                                        act("Copy") { store.clip = FilesClip(source, item, false); show("Copied ${item.name}. Open a folder and choose Paste.") }
+                                        act("Move") { store.clip = FilesClip(source, item, true); show("Moving ${item.name}. Open a folder and choose Paste.") }
+                                        if (!item.isFolder) {
+                                            act("Download") { downloading = item; download.launch(item.name) }
+                                            act("Share") { openExternally(item, true) }
+                                        }
+                                        act("Info") { info = item }
+                                        DropdownMenuItem(text = { Text("Delete", color = Fm.colors.danger) }, onClick = { menuFor = null; deleting = item })
                                     }
-                                    act("Info") { info = item }
-                                    DropdownMenuItem(text = { Text("Delete", color = Fm.colors.danger) }, onClick = { menuFor = null; deleting = item })
                                 }
                             }
                             HorizontalDivider(color = Fm.colors.border)

@@ -178,6 +178,7 @@ struct FmListRow: View {
             .onTapGesture {
                 tapped()
             }
+            .textSelection(.disabled)
             .onLongPressGesture(
                 minimumDuration: 0.5,
                 maximumDistance: 10,

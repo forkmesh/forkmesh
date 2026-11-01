@@ -12,6 +12,7 @@ import com.forkmesh.nativeapp.core.AppVisibility
 import com.forkmesh.nativeapp.feature.Features
 import com.forkmesh.nativeapp.feature.chat.ChatPrivacy
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -50,7 +51,9 @@ class MainActivity : ComponentActivity() {
             ForkMeshTheme(dark = dark, theme = appearance.effectiveTheme, wallpaper = appearance.wallpaper.active) {
                 Box(Modifier.fmTapSounds(), propagateMinConstraints = true) {
                     FmWallpaperLayer(Modifier.matchParentSize())
-                    if (kitGallery != null) kitGallery.Content(navigator) else Features.Root(navigator, onExit = { moveTaskToBack(true) })
+                    SelectionContainer {
+                        if (kitGallery != null) kitGallery.Content(navigator) else Features.Root(navigator, onExit = { moveTaskToBack(true) })
+                    }
                 }
             }
         }
