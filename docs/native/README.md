@@ -441,6 +441,12 @@ avatar movement but does not silently change that saved feedback preference.
   rescheduling a save; `ChatHub.attachHistory(inBackground:)` and the
   batched `restore`s replace that. Name every launch step
   (`startup.<step>`) so the report says which one is slow.
+- A tab hidden under Home or behind another tab starts only the work the
+  shell needs from it (Agents: the list, for the counts); streams, follows
+  and watchers wait until it is first shown (`AgentsTabLiveGate`). SwiftUI
+  evaluates every `@State` default each time the parent builds the view,
+  and keeps only the first, so a default does no reads or parsing in
+  `init` (`AgentReadTracker` reads its store on first use).
 - Parse message text once per text, not once per redraw: `ChatLinkText` and
   the bubbles read `ChatTextCache`.
 - Compute derived lists once per body and pass them down.

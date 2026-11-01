@@ -89,11 +89,13 @@ public struct AgentReadState: Equatable, Sendable {
 @MainActor
 @Observable
 public final class AgentReadTracker {
-    public private(set) var state: AgentReadState
     public private(set) var openKey = ""
+    private var revision = 0
 
     @ObservationIgnored private let store: KeyValueStore?
     @ObservationIgnored private let markDesktop: @MainActor (Int) -> Void
+    @ObservationIgnored private let nowMs: Int
+    @ObservationIgnored private var loaded: AgentReadState?
 
     public init(
         store: KeyValueStore?, nowMs: Int = Int(Date().timeIntervalSince1970 * 1000),
@@ -101,7 +103,15 @@ public final class AgentReadTracker {
     ) {
         self.store = store
         self.markDesktop = markDesktop
-        state = store.map { AgentReadState.load($0, nowMs: nowMs) } ?? AgentReadState(baselineMs: nowMs)
+        self.nowMs = nowMs
+    }
+
+    public var state: AgentReadState {
+        _ = revision
+        if let loaded { return loaded }
+        let read = store.map { AgentReadState.load($0, nowMs: nowMs) } ?? AgentReadState(baselineMs: nowMs)
+        loaded = read
+        return read
     }
 
     public func lines(_ lines: [AgentLine]) -> [AgentLine] {
@@ -124,8 +134,20 @@ public final class AgentReadTracker {
     private func record(_ line: AgentLine) -> Bool {
         var next = state
         guard next.markRead(line) else { return false }
-        state = next
+        loaded = next
+        revision &+= 1
         if let store { next.save(store) }
         return true
+    }
+}
+
+public struct AgentsTabLiveGate: Equatable, Sendable {
+    public private(set) var opened = false
+
+    public init() {}
+
+    public mutating func allows(hidden: Bool) -> Bool {
+        if !hidden { opened = true }
+        return opened
     }
 }
