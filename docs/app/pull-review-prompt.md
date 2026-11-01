@@ -28,8 +28,8 @@ prompt moved to the sidebar at the same time.
   button carries `aria-expanded` and `aria-controls`. At most 50 files are
   listed, then "and N more".
 - A row of buttons: **Copy review prompt**, which turns into **Copied**;
-  **Summarize in ChatGPT**; and **Show all** when the file list is longer
-  than five rows.
+  **Review with ChatGPT**; **Summarize in ChatGPT**; and **Show all** when
+  the file list is longer than five rows.
 - Each file links to the file at the pull request's head branch,
   `<repo>/blob/<path>?ref=<head>` (the file page's own address). A deleted
   file, or every file of a pull request whose head is on another node
@@ -74,6 +74,23 @@ prompt below. Code: `summary_text` and `chatgpt_url` in
 `app/host/forkmesh_host/pull_review_prompt.py`, `pullSummaryText` and
 `pullSummaryChatGptUrl` in `06-repo-content.js`; files come from the diff's
 `diff --git` lines (`changed_files`, `pullChangedFiles`).
+
+### Review with ChatGPT
+
+A link (`target="_blank"`, `rel="noopener noreferrer"`, drawn in the first
+view too) to `https://chatgpt.com/?q=<review prompt>`: the same prompt
+**Copy review prompt** copies, for people who review in ChatGPT rather than
+a coding agent. The prompt goes in whole up to 8000 percent-encoded
+characters (`CHATGPT_PROMPT_LIMIT`, `PULL_REVIEW_CHATGPT_MAX`); a detailed
+repository template runs to about 6600, so 6000 was raised to 8000 on
+2026-10-23. A longer prompt is cut to fit on a code point boundary, ends with
+an ellipsis, and starts with the pull request's address when the cut part
+does not already hold it, so ChatGPT can still open the pull request. Then
+the link also carries `data-dashboard-copy` with the full prompt, the shared
+copy handler puts it on the clipboard as ChatGPT opens, and the label and
+title say so. Code: `chatgpt_prompt` and `chatgpt_link` in
+`pull_review_prompt.py`, `pullReviewChatGptPrompt` and
+`renderPullReviewChatGptLink` in `06-repo-content.js`.
 
 ### Copy review prompt
 
@@ -240,7 +257,9 @@ markup and Tailwind utilities as the dashboard's `renderPullReviewPrompt`.
 clauses and reply rules, template parsing and caps, hidden characters,
 placeholders filled once, escaping, the diff and text addresses, the file
 links (deleted files and other-node heads unlinked, the 50-file cap and the
-toggle), the ChatGPT summary link (no review rules in it, the length limit),
+toggle), the ChatGPT summary link (no review rules in it, the length limit), the
+Review with ChatGPT link (the whole prompt, the cut to 8000 characters with
+the address kept and the full prompt copied, lone surrogates),
 the first
 view (open, closed, merged, branch-backed, per origin, signed out), and parity
 with the dashboard's own functions run under node (fields, template, prompt
