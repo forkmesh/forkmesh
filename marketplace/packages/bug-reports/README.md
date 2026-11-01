@@ -28,6 +28,28 @@ Downloaded attachments are kept only in the app's cache folder
 (`bug-report-attachments/`). The admin console's Bug reports section keeps
 working the same way.
 
+Everyone else who is signed in sees a **My reports** tab in the Bug sheet on
+iPhone and Android instead. It lists only the reports they sent while signed
+in, newest first, each with its status: Received (new), In progress
+(triaged), Closed, or "Fixed, confirmed by you". A **Confirm it's fixed**
+button on each report not yet confirmed marks it closed and records when the
+reporter confirmed it; administrators see that time as "Reporter confirmed
+fixed" in the console. Reports sent signed out cannot be tied to an account,
+so they never appear there.
+
+It goes through `/api/bug-reports/mine`, which answers only a bearer session
+(401 otherwise) and only ever reads rows whose account is the caller's:
+
+- `GET /api/bug-reports/mine?offset=` lists the caller's reports and the count
+  per status. A report carries its id, status, severity, platform, build,
+  time, message, screen, plugin, attachment names and sizes, and
+  `confirmedFixedAt` (0 until confirmed). The account and reply contact are
+  left out, and attachments cannot be downloaded from here.
+- `POST /api/bug-reports/mine` with `{"report": id, "fixed": true}` sets the
+  report to closed and stores `confirmedFixedAt` inside the encrypted row, so
+  no schema change was needed. It works from any status; a report that is not
+  the caller's answers 404.
+
 The install state follows your ForkMesh account: removing it on one device
 removes it from every device, and installing it brings it back everywhere.
 

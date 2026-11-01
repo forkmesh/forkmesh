@@ -1219,7 +1219,7 @@ _URL_EXPORT_NAMES = (
     "AP_USER_SUB_RE", "AP_REPO_RE", "AP_REPO_SUB_RE", "AP_OBJECT_RE",
     "AP_OBJECT_MEDIA_RE", "REPO_FEDI_COMMENTS_RE", "REPO_AP_PUBLISH_RE",
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
-    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE",
+    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE", "REPO_FORUM_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
@@ -1453,6 +1453,7 @@ watch_github_actions = github_actions_watch.export("watch_github_actions")
 _bug_reports = _LazyModule("bug_reports")
 bug_reports_handler = _bug_reports.export("bug_reports_handler")
 bug_reports_inbox_handler = _bug_reports.export("bug_reports_inbox_handler")
+bug_reports_mine_handler = _bug_reports.export("bug_reports_mine_handler")
 # Reading those reports back (and the docs / World feedback) happens only in
 # the is_admin console, through its Support sections.
 _admin_support = _LazyModule("admin_support")
@@ -36242,7 +36243,8 @@ AP_REPO_SETTING_DEFAULTS = {
 }
 
 REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
-                         "actions": True, "protectDefaultBranch": False,
+                         "forum": False, "actions": True,
+                         "protectDefaultBranch": False,
                          "stalePulls": False, "stalePullsDeleteBranch": False}
 
 

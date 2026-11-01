@@ -395,10 +395,14 @@ chat room, threads, DMs) uses `.shellDock { … }`: it sits `ShellDock.gap` abov
 the capsule, measured inside `.ignoresSafeArea` against `ShellDock.barBottom`.
 With the keyboard up or on iPad it sits at the page's bottom.
 
-**Tab mounting.** The selected tab is built first; Agents is mounted 2 s after
-launch (it feeds the counts); Chat and Code on first visit; mounted tabs stay
-hidden (`HomeShell.mountedTabs`) and pause frame-rate animations
-(`shellTabHidden`).
+**Tab mounting.** The selected tab is built first, at launch, even when Home
+covers it (Agents, the default, on an iPhone); Agents is mounted 2 s after
+launch when another tab is selected (it feeds the counts); Chat and Code on
+first visit; mounted tabs stay hidden (`HomeShell.mountedTabs`) and pause
+frame-rate animations (`shellTabHidden`). A hidden Agents tab loads its list
+(Home's counts need it) but starts the Eagle transcript follows and the agent
+dot watcher only the first time it is shown (`AgentsTabLiveGate`), and keeps
+them after that.
 
 **Launch.** `AppRootView` shows the app over the launch colour the moment the
 services exist, with no fade (the operator asked for Home to snap in on
@@ -798,6 +802,12 @@ to offer three depths.
   The About screen credits NetNewsWire
   ([RSS Reader](../marketplace/rss-reader.md)). Android: `Route.RssReader`,
   `feature/rssreader/`.
+- **Mastodon** (`.mastodon`, `/dashboard/mastodon`, `forkmesh://mastodon`,
+  Personal group): a native Mastodon client that signs in to the user's own
+  server and talks to it directly (`Mastodon*.swift` in FMPackages and
+  `Features/Packages/`). `forkmesh://mastodon/callback` is the OAuth
+  redirect, not a route ([Mastodon](../marketplace/mastodon.md#on-the-phone)).
+  Android: `Route.Mastodon`, `feature/mastodon/`.
 - **People** (`.people`, `/dashboard/people`): a campfire of five engagement
   rings with Follow and Message ([People](../marketplace/people.md)).
 - **Docs** (`.docs`): the public documentation library bundled with the app.

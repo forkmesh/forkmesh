@@ -15375,7 +15375,7 @@ Your reply
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "forum", "actions"];
   const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch", "stalePulls", "stalePullsDeleteBranch"];
 
   function repoFirstViewSeed(repo) {
