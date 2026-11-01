@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Desktop", "text": "New AppArmor package for Linux: see which programs AppArmor confines and what it blocks, then switch profiles between enforce and complain, edit or create them, and allow a denial with one confirmed click."},
   {"date": "2026-11-01", "area": "Market", "text": "A saved CRM view can now be made the default, so every list opens in it on the web and the desktop."},
   {"date": "2026-11-01", "area": "Projects", "text": "Open pull requests have a Review with ChatGPT button that opens ChatGPT with the review prompt filled in; a prompt too long for a link opens with its start and is copied whole to paste."},
   {"date": "2026-10-31", "area": "Desktop", "text": "With a note open, type a change in the composer and click Add to have AI edit that note; Ctrl+Z undoes it."},
