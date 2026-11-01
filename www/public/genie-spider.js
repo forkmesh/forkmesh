@@ -812,12 +812,13 @@
 
   function drawInteraction(bag, kinds, options = {}) {
     const rand = options.rand || Math.random;
+    const table = options.table || INTERACTIONS;
     const usable = (name) => {
-      const play = INTERACTIONS[name];
-      return Boolean(play) && (!options.still || play.still) && play.fits.some((kind) => kinds.includes(kind));
+      const play = table[name];
+      return Boolean(play) && (!options.still || play.still) && (!options.skip || !options.skip(play)) && play.fits.some((kind) => kinds.includes(kind));
     };
     for (let pass = 0; pass < 2; pass += 1) {
-      if (pass === 1 || !bag.length) bag.splice(0, bag.length, ...shuffled(Object.keys(INTERACTIONS), rand));
+      if (pass === 1 || !bag.length) bag.splice(0, bag.length, ...shuffled(Object.keys(table), rand));
       const index = bag.findIndex(usable);
       if (index >= 0) return bag.splice(index, 1)[0];
     }
@@ -827,6 +828,13 @@
   const OFF_KEY = "forkmesh.genie.off";
   const AWAY_KEY = "forkmesh.genie.away";
   const OFF_COOKIE = "forkmesh_genie";
+  const MASCOT_KEY = "forkmesh.genie.mascot";
+  const MASCOT_COOKIE = "forkmesh_mascot";
+  const MASCOTS = [
+    { id: "spider", name: "Genie spider" },
+    { id: "dragon", name: "Cloud Dragon" },
+  ];
+  const DRAGON_VERSION = "4f8e69b9a8";
   const FLIGHT = {
     gravity: 2200, drag: 0.00055, maxSpeed: 4200, settle: 240,
     floorBounce: 0.3, wallBounce: 0.42, floorGrip: 0.78,
@@ -875,10 +883,24 @@
     return `${OFF_COOKIE}=${off ? "off" : "on"}; Path=/; Max-Age=31536000; SameSite=Lax${shared}${secure ? "; Secure" : ""}`;
   }
 
+  function mascotFrom(cookie, local) {
+    const entry = String(cookie || "").split(";").map((part) => part.trim())
+      .find((part) => part.startsWith(MASCOT_COOKIE + "="));
+    const value = entry ? entry.slice(MASCOT_COOKIE.length + 1) : String(local || "");
+    return MASCOTS.some((mascot) => mascot.id === value) ? value : "spider";
+  }
+
+  function mascotCookie(id, hostname, secure) {
+    const host = String(hostname || "").toLowerCase();
+    const shared = host === "forkmesh.com" || host.endsWith(".forkmesh.com") ? "; Domain=.forkmesh.com" : "";
+    return `${MASCOT_COOKIE}=${id}; Path=/; Max-Age=31536000; SameSite=Lax${shared}${secure ? "; Secure" : ""}`;
+  }
+
   const api = {
     tips, pageTip, briefing, normalizePath, wordCount, paint: painter,
     clearX, footprintCover, elementKinds, drawInteraction, interactions: INTERACTIONS, genieEffects: Object.keys(GENIE_EFFECTS), body: BODY,
-    offFrom, offCookie, flight: FLIGHT, flightStep, landingVelocity,
+    offFrom, offCookie, flight: FLIGHT, flightStep, landingVelocity, mascots: MASCOTS, mascotFrom, mascotCookie,
+    dragonVersion: DRAGON_VERSION,
   };
   window.ForkMeshGenie = api;
 
@@ -954,6 +976,35 @@
     return !hidden() && instanceAllows();
   }
 
+  const mascot = () => mascotFrom(cookieText(), keyOf("localStorage", MASCOT_KEY));
+  let dragonArt = null;
+  let dragonLoad = null;
+
+  function loadDragon() {
+    if (!dragonLoad) {
+      dragonLoad = new Promise((resolve, reject) => {
+        if (window.ForkMeshDragon) {
+          resolve();
+          return;
+        }
+        const script = document.createElement("script");
+        script.src = `/assets/cloud-dragon/dragon.js?v=${DRAGON_VERSION}`;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      })
+        .then(() => window.ForkMeshDragon.load(DRAGON_VERSION))
+        .then((art) => {
+          dragonArt = art;
+        })
+        .catch(() => {
+          dragonLoad = null;
+          throw new Error("dragon");
+        });
+    }
+    return dragonLoad;
+  }
+
   function boot() {
     if (stop) return;
     if (document.readyState !== "complete") {
@@ -964,12 +1015,29 @@
       return;
     }
     if (!allowed()) return;
-    stop = start() || null;
+    if (mascot() === "dragon" && !dragonArt) {
+      loadDragon().then(boot).catch(() => {
+        if (!stop && allowed()) stop = start(false) || null;
+      });
+      return;
+    }
+    stop = start(mascot() === "dragon") || null;
   }
 
   api.isOff = isOff;
   api.hidden = hidden;
   api.shown = () => Boolean(stop);
+  api.mascot = mascot;
+  api.setMascot = (id) => {
+    if (!MASCOTS.some((entry) => entry.id === id)) return;
+    setKey("localStorage", MASCOT_KEY, id === "spider" ? null : id);
+    try {
+      document.cookie = mascotCookie(id, location.hostname, location.protocol === "https:");
+    } catch (_) {}
+    if (stop) stop();
+    boot();
+    announce();
+  };
   api.hide = () => {
     setOff(true);
     if (stop) stop();
@@ -1011,6 +1079,11 @@
 .fm-genie:focus-visible{outline:2px solid rgb(64,242,219);outline-offset:2px;border-radius:50%}
 .fm-genie.is-dragging{cursor:grabbing}
 .fm-genie canvas{display:block;width:100%;height:100%;pointer-events:none}
+.fm-genie.is-dragon{overflow:visible}
+.fm-genie.is-dragon canvas{position:absolute;left:-100%;top:-190%;width:300%;height:300%;max-width:none}
+.fm-genie.is-dragon:focus-visible{outline-color:#0ebe60}
+.fm-genie-bubble.is-dragon{border-color:rgba(14,190,96,.45)}
+.fm-genie-bubble.is-dragon .fm-genie-row a:hover,.fm-genie-bubble.is-dragon .fm-genie-row button:hover{border-color:rgba(14,190,96,.85)}
 .fm-genie-bubble{position:fixed;left:0;top:0;z-index:951;box-sizing:border-box;width:max-content;max-width:min(380px,calc(100vw - 16px));padding:9px 13px;border-radius:14px;border:1px solid rgba(64,242,219,.35);background:rgba(14,14,30,.96);color:#eef0f7;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-shadow:0 14px 36px rgba(0,0,0,.4),0 0 0 1px rgba(0,0,0,.25);text-align:left}
 .fm-genie-bubble[hidden]{display:none}
 .fm-genie-bubble p{margin:0;color:#eef0f7;overflow-wrap:anywhere}
@@ -1034,7 +1107,7 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
 <clipPath id="fm-genie-clip"><rect/></clipPath>
 </defs>`;
 
-  function start() {
+  function start(dragon) {
     if (document.querySelector(".fm-genie")) return null;
     const abort = new AbortController();
     const live = { signal: abort.signal };
@@ -1045,8 +1118,10 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
     const host = document.createElement("button");
     host.type = "button";
     host.className = "fm-genie";
-    host.setAttribute("aria-label", "Genie: click for a tip, drag to move.");
-    host.title = "Genie: click for a tip, drag me anywhere";
+    const shortName = dragon ? "Cloud Dragon" : "Genie";
+    host.setAttribute("aria-label", `${shortName}: click for a tip, drag to move.`);
+    host.title = `${shortName}: click for a tip, drag me anywhere`;
+    if (dragon) host.classList.add("is-dragon");
     const canvas = document.createElement("canvas");
     host.appendChild(canvas);
     const ctx = canvas.getContext("2d");
@@ -1056,6 +1131,7 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
     bubble.setAttribute("role", "status");
     bubble.setAttribute("aria-live", "polite");
     bubble.hidden = true;
+    if (dragon) bubble.classList.add("is-dragon");
 
     document.body.appendChild(host);
     document.body.appendChild(bubble);
@@ -1095,15 +1171,19 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
     let keep = { at: -Infinity, rects: [] };
     let lastGuard = 0;
     let scrollTimer = 0;
+    let quietSince = performance.now();
+    const reach = { x: 0, y: 0 };
+    const plays = dragon ? window.ForkMeshDragon.activities : INTERACTIONS;
 
     function measure() {
       width = window.innerWidth;
       height = window.innerHeight;
-      size = width < 520 ? 62 : 78;
+      size = dragon ? (width < 520 ? 76 : 96) : width < 520 ? 62 : 78;
       host.style.setProperty("--fm-genie-size", size + "px");
       const ratio = Math.min(window.devicePixelRatio || 1, 3);
-      canvas.width = Math.round(size * ratio);
-      canvas.height = Math.round(size * ratio);
+      const room = dragon ? 3 : 1;
+      canvas.width = Math.round(size * ratio * room);
+      canvas.height = Math.round(size * ratio * room);
       furniture.at = -Infinity;
     }
 
@@ -1396,16 +1476,99 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       return restSpot(preferred, atFloor ? [{ left: r.left, right: r.right, top: r.top, bottom: r.bottom }] : []);
     }
 
-    function startPlay(stay, forced) {
-      if (forced && (!INTERACTIONS[forced] || (stay && !INTERACTIONS[forced].still))) return "";
+    function targetRect(element) {
+      const r = element.getBoundingClientRect();
+      if (!/^(H1|H2|H3|A)$/.test(element.tagName)) return r;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const tight = range.getBoundingClientRect();
+      return tight.width && tight.width < r.width ? tight : r;
+    }
+
+    function trickFace(r) {
+      const left = r.left;
+      const right = width - r.right;
+      const need = size * 0.9;
+      if (left >= need && right >= need) return body.x + size / 2 < r.left + r.width / 2 ? 1 : -1;
+      return left >= right ? 1 : -1;
+    }
+
+    function trickSpot(trick, r, face) {
+      const mid = r.left + r.width / 2;
+      const room = height - size;
+      const maxX = Math.max(width - size, 0);
+      let x = mid - size / 2;
+      let y = r.top - size + 3;
+      if (trick.at === "side") {
+        x = face > 0 ? r.left - size * 0.88 : r.right - size * 0.12;
+        y = r.top + r.height / 2 - size * 0.58;
+      } else if (trick.at === "edge") {
+        y = r.top - size * 0.47;
+      } else if (trick.at === "ceiling") {
+        y = r.bottom - size;
+      } else if (trick.at === "over") {
+        y = r.top - size * 0.86;
+      } else if (trick.at === "centre") {
+        y = r.top + r.height / 2 - size * 0.6;
+      } else if (trick.at === "wall") {
+        x = (face > 0 ? r.left : r.right) - size / 2;
+        y = r.top + r.height / 2 - size;
+      } else if (trick.at === "behind") {
+        y = r.top - size * 0.56;
+      }
+      return { x: clamp(x, trick.at === "wall" ? -size : 0, maxX + (trick.at === "wall" ? size : 0)), y: clamp(y, -size * 0.2, room) };
+    }
+
+    function pagePaper(element) {
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        const color = getComputedStyle(node).backgroundColor;
+        if (color && !/rgba?\(0, 0, 0, 0\)|transparent/.test(color)) return color;
+      }
+      return "#fff";
+    }
+
+    function startTrick(name, element, rect) {
+      const r = targetRect(element);
+      const trick = plays[name];
+      const face = trickFace(r);
+      const goal = trickSpot(trick, r, face);
+      fxLayer = document.createElement("canvas");
+      fxLayer.className = "fm-genie-fx";
+      fxLayer.setAttribute("aria-hidden", "true");
+      document.body.appendChild(fxLayer);
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      fxLayer.width = Math.round(width * ratio);
+      fxLayer.height = Math.round(height * ratio);
+      const flight = clamp(Math.hypot(goal.x - body.x, goal.y - body.y) / 620, 0.5, 1.5);
+      play = { name, element, rect: r || rect, phase: "rise", age: 0, duration: trick.duration, flight, face, ratio, from: { x: 0, y: 0 }, paper: pagePaper(element), done: {}, data: {}, gaze: null, spot: null, trick: true };
+      s.soar = 1;
+      s.facing = goal.x < body.x ? -1 : 1;
+      wake();
+      return name;
+    }
+
+    function startPlay(stay, forced, element) {
+      if (dragon && reducedMotion) return "";
+      if (forced && (!plays[forced] || (stay && !plays[forced].still && !dragon))) return "";
+      if (dragon && forced && stay && plays[forced].scene) return "";
+      if (dragon && element && plays[forced]?.scene) return startTrick(forced, element, element.getBoundingClientRect());
       const found = gather(stay);
-      if (!found.length) return "";
-      const name = forced || drawInteraction(bag, [...new Set(found.flatMap((c) => c.kinds))], { still: stay });
-      const fitting = found.filter((c) => INTERACTIONS[name] && INTERACTIONS[name].fits.some((k) => c.kinds.includes(k)));
-      if (!fitting.length) return "";
+      if (!found.length && !dragon) return "";
+      const kinds = found.length ? [...new Set(found.flatMap((c) => c.kinds))] : window.ForkMeshDragon.kinds;
+      const solo = dragon && (stay || !found.length);
+      const name = forced || drawInteraction(bag, kinds, { still: dragon ? false : stay, table: plays, skip: solo ? (entry) => entry.scene : null });
+      const covers = (r) => dragon && plays[name]?.scene && r.width * r.height > width * height * 0.2;
+      const fitting = found.filter((c) => plays[name] && plays[name].fits.some((k) => c.kinds.includes(k)) && !covers(c.rect));
+      if (!fitting.length && (!dragon || plays[name]?.scene)) return "";
+      if (!fitting.length || (dragon && stay)) {
+        play = { name, element: host, rect: host.getBoundingClientRect(), phase: "walk", age: 0, duration: 0, done: {}, data: {}, gaze: null, spot: null };
+        wake();
+        return name;
+      }
       const pick = fitting[Math.floor(Math.random() * fitting.length)];
+      if (dragon && plays[name].scene) return startTrick(name, pick.element, pick.rect);
       play = { name, element: pick.element, rect: pick.rect, phase: "walk", age: 0, duration: 0, done: {}, data: {}, gaze: null, spot: null };
-      if (!stay && INTERACTIONS[name].teleport) {
+      if (!stay && plays[name].teleport) {
         play.spot = playSpot(pick.rect);
       } else if (!stay) {
         const spot = playSpot(pick.rect);
@@ -2519,13 +2682,102 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       },
     };
 
+    function stepTrick(dt) {
+      const trick = plays[play.name];
+      const D = window.ForkMeshDragon;
+      const live = play.element.isConnected ? targetRect(play.element) : null;
+      const shown = live && live.width && live.bottom > 0 && live.top < height && live.right > 0 && live.left < width;
+      if (shown) play.rect = live;
+      else if (play.phase !== "back") {
+        play.phase = "back";
+        play.age = 0;
+        play.from = { ...reach };
+        s.pose = "";
+        s.soar = 1;
+      }
+      play.age += dt;
+      const spot = trickSpot(trick, play.rect, play.face);
+      const goal = { x: spot.x - body.x, y: spot.y - body.y };
+      let ctx = null;
+      if (fxLayer) {
+        ctx = fxLayer.getContext("2d");
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, fxLayer.width, fxLayer.height);
+        ctx.setTransform(play.ratio, 0, 0, play.ratio, 0, 0);
+      }
+      if (play.phase === "rise") {
+        const k = clamp(play.age / play.flight, 0, 1);
+        const e = k * k * (3 - 2 * k);
+        reach.x = goal.x * e;
+        reach.y = goal.y * e - Math.sin(Math.PI * k) * size * 0.3;
+        s.aloft = true;
+        if (k >= 1) {
+          play.phase = "act";
+          play.age = 0;
+          s.soar = 0;
+          s.pose = play.name;
+          s.poseAge = 0;
+          s.rest = play.face;
+          s.aloft = body.y + goal.y < furnitureTop(body.x) - size - 8 && trick.at !== "top";
+        }
+        return;
+      }
+      if (play.phase === "act") {
+        const motion = D.trickMotion(play.name, { age: play.age, rect: play.rect, size, face: play.face });
+        reach.x = goal.x + motion.path.x;
+        reach.y = goal.y + motion.path.y;
+        spell.turn = motion.turn;
+        host.style.transformOrigin = trick.pivot || "";
+        s.rest = motion.face;
+        s.facing = motion.face;
+        s.poseAge = play.age;
+        gazeAt(play, pt(play.rect.left + play.rect.width / 2, play.rect.top + play.rect.height / 2));
+        if (trick.at === "behind") {
+          const hostTop = body.y + reach.y + size * (1 - GROUND / 100);
+          host.style.clipPath = `inset(-400% -400% ${(hostTop + size - play.rect.top).toFixed(1)}px -400%)`;
+        }
+        if (ctx) D.scene(ctx, s, dragonArt, { name: play.name, age: play.age, rect: play.rect, size, face: motion.face, paper: play.paper, origin: { x: body.x + reach.x, y: body.y + reach.y + size * (1 - GROUND / 100) } });
+        if (play.age >= play.duration) {
+          play.phase = "back";
+          play.age = 0;
+          play.from = { ...reach };
+          s.pose = "";
+          s.soar = 1;
+          s.aloft = true;
+          spell.turn = 0;
+          host.style.clipPath = "";
+          host.style.transformOrigin = "";
+        }
+        return;
+      }
+      const k = clamp(play.age / play.flight, 0, 1);
+      const e = k * k * (3 - 2 * k);
+      reach.x = play.from.x * (1 - e);
+      reach.y = play.from.y * (1 - e) - Math.sin(Math.PI * k) * size * 0.2;
+      s.facing = play.from.x > 0 ? -1 : 1;
+      if (k >= 1) {
+        reach.x = 0;
+        reach.y = 0;
+        s.land = 1;
+        endPlay();
+      }
+    }
+
     function stepPlay(dt) {
       if (!play) return;
       if (press || parked || !bubble.hidden || body.mode !== "stand") {
         endPlay();
         return;
       }
-      const act = ACTS[play.name];
+      if (play.trick) {
+        try {
+          stepTrick(dt);
+        } catch (_) {
+          endPlay();
+        }
+        return;
+      }
+      const act = dragon ? dragonAct(play.name) : ACTS[play.name];
       if (play.phase === "walk") {
         if (body.targetX !== null) return;
         play.phase = "act";
@@ -2555,9 +2807,37 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       }
     }
 
+    function dragonAct(name) {
+      return {
+        duration: plays[name].duration,
+        begin(p) {
+          s.pose = name;
+          s.poseAge = 0;
+          if (p.element !== host) s.rest = towards(p);
+          s.facing = s.rest;
+        },
+        tick(p) {
+          s.poseAge = p.age;
+          s.facing = s.rest;
+          if (p.element !== host) glance(p);
+        },
+      };
+    }
+
     function endPlay() {
       if (!play) return;
       play = null;
+      if (reach.x || reach.y) {
+        body.x = clamp(body.x + reach.x, 0, Math.max(width - size, 0));
+        body.y += reach.y;
+        reach.x = 0;
+        reach.y = 0;
+      }
+      s.soar = 0;
+      s.aloft = false;
+      host.style.clipPath = "";
+      host.style.transformOrigin = "";
+      s.pose = "";
       s.point = 0;
       s.magic = 0;
       lift = 0;
@@ -2582,7 +2862,8 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       const sink = size * (1 - GROUND / 100);
       const charm = spell.scale !== 1 || spell.spin || spell.turn
         ? ` rotate(${spell.turn.toFixed(1)}deg) rotateY(${spell.spin.toFixed(1)}deg) scale(${spell.scale.toFixed(3)})` : "";
-      host.style.transform = `translate3d(${Math.round(body.x)}px,${Math.round(body.y - lift + sink)}px,0)${charm}`;
+      const px = (value) => (dragon ? value.toFixed(2) : Math.round(value));
+      host.style.transform = `translate3d(${px(body.x + reach.x)}px,${px(body.y + reach.y - lift + sink)}px,0)${charm}`;
       host.style.opacity = spell.fade < 1 ? spell.fade.toFixed(2) : "";
       if (!bubble.hidden) placeBubble();
     }
@@ -2680,18 +2961,53 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       }
       if (body.targetX !== null) {
         const dx = body.targetX - body.x;
-        const speed = parked ? 160 : 70;
+        let speed = parked ? 160 : 70;
+        if (dragon) {
+          body.pace = Math.min(speed + 8, (body.pace || 0) + 260 * dt);
+          speed = Math.max(16, body.pace * Math.min(Math.abs(dx) / 22, 1));
+        }
         if (Math.abs(dx) < 1.5) {
           body.x = body.targetX;
           body.targetX = null;
+          body.pace = 0;
         } else {
-          body.x += Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
+          const stepped = Math.min(Math.abs(dx), speed * dt);
+          body.x += Math.sign(dx) * stepped;
           s.facing = Math.sign(dx);
+          if (dragon) s.stridePhase += (stepped * Math.PI) / (size * 0.171);
         }
       }
     }
 
+    function doze(now, dt) {
+      const near = pointer && Math.hypot(pointer.x - body.x - size / 2, pointer.y - body.y - size / 2) < 260;
+      if (s.ambient === "stretch") {
+        s.ambientAge += dt;
+        if (s.ambientAge >= plays.stretch.duration) {
+          s.ambient = "";
+          quietSince = now;
+        }
+        return;
+      }
+      const calm = !play && !press && !parked && !reducedMotion && bubble.hidden && body.mode === "stand"
+        && body.targetX === null && !s.reaction;
+      if (s.ambient === "sleep") {
+        s.ambientAge += dt;
+        if (near || !calm) {
+          s.ambient = calm ? "stretch" : "";
+          s.ambientAge = 0;
+        }
+        return;
+      }
+      if (near || press || !bubble.hidden) quietSince = now;
+      else if (calm && now - quietSince > 45000) {
+        s.ambient = "sleep";
+        s.ambientAge = 0;
+      }
+    }
+
     function idle(now) {
+      if (s.ambient) return;
       if (play || press || parked || !bubble.hidden || body.mode !== "stand" || body.targetX !== null) return;
       if (now < nextWander) return;
       nextWander = now + 5000 + Math.random() * 8000;
@@ -2726,9 +3042,19 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       }
       const moving = body.targetX !== null || body.mode === "skid";
       s.walking += ((moving ? 1 : 0) - s.walking) * Math.min(dt * 8, 1);
-      if (moving) s.stridePhase += dt * 11;
+      if (moving && (!dragon || body.mode === "skid")) s.stridePhase += dt * 11;
       s.air += ((body.mode === "fly" ? 1 : 0) - s.air) * Math.min(dt * 10, 1);
       s.land = Math.max(0, s.land - dt / 0.3);
+      if (dragon) {
+        s.held = body.mode === "drag";
+        s.reduced = reducedMotion;
+        s.hover = Boolean(pointer) && Math.hypot(pointer.x - body.x - size / 2, pointer.y - body.y - size * 0.55) < size * 0.55;
+        s.vx = body.vx;
+        s.vy = body.vy;
+        if (body.targetX !== null) s.facing = body.targetX < body.x ? -1 : 1;
+        if (Math.abs(s.facing) > 0.5) s.rest = Math.sign(s.facing);
+        doze(now, dt);
+      }
       if (s.walking < 0.02 && !moving) s.facing *= Math.max(0, 1 - dt * 3);
       stepPlay(dt);
       guard(now);
@@ -2742,8 +3068,9 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       }
       if (play && play.gaze) s.gaze = play.gaze;
       const busy = body.mode === "fly" || body.mode === "drag";
-      const lively = busy || moving || play || s.reaction || s.gaze || s.land > 0;
-      const interval = busy ? 0 : lively ? 1000 / 30 : reducedMotion ? 1000 : 1000 / 12;
+      const lively = busy || moving || play || s.reaction || s.gaze || s.land > 0 || (s.ambient && s.ambient !== "sleep") || (dragon && s.walking > 0.02);
+      const smooth = dragon ? 0 : 1000 / 30;
+      const interval = busy ? 0 : lively ? smooth : reducedMotion ? 1000 : dragon ? 1000 / 30 : 1000 / 12;
       if (now - lastDraw >= interval) {
         lastDraw = now;
         place();
@@ -2754,7 +3081,7 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
       } else if (!reducedMotion) {
         raf = setTimeout(() => {
           raf = requestAnimationFrame(frame);
-        }, 1000 / 12);
+        }, dragon ? 1000 / 30 : 1000 / 12);
       }
     }
 
@@ -2766,9 +3093,15 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
     }
 
     function draw() {
-      const ratio = canvas.width / 100;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (dragon) {
+        const ratio = canvas.width / 300;
+        ctx.setTransform(ratio, 0, 0, ratio, 100 * ratio, 190 * ratio);
+        window.ForkMeshDragon.paint(ctx, s, dragonArt);
+        return;
+      }
+      const ratio = canvas.width / 100;
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       painter(ctx, s);
     }
@@ -2845,6 +3178,7 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
             hideBubble();
           }],
           ["Tuck away", park],
+          [dragon ? "Switch to the spider" : "Switch to Cloud Dragon", () => api.setMascot(dragon ? "spider" : "dragon")],
           ["Hide for this visit", () => {
             setKey("sessionStorage", AWAY_KEY, "1");
             teardown();
@@ -3073,7 +3407,7 @@ html[data-season=halloween] .fm-genie-row a:hover,html[data-season=halloween] .f
 
     api.next = nextTip;
     api.tuck = park;
-    api.play = (name) => (play || parked || !bubble.hidden || body.mode !== "stand" ? "" : startPlay(reducedMotion || still, name));
+    api.play = (name, element) => (play || parked || !bubble.hidden || body.mode !== "stand" ? "" : startPlay(reducedMotion || still, name, element));
     api.playing = () => (play ? `${play.name}:${play.phase}` : "");
 
     function teardown() {
