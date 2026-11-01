@@ -5943,6 +5943,7 @@ private:
     // Relays / Nodes / Hosts pages as its first tabs.
     QWidget *buildNetworkDiagnosticsSection();
     void refreshNetworkDiagnostics();
+    void fadeNetworkEndpointRows();
     void updateNetworkCounts(int relays, int nodes, int hosts);
     // Green lamp on the Network rail button while a mirror node is being stood
     // up, mirroring what the Control rail shows during a site deploy.
@@ -6152,6 +6153,7 @@ private:
     StatsDashboard *m_statsDashboard = nullptr;
     bool m_statsNetworkRefreshQueued = false; // live Network requests repaint
     bool m_firewallRuleCountsQueued = false; // live Firewall Rules counts
+    bool m_networkDiagnosticsRefreshQueued = false;
     bool m_outdatedClientVersionWarned = false; // update popup already raised
     QLabel *m_statsStatus = nullptr;
     QTimer *m_statsRefreshTimer = nullptr;
@@ -7266,6 +7268,7 @@ private:
     void updateAgentsNavBadge();
     void refreshAgentDotMatrix();
     void refreshAgentDots();
+    void refreshAgentDotIntensities();
     void refreshActionRunStrip();
     QString actionWorkflowIconName(const ActionRun &run);
     void processAgentQueue();
@@ -12338,6 +12341,7 @@ private:
     QTableWidget *m_networkEndpointsTable = nullptr;
     QTableWidget *m_networkDiagnosticsTable = nullptr;
     QPushButton *m_networkDiagnosticsRefreshButton = nullptr;
+    QHash<QString, int> m_networkEndpointProfileIndex;
     bool m_networkEndpointFadeScheduled = false;
     bool m_networkEndpointsUserSorted = false;
     QWidget *m_networkWebRequestsChart = nullptr;
@@ -16005,6 +16009,8 @@ private:
     QPointer<QComboBox> m_chatRetentionCombo;
     QTimer *m_agentRecycleSweepTimer = nullptr; // periodic pruneExpiredChatHistory()
     bool m_agentRecyclePurgeInFlight = false;
+    bool m_agentRecycleReloadInFlight = false;
+    bool m_agentRecycleReloadPending = false;
     QHash<QString, MessageRow *> m_visibleRows; // messageId -> row (current conv)
     QString m_activeChatThreadRootId;
     QSplitter *m_chatSplit = nullptr;

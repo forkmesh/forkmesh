@@ -1735,6 +1735,37 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
     return page;
 }
 
+void MainWindow::fadeNetworkEndpointRows()
+{
+    if (!m_networkEndpointsTable)
+        return;
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    bool active = false;
+    for (int row = 0; row < m_networkEndpointsTable->rowCount(); ++row) {
+        const QTableWidgetItem *last = m_networkEndpointsTable->item(row, 11);
+        if (!last)
+            continue;
+        const qint64 lastMs = last->data(Qt::UserRole).toLongLong();
+        if (networkApplyEndpointFlash(m_networkEndpointsTable, row, lastMs, nowMs)) {
+            active = true;
+            continue;
+        }
+        for (int col = 0; col < m_networkEndpointsTable->columnCount(); ++col)
+            if (QTableWidgetItem *item = m_networkEndpointsTable->item(row, col))
+                if (item->data(Qt::BackgroundRole).isValid())
+                    item->setData(Qt::BackgroundRole, QVariant());
+    }
+    if (active && !m_networkEndpointFadeScheduled) {
+        m_networkEndpointFadeScheduled = true;
+        QTimer::singleShot(120, this, [this] {
+            m_networkEndpointFadeScheduled = false;
+            if (m_sectionStack &&
+                m_sectionStack->currentIndex() == kNetworkDiagnosticsSectionIndex)
+                fadeNetworkEndpointRows();
+        });
+    }
+}
+
 void MainWindow::refreshNetworkDiagnostics()
 {
     if (!m_networkDiagnosticsTable)
@@ -1825,11 +1856,19 @@ void MainWindow::refreshNetworkDiagnostics()
         const QList<BackoffNetworkAccessManager::EndpointProfile> &catalog =
             networkEndpointCatalog();
         const auto setProfileCells = [this, &catalog](int row, const QString &method,
-                                                      const QUrl &url,
+                                                      const QString &urlText,
                                                       double observedPerHour,
                                                       bool rateKnown) {
-            const int index =
-                BackoffNetworkAccessManager::matchEndpointProfile(catalog, method, url);
+            const QString cacheKey = method + QLatin1Char('\n') + urlText;
+            auto cached = m_networkEndpointProfileIndex.constFind(cacheKey);
+            if (cached == m_networkEndpointProfileIndex.constEnd()) {
+                if (m_networkEndpointProfileIndex.size() > 4096)
+                    m_networkEndpointProfileIndex.clear();
+                cached = m_networkEndpointProfileIndex.insert(
+                    cacheKey, BackoffNetworkAccessManager::matchEndpointProfile(
+                                  catalog, method, QUrl(urlText)));
+            }
+            const int index = cached.value();
             const BackoffNetworkAccessManager::EndpointProfile *profile =
                 index >= 0 ? &catalog.at(index) : nullptr;
             auto *rate = rateKnown ? networkDiagNumberItem(qRound64(observedPerHour))
@@ -1907,8 +1946,8 @@ void MainWindow::refreshNetworkDiagnostics()
                     .arg(stats.blocked));
             m_networkEndpointsTable->setItem(row, 2, calls);
             setProfileCells(row, stats.method,
-                            QUrl(stats.lastFullUrl.isEmpty() ? stats.endpoint
-                                                             : stats.lastFullUrl),
+                            stats.lastFullUrl.isEmpty() ? stats.endpoint
+                                                        : stats.lastFullUrl,
                             BackoffNetworkAccessManager::observedCallsPerHour(stats, nowMs),
                             true);
             auto *status = networkDiagItem(networkEndpointStatus(stats),
@@ -1964,7 +2003,7 @@ void MainWindow::refreshNetworkDiagnostics()
                                       networkDiagInt(rowObject, "rxControlFrames");
             m_networkEndpointsTable->setItem(row, 2,
                                              networkDiagNumberItem(frameCalls));
-            setProfileCells(row, QStringLiteral("WS"), QUrl(endpointText), 0, false);
+            setProfileCells(row, QStringLiteral("WS"), endpointText, 0, false);
             auto *state = networkDiagItem(
                 networkDiagText(rowObject, "state", QStringLiteral("Unknown")));
             if (rowObject.value(QStringLiteral("connected")).toBool())
@@ -2006,7 +2045,7 @@ void MainWindow::refreshNetworkDiagnostics()
             m_networkEndpointFadeScheduled = false;
             if (m_sectionStack &&
                 m_sectionStack->currentIndex() == kNetworkDiagnosticsSectionIndex)
-                refreshNetworkDiagnostics();
+                fadeNetworkEndpointRows();
         });
     }
 

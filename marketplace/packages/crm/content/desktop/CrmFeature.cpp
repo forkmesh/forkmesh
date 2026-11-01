@@ -7059,10 +7059,28 @@ void CrmFeature::applyColumnOrder()
 {
     QHeaderView *header = m_contactsTable->horizontalHeader();
     m_orderingColumns = true;
+    QList<int> fitted;
+    bool suspended = false;
+    const auto moveSection = [header, &fitted, &suspended](int from, int to) {
+        if (from == to)
+            return;
+        if (!suspended) {
+            suspended = true;
+            for (int logical = 0; logical < header->count(); ++logical) {
+                if (header->sectionResizeMode(logical) != QHeaderView::ResizeToContents)
+                    continue;
+                fitted << logical;
+                const int width = header->sectionSize(logical);
+                header->setSectionResizeMode(logical, QHeaderView::Fixed);
+                header->resizeSection(logical, width);
+            }
+        }
+        header->moveSection(from, to);
+    };
     const QStringList layout = allColumnsView() ? sheetLayoutFields() : QStringList();
     if (allColumnsView() && layout.isEmpty()) {
         for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical)
-            header->moveSection(header->visualIndex(logical), logical);
+            moveSection(header->visualIndex(logical), logical);
     } else if (!layout.isEmpty()) {
         QList<int> placed;
         int target = 0;
@@ -7071,14 +7089,14 @@ void CrmFeature::applyColumnOrder()
                  ++logical) {
                 if (placed.contains(logical) || viewField(m_columns.at(logical)) != field)
                     continue;
-                header->moveSection(header->visualIndex(logical), target++);
+                moveSection(header->visualIndex(logical), target++);
                 placed << logical;
                 break;
             }
         }
         for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical) {
             if (!placed.contains(logical))
-                header->moveSection(header->visualIndex(logical), target++);
+                moveSection(header->visualIndex(logical), target++);
         }
     } else {
         int target = 0;
@@ -7087,11 +7105,13 @@ void CrmFeature::applyColumnOrder()
                  ++logical) {
                 if (viewField(m_columns.at(logical)) != field)
                     continue;
-                header->moveSection(header->visualIndex(logical), target++);
+                moveSection(header->visualIndex(logical), target++);
                 break;
             }
         }
     }
+    for (int logical : std::as_const(fitted))
+        header->setSectionResizeMode(logical, QHeaderView::ResizeToContents);
     m_orderingColumns = false;
 }
 

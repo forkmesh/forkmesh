@@ -528,6 +528,11 @@ The `tour` package shows the tour once after sign-in (`ShellTour.seen`,
 `fm.tour.seen.v1`) and keeps a Tour icon on Home. It looks like the screens it
 describes, moves, and offers three depths.
 
+- **Color scheme.** On iOS the sheet sets `preferredColorScheme` to the theme's
+  scheme. `ForkMeshTheme` only sets the SwiftUI environment, and the tour opens
+  right after the forced-dark onboarding, so on iPhone Duo the sheet and status
+  bar stayed dark behind the light palette and the heading could not be read.
+  Android draws its own canvas.
 - **Tracks** (`TourTrack`, `FMPackages/TourCatalog.swift`): Essentials (Home,
   Agents, the new agent button, Inbox, the hub), Advanced (adds hold to talk,
   review and merge, the command palette, search and the bottom bar) and The

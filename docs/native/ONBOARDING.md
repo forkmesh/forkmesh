@@ -78,6 +78,13 @@ working. VoiceOver reads each row's full `reason`. "Let's Get Started" moves to
 the starter pack; Skip and "skip and start" finish onboarding with the default
 pack. Finishing sets the intro to seen.
 
+On a short screen the page drops the card's header, strip and counter and
+keeps the permission list (so no count-down runs), because the full card
+pushed the title under the buttons on iPhone Duo's 678 pt cover screen. iOS
+picks the first version that fits (`ViewThatFits`), then scrolls; Android
+goes compact when the space above the buttons is under 600 dp and still
+scrolls. Both apps do it.
+
 The text lives in `PermissionPacing` (FMAccount) so a core test keeps it to
 five short rows. Installs that predate the screen never see it:
 `PermissionPacing.settle` marks them `seen` on their first launch with it

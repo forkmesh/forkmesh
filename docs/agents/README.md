@@ -44,7 +44,8 @@ is and is not trusted to stop), [architecture](../architecture.md),
 
 - **Sessions.** A run is an `AgentSession` stored under `data/agents/`
   (`AgentStore`, `meta.json` per session; deleted sessions go to a recycle
-  bin with a `deleted-at.json` stamp). `AgentSession::name` is the
+  bin with a `deleted-at.json` stamp; the desktop reads the bin on a worker,
+  [diagnostics.md](../desktop/diagnostics.md)). `AgentSession::name` is the
   repository name; the task title is `issueTitle`.
 - **Titles.** A run starts with `promptTitle()` (`AgentWorktree.h`, up to 8
   words); the branch and worktree slug (`titleSlug()`) is 4 words / 30

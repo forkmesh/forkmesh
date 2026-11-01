@@ -181,12 +181,12 @@ def test_cold_action_snapshot_verification_runs_on_a_worker():
         "ActionRunner *MainWindow::runnerForRun(",
     )
 
-    assert "m_actionQueueVerificationInFlight" in queue
+    assert "m_actionVerifyingRuns.insert(runId" in queue
     assert "runOffThread<ActionQueueVerification>(" in queue
     assert "workflowContentAt(mirror" in queue
     assert "bindActionRepositoryState(&result.verified" in queue
     assert "finishActionQueueVerification" in queue
-    assert "bool m_actionQueueVerificationInFlight = false" in HEADER
+    assert "QHash<int, qint64> m_actionVerifyingRuns;" in HEADER
 
 
 def test_workflow_scan_carries_snapshot_hashes_back_to_the_gui():
@@ -226,3 +226,19 @@ def test_log_views_render_in_event_loop_slices_without_nested_pumps():
     assert "kMaxLinesPerSlice = 24" in popout
     assert "processEvents" not in popout
     assert "kNetworkLogSegmentSize = 96" in INTERNAL
+
+
+def test_recycle_bin_reload_reads_the_disk_on_a_worker():
+    reload = _section(
+        AGENTS,
+        "void MainWindow::reloadAgentRecycleBin()",
+        "QList<AgentSession> MainWindow::agentRecycledInOpenRepo() const",
+    )
+
+    assert "runOffThread<QList<AgentSession>>(" in reload
+    worker = reload[reload.index("runOffThread<QList<AgentSession>>(") :]
+    assert worker.index("store->loadRecycledSessions()") < worker.index(
+        "m_agentRecycled = std::move(sessions);"
+    )
+    assert "m_agentRecycled =\n        m_agentStore ? m_agentStore->loadRecycledSessions()" not in reload
+    assert "m_agentRecycleReloadPending = true;" in reload

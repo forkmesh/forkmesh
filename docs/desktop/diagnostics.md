@@ -603,8 +603,13 @@ returned, so summed frame totals overstate a function's own cost.
 - **Idle frame rate.** Separate animation timers that never align keep the
   window repainting at the compositor's frame rate while nobody uses it.
   - `AgentDotMatrix` stores a change that only moves a running square's meter
-    for the next sweep frame (`sameSquares`). The scanner tick calls
-    `refreshAgentDots()`, which leaves out `scheduleSessionsPageRefresh()`.
+    for the next sweep frame (`sameSquares`). The 45 ms scanner tick calls
+    `refreshAgentDotIntensities()`, which updates only the running squares'
+    meters from the matrix's current dots and leaves out
+    `scheduleSessionsPageRefresh()`; it falls back to `refreshAgentDots()`
+    when a session was added, removed or started or stopped running. Before
+    report #21 (2026-11-01) every tick rebuilt every session's square and the
+    status tally (`refreshAgentDots`, 512 ms stall).
   - The Agents squares and the Actions strip share one 60 ms clock
     (`ChromeDotGrid::animationClock`, held through `holdAnimationClock` while
     something runs), so their repaints land in the same frame.
@@ -741,6 +746,22 @@ returned, so summed frame totals overstate a function's own cost.
 - **Off the GUI thread:** reading the Genie CRM summary (`GenieCrmCounts::read`,
   `GenieCrmDigest::read`, `…-p970989-0006`). The Workflows package's
   `loadLocal` stops when the host's payload has not changed.
+- **Match a URL against a rule list once per URL.** The Network page's
+  endpoint table rebuilt every 120 ms while a row faded and matched each
+  endpoint against all 208 catalog patterns, and each match re-canonicalized
+  the URL through `QUrl::toString` (stalls of 2 to 7.7 s, report #21).
+  `firewallRuleMatchesFacts` (`BackoffNetworkAccessManager.cpp`) works from
+  the URL's scheme, host and port taken once, builds the exact-URL form only
+  for a `url:` rule, and keeps parsed `urlglob:` patterns in a per-thread
+  cache; `matchEndpointProfile` and `firewallDecision` use it (600 URLs
+  against the shipped catalog: 260 to 298 ms before, 21 to 29 ms after).
+  `refreshNetworkDiagnostics` also keeps each method and URL's catalog match
+  (`m_networkEndpointProfileIndex`), since the catalog is fixed. A request
+  no longer rebuilds the table at once: `endpointStatsChanged` queues one
+  rebuild per 250 ms (`m_networkDiagnosticsRefreshQueued`), and the
+  120 ms highlight fade only recolours the rows already there
+  (`fadeNetworkEndpointRows`). Test:
+  `forkmesh-tests` (crypto suite, firewall rule matching).
 - **Nothing to fix:** layout started by `setVisible` (`renderPageNotices`),
   text shaping, paint and style polish with no application frame, cached
   pixmap painting while the process is swapped out, and any stall sampled
@@ -769,6 +790,43 @@ Marketing are the heaviest); building each page only when it is first opened
 would remove that. For the few seconds the steps take, a package page not yet
 built is missing from search results and its rail button. `main.cpp` logs its
 startup lines through `logStartupTrace` like the rest of the trace.
+
+### Installing a package keeps the other pages (report #20)
+
+`syncNativePackagePages` used to delete every package page and build all of
+them again whenever the installed set changed, so one Market install rebuilt
+CRM, Calories, OpenWrt, Workflows, Marketing and the rest on the GUI thread
+(4.8 s, 8.1 s and 7.6 s stalls on 2026-11-01, followed by seconds of deferred
+style polish). It also sent you back to Market when you installed something
+from a package page you had open. Now it only removes the pages whose
+`(id, entrypoint)` dropped out, and only builds the ones that are missing: one
+missing page is built at once, so a single install opens on a ready page;
+two or more added beside pages already built (Install all, a pack) go through
+the `buildNextNativePackagePage` chain, which skips pages already built. A
+window with no pages yet still builds them in one pass, which the window
+tests rely on. Test: the Install all check in `forkmesh-window-tests
+--package-only` and `app/tests/test_desktop_package_rail_startup.py`.
+
+Other fixes from the same report:
+
+- **Market previews arrive ready to paint.** The worker converts each decoded
+  preview to `RGB32` or `ARGB32_Premultiplied`, and `applyMarketPreview` calls
+  `QPixmap::fromImage(..., Qt::NoOpaqueDetection)`, so the GUI thread no longer
+  scans every pixel for alpha and converts the image (1.5 s).
+- **CRM column moves do not refit every row.** In `CrmFeature::applyColumnOrder`
+  each `moveSection` made the table refit its `ResizeToContents` Actions column
+  over every contact row (612 ms for one snapshot). The first real move pins
+  those sections to `Fixed` at their current width, and they go back to
+  `ResizeToContents` once after the last move. A pass with nothing to move
+  touches no resize mode.
+- **The agent recycle bin loads on a worker.** `reloadAgentRecycleBin` reads
+  the bin with `runOffThread` (one read at a time, a call during a read queues
+  one more) and starting an agent no longer waits for it (1.2 s).
+- **Already fixed:** both crash records (the `refreshChannelList` crash during
+  local-mesh startup, and the teardown crash) happened before `d149be9982`.
+- **Nothing to fix:** the `DeployLogFollower::deliverFileLines` frame on the
+  2.4 s polish stall is a stray symbol; the stall was the posted Polish event
+  of the package pages rebuilt three seconds earlier.
 
 ### Background file writes
 
