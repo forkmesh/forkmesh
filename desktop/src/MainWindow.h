@@ -16003,6 +16003,8 @@ private:
     QPointer<QComboBox> m_chatRetentionCombo;
     QTimer *m_agentRecycleSweepTimer = nullptr; // periodic pruneExpiredChatHistory()
     bool m_agentRecyclePurgeInFlight = false;
+    bool m_agentRecycleReloadInFlight = false;
+    bool m_agentRecycleReloadPending = false;
     QHash<QString, MessageRow *> m_visibleRows; // messageId -> row (current conv)
     QString m_activeChatThreadRootId;
     QSplitter *m_chatSplit = nullptr;

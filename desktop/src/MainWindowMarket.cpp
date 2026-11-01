@@ -2321,6 +2321,10 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
             (image.width() > box.width() || image.height() > box.height()))
             image = image.scaled(box, Qt::KeepAspectRatio,
                                  Qt::SmoothTransformation);
+        if (!image.isNull())
+            image.convertTo(image.hasAlphaChannel()
+                                ? QImage::Format_ARGB32_Premultiplied
+                                : QImage::Format_RGB32);
         return image;
     }));
     return QPixmap();
@@ -2329,7 +2333,8 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
 void MainWindow::applyMarketPreview(const QString &key, const QImage &image)
 {
     const QPixmap pixmap =
-        image.isNull() ? QPixmap() : QPixmap::fromImage(image);
+        image.isNull() ? QPixmap()
+                       : QPixmap::fromImage(image, Qt::NoOpaqueDetection);
     m_marketPreviewCache.insert(key, pixmap);
     const bool flushQueued = !m_marketPreviewArrived.isEmpty();
     m_marketPreviewArrived.insert(key, pixmap);
@@ -5017,8 +5022,21 @@ void MainWindow::syncNativePackagePages()
     if (desired == m_nativePackagePagesWanted)
         return;
 
+    const auto built = [this](const QString &id, const QString &entrypoint) {
+        for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+            if (page.id == id && page.entrypoint == entrypoint)
+                return true;
+        }
+        return false;
+    };
+    QList<NativePackagePage> removed;
+    for (qsizetype i = m_nativePackagePages.size() - 1; i >= 0; --i) {
+        const NativePackagePage &page = m_nativePackagePages.at(i);
+        if (!desired.contains(qMakePair(page.id, page.entrypoint)))
+            removed.prepend(m_nativePackagePages.takeAt(i));
+    }
     bool removingCurrent = false;
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+    for (const NativePackagePage &page : std::as_const(removed)) {
         removingCurrent = removingCurrent ||
             (page.widget && m_sectionStack->currentWidget() == page.widget) ||
             (page.placeholder &&
@@ -5026,7 +5044,7 @@ void MainWindow::syncNativePackagePages()
     }
     if (removingCurrent)
         showSection(kMarketSectionIndex);
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+    for (const NativePackagePage &page : std::as_const(removed)) {
         if (page.window) {
             page.window->removeEventFilter(this);
             page.window->hide();
@@ -5046,16 +5064,24 @@ void MainWindow::syncNativePackagePages()
             page.widget->deleteLater();
         }
     }
-    m_nativePackagePages.clear();
     m_nativePackagePagesWanted = desired;
     const quint64 generation = ++m_nativePackagePagesGeneration;
-    if (m_staggerNativePackagePages) {
+    QList<QPair<QString, QString>> missing;
+    for (const auto &[id, entrypoint] : desired) {
+        if (!built(id, entrypoint))
+            missing.append({id, entrypoint});
+    }
+    if (m_staggerNativePackagePages ||
+        (missing.size() > 1 && !m_nativePackagePages.isEmpty())) {
+        if (!removed.isEmpty())
+            finishNativePackagePages();
         buildNextNativePackagePage(generation, 0);
         return;
     }
-    for (const auto &[id, entrypoint] : desired)
+    for (const auto &[id, entrypoint] : missing)
         addNativePackagePage(id, entrypoint);
-    finishNativePackagePages();
+    if (!removed.isEmpty() || !missing.isEmpty())
+        finishNativePackagePages();
 }
 
 void MainWindow::buildDeferredNativePackagePages()
@@ -5107,6 +5133,13 @@ void MainWindow::buildNextNativePackagePage(quint64 generation, int index)
         return;
     }
     const auto [id, entrypoint] = m_nativePackagePagesWanted.at(index);
+    bool built = false;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        built = built || (page.id == id && page.entrypoint == entrypoint);
+    if (built) {
+        buildNextNativePackagePage(generation, index + 1);
+        return;
+    }
     addNativePackagePage(id, entrypoint);
     finishNativePackagePages();
     QTimer::singleShot(0, this, [this, generation, index] {
