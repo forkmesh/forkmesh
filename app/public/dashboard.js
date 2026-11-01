@@ -60563,7 +60563,7 @@ Your reply
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
     "repo-forum": "/dashboard-page-repo-forum.js?v=7aa7ede1734a",
-    "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
+    "tasks": "/dashboard-page-tasks.js?v=1a9a370415a1",
     "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
   };
   const dashboardChunkScope = {
