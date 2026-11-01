@@ -1470,6 +1470,7 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
             qApp->setStyleSheet(QString());
         qApp->setStyleSheet(styleSheet);
     }
+    Theme::adoptInterfaceFamiliesForWidgetClasses();
     for (QWidget *widget : QApplication::topLevelWidgets()) {
         widget->setProperty("forkmeshTheme", activeThemeId);
         if (auto *window = qobject_cast<MainWindow *>(widget)) {
