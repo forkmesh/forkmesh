@@ -319,7 +319,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Core features as plugins** (account-synced on/off switches for built-in
   features): see [core-plugins.md](core-plugins.md).
 - **Productivity and data:** `notes`, `tasks`, `calendar`, `timers`, `crm`,
-  `competitor`, `invoices` (CRM-linked invoices emailed with open, view and
+  `competitor`, `booking` (a personal booking page at one short link, with
+  confirmations emailed through ForkMesh, [booking.md](booking.md)),
+  `invoices` (CRM-linked invoices emailed with open, view and
   payment tracking, [invoices.md](invoices.md)), `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
   `secure-drive` (an end-to-end encrypted shared drive kept as one file on a
   router's USB drive or any network share, suite `fmsd1`, on the desktop,

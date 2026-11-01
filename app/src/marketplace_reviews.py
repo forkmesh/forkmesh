@@ -43,6 +43,7 @@ FIRST_PARTY_PACKAGES = {
     "app-store-status": "App Store Status",
     "aquarium": "Aquarium",
     "backups": "Backups",
+    "booking": "Booking Page",
     "branches": "Branches",
     "browser-extension": "Browser Extension",
     "bug-reports": "Report a bug",

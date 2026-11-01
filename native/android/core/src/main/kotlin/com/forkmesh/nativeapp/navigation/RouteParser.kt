@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.navigation
 
+import com.forkmesh.nativeapp.market.PackagesText
 import com.forkmesh.nativeapp.poker.PokerApi
 import java.net.URI
 import java.net.URLDecoder
@@ -265,6 +266,7 @@ object RouteParser {
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
             "openwrt" -> listOf(Route.OpenWrtRouter)
             "app-store-status" -> listOf(Route.AppStoreStatus)
+            "booking" -> if (first == null) listOf(Route.Booking(query["booking"]?.trim()?.lowercase()?.takeIf(PackagesText::isHexId))) else null
             "runners" -> if (first == null) listOf(Route.Runners) else null
             "usage" -> if (first == null) listOf(Route.Usage) else null
             "rss", "rss-reader" -> listOf(Route.RssReader)
@@ -343,6 +345,7 @@ object RouteParser {
         "openwrt" -> listOf(Route.OpenWrtRouter)
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
+        "booking" -> listOf(Route.Booking(first?.lowercase()?.takeIf(PackagesText::isHexId)))
         "runners" -> listOf(Route.Runners)
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
