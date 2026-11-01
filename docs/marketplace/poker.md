@@ -3,7 +3,7 @@
 No-limit Texas Hold'em between ForkMesh users for virtual chips, with a
 dealer, bots, side pots, turn clocks and synthesized sounds, as a native
 desktop page, on phones and on the web. Part of
-[the marketplace docs](README.md).
+[Marketplace](README.md).
 
 Package: [`marketplace/packages/poker`](../../marketplace/packages/poker/README.md).
 Every account installs it for itself (`install.sync: "account"`); tables are

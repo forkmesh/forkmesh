@@ -1,8 +1,10 @@
 # Private repository confidentiality boundary
 
-The leakage and recovery contract for private repositories.
-See also [Encryption and signatures](../encryption.md#private-repositories) and
-the [threat model](../protocol/threat-model.md).
+The leakage and recovery contract for private repositories: what is protected,
+what at-rest inspection may reveal, how keys rotate and are revoked, and the
+evidence general availability needs. Part of [Security](README.md); the
+encryption layers are on
+[Encryption and signatures](../encryption.md#private-repositories).
 
 ## Protected data
 

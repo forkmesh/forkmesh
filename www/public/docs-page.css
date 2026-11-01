@@ -294,7 +294,7 @@ body.dp-body {
   min-width: 0;
 }
 
-.dp-nav summary {
+.dp-nav > summary {
   cursor: pointer;
   list-style: none;
   padding: 0.6rem 0.9rem;
@@ -304,11 +304,11 @@ body.dp-body {
   font-weight: 800;
 }
 
-.dp-nav summary::-webkit-details-marker {
+.dp-nav > summary::-webkit-details-marker {
   display: none;
 }
 
-.dp-nav summary::before {
+.dp-nav > summary::before {
   content: "☰";
   margin-right: 0.6rem;
   color: var(--docs-soft);
@@ -1405,7 +1405,7 @@ body.dp-body {
     grid-template-columns: 260px minmax(0, 1fr);
   }
 
-  .dp-nav summary {
+  .dp-nav > summary {
     display: none;
   }
 

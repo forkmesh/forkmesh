@@ -3,7 +3,7 @@
 The `tour` package (1.2.0) is the first-run welcome and the guided tour on the
 desktop and the phone, in three depths (Essentials, Advanced and The whole
 shebang); the phone tour looks like the screens it talks about. Part of
-[the marketplace docs](README.md).
+[Marketplace](README.md).
 
 ## Desktop
 

@@ -1,11 +1,11 @@
 # Reddit, the Reddit scout special agent
 
-The Reddit special agent (`.forkmesh/workflows/reddit-agent.json`) finds Reddit
-threads where ForkMesh can honestly help someone and hands the operator a
-short brief. The operator writes and posts every word. This page is the
-agent's charter: its rules, its tools and the research behind them. Marketing owns the
-channel plan ([marketing](../marketing/README.md)); index:
-[docs/README.md](../README.md).
+Part of [Community](README.md). The Reddit special agent
+(`.forkmesh/workflows/reddit-agent.json`) finds Reddit threads where ForkMesh
+can honestly help someone and hands the operator a short brief. The operator
+writes and posts every word. This page is the agent's charter: its rules, its
+tools and the research behind them. Marketing owns the channel plan
+([marketing](../marketing/README.md)).
 
 | Piece | Path |
 | --- | --- |
@@ -51,7 +51,7 @@ which is not a post, comment or message.
   between mentions and 30 days between showcases per subreddit.
 - `link --subreddit <name>` builds a tagged `forkmesh.com` link
   (`utm_source=reddit&utm_medium=social&utm_campaign=reddit_scout&utm_content=<subreddit>`);
-  static docs and blog links go out untagged ([../attribution.md](../app/attribution.md)).
+  static docs and blog links go out untagged ([attribution](../app/attribution.md)).
 
 Reading modes: public Atom feeds by default (slow, paced, retried with
 backoff), or app-only OAuth when `REDDIT_CLIENT_ID` and
@@ -75,7 +75,7 @@ stance that looks wrong.
 | `decentralized` | `/docs/protocol/` |
 | `portable-collaboration` | `/docs/offline-sync/` |
 | `agent-orchestration` | `/docs/qt-client/` |
-| `forge-sync` | `/docs/github-sync/` |
+| `forge-sync` | `/docs/forge-sync/` |
 
 Topic patterns are tested against real asks and titles that must stay
 unmatched.

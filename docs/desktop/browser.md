@@ -1,13 +1,13 @@
 # Embedded browser (ungoogled Chromium)
 
-Part of [the desktop docs](README.md).
-
 The Agents workspace's **Browser** tab and the side rail's browser are the
 same widget, `WorkspaceBrowserPane` (library `forkmesh-browser-pane`). It
 renders pages with Qt WebEngine, which is Chromium, and switches off the
 parts of Chromium that talk to Google, following what
 [ungoogled-chromium](https://github.com/ungoogled-software/ungoogled-chromium)
 removes.
+
+Part of [Desktop](README.md).
 
 Code: `desktop/src/WorkspaceBrowserPane.*` (the widget, its profile and page),
 `desktop/src/BrowserPrivacy.*` (the switches, the blocklist, the user agent and
@@ -21,7 +21,7 @@ Linking Qt WebEngine costs about 36 MB of resident memory in every process
 that links it, before a page is opened (its relocations and startup code, plus
 Qt Quick and QML; an empty Qt Widgets window is 24 MB without it, 60 MB with
 it). Most people never open the Browser tab or an agent browser window, so on
-Linux the app does not link it ([shell.md](shell.md)):
+Linux the app does not link it ([empty shell](package-modules.md#the-empty-shell)):
 
 - `WebEngineQt.cpp` is built as `packages/web-engine.so` with a sidecar
   (`web-engine.json`, entrypoint `core:web-engine`), next to the package

@@ -4,7 +4,7 @@ The ForkMesh iOS app in **Swift + SwiftUI**, the iOS sibling of
 [`native/android`](../android/README.md). App Store app id `com.forkmesh.forkmesh`.
 The developer home page for both native apps is
 [docs/native/README.md](../../docs/native/README.md); how the app talks to the
-relay and the mirrors is in [docs/codebase.md](../../docs/codebase.md).
+relay and the mirrors is in [docs/architecture.md](../../docs/architecture.md).
 
 ## Layout
 
@@ -40,19 +40,12 @@ ForkMeshWatch/       the watchOS app
 ForkMeshWatchWidgets/ its complications and Smart Stack widget
 tools/               generate_project.rb, check_swift_syntax.sh, asc_bundle_ids.py
 ForkMesh.xcodeproj   generated; regenerate with tools/generate_project.rb
-docs/                one API note per core module
+docs/appstore/       App Store screenshot sources
 ```
 
-Module notes: [FMBase](../../docs/native/ios/FMBase.md), [FMCrypto](../../docs/native/ios/FMCrypto.md) and
-[its additions](../../docs/native/ios/FMCryptoAdditions.md), [FMNet](../../docs/native/ios/FMNet.md),
-[FMVault](../../docs/native/ios/FMVault.md), [FMAccount](../../docs/native/ios/FMAccount.md),
-[FMApi](../../docs/native/ios/FMApi.md) ([models](../../docs/native/ios/FMApiModels.md),
-[view models](../../docs/native/ios/FMApiViewModels.md)), [FMChat](../../docs/native/ios/FMChat.md),
-FMCode ([repos](../../docs/native/ios/FMCodeRepos.md), [collaboration](../../docs/native/ios/FMCodeCollab.md),
-[local Git](../../docs/native/ios/FMCodeLocal.md)), [FMLocalAI](../../docs/native/ios/FMLocalAI.md),
-[FMAgents](../../docs/native/ios/FMAgents.md), [FMTools](../../docs/native/ios/FMTools.md),
-[FMAssistant](../../docs/native/ios/FMAssistant.md), [FMPackages](../../docs/native/ios/FMPackages.md). The parity
-matrix is [`docs/native/PARITY.md`](../../docs/native/PARITY.md).
+Module notes: [docs/native/ios/](../../docs/native/ios/README.md), one page per
+core module. The parity matrix is
+[`docs/native/PARITY.md`](../../docs/native/PARITY.md).
 
 ## Build and test
 

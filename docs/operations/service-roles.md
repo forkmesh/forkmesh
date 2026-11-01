@@ -1,5 +1,7 @@
 # Self-hostable service roles
 
+Part of [Operations](README.md).
+
 ForkMesh's network services are split into eight roles. This page lists which
 roles an independent operator can run, how to start them, what replaces each
 optional dependency, and how to check a running deployment. The overview is

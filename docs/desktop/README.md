@@ -9,41 +9,51 @@ daemon in `server/` (see [../server/README.md](../server/README.md)). The same
 binary runs on the deploy box as the "flagship" node, built from the primary
 checkout.
 
-User-facing guide: [docs/qt-client.md](../qt-client.md).
-Developer docs index: [../README.md](../README.md). How the desktop fits with
-the core nodes, mirrors and phones: [architecture](../architecture.md);
-what it signs and encrypts: [encryption](../encryption.md); running
-your own instance: [self-hosting](../self-hosting.md).
+This folder is for developers. How to use the app is in the
+[desktop app guide](../qt-client.md); how the desktop fits with the core
+nodes, mirrors and phones is in [architecture](../architecture.md); what it
+signs and encrypts is in [encryption](../encryption.md); mirrors and releases
+are in [mirroring](../mirroring.md); running your own instance is in
+[self-hosting](../self-hosting.md); what keeps working when the core nodes are
+unreachable is in [censorship resilience](../censorship-resilience.md); what
+an attacker can do with the desktop's keys is in the
+[threat model](../protocol/threat-model.md). Back to the
+[documentation home](../README.md).
 
-Topic pages in this folder:
+## Pages
 
-- [build-and-test.md](build-and-test.md): CMake, `run.sh`, Rebuild & restart, ctest, CI
-- [diagnostics.md](diagnostics.md): logs, stall watchdog, crash repair, inline notices, Health and Memory pages
-- [tmp-disk.md](tmp-disk.md): the TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings
-- [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
-- [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
-- [claude-code-parity.md](claude-code-parity.md): what Claude Code desktop has that the Agents workspace has or lacks; workspace shortcuts, prompt drops, Open in, `.worktreeinclude`
-- [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in; reviewing a pull request there (comments, approve, request changes)
-- [git-change-arrows.md](git-change-arrows.md): the arrows between the two sides of the Git page's split diff that revert, stage or unstage one change block
-- [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch prompt it drafts in the composer, and the cleanup of merged pull requests and branches
-- [pull-review-all.md](pull-review-all.md): Review all with AI on the Pull requests list: the read-only review prompt, the report the agent writes, and the threads, verdicts and summary ForkMesh posts from it
-- [tasks-page.md](tasks-page.md): Tasks page layout, top-search filtering, row and detail design, task work items and delete cleanup
-- [saved-searches.md](saved-searches.md): saved searches, their pings, and the security-pertinent alarm
-- [ui-redesign.md](ui-redesign.md): the interface redesign plan: design tokens, components, welcome and sign-in, expanded sidebar, phases and rules
-- [windows.md](windows.md): Windows-only behaviour, installer, registry settings, Actions lock
-- [git-locking.md](git-locking.md): per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout
-- [package-modules.md](package-modules.md): optional packages built as shared modules, loaded only when installed
-- [shell.md](shell.md): the empty shell: a project with nothing installed, core services that start and stop with their packages, memory measurements and what is still core
-- [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window (including keeping the computer from sleeping)
-- [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
-- [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
-- [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
-- [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
-- [browser.md](browser.md): the embedded browser (Browser tab and side browser), the Chromium switches and blocked hosts that ungoogle it, its profile
-- [busy-ring.md](busy-ring.md): the spinning ring around a button's icon while its work runs, and around an active left-rail icon, on desktop, web and phones
-- [chat.md](chat.md): chat encryption, device approval, safety numbers, direct delivery and chat state storage
-- [side-rail-and-terminals.md](side-rail-and-terminals.md): the right-hand side rail (drag workflows, pages and links onto it), its small browser, terminal tabs and the MCP terminal tools for agents
-- Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
+| Page | Covers |
+| --- | --- |
+| [build-and-test.md](build-and-test.md) | CMake, `run.sh`, ccache, Rebuild & restart, ctest, CI, portability rules |
+| [windows.md](windows.md) | Windows cross-build, registry settings, Actions lock, uninstaller |
+| [lifecycle.md](lifecycle.md) | What a quit stops and leaves running; running without a window, start at boot, keeping the computer awake |
+| [diagnostics.md](diagnostics.md) | Logs, inline notices, Debug bar, stall watchdog, crash repair, Health, Memory and Stats pages |
+| [tmp-disk.md](tmp-disk.md) | The TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings |
+| [networking.md](networking.md) | Relay transport, HTTP/3, host and fleet logs, Network page, fleet operations, local mesh, phone LAN control, firewall |
+| [package-modules.md](package-modules.md) | Packages built as shared modules, plugin pages apart from the window, the empty shell and core services that follow their packages |
+| [ui-redesign.md](ui-redesign.md) | The new interface: design tokens, components, the two layout modes, the shell, and pages without their own topic page |
+| [side-rail-and-terminals.md](side-rail-and-terminals.md) | The right-hand side rail, its browser, terminal tabs and the MCP terminal tools for agents |
+| [busy-ring.md](busy-ring.md) | The spinning ring around a working button or rail icon, on desktop, web and phones |
+| [markdown-preview.md](markdown-preview.md) | One render path for every Markdown preview and its GitHub-style styling |
+| [browser.md](browser.md) | The embedded ungoogled Chromium browser, its switches, blocked hosts and profile |
+| [agents-ui.md](agents-ui.md) | The Agents page: list, detail pane, Claude Code session control, transcript, composer, cloud rows, Models board |
+| [sessions-page.md](sessions-page.md) | The Sessions page and its side panels |
+| [agent-usage.md](agent-usage.md) | Agent accounts and the Usage page |
+| [special-agents.md](special-agents.md) | Special agents: agent choice, permissions, sessions and their rail page |
+| [activity-and-sounds.md](activity-and-sounds.md) | Watch, Listen, the announcer, interface sounds and Voice Changer |
+| [claude-code-parity.md](claude-code-parity.md) | What Claude Code desktop has that the Agents workspace has or lacks |
+| [branch-diffs.md](branch-diffs.md) | The Git page's diffs: change arrows, wide branch and pull diffs, reviewing a pull request |
+| [git-locking.md](git-locking.md) | Per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout |
+| [pull-merge-all.md](pull-merge-all.md) | Merge all and Review all with AI on the Pull requests list |
+| [tasks-page.md](tasks-page.md) | The Tasks page: layout, filters, detail, work items and delete cleanup |
+| [notes.md](notes.md) | The Notes page: local and cloud notes, versions, signed requests |
+| [saved-searches.md](saved-searches.md) | Saved searches, their pings and the security-pertinent alarm |
+| [shortcuts.md](shortcuts.md) | The Shortcuts page, one-tap runs and the per-repository queue |
+| [chat.md](chat.md) | Chat encryption, device approval, safety numbers, direct delivery, chat state storage |
+| [genie.md](genie.md) | The Genie spider pet, its health, and the marketing coach |
+
+Agent runs across desktop, mirrors, web and phone, and the agent sandbox, are
+in [../agents/README.md](../agents/README.md).
 
 ## Code map
 
@@ -62,7 +72,7 @@ Everything is in `desktop/`.
 | `src/AppPaths.*`, `src/ProjectRegistry.*`, `src/SingleInstance.*` | Project layout, project list, per-project lock and socket |
 | `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/BackgroundRunnerBadge.*`, `src/TrayMode.*`, `src/KeepAwake.*` | Running without a window (`--headless`), start at boot, the top-bar badge, the tray, keeping the computer awake ([lifecycle](lifecycle.md#running-without-a-window)) |
 | `src/PackageModules.*`, `cmake/ForkMeshPackageModules.cmake` | Optional packages built as lazily loaded shared modules ([package-modules](package-modules.md)) |
-| `src/CorePackageServices.*`, `src/MainWindowCorePackageServices.cpp` | Core background services that run only while one of their packages is installed ([shell](shell.md)) |
+| `src/CorePackageServices.*`, `src/MainWindowCorePackageServices.cpp` | Core background services that run only while one of their packages is installed ([package modules](package-modules.md#the-empty-shell)) |
 | `src/Theme.h`, `src/DesignTokens.*`, `src/UiKit.*`, `resources/theme/` | Classic style sheets, design tokens and components of the new interface ([ui-redesign](ui-redesign.md)) |
 | `src/Agent*`, `src/ClaudeStreamSession.*`, `src/CodexAppServerSession.*` | Local agent runtimes, guardrails, worktrees, access gates |
 | `src/ProjectAgentAccess.*`, `src/AgentRunRules.*`, `src/AgentNetworkGate.*` | Agent access policy, run/ask/deny decisions, external-call and destructive-command gate |
@@ -128,7 +138,7 @@ Everything is in `desktop/`.
   `code`, `tour`) and Everything (every bundled plugin but the organization
   ones), each with its dependencies (`projects::starterPackages`). A fourth
   pack, Empty (desktop only), installs nothing at all
-  ([shell.md](shell.md)). Check reads
+  ([empty shell](package-modules.md#starting-empty)). Check reads
   `/api/version` (the `x-forkmesh-worker` header, or `ok` with `rev` and
   `worker`) and then `/api/instance`, filling the name from the instance's
   project name and the logo from its `logo` path or favicon; an instance
@@ -215,7 +225,7 @@ Everything is in `desktop/`.
   placeholder keeps the page's index in the section stack, because the rail's
   button ids and every `setCurrentIndex` caller address pages by index.
   Closing the window docks the page back. Package pages use their own window
-  (see [../marketplace/README.md](../marketplace/README.md)).
+  (see [own window](../marketplace/package-system.md#own-window)).
 - **Home.** A home-screen grid of every rail page, arranged into pages, with
   live counts read from the rail buttons themselves so they never disagree.
   The open repository's Code icon carries its open pull requests ("3 open
@@ -234,7 +244,7 @@ Everything is in `desktop/`.
   and search hits. Rules: [../marketplace/core-plugins.md](../marketplace/core-plugins.md).
 - **Chat.** Relay rooms, server office channels and direct messages share one
   sidebar. Read marks, retention preferences and formatting sync with the
-  account; see [../app/chat-read-sync.md](../app/chat-read-sync.md) and
+  account; see [../app/chat-unread.md](../app/chat-unread.md#read-state-across-devices) and
   [../app/chat-formatting.md](../app/chat-formatting.md). Encryption, device
   approval, safety numbers and direct delivery: [chat.md](chat.md).
 - **Notices.** There are no floating toasts. A message is shown inline on the
@@ -300,8 +310,7 @@ Everything is in `desktop/`.
   and widgets, drive browser windows, suggest sessions, list and message
   agents and runners, and cut releases
   ([../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
-  [../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md),
-  [../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md),
+  [../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md),
   [../tools/mcp-releases.md](../tools/mcp-releases.md)).
 - **Launch targets:** `forkmesh <target>` takes a `forkmesh://` link, an
   absolute folder path or a `file://` URL. A path after `--project` is a
@@ -457,44 +466,12 @@ Details, manual CMake, test targets and known failures:
 
 ## Desktop agent sandboxing
 
-Agents run in Git worktrees of the open repository, inside layered controls.
-The full description is in
-[../agents/README.md](../agents/README.md#desktop-agent-sandboxing) and
-[../agents/access-rules.md](../agents/access-rules.md).
-
-- **Folder lock (Linux, default on).** Landlock restricts an agent to its
-  worktree, the project's top-level folders except `data/`, `config/`,
-  `cache/`, `state/`, `logs/` and `ssh/`, and a few shared tool and scratch
-  paths.
-- **External-call gate.** `AgentNetworkGate.*` classifies Bash, WebFetch and
-  WebSearch calls. For Claude Code a PreToolUse hook asks the desktop over a
-  local socket; an unreachable socket denies. Legacy script providers ask the
-  same gate. The gate works per tool call; it is not a network sandbox.
-- **Access policy.** A project's `agentAccess` merges with the global rules
-  (`effectiveAgentAccess`); `agentrules::decide` turns the result into run,
-  ask or deny for every provider. The global rules file lives where no
-  agent's folder lock reaches, so an agent cannot loosen its own rules.
-- **KVM workspace (optional).** Agents can run in a QEMU/KVM guest, which is
-  then the boundary.
-- **Memory containment.** Each agent runs in its own systemd scope inside a
-  capped slice ([../agents/memory.md](../agents/memory.md)). `AgentJail.h` is
-  a resource fence, not a security sandbox.
-
-### Guardrails and why
-
-- **Destructive commands** (recursive deletes outside temp folders, force
-  pushes, remote branch deletes, `git reset --hard`, `git clean -f`,
-  `git branch -D`, stash drops, history rewrites, disk wipes) are classified
-  by `classifyCommandRisk` and, by default, wait for the user's approval. A
-  single mistaken command can erase unrecoverable data.
-- **Tool allowlist.** An optional list of tool families; tools outside it are
-  not offered to the model, so a tool a newer agent CLI adds stays off.
-- **Access failures** (a refused folder or host) prompt the user instead of
-  failing silently.
-- **Recursive deletes in the desktop itself** go through
-  `forkmesh::safedelete::removeTree`, which refuses `HOME`, checkouts, other
-  worktrees and protected project folders
-  ([../engineering/destructive-actions.md](../engineering/destructive-actions.md)).
+Agents run in Git worktrees of the open repository inside a folder lock
+(Landlock), an external-call gate, a destructive-command gate, the project
+and global access rules, an optional KVM workspace and a capped memory slice.
+Each layer, and what it enforces per provider, is in
+[../agents/access-rules.md](../agents/access-rules.md); memory limits in
+[../agents/memory.md](../agents/memory.md).
 
 ## Security
 
@@ -528,13 +505,19 @@ The full description is in
   (`SessionCache::mayRestoreDesktopCapability`). The "Account switched" dialog
   says which state it ended in.
 - Agents are sandboxed as described in
-  [Desktop agent sandboxing](#desktop-agent-sandboxing).
+  [agent access rules](../agents/access-rules.md).
 - Actions steps run in a bubblewrap sandbox unless a workflow says
   `sandbox: false` ([below](#actions-outside-the-sandbox)).
 - A desktop Actions step stops after 90 minutes unless the step sets
   `timeout-minutes` (1–1440, as on the instance runner), which replaces that
   limit for the step; the run's 4-hour limit still caps it. Any other value
   makes the workflow invalid ([build-and-test.md](build-and-test.md#ci)).
+
+## Actions and pull requests
+
+How desktop Actions runs and pull request checks behave beyond the sandbox
+and timeout rules above. The Git page and pull review are in
+[branch-diffs.md](branch-diffs.md).
 
 ### Actions outside the sandbox
 
@@ -722,11 +705,10 @@ measured and keep the plain branch icon.
   targets. A `ninja ... | tail` pipeline hides the build's exit status.
 - **New `Q_OBJECT` headers** must be listed for moc. Several classes avoid
   `Q_OBJECT` on purpose and use `std::function` callbacks.
-- **External and cloud agent rows have negative ids** (`<= -1000`, cloud rows
-  `<= -1000000`). A guard like `sessionId < 0` silently excludes them; use
-  `isExternalSession()`/`isCloudSession()`.
-- **`AgentSession::name` is the repository name**, not the task title (that is
-  `issueTitle`). It also seeds the agent's colour and voice.
+- **Agent traps** (negative ids of external and cloud rows,
+  `AgentSession::name` being the repository name, the two completion paths):
+  [agent runs](../agents/README.md#traps). `AgentSession::name` also seeds the
+  agent's colour and voice.
 - **Show a chat row as soon as it is inserted.** `addMessageRow` calls
   `row->show()` right after `insertWidget`; otherwise the layout counts new
   rows as empty for one pass and paints squeezed rows.
@@ -809,10 +791,7 @@ measured and keep the plain branch icon.
 
 ## Related docs
 
-- [docs/qt-client.md](../qt-client.md): user guide
-- [docs/operations/desktop-control-node.md](../operations/desktop-control-node.md): Control page
-- [docs/engineering/definition-of-done.md](../engineering/definition-of-done.md)
-- [../engineering/destructive-actions.md](../engineering/destructive-actions.md): guarded deletes
-- [../native/DESKTOP_PARITY.md](../native/DESKTOP_PARITY.md): native app parity with the desktop
-- [../../docs/mirroring.md](../mirroring.md): how mirrors serve repositories and releases
-- [../../docs/censorship-resilience.md](../censorship-resilience.md): what keeps working when the core nodes are unreachable
+- [Desktop control node](../operations/desktop-control-node.md): Control page
+- [Definition of done](../engineering/definition-of-done.md)
+- [Destructive actions](../engineering/destructive-actions.md): guarded deletes
+- [Native app parity](../native/DESKTOP_PARITY.md) with the desktop

@@ -83,7 +83,7 @@ proxy in front and no single point of failure: a failed core leaves DNS, and
 with two down the survivor serves read-only. The old Cloudflare Worker relay
 (Workers, D1, Durable Objects) is gone; do not describe or rebuild it.
 `app/host/`, `deploy/` and `tools/next_*.py` drive the stack; `docs/operations/served-stack.md`
-and `docs/operations/operator-files.md` describe it, `docs/codebase.md` summarises
+and `docs/operations/operator-files.md` describe it, `docs/architecture.md` summarises
 it.
 
 - Vultr instances are labelled `fmnext-*` and tagged `forkmesh-next`. Never add
@@ -108,7 +108,7 @@ them (`docs/desktop/build-and-test.md#ccache`).
 Source files hold code; human-readable text lives in `docs/`. Do not add
 comments or docstrings. Put the reason for a change in the matching
 `docs/*.md`; `docs/README.md` maps each subsystem to its home page. Keep docs
-short, link related pages, and link the core pages (`docs/codebase.md`,
+short, link related pages, and link the core pages (`docs/architecture.md`,
 `encryption.md`, `mirroring.md`, `self-hosting.md`, `censorship-resilience.md`,
 `protocol/threat-model.md`) instead of re-explaining them. The only exceptions are lines tools read: shebangs, encoding
 lines, build tags and `//go:embed`, lint/type directives, license headers,

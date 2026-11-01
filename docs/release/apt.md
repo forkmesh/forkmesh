@@ -1,5 +1,7 @@
 # apt repository
 
+Part of [Releases](README.md).
+
 Debian and Ubuntu users install and update the desktop app with apt:
 
 ```sh
@@ -11,8 +13,8 @@ sudo apt install forkmesh
 
 After that, `sudo apt update && sudo apt upgrade` installs each new release.
 The package runs on the same systems as the Linux binary: Ubuntu 22.04 and
-newer, Debian 12 and newer, x86_64. Release flow:
-[README.md](README.md); the build: [linux-baseline.md](linux-baseline.md).
+newer, Debian 12 and newer, x86_64. The build:
+[Linux release baseline](linux-baseline.md).
 
 ## Code map
 
@@ -46,7 +48,7 @@ maps to no package or to several. These package names are the same on
 Ubuntu 22.04 and 24.04, which the smoke test checks.
 
 The package version is the release version, with `+<build>` added for a
-rebuilt platform build (`--deploy-build linux`, [README.md](README.md#build-numbers)).
+rebuilt platform build (`--deploy-build linux`, [build numbers](README.md#build-numbers)).
 Build 0 of 1.5.1 is `1.5.1`, build 2 is `1.5.1+2`, and dpkg orders
 `1.5.1 < 1.5.1+2 < 1.5.2`. A rebuild with the same version would never reach
 apt users, which is why the build number goes into the version.

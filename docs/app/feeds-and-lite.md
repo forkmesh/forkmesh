@@ -221,7 +221,7 @@ the "no JavaScript" promise.
 
 The forum needs independent copies more than anything else, so every read
 surface asks for them while a repository is below its mirror goal
-([mirror-quota.md](mirror-quota.md)). The texts and markup live in
+([mirror-quota.md](../mirror-quota.md)). The texts and markup live in
 `app/host/forkmesh_host/mirror_help.py`.
 
 **When.** `mirror_help.help_state(quota, home)` decides: with a mirror quota

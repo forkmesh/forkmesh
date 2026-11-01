@@ -1,7 +1,7 @@
 # ForkMesh Marketplace packages
 
 > Developer notes for this directory (sockets, generators, host runtime,
-> traps) are in [docs/marketplace/README.md](../docs/marketplace/README.md).
+> traps) are in [docs/marketplace/package-system.md](../docs/marketplace/package-system.md).
 
 This directory is the source catalog for creations that move through the
 ForkMesh ecosystem. Software extensions, virtual goods, agents, themes and

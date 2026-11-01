@@ -6,7 +6,7 @@ shown as one continuous page. A separator above each file names it and shows
 its last commit date. Admins (`users.is_admin`) can edit a file in place or
 delete selected blocks or sections; each save is one commit on `main`. On a
 white-label instance the page is the `developer-docs` plugin, off unless
-`INSTANCE_PLUGINS` names it ([../INSTANCES.md](../operations/instances.md)).
+`INSTANCE_PLUGINS` names it ([instances](../operations/instances.md)).
 
 ## Code map
 
@@ -78,7 +78,7 @@ tree entries makes saves answer 503 `gateway_outdated`.
 ## Security
 
 - The check is `users.is_admin`, not the repository push rule
-  ([CORE_PUSH.md](../operations/core-push.md)). The push is made as the admin's account
+  ([core push](../operations/core-push.md)). The push is made as the admin's account
   and audited as `git.push` (`credential: "docs-page"`) and `docs.edit`.
 - A save can only replace one existing regular file under `docs/`; it cannot
   create, delete or rename files.

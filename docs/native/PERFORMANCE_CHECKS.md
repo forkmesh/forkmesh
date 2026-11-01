@@ -9,7 +9,7 @@ committing, so each check starts from what the previous ones learned. Keep this
 page short: correct a wrong reading in place rather than adding a
 contradicting note. The DJ studio has its own button, bundle and page:
 [video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md).
-The standing rules are in [README.md](README.md), "iOS performance rules".
+The standing rules are in [iOS performance rules](#ios-performance-rules).
 
 ## Reading the bundle
 
@@ -116,6 +116,68 @@ below say when each field arrived).
   <0x100000000 + offset>` with the build's dSYM names it.
 - **`App log`** and **`Busiest log lines`** are optional. `Connected to ...
   room` counts relay (re)connects; each follows a resume or a dropped socket.
+
+## iOS performance rules
+
+The shell's account avatar shares the phone-motion feed with the Genie view.
+Agent Watch feel defaults on unless the user turns it off; Reduce Motion stops
+the avatar movement but does not change that saved preference.
+
+- No Keychain write per received frame on the main actor (`SecItemDelete` plus
+  `SecItemAdd` is a round trip to `securityd`). The chat replay book is written
+  at most every 250 ms off the main thread (`ChatKeyring.persistReplay`).
+- Parse API replies of 16 KB or more off the main actor
+  (`decodeResponseAsync`, `ApiParse.parseAsync`, `ApiParse.modelAsync`),
+  including documents read in batches (`publishedIssues`) and replies that
+  bypass `ApiService` (`ApiPackagesTransport.parse`; `PackagesClient.crm`
+  builds `CrmOrganizationData` in a detached task).
+- Write `@Observable` properties only when the value changes; every write
+  notifies, equal or not, including refreshes on every return to the app
+  (`AccountPackagesStore`, `HubPackageState`, `OrganizationPackagesLedger`,
+  `ShellNavigatorCounts`).
+- A scene-phase refresh runs on every inactive-to-active change (Control
+  Center, Notification Center, a system alert); gate it on age
+  (`AccountPackagesStore.refreshIfStale`) or a real return (`AppReturnGate`).
+- Read and decode stored files off the main actor at launch and restore a list
+  in one write (`ChatHub.attachHistory(inBackground:)`, batched `restore`s):
+  everything in `AppServices.start` after the identity load runs on the main
+  thread in one block. Name every launch step (`startup.<step>`).
+- Parse message text once per text, not per redraw (`ChatTextCache`).
+- Compute derived lists once per body and pass them down.
+- Do not let a ring cancel a load in flight; mark it and run one more load
+  afterwards, or none when the load's reads had not gone out yet. Join
+  in-flight loads (`loadIfStale`, shared reads).
+- Fan out independent reads (`PackagesClient.organizationPackages([String])`)
+  instead of asking each organization in turn.
+- Read only what a screen needs (`publishedPullHeads`, front matter only) and
+  keep ledgers between rings unless something relevant changed.
+- Build the selected tab first; other tabs later or on first visit. Hidden
+  tabs set `shellTabHidden` and pause frame-rate animations.
+- Fan out live values to small observed objects (one row redraws, not the
+  list); throttle shell counts (`ThrottledSnapshot`, at most 4 reads a
+  second); bump roster revisions only on real changes.
+- Decode images once through `FmImageCache` (48 MB cap), never in `body`.
+- Build Home and bottom-bar groups once per redraw and hand the installed set
+  down (`HubGroups.current(guest:installed:)`); `installedGatedPackages` reads
+  project settings once and indexes account state and catalog by id, so a
+  redraw is not quadratic in the package count.
+- Home tiles take their lookups from the layout built once per body;
+  `ShellHomeIcon` keeps only the shown fields (`ShellHomeIconFace`), not the
+  action closure, so SwiftUI skips unchanged icons.
+- The performance monitor ignores frame gaps that reach back into the
+  background.
+- Walking the view or accessibility tree (the Genie spider, the aquarium,
+  `GenieScreenScan`) runs on the main thread and builds accessibility
+  elements; scan on page and tab changes, then rarely, and cache each walk.
+- Parse agent transcripts off the main actor (`beatsFromTranscript` costs about
+  58 ms per 64 KB, `AgentTranscriptFormat.blocks` about 16 ms).
+  `TranscriptBeatCache` parses in a detached task once per transcript length;
+  live feeds re-read only the transcript that moved
+  (`ControlWatchFeeds.revision`, `AgentEagleFeed`).
+- Wrap main-actor work that grows with the account's data in
+  `PerformanceMonitorService.section(name)`. A section over 8 ms is named in
+  the `sections` detail of any stall it falls inside; one over 200 ms is its
+  own `sync` stall.
 
 ## Checks so far
 

@@ -1,5 +1,7 @@
 # Business-model rollout and recovery
 
+Part of [Operations](README.md).
+
 This runbook publishes the free-protocol / paid-services boundary of the
 [business model](../business-model.md) without giving the hosted operator
 control over protocol participation.

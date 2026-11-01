@@ -59,7 +59,7 @@ large repository costs no more than the change.
 Production hosts repositories on the core nodes listed in
 `HOSTED_GIT_CORE_NODES`: a push goes to the core that took the last push, else
 the first live core by rendezvous hash, and the others replicate from it
-([HOSTED_REPOS.md](operations/core-hosted-repositories.md)). Without core hosting the
+([core-hosted repositories](operations/core-hosted-repositories.md)). Without core hosting the
 fallback is `HOSTED_GIT_WRITE_NODE`, a node with `writableRepositoryRoot` and
 `"writableOwners": ["*"]`. With neither, the API answers
 `hosted_git_unavailable`.

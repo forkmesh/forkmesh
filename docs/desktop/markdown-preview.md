@@ -1,10 +1,15 @@
 # Desktop: rendered Markdown
 
-Part of [the desktop docs](README.md). Code: `desktop/src/MarkdownRender.h`
+How every Markdown preview in the desktop (README views, file previews,
+composers, packages) is rendered through one path: source preparation, the
+GitHub-style document styling and painted decorations, and link handling.
+Code: `desktop/src/MarkdownRender.h`
 (source preparation, Qt Core only), `desktop/src/MarkdownPreviewStyle.h`
 (document styling and the painted decorations), `forkmesh::ui::styleReadmeDocument`
 in `desktop/src/MainWindowRepoDetail.cpp` (picks the colours). Tests: the
 README rendering block in `desktop/tests/test_crypto.cpp`.
+
+Part of [Desktop](README.md).
 
 ## One path for every preview
 

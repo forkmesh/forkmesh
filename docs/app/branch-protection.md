@@ -9,7 +9,7 @@ A repository can protect its default branch. The default branch then changes
 only by merging a pull request that an organization owner or admin approved,
 and that approver must not be the author. The rule exists for repositories
 whose default branch deploys somewhere, for example an instance that builds
-itself from its own repository ([../INSTANCES.md](../operations/instances.md#building-the-instance-from-its-own-repository)).
+itself from its own repository ([instances](../operations/instances.md#building-the-instance-from-its-own-repository)).
 Without it, pull rules ([../server/pull-rules.md](../server/pull-rules.md))
 check only a pull request's content and the node operator policy blocks only
 deletes and force pushes, so an organization owner could push to `main`, edit
@@ -39,7 +39,7 @@ to `issues`, `pulls` and `discussions` (`REPO_FEATURE_DEFAULTS` in
   who may edit (`app/tests/test_org_repo_admin.py`).
 - **Operator:** `python -m forkmesh_host instance-repo ...
   --protect-default-branch | --no-protect-default-branch` and
-  `--actions on|off` ([../INSTANCES.md](../operations/instances.md#importing-a-repository-on-the-server-instance_repopy)).
+  `--actions on|off` ([instances](../operations/instances.md#importing-a-repository-on-the-server-instance_repopy)).
   The switches are applied right after the repository row exists and before
   the fill, so the import's own push hooks already see them.
 

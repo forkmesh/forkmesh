@@ -328,7 +328,7 @@
         "start": ["forkmesh-mirror-node", "--config", "<mirror-node.json>"],
         "check": ["forkmesh-mirror-node", "--config", "<mirror-node.json>", "--check"],
         "configSchema": "docs/ssh-gateway-config.schema.json",
-        "runbook": "docs/operations/direct-https-mirror-gateway.md#contributor-pull-requests-over-ssh",
+        "runbook": "docs/operations/git-ssh-gateway.md#contributor-pull-requests-over-ssh",
         "evidence": ["server/intake_test.go", "app/tests/test_ssh_independent_writes.py", "app/tests/test_mirror_dashboard.py"]
       },
       "contract": [],
@@ -343,7 +343,7 @@
             "id": "hosted-inbox-leases",
             "proprietary": false,
             "substitute": "Contributors submit over SSH (forkmesh-pull-submit) or directly to the gateway; the signed records are committed on the node.",
-            "docs": "docs/operations/direct-https-mirror-gateway.md#contributor-pull-requests-over-ssh"
+            "docs": "docs/operations/git-ssh-gateway.md#contributor-pull-requests-over-ssh"
           }
         ]
       },

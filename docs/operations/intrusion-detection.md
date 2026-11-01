@@ -1,5 +1,7 @@
 # Host intrusion detection (IDS)
 
+Part of [Operations](README.md).
+
 Every core node and runner runs `fmnext-ids`, a small root service
 (`deploy/core/ids.py`, installed as `/opt/forkmesh-next/bin/fmnext-ids`,
 config `/etc/forkmesh-next/ids.json`, state in `/var/lib/fmnext-ids`). It uses
@@ -11,9 +13,8 @@ On an intrusion it **locks the node down**: the vault key leaves memory, the
 node is quarantined in rqlite, the firewall closes and services stop. It also
 pages the admins, and mails them itself (see *Direct mail*). Only the
 operator can end a lockdown (`tools/next_ids.py release`). Fleet runbook:
-[OPERATIONS.md](README.md); public threat model:
-[threat-model](../protocol/threat-model.md); developer index:
-[README.md](../README.md).
+[runbook](runbook.md); public threat model:
+[threat model](../protocol/threat-model.md).
 
 ## Threat model
 
@@ -30,7 +31,7 @@ Does not stop:
   peers that vote a node into quarantine when its app runs while its IDS has
   been silent for 3 minutes.
 - **A node compromised while unsealed**: its memory held `DATA_KEY`. Rotate
-  `DATA_KEY` and vault secrets after any real lockdown ([REKEY.md](rekey.md)).
+  `DATA_KEY` and vault secrets after any real lockdown ([re-keying](rekey.md)).
 - **A compromised operator box**, which holds `DATA_KEY`, the fleet SSH key,
   the IDS master key and the operator release key.
 - **HTTPS exfiltration by the app user**: only non-HTTP(S) egress is logged.
@@ -136,7 +137,7 @@ explained once the process has exited, which happened with a dash under
    keeps running behind the firewall. One healthy peer later removes the node
    as a voter when that is quorum-safe, never below two voters.
 5. **Firewall** (`inet fmnext_ids`): inbound only replies, loopback, SSH (on
-   `ssh.port`, the fleet's `ssh_port`; [deploy/ssh-port.md](ssh-port.md))
+   `ssh.port`, the fleet's `ssh_port`; [SSH port](ssh-port.md))
    and mesh; outbound only root.
 6. **Stop** services.
 7. **Alerts.**
@@ -196,7 +197,7 @@ and the `security_incidents` row, and nobody is told.
 - **Normally** it submits over SMTP to the node's own Postfix on
   `127.0.0.1:25`, so the same route as every other server mail applies:
   OpenDKIM signing, the n4 relay for n3 and n5, and the Mailtrap fallback
-  relay when that route fails ([MAIL_LOG.md](mail-log.md#sending-from-the-cores)).
+  relay when that route fails ([mail log](mail-log.md#sending-from-the-cores)).
   Only a loopback address is accepted.
 - **In a lockdown** the IDS firewall lets only root send off the node, so
   Postfix (user `postfix`) could queue the alert but not deliver it, and the

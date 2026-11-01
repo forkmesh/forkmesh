@@ -1,5 +1,7 @@
 # Mirror Actions control and summary v2
 
+Part of [Operations](README.md).
+
 The website's repository **Actions** tab reads run state from, and sends
 control requests to, a mirror node running the Actions executor. This page is
 the wire contract (the gateway side is in

@@ -37,8 +37,7 @@ Start here. Each page is short and links to the detail.
 [Hosted repositories](hosted-repositories.md) ·
 [Contribute with git only](contributing-with-git.md) ·
 [Repository imports](repository-imports.md) ·
-[Connecting to GitHub](github-sync.md) ·
-[Two-way forge sync](forge-sync.md) ·
+[GitHub and forge sync](forge-sync.md) ·
 [Folder About boxes](folder-about.md) ·
 [Subscribing by feed or email](feeds-and-email.md) ·
 [Mirror and deploy a Cloudflare Worker](cloudflare-workers.md) ·
@@ -60,12 +59,9 @@ Start here. Each page is short and links to the detail.
 
 **Identity, trust and social.** [Portable identities and recovery](portable-identities.md) ·
 [Trust lists](trust-lists.md) · [Portable social signals](social-signals.md) ·
-[Fediverse digests](fediverse-digests.md) and [mention review](fediverse-mention-review.md) ·
-[Lemmy threaded collaboration](lemmy-threaded-collaboration.md)
+[Fediverse digests, mention review and Lemmy threads](fediverse.md)
 
-**World.** [Community services](world-community-services.md) ·
-[Soundtrack licence](world-soundtrack-license.md) ·
-[Community ad governance](community-ad-governance.md)
+**World.** [Community services, soundtrack licence and ad governance](world-community-services.md)
 
 **Phones.** [Mobile node contract](mobile/mobile-node-contract.md) ·
 [Owned Git engine](mobile/owned-git-engine-spec.md) · [Siri](mobile/siri.md) ·
@@ -77,7 +73,7 @@ Start here. Each page is short and links to the detail.
 | Area | Start with |
 | --- | --- |
 | Your own node, mirror or instance | [Self-hosting](self-hosting.md), [Start your own instance](start-your-own-instance.md), [Start from a settings file](start-config.md), [mirror node](operations/mirror-node.md) |
-| The served stack and its runbook | [Operations](operations/README.md): [served stack](operations/served-stack.md), [vault](operations/vault.md), [runners](operations/runners.md), [instances](operations/instances.md) |
+| The served stack and its runbook | [Operations](operations/README.md): [served stack](operations/served-stack.md), [runbook](operations/runbook.md), [vault](operations/vault.md), [runners](operations/runners.md), [instances](operations/instances.md) |
 | Recovery | [Disaster recovery](disaster-recovery/README.md) and its [printable runbook](disaster-recovery/runbook.md) |
 | Security | [Security](security/README.md): trust boundaries, keys, [private repositories](security/private-repository-confidentiality.md), [chat encryption](security/sealed-chat.md), [organization roles](security/organization-roles.md), [secret scanning](security/secret-scanning.md) |
 | What outside services see, and what the service keeps | [External dependency map](external-dependency-map.md), [Relay data retention and deletion](relay-data-retention.md) |
@@ -86,7 +82,7 @@ Start here. Each page is short and links to the detail.
 ## Reference
 
 [Protocol suite](protocol/README.md) ·
-design decisions on [conflict-safe collaboration](design/conflict-safe-collaboration.md), [ActivityPub federation](design/activitypub-federation.md), [pull review threads](design/pull-review-threads.md), [release binary publishing](design/release-binary-publishing.md) and [scoped trust lists](design/scoped-trust-lists.md) ·
+[Design decisions](design/README.md) on collaboration, trust lists, review threads, release publishing and federation ·
 [Integration contract](integrations.md) ·
 [Git compatibility matrix](git-compatibility.md) ·
 [Surface capability matrix](capability-matrix.md) ·
@@ -129,7 +125,7 @@ Each part has one home page; its topic pages link back to it.
 | Fleet, deploys and operator tools | `deploy/`, `tools/next_*.py` | [operations/README.md](operations/README.md) |
 | Releases and installers | `tools/package/`, `.forkmesh/releases/` | [release/README.md](release/README.md) |
 | Repository tools | `tools/` | [tools/README.md](tools/README.md) |
-| Engineering rules | cross-cutting | [destructive actions](engineering/destructive-actions.md), [GitHub Actions](engineering/github-actions.md), [third-party dependencies](engineering/third-party-dependencies.md), [changelog](engineering/changelog.md), [daily interface validation](engineering/daily-interface-validation.md) |
+| Engineering rules | cross-cutting | [engineering/README.md](engineering/README.md) |
 
 Special agents are workflows in `.forkmesh/workflows/`
 ([app/workflows.md](app/workflows.md#desktop-workflows-and-special-agents)):

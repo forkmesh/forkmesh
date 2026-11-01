@@ -1,14 +1,13 @@
 # MCP connector: `create_agent`
 
 Part of [the tools docs](README.md); the MCP server itself is in
-[../agents/tools.md](../agents/tools.md#forkmesh-mcp-server).
+[agent tools](../agents/tools.md#forkmesh-mcp-server).
 
 `create_agent` on `tools/forkmesh_mcp_server.py` adds an agent to the
 desktop's Agents list, so an agent can hand a follow-up task to a new agent,
 running at once or parked until the user starts it. The agent-intake socket
 described here also carries the window, hub, terminal and release tools
-([mcp-agent-windows.md](mcp-agent-windows.md),
-[mcp-claude-code-desktop.md](mcp-claude-code-desktop.md),
+([mcp-desktop-tools.md](mcp-desktop-tools.md),
 [mcp-releases.md](mcp-releases.md)).
 
 ## The tool

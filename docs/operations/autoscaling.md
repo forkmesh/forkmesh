@@ -1,5 +1,7 @@
 # Fleet autoscaling
 
+Part of [Operations](README.md).
+
 The fleet grows and shrinks two pools without the operator box:
 
 - **App capacity:** app replicas, label `fmnext-auto-N`, fleet name `aN`,
@@ -11,7 +13,7 @@ Cores and the always-on runner are never scaled, listed, touched or destroyed
 by the autoscaler; rqlite voters stay at three. The desktop (Network, Hosts)
 is only the control plane: it signs settings and commands and reads status.
 Scaling keeps working while it is off. Fleet map:
-[deploy/README.md](fleet-tooling.md); availability overview:
+[fleet tooling](fleet-tooling.md); availability overview:
 [architecture](../architecture.md).
 
 ## Where the scaler runs
@@ -27,7 +29,7 @@ leaderless:
   `creating` → `booting` → `joining` → `serving`, and `draining` → `removing`
   → gone. A core that dies mid-action is replaced by the next tick's owner.
 - Replicas never host Durable Objects (the host's emulation,
-  [host/README.md](../host/README.md)) or own cron, so they never run it.
+  [app host](../host/README.md)) or own cron, so they never run it.
 
 ## Settings
 
@@ -59,7 +61,7 @@ Both pools start off and in dry run. Two extras per pool fit a $25 combined
 monthly cap. The p95 threshold is far above the normal target, so only real
 overload scales. Burst runners never scale up automatically until per-job
 provider credentials exist (`BURST_JOBS_READY = False` in
-`autoscale_policy.py`; [../RUNNERS.md](runners.md) mode B).
+`autoscale_policy.py`; [runners](runners.md) mode B).
 
 ### Hard limits (in code)
 
@@ -80,7 +82,7 @@ The same row carries `cpuPct`, `memPct` and `diskPct` (CPU busy share between
 samples at least 5 s apart, memory in use, root file system in use). The
 autoscaler does not read them; `/api/status` shows them as each core's
 `resources` and the iPhone draws them as tiny bars on the core node lights
-([NAVIGATION.md](../native/NAVIGATION.md)).
+([phone navigation](../native/NAVIGATION.md)).
 
 ## Cloud credential
 
@@ -154,7 +156,7 @@ command is recorded in `autoscale_audit`, and every real action also raises a
 
 ## Threat model
 
-The fleet-wide model is [threat-model.md](../protocol/threat-model.md);
+The fleet-wide model is [threat model](../protocol/threat-model.md);
 the autoscaler adds:
 
 - **Compromised core app:** can use the provider key directly; cannot obtain

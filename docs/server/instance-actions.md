@@ -3,9 +3,9 @@
 An instance (installed with `www/public/install-instance.sh`) runs its
 repositories' workflows on the instance server itself, so maintainers can
 push, merge, run CI, run scheduled jobs and deploy from the website alone.
-It builds on the runner Actions path ([runner-actions.md](runner-actions.md)):
+It builds on the runner Actions path ([actions.md](actions.md#on-a-runner-when-the-desktop-is-offline)):
 one runner daemon is installed next to the core and leases every Actions job.
-Home: [README.md](README.md); running an instance:
+Home: [Go daemon](README.md); running an instance:
 [self-hosting](../self-hosting.md).
 
 What this adds over runner Actions:
@@ -135,7 +135,7 @@ Payloads (`FORKMESH_EVENT_PATH`) follow GitHub's shapes for the fields used:
 - issue_comment: `{action, issue:{...}, comment:{id, body, user:{login, verified}, verified}, sender:{login, verified}}`
 
 `verified` is `true` only when the inbox bound the author to an account (the
-signed-in session or an account-bound key, [notification-email.md](../app/notification-email.md)).
+signed-in session or an account-bound key, [notifications.md](../app/notifications.md#collaboration-author-display)).
 Then `login` is that account. Otherwise `login` is the signing key, never a
 username the client chose. A workflow that acts for the commenter (assigning
 them, for example) must check `comment.user.verified`.

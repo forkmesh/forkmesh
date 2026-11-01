@@ -1,6 +1,8 @@
 # Desktop: the TMP fast disk and slow USB links
 
-Part of [the desktop docs](README.md).
+How the desktop moves agent scratch, ccache and Action sandboxes onto an internal disk labelled `TMP`, keeps it clean and shows it on the Debug panel, and how it warns about a fast drive on a slow USB link.
+
+Part of [Desktop](README.md).
 
 ## Why
 

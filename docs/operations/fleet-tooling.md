@@ -1,15 +1,17 @@
-# Deploy: the core fleet
+# Fleet tooling
+
+Part of [Operations](README.md).
 
 `deploy/` turns one fleet description, `deploy/fleet.toml`, into every file a
 fleet node needs. The operator tools in `tools/next_*.py` create instances,
 install nodes, push secrets and roll out releases. Node kinds: **core** nodes
 (trusted: Caddy, the app on CPython, rqlite, the Go daemon and Git gateway)
 and **runners** (untrusted, outbound-only agent compute,
-[RUNNERS.md](runners.md)). The runbook is [OPERATIONS.md](README.md);
-this page is the map. How the cores fit together and what happens when one
-fails: [architecture](../architecture.md); running your own:
-[self-hosting](../self-hosting.md). Developer index:
-[docs/README.md](../README.md).
+[runners](runners.md)). This page is the map of the code and the core
+lifecycle; the commands to run are in the [runbook](runbook.md). How the cores
+fit together and what happens when one fails:
+[architecture](../architecture.md); running your own:
+[self-hosting](../self-hosting.md).
 
 ## Code map
 
@@ -21,9 +23,8 @@ fails: [architecture](../architecture.md); running your own:
 | `deploy/core/caddy_routes.py` | Caddy route snippets shipped with each release |
 | `deploy/core/request_rules.py` | renders request block rules into a Caddy include |
 | `deploy/core/certsync.py` | leaderless certificate sharing |
-| `deploy/core/ids.py` | host intrusion detection ([IDS.md](intrusion-detection.md)) |
-| `deploy/core/self_deploy.py` | phone-approved merges deployed by the cores ([self-deploy.md](self-deploy.md)) |
-| `docs/www/edge-client.md` | wire contract for `x-forkmesh-edge-client` ([edge_client.md](../www/edge-client.md)) |
+| `deploy/core/ids.py` | host intrusion detection ([intrusion detection](intrusion-detection.md)) |
+| `deploy/core/self_deploy.py` | phone-approved merges deployed by the cores ([self-deploy](self-deploy.md)) |
 | `deploy/core/templates/`, `deploy/runner/templates/` | unit files and configs |
 | `deploy/operator/` | operator-box user units: backup, unseal, DNS health |
 | `deploy/tests/` | renderer, Caddy, certsync, IDS and tool tests |
@@ -32,7 +33,7 @@ fails: [architecture](../architecture.md); running your own:
 | `tools/next_cloud.py`, `tools/next_aws.py` | provider interface; AWS EC2 provider (standard-library SigV4) |
 | `tools/next_add_core.py`, `tools/next_remove_core.py` | resumable add/remove runs |
 | `tools/next_deploy.py` | `build`, `upload`, `migrate`, `restart`, `all`, `rollback` |
-| `tools/next_autodeploy.py` | auto-deploy of `main` ([auto-deploy.md](auto-deploy.md)) |
+| `tools/next_autodeploy.py` | auto-deploy of `main` ([auto-deploy](auto-deploy.md)) |
 | `tools/next_vault.py`, `next_ids.py`, `next_dns.py`, `next_backup.py`, `next_rekey.py`, `next_git_host.py`, `next_codemagic.py` | vault, IDS, DNS, backup, re-key, private Git and native builds |
 
 ## Architecture
@@ -42,10 +43,10 @@ fails: [architecture](../architecture.md); running your own:
   SSH. Core steps: `base`, `wireguard`, `rqlite`, `turn`, `calls`, `ssh-port`,
   `files`, `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`).
   Runner steps: `base`, `ssh-port`, `files`, `start`, `daemon`. SSH runs on
-  `ssh_port` ([ssh-port.md](ssh-port.md)).
+  `ssh_port` ([SSH port](ssh-port.md)).
 - **Secrets never rendered.** Units load encrypted credentials by name
   (`LoadCredentialEncrypted=`). With `[app] vault = true` the app gets only
-  bootstrap credentials and starts sealed ([VAULT.md](vault.md)).
+  bootstrap credentials and starts sealed ([vault](vault.md)).
 - **Releases.** `next_deploy.py build` makes a tarball (app host and source,
   built assets, World, an offline venv, Caddy snippets, `BUILD_REV`) that lands
   in `/opt/forkmesh-next/app/releases/<rev>` with `current` and `previous`
@@ -59,7 +60,7 @@ fails: [architecture](../architecture.md); running your own:
   of the cores and at least two still get it (`deploy_quorum`); otherwise
   they refuse. `--skip nN` names the cores to leave out instead. The deploy
   manifest records `skipped`, and `restart nN` of that release later clears
-  it (`caughtUp`). See [auto-deploy.md](auto-deploy.md), "Skipped cores".
+  it (`caughtUp`). See [auto-deploy](auto-deploy.md#skipped-cores).
 - **Speed.** One multiplexed SSH connection per node
   (`FMNEXT_SSH_MULTIPLEX=0` disables it), parallel uploads with the migration
   alongside, venv reuse when requirements are unchanged, a wheelhouse cache,
@@ -81,7 +82,7 @@ chosen at run time among live cores:
 | certificates, cron, Durable Object emulation ([host](../host/README.md)), autoscaler | rendezvous or rotation over live `cluster_members` |
 | WireGuard, firewall, mesh, certsync, IDS keys, Git upstreams | full mesh from `fleet.toml` |
 | runner-pool and hosted-git core lists | rendered into `app.env` from the fleet's cores |
-| group calls | every core runs `fmnext-calls`; the app places each room by rendezvous over the healthy cores in `FORKMESH_CALLS_NODES` ([calls.md](call-servers.md)) |
+| group calls | every core runs `fmnext-calls`; the app places each room by rendezvous over the healthy cores in `FORKMESH_CALLS_NODES` ([call servers](call-servers.md)) |
 
 `deploy/tests/test_no_main_node.py` checks this.
 
@@ -122,6 +123,13 @@ the plan. Steps:
 - **Merge:** the commit step merges the branch into `main` itself (see
   [Landing the fleet change on main](#landing-the-fleet-change-on-main)).
 
+`python3 tools/next_fleet.py add-core` alone prints the plan;
+`add-core-status` shows a run's progress.
+
+To abandon a new core: keep it out of DNS, `rqlite remove` it from a peer,
+`next_fleet.py destroy nN --yes --execute`, delete its `[[nodes]]` block, and
+re-render the peers with `next_fleet.py roll --steps files,start --execute`.
+
 ## Removing a core node
 
 `python3 tools/next_fleet.py remove-core nN [--destroy-instance] --execute`
@@ -156,7 +164,7 @@ left on its branch breaks every deploy ("n2 did not answer /api/version
    moves `refs/heads/main` by compare-and-swap.
 
 The merge in the source checkout is published like any other commit
-([source-publisher.md](../tools/source-publisher.md)), and that push starts
+([source publisher](../tools/source-publisher.md)), and that push starts
 the next deploy. A refused merge does not fail the run (the core is already
 added or removed): the run records `merge_error` and prints the
 `git -C <main checkout> merge --no-ff <branch>` to run. Until then, gate 1
@@ -305,7 +313,7 @@ create or destroy instances.
   locally and writes through rqlite HTTP.
 - Unseal: `DATA_KEY` over SSH stdin to the app's unix socket.
 - The forkmesh.com Worker (`forkmesh-www`) signs `x-forkmesh-edge-client`
-  ([edge_client.md](../www/edge-client.md)).
+  ([edge client](../www/edge-client.md)).
 - Operator config in `~/projects/forkmesh/config/fleet/` (`FMNEXT_CONFIG_DIR`);
   `FMNEXT_DIST_DIR` for builds; the label prefix guard
   `instance_label_prefix = "fmnext-"` cannot be bypassed.
@@ -322,9 +330,9 @@ python3 tools/next_deploy.py all --execute
 ## Services on every core
 
 - Office TURN relay: `fmnext-turn.service`, `[turn]`
-  ([office/README.md](../office/README.md)).
+  ([Office](../office/README.md)).
 - Group-call server (SFU): `fmnext-calls.service`, `[calls]`, UDP 3479 and
-  `/calls/*` on each per-node name ([calls.md](call-servers.md)).
+  `/calls/*` on each per-node name ([call servers](call-servers.md)).
 
 ## Traps
 
@@ -349,7 +357,7 @@ python3 tools/next_deploy.py all --execute
   swap. The page cache of the ~100 MB database counts against the unit, so at
   `MemoryMax=220M` rqlite sat at its limit and a leader was OOM-killed under a
   burst of analytics reads; `MemoryHigh` makes the kernel reclaim first.
-  Details: [RQLITE_FINDINGS.md](../host/rqlite-findings.md).
+  Details: [rqlite findings](../host/rqlite-findings.md).
 - `forkmesh-mirror-node` (`MemoryHigh=96M`, `MemoryMax=128M`) also holds its
   `mirror_gateway.py` child, so the gateway's in-memory caches must stay well
   under the unit (larger caps pushed ~185 MiB per core into swap). Caps:

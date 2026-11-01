@@ -11,7 +11,7 @@ starts further ahead than the last. Keep this page short: correct a wrong
 reading in place rather than adding a contradicting note. The studio itself is
 described in [video-mix-dj-studio.md](video-mix-dj-studio.md); the app-wide
 checks are in [../native/PERFORMANCE_CHECKS.md](../native/PERFORMANCE_CHECKS.md).
-Part of [the marketplace docs](README.md).
+Part of [Marketplace](README.md).
 
 ## Budgets
 

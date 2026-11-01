@@ -5,7 +5,7 @@ World API and Durable Object emulation source (`world/src/`, staged into the
 App), tools and tests. The developer home page, with the code map,
 architecture and traps, is [docs/world/README.md](../docs/world/README.md);
 the served stack is described in
-[Architecture and availability](../docs/codebase.md).
+[Architecture and availability](../docs/architecture.md).
 
 `world.forkmesh.com` is served by the three core nodes, reached by DNS round
 robin. Caddy serves the built files from `world/dist` in the current app

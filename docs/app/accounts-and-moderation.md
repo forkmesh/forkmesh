@@ -53,7 +53,7 @@ page view, the email honeypot, Turnstile or its backup puzzle, the per-address
 throttle, username moderation) and adds, before any account lookup:
 
 - `closed`: refused with `signup_closed` (403), logged like every other
-  blocking refusal (`log_blocked_signup`, [signup-failure-pings](signup-failure-pings.md)).
+  blocking refusal (`log_blocked_signup`, [signup-challenge](signup-challenge.md#signup-failure-pings)).
 - `optional`/`invite`: the email field may be empty. A given address is
   validated, indexed and verified exactly as before. Without one the account
   stores `email: ""`, no `email_bi`, and gets a recovery code (below).
@@ -321,7 +321,7 @@ No table has an address or browser column. Payloads are sealed under
 `DATA_KEY` ([encryption](../encryption.md)). Every payload carries the
 plaintext its blind indexes were made from (`scope` as `org:<name>` or
 `moderation-scope:instance`, `repo` as `<owner>/<repo>`, the account name), so
-`tools/next_rekey.py` recomputes them ([REKEY.md](../operations/rekey.md)); the counters
+`tools/next_rekey.py` recomputes them ([rekey](../operations/rekey.md)); the counters
 are emptied instead. A repository delete purges flags and queue
 (`_REPO_SCOPED_TABLES`); an account delete purges roles, blocks, counters and
 queued posts.

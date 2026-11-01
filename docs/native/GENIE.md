@@ -1,5 +1,6 @@
 # The Genie: on-device voice assistant (native iOS)
 
+Part of the [phone apps docs](README.md).
 The Genie is an on-device assistant drawn as an animated spider that lives over
 the whole app. It listens through on-device speech recognition, works out what
 to do with a tool loop on an on-device model, asks when a request is unclear,
@@ -8,8 +9,8 @@ teaches the Genie the missing tool. The spider is also a pet whose health
 follows the user's code velocity and marketing. The desktop
 ([../desktop/genie.md](../desktop/genie.md)) and the web
 ([../www/genie-spider.md](../www/genie-spider.md)) draw the same spider.
-Part of the [phone apps docs](README.md); this page is also the change record
-the Genie's hand-off prompt asks agents to update.
+This page is also the change record the Genie's hand-off prompt asks agents
+to update.
 
 Most logic is in `native/ios/ForkMeshCore/Sources/FMAssistant/` (pure Swift,
 tested on Linux); views and platform glue are in

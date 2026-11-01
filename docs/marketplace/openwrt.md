@@ -9,7 +9,7 @@ on one device shows it on the others. On Linux the desktop page is a lazily
 loaded package module ([../desktop/package-modules.md](../desktop/package-modules.md)).
 The user-facing description is the package
 [README](../../marketplace/packages/openwrt/README.md). Part of
-[the marketplace docs](README.md).
+[Marketplace](README.md).
 
 ## Where it runs
 
@@ -263,7 +263,7 @@ signed-in account has.
   `market/packages/openwrt/data/`.
 - **Saving it in the Password Vault (desktop).** When a login store is
   installed (the host's `loginStoreName()` is not empty; see
-  [README.md](README.md#architecture), **Login store**), the sign-in form
+  [Login store](package-system.md#login-store)), the sign-in form
   shows **Save the password in Password Vault** (ticked by default) and **Use
   saved password**. After a successful sign-in with a typed password, the page
   calls `saveLogin` with the title `OpenWrt router (<host>)`, the router's

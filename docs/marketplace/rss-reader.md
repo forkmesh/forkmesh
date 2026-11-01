@@ -7,7 +7,7 @@ on the device. There is no web page, no server API and no sync; ForkMesh's
 servers never see what a person reads. The only shared thing is the package's
 installed state (`install.sync: "account"`), which follows the account the
 way every account-synced package does; the data does not. Part of
-[the marketplace docs](README.md).
+[Marketplace](README.md).
 
 The design follows [NetNewsWire](https://netnewswire.com/) (Brent Simmons,
 Ranchero Software, MIT licensed): smart feeds, the timeline, the article view

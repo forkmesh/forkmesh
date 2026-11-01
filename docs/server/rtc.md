@@ -6,7 +6,7 @@ WebRTC protocol stack under it are our own Go code in `server/rtc/`, built only
 on the Go standard library: no Pion and no other third-party module
 (`server/go.mod` has no requirements and keeps none). One-to-one calls stay
 peer to peer ([chat-direct-calls.md](../app/chat-direct-calls.md)). Home:
-[README.md](README.md). The engine replacing this stack is
+[Go daemon](README.md). The engine replacing this stack is
 [FM Media](fm-media.md).
 
 The phones get their media engine from Google's open-source libwebrtc, built

@@ -1,8 +1,10 @@
 # Desktop: build, rebuild and test
 
-Part of [the desktop docs](README.md). The user-facing build guide with
+The user-facing build guide with
 per-distribution package commands is
 [docs/qt-client.md](../qt-client.md#build-and-run-from-source).
+
+Part of [Desktop](README.md).
 
 ## Requirements
 
@@ -11,7 +13,7 @@ From `desktop/CMakeLists.txt`:
 - Qt 6.4 or newer: Widgets, Network, Svg, Concurrent (required); DBus on Linux
   (required); Multimedia/MultimediaWidgets, OpenGL/OpenGLWidgets, Bluetooth,
   WebEngineWidgets (optional, found `QUIET`). Without WebEngine, agent browser
-  windows ([../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md)) open
+  windows ([../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md)) open
   in the system browser, and so do pages in the Browser tab
   ([browser.md](browser.md)).
 - OpenSSL 3.0 or newer; 3.5 for every feature. See [OpenSSL](#openssl).

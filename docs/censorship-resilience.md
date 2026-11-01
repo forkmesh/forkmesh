@@ -22,7 +22,7 @@ another general-purpose forge.
 
 | What is blocked or lost | What still works | How |
 | --- | --- | --- |
-| The original host (GitHub account suspended, repository removed) | Clone, issues, pull requests, releases | Import or sync the project first ([repository imports](repository-imports.md), [GitHub sync](github-sync.md)); the signed history and every mirror carry on without the original host. For a project at risk now: [crisis preservation](crisis-preservation.md). |
+| The original host (GitHub account suspended, repository removed) | Clone, issues, pull requests, releases | Import or sync the project first ([repository imports](repository-imports.md), [GitHub sync](forge-sync.md#connecting-a-repository-to-github)); the signed history and every mirror carry on without the original host. For a project at risk now: [crisis preservation](crisis-preservation.md). |
 | The `forkmesh.com` website | The app, API and Git | Use `app.forkmesh.com`, a core's own name (`nN.next.forkmesh.com`) or a mirror's address. |
 | The ForkMesh service entirely (all cores unreachable) | Clone and fetch of public repositories with a live mirror; releases from any copy | Point Git at a mirror's own HTTPS or SSH address ([mirroring and distribution](mirroring.md#ways-to-reach-a-copy)). Desktop nodes keep serving what they hold. |
 | One or two cores | Everything with one down; reads, clone and downloads with two down | DNS round robin and read-only mode ([architecture](architecture.md#no-single-point-of-failure)). |

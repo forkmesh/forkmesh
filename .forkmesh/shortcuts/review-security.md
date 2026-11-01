@@ -23,7 +23,7 @@ Read `docs/security/sentinel.md` (your charter and lanes) and
   hostnames. The 2026-09-24 infrastructure audit's login burst locked the
   operator's IP out for 15 minutes and its local scan stalled their uplink.
   Read-only probes of the fleet happen only when the operator asks for one
-  named check, and then from the commands in `docs/operations/README.md`.
+  named check, and then from the commands in `docs/operations/runbook.md`.
 - Never print, paste, commit or post a secret, key, token, password, cookie,
   credential file or `DATA_KEY` value. Name the file and the key, never the value.
   If you find a secret in the tree or history, report the path and commit and

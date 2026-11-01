@@ -1,6 +1,6 @@
 # Face Changer on the desktop
 
-Part of [the marketplace docs](README.md). The desktop's Face Changer is a
+Part of [Marketplace](README.md). The desktop's Face Changer is a
 native rail page whose output is a camera every app lists: on Linux, choose
 **ForkMesh Camera** in Google Meet's camera menu (or any other call app) and
 the meeting gets the changed picture. The web page `/dashboard/face-changer`
@@ -43,7 +43,7 @@ meeting app"; this page may name them.
 - **The engine stays in JavaScript.** The face tracker, the segmentation
   network and the warp renderer are about 9,000 lines of JavaScript and WebGL
   in `app/public`. The phone apps already host that engine in a web view
-  behind a native screen ([chat-direct-calls.md](../app/chat-direct-calls.md),
+  behind a native screen ([call-filters.md](../app/call-filters.md#face-changer-on-the-phones),
   Face Changer on the phones); the desktop does the same with Qt WebEngine, which every desktop
   build that has a browser pane already ships. A build without WebEngine
   shows a note and "Open in browser".

@@ -3,7 +3,7 @@ from pathlib import Path
 from test_issue_assignment_deadline import BUNDLE, CONTENT, ISSUES_IO, _function, _node
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC = (ROOT.parent / "docs" / "app" / "issue-assignment-limit.md").read_text(encoding="utf-8")
+DOC = (ROOT.parent / "docs" / "app" / "issue-assignment.md").read_text(encoding="utf-8")
 
 
 def test_assignment_limit_comes_from_issues_json():

@@ -1,11 +1,12 @@
 # Secrets vault
 
+Part of [Operations](README.md).
+
 The app's variables (`ADMIN_PASS`, the router seed, integration tokens and so
 on) are stored in the database encrypted under `DATA_KEY`. `DATA_KEY` is kept
 only on the operator box; on a node it exists only in the app's memory while
-that node is unsealed. Fleet runbook: [OPERATIONS.md](README.md);
-encryption overview: [encryption](../encryption.md); developer
-index: [README.md](../README.md).
+that node is unsealed. Fleet runbook: [runbook](runbook.md);
+encryption overview: [encryption](../encryption.md).
 
 Switches in `deploy/fleet.toml` `[app]`: `vault = true` turns the vault on
 (the example config defaults to plain systemd credentials);
@@ -57,7 +58,7 @@ nodes only decrypt.
    `--restart` (`seal-restart`) also overwrites the bytes and ends the process.
    The IDS lockdown uses it.
 5. **Quarantine**: a quarantined node refuses unseal and peers refuse it; after
-   a release peers wait until the operator has unsealed it once ([IDS.md](intrusion-detection.md)).
+   a release peers wait until the operator has unsealed it once ([intrusion detection](intrusion-detection.md)).
 
 Five failed socket unseals within 60 s lock further attempts for the window;
 failed peer keys do not count. Node operator actions (`fmnext-app-ops`) run
@@ -115,7 +116,7 @@ Keep `DATA_KEY` in its own 0400 file with an offline backup rather than in
 
 ## Rotation
 
-Offline rotation uses `tools/next_rekey.py` ([REKEY.md](rekey.md)): re-key a
+Offline rotation uses `tools/next_rekey.py` ([re-keying](rekey.md)): re-key a
 backup, load it with the apps stopped, then `sync` re-seals the vault. There
 is no online rotation; `sync` refuses to write when any row was sealed under
 another key. After a suspected key compromise, rotate individual secrets and

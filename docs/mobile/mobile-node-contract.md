@@ -1,5 +1,7 @@
 # Mobile node contract
 
+Part of [Phone apps](README.md).
+
 The wire and policy contract that makes the iOS and Android apps **mobile
 nodes** of a ForkMesh account: peers of the desktop node, coupled to it through
 the account on the relay. The owned Git engine is specified in

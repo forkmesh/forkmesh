@@ -3,7 +3,7 @@
 `tools/cloudflare_worker_deploy.py` lets a user mirror an existing Worker
 repository on ForkMesh and deploy it with Wrangler from their own desktop.
 This is a user feature; it has nothing to do with how ForkMesh itself is
-served. Tools index: [README.md](README.md). User guide: [docs/cloudflare-workers.md](../cloudflare-workers.md).
+served. Tools index: [tools docs](README.md). User guide: [docs/cloudflare-workers.md](../cloudflare-workers.md).
 Tests: `app/tests/test_cloudflare_worker_deploy.py`.
 
 ## Pieces
@@ -21,8 +21,7 @@ because `connect` copies it into the user's repository.
 ## Why it is shaped this way
 
 - **Runs on the owner's desktop.** Mirrors and shared runners hold no
-  Actions variables and have no network ([../server/actions-runner.md](../server/actions-runner.md),
-  [../server/runner-actions.md](../server/runner-actions.md)); only the
+  Actions variables and have no network ([../server/actions.md](../server/actions.md)); only the
   desktop's `ActionRunner` exposes `${{ vars.X }}` from Settings → Secrets and
   honours `FORKMESH_ACTIONS_ALLOW_NETWORK`.
 - **`runs-on: cloudflare-deploy`.** Desktop labels are the node name, the

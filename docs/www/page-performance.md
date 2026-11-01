@@ -2,8 +2,10 @@
 
 Targets: repository, pull request, issue and discussion pages usable in under
 200 ms on a warm load and under 800 ms cold, with immutable-content API reads
-under 30 ms at the node. Served stack: [PLAN.md](../operations/served-stack.md); developer index:
-[README.md](../README.md).
+under 30 ms at the node. This page lists the techniques in place, how to
+measure, and what is still open. Part of [the website docs](README.md);
+served stack: [served stack](../operations/served-stack.md); host fast path:
+[host](../host/README.md).
 
 ## Techniques in place
 

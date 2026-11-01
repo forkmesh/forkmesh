@@ -106,7 +106,7 @@ Security-relevant areas:
   repositories. Legacy custodial payouts are frozen; current rewards use
   externally owned wallets.
 - **Hosted service** — the self-hosted core nodes behind app.forkmesh.com
-  and world.forkmesh.com ([architecture](docs/codebase.md)) and the
+  and world.forkmesh.com ([architecture](docs/architecture.md)) and the
   runners that execute agent and Actions jobs
   ([docs/operations/runners.md](docs/operations/runners.md)).
 

@@ -1,9 +1,9 @@
 # FMPackages
 
+Part of [iOS core modules](README.md).
 The organization packages (CRM, Marketing, Analytics, Competitors) and the Market. `import
 FMPackages` (re-import `FMBase` for `JSONObject`). The SwiftUI views are in
-`ForkMesh/Features/Packages`; tests are in `ForkMeshCore/Tests/FMPackagesTests`. Native docs
-home: [docs/native/README.md](../README.md).
+`ForkMesh/Features/Packages`; tests are in `ForkMeshCore/Tests/FMPackagesTests`.
 
 ## Marketing Reddit desk
 

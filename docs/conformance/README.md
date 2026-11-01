@@ -4,10 +4,11 @@
 vectors, fixtures, ledgers and retained evidence. Each suite is shared by the
 implementations it binds (the Python app, the Go daemon, the desktop, mobile)
 and backs one public page under `docs/`. A version directory is frozen
-once published; a breaking change adds `v2` beside it. Home:
-[docs/README.md](../README.md); public index:
-[docs/README.md](../README.md); the threat model these suites
-test is [threat-model.md](../protocol/threat-model.md).
+once published; a breaking change adds `v2` beside it. The code map below
+lists every suite with the page it backs. The threat model these suites test
+is [threat-model.md](../protocol/threat-model.md); the normative protocol
+suite is [protocol/README.md](../protocol/README.md). Back to the
+[documentation index](../README.md).
 
 ## Code map
 

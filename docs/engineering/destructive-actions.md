@@ -1,7 +1,7 @@
 # Destructive actions
 
 The repository rule is in `AGENTS.md`; this page explains the helpers and the
-contract test. Home: [docs/README.md](../README.md).
+contract test. Part of [Engineering](README.md).
 
 ## The rule
 

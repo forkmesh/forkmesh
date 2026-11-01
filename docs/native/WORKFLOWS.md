@@ -100,7 +100,7 @@ and Free disk space, which cleans the desktop.
 The JavaScript engine is a line-for-line port of `workflows.py`: validation
 (`clean`), expressions, every core node including the scripting, text,
 number, list and date steps ([app/workflow-steps.md](../app/workflow-steps.md)),
-the script interpreter ([app/workflow-scripts.md](../app/workflow-scripts.md)),
+the script interpreter ([app/workflow-steps.md](../app/workflow-steps.md#run-script)),
 integration request building, the run report. Python details that change
 results are reproduced on purpose:
 `json.dumps` spacing and `ensure_ascii`, `quote`/`urlencode` escaping, Python

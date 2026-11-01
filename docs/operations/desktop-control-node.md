@@ -1,5 +1,7 @@
 # ForkMesh desktop control node
 
+Part of [Operations](README.md).
+
 The desktop client's **Control** page is the operator surface for the current
 device. It never makes ForkMesh a custodian. Its tabs are Site deployment,
 Export, Import, Mirror client, Repository permissions, Keys and wallet, Reward
@@ -90,4 +92,4 @@ desktop, and are passed via environment or stdin, never arguments.
 ## Reward-pool signer
 
 The Control page hosts the local signer for the community reward pool; see
-[Community reward-pool local signer](community-reward-pool-signer.md).
+[community reward pool, local signer](community-reward-pool.md#local-signer).

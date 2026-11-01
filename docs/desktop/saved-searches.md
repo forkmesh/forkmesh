@@ -1,6 +1,8 @@
 # Desktop: saved searches and security alarms
 
-Part of [the desktop docs](README.md).
+Saved searches on the search results page, the pings they raise for new hits, the security-pertinent searches that raise an alarm, and the exclusions, hidden terms and scrubbing that keep terms out of search and logs.
+
+Part of [Desktop](README.md).
 
 ## Saved searches
 

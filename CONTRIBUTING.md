@@ -7,7 +7,7 @@ the same workflow. New to ForkMesh? Start with
 troubleshooting are in the [Qt client guide](docs/qt-client.md). The
 developer documentation for each subsystem starts at
 [docs/README.md](docs/README.md); how the pieces fit is in
-[Architecture and availability](docs/codebase.md), and the served stack
+[Architecture and availability](docs/architecture.md), and the served stack
 in [docs/operations/served-stack.md](docs/operations/served-stack.md).
 
 ## Ways to contribute

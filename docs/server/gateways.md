@@ -1,6 +1,6 @@
 # Gateways: HTTPS and SSH
 
-The daemon ([README.md](README.md)) never serves Git itself. It supervises the
+The daemon ([Go daemon](README.md)) never serves Git itself. It supervises the
 Python HTTPS gateway and leaves SSH writes to the SSH gateway and broker. These
 gateways are what a mirror serves clones from
 ([mirroring](../mirroring.md)).

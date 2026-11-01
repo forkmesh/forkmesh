@@ -1,5 +1,7 @@
 # Editing files and opening pull requests from the phone
 
+Part of [Phone apps](README.md).
+
 From the repository browser in the iOS or Android app, a person can edit one
 text file and propose it as a pull request with no clone, no fork and no push
 access. Related: [mobile node contract](mobile-node-contract.md),

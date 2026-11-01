@@ -564,7 +564,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 - **Alternative:** A self-hosted instance runs the same app on any Linux server it owns, and the mirror node installs on any Linux host with install.sh. Moving the hosted service to another provider means provisioning new cores and restoring a backup; the fleet tools only create Vultr instances.
 - **Failure drills:** `deploy/tests/test_next_dns.py::test_production_failover_removes_from_both_names_and_readds`, `app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising`, `app/host/tests_unit/test_autoscale.py::test_boot_timeout_destroys_a_node_that_never_joined`
 - **Known gap:** All three cores and the runner are in one Vultr region, and no drill covers losing the region or the account.
-- **Evidence:** `deploy/fleet.toml`, `docs/operations/README.md`, `tools/next_fleet.py`, `tools/next_backup.py`, `app/host/forkmesh_host/vultr_guard.py`, `app/host/forkmesh_host/d1_rqlite.py`, `app/host/forkmesh_host/durable.py`, `desktop/src/MainWindowChat.cpp`
+- **Evidence:** `deploy/fleet.toml`, `docs/operations/runbook.md`, `tools/next_fleet.py`, `tools/next_backup.py`, `app/host/forkmesh_host/vultr_guard.py`, `app/host/forkmesh_host/d1_rqlite.py`, `app/host/forkmesh_host/durable.py`, `desktop/src/MainWindowChat.cpp`
 
 <a id="crm-package-providers"></a>
 
@@ -785,7 +785,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 - **Alternative:** Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance.
 - **Failure drills:** `app/tests/test_comment_gifs.py::test_results_are_cached_and_upstream_failures_are_reported`
 - **Known gap:** The privacy notice does not name GIPHY yet.
-- **Evidence:** `app/src/comment_gifs.py`, `app/public/dashboard/js/09-comment-gifs.js`, `docs/app/comment-gifs.md`
+- **Evidence:** `app/src/comment_gifs.py`, `app/public/dashboard/js/09-comment-gifs.js`, `docs/app/comment-reactions.md`
 
 <a id="video-mix-sources"></a>
 

@@ -13,7 +13,7 @@ hosts.
 | Settings, provider API, import, outbox, cron | `app/src/repository_provider_mirror.py` |
 | Route | `REPO_PROVIDER_MIRROR_RE` in `app/src/urls.py` |
 | Tables | `repo_provider_mirrors`, `repo_provider_mirror_links`, `repo_provider_mirror_outbox` |
-| Code push | `server/hosted_push_mirror.go`, fed by `hosted_repos.replicas` ([../HOSTED_REPOS.md](../operations/core-hosted-repositories.md)) |
+| Code push | `server/hosted_push_mirror.go`, fed by `hosted_repos.replicas` ([core-hosted repositories](../operations/core-hosted-repositories.md)) |
 | Tests | `app/tests/test_repository_provider_mirror.py`, `server/hosted_push_mirror_test.go` |
 
 ## Features

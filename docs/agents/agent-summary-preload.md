@@ -1,9 +1,13 @@
 # Claude Code agent summaries switched off
 
+The desktop stops Claude Code's background agent-summary requests with a
+pinned preload script: what they cost, how the script works, where the desktop
+applies it, how to check it and what happens after a Claude Code update.
 Code: `desktop/src/AgentSummaryPreload.h` (install and `BUN_OPTIONS`),
 `desktop/src/AgentSummaryPreloadScript.h` (the script),
-`desktop/tests/test_agent_summary_preload.cpp`. Part of the agent runtime
-described in [README.md](README.md).
+`desktop/tests/test_agent_summary_preload.cpp`.
+
+Part of [Agents](README.md).
 
 ## What it stops
 

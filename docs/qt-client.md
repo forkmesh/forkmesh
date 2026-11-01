@@ -133,7 +133,7 @@ the owner is online. See [Contributing](../CONTRIBUTING.md).
 ## Run a managed mirror
 
 Do not use the desktop binary as a repository server; run the Go mirror daemon
-per the [headless mirror runbook](operations/headless-mirror-refresh.md).
+per the [headless mirror runbook](operations/headless-mirror.md#refresh-and-publication).
 
 ## Logs and diagnostics
 

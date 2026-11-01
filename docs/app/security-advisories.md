@@ -201,7 +201,7 @@ Tables (migration 0277): `security_advisories`, `security_advisory_members`,
 `security_advisory_comments`, `security_advisory_credits`,
 `security_advisory_settings`. All carry `repo_bi`, so a repository delete
 purges them (`_REPO_SCOPED_TABLES`), and all are in the re-key inventory
-([REKEY.md](../operations/rekey.md)).
+([rekey](../operations/rekey.md)).
 
 The access record `context()` builds is passed as `ctx` and read by key only
 (`ctx["admin"]`, never `ctx.get(...)`): the `test_host_js_surface` inventory

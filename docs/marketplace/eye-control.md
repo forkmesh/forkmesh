@@ -5,7 +5,7 @@ experimental iPhone section: a cursor follows where the user looks, and a
 firm blink taps whatever is under it. It is off by default, synced with the
 account, shown on phones only (iOS; there is no Android version yet), and
 opens from **You → Personal → Eye Control**, the Market's **Open** button, or
-`forkmesh://dashboard/eye-control`. Part of [the marketplace docs](README.md).
+`forkmesh://dashboard/eye-control`. Part of [Marketplace](README.md).
 
 ## Pieces
 

@@ -1,5 +1,6 @@
 # Voice, camera and channels in the World
 
+Part of [World](README.md).
 People in the World can turn on their microphone and camera and talk to each
 other: in the whole World, in one World channel, in a voice room they start,
 or inside a privacy bubble with the people next to them. The camera does not
@@ -7,7 +8,7 @@ send video by default. It moves the person's avatar: head direction, every
 facial expression on the avatar's face, arms and hands, and hand gestures that
 send reactions to whoever is speaking. Each speaker wears a live word count.
 One Discord-style list holds every World channel, voice room, Office room,
-private channel and direct message. Home: [World](README.md).
+private channel and direct message.
 
 It is one system with the `/chat` calls: the same group-call engine
 (`chat-group-calls.js`), the same face changer and voice changer, the same

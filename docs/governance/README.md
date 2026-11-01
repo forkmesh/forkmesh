@@ -7,6 +7,16 @@ records and participant disclosures live in
 the [decision register](decision-register.md) and
 `/docs/governance/register.json` are generated from them.
 
+| Page | Covers |
+| --- | --- |
+| This charter | Bodies and quorum, proposals, security decisions, appeals, running the ledger |
+| [Decision register](decision-register.md) | Every proposal, security and appeal record with its votes and disclosures (generated) |
+
+Related: the [protocol suite](../protocol/README.md), the
+[threat model](../protocol/threat-model.md) and
+[public-interest funding](../funding/README.md). Back to the
+[documentation index](../README.md).
+
 ## Roles
 
 | Body | Seats | Quorum |

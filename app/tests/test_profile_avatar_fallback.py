@@ -9,7 +9,7 @@ PROFILE_IO = (JS / "03-issues-profile-io.js").read_text(encoding="utf-8")
 HELPERS = (JS / "02-helpers.js").read_text(encoding="utf-8")
 EXPLORER = (JS / "05-repo-list-explorer.js").read_text(encoding="utf-8")
 BUNDLE = (ROOT / "public" / "dashboard.js").read_text(encoding="utf-8")
-DOC = (ROOT.parent / "docs" / "app" / "profile-avatar.md").read_text(encoding="utf-8")
+DOC = (ROOT.parent / "docs" / "app" / "profile-links.md").read_text(encoding="utf-8")
 
 
 def _function(text, name):

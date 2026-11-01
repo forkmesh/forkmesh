@@ -6,7 +6,7 @@ brings the Genie spider ([../native/GENIE.md](../native/GENIE.md)) into the
 room through the camera. Installed, it adds **Spider Room** to the home grid
 (Personal) and the package's Market page opens it. Deep links:
 `forkmesh://spider-room`, `/dashboard/spider-room`. Part of
-[the marketplace docs](README.md); the desktop counterpart is
+[Marketplace](README.md); the desktop counterpart is
 [aquarium.md](aquarium.md).
 
 ## Code map

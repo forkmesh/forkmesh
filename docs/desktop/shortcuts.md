@@ -1,13 +1,13 @@
 # Shortcuts: one-tap runs and the queue
 
-Part of [the desktop docs](README.md).
-
 Shortcuts are the scripts and prompts in a repository's `.forkmesh/shortcuts/`
 folder. The desktop runs scripts (`bash`, from the repository root); the
 iPhone and Android apps list them and run them on the desktop over the phone
 LAN control link (`insights.*` family, see [networking.md](networking.md)).
 The feature is the built-in `shortcuts` package
 ([../marketplace/core-plugins.md](../marketplace/core-plugins.md)).
+
+Part of [Desktop](README.md).
 
 Code: `desktop/src/MainWindowShortcuts.cpp` (page, runs, queue),
 `desktop/src/MainWindowLocalControlInsights.cpp` and
@@ -50,7 +50,7 @@ it:
 - **Web.** The package declares each file as a `content.shortcut`
   contribution, so the Workflows Repository view lists them for accounts with
   the Shortcuts package installed and adds one as a commit after review
-  ([../marketplace/README.md](../marketplace/README.md#protocols-and-interfaces)).
+  ([package system](../marketplace/package-system.md#protocols-and-interfaces)).
   Because the package has a `content/` folder, it is a selectable plugin
   listed in `marketplace/plugins.json`.
 

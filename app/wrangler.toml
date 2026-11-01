@@ -226,7 +226,7 @@ ATTRIBUTION_ALLOWED_CAMPAIGNS = "forever_launch,search_to_clone_478,category_com
 # Cloudflare Turnstile widget "forkmesh-next-signup" (managed mode; domains
 # app.forkmesh.com and forkmesh.com). The site key is public; its
 # secret TURNSTILE_SECRET_KEY arrives through the vault (deploy/fleet.toml
-# optional_secrets). See app/src/turnstile.py and docs/operations/README.md.
+# optional_secrets). See app/src/turnstile.py and docs/operations/runbook.md.
 TURNSTILE_SITE_KEY = "0x4AAAAAAFB4BWGb6Sgx78UR"
 OFFICE_STUN_URLS = "stun:stun.cloudflare.com:3478"
 

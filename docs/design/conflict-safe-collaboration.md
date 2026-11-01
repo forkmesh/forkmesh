@@ -4,7 +4,8 @@ Status: normative protocol version 1, part of the
 [ForkMesh protocol suite](../protocol/README.md). Suite version: `1.0.0-rc.1`. The machine-readable envelope schema is
 [`collaboration-event-v1.schema.json`](../../www/public/docs/protocol/collaboration-event-v1.schema.json).
 The dependency-free reference fold is `app/src/collaboration.py`; the independent
-WebCrypto fold is `app/public/collaboration.js`.
+WebCrypto fold is `app/public/collaboration.js`. Part of
+[Design decisions](README.md).
 
 ## Invariants
 

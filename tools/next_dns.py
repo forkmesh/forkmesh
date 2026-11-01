@@ -9,7 +9,7 @@
     next_dns.py undrain nN    [--execute]
 
 Dry-run is the default: without --execute changes are printed only.
-docs/operations/README.md, section "DNS health failover".
+docs/operations/runbook.md, section "DNS health failover".
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ def check_token_file(path):
     try:
         mode = Path(path).stat().st_mode
     except FileNotFoundError:
-        raise ToolError("missing %s (the DNS token file; docs/operations/README.md)"
+        raise ToolError("missing %s (the DNS token file; docs/operations/operator-files.md)"
                         % path) from None
     if not stat.S_ISREG(mode):
         raise GuardError("%s is not a regular file" % path)

@@ -1,10 +1,11 @@
 # FMAgents
 
+Part of [iOS core modules](README.md).
 The on-device coding agent, its providers (Claude, OpenAI, and Gemma 4 on this iPhone), the
 session service with branch isolation, the node login terminal, quick launch from the composer,
 and the Agents screens' view models. `import FMAgents` (deps FMBase, FMCrypto, FMNet, FMAccount,
 FMApi, FMCode, FMGit, FMDiff, FMLocalAI). Everything is `@MainActor`. Views:
-ForkMesh/Features/Agents. Native docs home: [docs/native/README.md](../README.md).
+ForkMesh/Features/Agents.
 
 ## Workspace seam (`AgentWorkspace.swift`, `GitAgentWorkspace.swift`)
 

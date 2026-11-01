@@ -57,7 +57,7 @@
             "id": "forge-sync",
             "label": "Keeping GitHub or GitLab in sync with another host",
             "pattern": "\\bsync(ing|ed)? (my |our |a )?(repos? |repositories )?(between|from|to|with) (github|gitlab)\\b|\\bkeep (github|gitlab|both) (in sync|synced)\\b|\\btwo[- ]way (git |repo )?sync\\b",
-            "evidence": "/docs/github-sync/"
+            "evidence": "/docs/forge-sync/"
         }
     ],
     "queries": [

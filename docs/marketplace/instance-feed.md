@@ -4,12 +4,11 @@
 people on one ForkMesh instance (the local timeline, in Mastodon terms). Each
 account installs it for itself; everyone on the instance with it installed
 reads the same feed. It does not federate: the network-wide ActivityPub view
-is the separate `feed` package
-([../marketplace-usage-feed-mastodon.md](usage-feed-mastodon.md)).
-Part of [the marketplace docs](README.md).
+is the separate `feed` package ([Network Feed](#network-feed)).
+Part of [Marketplace](README.md).
 
-Every surface (Market, web page, desktop rail, iOS and Android) calls it Feed
-(formerly Instance Feed); the ActivityPub `feed` package is shown as Network
+Every surface (Market, web page, desktop rail, iOS and Android) calls it Feed;
+the ActivityPub `feed` package is shown as Network
 Feed, so no two packages are called Feed. The package id, the
 `/api/instance-feed` routes, `/dashboard/instance-feed`, the tables and the
 request proof keep the old name so existing installs and data carry over.
@@ -195,3 +194,7 @@ older posts"; pull down or the refresh button reloads. A route with a post id
 opens that thread with "Back to the feed". An account without the package sees
 the install note and "Open in the Market", which opens the package's Market
 page.
+
+## Network Feed
+
+Network Feed (package id `feed`) projects public ForkMesh profile updates alongside the existing signature-verified ActivityPub mention stream from World. It excludes private profiles and repositories and never turns a social mention into work automatically. On the desktop it has a native registration that opens its authenticated dashboard route; on iOS and Android it discovers the same dashboard contribution as a web surface and opens that route from the installed package.

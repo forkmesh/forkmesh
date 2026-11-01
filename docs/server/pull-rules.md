@@ -3,7 +3,7 @@
 Repository and organization requirements checked against every pull request,
 and the signed proof of which AI model wrote a commit. The user guide is
 [`docs/operations/pull-rules.md`](../operations/pull-rules.md);
-this page is the implementation (home: [README.md](README.md); merges:
+this page is the implementation (home: [Go daemon](README.md); merges:
 [merge-executor.md](merge-executor.md)).
 
 ## Code map

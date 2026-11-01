@@ -66,7 +66,7 @@ findings by check and target (or page), so a fix shows up as resolved.
 ## Limits and why
 
 - **Pacing.** The zone rate limit is 120 requests per 10 s per address and
-  colo ([README.md](README.md), "Security"). The default is 6 requests a
+  colo ([website docs](README.md), "Security"). The default is 6 requests a
   second across all workers. A 429 halves the pace and waits for
   `Retry-After` (capped at 30 s, up to three tries); a URL still limited is
   counted as not checked, never as broken.

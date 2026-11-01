@@ -1,10 +1,15 @@
 # Desktop: networking
 
-Part of [the desktop docs](README.md). How the relay, cores and mirrors fit
-together is in [architecture](../architecture.md); the encryption
-used on links and chat is in [encryption](../encryption.md).
+How the desktop talks to the network: the relay connection and its HTTP/3
+client, the host and fleet log feeds, the Network page's node list, host and
+fleet operations, the LAN and Bluetooth mesh, phone control over the LAN, and
+the application firewall rules agents need. How the relay, cores and mirrors
+fit together is in [architecture](../architecture.md); the encryption used on
+links and chat is in [encryption](../encryption.md).
 
-## Relay transport
+Part of [Desktop](README.md).
+
+## Relay connection
 
 - `src/ServerNode.*` and `src/ChatBackend.h` hold the relay HTTP and WebSocket
   connection; `src/BackoffNetworkAccessManager.*` and `src/NetworkBackoff.h`
@@ -60,18 +65,7 @@ used on links and chat is in [encryption](../encryption.md).
   limit. Frames the relay marks `historyReplay` before `forkmesh-history-end`
   skip only the already-seen counter check.
 
-## Cloudflare log tail (legacy)
-
-`MainWindow::setCloudLogMonitorEnabled()` (`src/MainWindowLogs.cpp`, setting
-`diagnostics/cloudLogMonitor`) can run `npx wrangler tail` for the Worker named
-in `app/wrangler.toml`. The app and World run on the core nodes, not as
-Workers, so the tail normally reports the Worker missing
-(`cloudflareTailWorkerMissing()`): the monitor then stops, records the name in
-`diagnostics/cloudLogMonitorMissingWorker`, and skips the tail on later
-launches until the box is ticked again. The Node.js probe runs on a worker
-thread once per session. App logs come from the fleet feed below.
-
-## HTTP/3 client
+### HTTP/3 client
 
 QtNetwork stops at HTTP/2. `src/Http3Get.{h,cpp}` is an in-process HTTP/3 GET
 client on OpenSSL's QUIC client and `libnghttp3`, driven by a
@@ -82,7 +76,11 @@ tests). QUIC's idle timeout is 30 s, so the mirror gateway
 (`tools/mirror_gateway.py`, `NODE_LOG_KEEPALIVE_SECONDS`) sends keep-alives
 every 10 s. Probe: `forkmesh-http3-probe <url> [Header: value]...`.
 
-## Host logs
+## Host and fleet logs
+
+The Log page itself is in [diagnostics.md](diagnostics.md#log-page).
+
+### Host logs
 
 The Hosts rail's **Live view** (`src/MainWindowHosts.cpp`, `src/HostLogSources.h`)
 reads the gateway's `/v1/node/logs` server-sent events over HTTP/3 when it can.
@@ -90,10 +88,10 @@ Only Ed25519 keys the desktop's host installer wrote to the gateway's allow file
 may open the feed. Otherwise it falls back to one SSH connection multiplexing
 the node log and the systemd journal, and retries QUIC periodically.
 
-## Fleet node logs
+### Fleet node logs
 
 `src/CoreNodeLogs.{h,cpp}` and `CoreLogFeed` in `src/MainWindowLogs.cpp` follow
-every fleet node's journal live. Node side: [../NODE_LOGS.md](../operations/node-logs.md),
+every fleet node's journal live. Node side: [node logs](../operations/node-logs.md),
 `deploy/core/logread.py`. Setting: "Follow the fleet nodes' logs, rqlite
 statements and web traffic" (`diagnostics/coreNodeLogFeed`, on by default;
 compiled out under `FORKMESH_WINDOW_TESTS`).
@@ -159,6 +157,17 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   not loaded yet the table is selected once it arrives. The `(no table)` and
   `+N more` bubbles are not links.
 
+### Cloudflare log tail (legacy)
+
+`MainWindow::setCloudLogMonitorEnabled()` (`src/MainWindowLogs.cpp`, setting
+`diagnostics/cloudLogMonitor`) can run `npx wrangler tail` for the Worker named
+in `app/wrangler.toml`. The app and World run on the core nodes, not as
+Workers, so the tail normally reports the Worker missing
+(`cloudflareTailWorkerMissing()`): the monitor then stops, records the name in
+`diagnostics/cloudLogMonitorMissingWorker`, and skips the tail on later
+launches until the box is ticked again. The Node.js probe runs on a worker
+thread once per session. App logs come from the fleet feed below.
+
 ## Network & nodes
 
 The Nodes tab of the Network page (`src/MainWindowNodes.cpp`, `buildNodesSection`)
@@ -194,7 +203,7 @@ rail.
   Latency and Health right after Node, so the health of each node reads first.
 - **Hosts rail** (`buildHostsSection`, `networkHostsRail`): a right column
   (`networkRightColumn`, a quarter of the page, 240 to 320 px) holds the node
-  details panel (Next design) above the rail. The rail keeps every former Hosts
+  details panel (Next design) above the rail. The rail holds every Hosts
   control in compact form: icon-only buttons for live view, check all and the
   all-host install, reinstall and source update; the saved-host list with two
   lines per host and its ten per-host actions as a 2 by 5 grid of icon buttons;
@@ -204,7 +213,7 @@ rail.
   opens itself when one of its fields is filled from elsewhere (the World
   launch handoff, a double-clicked host) or output arrives. The Hosts plugin
   switch hides the rail. **Live view** swaps the node list for the side-by-side
-  host panes (`m_hostsViewStack`). `kNetworkHostsTab` is now an alias of the
+  host panes (`m_hostsViewStack`). `kNetworkHostsTab` is an alias of the
   Nodes tab, so every "open Hosts" path lands here. Saved hosts are probed only
   while the page is on screen (`hostsRailOnScreen`).
 
@@ -225,13 +234,151 @@ rail.
   and `GET /api/runners` (status, last check-in, `activeLeases`, scope, owner).
   Their **Logs** action opens the Log page filtered to that runner.
 - Owner and version come from the catalog
-  ([NODE_OWNERSHIP.md](../operations/node-ownership.md)).
+  ([node ownership](../operations/node-ownership.md)).
 - A node in the relay's serving set counts as online even when its endpoint
   lease is not current (`mirrorsync::catalogMirrorLiveness`); its tooltip says
   clones are not routed to it.
 
 Tests: `forkmesh-control-tests` (`checkNodeRoles`, `checkCatalogMirrorLiveness`),
 `forkmesh-window-tests --nodes-page-only`, `forkmesh-runner-login-tests`.
+
+### New interface
+
+In the [new interface](ui-redesign.md#pages) the Network page
+(`buildNetworkDiagnosticsSection` in `MainWindowNetworkDiagnostics.cpp`,
+`buildNodesSection` in `MainWindowNodes.cpp`, `buildMirrorNodesSection` in
+`MainWindowReleases.cpp`, `82-network.qss`) follows the desktop mockup;
+Classic keeps the layout above.
+
+- **Header.**
+  - The title is 15 px semibold, with the "About network diagnostics" help
+    button beside it.
+  - Under the title is one muted summary line (`networkRole="summary"`):
+    "N of M nodes online · E endpoints · c / n websocket connected · X sent,
+    Y received". The nodes part comes from the Nodes table and the rest from
+    `refreshNetworkDiagnostics`. Each side stores its part in a dynamic
+    property (`nextNodesPart`, `nextDiagPart`) on `m_networkDiagnosticsStatus`
+    and joins both. The Classic text, with frame counts, becomes the line's
+    tooltip.
+  - On the right are the page's one Refresh (`repoAction`, ghost through
+    `networkRole="ghost"`, same slot) and an inverse "Add node" button
+    (`networkAddNodeButton`). Add node opens the Add a host section of the
+    Hosts rail beside the node list and focuses its address field. It adds no
+    new flow.
+- **Tabs.** `#networkTabs` uses underline tabs (accent underline on the
+  current tab) in place of the pills from `10-shell.qss`. Tabs that were
+  title case are renamed in sentence case in Next ("Web requests",
+  "Firewall rules", "Recent firewall decisions"). Every tab stays, in the
+  same order and at the same index. Each tab page gets 16 px top padding.
+  The five diagnostics tables get 36 px rows and a 12 px rounded hairline
+  frame (`networkGrid`).
+- **Nodes tab.** It is a left column plus a right detail panel. Every widget
+  still belongs to the Nodes page.
+  - **Stat cards** (`networkStatOnline`, `networkStatLatency`,
+    `networkStatTraffic`, `networkStatRepos`):
+    - Nodes online: online and total rows, with an offline breakdown.
+    - Median latency: median of the Latency column, with how many nodes were
+      measured.
+    - Relay traffic: bytes sent plus received over the relay websockets this
+      session.
+    - Repositories served: distinct repositories in the roster's mirror
+      lists, and how many nodes hold them.
+
+    The cards are refreshed at the end of `sortNodesTable` and in
+    `refreshNetworkDiagnostics`.
+  - **Repository mirrors bar.** `#mirrorNodesSection` becomes a rounded card
+    with the repository picker, the count, the Online only switch, Reset
+    integrity pin, Refresh nodes and "Update all from this binary".
+    - Online only is a `kit::Toggle` (a `QCheckBox`), with the same text,
+      default and slot.
+    - The update button keeps its text and object name, so a rail shortcut
+      to it still resolves by label. It sits in the bar's
+      `mirrorNodesHeaderRow`.
+  - **Filter bar** (`networkNodesToolbar`).
+    - A segmented control built from `nodesRoleFilter`'s items: All, Core,
+      Runners, Mirrors, Desktop nodes, Relays. It sets the combo's index, so
+      the saved setting and the filtering code are unchanged. The combo and
+      its label are hidden, and the two stay in sync both ways.
+    - The "Filter nodes" field hides rows whose name, role, owner, status,
+      region, platform and endpoint all lack the text. It filters only what
+      the role filter already shows, and hides child copy rows with their
+      node.
+    - The long lede sits behind an "About nodes" help button.
+    - Sorting lives here, not in the column headers: a "Sort: <field>"
+      combo (`networkNodesSort`, every column but Actions, in display order)
+      and an ascending/descending button (`networkNodesSortOrder`). Both set
+      the header's sort indicator, so `sortNodesTable` is unchanged; the
+      choice is saved as `network/nodesSort` (the column's caption) and
+      `network/nodesSortOrder` (`asc`/`desc`).
+  - **Nodes table.**
+    - The model keeps all 44 columns, its actions, context menus and
+      double-click behaviour, but the table shows far fewer: the header is
+      hidden (`nodePairs` property) and each shown cell holds two different
+      fields, one per line (`nextNodePairs`):
+      - Status over Activity, Latency over Checked, Health over Integrity,
+        Revision over Message and Author, Route over Reach, Repos over
+        Mirrors, Size over Git DB, Issues over Pulls and Discussions,
+        Commits over Branches, Artifacts over Worktrees, Clones over Web
+        hits, Caps over Scope.
+      - CPU, RAM and Disk share one cell as three small meters.
+      - Each line is its icon, a muted caption (left out where the value
+        says what it is: status, activity, latency, revision, message) and
+        the value. An empty value is a plain dash.
+      - A count's sync-back backlog (`nextNodeBacklogColumn`) follows it in
+        the warning colour as "↑N", instead of taking its own column.
+    - Role, owner, platform (or region), endpoint and version are folded
+      into the Node cell's second line, which absorbs the spare width
+      (`makeColumnsResizable` keeps Node flexible). Node id is only in the
+      details panel.
+    - `nextFitNodeColumns` (run at the end of `applyNodeRoleFilter`) hides a
+      cell whose fields are empty in every row the role and text filters
+      show, so a role tab only lists the columns its nodes report.
+    - Rows are 48 px.
+    - `NextNodeCellDelegate` paints:
+      - Node: a status dot (green online, grey offline, amber behind, red
+        integrity failing), the mono name, and a soft "You" badge or outline
+        "Source of truth" and "Active relay" badges.
+      - Child copy rows: indented under "└".
+      - Muted columns: role, scope, status ("Online · serving"), activity,
+        owner, latency, region.
+      - Version and Revision: mono.
+    - `NextNodesTableChrome` (a viewport event filter) paints the hairlines,
+      the whole-row hover fill and the selected-node band. The table stays
+      `NoSelection`.
+  - **Detail panel** (`networkNodePanel`, 320 px).
+    - A click on a row opens it, and × closes it. The node is remembered by
+      key (`nextPanelKey`) and refilled after every refresh.
+    - Content, all read from that row's cells:
+      - Header: a role icon tile, the mono name, "This node", and role ·
+        region (or platform).
+      - An offline notice made of the status and its tooltip.
+      - Latency, Synced and Version tiles.
+      - CPU, Memory and Disk bars (`kProgressBarRole`).
+      - A Details list: status, activity, owner, platform, revision,
+        endpoint, health, node id.
+    - Footer: Profile (`showNodeProfile`), the row's own action (Website or
+      Logs, through `activateNodeDirectoryRow`), and "…", which offers the
+      row's Delete button by clicking it.
+  - `m_nodesStatus` stays as a footnote under the table.
+- **Left out on purpose.**
+  - Topology graph: the app has no node-to-node link data and no graph
+    widget.
+  - Activity · 24h sparklines and the panel's Load · last 24h: no per-node
+    history exists. Activity stays the existing text column.
+  - The panel's Uptime tile: no uptime is reported. Synced is shown instead.
+  - The Services list with running dots: nodes report no services.
+    Capabilities stay in the Caps column tooltip.
+  - Open shell and Restart: the Nodes directory has no per-node shell or
+    restart. Those stay on saved hosts in the Hosts rail.
+  - The Relay traffic delta ("+12%"), and the mockup's mesh invite command
+    and dialog: no such data or flow exists.
+  - The mockup hides most columns. Here they are paired two to a cell or
+    folded into the Node cell instead, so no field is lost.
+- **Tests.** `test_window_resize.cpp` pins compact two-line node rows (40 to
+  52 px) and the "Web Requests" tab label. Both hold in Classic, the test
+  default. The Next values are cosmetic.
+- **Live switch.** The layout is built once, so a live switch shows it after
+  the page is rebuilt.
 
 ## Hosts and fleet operations
 
@@ -245,7 +392,7 @@ Passwords are only a fallback and travel via environment or stdin, never argv.
 The Hosts rail's Runners section lists the app's cloud agent runners (`hostsRunnersTable`,
 `refreshRunners()`, `src/RunnerListView.*`) from `GET /api/runners`, with
 status, scope, last check-in and per-provider sign-in state, and buttons that
-open the runner sign-in dialog ([../RUNNERS.md](../operations/runners.md#provider-credentials)).
+open the runner sign-in dialog ([runners](../operations/runners.md#provider-credentials)).
 Runners are never added to the saved hosts; they show in the node list as runners.
 
 ### Add core node
@@ -314,7 +461,7 @@ delete it later with **Remove…** and the instance box. Test:
 The Hosts rail's ForkMesh fleet section carries **Fleet autoscaling** (`src/FleetAutoscalePanel.{h,cpp}`,
 `src/FleetAutoscaleModel.h`), a control plane for `tools/next_autoscale.py`
 (`FORKMESH_NEXT_AUTOSCALE`, `FORKMESH_FLEET_PYTHON`). The scaler itself runs
-leaderless on the cores ([../fleet/AUTOSCALING.md](../operations/autoscaling.md)).
+leaderless on the cores ([autoscaling](../operations/autoscaling.md)).
 The panel offers a kill switch, per-pool settings (validated, then signed by
 `next_autoscale.py settings set`; going live asks first), a status view
 refreshed every 60 s only while visible, and manual scale requests queued to the
@@ -477,25 +624,10 @@ moves files, without relaying content in clear.
 - The Remote control switch at the bottom of a session's Environment card
   (`LocalControlServer::setRemoteOff`) refuses every paired request with
   `remote_off` and holds back events while it is off; see
-  [agents-ui.md](agents-ui.md), "Side panels".
+  [Sessions page side panels](sessions-page.md#side-panels).
 - Test vectors are pinned in `desktop/tests/test_local_control.cpp` and
   `native/ios/ForkMeshCore/Tests/FMChatTests/LocalControlTests.swift`; change
   both together. Tests: `forkmesh-local-control-tests`.
-
-## Traps
-
-- A code-approved phone stays in `paired-devices.json` regardless of the
-  account; remove it in **Settings → Phone**.
-- `accountDeviceCheck` may call `done` before it returns, and `requestPairing`
-  closes a relayed connection; look the connection up by id again after either.
-- `LocalControlServer` and `Http3Get` have no `Q_OBJECT`; register the header
-  for moc before adding signals.
-- A catalog record's `cloneUrl` is whatever the publishing node sent, and it
-  is passed to `git clone --bare` (`MainWindowRepoFetch.cpp`) and
-  `git fetch` (`fetchServedBranch`). Both put `--` before the source, so a URL
-  that starts with `-` cannot become a git option. Sources are not limited to
-  https, because local paths and LAN, ssh and http mirrors are real sources;
-  git's own `protocol.allow` defaults still refuse `ext::`.
 
 ## Application firewall rules
 
@@ -524,3 +656,18 @@ those paths for one user; run the install once per account that runs agents
 
 The rules folder is root-only, so neither the desktop nor an agent installs
 them. Tests: `tools/test_opensnitch_rules.py`.
+
+## Traps
+
+- A code-approved phone stays in `paired-devices.json` regardless of the
+  account; remove it in **Settings → Phone**.
+- `accountDeviceCheck` may call `done` before it returns, and `requestPairing`
+  closes a relayed connection; look the connection up by id again after either.
+- `LocalControlServer` and `Http3Get` have no `Q_OBJECT`; register the header
+  for moc before adding signals.
+- A catalog record's `cloneUrl` is whatever the publishing node sent, and it
+  is passed to `git clone --bare` (`MainWindowRepoFetch.cpp`) and
+  `git fetch` (`fetchServedBranch`). Both put `--` before the source, so a URL
+  that starts with `-` cannot become a git option. Sources are not limited to
+  https, because local paths and LAN, ssh and http mirrors are real sources;
+  git's own `protocol.allow` defaults still refuse `ext::`.

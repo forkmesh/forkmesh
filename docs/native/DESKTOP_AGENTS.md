@@ -6,7 +6,7 @@ channel: directly on the same network, through the relay on the core nodes
 when away, end-to-end encrypted either way
 ([desktop networking](../desktop/networking.md); [PARITY.md](PARITY.md) WS7;
 [encryption](../encryption.md)). The website's Agents tab uses the
-same channel ([desktop-agents-web.md](../app/desktop-agents-web.md)).
+same channel ([agents-page.md](../app/agents-page.md#desktop-agents-on-a-repositorys-agents-tab)).
 
 ## Reaching a desktop without meeting it on the LAN
 
@@ -510,7 +510,7 @@ Every agent detail screen pins what you last wrote above its transcript:
   position from the first, so this animates instead of swapping text.
 - VoiceOver reads it as one adjustable element (swipe up for newer, down for
   older). Reduce Motion fades between cards without the tilt.
-- The desktop (`PromptDeckBar`, [agents-ui.md](../desktop/agents-ui.md)) and
+- The desktop (`PromptDeckBar`, [agents-ui.md](../desktop/agents-ui.md#pinned-prompt)) and
   the web session pages ([agents](../agents/README.md)) have the same deck.
 
 ## Actions on one desktop agent
@@ -955,10 +955,10 @@ per provider, New terminal, every account profile (name, signed-in identity,
 usage windows), tap to use for new agents, and a menu with New terminal as
 this account, Log in, Log out, Rename, Delete; Add account creates and selects
 a profile and opens its sign-in
-([../marketplace-usage-feed-mastodon.md](../marketplace/usage-feed-mastodon.md#usage-on-ios)).
+([Usage on iOS](../marketplace/usage.md#usage-on-ios)).
 Android's `UsageScreen` offers the same actions, with Log in and Log out
 started as `terminal.start {provider, mode, account}`
-([Usage on Android](../marketplace/usage-feed-mastodon.md#usage-on-android)).
+([Usage on Android](../marketplace/usage.md#usage-on-android)).
 
 - Capabilities `terminal.accounts` and `agentops.accounts` gate the per-account
   terminals and the account methods.
@@ -967,7 +967,7 @@ started as `terminal.start {provider, mode, account}`
 - `agentops.usage {refresh: true}` re-reads every Claude Code account from
   Anthropic before answering (within 20 s, coalesced, at most once per 30 s);
   without `refresh` it answers the stored snapshot at once
-  ([desktop/agents-ui.md](../desktop/agents-ui.md)).
+  ([desktop/agent-usage.md](../desktop/agent-usage.md#web-and-phones)).
 - `agentops.accounts.select {provider, account}`,
   `agentops.accounts.rename {provider, account, label}`,
   `agentops.accounts.add {provider, label}`,

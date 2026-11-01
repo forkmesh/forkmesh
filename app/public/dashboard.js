@@ -60164,7 +60164,7 @@ Your reply
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
     "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
-    "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
+    "workflows": "/dashboard-page-workflows.js?v=e8c203201e89",
   };
   const dashboardChunkScope = {
     $,

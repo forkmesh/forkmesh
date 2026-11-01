@@ -5,7 +5,7 @@ without sending microphone audio anywhere. The browser is only a controller and
 transcript recipient; capture and transcription stay in the desktop client. The
 World currently ships no speech controls, and the desktop bridge is dormant
 infrastructure.
-Other security pages are listed in the [docs index](../README.md).
+Part of [Security](README.md).
 
 ## Pairing
 

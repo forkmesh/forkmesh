@@ -11,7 +11,7 @@ Android client
 tested by
 `native/android/core/src/test/kotlin/com/forkmesh/nativeapp/security/TrustListsCryptoTest.kt`),
 and the desktop client (`desktop/src/TrustLists.cpp`). The user guide is
-[Trust lists](../trust-lists.md).
+[Trust lists](../trust-lists.md). Part of [Design decisions](README.md).
 
 ## Goals and non-goals
 

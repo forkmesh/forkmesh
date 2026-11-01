@@ -152,7 +152,7 @@ up to 5 delayed replies for 30 minutes.
 Block kit: `section` (text plus up to 10 fields), `context`, `divider`,
 `actions` (`button`, `static_select`); at most 20 blocks and 16 KB; text is
 rendered as text, never HTML. Server notices from `system:` senders use the
-same blocks ([MAIL_LOG.md](../operations/mail-log.md)). Clicks call `POST /api/apps/interact`;
+same blocks ([mail log](../operations/mail-log.md)). Clicks call `POST /api/apps/interact`;
 the server accepts only an action id and value the recorded message offered,
 then sends a signed `block_actions` request to the app.
 

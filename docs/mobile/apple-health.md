@@ -1,5 +1,7 @@
 # Apple Health on iPhone
 
+Part of [Phone apps](README.md).
+
 The ForkMesh iPhone app works with Apple Health. It uses Apple's HealthKit
 framework to connect seven optional tools to the Health app: Pedometer, Water
 Intake, Calorie Counter, Sleep, Sugar Break, Stretch Break and Food Guide. This

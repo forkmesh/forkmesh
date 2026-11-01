@@ -186,7 +186,7 @@ the matching count to accessibility clients.
 
 **Saving another package's password.** The page is the desktop's login store
 (`storesLogins()`, permission `desktop.logins.store`; the host side is
-**Login store** in `docs/marketplace/README.md`). Today the Router uses it to
+**Login store** in `docs/marketplace/package-system.md`). Today the Router uses it to
 keep the router password. `saveLogin` and `findLogins` first unlock: a locked
 vault shows its own master-password dialog over the asking page, naming the
 package and the address, asks again after a wrong password, and reports

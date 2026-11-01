@@ -1,5 +1,7 @@
 # Paid microjobs
 
+Part of [Operations](README.md).
+
 A useful issue report or a focused pull request can receive a small,
 discretionary SOL reward after a repository owner reviews it. There is no
 separate claim form, no fixed amount, and no payout schedule.

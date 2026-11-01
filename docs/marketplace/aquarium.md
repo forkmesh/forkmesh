@@ -7,7 +7,7 @@ the same fish swim over the iPhone app. Every agent is a fish whose look and
 behaviour follow its status, changed files and merge conflicts; the fish play
 with the window's own buttons, headings, rows and text boxes, and with the
 Genie spider ([../desktop/genie.md](../desktop/genie.md)). Part of
-[the marketplace docs](README.md); see also [spider-room.md](spider-room.md).
+[Marketplace](README.md); see also [spider-room.md](spider-room.md).
 
 ## Code map
 

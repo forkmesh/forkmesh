@@ -1,5 +1,7 @@
 # Breakout authorization replica
 
+Part of [Operations](README.md).
+
 Mirrors replicate repository data through Git and signed ledgers. Managing
 repositories while the controller is unreachable also needs authorization
 data, but copying account or session tables to every public host would make

@@ -4,9 +4,10 @@ Every Claude Code agent the ForkMesh desktop runs is also a session in the
 Claude desktop app's **Code** tab, where it can be read and resumed. Codex
 agents stay ForkMesh-only. Code: `desktop/src/ClaudeDesktopSessions.{h,cpp}`
 (Qt Core only, test `forkmesh-claude-desktop-sessions-tests`) and
-`desktop/src/MainWindowClaudeDesktop.cpp`. The agent runtime is in
-[README.md](README.md); the desktop UI in
+`desktop/src/MainWindowClaudeDesktop.cpp`. The desktop UI is in
 [../desktop/agents-ui.md](../desktop/agents-ui.md).
+
+Part of [Agents](README.md).
 
 ## Background
 
@@ -21,7 +22,10 @@ agents stay ForkMesh-only. Code: `desktop/src/ClaudeDesktopSessions.{h,cpp}`
 - So each agent is a Claude Code session; two things keep it out of the
   Claude app on its own.
 
-## Why the Claude app does not list them (Claude app 3.6556.2, CLI 2.1.309)
+## Why the Claude app does not list them
+
+Observed with Claude app 3.6556.2 and CLI 2.1.309.
+
 
 1. **Code-tab sessions are an index, not a folder scan.** The Code tab lists
    `~/.config/Claude/claude-code-sessions/<account>/<org>/local_<uuid>.json`
@@ -105,7 +109,7 @@ private, unversioned state and it holds them in memory.
   is untouched.
 - **Codex** has no Claude app counterpart; Codex agents stay in the ForkMesh
   Agents panel and Sessions tab, which list, open, continue and show the
-  transcript of both kinds as before.
+  transcript of both kinds.
 - **Cloud and runner agents** (mirrors, cores, r1; [README.md](README.md),
   [../server/agent-jobs.md](../server/agent-jobs.md)) run on another machine,
   so their Claude session is not on this disk and "Open in Claude app" is

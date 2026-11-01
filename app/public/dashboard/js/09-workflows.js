@@ -1218,7 +1218,7 @@
     const logs = wfRunNode(node.id)?.logs || [];
     const mode = WF_SELECT_LABELS(wfSpec(node.type), "mode", node.params?.mode);
     const log = logs.length ? `<p class="wf-label">Log from the selected run</p><pre class="wf-pre">${escapeHtml(logs.join("\n"))}</pre>` : "";
-    wfOpenDialog(`${node.name} · Run script`, "file-code", `<div class="p-2"><dl class="wf-facts">${wfFact("Language", "JavaScript, the subset in docs/app/workflow-scripts.md")}${wfFact("Runs", escapeHtml(mode))}${wfFact("Reads", `${wfCode("items")} and ${wfCode("$json")}; what it returns becomes the step's items`)}</dl>${wfCodeHtml(code)}${log}</div>`, true);
+    wfOpenDialog(`${node.name} · Run script`, "file-code", `<div class="p-2"><dl class="wf-facts">${wfFact("Language", "JavaScript, the subset in docs/app/workflow-steps.md")}${wfFact("Runs", escapeHtml(mode))}${wfFact("Reads", `${wfCode("items")} and ${wfCode("$json")}; what it returns becomes the step's items`)}</dl>${wfCodeHtml(code)}${log}</div>`, true);
   }
 
   function wfFindBlock(lines, text) {

@@ -1,10 +1,11 @@
 # Desktop Genie spider and marketing coach
 
-Part of [the desktop docs](README.md). The desktop port of the phone's Genie
-spider ([../native/GENIE.md](../native/GENIE.md)): a pet whose health follows
+The desktop port of the phone's Genie spider ([../native/GENIE.md](../native/GENIE.md)): a pet whose health follows
 code velocity and marketing velocity, and a marketing coach. It has no voice,
 model or tools of its own; replies go to the Genie special agent. The web has a
 tips-only variant ([../www/genie-spider.md](../www/genie-spider.md)).
+
+Part of [Desktop](README.md).
 
 ## Where the code is
 
@@ -118,7 +119,7 @@ button.
 Each tip bubble has **Reply** and the menu has **Reply to the spider…**. Both
 open the Genie special agent's page (`.forkmesh/workflows/genie.json`) with the
 tip quoted in the composer. The agent is on-demand, read-only plus external
-tools, and sets `"lowCostModel": true` (see [agents-ui.md](agents-ui.md)). Each
+tools, and sets `"lowCostModel": true` (see [special agents](special-agents.md#agent-choice-and-permissions)). Each
 run's prompt carries `genieAgentBriefing`: health, recent tips, closed stages,
 taught contacts and the teaching contract. The agent answers with a block:
 

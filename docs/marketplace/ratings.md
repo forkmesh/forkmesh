@@ -3,7 +3,7 @@
 Signed-in accounts rate Market packages from 1 to 5 stars. **A rating below five
 stars must come with a review** saying what did not work and what would earn
 five stars; the server enforces this. A 5-star rating needs no review.
-Market docs: [marketplace/README.md](README.md).
+Part of [Marketplace](README.md).
 
 - Server: `app/src/marketplace_reviews.py`, `app/src/marketplace_runtime.py`,
   migration `0198_marketplace_reviews.sql`.

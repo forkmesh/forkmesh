@@ -67,7 +67,7 @@ is sealed like every other row.
   cannot be replayed under another repository's address.
 - Deletes and keys: a repository delete purges its `repo_uploads` rows and
   their parts (`_repo_scoped_state_statements`); `repo_uploads` is in the
-  rekey inventory ([REKEY.md](../operations/rekey.md)) for its two blind indexes and
+  rekey inventory ([rekey](../operations/rekey.md)) for its two blind indexes and
   its sealed `data`.
 
 ## Web

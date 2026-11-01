@@ -2,7 +2,7 @@
 
 An organization plugin for billing: members create invoices, link them to CRM
 contacts, email them with a private view-and-pay link, and see when each one is
-opened, viewed and paid. Part of [the marketplace docs](README.md).
+opened, viewed and paid. Part of [Marketplace](README.md).
 
 Package: [`marketplace/packages/invoices`](../../marketplace/packages/invoices/README.md).
 Members manage invoices on the web (`/dashboard/invoices`, laid out for

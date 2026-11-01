@@ -1,5 +1,7 @@
 # Node operator policy and legal response
 
+Part of [Operations](README.md).
+
 An operator decides, for their own node only, what it stores and serves, how
 much disk it may use, and how it answers abuse reports and legal requests. None
 of this is a network-wide rule: a repository this node refuses or quarantines is

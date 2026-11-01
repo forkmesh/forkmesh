@@ -50,6 +50,19 @@ lists the remaining legacy schemes (issue, discussion, pull, release, room,
 node link). Their field layout is informative until they receive vectors; see
 TM-004 in the [threat model](threat-model.md).
 
+### Repository-bound legacy event schemes
+
+This subsection is informative. The v1 strings `forkmesh-issue-event-v1`,
+`forkmesh-discussion-event-v1`, `forkmesh-pull-event-v1` and
+`forkmesh-pull-comment-v1` bind no repository, so a signed record could be
+replayed into another repository. The v2 form inserts the repository on the
+second line: `forkmesh-<kind>-v2\n<owner>/<repo>\n` followed by the v1 body
+(owner and name lowercased; behind an organization alias either owner is
+accepted). Verifiers try v2 first. API intake accepts v1 only until
+`EVENT_SIGNATURE_V1_INTAKE_UNTIL_MS` (a constant in each intake file); records
+already committed in a repository's own `.forkmesh/` tree stay valid as v1.
+All interactive clients sign v2.
+
 ## Collaboration envelopes
 
 - **FM-SIG-003** MUST — A collaboration event's signing bytes are

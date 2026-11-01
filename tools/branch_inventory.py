@@ -213,7 +213,7 @@ def default_layout():
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Sort every unmerged branch into merged, ready, behind, conflicted, "
-                    "stale or orphaned and save a dated snapshot (docs/tools/branch-inventory.md).")
+                    "stale or orphaned and save a dated snapshot (docs/tools/branch-cleanup.md).")
     parser.add_argument("--repo", default=str(TOOLS.parent))
     parser.add_argument("--repository", default="forkmesh/forkmesh")
     parser.add_argument("--agents", help="desktop agent store (default: <data>/agents)")

@@ -1,5 +1,7 @@
 # Y Combinator News launch readiness
 
+Part of [Launch](README.md).
+
 Verdict: **blocked**
 
 Evidence refreshed: **2026-09-30 America/New_York** (probes 23:12–23:16 UTC)

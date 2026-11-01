@@ -666,7 +666,7 @@ def base_script(role):
         "if sshd -t; then systemctl reload ssh || true; else rm -f /etc/ssh/sshd_config.d/10-fmnext.conf; fi; fi"
         % (" ".join(shq(x) for x in SSHD_SETTINGS), shq(CLOUD_INIT_SSHD)),
         # No console root password (the Vultr console then needs a rescue
-        # boot; docs/operations/README.md). passwd -l only where sshd uses PAM,
+        # boot; docs/operations/runbook.md). passwd -l only where sshd uses PAM,
         # which ignores the lock for key logins; otherwise '*' (no valid
         # password, not "locked") so root's key login keeps working.
         "if sshd -T 2>/dev/null | grep -qi '^usepam yes'; then passwd -l root >/dev/null; "

@@ -63,7 +63,7 @@ after their local people:
 Not using it: the organization member field searches the same endpoint
 through a `<datalist>`; team members, calendar attendees, Notes sharing and
 task @mentions pick from the organization, the invitees or the task board on
-purpose (task Pings reach members only, [task-pings.md](task-pings.md)). The
+purpose (task Pings reach members only, [tasks.md](tasks.md#pings)). The
 World page's media moderator field runs on its own origin and session. The
 desktop invite dialogs search people (`pickChatPeople`); the phone apps have no
 channel invite field.

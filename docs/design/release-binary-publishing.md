@@ -12,6 +12,7 @@ apart on purpose (how releases reach users is the
 
 A mirror can carry the bytes, but it cannot change them without breaking the
 signed hash, and git history never grows by the size of a build.
+Part of [Design decisions](README.md).
 
 ## Two kinds of release
 

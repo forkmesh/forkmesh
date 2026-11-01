@@ -1,5 +1,7 @@
 # Custodial deposit addresses for world-element purchases
 
+Part of [Operations](README.md).
+
 The World element store accepts two payment methods. The second is optional.
 
 | | Direct | Deposit |

@@ -1,5 +1,7 @@
 # ForkMesh Ads
 
+Part of [Operations](README.md).
+
 ForkMesh Ads is a first-party, text-only ad network. Members write short ads,
 a person reviews every one, and approved ads run on a product surface: the web
 app, the website, the desktop app, the mobile apps, and World.
@@ -15,7 +17,7 @@ Three rules govern it:
    signed-in member can report an ad.
 
 Approval is not an endorsement and expires after 180 days. This network is
-separate from [community-reviewed placements](../community-ad-governance.md)
+separate from [community-reviewed placements](../world-community-services.md#community-reviewed-placements)
 and does not change the [business-model contract](../business-model.md):
 personal data is never sold or used for advertising.
 

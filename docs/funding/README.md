@@ -6,7 +6,17 @@ sponsorship, grants and matching. Funding never buys access, votes or network
 rights. Program and rounds live in
 [`conformance/funding/v1/`](../../conformance/funding/v1/program.json); the
 [funding register](funding-register.md) and `/docs/funding/register.json` are
-generated from them. See also [incentive independence](../incentive-independence.md).
+generated from them.
+
+| Page | Covers |
+| --- | --- |
+| This guide | Eligibility, selection, conflicts, payment, disclosure, recovery, closure |
+| [Funding register](funding-register.md) | Offers, areas, rounds, reviewers, awards and payments (generated) |
+
+Related: [incentive independence](../incentive-independence.md), the
+[governance charter](../governance/README.md) and the
+[business model](../business-model.md). Back to the
+[documentation index](../README.md).
 
 ## Eligibility
 

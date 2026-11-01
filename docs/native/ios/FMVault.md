@@ -1,11 +1,11 @@
 # FMVault
 
+Part of [iOS core modules](README.md).
 The Password Vault: suite "fmv1" (byte-compatible with the browser's vault-crypto.js, the
 desktop's VaultCrypto.cpp and the Android app), the /api/vault client, the app-level service,
 and the view models of the vault screens. `import FMVault` (re-import `FMBase` for JSON). The
 package is [marketplace/packages/vault/README.md](../../../marketplace/packages/vault/README.md) and the
-cross-client encryption overview in [docs/encryption.md](../../encryption.md);
-native docs home: [docs/native/README.md](../README.md).
+cross-client encryption overview in [docs/encryption.md](../../encryption.md).
 
 ## Wiring (app target)
 

@@ -36,14 +36,13 @@ lives in [`.forkmesh/projects`](.forkmesh/projects) and
 
 ## Core documentation
 
-- [Architecture and availability](docs/codebase.md)
+- [Architecture and availability](docs/architecture.md)
 - [Encryption and signatures](docs/encryption.md)
 - [Mirroring and software distribution](docs/mirroring.md)
 - [Self-hosting](docs/self-hosting.md)
 - [Censorship resilience](docs/censorship-resilience.md)
 - [Threat model](docs/protocol/threat-model.md)
-- Indexes: [developer docs](docs/README.md) and
-  [public documentation](docs/README.md), also at
+- Every page, one index: [docs/README.md](docs/README.md), also at
   [forkmesh.com/docs](https://forkmesh.com/docs)
 
 ## Quick start
@@ -196,7 +195,7 @@ independent mirrors     →  Git bytes + signed health, serve clones on their ow
 The app is also the self-hosting unit: one deployment at an address such as
 `forkmesh.example.com` gives the full Git, account, API and realtime surface;
 World is optional ([docs/operations/instances.md](docs/operations/instances.md)). See
-[Architecture and availability](docs/codebase.md) and the developer view
+[Architecture and availability](docs/architecture.md) and the developer view
 in [docs/codebase.md](docs/codebase.md).
 
 ## Self-hosting and operations
@@ -219,7 +218,7 @@ python3 tools/next_deploy.py all --execute    # build, upload, migrate, rolling 
 ```
 
 [docs/operations/fleet-tooling.md](docs/operations/fleet-tooling.md) maps the tooling and
-[docs/operations/README.md](docs/operations/README.md) is the runbook. Never commit secrets.
+[docs/operations/runbook.md](docs/operations/runbook.md) is the runbook. Never commit secrets.
 The [external dependency and observability map](docs/external-dependency-map.md)
 lists every outside service a deployment contacts, what it sees, and what
 still works without it; `python3 tools/external_dependency_inventory.py check`
@@ -352,7 +351,7 @@ developer view in [docs/security](docs/security/README.md).
 | Operate a mirror host | [Mirror-node operations](docs/operations/mirror-node.md), [Mirroring](docs/mirroring.md) |
 | Back up a node and its key | [Node backup and recovery](docs/operations/node-backup-and-recovery.md) |
 | Storage, content and legal-response policy | [Node operator policy](docs/operations/node-operator-policy.md) |
-| Everything else | [Public index](docs/README.md), [developer index](docs/README.md), [architecture overview](docs/codebase.md) |
+| Everything else | [Documentation index](docs/README.md), [how the codebase fits together](docs/codebase.md) |
 
 ## Mirrors
 

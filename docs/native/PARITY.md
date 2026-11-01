@@ -111,32 +111,8 @@ widgets, the share extension and Live Activities belong to
 
 ### 1.1 Theme rules
 
-- **Contrast.** Every light-mode text colour clears WCAG AA (4.5:1) on
-  `bgBase`, `bgRaised` and `bgOverlay` and inside its own 11% status-badge
-  tint. `FmColors.swift` and `ForkMeshTheme.kt` carry the same values:
-  `textSecondary` 72%, `textTertiary` 60%, `success` `#0F7A3B`, `warning`
-  `#8F5A0A`, `offline` `#5F6672` (`offlineOnLight`, light only).
-  `textDisabled` stays 25%. Accents suit buttons and larger text, not small
-  captions.
-- **Accents and themes.** Twelve accents (blue, cyan, teal, green, lime,
-  amber, orange, red, pink, violet, purple, graphite) or a custom colour,
-  stored by name in `appearance/accent`; unknown names fall back to blue.
-  Every preset clears 4.5:1 on `bgBase`, `bgRaised` and `bgOverlay` (the
-  default blue is `#0066CC` light, `#409CFF` dark since October 2026), under
-  white labels in light mode and the near-black `onPrimary` label in dark.
-  Surface families, the readable-colours rule, Shuffle and the per-colour
-  theme editor are in [THEMES.md](THEMES.md).
-- **Background image (iOS).** Downscaled to 2800 px, saved as JPEG in
-  Application Support `wallpapers/`, named in `appearance/backgroundImage`;
-  `appearance/backgroundDim` (0 to 90%, default 40%) lays `bgBase` over it.
-  `FmWallpaperBackdrop` draws it once behind `AppHomeView`. With a picture,
-  `fm.canvas` is clear (otherwise `bgBase`); pages paint `fm.canvas`;
-  `listSurface` drops to 60%; reading surfaces use `readingSurface` and
-  `readingGutter`; terminals paint `terminalSurface` (terminal black at 80%).
-  Bars, inputs, chips, sheets, cards and covers keep solid fills. Every pushed
-  page gets the clear navigation container through `shellPageClearance()` or
-  `shellDock` (iOS 18 and later). A conversation's own background wins over the
-  app background. Android has the accents but not the background image.
+Contrast, accents, surface families, the theme editor and the background
+image are in [THEMES.md](THEMES.md).
 
 ## 2. Platform limits and decisions
 

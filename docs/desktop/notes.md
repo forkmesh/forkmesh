@@ -1,6 +1,7 @@
 # Desktop: the Notes page
 
-Part of [the desktop docs](README.md). Code: the Notes plugin's
+The Notes page lists local and cloud notes, opens, saves and shares them,
+keeps versions and signs its relay requests. Code: the Notes plugin's
 `marketplace/packages/notes/content/desktop/NotesPage.cpp` (`requestNotes()`,
 `refreshNotes()`, `renderNotesList()`), built as `notes.so` apart from the
 window ([package modules](package-modules.md#plugins-built-apart-from-the-window));
@@ -9,6 +10,8 @@ reach it through `NativePackageHost`. List-row rules in
 `desktop/src/NoteListEntry.h`, request proof in `desktop/src/NoteRequestProof.h`,
 link parsing, filters and export naming in `desktop/src/NoteTools.h`.
 Server: `app/src/notes.py`, with the `_NotesRuntime` boundary in `app/src/entry.py`.
+
+Part of [Desktop](README.md).
 
 ## Where the list comes from
 

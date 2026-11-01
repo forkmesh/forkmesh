@@ -1,5 +1,7 @@
 # ForkMesh-Owned Git Engine Specification
 
+Part of [Phone apps](README.md).
+
 The mobile apps carry their own Git engine: Swift in
 `native/ios/ForkMeshCore/Sources/FMGit` and Kotlin in
 `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/git`. It treats all

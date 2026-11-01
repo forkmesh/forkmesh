@@ -6,7 +6,7 @@ out. Picking someone opens a profile card with Follow and Message.
 
 Package: [`marketplace/packages/people`](../../marketplace/packages/people/README.md).
 It runs on the desktop, the iPhone, Android and the web. Part of
-[the marketplace docs](README.md).
+[Marketplace](README.md).
 
 The rings reuse the World campfire's engagement data and points
 (`memberEngagementProfile` in

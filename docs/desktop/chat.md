@@ -1,12 +1,15 @@
 # Desktop: chat encryption (protocols v3 and v4)
 
-Part of [the desktop docs](README.md). The public overview of what is
+How the desktop implements chat encryption, device approval, safety numbers,
+direct delivery and chat state storage. The public overview of what is
 encrypted and how is [encryption](../encryption.md). The protocols
 themselves are
 [../app/chat-protocol-v3.md](../app/chat-protocol-v3.md) and, for direct
 messages, [../app/chat-protocol-v4.md](../app/chat-protocol-v4.md); this page
 says how the desktop implements them and where it chose between readings of
 the spec.
+
+Part of [Desktop](README.md).
 
 ## Code
 
@@ -108,8 +111,9 @@ data folder (`data/core/chat-seal/`, `storedStateKeyFile()`), written with
 ## State writes off the GUI thread
 
 Ratchet saves after every v4 seal, trust scopes re-serialised with all their
-held frames on every held frame, and `QSaveFile` commits used to block the GUI
-thread in `fdatasync` for up to seconds under IO load. The rules:
+held frames on every held frame, and `QSaveFile` commits can block in
+`fdatasync` for seconds under IO load, so none of them runs on the GUI thread.
+The rules:
 
 - **One ordered writer.** Every write of a `trustV3`, `ratchetV4` or `seenV3`
   key runs on one worker thread (a `QThreadPool` of one thread), first in,

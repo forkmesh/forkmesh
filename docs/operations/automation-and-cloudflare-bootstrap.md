@@ -1,5 +1,7 @@
 # ForkMesh deployment and scheduled automation
 
+Part of [Operations](README.md).
+
 Deployment and automation tools. None of them writes wallet keys, API tokens or
 GitHub tokens to the repository.
 
@@ -108,4 +110,4 @@ a frozen snapshot using public entropy, and never generates or accepts a private
 key. An external signer receives the intent on stdin and returns a signed
 transaction; responses containing key material are rejected. Pending rewards
 are 24-hour reservations; funds move only after the signer approves a claim
-([community reward pool signer](community-reward-pool-signer.md)).
+([community reward pool, local signer](community-reward-pool.md#local-signer)).

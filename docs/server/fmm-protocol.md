@@ -6,7 +6,7 @@ retransmission), congestion control and pacing, the jitter buffers, the
 session layer (`fmm.Client`) and the SFU forwarding core, plus the
 measurements that shaped them. The code is `server/rtc/fmm/`, standard
 library only, in the `forkmesh.com/mirror-node` module. Home:
-[README.md](README.md). Payloads are end-to-end encrypted before they reach
+[Go daemon](README.md). Payloads are end-to-end encrypted before they reach
 this layer ([call-e2ee.md](call-e2ee.md),
 [encryption](../encryption.md)).
 

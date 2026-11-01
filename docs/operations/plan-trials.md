@@ -1,5 +1,7 @@
 # Plan trials and self-serve usage meters
 
+Part of [Operations](README.md).
+
 Users can start a trial, see usage, pay, change plan, and cancel without
 support intervention. The pricing contract is the
 [business model](../business-model.md); the rollout runbook is

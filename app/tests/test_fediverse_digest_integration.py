@@ -692,4 +692,4 @@ def test_dashboard_exposes_repo_and_org_controls_with_exact_preview():
     ):
         assert marker in assembled
     assert (Path(__file__).resolve().parents[2]
-            / "docs" / "fediverse-digests.md").is_file()
+            / "docs" / "fediverse.md").is_file()

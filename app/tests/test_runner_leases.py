@@ -897,7 +897,7 @@ def test_model_grants_name_the_model_that_runs_and_skip_personal_runners():
     assert "modelGrant" not in personal
 
 
-# --- Actions jobs (docs/server/runner-actions.md) --------------------------
+# --- Actions jobs (docs/server/actions.md) ---------------------------------
 
 COMMIT_A = "a" * 40
 COMMIT_B = "b" * 40

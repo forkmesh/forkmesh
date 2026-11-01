@@ -1,15 +1,15 @@
 # Plugins and the core
 
-Part of [the marketplace docs](README.md). Code: `marketplace/plugins.json`,
+Part of [Marketplace](README.md). Code: `marketplace/plugins.json`,
 `marketplace/tools/marketplace_lib.py` (`plugin_selection` and the
 `selected_*` helpers), `marketplace/tools/generate_desktop_packages.py`,
 `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py`,
 `marketplace/tools/generate_world_packages.py`.
 
-A plugin is a separate part with its own setup, and the core holds none of
-them unless a build explicitly adds it. (Until October 2026 every catalogued
-package was compiled into every host and a package was only a switch over code
-that was always there.)
+This page covers the difference between plugins and switches, and how a
+build chooses which plugins to add to the core on the desktop, the App, World
+and the phones. A plugin is a separate part with its own setup, and the core
+holds none of them unless a build explicitly adds it.
 
 ## Plugins and switches
 
@@ -75,15 +75,16 @@ dropped, and so is a guide whose pack is gone.
   `DesktopPackageExtensionRegistration`, like page plugins do with
   `NativePackageRegistration`, so the core never calls them by name and both
   are modules.
-- `AgentNetworkSampler` moved from agent-watch to `desktop/src`: the core's
-  local control insights use it, so it is core code. Agent Watch is a module.
+- `AgentNetworkSampler` lives in `desktop/src`, not in agent-watch: the
+  core's local control insights use it, so it is core code. Agent Watch is a
+  module.
 - Agent Watch, Analytics and Docs are installed by default, so their modules
   load at start (about 30 ms and 3 MB together); being real plugins was judged
   worth that.
 - Qt WebEngine is a core module the same way (`packages/web-engine.so`, not a
   Market package), loaded the first time a page opens
   ([browser](../desktop/browser.md#the-engine-is-a-module)); the empty shell
-  and what is still core are on [shell](../desktop/shell.md).
+  and what is still core are on [package modules](../desktop/package-modules.md#the-empty-shell).
 - macOS and Windows still link listed plugins into the app
   (`FORKMESH_PACKAGE_MODULES` defaults off there): a module resolves the
   window's symbols from the executable, which works through `-rdynamic` on

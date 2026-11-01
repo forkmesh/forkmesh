@@ -1,6 +1,6 @@
 # Video Mix DJ Studio
 
-`video-mix-dj-studio` is an account-synced Marketplace package with a responsive dashboard page at `/dashboard/video-mix-dj-studio`, a native desktop studio, and a native iOS route. The dashboard page's mobile-first deck is a fixed, non-scrolling surface: both turntables and their waveforms stay visible in portrait and landscape, while loading, search, mixer, sampler and set actions open compact overlays above it. Loaded video artwork becomes the spinning record label. Performance checks for iOS are in [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md). Part of [the marketplace docs](README.md).
+`video-mix-dj-studio` is an account-synced Marketplace package with a responsive dashboard page at `/dashboard/video-mix-dj-studio`, a native desktop studio, and a native iOS route. The dashboard page's mobile-first deck is a fixed, non-scrolling surface: both turntables and their waveforms stay visible in portrait and landscape, while loading, search, mixer, sampler and set actions open compact overlays above it. Loaded video artwork becomes the spinning record label. Performance checks for iOS are in [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md). Part of [Marketplace](README.md).
 
 ## iOS
 

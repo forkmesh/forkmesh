@@ -2,18 +2,25 @@
 
 ForkMesh runs coding agents (Claude Code and Codex CLIs, plus a few legacy
 script providers) in four places: the desktop app, a mirror node or runner
-([../RUNNERS.md](../operations/runners.md)), another of the account's desktops (a job
-queued from the website or phone), and the phone. This page follows a run
-through every layer. The desktop UI is in
-[../desktop/agents-ui.md](../desktop/agents-ui.md); the developer docs index is
-[../README.md](../README.md).
+([runners](../operations/runners.md)), another of the account's desktops (a
+job queued from the website or phone), and the phone. This page follows a run
+through every layer; the desktop's Agents page is in
+[../desktop/agents-ui.md](../desktop/agents-ui.md).
 
-Pages here: [tools.md](tools.md) (every tool each agent can call),
-[access-rules.md](access-rules.md) (sandboxing and teammate permissions),
-[memory.md](memory.md) (memory and CPU limits),
-[agent-summary-preload.md](agent-summary-preload.md) (Claude Code summary side
-query) and [claude-desktop-sessions.md](claude-desktop-sessions.md) (agents in
-the Claude app).
+| Page | Covers |
+| --- | --- |
+| [README.md](README.md) | This page: run lifecycle, queued jobs, live transcripts, moving runs, mirror runs, errors |
+| [access-rules.md](access-rules.md) | Sandbox layers, global and project rules, destructive commands, external calls, teammate permissions |
+| [tools.md](tools.md) | Every tool each agent can call, by where it runs, and the ForkMesh MCP server |
+| [memory.md](memory.md) | Memory and CPU containment of desktop agents on Linux |
+| [agent-summary-preload.md](agent-summary-preload.md) | Switching off Claude Code's background agent-summary requests |
+| [claude-desktop-sessions.md](claude-desktop-sessions.md) | Claude Code agents listed as sessions in the Claude desktop app |
+
+Related: [threat model](../protocol/threat-model.md) (what the agent sandbox
+is and is not trusted to stop), [architecture](../architecture.md),
+[self-hosting](../self-hosting.md) (running your own runner), the
+[desktop docs](../desktop/README.md) and the
+[documentation home](../README.md).
 
 ## Code map
 
@@ -83,7 +90,7 @@ the Claude app).
   stream). Every `session_title_changed` still renames the run, so `/rename`
   and renames on claude.ai carry over, and **Rename…** in the agent list
   renames the Claude session too. See
-  [../desktop/agents-ui.md](../desktop/agents-ui.md#claude-code-session-control-2026-10-23).
+  [../desktop/agents-ui.md](../desktop/agents-ui.md#claude-code-session-control).
 - **Worktree and scratch.** Each run gets a Git worktree at
   `.worktrees/agent-<session>-<slug>` (bare mirrors and KVM runs use a temp
   directory) and a scratch folder `.worktrees/.scratch/<worktree>`
@@ -105,8 +112,8 @@ the Claude app).
   id in `builds/` and `/tmp`. All deletes go through
   `safedelete::removeTree`, which refuses a git checkout. The web merge's
   branch clean-up (`WebBranchOps.cpp`) and the task clean-up
-  (`TaskWorkItems.cpp`) remove the scratch folder too; orphaned scratch
-  folders once filled the disk.
+  (`TaskWorkItems.cpp`) remove the scratch folder too, so orphaned scratch
+  folders cannot fill the disk.
 - **Parity alert.** `MainWindowAgentParity.cpp` checks every local checkout
   1 minute after start and every 3 minutes (`git worktree list --porcelain`,
   `git for-each-ref refs/heads/`); `AgentParity.h` reports agents with no
@@ -129,7 +136,7 @@ the Claude app).
   past Claude Code and Claude Desktop sessions into stored agents named after
   the session; they mirror new turns until continued in ForkMesh, which resumes
   them with `--fork-session`. See
-  [../desktop/agents-ui.md](../desktop/agents-ui.md#importing-claude-code-sessions-2026-10-22).
+  [../desktop/agents-ui.md](../desktop/agents-ui.md#importing-claude-code-sessions).
 - **Merge & clean up** deletes only the merged branch's session, its
   worktree, branch and the PR records whose head is that branch. The merge
   runs in the main checkout; it proceeds past unstaged or untracked edits the
@@ -138,68 +145,12 @@ the Claude app).
 
 ## Desktop agent sandboxing
 
-The rules, per-provider enforcement and teammate permissions are in
-[access-rules.md](access-rules.md); memory and CPU limits in
-[memory.md](memory.md). In short:
-
-- **Folder lock (Linux, default on).** Landlock restricts the agent to its
-  worktree and the project's top-level folders except `data/`, `config/`,
-  `cache/`, `state/`, `logs/`, `ssh/`, plus shared tool and scratch paths.
-- **External-call gate.** `AgentNetworkGate.*` classifies Bash, WebFetch and
-  WebSearch calls (and scripts that import network modules); for Claude Code a
-  PreToolUse hook in `--settings` asks the desktop over a local socket, and an
-  unreachable socket denies. Refusals prompt the user (`AgentAccessFailure.*`).
-- **Destructive commands** (`classifyCommandRisk`) ask by default.
-- **Codex** keeps approval policy `never`; web search is off unless allowed.
-- **KVM workspace (optional, `VirtualMachineRuntime.*`)**: the guest is the
-  boundary
-  ([docs/qt-client.md](../qt-client.md#kvm-isolated-coding-workspace)).
-- **Jail** (`AgentJail.h`) is a resource fence, not a security sandbox.
-- Not covered: MCP tools and the `openai` legacy provider. The gate works per
-  tool call; it is not a network sandbox.
-
-### Legacy provider scripts
-
-The legacy providers run Python scripts: `tools/forkmesh_coding_agent.py`
-(embedded as `desktop/src/CloudflareAgentScript.h` by
-`tools/sync_coding_agent_header.py`; `local-llama` and `cloudflare-ai`) and
-the one-tool script in `desktop/src/ClaudeAgentScript.h` (Claude API). The
-desktop passes:
-
-| Variable | Meaning |
-| --- | --- |
-| `FORKMESH_AGENT_GATE` | Gate socket path. Every shell-running tool asks first with one JSON line `{"v":1,"session","label","tool":"Bash","input":{"command"},"cwd","env":{"values","hidden"}}`; a denial returns to the model as the tool result |
-| `FORKMESH_AGENT_GATE_SESSION`, `FORKMESH_AGENT_GATE_LABEL` | Copied into each request |
-| `FORKMESH_AGENT_DISABLED_TOOL_FAMILIES` | Comma-separated family ids from `AgentToolCatalog.cpp`; those tools are not offered and refuse if called |
-| `FORKMESH_AGENT_ALLOWED_TOOL_FAMILIES` | When non-empty, only listed families are offered |
-| `FORKMESH_AGENT_ALLOWED_DIRECTORIES` | JSON list of repository-relative directories the file tools may touch; `[]` allows none; default `["."]` |
-| `FORKMESH_AGENT_GUARDRAILS` | `off` turns path guardrails off, only when no allowlist is given |
-
-`git_*` tools send their equivalent command line to the gate; `run_tests`
-and `lint_project` send the configured command. Commands the model runs do
-not inherit `FORKMESH_AGENT_GATE*`. Tests: `app/tests/test_coding_agent.py`,
-`tools/test_forkmesh_coding_agent_guardrails.py`.
-
-`cloudflare-ai` runs call Cloudflare directly. `agentConfigForProvider`
-(`MainWindowAgentLaunch.cpp`) passes the token from Settings as
-`FORKMESH_AGENT_API_TOKEN` and the account as `FORKMESH_AGENT_ACCOUNT_ID`; the
-script builds `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1/chat/completions`
-from them and stops with "Cloudflare endpoint or account ID is required" when
-neither an endpoint nor an account is set. The model picker reads
-`/ai/models/search` and the workspace namer calls the same chat endpoint. The
-relay's `POST /api/ai/agent` (a per-run `FORKMESH_AI_AGENT_AUTH` ticket signed
-as `forkmesh-ai-agent-v1`) stays only for older clients.
-
-`app/tests/test_forkbot.py` runs the embedded script end to end
-(`_run_cloudflare_agent`): it extracts the Python from the header and drives it
-against a local stub of the chat-completions endpoint in a throwaway Git
-repository with a fake `HOME`. Small Workers AI models loop on one command,
-stop before committing, or answer with an empty turn, so the repeat guard
-(adhoc #279, #1633), steering from stdin, retries of a 5xx (adhoc #1633),
-the uncommitted-work check and the empty-turn check are exercised rather than
-grepped. The script echoes a tool call in the OpenAI `tool_calls` shape
-(adhoc #1683); whether the chat-completions endpoint keeps them is not yet
-checked against a live model.
+Desktop agents run inside a folder lock, an external-call gate, a
+destructive-command gate, the access policy, an optional KVM workspace and a
+memory slice. Each layer and its enforcement per provider is in
+[access-rules.md](access-rules.md); memory and CPU limits are in
+[memory.md](memory.md); the environment the legacy script providers get is in
+[tools.md](tools.md#desktop-legacy-script-providers).
 
 ## Website- and phone-queued jobs
 
@@ -463,8 +414,6 @@ running jobs keep their binary. The update's exit status is unchanged.
 
 ## Related docs
 
-- [../desktop/agents-ui.md](../desktop/agents-ui.md)
-- [../../docs/protocol/threat-model.md](../protocol/threat-model.md): what the agent sandbox is and is not trusted to stop
 - [../server/README.md](../server/README.md) and [../server/agent-jobs.md](../server/agent-jobs.md)
-- [docs/operations/organization-agent-offline-queue.md](../operations/organization-agent-offline-queue.md)
-- [docs/mobile/mobile-agent-access.md](../mobile/mobile-agent-access.md)
+- [Organization agent offline queue](../operations/organization-agent-offline-queue.md)
+- [Mobile agent access](../mobile/mobile-agent-access.md)

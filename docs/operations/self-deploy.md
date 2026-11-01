@@ -1,14 +1,16 @@
 # Self-deploy: the cores deploy phone-approved merges
 
+Part of [Operations](README.md).
+
 `deploy/core/self_deploy.py` runs on every core as `fmnext-self-deploy.service`
 (rendered by `add_self_deploy_files` in `deploy/core/render.py` when
 `[self_deploy] enabled = true` and `approver_keys` is not empty). It deploys a
 merge to `main` that an enrolled phone signed, so a merge ships while the
 operator box is offline. Approvals are recorded in `deploy_approvals`
 (`app/src/deploy_approvals.py`); the phone side is described in
-[../native/RUNNER_AGENTS.md](../native/RUNNER_AGENTS.md). Fleet map:
-[deploy/README.md](fleet-tooling.md); the operator-box path:
-[auto-deploy.md](auto-deploy.md).
+[runner agents](../native/RUNNER_AGENTS.md). Fleet map:
+[fleet tooling](fleet-tooling.md); the operator-box path:
+[auto-deploy](auto-deploy.md).
 
 Each core polls rqlite every 15 s and checks the approval's Ed25519 signature
 against `approver_keys`, its age (two hours), that the merged commit is the
@@ -49,7 +51,7 @@ operator auto-deploy rolls them). The rolled revision is recorded in
 With `[self_deploy] admin_updates = true` (and `enabled = true`) the agent
 also runs on cores without an enrolled phone key, the app gets
 `FORKMESH_VAR_CORE_ADMIN_UPDATES=1`, and an admin's **Update ForkMesh**
-button ([../app/server-update.md](../app/server-update.md)) inserts a
+button ([server update](../app/server-update.md)) inserts a
 `deploy_approvals` row with `kind = 'admin'` and no commits. Such a row is
 not signed; instead:
 

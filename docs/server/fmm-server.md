@@ -5,7 +5,7 @@ Phase 4 of [FM Media](fm-media.md): the SFU forwarding core of
 `forkmesh-calls`, beside the WebRTC SFU of [rtc.md](rtc.md), with the same
 room model: the same tickets and room ids, at most 4 places per account in a
 room, one server-wide cap for both engines, and the same browser origin
-list. Home: [README.md](README.md). Media stays end-to-end encrypted
+list. Home: [Go daemon](README.md). Media stays end-to-end encrypted
 ([call-e2ee.md](call-e2ee.md), [encryption](../encryption.md));
 the server sees only ciphertext and headers.
 

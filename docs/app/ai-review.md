@@ -214,4 +214,4 @@ processes it under the account's terms for Workers AI.
 - `ai_review_budget`: per-day counters keyed `instance`, `repo:<bi>`,
   `author:<bi>`, `click:<bi>`.
 
-See [REKEY.md](../operations/rekey.md) for how a key rotation treats them.
+See [rekey](../operations/rekey.md) for how a key rotation treats them.

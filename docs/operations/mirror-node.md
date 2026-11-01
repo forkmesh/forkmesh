@@ -1,5 +1,7 @@
 # Mirror node service
 
+Part of [Operations](README.md).
+
 `forkmesh-mirror-node` is the headless Go runtime for a public mirror host. It
 synchronizes repositories, supervises the loopback Git gateway (and optionally a
 Cloudflare Tunnel), publishes the node's signed catalog record and endpoint
@@ -38,7 +40,7 @@ running part of the [mirroring](../mirroring.md) and
   2s→15s backoff until that generation lands. Direct pushes to a managed host
   ring the doorbell from a service-owned `post-receive` hook. Peers listed in
   `eventDrivenUpstreams` are push-notified; upstreams that cannot push use
-  `syncInterval`. One reconciliation every 30 minutes covers a lost event.
+  `syncInterval`. A reconciliation every 5 minutes (`relaySafetySyncInterval`) covers a lost event.
 - **Catalog and lease.** A four-minute heartbeat republishes the catalog record
   and renews the endpoint lease from local refs reads, over the event socket
   when the relay advertises that frame and over HTTPS otherwise.

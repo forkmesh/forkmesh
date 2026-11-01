@@ -1,5 +1,7 @@
 # Patreon membership operations
 
+Part of [Operations](README.md).
+
 Patreon is the membership payment rail for the Supporter, Pro, Builder, and
 Studio tiers. The server never sees card data. Member OAuth tokens are
 discarded right after identity lookup and are never stored or logged.
@@ -19,7 +21,7 @@ discarded right after identity lookup and are never stored or logged.
 
 Non-secret variable: `PATREON_OAUTH_REDIRECT_URI`. Secrets, set together in the
 core fleet's `secrets.env` and secret list (`deploy/fleet.example.toml`,
-[NEXT_ADOPTION.md](operator-files.md)); on a
+[operator files](operator-files.md)); on a
 Workers self-host, `app/deploy.sh secrets` publishes them and
 `app/deploy.sh validate-secrets` checks them:
 

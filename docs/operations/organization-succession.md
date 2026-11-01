@@ -1,5 +1,7 @@
 # Non-custodial organization succession
 
+Part of [Operations](README.md).
+
 Organization succession is a governance mechanism for one organization
 roster. It is not inheritance, account recovery, custody, or asset transfer.
 

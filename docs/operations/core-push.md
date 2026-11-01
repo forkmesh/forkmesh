@@ -1,5 +1,7 @@
 # Owner pushes to the core nodes
 
+Part of [Operations](README.md).
+
 The cores hold the flagship repository and every repository whose namespace is
 a core node's account. Owners push with plain `git push` over HTTPS:
 
@@ -8,9 +10,8 @@ git push https://app.forkmesh.com/<owner>/<repo>.git <branch>
 ```
 
 The per-core names serve the same app and take the same pushes. Hosted
-repositories follow the same rules ([HOSTED_REPOS.md](core-hosted-repositories.md));
-how the cores fit together is in [architecture](../architecture.md);
-index: [docs/README.md](../README.md).
+repositories follow the same rules ([hosted repositories](core-hosted-repositories.md));
+how the cores fit together is in [architecture](../architecture.md).
 
 Code: `app/src/entry.py` (`_https_mirror_push_proxy`, `_core_push_permitted`,
 `_admit_core_push_state`, `_ref_updates_from`), `app/src/core_push.py` (tag
@@ -18,7 +19,7 @@ moves, branch deletes and trash listing, audit, hooks),
 `tools/mirror_gateway.py` (`enforce_push_ref_policy`, `X-ForkMesh-Ref-Updates`),
 `server/gateway.go` (`adoptAdmittedTagMoves`), migration `0205_git_tag_moves`.
 Each accepted branch push is also recorded for the pusher's "recent pushes"
-bar ([app/recent-push-banner.md](../app/recent-push-banner.md)).
+bar ([recent push banner](../app/recent-push-banner.md)).
 
 ## Who can push
 
@@ -103,7 +104,7 @@ retired core's account stay core-held while pushes go only to live cores.
 (`POST`, 200) whose `X-ForkMesh-Ref-Updates` name a new or moved branch other
 than the default, on a repository whose catalog record has `forkedFrom` (or
 a contributor's `pr/<account>/` branch on the repository itself, see
-[HOSTED_REPOS.md](core-hosted-repositories.md)), the proxy reads the result and adds one
+[hosted repositories](core-hosted-repositories.md)), the proxy reads the result and adds one
 side-band 2 packet before the final flush:
 
 ```
@@ -334,7 +335,7 @@ and relies on the operator-policy hook, as before.
 3. Other cores fetch from the pushed core and converge fast-forward only
    (a recorded force push excepted, see [force pushes](#force-pushes)); a
    moved tag is adopted only when it yields exactly the admitted digest.
-4. The source publisher ([tools/source-publisher.md](../tools/source-publisher.md))
+4. The source publisher ([source publisher](../tools/source-publisher.md))
    pushes the source checkout the same way and absorbs commits owners pushed
    directly (fast-forward, or a clean merge; conflicts are logged and left
    alone).

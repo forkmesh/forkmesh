@@ -1,12 +1,13 @@
 # FMChat
 
+Part of [iOS core modules](README.md).
 The relay chat room, relay switching, the local mesh room, the local control channel (the phone
 driving a desktop, and serving its on-device model to it), node sync, direct messages and calls,
 and the chat view models. `import FMChat` (deps FMBase, FMCrypto, FMNet, FMAccount, FMApi,
 FMLocalAI). Every service is a `@MainActor @Observable final class`; `addListener`/`removeListener`
 (FMAccount `Listeners`) for code outside SwiftUI; each has a `revision` bumped on every change.
 
-Part of the native docs ([home](../README.md)); the cross-client wire formats are
+The cross-client wire formats are
 [chat protocol v3](../../app/chat-protocol-v3.md) and
 [v4](../../app/chat-protocol-v4.md), and the encryption model is
 [docs/encryption.md](../../encryption.md).
@@ -96,7 +97,7 @@ the answer; EHOSTUNREACH means Local Network access is off.
   a fresh install shows no Local Network prompt at launch: `start`, `resume` and `networkChanged`
   do nothing while it is set, and the first `roomOpened` clears it, calls `onFirstRoomOpen` and
   starts. The app sets it from `PermissionPacing.nearbyAllowed` and records the first open with
-  `PermissionPacing.markNearbyOpened` ([PERMISSIONS.md](../PERMISSIONS.md)).
+  `PermissionPacing.markNearbyOpened` ([ONBOARDING.md](../ONBOARDING.md#the-permissions-intro)).
 - Constants: `meshConversation` ("#mesh"), `meshDiscoveryPort` (48732), `meshMulticastGroup`.
 - Chat protocol v3 links: each side sends a plaintext `fm-link-hello`, then a plaintext
   `fm-link-auth` (the dialer or Bluetooth central is the initiator); only after the peer's
@@ -188,6 +189,30 @@ nothing.
 - `UserPresence`: `confirm(reason:dialog:) async -> Bool` (local authentication prompt).
 
 ## Chat history file (`Threads/ChatHistoryStore.swift`)
+
+The phone is the only place most chat history can be read again: DMs are
+deleted from the server once acknowledged and use a per-message ratchet,
+sealed channel frames open only while their prekey lives (8 days), and a
+channel's server history holds its last 200 messages. `ChatHistoryStore`
+keeps it in `Application Support/chat-history/` (`ChatHistoryStore.swift`,
+`ChatHub.swift`, `OfficeChannels.swift`, `AppServices+Chat.swift`), so it
+survives updates and restarts:
+
+- Files are named after the project id and room
+  (`ChatHistoryCodec.projectScope`), not the relay URL, because launch
+  rewrites the built-in relay's URL (`RelayDirectory.ensureBuiltIn`) and
+  folds aliases onto `app.forkmesh.com`. On first launch, files under every
+  former URL (`ChatHistoryCodec.formerScopes`) are merged in and renamed
+  `*.migrated`.
+- Server-side group channels (`#office/…`, including `#general`, `#random`,
+  `#welcome`) are saved and restored into `OfficeChannelService`; a server
+  copy replaces the restored one in place.
+- A sign-out or 401 keeps the DMs in the hub and gives them back to the same
+  account; another account drops them.
+- The store never overwrites what it could not read: a file that cannot be
+  read yet (data protection before first unlock) blocks writes until a read
+  succeeds, an unparsable file is renamed `*.unreadable-<ms>`, and a file
+  with `v` other than 1 is read field by field.
 
 Chat history files and the `#mesh` history are excluded from device backups
 (`ChatFiles.excludeFromBackup`, chat protocol v3 "On the device"); held frames live in the
@@ -528,7 +553,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   The page host, Vision and TrueDepth code are in the app's `Features/FaceChanger/`. Face landmarks and person masks come from Apple Vision
   (`CallFaceLandmarks`: `VNDetectFaceLandmarksRequest`, `VNGeneratePersonSegmentationRequest`),
   returned to the page; the page falls back to its own tracker after three failures. Details:
-  [chat-direct-calls.md](../../app/chat-direct-calls.md).
+  [call-filters.md](../../app/call-filters.md).
 - **TrueDepth camera.** On phones with a front TrueDepth camera, `CallDepthCamera` owns the
   camera (WebKit gets audio only). It pairs video and filtered depth, renders each frame upright
   (not mirrored, at most 480 px) and runs Vision on it. It adds per-point depth
@@ -539,7 +564,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   `window.fmCallCamera(id, { ok, error })` answers. Any failure (no device, denied, no frame within
   1.5 s, `fmCallCameraFailed`) falls back to `getUserMedia` video. The depth maths
   (`CallFaceDepth`, `CallDepthField`, `CallDepthOrientation`) is in `Direct/CallFaceDepth.swift`.
-  Protocol and rules: [docs/app/chat-direct-calls.md](../../app/chat-direct-calls.md) ("iOS TrueDepth camera").
+  Protocol and rules: [docs/app/call-filters.md](../../app/call-filters.md) ("iOS TrueDepth camera").
 - **Preview and recording.** The pre-call preview shows the WebView immediately (WebKit holds
   capture until the view is visible), with a 30 s watchdog. "Record message" records the page's
   outgoing tracks (`record`, `recordStop`, `recordChunk` of up to 768 KiB, `recordDrop`), up to
@@ -726,7 +751,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     `FMChat/CallFace`) as Metal compute kernels and the browser's guided-filter person matte on
     Vision's mask. Stand-in photos are in `Resources/CallFaces`; the custom face is built from the
     look's photo. Passes, threading, fallbacks, cost and the differences from the browser are in
-    [docs/app/chat-direct-calls.md](../../app/chat-direct-calls.md), "Native face renderer (iOS)".
+    [docs/app/call-filters.md](../../app/call-filters.md), "Native face renderer (iOS)".
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
   `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer
@@ -1102,4 +1127,3 @@ the shared preferences, shown in Settings > Chat privacy (`SettingsSectionId.cha
   repeated by itself; the placeholder's **Unlock** asks again. A phone with no passcode cannot
   evaluate the policy, so the switch is disabled there and an existing lock opens. The lock
   only gates the Chat tab: notification previews follow the "Notification content" setting.
-

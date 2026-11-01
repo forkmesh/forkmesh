@@ -1,9 +1,9 @@
 # ActivityPub federation (fediverse interop)
 
 The relay joins the ActivityPub network (Mastodon-compatible) with followable
-actors on its own domain. Digest and mention handling are in
-[fediverse digests](../fediverse-digests.md) and
-[fediverse mention review](../fediverse-mention-review.md).
+actors on its own domain. Digests, mention review and threaded replies are in
+[Fediverse digests, mentions and replies](../fediverse.md).
+Part of [Design decisions](README.md).
 
 | Actor | Handle | Actor URL | Type |
 |---|---|---|---|
@@ -45,6 +45,16 @@ sent only with separate consent.
   `(request-target)` and `digest`, checks the digest byte for byte, enforces a
   ±12 h date window and requires the `keyId` host to match the actor. Remote
   keys are cached for 24 h with one forced refresh on failure.
+- Inbox actor binding (`ap_inbox_handler`): after the HTTP signature verifies,
+  the key's actor (the document fetched from `keyId` without its fragment)
+  must be the activity's `actor`, or a path under it (GoToSocial publishes
+  `<actor>/main-key`), or the inbox answers 401 `actor_mismatch`. A `keyId`
+  path with `.`/`..` segments or any percent-encoding is refused
+  (`key_actor_mismatch`), because the fetch would normalise
+  `victim/../attacker` while the prefix check still saw the victim. A key from
+  the same server is not enough: on a shared instance one account could send
+  Undo(Follow) or a self-Delete naming another and erase its follows. Lemmy
+  moderators sign their own Remove, so Remove needs no exception.
 - Discovery: `/.well-known/webfinger`, `/.well-known/nodeinfo` →
   `/nodeinfo/2.1`, and content negotiation on `/@name` and `/@owner.repo`.
 

@@ -1,9 +1,12 @@
 # Agent tools inventory
 
-Every tool a ForkMesh agent can call, by where the agent runs. The run
-lifecycle is in [README.md](README.md); access rules in
+Every tool a ForkMesh agent can call, by where the agent runs: desktop Claude
+Code, Codex and legacy script runs, mirror and runner runs, phone agents, the
+ForkMesh MCP server and remote MCP. Access rules are in
 [access-rules.md](access-rules.md); the desktop UI in
 [../desktop/agents-ui.md](../desktop/agents-ui.md).
+
+Part of [Agents](README.md).
 
 ## Summary
 
@@ -110,7 +113,7 @@ terminal tabs get) with the run's `FORKMESH_AGENT_INTAKE` and
 non-interactive `claude` skips a checked-in `.mcp.json` until the user
 approves it in an interactive session (`enabledMcpjsonServers`), and other
 repositories have no `.mcp.json`. So the terminal, window, browser and
-hub tools ([../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md))
+hub tools ([../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md))
 reach every run, as Claude Code's desktop app gives its sessions their panes.
 The flag adds to the user's own servers (no `--strict-mcp-config`), and a run
 with guardrails gets the config file and the server's folder as read-only
@@ -146,6 +149,53 @@ MCP server from ForkMesh (it does not read `.mcp.json`).
   `git_restore`, `run_tests`, `lint_project`. The Cloudflare path calls
   Workers AI directly with the desktop's locally stored token.
 - `openai` and fallbacks: `codex -a never exec --sandbox danger-full-access`.
+
+### Gate environment
+
+The legacy providers run Python scripts: `tools/forkmesh_coding_agent.py`
+(embedded as `desktop/src/CloudflareAgentScript.h` by
+`tools/sync_coding_agent_header.py`; `local-llama` and `cloudflare-ai`) and
+the one-tool script in `desktop/src/ClaudeAgentScript.h` (Claude API). The
+desktop passes:
+
+| Variable | Meaning |
+| --- | --- |
+| `FORKMESH_AGENT_GATE` | Gate socket path. Every shell-running tool asks first with one JSON line `{"v":1,"session","label","tool":"Bash","input":{"command"},"cwd","env":{"values","hidden"}}`; a denial returns to the model as the tool result |
+| `FORKMESH_AGENT_GATE_SESSION`, `FORKMESH_AGENT_GATE_LABEL` | Copied into each request |
+| `FORKMESH_AGENT_DISABLED_TOOL_FAMILIES` | Comma-separated family ids from `AgentToolCatalog.cpp`; those tools are not offered and refuse if called |
+| `FORKMESH_AGENT_ALLOWED_TOOL_FAMILIES` | When non-empty, only listed families are offered |
+| `FORKMESH_AGENT_ALLOWED_DIRECTORIES` | JSON list of repository-relative directories the file tools may touch; `[]` allows none; default `["."]` |
+| `FORKMESH_AGENT_GUARDRAILS` | `off` turns path guardrails off, only when no allowlist is given |
+
+`git_*` tools send their equivalent command line to the gate; `run_tests`
+and `lint_project` send the configured command. Commands the model runs do
+not inherit `FORKMESH_AGENT_GATE*`. Tests: `app/tests/test_coding_agent.py`,
+`tools/test_forkmesh_coding_agent_guardrails.py`.
+
+### Cloudflare path
+
+`cloudflare-ai` runs call Cloudflare directly. `agentConfigForProvider`
+(`MainWindowAgentLaunch.cpp`) passes the token from Settings as
+`FORKMESH_AGENT_API_TOKEN` and the account as `FORKMESH_AGENT_ACCOUNT_ID`; the
+script builds `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1/chat/completions`
+from them and stops with "Cloudflare endpoint or account ID is required" when
+neither an endpoint nor an account is set. The model picker reads
+`/ai/models/search` and the workspace namer calls the same chat endpoint. The
+relay's `POST /api/ai/agent` (a per-run `FORKMESH_AI_AGENT_AUTH` ticket signed
+as `forkmesh-ai-agent-v1`) stays only for older clients.
+
+### End-to-end test
+
+`app/tests/test_forkbot.py` runs the embedded script end to end
+(`_run_cloudflare_agent`): it extracts the Python from the header and drives it
+against a local stub of the chat-completions endpoint in a throwaway Git
+repository with a fake `HOME`. Small Workers AI models loop on one command,
+stop before committing, or answer with an empty turn, so the repeat guard
+(adhoc #279, #1633), steering from stdin, retries of a 5xx (adhoc #1633),
+the uncommitted-work check and the empty-turn check are exercised rather than
+grepped. The script echoes a tool call in the OpenAI `tool_calls` shape
+(adhoc #1683); whether the chat-completions endpoint keeps them is not yet
+checked against a live model.
 
 ## Mirror node and runner runs
 
@@ -215,8 +265,7 @@ a write land wherever a symlinked record points.
 | Agents and runners | `list_agents`, `send_agent_message`, `list_runners`, `notify_user` | Desktop socket; messages only reach desktop agents whose mode allows no more than the sender's; 30 messages and 10 notifications per 10 minutes |
 
 Details: [../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
-[../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md),
-[../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md)
+[../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md)
 (how these map to Claude Code desktop's own tools),
 [../tools/mcp-releases.md](../tools/mcp-releases.md).
 
@@ -243,7 +292,7 @@ Skills live in `.forkmesh/skills/`.
 
 No app code on the core nodes gives an LLM tools to run on the server: ForkBot chat uses
 JSON-schema intent classification, other AI calls are tool-less, and
-marketplace package workers and ForkMesh Apps ([../APPS.md](../app/oauth-apps.md))
+marketplace package workers and ForkMesh Apps ([OAuth apps](../app/oauth-apps.md))
 expose fixed APIs, not LLM tools.
 
 ## Known gaps
@@ -260,8 +309,6 @@ expose fixed APIs, not LLM tools.
 
 ## Related docs
 
-- [README.md](README.md): agent runs and sandboxing
-- [../security/agent-host-boundaries.md](../security/agent-host-boundaries.md)
-- [../desktop/agents-ui.md](../desktop/agents-ui.md)
-- [../server/agent-jobs.md](../server/agent-jobs.md), [../RUNNERS.md](../operations/runners.md)
+- [Agent host boundaries](../security/agent-host-boundaries.md)
+- [../server/agent-jobs.md](../server/agent-jobs.md), [runners](../operations/runners.md)
 - [../tools/README.md](../tools/README.md)

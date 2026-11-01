@@ -3,7 +3,7 @@
 How UTM parameters are captured, how later actions are attributed to the
 channel that brought a visitor, and how it is reported. Correctness matters
 more than breadth: an undercounted metric is recoverable, a silently wrong one
-is not. Developer index: [README.md](../README.md).
+is not. Part of [the App docs](README.md).
 
 Code: `app/src/attribution.py` (capture, storage, bot rules, reporting),
 `www/worker.js` (`captureAttribution`, the marketing-origin relay),
@@ -74,7 +74,7 @@ include bots.
 - Retention: `ATTRIBUTION_RETENTION_DAYS` (default 400).
 - `DELETE /api/attribution/session` deletes a visitor's session and events.
 - `/privacy` documents collection, the cookie, and email tracking
-  ([MAIL_LOG.md](../operations/mail-log.md)).
+  ([mail log](../operations/mail-log.md)).
 
 ## Reporting rules
 

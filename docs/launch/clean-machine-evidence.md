@@ -1,5 +1,7 @@
 # Clean-machine install evidence
 
+Part of [Launch](README.md).
+
 The clean-machine harness tests whatever the signed `latest` manifest
 publishes and stamps every step with the tag and `checksums_sha256` it
 verified. Pin a release with `FORKMESH_EXPECTED_TAG` /

@@ -1,5 +1,7 @@
 # Mobile access to owner-encrypted agent sessions
 
+Part of [Phone apps](README.md).
+
 Agent sessions are end-to-end encrypted to the owner's devices. The phone is an
 owner device with its own key, so it can read sessions, queue prompts for a
 mirror, and control a desktop live on the LAN or through the relay. The

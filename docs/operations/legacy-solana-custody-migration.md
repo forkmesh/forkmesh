@@ -1,5 +1,7 @@
 # Legacy Solana custody migration
 
+Part of [Operations](README.md).
+
 The live server is non-custodial: it never creates, accepts, signs with, or
 broadcasts a Solana private key. Older deployments may still hold encrypted
 wallet seeds in compatibility rows from retired signup-deposit, issue-bounty,

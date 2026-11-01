@@ -7,7 +7,7 @@ Legal pages are in [instance-legal-pages.md](instance-legal-pages.md). Every
 change is CSRF-checked and written to the sensitive audit log as
 `admin.console_<action>`. Running your own instance is covered in
 [self-hosting](../self-hosting.md) and
-[../INSTANCES.md](../operations/instances.md).
+[instances](../operations/instances.md).
 
 The pages live at `<ADMIN_PATH>?view=update` and so on. With a private
 `ADMIN_PATH` every console page (theme switch, Acquisition and Hackathon
@@ -15,7 +15,7 @@ included) is served only under that path and `/admin/...` answers the normal
 404; links and form actions come from `admin_shell.subpage_base(env)` and
 `console_base(env)`, never a fixed `/admin`. Setting it on a live instance,
 the installer's `adminPath` setting, and what stays at `/api/admin/...` are in
-[../INSTANCES.md](../operations/instances.md#private-admin-console-path).
+[instances](../operations/instances.md#private-admin-console-path).
 
 ## Update ForkMesh (`?view=update`)
 
@@ -74,7 +74,7 @@ only drops a request file; a root unit does the work.
    accounts. It builds beside the running version, switches only after a
    good build and rolls back if the restart fails, so a failed update leaves
    the old version serving
-   ([../INSTANCES.md](../operations/instances.md#updates-build-beside-the-running-version)).
+   ([instances](../operations/instances.md#updates-build-beside-the-running-version)).
    **auto** is the same run with `trigger: merge`, except it ends at once
    (`done`, nothing restarted) when the fetched commit is already running
    (for example two coalesced merges).
@@ -90,7 +90,7 @@ the buttons; it may fail to load for a moment while the app restarts.
 The Version card also warns when `build-info.json` says the git node program
 was built from older `server/` code than the running source
 (`daemon.state` = `stale`); see
-[../INSTANCES.md](../operations/instances.md#the-git-node-program).
+[instances](../operations/instances.md#the-git-node-program).
 
 ### Update when a pull request is merged
 
@@ -283,8 +283,8 @@ Page addresses kept out of the short-repository router and the JSON 404:
 - `/dashboard/profile/<name>` and `/profile/<name>` (browsers cached an old
   308) 308 to `/@<name>` (`profile_page_redirect`), and
   `dashboard_repo_redirect` never turns `/dashboard/<page>/...` into a
-  repository path (canonical mode used to read `/profile/<name>` as the
-  repository `profile`).
+  repository path (so `/profile/<name>` is never read as the repository
+  `profile`).
 - `/<name>` of an organization or an active, non-node account 302s to
   `/@<name>` (`_account_page_redirect`).
 - `/explore` 308s to `/dashboard/repos`, `/forgot` to `/forgot-password`
@@ -364,7 +364,7 @@ catalog snapshot on the cores (instances do not use it).
 
 New instances opt in with `"singleOrganization": true` in the install
 settings (default `false`, organization owners only); see
-[../INSTANCES.md](../operations/instances.md). For an existing instance, run the operator
+[instances](../operations/instances.md). For an existing instance, run the operator
 command as the app user from the instance's source:
 
 ```sh

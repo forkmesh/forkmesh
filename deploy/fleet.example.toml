@@ -54,7 +54,7 @@ snap_wal_size = 33554432
 
 [caddy]
 # Upstream release binary, installed by `next_fleet.py install nN --steps caddy`
-# as /usr/local/bin/caddy (docs/operations/README.md "Caddy"). sha256 of
+# as /usr/local/bin/caddy (docs/operations/runbook.md "Caddy version"). sha256 of
 # caddy_2.11.4_linux_amd64.tar.gz, checked against the release's signed
 # sha512 checksums file.
 version = "2.11.4"

@@ -1,12 +1,14 @@
 # Chat encryption and public integrations
 
+How chat messages are sealed device to device, who can read each kind of
+conversation, and how apps and webhooks post into it. Part of
+[Security](README.md); the overview is on
+[Encryption and signatures](../encryption.md#end-to-end-encrypted-chat-and-calls).
+
 All chat traffic uses an outer AES-256-GCM room cipher whose passphrase is
 derived from the controller's `DATA_KEY`. It protects the wire and retained
 storage from third parties, not from the controller operator. On top of it each
 conversation has one policy:
-The overview is on
-[Encryption and signatures](../encryption.md#end-to-end-encrypted-chat-and-calls);
-the attackers considered are in the [threat model](../protocol/threat-model.md).
 
 | Conversation | Content policy | Who can read it |
 | --- | --- | --- |
@@ -32,7 +34,7 @@ A line a device posts for ForkBot shows as "forkbot · via" the person who
 posted it. Making a channel public affects only new messages; making it
 private rotates the room key and revokes its incoming webhooks.
 
-Device-to-device encryption uses chat protocol v3 (October 2026), and direct
+Device-to-device encryption uses chat protocol v3, and direct
 messages use v4, which adds a per-message ratchet. Every client (web, desktop,
 iOS, Android) speaks only these; older v2 frames are ignored. The full
 specifications are `docs/app/chat-protocol-v3.md` and
@@ -70,9 +72,8 @@ room. Other devices check the signature before using it.
 - Edits, deletes, reactions, stickers and thread replies count only from
   sealed frames, and an edit or delete only from the message's author.
 
-- Before v3 the server could add a key to a direct message and every client
-  would start encrypting to it. Now, in a direct message, a bundle that names anyone other than the two people in the
-  conversation is dropped, and a second device for an account that already
+- In a direct message, the server cannot add a key: a bundle that names
+  anyone other than the two people in the conversation is dropped, and a second device for an account that already
   has one is **held**: it receives nothing and its messages are not shown until
   you approve it. You see a line in the conversation and a banner with Approve
   and Block.

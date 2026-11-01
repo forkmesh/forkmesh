@@ -6,7 +6,7 @@
   "documents": [
     {
       "path": "docs/protocol/README.md",
-      "sha256": "950fd6c5392c54b99bfa48e0a63c5c49a5e5cadecd6d319c9a77978db6cdac4c"
+      "sha256": "df7aa707555c835fead0810c72c3f1ab07792f4d710dd67f16ca6952b2b0fe1a"
     },
     {
       "path": "docs/protocol/encoding-and-identifiers.md",
@@ -14,7 +14,7 @@
     },
     {
       "path": "docs/protocol/signatures-and-authentication.md",
-      "sha256": "35252267b0290b3a8808d027a17f670ca79813b2ab387bcfacb3a42e5927c1e0"
+      "sha256": "aaeb209dc1444c03a78b8d263f50f10610925ee0ca91f72c448f885704af0705"
     },
     {
       "path": "docs/protocol/relay-sync-and-migration.md",
@@ -30,7 +30,7 @@
     },
     {
       "path": "docs/design/conflict-safe-collaboration.md",
-      "sha256": "bac6f41cb8be34fdba61e85b0f0afc2ac3ec37a4617153f1b2c4d9ec8a3525cf"
+      "sha256": "c5e0d8ea0b1970b4ae3732ed9f2ed50dda24dee0d3ff13d55e7dc058ee81a975"
     }
   ],
   "schemas": [

@@ -509,13 +509,9 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 
 ### 2.0.2.1 First run
 
-- **Login** has "Forgot password?", which opens the relay's
-  `/forgot-password` (`AuthService.forgotPasswordUrl`) in an in-app Safari
-  sheet.
-- **Sign up** opens `/signup` in the same sheet and moves the flow to the
-  login form with "When your email is confirmed, log in here with your new
-  account." (`AuthFlowModel.signupOpened`), so closing the sheet lands on
-  login instead of leaving the app.
+Login, sign-up, onboarding and the permissions intro:
+[ONBOARDING.md](ONBOARDING.md).
+
 - **FmNeedsDesktopNote** ends with "Get the desktop app", which opens the
   project homepage's `/desktop` (`LegalLinks.desktop`).
 - **Placeholders** (`RoutePlaceholderView`, unbuilt repository sections) say
@@ -630,7 +626,7 @@ describes, moves, and offers three depths.
   Face, Background, Voice and Hear myself controls that calls also use, and
   records a clip of up to five minutes to save or share. The choices live in
   `FaceChangerStudio.shared.look` and are the ones the next call uses
-  ([chat-direct-calls.md](../app/chat-direct-calls.md), Face Changer on the
+  ([call-filters.md](../app/call-filters.md), Face Changer on the
   phones).
 - **App Store Status** (`.appStoreStatus`, `/dashboard/app-store-status`,
   Insights group): the App Store Connect snapshot the desktop last published,
@@ -652,7 +648,7 @@ describes, moves, and offers three depths.
   the account actions and terminals (`UsageScreen.swift`, body
   `AgentAccountsPanel`), drawn natively instead of the package's web page.
   The Agents usage bars push it too
-  ([Usage](../marketplace/usage-feed-mastodon.md#usage-on-ios)).
+  ([Usage](../marketplace/usage.md#usage-on-ios)).
 - **RSS Reader** (`.rssReader`, `/dashboard/rss`, `forkmesh://rss-reader`,
   Personal group): a local-only feed reader laid out after NetNewsWire. Feeds
   are fetched, parsed and stored on the phone (`RSSReader*.swift` in

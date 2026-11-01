@@ -26,7 +26,7 @@ ForkMesh phone app ──► desktop (LAN or relay): Run · Re-run · Approve ·
 
 | Piece | What it does |
 | --- | --- |
-| `.github/workflows/forkmesh-github-sync.yml` | Copies branches and tags between GitHub and ForkMesh on every push and every 15 minutes, fast-forward only ([Connecting to GitHub](github-sync.md)) |
+| `.github/workflows/forkmesh-github-sync.yml` | Copies branches and tags between GitHub and ForkMesh on every push and every 15 minutes, fast-forward only ([Connecting to GitHub](forge-sync.md#connecting-a-repository-to-github)) |
 | `.forkmesh/deploy-cloudflare.yml` | Runs on your desktop when the default branch moves, or when you start it by hand |
 | `.forkmesh/rollback-cloudflare.yml` | Started by hand: rolls the Worker back to its previous version |
 | `.forkmesh/cloudflare-deploy.py` | Checks the setup, runs Wrangler and reports the deployed URL and version |

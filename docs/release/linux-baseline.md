@@ -1,11 +1,13 @@
 # Linux release baseline (Debian 12 container build)
 
+Part of [Releases](README.md).
+
 The Linux release assets (`forkmesh-linux-x86_64`,
 `forkmesh-linux-x86_64.AppImage` and its `.zsync`, and
 `forkmesh-linux-x86_64.deb` for the [apt repository](apt.md)) are built inside a pinned
 Debian 12 (glibc 2.36) image so they run on Ubuntu 22.04+ and Debian 12+. The
 Go mirror daemon is fully static (`CGO_ENABLED=0`) and is built by the Actions
-job. Development builds are unaffected. Release flow: [README.md](README.md).
+job. Development builds are unaffected.
 
 ## Code map
 

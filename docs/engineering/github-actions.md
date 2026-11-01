@@ -5,7 +5,7 @@ workflows in `.github/workflows/` on every push to `main`. GitHub's only signal
 for a failure is an email, and job logs need a GitHub login, so the workflows
 once stayed red for days unseen. Three pieces make failures visible: a watcher
 that pings admins, a command-line check, and failures written as annotations
-anyone can read. Home: [docs/README.md](../README.md).
+anyone can read. Part of [Engineering](README.md).
 
 ## Code map
 
@@ -115,7 +115,7 @@ no login, so both suites write their failures as annotations:
   newer push waits, and GitHub keeps only the newest waiting run. The job limit
   is 40 minutes (the full App suite takes about 10). The mobile camera samples
   warm up with two drags under SwiftShader
-  ([docs/world/README.md](../world/README.md)), and the workflow installs
+  ([World development](../world/development.md#build-run-test)), and the workflow installs
   ffmpeg for `chat-view-once`'s fake camera clip.
 
 ## The browser-test server

@@ -1,5 +1,7 @@
 # GitHub outage survival kit
 
+Part of [Launch](README.md).
+
 A launch kit, not yet published: a 60-second video script, a post thread and a
 $5 mirror bounty. The goal is to get repositories mirrored on ForkMesh
 **before** a GitHub outage, so cloning and shipping continue during one.

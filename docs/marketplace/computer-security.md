@@ -5,16 +5,15 @@ id `computer-security`) that runs a local security checkup, explains every
 result, shows whether the thing it found is actually in use, and offers a
 confirmed one-click fix where a safe one exists. It is off by default and
 appears in the desktop rail when installed. Part of
-[the marketplace docs](README.md). Phones have their own checkup, the
+[Marketplace](README.md). Phones have their own checkup, the
 [Phone Security package](phone-security.md) (`phone-security`).
 
 ## Name and icon
 
 The package is shown as **Security** in the desktop rail, the page heading, the
-Market listing and review pages (formerly "Computer Security Checkup"). The
-Market id `computer-security`, the entrypoint `builtin:computer-security` and
-the C++ class names keep the old name, so installed copies and saved reviews
-keep working.
+Market listing and review pages. The Market id `computer-security`, the
+entrypoint `builtin:computer-security` and the C++ class names are unchanged by the display
+name, so installed copies and saved reviews keep working.
 
 The rail icon is `shield`, in `desktop/resources/icons/forkmesh/shield.svg`
 (registered in `desktop/resources/icons.qrc`).

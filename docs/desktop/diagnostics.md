@@ -1,6 +1,13 @@
 # Desktop: logs, stalls, crashes and health
 
-Part of [the desktop docs](README.md).
+How the desktop records and shows what it is doing: where logs are written,
+the Log page, inline notices, the debug bar and its diagnostic report, the UI
+stall watchdog and the rules that keep the GUI thread free, crash handling and
+crash repair, what is reported to the relay, and the Health, Memory and Stats
+pages. The user's view is in the
+[desktop guide](../qt-client.md#logs-and-diagnostics).
+
+Part of [Desktop](README.md).
 
 ## Where things are written
 
@@ -45,7 +52,7 @@ Windows and macOS read paths from there.
   block so batches never merge into the previous row).
 - Host and core node logs: [networking.md](networking.md#host-logs),
   [networking.md](networking.md#fleet-node-logs),
-  [../NODE_LOGS.md](../operations/node-logs.md).
+  [node logs](../operations/node-logs.md).
 
 ### Repeated errors fold into one ping
 
@@ -282,7 +289,6 @@ answers both methods on Linux; elsewhere they answer
   `process_changed`, `protected_process`, `process_stop_failed`,
   `bad_password`, `process_details_unavailable`.
 
-
 ### Diagnostic report
 
 The debug bar's Diagnose tool builds a Markdown report meant for a coding
@@ -436,7 +442,7 @@ returned, so summed frame totals overstate a function's own cost.
 - Before optimizing, check the worker's own `duration_ms` in `actions.jsonl`
   and aggregate a group's demangled frames before blaming its origin.
 
-### Keeping the GUI thread free
+## Keeping the GUI thread free
 
 - **No git on the GUI thread.** `runGitCapture` from the GUI thread pumps a
   nested loop. Take a snapshot, run git in a static worker through
@@ -449,8 +455,8 @@ returned, so summed frame totals overstate a function's own cost.
   worktrees and the mirror refs hash (`forEachRefHeadsAndTagsFromFiles`),
   falling back to git for reftable or anything unusual. Caches key on ref or
   config file signatures. `refTipFromFiles` parses `packed-refs` once per
-  size and modification time instead of scanning it per lookup (the 200 KB
-  file was rescanned for each branch in a loop).
+  size and modification time instead of scanning it per lookup (a 200 KB
+  file rescanned for each branch of a loop is slow).
 - **Git timeouts.** Reads get 8 s, index-writing commands 60 s
   (`gitWaitTimeoutMs()`); agent pull capture (`captureAgentPull()`) 120 s on a
   worker. Overdue git is stopped with `forkmesh::stopProcessGracefully()`
@@ -475,7 +481,7 @@ returned, so summed frame totals overstate a function's own cost.
   live feed that grows past twice its batch while the reader is at the bottom
   is re-windowed. Text volume, not row count, is the cost: Qt shapes every
   colour emoji by decoding its PNG in `FT_Load_Glyph`, and a mail-log channel
-  with thousands of emoji took minutes to open before the budget.
+  with thousands of emoji takes minutes to open without the budget.
 - **Cache label heights per width.** The scroll area asks every row for
   `heightForWidth` and `minimumHeightForWidth` at several widths on every
   `LayoutRequest`, and `QLabel` relays its whole rich-text document each time.
@@ -571,7 +577,7 @@ returned, so summed frame totals overstate a function's own cost.
   - `defaultApprovedFirewallRules()` parses the bundled
     `:/firewall/default-approved.json` once.
   - `marketPreviewPixmap` decodes package previews on a worker
-    ([../marketplace/README.md](../marketplace/README.md)).
+    ([preview images](../marketplace/market.md#preview-images)).
   - The branch diff re-scores merge health on a worker when a patch over the
     synchronous render limit (`kBranchDiffSyncRenderChars`) gets a new Git
     verdict (`updateBranchDiffHealth`), keeping `findSecretsInDiff` off the GUI
@@ -653,9 +659,9 @@ returned, so summed frame totals overstate a function's own cost.
 
 ### Startup: installed package pages after first paint
 
-Building every installed package's page inside `buildChatPage` cost seconds
-before the window appeared: the factories themselves, and then each reparent
-of the shell (`lower`, `page`, `m_stack`) re-polished the whole subtree under
+Building every installed package's page inside `buildChatPage` costs seconds
+before the window appears: the factories themselves, and then each reparent
+of the shell (`lower`, `page`, `m_stack`) re-polishes the whole subtree under
 the application stylesheet.
 
 So the shell is built and attached without package pages, and the window
@@ -849,7 +855,13 @@ members.
 link counts, only while the network is up, and drops within
 `kRelayDropCoalesceMs` (15 s) coalesce.
 
-## Health page (component health)
+## Pages: Health, Memory and Stats
+
+Each page's Next layout follows the mockup and is described under its own
+"New interface" heading; Classic keeps the old layout
+([new interface](ui-redesign.md#pages)).
+
+### Health page (component health)
 
 Rail **Health**. `src/CodeHealth.{h,cpp}` scans the checkout off the GUI thread
 and scores each file and function, including attributed stall time;
@@ -865,7 +877,82 @@ and the link line in `build.ninja` to attribute symbols; each group keeps its
 150 largest symbols. `src/BinarySizeMap.*` draws it. Non-ELF platforms show a
 notice.
 
-## Memory page
+#### New interface
+
+In Next, Component health (`MainWindow::buildComponentHealthSection`,
+`MainWindowComponentHealth.cpp`, `ComponentHealthBoard.cpp`, `87-health.qss`)
+follows the mockup's `pages/Health.tsx`.
+
+- **Header.**
+  - "Component health" sits over the muted scan summary
+    (`m_componentHealthStatus`, `healthRole="summary"`), with Rescan as a
+    ghost action on the right.
+  - Source files and Binary size become underline tabs below the summary
+    (`healthRole="tab"`): the active one has `@fg` text and an `@accentFg`
+    underline. A hairline (`#healthHeaderDivider`) ends the header.
+- **Toolbar.**
+  - The existing source tools widget (`m_componentHealthSourceTools`,
+    `healthRole="toolbar"`) becomes a full-width row with a bottom hairline:
+    All files (back), the filter at 224 px with a search icon, then a
+    right-aligned "N files" / "N functions" count (`#healthCardCount`) and
+    the sort menu.
+  - It still hides on the Binary size tab.
+- **Cards** (`ComponentHealthBoard`).
+  - Cards follow the mockup's `auto-fill, minmax(176px, 1fr)` grid: 92 px
+    high, a 10 px gap and 24 px padding.
+  - Each card is hairline `@surface` with 12 px corners and a
+    `@surfaceRaised` hover fill. It shows:
+    - the name, 14 px medium, elided from the left;
+    - the component, 12 px muted;
+    - "N lines" over the stall and flag facts (or "No flags"), in
+      `fgSubtle`;
+    - the score, 18 px semibold, in the success, warning or danger role.
+      The 80 and 55 band thresholds are unchanged.
+  - Cards scoring under 80 get a border tinted in their band's colour.
+  - Colours come through the same `nextColors` property as Stats
+    (`applyNextHealthColors`, `NextHealthColorSync`), because the board is
+    also built into `forkmesh-component-health-board-tests`.
+- **Detail panel** (`#healthDetailPanel`, 360 px, Next only).
+  - It opens beside the function board when a file is open (the existing
+    drill-in) and closes on All files, the panel's ×, or the Binary size
+    tab. The × (`#healthDetailClose`) calls the same
+    `showComponentHealthOverview()` as All files.
+  - It shows only data from `FileHealth`:
+    - the name and the path, in mono and selectable;
+    - the component and line count;
+    - the score with a band word: Healthy, Needs attention or At risk;
+    - a facts card: code lines, functions, longest function, stall
+      attributed, acknowledged in code, and last changed;
+    - "FLAGS · N" with one row per finding kind ("N × kind"), or "Nothing
+      flagged in this file".
+- **Binary size.**
+  - Four stat tiles (`#healthStatTile` inside `#healthBinaryTiles`) are read
+    from the existing report: total size, symbols, object files, and the
+    largest top-level part with its share. They are hidden while there is no
+    report.
+  - The breadcrumb line (`healthRole="crumbs"`) and the treemap are
+    unchanged.
+- **Widget paths.** Every existing widget keeps its parent and creation order.
+  The new containers are named `QFrame`s, so the class-index paths of the
+  existing `QWidget`, `QPushButton` and `QLabel` siblings do not move. Object
+  names, sort modes, the filter, the drill-in, Rescan, the progress row and
+  every tooltip are unchanged.
+- **Left out on purpose.**
+  - Component picker and "Only flagged" switch: the page has no such
+    filters, and adding them would be new logic.
+  - The four score-part progress bars (Size, Complexity, Stalls, Flags):
+    the scanner computes a single score.
+  - Open in editor and "Draft a fix with an agent": the page has no such
+    actions.
+  - The selected-card highlight: a click drills in instead of selecting.
+  - "Size by component" ranked list and "Biggest symbols" table: the treemap
+    already shows both and zooms. The binary's delta since the last
+    release is not recorded.
+- **Live switch.** The header, toolbar and panel are built once, so a live
+  design switch shows them only after the page is rebuilt. The boards' colours
+  do follow dark/light and design switches.
+
+### Memory page
 
 Rail **Memory**: `src/MainWindowMemory.cpp`, `src/ProcessMemory.*`,
 `src/MemoryUsageChart.*`, a live breakdown of this process's mappings.
@@ -874,7 +961,7 @@ Rail **Memory**: `src/MainWindowMemory.cpp`, `src/ProcessMemory.*`,
 the GUI thread, sized by resident, proportional, private, virtual, swapped or
 in-app probe counts.
 
-### High memory usage window
+#### High memory usage window
 
 `showHighMemoryProcessPanel()` (`src/MainWindowDiagnostics.cpp`) opens without
 activating when host memory crosses 85% (re-armed below 80%), or on a click of
@@ -895,7 +982,46 @@ and Stop agent.
 - `m_highMemoryAutoKillPending` is set only by the automatic pop-up and cleared
   by `endHighMemoryAutoKill()`, so opening the window by hand never kills.
 
-## Stats page
+#### New interface
+
+In Next, the Memory page (`MainWindow::buildMemorySection`,
+`MainWindowMemory.cpp`, `MemoryUsageChart.cpp`, `83-memory.qss`) follows the
+mockup. It is built once, so a live design switch keeps the layout it was
+built with; the chart and table colours still follow the switch.
+
+- **Header.** "Memory" over the existing status line ("N mappings in M
+  groups · read in X ms · time"), then a 24 px gutter and a hairline under
+  it (`memoryRule`). The actions keep their order and code: the Filter field
+  (160 px, a search icon), the interval combo, Pause (a painted pause/play
+  icon that follows its state), Trim heap on Linux, Copy report, Memory map
+  and Agent governor as ghost buttons with `fgMuted` octicons
+  (`nextIconRole`).
+- **Tiles.** The eight `statsTile` frames are 12 px rounded `surface` cards
+  in a 4-column grid with 12 px gaps: a 12 px muted label, a 22 px semibold
+  value and the existing caption in `fgSubtle` (`memoryRole` property on each
+  label).
+- **Chart.** `MemoryUsageChart` gains a Next painting mode, switched on by
+  colour properties the page sets (`nextAccent`, `nextBorder`, …), because the
+  file is also built into `forkmesh-process-memory-tests`, which does not
+  link the design tokens. The page re-sets them on `Polish`, `StyleChange`
+  and `PaletteChange` (`MemoryLookHook`) and clears them in Classic. In Next
+  the chart is a 244 px card: a 40 px header with "Resident memory · last 5
+  minutes" and the newest total on the right, dashed gridlines with byte
+  labels, HH:mm:ss time labels, and one 2 px accent line of the summed
+  bands. Hover draws a rule and a dot; the tooltip still lists every group.
+  Classic keeps the stacked bands.
+- **Tabs and tables.** "By mapping" and "Inside the app" are underline tabs
+  (document mode, accent underline). Both trees are 12 px bordered tables on
+  `bg` with 36 px `fgSubtle` headers, 40 px rows with hairlines, no
+  alternating rows, `accentSubtle` selection and right-aligned numeric
+  headers. Growth in the Change column is `warning` and shrinkage `success`
+  in Next (`Theme::nextOr`); Classic keeps its red and green.
+- **Left out on purpose.** The mockup's fixed captions ("not shared with
+  other processes", "peak 63" threads) are replaced by the captions the page
+  already computes, and its feature ranking under "Inside the app" by the
+  existing allocator, toolkit and probe tree; nothing else is measured.
+
+### Stats page
 
 Rail **Stats**: `src/StatsDashboard.*`, `src/MainWindowStats.cpp`,
 `src/RepoStatsStore.*`. Tile layout is persisted and has a Reset.
@@ -906,6 +1032,58 @@ The phone shows every one of these tiles. It asks for them with `stats.tiles`
 `DesktopTileEntry` in both phone apps, or
 `app/tests/test_mobile_stats_desktop_parity.py` fails. See
 [../native/STATS.md](../native/STATS.md).
+
+#### New interface
+
+In Next, the Stats page (`MainWindow::buildStatsSection`, `MainWindowStats.cpp`,
+`86-stats.qss`) follows the mockup's `pages/Stats.tsx`.
+
+- **Header.**
+  - "Stats" sits over the muted summary (`m_statsStatus`, `statsRole="summary"`,
+    "N tiles · updated HH:mm:ss"), with a hairline under the header
+    (`#statsHeaderDivider`).
+  - The actions are on the right in the mockup's order: ghost Reset and
+    Refresh (`statsRole="action"`, muted icons through `nextIconRole`), then
+    one inverse Add tile (`statsRole="create"`, `@fg` fill, `@bg` text and
+    icon).
+  - The header row is attached before its buttons are added, and the order on
+    screen comes from `insertWidget`. So the buttons keep the creation order
+    and parent they have in Classic, and their rail-shortcut paths stay the
+    same. Object names, tooltips, menus and connections are unchanged.
+- **Board** (`StatsDashboard`).
+  - The board sits under a 24 px page padding. Tiles are hairline `@surface`
+    cards with 12 px corners and a `@surfaceRaised` hover fill, padded 16 px
+    across and 12 px down. Each tile shows a 12 px muted title, a 22 px
+    semibold value (28 px on tiles bigger than one square), and a 12 px
+    `fgSubtle` note.
+  - Time series draw a 1.75 px accent line with no area fill. Bars use the
+    accent. Ticks are 10 px `fgSubtle` and the baseline is `@border`.
+  - Status shows as a tinted border (`success`, `warning`, `danger`). The
+    coloured left edge is drawn only when edge indicators are on.
+  - The resize and remove controls are small bordered squares with
+    `fgSubtle` glyphs.
+  - While a tile is dragged, its landing slot shows as an `accentSubtle` box
+    with an accent edge. The tile being dragged gets a `borderStrong` edge
+    and no shadow.
+  - The empty board is a dashed `borderStrong` box with the heading "No tiles
+    on the board" and the hint "Use Add tile, or Reset…".
+- **Colours.** `StatsDashboard.cpp` is also built into
+  `forkmesh-stats-dashboard-tests`, which does not link the design tokens.
+  So the window passes the role colours in as the dynamic property
+  `nextColors` (a `QVariantMap`, plus `edges` for edge indicators) instead of
+  calling `Theme::` there.
+  - The map is set by `applyNextChartColors`: at build, on every refresh, and
+    on the board's `StyleChange`, `PaletteChange` and `Show` events, through
+    an event filter (`NextChartColorSync`).
+  - The board re-lays itself out on `DynamicPropertyChange`.
+  - Classic never sets the property, so the board paints exactly as before.
+  - The packing, square cells, hit areas and every edit, menu and tooltip are
+    unchanged.
+- **Left out on purpose.**
+  - The mockup's horizontal "breakdown" bars and its fixed-height
+    (non-square) tiles: the board's square packing, point hit-testing and
+    the Network-tile click-through depend on them.
+  - The grip handle: the whole tile already drags.
 
 ## Background timers
 
@@ -926,6 +1104,8 @@ drop-ins. Linux only.
 
 ## Testing
 
+Building and running the targets: [build-and-test.md](build-and-test.md).
+
 - Unit suites: `forkmesh-diagnostics-report-tests`, `forkmesh-settings-write-tests`,
   `forkmesh-qt-runtime-diagnostics-tests`, `forkmesh-code-health-tests`,
   `forkmesh-component-health-board-tests`, `forkmesh-binary-size-tests`,
@@ -945,9 +1125,3 @@ drop-ins. Linux only.
   `tests/validate_error_log_regressions.py`.
 - Tests that burn CPU or spawn processes must end on their own (`timeout 2 sh
   -c '...'`), not rely on the parent killing them.
-
-## Related
-
-- [docs/qt-client.md](../qt-client.md#logs-and-diagnostics)
-- [build-and-test.md](build-and-test.md)
-- [git-locking.md](git-locking.md)

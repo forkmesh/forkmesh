@@ -1,7 +1,7 @@
 // The on-device model runtime: Gemma 4 through MLX (ml-explore/mlx-swift-lm,
 // MLXLLM + MLXLMCommon) with swift-transformers' tokenizer. The one sanctioned
 // third-party dependency of the app (native/ios/README.md, "Dependency
-// policy"). FMLocalAI (docs/FMLocalAI.md) owns everything but this file.
+// policy"). FMLocalAI (docs/native/ios/FMLocalAI.md) owns everything but this file.
 //
 // Written against mlx-swift-lm 3.31.4 and swift-transformers 1.3.4. Every MLX
 // line is inside `#if canImport(MLXLLM)`, so the app still builds (with an

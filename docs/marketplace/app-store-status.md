@@ -3,7 +3,7 @@
 `marketplace/packages/app-store-status` shows the iOS app as App Store Connect
 sees it, on every client: the web dashboard (`/dashboard/app-store-status`),
 the Qt desktop (rail page `builtin:app-store-status`), the iPhone app and the
-Android app. Part of [the marketplace docs](README.md).
+Android app. Part of [Marketplace](README.md).
 
 ## Where the data comes from
 

@@ -1,5 +1,7 @@
 # Polling inventory and elimination plan
 
+Part of [Operations](README.md).
+
 Goal: no ForkMesh client polls the relay for data. Every "did anything change?"
 question becomes a payload-free push over a WebSocket, answered by the one
 signed HTTPS read the client would have made anyway. The transport is the

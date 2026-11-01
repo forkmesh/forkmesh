@@ -19,7 +19,7 @@ are stored. `repo_views` has one row per viewer with a per-repository
 `viewer_key` digest (viewers cannot be linked across repositories);
 `repo_view_totals` holds `views`, `viewers` and `last_viewed_at`. Both are
 purged with the repository and rekeyed by the rekey tool
-([REKEY.md](../operations/rekey.md)).
+([rekey](../operations/rekey.md)).
 
 ## API (all `no-store`)
 
@@ -353,7 +353,7 @@ mirrors as plain rows: node name, its version or (for the node serving the
 page) the response time, and an open-direct icon. The logo suggestion form
 and the owner's fediverse posts are collapsibles at the bottom, then the
 "Mirrors" card with the mirror goal and each copy's health
-([mirror-quota.md](mirror-quota.md); see
+([mirror-quota.md](../mirror-quota.md); see
 [mirroring](../mirroring.md)).
 
 ## Issues, pull requests and discussions
@@ -643,7 +643,7 @@ moves when the dashboard takes over:
   first by `ts` (`renderIssueTimeline` / `Renderer.timeline`, stable sorts);
   mirrored comments carry the provider's creation time.
 - **Instance switches.** With the `issue-ai-prompt` or `fediverse-ui` plugin
-  off ([INSTANCES.md](../operations/instances.md#plugins)) neither renderer draws the
+  off ([instances](../operations/instances.md#plugins)) neither renderer draws the
   prompt box or the Fediverse thread; the server reads `plugins_off()` and
   keys its kept article by it.
 - **Pictures.** A paragraph that is one picture of unknown size

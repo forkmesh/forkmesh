@@ -1,5 +1,7 @@
 # Mobile push notifications (APNs)
 
+Part of [Operations](README.md).
+
 Apple Push Notification service wakes the iOS app when iOS has suspended or
 killed it, the one case the account event socket cannot cover (see
 [polling elimination](polling-elimination.md)). A write that changes an unread

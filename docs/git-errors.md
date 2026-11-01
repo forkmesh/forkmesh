@@ -40,3 +40,18 @@ trace (check it for secrets before posting):
 ```bash
 GIT_TRACE_CURL=1 GIT_TRACE_CURL_NO_DATA=1 git pull origin main 2>&1 | tail -60
 ```
+
+## How the messages are produced
+
+For developers. Git shows a server's explanation only for a failed `info/refs`
+GET and only when the body is `text/plain`, printing each line as `remote: …`.
+A failed `git-upload-pack` or `git-receive-pack` POST shows nothing from the
+body, and transport failures carry no body at all.
+
+| Part | Where | What it does |
+| --- | --- | --- |
+| App | `_git_error_as_text` (`app/src/entry.py`) | Wraps the `info/refs` routes (upload-pack public and private, receive-pack). A JSON error of status 400 or more becomes one sentence plus `Help: https://forkmesh.com/docs/git-errors/`. The status and `cache-control`, `retry-after`, `www-authenticate`, `x-forkmesh-expected-degraded` and `x-forkmesh-served-by` are kept (`WWW-Authenticate` must survive or git never prompts for credentials). A `message` or `hint` in the JSON wins over the table in `GIT_ERROR_MESSAGES`. Other routes and POSTs still answer JSON. |
+| Node gateway | `dispatch_error_response` (`tools/mirror_gateway.py`) | The same for the public `/<owner>/<repo>.git/info/refs` route. Restricted and missing repositories get the same 404 text. |
+| Desktop | `forkmesh::gitrefusal::explainFailure` (`desktop/src/GitRefusal.cpp`) | Shows the server's `remote:` sentence, or a plain sentence for transport failures, instead of raw stderr (the log keeps the raw text). HTTP/2 breaks count as transient. |
+| Transports | `tools/forkmesh_transports.py` | Treats HTTP/2 breaks as route failures and tries the next route. |
+| Installer | `www/public/install.sh` | Names HTTP/2 breaks and dropped downloads. |

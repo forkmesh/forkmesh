@@ -1,8 +1,10 @@
 # Runners: trusted core and untrusted agent compute
 
+Part of [Operations](README.md).
+
 Untrusted agent work runs on a separate runner tier, never on the cores that
 hold the data ([architecture](../architecture.md), [threat
-model](../protocol/threat-model.md); index: [docs/README.md](../README.md)).
+model](../protocol/threat-model.md)).
 The Go daemon (`server/`) has three roles:
 
 | Role | Serves repositories | Gateway, catalog, merge executor | Agent jobs | Actions |
@@ -59,7 +61,7 @@ An instance installs one runner next to its core with
 `python -m forkmesh_host instance-runner`), `enableActions: true`, job user
 `forkmesh-job` unless `--job-user` says otherwise, and the last output line
 `FM_RUNNER_PUBLIC_KEY=<base64url raw Ed25519 key>`
-([server/instance-actions.md](../server/instance-actions.md)).
+([instance actions](../server/instance-actions.md)).
 
 ## Security model
 
@@ -74,7 +76,7 @@ arbitrary code inside its sandbox. It cannot:
   for one `refs/heads/<branch>` instead, accepted only as a fast-forward of
   the existing tip; that grant also fetches the same repository, so a
   workflow can rebase before it pushes
-  ([server/instance-actions.md](../server/instance-actions.md)).
+  ([instance actions](../server/instance-actions.md)).
 - **Mint or extend a grant.** Grants are Ed25519-signed by the router key,
   which only the app holds, over `forkmesh-runner-grant-v1` plus node, owner,
   repo, access, ref, runner, grant id and times.
@@ -177,7 +179,7 @@ systemd-run --scope --quiet --collect [--user] -p MemoryMax=<jobMemoryMax> -p Me
 |---|---|---|
 | `POST /api/runners/register` | session plus key proof | register name and public key |
 | `POST /api/runners/revoke` | registrant (pool runners: also any admin) | revoke |
-| `POST /api/runners/pause`, `/resume` | registrant (pool runners: also any admin) | stop or restart new claims ([marketplace/runners.md](../marketplace/runners.md#pause)) |
+| `POST /api/runners/pause`, `/resume` | registrant (pool runners: also any admin) | stop or restart new claims ([runners](../marketplace/runners.md#pause)) |
 | `POST /api/runners/claim` | runner-signed | lease up to N jobs |
 | `POST /api/runners/report` | runner-signed, lease holder | report result |
 | `POST /api/runners/attachment` | runner-signed, lease holder | bytes of one prompt image |
@@ -390,10 +392,10 @@ Online means a check-in within 10 minutes (`ONLINE_MS` in
 `runner_logins.py`). The sign-in panel shows the authorize URL (Copy, Open),
 the terminal as one code block, then the code form. The settings page
 renders the same rows
-([app/settings-agents-and-runners.md](../app/settings-agents-and-runners.md)).
+([settings agents and runners](../app/settings-agents-and-runners.md)).
 
 The desktop and both phones manage the same runners through the `runners`
-Market package ([marketplace/runners.md](../marketplace/runners.md)), which also
+Market package ([runners](../marketplace/runners.md)), which also
 pauses, resumes and revokes them.
 
 ## Live agent output
@@ -419,7 +421,7 @@ Off by default; configured as `runnerPool` in a core's daemon config
   `forkmesh-next`, re-checked before every destroy.
 
 The runner snapshot and its one-time registration are not built yet, so keep
-`enabled: false`. Policy defaults are in [fleet/AUTOSCALING.md](autoscaling.md).
+`enabled: false`. Policy defaults are in [autoscaling](autoscaling.md).
 
 ## Failed runs
 
@@ -432,5 +434,5 @@ its branch only when it committed something.
 ## Node logs
 
 Burst runners must be discoverable and carry the log reader for their logs to
-reach the desktop ([NODE_LOGS.md](node-logs.md)). A runner's own IDS reports
-to `/api/runners/security-incident` ([IDS.md](intrusion-detection.md)).
+reach the desktop ([node logs](node-logs.md)). A runner's own IDS reports
+to `/api/runners/security-incident` ([intrusion detection](intrusion-detection.md)).

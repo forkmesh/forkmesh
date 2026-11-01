@@ -1,4 +1,4 @@
-# Client-work tools from the 2026-10-27 X thread
+# Client-work tools in the Ecosystem
 
 Part of [the App docs](README.md). Analysis behind
 `tools/ecosystem_client_work.json` and the "Work & client management" category

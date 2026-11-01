@@ -6,7 +6,7 @@ network between one of them and the server, and it measures what people in
 the call would notice: how long joining takes, how smooth the video is, how
 much audio is concealed, how late the picture is, and what it costs in CPU.
 [fm-media.md](fm-media.md) uses it to decide when FM Media is better than the
-WebRTC path in [rtc.md](rtc.md). Home: [README.md](README.md).
+WebRTC path in [rtc.md](rtc.md). Home: [Go daemon](README.md).
 
 ## Running it
 

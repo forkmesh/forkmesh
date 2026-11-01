@@ -4,7 +4,8 @@ A node copies every object it receives to mirrors, forks, clones and backups,
 so **a pushed object cannot be recalled**. The only remediation for a leaked
 credential is rotation; the only prevention is stopping it before the first
 remote receives it. Every boundary prints this warning with its findings.
-Why a copy cannot be recalled is explained on [Mirroring](../mirroring.md).
+Part of [Security](README.md); why a copy cannot be recalled is explained on
+[Mirroring](../mirroring.md).
 
 ## Scanner contract
 

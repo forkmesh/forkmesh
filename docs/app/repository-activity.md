@@ -1,4 +1,4 @@
-# Repository activity (Pulse, leaderboard, achievements)
+# Repository activity (Pulse, leaderboard, achievements, traffic)
 
 Part of [the App docs](README.md). The repository **Insights** tab (linked as
 **Activity** from the About box) is a GitHub/Forgejo-style Pulse with a
@@ -12,7 +12,7 @@ The tab has a left sub-navigation (a wrapped row of pills below 768px):
 | --- | --- | --- |
 | Pulse (default) | `/<owner>/<repo>/insights?period=1w` | `pulse` |
 | Leaderboard | `?view=leaderboard`, all time with `&scope=all` | `pulse`, `pulse?period=all` |
-| Contributors | `?view=contributors` | `stats`, `history`, `traffic` ([repository-traffic.md](repository-traffic.md)) |
+| Contributors | `?view=contributors` | `stats`, `history`, `traffic` ([Traffic](#traffic)) |
 | Code frequency | `?view=frequency` | `stats` (52 weekly commit counts) and the period's `pulse.series` |
 | Recent commits | `?view=commits` | `history` (latest 60 commits of the selected branch) |
 
@@ -198,6 +198,20 @@ request:
 - Measured on a desktop: 45,560 commits, first answer 1.1 s, later periods
   20-30 ms; 62,808 commits at 1,100 a week, 3.7 s for a week's first answer,
   then under 0.1 s.
+
+## Traffic
+
+The Contributors view shows a 30-day chart of completed Git clones of a
+public repository. `GET /api/repo/<owner>/<repo>/traffic` returns one UTC-day
+bucket for each of the last 30 days, zero days included, plus the period
+total.
+
+The endpoint reads `product_clone_daily`, which the routed HTTPS upload-pack
+path increments after serving a clone. Private repositories answer as not
+found. Counting clones rather than requests keeps a Git client's several
+transport requests from showing as several clones.
+
+## Dashboard code and tests
 
 The dashboard code is a lazy chunk (`09-repo-activity.js`,
 `dashboard-page-repo-activity.js`) loaded on the first Insights view, so other

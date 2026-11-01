@@ -1,8 +1,6 @@
 # Quality-gate waivers
 
-This directory contains temporary, reviewed exceptions for a removed or
-weakened performance budget. A waiver file is named `<budget-id>.json`; it must
-contain every field required by `../quality-gates.json`, use an ISO-8601 UTC
-expiry time, and explain the measured risk.
-
-Do not add a waiver for a tighter budget.
+Temporary, reviewed exceptions for a removed or weakened performance budget,
+one `<budget-id>.json` file each. The rules for writing one are in the
+[definition of done](../definition-of-done.md#changing-a-budget). Part of
+[Engineering](../README.md).

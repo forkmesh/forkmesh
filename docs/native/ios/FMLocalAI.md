@@ -1,10 +1,10 @@
 # FMLocalAI
 
+Part of [iOS core modules](README.md).
 On-device models: Gemma 4 on the phone's GPU through MLX, which the app target runs
 (`ForkMesh/Features/LocalAI/MLXGemmaEngine.swift`). This module is everything else and contains no
 MLX: the catalog, device fit, the Hugging Face download, the engine protocol, the view models and
-the mesh-node request handler. `import FMLocalAI` (deps FMBase, FMNet). Native docs home:
-[docs/native/README.md](../README.md).
+the mesh-node request handler. `import FMLocalAI` (deps FMBase, FMNet).
 
 ## Catalog and device fit (`LocalAIModel.swift`)
 

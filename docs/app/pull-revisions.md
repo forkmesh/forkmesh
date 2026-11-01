@@ -4,7 +4,7 @@ Part of the [App](README.md). A pull opened from the web, from a fork or from
 a `pr/<account>/` branch is a signed snapshot of a patch, with nothing linking
 it back to its branch. Branches on repositories the cores hold or host can be
 force-pushed by whoever may write them, keeping every replaced tip
-([CORE_PUSH.md](../operations/core-push.md#force-pushes)); revisions cover the rest: a
+([core push](../operations/core-push.md#force-pushes)); revisions cover the rest: a
 pull sent as a patch series from someone's own copy, which has no branch on
 the cores to push to.
 

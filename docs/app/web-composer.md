@@ -125,5 +125,5 @@ dashboard error element; `showErrorNotice()` replaces `window.alert()`. The
 copies together.
 
 Not supported on the web: local transcription, video uploads, local CLI slash
-commands. See [desktop-agents-web.md](desktop-agents-web.md) and
+commands. See [agents-page.md](agents-page.md#desktop-agents-on-a-repositorys-agents-tab) and
 [agents/README.md](../agents/README.md).

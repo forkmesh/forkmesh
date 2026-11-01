@@ -1,5 +1,7 @@
 # Launch incident tabletop — 2026-09-16
 
+Part of [Launch](README.md).
+
 A desk walk-through of the incident plan in the
 [launch readiness packet](y-combinator-news-readiness.md#incident-plan). Data
 custody answers come from [relay data retention and deletion](../relay-data-retention.md).

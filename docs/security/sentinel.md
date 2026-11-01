@@ -6,8 +6,8 @@ rules are the `.forkmesh/skills/security-review.skill` repository skill, and
 the record it keeps is [findings.md](findings.md).
 `app/tests/test_security_sentinel_teammate.py` pins the parts of the
 definition that keep it safe. It exists because many changes cross trust
-boundaries every day and no other teammate's lane reviews them. Home:
-[docs/security](README.md); attacker model:
+boundaries every day and no other teammate's lane reviews them. Part of
+[Security](README.md); attacker model:
 [threat model](../protocol/threat-model.md).
 
 ## Lanes
@@ -34,7 +34,7 @@ Each valid report is stored encrypted and emailed to `SECURITY_EMAIL`, then:
   in the `security` department, routed to an agent at priority 5, linking the
   flagship repository; and
 - every platform admin gets a `security_alert` Ping linking that task. Ping
-  settings and quiet hours cannot mute that kind ([IDS.md](../operations/intrusion-detection.md)), so it rings
+  settings and quiet hours cannot mute that kind ([intrusion detection](../operations/intrusion-detection.md)), so it rings
   like an intrusion alert. Resubmitting the same report reuses one Ping.
 
 The endpoint is anonymous, so the report is hostile input. The task's details

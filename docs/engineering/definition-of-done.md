@@ -3,7 +3,8 @@
 A feature is complete when its code and the following evidence can be reviewed
 together. The pull-request template has one section per item. The GitHub mirror's CI
 (`python3 tools/quality_gate.py pr-evidence`) rejects a pull request with a
-missing or placeholder section; on ForkMesh the reviewer checks it.
+missing or placeholder section; on ForkMesh the reviewer checks it. Part of
+[Engineering](README.md).
 
 1. **Threat review.** Trust boundaries, sensitive inputs, authority changes,
    failure behaviour. Authorization, identity, custody and repository privacy
@@ -40,8 +41,9 @@ Budgets live in `quality-gates.json`. Tightening needs no exception. Removing a
 budget or raising a maximum requires a waiver:
 
 1. Add a JSON record under `docs/engineering/quality-gate-waivers/` named
-   after the budget ID, with every field `quality-gates.json` lists, a risk
-   review, a UTC expiry date and the approving reviewer.
+   `<budget-id>.json`, with every field `quality-gates.json` lists, a risk
+   review that explains the measured risk, an ISO-8601 UTC expiry time and the
+   approving reviewer. A tighter budget never gets a waiver.
 2. Run `python3 tools/quality_gate.py compare --base-ref <sha>`; it rejects
    silent removals and increases.
 3. Restore or tighten the budget before the waiver expires.

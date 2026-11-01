@@ -5,7 +5,7 @@ trigger (manual, webhook or schedule) followed by steps on a canvas at
 `/dashboard/workflows`. Each step is a core node (HTTP request, Set fields, If,
 Filter, Merge, Limit, Split out, No operation), one of the Shortcuts-style
 scripting, text, number, list and date steps including Run script
-([workflow-steps.md](workflow-steps.md), [workflow-scripts.md](workflow-scripts.md)),
+([workflow-steps.md](workflow-steps.md)),
 or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
 ...). Items flow along connections; each step runs once per item it receives.
 
@@ -61,7 +61,7 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
   on the server (`/api/workflows/files/render`), reports warnings, and commits
   through `POST /api/repo/<owner>/<repo>/file-edit` with the read blob oid (a
   concurrent change is a 409). Packages can ship such files through the
-  `content.*` sockets ([marketplace docs](../marketplace/README.md#protocols-and-interfaces)).
+  `content.*` sockets ([package system](../marketplace/package-system.md#protocols-and-interfaces)).
   A shortcut script's body is split into blocks on blank lines. A block whose
   first non-empty line is `# step: <name>` shows that name (at most 80
   characters) instead of "Commands N". A block with a line
@@ -167,7 +167,7 @@ one step type each so each has its own icon.
   browser's **Run workflow** (`wfRunOnDesktop`) and the iPhone's **Run on
   your desktop** ([native/WORKFLOWS.md](../native/WORKFLOWS.md#the-desktops-workflows))
   reach the first linked desktop through `desktopControlHub()`
-  ([desktop-agents-web.md](desktop-agents-web.md)), send `diag.prepare` and
+  ([agents-page.md](agents-page.md#desktop-agents-on-a-repositorys-agents-tab)), send `diag.prepare` and
   `diag.run` (action `freeDiskSpace`) per step in graph order, wait up to 20
   minutes a step, and post the report to `/<id>/record`, which checks every
   node id, status and duration (`workflow_desktop.clean_report`) and stores a
@@ -369,7 +369,7 @@ Workflows and the rail actions.
 A repository keeps workflows the desktop runs in
 `.forkmesh/workflows/<id>.json`. A special agent is such a workflow whose
 first **Special agent** step (`agent.run`) holds everything
-`.forkmesh/teammates/<id>.json` used to (portrait, specialty, focus,
+a `.forkmesh/teammates/<id>.json` file held (portrait, specialty, focus,
 responsibility, instructions, playbook shortcut, skills and skill files,
 permissions, learning journal, low-cost model, run window, relay and
 Marketing channels, native workflow). The special agent store
@@ -493,7 +493,7 @@ permission gives the page `repositoryWorkflows()` and
 `repositoryWorkflowAction(repo, id, action, payload, done)` (actions `get`,
 `save`, `run`, `review`, `stop`, `delete`, `pin`, `unpin`, `setEnabled`,
 `setSchedule`, `openAgent`, `openSession`, `openOutput`, `readOutput`,
-`openFile`; [marketplace docs](../marketplace/README.md)).
+`openFile`; [package system](../marketplace/package-system.md#desktop-page-contract)).
 
 ## Security
 
@@ -506,7 +506,7 @@ permission gives the page `repositoryWorkflows()` and
   valid only while the workflow is active with a webhook trigger.
 - Run script code is interpreted by `workflow_script.py`, a sandboxed
   JavaScript subset with no access to the host, files or the network, a step
-  limit, a call-depth limit and size caps ([workflow-scripts.md](workflow-scripts.md)).
+  limit, a call-depth limit and size caps ([workflow-steps.md](workflow-steps.md#run-script)).
   Nothing a user types reaches `eval`, `exec` or a JavaScript engine.
 
 ## Web styling

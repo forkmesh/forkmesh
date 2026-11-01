@@ -529,6 +529,20 @@
             <h2
               class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
             >
+              Core documentation
+            </h2>
+            <a class="nav-link" href="/docs/architecture/">Architecture and availability</a>
+            <a class="nav-link" href="/docs/encryption/">Encryption and signatures</a>
+            <a class="nav-link" href="/docs/mirroring/">Mirroring and distribution</a>
+            <a class="nav-link" href="/docs/self-hosting/">Self-hosting</a>
+            <a class="nav-link" href="/docs/censorship-resilience/">Censorship resilience</a>
+            <a class="nav-link" href="/docs/protocol/threat-model/">Threat model</a>
+          </div>
+
+          <div class="mb-8">
+            <h2
+              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
+            >
               Quickstart
             </h2>
             <a class="nav-link" href="#install">Install</a>
@@ -684,6 +698,50 @@
               <span class="mt-1 block text-[0.95rem] text-[var(--docs-muted)]">Join the World, use the desktop app, submit a pull request, get an independent review, and share links for rewards.</span>
             </span>
           </a>
+        </section>
+
+        <section
+          id="core-documentation"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Core documentation"
+          data-search-body="architecture availability encryption signatures mirroring distribution self-hosting censorship resilience threat model"
+        >
+          <h2
+            class="text-[1.78rem] font-black leading-tight text-[var(--docs-fg)]"
+          >
+            Core documentation
+          </h2>
+          <p class="mt-3 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+            Six short pages explain how ForkMesh works and what it protects.
+            Everything else in the <a href="/docs/library/">documentation library</a>
+            links back to them.
+          </p>
+          <div class="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <a class="doc-card p-6 no-underline" href="/docs/architecture/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Architecture and availability</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Equal core nodes behind DNS round robin, independent mirrors, read-only survival, and what is still a single dependency.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/encryption/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Encryption and signatures</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Every signing and encryption layer, the algorithms behind it, and the known gaps.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/mirroring/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Mirroring and distribution</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">How copies stay in step, how a clone is verified, and how signed releases reach users.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/self-hosting/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Self-hosting</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Run a desktop node, a mirror, a whole instance or a fleet of your own.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/censorship-resilience/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Censorship resilience</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">What still works when a host, domain, account or network is blocked, and how it is tested.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/protocol/threat-model/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Threat model</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">What the protocol defends against and which threats are still open.</p>
+            </a>
+          </div>
         </section>
 
         <section

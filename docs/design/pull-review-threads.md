@@ -4,7 +4,7 @@ A review thread is pinned to a path, a side (`old`/`new`) and a line range of
 the diff the reviewer saw. When the pull is updated, lines shift or disappear.
 Threads therefore carry a signed anchor ([encryption](../encryption.md)) so
 every client can show them on the right lines or mark them as moved or
-outdated.
+outdated. Part of [Design decisions](README.md).
 
 ## The anchor
 

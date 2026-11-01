@@ -7,7 +7,7 @@ update needs only someone who may push the pull's head branch
 ([app/pull-merge-box.md](../app/pull-merge-box.md#update-branch)). Code: `server/merge.go`,
 `server/checks.go`, `server/pull_metadata_refs.go`. Operator view:
 [mirror-node.md, "Owner-authorized web merges"](../operations/mirror-node.md#owner-authorized-web-merges).
-Home: [README.md](README.md); why mirrors can take writes:
+Home: [Go daemon](README.md); why mirrors can take writes:
 [mirroring](../mirroring.md).
 
 ## Flow
@@ -63,7 +63,7 @@ Home: [README.md](README.md); why mirrors can take writes:
    refs attestation. The App admits that digest into the pin history and
    pushes a `commits` event so the other mirrors converge. The event goes
    out even when the digest is not admitted, and it reaches every core
-   ([CORE_PUSH.md](../operations/core-push.md), "Every core is woken at once").
+   ([core push](../operations/core-push.md), "Every core is woken at once").
 
 ## Progress
 
@@ -162,7 +162,7 @@ mutations (`server/merge_branch.go`):
   is derived from the request, so a record rebuilt from the completion marker
   after a crash names the same ref.
 - **Replication.** The cores fetch every head from each other and never
-  delete ([CORE_PUSH.md](../operations/core-push.md)), so a removed branch would come
+  delete ([core push](../operations/core-push.md)), so a removed branch would come
   back from a peer. `reconcileUpstreamRefs` therefore skips creating an
   `agent/` branch whose incoming tip is a trashed tip (or contained in one),
   and the App sends the delete to every core that serves the repository;
@@ -193,7 +193,7 @@ Further rules:
   refuses non-`agent/` branches and the App queues the operation for the
   owner's desktop ([../app/branch-ops.md](../app/branch-ops.md)).
 - Hosted repositories get the same mutations on their cores
-  ([../HOSTED_REPOS.md](../operations/core-hosted-repositories.md)).
+  ([core-hosted repositories](../operations/core-hosted-repositories.md)).
 - After `merged` with `generationReady`, the gateway adopts the generation
   with `reload_from_disk(prewarm=False)` and warms caches in the background.
   The warmup waits until no job finished for 5 s and runs once at a lower

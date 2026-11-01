@@ -1,13 +1,13 @@
 # FMTools
 
+Part of [iOS core modules](README.md).
 Activity, telemetry and the in-app log, notes, tasks, the health and wellbeing tools (Calorie
 Counter, Pedometer, Water, Sleep, Sugar Break, Stretch Break, Food Guide, heart rate by tapping),
 Glasses Alert, Eye Control's maths, the Speech Playground, the Docs library, bug reports, and the developer performance
 overlay's text. `import FMTools` (re-import `FMBase` for `JSONObject`, `FMAccount` for
 `PerformanceMonitorService`). Every view model is `@MainActor @Observable`; the SwiftUI views are
 in `ForkMesh/Features/Tools`. The Password Vault's logic is FMVault's ([FMVault](FMVault.md)); only
-its views and clipboard live in the Tools feature. Native docs home:
-[docs/native/README.md](../README.md).
+its views and clipboard live in the Tools feature.
 
 ## App wiring (`ForkMesh/Features/Tools/ToolsFeature.swift`)
 
@@ -65,7 +65,7 @@ Models take a `ToolsApiCall` closure (tests) or an `ApiService` (convenience ini
 - **Tasks**: `TasksListModel` (Mine/Open/Done with icons and counts, `loadMore`),
   `TaskDetailModel`, `TaskFormModel`, `TaskCheckinModel`. People filter: Everyone, each member
   (you first, then A to Z), Bot (agent assignees) and Unassigned, each with its open count; same
-  rules as the web board ([docs/app/task-board-filters.md](../../app/task-board-filters.md)).
+  rules as the web board ([docs/app/tasks.md](../../app/tasks.md)).
 - **Bug reports**: `ReportBugModel(screen:build:signedIn:api:)` (`submit()`), `BugSeverity.all`.
   The admins' Reported tab is `BugReportInboxModel`. A cancelled list load is not an error:
   SwiftUI cancels the view's `.task` when the tab or sheet goes away, and a `.refreshable` when

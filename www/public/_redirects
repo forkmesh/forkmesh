@@ -35,3 +35,29 @@
 /reset-password https://app.forkmesh.com/reset-password 308
 /signup https://app.forkmesh.com/signup 308
 /start https://app.forkmesh.com/start 308
+
+# Merged documentation pages
+/docs/fediverse-digests /docs/fediverse/ 308
+/docs/fediverse-digests/ /docs/fediverse/ 308
+/docs/fediverse-mention-review /docs/fediverse/ 308
+/docs/fediverse-mention-review/ /docs/fediverse/ 308
+/docs/lemmy-threaded-collaboration /docs/fediverse/ 308
+/docs/lemmy-threaded-collaboration/ /docs/fediverse/ 308
+/docs/world-soundtrack-license /docs/world-community-services/ 308
+/docs/world-soundtrack-license/ /docs/world-community-services/ 308
+/docs/community-ad-governance /docs/world-community-services/ 308
+/docs/community-ad-governance/ /docs/world-community-services/ 308
+/docs/github-sync /docs/forge-sync/ 308
+/docs/github-sync/ /docs/forge-sync/ 308
+/docs/security/NODE_LINK_GRANT /docs/security/node-link-grants/ 308
+/docs/security/NODE_LINK_GRANT/ /docs/security/node-link-grants/ 308
+/docs/engineering/third-party-dependencies /docs/security/dependency-security-audit/ 308
+/docs/engineering/third-party-dependencies/ /docs/security/dependency-security-audit/ 308
+/docs/operations/headless-mirror-identity /docs/operations/headless-mirror/ 308
+/docs/operations/headless-mirror-identity/ /docs/operations/headless-mirror/ 308
+/docs/operations/headless-mirror-refresh /docs/operations/headless-mirror/ 308
+/docs/operations/headless-mirror-refresh/ /docs/operations/headless-mirror/ 308
+/docs/operations/community-reward-pool-signer /docs/operations/community-reward-pool/ 308
+/docs/operations/community-reward-pool-signer/ /docs/operations/community-reward-pool/ 308
+/docs/operations/open-pull-audit-2026-07-28 /docs/operations/pull-rules/ 308
+/docs/operations/open-pull-audit-2026-07-28/ /docs/operations/pull-rules/ 308

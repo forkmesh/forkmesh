@@ -8,10 +8,10 @@ up day to day is in [architecture](../architecture.md); what a community keeps
 when the hosted service is blocked or gone is in
 [censorship resilience](../censorship-resilience.md).
 
-| File | What it is |
+| Page | Covers |
 | --- | --- |
-| [runbook.md](runbook.md) | The printable runbook: triage, roles and checklists, prerequisites, a decision tree per scenario, procedures with verification and rollback, and an exercise worksheet. |
-| [exercise-register.md](exercise-register.md) | Every recorded exercise, its findings and corrective owners, and what closure still needs. |
+| [Runbook](runbook.md) | The printable runbook: triage, roles and checklists, prerequisites, a decision tree per scenario, procedures with verification and rollback, and an exercise worksheet. |
+| [Exercise register](exercise-register.md) | Every recorded exercise, its findings and corrective owners, and what closure still needs. |
 | [`conformance/disaster-recovery/v1/runbook.json`](../../conformance/disaster-recovery/v1/runbook.json) | The runbook source (`forkmesh-disaster-runbook-v1`). `runbook.md` is generated from it. |
 | `tools/forkmesh_disaster_recovery.py` | Validates and renders the runbook, builds and verifies the bootstrap kit, manages the roster and key rotations, and runs drills. |
 
@@ -280,3 +280,5 @@ strace and runs only on Linux.
 - The `search` and `organization-service` roles are hosted-only, so
   main-service loss cannot restore them.
 - Kits are signed by one kit key, not a threshold.
+
+Back to [Operations](../operations/README.md) and the [documentation home](../README.md).

@@ -1,5 +1,7 @@
 # Git SSH public-key authentication
 
+Part of [Operations](README.md).
+
 ForkMesh serves standard `ssh://` clone and push URLs from an independently
 operated OpenSSH origin; the HTTP control plane never terminates SSH. This is
 part of [self-hosting](../self-hosting.md) and [mirroring](../mirroring.md).
@@ -85,7 +87,7 @@ use filesystem quotas for a hard boundary.
 
 After a successful receive a fixed root-owned notifier writes a coalesced
 marker; a systemd path unit runs the
-[headless refresh](headless-mirror-refresh.md) as `forkmesh-mirror`, verifies
+[headless refresh](headless-mirror.md#refresh-and-publication) as `forkmesh-mirror`, verifies
 signed health, and registers the new generation, retrying with capped backoff
 (see [`ssh-post-receive-refresh.schema.json`](../ssh-post-receive-refresh.schema.json)).
 `forkmesh-mirror-reconcile.timer` reconciles every 30 minutes.
@@ -244,12 +246,35 @@ outage stops SSH. An independent mirror can authorize locally
   unreachable, never after an authoritative denial.
 - `local` never contacts the control plane; the grants file is the whole policy.
 
-The grants file (`type: forkmesh.ssh-local-grants`) lists each key, its account
-and per-repository `access`: `read-only`, `read-write` or `pull-request` (push
-only to `refs/heads/pr/<account>/*`). Setting `pullSubmissionSpool` accepts
-signed pull submissions via `forkmesh-pull-submit <owner>/<repo>` and replays
-them later with `ssh_gateway.py spool-forward`. Setting
-`dynamicRepositoriesPath` enables `forkmesh-fork <owner>/<repo>`.
+The grants file (`type: forkmesh.ssh-local-grants`) maps each key to an
+account and per-repository `access`: `read-only`, `read-write` or
+`pull-request` (push only to `refs/heads/pr/<account>/*`).
+
+Dashboard, SSH and mirror URLs stay replaceable metadata over the same
+canonical repositories; the HTTPS side of an independent mirror is in
+[direct-HTTPS mirror gateway](direct-https-mirror-gateway.md#independent-mirror-operation).
+
+### Contributor pull requests over SSH
+
+With `pullSubmissionSpool` set, the forced command
+`forkmesh-pull-submit <owner>/<repo>` accepts a signed pull request or review
+comment on stdin, verifies its Ed25519 signature (`forkmesh-pull-event-v1` /
+`forkmesh-pull-comment-v1`; the author field is the public key) and spools it
+with per-key and global caps. A timer replays the spool to the controller:
+
+```bash
+python3 tools/ssh_gateway.py --config … spool-forward --api-origin https://app.example.com
+```
+
+Delivered items move to `forwarded/`, permanent failures to `rejected/`.
+
+### Forking over SSH
+
+With `dynamicRepositoriesPath` set (and the broker's
+`localAuthorization.dynamicRepositoriesFile` pointing at the same file),
+`forkmesh-fork <owner>/<repo>` clones heads and tags into a new bare repository
+for the caller, registers it and refreshes the gateway. Global catalog
+publication still goes through the owner's signed path.
 
 ## Transport and round-robin origins
 

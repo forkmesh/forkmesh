@@ -4,7 +4,7 @@ The transport under FM Media ([fm-media.md](fm-media.md)): our own QUIC v1,
 a minimal HTTP/3 and WebTransport over HTTP/3, in Go, standard library only
 (no quic-go, no x/crypto, no x/net). The TLS 1.3 handshake is `crypto/tls`'s
 QUIC API (`tls.QUICServer`, `tls.QUICClient`, `QUICConn` events); everything
-else, packet protection included, is ours. Home: [README.md](README.md); the
+else, packet protection included, is ours. Home: [Go daemon](README.md); the
 call server on top of it: [fmm-server.md](fmm-server.md).
 
 | Package | Role | Spec |

@@ -1,5 +1,7 @@
 # Stock Git conformance operations
 
+Part of [Operations](README.md).
+
 The public [compatibility matrix](../git-compatibility.md) is generated from
 the claims in `conformance/git/v1/matrix.json` and the retained run reports in
 `conformance/git/v1/evidence/` (indexed by `conformance/git/v1/results.json`).

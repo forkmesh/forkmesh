@@ -1,6 +1,6 @@
 # Core features as plugins, off by default in new projects
 
-Part of [the marketplace docs](README.md). Most of what the Home grid, the
+Part of [Marketplace](README.md). Most of what the Home grid, the
 bar tabs and the repository tabs offer is a Market package. Packages here
 without a `content/` folder are switches over core code; packages with one are
 plugins a build adds only when `marketplace/plugins.json` lists them
@@ -108,7 +108,7 @@ installed (it and everything it depends on are installed) and the app's own
 place is in the package's places. Deep links and direct routes keep working;
 hiding is about entry points. On the desktop the core's background services
 behind a switch (the agent watchers, the local mesh, log feeds, the task
-read) start and stop with it too ([shell](../desktop/shell.md)).
+read) start and stop with it too ([empty shell](../desktop/package-modules.md#core-services-follow-their-packages)).
 
 ### Account state
 
@@ -133,7 +133,7 @@ instance has no onboarding, and without this its signed-in users would see
 fewer repository tabs than signed-out visitors. Removing a package still stores an
 `installed: false` row, which wins as in step 1. ForkMesh-company surfaces
 among them (World, the ledger) stay hidden by the instance's own plugin
-switch (`INSTANCE_PLUGINS`, see [INSTANCES.md](../operations/instances.md)).
+switch (`INSTANCE_PLUGINS`, see [instances](../operations/instances.md)).
 forkmesh.com is unchanged.
 
 The server marks answers from steps 2 and 3 with `"legacy": true`

@@ -1,9 +1,9 @@
-# Architecture overview
+# How the codebase fits together
 
-How the code fits together. ForkMesh keeps Git data on hosts people run
+The developer entry page. ForkMesh keeps Git data on hosts people run
 themselves; the app on the core nodes handles accounts, routing and
 collaboration metadata. The public overview, including what is still a single
-dependency, is [docs/codebase.md](architecture.md); the
+dependency, is [docs/architecture.md](architecture.md); the
 index of developer docs is [README.md](README.md).
 
 ```text
@@ -27,12 +27,12 @@ index of developer docs is [README.md](README.md).
 | --- | --- | --- |
 | Desktop node | `desktop/` (Qt 6, C++) | Linux, Windows, macOS |
 | Mirror daemon and gateway | `server/` (Go), `tools/mirror_gateway.py` | headless mirrors, core nodes, runners |
-| App | `app/` (Python, run on CPython by `app/host/`) | the core nodes ([PLAN.md](operations/served-stack.md)) |
+| App | `app/` (Python, run on CPython by `app/host/`) | the core nodes ([served stack](operations/served-stack.md)) |
 | Website | `www/` (static site and docs) | forkmesh.com ([www/README.md](www/README.md)) |
 | World | `world/` (three.js client; backend in the app) | world.forkmesh.com |
 | Native apps | `native/ios/`, `native/android/` | phones |
 | Marketplace packages | `marketplace/` | inside the desktop, app, World and mobile hosts |
-| Fleet tooling | `deploy/`, `tools/next_*.py` | operator box ([deploy/README.md](operations/fleet-tooling.md)) |
+| Fleet tooling | `deploy/`, `tools/next_*.py` | operator box ([fleet tooling](operations/fleet-tooling.md)) |
 | Releases | `tools/package/`, release tooling | build hosts ([release/README.md](release/README.md)) |
 | Contracts | `conformance/` | CI and independent implementations ([conformance/README.md](conformance/README.md)) |
 
@@ -55,14 +55,14 @@ index of developer docs is [README.md](README.md).
   and whose refs match the signed pin
   ([docs/mirroring.md](mirroring.md)). The app stores no
   packfiles except for repositories hosted on the cores
-  ([HOSTED_REPOS.md](operations/core-hosted-repositories.md)).
+  ([core-hosted repositories](operations/core-hosted-repositories.md)).
 - **Collaboration records.** Issues, pulls, discussions, reviews and releases
   are signed files under `.forkmesh/` in the repository, so they travel with
   every clone.
 - **Phones** are access clients over the same API and sockets; they do not
   mirror Git.
 - **Agents.** Agent jobs run on desktops, mirrors or the untrusted runner tier,
-  which holds only per-job grants ([RUNNERS.md](operations/runners.md)).
+  which holds only per-job grants ([runners](operations/runners.md)).
 - **Packages.** Hosts expose generic sockets; packages contribute pages, API
   handlers and World modules without core code naming them.
 
@@ -73,7 +73,7 @@ index of developer docs is [README.md](README.md).
 - Mirror: the daemon's config, identity key and bare repositories.
 - Cores: rqlite (payloads encrypted under `DATA_KEY`, HMAC blind indexes),
   node-local caches, and room-object storage in rqlite. Secrets are sealed in
-  the vault ([VAULT.md](operations/vault.md)); every layer is summarised in
+  the vault ([vault](operations/vault.md)); every layer is summarised in
   [docs/encryption.md](encryption.md).
 
 Trust boundaries: [security/README.md](security/README.md) and the

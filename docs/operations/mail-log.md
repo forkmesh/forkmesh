@@ -1,9 +1,11 @@
 # Mail: the #email-log channel, tracking and core delivery
 
+Part of [Operations](README.md).
+
 Every email the platform sends leaves a note in a private chat channel,
 **#email-log**, visible only to the account named in `MAIL_LOG_OWNER`. The
 operator sees all outgoing mail and its outcome in one place. Fleet runbook:
-[OPERATIONS.md](README.md); developer index: [README.md](../README.md).
+[runbook](runbook.md).
 
 ## Code map
 
@@ -39,7 +41,7 @@ A bot app was rejected for this: app posting is limited to public channels.
 The server writes the notes itself through the channel delivery path, which
 marks each envelope `srv` (server-injected) so clients accept these unsealed
 frames in this private room; ordinary private channels take webhooks the
-same way ([app/chat-private-rooms.md](../app/chat-private-rooms.md)).
+same way ([chat private rooms](../app/chat-private-rooms.md)).
 
 ## The note
 
@@ -237,7 +239,7 @@ normal path, at most once a minute.
 - The IDS mails its lockdown and test alerts through the same loopback
   Postfix, and in a lockdown (when its firewall stops Postfix sending) posts
   to the Mailtrap API as root with the token in `/etc/postfix/sasl_passwd`
-  ([IDS.md](intrusion-detection.md), "Direct mail").
+  ([intrusion detection](intrusion-detection.md), "Direct mail").
 - Setup with `tools/next_mail.py`: `dkim`, `dns`, `rdns` once; per core
   `install` then `restart`; `check`.
 
@@ -265,7 +267,7 @@ operator's choice over the unread `no-reply@forkmesh.com`).
   envelope sender. Rolling the table out needs
   `next_mail.py install nN --execute` on each core.
 - White-label instances keep their own `MAIL_SENDER`
-  ([INSTANCES.md](instances.md)); one that sends through SMTP gets the
+  ([self-hosted instances](instances.md)); one that sends through SMTP gets the
   envelope sender `no-reply@` its own domain.
 
 ## Branding

@@ -5,7 +5,7 @@ checkout on the publishing machine without the desktop app. Commit or merge in
 `~/projects/forkmesh/src` and the change reaches the fleet within about a
 minute, whether `forkmesh-source.service` (the flagship desktop) is running or
 not. Tests: `python3 -m pytest -q tools/test_source_publisher.py`. Tools
-index: [README.md](README.md); how mirrors then serve the source:
+index: [tools docs](README.md); how mirrors then serve the source:
 [mirroring](../mirroring.md).
 
 ## Model
@@ -79,7 +79,7 @@ For each target the publisher:
    bypass for local Git traffic;
 2. runs `git push --porcelain <proxy> refs/heads/*:refs/heads/* refs/tags/*:refs/tags/*`
    (never forced, never deleting; deletions go through
-   `POST /api/git/branch-deletes`, see [CORE_PUSH.md](../operations/core-push.md));
+   `POST /api/git/branch-deletes`, see [core push](../operations/core-push.md));
 3. has the proxy sign each request as
    `forkmesh-git-push-v1\n{owner}\n{repo}\n{METHOD}\n{ts}\n{sha256(body)}`
    with `X-ForkMesh-Pubkey/-Ts/-Sig/-Body-Sha256`, the scheme the mobile
@@ -156,10 +156,9 @@ and is masked in errors.
   mirror's result under `github`.
 - Contributions land on the forge, not GitHub. Pull requests opened on GitHub
   are reviewed and reapplied by hand.
-- GitHub `main` was replaced once (2026-10-21) with a
-  `--force-with-lease` push because it predated the history rewrite; a bundle
-  of the old `main` and PR heads is in
-  `data/core/state/github-mirror/github-forkmesh-before-2026-10-21.bundle`.
+- GitHub's `main` and PR heads from before the history rewrite are kept in
+  `data/core/state/github-mirror/github-forkmesh-before-2026-10-21.bundle`;
+  the GitHub `main` that replaced them went up with `--force-with-lease`.
 - GitHub runs `.github/workflows/` on every push to `main`; how failures are
   watched is in [github-actions.md](../engineering/github-actions.md). The
   Windows jobs set `PYTHONUTF8: "1"` (Windows Python otherwise uses cp1252 and

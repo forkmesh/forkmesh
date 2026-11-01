@@ -1,11 +1,13 @@
 # Auto-deploy: main to the core nodes
 
+Part of [Operations](README.md).
+
 A push to `main` that changes the served stack deploys it to the cores: the
 same deploy an operator runs with `tools/next_deploy.py`, driven by a ForkMesh
 Actions workflow and an agent on the operator box. `.forkmesh/deploy.yml` is
 manual-only and refuses. `python3 tools/next_autodeploy.py pause <reason>` or
-`disarm` stops it. Fleet map: [deploy/README.md](fleet-tooling.md); runbook:
-[OPERATIONS.md](README.md).
+`disarm` stops it. Fleet map: [fleet tooling](fleet-tooling.md); commands:
+[runbook](runbook.md).
 
 ## Pieces
 
@@ -113,7 +115,7 @@ stale-copy case and the `install` command.
    the box. `TestThreePeopleHoldACallThroughImpairedLinks`,
    `TestAntiAmplificationLimit`, `TestMultipathPathFailureAudio` and
    `TestCoreDeathMovesTheCallToTheStandbyCore` also give their timing checks
-   three attempts themselves ([server/README.md](../server/README.md)),
+   three attempts themselves ([server](../server/README.md)),
    which helps even before the agent has updated itself, since the Go tests
    come from the commit being deployed. A real regression fails both runs.
 3. **Build** in a fresh detached worktree.
@@ -184,7 +186,7 @@ check readyz, units and IDS, undrain, stop at the first failure. Roll paths
 are counted since the last successful roll, so a skipped roll is caught up.
 When `server/` changed, it then runs `roll-runners --idle-wait 0`, which
 never restarts a runner with active job scopes; busy runners are retried every
-10 minutes ([RUNNERS.md](runners.md)). Failures Ping and email and are kept
+10 minutes ([runners](runners.md)). Failures Ping and email and are kept
 in `state.json` until `next_autodeploy.py ack-roll`. Create
 `<fleet config>/autodeploy/manual-roll` to only report that a roll is needed.
 

@@ -1,11 +1,12 @@
 # Repositories hosted on the core nodes
 
+Part of [Operations](README.md).
+
 A user with no desktop node and no external forge account can create a
 repository on the website and use it with plain `git` over HTTPS. Every core
 keeps a full replica, so the repository survives the loss of any one core
 ([architecture](../architecture.md)); later the user can move it to
-their own node. User guide: [docs/hosted-repositories.md](../hosted-repositories.md);
-index: [docs/README.md](../README.md).
+their own node. User guide: [hosted repositories](../hosted-repositories.md).
 
 Code: `app/src/hosted_git.py` (create, push routing, quotas, private reads),
 `app/src/hosted_repos.py` (replica exchange, templates), migration
@@ -13,7 +14,7 @@ Code: `app/src/hosted_git.py` (create, push routing, quotas, private reads),
 `server/hosted_push_mirror.go`, the `restricted` visibility in
 `tools/mirror_gateway.py`, and the create page `/dashboard/repos/new`. On a self-hosted instance the
 operator command `instance-repo` creates and fills one from a repository on
-the server through the same create helpers ([INSTANCES.md](instances.md)).
+the server through the same create helpers ([self-hosted instances](instances.md)).
 
 ## What a user gets
 
@@ -43,7 +44,7 @@ verified email.
 
 **Git rules** (gateway receive-pack): the default and protected branches
 fast-forward only; other branches may be force-pushed by accounts that may
-write them ([CORE_PUSH.md](core-push.md#force-pushes)); no ref deletes, new
+write them ([core push](core-push.md#force-pushes)); no ref deletes, new
 tags allowed but never moved, only `refs/heads/*` and `refs/tags/*`, objects
 fsck-checked, no hooks, every accepted push audited per ref.
 
@@ -57,7 +58,7 @@ moves the tip to `refs/forkmesh/trash/branch/` and deletes the branch in one
 ref transaction, then the same on every other core, each audited as
 `repository.branch_delete`. When the job ends the app notes the change like a
 push, so the cores wake and a push mirror with prune drops the branches on
-its next push, and updates the catalog's `branchCount`. Details: [app/branch-ops.md](../app/branch-ops.md#deleting-branches).
+its next push, and updates the catalog's `branchCount`. Details: [branch ops](../app/branch-ops.md#deleting-branches).
 
 ## Design
 
@@ -356,7 +357,7 @@ refs).
 ## Internet Archive backups
 
 The owner can upload a public hosted repository to an archive.org item on a
-schedule ([app/archive-sync.md](../app/archive-sync.md)). The exchange carries an
+schedule ([archive sync](../app/archive-sync.md)). The exchange carries an
 optional `archiveSync` (`revision`, `url`, `accessKey`, `secret`,
 `intervalSeconds`, `collection`, `title`, `source`, and `uploaded`: the
 `revision`, `digest` and `at` of the last upload the app recorded) to the

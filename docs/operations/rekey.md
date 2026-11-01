@@ -1,5 +1,7 @@
 # Re-keying the database (`DATA_KEY` rotation)
 
+Part of [Operations](README.md).
+
 `DATA_KEY` encrypts stored rows, keys every blind index, and seeds several
 HMAC secrets. Rotating it means decrypting everything under the old key and
 re-creating it under the new one, offline, with the apps stopped. The tool is
@@ -7,7 +9,7 @@ re-creating it under the new one, offline, with the apps stopped. The tool is
 runs only on the operator box, against a local SQLite file, never on a node.
 Users keep their passwords: password hashes are salted PBKDF2 inside the
 encrypted account record and do not depend on `DATA_KEY`. See
-[VAULT.md](vault.md), [OPERATIONS.md](README.md) and the
+[vault](vault.md), [runbook](runbook.md) and the
 [encryption overview](../encryption.md).
 
 ## What depends on `DATA_KEY`
@@ -15,7 +17,7 @@ encrypted account record and do not depend on `DATA_KEY`. See
 | Kind | Examples | Handling |
 |---|---|---|
 | Stored ciphertext | `encrypt_row` rows (AES-256-GCM, key `SHA-256(DATA_KEY)`), `ad_network_ads.owner_sealed`, chat history envelopes | re-encrypted with fresh nonces |
-| Vault rows | `host_secrets` (HKDF of `DATA_KEY`, [VAULT.md](vault.md)) | emptied; `next_vault.py sync` re-seals them |
+| Vault rows | `host_secrets` (HKDF of `DATA_KEY`, [vault](vault.md)) | emptied; `next_vault.py sync` re-seals them |
 | Stored blind indexes | `blind_index(v) = HMAC-SHA256(SHA-256(DATA_KEY + ":blind-index"), lower(strip(v)))` in `*_bi` columns, token columns, `_bi` JSON keys | recomputed from recovered plaintext, or replaced by one consistent random pseudonym per value |
 | Derived on the fly | password-reset and email-verify links, session token digests, admin sessions, signed tickets, push passwords, room chat passphrases | nothing stored; outstanding tokens stop verifying, sessions end |
 | Not affected | client-side end-to-end keys, password hashes, router key, mesh and edge secrets, node-local caches | untouched |
@@ -82,13 +84,13 @@ after rotation.
 `account_store_keys.wrapped` holds each account's store key under `DATA_KEY`
 and is re-encrypted; `account_store.data` is sealed with that per-account key,
 not `DATA_KEY`, so it is copied unchanged and still opens after rotation
-([app/account-data.md](../app/account-data.md)).
+([account data](../app/account-data.md)).
 
 `pull_batch_sent` keys `repo_bi` on the lowercased `owner/repo` and
 `target_bi` on `pull-batch-target:` plus the lowercased target fork URL, so a
 re-key keeps the record of which commits were already sent to each fork.
 
-`pull_ai_reviews` (AI review queue, [app/ai-review.md](../app/ai-review.md))
+`pull_ai_reviews` (AI review queue, [ai review](../app/ai-review.md))
 keys `repo_bi` on the lowercased `owner/repo`, which re-keys. `head_bi`
 indexes `owner/repo:branch` of a branch-backed pull's head and has no
 plaintext to recompute, so it gets a pseudonym: after a re-key a push to that

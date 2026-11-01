@@ -24,7 +24,7 @@ the system browser, so they solve the widget like any browser. A client that
 POSTs the endpoints directly gets ``turnstile_required`` with a message that
 says to complete the challenge on the web (``challengeUrl``).
 
-Configuration (docs/operations/README.md, "Signup challenge"):
+Configuration (docs/operations/runbook.md, "Signup challenge"):
 
 * ``TURNSTILE_SITE_KEY``: public, app/wrangler.toml [vars].
 * ``TURNSTILE_SECRET_KEY``: vault secret (deploy/fleet.toml optional_secrets).

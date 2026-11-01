@@ -6,7 +6,7 @@ files and for SMB network shares on the local network, such as a USB disk
 shared by the router ([openwrt.md](openwrt.md), Network shares). The
 user-facing description is the package
 [README](../../marketplace/packages/files/README.md). Part of
-[the marketplace docs](README.md).
+[Marketplace](README.md).
 
 It is bundled, off by default and account-synced, with
 `install.installedBefore: "2026-10-19"` so existing accounts get it

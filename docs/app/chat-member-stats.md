@@ -1,7 +1,7 @@
 # Chat member activity line
 
 Part of [the App docs](README.md). The web chat's people pane (`/chat`,
-[web-chat-layout.md](web-chat-layout.md))
+[web-chat.md](web-chat.md#layout))
 shows one muted line under each person's name with up to five figures for the
 past year: pull requests opened, commits, issues opened, reviews, and how long
 ago their last contribution was. Hovering the line shows the full sentence

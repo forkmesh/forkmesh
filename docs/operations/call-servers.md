@@ -1,11 +1,13 @@
 # Group-call server on the cores
 
+Part of [Operations](README.md).
+
 `server/cmd/forkmesh-calls` is ForkMesh's own WebRTC selective forwarding unit
-(SFU) for group audio and video calls ([server/rtc.md](../server/rtc.md)). The
+(SFU) for group audio and video calls ([rtc](../server/rtc.md)). The
 fleet runs it on **every core** as `fmnext-calls.service`. `[calls]` in
 `deploy/fleet.toml` controls it, `deploy/core/render.py` renders it, and the
 `calls` step of `tools/next_fleet.py` installs it. Fleet map:
-[deploy/README.md](fleet-tooling.md); why no core is special:
+[fleet tooling](fleet-tooling.md); why no core is special:
 [architecture](../architecture.md).
 
 ## Redundant on every core
@@ -77,7 +79,7 @@ keeps `[turn]`.
 
 `FORKMESH_CALLS_SECRET` is one value shared by the app and every core. The
 app signs join tickets with it, and the SFU checks them
-([server/rtc.md](../server/rtc.md)).
+([rtc](../server/rtc.md)).
 
 - `next_fleet.py init-secrets --execute` generates it (`token_urlsafe(48)`)
   into `secrets.env`.
@@ -117,7 +119,7 @@ app signs join tickets with it, and the SFU checks them
   not run the `calls` step yet skips it, and the app's health probe leaves
   that node out.
 - **`remove-core`** stops it with the other services.
-- Phone-approved self-deploy ([self-deploy.md](self-deploy.md)) rolls only
+- Phone-approved self-deploy ([self-deploy](self-deploy.md)) rolls only
   the mirror daemon. A change under `server/rtc/` reaches the cores through the
   desktop's auto-deploy roll or `next_fleet.py roll`.
 
@@ -132,7 +134,7 @@ app signs join tickets with it, and the SFU checks them
    ```
 
 2. Roll the cores: auto-deploy runs `next_fleet.py roll --execute` after a
-   `server/` or `deploy/core/` change ([auto-deploy.md](auto-deploy.md));
+   `server/` or `deploy/core/` change ([auto-deploy](auto-deploy.md));
    with `manual-roll` set, run it yourself.
 3. Check:
 
@@ -160,7 +162,7 @@ tickets live only 60 s.
 ## FM Media
 
 The same binary also serves FM Media, our own call engine over QUIC
-([../server/fmm-server.md](../server/fmm-server.md)), when `[calls] fmm =
+([fmm server](../server/fmm-server.md)), when `[calls] fmm =
 true`. It ships **off** (`deploy/fleet.toml` has `fmm = false`, and
 `test_live_fleet_ships_fm_media_disabled` keeps it so) until clients that
 speak it exist. With it off, nothing renders or opens.

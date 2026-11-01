@@ -1,11 +1,13 @@
 # Busy ring: a spinner around the icon while something runs
 
-Part of [the desktop docs](README.md). Every platform shows the same
+Every platform shows the same
 "working" mark: a thin ring around a button's icon whose bright arc turns once
 every 1.6 s and fades over 70 % of the circle, on a faint 14 % track. It is the
 phone apps' activity halo (`ShellActivityHalo` on iOS and Android), used on
 buttons and on the left rails too. A button with no icon gets the same sweep
 around its rounded outline.
+
+Part of [Desktop](README.md).
 
 ## The rule: disabled right after a click means working
 

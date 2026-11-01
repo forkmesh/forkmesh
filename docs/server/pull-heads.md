@@ -3,7 +3,7 @@
 A pull request opened from the web, from another node or from the MCP tool
 arrives as a signed patch: `changes.patch` and a `git format-patch` series in
 `commits.mbox` (submission and intake: [intake-and-attestation.md](intake-and-attestation.md);
-home: [README.md](README.md)). The patch is only the transport. Every node
+home: [Go daemon](README.md)). The patch is only the transport. Every node
 turns it into commits once, the same way, and from then on a patch-backed pull
 is checked and merged like a branch: a three-way merge of its head commit into
 the base tip ([merge-executor.md](merge-executor.md)).

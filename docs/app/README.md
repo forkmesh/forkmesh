@@ -9,9 +9,9 @@ self-hosted core nodes; each core runs Caddy, this Python code on CPython
 (`app/src`, staged to `app/src_build`, under the host in
 `app/host/forkmesh_host/`), rqlite and the Go daemon, and a DNS health loop
 (`tools/next_dns.py`) drops a failed core. With two cores down the survivor
-serves reads and refuses writes ([PLAN.md](../operations/served-stack.md);
+serves reads and refuses writes ([served stack](../operations/served-stack.md);
 [architecture](../architecture.md)). Agent jobs run on the runner
-tier ([RUNNERS.md](../operations/runners.md)). The host is documented in
+tier ([runners](../operations/runners.md)). The host is documented in
 [docs/host/README.md](../host/README.md); this page covers the App code.
 
 The code keeps the API shape it was written for on Cloudflare Workers: a
@@ -45,17 +45,148 @@ user-facing descriptions live in `docs/` ([index](../README.md)).
 
 ## Topic pages
 
-| Area | Pages |
+One page per topic. Each links back here.
+
+### Platform and data
+
+| Page | Covers |
 | --- | --- |
-| Platform | [cron-and-durable-objects](cron-and-durable-objects.md), [d1](d1.md), [worker-footprint](worker-footprint.md), [auth-sessions](auth-sessions.md), [login-page](login-page.md), [update-notice](update-notice.md), [docs-book](docs-book.md), [world-boot-latency](world-boot-latency.md), [dashboard-colors](dashboard-colors.md), [dashboard-components](dashboard-components.md), [seasonal-theme](seasonal-theme.md) |
-| Repositories | [repo-views](repo-views.md), [ai-review](ai-review.md), [pull-merge-box](pull-merge-box.md), [pull-quick-replies](pull-quick-replies.md), [repo-features](repo-features.md), [repo-settings-access](repo-settings-access.md), [repository-traffic](repository-traffic.md), [repository-activity](repository-activity.md), [repository-file-edits](repository-file-edits.md), [ai-disclosure](ai-disclosure.md), [pull-review-prompt](pull-review-prompt.md), [directory-about](directory-about.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [archive-sync](archive-sync.md), [issue-scale-limits](issue-scale-limits.md), [public-pages](public-pages.md), [feeds-and-lite](feeds-and-lite.md), [mirror-quota](mirror-quota.md), [translations](translations.md), [forum-reach](forum-reach.md), [branch-protection](branch-protection.md), [diff-viewer](diff-viewer.md), [issue-views](issue-views.md), [issue-assignment-deadline](issue-assignment-deadline.md), [issue-assignment-limit](issue-assignment-limit.md), [comment-edits](comment-edits.md), [comment-reactions](comment-reactions.md), [comment-gifs](comment-gifs.md), [comment-tips](comment-tips.md), [bot-avatars](bot-avatars.md) |
-| Chat | [chat-protocol-v3](chat-protocol-v3.md), [chat-protocol-v4](chat-protocol-v4.md), [chat-relay-hardening](chat-relay-hardening.md), [chat-relay-server](chat-relay-server.md), [web-chat-relay-hardening](web-chat-relay-hardening.md), [chat-sealed-sender](chat-sealed-sender.md), [chat-private-rooms](chat-private-rooms.md), [chat-direct-calls](chat-direct-calls.md), [chat-group-calls](chat-group-calls.md), [face-stream](face-stream.md), [fmm-browser](fmm-browser.md), [chat-push-previews](chat-push-previews.md), [chat-read-sync](chat-read-sync.md), [chat-unread-reminders](chat-unread-reminders.md), [chat-everyone-channels](chat-everyone-channels.md), [chat-genie-welcome](chat-genie-welcome.md), [chat-formatting](chat-formatting.md), [chat-stickers](chat-stickers.md), [web-chat-layout](web-chat-layout.md), [chat-member-stats](chat-member-stats.md), [web-composer](web-composer.md) |
-| Notifications | [notification-email](notification-email.md), [new-issue-pings](new-issue-pings.md), [content-first-pings](content-first-pings.md), [thread-notifications](thread-notifications.md) |
-| Notes | [notes-sharing](notes-sharing.md), [notes-convert](notes-convert.md), [notes-activity](notes-activity.md) |
-| Tasks | [task-progress](task-progress.md), [issue-to-task](issue-to-task.md), [task-markdown](task-markdown.md), [task-trash](task-trash.md), [task-pings](task-pings.md), [task-email](task-email.md), [task-board-filters](task-board-filters.md) |
-| Agents and desktop | [agents-page](agents-page.md), [desktop-agents-web](desktop-agents-web.md), [desktop-commands](desktop-commands.md), [settings-agents-and-runners](settings-agents-and-runners.md), [agent-notes](agent-notes.md), [activity-today](activity-today.md), [workflows](workflows.md), [workflow-steps](workflow-steps.md), [workflow-scripts](workflow-scripts.md) |
-| Accounts and organizations | [account-data](account-data.md), [member-roster](member-roster.md), [username-casing](username-casing.md), [organization-bot-scopes](organization-bot-scopes.md), [payments-and-plans](payments-and-plans.md), [badges](badges.md), [discussion-answers](discussion-answers.md), [web-discussions](web-discussions.md), [web-desktop-parity](web-desktop-parity.md), [web-releases](web-releases.md), [web-repo-access](web-repo-access.md), [web-projects](web-projects.md), [challenges](challenges.md), [feedback-bounties-links](feedback-bounties-links.md), [early-ios-testers](early-ios-testers.md), [accounts-and-moderation](accounts-and-moderation.md) |
-| Operations and growth | [server-update](server-update.md), [analytics](analytics.md), [not-found-tracking](not-found-tracking.md), [probe-auto-ban](probe-auto-ban.md), [signup-failure-pings](signup-failure-pings.md), [password-reset-challenge](password-reset-challenge.md), [marketing-email](marketing-email.md), [onboarding-email](onboarding-email.md), [ecosystem](ecosystem.md), [ecosystem-client-work](ecosystem-client-work.md), [package-ai-failures](package-ai-failures.md), [privacy-mode](privacy-mode.md), [affiliates](affiliates.md), [instance-federation](instance-federation.md), [instance-legal-pages](instance-legal-pages.md) |
+| [cron-and-durable-objects](cron-and-durable-objects.md) | Room objects, the per-minute cron and ingress shards |
+| [d1](d1.md) | The `DB` database: rqlite, schema, read budget, traps |
+| [worker-footprint](worker-footprint.md) | App source footprint report and World module budgets |
+| [auth-sessions](auth-sessions.md) | Session tokens, cookies, login state, admin 2FA, email confirmation |
+| [login-page](login-page.md) | The `/login` page: styling rules, demo login, redirects |
+| [signup-challenge](signup-challenge.md) | Signup and password reset Turnstile challenge, backup check, signup failure pings |
+| [update-notice](update-notice.md) | Dashboard notice when a new version is deployed |
+| [docs-book](docs-book.md) | Developer docs page `/dashboard/docs` and in-place editing |
+| [member-roster](member-roster.md) | Public member roster and avatar endpoints, privacy rules, boot latency on the cores |
+| [analytics](analytics.md) | First-party product analytics, consent, recordings and error reports |
+| [not-found-tracking](not-found-tracking.md) | 404 tracking, the admin 404s list and automatic probe bans |
+| [server-update](server-update.md) | Admin console: Update ForkMesh, repository addresses, legal pages |
+| [privacy-mode](privacy-mode.md) | Privacy mode for self-hosted instances |
+| [instance-legal-pages](instance-legal-pages.md) | Terms, Privacy and Security pages on self-hosted instances |
+| [instance-federation](instance-federation.md) | Self-hosted instances joining the directory and World |
+| [public-pages](public-pages.md) | Public ledger, network, status and mirror rewards pages |
+| [early-ios-testers](early-ios-testers.md) | Early iOS tester flag and build notifications |
+
+### Dashboard look and parts
+
+| Page | Covers |
+| --- | --- |
+| [dashboard-colors](dashboard-colors.md) | Dashboard colour roles and theme.json |
+| [dashboard-components](dashboard-components.md) | Shared `fm-*` dashboard components |
+| [web-composer](web-composer.md) | The dashboard prompt composer |
+| [web-desktop-parity](web-desktop-parity.md) | What works on the web and what still needs the desktop |
+| [seasonal-theme](seasonal-theme.md) | The platform-wide Halloween theme |
+
+### Repositories and pull requests
+
+| Page | Covers |
+| --- | --- |
+| [repo-views](repo-views.md) | How repository pages are drawn: views, tabs, title row, About rail |
+| [repo-settings](repo-settings.md) | Who administers a repository, feature switches, collaborators and visibility |
+| [repo-media](repo-media.md) | Videos in issue and pull request Markdown |
+| [repository-activity](repository-activity.md) | Insights tab: Pulse, leaderboard, milestones, clone traffic |
+| [repository-file-edits](repository-file-edits.md) | Editing, adding, renaming and deleting files on the web |
+| [recent-push-banner](recent-push-banner.md) | The recent pushes banner and Compare &amp; pull request |
+| [branch-ops](branch-ops.md) | Branch merge, update and delete from the website |
+| [branch-protection](branch-protection.md) | Protected default branch and the Actions switch |
+| [diff-viewer](diff-viewer.md) | Web diff viewer for pulls, compare and commit pages |
+| [directory-about](directory-about.md) | Folder About boxes: API, README fallback, web page |
+| [pull-merge-box](pull-merge-box.md) | Pull request merge box, Update branch, quick review replies and conflict pings |
+| [pull-review-prompt](pull-review-prompt.md) | The Diff and files box: summary link and review prompt |
+| [pull-revisions](pull-revisions.md) | Updating a patch-backed pull request with revisions |
+| [remote-forks](remote-forks.md) | Forks on other instances and cross-instance pull requests |
+| [provider-mirrors](provider-mirrors.md) | Mirroring a repository to GitHub or GitLab |
+| [archive-sync](archive-sync.md) | Scheduled backup of a repository to the Internet Archive |
+| [ai-review](ai-review.md) | Automated first-pass AI review of pull requests |
+| [ai-disclosure](ai-disclosure.md) | AI disclosure on pull requests and the issue AI prompt |
+| [security-advisories](security-advisories.md) | Private vulnerability reports and repository security advisories |
+| [web-releases](web-releases.md) | Releases and tags on the web |
+| [web-projects](web-projects.md) | Projects on the web |
+| [web-discussions](web-discussions.md) | Discussions on the web |
+| [discussion-answers](discussion-answers.md) | Marking a discussion reply as the answer |
+
+### Issues, tasks, notes and notifications
+
+| Page | Covers |
+| --- | --- |
+| [issue-assignment](issue-assignment.md) | Assign button, one-open-issue rule and assignment deadlines |
+| [issue-scale-limits](issue-scale-limits.md) | Issue and forum scale limits |
+| [issue-to-task](issue-to-task.md) | Moving an issue to an organization task |
+| [issue-views](issue-views.md) | Issue view counts |
+| [comment-edits](comment-edits.md) | Editing and deleting your own issue and pull request comments |
+| [comment-reactions](comment-reactions.md) | Comment reactions, GIFs and stickers in comments, Solana Pay tips |
+| [tasks](tasks.md) | Organization tasks: Tasks page, Markdown text, progress and work items, trash, pings, email |
+| [notes](notes.md) | Web Notes: sharing and access link, activity log, note to task or issue, body search, platform differences |
+| [notifications](notifications.md) | Thread notifications, new issue pings, notification email send claims, collaboration author display |
+| [content-first-pings](content-first-pings.md) | Pings that lead with the actor and the content |
+| [feeds-and-lite](feeds-and-lite.md) | Feeds, the lite view and the forum home page |
+| [forum-reach](forum-reach.md) | Static forum exports, publishing and onion service |
+| [accounts-and-moderation](accounts-and-moderation.md) | Forum accounts without email, random names, moderators, blocks, hidden posts, new-account limits |
+| [translations](translations.md) | Translating posts |
+
+### Chat and calls
+
+| Page | Covers |
+| --- | --- |
+| [chat-protocol-v3](chat-protocol-v3.md) | Chat protocol v3 specification |
+| [chat-protocol-v4](chat-protocol-v4.md) | Chat protocol v4: per-message ratchet for direct messages |
+| [chat-relay-hardening](chat-relay-hardening.md) | Relay hardening rules R1-R7 for clients and the server side |
+| [chat-sealed-sender](chat-sealed-sender.md) | Sealed sender for direct messages (proposed) |
+| [chat-private-rooms](chat-private-rooms.md) | Private rooms and direct messages: access, delivery, media, DM surfaces |
+| [chat-everyone-channels](chat-everyone-channels.md) | #general, #random and #welcome server channels and the genie spider welcome |
+| [chat-unread](chat-unread.md) | Read marks across devices and unread reminder emails |
+| [chat-formatting](chat-formatting.md) | Chat message formatting syntax and renderers |
+| [chat-stickers](chat-stickers.md) | Chat stickers on messages, per platform |
+| [chat-member-stats](chat-member-stats.md) | The activity line under each person in the chat people pane |
+| [chat-push-previews](chat-push-previews.md) | Message text in chat push notifications |
+| [web-chat](web-chat.md) | The `/chat` page layout and styling, and browser relay hardening |
+| [chat-direct-calls](chat-direct-calls.md) | One-to-one encrypted calls: signaling, resilience, rings, quality widget, phones |
+| [chat-group-calls](chat-group-calls.md) | Group audio and video calls in private channels |
+| [call-filters](call-filters.md) | Face, background, outfit and voice filters in calls, native ports, Face Changer |
+| [face-stream](face-stream.md) | Low-bandwidth face stream for calls |
+| [fmm-browser](fmm-browser.md) | FM Media call engine in the browser |
+
+### Agents, apps and workflows
+
+| Page | Covers |
+| --- | --- |
+| [agents-page](agents-page.md) | The Agents page and desktop agents on a repository's Agents tab |
+| [agent-notes](agent-notes.md) | AI guestbook and anonymous agent notes (GET-only endpoints) |
+| [desktop-commands](desktop-commands.md) | Signed phone-to-desktop commands through the relay |
+| [settings-agents-and-runners](settings-agents-and-runners.md) | Settings → Agents &amp; runners |
+| [activity-today](activity-today.md) | Today's activity heat grid shared across a member's devices |
+| [workflows](workflows.md) | Workflows: the visual automation builder |
+| [workflow-steps](workflow-steps.md) | Shortcuts-style workflow steps and the Run script interpreter |
+| [oauth-apps](oauth-apps.md) | ForkMesh Apps: OAuth 2.1 installs, scopes, Web and Events APIs, directory |
+| [organization-bot-scopes](organization-bot-scopes.md) | Organization bot token scopes and retired scopes |
+| [package-ai-failures](package-ai-failures.md) | How package AI failures surface (Calorie Counter) |
+
+### People and accounts
+
+| Page | Covers |
+| --- | --- |
+| [account-data](account-data.md) | Phone Settings &gt; Data: saved settings, the data inventory and the export |
+| [profile-links](profile-links.md) | Profile links for names and mentions on every surface, profile page avatars |
+| [username-autocomplete](username-autocomplete.md) | The shared username autocomplete picker |
+| [username-casing](username-casing.md) | Username capitalization rules |
+| [bot-avatars](bot-avatars.md) | Built-in avatars for bots and system accounts |
+| [badges](badges.md) | Achievement badges, levels, record badges and medallions |
+| [challenges](challenges.md) | Code challenges between users |
+| [payments-and-plans](payments-and-plans.md) | Patreon memberships, role grants, plan usage |
+
+### Growth and community
+
+| Page | Covers |
+| --- | --- |
+| [attribution](attribution.md) | UTM capture, acquisition attribution and reporting |
+| [affiliates](affiliates.md) | Affiliate program: claims, CRM link, payment and tax forms |
+| [marketing-email](marketing-email.md) | Opt-in marketing email (consent, unsubscribe, campaigns) and the drafted onboarding emails |
+| [plugin-race](plugin-race.md) | The Plugin Race hackathon |
+| [feedback-bounties-links](feedback-bounties-links.md) | Feedback, bounties and link rewards in the dashboard |
+| [ecosystem](ecosystem.md) | Curated ecosystem project directory |
+| [ecosystem-client-work](ecosystem-client-work.md) | Analysis behind the Ecosystem's work and client management category |
 
 ## Architecture
 
@@ -91,7 +222,7 @@ live node by rendezvous hash; storage and alarms live in rqlite. See
 **Storage.** `DB` is the database of record and keeps D1's SQL dialect. Most
 row payloads are AES-GCM blobs under `DATA_KEY` with HMAC blind indexes for
 lookups. Git bytes are never stored in the database; they live on desktop
-nodes and in the cores' Git stores ([HOSTED_REPOS.md](../operations/core-hosted-repositories.md)).
+nodes and in the cores' Git stores ([core-hosted repositories](../operations/core-hosted-repositories.md)).
 See [d1.md](d1.md).
 
 **Cron.** Each minute the host calls `scheduled`, which rings the
@@ -107,7 +238,7 @@ display data: changes reach them as frames on the node event socket
 (`ForkMeshNodes`) and as APNs pushes (`app/src/apns.py`).
 
 **Secrets.** Nodes start sealed; `DATA_KEY` and other vaulted secrets arrive
-over the unseal socket ([VAULT.md](../operations/vault.md)). How data is encrypted:
+over the unseal socket ([vault](../operations/vault.md)). How data is encrypted:
 [encryption](../encryption.md); threats considered:
 [threat model](../protocol/threat-model.md).
 
@@ -173,7 +304,7 @@ exhaust memory. Browser tests:
 
 - Releases, migrations and rolling restarts:
   [docs/operations/fleet-tooling.md](../operations/fleet-tooling.md) and
-  [OPERATIONS.md](../operations/README.md). A node that fails its gate reverts and
+  [operations](../operations/README.md). A node that fails its gate reverts and
   the rollout stops. Check the rev at `/api/version` before assuming a fix
   is live.
 - Logs: `journalctl -u forkmesh-app` on a node, or the desktop Log page.
@@ -190,7 +321,7 @@ exhaust memory. Browser tests:
 
 - `DATA_KEY` encrypts row payloads; blind indexes are HMACs. There is no
   key-version byte, so the key is rotated only offline with the apps stopped
-  (`tools/next_rekey.py`, [REKEY.md](../operations/rekey.md)).
+  (`tools/next_rekey.py`, [rekey](../operations/rekey.md)).
 - The host applies a Host allowlist, streamed body caps, an SSRF egress guard
   and edge-client verification before the App sees a request
   (`request_guard.py`, `egress.py`).
@@ -246,8 +377,8 @@ exhaust memory. Browser tests:
 ## Related docs
 
 - [docs/host/README.md](../host/README.md),
-  [docs/operations/fleet-tooling.md](../operations/fleet-tooling.md), [PLAN.md](../operations/served-stack.md),
-  [OPERATIONS.md](../operations/README.md), [VAULT.md](../operations/vault.md)
+  [docs/operations/fleet-tooling.md](../operations/fleet-tooling.md), [served stack](../operations/served-stack.md),
+  [operations](../operations/README.md), [vault](../operations/vault.md)
 - [polling elimination](../operations/polling-elimination.md)
   (push-first client contract), [integrations](../integrations.md),
   [ActivityPub federation](../design/activitypub-federation.md)

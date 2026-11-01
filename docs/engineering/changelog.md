@@ -9,7 +9,7 @@ ForkMesh has one changelog, `changelog/changelog.json`. Two places show it:
   `stage_app` and `stage_cutover`). A self-hosted instance serves the same
   page and file at its own `/changelog` and `/changelog.json` (the
   `changelog` plugin, on by default, see
-  [INSTANCES.md](../operations/instances.md#plugins)).
+  [instances](../operations/instances.md#plugins)).
 - **The phone apps' What's new**, under the version row of the You hub
   ([native/NAVIGATION.md](../native/NAVIGATION.md)). The iOS build step "Bundle
   the changelog" and the release host's Android APK build export the file into
@@ -17,7 +17,7 @@ ForkMesh has one changelog, `changelog/changelog.json`. Two places show it:
 
 The file merges the two older changelogs: the website's releases v0.1.0 to
 v0.7.0 and the apps' notes of builds 218 to 302 (two entries, 2026-10-13 and
-2026-10-21). Developer index: [README.md](../README.md).
+2026-10-21). Part of [Engineering](README.md).
 
 ## The file
 

@@ -1,7 +1,14 @@
-# Comment reactions
+# Comment reactions, GIFs, stickers and tips
 
-Part of [the App docs](README.md). Every comment-like thing on a repository
-page can take emoji reactions:
+Part of [the App docs](README.md). The extras on repository comments:
+emoji reactions, GIFs and stickers in the composer, and Solana Pay tips to
+the author. Administrators configure all three under Settings → Reactions,
+GIFs & tips; how comments are edited and deleted is in
+[comment-edits.md](comment-edits.md).
+
+## Reactions
+
+Every comment-like thing on a repository page can take emoji reactions:
 
 - an issue's description and each issue comment;
 - a pull request's description, its conversation comments, review summaries
@@ -15,7 +22,7 @@ advisory comments have no stable comment id and are not covered. Chat already
 has its own reactions (sealed, sent over the relay, [chat-stickers.md](chat-stickers.md));
 comment reactions reuse its vocabulary instead of adding a second one.
 
-## Vocabulary
+### Vocabulary
 
 The 24 reactions of the desktop's `ReactionCatalog.h` (`like`, `love`,
 `laugh`, `celebrate`, `hot`, `thanks`, `smile`, `wink`, `cool`, `thinking`,
@@ -43,7 +50,7 @@ words hide under 420 px) until the viewer has added `thankyou`; one tap adds
 it. It is part of the first-view markup, so the server render and the
 dashboard render stay byte-identical.
 
-### Custom reactions
+#### Custom reactions
 
 An instance administrator (Settings → Reactions, GIFs & tips, scope "This
 instance") and an organization owner (scope = the organization) can add, edit,
@@ -75,7 +82,7 @@ most 50 per scope; 30 edits a minute per account.
   and it can still be taken back but not added again.
 - The desktop and the phone apps show a custom reaction by name.
 
-### Motion
+#### Motion
 
 Chips animate only under `prefers-reduced-motion: no-preference`: a subtle
 loop while hovered or focused (hearts beat, hands wave, stars twinkle, the
@@ -85,7 +92,7 @@ reaction's animated variant on hover. All of it is CSS keyframes on the glyph
 (no assets) and is switched off, with the burst and confetti, under
 `prefers-reduced-motion: reduce`.
 
-## Storage
+### Storage
 
 Comments live in the repository's signed ledger (`.forkmesh/issues`,
 `.forkmesh/pulls/<n>/NNNN-*.md`, `.forkmesh/discussions/<n>/NNNN-comment.md`),
@@ -117,7 +124,7 @@ comment_reaction_rate (account_bi PRIMARY KEY, window_start, count)
 - `idx_comment_reactions_account (account_bi, created_at)` serves the daily
   cap and account deletion.
 - Deleting the repository (`_REPO_SCOPED_TABLES`) or the account
-  (`_delete_account_namespace`) deletes its rows. [REKEY.md](../operations/rekey.md) lists
+  (`_delete_account_namespace`) deletes its rows. [rekey](../operations/rekey.md) lists
   both tables (the rate counter is emptied on a re-key).
 
 The `comment_reactions` migration (`app/migrations/*_comment_reactions.sql`)
@@ -128,7 +135,7 @@ The issue view merges both sources: ledger reactions folded as before
 name once per emoji. A ledger reaction cannot be taken back from the web; the
 desktop that signed it does that.
 
-## API
+### API
 
 `GET /api/repo/<owner>/<repo>/reactions?kind=issue|pull|discussion&number=<n>`
 returns every comment's tallies for one record in one indexed read:
@@ -140,7 +147,7 @@ returns every comment's tallies for one record in one indexed read:
  "tips": {"body": 2}}
 ```
 
-`tips` counts confirmed tips per comment ([comment-tips.md](comment-tips.md)).
+`tips` counts confirmed tips per comment ([tips](#tips-on-comments-solana-pay)).
 Tallies are ordered by their first reaction; `people` holds the first ten
 reactors (only those rows are decrypted). Anonymous reads of a public
 repository are `public, max-age=5, stale-while-revalidate=30`; a signed-in
@@ -180,7 +187,7 @@ repository content); the caps bound what a made-up id can cost. The
 per-account cap on one record means a single account cannot fill a real
 record's 5000 rows with invented ids and lock everyone else out.
 
-## Notifications
+### Notifications
 
 Adding a reaction pings the comment's author with the `reaction` kind
 ("Reactions to your comments", Conversations group, off by email by
@@ -203,13 +210,13 @@ repository from the account's own rows). Past that the reaction is still
 stored and shown, but nobody is pinged, so one account cannot flood someone's
 inbox by inventing ids.
 
-## Agents
+### Agents
 
 A reaction made with an app token (`fmat_…`) is stored as an agent's. The
 chip gets a small accent dot, the "who reacted" card marks the person with an
 "agent" badge and a bot avatar, and the accessible label says "(agent)".
 
-## First paint
+### First paint
 
 Issue pages are server-rendered in the dashboard's own markup
 (`repo_ssr_issue`), so reaction bars are drawn there with their counts and
@@ -231,7 +238,7 @@ only the bars.
 Rendered issue articles and first views are cached per bundle and reaction
 summary (at most 8 variants a bundle).
 
-## Interface
+### Interface
 
 - One tap or click toggles a chip; the change shows at once and is rolled
   back with a short notice when the server refuses it.
@@ -260,3 +267,132 @@ first-view parity test), `app/public/dashboard/js/09-comment-reactions.js`
 (loading, picker, toggles, effects), `app/public/dashboard/shell.html`
 (`.fm-reaction*` styles), `app/host/forkmesh_host/repo_ssr.py`,
 `repo_ssr_issue.py`, `repo_views.py` (first view).
+
+## GIFs and stickers in comments
+
+Every record composer on a repository page (issue, pull request and
+discussion comments and replies, reviews, edits: any textarea marked
+`data-mention-input="record"`) has a **Sticker** button and, when the instance
+has a GIPHY key, a **GIF** button. Both open one picker (a popover, a bottom
+sheet under 640 px) that inserts Markdown at the caret:
+
+- a GIF as `![title](https://media.giphy.com/media/<id>/200.gif)`;
+- a sticker as `![label](<same-origin image>#w=96)`: the built-in Thank you
+  sticker and the custom reactions usable on the repository
+  ([custom reactions](#custom-reactions)).
+
+The reaction picker also has **Reply with a GIF**: picking one posts a reply
+to the record (mentioning the comment's author) in one click. A draft already
+in the composer is never replaced or sent; the GIF is added to it instead.
+
+### The GIPHY proxy
+
+The key is an administrator setting (Settings → Reactions, GIFs & tips →
+GIFs), stored in `instance_settings` under `giphy` and sealed with
+`encrypt_row`. No browser ever receives it:
+
+| Endpoint | Who | What |
+| --- | --- | --- |
+| `GET /api/gifs/config` | anyone | `{enabled, rating, attribution}`, cached a minute |
+| `GET /api/gifs/trending?offset=` | signed in | 24 trending GIFs |
+| `GET /api/gifs/search?q=&offset=` | signed in | 24 results for `q` (50 characters) |
+| `GET/POST /api/gifs/settings` | administrators | `{configured, rating}`; set, replace or clear the key, rating `g`/`pg`/`pg-13`/`r` (default `pg`) |
+
+Results keep only each GIF's id, title and preview size; every address is
+rebuilt from the id on `media.giphy.com`, so a picked GIF can only point at
+GIPHY's media host whatever the upstream answer says. Answers are remembered
+per app process (trending 5 minutes, searches 10) and a search costs the account
+one of 30 a minute (`comment_extras_rate`). With no key, `enabled` is false,
+the GIF buttons stay hidden and searches answer 404. The picker shows
+"Powered by GIPHY", as GIPHY's terms ask.
+
+### Rendering
+
+Markdown images whose address is on GIPHY's media hosts
+(`https://media[0-4].giphy.com/media/[v1.../]<id>/(giphy|200|200w|giphy-downsized).gif`,
+no query) render as
+
+```html
+<span class="fm-gif" data-fm-gif role="button" tabindex="0" aria-label="GIF: …">
+  <picture><source srcset="…_s.gif" media="(prefers-reduced-motion: reduce)" data-fm-gif-still>
+  <img src="….gif" alt="…" loading="lazy" decoding="async" referrerpolicy="no-referrer"></picture>
+  <span class="fm-gif-badge">GIF</span></span>
+```
+
+in the dashboard (`mdGifHtml`), the server-rendered issue page
+(`repo_ssr_issue.gif_html`, byte-identical) and the pull request and
+discussion first views. Under reduced motion the still frame shows until the
+GIF is hovered; anyone can click, tap or press Enter/Space to pause or play
+it. Every other image renders as before. The page CSP already allows
+`img-src https:`, which covers GIPHY's media hosts on every page that renders
+comments (`_BROWSER_CSP`, the static-page fallback headers).
+
+Code: `app/src/comment_gifs.py`, `app/public/dashboard/js/09-comment-gifs.js`.
+
+## Tips on comments (Solana Pay)
+
+A comment, issue or pull request description, review or discussion post whose
+author has a Solana address on their profile (the existing public `solana`
+payout field in Settings → Verification and payout, `SOLANA_RE`) shows a
+**Tip** button to signed-in readers other than the author. Tips go directly
+wallet to wallet: **the forge never holds keys or funds and never signs or
+submits a transaction.** `comment_tips.py` only builds payment requests and
+reads the chain through the read-only `_solana_rpc` (never `_solana_rpc_write`
+or the platform payout code).
+
+### Flow
+
+1. The Tip sheet (a dialog, a bottom sheet on phones) offers SOL, USDC (if
+   on) and the instance token (if configured), presets and an amount.
+2. `POST /api/repo/<owner>/<repo>/tips` `{kind, number, comment, recipient,
+   token, amount}` checks the session, read access to the repository, the
+   recipient's address (not yourself), the token and the amount (more than
+   zero, at most the token's precision, at most 1000 SOL), then stores a
+   pending request with a fresh random 32-byte `reference` public key and
+   answers with a Solana Pay link from `_solana_pay_uri`:
+   `solana:<recipient>?amount=0.05&reference=<ref>&label=Tip%20for%20%40bob&message=…`
+   (`&spl-token=<mint>` for a token).
+3. The sheet shows the link as a QR code (`ForkMeshQR`, as on the profile's
+   tips card), an **Open in wallet** link and **Copy payment link**. The
+   tipper's wallet signs and sends. `world/public/qr.js` encodes up to QR
+   version 9 (230 bytes), enough for a token request with `spl-token` and
+   `reference`; when a request is longer, the QR drops the message and then
+   the label, while **Open in wallet** keeps them. A test pins the encoder
+   module for module against an independent one.
+4. While the sheet is open it asks `POST /api/tips/verify {reference}` every
+   6 seconds for 3 minutes (and on **I've sent it - check now**). The
+   `tip-verify` cron phase (every 5 minutes) looks again for up to three
+   pending tips from the last two hours, least recently checked first.
+5. Verification calls `getSignaturesForAddress(reference)` and
+   `getTransaction(…, jsonParsed)` for at most two signatures. A transaction
+   matches when it succeeded, names the reference and raised the recipient's
+   balance of the asked token by at least the asked amount (SOL balances, or
+   `postTokenBalances` for the mint and owner). A signature confirms one tip
+   only. Then the tip is marked confirmed, the comment shows "💸 tipped" (with
+   a count above one), the author gets a `tip_sent` ping ("dave tipped your
+   comment on alice/app#7"), and a SOL tip is also written to `tip_notice`
+   (the receipt table desktop tips and the tip leaderboard use).
+
+### Limits and storage
+
+`comment_tips` keeps one row per request: the repository and comment, blind
+indexes of tipper and recipient, token, mint, amount in base units, status,
+signature, timestamps, check count and an encrypted `{tipper, recipient,
+address, owner, repo}`. Pending requests expire after a day; an account has at
+most 10 pending (the oldest makes way), 50 a day and 20 a minute; verification
+is 12 a minute; a record holds at most 5000. Repository and account deletion
+remove the rows. RPC calls go through `_solana_rpc`, so they fail over across
+the keyless public endpoints plus the operator's `SOLANA_RPC_URL` and are
+charged to the cron phase's subrequest budget.
+
+### Settings
+
+Administrators set, in Settings → Reactions, GIFs & tips → Comment tips
+(`GET/POST /api/tips/settings`, stored in `instance_settings` under `tips`):
+tips on or off, USDC on or off, and an optional instance token `{mint,
+symbol, decimals}`. `GET /api/tips/config` gives the tokens to the dashboard;
+`GET /api/tips/recipients?names=` gives the public addresses of up to 30
+authors.
+
+Code: `app/src/comment_tips.py`, `app/public/dashboard/js/09-comment-tips.js`,
+`_solana_pay_uri` / `_amount_units` in `app/src/entry.py`.

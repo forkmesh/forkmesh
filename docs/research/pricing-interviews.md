@@ -1,5 +1,7 @@
 # Managed-services pricing interview register
 
+Part of [Research](README.md).
+
 This register is the evidence gate for the managed-services plan in
 `www/public/business-model.json`. It contains no customer research as of
 2026-08-20.

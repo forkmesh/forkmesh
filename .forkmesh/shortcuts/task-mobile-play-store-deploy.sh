@@ -40,7 +40,7 @@ Steps:
 4. Fill in the store listing, Data safety (same data types as the App Store privacy answers), the content rating questionnaire and the privacy policy URL `https://forkmesh.com/privacy`.
 5. Upload the bundle to Internal testing, install it on a phone, check sign-in and the relay, then promote it to Production.
 
-Guides: docs/native/ANDROID.md (application id, signing) and docs/native/README.md, "Configuration"."""
+Guides: docs/native/ANDROID.md (application id, signing) and docs/native/ARCHITECTURE.md, "Configuration"."""
 
 task = mcp.create_task({
     "title": "Reminder: deploy the Android app to the Play Store",

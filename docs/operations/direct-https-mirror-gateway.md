@@ -1,5 +1,7 @@
 # Direct-HTTPS independent mirror gateway
 
+Part of [Operations](README.md).
+
 `tools/mirror_gateway.py` is the repository-byte origin of an independently
 operated ForkMesh mirror. It listens on loopback HTTP only; an
 operator-controlled HTTPS reverse proxy terminates public TLS. Git clients use
@@ -56,7 +58,7 @@ A node must prove its direct HTTPS endpoint before it is published.
 The gateway delegates Ed25519 to two shell-free local commands, each reading one
 bounded JSON object on stdin and writing one on stdout, with credential-like
 environment variables removed. Neither response may contain a private-key field.
-See [Headless mirror identity](headless-mirror-identity.md) for a VPS
+[Headless mirror identity](headless-mirror.md#identity) is the VPS
 implementation.
 
 | Command | Input `type` | Output |
@@ -130,43 +132,19 @@ expiry-bounded grant and keep it in an HttpOnly cookie. Rendered documents are
 held in bounded LRU caches invalidated on generation change (SIGHUP, or SIGUSR1
 for the replica), never by time; large bodies stream.
 
-### SSH writes without the control plane
+### SSH writes, pull requests and forks
 
-`tools/ssh_gateway.py` and `tools/ssh_authorization_broker.py`
-([git-ssh-gateway.md](git-ssh-gateway.md)) normally authorize through the
-routing service. `localAuthorization.mode` adds `fallback` (a signed local
-grants file consulted only when the service is unreachable, never after a
-denial) or `local` (the grants file is the whole policy). Grants map a key to an
-account and per-repository `read-only`, `read-write` or `pull-request` access;
-`pull-request` may push only to `refs/heads/pr/<account>/*`.
-
-### Contributor pull requests over SSH
-
-With `pullSubmissionSpool` set, the forced command
-`forkmesh-pull-submit <owner>/<repo>` accepts a signed pull request or review
-comment on stdin, verifies its Ed25519 signature (`forkmesh-pull-event-v1` /
-`forkmesh-pull-comment-v1`; the author field is the public key) and spools it
-with per-key and global caps. A timer replays the spool to the controller:
-
-```bash
-python3 tools/ssh_gateway.py --config … spool-forward --api-origin https://app.example.com
-```
-
-Delivered items move to `forwarded/`, permanent failures to `rejected/`.
-
-### Forking over SSH
-
-With `dynamicRepositoriesPath` set (and the broker's
-`localAuthorization.dynamicRepositoriesFile` pointing at the same file),
-`forkmesh-fork <owner>/<repo>` clones heads and tags into a new bare repository
-for the caller, registers it and refreshes the gateway. Global catalog
-publication still goes through the owner's signed path.
+`tools/ssh_gateway.py` and `tools/ssh_authorization_broker.py` can authorize
+from a signed local grants file while the routing service is unreachable,
+accept signed contributor pull requests over SSH, and fork a repository for
+the caller. All three are configured on the SSH side:
+[Git SSH gateway, controller-free operation](git-ssh-gateway.md#controller-free-operation).
 
 ### Push-created repositories
 
 Set in the refresh configuration
 ([`headless-mirror-refresh.schema.json`](../headless-mirror-refresh.schema.json),
-[headless refresh](headless-mirror-refresh.md)), never by hand in the generated
+[headless refresh](headless-mirror.md#refresh-and-publication)), never by hand in the generated
 gateway file:
 
 | Key | Rule |
@@ -180,7 +158,7 @@ On a capability-bound push the gateway creates
 deletes and repository hooks refused and non-fast-forwards refused unless the
 capability carries a `rewrite=` grant (then the gateway's own pre-receive
 decides per ref and keeps each replaced tip under `refs/forkmesh/history/`;
-see `docs/operations/core-push.md#force-pushes`), records it in
+see [core push](core-push.md#force-pushes)), records it in
 `hosted-pushes.json` (treated as untrusted input) and touches
 `/run/forkmesh-mirror-refresh/pending` to trigger a refresh. At most two pushes
 run at once (`503 push_busy`). The pushing device, not the node, publishes the

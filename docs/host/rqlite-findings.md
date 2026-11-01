@@ -3,9 +3,9 @@
 The App's database is rqlite on the core nodes, reached through `env.DB` in
 the D1 shape the App was written for. This page records how rqlite behaves
 where it differs from plain SQLite, and the rules the host adapter
-(`app/host/forkmesh_host/d1_rqlite.py`) and the App follow because of it. Host
-overview: [docs/host/README.md](README.md); read-only mode
-without a leader: [PLAN.md](../operations/served-stack.md#read-only-mode).
+(`app/host/forkmesh_host/d1_rqlite.py`) and the App follow because of it. Part
+of [the host docs](README.md); read-only mode
+without a leader: [served stack](../operations/served-stack.md#read-only-mode).
 
 - **Version:** pinned in `app/host/RQLITE_VERSION`; the release tarball is
   verified against its published sha256 and installed under

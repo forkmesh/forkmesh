@@ -1,10 +1,11 @@
 # Node logs on the operator desktop
 
+Part of [Operations](README.md).
+
 The desktop's Log page follows every fleet node's systemd journal live (cores,
 runners, autoscaled replicas and burst runners), every Caddy request, and the
 operator box's own deploy output. Nothing is stored in the database: live
-logs stay on the desktop. Fleet runbook: [OPERATIONS.md](README.md);
-developer index: [README.md](../README.md).
+logs stay on the desktop. Fleet runbook: [runbook](runbook.md).
 
 ## Transport: the desktop pulls over SSH
 
@@ -12,7 +13,7 @@ The desktop opens one SSH session per node with a dedicated reader key
 (`next_logread_ed25519`, created by `tools/next_fleet.py logread-key`), not the
 fleet key. It connects on the fleet's `ssh_port`, read from
 `~/projects/forkmesh/src/deploy/fleet.toml`. Every other retry after a failure
-uses 22, for a node that has not moved yet ([deploy/ssh-port.md](ssh-port.md)).
+uses 22, for a node that has not moved yet ([SSH port](ssh-port.md)).
 On each node it is a forced command:
 
 ```
@@ -45,7 +46,7 @@ The reader key's fingerprint is part of the IDS fleet fingerprints, so a
 reader login is an `info` `ssh_tool_session`. `restrict` refuses a pty. The
 authorized-keys line is written only after the IDS has restarted with the new
 config, and a fresh node starts its IDS after the line is written
-([IDS.md](intrusion-detection.md)).
+([intrusion detection](intrusion-detection.md)).
 
 ## Caddy access log
 
@@ -53,7 +54,7 @@ config, and a fresh node starts its IDS after the line is written
 response headers dropped, client address and `user_agent` kept, Cloudflare and
 edge visitor fields (`cf_*`, `edge_*`) only when the TCP peer is in
 Cloudflare's published ranges (requests relayed by the `forkmesh-www` Worker,
-[docs/www/edge-client.md](../www/edge-client.md)), the `expected_degraded` response header,
+[edge client](../www/edge-client.md)), the `expected_degraded` response header,
 credential query parameters redacted, `/readyz` and `/health` skipped. The app
 never sees the `Cf-*` headers.
 
@@ -67,7 +68,7 @@ request body (`POST /api/chat/invites/preview|accept`) and webhook tokens in
 the `token` query key or the `x-forkmesh-webhook-token` header
 (`/api/chat/webhooks?token=<token>`); the old `/api/chat/invites/<token>` and
 `/api/chat/webhooks/<token>` paths answer `410`
-([app/chat-private-rooms.md](../app/chat-private-rooms.md#invite-links)). Caddy
+([chat private rooms](../app/chat-private-rooms.md#invite-links)). Caddy
 applies one filter per log field and `request>uri` already uses the `query`
 filter, so redacting a path would need hand-written regular expressions over
 the whole URI that nothing here can validate before it ships; moving the

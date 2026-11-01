@@ -5,7 +5,7 @@ Calls move off libwebrtc to an engine we write ourselves (decided
 This page is the plan and the record of decisions. [rtc.md](rtc.md) is the
 WebRTC stack that serves calls until then, [call-bench.md](call-bench.md) the
 bench that decides "better", [fmm-protocol.md](fmm-protocol.md) the wire
-format. Home: [README.md](README.md); the public view of call encryption is
+format. Home: [Go daemon](README.md); the public view of call encryption is
 [encryption](../encryption.md).
 
 ## What we write and what we take from the platform

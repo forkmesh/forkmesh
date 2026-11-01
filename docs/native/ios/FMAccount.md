@@ -1,12 +1,12 @@
 # FMAccount
 
+Part of [iOS core modules](README.md).
 Settings, relays, auth and the session, performance monitor, stall log, trust lists, sync
 status. `import FMAccount` (re-import `FMBase`/`FMNet`/`FMCrypto` for their types). Storage is
 FMBase's synchronous `KeyValueStore` / `SecureStore`, and every call is synchronous.
 
 Also here: the Kotlin app's SecurityBootstrap. Owner crypto and room seal live in FMCrypto
-([FMCryptoAdditions](FMCryptoAdditions.md)). Native docs home:
-[docs/native/README.md](../README.md).
+([FMCrypto](FMCrypto.md#ownercrypto-ownercryptoswift)).
 
 ## Observation and listeners
 
@@ -162,10 +162,22 @@ push credentials and share drop).
   `.deferred`, and the pending flag makes the next launch erase again even though the
   preferences are no longer empty.
 
+### Sign-ins survive a phone restart
+
+After a reboot iOS can wake the app (PushKit, a call push) before the first
+unlock, when the Keychain answers `errSecInteractionNotAllowed` and
+UserDefaults reads empty. Launch must not take that for a fresh install:
+`AppBoot.start` waits until protected data is available or the Keychain stops
+answering locked (`KeychainBackend.isLockedUntilFirstUnlock`) before building
+any service, and `FreshInstallReset` refuses to erase while the Keychain is
+locked. Otherwise `RelayDirectory.restore` and `FallbackSecureStore` would
+forget every instance and sign-in. Calls still ring meanwhile, because
+`DirectCallKit` reports them to CallKit without the services.
+
 ## PermissionPacing (`PermissionPacing.swift`)
 
 Device-wide keys that keep a fresh install free of permission prompts
-([PERMISSIONS.md](../PERMISSIONS.md)). `settle(prefs, freshInstall:)` runs once at boot
+([ONBOARDING.md](../ONBOARDING.md#the-permissions-intro)). `settle(prefs, freshInstall:)` runs once at boot
 (`SettingsService.settlePermissionPacing`, fresh when the active project still
 needs its starter pack): a fresh install stores `permissions/intro` = `pending`;
 an update stores `seen` and `permissions/nearby-opened` = true, so nothing

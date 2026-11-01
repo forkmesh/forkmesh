@@ -1,9 +1,10 @@
 # Fleet node ownership and version fields
 
+Part of [Operations](README.md).
+
 Each core and runner has a node account that belongs to an operator account.
 `tools/next_node_owner.py` inspects, provisions and transfers ownership
-(dry-run by default). Fleet runbook: [OPERATIONS.md](README.md);
-developer index: [README.md](../README.md).
+(dry-run by default). Fleet runbook: [runbook](runbook.md).
 
 ## Where ownership lives
 
@@ -30,7 +31,7 @@ The new owner must accept, with `--accept-key PATH` (its own signing key, read
 locally) or `--session-env NAME` (a session token sent as a bearer);
 otherwise `--execute` refuses.
 
-- **Cores** use the signed link grant ([security/NODE_LINK_GRANT.md](../security/NODE_LINK_GRANT.md)):
+- **Cores** use the signed link grant ([node link grants](../security/node-link-grants.md)):
   the node signs `forkmesh-link-grant-v2\n<node>\n<target>\n<ts>\n<nonce>`
   with its identity key (the script arrives on stdin; only the public key and
   signature leave the node), the tool checks the public key against

@@ -8,14 +8,14 @@ active provider account, pause, resume and revoke. The web keeps the core
 no `dashboard.page` contribution and its places are `mobile` and `desktop`.
 It is account-synced and off by default, like the other gated packages
 ([core-plugins.md](core-plugins.md)). Part of
-[the marketplace docs](README.md); the runner tier itself is described in
-[../RUNNERS.md](../operations/runners.md).
+[Marketplace](README.md); the runner tier itself is described in
+[runners](../operations/runners.md).
 
 ## API used
 
 Every call is account-session authenticated (`Authorization: Bearer`) and
 answers only for runners the caller registered; anyone else gets `404`
-([../RUNNERS.md](../operations/runners.md#private-runners)).
+([runners](../operations/runners.md#private-runners)).
 
 | Call | Purpose |
 |---|---|

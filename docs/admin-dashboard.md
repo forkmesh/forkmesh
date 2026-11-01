@@ -59,7 +59,7 @@ the core nodes) because a report decrypts every account and repository row.
 
 - Rotate the password on the fleet: edit `PRODUCT_ANALYSIS_PASS` in
   `secrets.env`, then run `python3 tools/next_vault.py sync --execute`
-  ([OPERATIONS.md](operations/README.md)).
+  ([operations](operations/README.md)).
 - Disable the route by deleting either secret.
 - Each public HTTPS clone does one best-effort `product_clone_daily` upsert.
 - Down migration: `app/migrations/down/0175_product_analysis.sql`.

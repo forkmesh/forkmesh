@@ -4,10 +4,18 @@ How a version is numbered, built, signed, published, promoted and installed:
 the desktop app on every platform, the Go mirror daemon, the Android APK, the
 macOS `.dmg`, and the App Store submission of the iOS app. The metadata layout
 and publisher flags are documented beside the data in
-`.forkmesh/releases/README.md`; binaries never enter git. Home:
-[docs/README.md](../README.md). Why signed releases on mirrors keep software
-reachable: [mirroring](../mirroring.md) and
-[encryption and signatures](../encryption.md).
+`.forkmesh/releases/README.md`; binaries never enter git. Why signed releases
+on mirrors keep software reachable: [mirroring](../mirroring.md) and
+[encryption and signatures](../encryption.md). Part of
+[Operations](../operations/README.md); back to the
+[documentation home](../README.md).
+
+| Page | Covers |
+| --- | --- |
+| This page | Versions, the publish and promote flow, trust rules, platforms, build numbers, daemon rollout |
+| [apt repository](apt.md) | The signed apt repository for Debian and Ubuntu |
+| [Linux release baseline](linux-baseline.md) | Linux builds in a pinned Debian 12 container |
+| [Self-setup node](self-setup-node.md) | One install command or cloud-init script brings up a mirror node without the desktop |
 
 ## Code map
 
@@ -20,9 +28,9 @@ reachable: [mirroring](../mirroring.md) and
 | `tools/forkmesh-release-publish.sh` | hashes binaries, copies them into the content-addressed store, writes and signs channel metadata |
 | `tools/forkmesh-release-promote.py` | promotion gate from a candidate to `latest`; regenerates the appcast |
 | `tools/forkmesh-release-host.py`, `tools/release-host/*` | builds what the Actions sandbox cannot, promotes, seeds mirrors, rolls out the daemon, submits iOS, checks the homepage |
-| `tools/package/linux-baseline.sh`, `tools/package/linux-baseline/` | Linux build in a pinned Debian 12 container ([linux-baseline.md](linux-baseline.md)) |
+| `tools/package/linux-baseline.sh`, `tools/package/linux-baseline/` | Linux build in a pinned Debian 12 container ([Linux baseline](linux-baseline.md)) |
 | `tools/package/` | per-platform packaging (`appimage.sh`, `deb.sh`, `macos.sh`, `windows.sh`, NSIS, appcast) |
-| `tools/forkmesh-apt-repo.py`, `.forkmesh/releases/apt/` | the signed apt repository ([apt.md](apt.md)) |
+| `tools/forkmesh-apt-repo.py`, `.forkmesh/releases/apt/` | the signed apt repository ([apt repository](apt.md)) |
 | `tools/package/macos_universal_on_mac.sh` | universal (arm64 + x86_64) `.dmg` build on a Mac |
 | `codemagic.yaml` (`macos-desktop`, `ios-native-release`), `native/ios/tools/asc_appstore.py` | cloud Mac fallback for the `.dmg`; iOS archive, upload, TestFlight and App Store submission |
 | `.forkmesh/releases/<channel>/` | `SHASUMS256.txt`, `release.json`, `release.json.sig`, `appcast.xml` |
@@ -69,7 +77,7 @@ reachable: [mirroring](../mirroring.md) and
 The release host's keystores (`release/`) and the served mirror
 (`mirrors/forkmesh-forkmesh.git`, whose `forkmesh-releases/` is the blob store)
 sit under `forkmesh_paths` `LAYOUT.core` (`data/core/`, `data/` before the
-2026-10-19 move; [projects-layout.md](../tools/projects-layout.md)). Never use
+2026-10-19 move; [projects layout](../tools/projects-layout.md)). Never use
 `LAYOUT.data`, the container: there the host finds no Android keystore and
 publishes into an unserved `data/mirrors` folder.
 
@@ -140,7 +148,7 @@ version, so an old signed release could be replayed to roll a machine back.
   Debian 12+.
   The same build makes `forkmesh-linux-x86_64.deb`, which the apt repository
   serves, so `sudo apt install forkmesh` and `sudo apt upgrade` work once the
-  source is added ([apt.md](apt.md)).
+  source is added ([apt repository](apt.md)).
 - **Windows:** cross-built with MinGW-w64; NSIS installer, Authenticode-signed
   with osslsigncode; the uninstaller deletes only files in its manifest.
 - **macOS:** one ad-hoc signed universal `.dmg`, published under both arm64 and
@@ -203,7 +211,7 @@ so a fix reaches the homepage for one platform without a release.
   `Build N` on a rebuilt download.
 - Every platform starts a new version at build 0, iOS included (since v1.5.0,
   at the maintainer's request); App Store Connect only needs the number unique
-  within a `MARKETING_VERSION` ([IOS_RELEASE.md](../native/IOS_RELEASE.md#version)).
+  within a `MARKETING_VERSION` ([iOS release](../native/IOS_RELEASE.md#version)).
   The Android versionCode still grows, because the version is its high digits.
 - The Android stamp patterns match `versionCodeOverride ?: N` and
   `versionNameOverride.ifEmpty { "X.Y.Z" }` in `build.gradle.kts`; if that
@@ -321,7 +329,7 @@ Names only:
   `MAC_BUILD_HOST`, `MAC_BUILD_GIT_URL`.
 - Build: `-DFORKMESH_BUILD_COMMIT_OVERRIDE`, `-DFORKMESH_VERSION_OVERRIDE`.
 - Installer: `FORKMESH_PUBLIC_HOSTNAME`, `FORKMESH_LINK_CODE`,
-  `FORKMESH_DNS_WAIT_SECONDS` ([self-setup-node.md](self-setup-node.md)),
+  `FORKMESH_DNS_WAIT_SECONDS` ([self-setup node](self-setup-node.md)),
   `FORKMESH_RELEASE`, `FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE`,
   `FORKMESH_EXPECTED_RELEASE_MANIFEST_SHA256`, `FORKMESH_FROM_SOURCE`.
 
@@ -363,7 +371,7 @@ python3 -m pytest tools/test_forkmesh_release_host_rollout.py tools/test_forkmes
 - `install.sh --uninstall/--reinstall/--purge` and `uninstall.sh --purge`
   refuse to erase anything outside `HOME` and refuse a user-data wipe from an
   agent shell. Agents must never run them (`AGENTS.md`,
-  [destructive-actions.md](../engineering/destructive-actions.md)).
+  [destructive actions](../engineering/destructive-actions.md)).
 
 ## Traps
 

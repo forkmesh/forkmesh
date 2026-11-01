@@ -13,9 +13,9 @@ The App runs on the core nodes behind Caddy and is reached two ways:
 
 forkmesh.com is the only name still behind Cloudflare; app.forkmesh.com and
 world.forkmesh.com resolve straight to the cores
-([architecture](../codebase.md)). Host side:
-[docs/host/README.md](../host/README.md); fleet map:
-[docs/operations/fleet-tooling.md](../operations/fleet-tooling.md).
+([architecture](../architecture.md)). Part of [the website docs](README.md);
+host side: [host](../host/README.md); fleet map:
+[fleet tooling](../operations/fleet-tooling.md).
 
 ## Wire format
 
@@ -56,7 +56,7 @@ URL-encoded, control characters removed, each field cut at 80 characters, empty
 fields omitted. It is unsigned and grants nothing. Caddy's access log records
 it only when the TCP peer is in Cloudflare's ranges, then `client_headers`
 removes it so the App never sees it. The Worker deletes any visitor-sent copy
-(`CLIENT_CLAIM_HEADERS`). See [NODE_LOGS.md](../operations/node-logs.md).
+(`CLIENT_CLAIM_HEADERS`). See [node logs](../operations/node-logs.md).
 
 ## Verification contract
 

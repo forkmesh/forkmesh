@@ -1,5 +1,7 @@
 # Signed required checks
 
+Part of [Operations](README.md).
+
 A repository can require status checks before a pull request merges on a
 mirror node. Each result is an Ed25519-signed attestation from a runner the
 repository trusts, so the gate does not depend on any runner service or

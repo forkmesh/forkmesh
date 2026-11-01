@@ -15,7 +15,7 @@ inventory; each row says why the dependency exists and how it could go. Part of
 | Rename, move and delete files (commit, or propose as a pull request) | [repository-file-edits.md](repository-file-edits.md#rename-and-delete) |
 | Releases (draft, edit, delete; notes; attached files; creating their tags) | [web-releases.md](web-releases.md) |
 | Issues, pull requests and discussions on private repositories, for accounts that can read them, with public side effects off | [web-discussions.md](web-discussions.md#who-may-do-what) |
-| Collaborators on private repositories; visibility of core-hosted repositories | [web-repo-access.md](web-repo-access.md) |
+| Collaborators on private repositories; visibility of core-hosted repositories | [repo-settings.md](repo-settings.md#access-collaborators-and-visibility) |
 | Projects (create, edit, close, delete) | [web-projects.md](web-projects.md) |
 | Add file (create or upload a file, or propose it as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
 | Issues and pull requests (browser-signed events), file edits and proposals, forks, repository deletion, branch operations on core-hosted repositories, webhooks, Actions secrets, security advisories, notes, tasks, calendar, docs, organizations, accounts and SSH keys | already had web paths |

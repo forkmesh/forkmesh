@@ -1,10 +1,10 @@
-# Profile links for usernames and mentions
+# Profile links and avatars
 
 Part of [the App docs](README.md). Every place that shows a ForkMesh account
 name, and every `@name` mention in text people write, opens that account's
 profile (`/@name` on the public site). This page lists the shared helpers per
-surface and the rules they all follow. Avatars on the profile page itself are
-in [profile-avatar.md](profile-avatar.md).
+surface and the rules they all follow, then how the profile page resolves a
+person's avatar ([Profile page avatars](#profile-page-avatars)).
 
 ## Rules
 
@@ -121,7 +121,7 @@ profile_origin)` turns mention nodes into links to `{origin}/@name`
 (`PROFILE_ORIGIN` when none is given; a mention inside a link label stays
 `<strong>`), and `_notification_actor_html` links the "by" name. The origin is
 the one `_notification_item_url` uses for the item link
-([notification-email.md](notification-email.md)).
+([notifications.md](notifications.md#notification-email)).
 
 ## Chat and the world
 
@@ -233,3 +233,42 @@ again before drawing a code.
   replies. `AccountProfile` parses `solana`, `profileLinks`, `mastodon` and
   `mastodonUrl` (http and https links only) and `PeopleProfile` keeps a valid
   `tipAddress`.
+
+## Profile page avatars
+
+The profile page (`/@name`, which `/<name>` redirects to), the dashboard's own
+profile and the header's account avatar resolve a person's picture the same
+way issue and pull request avatars do (`hydrateIssueActorAvatars` in
+`02-helpers.js`).
+
+Issue pages draw a person's avatar from their uploaded account picture
+(`/api/accounts/<name>`, `issueActorAccount`), else from the open repository's
+contributor roster (`.forkmesh/contributors/contributors.json` plus
+`.forkmesh/contributors/<slug>.png`, `repoPeopleRosterMatch`). Many people
+never upload a picture but are in a roster. A profile that read only the
+payload's `avatarPng` (or the session snapshot taken at login) would show
+them an initial, and miss an avatar uploaded from another device.
+
+### Resolution (`applyAvatar`, `03-issues-profile-io.js`)
+
+1. `avatarPng` from the payload being shown (the public account, or the
+   session for the owner's own pages) is drawn at once.
+2. Otherwise the initial is drawn, the image is hidden with no `src`, and
+   `hydrateProfileAvatar` looks the account up (`issueActorAccount`, the same
+   cached lookup, by the lower-cased name, since display names keep their
+   capitalisation), then reads the contributor rosters of up to
+   `PROFILE_AVATAR_ROSTER_REPOS` (4) public repositories from the catalog:
+   the person's own first, then the parent of each of their forks (a fork
+   usually carries an older copy of its parent's roster), then the others in
+   catalog order. The first picture found is drawn; one that fails to load
+   falls back to the initial.
+3. The catalog can arrive after the profile, so `renderProfileRepositories`
+   calls `hydrateProfileAvatars`, which retries only when the candidate
+   repositories have changed.
+
+A bot or system account with no picture gets its built-in glyph
+(`showProfileAvatarBot`, [bot-avatars.md](bot-avatars.md)). Organization
+profiles keep their logo. The public roster and avatar endpoints are in
+[member-roster.md](member-roster.md).
+
+Tests: `app/tests/test_profile_avatar_fallback.py`.

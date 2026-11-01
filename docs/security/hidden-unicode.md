@@ -4,8 +4,8 @@ Every text field on the web, the desktop and both phone apps removes
 invisible Unicode characters as the user types or pastes, and the app server
 removes them again from every parsed request body. One policy,
 `forkmesh-hidden-unicode-v1`, is shared by all of them and pinned by
-`conformance/hidden-unicode/v1/vectors.json`. Home:
-[docs/security](README.md).
+`conformance/hidden-unicode/v1/vectors.json`. Part of
+[Security](README.md).
 
 ## Why
 

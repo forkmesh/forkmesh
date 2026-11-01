@@ -6,7 +6,7 @@ desktop debug bar, under the version on iPhone and Android, and on the web's
 dashboard page `/dashboard/status-monitors`. Each check is its own package
 (`marketplace/packages/status-check-*`) that depends on it, the user can add
 their own monitors, and the install state follows the account across every
-device. Part of [the marketplace docs](README.md).
+device. Part of [Marketplace](README.md).
 
 ## Code map
 

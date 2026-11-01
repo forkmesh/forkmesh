@@ -1,5 +1,7 @@
 # Using Siri with ForkMesh on iPhone
 
+Part of [Phone apps](README.md).
+
 The ForkMesh iPhone app adds its commands to Siri and the Shortcuts app. You
 can start an agent, ask what your agents are doing, answer their requests, and
 stop, continue, message, merge or delete them without opening the app. How the

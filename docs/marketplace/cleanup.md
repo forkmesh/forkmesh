@@ -4,7 +4,7 @@
 entry point `builtin:cleanup`, off by default) that lists everything Claude
 Code, Codex and agent runs leave on this computer, says what each item is
 still attached to, and deletes what the user confirms. Part of
-[the marketplace docs](README.md).
+[Marketplace](README.md).
 
 Agent sessions fill the disk with transcripts, scratchpads, worktrees,
 per-agent build trees, Actions sandboxes and caches. The package answers,

@@ -735,7 +735,7 @@ default in new projects except the chosen starter pack
   `FaceChangerScreen`, which previews the camera and records a clip into the
   `face-changer-share` cache path for an `ACTION_SEND` chooser. Direct calls
   build on the same look, factory and worker
-  ([chat-direct-calls.md](../app/chat-direct-calls.md), Face Changer on the
+  ([call-filters.md](../app/call-filters.md), Face Changer on the
   phones). A stop with nothing recorded (`empty_recording`, S037) says
   "Nothing was recorded. Record for a little longer, then stop."
 - **App Store Status.** `A/feature/appstorestatus/` draws
@@ -759,7 +759,7 @@ default in new projects except the chosen starter pack
   route and package `usage`) from the desktop's `agentops.usage` through
   `AgentUsageModel`, with the account actions and the agent-in-a-terminal
   form; the Usage card on Desktop agents opens it
-  ([Usage on Android](../marketplace/usage-feed-mastodon.md#usage-on-android)).
+  ([Usage on Android](../marketplace/usage.md#usage-on-android)).
   Refresh sends `agentops.usage` with `refresh: true`; opening is a plain read;
   each meter shows `UsageFormat.resetClock` ("Resets 3:45 PM", "Resets Tue
   9:00 AM", "Resets Oct 26, 10:00 AM"; `UsageResetClockTest`).

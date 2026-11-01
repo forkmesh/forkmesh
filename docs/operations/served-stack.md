@@ -1,12 +1,13 @@
 # The served stack
 
+Part of [Operations](README.md).
+
 app.forkmesh.com and world.forkmesh.com run on a small self-hosted fleet:
 three equal core nodes that hold data and secrets, reached directly by DNS round
 robin, and a runner tier that runs untrusted work. `deploy/fleet.toml`
-describes the fleet; [OPERATIONS.md](README.md) is the runbook and
-[NEXT_ADOPTION.md](operator-files.md) covers operator files. The public summary
-is [docs/codebase.md](../architecture.md); developer index
-[README.md](../README.md).
+describes the fleet. This page is the design in detail; the public summary is
+[architecture](../architecture.md), the commands are in the
+[runbook](runbook.md) and the code map is [fleet tooling](fleet-tooling.md).
 
 ## Who serves what
 
@@ -38,7 +39,7 @@ is [docs/codebase.md](../architecture.md); developer index
 - **Trust split.** Agent runs execute arbitrary code, so they never run on a
   node holding `DATA_KEY`, password hashes or the database. A runner gets a
   short-lived, router-signed push capability for exactly
-  `refs/heads/agent/<session>` of one repository ([RUNNERS.md](runners.md)).
+  `refs/heads/agent/<session>` of one repository ([runners](runners.md)).
 - **Host shim.** The app's Python code targets a Workers-style runtime (`js`,
   `ffi`, `env` bindings); `app/host/forkmesh_host/` provides it on CPython
   (`js.py`, `ffi.py`, `workers.py`, `env.py`, `asgi.py` under uvicorn).
@@ -65,13 +66,14 @@ is [docs/codebase.md](../architecture.md); developer index
   coordinator rotates across live nodes every minute, and
   `deploy/core/certsync.py` runs the same on every core.
 - **Secrets.** Nodes start sealed and hold `DATA_KEY` only in memory; the
-  operator unseals them ([VAULT.md](vault.md)). Other secrets come from
+  operator unseals them ([vault](vault.md)). Other secrets come from
   systemd credentials, never from rqlite or backups.
 - **Integrations start off.** A service credential is added to
   `optional_secrets` only on purpose. ForkMesh Next starts with Solana rewards
   off mainnet; production enables them only through `[production.vars]`.
 - **Backups.** The operator box pulls an rqlite backup nightly over SSH,
-  verifies it and keeps 7 daily and 4 weekly copies (`tools/next_backup.py`).
+  verifies it and keeps 7 daily and 4 weekly copies (`tools/next_backup.py`,
+  [runbook](runbook.md#routine-operations)).
 
 ## Read-only mode
 
@@ -138,7 +140,7 @@ that fails with a 5xx gets the same answer as an HTTP denial.
 placement, are off; the fetch-only ingress objects run on every node and keep
 working. Off with them: alarms, the cron loop (skipped like a sealed node),
 queue consumers (paused; messages wait in memory and resume when writes come
-back), DNS reconciler votes and peer unseal (VAULT.md).
+back), DNS reconciler votes and peer unseal ([vault](vault.md#peer-unseal)).
 
 **Readiness and DNS.**
 
@@ -215,7 +217,7 @@ Each job runs in its own systemd scope with memory and CPU limits and a
 private tmp dir, and its workdir is wiped afterwards. Burst runners
 (`server/runnerpool.go`) are created from a snapshot when the queue backs up
 and destroyed when idle, under a count and monthly spend cap
-([fleet/AUTOSCALING.md](autoscaling.md)).
+([autoscaling](autoscaling.md)).
 
 ## Performance rules
 
@@ -228,12 +230,8 @@ and destroyed when idle, under a count and monthly spend cap
 
 ## Fleet tooling
 
-`tools/next_fleet.py` (create, install, replace or add a core, runner
-snapshot, status), `tools/next_deploy.py` (build, upload, migrate, rolling
-restart gated on `/api/version` and `/readyz`, automatic rollback),
-`tools/next_dns.py`, `tools/next_vault.py`, `tools/next_ids.py`,
-`tools/next_backup.py`. Instances are labelled `fmnext-*`, tagged
-`forkmesh-next`, and never added to the desktop's saved hosts.
-
-Installer and fleet tests sandbox `HOME` and the `XDG_*` folders and drop
+The `tools/next_*.py` tools and the renderer are mapped in
+[fleet tooling](fleet-tooling.md). Instances are labelled `fmnext-*`, tagged
+`forkmesh-next`, and never added to the desktop's saved hosts. Installer and
+fleet tests sandbox `HOME` and the `XDG_*` folders and drop
 `FORKMESH_HOME` / `FORKMESH_PROJECTS_DIR` (AGENTS.md).

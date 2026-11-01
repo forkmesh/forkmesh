@@ -377,7 +377,7 @@ def test_worker_route_schema_docs_and_cleanup_are_wired():
     )
     schema = (SRC / "schema.py").read_text(encoding="utf-8")
     docs = (
-            ROOT.parent / "docs" / "community-ad-governance.md"
+            ROOT.parent / "docs" / "world-community-services.md"
     ).read_text(encoding="utf-8")
     assert 'community_ads_api = _LazyModule("community_ads_api")' in entry
     assert 'url.path == "/api/world/community-ads"' in entry

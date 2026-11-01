@@ -5,7 +5,7 @@ Every organization request is decided by one deny-by-default table,
 names it; unknown roles, empty roles and unlisted capabilities are refused for
 everyone, owners included. The tables below are generated from that module and
 checked against it by `app/tests/test_organization_rbac.py`.
-Other security pages are listed in the [docs index](../README.md).
+Part of [Security](README.md).
 
 ## Roles
 
@@ -71,7 +71,7 @@ Denied writes are recorded in the sensitive-action audit log with a reason
   logo review, delete) need repository permission `admin`, so `owner` and
   `admin` hold it and `maintainer` does not unless a team grants `admin`; the
   account that stores the repository keeps it too
-  (`docs/app/repo-settings-access.md` in the source tree).
+  (`docs/app/repo-settings.md` in the source tree).
 - World building access, office chat channels, task boards and succession
   votes, which enumerate the insider roles in SQL.
 - Notes shared with the organization, organization package state

@@ -60,7 +60,7 @@ WORLD_DURABLE_OBJECTS = (
 ).read_text(encoding="utf-8")
 SCHEMA = (ROOT / "src" / "schema.py").read_text(encoding="utf-8")
 FEDIVERSE_REVIEW_DOC = (
-    REPOSITORY / "docs" / "fediverse-mention-review.md"
+    REPOSITORY / "docs" / "fediverse.md"
 ).read_text(encoding="utf-8")
 QT_SINGLE_INSTANCE = (
     ROOT.parent / "desktop" / "src" / "SingleInstance.cpp"

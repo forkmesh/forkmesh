@@ -1,10 +1,17 @@
-# Mastodon on the desktop
+# Mastodon
 
-The `mastodon` package (entry point `builtin:mastodon`) is a native Qt Mastodon
-client on the desktop since 1.1.0 (the web page keeps its token in one browser
-session). The web page (`content/web/`) still serves the web and phone apps
-([../marketplace-usage-feed-mastodon.md](usage-feed-mastodon.md)).
-Part of [the marketplace docs](README.md).
+Part of [Marketplace](README.md). The `mastodon` package is a Mastodon client:
+a native Qt page on the desktop (entry point `builtin:mastodon`, since 1.1.0)
+and a web page (`content/web/`) that serves the web and the phone apps. This
+page covers both.
+
+## On the web and phones
+
+Mastodon registers a client with the HTTPS instance selected by the user and completes OAuth there. On the web its access token and client registration are kept in browser session storage, are not synchronized to ForkMesh, and are cleared by Logout or when the browser session ends. The desktop client keeps them in the package's desktop settings instead, also unsynchronized ([Signing in](#signing-in)). The package uses the standard Mastodon API for timelines, posts, profile edits, notifications, relationships, lists, and preferences.
+
+On iOS and Android the package discovers the same dashboard contribution as a web surface and opens that route from the installed package, so one responsive implementation serves the web and both phones. On the web and the phones, Mastodon authentication stays scoped to that device's browser session.
+
+## On the desktop
 
 Source: `marketplace/packages/mastodon/content/desktop/`.
 
@@ -17,7 +24,7 @@ Source: `marketplace/packages/mastodon/content/desktop/`.
 | `MastodonFeature.*`, `MastodonPages.cpp` | The page: sign-in, sidebar, history, actions and every section. |
 | `tests/test_mastodon.cpp` | `forkmesh-mastodon-tests`, driven by an in-process fake Mastodon server. |
 
-## Signing in
+### Signing in
 
 The user types their server (`mastodon.social`, `https://…` or a full
 `@user@server` handle; only HTTPS origins without a path are accepted).
@@ -45,7 +52,7 @@ to ForkMesh. Signing out revokes the token on the server (`POST /oauth/revoke`)
 and forgets it. A 401 from the server means the token was revoked elsewhere:
 the page forgets that account and returns to sign-in with the server filled in.
 
-## Network and the firewall
+### Network and the firewall
 
 All calls go to the chosen server, so the firewall asks once per server. A
 server cannot be listed in the endpoint catalog because the host is the user's
@@ -55,7 +62,7 @@ other host are marked as decoration (`markFaviconProbe`) so they are skipped
 silently instead of opening a firewall prompt per remote server, and a letter
 avatar is shown instead.
 
-## What the page covers
+### What the page covers
 
 - Timelines: Home (with a compose prompt), Local, Federated, Bookmarks,
   Favourites, each list, hashtag timelines, threads, profiles (posts, posts and
@@ -91,7 +98,7 @@ account deletion; Preferences links to those pages on the server.
 The page is one layout used by both layout modes (Control Tower and Focus):
 a fixed sidebar and a centred column at most 720 px wide.
 
-## Tests
+### Tests
 
 ```sh
 cmake --build desktop/build --target forkmesh-mastodon-tests

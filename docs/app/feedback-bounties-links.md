@@ -14,7 +14,7 @@ existing server APIs.
 | Path | Responsibility |
 | --- | --- |
 | `app/public/dashboard/partials/modals.html` (`data-feedback-modal`), `js/09-feedback.js` | Feedback dialog |
-| `app/public/dashboard/partials/header.html` (`data-plugin-menu`), `js/09-plugin-menu.js` | ⋯ menu on plugin pages ([../marketplace/README.md](../marketplace/README.md)) |
+| `app/public/dashboard/partials/header.html` (`data-plugin-menu`), `js/09-plugin-menu.js` | ⋯ menu on plugin pages ([plugin page menu](../marketplace/market.md#plugin-page-menu)) |
 | `app/public/dashboard/partials/views/bounties.html`, `js/09-bounties.js` | Bounties page (lazy chunk) |
 | `app/public/dashboard/partials/views/links.html`, `js/09-links.js` | Link rewards page (lazy chunk) |
 | `app/src/dashboard_shell.py`, `dashboard_bundle.py`, `static_routes.py` | Page registration, chunks and routes |

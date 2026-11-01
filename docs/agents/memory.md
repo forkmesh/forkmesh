@@ -2,8 +2,10 @@
 
 Many agents running at once each start their own builds and test runs. The
 desktop ties that work to one shared memory and CPU budget so the desktop,
-the compositor and the browser stay responsive. The run lifecycle is in
-[README.md](README.md); per-run sandboxing in [access-rules.md](access-rules.md).
+the compositor and the browser stay responsive. Per-run sandboxing is in
+[access-rules.md](access-rules.md).
+
+Part of [Agents](README.md).
 
 Code: `desktop/src/AgentResources.{h,cpp}` (launch side),
 `desktop/src/AgentResourceGovernor.{h,cpp}` (freeze/thaw and CPU cap loop,

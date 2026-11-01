@@ -1,11 +1,10 @@
 # Hearth, the Discord community special agent
 
-Hearth (`.forkmesh/workflows/hearth.json`) keeps the ForkMesh Discord server
-warm and useful: it answers open loops, welcomes newcomers and sparks
-conversation when the server is quiet. This page is its charter, research and
-voice. Marketing owns the
-channel plan ([marketing](../marketing/README.md)); index:
-[docs/README.md](../README.md).
+Part of [Community](README.md). Hearth (`.forkmesh/workflows/hearth.json`)
+keeps the ForkMesh Discord server warm and useful: it answers open loops,
+welcomes newcomers and sparks conversation when the server is quiet. This
+page is its charter, research and voice. Marketing owns the channel plan
+([marketing](../marketing/README.md)).
 
 | Piece | Path |
 | --- | --- |

@@ -1,6 +1,7 @@
 # The Genie spider in the World
 
-Part of [the World docs](README.md). The same Genie spider that guides web
+Part of [World](README.md).
+The same Genie spider that guides web
 pages ([../www/genie-spider.md](../www/genie-spider.md)), the desktop and the
 phone lives in the 3D World too. It follows you around town and, every 4.5 to
 11 seconds, plays one of 100 acts with whatever is near: you, other people,

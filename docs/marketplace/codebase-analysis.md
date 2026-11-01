@@ -1,6 +1,6 @@
 # Codebase analysis plugins
 
-Part of [the marketplace docs](README.md). Five Market packages look at the
+Part of [Marketplace](README.md). Five Market packages look at the
 code of a repository open in ForkMesh. Two are built-in desktop features as
 switches; three share one analysis engine and give the same results on the
 desktop, the iPhone and Android (see [On phones](#on-phones)).

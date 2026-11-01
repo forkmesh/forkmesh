@@ -1,12 +1,44 @@
-# Two-way forge sync
+# Forge sync
 
+Keeps a ForkMesh repository in step with a repository on another forge. Two
+tools share the job: `tools/github_forkmesh_bridge.py` moves branches and tags
+between GitHub and ForkMesh and imports GitHub records one way, and
 `tools/forge_sync.py` keeps ForkMesh issues and comments (fields, labels,
-assignees, state, edits, comment deletions) in step with GitHub (`github`
-adapter) or Gitea, Forgejo and Codeberg (`gitea` adapter). Branches and tags
-use the ref sync in [Connecting to GitHub](github-sync.md); other guides are in
-the [docs index](README.md).
+assignees, state, edits, comment deletions) in step two ways with GitHub
+(`github` adapter) or Gitea, Forgejo and Codeberg (`gitea` adapter). Why a
+second copy matters is on [Censorship resilience](censorship-resilience.md);
+one-off imports are on [Repository imports](repository-imports.md).
 
-## Usage
+## Connecting a repository to GitHub
+
+A GitHub Actions workflow syncs a ForkMesh repository with GitHub on events and
+every 15 minutes. Refs move both ways by fast-forward only (never forced or
+deleted; diverged branches are reported). Issues, discussions and pull requests
+import one way into `.forkmesh` records; two-way issues use the issue sync
+below.
+
+```bash
+python3 tools/github_forkmesh_bridge.py connect --github OWNER/NAME --forkmesh OWNER/NAME --key-out KEY.pem
+```
+
+`connect` writes `.forkmesh/github-sync.json`, `.forkmesh/github-bridge.py` and
+`.github/workflows/forkmesh-github-sync.yml`. Set secrets
+`FORKMESH_BRIDGE_SIGNING_KEY` and `FORKMESH_SYNC_SSH_KEY` and variable
+`FORKMESH_SYNC_REMOTE` (optionally `FORKMESH_SYNC_KNOWN_HOSTS`).
+
+- Imported events are signed by the bridge key with `authorName`
+  `github:LOGIN`.
+- GitHub numbers are kept unless taken; event ids derive from GitHub ids, so
+  reruns are idempotent.
+- ForkMesh-side edits survive.
+- Pull request code is fetched as data and never executed (payloads over
+  8 MiB skipped).
+
+Subcommands `git-sync`, `export` and `run --dry-run` run pieces by hand; tests
+are `app/tests/test_github_forkmesh_bridge.py`. To also deploy a Cloudflare
+Worker from the mirror, see [Mirror and deploy a Cloudflare Worker](cloudflare-workers.md).
+
+## Two-way issue sync
 
 ```bash
 python3 tools/forge_sync.py connect --provider gitea --repository octo/app \

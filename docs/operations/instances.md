@@ -1,5 +1,7 @@
 # Self-hosted instances
 
+Part of [Operations](README.md).
+
 Anyone can start their own ForkMesh instance, a white-label Git host on their
 own server, from `forkmesh.com/start`. The app connects to the server over
 SSH, runs `www/public/install-instance.sh`, streams progress to the page, and
@@ -7,7 +9,6 @@ finishes on the new `<owner>/forkmesh` repository. The user guide is
 [Self-hosting](../self-hosting.md) and
 [Start your own instance](../start-your-own-instance.md); how an
 instance fits the network is in [Architecture](../architecture.md).
-Developer index: [docs/README.md](../README.md).
 
 Instances show a "Powered by ForkMesh" badge by default. `poweredBy: false`
 makes the installer write `INSTANCE_POWERED_BY=0` and pass `--no-powered-by`
@@ -26,13 +27,13 @@ on by default).
 
 - **Set up from a file.** A JSON file whose keys are exactly the launch body,
   or a zip with that JSON and a logo, read in the browser only. Guide:
-  [start-config.md](../start-config.md); examples
+  [start config](../start-config.md); examples
   `app/public/start-config.example.json` and `.zip`.
 - **Let your coding agent do it.** A card under "Set up from a file" holds a
   read-only one-line prompt with a Copy button (`data-start-agent-prompt`,
   `data-start-agent-copy`) pointing an agent at `app/public/forkmesh-agent.md`
   (served at `/forkmesh-agent.md`), with links to read it, download it as
-  `FORKMESH.md`, and [coding-agents.md](../coding-agents.md). The
+  `FORKMESH.md`, and [coding agents](../coding-agents.md). The
   agent writes the settings file and the person uploads it, so only they
   type SSH secrets. The card has no section number.
 - **Colour theme.** Accent swatches plus a free picker, three surface
@@ -71,7 +72,7 @@ on by default).
 | `GET /api/start/launches/<id>` | state, steps, message, log, URL; the 128-bit id is the capability |
 | `GET /api/start/instances` | public list of listed instances and World slots |
 | `GET /api/start/instances/<id>/logo` | an instance's logo, served with a sandboxing CSP and `nosniff` |
-| `POST /api/start/instances/register` | a self-installed instance joins or leaves the directory ([app/instance-federation.md](../app/instance-federation.md)) |
+| `POST /api/start/instances/register` | a self-installed instance joins or leaves the directory ([instance federation](../app/instance-federation.md)) |
 
 - No account needed. Per-client rate limits (client stored only as a salted
   hash) and a global concurrency cap. The host must resolve to public
@@ -92,7 +93,7 @@ on by default).
 ## SSH (`app/host/forkmesh_host/ssh_helper.py`)
 
 The sandboxed, socket-activated `fmnext-ssh-helper` (shared with runner SSH
-setup, [RUNNERS.md](runners.md)) has an `instance` operation. It pins the
+setup, [runners](runners.md)) has an `instance` operation. It pins the
 host key, downloads the installer and runs `bash "$t" --config-stdin` (via
 `sudo -n` for a non-root user). Settings, including passwords and mail keys,
 travel as one base64 JSON line on stdin, never on the command line. Runs may
@@ -106,7 +107,7 @@ take up to 50 minutes. App settings: `INSTANCE_INSTALL_URL`,
 | `system` | supported Debian/Ubuntu, x86_64 or arm64, at least 1 GB RAM and 6 GB disk, ports 80/443 free |
 | `packages` | swap on small machines; git, Python, Node, Caddy, sqlite3, age; service users |
 | `source` | shallow clone into `/opt/forkmesh-instance/src`; on `--update`, a shallow fetch of `sourceRef` from `sourceUrl` into that checkout (nothing checked out yet) |
-| `build` | venv and `python -m forkmesh_host build` without ForkMesh-only plugins (`FORKMESH_EXCLUDED_PLUGINS`: their pages, app modules and registry rows are left out, [plugins.md](../marketplace/plugins.md)), then `app/tools/apply_instance_brand.py`; on a running instance this happens in `src.next` (below) |
+| `build` | venv and `python -m forkmesh_host build` without ForkMesh-only plugins (`FORKMESH_EXCLUDED_PLUGINS`: their pages, app modules and registry rows are left out, [plugins](../marketplace/plugins.md)), then `app/tools/apply_instance_brand.py`; on a running instance this happens in `src.next` (below) |
 | `configure` | `/etc/forkmesh-instance/app.env` with fresh `DATA_KEY`, `ADMIN_PASS` and router keys (kept on re-runs), `ADMIN_PATH`, and `instance.json` without secrets |
 | `database` | migrations into a single-node SQLite database |
 | `services` | `forkmesh-instance.service` (uvicorn on loopback, sandboxed) |
@@ -148,7 +149,7 @@ take up to 50 minutes. App settings: `INSTANCE_INSTALL_URL`,
   installer (same key, new binary); `actions: false` stops it. An unclaimed
   instance removes the runner it installed (its own account folders, and the
   runner roots, firewall unit and `forkmesh-job` user when it created them).
-  See [server/instance-actions.md](../server/instance-actions.md).
+  See [instance actions](../server/instance-actions.md).
 - **HSTS comes from Caddy only.** The app adds
   `Strict-Transport-Security: max-age=31536000; includeSubDomains` to HTML
   (`_BROWSER_SECURITY_HEADERS`). The Caddyfile sets the same value in a
@@ -163,13 +164,13 @@ take up to 50 minutes. App settings: `INSTANCE_INSTALL_URL`,
   build writes `/opt/forkmesh-instance/build-info.json` (version, commit,
   message), and `app.env` carries `BUILD_REV`, `APP_VERSION`,
   `BUILD_INFO_FILE` and the request and status paths. See
-  [app/server-update.md](../app/server-update.md).
+  [server update](../app/server-update.md).
 
 ## Tor onion service
 
 Setting `onionService` (boolean, default `false`, kept in `instance.json`)
 also serves the instance over Tor, so blocking its domain or IP does not
-block it ([app/forum-reach.md](../app/forum-reach.md),
+block it ([forum reach](../app/forum-reach.md),
 [Censorship resilience](../censorship-resilience.md)). On a running
 instance, add `"onionService": true` to `/etc/forkmesh-instance/instance.json`
 and run `install-instance.sh --update`; `false` (or removing the key) turns
@@ -313,12 +314,12 @@ deploys. All opt-in:
    the ForkMesh release source whenever `sourceUrl` is on the instance's
    domain.
 3. **Turn on "Update when a pull request is merged"** on the console's Update
-   page ([app/server-update.md](../app/server-update.md#update-when-a-pull-request-is-merged)).
+   page ([server update](../app/server-update.md#update-when-a-pull-request-is-merged)).
 
 Then a contributor opens a pull request, an owner or admin who is not the
 author approves it, an owner merges it, and the instance updates;
 `build-info.json` and the Update page show the merged commit. The protected
-branch ([app/branch-protection.md](../app/branch-protection.md)) keeps
+branch ([branch protection](../app/branch-protection.md)) keeps
 unreviewed code from deploying: the console refuses automatic updates, and a
 merge files none, while the branch is unprotected. The operator's
 `instance-repo` stays a root-only bypass and never triggers an update.
@@ -538,19 +539,19 @@ app does not redirect Git clients to its own origin.
 
 - Issues, Pull requests and Discussions start off on the `<owner>/forkmesh`
   mirror; the owner can turn them on in Settings
-  ([app/repo-features.md](../app/repo-features.md)).
+  ([repository features](../app/repo-settings.md#features-issues-pull-requests-discussions)).
 - With `ACTIONS_BOT_SEED` in its environment (or the app env) it creates the
   Actions bot `<owner>-actions` (a node account with the Ed25519 key derived
   from the seed, organization role `maintainer`);
   `python -m forkmesh_host instance-runner --name N --public-key K --owner O`
   registers the instance's trusted pool runner
-  ([server/instance-actions.md](../server/instance-actions.md)). A public
+  ([instance actions](../server/instance-actions.md)). A public
   repository's Actions tab lists runs to everyone (workflow, event, branch,
   commit, actor, status, times); logs, live tails and Run, Cancel and Re-run
   stay with owners and organization writers, and a private repository's runs
   stay hidden ("Public run summary" there).
 - Admins can serve one owner's repositories at `/<repo>/<folder>` from
-  Platform → Repository addresses ([app/server-update.md](../app/server-update.md)).
+  Platform → Repository addresses ([server update](../app/server-update.md)).
 
 ## The platform source mirror (`<owner>/forkmesh`)
 
@@ -562,7 +563,7 @@ typed on the instance can change it: changes go upstream or into a fork. See
 [Mirroring](../mirroring.md) for how mirrors work in general.
 
 How it stays current (`server/upstreamwatch.go`,
-[server/README.md](../server/README.md)):
+[server](../server/README.md)):
 
 - The git node fetches `https://app.forkmesh.com/forkmesh/forkmesh` (the
   `upstreams` entry of `/etc/forkmesh/mirror-node.json`).
@@ -647,7 +648,7 @@ when it creates the organization, so every repository shows only as
 and only for a new organization, so a re-run never overrides an admin, and
 `--update` never runs the bootstrap. Convert an installed instance with
 `python -m forkmesh_host instance-single-org --org <org>` (idempotent,
-`--off` to switch back); see [app/server-update.md](../app/server-update.md).
+`--off` to switch back); see [server update](../app/server-update.md).
 
 **Web ports and ufw.** With ufw active, the installer opens 80 or 443 only
 if no ufw rule mentions that port, so a narrowed rule (for example
@@ -708,7 +709,7 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
 - **Switches.** `--protect-default-branch` / `--no-protect-default-branch`
   and `--actions on|off` set feature settings before the fill, audited as
   `repository.protection_settings`
-  ([app/branch-protection.md](../app/branch-protection.md)).
+  ([branch protection](../app/branch-protection.md)).
 - **Counts and activity.** The fill writes the default branch's full
   `commitCount` (`git rev-list --count`), `mergeCount`, and the 52-week
   `activityWeeks` / `mergeActivityWeeks` series, bucketed as in
@@ -759,7 +760,7 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   A failed `update-ref` after the move leaves an unreferenced pack the node's
   maintenance keeps (no prune) and a rerun reuses. The fill touches
   `forkmesh-maintenance-due` so the node compacts next
-  ([HOSTED_REPOS.md](core-hosted-repositories.md#maintenance)). HEAD points at `main`,
+  ([hosted repositories](core-hosted-repositories.md#maintenance)). HEAD points at `main`,
   else `master`, `trunk`, `develop`, else the first branch. (Fetching
   straight into the hosted repository rewrote the whole history as a new
   pack each run, because a bundle has no negotiation.)
@@ -773,7 +774,7 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   ref and, unless `--no-hooks`, push webhooks, code-push ping and Actions
   queue. An import that creates the default branch queues one Actions push
   job, for that branch only
-  ([server/instance-actions.md](../server/instance-actions.md#queue-lease-report)).
+  ([instance actions](../server/instance-actions.md#queue-lease-report)).
 - **Idempotent.** A second run finds the `hosted_repos` row and only moves
   refs; with nothing new it records nothing (`refsUpdated: 0`). A repository
   under another organization, or a catalog name a node published, is
@@ -826,7 +827,7 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
 - **Market packages:** every account on an instance has the pre-marketplace
   packages (repository tabs, Chat, Network, Agents, ...) installed until it
   removes one, because an instance has no Market onboarding ("Account state"
-  in [marketplace/core-plugins.md](../marketplace/core-plugins.md)). Nothing is
+  in [core plugins](../marketplace/core-plugins.md)). Nothing is
   stored, so existing accounts get them on the next app restart.
 - **Pages** (`app/src/instance_pages.py`): the instance renders its own
   `/desktop` and `/docs` guide pages.
@@ -851,7 +852,7 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   nothing for off; only `security` takes `contact` (email or https). The
   bootstrap writes it once (`ON CONFLICT DO NOTHING`); `--update` ignores it.
   forkmesh.com keeps its own pages.
-  Details: [app/instance-legal-pages.md](../app/instance-legal-pages.md).
+  Details: [instance legal pages](../app/instance-legal-pages.md).
 - **ForkMesh's own sites** (`"whiteLabel": true`, off by default;
   `apply_instance_brand --white-label`, `INSTANCE_WHITE_LABEL=1`;
   `apply_instance_brand.offsite_chrome`, `instance_features.OFFSITE_CHROME`):
@@ -879,7 +880,7 @@ With one set, `/` is a forum front page rendered by the host
 its labels, Atom feed and lite view links, and a slot for the mirror line.
 No JavaScript, no request to another site. Without one, or while the
 repository is not public, `/` redirects to `/dashboard`.
-Details: [app/feeds-and-lite.md](../app/feeds-and-lite.md).
+Details: [feeds and lite](../app/feeds-and-lite.md).
 
 ## Plugins
 
@@ -927,7 +928,7 @@ keeps it.
 - **The changelog on an instance.** The page is the static
   `www/public/changelog.html`, which loads `/changelog.js` and reads
   `/changelog.json`, the `changelog/changelog.json` of the running commit
-  ([changelog.md](../engineering/changelog.md)), so it needs nothing from forkmesh.com.
+  ([changelog](../engineering/changelog.md)), so it needs nothing from forkmesh.com.
   `build_site_assets.stage_app` copies page and script into `app/dist`
   (`BACKEND_ASSETS`, like `blog.html`) with the JSON beside them;
   `/changelog.json` is served even with the plugin off (public release
@@ -1105,7 +1106,7 @@ ForkMesh town's desert petals: the one the hub publishes for it in
 `/api/world/mesh`, else slot n's petal n + 1 (`territoryPetal`). ForkMesh's
 town, petals, roads, Office tower, coaster, beach and other scenery
 (`TERRITORY_NEIGHBOUR_ELEMENTS`) are moved beside the hexagon, walkable and
-solid, with no reload at the border ([world/federation.md](../world/federation.md)).
+solid, with no reload at the border ([federation](../world/federation.md)).
 Stepping onto ForkMesh's ground moves the walker's presence to ForkMesh's
 relay over a visit socket with a visitor token (`name@<this host>` there);
 the Office runs against ForkMesh's API (`setOfficeOwner`). Pieces that would
@@ -1135,7 +1136,7 @@ links, the terrarium with up to 32 bugs). A ForkMesh walker who steps onto
 it, without a reload, stands in this World as it draws itself: built with
 the same code from this instance's `/api/instance`, ForkMesh's town next
 door, and Members Circle, portals and town content read from this instance
-([world/README.md](../world/README.md), Standing in an instance's hexagon). They
+([World mesh](../world/mesh.md#standing-in-an-instances-hexagon)). They
 open a visit socket to this relay with a visa and appear as
 `name@world.forkmesh.com`.
 
@@ -1147,7 +1148,7 @@ on entering a listed crossing tile (`crossedInto`) to
 directory's `portal.home` or `https://world.forkmesh.com/world/`; `pos`
 relative to the hexagon centre, rounded to a tenth, within 400). Walking from
 world.forkmesh.com into an instance is the world-mesh flowers' job
-([world/README.md](../world/README.md)); the territory turns off the mesh
+([World mesh](../world/mesh.md)); the territory turns off the mesh
 neighbours (`placeWorldMesh`) so the layouts never overlap. On arrival
 `territoryArrival()` validates the parameters (a domain or `forkmesh`, slot
 0-11, two short numbers), places the visitor on the matching road edge 14
@@ -1281,7 +1282,7 @@ never carry it.
   elsewhere (this instance, the original named by
   `.forkmesh/forge-source.json`, and registered copies) against a goal the
   maintainers set, and shows on instances too
-  ([app/mirror-quota.md](../app/mirror-quota.md)).
+  ([mirror goals](../mirror-quota.md#how-it-is-built)).
 
 ## Accounts, sign-up and moderation
 
@@ -1290,7 +1291,7 @@ An admin chooses under People → **Sign-up & moderation**
 the `instance_settings` row `accounts` and applies within 30 seconds without
 a restart. Defaults: email required, people pick usernames, no review, no
 limits. Details, APIs and storage:
-[app/accounts-and-moderation.md](../app/accounts-and-moderation.md).
+[accounts and moderation](../app/accounts-and-moderation.md).
 
 | Setting | Choices |
 | --- | --- |
@@ -1325,7 +1326,7 @@ its admin console (Platform → ForkMesh directory) or with
 `"directory": {"listed": true, "world": true}`: it publishes
 `/.well-known/forkmesh-instance.json` and sends a signed announcement that
 forkmesh.com checks against that document before writing the row, again
-every six hours ([app/instance-federation.md](../app/instance-federation.md)).
+every six hours ([instance federation](../app/instance-federation.md)).
 The World has 12 instance slots. Cron phase `instance-health` probes
 `https://<domain>/readyz`; two misses in a row hide the entry, a day offline
 pings the admins once per outage.
@@ -1366,7 +1367,7 @@ Actions commit-back by `<owner>-actions`.
 `MAIL_PROVIDER` selects `mailtrap`, `sendgrid`, `mailgun` or `none`;
 otherwise SMTP or Mailtrap by configuration. `MAIL_SENDER` and
 `MAIL_SENDER_NAME` set the sender. Budgets, suppression and the mail log
-([MAIL_LOG.md](mail-log.md)) apply to every provider.
+([mail log](mail-log.md)) apply to every provider.
 
 ## Privacy mode
 
@@ -1376,7 +1377,7 @@ install setting `privacyMode: true` (`INSTANCE_PRIVACY_MODE=1` in `app.env`).
 Only the install setting also reaches Caddy, uvicorn, the git node and the
 journal; for an existing instance add `"privacyMode": true` to
 `/etc/forkmesh-instance/instance.json` and run `install-instance.sh --update`.
-[app/privacy-mode.md](../app/privacy-mode.md) audits what is recorded normally,
+[privacy mode](../app/privacy-mode.md) audits what is recorded normally,
 what privacy mode stops, and what remains and why.
 
 ## Limits

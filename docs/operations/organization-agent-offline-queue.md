@@ -1,5 +1,7 @@
 # Organization agent offline queue
 
+Part of [Operations](README.md).
+
 Organization owners can queue Claude Code and Codex work for the desktop linked
 to an organization repository while that desktop is offline. The queue is
 durable and has no admission-count limit; list responses are bounded. Online

@@ -215,7 +215,7 @@ WORLD_QA_CARDS = (
      "commit's timestamp; hover it and confirm the full commit evidence remains."),
     ("open-pr-audit", "Open pull-request disposition audit",
      "Open the PR board and compare every record marked Open with "
-     "docs/operations/open-pull-audit-2026-07-28.md. Confirm PR #52's change "
+     "the audit method in docs/operations/pull-rules.md. Confirm PR #52's change "
      "is present on main and its chat disclosure survives a dashboard asset "
      "rebuild. Confirm deleted-head PRs show their recorded stale, represented, "
      "or recover-before-review disposition rather than implying mergeability."),

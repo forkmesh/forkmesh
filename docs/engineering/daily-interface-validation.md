@@ -4,7 +4,8 @@ One contract covers the responsive web dashboard and the web content embedded by
 the desktop and mobile shells. Numeric limits live in
 [`daily-interface-budgets.json`](daily-interface-budgets.json); weakening one
 uses the expiring waiver process in
-[`definition-of-done.md`](definition-of-done.md).
+[`definition-of-done.md`](definition-of-done.md#changing-a-budget). Part of
+[Engineering](README.md).
 
 ## Automated check
 

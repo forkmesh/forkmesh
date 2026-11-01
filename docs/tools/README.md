@@ -4,16 +4,32 @@
 operations, release and packaging, gateway files the cores run, protocol and
 evidence ledgers, agent helpers, and the projects-layout resolver. Most are
 standard-library Python run from the repository root with
-`python3 tools/<name>.py --help`. App-specific tools live next to their app
-(`app/tools/`, `world/tools/`, `marketplace/tools/`, `desktop/scripts/`,
-`native/ios/tools/`). Fleet tools run on the operator machine; those that
-change something are dry runs unless given `--execute`. Home:
-[docs/README.md](../README.md); what the fleet looks like:
-[architecture](../architecture.md).
+`python3 tools/<name>.py --help`; those that change something are dry runs
+unless given `--execute`.
+
+| Page | Covers |
+| --- | --- |
+| [projects-layout.md](projects-layout.md) | Where every project's data, config, keys and logs live, and the resolver both apps share |
+| [source-publisher.md](source-publisher.md) | Publishing `forkmesh/forkmesh` from the source checkout without the desktop |
+| [branch-cleanup.md](branch-cleanup.md) | Pruning merged branches, worktrees and agents; the daily branch inventory |
+| [free-disk-space.md](free-disk-space.md) | Freeing disk space on a developer box, and the workflow that runs it |
+| [pull-ledger.md](pull-ledger.md) | Commenting on, closing and recording merges of pulls from the terminal |
+| [mcp-create-agent.md](mcp-create-agent.md) | The `create_agent` MCP tool and the agent-intake socket |
+| [mcp-desktop-tools.md](mcp-desktop-tools.md) | MCP tools for desktop windows, the browser, widgets, other agents, runners and notifications |
+| [mcp-releases.md](mcp-releases.md) | Cutting releases from MCP tools, phones and the terminal |
+| [zoho-mail.md](zoho-mail.md) | Sending email through Zoho Mail (the `send_email` tool) |
+| [cloudflare-worker-deploy.md](cloudflare-worker-deploy.md) | Deploying a user's Cloudflare Worker from ForkMesh Actions |
+
+App-specific tools live next to their app (`app/tools/`, `world/tools/`,
+`marketplace/tools/`, `desktop/scripts/`, `native/ios/tools/`). Fleet tools
+run on the operator machine ([fleet tooling](../operations/fleet-tooling.md));
+what the fleet looks like: [architecture](../architecture.md); running your
+own: [self-hosting](../self-hosting.md). Back to
+[all documentation](../README.md).
 
 ## Code map
 
-**Fleet and releases** ([../deploy/README.md](../operations/fleet-tooling.md))
+**Fleet and releases** ([fleet tooling](../operations/fleet-tooling.md))
 
 | File | What it does |
 | --- | --- |
@@ -22,25 +38,25 @@ change something are dry runs unless given `--execute`. Home:
 | `next_cloud.py`, `next_aws.py` | Cloud provider interface; the AWS EC2 provider (standard-library SigV4) |
 | `next_deploy.py` | App release build, upload, migrate, rolling restart, rollback |
 | `next_autodeploy.py` | Deploys `main` to the core nodes when served-stack paths change ([auto-deploy](../operations/auto-deploy.md)) |
-| `next_autoscale.py` | Operator side of the core autoscaler ([AUTOSCALING.md](../operations/autoscaling.md)) |
-| `next_vault.py` | Secrets vault: `status`, `sync`, `unseal`, `seal`, `reload` ([VAULT.md](../operations/vault.md)) |
-| `next_ids.py` | IDS: `keygen`, `fingerprint`, `status`, `baseline`, `expect`, `test-fire`, `release` ([IDS.md](../operations/intrusion-detection.md)) |
+| `next_autoscale.py` | Operator side of the core autoscaler ([autoscaling](../operations/autoscaling.md)) |
+| `next_vault.py` | Secrets vault: `status`, `sync`, `unseal`, `seal`, `reload` ([vault](../operations/vault.md)) |
+| `next_ids.py` | IDS: `keygen`, `fingerprint`, `status`, `baseline`, `expect`, `test-fire`, `release` ([intrusion detection](../operations/intrusion-detection.md)) |
 | `next_dns.py` | DNS for the served names and core node names, plus DNS health failover |
-| `next_mail.py` | Core mail: DKIM, DNS, reverse DNS, install, check ([MAIL_LOG.md](../operations/mail-log.md)) |
-| `next_node_owner.py` | Fleet node ownership ([NODE_OWNERSHIP.md](../operations/node-ownership.md)) |
+| `next_mail.py` | Core mail: DKIM, DNS, reverse DNS, install, check ([mail log](../operations/mail-log.md)) |
+| `next_node_owner.py` | Fleet node ownership ([node ownership](../operations/node-ownership.md)) |
 | `next_backup.py` | Nightly age-encrypted rqlite backup: `run`, `prune`, `keygen`, `verify`, `restore` |
-| `next_rekey.py` | Offline re-key of a database copy ([REKEY.md](../operations/rekey.md)) |
+| `next_rekey.py` | Offline re-key of a database copy ([re-key](../operations/rekey.md)) |
 | `next_git_host.py`, `next_codemagic.py` | Private Git over HTTPS on the cores; native iOS builds cloned from it (full history: dumb HTTP has no shallow clones) |
 | `next_import.py` | Replays the old separate Next repository's history onto a branch here (`next-import`); refuses to rewind a diverged branch without `--force` |
 | `rqlite_migrate.py` | Applies `app/migrations/*.sql` to rqlite, keeping the `d1_migrations` ledger shape |
 | `source_publisher.py` | Publishes `forkmesh/forkmesh` from a checkout without the desktop ([source-publisher.md](source-publisher.md)) |
-| `prune_merged.py` | Prunes merged branches, worktrees and finished agent sessions ([prune-merged.md](prune-merged.md)) |
+| `prune_merged.py` | Prunes merged branches, worktrees and finished agent sessions ([branch-cleanup.md](branch-cleanup.md)) |
 | `free_disk_space.py` | Deletes agent scratch, build and test debris nothing uses; run step by step on the desktop by the **Free disk space** workflow in Workflows ([free-disk-space.md](free-disk-space.md)) |
-| `branch_inventory.py` | Classifies unmerged branches and saves daily snapshots ([branch-inventory.md](branch-inventory.md)) |
+| `branch_inventory.py` | Classifies unmerged branches and saves daily snapshots ([branch-cleanup.md](branch-cleanup.md#branch-inventory)) |
 | `grants_build.py` | Builds the grants CRM import and ranked page from `docs/finance/grants/grants.json` ([grants](../finance/grants/README.md)) |
 | `cutover_*.py`, `rehost.py` | Hostname rewrite, DNS, TLS, identity and data move tooling kept from the move to the self-hosted cores |
 
-**Forum reach** ([../app/forum-reach.md](../app/forum-reach.md)):
+**Forum reach** ([forum reach](../app/forum-reach.md)):
 `forum_static_export.py` writes a static, read-only, JavaScript-free copy of
 a repository's issue forum (threads, labels, Atom feed, mirrored files,
 `manifest.json`); `forum_static_publish.py` commits it on top of a branch of
@@ -50,7 +66,7 @@ one or more git remotes (GitHub Pages, Codeberg Pages) without force.
 (Python twin of `desktop/src/AppPaths.{h,cpp}`), `forkmesh-paths.sh` (the
 same for shell scripts), `forkmesh_layout.py` (`plan` or `apply`).
 
-**Release and packaging** ([../release/README.md](../release/README.md)):
+**Release and packaging** ([releases](../release/README.md)):
 `forkmesh-release-publish.sh`, `forkmesh-release-host.py` (assets only the
 release host can build), `forkmesh-release-promote.py`,
 `forkmesh_release_request.py` ([mcp-releases.md](mcp-releases.md)),
@@ -58,7 +74,7 @@ release host can build), `forkmesh-release-promote.py`,
 `clean_machine_*` (install transcript in a disposable VM), `openssl-local.sh`,
 `qt64-build-check.sh`, `android-toolchain.sh`.
 
-**Gateways** ([../server/README.md](../server/README.md)): `mirror_gateway.py`,
+**Gateways** ([Go daemon](../server/README.md)): `mirror_gateway.py`,
 `direct_https_bootstrap.py`, `node_operator_policy.py` and `secret_gate.py`
 run on the cores next to the Go daemon (`DAEMON_TOOLS` in `next_fleet.py`).
 Also here: the SSH gateway and authorization broker, sshd and fail2ban
@@ -68,21 +84,21 @@ security scan runners.
 **Agents and desktop helpers**: `forkmesh_coding_agent.py` and
 `forkmesh_agent_guard.py` (embedded into the desktop by their
 `sync_*_header.py` scripts; edit the Python, then regenerate),
-`forkmesh_mcp_server.py` ([../agents/tools.md](../agents/tools.md#forkmesh-mcp-server); its Claude Code desktop counterparts in [mcp-claude-code-desktop.md](mcp-claude-code-desktop.md)),
+`forkmesh_mcp_server.py` ([agent tools](../agents/tools.md#forkmesh-mcp-server); its desktop tools in [mcp-desktop-tools.md](mcp-desktop-tools.md)),
 `branch_pr_review.py` (loopback-only diff viewer),
 `pull_ledger.py` (comment on, close, reopen and record merges of a native pull from the terminal, [pull-ledger.md](pull-ledger.md)),
 `zoho_mail.py` (send email from a Zoho Mail mailbox with no prompts, the `send_email` MCP tool, [zoho-mail.md](zoho-mail.md)), `code_health.py`,
 `measure_startup.py`, `run_critical_tests.py`, `quality_gate.py`.
 
 **Evidence ledgers and contracts**: each backs a `docs` page; inputs and
-outputs are listed in [../conformance/README.md](../conformance/README.md).
+outputs are listed in [conformance](../conformance/README.md).
 
 **Other**: forge sync and imports (`forge_sync.py`, `forge_providers.py`,
 `github_*`, `hosted_repository_sync.py`), Cloudflare Worker deploys from
 Actions (`cloudflare_worker_deploy.py`, [cloudflare-worker-deploy.md](cloudflare-worker-deploy.md)),
 legacy reward and custody tools,
 `ecosystem_seed.py` (signed `POST /api/ecosystem/import`,
-[../app/ecosystem.md](../app/ecosystem.md)).
+[ecosystem](../app/ecosystem.md)).
 
 ## Architecture
 
@@ -117,7 +133,7 @@ python3 tools/next_fleet.py list                # read-only
 ```
 
 Many tools are also covered by `app/tests/test_<tool>.py`. The fleet runbook
-is [OPERATIONS.md](../operations/README.md).
+is [operations](../operations/README.md).
 
 ## Security
 

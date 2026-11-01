@@ -5,7 +5,7 @@ rule is enforced, and how direct messages are delivered. Encryption overview:
 [encryption](../encryption.md). Related: [chat-everyone-channels.md](chat-everyone-channels.md),
 [chat-push-previews.md](chat-push-previews.md),
 [chat-direct-calls.md](chat-direct-calls.md),
-[chat-unread-reminders.md](chat-unread-reminders.md).
+[chat-unread.md](chat-unread.md).
 
 ## Access rule
 
@@ -63,7 +63,7 @@ bound to the resource and body (`_chat_channel_signed_session`,
 - The web link is `/chat#invite=<token>`: a fragment, so the token never
   reaches the server in a page request or `Referer`, and the API takes it in
   the request body, so it never lands in a Caddy access log line
-  ([NODE_LOGS.md](../operations/node-logs.md#caddy-access-log)). The old path
+  ([node logs](../operations/node-logs.md#caddy-access-log)). The old path
   `/api/chat/invites/<token>` answers `410 token_path_retired`. (A body was
   chosen over a Caddy `regexp` log filter because no Caddy binary is at hand
   to validate a new log config before it ships.)
@@ -151,7 +151,7 @@ it. Clients show "N messages on the server" or "Not stored on the server".
   sends a push.
 - Channels have many readers: no `ref`, receipts ignored.
 - A recipient whose copies wait more than a day gets one reminder email
-  ([chat-unread-reminders.md](chat-unread-reminders.md#direct-messages-waiting-on-the-server)).
+  ([chat-unread.md](chat-unread.md#direct-messages-waiting-on-the-server)).
 
 ### Re-sealing
 
@@ -228,6 +228,26 @@ applies an edit or delete only when the frame's `senderId` equals the target's
 `senderId`. After a delete the sender also sends `forkmesh-superseded` for the
 original ref, so an undelivered server copy is withdrawn; the delete frame
 itself stays until delivered.
+
+## Direct messages on the dashboard
+
+`/dashboard/chat` redirects to `/chat`, which lists direct messages in its own
+rail ([web-chat.md](web-chat.md#layout)). `mountDirectMessageStrip`
+(`dashboard-chat.js`) still runs where the old page's channel header exists: a
+strip of DM chips, each linking to `/chat?dm=<name>` with its unread badge; the
+`+` chip links to `/chat?dm=` (the new-DM picker). It reads
+`GET /api/chat/direct-messages?limit=20` once and refreshes only when the
+account event channel pushes the `direct-messages` topic (re-broadcast as the
+`forkmesh:direct-messages` window event). It is skipped in the World embed and
+for signed-out visitors.
+
+### "Add person" in a direct message
+
+A DM is strictly one-to-one, so "+ Add person" creates a **new private
+channel** with the current partner and the picked person
+(`POST /api/chat/channels`) and switches to it. The name is built from the
+participants' slugs plus a random suffix within `CHANNEL_NAME_RE`. History is
+not copied: it is end-to-end encrypted to the original two participants.
 
 ## Conversation list
 
@@ -346,7 +366,7 @@ What is still not covered:
   a restore onto a new or erased phone: an unencrypted iTunes/Finder or iCloud
   backup would otherwise carry readable chat text, and iOS has no per-file
   "encrypted backups only" flag. See
-  [../native/README.md](../native/README.md#architecture).
+  [../native/ARCHITECTURE.md](../native/ARCHITECTURE.md#architecture).
 - The desktop writes received files up to 512 KB in plaintext into its chat
   history; Android leaves `cacheDir/chat-media/` behind.
 
@@ -411,7 +431,7 @@ API (`app/src/chat_direct_media_api.py`, under
 - The web holds the `forkmesh-received` receipt for a view-once frame until it
   is opened, expired or withdrawn, because it keeps no local DM history.
 - Recording filters reuse the call engine's face, background and voice
-  stages ([chat-direct-calls.md](chat-direct-calls.md)); if a requested stage
+  stages ([call-filters.md](call-filters.md)); if a requested stage
   cannot start, nothing is recorded rather than sending raw media. The voice
   stage starts before the face stage, so the face models cannot starve the
   voice worklet's load, and the status names the stage that failed. Each change

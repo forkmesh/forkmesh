@@ -4,18 +4,32 @@ The `forkmesh-www` Worker serves `forkmesh.com` and `www.forkmesh.com`: the
 landing page, marketing pages, the blog and RSS, the hosted documentation
 (including the Markdown library rendered from `docs/`), the installer
 scripts, and shared site chrome. It is a small JavaScript Worker in front of
-Cloudflare Static Assets, deployed from `www/wrangler.production.toml`. The
-App (`app.forkmesh.com`) and World run on the core nodes; the Worker has no
-service binding and reaches the App over the public internet at
-`APP_ORIGIN`. Everything dynamic is proxied or redirected to the App (see
-[docs/app](../app/README.md)). `www/wrangler.toml` has no `name` and no
-route, so a deploy from it fails instead of creating a second Worker.
+Cloudflare Static Assets, the one part of the served stack still on
+Cloudflare; the App and World run on the core nodes, reached by DNS round
+robin, and everything dynamic is proxied or redirected to the App.
 
-The site is the one part of the served stack still on Cloudflare; the cores
-behind app and world are reached by DNS round robin, not through it
-([architecture](../architecture.md),
-[censorship resilience](../censorship-resilience.md)). Index:
-[docs/README.md](../README.md).
+| Page | Covers |
+| --- | --- |
+| [templates.md](templates.md) | Page templates, partials, logos and favicons, share images, the pre-push check |
+| [edge-client.md](edge-client.md) | The signed visitor header the Worker sends to the App, and how the host verifies it |
+| [page-performance.md](page-performance.md) | Load-time targets for repository pages and the techniques that meet them |
+| [auth-mesh.md](auth-mesh.md) | Auth pages: the dotted world map backdrop and the shared theme tokens |
+| [mobile-page.md](mobile-page.md) | The `/mobile` page and the landing page's phone section |
+| [investor-deck.md](investor-deck.md) | The investor deck's look, slides and page tracking |
+| [genie-spider.md](genie-spider.md) | The Genie spider guide on web pages |
+| [site-crawler.md](site-crawler.md) | Crawler, the special agent that inspects the live site |
+
+How the site fits the network: [architecture](../architecture.md) and
+[censorship resilience](../censorship-resilience.md); the App behind it:
+[app](../app/README.md) and [World](../world/README.md); deploys:
+[operations](../operations/README.md) and
+[auto-deploy](../operations/auto-deploy.md). Back to
+[all documentation](../README.md).
+
+The Worker has no service binding and reaches the App over the public
+internet at `APP_ORIGIN`. It is deployed from `www/wrangler.production.toml`;
+`www/wrangler.toml` has no `name` and no route, so a deploy from it fails
+instead of creating a second Worker.
 
 ## Code map
 
@@ -32,8 +46,8 @@ behind app and world are reached by DNS round robin, not through it
 | `www/public/analytics.js`, `analytics-sdk.js` | Consent-gated first-party analytics ([analytics](../app/analytics.md)); the SDK is a generated copy. Conversion points (`data-forkmesh-product-action`) and markup experiments (`data-fm-experiment`) are listed under [conversion tracking](../app/analytics.md#conversion-tracking) |
 | `www/public/homepage-downloads.js` | The downloads card, fed by the signed release manifest |
 | `www/public/install.sh`, `uninstall.sh` | Desktop installer and uninstaller served at `forkmesh.com/install.sh` (default `FORKMESH_HOST` `https://forkmesh.com`) |
-| `www/public/auth-mesh.js`, `auth-mesh.css`, `assets/land-mask.png` | The dotted world map behind the login and signup pages, drawn from a generated Natural Earth land mask ([auth backdrop](auth-mesh.md)) |
-| `www/public/auth-page-theme.css` | Light and dark tokens shared by the auth pages ([auth theme](auth-theme.md)) |
+| `www/public/auth-mesh.js`, `auth-mesh.css`, `assets/land-mask.png` | The dotted world map behind the login and signup pages, drawn from a generated Natural Earth land mask ([auth pages](auth-mesh.md)) |
+| `www/public/auth-page-theme.css` | Light and dark tokens shared by the auth pages ([auth pages](auth-mesh.md#theme-tokens)) |
 | `www/public/ecosystem.html`, `#ecosystem` in `www/public/index.html` | The ForkMesh Ecosystem directory at `/ecosystem` and `/ecosystem/<slug>`, and its landing-page section, both read from `GET /api/ecosystem` ([docs/app/ecosystem.md](../app/ecosystem.md)) |
 | `www/public/features.html` | The `/features` catalog. Self-contained: its styles and an SVG icon sprite are inline and it runs no script of its own; see Traps |
 | `#everywhere` in `www/public/index.html`, `assets/everywhere/` | "Your mesh, wherever you work": the connection line, the three device mockups and their screenshots |
@@ -62,7 +76,7 @@ Routing in `www/worker.js`, in order:
    redirect to the App.
 6. `/ecosystem/<slug>` serves `ecosystem.html`; `/market/<id>` serves the
    package page `market/<id>.html`, or `market.html` for an unknown id
-   ([package pages](../marketplace/README.md#share-links-and-package-pages));
+   ([package pages](../marketplace/market.md#share-links-and-package-pages));
    other `/<owner>/<repo>` paths redirect to the App.
 7. Everything else is a static asset, with first-party attribution captured
    on page navigations (`fm_attr` cookie; [attribution](../app/attribution.md)).
@@ -79,7 +93,7 @@ answers them without running the Worker. Static responses carry
 - **Visitor identity.** Caddy on a core sees only a Cloudflare egress
   address for relayed requests, so the Worker signs the visitor's address
   and country into `x-forkmesh-edge-client` with `WWW_EDGE_SECRET`
-  ([edge_client.md](edge-client.md)); the host verifies it before the App runs.
+  ([edge client](edge-client.md)); the host verifies it before the App runs.
   Without the secret no identity is forwarded.
 - **Downloads card.** `homepage-downloads.js` reads
   `.forkmesh/releases/<channel>/release.json`, its `.sig` and
@@ -106,10 +120,11 @@ answers them without running the Worker. Static responses carry
 - `/docs/library/` and every `/docs/<path>/` page are generated from
   `docs/` by `app/tools/docs_site.py`. Relative links, heading anchors and
   schema references are resolved; Git history dates each page. Code and tests
-  reference many `docs/**` paths directly, so do not rename or move them.
+  reference many `docs/**` paths directly, so move or rename a page only
+  together with every reference ([writing docs](../README.md#writing-docs)).
 - `/api/home-availability`: JSON for the homepage availability strip.
 - `x-forkmesh-edge-client: v1,<ip>,<country>,<ts>,<mac>`
-  ([edge_client.md](edge-client.md)).
+  ([edge client](edge-client.md)).
 
 ## Configuration
 
@@ -132,61 +147,6 @@ python3 -m pytest -q www/tests
 node --test www/tests/worker_routing.test.mjs
 node --test www/tests/genie_spider.test.mjs
 ```
-
-## Logo files
-
-`logo.svg` at the repository root is the one source: `python3
-tools/render_logo.py` (pycairo, Pillow) rewrites every other logo file, then
-`python3 app/tools/embed_og_logo.py` re-bakes the og-card copy. Pages use
-`/assets/logo.svg` and list `/favicon/favicon.svg` after `favicon.ico`
-(`app/tests/test_favicon_metadata.py`); rasters stay where SVG is not accepted.
-
-That test holds every page under `app/public` and `www/public` to the same
-head: all four favicons, the manifest, `application-name`,
-`apple-mobile-web-app-title`, `theme-color` `#090909`, `color-scheme`
-`light dark` and a description. Only the www landing page and the investor
-deck (`app/public/pitch-deck/deck.html`) may use `color-scheme: dark`; the
-deck advertises `light dark`. The deck's CSP (`PAGE_CSP` in
-`app/src/pitch_deck_runtime.py`) allows `manifest-src 'self'` so its manifest
-link loads.
-
-## Investor deck
-
-The deck a CRM contact opens (`/pitch-deck/<token>`, served by
-`app/src/pitch_deck_runtime.py`) uses the homepage's look, because it goes out
-with every investor email.
-
-- **Theme.** Homepage tokens: white page, ink `#101012`, blue accent, ABC
-  Favorit headlines. Slides 3, 5, 7, 9 and 13 sit in the homepage's dark
-  rounded panel. Light by default; a choice saved under `forkmesh.theme` or
-  `forkmesh.dashboard.theme` wins, and the moon/sun button writes both keys.
-- **Assets.** The cover and closing slide draw the hero schematic (copied from
-  `www/public/index.html`, with moving pulses). Images and the font load from
-  `/assets/...` on the deck's own origin: `PAGE_CSP` keeps `img-src 'self'`
-  and `font-src 'self'`, so the deck must be opened on forkmesh.com (the CRM's
-  `DECK_SITE_ORIGIN`). On app.forkmesh.com the screenshots and font are missing.
-- **Product visuals.** The cover shows the desktop app on a laptop and the
-  mobile app on a phone. On slide 4 a phone beside the six workflow cards
-  cycles through the matching mobile screens; the cards stay still (user
-  request). Slide 5 fans three phone screens. Numbers count up, use-of-funds
-  bars fill and the ARR ladder steps in when their slide scrolls into view;
-  `prefers-reduced-motion` and print show the final state.
-- **Beyond the desk (slide 7).** The watch app and AR/XR glasses: the
-  workspace (desktop app and a Claude Code session opening a pull request)
-  appears only inside the lenses of aviator AR glasses, with a blurred glow
-  behind and a slight pointer parallax; the watch copies the watchOS agent
-  list. Everything is inline SVG and CSS, because `PAGE_CSP` allows no
-  external scripts (no three.js). The glasses sit on a fixed 600 by 240 stage
-  that a small script scales (`--fit` sets the width share). Labels: watch
-  "In build", glasses "R&D"; the footer names the pictured hardware. Watch
-  classes are `.strap` and `.wrow.on` because `.band` and `.live` are taken.
-- **Page numbers.** Slides 8 to 14 are Customer & go-to-market through
-  Sources; `DECK_PAGE_TITLES` in the CRM worker follows. Page views are stored
-  by number, so time recorded before slide 7 was inserted (20 Oct 2026) shows
-  one title too early in the CRM's per-page table.
-- **Page tracking.** The current page is the slide crossing the middle of the
-  viewport, because a phone slide is taller than the screen and a
-  "55% visible" rule never changed page.
 
 ## Operations
 
@@ -250,7 +210,7 @@ Crawlers and scrapers:
 - Blocked crawlers are the enabled rows of the `request_block_rules` table.
   `app/sync_request_block_rules.sh` (or `tools/forkmesh-sync-block-rules.sh`,
   `--dry-run` to print) publishes them as the zone's WAF rule; automatic probe
-  bans ([../app/probe-auto-ban.md](../app/probe-auto-ban.md)) are never
+  bans ([../app/not-found-tracking.md](../app/not-found-tracking.md#automatic-probe-bans)) are never
   published. `app/sync_request_rate_limit.sh` keeps the zone rate limit (120
   requests per 10 s per address and colo). The cores enforce the same table
   and limit for app and world ([host/README.md](../host/README.md)).
@@ -330,14 +290,3 @@ or another package, a title and its assets. Each package page documents
 itself; current ones include the Feed's public post page
 `forkmesh.com/feed?post=<id>` ([instance-feed.md](../marketplace/instance-feed.md)).
 Test: `app/tests/test_www_plugin_pages.py`.
-
-## Related docs
-
-- [docs/app/README.md](../app/README.md), [World](../world/README.md)
-- [OPERATIONS.md](../operations/README.md), [auto-deploy](../operations/auto-deploy.md)
-- [templates](templates.md), [genie spider](genie-spider.md),
-  [site crawler](site-crawler.md), [auth backdrop](auth-mesh.md),
-  [auth theme](auth-theme.md), [mobile page](mobile-page.md)
-- [docs/README.md](../README.md) (public library index)
-  (optional self-host; not how forkmesh.com's app runs)
-- [attribution](../app/attribution.md)

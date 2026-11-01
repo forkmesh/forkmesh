@@ -2,7 +2,7 @@
 
 Part of [the App docs](README.md). Privacy mode is an admin setting for
 [self-hosted instances](../self-hosting.md) (see also
-[../INSTANCES.md](../operations/instances.md)). When it is on, the instance keeps no
+[instances](../operations/instances.md)). When it is on, the instance keeps no
 records about visitors or users beyond what it needs to run and to diagnose
 faults, and sends nothing about them to anyone. The remaining diagnostics hold
 no personal data: error class, route group, status and counts, kept briefly.

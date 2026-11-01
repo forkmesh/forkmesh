@@ -1,7 +1,10 @@
 # Desktop lifecycle: quitting and the processes it owns
 
-Part of [the desktop docs](README.md). What the desktop starts, what a quit
-stops, and what it deliberately leaves running.
+What the desktop starts, what a quit stops, what it deliberately leaves
+running, and running without a window (start at boot, the tray, keeping the
+computer awake).
+
+Part of [Desktop](README.md).
 
 Code: `desktop/src/ProcessReaper.{h,cpp}`, called from the end of `main()`.
 Test: `forkmesh-process-reaper-tests` (`desktop/tests/test_process_reaper.cpp`).
