@@ -1,0 +1,30 @@
+{
+  "name": "surveys",
+  "version": "1.0.0",
+  "description": "Organization surveys with a shareable answer link, live results, response management and CSV export.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["surveys", "forms", "feedback", "polls", "questionnaire"],
+  "interface": {
+    "displayName": "Surveys",
+    "shortDescription": "Run surveys and read the results.",
+    "longDescription": "Build surveys with choice, text and rating questions, share a private link anyone can answer, and read results and responses on the web, desktop and phones.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "Which surveys are open right now?",
+      "Summarise the answers to the latest survey.",
+      "How many responses came in this week?"
+    ],
+    "brandColor": "#2563EB"
+  }
+}

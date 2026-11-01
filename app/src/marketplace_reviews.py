@@ -121,6 +121,7 @@ FIRST_PARTY_PACKAGES = {
     "steps": "Pedometer",
     "stretch": "Stretch Break",
     "sugar-break": "Sugar Break",
+    "surveys": "Surveys",
     "tasks": "Tasks",
     "timers": "Timers",
     "tour": "Tour",

@@ -320,7 +320,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   features): see [core-plugins.md](core-plugins.md).
 - **Productivity and data:** `notes`, `tasks`, `calendar`, `timers`, `crm`,
   `competitor`, `invoices` (CRM-linked invoices emailed with open, view and
-  payment tracking, [invoices.md](invoices.md)), `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
+  payment tracking, [invoices.md](invoices.md)), `surveys` (surveys answered
+  through a private link, with results and CSV export, [surveys.md](surveys.md)), `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
   `secure-drive` (an end-to-end encrypted shared drive kept as one file on a
   router's USB drive or any network share, suite `fmsd1`, on the desktop,
   iPhone and Android; [secure-drive.md](secure-drive.md)),

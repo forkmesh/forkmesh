@@ -258,6 +258,7 @@ public enum RouteParser {
         case "network": return [.network(section: first)]
         case "ads": return [.ads]
         case "invoices": return tail.isEmpty ? invoiceRoutes(query) : nil
+        case "surveys": return tail.isEmpty ? surveyRoutes(query) : nil
         case "apps": return tail.isEmpty ? [.settings(section: "apps")] : nil
         case "calories": return [.calories]
         case "steps": return [.steps]
@@ -304,6 +305,14 @@ public enum RouteParser {
             value.count == 32 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase } ? value : nil
         }
         return [.invoices(organization: org, invoice: invoice)]
+    }
+
+    private static func surveyRoutes(_ query: [String: String]) -> [Route] {
+        let org = nonEmpty(query["org"]).flatMap { isSafe($0) ? $0.lowercased() : nil }
+        let survey = query["survey"].flatMap { value in
+            value.count == 32 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase } ? value : nil
+        }
+        return [.surveys(organization: org, survey: survey)]
     }
 
     private static func pokerTable(_ value: String?) -> String? {

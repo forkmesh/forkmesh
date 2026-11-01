@@ -257,6 +257,7 @@ object RouteParser {
             "network" -> listOf(Route.Network(first))
             "ads" -> listOf(Route.Ads)
             "invoices" -> if (first == null) listOf(Route.Invoices(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["invoice"]?.trim()?.takeIf { it.isNotEmpty() })) else null
+            "surveys" -> if (first == null) listOf(Route.Surveys(query["org"]?.trim()?.takeIf { it.isNotEmpty() }, query["survey"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
             "speech" -> listOf(Route.Speech)

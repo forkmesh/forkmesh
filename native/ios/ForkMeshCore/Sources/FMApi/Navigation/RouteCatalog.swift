@@ -161,6 +161,7 @@ public enum RouteCatalog {
         case .analytics: return "Analytics"
         case .competitors: return "Competitors"
         case .invoices: return "Invoices"
+        case .surveys: return "Surveys"
         case .ads: return "Ad review"
         case .ledger: return "Ledger"
         case .vault: return "Vault"
@@ -255,6 +256,7 @@ public enum RouteCatalog {
         case .analytics: return "chart.xyaxis.line"
         case .competitors: return "binoculars"
         case .invoices: return "receipt"
+        case .surveys: return "list.clipboard"
         case .ads: return "rectangle.and.text.magnifyingglass"
         case .ledger: return "creditcard"
         case .vault: return "key"
@@ -402,6 +404,7 @@ public enum HubCatalog {
         .destination(.analytics(section: nil), needsRegistration: true),
         .destination(.competitors, needsRegistration: true),
         .destination(.invoices(organization: nil, invoice: nil), needsRegistration: true),
+        .destination(.surveys(organization: nil, survey: nil), needsRegistration: true),
         .destination(.ads, needsRegistration: true),
         .destination(.ledger(section: nil), needsRegistration: true),
     ]
