@@ -1100,13 +1100,42 @@ and the panel folds them in 8 ms slices only while it is visible.
   first prompt, and every local launch (`startAgentRunner` calls
   `NextAccess::sessionStarted`) set `panelOpen` again even if it was hidden.
   The new-session screen shows the column too.
-- **Context (2026-10-31)** reads like Claude Code's context panel: "N% used"
-  and used / window above the bar, then rows with a coloured swatch, value and
-  share: Used (blue), Free space, Input and Output tokens (share of all tokens
-  in the session), Turns and Cost. Sessions that only report a total show one
-  Tokens used row. The bar and the Used swatch turn amber at 80% and red at 95%
-  (`sessionsLevel` on `sessionsContextBar`). The header's percentage shows only
-  while the card is folded, since the open card already says it.
+- **Flat sections (2026-11-01).** The cards have no background or box: each
+  is a titled section with a thin line under it (none under the last shown
+  one, `sessionsLast`), so they sit closer together. The column has no border
+  of its own; the splitter handle is the one line between the transcript and
+  the panels, in Control Tower (`agentCodeSplit`) and on the Sessions page.
+- **Context (2026-11-01)** reads like Claude Code's context panel: "N% used"
+  and used / window above a bar split into coloured parts, then what fills the
+  window, each with a swatch, tokens and share: **Messages** (blue),
+  **Tool calls** (orange), **Memory files** (teal), **System prompt & tools**
+  (pink) and **Free space**. Under a gap, grey rows give the session totals:
+  Input and Output tokens, Turns, Cost, **Tools loaded** (tools and MCP
+  servers), **Skills & agents** and how often it was **Compacted**. Last, a
+  folding **Memory files N** row lists each file with its estimated tokens;
+  clicking one opens it.
+  - The numbers come from `sessioninsights::Collector::context()`: "used" is
+    the last assistant message's input (with cache reads and writes) plus
+    output; the first turn's input, less the prompt before it, is the fixed
+    part (system prompt, tools, memory); the system `init` event gives the
+    tool, MCP, skill and agent counts and the model; `compact_boundary`
+    counts a compaction and restarts the conversation tally. Without usage
+    events (Codex, cloud runs) "used" is the session's `contextTokens`.
+  - `splitContext` takes the memory files' estimate out of the fixed part and
+    splits the rest of "used" between Messages and Tool calls by the length of
+    the text since the last compaction (4 characters a token). These are
+    estimates; the totals are the API's.
+  - `memoryFiles` finds what Claude Code loads: `~/.claude/CLAUDE.md`, then
+    `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` from the root down
+    to the session folder, following `@path` imports, and the first 200 lines
+    of the auto memory `MEMORY.md` (`~/.claude/projects/<slug>/memory`, the
+    folder or its nearest parent that has one). With no CLAUDE.md anywhere it
+    lists the `AGENTS.md` chain instead (Codex). The panel rescans every 30
+    seconds or when the folder changes.
+  - The window grows to 1M when the model name has `[1m]` or "used" passes
+    the configured window. "N% used" turns amber at 80% and red at 95%
+    (`sessionsLevel` on `sessionsContextUsed`). The header's percentage shows
+    only while the card is folded, since the open card already says it.
 - **Environment** ends with a **Remote control** switch (2026-10-31), the
   global phone-control switch (`localControl/remoteControl`, on by default;
   `MainWindow::setRemoteControlOn`). Under it, a connected phone shows its name

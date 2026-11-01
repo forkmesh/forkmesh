@@ -540,7 +540,47 @@ int runWorkspaceSnapshots(MainWindow &window)
             bool toggled = false;
             panels.setRemoteActions([&toggled](bool on) { toggled = !on; }, [] {});
             panels.setDetails(details);
-            settle();
+            const auto usage = [](qint64 input, qint64 output, const QJsonArray &content) {
+                return QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("assistant")},
+                    {QStringLiteral("message"),
+                     QJsonObject{{QStringLiteral("content"), content},
+                                 {QStringLiteral("usage"),
+                                  QJsonObject{{QStringLiteral("input_tokens"), 10},
+                                              {QStringLiteral("cache_read_input_tokens"),
+                                               input - 10},
+                                              {QStringLiteral("output_tokens"), output}}}}}};
+            };
+            panels.append(QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("system")},
+                {QStringLiteral("subtype"), QStringLiteral("init")},
+                {QStringLiteral("tools"),
+                 QJsonArray{QStringLiteral("Read"), QStringLiteral("Edit"), QStringLiteral("Bash")}},
+                {QStringLiteral("mcp_servers"), QJsonArray{QJsonObject{}}},
+                {QStringLiteral("skills"), QJsonArray{QStringLiteral("a"), QStringLiteral("b")}}});
+            panels.append(QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                                      {QStringLiteral("text"), QString(400, QLatin1Char('p'))}});
+            panels.append(usage(20000, 300,
+                                QJsonArray{QJsonObject{
+                                    {QStringLiteral("type"), QStringLiteral("tool_use")},
+                                    {QStringLiteral("id"), QStringLiteral("t1")},
+                                    {QStringLiteral("name"), QStringLiteral("Read")},
+                                    {QStringLiteral("input"),
+                                     QJsonObject{{QStringLiteral("file_path"),
+                                                  QStringLiteral("/repo/a.cpp")}}}}}));
+            panels.append(QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("user")},
+                {QStringLiteral("message"),
+                 QJsonObject{{QStringLiteral("content"),
+                              QJsonArray{QJsonObject{
+                                  {QStringLiteral("type"), QStringLiteral("tool_result")},
+                                  {QStringLiteral("tool_use_id"), QStringLiteral("t1")},
+                                  {QStringLiteral("content"), QString(80000, QLatin1Char('x'))}}}}}}});
+            panels.append(usage(127000, 500,
+                                QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                                       {QStringLiteral("text"),
+                                                        QString(2000, QLatin1Char('r'))}}}));
+            settle(20);
             QStringList rows;
             for (QLabel *swatch : panels.findChildren<QLabel *>(
                      QStringLiteral("sessionsDetailSwatch")))
@@ -548,10 +588,13 @@ int runWorkspaceSnapshots(MainWindow &window)
                     rows << swatch->parentWidget()
                                 ->findChild<QLabel *>(QStringLiteral("sessionsDetailText"))
                                 ->text();
-            check(rows == QStringList{QStringLiteral("Used"), QStringLiteral("Free space"),
+            check(rows == QStringList{QStringLiteral("Messages"), QStringLiteral("Tool calls"),
+                                      QStringLiteral("System prompt & tools"),
+                                      QStringLiteral("Free space"),
                                       QStringLiteral("Input tokens"),
                                       QStringLiteral("Output tokens"), QStringLiteral("Turns"),
-                                      QStringLiteral("Cost")},
+                                      QStringLiteral("Cost"), QStringLiteral("Tools loaded"),
+                                      QStringLiteral("Skills & agents")},
                   QStringLiteral("the Context card lists coloured rows (%1): %2")
                       .arg(label, rows.join(QStringLiteral(", "))));
             auto *used = panels.findChild<QLabel *>(QStringLiteral("sessionsContextUsed"));
