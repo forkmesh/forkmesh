@@ -110,8 +110,7 @@
   "install": {
     "bundled": true,
     "default": false,
-    "sync": "account",
-    "places": ["desktop", "web"]
+    "sync": "account"
   },
   "lifecycle": { "migrations": [] },
   "dataLifecycle": { "scope": "account" },

@@ -150,6 +150,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "openWrtRouter" -> Route.OpenWrtRouter
     "faceChanger" -> Route.FaceChanger
     "appStoreStatus" -> Route.AppStoreStatus
+    "booking" -> Route.Booking(null)
     "runners" -> Route.Runners
     "usage" -> Route.Usage
     "rssReader" -> Route.RssReader

@@ -76,6 +76,7 @@ public enum PackageRoutes {
         case "analytics": return .analytics(section: nil)
         case "competitors": return .competitors
         case "invoices": return .invoices(organization: nil, invoice: nil)
+        case "booking": return .booking(id: nil)
         case "ledger": return .ledger(section: nil)
         case "vault": return .vault(section: nil)
         case "calories": return .calories

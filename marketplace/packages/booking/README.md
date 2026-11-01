@@ -3,6 +3,8 @@
 Booking Page is an optional ForkMesh package that any account installs for
 itself: a public page with one short link, such as
 `forkmesh.com/meet?alice`, that you send to anyone who wants to meet you.
+You manage it on the web dashboard (`/dashboard/booking`), the desktop rail,
+and the **Booking** screen of the iPhone and Android apps.
 
 - **Meeting types.** Offer a quick chat, a meeting, a phone call or anything
   else, each with its own length, description and place (a video link, a

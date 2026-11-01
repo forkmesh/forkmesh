@@ -9,7 +9,8 @@ information is emailed, all through ForkMesh.
 
 Package: [`marketplace/packages/booking`](../../marketplace/packages/booking/README.md).
 The owner manages the page at `/dashboard/booking` (the desktop rail opens the
-same page); guests use `/meet` on the website.
+same page) and in the Booking screen of the iPhone and Android apps; guests use
+`/meet` on the website.
 
 ## Code map
 
@@ -19,6 +20,10 @@ same page); guests use `/meet` on the website.
 | `content/www/meet.html`, `meet.js`, `meet.css` | The public page at `/meet`: meeting types, the month calendar and open times in the guest's time zone, the details form, the confirmation with calendar buttons, and the reschedule and cancel page. |
 | `content/web/view.html`, `content/web/page.js` | The owner's dashboard page: the link and per-type links, totals, upcoming and past meetings with cancel, and the meeting type, hours and page and email settings. |
 | `content/desktop/BookingLink.cpp` | Registers `builtin:booking` so the desktop rail opens the dashboard page. |
+| `native/ios/ForkMeshCore/Sources/FMPackages/BookingModels.swift`, `BookingModel.swift`, `PackagesClient+Booking.swift` | The iPhone app's decoding, labels, settings draft and API calls. |
+| `native/ios/ForkMesh/Features/Packages/BookingScreen.swift`, `BookingSettingsScreen.swift` | The iPhone Booking screen and its settings. |
+| `native/android/core/.../market/Booking.kt` | The Android app's decoding, labels, settings draft and API calls. |
+| `native/android/app/.../feature/booking/BookingScreens.kt` | The Android Booking screen and its settings. |
 | `tests/test_booking.py` | Worker tests against SQLite with a fake runtime. |
 
 ## The short link
@@ -121,14 +126,25 @@ confirmation naming the owner and the time.
 
 ## Phones
 
-The manifest lists `places: ["desktop", "web"]`. The guest side is a web page
-that works on any phone browser; the owner's page has no native iPhone or
-Android screen yet, so the package does not appear in the phone apps rather
-than appearing differently on each.
+The iPhone and Android apps have the same Booking screen, under Workspace
+next to Calendar (route `booking`; `/dashboard/booking?booking=<id>`, the link
+in the owner's ForkMesh notification, opens it on that meeting). It covers
+what the owner does on the web: create the page, copy, share and open the
+link and each meeting type's link, pause the page, the four totals, upcoming
+and past meetings grouped by day in the phone's time zone, cancelling with a
+message, and the settings for the page, hours, meeting types and email. Export
+saves the JSON (Android) or shares it (iPhone); uninstall exports first.
+Guests never need the app: `/meet` is a web page that works in any phone
+browser.
+
+The settings screen edits weekly hours as text times (`HH:MM`); an end of
+`24:00` shows as `23:59` and is saved back as `24:00`, as on the web.
 
 ## Checking it by hand
 
-`tests/test_booking.py` covers the worker. To see the pages, serve
+`tests/test_booking.py` covers the worker; `BookingTests.swift`,
+`BookingRouteTests.swift` and `BookingTest.kt` cover the phone apps' models,
+API calls and routes. To see the pages, serve
 `content/www` with the worker behind `/api/booking` (the tests' `Runtime` is
 enough) and open `/meet?<slug>`; the screenshots for this change were taken
 with the cached `chrome-headless-shell` run under `systemd-run`.

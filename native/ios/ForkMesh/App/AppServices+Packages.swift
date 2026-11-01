@@ -48,6 +48,10 @@ struct PackagesInstaller: AppServicesInstaller {
             }
             return AnyView(InvoicesDestination(organization: organization, invoice: invoice))
         }
+        services.routes.register(.booking, by: "WS19") { route in
+            guard case .booking(let id) = route else { return AnyView(BookingDestination(booking: nil)) }
+            return AnyView(BookingDestination(booking: id))
+        }
         services.routes.register(.ads, by: "WS19") { _ in AnyView(AdsDestination()) }
         services.routes.register(.ledger, by: "WS19") { route in
             guard case .ledger(let section) = route else { return AnyView(LedgerDestination(section: nil)) }
