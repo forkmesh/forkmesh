@@ -3934,6 +3934,8 @@ QWidget *MainWindow::buildNetworkLogDock()
     connect(m_quickAddSendToAgentButton, &QPushButton::clicked, this, [this] {
         if (!m_issueQuickAdd)
             return;
+        if (quickAddPackageAppliesToOpen() && submitQuickAddToPackage())
+            return;
         const QString typed = m_issueQuickAdd->toPlainText().trimmed();
         // A cloud run open above takes the message through the relay. Its node
         // cannot read a file on this disk, so attachments stay in the composer.
