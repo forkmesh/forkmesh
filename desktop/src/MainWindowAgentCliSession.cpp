@@ -67,6 +67,7 @@ using namespace forkmesh::ui;
 namespace {
 
 constexpr int kAgentExternalStopSettleMs = 3000;
+constexpr int kClaudeSessionResweepMs = 45 * 1000;
 constexpr int kExitAfterSigterm = 128 + 15;
 constexpr int kExitAfterSighup = 128 + 1;
 
@@ -2016,17 +2017,24 @@ QStringList MainWindow::claudeTranscriptConfigDirs() const
     return dirs;
 }
 
-void MainWindow::removeOrphanedClaudeTranscripts(const QString &worktreePath)
+void MainWindow::removeOrphanedClaudeTranscripts(const QString &worktreePath, bool resweep)
 {
     if (worktreePath.trimmed().isEmpty())
         return;
     runOffThread<QStringList>(
-        [dirs = claudeTranscriptConfigDirs(), worktreePath] {
+        [dirs = claudeTranscriptConfigDirs(),
+         desktopRoot = ClaudeSessionScan::desktopConfigRoot(), worktreePath] {
             QStringList removed;
+            ClaudeSessionScan::removeOrphanedDesktopRecords(desktopRoot, worktreePath,
+                                                            &removed);
             ClaudeSessionScan::removeOrphanedTranscripts(dirs, worktreePath, &removed);
             return removed;
         },
-        [this, worktreePath](QStringList removed) {
+        [this, worktreePath, resweep](QStringList removed) {
+            if (resweep)
+                QTimer::singleShot(kClaudeSessionResweepMs, this, [this, worktreePath] {
+                    removeOrphanedClaudeTranscripts(worktreePath, false);
+                });
             if (removed.isEmpty())
                 return;
             logSystem(QStringLiteral("Agents: removed the Claude Code sessions of "

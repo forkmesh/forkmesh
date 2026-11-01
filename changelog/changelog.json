@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Agents", "text": "Merge & clean up now also removes the agent from the Claude app's session list, so a merged agent's Claude Code session is gone everywhere."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "The documentation highlights the section you are reading as you scroll, has a jump-to-section bar on phones, new guides for the browser extension and the phone apps, and diagrams on the main pages."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The AppArmor page now fits on one screen, with a coverage ring, a busiest-profiles chart, a plain explanation of each program and its mode, and suggestions with the next step highlighted."},
   {"date": "2026-11-01", "area": "Desktop", "text": "Emoji in the sessions list, buttons, labels and menus draw in full colour on Linux instead of black outlines, and those widgets now use the interface font."},
