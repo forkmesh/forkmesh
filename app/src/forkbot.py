@@ -1014,8 +1014,11 @@ async def _forkbot_ai_interpret(env, command, context_text="", model=""):
         return None
     return {"intent": "create_issue", "title": fields["title"],
             "body": fields["body"]}
-async def _forkbot_repo_gateway_json(env, owner, repo, action_query):
-    """Read public repository data through the normal HTTPS mirror gateway."""
+async def _forkbot_repo_gateway_json(env, owner, repo, action_query,
+                                     allow_missing=False):
+    """Read public repository data through the normal HTTPS mirror gateway.
+    With allow_missing, a 404 whose body says the path is not in git is
+    returned as-is, so callers can tell "no such folder" from "no host"."""
     owner = safe_segment(owner)
     repo = safe_segment(repo)
     raw_action = str(action_query or "")
@@ -1044,12 +1047,17 @@ async def _forkbot_repo_gateway_json(env, owner, repo, action_query):
             {"method": "GET"},
             FORKBOT_GATEWAY_TIMEOUT_MS / 1000,
         )
-        if int(getattr(response, "status", 0) or 0) != 200:
+        status = int(getattr(response, "status", 0) or 0)
+        if status != 200 and not (allow_missing and status == 404):
             return None
         data = await response.json()
         if hasattr(data, "to_py"):
             data = data.to_py()
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            return None
+        if status != 200 and not _forkbot_missing_tree(data):
+            return None
+        return data
     except Exception:
         return None
 def _forkbot_missing_tree(data):

@@ -1452,9 +1452,21 @@ def _sweep_namespace(db, gateway):
     async def ensure_schema(env):
         return None
 
-    async def repo_gateway(env, owner, repo, action):
+    async def repo_gateway(env, owner, repo, action, allow_missing=False):
         gateway["calls"].append((owner, repo, action))
-        return gateway["answer"](action)
+        data = gateway["answer"](action)
+        if isinstance(data, dict) and "error" in data and not allow_missing:
+            return None
+        return data
+
+    forkbot_tree = ast.parse(
+        (ENTRY.parent / "forkbot.py").read_text(encoding="utf-8"))
+    missing_tree = {}
+    exec(compile(ast.Module(body=[
+        node for node in forkbot_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_forkbot_missing_tree"], type_ignores=[]),
+        "forkbot.py", "exec"), missing_tree)
 
     def blob_text(blob):
         if not isinstance(blob, dict) or not blob.get("ok"):
@@ -1467,13 +1479,14 @@ def _sweep_namespace(db, gateway):
         "_sweep_repo_issue_records", "_badge_record_numbers",
         "_badge_record_blobs", "_record_coauthor_facts",
         "_verified_email_account", "_record_web_merge_badge_fact",
-        "_sweep_repo_discussion_answers",
+        "_sweep_repo_discussion_answers", "_badge_record_tree",
         extra_globals=dict(
             sql, d1_run=d1.run, d1_all=d1.all, d1_first=d1.first,
             ensure_schema=ensure_schema, decrypt_row=decrypt_row,
             blind_index=blind_index, Date=_MsClock, json=json_module,
             quote=quote, badge_catalog=badges, microjobs=_module("microjobs"),
             _forkbot_repo_gateway_json=repo_gateway,
+            _forkbot_missing_tree=missing_tree["_forkbot_missing_tree"],
             _forkbot_blob_text=blob_text,
             clean_string=lambda value, limit: str(value or "")[:limit],
             _account_kind=lambda rec: rec.get("kind", "user")))
@@ -1622,6 +1635,37 @@ def test_record_sweep_keeps_a_repo_pending_when_the_mirror_fails():
     assert [tuple(row) for row in db.execute(
         "SELECT repo_bi, state_ts, swept_at FROM badge_repo_sweeps")] == [
         ("r1", 0, _MsClock.value)]
+
+
+def test_record_sweep_finishes_a_repo_without_record_folders():
+    # A repo that never had a pull, a closed issue or a discussion: the host
+    # answers 404 not_found for each folder (and for the forkmesh/pulls
+    # branch), which means "nothing to record", not "try again".
+    db = _sqlite_badge_db()
+    db.execute("INSERT INTO repo_state_history VALUES ('r1','h',20)")
+    gateway = {"calls": [], "answer": lambda action: {"error": "not_found"}}
+    ns = _sweep_namespace(db, gateway)
+    assert _run(ns["sweep_badge_records"](None)) == {"awarded": ["ada/web"]}
+    assert not [action for _, _, action in gateway["calls"]
+                if action.startswith("blobs?")]
+    assert [tuple(row) for row in db.execute(
+        "SELECT repo_bi, state_ts FROM badge_repo_sweeps")] == [("r1", 20)]
+
+
+def test_record_sweep_waits_when_only_the_pulls_branch_is_unreachable():
+    db = _sqlite_badge_db()
+    db.execute("INSERT INTO repo_state_history VALUES ('r1','h',20)")
+
+    def answer(action):
+        if "ref=forkmesh%2Fpulls" in action:
+            return None
+        return {"error": "not_found"}
+
+    gateway = {"calls": [], "answer": answer}
+    ns = _sweep_namespace(db, gateway)
+    assert _run(ns["sweep_badge_records"](None)) == {"awarded": []}
+    assert [tuple(row) for row in db.execute(
+        "SELECT repo_bi, state_ts FROM badge_repo_sweeps")] == [("r1", 0)]
 
 
 def test_web_merges_record_the_merger_for_the_sweep():

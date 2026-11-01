@@ -32162,6 +32162,21 @@ def _badge_record_numbers(tree):
     return numbers
 
 
+async def _badge_record_tree(env, owner, repo, path, ref=""):
+    # A folder (or the forkmesh/pulls branch) that was never committed is an
+    # empty listing; None means no host answered and the sweep must retry.
+    action = "tree?path=" + quote(path, safe="")
+    if ref:
+        action += "&ref=" + quote(ref, safe="")
+    tree = await _forkbot_repo_gateway_json(
+        env, owner, repo, action, allow_missing=True)
+    if not isinstance(tree, dict):
+        return None
+    if not isinstance(tree.get("entries"), list):
+        return {"entries": []} if _forkbot_missing_tree(tree) else None
+    return tree
+
+
 async def _badge_record_blobs(env, owner, repo, paths, ref=""):
     if not paths:
         return {}
@@ -32219,12 +32234,10 @@ async def _record_coauthor_facts(env, repo_bi, number, author_key, emails):
 
 
 async def _sweep_repo_pull_records(env, repo_bi, owner, repo, known):
-    tree = await _forkbot_repo_gateway_json(
-        env, owner, repo,
-        "tree?path=" + quote(".forkmesh/pulls", safe="") +
-        "&ref=" + quote("forkmesh/pulls", safe=""))
+    tree = await _badge_record_tree(
+        env, owner, repo, ".forkmesh/pulls", "forkmesh/pulls")
     if tree is None:
-        return True
+        return False
     pending = []
     for number in _badge_record_numbers(tree):
         row = known.get(("pull", number))
@@ -32278,9 +32291,8 @@ async def _sweep_repo_pull_records(env, repo_bi, owner, repo, known):
 
 
 async def _sweep_repo_issue_records(env, repo_bi, owner, repo, known):
-    tree = await _forkbot_repo_gateway_json(
-        env, owner, repo,
-        "tree?path=" + quote(".forkmesh/issues/closed", safe=""))
+    tree = await _badge_record_tree(
+        env, owner, repo, ".forkmesh/issues/closed")
     if tree is None:
         return False
     pending = sorted(number for number in _badge_record_numbers(tree)
@@ -32310,9 +32322,7 @@ async def _sweep_repo_issue_records(env, repo_bi, owner, repo, known):
 
 
 async def _sweep_repo_discussion_answers(env, repo_bi, owner, repo):
-    tree = await _forkbot_repo_gateway_json(
-        env, owner, repo,
-        "tree?path=" + quote(".forkmesh/discussions", safe=""))
+    tree = await _badge_record_tree(env, owner, repo, ".forkmesh/discussions")
     if tree is None:
         return False
     entries = tree.get("entries") if isinstance(tree, dict) else None
