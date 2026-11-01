@@ -29,7 +29,7 @@ from forkmesh_host import dns_reconciler, dns_rules  # noqa: E402
 
 MIGRATION = (HERE.parents[1] / "migrations"
              / "0196_leaderless_cron_and_dns.sql")
-APP, WORLD = "app.next.forkmesh.com", "world.next.forkmesh.com"
+APP, WORLD = "app.forkmesh.com", "world.forkmesh.com"
 TARGETS = {"n1": "203.0.113.11", "n2": "203.0.113.12", "n3": "203.0.113.13"}
 ZONE = "0123456789abcdef0123456789abcdef"
 INTERVAL_MS = 30_000
@@ -208,7 +208,7 @@ def test_never_empties_a_set_and_never_touches_node_names(rqlite_url):
         with pytest.raises(dns_rules.DnsGuardError):
             dns_rules.check_reconciler_name("n1.next.forkmesh.com")
         with pytest.raises(dns_rules.DnsGuardError):
-            dns_rules.check_reconciler_name("app.forkmesh.com")
+            dns_rules.check_reconciler_name("app.next.forkmesh.com")
         with pytest.raises(dns_rules.DnsGuardError):
             dns_reconciler.DnsReconciler(
                 "n1", Member("n1", rqlite_url, ["n1"]), TARGETS,

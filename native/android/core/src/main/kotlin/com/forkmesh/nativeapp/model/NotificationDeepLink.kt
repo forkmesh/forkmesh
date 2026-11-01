@@ -14,6 +14,7 @@ data class NotificationDeepLink(
     val branch: String = "",
     val session: Int = 0,
     val run: Int = 0,
+    val section: String = "",
 ) {
     val isBranchCommits: Boolean get() = initialTab == RepoDetailTab.Commits && reference.isEmpty() && branch.isNotEmpty()
 
@@ -43,12 +44,17 @@ data class NotificationDeepLink(
             var reference = ""
             var session = 0
             var run = 0
+            var section = ""
             fun rest(from: Int): String = if (parts.size > from) parts.drop(from).joinToString("/") else ""
             var branch = (queryValue(query, "branch") ?: queryValue(query, "ref") ?: "").trim()
             if (parts.size >= 3) {
                 when (parts[2]) {
                     "issues" -> { tab = RepoDetailTab.Issues; number = number(parts) }
-                    "pulls", "pull" -> { tab = RepoDetailTab.Pulls; number = number(parts) }
+                    "pulls", "pull" -> {
+                        tab = RepoDetailTab.Pulls
+                        number = number(parts)
+                        if (number > 0 && parts.size >= 5) section = parts[4].lowercase()
+                    }
                     "discussions" -> { tab = RepoDetailTab.Discussions; number = number(parts) }
                     "commit" -> {
                         tab = RepoDetailTab.Commits
@@ -82,7 +88,7 @@ data class NotificationDeepLink(
                     "blob", "raw", "code" -> tab = RepoDetailTab.Code
                 }
             }
-            return NotificationDeepLink(Repository(owner = owner, name = name), tab, number, reference, branch, session, run)
+            return NotificationDeepLink(Repository(owner = owner, name = name), tab, number, reference, branch, session, run, section)
         }
 
         private val COMMIT_HASH = Regex("^[0-9a-f]{7,64}$")

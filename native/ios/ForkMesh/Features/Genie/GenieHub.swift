@@ -26,6 +26,7 @@ final class GenieHub {
     nonisolated static let alwaysKey: String = "genie/always_listening"
     nonisolated static let scaleKey: String = "genie/scale"
     nonisolated static let hiddenKey: String = "genie/hidden"
+    nonisolated static let mascotKey: String = GenieMascot.key
     nonisolated static let vitalsEvery: TimeInterval = 30 * 60
     nonisolated static let lineSeconds: Double = 5
     nonisolated static let lineRestart: TimeInterval = 60
@@ -50,6 +51,7 @@ final class GenieHub {
     private(set) var finishedAgents: Int = 0
     private(set) var tab: AppTab?
     private(set) var spiderHidden: Bool
+    private(set) var mascot: GenieMascot
     private(set) var farewells: Int = 0
 
     @ObservationIgnored private var factory: (@MainActor () -> GenieSession)?
@@ -73,6 +75,7 @@ final class GenieHub {
         alwaysListening = prefs?.bool(forKey: GenieHub.alwaysKey) ?? false
         scale = GenieHub.fitted(CGFloat(prefs?.double(forKey: GenieHub.scaleKey) ?? 1))
         spiderHidden = prefs?.bool(forKey: GenieHub.hiddenKey) ?? false
+        mascot = GenieMascot(stored: prefs?.string(forKey: GenieHub.mascotKey))
         activity = GenieActivityLog(store: prefs)
         vitals = GenieVitalSigns.load(prefs).map { GenieVitals($0) }
         let motion: GenieMotion = GenieMotion.shared
@@ -90,7 +93,25 @@ final class GenieHub {
         crawler.avoid = { GenieKeepClear.shared.buttons }
         crawler.knocked = { [weak self] in self?.knocked($0) }
         crawler.loose = { GenieMotion.shared.quick($0) }
+        crawler.silks = { [weak self] in !(self?.dragon ?? false) }
+        crawler.asleep = { CloudDragonDirector.shared.napping || CloudDragonDirector.shared.playing }
         if spiderHidden { crawler.hidden = true }
+    }
+
+    var dragon: Bool { mascot == .dragon && CloudDragonArt.shared != nil }
+
+    var mascotName: String { dragon ? GenieMascot.dragon.name : GenieMascot.spider.name }
+
+    var mascotRatio: CGFloat { dragon ? CGFloat(GenieMascot.dragon.base / GenieMascot.spider.base) : 1 }
+
+    func setMascot(_ next: GenieMascot) {
+        guard next != mascot else { return }
+        mascot = next
+        prefs?.set(next.rawValue, forKey: GenieHub.mascotKey)
+        FmHaptics.impact(.light)
+        GenieSounds.shared.play(.boing)
+        GenieCues.shared.play(next == .dragon ? .wave : .giggle)
+        CloudDragonDirector.shared.wakeNow()
     }
 
     var holdsStill: Bool {

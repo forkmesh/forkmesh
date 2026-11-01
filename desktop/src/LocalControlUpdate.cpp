@@ -1,8 +1,10 @@
 #include "LocalControlUpdate.h"
 
+#include <QJsonDocument>
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <utility>
 
 namespace forkmesh::localcontrol::update {
 
@@ -49,7 +51,8 @@ QString computerRestartSubjectName()
 QString computerRestartSummary(int agentsRunning)
 {
     QString text = QStringLiteral(
-        "Restart this entire computer. ForkMesh and every other running program will stop.");
+        "Restart this entire computer, even if a program is holding off shutdown. ForkMesh "
+        "and every other running program will stop.");
     if (agentsRunning == 1)
         text += QStringLiteral(" 1 agent is running; it is queued again after the restart.");
     else if (agentsRunning > 1)
@@ -58,15 +61,85 @@ QString computerRestartSummary(int agentsRunning)
     return text;
 }
 
-QString computerRestartFailure(int exitCode, const QString &output)
+namespace {
+
+bool needsAuthentication(const QString &output)
+{
+    return output.contains(QLatin1String("Interactive authentication required"),
+                           Qt::CaseInsensitive);
+}
+
+bool accessDenied(const QString &output)
+{
+    return output.contains(QLatin1String("Access denied"), Qt::CaseInsensitive);
+}
+
+} // namespace
+
+bool computerRestartRefused(const QString &output)
+{
+    return needsAuthentication(output) || accessDenied(output);
+}
+
+QStringList computerRestartBlockers(const QByteArray &inhibitorsJson,
+                                    const QStringList &sessionApps)
+{
+    QStringList out;
+    const QJsonArray data =
+        QJsonDocument::fromJson(inhibitorsJson).object().value(QStringLiteral("data")).toArray();
+    const QJsonArray rows = data.isEmpty() ? QJsonArray() : data.at(0).toArray();
+    for (const QJsonValue &value : rows) {
+        const QJsonArray row = value.toArray();
+        if (row.size() < 4)
+            continue;
+        if (!row.at(0).toString().split(QLatin1Char(':')).contains(QLatin1String("shutdown")) ||
+            row.at(3).toString() != QLatin1String("block"))
+            continue;
+        const QString who = row.at(1).toString().simplified();
+        const QString why = row.at(2).toString().simplified();
+        QStringList entries;
+        if (why == QLatin1String("user session inhibited") && !sessionApps.isEmpty()) {
+            entries = sessionApps;
+        } else {
+            QString entry = who.isEmpty() ? QStringLiteral("a program") : who;
+            if (!why.isEmpty())
+                entry += QStringLiteral(" (%1)").arg(why);
+            entries.append(entry);
+        }
+        for (const QString &entry : std::as_const(entries))
+            if (!out.contains(entry))
+                out.append(entry);
+    }
+    return out;
+}
+
+QString computerRestartFailure(int exitCode, const QString &output, const QStringList &blockers)
 {
     const QString detail = output.simplified();
-    if (detail.contains(QLatin1String("Interactive authentication required"), Qt::CaseInsensitive))
+    const QString blocking = blockers.join(QStringLiteral(", "));
+    if (needsAuthentication(detail) && !blockers.isEmpty())
+        return QStringLiteral(
+            "Could not restart the computer: %1 is holding off shutdown, and overriding it needs "
+            "your permission. On the desktop, turn on Settings, General, Let my phones restart "
+            "this computer (it asks for an administrator password once), then try again.")
+            .arg(blocking);
+    if (needsAuthentication(detail))
         return QStringLiteral(
             "Could not restart the computer: it lets only the account on its screen restart "
             "it, and another user is on the screen or nobody is logged in. On the desktop, turn "
             "on Settings, General, Let my phones restart this computer (it asks for an "
             "administrator password once), then try again.");
+    if (accessDenied(detail) && !blockers.isEmpty())
+        return QStringLiteral(
+            "Could not restart the computer: %1 is holding off shutdown. Try again when it has "
+            "finished, or close it on the desktop.")
+            .arg(blocking);
+    if (accessDenied(detail))
+        return QStringLiteral(
+            "Could not restart the computer: it refused (Access denied). A program was probably "
+            "holding off shutdown and has finished, or the computer was too busy to check, so "
+            "try again; if it keeps failing, run systemd-inhibit --list on the desktop to see "
+            "what blocks it.");
     if (detail.isEmpty())
         return QStringLiteral("Could not request a computer restart (systemctl exited %1).")
             .arg(exitCode);

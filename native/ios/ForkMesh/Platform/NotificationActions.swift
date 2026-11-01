@@ -1,6 +1,7 @@
 import FMAccount
 import FMApi
 import FMBase
+import FMCode
 import Foundation
 import UserNotifications
 
@@ -123,6 +124,15 @@ enum NotificationActions {
                     return
                 }
                 try await inbox.reviewPull(repo.owner, repo.name, number, "approve", "")
+            case let .approveChecks(repo, number, head):
+                let note: ActionsApprovalNotification = ActionsApprovalNotification(repo: repo, number: number, head: head)
+                guard let client = CIServices.client else {
+                    open(route: note.route, href: "")
+                    return
+                }
+                if let route = await note.approve(client: client) {
+                    open(route: route, href: "")
+                }
             case .ignore:
                 return
             }

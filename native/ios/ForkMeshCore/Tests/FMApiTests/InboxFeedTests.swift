@@ -408,4 +408,67 @@ final class InboxFeedTests: XCTestCase {
         XCTAssertEqual(ping.category, .ping)
         XCTAssertEqual(NotificationActionRouter.route(for: ping), .repo(RepoRef(owner: "acme", name: "app"), section: .releases))
     }
+
+    func testActionsApprovalCategoryApprovesTheHeadOrOpensTheChecks() {
+        let repo = RepoRef(owner: "acme", name: "app")
+        let head = String(repeating: "b", count: 40)
+        XCTAssertEqual(NotificationCategoryId.actionsApproval.rawValue, "actions-approval")
+        XCTAssertEqual(NotificationCategoryId.actionsApproval.actions, [.approveChecks, .open])
+        XCTAssertTrue(NotificationCategoryId.actionsApproval.isTimeSensitive)
+        XCTAssertTrue(NotificationActionId.approveChecks.requiresAuthentication)
+        XCTAssertFalse(NotificationActionId.approveChecks.opensApp)
+        XCTAssertEqual(NotificationActionId.approveChecks.title, "Approve")
+        XCTAssertEqual(NotificationCategoryId.forPing(kind: "action_approval"), .actionsApproval)
+        XCTAssertEqual(NotificationCategoryId.forPing(kind: "action_failed"), .ciFailed)
+        XCTAssertTrue(NotificationPayload.userInfoKeys.contains("head"))
+
+        let fields = ["repo": "acme/app", "number": "12", "head": head.uppercased(), "href": "/acme/app/pull/12", "runId": "300"]
+        let payload = NotificationPayload(category: "actions-approval", fields: fields)
+        XCTAssertEqual(payload.head, head)
+        XCTAssertEqual(NotificationActionRouter.route(for: payload), .pull(repo, number: 12, tab: .checks))
+        XCTAssertEqual(NotificationActionRouter.command(actionId: "fm.approveChecks", payload: payload, text: nil),
+                       .approveChecks(repo, number: 12, head: head))
+        XCTAssertEqual(NotificationActionRouter.command(actionId: "fm.open", payload: payload, text: nil),
+                       .open(.pull(repo, number: 12, tab: .checks), href: "/acme/app/pull/12"))
+        let noHead = NotificationPayload(category: "actions-approval", fields: ["repo": "acme/app", "number": "12", "head": "abc"])
+        XCTAssertEqual(NotificationActionRouter.command(actionId: "fm.approveChecks", payload: noHead, text: nil),
+                       .open(.pull(repo, number: 12, tab: .checks), href: ""))
+        XCTAssertTrue(NotificationActionRouter.isCommitId(String(repeating: "0", count: 64)))
+        XCTAssertFalse(NotificationActionRouter.isCommitId(String(repeating: "g", count: 40)))
+
+        let failed = NotificationPayload(category: "ci-failed", fields: ["repo": "acme/app", "runId": "301", "href": "/acme/app/actions/runs/301"])
+        XCTAssertEqual(NotificationActionRouter.command(actionId: "fm.openLog", payload: failed, text: nil),
+                       .open(.run(repo, id: "301"), href: "/acme/app/actions/runs/301"))
+        let hrefOnly = NotificationPayload(category: "ci-failed", fields: ["href": "/acme/app/actions/runs/301"])
+        XCTAssertEqual(NotificationActionRouter.route(for: hrefOnly), .run(repo, id: "301"))
+    }
+
+    func testActionsPingsRouteToTheChecksAndTheRun() {
+        let repo = RepoRef(owner: "acme", name: "app")
+        XCTAssertEqual(InboxRoutes.route(kind: "action_approval", href: "/acme/app/pull/12",
+                                         meta: ["category": "actions-approval", "number": 12, "runId": 300], repo: "acme/app"),
+                       .pull(repo, number: 12, tab: .checks))
+        XCTAssertEqual(InboxRoutes.route(kind: "action_failed", href: "/acme/app/actions/runs/301",
+                                         meta: ["category": "ci-failed", "runId": 301, "number": 12], repo: "acme/app"),
+                       .run(repo, id: "301"))
+        XCTAssertEqual(InboxRoutes.route(kind: "action_failed", href: "/acme/app/actions/runs/301", meta: [:], repo: ""),
+                       .run(repo, id: "301"))
+        XCTAssertEqual(InboxRoutes.route(kind: "pull_submitted", href: "/acme/app/pull/12/checks", meta: [:], repo: ""),
+                       .pull(repo, number: 12, tab: .checks))
+        XCTAssertEqual(NotificationDeepLink.parse("/acme/app/pull/12")?.pullTab, .conversation)
+        XCTAssertEqual(NotificationDeepLink.parse("/acme/app/pulls/12/files")?.pullTab, .files)
+        XCTAssertEqual(NotificationDeepLink.parse("/acme/app/pull/12/nope")?.pullTab, .conversation)
+    }
+
+    func testAnApprovalPushTapLandsOnTheChecksTab() {
+        let open = PushOpen(arguments: ["category": "actions-approval", "href": "/acme/app/pull/12", "alertId": "n1"])
+        XCTAssertEqual(open.href, "/acme/app/pull/12/checks")
+        XCTAssertEqual(open.deepLink?.route, .pull(RepoRef(owner: "acme", name: "app"), number: 12, tab: .checks))
+        XCTAssertEqual(PushOpen(arguments: ["kind": "action_approval", "href": "/acme/app/pull/12"]).href, "/acme/app/pull/12/checks")
+        XCTAssertEqual(PushOpen(arguments: ["category": "pr-review", "href": "/acme/app/pull/12"]).href, "/acme/app/pull/12")
+        XCTAssertEqual(PushOpen(arguments: ["category": "actions-approval", "href": "/acme/app/pull/12/files"]).href,
+                       "/acme/app/pull/12/files")
+        let failed = PushOpen(arguments: ["category": "ci-failed", "href": "/acme/app/actions/runs/301", "runId": "301"])
+        XCTAssertEqual(failed.deepLink?.route, .run(RepoRef(owner: "acme", name: "app"), id: "301"))
+    }
 }

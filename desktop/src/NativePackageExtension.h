@@ -145,6 +145,7 @@ struct NativePackageHost {
 struct NativePackagePromptTarget {
     QString placeholder;
     QString action;
+    bool appliesToOpen = false;
 };
 
 // One row a package contributes to the window's top search box. `id` is

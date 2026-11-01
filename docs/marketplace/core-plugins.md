@@ -16,7 +16,7 @@ away from existing users.
 
 ## The packages
 
-Every package below has `install.default: false`. Account-synced packages
+Every package below has `install.default: false`, except `forum`. Account-synced packages
 (`install.sync: "account"`, `GET /api/plugins/@account`) keep their install
 state on the ForkMesh account and follow every device.
 
@@ -43,6 +43,10 @@ state on the ForkMesh account and follow every device.
   `size-map`, the repository screen's Code map button and Size map tab
   (installed before 2026-10-17, desktop only,
   [codebase-analysis.md](codebase-analysis.md)).
+- **The one installed by default, account-synced:** `forum`, the repository
+  Forum tab (web only for now). Readers need nothing to read a forum, and the
+  tab shows only on repositories whose owner turned the forum on
+  ([repo-forum](../app/repo-forum.md)).
 
 Each package gates its feature's surfaces in every app (tabs, tiles, rail
 buttons, repository tabs). `crm` stays organization-installed; `market`,

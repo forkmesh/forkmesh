@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.ci
 
 import com.forkmesh.nativeapp.api.ApiJsonResult
 import com.forkmesh.nativeapp.api.ApiService
+import com.forkmesh.nativeapp.json.maps
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.model.RepoRelease
 
@@ -12,6 +13,14 @@ data class RepoRef(val owner: String, val name: String) {
 class CiError(val status: Int, val code: String) : Exception() {
     override val message: String
         get() = when {
+            code == "not_available" -> "This instance does not run checks for pull requests."
+            code == "stale_head" -> "The pull request has a newer commit. Review it before approving."
+            code == "not_awaiting_approval" -> "These checks are no longer waiting for approval."
+            code == "author_unknown" -> "Only the pull request's verified author can be trusted from here."
+            code == "invalid_name" -> "Secret names use A-Z, 0-9 and _, start with a letter or _, and are up to 64 characters."
+            code == "invalid_value" -> "A secret value is 1 byte to 48 KiB of text."
+            code == "too_many_secrets" -> "This repository already has the most secrets it can have."
+            code == "run_not_found" -> "This run was not found."
             code == "forbidden" || code == "not_authorized" || status == 403 -> "Only the repository owner and organization writers can do that."
             code == "actions_node_unavailable" || status == 503 -> "The node that runs this repository's actions is not reachable right now."
             code == "invalid_session" || status == 401 -> "Sign in again to manage this repository."
@@ -36,7 +45,13 @@ class CiError(val status: Int, val code: String) : Exception() {
 
 interface CiClient {
     fun actionsRuns(repo: RepoRef): ActionsSummary
-    fun actionsControl(repo: RepoRef, request: ActionsControlRequest)
+    fun actionsControl(repo: RepoRef, request: ActionsControlRequest): Map<String, Any?>
+    fun pullChecks(repo: RepoRef, number: Int): RunnerPullChecks
+    fun pullChecksAction(repo: RepoRef, number: Int, request: PullChecksRequest): Map<String, Any?>
+    fun runLog(repo: RepoRef, runId: Int): RunnerRunLog
+    fun actionSecrets(repo: RepoRef): List<ActionSecret>
+    fun putActionSecret(repo: RepoRef, name: String, value: String): Map<String, Any?>
+    fun deleteActionSecret(repo: RepoRef, name: String): Map<String, Any?>
     fun webhooks(repo: RepoRef, action: String, fields: Map<String, Any?>): Map<String, Any?>
     fun securityScans(repo: RepoRef, operation: String, query: List<Pair<String, String>>): Map<String, Any?>
     fun securityTriage(repo: RepoRef, scanId: String, findingId: String, status: String, note: String): Map<String, Any?>
@@ -56,6 +71,13 @@ interface CiClient {
 
 object CiRequests {
     fun repoPath(repo: RepoRef, tail: String): String = "/api/repo/${repo.owner}/${repo.name}/$tail"
+
+    fun pullChecksPath(repo: RepoRef, number: Int): String = repoPath(repo, "pulls/$number/checks")
+
+    fun runLogPath(repo: RepoRef, runId: Int): String = repoPath(repo, "actions/runs/$runId/log")
+
+    fun secretsPath(repo: RepoRef, name: String = ""): String =
+        repoPath(repo, if (name.isEmpty()) "actions/secrets" else "actions/secrets/$name")
 
     fun decode(result: ApiJsonResult): Map<String, Any?> {
         val map = result.body
@@ -96,9 +118,26 @@ class ApiCiClient(private val api: ApiService) : CiClient {
     override fun actionsRuns(repo: RepoRef): ActionsSummary =
         ActionsSummary.fromJson(send("GET", CiRequests.repoPath(repo, "actions/runs")))
 
-    override fun actionsControl(repo: RepoRef, request: ActionsControlRequest) {
+    override fun actionsControl(repo: RepoRef, request: ActionsControlRequest): Map<String, Any?> =
         send("POST", CiRequests.repoPath(repo, "actions/control"), body = request.body)
-    }
+
+    override fun pullChecks(repo: RepoRef, number: Int): RunnerPullChecks =
+        RunnerPullChecks.fromJson(send("GET", CiRequests.pullChecksPath(repo, number)))
+
+    override fun pullChecksAction(repo: RepoRef, number: Int, request: PullChecksRequest): Map<String, Any?> =
+        send("POST", CiRequests.pullChecksPath(repo, number), body = request.body)
+
+    override fun runLog(repo: RepoRef, runId: Int): RunnerRunLog =
+        RunnerRunLog.fromJson(send("GET", CiRequests.runLogPath(repo, runId)))
+
+    override fun actionSecrets(repo: RepoRef): List<ActionSecret> =
+        send("GET", CiRequests.secretsPath(repo)).maps("secrets").mapNotNull(ActionSecret::fromJson)
+
+    override fun putActionSecret(repo: RepoRef, name: String, value: String): Map<String, Any?> =
+        send("PUT", CiRequests.secretsPath(repo, name), body = linkedMapOf("value" to value))
+
+    override fun deleteActionSecret(repo: RepoRef, name: String): Map<String, Any?> =
+        send("DELETE", CiRequests.secretsPath(repo, name))
 
     override fun webhooks(repo: RepoRef, action: String, fields: Map<String, Any?>): Map<String, Any?> =
         send("POST", CiRequests.repoPath(repo, "webhooks"), body = LinkedHashMap(fields).apply { put("action", action) })

@@ -491,6 +491,11 @@ signed with the v3 key (`native/android/README.md`); the default application id
   token and a typed name after the screen lock (`UserPresence.confirm`).
   Approving an agent request always opens the app; only Deny works from a
   notification.
+  Approving waiting checks from a notification opens the pull request's
+  Checks card with the approval queued for five minutes and bound to the
+  notification's head; the card asks for the screen lock and then sends it
+  (iOS approves in place after Face ID). Approve and Run workflow on the
+  Actions screens ask for the screen lock too.
 
 ## 10. Platform choices
 
@@ -585,9 +590,15 @@ signed with the v3 key (`native/android/README.md`); the default application id
 - Chat and ping times use a 12-hour clock; agent prompts keep 24-hour stamps.
 - The prompt composer has no mic button; dictation is `/dictate`, and a quiet
   stop after words sends the prompt (`SpeechDictation` `onQuiet`).
+- Approving waiting checks from a notification opens the app (the screen lock
+  needs an on-screen dialog to fall back to); iOS approves from the banner.
 
 iOS features Android does not have, because they need an Apple-only API:
 
+- **Cloud Dragon** (2026-11-01): the second Genie mascot on iPhone
+  ([GENIE.md](GENIE.md#the-cloud-dragon)). It is iOS only until the owner asks
+  for it on Android; the Android spider is unchanged and Android has no mascot
+  choice yet.
 - **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
 - **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
   new dependency.
@@ -813,6 +824,18 @@ default in new projects except the chosen starter pack
     `data:` URI from the on-device cache.
   - **Appearance**: Light or Dark wraps the reader in
     `ForkMeshTheme(dark = …)`; Automatic follows the app.
+- **Mastodon** (`mastodon`, route `Route.Mastodon`, Personal group;
+  `/dashboard/mastodon`, `forkmesh://mastodon`). `C/mastodon/` holds the
+  host-JVM-tested part (server parsing, PKCE, the callback `state` check,
+  post HTML to segments, the character count, Link paging, models and the
+  client over a `MastodonTransport`); `A/feature/mastodon/` the Compose
+  screens and `MastodonState`. The browser returns to
+  `forkmesh://mastodon/callback`, which `MastodonFeature.onIntent` takes
+  before `NavigationFeature` so the code never becomes a route; the pending
+  sign-in lives in the project's `SecretStore` (`mastodon.pending.v1`), so a
+  process the system ended while the browser was open still finishes. The
+  iPhone uses `ASWebAuthenticationSession` for the same step
+  ([Mastodon](../marketplace/mastodon.md#on-the-phone)).
 
 ## 14. Chat features
 

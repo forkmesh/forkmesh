@@ -132,7 +132,7 @@ def test_url_never_has_the_password(tmp_path, sandbox, capsys):
     (sandbox / "secrets.env").write_text("GIT_CI_PASSWORD=do-not-print-me\n")
     assert tool.main(["--fleet", str(FLEET), "url"]) == 0
     out = capsys.readouterr().out.strip()
-    assert out == "https://fmnext-ci@app.next.forkmesh.com/git/forkmesh-next.git"
+    assert out == "https://fmnext-ci@app.forkmesh.com/git/forkmesh-next.git"
     assert tool.main(["--fleet", str(FLEET), "url", "--node", "n2"]) == 0
     assert capsys.readouterr().out.strip() == \
         "https://fmnext-ci@n2.next.forkmesh.com/git/forkmesh-next.git"

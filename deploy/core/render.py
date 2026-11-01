@@ -157,9 +157,10 @@ def load_fleet(path, state_path=None, state=None, instances=None,
     domain = fleet.get("domain", "")
     if domain != "next.forkmesh.com":
         raise RenderError("domain must be next.forkmesh.com (got %r)" % domain)
-    for key in ("app_host", "world_host"):
-        if not str(fleet.get(key, "")).endswith("." + domain):
-            raise RenderError("%s must be under %s" % (key, domain))
+    for key, expected in PRODUCTION_HOSTS.items():
+        if fleet.get(key) != expected:
+            raise RenderError("%s must be %s (got %r)"
+                              % (key, expected, fleet.get(key)))
     if not str(fleet.get("instance_label_prefix", "")).startswith("fmnext-"):
         raise RenderError("instance_label_prefix must start with fmnext-")
     nodes = fleet.get("nodes") or []
@@ -434,10 +435,8 @@ def shared_hosts(fleet):
     return [fleet["app_host"], fleet["world_host"]]
 
 
-
 PRODUCTION_HOSTS = {"app_host": "app.forkmesh.com",
                     "world_host": "world.forkmesh.com"}
-LEGACY_PASSTHROUGH = ("/readyz", "/health", "/api/version")
 PRODUCTION_VAR_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 SECRETISH = re.compile(r"(SECRET|TOKEN|PASS|SEED|PRIVATE|DSN|_KEY$|^DATA_KEY$)")
 PUBLIC_KEY_VARS = frozenset({"TURNSTILE_SITE_KEY"})
@@ -464,11 +463,7 @@ def check_production(fleet):
         return
     if not isinstance(prod, dict):
         raise RenderError("[production] must be a table")
-    for key, expected in PRODUCTION_HOSTS.items():
-        if prod.get(key) != expected:
-            raise RenderError("production.%s must be %s (got %r)"
-                              % (key, expected, prod.get(key)))
-    unknown = set(prod) - set(PRODUCTION_HOSTS) - {"vars"}
+    unknown = set(prod) - {"vars"}
     if unknown:
         raise RenderError("unknown [production] keys: %s"
                           % ", ".join(sorted(unknown)))
@@ -487,27 +482,19 @@ def check_production(fleet):
 
 
 def served_app_host(fleet):
-    return production(fleet).get("app_host") or fleet["app_host"]
+    return fleet["app_host"]
 
 
 def served_world_host(fleet):
-    return production(fleet).get("world_host") or fleet["world_host"]
+    return fleet["world_host"]
 
 
 def served_hosts(fleet):
-    return [served_app_host(fleet), served_world_host(fleet)]
-
-
-def legacy_hosts(fleet):
-    return shared_hosts(fleet) if production(fleet) else []
+    return shared_hosts(fleet)
 
 
 def tls_hosts(fleet):
-    out = []
-    for host in served_hosts(fleet) + legacy_hosts(fleet):
-        if host not in out:
-            out.append(host)
-    return out
+    return shared_hosts(fleet)
 
 
 def production_settings(fleet):
@@ -562,9 +549,8 @@ def probe_ban_allow(fleet):
 def public_hosts(fleet):
     """Every public hostname a core's App answers to (the host rejects any
     other Host header; app/host/forkmesh_host/asgi.py)."""
-    hosts = [h for h in served_hosts(fleet) if h not in shared_hosts(fleet)]
-    return hosts + shared_hosts(fleet) + ["%s.%s" % (n["name"], fleet["domain"])
-                                          for n in fleet["nodes"]]
+    return shared_hosts(fleet) + ["%s.%s" % (n["name"], fleet["domain"])
+                                  for n in fleet["nodes"]]
 
 
 # The certsync pair server authenticates with its own secret, which the app
@@ -1383,9 +1369,7 @@ def calls_urls(fleet):
 
 
 def calls_origins(fleet):
-    hosts = ["https://" + host for host in (
-        served_app_host(fleet), fleet["app_host"],
-        served_world_host(fleet), fleet["world_host"])]
+    hosts = ["https://" + host for host in shared_hosts(fleet)]
     return list(dict.fromkeys(hosts + list(calls_settings(fleet)["origins"])))
 
 
@@ -1695,7 +1679,7 @@ def caddyfile(fleet, node, paths, per_node=True):
         "\t}",
         "}",
         "",
-        "# world.next asks the App for App-owned assets under the App's name,",
+        "# world.forkmesh.com asks the App for App-owned assets under the App's name,",
         "# like world/worker.js did through its service binding.",
         "(app_proxy_app_host) {",
         "\treverse_proxy 127.0.0.1:%d {" % app_port,
@@ -1790,23 +1774,6 @@ def caddyfile(fleet, node, paths, per_node=True):
         out += ["\timport site_common",
                 "\timport %s/%s" % (include_dir, routes[host]),
                 "}", ""]
-    targets = {fleet["app_host"]: served_app_host(fleet),
-               fleet["world_host"]: served_world_host(fleet)}
-    for host in legacy_hosts(fleet):
-        out.append("%s {" % host)
-        out += ["\t# Next name after the cutover (docs/CUTOVER.md): redirects.",
-                "\timport %s/tls-%s.caddy" % (include_dir, host)]
-        out += request_rules
-        if host == fleet["app_host"]:
-            out += git_private
-        out += ["\timport client_headers", "\timport security_headers"]
-        if host == fleet["app_host"]:
-            out += ["\t@readiness path %s" % " ".join(LEGACY_PASSTHROUGH),
-                    "\thandle @readiness {", "\t\timport app_proxy_app_host",
-                    "\t}"]
-        out += ["\thandle {",
-                "\t\tredir https://%s{uri} 308" % targets[host],
-                "\t}", "}", ""]
     out += [
         "# HTTP-01 for the shared names: whichever A record Let's Encrypt picks,",
         "# fmnext-certsync's forwarder (127.0.0.1:%d) asks the other cores."
@@ -2044,8 +2011,7 @@ def base_values(fleet, node_name, paths):
         "APP_PORT": int(app.get("port", 8080)),
         "MESH_PORT": int(app.get("mesh_port", 8792)),
         "APP_HOST": fleet["app_host"],
-        "APP_HOSTS": " ".join(dict.fromkeys([served_app_host(fleet),
-                                             fleet["app_host"]])),
+        "APP_HOSTS": fleet["app_host"],
         "DATA_DIR": paths["var"] + "/rqlite",
     }
 

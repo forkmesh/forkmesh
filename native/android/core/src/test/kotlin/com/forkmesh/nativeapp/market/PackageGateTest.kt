@@ -58,6 +58,16 @@ class PackageGateTest {
         expect(!removed.showsRoute(Route.Usage) && Route.Kind.Usage.raw in removed.hubItems)
     }
 
+    fun testMastodonIsANativePackageDestinationBehindTheGate() {
+        assertEq(PackagePhoneSurface.Native("mastodon"), MarketPackage(id = "mastodon", name = "Mastodon", webRoute = "/dashboard/mastodon").phoneSurface)
+        assertEq("mastodon", PackageGate.ROUTE_KINDS[Route.Kind.Mastodon])
+        assertEq("mastodon", PackageGate.HUB_ITEMS[Route.Kind.Mastodon.raw])
+        expect("mastodon" in PackageGate.GATED)
+        assertEq("mastodon", PackageMenu.packageFor(Route.Kind.Mastodon))
+        val removed = PackageSurfaces(setOf("mastodon"))
+        expect(!removed.showsRoute(Route.Mastodon) && Route.Kind.Mastodon.raw in removed.hubItems)
+    }
+
     fun testInstanceFeedIsANativePackageDestinationBehindTheGate() {
         assertEq(
             PackagePhoneSurface.Native("instanceFeed"),

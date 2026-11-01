@@ -69,6 +69,10 @@ import com.forkmesh.nativeapp.tools.BugButtonGeometry
 import com.forkmesh.nativeapp.tools.BugButtonPoint
 import com.forkmesh.nativeapp.tools.BugReportInboxCopy
 import com.forkmesh.nativeapp.tools.BugReportInboxState
+import com.forkmesh.nativeapp.tools.MyBugReportsCopy
+import com.forkmesh.nativeapp.tools.MyBugReportsState
+import com.forkmesh.nativeapp.tools.confirmMyBugReportFixed
+import com.forkmesh.nativeapp.tools.loadMyBugReports
 import com.forkmesh.nativeapp.tools.ReportBugCopy
 import com.forkmesh.nativeapp.tools.ReportBugDraft
 import com.forkmesh.nativeapp.tools.loadBugReportInbox
@@ -205,6 +209,9 @@ internal fun ReportBugSheet(
     val admin = packageId == null && Services.get<AuthService>()?.session?.value?.isAdmin == true
     var tab by remember { mutableStateOf(0) }
     var inbox by remember { mutableStateOf(BugReportInboxState()) }
+    val mine = packageId == null && signedIn && !admin
+    var myReports by remember { mutableStateOf(MyBugReportsState()) }
+    var myRequest by remember { mutableStateOf(0) }
     val c = Fm.colors
     fun loadInbox(status: String, offset: Int = 0) {
         inbox = inbox.requesting(status)
@@ -215,6 +222,25 @@ internal fun ReportBugSheet(
     }
     LaunchedEffect(admin) { if (admin) loadInbox(inbox.status) }
     LaunchedEffect(inbox.counts) { if (inbox.loaded && inbox.counts.isNotEmpty()) ShellBadges.adoptBugReports(inbox.counts) }
+    fun loadMine(offset: Int = 0) {
+        val request = myRequest + 1
+        myRequest = request
+        myReports = myReports.requesting()
+        scope.launch {
+            val page = withContext(Dispatchers.IO) { loadMyBugReports(Services.get<ApiService>(), offset) }
+            if (myRequest == request) myReports = myReports.received(page, offset)
+        }
+    }
+    LaunchedEffect(mine, tab) { if (mine && tab == 1 && !myReports.loaded && !myReports.loading) loadMine() }
+    LaunchedEffect(sent) { if (sent && mine && myReports.loaded) loadMine() }
+    fun confirmFixed(id: String) {
+        if (!myReports.canConfirm(id)) return
+        myReports = myReports.confirmStarted(id)
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { confirmMyBugReportFixed(Services.get<ApiService>(), id) }
+            myReports = myReports.confirmed(id, result)
+        }
+    }
     fun setInboxStatus(id: String, value: String) {
         if (!inbox.canSet(id, value)) return
         inbox = inbox.updatingStarted(id)
@@ -287,6 +313,15 @@ internal fun ReportBugSheet(
                     index = tab,
                     onChanged = { tab = it },
                 )
+            } else if (mine) {
+                FmSegmentTabBar(
+                    tabs = listOf(
+                        FmSegmentTab(BugReportInboxCopy.TAB_REPORT),
+                        FmSegmentTab(MyBugReportsCopy.TAB_MINE),
+                    ),
+                    index = tab,
+                    onChanged = { tab = it },
+                )
             }
             if (admin && tab == 1) {
                 BugReportInboxList(
@@ -295,6 +330,14 @@ internal fun ReportBugSheet(
                     onMore = { inbox.nextOffset?.let { offset -> if (!inbox.loading) loadInbox(inbox.status, offset) } },
                     onSetStatus = ::setInboxStatus,
                     onOpen = ::openInboxAttachment,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            } else if (mine && tab == 1) {
+                MyBugReportsList(
+                    myReports,
+                    onRefresh = { if (!myReports.loading) loadMine() },
+                    onMore = { myReports.nextOffset?.let { offset -> if (!myReports.loading) loadMine(offset) } },
+                    onConfirm = ::confirmFixed,
                     modifier = Modifier.weight(1f, fill = false),
                 )
             } else if (sent) {

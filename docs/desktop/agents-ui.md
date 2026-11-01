@@ -404,6 +404,21 @@ creator from it. Phones can change the limit and queue order
 (`agents.queue.limit`, `agents.queue.move`; see
 [../native/DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)).
 
+A running agent can also link a branch it created to its own session with the
+MCP `link_branch` tool (`agents.link_branch`,
+[../tools/mcp-create-agent.md](../tools/mcp-create-agent.md#linking-a-branch-to-your-own-session-link_branch)).
+This is for a session started directly in the checkout (`directCheckout`,
+which has `branchName` empty) that later moved its work to a branch: after
+the link the **Branch** button, **Code**, the merge actions and the task link
+use that branch. `directCheckout` stays set, so the run and its follow-ups
+keep working in the checkout; `cachedSessionWorktree` and
+`cachedSessionWorktreeForUi` skip the live working directory
+(`m_streamWorktree`, the checkout) for such a session
+(`sessionLinkedFromCheckout`) and resolve the worktree that holds the branch
+instead, or none when the branch is checked out in the checkout itself.
+`m_streamWorktree` is left alone, so finishing the run never treats the linked
+worktree as the run's own folder to clean up.
+
 ### Detail pane
 
 - The header's actions live in one `OverflowActionRow` (`agentHeaderActions`,
@@ -677,6 +692,12 @@ list (`transcriptcoverage::isCodexToolItem`), so the two cannot drift.
 
 The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 `src/AgentPromptImages.*`) keeps drafts, spell-checks and takes images.
+The system dictionary (Hunspell, or a plain word list) loads on the global
+thread pool the first time any highlighter asks for it; until it is ready a
+highlighter marks nothing, and every highlighter that asked is rehighlighted
+when it arrives. Loading it inline cost about a second on the GUI thread the
+first time the log dock's editor was built at startup (report #19,
+2026-11-01).
 
 | Control | Setting | Effect |
 | --- | --- | --- |

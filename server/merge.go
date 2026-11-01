@@ -162,14 +162,17 @@ type pullJobRecord struct {
 // PullMutationExecutor runs the bounded merge-pull / update-pull-branch
 // protocol for the gateway. It is constructed once per helper invocation.
 type PullMutationExecutor struct {
-	Config        Config
-	Gateway       GatewayConfig
-	Identity      *Identity
-	Now           func() time.Time
-	DaemonBaseURL string // loopback control API; empty disables the wake-up
-	Progress      io.Writer
-	lastPhase     string
+	Config            Config
+	Gateway           GatewayConfig
+	Identity          *Identity
+	Now               func() time.Time
+	DaemonBaseURL     string // loopback control API; empty disables the wake-up
+	DaemonWakeTimeout time.Duration
+	Progress          io.Writer
+	lastPhase         string
 }
+
+const defaultDaemonWakeTimeout = 3 * time.Second
 
 const pullProgressPrefix = "forkmesh-progress "
 
@@ -1331,7 +1334,11 @@ func (e *PullMutationExecutor) wakeDaemon() {
 	if err != nil {
 		return
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
+	timeout := e.DaemonWakeTimeout
+	if timeout <= 0 {
+		timeout = defaultDaemonWakeTimeout
+	}
+	client := &http.Client{Timeout: timeout}
 	request, err := http.NewRequest(http.MethodPost, endpoint.String(), nil)
 	if err != nil {
 		return

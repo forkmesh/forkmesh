@@ -99,20 +99,20 @@ def test_ensure_is_dry_run_by_default(tmp_path):
     assert len(changes) == 3 + 3 + 3  # app, world (3 each) + n1..n3
 
 
-def test_ensure_creates_updates_and_prunes_only_next_records(tmp_path):
+def test_ensure_creates_updates_and_prunes_only_served_records(tmp_path):
     zone = Zone([
-        a("p1", "app.forkmesh.com", "192.0.2.1"),       # production: untouched
-        a("x1", "app.next.forkmesh.com", "192.0.2.99"),  # stale: deleted
-        a("x2", "world.next.forkmesh.com", "203.0.113.11", ttl=300, proxied=True),
+        a("p1", "app.next.forkmesh.com", "192.0.2.1"),  # not served: untouched
+        a("x1", "app.forkmesh.com", "192.0.2.99"),      # stale: deleted
+        a("x2", "world.forkmesh.com", "203.0.113.11", ttl=300, proxied=True),
     ])
     next_dns.ensure(fleet(tmp_path), zone.cf, Runner(execute=True))
-    assert zone.ips("app.next.forkmesh.com") == ["203.0.113.11", "203.0.113.12",
-                                                 "203.0.113.13"]
-    assert zone.ips("world.next.forkmesh.com") == ["203.0.113.11", "203.0.113.12",
-                                                   "203.0.113.13"]
+    assert zone.ips("app.forkmesh.com") == ["203.0.113.11", "203.0.113.12",
+                                            "203.0.113.13"]
+    assert zone.ips("world.forkmesh.com") == ["203.0.113.11", "203.0.113.12",
+                                              "203.0.113.13"]
     assert zone.ips("n2.next.forkmesh.com") == ["203.0.113.12"]
     assert zone.records["x2"]["ttl"] == 60 and zone.records["x2"]["proxied"] is False
-    assert zone.records["p1"] == a("p1", "app.forkmesh.com", "192.0.2.1")
+    assert zone.records["p1"] == a("p1", "app.next.forkmesh.com", "192.0.2.1")
     for method, path, body in zone.http.mutations():
         if body:
             next_dns.guard_name(body["name"])
@@ -134,9 +134,9 @@ def test_delete_and_update_recheck_the_live_record_name():
 
 
 def test_sync_never_empties_a_name():
-    zone = Zone([a("x1", "app.next.forkmesh.com", "203.0.113.11")])
+    zone = Zone([a("x1", "app.forkmesh.com", "203.0.113.11")])
     with pytest.raises(GuardError):
-        next_dns.sync_name(zone.cf, Runner(execute=True), "app.next.forkmesh.com", [])
+        next_dns.sync_name(zone.cf, Runner(execute=True), "app.forkmesh.com", [])
     assert zone.http.mutations() == []
 
 
@@ -160,7 +160,7 @@ def run_rounds(tmp_path, zone, health, rounds, start=0.0, step=30.0, execute=Tru
 
 def full_zone():
     records = []
-    for name in ("app.next.forkmesh.com", "world.next.forkmesh.com"):
+    for name in ("app.forkmesh.com", "world.forkmesh.com"):
         for n in (1, 2, 3):
             records.append(a("%s-%d" % (name[:3], n), name, "203.0.113.1%d" % n))
     return Zone(records)
@@ -177,8 +177,8 @@ def test_node_removed_after_three_failures_then_readded_after_two_minutes(tmp_pa
     readded_at = decisions.index(("add", "n2"))
     # healthy from round 3 (t=90); 120 s healthy AND 300 s since the last change
     assert (readded_at - removed_at) * 30 >= 300
-    assert zone.ips("app.next.forkmesh.com") == ["203.0.113.11", "203.0.113.12",
-                                                 "203.0.113.13"]
+    assert zone.ips("app.forkmesh.com") == ["203.0.113.11", "203.0.113.12",
+                                            "203.0.113.13"]
 
 
 def test_at_most_one_change_per_five_minutes(tmp_path):
@@ -200,8 +200,8 @@ def test_never_removes_the_last_node(tmp_path):
     changes = [d for d in decisions if d]
     assert changes[:2] == [("remove", "n2"), ("remove", "n3")]
     assert changes.index(("add", "n2")) < changes.index(("remove", "n1"))
-    assert zone.ips("app.next.forkmesh.com") == ["203.0.113.12"]
-    assert zone.ips("world.next.forkmesh.com") == ["203.0.113.12"]
+    assert zone.ips("app.forkmesh.com") == ["203.0.113.12"]
+    assert zone.ips("world.forkmesh.com") == ["203.0.113.12"]
 
 
 def test_every_node_failing_means_this_box_is_offline(tmp_path):
@@ -233,7 +233,7 @@ def test_health_dry_run_changes_nothing(tmp_path):
 
 def test_probe_fails_closed_on_unreachable_or_untrusted(monkeypatch):
     # Loopback with nothing listening: a clean False, no exception.
-    assert next_dns.probe("127.0.0.1", "app.next.forkmesh.com", timeout=0.5) is False
+    assert next_dns.probe("127.0.0.1", "app.forkmesh.com", timeout=0.5) is False
 
 
 # --------------------------------------------------------------------------
@@ -251,8 +251,7 @@ BY_IP = {**{ip: n for n, ip in V4.items()}, **{ip: n for n, ip in V6.items()}}
 def production_fleet(tmp_path, ipv6=True):
     import render
     text = FLEET.read_text("utf-8")
-    text = text.replace("\n[dns]\n", '\n[production]\napp_host = "app.forkmesh.com"\n'
-                        'world_host = "world.forkmesh.com"\n\n[dns]\n', 1)
+    text = text.replace("\n[dns]\n", "\n[production]\n\n[dns]\n", 1)
     if ipv6:
         for name, ip in V4.items():
             text = text.replace('public_ipv4 = "%s"\n' % ip,
@@ -274,7 +273,7 @@ def record(record_id, name, record_type, content):
 
 def production_zone(extra=(), with_aaaa=True):
     records = list(extra)
-    for name in PROD + NEXT:
+    for name in PROD:
         for n in ("n1", "n2", "n3"):
             records.append(a("%s-%s-4" % (name, n), name, V4[n]))
             if with_aaaa:
@@ -326,7 +325,7 @@ def test_content_must_be_a_core_address(tmp_path):
     assert zone.ips("app.forkmesh.com", "AAAA") == [V6["n1"]]
 
 
-def test_ensure_manages_production_and_next_names_a_and_aaaa(tmp_path):
+def test_ensure_manages_production_and_node_names_a_and_aaaa(tmp_path):
     data = production_fleet(tmp_path)
     keep = [a("w1", "www.forkmesh.com", "192.0.2.1"),
             record("t1", "app.forkmesh.com", "TXT", "keep"),
@@ -334,7 +333,9 @@ def test_ensure_manages_production_and_next_names_a_and_aaaa(tmp_path):
     zone = Zone(keep[:2] + [keep[2]])
     zone.cf.allowed = next_dns.core_addresses(data)
     next_dns.ensure(data, zone.cf, Runner(execute=True))
-    for name in PROD + NEXT:
+    for name in NEXT:
+        assert zone.ips(name) == [] and zone.ips(name, "AAAA") == []
+    for name in PROD:
         assert zone.ips(name) == sorted(V4.values())
         assert zone.ips(name, "AAAA") == sorted(V6.values())
     assert zone.ips("n2.next.forkmesh.com", "AAAA") == [V6["n2"]]
@@ -343,8 +344,8 @@ def test_ensure_manages_production_and_next_names_a_and_aaaa(tmp_path):
     for method, path, body in zone.http.mutations():
         if body:
             assert body["type"] in ("A", "AAAA")
-            assert body["name"] in PROD + NEXT or body["name"].endswith(
-                ".next.forkmesh.com")
+            assert body["name"] in PROD or body["name"] in (
+                "%s.next.forkmesh.com" % n for n in V4)
 
 
 def test_without_ipv6_aaaa_records_are_left_alone(tmp_path):
@@ -353,7 +354,7 @@ def test_without_ipv6_aaaa_records_are_left_alone(tmp_path):
     next_dns.ensure(data, zone.cf, Runner(execute=True))
     assert [m for m in zone.http.mutations()
             if m[0] != "POST" or m[2]["type"] != "A"] == []
-    for name in PROD + NEXT:
+    for name in PROD:
         assert zone.ips(name, "AAAA") == sorted(V6.values())
 
 
@@ -381,7 +382,7 @@ def test_production_failover_removes_from_both_names_and_readds(tmp_path):
     removed_at = decisions.index(("remove", "n2"))
     readded_at = decisions.index(("add", "n2"))
     assert (readded_at - removed_at) * 30 >= 300
-    for name in PROD + NEXT:
+    for name in PROD:
         assert zone.ips(name) == sorted(V4.values())
         assert zone.ips(name, "AAAA") == sorted(V6.values())
 
@@ -427,7 +428,7 @@ def test_production_never_removes_the_last_record(tmp_path):
     assert [d for _i, d in changes] == [("remove", "n2"), ("remove", "n3"),
                                         ("add", "n2"), ("remove", "n1")]
     assert all((b[0] - a[0]) * 30 >= 300 for a, b in zip(changes, changes[1:]))
-    for name in PROD + NEXT:
+    for name in PROD:
         assert len(zone.ips(name)) == 1 and len(zone.ips(name, "AAAA")) == 1
 
 
@@ -550,7 +551,7 @@ def test_read_only_cores_stay_while_no_core_is_ready(tmp_path):
                                             "n2": down, "n3": down}, rounds=30)
     changes = [d for d in decisions if d]
     assert changes == [("remove", "n2"), ("remove", "n3")]
-    assert zone.ips("app.next.forkmesh.com") == ["203.0.113.11"]
+    assert zone.ips("app.forkmesh.com") == ["203.0.113.11"]
 
 
 def test_a_read_only_core_leaves_while_another_core_is_ready(tmp_path):
@@ -570,7 +571,7 @@ def test_a_read_only_core_comes_back_once_the_others_are_gone(tmp_path):
     changes = [d for d in decisions if d]
     assert changes[0] == ("remove", "n1")
     assert ("add", "n1") in changes
-    assert zone.ips("app.next.forkmesh.com") == ["203.0.113.11"]
+    assert zone.ips("app.forkmesh.com") == ["203.0.113.11"]
 
 
 def test_undrain_needs_a_fully_ready_core(tmp_path):

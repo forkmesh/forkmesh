@@ -1,0 +1,70 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "discourse-mirror",
+  "name": "Discourse Mirror",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Community",
+  "version": "1.1.0",
+  "summary": "Copies a public Discourse forum into a ForkMesh repository's Forum tab, or into a repository of its own with offline pages, so mirrors keep it readable when the forum cannot be reached.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A mirrored forum's home page with categories, topics, post counts and the time of the last copy"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence. Mirrored posts stay their authors' under the source forum's terms."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "mirror": "content/mirror/discourse_mirror.py",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "network.forum.read",
+      "label": "Read the public topics, posts, categories and pictures of the forums you choose to copy",
+      "risk": "low"
+    },
+    {
+      "id": "storage.repository.write",
+      "label": "Write each forum's copy into a Git repository on this computer and commit it",
+      "risk": "low"
+    },
+    {
+      "id": "git.repository.push",
+      "label": "Push the copy to the Git remote you name, so ForkMesh mirrors carry it",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

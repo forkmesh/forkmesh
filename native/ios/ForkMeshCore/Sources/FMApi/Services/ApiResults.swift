@@ -327,6 +327,88 @@ public struct BugReportFile: Equatable, Sendable {
     public static func failure(_ message: String) -> BugReportFile { BugReportFile(ok: false, message: message) }
 }
 
+public struct MyBugReport: Equatable, Sendable, Identifiable {
+    public let id: String
+    public var status: String
+    public let severity: String
+    public let platform: String
+    public let appVersion: String
+    public let createdAt: Int64
+    public let message: String
+    public let screen: String
+    public let package: String
+    public var confirmedFixedAt: Int64
+    public let attachments: [BugReportInboxAttachment]
+
+    public init(json: JSONObject) {
+        id = json.str("id")
+        status = json.str("status", "new")
+        severity = json.str("severity", "normal")
+        platform = json.str("platform")
+        appVersion = json.str("appVersion")
+        createdAt = json.int64("createdAt")
+        message = json.str("message")
+        screen = json.str("screen")
+        package = json.str("package")
+        confirmedFixedAt = json.int64("confirmedFixedAt")
+        attachments = json.maps("attachments").map(BugReportInboxAttachment.init(json:))
+    }
+
+    public var confirmedFixed: Bool { confirmedFixedAt > 0 }
+}
+
+public struct MyBugReports: Equatable, Sendable {
+    public let ok: Bool
+    public let reports: [MyBugReport]
+    public let counts: [String: Int]
+    public let nextOffset: Int?
+    public let message: String
+    public let cancelled: Bool
+
+    public init(ok: Bool, reports: [MyBugReport] = [], counts: [String: Int] = [:], nextOffset: Int? = nil,
+                message: String = "", cancelled: Bool = false) {
+        self.ok = ok
+        self.reports = reports
+        self.counts = counts
+        self.nextOffset = nextOffset
+        self.message = message
+        self.cancelled = cancelled
+    }
+
+    public init(json: JSONObject) {
+        let counts = json.obj("counts")
+        self.init(
+            ok: true, reports: json.maps("reports").map(MyBugReport.init(json:)),
+            counts: Dictionary(uniqueKeysWithValues: counts.keys.map { ($0, counts.int($0)) }),
+            nextOffset: json["nextOffset"]?.isNull == false ? json.int("nextOffset") : nil)
+    }
+
+    public static func failure(_ message: String) -> MyBugReports { MyBugReports(ok: false, message: message) }
+
+    public static let cancelledLoad = MyBugReports(ok: false, cancelled: true)
+}
+
+public struct MyBugReportConfirmation: Equatable, Sendable {
+    public let ok: Bool
+    public let report: MyBugReport?
+    public let previous: String
+    public let counts: [String: Int]
+    public let message: String
+
+    public init(ok: Bool, report: MyBugReport? = nil, previous: String = "", counts: [String: Int] = [:],
+                message: String = "") {
+        self.ok = ok
+        self.report = report
+        self.previous = previous
+        self.counts = counts
+        self.message = message
+    }
+
+    public static func failure(_ message: String) -> MyBugReportConfirmation {
+        MyBugReportConfirmation(ok: false, message: message)
+    }
+}
+
 /// A refused or failed `POST /api/accounts/user-status`, with the server's error code and a
 /// message ready for an inline notice.
 public struct UserStatusException: Error, Equatable, Sendable, CustomStringConvertible {

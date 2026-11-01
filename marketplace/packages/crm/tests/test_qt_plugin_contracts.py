@@ -613,6 +613,19 @@ def test_desktop_table_views_are_default_all_and_custom_ones_shared_in_settings(
     draft = FEATURE.split("void CrmFeature::saveTableViewDraft(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "QInputDialog" not in draft and 'QStringLiteral("View %1")' in draft
     assert "addTableView(name, fields," in draft
+
+
+def test_desktop_lists_open_in_the_organization_default_view():
+    assert "bool m_tableViewPicked = false;" in FEATURE_HEADER
+    assert "if (!m_tableViewPicked)\n        m_tableViewId = defaultTableViewId();" in FEATURE
+    fallback = FEATURE.split("QString CrmFeature::defaultTableViewId(", 1)[1].split("\n}\n", 1)[0]
+    assert 'text(m_settings, "defaultTableView")' in fallback and "kDefaultTableView" in fallback
+    menu = FEATURE.split("void CrmFeature::showTableViewMenu(", 1)[1].split("\n}\n", 1)[0]
+    assert 'QStringLiteral("Make default view")' in menu and "makeTableViewDefault()" in menu
+    make = FEATURE.split("void CrmFeature::makeTableViewDefault(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert 'QJsonObject{{QStringLiteral("defaultTableView"), id}}' in make
+    picked = FEATURE.split("void CrmFeature::selectTableView(", 1)[1].split("\n}\n", 1)[0]
+    assert "m_tableViewPicked = true;" in picked
     assert '[this] { saveTableViewDraft(); }' in FEATURE
     select = FEATURE.split("void CrmFeature::selectTableView(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "m_tableViewDraft.clear();" in select
@@ -761,9 +774,12 @@ def test_desktop_lists_open_as_tabs_with_a_share_count_and_imports_name_them():
     assert "m_sheetList->setItemWidget(item, row)" in side
     assert "badge->setText(QString::number(names.size()))" in side
     assert "sheetShareNames(sheet)" in side
-    # The one table moves into the open list's tab and filters to that list.
+    # The one table stays in place beside the tabs and filters to the open
+    # list: moving it between tab pages re-polished every row's cell widgets.
     sync = FEATURE.split("void CrmFeature::syncSheetTab()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "page->layout()->addWidget(m_contactsBody)" in sync
+    assert "m_contactsBody->setVisible(!id.isEmpty())" in sync
+    assert "addWidget(m_contactsBody)" not in sync
+    assert "centerLayout->addWidget(m_contactsBody, 1)" in FEATURE
     assert "m_sheet->setCurrentIndex(sheetIndex)" in sync
     # The import step asks for the tab's name and every part carries it; the
     # worker only uses it when the import opens a new tab.
