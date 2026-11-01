@@ -429,7 +429,7 @@ class _Renderer:
                 i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "/\"'=")
             ):
                 match = BARE_URL_RE.match(text, i)
-                url = _trim_url(match.group(0))
+                url = _trim_url(match.group(0)) if match else ""
                 if url:
                     self.links.append(url)
                     out.append(f'<a href="{html.escape(url)}">{html.escape(url, quote=False)}</a>')

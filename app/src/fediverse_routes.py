@@ -2144,17 +2144,14 @@ async def _ap_public_repo_owner(env, request, owner, repo):
     except Exception:
         match = None
     owner_l = str(owner or "").strip().lower()
-    if not match:
-        return owner_l
-    alias = (safe_segment(match.group(1)) or "").lower()
-    if (not alias or alias == owner_l
-            or (safe_segment(match.group(2)) or "").lower()
-            != str(repo or "").strip().lower()):
-        return owner_l
-    node = await _org_repo_node(env, alias, repo)
-    if str(node or "").strip().lower() != owner_l:
-        return owner_l
-    return alias
+    alias = (safe_segment(match.group(1)) or "").lower() if match else ""
+    if (alias and alias != owner_l
+            and (safe_segment(match.group(2)) or "").lower()
+            == str(repo or "").strip().lower()
+            and str(await _org_repo_node(env, alias, repo) or "")
+            .strip().lower() == owner_l):
+        return alias
+    return await _repo_organization(env, owner_l, repo) or owner_l
 
 
 async def ap_publish_handler(env, request, owner, repo):

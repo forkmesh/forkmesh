@@ -108,6 +108,11 @@ off in the Settings tab (the Features group above the ActivityPub switches).
   opened or commented. Existing records stay readable and come back when the
   feature is switched on. The web page hides the tab
   (`applyRepoFeatures` in `06-repo-content.js`).
+- **Stale pull requests:** two more switches in the same group, both off by
+  default, `stalePulls` and `stalePullsDeleteBranch`
+  ([stale-pulls.md](stale-pulls.md)). They change no tab and refuse nothing;
+  saving them registers or unregisters the repository with the
+  `stale-pulls` cron phase.
 - **Repository delete** purges the row with the other settings tables
   (`_delete_repo_named_state`).
 

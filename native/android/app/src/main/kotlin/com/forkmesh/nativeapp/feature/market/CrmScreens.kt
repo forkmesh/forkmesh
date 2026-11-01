@@ -298,6 +298,16 @@ private fun CrmInstallPanel(model: CrmModel, installing: Boolean, onInstall: () 
 private fun CrmHeader(model: CrmModel, data: CrmOrganizationData, selecting: Boolean) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (!selecting) CrmSectionBar(model, data)
+        val contactsStatus = model.contactsStatus
+        if (contactsStatus.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("crm-contacts-loading"),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FmCircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                Text(contactsStatus, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+            }
+        }
         if (model.section != CrmArea.MORE) {
             FmTextField(model.query, { query ->
                 model.query = query

@@ -324,6 +324,60 @@ unreviewed code from deploying: the console refuses automatic updates, and a
 merge files none, while the branch is unprotected. The operator's
 `instance-repo` stays a root-only bypass and never triggers an update.
 
+### Following ForkMesh
+
+An instance built from its own repository falls behind ForkMesh unless
+someone merges ForkMesh into that repository. **Follow ForkMesh** on the
+Update page does it on the server:
+
+1. Set `"followOwner": "<account>"` in `instance.json`: the account that
+   owns the `sourceUrl` repository (the `--owner` given to `instance-repo`).
+   `followUrl` (default `https://app.forkmesh.com/forkmesh/forkmesh`) and
+   `followRef` (default `main`) say what to merge. The installer keeps all
+   three on later updates.
+2. **Merge ForkMesh now** asks for one follow; **Turn on** writes
+   `/var/lib/forkmesh-instance/update/follow`, and the hourly
+   `forkmesh-instance-follow.timer` then asks for a follow once 20 hours
+   have passed since the last one, never while a runner is working on an
+   Actions job (a restart would cut it off); queued jobs do not hold it back.
+
+A follow (`tools/instance_follow.py`, run by `instance-update.sh`) merges
+`followUrl`'s branch into the source branch in
+`/var/lib/forkmesh-instance-update/follow`, a work tree of its own. It
+resolves only conflicts with one right answer: generated dashboard bundles
+are rebuilt, changelog entries from both sides are kept, a migration
+ForkMesh added gets the next number after the instance's own (the database
+applied the instance's numbering; when ForkMesh numbers a migration the
+instance already applied under its own number, the instance's copy stays), the
+schema fingerprint is restamped and
+`test_local_migrations.py` names the newest migration. Anything else stops
+the follow: the Update page lists the files, the source repository and the
+running build stay as they were, and a person syncs by hand. A clean merge
+is published to the source repository with `instance-repo` (a root-only
+push, like the operator's) and the ordinary update deploys it.
+
+Following pushes ForkMesh's code to the protected branch without a pull
+request, so turn it on only when the instance means to run whatever
+ForkMesh ships. Every follow also deploys whatever else is on the source
+branch, so the console refuses to turn following on while that branch is not
+protected, as it does for automatic updates; **Merge ForkMesh now**, like
+**Update**, is an admin's one-off and needs no protection. The check runs
+when following is turned on: unprotecting the branch later does not turn it
+off.
+
+The hourly tick runs as root but the request folder belongs to the app user,
+so it reads the `follow` flag without following links or blocking on a pipe,
+and writes its `follow` request through a fresh file opened with `O_EXCL` and
+`O_NOFOLLOW`: a link the app user planted at `request.new` is replaced, never
+written through. The app user also owns `/var/lib/forkmesh-instance`, so it
+could swap the `update` folder itself for a link; root therefore opens that
+folder once with `O_NOFOLLOW` and reads, writes, renames and removes the
+request (and reads the flag) relative to that handle, so nothing it does can
+land in another folder. The parent folder is root's, so the handle cannot be
+swapped in turn. The follow tool resets and cleans only a work tree it made
+itself (one with `refs/follow/` refs, or an empty one) and refuses any other
+folder given as `--work`.
+
 ## Named themes
 
 An instance can wear a whole named theme: colours for both modes plus a
@@ -795,6 +849,57 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   are also bounded per request by `FORKMESH_MAX_GIT_PUSH_BODY_BYTES`
   (256 MiB).
 
+## Moving organization repositories' public facts (`org_repo_identity.py`)
+
+An organization repository is stored under the member who created it, and
+since the organization became its public owner ([core-hosted repositories](core-hosted-repositories.md), "The
+organization is the public owner") new forks, stars, views and fork edges are
+recorded under `<org>/<repo>`. Records written before that name
+`<member>/<repo>`. `python -m forkmesh_host org-repo-identity` moves them. It
+is a dry run unless `--apply` is given; run it as root like `instance-repo`
+(the database work runs as `forkmesh-app`):
+
+```
+cd /opt/forkmesh-instance/src/app/host
+/opt/forkmesh-instance/venv/bin/python -m forkmesh_host org-repo-identity \
+  [--organization <org>] [--apply] \
+  --env-file /etc/forkmesh-instance/app.env \
+  --db sqlite:/var/lib/forkmesh-instance/app.db \
+  --data-dir /var/lib/forkmesh-instance/data
+```
+
+It considers every public repository linked to exactly one organization
+(`org_repos`; a repository linked to two keeps the member) and prints one
+JSON line:
+
+- `dryRun`: `true` unless `--apply`.
+- `repositories`: `{organization, member, name}` per linked repository.
+- `forks`: one entry per fork that still needs work, `{fork, from, to,
+  record, edge}`. `record` is `rewrite` (a core-written hosted fork whose
+  `forkedFrom` changes from `from` to `to` through `_pin_hosted_state`, as
+  `instance-repo --fork-of` does), `signed-kept` or `not-hosted-kept` (a
+  record a node signed or published: its `forkedFrom` is left alone because
+  the signature binds it, and the node's next publication keeps it; only the
+  edge moves), or `unchanged`. `edge` is `rekey` when the `repo_forks` row is
+  not yet keyed on `to` (applied with `_index_repo_fork_edge`, which keys it
+  on the organization), `ok`, or `none` for a private fork.
+- `tables`: one entry per table with rows under the member key, `{table,
+  from, to, rows}` (`totals` for views): `repo_stars`, `pull_batch_sent`,
+  `repo_remote_forks` are moved row by row, a row already present under the
+  organization wins and the member copy is dropped; `repo_views` /
+  `issue_views` rows move to the organization and their totals are added.
+  The statements also merge a viewer present under both keys (hits added,
+  first and last view widened, the viewer counted once), but a viewer key
+  is derived from the repository address it was counted under
+  (`_repo_viewer_key`), so a member-address key never equals an
+  organization-address key: someone who viewed the repository at both
+  addresses stays two viewers.
+
+Each table moves in one transaction. A second run prints empty `forks` and
+`tables`, so the command is idempotent and safe to rerun after a partial run.
+Run the dry run first, check that every `from` is a member address of a
+repository you expect, then rerun with `--apply`.
+
 ## White label
 
 - `INSTANCE_NAME` names the instance: email sender and card, page titles,
@@ -893,7 +998,7 @@ An admin turns optional plugins on and off in Platform → Plugins
 | `guestbook` | The agent guestbook in the instance's chat. |
 | `genie` | The tip spider at the bottom of each page. |
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
-| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
+| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" prompt in an open issue's Agent section, which readers copy into a coding agent. On by default. |
 | `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
 | `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
 | `forum-list` | Forum-style issue lists: newest first, with each row's last few commenters ([repo views](../app/repo-views.md)). Opt-in (`OPT_IN`): off unless chosen, on forkmesh.com too. |

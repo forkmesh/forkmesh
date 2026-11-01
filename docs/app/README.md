@@ -96,6 +96,7 @@ One page per topic. Each links back here.
 | [pull-merge-box](pull-merge-box.md) | Pull request merge box, Update branch, quick review replies and conflict pings |
 | [pull-review-prompt](pull-review-prompt.md) | The Diff and files box: summary link and review prompt |
 | [pull-revisions](pull-revisions.md) | Updating a patch-backed pull request with revisions |
+| [stale-pulls](stale-pulls.md) | Optional ForkBot reminders and closing for pull requests waiting on their author |
 | [remote-forks](remote-forks.md) | Forks on other instances and cross-instance pull requests |
 | [provider-mirrors](provider-mirrors.md) | Mirroring a repository to GitHub or GitLab |
 | [archive-sync](archive-sync.md) | Scheduled backup of a repository to the Internet Archive |
@@ -119,7 +120,10 @@ One page per topic. Each links back here.
 | [comment-reactions](comment-reactions.md) | Comment reactions, GIFs and stickers in comments, Solana Pay tips |
 | [tasks](tasks.md) | Organization tasks: Tasks page, Markdown text, progress and work items, trash, pings, email |
 | [notes](notes.md) | Web Notes: sharing and access link, activity log, note to task or issue, body search, platform differences |
+| [notes-comments](notes-comments.md) | Inline comments on notes, replies, mentions, resolving, and who is here |
+| [notes-pages](notes-pages.md) | Note emoji and pages that gather many notes under one outline |
 | [notifications](notifications.md) | Thread notifications, new issue pings, notification email send claims, collaboration author display |
+| [pings-page](pings-page.md) | The `/dashboard/pings` inbox that replaced the bell dropdown and pings modal |
 | [content-first-pings](content-first-pings.md) | Pings that lead with the actor and the content |
 | [feeds-and-lite](feeds-and-lite.md) | Feeds, the lite view and the forum home page |
 | [forum-reach](forum-reach.md) | Static forum exports, publishing and onion service |
@@ -359,7 +363,9 @@ exhaust memory. Browser tests:
 - **Organization aliases.** Organization repositories reach handlers with
   `owner` rewritten to the backing node (`org_alias_rewrite`). Anything public
   (ActivityPub handles, note text, links) must use the organization name from
-  the original URL; privacy and repository rows use the node.
+  the original URL, or `_repo_organization` when the URL names the member
+  ([core-hosted repositories](../operations/core-hosted-repositories.md), "The organization is the public owner"); privacy,
+  permissions and repository rows use the node.
 - **Repository read actions.** Every action in `REPO_HOST_RE`
   (`app/src/urls.py`) must be in `REPO_HOST_READ_ACTIONS`
   (`app/src/app_runtime.py`), or it answers the cacheable 410

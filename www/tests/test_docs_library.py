@@ -216,6 +216,11 @@ def test_markdown_renderer_escapes_untrusted_html():
     assert "javascript:" not in doc.html and "<a>x</a>" in doc.html
 
 
+def test_markdown_renderer_keeps_a_bare_scheme_as_text():
+    doc = docs_markdown.render('Links must start with https://").')
+    assert "https://&quot;)." in doc.html and "<a " not in doc.html
+
+
 def test_www_stage_renders_the_library(tmp_path, monkeypatch):
     import build_site_assets
 

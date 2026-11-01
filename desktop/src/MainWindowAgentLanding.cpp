@@ -1196,7 +1196,8 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
         return;
     }
     endOutsideAgentsIn(wtPath);
-    QThread *worker = QThread::create([wtPath, repoPath, agentRoot]() {
+    QThread *worker = QThread::create([wtPath, repoPath, agentRoot,
+                                       claudeDirs = claudeTranscriptConfigDirs()]() {
         if (!repoPath.isEmpty()) {
             QProcess::execute(QStringLiteral("git"),
                               {QStringLiteral("-C"), repoPath, QStringLiteral("worktree"),
@@ -1211,6 +1212,7 @@ void MainWindow::cleanupStreamWorktree(int sessionId)
                               {QStringLiteral("-C"), repoPath, QStringLiteral("worktree"),
                                QStringLiteral("prune")});
         }
+        ClaudeSessionScan::removeOrphanedTranscripts(claudeDirs, wtPath);
     });
     connect(worker, &QThread::finished, worker, &QObject::deleteLater);
     if (QThread *prev = m_worktreeTeardown.value(sessionId))

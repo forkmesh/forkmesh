@@ -178,6 +178,8 @@ QList<DesktopSection> scopeSections(const QJsonObject &prefs, const QString &sco
         section.id = o.value(QStringLiteral("id")).toString();
         section.kind = o.value(QStringLiteral("kind")).toString();
         section.name = o.value(QStringLiteral("name")).toString().trimmed();
+        section.groupBy = o.value(QStringLiteral("groupBy")).toString().trimmed();
+        section.ascending = o.value(QStringLiteral("ascending")).toBool();
         if (section.id.isEmpty() || section.kind == QLatin1String("routines") ||
             o.value(QStringLiteral("shown")).toBool(true) == false)
             continue;
@@ -312,9 +314,11 @@ QList<SidebarGroup> arrangeSidebar(const DesktopIndex &index, const QList<Sideba
         hasSessions = hasSessions || section.kind == QLatin1String("sessions");
     }
     if (!hasPinned && !index.pinned.isEmpty())
-        sections.prepend({QStringLiteral("pinned"), QStringLiteral("pinned"), QString(), {}});
+        sections.prepend({QStringLiteral("pinned"), QStringLiteral("pinned"), QString(),
+                          QString(), false, {}});
     if (!hasSessions)
-        sections.append({QStringLiteral("sessions"), QStringLiteral("sessions"), QString(), {}});
+        sections.append({QStringLiteral("sessions"), QStringLiteral("sessions"), QString(),
+                         QString(), false, {}});
 
     QSet<int> claimed;
     QHash<QString, QList<int>> sectionItems;
@@ -334,9 +338,26 @@ QList<SidebarGroup> arrangeSidebar(const DesktopIndex &index, const QList<Sideba
         if (section.kind == QLatin1String("manual"))
             claim(section.id, section.members);
 
-    const auto byRecency = [&items](int a, int b) { return items.at(a).at > items.at(b).at; };
+    const auto sortItems = [&items](QList<int> &list, bool ascending) {
+        std::stable_sort(list.begin(), list.end(), [&items, ascending](int a, int b) {
+            return ascending ? items.at(a).at < items.at(b).at : items.at(a).at > items.at(b).at;
+        });
+    };
     QList<SidebarGroup> out;
     for (const DesktopSection &section : std::as_const(sections)) {
+        if (section.kind == QLatin1String("sessions") &&
+            (section.groupBy.isEmpty() || section.groupBy == QLatin1String("none"))) {
+            SidebarGroup group;
+            group.key = QStringLiteral("@claude:recents");
+            group.label = QStringLiteral("Recents");
+            for (int i = 0; i < items.size(); ++i)
+                if (!claimed.contains(i))
+                    group.items.append(i);
+            sortItems(group.items, section.ascending);
+            if (!group.items.isEmpty())
+                out.append(group);
+            continue;
+        }
         if (section.kind == QLatin1String("sessions")) {
             QHash<QString, QList<int>> folders;
             for (int i = 0; i < items.size(); ++i)
@@ -353,7 +374,7 @@ QList<SidebarGroup> arrangeSidebar(const DesktopIndex &index, const QList<Sideba
                 group.key = QStringLiteral("@folder:") + label;
                 group.label = label.isEmpty() ? QStringLiteral("Other sessions") : label;
                 group.items = folders.value(label);
-                std::stable_sort(group.items.begin(), group.items.end(), byRecency);
+                sortItems(group.items, section.ascending);
                 out.append(group);
             }
             continue;
@@ -367,7 +388,7 @@ QList<SidebarGroup> arrangeSidebar(const DesktopIndex &index, const QList<Sideba
                                                               : section.name;
         group.items = list;
         if (section.kind == QLatin1String("manual"))
-            std::stable_sort(group.items.begin(), group.items.end(), byRecency);
+            sortItems(group.items, section.ascending);
         out.append(group);
     }
     return out;

@@ -11,6 +11,17 @@ import com.forkmesh.nativeapp.json.strings
 
 private fun PackagesClient.crmPath(organization: String, rest: String = "") = "/api/crm/" + segment(organization) + rest
 
+const val CRM_FIRST_CONTACTS = 250
+const val CRM_CONTACTS_PAGE = 1000
+
+data class CrmContactsPage(val contacts: List<CrmContact>, val next: String)
+
+fun PackagesClient.crmContactsPage(organization: String, cursor: String, limit: Int = CRM_CONTACTS_PAGE): CrmContactsPage {
+    val reply = call("GET", crmPath(organization, "/contacts"), listOf("limit" to limit.coerceIn(1, CRM_CONTACTS_PAGE).toString(), "cursor" to cursor))
+    val next = reply.str("next")
+    return CrmContactsPage(reply.maps("contacts").map(CrmContact::fromJson), if (next == cursor) "" else next)
+}
+
 fun PackagesClient.bulkUpdateCrmContacts(organization: String, edits: List<Map<String, Any?>>): Pair<List<CrmContact>, List<String>> {
     if (edits.isEmpty()) return emptyList<CrmContact>() to emptyList()
     val reply = call("POST", crmPath(organization, "/contacts/bulk"), body = mapOf("edits" to edits))
@@ -150,6 +161,12 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     var retryDelays: List<Long> = listOf(400, 1_500)
     var sleep: (Long) -> Unit = { Thread.sleep(it) }
     private val memory = HashMap<String, CrmOrganizationData>()
+    @Volatile private var contactsGeneration = 0
+    private val appendedPages = ArrayList<Pair<String, List<CrmContact>>>()
+    var contactsLoading: Boolean = false
+        private set
+    var background: (() -> Unit) -> Unit = { work -> Thread(work, "crm-contacts").apply { isDaemon = true }.start() }
+    var onContactsChanged: () -> Unit = {}
     private val listViewsRecorded = HashMap<String, Long>()
 
     val installedOrganizations: List<PackageOrganization> get() = organizations.filter { it.installed }
@@ -238,21 +255,79 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         load()
     }
 
+    val contactsStatus: String
+        get() {
+            val data = data
+            if (!contactsLoading || data == null) return ""
+            val loaded = data.contacts.size
+            return "Loading contacts, %,d of %,d".format(loaded, maxOf(loaded, data.contactsTotal))
+        }
+
+    private fun stopContacts(): Int = synchronized(this) {
+        contactsGeneration++
+        contactsLoading = false
+        appendedPages.clear()
+        contactsGeneration
+    }
+
     fun load() {
+        val generation = stopContacts()
         if (!PackagesText.isOrgName(organization)) {
             data = null
             return
         }
-        val cached = memory[organization]
-        data = cached
+        val org = organization
+        val cached = memory[org]
+        if (cached != null || data?.organization != org) data = cached
         try {
-            client.crm(organization, cached?.revision ?: "")?.let { fresh ->
-                memory[organization] = fresh
-                data = fresh
+            val fresh = client.crm(org, cached?.revision ?: "", contacts = CRM_FIRST_CONTACTS)
+            synchronized(this) {
+                if (generation != contactsGeneration) return
+                if (fresh != null) {
+                    data = fresh
+                    if (fresh.contactsComplete) memory[org] = fresh else contactsLoading = true
+                }
+                errorText = ""
             }
-            errorText = ""
+            if (fresh != null && !fresh.contactsComplete) background { loadRemainingContacts(org, fresh.contactsNext, generation) }
         } catch (thrown: Exception) {
-            errorText = PackagesException.describe(thrown)
+            synchronized(this) {
+                if (generation == contactsGeneration) errorText = PackagesException.describe(thrown)
+            }
+        }
+    }
+
+    private fun loadRemainingContacts(org: String, first: String, generation: Int) {
+        var cursor = first
+        while (cursor.isNotEmpty()) {
+            val page = try {
+                client.crmContactsPage(org, cursor)
+            } catch (thrown: Exception) {
+                synchronized(this) {
+                    if (generation != contactsGeneration) return
+                    contactsLoading = false
+                    data = data?.copy(revision = "")
+                    memory[org]?.let { memory[org] = it.copy(revision = "") }
+                    errorText = "Some contacts did not load: ${PackagesException.describe(thrown)}"
+                }
+                onContactsChanged()
+                return
+            }
+            synchronized(this) {
+                if (generation != contactsGeneration) return
+                if (org != organization) {
+                    contactsLoading = false
+                    return
+                }
+                appendedPages.add(cursor to page.contacts)
+                data = data?.appendingContacts(page.contacts, page.next)
+                cursor = page.next
+                if (cursor.isEmpty()) {
+                    contactsLoading = false
+                    data?.let { memory[org] = it }
+                }
+            }
+            onContactsChanged()
         }
     }
 
@@ -263,9 +338,13 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
         existing = null
     }
 
-    private fun remember(next: CrmOrganizationData?) {
-        data = next
-        next?.let { memory[organization] = it }
+    private fun remember(next: CrmOrganizationData?) = synchronized(this) {
+        val current = data
+        val start = if (next != null && current != null && next.organization == current.organization &&
+            next.contactsNext != current.contactsNext) appendedPages.indexOfFirst { it.first == next.contactsNext } else -1
+        val caughtUp = if (start >= 0) next!!.appendingContacts(appendedPages.drop(start).flatMap { it.second }, current!!.contactsNext) else next
+        data = caughtUp
+        caughtUp?.takeIf { it.contactsComplete }?.let { memory[organization] = it }
     }
 
     private fun <T> perform(work: () -> T): T? {
@@ -426,6 +505,7 @@ class CrmModel(private val client: PackagesClient, var organization: String = ""
     }
 
     fun forget() {
+        stopContacts()
         memory.clear()
         listViewsRecorded.clear()
         data = null

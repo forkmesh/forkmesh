@@ -148,6 +148,9 @@ returns every comment's tallies for one record in one indexed read:
 ```
 
 `tips` counts confirmed tips per comment ([tips](#tips-on-comments-solana-pay)).
+A signed-in read also carries `reactedAt`: per comment and emoji, the time
+(ms) of the newest reaction by someone other than the viewer, for the
+[celebration](#celebration). Anonymous reads leave it out.
 Tallies are ordered by their first reaction; `people` holds the first ten
 reactors (only those rows are decrypted). Anonymous reads of a public
 repository are `public, max-age=5, stale-while-revalidate=30`; a signed-in
@@ -209,6 +212,40 @@ the last 24 hours (`MAX_PINGED_COMMENTS_PER_DAY`, counted across every
 repository from the account's own rows). Past that the reaction is still
 stored and shown, but nobody is pinged, so one account cannot flood someone's
 inbox by inventing ids.
+
+### Celebration
+
+When a comment's author opens the record after others reacted to it, the
+new reactions are celebrated: the page scrolls the comment into view, a ring
+and a burst of the reacted emoji (stickers and custom images included, in
+proportion to their counts) fly out of its reaction bar across the whole
+screen with confetti, the comment glows, and a note at the top says who
+reacted ("carol, dave and 1 other reacted to your issue"). At most three
+comments play, one after another in page order.
+
+- "Author" is the loaded record's `authorName` for the comment, the same
+  source the ping uses; the viewer's own reactions never count.
+- "New" means newer than `reactedAt` the last time this account was
+  celebrated for that comment in this browser (localStorage
+  `forkmesh.reactionCheer.v1:<account>`, newest 400 comments kept), and never
+  older than 14 days, so a first visit on a new device does not replay
+  months of reactions. It is remembered before the animation starts, so a
+  reload mid-way does not replay it. When localStorage is unavailable
+  (private mode, a full store) the celebration may play again next time.
+- It waits until the tab is visible, and plays whichever of the reactions
+  read and the record render finishes second.
+- Each reacted emoji gets a share of the flying bits by its count, at least
+  four each; bits start upward and outward so they fill the screen before
+  falling.
+- `reactedAt` goes to every signed-in reader of the record, not only the
+  comment's author: the server does not know comment authors (the ping takes
+  the author from the client too). It holds only times, never names, but
+  with a one-person tally it tells a reader when that named person reacted.
+- The note's names come from the tally's `people`, the first ten reactors,
+  so it can name someone who reacted earlier alongside the new reactor.
+- Under `prefers-reduced-motion: reduce` only the note shows; nothing moves.
+  The note is `role="status"`; the flying layer is `aria-hidden` and ignores
+  the pointer.
 
 ### Agents
 

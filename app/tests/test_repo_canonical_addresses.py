@@ -192,7 +192,8 @@ def entry_namespace(setting_doc, accounts=(), rows=None, records=(),
     names = {"_git_request_path", "_repo_short_setting_row",
              "_repo_name_is_account", "_repo_canonical_path",
              "_repo_public_path", "_repo_public_href", "_repo_short_links",
-             "_repo_clone_url", "_short_repo_board"}
+             "_repo_clone_url", "_short_repo_board",
+             "_repo_organization_path"}
     selected = [node for node in tree.body
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                 and node.name in names]
@@ -232,6 +233,12 @@ def entry_namespace(setting_doc, accounts=(), rows=None, records=(),
     async def repo_is_private(_env, owner, repo):
         return (owner.lower(), repo.lower()) in PRIVATE
 
+    async def repo_organization(_env, node, repo):
+        found = [org for (org, name), linked in (
+            rows if rows is not None else ALIASES).items()
+            if linked == node.lower() and name == repo.lower()]
+        return found[0] if len(found) == 1 else ""
+
     from urllib.parse import quote, unquote
     namespace = {"urlparse": urlparse, "quote": quote, "unquote": unquote,
                  "repo_short_urls": repo_short_urls,
@@ -240,6 +247,7 @@ def entry_namespace(setting_doc, accounts=(), rows=None, records=(),
                  "decrypt_row": decrypt_row, "blind_index": blind_index,
                  "_account_row": account_row, "_org_row": org_row,
                  "_org_repo_node": org_repo_node,
+                 "_repo_organization": repo_organization,
                  "_repo_is_private": repo_is_private, "queries": queries,
                  "_account_kind": lambda rec: rec.get("kind", "user")}
     exec(compile(ast.Module(body=selected, type_ignores=[]),
@@ -270,7 +278,7 @@ def test_creator_and_organization_page_paths_redirect_to_the_short_form():
     ns = entry_namespace(repo_short_urls.dump(
         dict(CANON, canonical=False)), accounts={"drew"})
     assert asyncio.run(ns["_repo_canonical_path"](
-        None, "/drew/Bolt")) is None
+        None, "/drew/Bolt")) == "/acme-bolt/Bolt"
 
 
 def test_the_platform_mirror_owned_by_the_node_account_moves_to_the_root():
@@ -342,6 +350,13 @@ def test_clone_urls_stay_long_without_the_canonical_switch():
     assert asyncio.run(ns["_repo_clone_url"](
         None, "https://git.example.org", "acme-bolt", "Bolt")) == (
         "https://git.example.org/acme-bolt/Bolt")
+    assert asyncio.run(ns["_repo_clone_url"](
+        None, "https://git.example.org", "drew", "Bolt")) == (
+        "https://git.example.org/acme-bolt/Bolt")
+    assert asyncio.run(ns["_repo_canonical_path"](
+        None, "/drew/Bolt/issues", "q=1")) == "/acme-bolt/Bolt/issues?q=1"
+    assert asyncio.run(ns["_repo_canonical_path"](
+        None, "/drew/secret")) is None
 
 
 def test_the_link_table_hides_private_repositories_from_the_browser():

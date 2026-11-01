@@ -1,6 +1,8 @@
 #include "NoteTools.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QJsonArray>
 
 #include <cstdio>
 
@@ -98,6 +100,32 @@ void testWebLinks()
               hosts)
               .isEmpty(),
           "a link with credentials is refused");
+}
+
+void testCommentLinks()
+{
+    const QString cid = QStringLiteral("fedcba9876543210fedcba9876543210");
+    const QStringList hosts{QStringLiteral("app.forkmesh.com")};
+    const NoteLink link = trustedNoteLink(
+        QStringLiteral("https://app.forkmesh.com/dashboard/notes?note=") + kId +
+            "&comment=" + cid.toUpper(),
+        hosts);
+    check(link.id == kId && link.comment == cid,
+          "a mention link carries the comment to open");
+    check(trustedNoteLink(QStringLiteral("https://app.forkmesh.com/dashboard/"
+                                         "notes?note=") +
+                              kId + "&comment=nope",
+                          hosts)
+                  .comment.isEmpty(),
+          "a malformed comment id is ignored but the note still opens");
+    check(trustedNoteLink(QStringLiteral("https://elsewhere.example/dashboard/"
+                                         "notes?note=") +
+                              kId + "&comment=" + cid,
+                          hosts)
+              .id.isEmpty(),
+          "a comment link to another host is not trusted");
+    check(parseNoteLink(QStringLiteral("forkmesh://note/") + kId).comment.isEmpty(),
+          "an app link has no comment");
 }
 
 void testBuiltLinks()
@@ -300,17 +328,143 @@ void testConflict()
 
 }
 
+qint64 localMs(int year, int month, int day, int hour, int minute)
+{
+    return QDateTime(QDate(year, month, day), QTime(hour, minute))
+        .toMSecsSinceEpoch();
+}
+
+void testListRow()
+{
+    const QDateTime now(QDate(2026, 10, 31), QTime(18, 0));
+    check(noteEditStamp(localMs(2026, 10, 31, 15, 14), now) ==
+              QStringLiteral("Today 3:14 PM"),
+          "an edit today reads Today and the time");
+    check(noteEditStamp(localMs(2026, 10, 30, 9, 2), now) ==
+              QStringLiteral("Yesterday 9:02 AM"),
+          "an edit yesterday reads Yesterday and the time");
+    check(noteEditStamp(localMs(2026, 10, 29, 15, 14), now) ==
+              QStringLiteral("Oct 29, 3:14 PM"),
+          "an older edit this year shows the date and time");
+    check(noteEditStamp(localMs(2025, 10, 29, 15, 14), now) ==
+              QStringLiteral("Oct 29, 2025"),
+          "an edit in an earlier year shows the date with the year");
+    check(noteEditStamp(localMs(2026, 1, 1, 0, 5), now) ==
+              QStringLiteral("Jan 1, 12:05 AM"),
+          "midnight reads 12 AM");
+    check(noteEditStamp(0, now).isEmpty(), "no edit time gives no stamp");
+    check(noteLastEditLabel(localMs(2026, 10, 31, 15, 14), QStringLiteral("ana"),
+                            QStringLiteral("me"), now) ==
+              QStringLiteral("Today 3:14 PM · by ana"),
+          "someone else's edit is named");
+    check(noteLastEditLabel(localMs(2026, 10, 31, 15, 14), QStringLiteral("Me"),
+                            QStringLiteral("me"), now) ==
+              QStringLiteral("Today 3:14 PM"),
+          "your own edit is not named");
+    check(noteLastEditTooltip(localMs(2026, 10, 29, 15, 14), QStringLiteral("ana"),
+                              QStringLiteral("me")) ==
+              QStringLiteral("Last edited Thursday, October 29, 2026, 3:14 PM by ana"),
+          "the tooltip has the full date and time");
+
+    check(noteStorageBadge(QStringLiteral("local")) == QStringLiteral("Local") &&
+              noteStorageBadge(QStringLiteral("cloud")) == QStringLiteral("Cloud") &&
+              noteStorageBadge(QStringLiteral("both")) ==
+                  QStringLiteral("Local + cloud"),
+          "storage badges");
+    const QJsonArray shares{
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("user")},
+                    {QStringLiteral("name"), QStringLiteral("ana")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("organization")},
+                    {QStringLiteral("name"), QStringLiteral("acme")}},
+        QJsonObject{{QStringLiteral("name"), QString()}}};
+    check(noteVisibilityBadge(QJsonObject{{QStringLiteral("visibility"),
+                                           QStringLiteral("public")}},
+                              true) == QStringLiteral("Public"),
+          "a published note is Public");
+    check(noteVisibilityBadge(QJsonObject{{QStringLiteral("shares"), shares}}, true) ==
+              QStringLiteral("Shared"),
+          "a note shared with someone is Shared");
+    check(noteVisibilityBadge(QJsonObject{}, true) == QStringLiteral("Private") &&
+              noteVisibilityBadge(QJsonObject{{QStringLiteral("shares"), shares}},
+                                  false) == QStringLiteral("Private"),
+          "an unshared or not-yet-synced note is Private");
+    const QList<NoteSharePerson> people = noteSharePeople(shares);
+    check(people.size() == 2 && !people.at(0).organization &&
+              people.at(1).organization,
+          "share avatars know organizations, nameless shares are skipped");
+    check(noteShareOverflow(3).isEmpty() && noteShareOverflow(5) == QStringLiteral("+2"),
+          "three avatars, then +N");
+
+    const QJsonObject unread{{QStringLiteral("unread"), true}};
+    check(noteUnread(unread, QStringLiteral("cloud")) &&
+              noteUnread(unread, QStringLiteral("both")),
+          "cloud and Local + cloud notes follow the cloud's unread flag");
+    check(!noteUnread(unread, QStringLiteral("local")),
+          "local-only notes are never unread");
+    check(noteUnread(QJsonObject{{QStringLiteral("unreadComments"), 2}},
+                     QStringLiteral("cloud")),
+          "new comments make a note unread");
+    const QJsonObject read = noteMarkedRead(
+        QJsonObject{{QStringLiteral("unread"), true},
+                    {QStringLiteral("unreadComments"), 3}},
+        42);
+    check(!noteUnread(read, QStringLiteral("cloud")) &&
+              read.value(QStringLiteral("myLastViewedAt")).toDouble() == 42,
+          "opening a note clears unread locally at once");
+    const QJsonObject kept = noteKeepFreshness(
+        QJsonObject{{QStringLiteral("id"), kId}},
+        QJsonObject{{QStringLiteral("openComments"), 4},
+                    {QStringLiteral("lastEditedBy"), QStringLiteral("ana")}},
+        QStringLiteral("me"));
+    check(kept.value(QStringLiteral("openComments")).toInt() == 4 &&
+              kept.value(QStringLiteral("lastEditedBy")).toString() ==
+                  QStringLiteral("me"),
+          "a save keeps the comment count and makes you the last editor");
+    const QJsonArray access{
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("user")},
+                    {QStringLiteral("name"), QStringLiteral("ana")},
+                    {QStringLiteral("role"), QStringLiteral("editor")}},
+        QJsonObject{{QStringLiteral("type"), QStringLiteral("organization")},
+                    {QStringLiteral("name"), QStringLiteral("acme")},
+                    {QStringLiteral("role"), QStringLiteral("viewer")}}};
+    check(noteAccessHeader(QStringLiteral("owner"), access, QStringLiteral("Shared"),
+                           QStringLiteral("Cloud"), localMs(2026, 10, 29, 15, 14),
+                           QStringLiteral("ana"), QStringLiteral("me")) ==
+              QStringList({QStringLiteral("You own this note"),
+                           QStringLiteral("Shared with ana (can edit), acme "
+                                          "(organization, can view)"),
+                           QStringLiteral("Shared · Cloud"),
+                           QStringLiteral("Last edited Thursday, October 29, "
+                                          "2026, 3:14 PM by ana")}),
+          "the row menu header names your access, the people, the badges and "
+          "the last edit");
+    check(noteRoleLine(QStringLiteral("editor")) == QStringLiteral("You can edit") &&
+              noteRoleLine(QStringLiteral("viewer")) == QStringLiteral("View only"),
+          "editors and viewers are told what they can do");
+    check(noteAccessHeader(QStringLiteral("owner"), {}, QStringLiteral("Private"),
+                           QStringLiteral("Local"), 0, {}, {}) ==
+              QStringList({QStringLiteral("You own this note"),
+                           QStringLiteral("Not shared"),
+                           QStringLiteral("Private · Local")}),
+          "a note nobody else has, with no edit time, has three lines");
+    check(noteCommentCountLabel(1) == QStringLiteral("1 open comment") &&
+              noteCommentCountLabel(3) == QStringLiteral("3 open comments"),
+          "comment count wording");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     testAppLinks();
     testWebLinks();
+    testCommentLinks();
     testBuiltLinks();
     testConversationRefs();
     testExport();
     testShareHelpers();
     testFilters();
     testConflict();
+    testListRow();
     if (failures == 0)
         std::puts("note tools: all checks passed");
     return failures == 0 ? 0 : 1;

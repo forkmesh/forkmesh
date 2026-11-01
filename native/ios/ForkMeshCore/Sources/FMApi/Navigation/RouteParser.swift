@@ -123,7 +123,7 @@ public enum RouteParser {
         case let .teammateEditor(id):
             if let id = id, !id.isEmpty { return [.teammates, .teammate(id: id), route] }
             return [.teammates, route]
-        case .note:
+        case .note, .notePage:
             return [.notes, route]
         case .task:
             return [.tasks(filter: nil), route]
@@ -237,7 +237,13 @@ public enum RouteParser {
         switch page {
         case "chat": return [.chat]
         case "notes":
-            if let id = first ?? nonEmpty(query["note"]) { return [.notes, .note(id: id)] }
+            if first == nil, let page = nonEmpty(query["page"]).flatMap({ isSafe($0) ? $0 : nil }) {
+                return [.notes, .notePage(id: page, note: nonEmpty(query["note"]).flatMap { isSafe($0) ? $0 : nil })]
+            }
+            if let id = first ?? nonEmpty(query["note"]) {
+                let comment = nonEmpty(query["comment"]).flatMap { isSafe($0) ? $0 : nil }
+                return [.notes, .note(id: id, comment: comment)]
+            }
             return [.notes]
         case "tasks":
             if let id = first { return [.tasks(filter: nil), .task(id: id)] }

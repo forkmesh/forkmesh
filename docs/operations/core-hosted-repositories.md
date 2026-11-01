@@ -153,6 +153,58 @@ other members cannot push), so `link_organization` stores the lowercase name
 and renames an existing mixed-case link; re-running `instance-repo` relinks
 an older repository.
 
+#### The organization is the public owner
+
+The member who created the repository stays its storage owner: the
+`repositories` row, its `key_bi`, the `owner` field of the catalog record, the
+hosted copy and every signature (`catalogSig`, `stateSig`) name the member,
+because the member's key or the core signs them and nodes, mirrors and the
+desktop find their own rows by that owner. Everything a visitor sees uses the
+organization instead:
+
+- **Catalog.** `/api/repositories` keeps `owner` (the storage and signing
+  owner) and projects the public identity into unsigned fields: a row linked
+  to exactly one organization gets `ownerKind: "organization"`,
+  `logicalOwner: <org>` and `logicalOwners` with only the organization; the
+  creating member is no longer listed. The link lookup is case-insensitive
+  (it used to compare the stored lowercase `org_repos.repo` with the record's
+  name as typed, so a mixed-case repository such as `Project` had no
+  organization at all and every client fell back to the member). An unsigned
+  row's default `channel` (`#<member>-<name>`) is shown as `#<org>-<name>`,
+  and with an SSH gateway the organization's SSH address is preferred.
+  Rewriting `owner` itself was rejected: a node-published record's `catalogSig`
+  v2 and `stateSig` bind it, the record key is its blind index, and nodes,
+  mirrors and the desktop select their own repositories by it.
+- **Public facts.** `_public_repo_owner` (stars, fork lists and edges, views,
+  issue views, remote forks, pull batches, advisories) and the fediverse
+  actor resolve a member address to the organization even when the request
+  names the member (`_repo_organization`, memoized with the alias lookups), so
+  `/api/repo/<member>/<repo>/forks` and `/api/repo/<org>/<repo>/forks` read
+  the same list. A new fork records `forkedFrom: <org>/<repo>`, and
+  `_index_repo_fork_edge` keys the edge on the organization even for an
+  older record that still names the member.
+- **Pages and links.** Without the single-owner short addresses, a page
+  request for `/<member>/<repo>[/...]` redirects (308) to `/<org>/<repo>[/...]`,
+  and the same mapping makes clone URLs, OG cards, the about record's
+  fediverse handle and notification links name the organization;
+  notification titles and bodies that quoted `<member>/<repo>` quote the
+  public address. With short addresses on, the existing canonical redirect
+  already sends both to `/<repo>`, and the display stays the bare name. The
+  API keeps answering under the member address, so old links and clients work.
+- **Dashboard.** `repoMatchesKey` matches a row by its organization address,
+  so a fork whose `forkedFrom` is `<org>/<repo>` nests under the repository in
+  every list, and the signed-in Top repositories entry of an organization
+  repository is found by that address instead of by the linked member node.
+  A fork's "forked from" line shows the parent's display name.
+
+A repository linked to two organizations keeps the member as its public owner
+(neither organization is preferred): `_repo_organization` returns nothing for
+it, and the catalog keeps the member first in `logicalOwners` (`ownerKind:
+"user"`) with both organizations after it, so the catalog, the public facts
+and the redirect agree. Data stored before this change under the
+member address is moved by `forkmesh_host org-repo-identity`
+([instances](instances.md)).
+
 ### Imports
 
 The primary fetches heads and tags from an allowed `https` host (no

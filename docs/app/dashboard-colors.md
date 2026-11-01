@@ -74,8 +74,8 @@ rule in `shell.html` removes the outline and shadow from the input itself.
 
 ## Ping icons
 
-Ping kind icons (`data-notification-kind-icon`) in the bell dropdown, the
-full pings list, the detail pane and the home feed are grey, unread too (the
+Ping kind icons (`data-notification-kind-icon`) on the Pings page rows, the
+expanded detail and the home feed are grey, unread too (the
 row's opacity tells read from unread). A `shell.html` rule lifts the icon to
 `foreground` while its row is hovered or focused.
 

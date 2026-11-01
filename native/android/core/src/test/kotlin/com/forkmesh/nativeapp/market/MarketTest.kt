@@ -629,7 +629,7 @@ class MarketTest {
         assertEq(1, data.contactsIn(model.flow, "vip").size)
         transport.answer("GET", "/api/crm/acme", mapOf("unchanged" to true))
         model.load()
-        assertEq(listOf("since", "tz"), transport.last("GET", "/api/crm/acme")?.query?.map { it.first })
+        assertEq(listOf("since", "tz", "contacts"), transport.last("GET", "/api/crm/acme")?.query?.map { it.first })
         assertEq("r1", transport.last("GET", "/api/crm/acme")?.query?.first()?.second)
         assertEq(2, model.data?.contacts?.size)
         val saved = contact + ("stage" to "won")

@@ -835,6 +835,25 @@ default in new projects except the chosen starter pack
     only) and Reconnect. `CrmZohoCode.of(status)` prefills client ID and data
     centre; the secret field may stay empty while the client ID is the saved
     one (`usesSavedSecret`).
+  - **Contact paging (CRM 1.46.0).** Both phones open the CRM with
+    `GET /api/crm/<org>?contacts=250` (iOS `PackagesClient.crmFirstContacts`,
+    Android `CRM_FIRST_CONTACTS`), show those contacts, then read the rest
+    1000 at a time (`crmContactsPage`, following `next`) in the background and
+    append them, skipping ids already shown; the header reads "Loading
+    contacts, N of M" meanwhile. The summary leaves out `customers` when it
+    pages, so `CrmOrganizationData` counts stage `customer` itself
+    (`countsCustomers`). Every `load()` bumps a generation (iOS also cancels
+    `contactsTask`), so a refresh or an organization switch drops an older
+    load's pages. A failed page stops the load, shows "Some contacts did not
+    load" and clears the revision, because the summary's `since` would
+    otherwise answer unchanged while contacts are missing. The in-memory
+    organization cache is written only once every page is in. iOS runs the
+    pages in a main-actor `Task`; Android in a background thread
+    (`CrmModel.background`) that calls `onContactsChanged` after each page,
+    which the app posts to the main thread as `CrmRevision.bump()`. Callers
+    outside the CRM screen (Genie, the toolbox, navigator counts) still read
+    every contact in one summary. Tests: iOS `CrmPagingTests`, Android
+    `CrmPagingTest`.
   - **Layout setting (S150).** `LayoutModeChoice` (`core/.../settings/Appearance.kt`)
     is stored by name in `appearance/layoutMode` (anything else reads as
     Control Tower). Settings > Appearance shows it under Theme

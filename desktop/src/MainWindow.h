@@ -15017,6 +15017,8 @@ private:
     QString lastClaudeSessionId(int sessionId) const;
     QString lastCodexThreadId(int sessionId) const;
     QString agentCliConversationId(int sessionId);
+    QStringList claudeTranscriptConfigDirs() const;
+    void removeOrphanedClaudeTranscripts(const QString &worktreePath);
     struct AgentTerminalHandoff {
         bool ok = false;
         QString program;

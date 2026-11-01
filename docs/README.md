@@ -133,7 +133,10 @@ Special agents are workflows in `.forkmesh/workflows/`
 [Reddit scout](community/reddit.md), [site crawler](www/site-crawler.md) and
 [Sentinel](security/sentinel.md). The
 guide for outside coding agents is `app/public/forkmesh-agent.md`, served at
-`https://app.forkmesh.com/forkmesh-agent.md`.
+`https://app.forkmesh.com/forkmesh-agent.md`. Keep it in step with
+[instances](operations/instances.md), [start-config.md](start-config.md) and the
+pull request section of `CONTRIBUTING.md`; `app/tests/test_start_instance_page.py`
+checks the parts that must match.
 
 ## Writing docs
 

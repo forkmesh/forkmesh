@@ -379,3 +379,90 @@ def test_protection_and_actions_switches_are_set_and_enforced(
     code, again = _repo_cli(instance, source, "--protect-default-branch",
                             name="guarded")
     assert code == 0 and again["settings"] == {"protectDefaultBranch": True}
+
+
+LEGACY_FORK = """
+import asyncio
+import sys
+from types import SimpleNamespace
+
+from forkmesh_host.ops import _runtime
+
+
+async def main(owner, name, parent, data_dir):
+    runtime = _runtime(SimpleNamespace(env_file=None, data_dir=data_dir,
+                                       db=None))
+    entry, env = runtime.entry, runtime.env
+    hosted_git = entry._hosted_git._load()
+    key_bi = await entry.blind_index(env, owner + "/" + name)
+    row = await entry.d1_first(
+        env, "SELECT owner_bi, data FROM repositories WHERE key_bi=?", key_bi)
+    record = await entry.decrypt_row(env, row["data"])
+    record["forkedFrom"] = parent
+    await hosted_git._pin_hosted_state(
+        env, owner, name, key_bi, row, record, record.get("stateHash") or "",
+        notify=False, pusher=owner)
+    parent_bi = await entry.blind_index(env, parent)
+    await entry.d1_run(
+        env, "UPDATE repo_forks SET parent_bi=? WHERE fork_bi=?",
+        parent_bi, key_bi)
+    await entry.d1_run(
+        env, "INSERT OR IGNORE INTO repo_stars (repo_bi, account_bi, "
+        "created_at) VALUES (?,?,?)", parent_bi, "legacy-star", 1)
+
+
+asyncio.run(main(*sys.argv[1:]))
+"""
+
+
+def test_organization_is_the_public_owner_and_old_links_are_moved(
+        instance, source, web):
+    client, headers = web["client"], web["headers"]
+    code, parent = _repo_cli(instance, source)
+    assert code == 0, parent
+    code, fork = _repo_cli(instance, source, "--fork-of", "alice/cli-made",
+                           name="legacy-fork")
+    assert code == 0 and fork["forkedFrom"] == "acme/cli-made", fork
+    listed = client.get("/api/repositories?fresh=1", headers=headers).json()
+    made = next(r for r in listed["repositories"]
+                if r.get("owner") == "alice" and r["name"] == "cli-made")
+    assert made["ownerKind"] == "organization"
+    assert made["logicalOwners"] == [{"kind": "organization",
+                                      "owner": "acme"}]
+    assert made["channel"] == "#acme-cli-made"
+
+    subprocess.run(
+        [sys.executable, "-c", LEGACY_FORK, "alice", "legacy-fork",
+         "alice/cli-made", str(instance["tmp"] / "data")],
+        cwd=str(paths.HOST_DIR), env=instance["env"], check=True,
+        capture_output=True, timeout=120)
+    code, planned = _cli(instance, "org-repo-identity")
+    assert code == 0 and planned["dryRun"] is True, planned
+    assert {"organization": "acme", "member": "alice",
+            "name": "cli-made"} in planned["repositories"]
+    assert planned["forks"] == [{
+        "fork": "alice/legacy-fork", "from": "alice/cli-made",
+        "to": "acme/cli-made", "record": "rewrite", "edge": "rekey"}]
+    assert {"table": "repo_stars", "from": "alice/cli-made",
+            "to": "acme/cli-made", "rows": 1} in planned["tables"]
+    forks = client.get("/api/repo/acme/cli-made/forks").json()["forks"]
+    assert "legacy-fork" not in [f["name"] for f in forks]
+
+    code, applied = _cli(instance, "org-repo-identity", "--apply")
+    assert code == 0 and applied["dryRun"] is False, applied
+    assert applied["forks"] == planned["forks"]
+    for owner in ("acme", "alice"):
+        forks = client.get("/api/repo/%s/cli-made/forks" % owner).json()
+        assert "legacy-fork" in [f["name"] for f in forks["forks"]]
+        stars = client.get("/api/repo/%s/cli-made/star" % owner).json()
+        assert stars["count"] == 1
+    listed = client.get("/api/repositories?fresh=1", headers=headers).json()
+    record = next(r for r in listed["repositories"]
+                  if r.get("owner") == "alice" and r["name"] == "legacy-fork")
+    assert record["forkedFrom"] == "acme/cli-made"
+    code, again = _cli(instance, "org-repo-identity")
+    assert code == 0 and again["forks"] == [] and again["tables"] == [], again
+
+    page = client.get("/alice/cli-made/issues", follow_redirects=False)
+    assert page.status_code == 308, page.text[:200]
+    assert page.headers["location"] == "/acme/cli-made/issues"

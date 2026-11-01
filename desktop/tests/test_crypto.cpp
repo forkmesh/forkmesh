@@ -558,7 +558,7 @@ int main(int argc, char *argv[])
         const auto up = MarkdownRender::resolveRepoLink("docs/intro.md", "../README.md");
         const auto here = MarkdownRender::resolveRepoLink("docs/intro.md", "./guide%20one.md");
         const auto folder = MarkdownRender::resolveRepoLink("docs/intro.md", "operations/");
-        check(up && up->path == "www/README.md", "../ climbs out of the file's directory");
+        check(up && up->path == "README.md", "../ climbs out of the file's directory");
         check(here && here->path == "docs/guide one.md",
               "./ stays in the file's directory and percent-escapes decode");
         check(folder && folder->path == "docs/operations" && folder->directory,

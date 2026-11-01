@@ -217,6 +217,8 @@ def main(argv=None):
     instance_repo.add_parser(sub, common)
     from . import pull_resync
     pull_resync.add_parser(sub, common)
+    from . import org_repo_identity
+    org_repo_identity.add_parser(sub, common)
 
     args = parser.parse_args(argv)
     return args.func(args)

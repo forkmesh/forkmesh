@@ -9,6 +9,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     organizations: [], organization: "", role: "", canManageSettings: false,
     installed: false,
     contacts: [], emails: [], mail: [], settings: {}, summary: {}, loading: true,
+    contactsTotal: 0, contactsLoading: false,
     // The summary revision last applied (see loadCrm).
     revision: "",
     // Founders outreach: access, templates, roster, and recent sends for the
@@ -4064,14 +4065,16 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const actions = (contact, compact) => shared ? "" : compact
       ? `<div class="mt-3 flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
       : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
-    list.innerHTML = contacts.map((contact) => `
+    const page = crmRowPageSlice(contacts);
+    renderCrmRowPager(contacts.length, page, board || people);
+    list.innerHTML = page.rows.map((contact) => `
       <tr data-crm-contact-row="${escapeHtml(contact.id)}" class="crm-row">
         ${shared ? "" : `<td class="px-2 py-2 align-top"><input type="checkbox" data-crm-select="${escapeHtml(contact.id)}" aria-label="Select ${escapeHtml(crmContactLabel(contact))}" class="mt-1.5" /></td>`}
         ${columns.map((column) => `<td data-crm-cell="${escapeHtml(column.field)}" class="px-3 py-2 align-top">${cell(contact, column)}</td>`).join("")}
         ${actions(contact, false)}
       </tr>`).join("");
     const cards = $(`[data-crm-contact-cards]`);
-    if (cards) cards.innerHTML = contacts.map((contact) => `
+    if (cards) cards.innerHTML = page.rows.map((contact) => `
       <article data-crm-contact-row="${escapeHtml(contact.id)}" class="rounded-md border border-border bg-card p-3">
         <div class="flex items-start justify-between gap-3">
           <div class="flex min-w-0 items-start gap-2">${photo(contact)}<div class="min-w-0">${columns.some((column) => column.field === "name")
@@ -6027,6 +6030,99 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   const crmSelection = { ids: new Set(), anchor: "", shown: [] };
+  const CRM_FIRST_PAGE = 250;
+  const CRM_PAGE_FETCH = 1000;
+  const CRM_ROW_PAGE_SIZES = [50, 100, 250, 500];
+  const CRM_ROW_PAGE_KEY = "forkmesh.crm.rowPageSize";
+  const crmRowPage = { index: 0, size: crmReadRowPageSize(), key: "" };
+  let crmContactsGeneration = 0;
+
+  function crmReadRowPageSize() {
+    try {
+      const size = Number(localStorage.getItem(CRM_ROW_PAGE_KEY));
+      if (CRM_ROW_PAGE_SIZES.includes(size)) return size;
+    } catch {}
+    return 100;
+  }
+
+  function crmRowPageKey() {
+    return [state.crmView.organization, state.crmView.activeView, state.crmView.activeShared, state.crmView.stageTab,
+      ...["search", "flow", "stage", "owner", "focus"].map((name) => String($(`[data-crm-${name}]`)?.value || "")),
+      crmSort.field, crmSort.descending].join("\u0001");
+  }
+
+  function crmRowPageSlice(contacts) {
+    const key = crmRowPageKey();
+    if (key !== crmRowPage.key) { crmRowPage.key = key; crmRowPage.index = 0; }
+    const pages = Math.max(1, Math.ceil(contacts.length / crmRowPage.size));
+    crmRowPage.index = Math.max(0, Math.min(crmRowPage.index, pages - 1));
+    const start = crmRowPage.index * crmRowPage.size;
+    return { rows: contacts.slice(start, start + crmRowPage.size), start, pages };
+  }
+
+  function renderCrmRowPager(total, page, hidden) {
+    const pager = $(`[data-crm-pager]`); if (!pager) return;
+    const loading = state.crmView.contactsLoading && !crmActiveShared();
+    pager.hidden = hidden || (!loading && total <= CRM_ROW_PAGE_SIZES[0]);
+    if (pager.hidden) return;
+    const from = total ? page.start + 1 : 0;
+    const to = page.start + page.rows.length;
+    const progress = loading
+      ? ` · loading contacts, ${state.crmView.contacts.length.toLocaleString()} of ${Number(state.crmView.contactsTotal || 0).toLocaleString()}`
+      : "";
+    pager.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-2"><span data-crm-pager-range>${from.toLocaleString()}\u2013${to.toLocaleString()} of ${total.toLocaleString()}${escapeHtml(progress)}</span>`
+      + `<div class="flex items-center gap-2"><label class="flex items-center gap-1">Rows<select data-crm-page-size aria-label="Rows per page" class="rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground">${CRM_ROW_PAGE_SIZES.map((size) =>
+        `<option value="${size}"${size === crmRowPage.size ? " selected" : ""}>${size}</option>`).join("")}</select></label>`
+      + `<button type="button" data-crm-page="prev" class="rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50"${crmRowPage.index === 0 ? " disabled" : ""}>Previous</button>`
+      + `<span data-crm-page-label>Page ${(crmRowPage.index + 1).toLocaleString()} of ${page.pages.toLocaleString()}</span>`
+      + `<button type="button" data-crm-page="next" class="rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50"${crmRowPage.index >= page.pages - 1 ? " disabled" : ""}>Next</button></div></div>`;
+  }
+
+  function handleCrmPagerClick(event) {
+    const button = event.target.closest("[data-crm-page]"); if (!button || button.disabled) return;
+    crmRowPage.index += button.dataset.crmPage === "next" ? 1 : -1;
+    renderCrmContacts();
+    $(`[data-crm-table]`)?.scrollIntoView({ block: "nearest" });
+  }
+
+  function handleCrmPageSizeChange(event) {
+    const size = Number(event.target.value);
+    if (!CRM_ROW_PAGE_SIZES.includes(size)) return;
+    const first = crmRowPage.index * crmRowPage.size;
+    crmRowPage.size = size;
+    crmRowPage.index = Math.floor(first / size);
+    try { localStorage.setItem(CRM_ROW_PAGE_KEY, String(size)); } catch {}
+    renderCrmContacts();
+  }
+
+  function crmCountCustomers() {
+    state.crmView.summary = { ...state.crmView.summary,
+      customers: state.crmView.contacts.filter((contact) => contact.stage === "customer").length };
+  }
+
+  async function crmLoadRemainingContacts(cursor, generation) {
+    const organization = state.crmView.organization;
+    try {
+      while (cursor) {
+        const query = new URLSearchParams({ limit: String(CRM_PAGE_FETCH), cursor });
+        const payload = await crmRequest(crmOrganizationPath(`/contacts?${query}`));
+        if (generation !== crmContactsGeneration || organization !== state.crmView.organization) return;
+        const known = new Set(state.crmView.contacts.map((contact) => contact.id));
+        state.crmView.contacts = state.crmView.contacts.concat(
+          (payload.contacts || []).filter((contact) => !known.has(contact.id)));
+        cursor = payload.next || "";
+        state.crmView.contactsLoading = Boolean(cursor);
+        crmCountCustomers();
+        renderCrm();
+      }
+    } catch (error) {
+      if (generation !== crmContactsGeneration) return;
+      state.crmView.contactsLoading = false;
+      state.crmView.revision = "";
+      crmMessage("error", `Some contacts did not load: ${error.message}`);
+      renderCrm();
+    }
+  }
   const crmSort = { field: "", descending: false };
   const crmSessionColumns = { organization: "", labels: new Map() };
   const crmPeople = { open: false, sort: "recent", timer: 0 };
@@ -6983,6 +7079,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (cell) crmSortBy(cell.dataset.crmColumn);
     });
     $(`[data-crm-people-toggle]`)?.addEventListener("click", () => setCrmPeople(!crmPeople.open));
+    $(`[data-crm-pager]`)?.addEventListener("click", handleCrmPagerClick);
+    $(`[data-crm-pager]`)?.addEventListener("change", (event) => {
+      if (event.target.closest("[data-crm-page-size]")) handleCrmPageSizeChange(event);
+    });
     $(`[data-crm-people-sort]`)?.addEventListener("change", (event) => { crmPeople.sort = event.target.value; renderCrmPeople(); });
     $(`[data-crm-people-grid]`)?.addEventListener("click", (event) => {
       const card = event.target.closest("[data-crm-contact-detail]");
@@ -7030,12 +7130,17 @@ window.ForkMeshDashboard.registerPage("crm", ({
       // answers with a few bytes and the page is not re-rendered.
       const query = new URLSearchParams({ tz: String(-new Date().getTimezoneOffset()) });
       if (state.crmView.revision) query.set("since", state.crmView.revision);
+      query.set("contacts", String(CRM_FIRST_PAGE));
       const payload = await crmRequest(crmOrganizationPath(`?${query}`));
       if (payload.unchanged) { crmMessage("error", ""); return; }
       state.crmView.revision = payload.revision || "";
       state.crmView.contacts = payload.contacts || []; state.crmView.emails = payload.emails || [];
+      const contactsGeneration = ++crmContactsGeneration;
+      state.crmView.contactsTotal = Number(payload.contactsTotal ?? state.crmView.contacts.length);
+      state.crmView.contactsLoading = Boolean(payload.contactsNext);
       state.crmView.mail = payload.mail || [];
       state.crmView.settings = payload.settings || {}; state.crmView.summary = payload.summary || {};
+      if (state.crmView.summary.customers === undefined) crmCountCustomers();
       state.crmView.outreach = payload.outreach || null;
       state.crmView.views = payload.views || []; state.crmView.members = payload.members || [];
       state.crmView.sharedViews = payload.sharedViews || [];
@@ -7068,6 +7173,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
           : "Refresh the organization's shared Zoho Mail boxes";
       }
       renderCrmDraftsLabel(); crmMessage("error", ""); renderCrm();
+      if (payload.contactsNext) void crmLoadRemainingContacts(payload.contactsNext, contactsGeneration);
       crmRefreshForkMeshAvatars();
       crmAutoSyncToots();
       crmAutoSyncZoho();

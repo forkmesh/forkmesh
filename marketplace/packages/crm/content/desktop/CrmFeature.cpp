@@ -111,6 +111,8 @@ constexpr int kMastodonFollowersPage = 80;
 constexpr int kMastodonFollowersMax = 2000;
 // Flows past this many are dropped by the worker when settings are saved.
 constexpr int kMaxFlows = 12;
+constexpr int kContactFirstPage = 250;
+constexpr int kContactPageFetch = 1000;
 // Every list and pipeline is a tab ahead of All activity, Zoho Mail boxes and
 // Import CSV list. A pipeline no list is bound to gets a client-side tab under
 // this id prefix, and "No pipeline" holds contacts whose flow is none of them.
@@ -3036,6 +3038,7 @@ void CrmFeature::loadOrganization()
         QString::number(QDateTime::currentDateTime().offsetFromUtc() / 60));
     if (!m_revision.isEmpty())
         summaryQuery.addQueryItem(QStringLiteral("since"), m_revision);
+    summaryQuery.addQueryItem(QStringLiteral("contacts"), QString::number(kContactFirstPage));
     request(QByteArrayLiteral("GET"),
             organizationPath(QStringLiteral("?") + summaryQuery.toString(QUrl::FullyEncoded)), {},
             [this, organization](bool ok, const QJsonObject &payload,
@@ -3069,10 +3072,63 @@ void CrmFeature::loadOrganization()
                       true);
             return;
         }
+        const quint64 generation = ++m_contactsGeneration;
         applyOrganization(payload);
         m_shownOrganization = organization;
-        cacheSummary(payload);
+        const QString next = text(payload, "contactsNext");
+        if (next.isEmpty()) {
+            m_pagedSummary = {};
+            cacheSummary(payload);
+        } else {
+            m_pagedSummary = payload;
+            loadRemainingContacts(organization, next, generation);
+        }
         syncToots(true);
+    });
+}
+
+void CrmFeature::loadRemainingContacts(const QString &organization, const QString &cursor,
+                                       quint64 generation)
+{
+    setStatus(QStringLiteral("Loading contacts, %1 of %2…")
+                  .arg(QLocale().toString(m_contacts.size()),
+                       QLocale().toString(m_pagedSummary.value(QStringLiteral("contactsTotal"))
+                                              .toInt(m_contacts.size()))));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("limit"), QString::number(kContactPageFetch));
+    query.addQueryItem(QStringLiteral("cursor"), cursor);
+    request(QByteArrayLiteral("GET"),
+            organizationPath(QStringLiteral("/contacts?") + query.toString(QUrl::FullyEncoded)), {},
+            [this, organization, generation](bool ok, const QJsonObject &payload,
+                                             const QString &error) {
+        if (generation != m_contactsGeneration || organization != m_shownOrganization)
+            return;
+        if (!ok) {
+            m_pagedSummary = {};
+            m_revision.clear();
+            setStatus(QStringLiteral("Some contacts did not load: %1").arg(error), true);
+            return;
+        }
+        QSet<QString> known;
+        for (const QJsonValue &value : std::as_const(m_contacts))
+            known.insert(text(value.toObject(), "id"));
+        QJsonArray contacts = m_contacts;
+        for (const QJsonValue &value : payload.value(QStringLiteral("contacts")).toArray()) {
+            if (!known.contains(text(value.toObject(), "id")))
+                contacts.append(value);
+        }
+        QJsonObject summary = m_pagedSummary;
+        summary.insert(QStringLiteral("contacts"), contacts);
+        const QString next = text(payload, "next");
+        summary.insert(QStringLiteral("contactsNext"), next);
+        m_pagedSummary = next.isEmpty() ? QJsonObject() : summary;
+        applyOrganization(summary);
+        if (next.isEmpty()) {
+            cacheSummary(summary);
+            setStatus(QStringLiteral("Organization CRM loaded · role: %1").arg(m_role));
+            return;
+        }
+        loadRemainingContacts(organization, next, generation);
     });
 }
 
@@ -3132,12 +3188,16 @@ void CrmFeature::applyOrganization(const QJsonObject &payload)
     // of being just another field; left off entirely when nobody has filled in
     // a value.
     qint64 pipelineValue = 0;
-    for (const QJsonValue &value : std::as_const(m_contacts))
+    int customers = 0;
+    for (const QJsonValue &value : std::as_const(m_contacts)) {
         pipelineValue += qint64(value.toObject().value(QStringLiteral("value")).toDouble());
+        if (text(value.toObject(), "stage") == QLatin1String("customer"))
+            ++customers;
+    }
     m_summary->setText(QStringLiteral(
         "%1 contacts · %2 customers · %3 email sends · %4 imported mail groups%5")
         .arg(summaryObject.value(QStringLiteral("contacts")).toInt())
-        .arg(summaryObject.value(QStringLiteral("customers")).toInt())
+        .arg(summaryObject.value(QStringLiteral("customers")).toInt(customers))
         .arg(summaryObject.value(QStringLiteral("sent")).toInt())
         .arg(summaryObject.value(QStringLiteral("mailGroups")).toInt())
         .arg(pipelineValue > 0
