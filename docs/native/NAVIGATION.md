@@ -869,6 +869,11 @@ Each tile pushes `RepoSectionScreen`. Android matches it (`RepoDetailScreen`,
   above the phone's own and the catalog, from `repos.list`
   (`DesktopReposModel`), reloaded on `repos.changed`; an older desktop falls
   back to its `agents.list` repositories.
+- **Search header.** On iOS the search and filter header is pinned over the
+  scrolling list, so rows showed through it. iOS 26 pins it with
+  `safeAreaBar` and a hard scroll edge; earlier versions give it the list's
+  solid background (`ReposPinnedHeader`). Android lays the header out above
+  the list, so nothing scrolls under it.
 - **Actions.** `RepoActionsModel` asks the desktop's `repos.actions` first and
   maps its reply onto the server's v2 summary ("Live from <desktop>"). Run logs
   follow `repos.actions.log` with `since` (64K cap). Controls go through
