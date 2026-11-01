@@ -22,7 +22,6 @@ N4_IP = "203.0.113.14"
 N4_V6 = "2001:19f0:ffff::14"
 N4_ID = "cccccccc-0000-0000-0000-000000000004"
 PROD = ("app.forkmesh.com", "world.forkmesh.com")
-NEXT = ("app.next.forkmesh.com", "world.next.forkmesh.com")
 
 
 def config():
@@ -31,8 +30,7 @@ def config():
 
 def fleet_text():
     text = EXAMPLE.read_text("utf-8")
-    text = text.replace("\n[dns]\n", '\n[production]\napp_host = "app.forkmesh.com"\n'
-                        'world_host = "world.forkmesh.com"\n\n[dns]\n', 1)
+    text = text.replace("\n[dns]\n", "\n[production]\n\n[dns]\n", 1)
     for name, ip in V4.items():
         text = text.replace('public_ipv4 = "%s"\n' % ip, 'public_ipv4 = "%s"\n'
                             'public_ipv6 = "%s"\n' % (ip, V6[name]), 1)
@@ -450,7 +448,7 @@ def test_vm_in_the_wrong_region_is_refused(tmp_path, monkeypatch):
 
 def served_zone():
     records = []
-    for index, name in enumerate(PROD + NEXT):
+    for index, name in enumerate(PROD):
         for node in ("n1", "n2", "n3"):
             records.append(a("%s-%s" % (index, node), name, V4[node]))
             records.append(aaaa("%s-%s6" % (index, node), name, V6[node]))
@@ -472,7 +470,7 @@ def test_fleet_step_writes_the_block_and_only_the_new_nodes_own_name(tmp_path, m
     assert common.load_json(config() / "fleet-state.json")["rqlite_nonvoters"] == ["n4"]
     assert zone.ips("n4.next.forkmesh.com") == [N4_IP]
     assert zone.ips("n4.next.forkmesh.com", "AAAA") == [N4_V6]
-    for name in PROD + NEXT:
+    for name in PROD:
         assert N4_IP not in zone.ips(name)
     changed = {c[2]["name"] for c in zone.http.mutations() if c[2]}
     assert changed == {"n4.next.forkmesh.com"}
@@ -610,7 +608,7 @@ def test_dns_adds_the_new_core_only_after_its_probes_pass(tmp_path):
                                          prober=lambda ip, host: ip != N4_IP)
     with pytest.raises(ToolError):
         failing.step_dns(job)
-    for name in PROD + NEXT:
+    for name in PROD:
         assert N4_IP not in zone.ips(name)
     assert next_dns.node_entry("n4")["held"] is False
     assert next_dns.node_entry("n4")["in_dns"] is False
@@ -619,7 +617,7 @@ def test_dns_adds_the_new_core_only_after_its_probes_pass(tmp_path):
                                          prober=lambda ip, host: probed.append(ip) or True)
     passing.step_dns(job)
     assert probed.count(N4_IP) == next_dns.UNDRAIN_PROBES
-    for name in PROD + NEXT:
+    for name in PROD:
         assert zone.ips(name) == sorted(list(V4.values()) + [N4_IP])
         assert N4_V6 in zone.ips(name, "AAAA")
     entry = next_dns.node_entry("n4")

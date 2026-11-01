@@ -1,11 +1,11 @@
 {
-  "catalogUrl": "https://app.next.forkmesh.com/api/repositories",
+  "catalogUrl": "https://app.forkmesh.com/api/repositories",
   "disableAgentJobs": true,
   "disableAgentLogin": true,
   "disableCloudflared": true,
   "enableActions": false,
   "eventDrivenUpstreams": [
-    "https://app.next.forkmesh.com/forkmesh/forkmesh"
+    "https://app.forkmesh.com/forkmesh/forkmesh"
   ],
   "hosted": {
     "enabled": true,
@@ -15,7 +15,7 @@
   "role": "core",
   "upstreams": {
     "forkmesh/forkmesh": [
-      "https://app.next.forkmesh.com/forkmesh/forkmesh",
+      "https://app.forkmesh.com/forkmesh/forkmesh",
       "https://n1.next.forkmesh.com/forkmesh/forkmesh.git",
       "https://n3.next.forkmesh.com/forkmesh/forkmesh.git"
     ]
