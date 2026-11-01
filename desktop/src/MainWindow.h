@@ -5195,6 +5195,7 @@ private:
     void takeBackupNow(bool automatic);
     void refreshBackupTable();
     void pruneOldBackups();
+    QStringList partialBackupPaths() const;
     void removePartialBackups();
     QStringList backupExcludeRoots() const;
     void restoreConfigArchive(const QString &archivePath);
@@ -7991,6 +7992,7 @@ private:
         QString dir;
         QString signature;
         QStringList branches;
+        BranchRefFiles files;
     };
     void requestRepoBranchOrder(const QString &dir) const;
     void applyRepoBranchOrder(const BranchOrderLoad &load);
