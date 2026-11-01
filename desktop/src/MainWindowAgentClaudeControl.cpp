@@ -55,6 +55,8 @@ void MainWindow::handleClaudeControlEvent(int sessionId, const QJsonObject &even
                 requestClaudeSessionTitle(sessionId);
         } else if (subtype == QLatin1String("session_title_changed")) {
             applyClaudeSessionTitle(sessionId, cc::titleFromEvent(event), true);
+        } else if (subtype == QLatin1String("commands_changed")) {
+            applyClaudeSlashCommands(event.value(QStringLiteral("commands")).toArray());
         } else if (forkmesh::agentclitasks::isTaskEvent(event) ||
                    subtype == QLatin1String("background_tasks_changed")) {
             if (sessionId == m_selectedAgentSessionId)

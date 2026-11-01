@@ -39,6 +39,7 @@ static void testDrawnEvents()
         R"({"type":"command_lifecycle","state":"future_state"})",
         R"({"type":"command_lifecycle"})",
         R"({"type":"system","subtype":"task_progress","task_id":"t"})",
+        R"({"type":"system","subtype":"commands_changed","commands":[{"name":"review","description":"d","argumentHint":""}]})",
         R"({"type":"assistant","message":{"content":[{"type":"thinking","thinking":"x"},{"type":"text","text":"hi"},{"type":"tool_use","id":"a","name":"Bash","input":{}}]}})",
         R"({"type":"assistant","message":{"content":[{"type":"web_search_tool_result","tool_use_id":"a"}]}})",
         R"({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a","content":"ok"}]}})",
