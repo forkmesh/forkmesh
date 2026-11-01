@@ -326,6 +326,69 @@ static void orphanedTranscriptTests(const QString &home)
           "the filesystem root is never a worktree");
 }
 
+static void orphanedDesktopRecordTests(const QString &home)
+{
+    const QString desktop = home + QStringLiteral("/desktop-records/Claude");
+    const QString org = desktop + QStringLiteral("/claude-code-sessions/acct/org");
+    const QString repo = home + QStringLiteral("/desktop-records/repo");
+    const QString worktree = repo + QStringLiteral("/.worktrees/12-merged");
+    const QString sibling = worktree + QStringLiteral("-v2");
+    QDir().mkpath(worktree + QStringLiteral("/sub"));
+    QDir().mkpath(sibling);
+    QDir().mkpath(org + QStringLiteral("/waiting-input"));
+    const auto record = [&org](const QString &id, const QJsonObject &fields) {
+        QJsonObject o = fields;
+        o.insert(QStringLiteral("sessionId"), QStringLiteral("local_") + id);
+        o.insert(QStringLiteral("cliSessionId"), id);
+        const QString path = org + QStringLiteral("/local_") + id + QStringLiteral(".json");
+        QFile f(path);
+        f.open(QIODevice::WriteOnly);
+        f.write(QJsonDocument(o).toJson());
+        return path;
+    };
+    const QString agent = record(QStringLiteral("agent-1"),
+                                 {{QStringLiteral("cwd"), worktree}});
+    const QString nested = record(QStringLiteral("nested-1"),
+                                  {{QStringLiteral("cwd"), worktree + QStringLiteral("/sub")}});
+    const QString moved = record(QStringLiteral("moved-1"),
+                                 {{QStringLiteral("cwd"), repo},
+                                  {QStringLiteral("originCwd"), worktree}});
+    const QString user = record(QStringLiteral("user-1"), {{QStringLiteral("cwd"), repo}});
+    const QString near = record(QStringLiteral("sibling-1"), {{QStringLiteral("cwd"), sibling}});
+    QFile waiting(org + QStringLiteral("/waiting-input/local_agent-1.json"));
+    waiting.open(QIODevice::WriteOnly);
+    waiting.close();
+
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, worktree) == 0 &&
+              QFileInfo::exists(agent),
+          "a worktree still on disk keeps its Claude app sessions");
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(QString(), worktree) == 0 &&
+              ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, QString()) == 0,
+          "no Claude app folder or no worktree names nothing");
+
+    QDir(worktree).removeRecursively();
+    QStringList removed;
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, worktree, &removed) == 3,
+          "every Claude app session that ran in the deleted worktree is removed");
+    check(!QFileInfo::exists(agent) && !QFileInfo::exists(nested) && !QFileInfo::exists(moved),
+          "the sessions in it, under it and started in it are gone from the Claude app");
+    check(QFileInfo::exists(user) && QFileInfo::exists(near),
+          "the main checkout and a worktree sharing the name prefix keep their sessions");
+    check(!QFileInfo::exists(org + QStringLiteral("/waiting-input/local_agent-1.json")),
+          "the session's waiting-for-input mark goes with it");
+    QFile tombstone(org + QStringLiteral("/deleted_agent-1"));
+    check(tombstone.open(QIODevice::ReadOnly) && tombstone.readAll().toLongLong() > 0 &&
+              QFileInfo::exists(org + QStringLiteral("/deleted_moved-1")) &&
+              !QFileInfo::exists(org + QStringLiteral("/deleted_user-1")),
+          "the Claude app is told each removed session was deleted");
+    check(removed.contains(agent) && removed.size() == 3, "the removed records are reported");
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, worktree) == 0,
+          "a second pass finds nothing left");
+    check(ClaudeSessionScan::removeOrphanedDesktopRecords(desktop, QStringLiteral("/")) == 0 &&
+              QFileInfo::exists(user),
+          "the filesystem root is never a worktree");
+}
+
 int main(int argc, char **argv)
 {
     QTemporaryDir home;
@@ -417,6 +480,7 @@ int main(int argc, char **argv)
 
     importTests(home.path(), repo);
     orphanedTranscriptTests(home.path());
+    orphanedDesktopRecordTests(home.path());
 
     if (failures == 0)
         std::cout << "claude session scan tests passed\n";

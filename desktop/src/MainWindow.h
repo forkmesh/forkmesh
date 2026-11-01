@@ -15049,7 +15049,7 @@ private:
     QString lastCodexThreadId(int sessionId) const;
     QString agentCliConversationId(int sessionId);
     QStringList claudeTranscriptConfigDirs() const;
-    void removeOrphanedClaudeTranscripts(const QString &worktreePath);
+    void removeOrphanedClaudeTranscripts(const QString &worktreePath, bool resweep = true);
     struct AgentTerminalHandoff {
         bool ok = false;
         QString program;
