@@ -2171,6 +2171,15 @@ void MainWindow::purgeSessionState(int sessionId)
     m_streamEventsLoading.remove(sessionId);
     m_streamEventsAbsent.remove(sessionId);
     m_agentQueue.removeAll(sessionId);
+    m_claudeDesktopPending.remove(sessionId);
+    for (auto it = m_claudeDesktopLinkOwners.begin(); it != m_claudeDesktopLinkOwners.end();) {
+        if (it.value() == sessionId) {
+            m_claudeDesktopLinkQueue.removeAll(it.key());
+            it = m_claudeDesktopLinkOwners.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (m_agentTranscriptRenderSession == sessionId) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;

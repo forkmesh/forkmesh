@@ -111,6 +111,7 @@ public:
     void setLines(const QList<Line> &lines)
     {
         m_lines = lines;
+        m_rowsKey.clear();
         rebuild();
         updateGeometry();
         update();
@@ -137,8 +138,7 @@ public:
     {
         const int rows = qMax(1, int(m_lines.size()));
         const QMargins margins = contentsMargins();
-        return QSize(QLabel::sizeHint().width(),
-                     rows * rowHeight() + (rows - 1) * kRowGap + margins.top() +
+        return QSize(0, rows * rowHeight() + (rows - 1) * kRowGap + margins.top() +
                          margins.bottom());
     }
 
@@ -148,7 +148,28 @@ protected:
     void paintEvent(QPaintEvent *event) override
     {
         QFrame::paintEvent(event);
+        const qreal dpr = devicePixelRatioF();
+        const QString key =
+            QStringList{QString::number(width()), QString::number(height()), QString::number(dpr),
+                        font().key(), Theme::color(Theme::Role::AccentFg).name(QColor::HexArgb),
+                        Theme::color(Theme::Role::FgSecondary).name(QColor::HexArgb),
+                        palette().color(QPalette::WindowText).name(QColor::HexArgb),
+                        Theme::nextOr(Theme::Role::FgMuted, QColor("#8b949e")).name(QColor::HexArgb)}
+                .join(QLatin1Char('|'));
+        if (key != m_rowsKey) {
+            m_rows = QPixmap(size() * dpr);
+            m_rows.setDevicePixelRatio(dpr);
+            m_rows.fill(Qt::transparent);
+            QPainter rows(&m_rows);
+            paintRows(rows);
+            m_rowsKey = key;
+        }
         QPainter painter(this);
+        painter.drawPixmap(0, 0, m_rows);
+    }
+
+    void paintRows(QPainter &painter)
+    {
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
         const QRect area = contentsRect();
@@ -226,6 +247,8 @@ private:
     }
 
     QList<Line> m_lines;
+    QPixmap m_rows;
+    QString m_rowsKey;
 };
 
 class FloatingPromptBar : public QWidget

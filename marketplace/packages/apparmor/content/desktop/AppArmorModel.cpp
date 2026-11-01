@@ -684,4 +684,189 @@ QList<HourBucket> hourlyBuckets(const QList<Event> &events, const QDateTime &end
     return buckets;
 }
 
+QString programDescription(const QString &profileName)
+{
+    struct Known {
+        const char *key;
+        bool prefix;
+        const char *text;
+    };
+    static const Known known[] = {
+        {"cupsd", false, "The printing service (CUPS). It talks to printers over USB and the network."},
+        {"cups-browsed", false, "Finds printers on the network for CUPS."},
+        {"avahi-daemon", false, "Announces and finds devices on the local network (mDNS, Bonjour)."},
+        {"dhclient", false, "Asks the network's DHCP server for an IP address."},
+        {"dhcpcd", false, "Asks the network's DHCP server for an IP address."},
+        {"dnsmasq", false, "A small DNS and DHCP server, used by virtual machines and hotspots."},
+        {"named", false, "The BIND DNS server."},
+        {"tcpdump", false, "Captures network traffic for debugging."},
+        {"ping", false, "The network reachability test command."},
+        {"ntpd", false, "Keeps the system clock in time."},
+        {"chronyd", false, "Keeps the system clock in time."},
+        {"rsyslogd", false, "Writes the system log."},
+        {"syslog-ng", false, "Writes the system log."},
+        {"sshd", false, "The remote login server (SSH)."},
+        {"mysqld", false, "The MySQL or MariaDB database server."},
+        {"mariadbd", false, "The MariaDB database server."},
+        {"postgres", false, "The PostgreSQL database server."},
+        {"nginx", false, "The nginx web server."},
+        {"apache2", false, "The Apache web server."},
+        {"httpd", false, "The Apache web server."},
+        {"dovecot", true, "The Dovecot mail server (IMAP and POP3)."},
+        {"postfix", true, "The Postfix mail server."},
+        {"smbd", false, "Windows file sharing (Samba)."},
+        {"nmbd", false, "Windows network names for Samba."},
+        {"samba", true, "Windows file sharing (Samba)."},
+        {"squid", false, "The Squid web proxy."},
+        {"clamd", false, "The ClamAV virus scanner."},
+        {"freshclam", false, "Downloads ClamAV virus definitions."},
+        {"libvirtd", false, "The virtual machine manager (libvirt)."},
+        {"virt-aa-helper", false, "Writes the AppArmor profile libvirt gives each virtual machine."},
+        {"libvirt-", true, "One virtual machine run by libvirt; libvirt writes this profile."},
+        {"docker-default", false, "The profile Docker puts on every container."},
+        {"lxc-", true, "LXC containers."},
+        {"crun", false, "A container runtime (Podman, Kubernetes)."},
+        {"runc", false, "A container runtime (Docker, Kubernetes)."},
+        {"snap-confine", false, "Snap's launcher, which confines every Snap app."},
+        {"snap-update-ns.", true, "Snap's helper that sets up one app's view of the file system."},
+        {"snap.", true, "A Snap app. snapd writes and updates this profile."},
+        {"flatpak", false, "The Flatpak app launcher."},
+        {"firefox", false, "The Firefox web browser."},
+        {"chrome", false, "The Google Chrome web browser."},
+        {"chromium", true, "The Chromium web browser."},
+        {"brave", false, "The Brave web browser."},
+        {"msedge", false, "The Microsoft Edge web browser."},
+        {"opera", false, "The Opera web browser."},
+        {"vivaldi", true, "The Vivaldi web browser."},
+        {"epiphany", false, "The GNOME Web browser."},
+        {"thunderbird", false, "The Thunderbird email app."},
+        {"evince", false, "The GNOME document viewer (PDF)."},
+        {"totem", false, "The GNOME video player."},
+        {"libreoffice-", true, "Part of the LibreOffice office suite."},
+        {"plasmashell", false, "The KDE Plasma desktop: panel, wallpaper and widgets."},
+        {"steam", false, "The Steam games client."},
+        {"code", false, "The Visual Studio Code editor."},
+        {"signal-desktop", false, "The Signal chat app."},
+        {"slack", false, "The Slack chat app."},
+        {"discord", false, "The Discord chat app."},
+        {"element-desktop", false, "The Element chat app (Matrix)."},
+        {"1password", false, "The 1Password password manager."},
+        {"transmission", true, "The Transmission BitTorrent app."},
+        {"sbuild", true, "Debian's package builder (sbuild) and its helper commands."},
+        {"man", false, "The manual page viewer."},
+        {"man_", true, "A helper of the manual page viewer."},
+        {"lsb_release", false, "Prints the Linux distribution's name; many programs run it."},
+        {"nvidia_modprobe", false, "Loads the NVIDIA graphics driver."},
+        {"unix-chkpwd", false, "Checks your password for the screen lock and sudo."},
+        {"ubuntu_pro_", true, "Ubuntu Pro messages shown by apt."},
+        {"unprivileged_userns", false, "Ubuntu's catch-all for programs that use user namespaces without a profile of their own."},
+        {"busybox", false, "Small all-in-one versions of the common commands."},
+        {"xorg", false, "The X display server."},
+        {"lightdm", false, "The LightDM login screen."},
+        {"gdm", true, "The GNOME login screen."},
+    };
+    QString key = profileName.trimmed();
+    if (key.startsWith(QLatin1Char('/')))
+        key = key.section(QLatin1Char('/'), -1);
+    key = key.toLower();
+    for (const Known &entry : known) {
+        const QString name = QString::fromLatin1(entry.key);
+        if (entry.prefix ? key.startsWith(name) : key == name)
+            return QString::fromLatin1(entry.text);
+    }
+    return {};
+}
+
+QString modeExplanation(Mode mode)
+{
+    switch (mode) {
+    case Mode::Enforce: return QStringLiteral("Enforce: AppArmor blocks, and logs, anything the profile does not allow.");
+    case Mode::Complain: return QStringLiteral("Complain: AppArmor allows everything and logs what enforce mode would block. It protects nothing yet.");
+    case Mode::Kill: return QStringLiteral("Kill: anything the profile does not allow ends the program.");
+    case Mode::Prompt: return QStringLiteral("Prompt: AppArmor asks before allowing anything the profile does not cover.");
+    case Mode::Unconfined: return QStringLiteral("Unconfined: the profile allows everything. It only gives the program a name.");
+    case Mode::Mixed: return QStringLiteral("Mixed: this file holds profiles in different modes.");
+    case Mode::Unknown: break;
+    }
+    return {};
+}
+
+QList<Advice> profileAdvice(const ProfileFacts &facts)
+{
+    QList<Advice> advice;
+    if (!facts.hasFile) {
+        advice << Advice{AdviceTone::Info, QStringLiteral("Loaded by another tool (a container runtime, Snap or a package script) without a "
+                                                          "file here. Change it with the tool that loaded it.")};
+        return advice;
+    }
+    if (!facts.editable)
+        advice << Advice{AdviceTone::Info, QStringLiteral("Snap writes this profile and replaces any change. Use snap connections to give the "
+                                                          "app more access.")};
+    if (facts.unconfinedFlag) {
+        advice << Advice{AdviceTone::Info, QStringLiteral("Marked unconfined on purpose: it only names the program so it may use features such "
+                                                          "as user namespaces. Leave it as it is.")};
+        return advice;
+    }
+    if (facts.disabled) {
+        advice << Advice{AdviceTone::Problem, QStringLiteral("Disabled: the program runs without any AppArmor limits. Enable it if you still use "
+                                                             "the program."),
+                         AdviceAction::Enable};
+        return advice;
+    }
+    if (facts.liveKnown && !facts.loaded)
+        advice << Advice{AdviceTone::Problem, QStringLiteral("The file exists but the profile is not loaded, so it protects nothing. Reload it."),
+                         AdviceAction::Reload};
+    if (facts.missed > 0)
+        advice << Advice{AdviceTone::Warning,
+                         QStringLiteral("%1 running %2 started before this profile was loaded and %3 unconfined. Restart the program to confine it.")
+                             .arg(facts.missed)
+                             .arg(facts.missed == 1 ? QStringLiteral("process") : QStringLiteral("processes"),
+                                  facts.missed == 1 ? QStringLiteral("runs") : QStringLiteral("run"))};
+    if (!facts.logKnown && (facts.mode == Mode::Enforce || facts.mode == Mode::Complain)) {
+        advice << Advice{AdviceTone::Info, QStringLiteral("The log is only readable by an administrator. Press Live view to see what this "
+                                                          "profile blocked or let through."),
+                         AdviceAction::LiveView};
+        return advice;
+    }
+    switch (facts.mode) {
+    case Mode::Enforce:
+        if (facts.denied > 0)
+            advice << Advice{AdviceTone::Warning,
+                             QStringLiteral("Blocked %1 %2 in 7 days. If the program works normally, it is doing its job and you can leave "
+                                            "it. If something broke, select the denials below and allow them.")
+                                 .arg(facts.denied)
+                                 .arg(facts.denied == 1 ? QStringLiteral("access") : QStringLiteral("accesses")),
+                             AdviceAction::Events};
+        else
+            advice << Advice{AdviceTone::Good, QStringLiteral("Protected, and nothing was blocked in 7 days: the program stays inside its "
+                                                              "rules. Nothing to do.")};
+        break;
+    case Mode::Complain:
+        if (facts.allowed > 0)
+            advice << Advice{AdviceTone::Warning,
+                             QStringLiteral("Let %1 %2 through that enforce mode would block. Allow the ones the program needs, then switch "
+                                            "it to enforce.")
+                                 .arg(facts.allowed)
+                                 .arg(facts.allowed == 1 ? QStringLiteral("access") : QStringLiteral("accesses")),
+                             AdviceAction::Events};
+        else if (facts.processes > 0)
+            advice << Advice{AdviceTone::Warning, QStringLiteral("Logs nothing although the program ran: enforce mode would block nothing. "
+                                                                 "Switch it to enforce to protect it."),
+                             AdviceAction::Enforce};
+        else
+            advice << Advice{AdviceTone::Info, QStringLiteral("Logs only, and the log is quiet, but the program has not run lately. Use it "
+                                                              "for a while, then switch to enforce if the log stays quiet."),
+                             AdviceAction::Enforce};
+        break;
+    case Mode::Kill:
+        advice << Advice{AdviceTone::Info, QStringLiteral("Kill mode ends the program on the first denial. Use complain mode while you are "
+                                                          "still learning what it needs."),
+                         facts.denied > 0 ? AdviceAction::Events : AdviceAction::None};
+        break;
+    default:
+        break;
+    }
+    return advice;
+}
+
 }

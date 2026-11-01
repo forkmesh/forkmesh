@@ -1465,11 +1465,8 @@ QList<Run> loadRuns(const QString &file)
     return runs;
 }
 
-bool saveRun(const QString &file, const Run &run, QStringList *droppedRunIds)
+QList<Run> mergeRun(QList<Run> runs, const Run &run, QStringList *droppedRunIds)
 {
-    if (file.isEmpty() || run.id.isEmpty())
-        return false;
-    QList<Run> runs = loadRuns(file);
     bool replaced = false;
     for (Run &existing : runs) {
         if (existing.id == run.id) {
@@ -1486,15 +1483,28 @@ bool saveRun(const QString &file, const Run &run, QStringList *droppedRunIds)
             droppedRunIds->append(runs.constLast().id);
         runs.removeLast();
     }
+    return runs;
+}
+
+QByteArray encodeRuns(const QList<Run> &runs)
+{
     QJsonArray encoded;
-    for (const Run &entry : std::as_const(runs))
+    for (const Run &entry : runs)
         encoded.append(entry.toJson());
+    return QJsonDocument(encoded).toJson(QJsonDocument::Compact);
+}
+
+bool saveRun(const QString &file, const Run &run, QStringList *droppedRunIds)
+{
+    if (file.isEmpty() || run.id.isEmpty())
+        return false;
+    const QList<Run> runs = mergeRun(loadRuns(file), run, droppedRunIds);
     if (!QDir().mkpath(QFileInfo(file).absolutePath()))
         return false;
     QSaveFile handle(file);
     if (!handle.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return false;
-    handle.write(QJsonDocument(encoded).toJson(QJsonDocument::Compact));
+    handle.write(encodeRuns(runs));
     return handle.commit();
 }
 

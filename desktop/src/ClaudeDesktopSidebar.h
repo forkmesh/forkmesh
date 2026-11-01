@@ -27,6 +27,7 @@ struct DesktopSection {
     QString groupBy;
     bool ascending = false;
     QStringList members;
+    bool keepEmpty = false;
 };
 
 struct DesktopIndex {

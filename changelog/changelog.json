@@ -12,6 +12,12 @@
  ],
  "notes": [
   {"date": "2026-11-01", "area": "Market", "text": "Installing or removing a package no longer freezes the desktop for seconds while every other package page is rebuilt, and no longer sends you back to the Market from the page you had open."},
+  {"date": "2026-11-01", "area": "Desktop", "text": "The Sessions page's right-click menus now match the Claude app: pin, mark as unread, rename, fork, move to a section and archive a session, and create, rename, reorder, fold, archive or delete whole sections from their header."},
+  {"date": "2026-11-01", "area": "Market", "text": "Spreadsheets is a new package: edit workbooks with formulas, formatting, charts, filters and pivot tables, ask the AI assistant to build or change them, and open or download Excel (.xls and .xlsx), OpenDocument and CSV files."},
+  {"date": "2026-11-01", "area": "Agents", "text": "Merge & clean up now also removes the agent from the Claude app's session list, so a merged agent's Claude Code session is gone everywhere."},
+  {"date": "2026-11-01", "area": "Other improvements", "text": "The documentation highlights the section you are reading as you scroll, has a jump-to-section bar on phones, new guides for the browser extension and the phone apps, and diagrams on the main pages."},
+  {"date": "2026-11-01", "area": "Desktop", "text": "The AppArmor page now fits on one screen, with a coverage ring, a busiest-profiles chart, a plain explanation of each program and its mode, and suggestions with the next step highlighted."},
+  {"date": "2026-11-01", "area": "Desktop", "text": "Emoji in the sessions list, buttons, labels and menus draw in full colour on Linux instead of black outlines, and those widgets now use the interface font."},
   {"date": "2026-11-01", "area": "Agents", "text": "The agent composer's slash menu now picks up new Claude Code commands and skills during a session."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "The docs have new core pages on architecture, encryption, mirroring, self-hosting and censorship resilience, and every page is shorter and links to them."},
   {"date": "2026-11-01", "area": "Agents", "text": "The agent prompt, Home and Sessions composers have one + menu to add files or photos (Ctrl+U), add a folder, open slash commands, switch connectors on or off and add plugins."},

@@ -212,7 +212,7 @@ QWidget *MainWindow::buildRewardPoolControlCard()
             "not contributor claims. Pending and paid records stay together "
             "here; a paid row is retained with its transaction receipt after "
             "the relay verifies the exact finalized transfer.")));
-    m_contributorRewardsTable = new QTableWidget(0, 6);
+    m_contributorRewardsTable = new QTableWidget(0, 6, card);
     m_contributorRewardsTable->setObjectName(
         QStringLiteral("contributorRewardsTable"));
     m_contributorRewardsTable->setHorizontalHeaderLabels(
@@ -362,7 +362,7 @@ QWidget *MainWindow::buildRewardPoolControlCard()
             "API-key-bearing RPC URLs are rejected instead of stored.")));
     layout->addLayout(configurationRow);
 
-    m_rewardPoolIntentsTable = new QTableWidget(0, 6);
+    m_rewardPoolIntentsTable = new QTableWidget(0, 6, card);
     m_rewardPoolIntentsTable->setObjectName(
         QStringLiteral("rewardPoolIntentsTable"));
     m_rewardPoolIntentsTable->setHorizontalHeaderLabels(

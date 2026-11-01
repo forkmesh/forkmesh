@@ -167,6 +167,8 @@ struct Run {
 QString runMarkdown(const Run &run);
 QString runSummaryText(const Run &run);
 QList<Run> loadRuns(const QString &file);
+QList<Run> mergeRun(QList<Run> runs, const Run &run, QStringList *droppedRunIds = nullptr);
+QByteArray encodeRuns(const QList<Run> &runs);
 bool saveRun(const QString &file, const Run &run, QStringList *droppedRunIds = nullptr);
 
 struct Pin {

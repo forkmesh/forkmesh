@@ -39,6 +39,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QTreeWidgetItemIterator>
 #include <QWidgetAction>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -64,6 +65,18 @@ constexpr int kScmClassicComposeButtonWidth = 30;
 constexpr int kScmNextCardRadius = 12;
 constexpr int kScmNextChipRadius = 4;
 const char kScmDiffCardName[] = "scmDiffCard";
+
+void clearScmTree(QTreeWidget *tree)
+{
+    if (!QApplication::activePopupWidget() && !QApplication::activeModalWidget()) {
+        QList<QWidget *> rows;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it)
+            if (QWidget *row = tree->itemWidget(*it, 0))
+                rows.append(row);
+        qDeleteAll(rows);
+    }
+    tree->clear();
+}
 
 void scmSetShown(QWidget *widget, bool shown)
 {
@@ -2792,13 +2805,13 @@ void MainWindow::showChangedRepositoriesDiff()
                 return;
             if (changed.isEmpty()) {
                 if (m_scmTree)
-                    m_scmTree->clear();
+                    clearScmTree(m_scmTree);
                 setDiffHtml(m_scmDiff, QStringLiteral(
                     "<p style='color:#8b949e'>All local repositories are clean.</p>"));
                 return;
             }
             if (m_scmTree) {
-                m_scmTree->clear();
+                clearScmTree(m_scmTree);
                 m_scmTree->setEnabled(true);
                 int fileCount = 0;
                 for (const ScmRepositoryPatchRead &repo : changed) {
@@ -3053,7 +3066,7 @@ void MainWindow::clearRangeFilesInSourceControl()
     if (m_scmOutgoingPanel)
         m_scmOutgoingPanel->hide();
     m_scmStatusCache.clear(); // returning to main must rebuild its working tree
-    m_scmTree->clear();
+    clearScmTree(m_scmTree);
     if (m_scmEmptyNote)
         m_scmEmptyNote->hide();
     if (m_scmCountLabel)
@@ -3119,7 +3132,7 @@ void MainWindow::showRangeFilesInSourceControl(const QStringList &paths,
     // end instead of one per row.
     TableRepaintGuard repaintGuard(m_scmTree);
     if (!sameRows)
-        m_scmTree->clear();
+        clearScmTree(m_scmTree);
 
     if (!paths.isEmpty() && !sameRows) {
         auto *group = new QTreeWidgetItem(m_scmTree);
@@ -3433,7 +3446,7 @@ void MainWindow::showSourceControlLoading(const QString &branch)
         m_scmDiffActiveOutline->hide();
     if (m_scmTree) {
         QSignalBlocker block(m_scmTree);
-        m_scmTree->clear();
+        clearScmTree(m_scmTree);
         m_scmTree->setEnabled(false);
     }
     if (m_scmCountLabel)
@@ -3505,7 +3518,7 @@ void MainWindow::refreshSourceControl(bool force)
             m_scmNextFileBar->hide();
         if (m_scmDiffActiveOutline)
             m_scmDiffActiveOutline->hide();
-        m_scmTree->clear();
+        clearScmTree(m_scmTree);
         if (m_scmDiff)
             m_scmDiff->clear();
         if (m_scmCountLabel)
