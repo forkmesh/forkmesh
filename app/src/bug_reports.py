@@ -26,10 +26,12 @@ Three properties matter more here than on the rest of the API:
   app version, source, status, timestamp -- stay in plaintext, so the report
   list sorts and paginates without decrypting anything.
 
-Reports are read back only by platform administrators: the Report a bug
-plugin lists, triages and downloads them through ``/api/bug-reports/inbox``
+Reports are read back in full only by platform administrators: the Report a
+bug plugin lists, triages and downloads them through ``/api/bug-reports/inbox``
 behind a bearer session and a live is_admin check, and so does the
-platform-admin console's Bug reports section (admin_support.py).
+platform-admin console's Bug reports section (admin_support.py).  A signed-in
+reporter sees only their own reports and their status through
+``/api/bug-reports/mine``, and can confirm one is fixed.
 
 Attachments are chunked into encrypted rows in ``bug_report_attachments``.
 They never enter the repository issue inbox or a non-admin response.
@@ -412,6 +414,7 @@ async def inbox_report(env, row):
         "package": str(record.get("package") or ""),
         "osVersion": str(record.get("osVersion") or ""),
         "device": str(record.get("device") or ""),
+        "confirmedFixedAt": int(record.get("confirmedFixedAt") or 0),
         "attachments": attachments,
     }
 
@@ -563,6 +566,142 @@ async def bug_reports_inbox_handler(env, request):
     reports = [await inbox_report(env, dict(row)) for row in rows[:limit]]
     return json_response(
         {"ok": True, "status": status or "all", "counts": counts,
+         "reports": reports, "offset": offset,
+         "nextOffset": offset + limit if len(rows) > limit else None},
+        cache_control=no_store)
+
+
+async def _mine_account(env, request):
+    try:
+        authorization = str(request.headers.get("authorization") or "")
+    except Exception:
+        return ""
+    if not authorization.lower().startswith("bearer "):
+        return ""
+    try:
+        return safe_segment(await _authed_account_name(env, request)) or ""
+    except Exception:
+        return ""
+
+
+async def mine_report(env, row):
+    record = await _sealed_record(env, row.get("data"))
+    return {
+        "id": str(row.get("report_id") or ""),
+        "status": str(row.get("status") or "new"),
+        "severity": str(row.get("severity") or "normal"),
+        "platform": str(row.get("platform") or ""),
+        "appVersion": str(row.get("app_version") or ""),
+        "createdAt": int(row.get("created_at") or 0),
+        "message": str(record.get("message") or ""),
+        "screen": str(record.get("screen") or ""),
+        "package": str(record.get("package") or ""),
+        "confirmedFixedAt": int(record.get("confirmedFixedAt") or 0),
+        "attachments": [
+            {"name": str(item.get("name") or "attachment"),
+             "size": int(item.get("size") or 0)}
+            for item in (record.get("attachments") or [])
+            if isinstance(item, dict)],
+    }
+
+
+async def _mine_counts(env, reporter_bi, account):
+    counts = {name: 0 for name in STATUSES}
+    for row in await d1_all(
+            env, "SELECT status, COUNT(*) AS n FROM bug_reports "
+            "WHERE reporter_bi=? AND account=? GROUP BY status",
+            reporter_bi, account) or []:
+        row = dict(row)
+        name = str(row.get("status") or "")
+        if name in counts:
+            counts[name] = int(row.get("n") or 0)
+    return counts
+
+
+async def _mine_confirm_fixed(env, request, account, reporter_bi, no_store):
+    try:
+        data = await bounded_json_request(request, max_bytes=INBOX_FORM_BYTES)
+    except Exception:
+        return json_response(
+            {"error": "invalid_json"}, status=400, cache_control=no_store)
+    data = data if isinstance(data, dict) else {}
+    if data.get("fixed") is not True:
+        return json_response(
+            {"error": "invalid_action", "detail": "send {\"fixed\": true}"},
+            status=400, cache_control=no_store)
+    report_id = _report_id(data.get("report"))
+    await ensure_schema(env)
+    row = await d1_first(
+        env, "SELECT report_id, account, source, platform, app_version, "
+        "severity, status, data, created_at FROM bug_reports "
+        "WHERE report_id=? AND reporter_bi=? AND account=? LIMIT 1",
+        report_id, reporter_bi, account) if report_id else None
+    if not row:
+        return json_response(
+            {"error": "report_missing"}, status=404, cache_control=no_store)
+    row = dict(row)
+    record = await _sealed_record(env, row.get("data"))
+    previous = str(row.get("status") or "new")
+    if not record:
+        return json_response(
+            {"error": "report_unavailable"}, status=410,
+            cache_control=no_store)
+    if previous != "closed" or not int(record.get("confirmedFixedAt") or 0):
+        record["confirmedFixedAt"] = int(Date.now())
+        sealed = await encrypt_row(env, record)
+        await d1_run(
+            env, "UPDATE bug_reports SET data=?, status='closed' "
+            "WHERE report_id=? AND reporter_bi=? AND account=?",
+            sealed, report_id, reporter_bi, account)
+        row["data"] = sealed
+        row["status"] = "closed"
+    return json_response(
+        {"ok": True, "report": await mine_report(env, row),
+         "previous": previous,
+         "counts": await _mine_counts(env, reporter_bi, account)},
+        cache_control=no_store)
+
+
+async def bug_reports_mine_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    url = urlparse(str(request.url or ""))
+    if method_name(request) not in ("GET", "POST"):
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "GET, POST"})
+    account = await _mine_account(env, request)
+    if not account:
+        return json_response(
+            {"error": "sign_in_required"}, status=401, cache_control=no_store)
+    reporter_bi = await _reporter_key(env, request, account)
+    if method_name(request) == "POST":
+        return await _mine_confirm_fixed(
+            env, request, account, reporter_bi, no_store)
+    params = parse_qs(url.query)
+
+    def param(name):
+        return _text((params.get(name) or [""])[0], 40).lower()
+
+    try:
+        limit = max(1, min(int(param("limit") or INBOX_PAGE_LIMIT),
+                           INBOX_PAGE_LIMIT))
+    except ValueError:
+        limit = INBOX_PAGE_LIMIT
+    try:
+        offset = max(0, int(param("offset") or 0))
+    except ValueError:
+        offset = 0
+    await ensure_schema(env)
+    rows = await d1_all(
+        env,
+        "SELECT report_id, account, source, platform, app_version, severity, "
+        "status, data, created_at FROM bug_reports "
+        "WHERE reporter_bi=? AND account=? "
+        "ORDER BY created_at DESC, report_id DESC LIMIT ? OFFSET ?",
+        reporter_bi, account, limit + 1, offset) or []
+    reports = [await mine_report(env, dict(row)) for row in rows[:limit]]
+    return json_response(
+        {"ok": True, "counts": await _mine_counts(env, reporter_bi, account),
          "reports": reports, "offset": offset,
          "nextOffset": offset + limit if len(rows) > limit else None},
         cache_control=no_store)

@@ -5609,6 +5609,12 @@ forkmesh::market::NativePackageWidget *MainWindow::quickAddPackagePromptTarget()
     return nullptr;
 }
 
+bool MainWindow::quickAddPackageAppliesToOpen() const
+{
+    const forkmesh::market::NativePackageWidget *target = quickAddPackagePromptTarget();
+    return target && target->hostPromptTarget().appliesToOpen;
+}
+
 bool MainWindow::submitQuickAddToPackage()
 {
     forkmesh::market::NativePackageWidget *target = quickAddPackagePromptTarget();

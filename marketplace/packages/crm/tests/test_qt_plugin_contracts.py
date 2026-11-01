@@ -613,6 +613,19 @@ def test_desktop_table_views_are_default_all_and_custom_ones_shared_in_settings(
     draft = FEATURE.split("void CrmFeature::saveTableViewDraft(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "QInputDialog" not in draft and 'QStringLiteral("View %1")' in draft
     assert "addTableView(name, fields," in draft
+
+
+def test_desktop_lists_open_in_the_organization_default_view():
+    assert "bool m_tableViewPicked = false;" in FEATURE_HEADER
+    assert "if (!m_tableViewPicked)\n        m_tableViewId = defaultTableViewId();" in FEATURE
+    fallback = FEATURE.split("QString CrmFeature::defaultTableViewId(", 1)[1].split("\n}\n", 1)[0]
+    assert 'text(m_settings, "defaultTableView")' in fallback and "kDefaultTableView" in fallback
+    menu = FEATURE.split("void CrmFeature::showTableViewMenu(", 1)[1].split("\n}\n", 1)[0]
+    assert 'QStringLiteral("Make default view")' in menu and "makeTableViewDefault()" in menu
+    make = FEATURE.split("void CrmFeature::makeTableViewDefault(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert 'QJsonObject{{QStringLiteral("defaultTableView"), id}}' in make
+    picked = FEATURE.split("void CrmFeature::selectTableView(", 1)[1].split("\n}\n", 1)[0]
+    assert "m_tableViewPicked = true;" in picked
     assert '[this] { saveTableViewDraft(); }' in FEATURE
     select = FEATURE.split("void CrmFeature::selectTableView(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "m_tableViewDraft.clear();" in select

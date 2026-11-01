@@ -41,6 +41,8 @@ public:
     void activateSearchHit(const QString &id) override;
     bool acceptsHostCommand(const QString &command) const override;
     bool hostCommand(const QString &command, const QJsonObject &args) override;
+    forkmesh::market::NativePackagePromptTarget hostPromptTarget() const override;
+    bool submitHostPrompt(const QString &text, const QStringList &attachments) override;
 
     void openNoteFromSearch(const QString &id, const QString &storage);
     bool takeQuickAddNote(const QString &text, const QStringList &attachments);
@@ -134,6 +136,10 @@ private:
                       const QString &kind = QString());
     void openReferenceLink(const QString &href);
     void searchIndexChanged();
+    bool noteAiEditAvailable() const;
+    void applyNoteAiEdit(const QString &reply, const QString &error);
+    void stopNoteAiEdit();
+    void promptTargetChanged();
 
     forkmesh::market::NativePackageHost m_host;
     std::function<void()> m_searchIndexChanged;
@@ -196,6 +202,10 @@ private:
     QJsonArray m_pages;
     QString m_customizeWhenLoaded;
     int m_pagesSequence = 0;
+    QString m_aiEditNoteId;
+    QString m_aiEditBase;
+    QString m_aiEditBaseTitle;
+    int m_aiEditSequence = 0;
 };
 
 }

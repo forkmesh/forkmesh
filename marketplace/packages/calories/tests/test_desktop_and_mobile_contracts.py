@@ -141,7 +141,7 @@ def test_desktop_footer_prompt_logs_to_the_diary_on_the_calories_section():
     assert "bool MainWindow::submitQuickAddToPackage()" in HOST
     enter = issues.split("if (obj == m_issueQuickAdd && event->type() == QEvent::KeyPress)", 1)[1]
     assert enter.index("submitQuickAddToPackage()") < enter.index("quickAddShouldFollowUpAgent()")
-    assert "if (!m_issueQuickAdd || submitQuickAddToPackage())" in issues
+    assert "(!quickAddPackageAppliesToOpen() && submitQuickAddToPackage()))" in issues
     assert "hostPromptTarget() const override" in FEATURE_HEADER
     assert "submitHostPrompt(const QString &text, const QStringList &attachments) override" in FEATURE_HEADER
     body = FEATURE.split("bool CaloriesFeature::submitHostPrompt(", 1)[1].split("\nvoid CaloriesFeature::", 1)[0]

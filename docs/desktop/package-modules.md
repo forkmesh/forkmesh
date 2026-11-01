@@ -100,6 +100,12 @@ the thread pool (`QtConcurrent`) instead of the window's `runOffThread`. Its
 "Fill event" asks the chosen CLI through `askAgentWith` and stops it when the
 dialog closes.
 
+A page that claims the composer (`hostPromptTarget()` with a placeholder) gets
+Enter and the **new** button, as Calorie Counter and Water do. One that sets
+`appliesToOpen` (Notes, while a note is open: [notes.md](notes.md#editing-a-note-with-ai))
+edits what is open instead: Enter and **add** go to `submitHostPrompt()`, and
+**new** does what it does on any other page.
+
 ### Keeping them apart
 
 Two checks hold the line, so a plugin recompiles only when its own files or the
