@@ -5923,6 +5923,7 @@ private:
     promptFirewallRequest(const QString &method, const QUrl &url,
                           QString *ruleOut);
     bool authorizeFirewallConnection(const QString &method, const QUrl &url);
+    void refreshFirewallAllowAllButton();
     // Says, once a session, that this build is older than the minimum
     // supported release and that is why nothing reaches the network.
     void warnOutdatedClientVersion();
@@ -12280,6 +12281,8 @@ private:
     };
     QCheckBox *m_requestFirewallEnabledCheck = nullptr;
     QLabel *m_requestFirewallStatus = nullptr;
+    QPushButton *m_requestFirewallAllowAllButton = nullptr;
+    QTimer *m_requestFirewallAllowAllTicker = nullptr;
     QLineEdit *m_requestFirewallRuleEdit = nullptr;
     QTableWidget *m_requestFirewallRulesTable = nullptr;
     QTableWidget *m_requestFirewallHistoryTable = nullptr;

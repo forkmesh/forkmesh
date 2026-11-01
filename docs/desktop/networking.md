@@ -497,6 +497,41 @@ moves files, without relaying content in clear.
   `native/ios/ForkMeshCore/Tests/FMChatTests/LocalControlTests.swift`; change
   both together. Tests: `forkmesh-local-control-tests`.
 
+## Request firewall prompt
+
+With **Whitelist only** on, every request or WebSocket to a destination no rule
+covers asks first in the **ForkMesh Firewall** dialog
+(`MainWindow::promptFirewallRequest`, `MainWindowNetworkDiagnostics.cpp`). The
+dialog runs inside the call that wants the network
+(`BackoffNetworkAccessManager::createRequest` or
+`authorizeFirewallConnection`), so it opens a nested event loop while it waits.
+
+- **One dialog at a time.** Pollers keep firing while a prompt is open, and
+  each request to another unlisted host used to open its own modal dialog
+  nested inside the first. The newest one blocked the older one but often
+  opened behind it, so **Allow** did nothing and the window looked frozen
+  (fixed 2026-11-01). Now only one prompt is on screen. A request that comes in
+  while it is open waits for the answer. A request to the same host takes that
+  answer. A request to another host checks the rules again, because the answer
+  is applied (and saved) as the dialog closes, before the outer request
+  unwinds, so a wildcard just allowed covers it. Only a destination that is
+  still unlisted opens the next dialog. If a waiting loop comes back with the
+  prompt still unanswered (the app is quitting), the request is denied once
+  instead of looping.
+- Before the dialog opens, popups (menus, combo lists) are closed and any mouse
+  or keyboard grab is released, because a grab sends the clicks meant for
+  **Allow** to the popup. The dialog is then shown, raised and activated so it
+  is not left behind another window.
+- **Allow all for 1 minute** lets every unlisted destination through for 60
+  seconds without asking, including the request that opened the dialog
+  (`BackoffNetworkAccessManager::allowAllFirewallFor`, verdict
+  `FirewallAllowOnce`). Nothing is remembered as a rule, and remembered
+  denials still block. The Network page's firewall tab has the same button,
+  which shows a countdown while the window is open and stops it early when
+  clicked. The start and end are written to the system log
+  (`firewallAllowAllChanged`). Requests let through this way show up in the
+  decision history with no rule.
+
 ## Traps
 
 - A code-approved phone stays in `paired-devices.json` regardless of the
