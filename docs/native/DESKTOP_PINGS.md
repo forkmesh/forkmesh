@@ -15,7 +15,8 @@ Push delivery itself is in [MESH_PUSH.md](MESH_PUSH.md) and
 | Which pings go, wire shape, phone-link rule, dedupe and storm gate | `desktop/src/DesktopPingForward.{h,cpp}`, `desktop/tests/test_desktop_ping_forward.cpp` |
 | Burst batching and summaries (OS cards, arrival sound, phone) | `desktop/src/PingBatch.{h,cpp}`, `desktop/tests/test_ping_batch.cpp`; `batchNativeNotificationCard`, `admitPingSound` (`MainWindowActions.cpp`), `flushPhonePingBatch` (`MainWindowPingForward.cpp`) |
 | Sending (signing, POST, on/off switch) | `desktop/src/MainWindowPingForward.cpp`; hook in `MainWindow::recordNotification` (`MainWindowActions.cpp`) |
-| Route | `app/src/desktop_pings.py` (`POST` and `DELETE /api/notifications/desktop`); tests `app/tests/test_desktop_pings.py` |
+| Route | `app/src/desktop_pings.py` (`POST` and `DELETE /api/notifications/desktop`, `POST /api/notifications/agent-approval`); tests `app/tests/test_desktop_pings.py` |
+| Agent approvals | sender `pushAgentApprovalPings` (`MainWindowLocalControlAgentOps.cpp`), proof and body in `LocalControlAgentOps.{h,cpp}`; ping kind `agent_approval`; phone actions `AgentApprovalNotification` (iOS `FMAgents/Remote`, Android `agents/ops`) |
 | Ping kind | `desktop_ping` in `NOTIFICATION_KINDS`, `devices` group of `PING_KIND_CATALOG` ("Pings from your desktop") |
 | Banner | `_apns_ping_alert` (`entry.py`), `apns.alert_payload` (adds `aps.category` and top-level `sessionId`) |
 | Power alarm | `desktop/src/DesktopPowerAlert.{h,cpp}`, `PowerSourceReader.{h,cpp}`, `MainWindowPowerAlert.cpp`; relay `DESKTOP_PING_ALARMS`, `apns.APNS_ALARM_SOUNDS`; iOS `DesktopAlarm.swift`; Android `PingAlarm.kt`, `PingNotifier` |
@@ -255,6 +256,46 @@ Continue, Merge & clean up); a warning about an agent is `agent-failed` (Open,
 Retry, Send to agent). A failed Actions run is `ci-failed` (Open log, Send to
 agent); a run that did not fail carries its `runId` with no category.
 
+### Agent approvals
+
+When an agent on the desktop waits for a tool approval (the same queue the
+phone's Approvals screen reads over desktop control), the desktop sends one
+`POST /api/notifications/agent-approval` per approval it has not announced yet
+(`ApprovalPingLedger`, 256 ids, kept across restarts; a 408, 429, 5xx or
+network failure is retried on the next tick). JSON body:
+
+| Field | Rule |
+| --- | --- |
+| `sessionId` | `[A-Za-z0-9_.:-]{1,64}`; the desktop sends the agent row number |
+| `approvalId` | 32 lowercase hex characters (`validApprovalId`) |
+| `agent` | at most 80 characters on one line; empty becomes "An agent" |
+| `summary` | at most 200 characters on one line, such as "Wants to run a command in alice/app"; empty becomes "Wants your approval" |
+
+Authorised by the account session, or by `user`/`ts`/`sig` over
+
+```
+forkmesh-account-agent-approval-ping-v1
+<user>
+<sessionId>\n<approvalId>\n<agent>\n<summary>
+<ts>
+```
+
+The relay files an `agent_approval` row ("Agent approvals from your desktop"
+in the ping settings, devices group) titled "<agent> needs your approval" with
+the summary as its body, deduplicated on the approval id. Its `meta` holds
+`category: agent-approval`, `sessionId`, `approvalId` and `agent`. The APNs
+payload carries `aps.category` `agent-approval`, the time-sensitive level, an
+`agent-approval:<sessionId>` thread and top-level `sessionId` and
+`approvalId`; Android reads the same fields from the ping's `meta`.
+
+The banner offers Approve, Deny and Open. The phone answers through desktop
+control (`agentops.prepare` + `agentops.answer`), never through the relay, so
+the ping only says that an approval is waiting and cannot approve anything by
+itself. Approve asks for the device passcode or biometrics (iOS approves once
+in place; Android opens the Approvals screen), Deny answers without opening
+the app, and Open lands on the approval. When the desktop does not take the
+answer, iOS opens the approval and Android says so.
+
 ### Tapping the banner
 
 A tap on an agent ping opens that agent's session, not the `href` (a desktop
@@ -419,8 +460,5 @@ applied unattended.
   `com.apple.developer.usernotifications.time-sensitive` entitlement, which
   `Config/ForkMesh-*.entitlements` does not carry yet. Add it together with the
   App ID capability, or signing fails.
-- `/api/notifications/agent-approval` has no route on the served stack, so
-  approvals arrive as a plain `agent-finished` ping without Approve and Deny
-  buttons.
 - The desktop cuts title and body to fit before signing (`fitText`), counting
   UTF-16 units, never fewer than Python's code points.

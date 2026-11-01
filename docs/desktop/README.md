@@ -601,6 +601,23 @@ points at the pull request's code (or the commit) as the thing to review. The
 button reads "Approve && run" in source: a single `&` is a Qt mnemonic and
 showed as "Approve_run".
 
+### Automatic approval re-verifies on a worker
+
+`autoApproveAwaitingRuns` re-reads each held run's workflow (`git show`) and
+re-hashes the repository snapshot (`ActionStore::repositoryStateDigest`: a
+`git ls-tree -r` plus a `git archive` of the whole tree) before it releases
+the run. It did that on the GUI thread, once at startup for every repository
+with automatic approval on and again when the setting was switched on; on
+2026-11-01 (report #19) the startup pass froze the window for 4.8 s on a
+large mirror. The git work now runs in `runOffThread`, and the apply step on
+the GUI thread looks each run up again by id and only approves it if it is
+still held, still not a first-time author's, and still at the same commit,
+workflow text and snapshot. It then rechecks that the repository still has
+automatic approval on, saves, queues and starts the queue itself, so the
+callers no longer wait for a count. Test:
+`app/tests/test_qt_pull_request_checks.py`
+(`test_the_auto_approval_sweep_reverifies_off_the_gui_thread`).
+
 ### New pull request pings count new pull requests only
 
 Two kinds of inbox entry are not new pull requests: review and lifecycle

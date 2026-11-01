@@ -68,10 +68,12 @@ object Features {
         com.forkmesh.nativeapp.feature.codeinsight.CodeInsightFeature.install(app)
         com.forkmesh.nativeapp.feature.openwrt.OpenWrtFeature.install()
         com.forkmesh.nativeapp.feature.appstorestatus.AppStoreStatusFeature.install()
+        com.forkmesh.nativeapp.feature.booking.BookingFeature.install()
         com.forkmesh.nativeapp.feature.runners.RunnersFeature.install()
         com.forkmesh.nativeapp.feature.usage.UsageFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
         com.forkmesh.nativeapp.feature.instancefeed.InstanceFeedFeature.install()
+        com.forkmesh.nativeapp.feature.mastodon.MastodonFeature.install(app)
         com.forkmesh.nativeapp.feature.poker.PokerFeature.install()
         com.forkmesh.nativeapp.feature.securedrive.SecureDriveFeature.install(app)
         com.forkmesh.nativeapp.feature.files.FilesFeature.install(app)
@@ -144,6 +146,7 @@ object Features {
         if (com.forkmesh.nativeapp.feature.chat.DirectCallFeature.onIntent(intent)) return
         if (PushFeature.onIntent(navigator, intent)) return
         if (InboxFeature.onIntent(intent)) return
+        if (com.forkmesh.nativeapp.feature.mastodon.MastodonFeature.onIntent(navigator, intent)) return
         if (NavigationFeature.onIntent(navigator, intent)) return
         SurfacesFeature.onShare(intent)
     }

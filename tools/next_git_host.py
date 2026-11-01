@@ -10,7 +10,7 @@ Each core node keeps a bare copy of this repository at
 files 0640). ``push`` sends ``main`` and the tags over SSH as root with the
 fleet key, then runs ``git update-server-info`` so Git's dumb-HTTP protocol
 can clone it through plain file serving. Caddy serves it under ``/git/*`` on
-``nN.next.forkmesh.com`` and ``app.next.forkmesh.com`` behind basic auth
+``nN.next.forkmesh.com`` and ``app.forkmesh.com`` behind basic auth
 (user ``fmnext-ci``) from ``/etc/forkmesh-next/caddy/git-private.caddy``,
 which the rendered Caddyfile imports by glob (deploy/core/render.py): a node
 without the file has no ``/git/`` route at all.
@@ -129,7 +129,7 @@ def _snippet_text(password_hash: str, root: str) -> str:
 
 def snippet(password_hash: str, root: str = GIT_ROOT) -> str:
     """The Caddy handle; the rendered Caddyfile imports it inside the
-    per-node and app.next site blocks."""
+    per-node and app.forkmesh.com site blocks."""
     if not password_hash.startswith("$2") or any(c.isspace() for c in password_hash):
         raise ToolError("not a bcrypt hash")
     return _snippet_text(password_hash, root)
@@ -272,7 +272,7 @@ def main(argv=None, ssh=None, run=None) -> int:
         p.add_argument("nodes", nargs="*")
         common.add_execute_flags(p)
     p = sub.add_parser("url")
-    p.add_argument("--node", help="nN: the per-node name instead of app.next")
+    p.add_argument("--node", help="nN: the per-node name instead of app.forkmesh.com")
     args = parser.parse_args(argv)
     try:
         fleet = common.load_fleet(args.fleet)

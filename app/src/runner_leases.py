@@ -1207,6 +1207,18 @@ class WorkerRuntime:
     async def notify(self, account, topic):
         await notify_account_event(self.env, account, topic)  # noqa: F821
 
+    async def notify_actions(self, kind, owner, repo, title, body, href,
+                             dedupe, meta):
+        pings = 0
+        for recipient in await _org_fanout_recipients(  # noqa: F821
+                self.env, owner, repo):
+            if await enqueue_notification(  # noqa: F821
+                    self.env, recipient, kind, title, body=body,
+                    repo=owner + "/" + repo, href=href, source="actions",
+                    dedupe=dedupe, ts=self.now(), meta=meta):
+                pings += 1
+        return pings
+
     async def alert_runner_auth(self, runner, provider, state, title, body,
                                 href, dedupe, email=False, extra=(),
                                 admins=True):

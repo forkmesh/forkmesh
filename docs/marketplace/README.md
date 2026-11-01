@@ -30,6 +30,7 @@ documentation; the package format, lifecycle and publishing rules are in
 | [app-store-status.md](app-store-status.md) | `app-store-status`: the iOS app as App Store Connect sees it |
 | [cleanup.md](cleanup.md) | `cleanup`: what agent runs leave on disk, and confirmed deletion |
 | [computer-security.md](computer-security.md) | `computer-security`: the desktop security checkup and fixes |
+| [apparmor.md](apparmor.md) | `apparmor`: AppArmor profiles, confinement and denials on Linux |
 | [phone-security.md](phone-security.md) | `phone-security`: the iPhone and Android security checkup |
 | [runners.md](runners.md) | `runners`: your agent runners on desktop and phones |
 | [usage.md](usage.md) | `usage`: coding-agent account usage on desktop, iPhone and Android |
@@ -38,9 +39,11 @@ documentation; the package format, lifecycle and publishing rules are in
 | [nexus.md](nexus.md) | `nexus`: desktop network inspection |
 | [secure-drive.md](secure-drive.md) | `secure-drive`: the encrypted shared drive format (`fmsd1`) |
 | [invoices.md](invoices.md) | `invoices`: CRM-linked invoices with open, view and payment tracking |
+| [booking.md](booking.md) | `booking`: a personal booking page at one short link, confirmations emailed |
 | [rss-reader.md](rss-reader.md) | `rss-reader`: a local-only feed reader |
 | [instance-feed.md](instance-feed.md) | `instance-feed` (Feed): one instance's timeline; `feed` (Network Feed) |
 | [mastodon.md](mastodon.md) | `mastodon`: the Mastodon client on the web, phones and desktop |
+| [discourse-mirror.md](discourse-mirror.md) | `discourse-mirror`: a read-only copy of a public Discourse forum in a Git repository |
 | [poker.md](poker.md) | `poker`: Texas Hold'em for virtual chips |
 | [video-mix-dj-studio.md](video-mix-dj-studio.md) | `video-mix-dj-studio`: the DJ studio on web, desktop and iOS (user guide: [DJ Studio jams](../dj-studio.md)) |
 | [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md) | The DJ studio's iOS performance checks, read by its diagnostics agent |

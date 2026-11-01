@@ -13,7 +13,7 @@
 A release is ``/opt/forkmesh-next/app/releases/<rev>`` holding the built app
 (``app/host``, ``app/src_build``, ``app/dist``, ``app/wrangler.toml``), the
 built World (``world/dist``, api-origin meta injected; the app host answers
-world.next ``/health/mobile`` from these files), a ``.venv`` installed offline from the bundled wheelhouse,
+world.forkmesh.com ``/health/mobile`` from these files), a ``.venv`` installed offline from the bundled wheelhouse,
 the Caddy route snippets for that release, ``BUILD_REV`` and
 ``release.env``. ``current`` is a symlink; the previous target is kept in
 ``/opt/forkmesh-next/app/previous``.

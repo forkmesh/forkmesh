@@ -140,6 +140,7 @@ object RouteCatalog {
         Route.Kind.Analytics -> "Analytics"
         Route.Kind.Competitors -> "Competitors"
         Route.Kind.Invoices -> "Invoices"
+        Route.Kind.Booking -> "Booking"
         Route.Kind.Ads -> "Ads"
         Route.Kind.Ledger -> "Ledger & tips"
         Route.Kind.Vault -> "Vault"
@@ -167,6 +168,7 @@ object RouteCatalog {
         Route.Kind.VideoMixDjStudio -> "Video Mix DJ Studio"
         Route.Kind.Poker -> "Poker"
         Route.Kind.InstanceFeed -> "Feed"
+        Route.Kind.Mastodon -> "Mastodon"
         Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Files -> "Files"
         Route.Kind.Nexus -> "NEXUS"
@@ -230,6 +232,7 @@ object RouteCatalog {
         Route.Kind.Analytics -> "show_chart"
         Route.Kind.Competitors -> "travel_explore"
         Route.Kind.Invoices -> "receipt_long"
+        Route.Kind.Booking -> "event"
         Route.Kind.Ads -> "ads_click"
         Route.Kind.Ledger -> "account_balance_wallet"
         Route.Kind.Vault -> "key"
@@ -256,6 +259,7 @@ object RouteCatalog {
         Route.Kind.VideoMixDjStudio -> "album"
         Route.Kind.Poker -> "casino"
         Route.Kind.InstanceFeed -> "comment"
+        Route.Kind.Mastodon -> "alternate_email"
         Route.Kind.SecureDrive -> "lock"
         Route.Kind.Files -> "folder"
         Route.Kind.Nexus -> "lan"
@@ -331,6 +335,7 @@ object HubCatalog {
         HubItem.destination(Route.Notes, guestAction = "use notes"),
         HubItem.destination(Route.Tasks(null), guestAction = "use tasks"),
         HubItem.destination(Route.Calendar(null, CalendarMode.Month), needsRegistration = true),
+        HubItem.destination(Route.Booking(null), needsRegistration = true, guestAction = "set up a booking page"),
         HubItem.destination(Route.Timers, needsRegistration = true),
         HubItem.destination(Route.Nexus),
     )
@@ -377,6 +382,7 @@ object HubCatalog {
         HubItem.destination(Route.VideoMixDjStudio),
         HubItem.destination(Route.Poker(null), needsRegistration = true, guestAction = "play poker"),
         HubItem.destination(Route.InstanceFeed(null), needsRegistration = true),
+        HubItem.destination(Route.Mastodon),
         HubItem.destination(Route.SecureDrive),
         HubItem.destination(Route.Files),
         HubItem.destination(Route.LocalAI, needsRegistration = true),

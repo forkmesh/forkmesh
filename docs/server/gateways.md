@@ -79,10 +79,12 @@ interpreter start before `main()` installs the handlers.
 - `tree` lists at most `MAX_TREE_ENTRIES` (500) entries of a code folder, with
   `truncated: true` past that. The collaboration folders
   (`COLLABORATION_TREE_ROOTS`: `.forkmesh/issues`, `pulls`, `discussions`,
-  `releases`) list up to `MAX_COLLABORATION_TREE_ENTRIES` (50,000): they skip
+  `releases`, `forum`) list up to `MAX_COLLABORATION_TREE_ENTRIES` (50,000): they skip
   the per-entry history and analysis, so a long listing is cheap, and the
-  issue list reads `.forkmesh/issues/open` as one listing (a 500 cap made a
-  forge with 547 open issues show "Open 500").
+  issue list reads `.forkmesh/issues/open` as one listing. With a 500 cap a
+  forge with 547 open issues showed "Open 500", and a copied forum keeps
+  thousands of folders in `.forkmesh/forum/topics` that its writer must
+  rebuild from ([repo-forum](../app/repo-forum.md#posting-and-operator-tools)).
 - A code folder's `tree` carries a dependency and coverage analysis
   (`_analysis`), which takes seconds on a large repository. It reads only
   code: every path outside `.forkmesh/`, plus coverage artifacts

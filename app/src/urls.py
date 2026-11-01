@@ -400,6 +400,7 @@ REPO_AP_POSTS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/ap-posts$")
 REPO_WEBHOOKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/webhooks$")
 REPO_PROVIDER_MIRROR_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/provider-mirror$")
+REPO_FORUM_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/forum$")
 REPO_ARCHIVE_SYNC_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/archive-sync$")
 # Owner-uploaded repo branding (logo/banner PNG) served publicly — referenced

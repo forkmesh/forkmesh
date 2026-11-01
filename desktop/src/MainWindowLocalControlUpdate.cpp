@@ -11,6 +11,13 @@
 #include <QPushButton>
 #include <QTimer>
 
+#if defined(Q_OS_LINUX) && defined(FORKMESH_HAVE_PORTAL)
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusObjectPath>
+#include <QDBusReply>
+#endif
+
 namespace updatectl = forkmesh::localcontrol::update;
 namespace hostctl = forkmesh::localcontrol::hosts;
 
@@ -18,6 +25,45 @@ namespace {
 
 const qint64 kProcessStartedMs = QDateTime::currentMSecsSinceEpoch();
 constexpr int kUpdateFlushMs = 500;
+constexpr int kSessionQueryMs = 2000;
+constexpr uint kGnomeInhibitLogout = 1;
+
+QStringList gnomeLogoutInhibitors()
+{
+    QStringList out;
+#if defined(Q_OS_LINUX) && defined(FORKMESH_HAVE_PORTAL)
+    const QString service = QStringLiteral("org.gnome.SessionManager");
+    QDBusInterface manager(service, QStringLiteral("/org/gnome/SessionManager"), service,
+                           QDBusConnection::sessionBus());
+    if (!manager.isValid())
+        return out;
+    manager.setTimeout(kSessionQueryMs);
+    const QDBusReply<QList<QDBusObjectPath>> paths = manager.call(QStringLiteral("GetInhibitors"));
+    if (!paths.isValid())
+        return out;
+    for (const QDBusObjectPath &path : paths.value()) {
+        QDBusInterface inhibitor(service, path.path(),
+                                 QStringLiteral("org.gnome.SessionManager.Inhibitor"),
+                                 QDBusConnection::sessionBus());
+        inhibitor.setTimeout(kSessionQueryMs);
+        const QDBusReply<uint> flags = inhibitor.call(QStringLiteral("GetFlags"));
+        if (!flags.isValid() || !(flags.value() & kGnomeInhibitLogout))
+            continue;
+        const QDBusReply<QString> app = inhibitor.call(QStringLiteral("GetAppId"));
+        const QDBusReply<QString> reason = inhibitor.call(QStringLiteral("GetReason"));
+        QString entry = app.isValid() ? app.value().simplified() : QString();
+        if (entry.endsWith(QLatin1String(".desktop")))
+            entry.chop(8);
+        if (entry.isEmpty())
+            entry = QStringLiteral("an app");
+        if (reason.isValid() && !reason.value().simplified().isEmpty())
+            entry += QStringLiteral(" (%1)").arg(reason.value().simplified());
+        if (!out.contains(entry))
+            out.append(entry);
+    }
+#endif
+    return out;
+}
 
 } // namespace
 
@@ -103,7 +149,8 @@ void MainWindow::restartComputer()
 {
     QProcess *process = new QProcess(this);
     process->setProgram(QStringLiteral("systemctl"));
-    process->setArguments({QStringLiteral("--no-ask-password"), QStringLiteral("reboot")});
+    process->setArguments(
+        {QStringLiteral("--no-ask-password"), QStringLiteral("-i"), QStringLiteral("reboot")});
     process->setProcessChannelMode(QProcess::MergedChannels);
     const auto failed = [this, process](const QString &message) {
         if (!m_computerRestarting) {
@@ -129,8 +176,37 @@ void MainWindow::restartComputer()
                     process->deleteLater();
                     return;
                 }
-                failed(updatectl::computerRestartFailure(
-                    exitCode, QString::fromUtf8(process->readAllStandardOutput())));
+                const QString output = QString::fromUtf8(process->readAllStandardOutput());
+                if (!updatectl::computerRestartRefused(output)) {
+                    failed(updatectl::computerRestartFailure(exitCode, output));
+                    return;
+                }
+                QProcess *inhibitors = new QProcess(this);
+                inhibitors->setProgram(QStringLiteral("busctl"));
+                inhibitors->setArguments(
+                    {QStringLiteral("--json=short"), QStringLiteral("call"),
+                     QStringLiteral("org.freedesktop.login1"),
+                     QStringLiteral("/org/freedesktop/login1"),
+                     QStringLiteral("org.freedesktop.login1.Manager"),
+                     QStringLiteral("ListInhibitors")});
+                connect(inhibitors, &QProcess::errorOccurred, this,
+                        [failed, inhibitors, exitCode, output](QProcess::ProcessError error) {
+                            if (error != QProcess::FailedToStart)
+                                return;
+                            failed(updatectl::computerRestartFailure(exitCode, output));
+                            inhibitors->deleteLater();
+                        });
+                connect(inhibitors, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+                        this, [failed, inhibitors, exitCode, output](int, QProcess::ExitStatus) {
+                            const QByteArray list = inhibitors->readAllStandardOutput();
+                            const QStringList blockers = updatectl::computerRestartBlockers(
+                                list, list.contains("user session inhibited")
+                                          ? gnomeLogoutInhibitors()
+                                          : QStringList());
+                            failed(updatectl::computerRestartFailure(exitCode, output, blockers));
+                            inhibitors->deleteLater();
+                        });
+                inhibitors->start();
             });
     process->start();
 }

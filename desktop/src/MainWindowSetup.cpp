@@ -3397,7 +3397,8 @@ void MainWindow::stopLocalMesh()
 
 void MainWindow::startLocalMesh()
 {
-    if (!corePackageServiceRunning(QStringLiteral("local-mesh")))
+    if (!m_backend || m_closingDown ||
+        !corePackageServiceRunning(QStringLiteral("local-mesh")))
         return;
     if (m_localMesh) {
         m_localMesh->setUserName(chatDisplayName());

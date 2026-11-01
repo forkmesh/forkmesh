@@ -499,6 +499,11 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
   token and a typed name after the screen lock (`UserPresence.confirm`).
   Approving an agent request always opens the app; only Deny works from a
   notification.
+  Approving waiting checks from a notification opens the pull request's
+  Checks card with the approval queued for five minutes and bound to the
+  notification's head; the card asks for the screen lock and then sends it
+  (iOS approves in place after Face ID). Approve and Run workflow on the
+  Actions screens ask for the screen lock too.
 
 ## 10. Platform choices
 
@@ -586,6 +591,8 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
 - Chat and ping times use a 12-hour clock; agent prompts keep 24-hour stamps.
 - The prompt composer has no mic button; dictation is `/dictate`, and a quiet
   stop after words sends the prompt (`SpeechDictation` `onQuiet`).
+- Approving waiting checks from a notification opens the app (the screen lock
+  needs an on-screen dialog to fall back to); iOS approves from the banner.
 
 iOS features Android does not have, because they need an Apple-only API:
 
@@ -910,6 +917,18 @@ default in new projects except the chosen starter pack
   or delete is merged with the local changes made since, so a new event is not
   lost and a deleted one does not return. Saves run on other IO threads, so
   token, revision and event list share one lock. Test: `CalendarSaveTest`.
+- **Mastodon** (`mastodon`, route `Route.Mastodon`, Personal group;
+  `/dashboard/mastodon`, `forkmesh://mastodon`). `C/mastodon/` holds the
+  host-JVM-tested part (server parsing, PKCE, the callback `state` check,
+  post HTML to segments, the character count, Link paging, models and the
+  client over a `MastodonTransport`); `A/feature/mastodon/` the Compose
+  screens and `MastodonState`. The browser returns to
+  `forkmesh://mastodon/callback`, which `MastodonFeature.onIntent` takes
+  before `NavigationFeature` so the code never becomes a route; the pending
+  sign-in lives in the project's `SecretStore` (`mastodon.pending.v1`), so a
+  process the system ended while the browser was open still finishes. The
+  iPhone uses `ASWebAuthenticationSession` for the same step
+  ([Mastodon](../marketplace/mastodon.md#on-the-phone)).
 
 ## 14. Chat features
 

@@ -3005,6 +3005,12 @@ class Default:
             instance_launch._bind_runtime(globals())
             return await instance_launch.route(self.env, request, url.path)
 
+        if url.path in ("/api/forum-mirrors", "/api/forum-mirrors/"):
+            import forum_mirror_setup
+            forum_mirror_setup._bind_runtime(globals())
+            return await forum_mirror_setup.forum_mirrors_handler(
+                self.env, request)
+
         # Anonymous docs/page feedback: like/dislike clicks with optional text.
         if url.path in ("/api/feedback", "/api/feedback/"):
             return await feedback_handler(self.env, request)
@@ -3221,6 +3227,10 @@ class Default:
         if url.path in ("/api/notifications/desktop",
                         "/api/notifications/desktop/"):
             return await desktop_ping_handler(self.env, request)
+
+        if url.path in ("/api/notifications/agent-approval",
+                        "/api/notifications/agent-approval/"):
+            return await agent_approval_ping_handler(self.env, request)
 
         if (url.path == "/api/calendar" or url.path == "/api/calendar/"
                 or url.path.startswith("/api/calendar/")):
@@ -3926,6 +3936,16 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_webhooks_handler(self.env, request, owner, repo)
+
+        forum_match = REPO_FORUM_RE.match(url.path)
+        if forum_match:
+            owner = safe_segment(forum_match.group(1))
+            repo = safe_segment(forum_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            import forum_records
+            forum_records._bind_runtime(globals())
+            return await forum_records.forum_handler(self.env, request, owner, repo)
 
         provider_mirror_match = REPO_PROVIDER_MIRROR_RE.match(url.path)
         if provider_mirror_match:

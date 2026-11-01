@@ -25,6 +25,12 @@ repository owner (organization or user, optional extra organization owners);
 optional mail provider; listing choices (`ownWorld`, `listOnHomepage`, both
 on by default).
 
+- **Discourse mirrors.** Under the title, a link reads "Mirroring a Discourse
+  forum? Start a Discourse mirror" (`/start-discourse-mirror`). With
+  `?forum=<https address>`, the page says the mirror is finished on the new
+  instance, and the finished launch's "Open my instance" goes to that
+  instance's `/start-discourse-mirror?forum=…` instead of its home page
+  ([repository forums](../app/repo-forum.md#starting-a-mirror)).
 - **Set up from a file.** A JSON file whose keys are exactly the launch body,
   or a zip with that JSON and a logo, read in the browser only. Guide:
   [start config](../start-config.md); examples

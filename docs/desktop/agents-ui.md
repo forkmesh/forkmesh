@@ -664,7 +664,11 @@ cannot drift.
 ## Composer
 
 The prompt box keeps drafts, spell-checks and takes images. It holds at most
-16,000 characters (not shown). Its usage meter and account menus are in
+16,000 characters (not shown). The system dictionary (Hunspell, or a plain word list)
+loads on the global thread pool the first time any highlighter asks for it;
+until it is ready a highlighter marks nothing, and every highlighter that
+asked is rehighlighted when it arrives (loading it inline cost about a second
+on the GUI thread at startup). Its usage meter and account menus are in
 [agent-usage.md](agent-usage.md#composer-usage-meter-and-menus).
 
 | Control | Setting | Effect |

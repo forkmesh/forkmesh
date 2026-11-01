@@ -563,6 +563,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         [this](const QString &method, const QUrl &url, QString *ruleOut) {
             return promptFirewallRequest(method, url, ruleOut);
         });
+    connect(network, &BackoffNetworkAccessManager::firewallAllowAllChanged, this,
+            [this](bool active) {
+                logSystem(active
+                              ? QStringLiteral("Firewall: allowing every connection "
+                                               "for the next minute.")
+                              : QStringLiteral("Firewall: stopped allowing every "
+                                               "connection; unlisted destinations "
+                                               "ask again."));
+                refreshFirewallAllowAllButton();
+            });
     connect(network, &BackoffNetworkAccessManager::firewallRequestDecided, this,
             [this, network](const QString &method, const QUrl &url,
                             const QString &rule, bool allowed) {

@@ -296,6 +296,7 @@ SYSTEM_ACTIONS_SUMMARY_PATH = Path(
 HOSTED_PUBLIC_GIT_ROOT = Path("/srv/forkmesh-git/imports")
 COLLABORATION_TREE_ROOTS = frozenset({
     ".forkmesh/pulls", ".forkmesh/issues", ".forkmesh/discussions", ".forkmesh/releases",
+    ".forkmesh/forum",
 })
 PUBLIC_OPERATIONS = frozenset(
     {

@@ -2,7 +2,7 @@
 
 * **Host allowlist.** On a VPS node the App answers only its configured
   public names: ``FORKMESH_PUBLIC_HOSTS`` (comma list rendered into app.env:
-  app.next, world.next and every nN.next name) plus the hosts of
+  app.forkmesh.com, world.forkmesh.com and every nN.next name) plus the hosts of
   ``APP_ORIGIN`` / ``WORLD_ORIGIN``. Anything else (``localhost``,
   ``127.0.0.1``, a raw IP, a foreign name) gets ``421``. Only ``/health``,
   ``/readyz`` and ``GET /api/version`` from a loopback peer are exempt: the

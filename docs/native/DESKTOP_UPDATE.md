@@ -20,7 +20,7 @@ each row, and a rebuilt row would dismiss the sheet as it opens.
 
 ## Restarting the computer
 
-The desktop runs `systemctl --no-ask-password reboot` and keeps the process
+The desktop runs `systemctl --no-ask-password -i reboot` and keeps the process
 until it has accepted or rejected the request, streaming the command and status
 through `update.progress`. A launch, authorization or exit failure reaches the
 phone as an error, never a false success.
@@ -48,19 +48,52 @@ Settings → General → Startup → **Let my phones restart this computer** ins
 sleep permission ([lifecycle.md](../desktop/lifecycle.md)), with one
 administrator authentication.
 
-- The rule returns `YES` for `login1.reboot` and
-  `login1.reboot-multiple-sessions` when `subject.user` is this account, and
-  nothing else: no power-off, no `reboot-ignore-inhibit`, so another user's
-  block inhibitor still stops the restart.
+- The rule returns `YES` for `login1.reboot`,
+  `login1.reboot-multiple-sessions` and `login1.reboot-ignore-inhibit` when
+  `subject.user` is this account, and nothing else (no power-off).
 - It is its own file, so turning it off (`pkexec rm -f` of that file) leaves
   the sleep rule alone.
-- It applies to every process of the account, agents included, and lets the
-  account end another user's session by restarting; the checkbox tooltip says
-  so.
+- It applies to every process of the account, agents included, lets the
+  account end another user's session by restarting, and lets the restart
+  override any program holding off shutdown; the checkbox tooltip says so.
 - Without it, a refusal containing "Interactive authentication required"
   reaches the phone as a message naming the setting
   (`computerRestartFailure`, `desktop/src/LocalControlUpdate.cpp`); other
   failures keep systemctl's words.
+
+### "Access denied"
+
+systemd 257's logind (`verify_shutdown_creds`) refuses a reboot outright with
+`AccessDenied` ("Access denied due to active block inhibitor") whenever any
+program, of any user, holds a `block` inhibitor on `shutdown`; sd-bus shortens
+every `AccessDenied` to "Access denied", and systemctl skips its own inhibitor
+check when it is not on a terminal. A `block-weak` inhibitor goes through
+polkit's `reboot-ignore-inhibit` instead and ends as "Interactive
+authentication required".
+
+- A phone restart is usually asked for because the computer is misbehaving,
+  which is also when a stuck program may hold off shutdown, so it must go
+  through. `systemctl -i` (`--check-inhibitors=no`; the short form also works
+  before systemctl 248) sets `SD_LOGIND_SKIP_INHIBITORS`, so logind asks
+  polkit for `reboot-ignore-inhibit` instead of refusing. That action is
+  `auth_admin_keep` even for the active session, which is why the restart rule
+  grants it. A rule installed before 2026-11-01 lacks that line: its text no
+  longer matches, so the checkbox reads off and turning it on again installs
+  the new rule. Delay inhibitors still get their few seconds
+  (`InhibitDelayMaxSec`).
+- On "Access denied" or "Interactive authentication required" the desktop
+  reads logind's `ListInhibitors` (`busctl --json=short`) and the phone's
+  message names each strong `shutdown` blocker and its reason
+  (`computerRestartBlockers`, `desktop/src/LocalControlUpdate.cpp`). On GNOME
+  the blocker is usually gnome-session itself (who: the account, why: "user
+  session inhibited"), taken when an app asks GNOME to hold off log-out; the
+  desktop then asks `org.gnome.SessionManager` for its logout inhibitors
+  (`GetInhibitors`, then `GetAppId`, `GetReason`, `GetFlags` with bit 1) and
+  names those apps instead (`gnomeLogoutInhibitors`,
+  `desktop/src/MainWindowLocalControlUpdate.cpp`).
+- "Access denied" with nothing blocking any more says to try again: polkit
+  also answers a flat no when a rules script throws or rule evaluation passes
+  its 15 s runaway timeout.
 
 ## Code map
 

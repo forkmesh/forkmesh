@@ -332,6 +332,66 @@ Tests: `app/tests/test_pull_request_actions.py`,
 `app/tests/test_pull_request_checks_frontend.py`,
 `server/runner_actions_pull_test.go`.
 
+### Pings and the phone
+
+Waiting checks and failed runs reach the people who can act on them as pings,
+so a maintainer can run the whole loop from the phone. Recipients are the
+hosting account plus the owners, admins and maintainers of any organization
+in front of the repository (`_org_fanout_recipients`, the audience of new
+issues), filed through `WorkerRuntime.notify_actions`; a missing or failing
+hook never fails the runner's report.
+
+| Kind | Raised when | Title / href | `meta` |
+| --- | --- | --- | --- |
+| `action_approval` ("Checks waiting for your approval") | `enqueue_pull` queues `waiting` jobs for a head, or the runner reports `approvalRequired: "workflows"` | "Checks need your approval", `/<owner>/<repo>/pull/<n>/checks` | `category: actions-approval`, `number`, `head`, `runId`, `reason` (`author` or `workflows`), `author` |
+| `action_failed` ("Failed workflow runs") | a report ends a job as `failed` or with a failed run, unless it was cancelled | "<workflow> failed", `/<owner>/<repo>/actions/runs/<runId>` | `category: ci-failed`, `runId` (the first failed run), `workflow`, `number` on a pull request run |
+
+An approval ping is deduplicated per pull request head
+(`actions-approval:<owner>/<repo>:<n>:<head>`), so re-syncing never pings
+again and a new commit pings once for the new head; a failure ping per job.
+Both carry `meta.number` on pull request runs but keep their own href: a
+numbered ping whose source has no record segment (`NOTIFICATION_ITEM_URL_SEGMENTS`)
+no longer falls back to the repository's front page in the banner, inbox or
+digest. Both kinds can be switched off in the ping settings (repositories group). The
+APNs payload carries `aps.category`, `runId`, `repo`, `number` and `head`
+(approvals are time-sensitive); Android reads the same fields from the
+ping's `meta`.
+
+The phone acts through the same routes as the website: *Approve* on the
+banner and *Approve and run* on the pull request post `pulls/<n>/checks`
+with the `head` the ping named (a newer commit answers `409 stale_head`, and
+the app opens the pull request instead), *Always run for @author* and *Stop
+running automatically* post `trust` / `untrust`, the run screen reads the
+full log from `actions/runs/<id>/log`, and the repository's Actions screen
+manages secrets through `actions/secrets`. Runner summaries
+(`source: "runner"`) hide the workflow and repository switches, which only
+mirror executors accept. A runner summary sends `source: "runner"` with no
+`schemaVersion`; the apps read `controlAvailable` and `workflows` from it,
+treat a workflow with `workflow_dispatch` as runnable by hand, and settle a
+control as soon as it answers `status: "applied"`. Approve, Run workflow and
+*Always run for @author* (which also approves the waiting head) ask for
+Face ID or the screen lock.
+
+| Piece | iOS | Android |
+| --- | --- | --- |
+| Client calls (checks, log, secrets) | `FMCode/CI/CIClient.swift` | `core/.../ci/CiClient.kt` |
+| Checks model and buttons | `FMCode/CI/PullChecksModel.swift`, `Features/Code/CI/CIRepoSections.swift` | `core/.../ci/PullChecks.kt`, `feature/code/review/RunnerActionsScreens.kt` |
+| Full run log, runner summary | `FMCode/CI/ActionsModel.swift`, `FMApi/Models/Actions.swift` | `core/.../ci/Actions.kt`, `feature/code/review/CiScreens.kt` |
+| Secrets | `FMCode/CI/ActionSecretsModel.swift`, `Features/Code/CI/ActionSecretsScreen.swift` | `core/.../ci/ActionSecrets.kt`, `RunnerActionsScreens.kt` |
+| Approval banner | `FMCode/CI/ActionsApprovalNotification.swift`, `FMApi/Inbox/NotificationCategories.swift` | `core/.../inbox/NotificationActions.kt`, `feature/inbox/InboxFeature.kt` |
+
+Tests: `app/tests/test_actions_notifications.py`,
+`app/tests/test_push_alert_expansion.py`, iOS
+`Tests/FMCodeTests/ActionsRunnerTests.swift`, Android
+`core/src/test/.../ci/RunnerActionsTest.kt` and
+`inbox/ActionsNotificationsTest.kt`.
+
+Known gaps: the phone sends no `workflow_dispatch` inputs, so a workflow with
+required inputs answers `input_required`; and *Always run for @author* fails
+with `author_unknown` when the author is the instance's own flagship node,
+whose name the run summary shows as its display name (`_shown_actor`), on
+the website too.
+
 ## Job API
 
 `Authorization: Bearer $FORKMESH_TOKEN`. The token is random, stored as a

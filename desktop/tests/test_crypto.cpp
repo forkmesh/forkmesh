@@ -3056,9 +3056,59 @@ int main(int argc, char *argv[])
                   "no Firewall blocked notice or error report");
         }
 
+        {
+            const QStringList allowBefore = manager.firewallRules();
+            const QStringList denyBefore = manager.firewallDenyRules();
+            int allowAllSignals = 0;
+            bool lastAllowAll = false;
+            const QMetaObject::Connection changed = QObject::connect(
+                &manager, &BackoffNetworkAccessManager::firewallAllowAllChanged,
+                [&](bool active) {
+                    ++allowAllSignals;
+                    lastAllowAll = active;
+                });
+            manager.allowAllFirewallFor(60 * 1000);
+            check(manager.firewallAllowingAll() &&
+                      manager.firewallAllowAllRemainingMs() > 0 &&
+                      allowAllSignals == 1 && lastAllowAll,
+                  "allow-all starts and announces itself");
+            manager.seenPaths.clear();
+            runRequest(QStringLiteral("http://allowall.test/static/allow-all"));
+            check(prompts == 2 && !manager.seenPaths.isEmpty(),
+                  "while allowing all, an unlisted host connects without a prompt");
+            check(manager.firewallRules() == allowBefore &&
+                      manager.firewallDenyRules() == denyBefore,
+                  "allowing all remembers no rule");
+            manager.seenPaths.clear();
+            runRequest(QStringLiteral("http://denied.test/static/allow-all-denied"));
+            check(prompts == 2 && manager.seenPaths.isEmpty(),
+                  "a remembered denial still blocks while allowing all");
+            manager.stopAllowingAllFirewall();
+            check(!manager.firewallAllowingAll() && allowAllSignals == 2 &&
+                      !lastAllowAll,
+                  "stopping allow-all announces the end");
+            manager.seenPaths.clear();
+            runRequest(QStringLiteral("http://allowall.test/static/allow-all-over"));
+            check(prompts == 3 && manager.seenPaths.isEmpty(),
+                  "after allow-all ends an unlisted host asks again");
+            manager.removeFirewallDenyRule(QStringLiteral("host:allowall.test"));
+            manager.allowAllFirewallFor(30);
+            QElapsedTimer expiry;
+            expiry.start();
+            while (lastAllowAll || allowAllSignals < 4) {
+                if (expiry.elapsed() > 3000)
+                    break;
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            }
+            check(!manager.firewallAllowingAll() && allowAllSignals == 4 &&
+                      !lastAllowAll,
+                  "allow-all ends on its own when the time runs out");
+            QObject::disconnect(changed);
+        }
+
         manager.addFirewallRule(QStringLiteral("*.test"));
         runRequest(QStringLiteral("http://denied.test/static/firewall-deny-wild"));
-        check(prompts == 2 && manager.seenPaths.isEmpty() &&
+        check(prompts == 3 && manager.seenPaths.isEmpty() &&
                   manager.firewallMatch(QUrl(QStringLiteral("http://denied.test/"))) ==
                       BackoffNetworkAccessManager::FirewallDenied,
               "a deny rule wins over an allow rule that also matches");
@@ -3077,7 +3127,7 @@ int main(int argc, char *argv[])
               "an external destination with no rule is unlisted and must be asked");
         manager.seenPaths.clear();
         runRequest(QStringLiteral("http://127.0.0.1:9/static/firewall-loopback"));
-        check(prompts == 2 && !manager.seenPaths.isEmpty(),
+        check(prompts == 3 && !manager.seenPaths.isEmpty(),
               "loopback stays on this machine and needs no firewall decision");
 
         // The Stats page charts requests per destination with the verdict the
@@ -3094,7 +3144,7 @@ int main(int argc, char *argv[])
                 return Destination{};
             };
             const Destination denied = find(QStringLiteral("denied.test"));
-            check(denied.calls == 3 && denied.blocked == 3 && denied.allowed == 0 &&
+            check(denied.calls == 4 && denied.blocked == 4 && denied.allowed == 0 &&
                       denied.match == BackoffNetworkAccessManager::FirewallAllowed,
                   "destination stats sum a host's requests and follow the current rules");
             const Destination blocked = find(QStringLiteral("blocked.test"));

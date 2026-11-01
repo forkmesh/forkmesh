@@ -104,8 +104,8 @@ on [rendering](rendering.md).
 `WORLD_ORIGIN` is `https://world.forkmesh.com`: in `deploy/fleet.toml`
 `[production.vars]` (rendered as `FORKMESH_VAR_WORLD_ORIGIN` by
 `deploy/core/render.py`), in `www/wrangler.toml` for the website Worker, and
-in `app/wrangler.toml` for the optional Workers self-host. The served host is `world_host` in `deploy/fleet.toml`
-`[production]`. `WORLD_MESH_HUB` (default `https://app.forkmesh.com`) is
+in `app/wrangler.toml` for the optional Workers self-host. The served host is `world_host` in `deploy/fleet.toml`.
+`WORLD_MESH_HUB` (default `https://app.forkmesh.com`) is
 where an instance reads the World mesh directory; an App without
 `INSTANCE_NAME` is the hub itself. `WORLD_NEIGHBOUR_SCENE` (optional, on an
 instance) is the scene its single hexagon shows in the hub's World ([neighbour

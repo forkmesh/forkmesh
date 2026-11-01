@@ -69,7 +69,7 @@ final class NoteEmojiTests: XCTestCase {
 
 final class NotePageOutlineTests: XCTestCase {
     @MainActor
-    func testRowsShowSectionsNotesLockedEntriesLinksAndCollapse() {
+    func testRowsShowSectionsNotesLockedEntriesLinksAndCollapse() async {
         let page = NotePage(json: pageJSON())
         var notes: [String: NotePageNote] = [:]
         for (key, value) in pageNotesJSON() {

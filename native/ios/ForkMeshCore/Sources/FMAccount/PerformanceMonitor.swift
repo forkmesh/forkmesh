@@ -167,6 +167,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     @ObservationIgnored private var recentHidden: [(startUs: Int64, endUs: Int64)] = []
     @ObservationIgnored private var showCount = 0
     public static let shownWindowMs = 10_000
+    @ObservationIgnored private let mainStackSampler: (@Sendable () -> [UInt])?
+    @ObservationIgnored private let appPath: String
+    @ObservationIgnored private var mainSamples: [(atUs: Int64, lagUs: Int64, frames: [UInt])] = []
+    public static let samplesPerStall = 4
 
     public init(
         enabled: Bool = true,
@@ -180,7 +184,9 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         now: (@Sendable () -> Date)? = nil,
         elapsedForTest: (@Sendable () -> Duration)? = nil,
         heartbeatQueue: DispatchQueue = .main,
-        watchQueue: DispatchQueue = DispatchQueue(label: "forkmesh.perf.watch", qos: .userInitiated)
+        watchQueue: DispatchQueue = DispatchQueue(label: "forkmesh.perf.watch", qos: .userInitiated),
+        mainStackSampler: (@Sendable () -> [UInt])? = nil,
+        appPath: String = Bundle.main.bundlePath
     ) {
         self.enabled = enabled
         self.threshold = threshold
@@ -194,6 +200,8 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         self.elapsedForTest = elapsedForTest
         self.heartbeatQueue = heartbeatQueue
         self.watchQueue = watchQueue
+        self.mainStackSampler = mainStackSampler
+        self.appPath = appPath
     }
 
     // MARK: Reading
@@ -422,17 +430,36 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     private func watchTick() {
         let nowUs = elapsedMicros()
         let intervalUs = PerformanceMonitorService.micros(heartbeatInterval)
+        var sampleLagUs: Int64?
         let pausedUs: Int64? = locked {
             guard heartbeatRunning else { return nil }
             let startUs = lastWatchUs + intervalUs
             lastWatchUs = nowUs
             let gapUs = nowUs - startUs
-            if gapUs < PerformanceMonitorService.micros(stallThreshold) { return nil }
+            if gapUs < PerformanceMonitorService.micros(stallThreshold) {
+                let lagUs = nowUs - lastBeatUs - intervalUs
+                let windowSamples = mainSamples.filter { $0.atUs > lastBeatUs }.count
+                if mainStackSampler != nil, lagUs >= PerformanceMonitorService.micros(stallThreshold) / 2,
+                    windowSamples < PerformanceMonitorService.samplesPerStall
+                {
+                    sampleLagUs = lagUs
+                }
+                return nil
+            }
             recentPauses.append((startUs, nowUs))
             if recentPauses.count > PerformanceMonitorService.recentLimit { recentPauses.removeFirst() }
             pauseTotal += 1
             longestPauseUs = max(longestPauseUs, gapUs)
             return gapUs
+        }
+        if let sampleLagUs, let sampler = mainStackSampler {
+            let frames = sampler()
+            if !frames.isEmpty {
+                locked {
+                    mainSamples.append((nowUs, sampleLagUs, frames))
+                    if mainSamples.count > PerformanceMonitorService.recentLimit { mainSamples.removeFirst() }
+                }
+            }
         }
         guard let pausedUs else { return }
         let line = "[pause] process paused \(pausedUs / 1_000)ms while visible"
@@ -466,13 +493,15 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     private func beat(_ generation: Int) {
         let nowUs = elapsedMicros()
         let intervalUs = PerformanceMonitorService.micros(heartbeatInterval)
-        let snapshot: (windowStart: Int64, attributed: Int64, pausedUs: Int64, inFlight: [String], recent: [String], lagHandler: ((Duration) -> Void)?)? = locked {
+        let snapshot: (windowStart: Int64, attributed: Int64, pausedUs: Int64, inFlight: [String], recent: [String], lagHandler: ((Duration) -> Void)?, samples: [(lagUs: Int64, frames: [UInt])])? = locked {
             guard heartbeatRunning, generation == heartbeatGeneration else { return nil }
             let windowStart = lastBeatUs
             lastBeatUs = nowUs
+            let samples = mainSamples.filter { $0.atUs > windowStart }.map { ($0.lagUs, $0.frames) }
+            mainSamples.removeAll { $0.atUs <= nowUs }
             return (
                 windowStart, lastAttributedStallUs, pausedMicros(from: windowStart, to: nowUs), inFlight.map(\.1),
-                recentlyFinished.filter { $0.1 >= windowStart }.map(\.0), heartbeatLagHandler
+                recentlyFinished.filter { $0.1 >= windowStart }.map(\.0), heartbeatLagHandler, samples
             )
         }
         guard let snapshot else { return }
@@ -487,7 +516,17 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         if !snapshot.inFlight.isEmpty { details["inFlight"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.inFlight)) }
         if !snapshot.recent.isEmpty { details["finishedDuring"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.recent)) }
         if let sections = sectionsText(from: snapshot.windowStart, to: nowUs) { details["sections"] = .string(sections) }
-        recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: lag, details: details)
+        let blockStartUs = nowUs - lagUs
+        details["unnamedMs"] = .int(max(0, lagUs - namedMicros(from: blockStartUs, to: nowUs)) / 1_000)
+        var stackTrace = ""
+        if !snapshot.samples.isEmpty {
+            let resolved = snapshot.samples.map { MainThreadSampler.resolve($0.frames, appPath: appPath) }
+            details["mainStack"] = .string(resolved.map { MainThreadSampler.signature($0) }.joined(separator: " | "))
+            stackTrace = zip(snapshot.samples, resolved).map { (sample, frames) in
+                "main thread at \(sample.lagUs / 1_000)ms:\n" + PerformanceMonitorService.symbolicate(PerformanceMonitorService.mainFrames(sample.frames, frames))
+            }.joined(separator: "\n")
+        }
+        recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: lag, details: details, stackTrace: stackTrace)
     }
 
     private func handleFrameTimings(_ timings: [FrameTiming]) {
@@ -635,6 +674,36 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         return order.sorted { (totals[$0] ?? 0) > (totals[$1] ?? 0) }
             .map { "\($0) \((totals[$0] ?? 0) / 1_000)ms" }
             .joined(separator: ", ")
+    }
+
+    private func namedMicros(from startUs: Int64, to endUs: Int64) -> Int64 {
+        let spans: [(Int64, Int64)] = locked {
+            recentSections.filter { $0.endUs > startUs && $0.startUs < endUs }
+                .map { (max($0.startUs, startUs), min($0.endUs, endUs)) }
+        }
+        var total: Int64 = 0
+        var reached = startUs
+        for (start, end) in spans.sorted(by: { $0.0 < $1.0 }) where end > reached {
+            total += end - max(start, reached)
+            reached = end
+        }
+        return total
+    }
+
+    static let leafFrames = 4
+    static let appFramesKept = 8
+
+    static func mainFrames(_ addresses: [UInt], _ frames: [MainThreadSampler.Frame]) -> [UInt] {
+        var kept: [UInt] = []
+        var app = 0
+        for (index, address) in addresses.enumerated() {
+            let inApp = index < frames.count && frames[index].inApp
+            if index < leafFrames || (inApp && app < appFramesKept) {
+                kept.append(address)
+                if inApp { app += 1 }
+            }
+        }
+        return kept
     }
 
     private static func uniqueJoined(_ values: [String]) -> String {

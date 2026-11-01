@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cloudflare DNS for ForkMesh (app/world production names and next.forkmesh.com).
+"""Cloudflare DNS for ForkMesh (app/world.forkmesh.com and the nN.next node names).
 
     next_dns.py status
     next_dns.py ensure        [--execute]
@@ -34,7 +34,7 @@ from next_common import GuardError, ToolError  # noqa: E402
 CLOUDFLARE_API = "https://api.cloudflare.com/client/v4"
 TOKEN_FILE = "cloudflare-dns.env"
 ZONE_APEX = dns_rules.ZONE_APEX
-PRODUCTION_NAMES = frozenset({"app.forkmesh.com", "world.forkmesh.com"})
+PRODUCTION_NAMES = dns_rules.PRODUCTION_NAMES
 RECORD_TYPES = ("A", "AAAA")
 TTL = dns_rules.TTL
 FAILS_TO_REMOVE = dns_rules.FAILS_TO_REMOVE
@@ -48,11 +48,6 @@ def guard_name(name, record_type="A") -> str:
     if record_type not in RECORD_TYPES:
         raise GuardError("refusing DNS record type %r for %r: only %s"
                          % (record_type, name, ", ".join(RECORD_TYPES)))
-    value = str(name or "").strip().lower()
-    if value.endswith("."):
-        value = value[:-1]
-    if value in PRODUCTION_NAMES:
-        return value
     try:
         return dns_rules.check_name(name)
     except dns_rules.DnsGuardError as error:
@@ -201,8 +196,7 @@ def core_addresses(fleet):
 def served_names(fleet):
     import render
     names = []
-    for name in render.served_hosts(fleet) + [fleet["app_host"],
-                                              fleet["world_host"]]:
+    for name in render.served_hosts(fleet):
         name = guard_name(name)
         if name not in names:
             names.append(name)

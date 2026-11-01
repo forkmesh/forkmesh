@@ -70,6 +70,24 @@ below say when each field arrived).
     code, or many short main-actor jobs queued back to back (65 relay frames of
     a few ms read as one stall; check `RELAY` max). Each chat relay frame is a
     `relay.frame` section.
+  - A `(no named section)` row (since 2026-11-01) sums each stall's
+    `unnamedMs`, the part of the block no section covered. When it is most of
+    the stall, read `Main thread during stalls`.
+- **`Main thread during stalls (leaf images < app frames)`** (since
+  2026-11-01): up to four samples of the main thread's stack per event-loop
+  stall, taken from the watch queue while the heartbeat was late
+  (`MainThreadSampler`), counted by signature: the leaf images (up to three,
+  e.g. `AttributeGraph < SwiftUICore`), then the two app frames nearest the
+  leaf (`ForkMesh +0x<offset>`, named with `atos`).
+  - System images with `no app frame`, or only the app's entry point after
+    them, mean SwiftUI, UIKit or Core Animation working on their own: layout,
+    a first build, a long list diff.
+  - `libsystem_kernel` at the leaf means the thread waited: a lock, a file
+    read, a Keychain or XPC round trip.
+  - A sample is taken 100 ms into a block and then once per heartbeat
+    interval, so a 350 ms block gives about three. This section and the one
+    above rank over the operation and endpoint tables, so they are not
+    trimmed first.
   - Launch: `startup.services` holds everything `AppServices.start` does on the
     main thread after the identity load: `startup.init` (with
     `startup.auth`), `startup.projects`, `startup.features` (one
@@ -109,8 +127,10 @@ below say when each field arrived).
   the time is in every stall and marks nothing.
 - **`stalls.log tail`**: release stacks are unsymbolicated;
   `libswift_Concurrency` under `ForkMesh` frames is a main-actor task job.
-  Event-loop and frame stalls carry no stack (the probe runs after the block);
-  stacks are where slow operations and `sync` sections started. Each frame
+  Frame stalls carry no stack (the probe runs after the block); an event-loop
+  stall's stack is samples of the main thread taken while it was blocked
+  (`main thread at <lag>ms:`, four leaf frames and up to eight app frames);
+  the other stacks are where slow operations and `sync` sections started. Each frame
   gives `+0x<offset>` from its image's load address: `atos -o
   ForkMesh.app.dSYM/Contents/Resources/DWARF/ForkMesh -l 0x100000000
   <0x100000000 + offset>` with the build's dSYM names it.
@@ -122,6 +142,13 @@ below say when each field arrived).
 The shell's account avatar shares the phone-motion feed with the Genie view.
 Agent Watch feel defaults on unless the user turns it off; Reduce Motion stops
 the avatar movement but does not change that saved preference.
+
+A tab hidden under Home or behind another tab starts only the work the shell
+needs from it (Agents: the list, for the counts); streams, follows and
+watchers wait until it is first shown (`AgentsTabLiveGate`). SwiftUI evaluates
+every `@State` default each time the parent builds the view and keeps only
+the first, so a default does no reads or parsing in `init`
+(`AgentReadTracker` reads its store on first use).
 
 - No Keychain write per received frame on the main actor (`SecItemDelete` plus
   `SecItemAdd` is a round trip to `securityd`). The chat replay book is written
@@ -184,6 +211,34 @@ the avatar movement but does not change that saved preference.
 Newest first. Each entry: date and branch; what the bundle showed; the cause;
 the fix; what was ruled out; what the bundle lacked.
 
+- **2026-11-01, `46-app-detected-performance-issue`** (1.5.0 (327), 421a5f2,
+  iPhone16,2, `uptime 49s`; 22 agent lines, 15 running, Eagle view, no watch
+  app). Showed: event-loop stalls of 352 and 260 ms and a 248 ms frame at
+  launch on `Home`; the only named work was `startup.services` 38 ms (holding
+  `startup.features` 29 ms) and `shell.start` 24 ms, so most of the 612 ms ran
+  outside any section. Cause, not proven: an iPhone opens on Home but builds
+  the selected tab (Agents) under it, and `AgentsScreen.onAppear` ran in full
+  while hidden. Besides the list Home's counts need, it started the Eagle feed
+  (every running desktop row's transcript from `since: 0`, each chunk handled
+  on the main actor by `TranscriptFollower.apply`) and the agent dot watcher
+  (`AgentDotsWatch`, up to 12 relay watch targets). `HomeShell` also re-created
+  `AgentsScreen()` on each body pass, so the `AgentReadTracker` `@State`
+  default re-parsed up to 400 read marks each time. Fix: the hidden Agents tab
+  starts the Eagle follows and the dot watcher only when first shown
+  (`AgentsTabLiveGate`, read in `AgentsScreen.followDialogs` and `syncDots`);
+  `AgentReadTracker` reads its store on first use. Tests:
+  `testATrackerReadsItsStoredMarksOnlyWhenFirstUsed`,
+  `testTheHiddenAgentsTabStartsItsLiveWorkOnlyOnceShownAndKeepsIt`,
+  `testAnEventLoopStallCarriesTheMainThreadSamplesTakenWhileItWasBlocked`,
+  `testASignatureNamesTheLeafImagesThenTheNearestAppFrames`,
+  `testStallsSayHowMuchRanOutsideNamedSectionsAndWhereTheMainThreadWas`, and
+  on Darwin `testTheMainThreadCanBeSampledFromAnotherThread`. Ruled out: the
+  launch block, chat history (137 KB), slow repository reads and
+  `agents/list` 403s (finished after the stalls), the watch bridge, the 1.4.1
+  MetricKit CPU exceptions. Not measured: shell redraws in the launch burst,
+  the Eagle and dot streams' cost at launch, SwiftUI's first build. Bundle gaps
+  closed: main-thread samples and `unnamedMs` (above). Still missing: samples
+  are unsymbolicated, so app frames need `atos` and the build's dSYM.
 - **2026-10-29, `2672-agents-tab-freeze-fix`** (1.5.0 (324), cb5b44d).
   Showed: two event-loop stalls of about 344 ms and a 372 ms frame at
   `uptime 13s`, all `launch, first 10s`, filed under `Agents`; only

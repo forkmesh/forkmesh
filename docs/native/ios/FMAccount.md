@@ -128,6 +128,17 @@ value of type ... @MainActor"). Make main-actor test methods `async`.
   operation runs and symbolicates them (`dladdr`, Darwin) only when it turns out slow, because
   `Thread.callStackSymbols` on the main actor for every request is costly and a resume fires a
   dozen or more at once.
+- `mainStackSampler` (init; the app passes `MainThreadSampler.forMainThread()`, which must be
+  called on the main thread and is nil elsewhere and off Darwin): when the heartbeat is half a
+  stall threshold late and the watch timer itself ran on time (so the process is not paused),
+  the watch queue suspends the main thread for a few microseconds, walks its frame-pointer chain
+  (at most 128 frames, inside the thread's stack; nothing is allocated or locked while it is
+  suspended) and resumes it. Up to `samplesPerStall` (4) samples per blocked window go on the
+  event-loop stall: `mainStack`, one signature per sample (up to three leaf images, then the two
+  app frames nearest the leaf, as `ForkMesh +0x<offset>` for `atos`), and the stack trace
+  (`main thread at <lag>ms:` with the four leaf frames and up to eight app frames). Each
+  event-loop stall also carries `unnamedMs`, the part of the block no named section covered (the
+  union of the sections, so nesting is not counted twice).
 - `StallLogFile.forDevice(build:)` (existing) is the on-disk log. `tail(maxBytes:) async` returns the
   end of `stalls.log.1` followed by `stalls.log`, starting on a whole line, read on the log's own
   queue; it reads earlier launches too and never creates the file.

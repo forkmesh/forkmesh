@@ -56,6 +56,21 @@ republishes the affected public snapshot paths, at most one trailing rebuild
 per path every `SNAPSHOT_REPUBLISH_MIN_INTERVAL_MS`. The cron is the
 freshness floor.
 
+A snapshot build runs under the same 45-call guard as a cron phase, so its
+cost must not grow with the number of rows it shows. On 2026-11-01
+`/api/network/overview` failed every republish with "cron phase subrequest
+budget exhausted": the contributors board looked up each contributor's
+profile on its own (one or two D1 reads per row, added for the private
+profile label), and the largest-repositories board resolved each row's
+organization address even on an instance without short addresses, where
+that can never change a row. The contributors board now reads all of its
+accounts in at most two queries (`_account_identity_recs_by_bi`), and
+`_short_repo_board` returns at once unless a canonical short owner is set.
+The whole build costs about 34 calls whatever the board sizes;
+`app/tests/host/test_network_overview_budget.py` builds it on the host
+runtime with full boards and checks it fits `CRON_BATCH_SUBREQUEST_CAP`
+minus the reserve headroom.
+
 ## Ingress shards
 
 Only mirror-daemon sync, Git clone reads and a short list of bursty public

@@ -7,9 +7,9 @@
 # read from ~/projects/forkmesh/config/fleet/secrets.env on the operator box,
 # then pushed into `systemd-creds encrypt` on the node (docs/operations/README.md).
 
-domain = "next.forkmesh.com"          # DNS suffix for the nN/app/world hosts; its homepage Worker was retired 2026-09-27
-app_host = "app.next.forkmesh.com"    # round-robin A records over the core nodes
-world_host = "world.next.forkmesh.com"
+domain = "next.forkmesh.com"          # DNS suffix for the per-node nN hosts; its homepage Worker was retired 2026-09-27
+app_host = "app.forkmesh.com"         # round-robin A records over the core nodes
+world_host = "world.forkmesh.com"
 region = "ewr"
 os_name = "Debian 13 x64 (trixie)"
 instance_label_prefix = "fmnext-"     # hard guard in tools/next_fleet.py

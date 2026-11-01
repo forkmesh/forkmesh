@@ -662,6 +662,38 @@ returned, so summed frame totals overstate a function's own cost.
   not a code path. Groups last logged by a binary built before their fix are
   stale; compare the binary's build time first.
 
+### Rules from the stall runs of 2026-10-31 and 2026-11-01
+
+- **Build long lists in slices.** Mastodon's `appendStatusCards` adds post
+  cards for about 12 ms per event-loop turn and queues the rest; a page switch
+  (`m_generation`) or a cleared list (`m_listEpoch`) drops the queue, and Load
+  more appears only once the page's last card is in.
+- **Compile a pattern once.** `renderContent`'s `attribute()` keeps one
+  compiled expression per attribute name and skips the match when the name is
+  not in the tag.
+- **Unlink big files off the GUI thread.** `pruneOldBackups` picks what to
+  remove on the GUI thread (`partialBackupPaths` is empty while a backup runs,
+  so a `.part` being written is never picked) and unlinks on `QThreadPool`;
+  the backup table refreshes when the unlinks finish.
+- **Keep the worktree listing.** Path lookups go through
+  `worktreeLayoutForCaller`, which reuses the listing while
+  `worktreeListStamp` (stat calls only) is unchanged. Tip SHAs in that copy
+  can be stale and path lookups never read them; the worktrees panel reads
+  fresh tips, and `WorktreeLookup::Live` still checks the folder exists.
+- **Do not reparent a styled widget tree.** The CRM contacts body stays beside
+  the tab widget in one column: a list tab hides `m_tabs` and shows the body,
+  any other tab does the reverse. Moving it into a tab page re-polished every
+  row's widgets.
+- **Write a setting only when it changes.** The quick-add provider, model and
+  mode handlers share one `QSettings` and write through
+  `forkmesh::settings::put`, which skips unchanged values.
+- **No work for a link that is already down.** `ServerNode::shutdown` sends
+  `bye` (one x25519 seal per room member) only while `m_wsReady`.
+- **Nothing to fix:** layout started by `setVisible` (`renderPageNotices`),
+  text shaping, paint and style polish with no application frame, cached
+  pixmap painting while the process is swapped out, and any stall sampled
+  while the load average is far above the CPU count.
+
 ### Startup: installed package pages after first paint
 
 Building every installed package's page inside `buildChatPage` costs seconds

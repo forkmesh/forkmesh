@@ -127,6 +127,7 @@ One page per topic. Each links back here.
 | [content-first-pings](content-first-pings.md) | Pings that lead with the actor and the content |
 | [feeds-and-lite](feeds-and-lite.md) | Feeds, the lite view and the forum home page |
 | [forum-reach](forum-reach.md) | Static forum exports, publishing and onion service |
+| [repo-forum](repo-forum.md) | Repository forums: categories, tags, topics, and mirroring a Discourse forum |
 | [accounts-and-moderation](accounts-and-moderation.md) | Forum accounts without email, random names, moderators, blocks, hidden posts, new-account limits |
 | [translations](translations.md) | Translating posts |
 

@@ -908,6 +908,9 @@ NOTIFICATION_KINDS = frozenset({
     # account's own desktop raises it, into its own inbox (timer_pings.py).
     "timer_finished",
     "desktop_ping",
+    "agent_approval",
+    "action_approval",
+    "action_failed",
     # Something moved in a repository you host or help run, with nothing
     # filed in an inbox to show for it (adhoc #295): a push, a merged pull
     # request. Issues, pull requests and comments keep their own kinds.
@@ -1219,7 +1222,7 @@ _URL_EXPORT_NAMES = (
     "AP_USER_SUB_RE", "AP_REPO_RE", "AP_REPO_SUB_RE", "AP_OBJECT_RE",
     "AP_OBJECT_MEDIA_RE", "REPO_FEDI_COMMENTS_RE", "REPO_AP_PUBLISH_RE",
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
-    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE",
+    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE", "REPO_FORUM_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
@@ -3596,6 +3599,20 @@ async def _apns_ping_alert(env, record):
         alert["sessionId"] = clean_string(meta.get("sessionId", ""), 12)
         alert["runId"] = clean_string(meta.get("runId", ""), 12)
         alert["alarm"] = clean_string(meta.get("alarm", ""), 20)
+    if record.get("kind") == "agent_approval" and isinstance(meta, dict):
+        session = clean_string(meta.get("sessionId", ""), 64)
+        alert["category"] = "agent-approval"
+        alert["sessionId"] = session
+        alert["approvalId"] = clean_string(meta.get("approvalId", ""), 64)
+        if session:
+            alert["threadId"] = "agent-approval:" + session
+    if (record.get("kind") in ("action_approval", "action_failed")
+            and isinstance(meta, dict)):
+        alert["category"] = clean_string(meta.get("category", ""), 40)
+        alert["runId"] = clean_string(str(meta.get("runId") or ""), 20)
+        alert["number"] = clean_string(str(meta.get("number") or ""), 12)
+        alert["head"] = clean_string(meta.get("head", ""), 64)
+        alert["repo"] = item["repo"]
     return alert
 
 
@@ -7997,14 +8014,18 @@ async def network_leaderboards(env):
     shared = globals().get("d1_shared_read")
     contrib_rows = await (shared(env, "contributor-board", contrib_scan)
                           if shared else contrib_scan())
-    private_contributors = set()
+    label_bis = {}
     for r in contrib_rows or []:
         label = clean_string(
             r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
-        if valid_node_name(label):
-            _, contributor_rec = await _account_row(env, label)
-            if (contributor_rec or {}).get("profile_private"):
-                private_contributors.add(label)
+        if valid_node_name(label) and label not in label_bis:
+            label_bis[label] = await blind_index(env, label)
+    contributor_recs = await _account_identity_recs_by_bi(
+        env, label_bis.values())
+    private_contributors = {
+        label for label, label_bi in label_bis.items()
+        if (contributor_recs.get(label_bi) or {}).get("profile_private")
+    }
     contrib_board = [
         {"name": "Private contributor" if clean_string(
              r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
@@ -12966,6 +12987,8 @@ _direct_reminders = _LazyModule("direct_reminders")
 send_direct_unread_reminders = _direct_reminders.export("send_reminders")
 _desktop_pings = _LazyModule("desktop_pings")
 desktop_ping_handler = _desktop_pings.export("desktop_ping_handler")
+agent_approval_ping_handler = _desktop_pings.export(
+    "agent_approval_ping_handler")
 _mesh_push = _LazyModule("mesh_push")
 mesh_wake_handler = _mesh_push.export("mesh_wake_handler")
 mesh_wake_mint_handler = _mesh_push.export("mesh_wake_mint_handler")
@@ -18625,6 +18648,30 @@ async def _account_identity_rec_by_bi(env, name_bi):
     if not row:
         return None
     return await decrypt_row(env, row.get("data"))
+
+
+async def _account_identity_recs_by_bi(env, name_bis):
+    found = {}
+    pending = list(dict.fromkeys(str(bi) for bi in name_bis if bi))
+    for table, column in (("users", "user_bi"), ("nodes", "node_bi")):
+        missing = []
+        for offset in range(0, len(pending), 80):
+            chunk = pending[offset:offset + 80]
+            rows = await d1_all(
+                env,
+                "SELECT %s AS bi, data FROM %s WHERE %s IN (%s)" % (
+                    column, table, column, ",".join("?" for _bi in chunk)),
+                *chunk,
+            )
+            hits = {str(row.get("bi") or ""): row.get("data")
+                    for row in rows or []}
+            for bi in chunk:
+                if bi in hits:
+                    found[bi] = await decrypt_row(env, hits[bi])
+                else:
+                    missing.append(bi)
+        pending = missing
+    return found
 
 
 # name_bis whose users/nodes rows this isolate already refreshed via
@@ -36243,7 +36290,8 @@ AP_REPO_SETTING_DEFAULTS = {
 }
 
 REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
-                         "actions": True, "protectDefaultBranch": False,
+                         "forum": False, "actions": True,
+                         "protectDefaultBranch": False,
                          "stalePulls": False, "stalePullsDeleteBranch": False}
 
 
@@ -40849,7 +40897,7 @@ def _push_alert_item(it, aliases=None, avatars=None):
         # email links to: the numbered record when the ping names one, else
         # the site path the ping stored for itself.
         "href": ((item_path + _notification_stored_tail(
-                     it, stored_repo, number)) if item_path
+                     it, stored_repo, number if segment else 0)) if item_path
                  else _notification_stored_path(it.get("href", ""))),
     }
 
@@ -40921,7 +40969,8 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     # The record path when the ping names one, else whatever exact
     # address it recorded for itself.
     path = _notification_item_path(repo, segment, number)
-    path = ((path + _notification_stored_tail(it, stored_repo, number))
+    path = ((path + _notification_stored_tail(
+                it, stored_repo, number if segment else 0))
             if path else _notification_stored_path(it.get("href", "")))
     url = _notification_item_url(base_url, path)
     when = _format_email_ts(it.get("ts"))
@@ -54469,6 +54518,9 @@ async def _repo_organization_path(env, parts, query, public_only):
 
 
 async def _short_repo_board(env, rows):
+    if not rows or not repo_short_urls.canonical_owner(
+            await _repo_short_setting_row(env)):
+        return list(rows)
     shown = []
     for row in rows:
         owner, _, name = str(row.get("name") or "").partition("/")
