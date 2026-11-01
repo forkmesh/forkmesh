@@ -328,4 +328,114 @@ final class ApiBugReportTests: XCTestCase {
             .bugReportAttachment(reportId: "r1", attachmentId: "a1")
         XCTAssertTrue(missing.message.contains("no longer available"), missing.message)
     }
+
+    func testAReporterListsTheirOwnReports() async throws {
+        let body = portEncode([
+            "ok": true, "offset": 50, "nextOffset": 100,
+            "counts": ["new": 1, "triaged": 1, "closed": 0],
+            "reports": [[
+                "id": "r1", "status": "triaged", "severity": "high", "platform": "ios", "appVersion": "1.0.0+2",
+                "createdAt": 1_783_463_371_000, "message": "Repos tab spins.", "screen": "code", "package": "",
+                "confirmedFixedAt": 0,
+                "attachments": [["name": "screen.png", "size": 6]],
+            ]],
+        ])
+        let relay = FakeBugRelay(status: 200, body: body)
+        let api = wire(relay)
+        api.sessionTokenProvider = { "session-token" }
+
+        let mine = await api.myBugReports(offset: 50)
+
+        XCTAssertTrue(mine.ok)
+        XCTAssertEqual(mine.counts["triaged"], 1)
+        XCTAssertEqual(mine.nextOffset, 100)
+        let report = try XCTUnwrap(mine.reports.first)
+        XCTAssertEqual(report.id, "r1")
+        XCTAssertEqual(report.status, "triaged")
+        XCTAssertEqual(report.severity, "high")
+        XCTAssertEqual(report.screen, "code")
+        XCTAssertEqual(report.createdAt, 1_783_463_371_000)
+        XCTAssertEqual(report.confirmedFixedAt, 0)
+        XCTAssertFalse(report.confirmedFixed)
+        XCTAssertEqual(report.attachments.first?.name, "screen.png")
+        XCTAssertEqual(report.attachments.first?.size, 6)
+        let request = try XCTUnwrap(relay.http.requests.first)
+        XCTAssertEqual(request.method, "GET")
+        XCTAssertEqual(portRawPath(request), "/api/bug-reports/mine")
+        XCTAssertEqual(request.url.query, "offset=50")
+        XCTAssertEqual(request.headers["Authorization"], "Bearer session-token")
+
+        let last = await wire(FakeBugRelay(status: 200, body: portEncode([
+            "ok": true, "counts": [:], "reports": [], "offset": 0, "nextOffset": nil,
+        ]))).myBugReports()
+        XCTAssertTrue(last.ok)
+        XCTAssertNil(last.nextOffset)
+    }
+
+    func testTheFirstPageOfMyReportsSendsNoOffset() async throws {
+        let relay = FakeBugRelay(status: 200, body: portEncode(["ok": true, "counts": [:], "reports": []]))
+
+        _ = await wire(relay).myBugReports()
+
+        let request = try XCTUnwrap(relay.http.requests.first)
+        XCTAssertEqual(portRawPath(request), "/api/bug-reports/mine")
+        XCTAssertNil(request.url.query)
+    }
+
+    func testMyReportsSignedOutSaysToSignIn() async {
+        let relay = FakeBugRelay(status: 401, body: portEncode(["error": "sign_in_required"]))
+
+        let mine = await wire(relay).myBugReports()
+
+        XCTAssertFalse(mine.ok)
+        XCTAssertTrue(mine.message.contains("Sign in"), mine.message)
+        let confirm = await wire(FakeBugRelay(status: 401, body: portEncode(["error": "sign_in_required"])))
+            .confirmBugReportFixed(id: "r1")
+        XCTAssertFalse(confirm.ok)
+        XCTAssertTrue(confirm.message.contains("Sign in"), confirm.message)
+    }
+
+    func testAReporterConfirmsAFix() async throws {
+        let relay = FakeBugRelay(status: 200, body: portEncode([
+            "ok": true, "previous": "triaged", "counts": ["new": 0, "triaged": 0, "closed": 1],
+            "report": [
+                "id": "r1", "status": "closed", "severity": "normal", "platform": "ios", "appVersion": "1.0.0+2",
+                "createdAt": 1_783_463_371_000, "message": "Repos tab spins.", "screen": "", "package": "",
+                "confirmedFixedAt": 1_783_500_000_000, "attachments": [],
+            ],
+        ]))
+        let api = wire(relay)
+        api.sessionTokenProvider = { "session-token" }
+
+        let confirmation = await api.confirmBugReportFixed(id: "r1")
+
+        XCTAssertTrue(confirmation.ok)
+        XCTAssertEqual(confirmation.previous, "triaged")
+        XCTAssertEqual(confirmation.counts["closed"], 1)
+        let report = try XCTUnwrap(confirmation.report)
+        XCTAssertEqual(report.status, "closed")
+        XCTAssertEqual(report.confirmedFixedAt, 1_783_500_000_000)
+        XCTAssertTrue(report.confirmedFixed)
+        let request = try XCTUnwrap(relay.http.requests.first)
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(portRawPath(request), "/api/bug-reports/mine")
+        XCTAssertEqual(relay.submitted.first?["report"], "r1")
+        XCTAssertEqual(relay.submitted.first?["fixed"], true)
+
+        let missing = await wire(FakeBugRelay(status: 404, body: portEncode(["error": "report_missing"])))
+            .confirmBugReportFixed(id: "r1")
+        XCTAssertFalse(missing.ok)
+        XCTAssertTrue(missing.message.contains("no longer exists"), missing.message)
+        let old = await wire(FakeBugRelay(status: 404, body: portEncode(["error": "not_found"])))
+            .confirmBugReportFixed(id: "r1")
+        XCTAssertTrue(old.message.contains("Update the relay"), old.message)
+    }
+
+    func testACancelledLoadOfMyReportsIsNotReportedAsUnreachable() async {
+        let relay = FakeBugRelay()
+        relay.offline.value = HTTPError.cancelled
+        let mine = await wire(relay).myBugReports()
+        XCTAssertTrue(mine.cancelled)
+        XCTAssertEqual(mine.message, "")
+    }
 }

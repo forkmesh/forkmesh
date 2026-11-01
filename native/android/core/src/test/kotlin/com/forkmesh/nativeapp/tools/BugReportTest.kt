@@ -5,6 +5,9 @@ import com.forkmesh.nativeapp.api.BugReportInbox
 import com.forkmesh.nativeapp.api.BugReportInboxItem
 import com.forkmesh.nativeapp.api.BugReportStatusChange
 import com.forkmesh.nativeapp.api.FakeTransport
+import com.forkmesh.nativeapp.api.MyBugReport
+import com.forkmesh.nativeapp.api.MyBugReportConfirmation
+import com.forkmesh.nativeapp.api.MyBugReports
 import com.forkmesh.nativeapp.api.TestSettings
 import com.forkmesh.nativeapp.api.bodyJson
 import com.forkmesh.nativeapp.api.jsonResponse
@@ -246,5 +249,76 @@ class BugReportTest {
         val loaded = cancelled.requesting().received(BugReportInbox(ok = true, reports = listOf(BugReportInboxItem.from(mapOf("id" to "a")))), offset = 0)
         expect(loaded.loaded)
         assertEq(listOf("a"), loaded.reports.map { it.id })
+    }
+
+    private fun mine(id: String, status: String = "new", fixedAt: Long = 0) = MyBugReport.from(
+        mapOf("id" to id, "status" to status, "message" to "Broken.", "platform" to "android", "appVersion" to "0.1.0+1", "confirmedFixedAt" to fixedAt),
+    )
+
+    fun testMyReportsNameEachStatusInPlainWords() {
+        assertEq("Received", MyBugReportsCopy.statusLabel(mine("a", "new")))
+        assertEq("In progress", MyBugReportsCopy.statusLabel(mine("a", "triaged")))
+        assertEq("Closed", MyBugReportsCopy.statusLabel(mine("a", "closed")))
+        assertEq("Fixed, confirmed by you", MyBugReportsCopy.statusLabel(mine("a", "closed", fixedAt = 1)))
+        assertEq("Fixed, confirmed by you", MyBugReportsCopy.statusLabel(mine("a", "new", fixedAt = 1)))
+        assertEq(MyBugReportTone.Plain, MyBugReportsCopy.statusTone(mine("a", "new")))
+        assertEq(MyBugReportTone.InProgress, MyBugReportsCopy.statusTone(mine("a", "triaged")))
+        assertEq(MyBugReportTone.Plain, MyBugReportsCopy.statusTone(mine("a", "closed")))
+        assertEq(MyBugReportTone.Confirmed, MyBugReportsCopy.statusTone(mine("a", "triaged", fixedAt = 1)))
+        assertEq("My reports", MyBugReportsCopy.TAB_MINE)
+        assertEq("Confirm it's fixed", MyBugReportsCopy.CONFIRM)
+        assertEq("You haven't reported any bugs yet.", MyBugReportsCopy.EMPTY)
+    }
+
+    fun testMyReportDetailsSkipEmptyParts() {
+        assertEq("android · 0.1.0+1", MyBugReportsCopy.details(mine("a")))
+        val full = MyBugReport.from(mapOf("id" to "a", "platform" to "ios", "appVersion" to "1.5.0", "screen" to "chat",
+            "attachments" to listOf(mapOf("name" to "one.png", "size" to 1), mapOf("name" to "two.txt", "size" to 2))))
+        assertEq("ios · 1.5.0 · chat", MyBugReportsCopy.details(full))
+        assertEq("one.png · two.txt", MyBugReportsCopy.attachments(full))
+        assertEq("", MyBugReportsCopy.details(MyBugReport.from(mapOf("id" to "a"))))
+    }
+
+    fun testMyReportsPageAndShowRefusals() {
+        val first = MyBugReportsState().requesting().received(
+            MyBugReports(ok = true, reports = listOf(mine("a")), counts = mapOf("new" to 2), nextOffset = 1),
+            offset = 0,
+        )
+        expect(first.loaded && !first.loading)
+        assertEq(1, first.nextOffset)
+        val more = first.requesting().received(MyBugReports(ok = true, reports = listOf(mine("b"))), offset = 1)
+        assertEq(listOf("a", "b"), more.reports.map { it.id })
+        assertEq(null, more.nextOffset)
+        val refreshed = more.requesting().received(MyBugReports(ok = true, reports = listOf(mine("c"))), offset = 0)
+        assertEq(listOf("c"), refreshed.reports.map { it.id })
+        val refused = more.requesting().received(MyBugReports.failure("Sign in to see the bugs you reported."), offset = 0)
+        expect(refused.reports.isEmpty())
+        assertEq("Sign in to see the bugs you reported.", refused.problem)
+        val cancelled = MyBugReportsState().requesting().received(MyBugReports.CANCELLED_LOAD, offset = 0)
+        expect(!cancelled.loaded && !cancelled.loading)
+        assertEq("", cancelled.problem)
+        expect(!loadMyBugReports(null).ok)
+        expect(!confirmMyBugReportFixed(null, "a").ok)
+    }
+
+    fun testConfirmingAFixReplacesTheReportInPlace() {
+        val list = MyBugReportsState().received(MyBugReports(ok = true, reports = listOf(mine("a"), mine("b", "triaged"), mine("c"))), 0)
+        expect(list.canConfirm("b"))
+        val busy = list.confirmStarted("b")
+        expect(!busy.canConfirm("b"))
+        expect(busy.canConfirm("a"))
+        val fixed = mine("b", "closed", fixedAt = 1_783_463_999_000)
+        val done = busy.confirmed("b", MyBugReportConfirmation(ok = true, report = fixed, previous = "triaged", counts = mapOf("closed" to 1)))
+        assertEq(listOf("a", "b", "c"), done.reports.map { it.id })
+        assertEq(fixed, done.reports[1])
+        assertEq("Fixed, confirmed by you", MyBugReportsCopy.statusLabel(done.reports[1]))
+        assertEq(1, done.counts["closed"])
+        expect(done.confirming.isEmpty())
+        expect(!done.canConfirm("b"))
+        val refused = list.confirmStarted("a").confirmed("a", MyBugReportConfirmation.failure("That report is no longer in your list."))
+        assertEq("That report is no longer in your list.", refused.problem)
+        assertEq(list.reports, refused.reports)
+        expect(refused.confirming.isEmpty())
+        expect(refused.canConfirm("a"))
     }
 }

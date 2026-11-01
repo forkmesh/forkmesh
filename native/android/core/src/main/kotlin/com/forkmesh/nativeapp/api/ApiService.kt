@@ -72,6 +72,8 @@ open class ApiService(
 ) {
     companion object {
         const val BUG_REPORT_INBOX_MISSING = "This relay cannot list reported bugs yet. Update the relay and try again."
+        const val MY_BUG_REPORTS_MISSING = "This relay cannot list your reported bugs yet. Update the relay and try again."
+        const val MY_BUG_REPORTS_SIGN_IN = "Sign in to see the bugs you reported."
         const val CACHE_TTL_MS = 60_000L
         const val ACCOUNT_STATUS_TTL_MS = 120_000L
         const val OFFLINE_REPO_TTL_MS = 60_000L
@@ -667,6 +669,55 @@ open class ApiService(
             status = jsonText(map["status"]).ifEmpty { status },
             counts = counts.mapValues { (it.value as? Number)?.toInt() ?: 0 },
         )
+    }
+
+    open fun myBugReports(offset: Int = 0): MyBugReports {
+        val query = LinkedHashMap<String, String>()
+        if (offset > 0) query["offset"] = offset.toString()
+        val response = try {
+            exchange(
+                "GET",
+                base("/api/bug-reports/mine", query),
+                withAuth(mapOf("Accept" to "application/json")),
+                timeoutMs = 20_000,
+            )
+        } catch (error: Exception) {
+            if (wasCancelled(error)) return MyBugReports.CANCELLED_LOAD
+            return MyBugReports.failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        if (response.status == 401 || response.status == 403) return MyBugReports.failure(MY_BUG_REPORTS_SIGN_IN)
+        if (response.status == 404 || response.status == 405) return MyBugReports.failure(MY_BUG_REPORTS_MISSING)
+        val decoded = if (response.status in 200..299) runCatching { Json.parse(response.text()) }.getOrNull() else null
+        @Suppress("UNCHECKED_CAST")
+        val map = decoded as? Map<String, Any?>
+            ?: return MyBugReports.failure("Your reported bugs could not be loaded. Try again in a moment.")
+        return MyBugReports.from(map)
+    }
+
+    open fun confirmBugReportFixed(id: String): MyBugReportConfirmation {
+        val response = try {
+            exchange(
+                "POST",
+                base("/api/bug-reports/mine"),
+                withAuth(mapOf("Accept" to "application/json", "Content-Type" to "application/json")),
+                encode(linkedMapOf("report" to id, "fixed" to true)),
+                timeoutMs = 20_000,
+            )
+        } catch (_: Exception) {
+            return MyBugReportConfirmation.failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        when (response.status) {
+            401, 403 -> return MyBugReportConfirmation.failure(MY_BUG_REPORTS_SIGN_IN)
+            404 -> return MyBugReportConfirmation.failure(
+                if (errorCode(response.text()) == "report_missing") "That report is no longer in your list." else MY_BUG_REPORTS_MISSING,
+            )
+            405 -> return MyBugReportConfirmation.failure(MY_BUG_REPORTS_MISSING)
+        }
+        val decoded = if (response.ok) runCatching { Json.parse(response.text()) }.getOrNull() else null
+        @Suppress("UNCHECKED_CAST")
+        val map = decoded as? Map<String, Any?>
+            ?: return MyBugReportConfirmation.failure(MyBugReportConfirmation.MY_BUG_REPORT_CONFIRM_FAILED)
+        return MyBugReportConfirmation.from(map)
     }
 
     open fun bugReportAttachment(reportId: String, attachmentId: String): BugReportFile {

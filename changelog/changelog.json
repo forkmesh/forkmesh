@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Market", "text": "In the Report a bug sheet on iPhone and Android, a My reports tab lists the bugs you reported with their status, and lets you confirm when one is fixed."},
   {"date": "2026-11-01", "area": "Projects", "text": "A note link in a task now opens the note inside the app you are using (the desktop Notes page, the phone app or the web dashboard) instead of jumping to the browser."},
   {"date": "2026-11-01", "area": "Market", "text": "A saved CRM view can now be made the default, so every list opens in it on the web and the desktop."},
   {"date": "2026-11-01", "area": "Projects", "text": "Open pull requests have a Review with ChatGPT button that opens ChatGPT with the review prompt filled in; a prompt too long for a link opens with its start and is copied whole to paste."},
