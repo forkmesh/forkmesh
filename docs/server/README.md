@@ -4,24 +4,52 @@
 on repositories: the core nodes, the runner tier, and any independent mirror.
 It keeps the served bare repositories in sync, supervises the Python HTTPS
 gateway (`tools/mirror_gateway.py`), publishes the node's catalog record and
-endpoint lease to the App, materializes web issue/pull/discussion submissions
-into Git, executes owner-authorized web merges, and runs website-queued agent
-jobs and, when enabled, repository Actions.
+endpoint lease to the App, writes web submissions into Git, executes web
+merges, and runs agent jobs and Actions. The same module holds the group-call
+server, its own QUIC and WebRTC stacks, and call encryption.
+
+| Page | Covers |
+| --- | --- |
+| [gateways.md](gateways.md) | HTTPS and SSH Git gateways, the SSH broker |
+| [intake-and-attestation.md](intake-and-attestation.md) | Web submissions into Git, issue convergence, refs attestations |
+| [pull-heads.md](pull-heads.md) | Deterministic head commits for patch-backed pulls |
+| [pull-rules.md](pull-rules.md) | Pull request rules and model attestations |
+| [merge-executor.md](merge-executor.md) | Owner-authorized web merges, branch updates and signed checks |
+| [agent-jobs.md](agent-jobs.md) | Website agent jobs on runners and mirrors |
+| [actions.md](actions.md) | Actions on mirrors, and on runners while the desktop is offline |
+| [instance-actions.md](instance-actions.md) | GitHub-compatible Actions on a self-hosted instance |
+| [fleet-operations.md](fleet-operations.md) | Installing and repairing a fleet of desktop-managed mirrors |
+| [rtc.md](rtc.md) | Group-call server and our standard-library WebRTC stack |
+| [quic.md](quic.md) | Our QUIC v1, HTTP/3 and WebTransport |
+| [fm-media.md](fm-media.md) | FM Media, the call engine replacing WebRTC: plan and decisions |
+| [fmm-protocol.md](fmm-protocol.md) | FM Media wire protocol and engine core |
+| [fmm-server.md](fmm-server.md) | FM Media call server, standby failover, certificates |
+| [call-e2ee.md](call-e2ee.md) | Group call end-to-end encryption (v2) |
+| [call-bench.md](call-bench.md) | Network impairment relay and call-quality bench |
+
+This folder is the code-level detail behind the
+[mirroring](../mirroring.md) pillar (how copies stay in step and are
+verified) and the [encryption](../encryption.md) pillar (call encryption).
+How the cores fit together: [architecture](../architecture.md); running your
+own node: [self-hosting](../self-hosting.md) and the operator guide
+[mirror node service](../operations/mirror-node.md), which covers the
+operator API, data flow, setup and rolling migration that this page does not
+repeat. Back to [all documentation](../README.md).
+
+## Roles
 
 `role` in `mirror-node.json` (`server/config.go`, `applyRole`) picks what a
-host does:
+host does ([service roles](../operations/service-roles.md)):
 
-- `mirror` (default): an independent mirror; all of the above, optionally with
-  Cloudflare Tunnel as a child process.
+- `mirror` (default): an independent mirror; everything above, optionally with
+  Cloudflare Tunnel (`cloudflared`) as a child process, the operator's choice
+  for reaching the gateway.
 - `core`: mirror, Git gateway and catalog work plus reconciliation of
   repositories hosted on the core. A core never runs agent jobs or Actions
   (`disableAgentJobs` forced on, `enableActions` off).
 - `runner`: no repositories, catalog, tunnel or merge executor. It claims agent
   job leases from the App and runs them in a per-job sandbox
-  ([RUNNERS.md](../RUNNERS.md)).
-
-The operator guide for independent mirrors is
-[www/docs/operations/mirror-node.md](../../www/docs/operations/mirror-node.md).
+  ([runners](../operations/runners.md)).
 
 ## Code map
 
@@ -48,11 +76,11 @@ pinned toolchain). Paths are relative to `server/`.
 | `pull_head.go` | Deterministic head commits for patch-backed pulls ([pull-heads.md](pull-heads.md)) |
 | `merge.go`, `merge_branch.go`, `checks.go` | Merge executor, branch operations, signed required checks ([merge-executor.md](merge-executor.md)) |
 | `pullrules.go`, `agentattest.go` | Pull request rules and model attestations ([pull-rules.md](pull-rules.md)) |
-| `forks.go`, `hosted.go` | Website fork jobs; core-side hosted repository reconciliation ([HOSTED_REPOS.md](../HOSTED_REPOS.md)) |
+| `forks.go`, `hosted.go` | Website fork jobs; core-side hosted repository reconciliation ([core-hosted repositories](../operations/core-hosted-repositories.md)) |
 | `agents.go`, `agent_*.go`, `agentstream.go`, `terminal.go` | Website agent jobs, errors, attachments, live output, provider sign-in terminal ([agent-jobs.md](agent-jobs.md)) |
 | `runner.go`, `runnergrant.go`, `sandbox.go`, `jobhome.go`, `runnerlogin.go` | Runner role: claim, clone with a read grant, run, push `refs/heads/agent/<session>`, report; per-job sandbox and homes |
 | `runnerpool.go`, `vultr.go` | Burst runner autoscaler (only fleet-labelled instances) |
-| `actions*.go`, `runner_actions.go` | Opt-in Actions on mirrors ([actions-runner.md](actions-runner.md)); Actions jobs on runners ([runner-actions.md](runner-actions.md)) |
+| `actions*.go`, `runner_actions.go` | Opt-in Actions on mirrors and Actions jobs on runners ([actions.md](actions.md)) |
 | `syncstatus.go`, `dashboard_replica.go`, `nodeops_*.go` | Sync status model, dashboard projection refresh, backup/restore/identity operations |
 | `packaging/` | systemd units, sshd and fail2ban configs for independent mirrors |
 
@@ -87,9 +115,10 @@ broker ([gateways.md](gateways.md)), the desktop host installer, and
 - Loopback API (`127.0.0.1:8791`, `localRequestOnly`): `GET /healthz`,
   `GET /readyz`, `GET /v1/status`, `POST /v1/control/sync`,
   `POST /v1/control/collaboration`.
-- Gateway on `127.0.0.1:8790`, fronted by Caddy or Cloudflare Tunnel
-  ([direct-https-mirror-gateway.md](../../www/docs/operations/direct-https-mirror-gateway.md),
-  `www/docs/mirror-*.schema.json`); the core gateway also serves
+- Gateway on `127.0.0.1:8790`, fronted by Caddy (cores and most mirrors) or
+  an operator's Cloudflare Tunnel
+  ([direct-https-mirror-gateway.md](../operations/direct-https-mirror-gateway.md),
+  `docs/mirror-*.schema.json`); the core gateway also serves
   `/v1/runner/<owner>/<repo>.git` to runners with grants.
 - App: `/api/nodes/events`, `/api/repositories`, `/api/accounts`,
   `org-agent-jobs` leases, collaboration inbox leases, runner routes
@@ -123,11 +152,11 @@ upstream on another relay (a self-hosted instance following forkmesh.com) gets
 an unsigned watch socket on that relay,
 `/api/nodes/events?watch=<owner>/<repo>` (`upstreamwatch.go`); a doorbell or
 a reconnect fetches at once and `syncInterval` stays the fallback poll. The
-relay side accepts a watch only for a public repository, resolves an
-organization alias to its backing node, and puts watchers on the
-`watch:<owner>/<repo>` `ForkMeshNodes` object, where they may only ping;
-`notify_repo_mirrors` rings that object for every `commits` doorbell.
-`/v1/status` lists `upstreamWatches`.
+relay accepts a watch only for a public repository, resolves an organization
+alias to its backing node, and puts watchers on the `watch:<owner>/<repo>`
+`ForkMeshNodes` object (the cores' Durable Object emulation), where they may
+only ping; `notify_repo_mirrors` rings that object for every `commits`
+doorbell. `/v1/status` lists `upstreamWatches`.
 
 `mirrorOf` maps a configured repository key to its upstream page
 (`https://host/owner/repo`). Such a repository, and every alias on the same
@@ -135,7 +164,7 @@ Git directory, is a read-only mirror: its catalog record carries `mirrorOf`,
 `upstreamCommit` and `lastSyncedAt` (signed optional fields the relay keeps
 only when well formed), and its gateway entries lose `git-receive-pack`,
 `merge-pull`, `update-pull-branch` and the agent-branch operations. See
-[../INSTANCES.md](../INSTANCES.md#the-platform-source-mirror-ownerforkmesh).
+[instances](../operations/instances.md#the-platform-source-mirror-ownerforkmesh).
 
 ## Build, run, test
 
@@ -151,14 +180,14 @@ forkmesh-mirror-node --config /etc/forkmesh/mirror-node.json --preflight --json
 `python3 tools/run_critical_tests.py go` runs the same tests offline
 (`GOTOOLCHAIN=local`, `GOPROXY=off`); CI (`.forkmesh/ci.yml`), the quality
 gate and the auto-deploy gate all run it, so a failing Go test blocks a
-deploy. Until 2026-10-15 no gate ran them and two had broken unnoticed.
+deploy.
 
 `python3 tools/next_fleet.py install nN --steps daemon` builds and installs
 it on a core or runner. Gateway tests are Python
 (`app/tests/test_mirror_gateway*.py`, `app/tests/test_headless_mirror_*.py`).
 Diagnosis: `journalctl -u forkmesh-mirror-node`,
 `curl -s 127.0.0.1:8791/v1/status`. Fleet runbook:
-[OPERATIONS.md](../OPERATIONS.md); independent mirrors:
+[operations](../operations/README.md); desktop-managed mirrors:
 [fleet-operations.md](fleet-operations.md).
 
 ## Security
@@ -172,44 +201,41 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   scopes as `forkmesh-job`.
 - Actions steps run in bubblewrap with no network and no view of node state.
 - SSH is key-only with fail2ban.
-- The gateway's reads (`resolve_commit`) resolve only branches, tags,
-  `refs/pr/*`, `refs/remotes/origin/*`, `HEAD` and commit ids, so hidden
-  namespaces such as `refs/forkmesh/trash/` are never served
-  (`test_reads_resolve_only_visible_refs`).
-- A commit id must have at least 7 hex digits, and is served only when one of
-  those visible refs, or a force-push backup under `refs/forkmesh/history/`
-  (kept resolvable for reviews, [CORE_PUSH.md](../CORE_PUSH.md)), contains
-  it. Until 2026-10-27 any id of 4+ digits resolved any object in the store,
-  so the public read API served deleted branches in `refs/forkmesh/trash/`,
-  merge staging, and objects a hosted fork borrows from its pool
-  (`test_reads_refuse_commit_reachable_only_from_hidden_refs`).
-- The check costs one walk per refs state, not per id: on the first commit-id
-  read of a cache generation the gateway lists the visible refs and, when
-  they reach at most `VISIBLE_COMMIT_SET_LIMIT` (50,000) commits, keeps that
-  commit set (about 5 MB at the limit). A full id is then answered from the
-  set without starting git. A bigger repository answers visible tips from
-  the ref list and walks the rest per id (`for-each-ref --contains`, memoized
-  per generation). Every walk forces `core.commitGraph=true` (repository
-  config is untrusted) and takes one of `VISIBLE_COMMIT_WALK_SLOTS` (2)
-  process-wide slots; a request that waits more than 5 s gets a 503, so a
-  flood of distinct old ids queues instead of taking every CPU
+- **Only visible refs are served.** The gateway's reads (`resolve_commit`)
+  resolve only branches, tags, `refs/pr/*`, `refs/remotes/origin/*`, `HEAD`
+  and commit ids, so hidden namespaces such as `refs/forkmesh/trash/`, merge
+  staging and objects a hosted fork borrows from its pool are never served
+  (`test_reads_resolve_only_visible_refs`). A commit id needs at least 7 hex
+  digits and is served only when a visible ref, or a force-push backup under
+  `refs/forkmesh/history/` (kept for reviews, [core push](../operations/core-push.md)),
+  contains it (`test_reads_refuse_commit_reachable_only_from_hidden_refs`).
+- **That check costs one walk per refs state.** On the first commit-id read of
+  a cache generation the gateway lists the visible refs and, when they reach
+  at most `VISIBLE_COMMIT_SET_LIMIT` (50,000) commits, keeps the commit set
+  (about 5 MB at the limit) and answers full ids without starting git. A
+  bigger repository answers visible tips from the ref list and walks the rest
+  per id (`for-each-ref --contains`, memoized per generation). Every walk
+  forces `core.commitGraph=true` (repository config is untrusted) and takes
+  one of `VISIBLE_COMMIT_WALK_SLOTS` (2) process-wide slots; a request that
+  waits more than 5 s gets a 503, so a flood of distinct old ids queues
+  instead of taking every CPU
   (`test_commit_id_visibility_is_cached_per_refs_state_and_bounded`).
-- The runner daemon reads a Codex job's `last-message.txt`, in a folder the
-  job user owns, with `readOwnedFile` (no symlink, no FIFO, owned by the job
-  user, at most 4 MiB), like every other job-owned file it reads
+- The runner daemon reads a Codex job's `last-message.txt` with
+  `readOwnedFile` (no symlink, no FIFO, owned by the job user, at most
+  4 MiB), like every other job-owned file
   (`TestCodexLastMessageReadRefusesJobPlantedLinksAndFifos`).
-- A core (`role: core`) syncs its upstreams with `http.followRedirects=false`
-  (`syncCoreRepository`, `upstreamGitArgs` in `gateway.go`), for the fetch,
-  the first clone and the peer `main` convergence. The App's public Git route
-  can answer with a 307 to the serving node, and before this the core followed
-  it to whatever host the App named, so a mirror the App picked could feed the
-  core's `main` and tags. Now a redirecting upstream fails, and the sync moves
-  on to the next configured upstream, the peer cores listed by
-  `core_upstreams` (`deploy/core/render.py`). Mirrors and runners keep
-  following redirects: the public route is their only upstream
+- **A core never follows a redirect upstream.** `role: core` syncs with
+  `http.followRedirects=false` (`syncCoreRepository`, `upstreamGitArgs` in
+  `gateway.go`) for the fetch, the first clone and the peer `main`
+  convergence. The App's public Git route can answer 307 to a serving node,
+  and following it would let a mirror the App picked feed the core's `main`
+  and tags. A redirecting upstream fails and the sync moves on to the peer
+  cores listed by `core_upstreams` (`deploy/core/render.py`). Mirrors and
+  runners keep following redirects: the public route is their only upstream
   (`TestCoreSyncNeverFollowsARedirectToAnotherHost`,
   `TestMirrorSyncStillFollowsRedirects`).
-- See [RUNNERS.md](../RUNNERS.md) and [IDS.md](../IDS.md).
+- See [runners](../operations/runners.md), [intrusion detection](../operations/intrusion-detection.md) and the
+  [threat model](../protocol/threat-model.md).
 
 ## Traps
 
@@ -233,9 +259,8 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   merge job. The executor writes `mirror-gateway/pull-jobs/gateway-generation`
   so the cycle can recognise its own write.
 - **Size a pty before starting its child.** `startPtyCommand` sets the
-  window size on the master before `cmd.Start`; sizing it afterwards let a
-  fast CLI read `0 0` as its first size (CI run #3523,
-  `TestRunnerTerminalRunsTheCLIAndFollowsTheSize`).
+  window size on the master before `cmd.Start`, or a fast CLI reads `0 0` as
+  its first size (`TestRunnerTerminalRunsTheCLIAndFollowsTheSize`).
 - The catalog's 52-week activity comes from one
   `git rev-list --since=52 weeks ago --timestamp --parents HEAD` pass.
 - Ref updates are compare-and-swap: `reconcileUpstreamRefs` reads refs with
@@ -247,84 +272,69 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   pins `syscall.Umask(0o022)`, the service umask that
   `makePublicRepositoryTraversable` relies on), and every `git commit` /
   `commit-tree` passes `-c user.name=… -c user.email=…` or runs in a clone
-  with a local `user.*`. Four tests broke on this from the day the Go suite
-  joined CI (2026-10-14) until it was fixed; reproduce with
+  with a local `user.*`. Reproduce with
   `umask 077; GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1
   GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true go test ./...`.
 - **The sandbox has a CPU quota, not fewer cores.** The desktop runs a step in
-  a scope with `CPUQuota` of at most 800% and `CPUWeight=20`, while Go 1.24
-  sizes `GOMAXPROCS` (and so `go test -p`) from every host core. On a 36-core
-  desktop, 36 packages with 36 threads each got throttled in bursts. Run 6484
-  (2026-10-22) failed this way: a loopback `httptest` POST in
-  `TestRegisterNodeAccountReservesAndFinalizesLinkCode` hit the 20 s client
-  timeout, and the plain datagram window in
-  `TestDatagramLossExemptKeepsTheWindowOpen` regrew to 3600 B, short of the old
-  4x-the-exempt-window ratio. `tools/run_critical_tests.py go` now sets
-  `GOMAXPROCS` from `FORKMESH_ACTIONS_CPUS`, which the desktop exports, so
-  package parallelism follows it. That datagram test now checks each
-  connection against its own starting window: without the exemption the
-  window falls to half or less, and with it the window never shrinks.
-- **Loopback calls in tests need room for a throttled sandbox.** Run 9289
-  (2026-11-01, main at a2c330f1) failed the same way: the merge executor's
-  daemon wake, a loopback POST with a 3 s client timeout, never reached the
-  `httptest` server in `TestExecutorRegisterRecordsGenerationAndWakesDaemon`
-  (`wakes=0`, test time 3.11 s). The wake stays best effort at 3 s in
-  production; `PullMutationExecutor.DaemonWakeTimeout` overrides it and the
-  test sets 30 s, so a throttled burst delays the test instead of failing it.
-  The full log of a desktop-run job is in
-  `~/projects/<project>/data/actions/runs/<repository>/<run>/log.txt`.
-- **A timeout on a busy desktop gets one retry.** The CI step shares the host
-  with agent sessions, builds and auto-deploy tests, at `CPUWeight=20`. Even
-  with `GOMAXPROCS` capped, one in-process loopback exchange sometimes waits
-  out its whole timeout while the rest of the package runs at normal speed.
-  Run 6458 hit the 30 s context of `TestMirrorNodeRejectsUnsafeAgentJobWithoutRunningIt`,
-  run 6484 the 20 s client timeout of the account test, and run 6499
-  (2026-10-22) the 30 s dial timeout of `http.DefaultTransport` in
-  `TestRunnerClaimsOnlyWithAProviderAndFreeSlots`. Each failed package took
-  its usual ~63 s plus exactly that timeout. The host counters show no lost
-  packets (`/proc/net/stat/nf_conntrack` drop 0, `ListenOverflows` 0,
-  `softnet_stat` dropped 0), so the test process was starved, not the
-  network. `tools/run_critical_tests.py go` now reruns the failed tests once,
-  with `-count=1 -run '^(…)$'` per package, but only when at most three
-  tests failed, each printed a timeout (`i/o timeout`,
+  a scope with `CPUQuota` of at most 800% and `CPUWeight=20`, while Go sizes
+  `GOMAXPROCS` (and so `go test -p`) from every host core, so a 36-core host
+  ran 36 packages of 36 threads in throttled bursts and loopback tests hit
+  their timeouts. `tools/run_critical_tests.py go` sets `GOMAXPROCS` from
+  `FORKMESH_ACTIONS_CPUS`, which the desktop exports.
+  `TestDatagramLossExemptKeepsTheWindowOpen` checks each connection against
+  its own starting window: without the exemption the window falls to half or
+  less, with it the window never shrinks.
+- **Loopback calls in tests need room for a throttled sandbox.** The merge
+  executor's daemon wake is a loopback POST, best effort at 3 s in production;
+  `PullMutationExecutor.DaemonWakeTimeout` overrides it, and
+  `TestExecutorRegisterRecordsGenerationAndWakesDaemon` sets 30 s so a
+  throttled burst delays the test instead of failing it. A desktop-run job's
+  full log is in `~/projects/<project>/data/actions/runs/<repository>/<run>/log.txt`.
+- **A timeout under load gets one retry.** The CI step shares the host with
+  agent sessions and builds at `CPUWeight=20`, and one in-process loopback
+  exchange sometimes waits out its whole timeout while the package otherwise
+  runs at normal speed (the host showed no dropped packets: the process was
+  starved, not the network). `tools/run_critical_tests.py go` reruns the
+  failed tests once, with `-count=1 -run '^(…)$'` per package, only when at
+  most three tests failed, each printed a timeout (`i/o timeout`,
   `context deadline exceeded`, `Client.Timeout exceeded`, `timed out`), and
   no package panicked or failed to build. The log says
-  `retrying … once: every failure was a timeout`. A wrong value, a panic,
-  or a timeout that recurs still fails the step.
-  `TestThreePeopleHoldACallThroughImpairedLinks` gets the same one retry
-  for any failure, because its frame counts drop when the process is
-  starved (`GO_LOAD_SENSITIVE_TESTS`, [../engineering/github-actions.md](../engineering/github-actions.md)).
+  `retrying … once: every failure was a timeout or a load-sensitive call test`.
+  A wrong value, a panic, or a recurring timeout still fails the step.
+  `TestThreePeopleHoldACallThroughImpairedLinks` gets the same one retry for
+  any failure, because its frame counts drop when the process is starved
+  (`GO_LOAD_SENSITIVE_TESTS`,
+  [../engineering/github-actions.md](../engineering/github-actions.md)).
 - **Real-time call tests take three attempts.** The call and QUIC tests that
   judge wall-clock results run their peers, cores and `netsim` links in the
-  test process, so a starved process is a worse network, not a slower one:
-  on 2026-10-24 an agent sandbox measured RTTs of 40–100 ms on 15/25 ms
-  links, a 1.3 s failover with no goroutine stalled for more than 57 ms, and
-  listeners that ran 110–121 of 150 steps yet played 15–71 frames. A stall
-  allowance or a per-step frame count therefore cannot separate load from a
-  regression. `TestThreePeopleHoldACallThroughImpairedLinks`,
+  test process, so a starved process looks like a worse network (a loaded
+  sandbox measured 40–100 ms RTTs on 15/25 ms links and a 1.3 s failover), and
+  no stall allowance can separate load from a regression.
+  `TestThreePeopleHoldACallThroughImpairedLinks`,
   `TestCoreDeathMovesTheCallToTheStandbyCore` (audio back within 500 ms),
   `TestMultipathPathFailureAudio` (a gap within one round trip of the
   surviving path, no loss) and the lower bound of `TestAntiAmplificationLimit`
   run through `retryTiming` (`timing_test.go` in `rtc/fmmserver` and
   `rtc/quic`): each attempt builds fresh cores, parties and links, misses are
   logged, and the test fails only when all three miss. Setup failures and
-  the anti-amplification upper bound still fail at once. They blocked
-  deploys `e162e9991b8f` (82 ms multipath gap) and `bf3a0be84066` (544 ms
-  failover) in run 7942, and earlier deploys on 2026-10-23 and 2026-10-24
-  ([../deploy/auto-deploy.md](../deploy/auto-deploy.md)).
+  the anti-amplification upper bound still fail at once
+  ([auto-deploy](../operations/auto-deploy.md)).
 
 ## Related docs
 
-- [RUNNERS.md](../RUNNERS.md), [HOSTED_REPOS.md](../HOSTED_REPOS.md),
-  [OPERATIONS.md](../OPERATIONS.md), [IDS.md](../IDS.md),
-  [CORE_PUSH.md](../CORE_PUSH.md)
-- Operations pages under `www/docs/operations/`: mirror node, direct HTTPS
-  gateway, Git SSH gateway, Actions control, headless refresh and identity,
-  backup and recovery, operator policy, required checks, service roles, Git
-  conformance; [sync status](../../www/docs/sync-status.md).
-- Topic pages: [agent-jobs.md](agent-jobs.md), [merge-executor.md](merge-executor.md),
-  [pull-heads.md](pull-heads.md),
-  [intake-and-attestation.md](intake-and-attestation.md),
-  [pull-rules.md](pull-rules.md), [actions-runner.md](actions-runner.md),
-  [runner-actions.md](runner-actions.md), [gateways.md](gateways.md),
-  [fleet-operations.md](fleet-operations.md)
+Operator pages in [operations](../operations/README.md):
+[runners](../operations/runners.md),
+[core-hosted repositories](../operations/core-hosted-repositories.md),
+[core push](../operations/core-push.md),
+[intrusion detection](../operations/intrusion-detection.md),
+[mirror node](../operations/mirror-node.md),
+[direct HTTPS gateway](../operations/direct-https-mirror-gateway.md),
+[Git SSH gateway](../operations/git-ssh-gateway.md),
+[headless refresh and identity](../operations/headless-mirror.md),
+[Actions control](../operations/mirror-actions-control.md),
+[backup and recovery](../operations/node-backup-and-recovery.md),
+[operator policy](../operations/node-operator-policy.md),
+[required checks](../operations/required-checks.md),
+[service roles](../operations/service-roles.md),
+[Git conformance](../operations/git-conformance.md); users see
+[sync status](../sync-status.md).

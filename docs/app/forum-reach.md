@@ -1,13 +1,11 @@
 # Forum reach: many doors to one forum
 
-A forum that lives in a ForkMesh repository (its threads are the issue
-records in `.forkmesh/issues`) should stay readable when a censor blocks one
-domain name or one IP address. A forum that plans a move off GitHub will
-typically ask for exactly that:
-blocking a domain name or IP address must not be enough to block the
-platform, a GitHub Pages mirror would give a somewhat censorship-resistant
-read-only view, and pages must stay light enough for DNS tunnels and work
-without JavaScript.
+Part of [the App docs](README.md); the public overview is
+[censorship resilience](../censorship-resilience.md). A forum that
+lives in a ForkMesh repository (its threads are the issue records in
+`.forkmesh/issues`) should stay readable when a censor blocks one domain name
+or one IP address, with read-only static copies elsewhere and pages light
+enough for DNS tunnels and usable without JavaScript.
 
 No single trick does this, so an instance opens several doors at once:
 
@@ -15,10 +13,10 @@ No single trick does this, so an instance opens several doors at once:
 | --- | --- | --- | --- |
 | The instance domain | yes | yes | the normal site |
 | The provider the forum mirrors (GitHub) | yes | yes | kept by forge sync ([provider-mirrors.md](provider-mirrors.md)) |
-| A Tor onion address | yes | yes | `onionService: true` ([INSTANCES.md](../INSTANCES.md#tor-onion-service)) |
+| A Tor onion address | yes | yes | `onionService: true` ([instances](../operations/instances.md#tor-onion-service)) |
 | Static copies on GitHub Pages, Codeberg Pages, S3, IPFS, a USB stick | yes | no | `tools/forum_static_export.py` + `tools/forum_static_publish.py` (below) |
 | `git clone` of the repository or of a pages branch | yes, offline | no | any git host that carries it |
-| Mirror nodes that carry the repository | yes | no | the mirror quota panel sets a goal of how many mirrors a repository wants (`mirror-quota.md`, branch `example/mirror-quota`) |
+| Mirror nodes that carry the repository | yes | no | the mirror quota panel sets a goal of how many mirrors a repository wants ([mirror-quota.md](../mirror-quota.md); [mirroring](../mirroring.md)) |
 
 Each door has different blocking costs for a censor: a domain, an IP, all
 of github.io or codeberg.page, Tor itself, and every copy anyone hosts. A
@@ -111,9 +109,8 @@ and the export copies that file into `repo/`. Only a file the source commit
 holds is copied: `CheckoutSource.published` takes paths from
 `git ls-files -s` (regular files, mode 100644 or 100755) and refuses a
 symlink or anything that resolves outside the checkout; `GitSource`
-refuses symlink blobs. Before 2026-10-24 the checkout mode copied any file
-on disk, so a comment with `![x](.env)` published an untracked secret, or
-the file behind a symlink, to every static copy.
+refuses symlink blobs, so a comment pointing an image at an untracked file
+such as `.env`, or at a symlink, cannot publish it to every static copy.
 
 ## Publishing (`tools/forum_static_publish.py`)
 
@@ -248,11 +245,12 @@ while a sync writes to it can catch a half-written state; `--source
 --update`) adds a v3 onion address that serves the same app over Tor, and
 the HTTPS site advertises it with `Onion-Location`, so Tor Browser offers
 it. Details, files and the key backup are in
-[INSTANCES.md](../INSTANCES.md#tor-onion-service).
+[instances](../operations/instances.md#tor-onion-service).
 
 Every onion visitor reaches Caddy from Tor's loopback connection, and the
 host skips its rate limiter for a loopback address, so the onion site sends
-the fixed address `100.64.0.1` as `Cf-Connecting-Ip`. All onion visitors
+the fixed address `100.64.0.1` in the `Cf-Connecting-Ip` header the host
+reads for the client address. All onion visitors
 share that one rate-limit bucket and one probe-ban entry: a flood over Tor
 slows every Tor reader rather than going unlimited. A per-circuit address
 (`HiddenServiceExportCircuitID haproxy` with Caddy's `proxy_protocol`

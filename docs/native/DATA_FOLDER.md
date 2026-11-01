@@ -1,11 +1,11 @@
 # The projects folder on iOS and Android
 
-The phone keeps its stores inside the app: Keychain or Keystore, preferences,
+Part of the phone apps ([README.md](README.md)). The phone keeps its stores inside the app: Keychain or Keystore, preferences,
 Documents, and Application Support or `filesDir`. The phone deletes all of it
 with the app, and a fresh install even erases a Keychain the old app left
 behind (`FreshInstallReset`).
 
-So the phone also keeps its projects in a projects folder, laid out like the
+So the phone also copies its projects to a projects folder, laid out like the
 desktop's `~/projects/<project>/data`
 ([projects-layout.md](../tools/projects-layout.md)):
 
@@ -61,10 +61,11 @@ At every launch the app shows *Keep your ForkMesh data safe* in two cases:
 - the folder can't be opened.
 
 Saving the identity key is optional: once a folder outside the app is chosen
-the alert stops, and the page offers *Identity key (optional)* for as long as
-the folder doesn't hold this project's key for its current public key
-(`DataFolder.identitySaved`). A user who keeps the key some other way, or who
-does not want it in a folder they share, is not asked for a passphrase.
+the alert stops, and the page offers *Identity key (optional)* while the folder
+lacks this project's key for its current public key
+(`DataFolder.identitySaved`), so a user who keeps the key elsewhere is never
+asked for a passphrase. How the key is encrypted:
+[encryption.md](../encryption.md).
 
 *Not now* hides it until the next launch. On iOS the alert sits on the root
 view; on Android it is drawn outside `AccountFeature.Gate`. Either way it shows

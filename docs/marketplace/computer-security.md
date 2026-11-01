@@ -4,29 +4,23 @@
 id `computer-security`) that runs a local security checkup, explains every
 result, shows whether the thing it found is actually in use, and offers a
 confirmed one-click fix where a safe one exists. It is off by default and
-appears in the desktop rail when installed.
-
-Phones have their own checkup, the
+appears in the desktop rail when installed. Part of
+[Marketplace](README.md). Phones have their own checkup, the
 [Phone Security package](phone-security.md) (`phone-security`).
 
 ## Name and icon
 
 The package is shown as **Security** in the desktop rail, the page heading, the
-Market listing and review pages; it was called "Computer Security Checkup"
-until 2026-10-16. The Market id `computer-security`, the entrypoint
-`builtin:computer-security` and the C++ class names are unchanged, so installed
-copies and saved reviews keep working.
+Market listing and review pages. The Market id `computer-security`, the
+entrypoint `builtin:computer-security` and the C++ class names are unchanged by the display
+name, so installed copies and saved reviews keep working.
 
-The rail icon is `shield`, a plain octicon-style shield outline in
-`desktop/resources/icons/forkmesh/shield.svg` (registered in
-`desktop/resources/icons.qrc`). The package always asked for `shield`, but no
-such icon was bundled, so the rail button rendered blank.
-`marketplace/tests/test_package_rail_icons.py` now fails any native package
-whose rail icon is missing from `icons.qrc`. When it landed it also caught the
-Feed, Usage and Mastodon packages asking for `rss`, `gauge` and `at-sign` (web
-dashboard icon names) in their desktop registrations; those now use the bundled
-`broadcast`, `pulse` and `mastodon` octicons. Their web navigation icons are
-unchanged.
+The rail icon is `shield`, in `desktop/resources/icons/forkmesh/shield.svg`
+(registered in `desktop/resources/icons.qrc`).
+`marketplace/tests/test_package_rail_icons.py` fails any native package whose
+rail icon is missing from `icons.qrc` (a missing icon renders a blank rail
+button); web dashboard icon names such as `rss`, `gauge` and `at-sign` are not
+desktop icons.
 
 ## What it checks
 

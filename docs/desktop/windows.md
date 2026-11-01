@@ -1,6 +1,8 @@
 # Desktop: Windows
 
-Part of [the desktop docs](README.md).
+What is different on Windows: the cross-built installer and its Qt DLLs, settings in the registry, the mirror Actions lock, the uninstaller and Windows-only traps.
+
+Part of [Desktop](README.md).
 
 ## How the Windows build is made
 

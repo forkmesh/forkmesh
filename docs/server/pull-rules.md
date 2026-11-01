@@ -2,8 +2,9 @@
 
 Repository and organization requirements checked against every pull request,
 and the signed proof of which AI model wrote a commit. The user guide is
-[`www/docs/operations/pull-rules.md`](../../www/docs/operations/pull-rules.md);
-this page is the implementation.
+[`docs/operations/pull-rules.md`](../operations/pull-rules.md);
+this page is the implementation (home: [Go daemon](README.md); merges:
+[merge-executor.md](merge-executor.md)).
 
 ## Code map
 
@@ -23,7 +24,7 @@ this page is the implementation.
 The node that hosts the repository is the only place with Git, so it is the
 only rule evaluator. Two callers ask it:
 
-1. **Display.** The pull page calls the relay's `/pulls/<n>/rules`. The relay
+1. **Display.** The pull page calls the App's `/pulls/<n>/rules`. The App
    loads the organization rules of every organization linking the repository
    (`org_repos` joined to `org_pull_rules`, combined with unique rule ids),
    and calls `merge-preview?rules=1&pull=<n>&orgRules=<base64url JSON>`. The
@@ -34,7 +35,7 @@ only rule evaluator. Two callers ask it:
 2. **Gate.** The Go executor evaluates the repository rules from
    `ExpectedBaseOid` against `ExpectedHeadOid` inside `executeMerge`.
    Organization rules never reach the merge request (its strict, digested
-   format stays unchanged). Instead the relay runs the same evaluation on the
+   format stays unchanged). Instead the App runs the same evaluation on the
    pinned base and head before it queues the job (`merge_gate`), and refuses
    with 409 `rules_required` when a blocking rule fails or no host answers.
    Retries of an already queued request skip the gate; the job was admitted
@@ -67,7 +68,7 @@ forkmesh-agent-model-grant-v1
 <provider> <model> <lease id> <issuedAt ms> <expiresAt ms>
 ```
 
-(one field per line). The relay issues it only to `scope='pool'` runners, and
+(one field per line). The App issues it only to `scope='pool'` runners, and
 only when the effective model is known: the job's model, or `claude-opus-5-5`
 for a Claude job with none. A Codex job without a model gets no grant.
 
@@ -99,9 +100,9 @@ hex of the grant token>` with its node key. Verification needs the gateway's
 
 ## Traps
 
-- Organization rules travel to the node in the query string, so the relay
+- Organization rules travel to the node in the query string, so the App
   caps them at 6 KiB (canonical JSON) and the gateway at the same size.
-- The relay validates regular expressions with Python's `re` and rejects
+- The App validates regular expressions with Python's `re` and rejects
   lookaround and backreferences; Go uses RE2. Anything RE2 still rejects makes
   the organization policy unreadable, which locks merges and says so on the
   pull page.

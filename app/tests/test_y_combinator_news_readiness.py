@@ -9,10 +9,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-REPORT = ROOT / "www" / "docs" / "launch" / "y-combinator-news-readiness.md"
+REPORT = ROOT / "docs" / "launch" / "y-combinator-news-readiness.md"
 LATEST = ROOT / ".forkmesh" / "releases" / "latest"
 CANDIDATE = ROOT / ".forkmesh" / "releases" / "candidate-1.2.8"
-CLEAN_MACHINE = ROOT / "www" / "docs" / "launch" / "clean-machine-evidence.md"
+CLEAN_MACHINE = ROOT / "docs" / "launch" / "clean-machine-evidence.md"
 TRANSCRIPT_TOOL = ROOT / "tools" / "clean_machine_transcript.sh"
 
 
@@ -102,7 +102,7 @@ def test_tag_commit_has_one_definition_that_matches_the_manifest():
     host = _read(ROOT / "tools" / "forkmesh-release-host.py")
     latest = json.loads(_read(LATEST / "release.json"))
 
-    assert "(../../../docs/release/README.md#protocols)" in report
+    assert "(../release/README.md#protocols)" in report
     assert "`tag_commit` is the commit the tag pointed to at signing" in protocol
     assert "git merge-base --is-ancestor <tag_commit> <tag>" in protocol
     assert "`parked_tag_target()`" in protocol and "def parked_tag_target(" in host
@@ -298,7 +298,7 @@ def test_availability_proof_is_part_of_the_show_path():
     assert "1 independent operator (target 2)" in normalized
     assert 'availability.proof == "quorum"' in normalized
     assert (ROOT / "tools" / "forkmesh_availability_proof.py").exists()
-    assert (ROOT / "www" / "docs" / "availability-proof.md").exists()
+    assert (ROOT / "docs" / "availability-proof.md").exists()
 
 
 def test_launch_gates_are_assigned_and_metrics_stay_tracked():
@@ -361,7 +361,7 @@ def test_relay_retention_table_is_linked_from_the_security_faq():
     faq = report.split("## 5. Security and trust FAQ", 1)[1].split(
         "## 6. Agent-system FAQ", 1)[0]
     assert "(../relay-data-retention.md)" in faq
-    table = _read(ROOT / "www" / "docs" / "relay-data-retention.md")
+    table = _read(ROOT / "docs" / "relay-data-retention.md")
     wrangler = _read(ROOT / "app" / "wrangler.toml")
     for binding in ("REPOSITORY_METADATA", "forkmesh-notification-email"):
         assert binding in wrangler and f"`{binding}`" in table
@@ -381,12 +381,12 @@ def test_relay_retention_table_is_linked_from_the_security_faq():
                     "## Logs", "## Outside processors", "## Known gaps"):
         assert heading in table
     assert "[Relay data retention and deletion](relay-data-retention.md)" in _read(
-        ROOT / "www" / "docs" / "README.md")
+        ROOT / "docs" / "README.md")
 
 
 def test_incident_tabletop_names_a_lead_and_controls_that_exist():
     report = _read(REPORT)
-    record = _read(ROOT / "www" / "docs" / "launch" / "incident-tabletop-2026-09-16.md")
+    record = _read(ROOT / "docs" / "launch" / "incident-tabletop-2026-09-16.md")
     assert "(incident-tabletop-2026-09-16.md)" in report
     assert "| Date | 2026-09-16 |" in record
     assert re.search(r"\| Incident lead \| ForkMesh account `[a-z0-9-]+`", record)

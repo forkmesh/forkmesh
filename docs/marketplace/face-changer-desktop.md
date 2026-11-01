@@ -1,12 +1,11 @@
 # Face Changer on the desktop
 
-Added 2026-10-25. The desktop's Face Changer used to be a rail button that
-opened `/dashboard/face-changer` in the system browser. That page can only
-show its picture in a browser tab or a pop-out window; a meeting in Google
-Meet, Zoom or Teams cannot pick it as a camera. The desktop now has a native
-rail page whose output is a camera every app lists: on Linux, choose
+Part of [Marketplace](README.md). The desktop's Face Changer is a
+native rail page whose output is a camera every app lists: on Linux, choose
 **ForkMesh Camera** in Google Meet's camera menu (or any other call app) and
-the meeting gets the changed picture.
+the meeting gets the changed picture. The web page `/dashboard/face-changer`
+can only show its picture in a browser tab, which a meeting in Meet, Zoom or
+Teams cannot pick as a camera.
 
 Code: `marketplace/packages/face-changer/content/desktop/`. Package copy names
 no other apps (`test_copy_names_no_other_apps`), so the UI says "any call or
@@ -44,8 +43,8 @@ meeting app"; this page may name them.
 - **The engine stays in JavaScript.** The face tracker, the segmentation
   network and the warp renderer are about 9,000 lines of JavaScript and WebGL
   in `app/public`. The phone apps already host that engine in a web view
-  behind a native screen (`docs/app/chat-direct-calls.md`, Face Changer on the
-  phones); the desktop does the same with Qt WebEngine, which every desktop
+  behind a native screen ([call-filters.md](../app/call-filters.md#face-changer-on-the-phones),
+  Face Changer on the phones); the desktop does the same with Qt WebEngine, which every desktop
   build that has a browser pane already ships. A build without WebEngine
   shows a note and "Open in browser".
 - **Video only.** The page asks for the camera alone (`audio: false`) and the
@@ -55,10 +54,9 @@ meeting app"; this page may name them.
 - **C++ drives every frame.** The stage runs with `manual: true` and
   `fmTake()` calls `stage.processFrame()` on its own hidden camera `<video>`.
   A QTimer calls `fmTake` every 33 ms through `runJavaScript`, which Chromium
-  does not throttle. The stage's own `setInterval` and
-  `requestVideoFrameCallback` would slow to once a second when the page is
-  hidden (the user went to another rail page or minimised the window) and the
-  meeting would freeze.
+  does not throttle; the stage's own timers slow to once a second when the
+  page is hidden (another rail page, a minimised window) and the meeting would
+  freeze.
 - **Frames cross as JPEG.** `fmTake(1)` returns the latest picture as a JPEG
   data URL (quality 0.85, up to 960x540, about 80 KB) and starts the next
   one; one call is in flight at a time, so a slow engine sends fewer frames
@@ -92,9 +90,7 @@ registration, the host hook, the permission handling, the engine page
 device discovery against a fake sysfs, the setup command and its errors, and
 that a plain file is refused as a camera.
 
-Checked by hand on 2026-10-25 with an offscreen harness (Qt 6.8 WebEngine,
-Chromium's fake camera, SwiftShader WebGL): the page loaded the engine from
-app.forkmesh.com, reported 7 faces, 7 outfits and 9 backgrounds, went live,
-and `fmTake` returned 128 frames at 960x540 in 8 s (software WebGL; a real GPU
-is faster). Writing to a real v4l2loopback device was not tried on that
-machine, which has no module.
+An offscreen harness (Qt 6.8 WebEngine, Chromium's fake camera, SwiftShader
+WebGL) loaded the engine from app.forkmesh.com (7 faces, 7 outfits, 9
+backgrounds) and `fmTake` returned 128 frames at 960x540 in 8 s. Writing to a
+real v4l2loopback device has not been tested automatically.

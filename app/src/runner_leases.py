@@ -40,7 +40,7 @@ Endpoints (all JSON, ``Cache-Control: no-store``):
     caller holds that job's current runner lease.
 
 ``POST /api/runners/security-incident``
-    Runner-signed. The runner's root IDS (deploy/core/ids.py, docs/IDS.md)
+    Runner-signed. The runner's root IDS (deploy/core/ids.py, docs/operations/intrusion-detection.md)
     reports an incident ``{severity, detector, summary, detail}``; it is
     recorded in ``security_incidents`` (the core hosts page the admins,
     forkmesh_host.ids_alerts). ``severity: "lockdown"`` also revokes the
@@ -871,7 +871,7 @@ async def _stream(runtime, runner, data):
     return runtime.response(body, status)
 
 
-# --- intrusion detection (docs/IDS.md) ------------------------------------
+# --- intrusion detection (docs/operations/intrusion-detection.md) ------------------------------------
 
 INCIDENT_SEVERITIES = ("info", "alert", "lockdown", "test")
 INCIDENTS_PER_HOUR = 30

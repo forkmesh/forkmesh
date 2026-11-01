@@ -16,7 +16,7 @@ import static_routes  # noqa: E402
 
 RUNTIME = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
 ENTRY = (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
-TERMS = json.loads((ROOT.parent / "www" / "docs" / "terminology.json")
+TERMS = json.loads((ROOT.parent / "docs" / "terminology.json")
                    .read_text(encoding="utf-8"))
 
 

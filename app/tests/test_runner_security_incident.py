@@ -1,4 +1,4 @@
-"""POST /api/runners/security-incident: a runner's IDS reports (docs/IDS.md);
+"""POST /api/runners/security-incident: a runner's IDS reports (docs/operations/intrusion-detection.md);
 a lockdown revokes that runner and nothing else."""
 
 import json

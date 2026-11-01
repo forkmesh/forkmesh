@@ -182,7 +182,7 @@ MAX_ACTIONS_SUMMARY_BYTES = 256 * 1024
 MAX_ACTIONS_SUMMARY_RUNS = 20
 MAX_ACTIONS_LOG_TAIL_BYTES = 16 * 1024
 MAX_ACTIONS_SUMMARY_LEASE_MS = 15 * 60 * 1000
-# Summary v2 (www/docs/operations/mirror-actions-control.md). Every bound is
+# Summary v2 (docs/operations/mirror-actions-control.md). Every bound is
 # shared with the executor that writes the document and the Worker that
 # revalidates the gateway's answer.
 MAX_ACTIONS_RUN_STEPS = 64

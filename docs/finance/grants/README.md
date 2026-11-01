@@ -80,7 +80,7 @@ A URL on `forkmesh.com` matches the manifest's hostname and needs no
 `wellKnown` file; a URL on any other host, GitHub included, does.
 Every claim in it is public, so keep each one checkable against the about page,
 the repository or the
-[exercise register](../../../www/docs/disaster-recovery/exercise-register.md).
+[exercise register](../../disaster-recovery/exercise-register.md).
 
 ## Updating the list
 

@@ -15,7 +15,7 @@ NETWORK = (ROOT / "app/public/dashboard/js/08-repo-detail-network.js").read_text
 IO = (ROOT / "app/public/dashboard/js/03-issues-profile-io.js").read_text(encoding="utf-8")
 SHELL = (ROOT / "app/public/dashboard/shell.html").read_text(encoding="utf-8")
 BUNDLE = (ROOT / "app/public/dashboard.js").read_text(encoding="utf-8")
-DOCS = (ROOT / "docs/app/pull-quick-replies.md").read_text(encoding="utf-8")
+DOCS = (ROOT / "docs/app/pull-merge-box.md").read_text(encoding="utf-8")
 
 needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is required")
 

@@ -1,12 +1,14 @@
 # Campaign brief: "Start your own ForkMesh"
 
+Part of [Campaign briefs](README.md).
+
 **Campaign tag:** `start_instance`
 **Plan:** [../plan.md](../plan.md)
 
 Announces the white-label "Start your own instance" page at
 `https://app.forkmesh.com/start` (`forkmesh.com/start` redirects there) with a
 blog post at `https://forkmesh.com/blog/start-your-own-forkmesh/`. Every
-claim comes from [../../INSTANCES.md](../../INSTANCES.md) or the page's own
+claim comes from [instances](../../operations/instances.md) or the page's own
 copy.
 
 ## Brief
@@ -29,7 +31,7 @@ copy.
 - **`/admin/acquisition` does not see `/start`.** It is a page shell that
   `app/wrangler.toml` excludes from `run_worker_first` (`!/start/`), so it is
   served straight from assets and the attribution hook never runs
-  ([../../attribution.md](../../attribution.md)). `start_instance` is still on
+  ([attribution](../../app/attribution.md)). `start_instance` is still on
   `ATTRIBUTION_ALLOWED_CAMPAIGNS` in `app/wrangler.toml` and
   `DEFAULT_ALLOWED_CAMPAIGNS` in `app/src/attribution.py`, as every brief's
   links must be.

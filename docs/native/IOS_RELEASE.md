@@ -1,10 +1,11 @@
 # Native iOS release pipeline
 
-The App Store app **ForkMesh** (`com.forkmesh.forkmesh`) ships from
-`native/ios`. This page covers the Codemagic workflows in `codemagic.yaml`,
-the helper scripts in `native/ios/tools/` and `tools/`, and the store rules
-the app must follow. Building on the office Mac instead of Codemagic is in
-[MAC_BUILD.md](MAC_BUILD.md).
+Part of the phone apps ([README.md](README.md)). The App Store app
+**ForkMesh** (`com.forkmesh.forkmesh`) ships from `native/ios`. This page
+covers the Codemagic workflows in `codemagic.yaml`, the helper scripts in
+`native/ios/tools/` and `tools/`, and the store rules the app must follow.
+Building on the office Mac instead: [MAC_BUILD.md](MAC_BUILD.md). The release
+flow as a whole: [../release/README.md](../release/README.md).
 
 ## Version
 
@@ -19,8 +20,8 @@ version differs from the app's is rejected at upload).
   written into its clone only. `asc_bundle_ids.py next-build VERSION` reads the
   builds filtered by `preReleaseVersion.version`. Apple only needs a build
   number to be unique within its version, and lookups for TestFlight and App
-  Review already filter by version and build. Since 1.5.0 (2026-10-28); before
-  that the number ran on across versions (1.4.1 ended at 21).
+  Review already filter by version and build. (Before 1.5.0 the number ran on
+  across versions; 1.4.1 ended at 21.)
 - `ios-native-adhoc` also goes one past the last ad hoc build, counted on the
   build Mac in `~/ci/ios-adhoc-build` (`FORKMESH_ADHOC_BUILD_FILE`).
 - A failed upload spends its build number.
@@ -97,7 +98,7 @@ project files on Linux so store mistakes fail in `swift test`:
 - On iPhone, `UISupportedInterfaceOrientations` lists portrait and both
   landscapes. iPhone Duo scales a portrait-only app on its inner display, so
   the app must declare landscape there. While it runs, `FmOrientationLock`
-  still keeps every other iPhone in portrait (NAVIGATION.md §7.1). The `~ipad`
+  still keeps every other iPhone in portrait ([NAVIGATION.md](NAVIGATION.md) §7.1). The `~ipad`
   list keeps all four orientations, which iPad multitasking requires.
 - No `PrivacyInfo.xcprivacy` is named in the project file (synchronized groups
   include them). Each manifest declares every required-reason API category its
@@ -111,7 +112,7 @@ project files on Linux so store mistakes fail in `swift test`:
 
 `tools/forkmesh-release-host.py` starts `ios-native-release` for the newest
 release candidate, on the office Mac when it answers ([MAC_BUILD.md](MAC_BUILD.md))
-and on Codemagic otherwise ([`docs/release/README.md`](../release/README.md)).
+and on Codemagic otherwise ([../release/README.md](../release/README.md)).
 It sets `FORKMESH_IOS_APP_STORE=1` and passes the annotated tag's message as
 `FORKMESH_IOS_WHATS_NEW` and `TESTFLIGHT_WHATS_NEW`.
 
@@ -158,15 +159,13 @@ desktop's Actions variables, or the office Mac; the private key at
 `~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8`.
 
 The shortcut also publishes the same data (`asc_store_report.py --publish`) to
-the **App Store Status** package page, so the web, desktop, iPhone and Android
-show it laid out as a page. `--json` prints that snapshot instead of the text.
-It then uploads the screenshots attached to that feedback, shrunk to a JPEG
-of at most 3 MB with Pillow, so every client can show them full size.
-It also sends daily downloads (with countries and devices), the versions and
-the reviews to the Marketing package's App Store channel, which charts
-downloads over time; `--marketing ORG` (or `FORKMESH_MARKETING_ORG`) names the
-organization when more than one has Marketing installed.
-See [../marketplace/app-store-status.md](../marketplace/app-store-status.md).
+the **App Store Status** package page for every client (`--json` prints that
+snapshot instead), with feedback screenshots shrunk to a JPEG of at most 3 MB
+(Pillow). It sends daily downloads (with countries and devices), versions and
+reviews to the Marketing package's App Store channel; `--marketing ORG` (or
+`FORKMESH_MARKETING_ORG`) names the organization when more than one has
+Marketing installed. See
+[../marketplace/app-store-status.md](../marketplace/app-store-status.md).
 
 ## TestFlight feedback to tasks
 
@@ -190,7 +189,7 @@ See [../marketplace/app-store-status.md](../marketplace/app-store-status.md).
 Under guidelines 3.1.1 and 3.1.3(b) an iOS app may only show or unlock
 something bought elsewhere if the same thing is sold by In-App Purchase, and
 the app sells nothing. Memberships are sold on the web
-(`docs/app/payments-and-plans.md`). Rule for the iOS app:
+([payments-and-plans.md](../app/payments-and-plans.md)). Rule for the iOS app:
 
 - no membership, tier, price, plan or paid/free label;
 - nothing a membership pays for is unlocked or managed (the Ads screen is the
@@ -223,7 +222,7 @@ requires the UI to identify it:
 - The text is `AppleHealthGuide` in
   `ForkMeshCore/Sources/FMTools/AppleHealthGuide.swift`, one `AppleHealthUse`
   per `AppleHealthTool`; `AppleHealthGuideTests` fails on a missing entry. Keep
-  it in sync with `www/docs/mobile/apple-health.md`,
+  it in sync with [apple-health.md](../mobile/apple-health.md),
   `www/templates/pages/privacy.html` and the usage strings in
   `Config/ForkMesh-Info.plist`.
 
@@ -249,9 +248,8 @@ Credential Exchange import destination for Apple Passwords.
 
 The Home Screen widgets, Live Activities (one summary of agents, shortcuts and
 the timer, and walks; drawn by the widget extension) and the watch app ship in
-every build. The App Store
-Connect API cannot create or assign App Groups, so they share data through
-keychain groups, which every profile allows:
+every build. The App Store Connect API cannot create or assign App Groups, so
+they share data through keychain groups, which every profile allows:
 
 - The app writes the widget snapshot and the widgets leave pending taps in
   `742ZANCB57.com.forkmesh.forkmesh`, service `com.forkmesh.forkmesh.surfaces`
@@ -283,11 +281,11 @@ again afterwards. A watch lists as platform IOS, class APPLE_WATCH.
 
 When Apple publishes a new Program License Agreement, every App Store Connect
 call answers 403 `FORBIDDEN_ERROR.PLA_NOT_ACCEPTED` until the team's Account
-Holder accepts it at https://developer.apple.com/account, and no build can get
-past "Register the bundle ids". The API key's role can't accept it. Apple
-puts the answer on several lines, and the deploy summary shows only the first,
-so `asc_bundle_ids.py` turns this refusal into one line that says what to do
-and names the Account Holder (`tools/test_asc_bundle_ids_errors.py`).
+Holder accepts it at https://developer.apple.com/account (the API key's role
+cannot), and no build gets past "Register the bundle ids". Apple's answer
+spans several lines and the deploy summary shows only the first, so
+`asc_bundle_ids.py` turns it into one line that says what to do and names the
+Account Holder (`tools/test_asc_bundle_ids_errors.py`).
 
 ## App icon
 
@@ -302,31 +300,28 @@ The same run writes the Android launcher icons (`mipmap-*/ic_launcher.png`,
 `drawable-nodpi/fm_logo.png`) and the Android adaptive icon layers
 (`mipmap-*/ic_launcher_{foreground,monochrome}.png`, used by
 `mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml`);
-`--android` writes only those. The adaptive background is
-`@android:color/transparent` and the legacy `ic_launcher.png` is a transparent
-cutout, so the launcher shows the hexagon itself rather than a rounded tile
-behind it. The foreground is the cube at 86% of the 72 dp visible area, which
-keeps the hexagon inside the 66 dp safe circle every launcher mask leaves
-uncut; the monochrome layer keeps only the white strokes for themed icons
-(the system draws the themed backing). Until 2026-10-20 Android had only the
-square PNG, which launchers shrink into a white circle with a border; from
-then until 2026-10-21 the adaptive icon carried the iOS tile gradient as its
-background. The iOS and watch icons keep the tile: Apple rejects an app icon
-with an alpha channel and masks every icon to its own shape, so the hexagon
-cannot stand alone there. The fediverse avatar
-(`www/public/assets/fediverse-avatar.png`) is a transparent cutout too; the
-`apple-touch-icon.png` keeps the tile because iOS fills a transparent one
-with black. To check the committed icons are current, run
-the script and confirm `git status` shows no change. The phone and watch
-targets are the only app icon sets (`ASSETCATALOG_COMPILER_APPICON_NAME =
-AppIcon`); widgets, extensions and `codemagic.yaml` set no icon of their own,
-and there are no alternate icons.
+`--android` writes only those.
 
-The white-ringed hexagon icon replaced the grey cube on 2026-10-04 (commit
-`a038e73b1c`). A phone that still shows the cube is running a build archived
-before that date: ship a new `ios-native-release` build. If the new build is
-installed and the home screen still shows the cube, iOS is showing its cached
-icon; restarting the phone clears it.
+- Android: the adaptive background is `@android:color/transparent` and the
+  legacy `ic_launcher.png` is a transparent cutout, so the launcher shows the
+  hexagon itself, not a square PNG shrunk into a white circle or a tile behind
+  it. The foreground is the cube at 86% of the 72 dp visible area, inside the
+  66 dp safe circle every launcher mask leaves uncut; the monochrome layer
+  keeps only the white strokes for themed icons.
+- iOS and watch icons keep the tile: Apple rejects an app icon with an alpha
+  channel and masks every icon to its own shape. The fediverse avatar
+  (`www/public/assets/fediverse-avatar.png`) is a transparent cutout; the
+  `apple-touch-icon.png` keeps the tile because iOS fills a transparent one
+  with black.
+- The phone and watch targets are the only app icon sets
+  (`ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`); widgets, extensions and
+  `codemagic.yaml` set no icon, and there are no alternate icons.
+- To check the committed icons are current, run the script and confirm
+  `git status` shows no change.
+- The white-ringed hexagon replaced the grey cube on 2026-10-04 (`a038e73b1c`).
+  A phone still showing the cube runs an older build; if a new build is
+  installed and the cube remains, iOS is showing its cached icon and a
+  restart clears it.
 
 ## Open items
 

@@ -2,7 +2,7 @@
 
 This directory holds **release metadata only**. Release binaries are **not**
 committed to git (issue #304; see
-[`www/docs/design/release-binary-publishing.md`](../../www/docs/design/release-binary-publishing.md);
+[`docs/design/release-binary-publishing.md`](../../docs/design/release-binary-publishing.md);
 the developer overview is [`docs/release/README.md`](../../docs/release/README.md)).
 The actual binary bytes live in a per-node content-addressed store (the CAS),
 served on demand from a hosting node over the relay — the same way the repo

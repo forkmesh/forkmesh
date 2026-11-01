@@ -516,6 +516,20 @@
             <h2
               class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
             >
+              Core documentation
+            </h2>
+            <a class="nav-link" href="/docs/architecture/">Architecture and availability</a>
+            <a class="nav-link" href="/docs/encryption/">Encryption and signatures</a>
+            <a class="nav-link" href="/docs/mirroring/">Mirroring and distribution</a>
+            <a class="nav-link" href="/docs/self-hosting/">Self-hosting</a>
+            <a class="nav-link" href="/docs/censorship-resilience/">Censorship resilience</a>
+            <a class="nav-link" href="/docs/protocol/threat-model/">Threat model</a>
+          </div>
+
+          <div class="mb-8">
+            <h2
+              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
+            >
               Quickstart
             </h2>
             <a class="nav-link" href="#install">Install</a>
@@ -555,7 +569,7 @@
             </h2>
             <a class="nav-link" href="/docs/protocol">Protocol spec</a>
             <a class="nav-link" href="/docs/git-compatibility">Git compatibility</a>
-            <a class="nav-link" href="/docs/cloudflare-worker">Relay &amp; website</a>
+            <a class="nav-link" href="/docs/cloudflare-worker">App &amp; relay</a>
             <a class="nav-link" href="/docs/qt-client">Desktop client</a>
             <a class="nav-link" href="/mobile">Mobile app</a>
           </div>
@@ -671,6 +685,50 @@
               <span class="mt-1 block text-[0.95rem] text-[var(--docs-muted)]">Join the World, use the desktop app, submit a pull request, get an independent review, and share links for rewards.</span>
             </span>
           </a>
+        </section>
+
+        <section
+          id="core-documentation"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Core documentation"
+          data-search-body="architecture availability encryption signatures mirroring distribution self-hosting censorship resilience threat model"
+        >
+          <h2
+            class="text-[1.78rem] font-black leading-tight text-[var(--docs-fg)]"
+          >
+            Core documentation
+          </h2>
+          <p class="mt-3 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+            Six short pages explain how ForkMesh works and what it protects.
+            Everything else in the <a href="/docs/library/">documentation library</a>
+            links back to them.
+          </p>
+          <div class="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <a class="doc-card p-6 no-underline" href="/docs/architecture/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Architecture and availability</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Equal core nodes behind DNS round robin, independent mirrors, read-only survival, and what is still a single dependency.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/encryption/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Encryption and signatures</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Every signing and encryption layer, the algorithms behind it, and the known gaps.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/mirroring/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Mirroring and distribution</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">How copies stay in step, how a clone is verified, and how signed releases reach users.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/self-hosting/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Self-hosting</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">Run a desktop node, a mirror, a whole instance or a fleet of your own.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/censorship-resilience/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Censorship resilience</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">What still works when a host, domain, account or network is blocked, and how it is tested.</p>
+            </a>
+            <a class="doc-card p-6 no-underline" href="/docs/protocol/threat-model/">
+              <h3 class="text-[1.05rem] font-black text-[var(--docs-fg)]">Threat model</h3>
+              <p class="mt-2 text-[0.93rem] leading-7 text-[var(--docs-muted)]">What the protocol defends against and which threats are still open.</p>
+            </a>
+          </div>
         </section>
 
         <section
@@ -1758,17 +1816,20 @@ sudo apt install forkmesh</code></pre>
           id="self-hosting"
           class="mt-16 scroll-mt-44"
           data-search-title="Self-hosting and development"
-          data-search-body="self hosting mainnode relay Cloudflare Worker Qt desktop build local relay pywrangler deploy requirements headless node"
+          data-search-body="self hosting desktop node mirror instance fleet core nodes DNS round robin Qt desktop build requirements headless node"
         >
           <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
             Self-hosting and development
           </h2>
           <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
-            A self-hosted ForkMesh needs a desktop or headless node for Git and
-            one App relay for the product UI, API, WebSockets, and Git routing.
-            The documented self-hosting path deploys the App as a Cloudflare
-            Worker with D1 and Durable Objects. ForkMesh's official marketing
-            site is separate and is not required by your instance.
+            Everything ForkMesh runs is open source. Run a desktop node on your
+            computer, a mirror on a server, a whole instance under your own
+            name, or a fleet of equal core nodes behind DNS round robin like
+            app.forkmesh.com. The
+            <a href="/docs/self-hosting/">self-hosting guide</a> compares the
+            levels, and <a href="/docs/architecture/">architecture and
+            availability</a> explains how the hosted service avoids a single
+            point of failure.
           </p>
           <div class="doc-card mt-6 p-6">
             <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
@@ -1787,60 +1848,37 @@ sudo apt install forkmesh</code></pre>
           </div>
           <div class="doc-card mt-4 p-6">
             <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
-              One App Worker
+              Your own instance
             </h3>
             <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
-              The bootstrapper derives <code>forkmesh.your-domain</code>, stages
-              every operational App asset, creates or reuses D1, deploys the
-              Worker, and attaches DNS without saving your Cloudflare token.
+              Start one at <a href="/start">forkmesh.com/start</a> on a Debian 13
+              or Ubuntu 24.04 server with 1 GB RAM, 6 GB disk and ports 80 and
+              443 free. ForkMesh connects over SSH, installs the app, database,
+              Git gateway and HTTPS, and never stores your SSH credentials. See
+              <a href="/docs/start-your-own-instance/">Start your own instance</a>.
             </p>
-            <pre
-              class="mt-5 overflow-x-auto rounded-xl bg-[var(--docs-code)] p-4 text-sm leading-7 text-[var(--docs-fg)]"
-            ><code>export CLOUDFLARE_API_TOKEN=&quot;your-scoped-token&quot;
-python3 tools/cloudflare_bootstrap.py \
-  --auto-configure \
-  --main-relay-url &quot;&quot; \
-  --skip-mirror-manifest
-
-cd app
-./deploy.sh dry-run app</code></pre>
           </div>
           <div class="doc-card mt-4 p-6">
             <ul
               class="grid gap-4 text-[0.95rem] leading-7 text-[var(--docs-muted)]"
             >
               <li>
-                <strong class="text-[var(--docs-fg)]">One origin:</strong>
-                set <code>PUBLIC_BASE_URL</code>, <code>API_ORIGIN</code>,
-                <code>APP_ORIGIN</code>, <code>WWW_ORIGIN</code>, and
-                <code>CORS_ALLOWED_ORIGINS</code> to
-                <code>https://forkmesh.your-domain</code>.
+                <strong class="text-[var(--docs-fg)]">Mirror:</strong>
+                add a server from the desktop, or run the one-line installer
+                with a link code; see
+                <a href="/docs/operations/mirror-node/">Mirror node service</a>.
               </li>
               <li>
-                <strong class="text-[var(--docs-fg)]">Worker plan:</strong>
-                use Cloudflare Workers Paid for the App. Its Python API, D1,
-                and Durable Object paths exceed the free plan's 10 ms CPU
-                ceiling during normal operation.
-              </li>
-              <li>
-                <strong class="text-[var(--docs-fg)]">Complete App root:</strong>
-                set <code>SINGLE_WORKER_SITE=&quot;true&quot;</code>. The root then
-                includes login, signup, dashboard, repositories, install and
-                uninstall scripts, while <code>/api</code> shows developer stats.
+                <strong class="text-[var(--docs-fg)]">Fleet:</strong>
+                <code>tools/next_fleet.py</code>, <code>tools/next_deploy.py</code>
+                and <code>tools/next_dns.py</code> build and run equal core nodes
+                described by <code>deploy/fleet.toml</code>.
               </li>
               <li>
                 <strong class="text-[var(--docs-fg)]">Source layout:</strong>
-                backend and product assets live in <code>app/</code>. Official
-                marketing/docs/blog live in <code>www/</code>; World lives in
-                <code>world/</code>.
-              </li>
-              <li>
-                <strong class="text-[var(--docs-fg)]">Optional World:</strong>
-                deploy <code>world/</code> at
-                <code>forkmesh-world.your-domain</code>, set its
-                <code>APP_ORIGIN</code> to your App, and add the World origin to
-                the App CORS allowlist. Never store wallet private keys in a
-                Worker configuration.
+                the app and product assets live in <code>app/</code>, the
+                website, docs and blog in <code>www/</code>, World in
+                <code>world/</code>, the Go daemon in <code>server/</code>.
               </li>
             </ul>
           </div>
@@ -1891,14 +1929,14 @@ cd app
           id="library"
           class="mt-20 scroll-mt-44 border-t border-[var(--docs-line)] pt-10"
           data-search-title="Documentation library"
-          data-search-body="Every guide, design note, engineering policy, security contract, operations runbook, mobile spec, plan and JSON schema from the ForkMesh source tree, rendered from www/docs"
+          data-search-body="Every guide, design note, engineering policy, security contract, operations runbook, mobile spec, plan and JSON schema from the ForkMesh source tree, rendered from docs"
         >
           <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
             Documentation library
           </h2>
           <p class="mt-4 max-w-[820px] text-[1.02rem] leading-8 text-[var(--docs-muted)]">
             Every Markdown document and JSON schema in the ForkMesh source tree's
-            <code>www/docs</code> tree, rendered with cross-links, an outline,
+            <code>docs</code> tree, rendered with cross-links, an outline,
             and previous/next navigation. Browse the
             <a href="/docs/library/">library overview</a> or jump to an area
             below. Each page links to its source file and to every page that

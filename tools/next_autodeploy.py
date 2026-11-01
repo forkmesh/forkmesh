@@ -1503,7 +1503,7 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "%s\n\nThe skipped core is caught up when it answers again and is "
                       "not held out of DNS: the agent checks every %d s, rolls only that "
                       "core to what the others run and Pings when it is done "
-                      "(docs/deploy/auto-deploy.md, \"Skipped cores\")." % (
+                      "(docs/operations/auto-deploy.md, \"Skipped cores\")." % (
                           "\n".join("%s: %s" % kv for kv in sorted(result["skipped"].items())),
                           CATCH_UP_SECONDS),
                       "deploy-skipped:%s" % rev)
@@ -1530,7 +1530,7 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "stopped: %s. The core it stopped on is left drained out of DNS; "
                       "check it, then run python3 tools/next_fleet.py roll nN --execute "
                       "for the cores still to do and python3 tools/next_autodeploy.py "
-                      "ack-roll (docs/deploy/auto-deploy.md)." % (
+                      "ack-roll (docs/operations/auto-deploy.md)." % (
                           rev, "\n".join(roll[:20]), result["rollError"]),
                       "node-roll-failed:%s" % rev, email=True)
     elif roll:
@@ -1538,7 +1538,7 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
                       "%s changed daemon or gateway files that only "
                       "next_fleet.py install applies:\n%s\n\nRoll one node at a time "
                       "(python3 tools/next_fleet.py roll, "
-                      "docs/deploy/auto-deploy.md)." % (rev, "\n".join(roll[:20])),
+                      "docs/operations/auto-deploy.md)." % (rev, "\n".join(roll[:20])),
                       "node-roll:%s" % rev)
     return state
 
@@ -1612,7 +1612,7 @@ def catch_up(repo, log, state_dir=None, notifier=None, layout=None,
                           "the other cores run: %s\n\nThe agent tries again every %d s. "
                           "By hand: python3 tools/next_deploy.py upload %s --rev <rev> "
                           "--execute, then restart %s --rev <rev> --execute "
-                          "(docs/deploy/auto-deploy.md)." % (
+                          "(docs/operations/auto-deploy.md)." % (
                               name, text, CATCH_UP_SECONDS, name, name),
                           "core-catch-up-failed:%s" % name, email=True)
     return outcome
@@ -1638,7 +1638,7 @@ def notify_runner_roll(notifier, result):
         notifier.send("Runner roll failed after %s" % rev,
                       "%s changed the Go daemon; rolling the runners stopped: %s. "
                       "Check the runner, then run python3 tools/next_fleet.py "
-                      "roll-runners --execute (docs/deploy/auto-deploy.md)." % (
+                      "roll-runners --execute (docs/operations/auto-deploy.md)." % (
                           rev, result["runnerRollError"]),
                       "runner-roll-failed:%s" % rev, email=True)
 
@@ -2100,7 +2100,7 @@ def self_update(repo, commit, layout, log, state_dir=None, notifier=None,
                           "The deploy agent did not update itself to %s: %s\n\nIt keeps "
                           "running its installed copy and will not try these files again. "
                           "Fix them on main or run python3 tools/next_autodeploy.py install "
-                          "(docs/deploy/auto-deploy.md)." % (rev, message),
+                          "(docs/operations/auto-deploy.md)." % (rev, message),
                           "agent-update-failed:%s" % rev, email=True)
         return {"status": "failed", "message": message}
 
@@ -2207,7 +2207,7 @@ def watch_self_update(digest, layout, state_dir=None, notifier=None, run=subproc
     if notifier is not None:
         notifier.send("Node deploy agent update to %s failed" % record.get("rev"),
                       "%s. These files are not tried again; fix them on main or run "
-                      "python3 tools/next_autodeploy.py install (docs/deploy/auto-deploy.md)."
+                      "python3 tools/next_autodeploy.py install (docs/operations/auto-deploy.md)."
                       % message, "agent-update-failed:%s" % record.get("rev"), email=True)
     return 1
 

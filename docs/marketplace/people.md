@@ -5,7 +5,8 @@ sit on the inner rings, closest to the flames; quieter members sit further
 out. Picking someone opens a profile card with Follow and Message.
 
 Package: [`marketplace/packages/people`](../../marketplace/packages/people/README.md).
-It runs on the desktop, the iPhone, Android and the web.
+It runs on the desktop, the iPhone, Android and the web. Part of
+[Marketplace](README.md).
 
 The rings reuse the World campfire's engagement data and points
 (`memberEngagementProfile` in
@@ -56,7 +57,7 @@ Follow). The "You" tag is a neutral outlined label rather than blue capitals.
 All four apps call the same routes:
 
 - `GET /api/accounts/users?view=world`: the public member directory the World
-  loads (edge-cached for 30 s). Each row carries `avatarThumb`, a 128 px WebP
+  loads (cached for 30 s). Each row carries `avatarThumb`, a 128 px WebP
   data URL, which every client decodes in place, so the page makes one request
   however many avatars it shows.
 - `GET /api/accounts/<name>?viewer=<me>`: the profile card (bio, location,
@@ -70,10 +71,10 @@ All four apps call the same routes:
   `/chat?dm=<name>`. People adds no server code.
 
 The iPhone's `accountCall` builds its URL with `pathWithQueryURL`, so
-`?view=world` and `?viewer=` stay a query. Built with `url(path)` the `?` was
-escaped into the path, the server answered `/api/accounts/users%3Fview=world`
-as a lookup of an account by that name (`{"ok":true,"exists":false}`), and
-the page showed every ring empty with no error.
+`?view=world` and `?viewer=` stay a query; `url(path)` escapes the `?` into
+the path, the server reads `/api/accounts/users%3Fview=world` as an account
+lookup (`{"ok":true,"exists":false}`), and every ring shows empty with no
+error.
 
 ## Where the code lives
 

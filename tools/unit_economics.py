@@ -20,7 +20,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "www" / "public" / "business-model.json"
 RESEARCH_PATH = (
-    ROOT / "www" / "docs" / "research" / "pricing-interviews.json"
+    ROOT / "docs" / "research" / "pricing-interviews.json"
 )
 PERIOD_SCHEMA = "forkmesh-unit-economics-period-v1"
 REQUIRED_PLAN_IDS = {

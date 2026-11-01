@@ -4,7 +4,18 @@ How a version is numbered, built, signed, published, promoted and installed:
 the desktop app on every platform, the Go mirror daemon, the Android APK, the
 macOS `.dmg`, and the App Store submission of the iOS app. The metadata layout
 and publisher flags are documented beside the data in
-`.forkmesh/releases/README.md`; binaries never enter git.
+`.forkmesh/releases/README.md`; binaries never enter git. Why signed releases
+on mirrors keep software reachable: [mirroring](../mirroring.md) and
+[encryption and signatures](../encryption.md). Part of
+[Operations](../operations/README.md); back to the
+[documentation home](../README.md).
+
+| Page | Covers |
+| --- | --- |
+| This page | Versions, the publish and promote flow, trust rules, platforms, build numbers, daemon rollout |
+| [apt repository](apt.md) | The signed apt repository for Debian and Ubuntu |
+| [Linux release baseline](linux-baseline.md) | Linux builds in a pinned Debian 12 container |
+| [Self-setup node](self-setup-node.md) | One install command or cloud-init script brings up a mirror node without the desktop |
 
 ## Code map
 
@@ -17,9 +28,9 @@ and publisher flags are documented beside the data in
 | `tools/forkmesh-release-publish.sh` | hashes binaries, copies them into the content-addressed store, writes and signs channel metadata |
 | `tools/forkmesh-release-promote.py` | promotion gate from a candidate to `latest`; regenerates the appcast |
 | `tools/forkmesh-release-host.py`, `tools/release-host/*` | builds what the Actions sandbox cannot, promotes, seeds mirrors, rolls out the daemon, submits iOS, checks the homepage |
-| `tools/package/linux-baseline.sh`, `tools/package/linux-baseline/` | Linux build in a pinned Debian 12 container ([linux-baseline.md](linux-baseline.md)) |
+| `tools/package/linux-baseline.sh`, `tools/package/linux-baseline/` | Linux build in a pinned Debian 12 container ([Linux baseline](linux-baseline.md)) |
 | `tools/package/` | per-platform packaging (`appimage.sh`, `deb.sh`, `macos.sh`, `windows.sh`, NSIS, appcast) |
-| `tools/forkmesh-apt-repo.py`, `.forkmesh/releases/apt/` | the signed apt repository ([apt.md](apt.md)) |
+| `tools/forkmesh-apt-repo.py`, `.forkmesh/releases/apt/` | the signed apt repository ([apt repository](apt.md)) |
 | `tools/package/macos_universal_on_mac.sh` | universal (arm64 + x86_64) `.dmg` build on a Mac |
 | `codemagic.yaml` (`macos-desktop`, `ios-native-release`), `native/ios/tools/asc_appstore.py` | cloud Mac fallback for the `.dmg`; iOS archive, upload, TestFlight and App Store submission |
 | `.forkmesh/releases/<channel>/` | `SHASUMS256.txt`, `release.json`, `release.json.sig`, `appcast.xml` |
@@ -65,19 +76,17 @@ and publisher flags are documented beside the data in
 
 The release host's keystores (`release/`) and the served mirror
 (`mirrors/forkmesh-forkmesh.git`, whose `forkmesh-releases/` is the blob store)
-sit under `forkmesh_paths` `LAYOUT.core`: `data/core/` since the 2026-10-19 move,
-`data/` before it. The host had kept `LAYOUT.data`, the container, so the first
-release after the move (v1.5.0) found no Android keystore and would have
-published into an unserved `data/mirrors` folder.
+sit under `forkmesh_paths` `LAYOUT.core` (`data/core/`, `data/` before the
+2026-10-19 move; [projects layout](../tools/projects-layout.md)). Never use
+`LAYOUT.data`, the container: there the host finds no Android keystore and
+publishes into an unserved `data/mirrors` folder.
 
 ## The version flips last
 
 `main` only names a new version once every platform can download it. The
 status page's per-platform "latest version" rows check the newest version
 `desktop/CMakeLists.txt` on `main` names, so a version on `main` whose
-candidate is still building shows as four outages for as long as the builds
-take. v1.5.0 (2026-10-28) recorded about an hour of them before the version
-line was held back by hand.
+candidate is still building shows as four outages until the builds finish.
 
 - The desktop cuts `forkmesh/forkmesh` releases on `release/<tag>`
   (`cutRelease`, `MainWindowReleases.cpp`); the release workflow and the host
@@ -139,7 +148,7 @@ version, so an old signed release could be replayed to roll a machine back.
   Debian 12+.
   The same build makes `forkmesh-linux-x86_64.deb`, which the apt repository
   serves, so `sudo apt install forkmesh` and `sudo apt upgrade` work once the
-  source is added ([apt.md](apt.md)).
+  source is added ([apt repository](apt.md)).
 - **Windows:** cross-built with MinGW-w64; NSIS installer, Authenticode-signed
   with osslsigncode; the uninstaller deletes only files in its manifest.
 - **macOS:** one ad-hoc signed universal `.dmg`, published under both arm64 and
@@ -149,15 +158,13 @@ version, so an old signed release could be replayed to roll a machine back.
   image must carry the build commit and, for the Intel name, contain only
   universal Mach-O files. `FORKMESH_RELEASE_ALLOW_DROPPED_ASSETS=1` and
   `--macos-dmg PATH` are manual escape hatches.
-- **macOS checks (2026-10-28):** the build commit sits in a `QStringLiteral`
-  (`DesktopBuildCommit.cpp`, since 2026-10-25), which clang stores as UTF-16,
-  so `inspect_macos_dmg` looks for the UTF-16 form as well as ASCII; v1.5.0's
-  first image failed the check while carrying its commit. The Mac build now
-  gets the release version as `FORKMESH_VERSION` and stamps it with
-  `-DFORKMESH_VERSION_OVERRIDE`, as Linux and Windows do; before, a rebuild
-  from `main` took `main`'s `project()` version (that image said 1.2.8).
-  The Windows check that `forkmesh.exe` carries its commit reads the UTF-16
-  form too; v1.5.0's first Windows build failed it at the very end.
+- **Build commit checks:** the build commit sits in a `QStringLiteral`
+  (`DesktopBuildCommit.cpp`), which clang stores as UTF-16, so
+  `inspect_macos_dmg` and the Windows `forkmesh.exe` check look for the UTF-16
+  form as well as ASCII. The Mac build gets the release version as
+  `FORKMESH_VERSION` and stamps it with `-DFORKMESH_VERSION_OVERRIDE`, as Linux
+  and Windows do; otherwise a rebuild from `main` takes `main`'s `project()`
+  version.
 - **iOS:** an App Store app with its own version
   (`native/ios/Config/Version.xcconfig`); each desktop release submits the
   newest build once (recorded in `<work>/ios-vX.Y.Z.json`), with the annotated
@@ -181,16 +188,15 @@ so a fix reaches the homepage for one platform without a release.
   version already has a build for that platform.
 - `--deploy-build PLATFORM --from-main` is for a platform the release's build
   commit cannot build: it builds from `main` as build 1 and leaves build 0
-  unused. `main` must contain the tag commit. v1.5.0's Linux, Windows and
-  macOS builds (2026-10-28) were made this way: compiled-in packages (the
-  static Linux, MinGW and Mac builds have no Qt WebEngine) failed on an
-  unguarded `QWebEngineView` in `FaceChangerFeature.cpp` at the tag.
+  unused. `main` must contain the tag commit. (v1.5.0's desktop builds needed
+  it: the static builds have no Qt WebEngine and the tag had an unguarded
+  `QWebEngineView`.)
 - A rebuild from `main` builds `code_commit(main)`: the newest commit that
   changed anything outside `.forkmesh/releases`, which is what the desktop's
   build provenance (`GenerateForkMeshVersion.cmake`) stamps. `main`'s tip is
   often a release-metadata commit or a `--no-ff` merge with its branch's tree,
-  and building it failed with "FORKMESH_BUILD_COMMIT_OVERRIDE does not match
-  the clean checkout" (v1.5.0 Windows, 2026-10-28).
+  and building it fails with "FORKMESH_BUILD_COMMIT_OVERRIDE does not match
+  the clean checkout".
 - `--check-build PLATFORM` waits up to 30 minutes until app.forkmesh.com
   serves the promoted manifest. While the version is still held back for
   other platforms it reports that and succeeds.
@@ -204,14 +210,13 @@ so a fix reaches the homepage for one platform without a release.
   `.forkmesh/releases/README.md`, "Per-platform builds". The homepage shows
   `Build N` on a rebuilt download.
 - Every platform starts a new version at build 0, iOS included (since v1.5.0,
-  2026-10-28, at the maintainer's request). Before that desktop builds started
-  at 1 and the iOS number ran on across versions; App Store Connect only needs
-  it unique within a `MARKETING_VERSION` ([IOS_RELEASE.md](../native/IOS_RELEASE.md#version)).
+  at the maintainer's request); App Store Connect only needs the number unique
+  within a `MARKETING_VERSION` ([iOS release](../native/IOS_RELEASE.md#version)).
   The Android versionCode still grows, because the version is its high digits.
 - The Android stamp patterns match `versionCodeOverride ?: N` and
-  `versionNameOverride.ifEmpty { "X.Y.Z" }` in `build.gradle.kts`; when that
-  file took the override form the old patterns stopped matching and drafts
-  silently left Android behind. The pattern spells `{` as `\x7B` because
+  `versionNameOverride.ifEmpty { "X.Y.Z" }` in `build.gradle.kts`; if that
+  file changes form, update the patterns, or drafts silently leave Android
+  behind. The pattern spells `{` as `\x7B` because
   `validate_release_version_stamp.py` counts braces without skipping strings.
 
 The shortcuts run these modes as named steps, so the desktop, phone and web
@@ -245,9 +250,8 @@ desktop's own rollout skips hosts that already run the release.
 ## Release store prune on nodes
 
 Publishing, `seed_mirrors` and the desktop's push to managed hosts only ever
-add blobs to `<gitDir>/forkmesh-releases`, and the desktop prunes only its own
-store. On 2026-10-16 the n2 and n3 stores had reached 8.8 GB (about 5 GB a
-month) with their disks at 85%, so the Go daemon now prunes its own stores
+add blobs to `<gitDir>/forkmesh-releases` (about 5 GB a month), and the desktop
+prunes only its own store, so the Go daemon prunes its own stores
 (`server/releaseprune.go`).
 
 The sync loop runs it five minutes after start and then every
@@ -262,11 +266,10 @@ sharing one store are pruned once, with the union of their manifests):
   a node whose sync has stalled would otherwise read an old channel list and
   delete blobs that only a newer `HEAD` references.
 - A referenced blob missing from the store is counted (the log's "referenced
-  not in the store") but does not stop the run. Until 2026-10-23 it did, and
-  the store never shrank: n3 lacked 5 blobs that v1.2.2 and v1.2.6 name, and n4
-  lacked all 87 referenced blobs. n2 and n3 reached 12 GB and 98% disk. A blob
-  landing for a publish in progress is still safe, because nothing younger than
-  `releasePruneMinAge` is a candidate.
+  not in the store") but does not stop the run; stopping there once kept
+  stores from ever shrinking (12 GB, 98% disk). A blob landing for a publish in
+  progress is still safe, because nothing younger than `releasePruneMinAge` is
+  a candidate.
 - Only `sha256/<aa>/<64 lowercase hex>` directories whose name starts with
   `<aa>` are candidates, and only when the directory and every file in it are
   older than `releasePruneMinAge` (default `168h`, at least `24h`), because
@@ -281,12 +284,10 @@ minimum age, so an old version stays downloadable by hash only while some
 channel still names it.
 
 Old candidates are retired by removing their `.forkmesh/releases/candidate-*`
-folders on `main`; nothing removes them on its own. On 2026-10-25 the 16
-candidates from 0.7.95 to 1.2.8 held 4.9 GB in every store, 4.3 GB of it named
-by no channel but themselves. `candidate-0.7.95` through `candidate-1.2.7` were
-removed, keeping `latest` and `candidate-1.2.8`, the one it was promoted from.
-`tools/forkmesh-release-host.py` never revisits a candidate older than
-`latest`, so removing older ones changes no rollout or completion.
+folders on `main`; nothing removes them on its own. Keep `latest` and the
+candidate it was promoted from. `tools/forkmesh-release-host.py` never revisits
+a candidate older than `latest`, so removing older ones changes no rollout or
+completion.
 
 ## Protocols
 
@@ -302,9 +303,9 @@ removed, keeping `latest` and `candidate-1.2.8`, the one it was promoted from.
   that carries the promoted manifest (`parked_tag_target()` in
   `tools/forkmesh-release-host.py`), so `git rev-parse <tag>^{commit}` is
   normally a later commit than `tag_commit`, not equal to it. That is the
-  defined relation, not tampering: v1.5.0 signs `510b0448b745` and its tag
-  peels to `0193ce5d3e88`, 105 commits later, which the ancestor check accepts.
-  This is the one definition; other documents link here.
+  defined relation, not tampering (v1.5.0 signs `510b0448b745`; its tag peels
+  to `0193ce5d3e88`, 105 commits later). This is the one definition; other
+  documents link here.
 - Asset names: `forkmesh-<os>-<arch>[.exe]`, `.AppImage`, `.dmg`,
   `-setup.exe`, `forkmesh-mirror-node-linux-x86_64`,
   `forkmesh-android-universal.apk`.
@@ -328,7 +329,7 @@ Names only:
   `MAC_BUILD_HOST`, `MAC_BUILD_GIT_URL`.
 - Build: `-DFORKMESH_BUILD_COMMIT_OVERRIDE`, `-DFORKMESH_VERSION_OVERRIDE`.
 - Installer: `FORKMESH_PUBLIC_HOSTNAME`, `FORKMESH_LINK_CODE`,
-  `FORKMESH_DNS_WAIT_SECONDS` ([self-setup-node.md](self-setup-node.md)),
+  `FORKMESH_DNS_WAIT_SECONDS` ([self-setup node](self-setup-node.md)),
   `FORKMESH_RELEASE`, `FORKMESH_TRUSTED_RELEASE_PUBLIC_KEY_FILE`,
   `FORKMESH_EXPECTED_RELEASE_MANIFEST_SHA256`, `FORKMESH_FROM_SOURCE`.
 
@@ -369,7 +370,8 @@ python3 -m pytest tools/test_forkmesh_release_host_rollout.py tools/test_forkmes
   `--build-commit` on each host.
 - `install.sh --uninstall/--reinstall/--purge` and `uninstall.sh --purge`
   refuse to erase anything outside `HOME` and refuse a user-data wipe from an
-  agent shell. Agents must never run them (`AGENTS.md`).
+  agent shell. Agents must never run them (`AGENTS.md`,
+  [destructive actions](../engineering/destructive-actions.md)).
 
 ## Traps
 

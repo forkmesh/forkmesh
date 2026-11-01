@@ -3,8 +3,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-BUDGETS = ROOT / "www/docs/engineering/daily-interface-budgets.json"
-QUALITY = ROOT / "www/docs/engineering/quality-gates.json"
+BUDGETS = ROOT / "docs/engineering/daily-interface-budgets.json"
+QUALITY = ROOT / "docs/engineering/quality-gates.json"
 SHELL = ROOT / "app/public/dashboard/shell.html"
 INTERACTION = ROOT / "app/public/dashboard/js/09-daily-interface.js"
 WORKFLOW = ROOT / ".github/workflows/world-browser-e2e.yml"

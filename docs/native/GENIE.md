@@ -1,5 +1,6 @@
 # The Genie: on-device voice assistant (native iOS)
 
+Part of the [phone apps docs](README.md).
 The Genie is an on-device assistant drawn as an animated spider that lives over
 the whole app. It listens through on-device speech recognition, works out what
 to do with a tool loop on an on-device model, asks when a request is unclear,
@@ -8,6 +9,8 @@ teaches the Genie the missing tool. The spider is also a pet whose health
 follows the user's code velocity and marketing. The desktop
 ([../desktop/genie.md](../desktop/genie.md)) and the web
 ([../www/genie-spider.md](../www/genie-spider.md)) draw the same spider.
+This page is also the change record the Genie's hand-off prompt asks agents
+to update.
 
 Most logic is in `native/ios/ForkMeshCore/Sources/FMAssistant/` (pure Swift,
 tested on Linux); views and platform glue are in
@@ -233,13 +236,10 @@ picked up.
   (`GenieLandmarks.spacing(afterScanTaking:)`, 10 s to 60 s). The aquarium
   asks every 2 s (`GenieLandmarks.poll`) and gets the cached scan between
   rescans.
-- Why (2026-10-15, build 1.4.1+235): an iPhone 15 Pro Max on the Agents tab
-  logged a 100 to 140 ms main-thread hitch every 2 to 3 s with nothing in
-  flight. The 1.5 s keep-clear tick walked every UIView for bars on each tick
-  and rescanned the accessibility tree whenever 2 s had passed. Only the
-  accessibility walk was timed, so the 2% backoff never saw the bar walk, the
-  tidy-up, or the accessibility nodes SwiftUI builds when the walk asks for
-  them.
+- Why: walking every UIView for bars on each keep-clear tick and rescanning
+  the accessibility tree every 2 s caused 100 to 140 ms main-thread hitches
+  every few seconds. The whole scan (including the accessibility nodes SwiftUI
+  builds on demand) is timed, so the backoff sees its real cost.
 - **Plays** (`GenieScreenPlayer.run`): every 16 to 34 s while idle, one play
   from a shuffled bag (`GenieScreenPlay`): still plays performed from a perch
   clear of buttons (look, read, wave, point, sniff, silk thread and others),
@@ -354,18 +354,14 @@ contacted, with a tap to draft an email or a Mastodon post.
   Liquid Glass capsule) with a small email or Mastodon mark. Tap it and the
   message is written and opened in Zoho Mail (or the share sheet); the
   portrait shows the progress itself and no Spider card appears
-  (`GenieOutreachCoach.write(_:)`, 2026-10-18). The marketing-channel megaphone that used to sit
-  beside it was removed (2026-10-18): it was a second, unrelated control in a
-  slot meant for one glance. VoiceOver actions: auto-send on/off, Not now,
-  Open the CRM.
+  (`GenieOutreachCoach.write(_:)`). The slot holds only this one control.
+  VoiceOver actions: auto-send on/off, Not now, Open the CRM.
 - **Auto-send** (`ShellAutoSend`, `shell/auto_send`): touch and hold the
   portrait to turn it on or off. Turning it on sends the first email right
-  away (`tick(force: true)` skips the pace wait, 2026-10-18), and anything that
-  stops that first email (today's 100 already sent, no ForkMesh session, nobody
-  left to email, five contacts skipped in a row, or any CRM refusal) is shown
-  at once instead of waiting for the next turn. While on, the
-  portrait has an accent ring, it
-  shows the next email recipient in a CRM with Zoho Mail connected
+  away (`tick(force: true)` skips the pace wait), and anything that stops it
+  (today's 100 already sent, no ForkMesh session, nobody left to email, five
+  contacts skipped in a row, or any CRM refusal) is shown at once. While on,
+  the portrait has an accent ring, shows the next email recipient in a CRM with Zoho Mail connected
   (`outreachBest(only: .email, zohoOnly: true)`), and the app sends one email
   every 864 s, 100 a day (`GenieAutoSendPace`), through the CRM's
   `POST /outreach/auto`, the same route as **Send AI email** on the web and
@@ -381,9 +377,9 @@ contacted, with a tap to draft an email or a Mastodon post.
   the contact's fields and notes, their recent activity with us and the
   conversation so far (`marketplace/packages/crm/README.md`). Production cores
   have no host model, so on a phone without an API key or on-device model the
-  paired desktop's Claude Code or Codex writes it (2026-10-19); before that,
-  auto-send paused with "no writer on this phone gave a usable draft". With no
-  writer at all the pause now says what to set up (`GenieAutoSend.noWriter`).
+  paired desktop's Claude Code or Codex writes it
+  ([DESKTOP_AGENTS.md](DESKTOP_AGENTS.md), `agents.write`). With no writer at
+  all the pause says what to set up (`GenieAutoSend.noWriter`).
   Sending only happens while the app is open (iOS has no background slot for
   it and the CRM package has no cron); the pace is kept across launches, so
   reopening never bursts.
@@ -392,7 +388,7 @@ contacted, with a tap to draft an email or a Mastodon post.
   While auto-send is on, a ring around it drains from the last send to the
   next one (`GenieAutoSendPace.countdown`, 864 s, or until midnight once 100
   are sent), redrawn each second; it is hidden while an email is in progress.
-- **Progress on the mail mark** (`ShellMailStatus`, 2026-10-18): while an email
+- **Progress on the mail mark** (`ShellMailStatus`): while an email
   is being prepared, an arc spins around the bottom-right mark and the mark
   shows the stage: magnifying glass while picking the contact, pencil while
   the email is written, paper plane while the phone's own draft is posted,
@@ -400,20 +396,17 @@ contacted, with a tap to draft an email or a Mastodon post.
   and sends in one request, so a server-written email goes from pencil
   straight to the check. While auto-send is paused, the mark is a pause sign
   on the warning colour.
-- **Feedback without the Spider** (2026-10-18): auto-send and the tap-to-write
-  path no longer speak through `GenieHub.show(line:)`, which showed nothing
-  while the Spider was hidden. Every message (on, off, waiting and why, opened
-  in Zoho Mail, the deck link failed) is a `ShellMailStatus.say` line under the
-  top bar (`shell-mail-notice`), shown at once whether or not the Spider is on
-  screen, announced to VoiceOver, and dismissed by its close button or after
-  8 s plus reading time. Each line is also saved immediately in device-local
-  Pings, including auto-send pauses and failures. General notices at the top
-  of the shell use the same saved history. Dismissing or replacing the banner
-  does not remove its ping, and the history survives reopening the app.
-  These visible notices bypass the background-error hourly limit, redact
-  secrets, and retain the newest 50 local pings; identical notices update
-  their existing entry. Informational notices use the info colour, failures
-  the error colour. Opening Zoho from the top bar creates only one ping.
+- **Feedback without the Spider**: auto-send and tap-to-write never speak
+  through `GenieHub.show(line:)`, which shows nothing while the Spider is
+  hidden. Every message (on, off, waiting and why, opened in Zoho Mail, the
+  deck link failed) is a `ShellMailStatus.say` line under the top bar
+  (`shell-mail-notice`), announced to VoiceOver and dismissed by its close
+  button or after 8 s plus reading time. Each line is also saved at once in
+  device-local Pings, as are the shell's general notices: dismissing the
+  banner keeps the ping, the history survives relaunch, notices bypass the
+  background-error hourly limit, secrets are redacted, the newest 50 are kept,
+  and identical notices update one entry. Info notices use the info colour,
+  failures the error colour. Opening Zoho from the top bar creates one ping.
 - **Review popup** (`ShellAutoSendReview`): every sent email opens a sheet with
   recipient, sender, Zoho, the writer, subject and body. Pick 1-5 stars and,
   optionally, write a line on what to change; **Save** posts
@@ -672,7 +665,7 @@ pulsing gem, speaking moves the mouth.
 ## Android
 
 The Android app ports the spider and the outreach half of the Genie; details
-are in [ANDROID.md](ANDROID.md#28-the-genie-spider-and-outreach-sync-ledger-s047-s058).
+are in [ANDROID.md](ANDROID.md#32-the-genie-spider-and-outreach-sync-ledger-s047-s058).
 Logic is in `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/genie/`
 (`GenieOutreach`, `GenieAutoSend`, `GenieCrm`, `GenieGravity`, `GenieTalk`),
 views in `native/android/app/.../feature/genie/`.

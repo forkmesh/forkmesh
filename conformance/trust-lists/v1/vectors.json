@@ -3122,7 +3122,7 @@
   ],
   "reference": "app/src/trust_lists.py",
   "schema": "forkmesh-trust-list-vectors-v1",
-  "specification": "www/docs/design/scoped-trust-lists.md",
+  "specification": "docs/design/scoped-trust-lists.md",
   "testKeys": {
     "alice": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
     "alice-recovery": "DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds",

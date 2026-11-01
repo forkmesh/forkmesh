@@ -1,7 +1,8 @@
 # Capture and markup in the native composer
 
-The desktop's `capture` package selects a screen region, opens a markup window
-and attaches the result to the next prompt (DESKTOP_PARITY 11.15). The phone
+Part of [the native docs](README.md). The desktop's `capture` package selects
+a screen region, opens a markup window and attaches the result to the next
+prompt ([DESKTOP_PARITY.md](DESKTOP_PARITY.md) 11.15). The phone
 apps do the same three steps within what a phone allows.
 
 ## Behaviour
@@ -35,16 +36,13 @@ gets **Select area to copy…** instead, so one hold never opens two menus.
   list row or cell in the hit view's ancestors, no static text of any size,
   and no other accessibility element smaller than half the screen at that
   point within the touched screen's view controller. Text, icons and images
-  therefore keep their own long-press behaviour; wallpaper, margins and gaps
-  between rows do not. Text counts at any size since 2026-10-31 (see
-  "Selectable text" below): before, a long body of text taller than half the
-  screen counted as blank and its hold opened the pop-up instead of selecting.
-- A hold on a control with its own hold never opens the pop-up. The New
-  agent button's hold fires at 0.35 s and opens voice or the palette, so by
-  0.6 s the finger was over that new layer's blank space and the pop-up
-  appeared too (fixed 2026-10-18). Now the recogniser notes the top presented
-  view at touch-down and refuses to begin if it changed during the hold, and
-  every custom hold (New agent, the top-bar project icon, the suggestion
+  therefore keep their own long-press behaviour (a long body of text selects
+  instead of opening the pop-up; see "Selectable text" below); wallpaper,
+  margins and gaps between rows do not.
+- A hold on a control with its own hold never opens the pop-up. Such a hold
+  can open a new layer (the New agent button opens voice or the palette at
+  0.35 s), so the recogniser notes the top presented view at touch-down and
+  refuses to begin if it changed during the hold, and every custom hold (New agent, the top-bar project icon, the suggestion
   chip, the Genie, the listening chip, explorer rows, held names, log lines)
   calls `CaptureHold.noteHandled()` so in-place overlays are covered too.
 - `ForkMesh/Platform/CaptureHold.swift`: one `UILongPressGestureRecognizer`
@@ -59,8 +57,8 @@ gets **Select area to copy…** instead, so one hold never opens two menus.
 ## Android: long-press a blank area to copy part of the screen
 
 The same feature, with the same `capture` package switch
-(`packages/capture/on`, on by default, `PhonePackages.CAPTURE`), since
-2026-10-20. `feature/composer/CaptureHold.kt`, installed by
+(`packages/capture/on`, on by default, `PhonePackages.CAPTURE`).
+`feature/composer/CaptureHold.kt`, installed by
 `ComposerFeature.install`:
 
 - A wrapper around `MainActivity`'s `Window.Callback` sees every touch
@@ -86,9 +84,8 @@ The same feature, with the same `capture` package switch
   2048 px), writes it to `cache/capture-copy/` and puts a `FileProvider`
   URI on the clipboard, then shows "Copied to clipboard". Discard leaves the
   clipboard alone.
-- Home's background menu does not yet have "Select area to copy…": that menu
-  lives in `shell/`, which this change does not touch (one line there can
-  call `CaptureOverlay.show`).
+- Home's background menu does not yet have "Select area to copy…" (one line
+  in `shell/` can call `CaptureOverlay.show`).
 
 ## Selectable text
 
@@ -171,15 +168,13 @@ eight swatches (red first), undo, Discard and "Add to prompt" (or "Done").
   responder chain's `UIApplication`; text or links alone show the sheet. If the
   app cannot be opened the sheet shows "Saved for ForkMesh" with an
   **Open ForkMesh** button that tries again.
-- The automatic send waits for `viewDidAppear` as well as the load
-  (2026-10-17). Sending from `viewDidLoad`'s task could run before the sheet
-  was in a window, so the responder chain had no `UIApplication`, the app did
-  not open and the image had to be shared a second time. The extension now
-  closes when `openURL:options:completionHandler:` reports success (or after
+- The automatic send waits for `viewDidAppear` as well as the load: before
+  the sheet is in a window the responder chain has no `UIApplication`, so the
+  app would not open. The extension closes when `openURL:options:completionHandler:` reports success (or after
   1.5 s with no answer) and falls back to the sheet when it reports failure.
 - YouTube video links with no images are sent at once too, with the DJ studio
   route instead of the compose route; the app adds them to the DJ queue
-  (`docs/marketplace/video-mix-dj-studio.md`).
+  ([../marketplace/video-mix-dj-studio.md](../marketplace/video-mix-dj-studio.md)).
 - The app picks the share up on every resume and on sign-in
   (`SurfacesCoordinator.pickUpShare`). Signing out deletes an unclaimed share.
 - `ForkMeshShare/PrivacyInfo.xcprivacy` declares `CA92.1`; `push_check` in

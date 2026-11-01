@@ -1,8 +1,9 @@
 # Phone themes
 
+Part of [the native docs](README.md).
 The iOS and Android apps let the user pick and edit a colour theme, the way
 the start page's theme picker does for a new instance
-([../INSTANCES.md](../INSTANCES.md)). The choice is the phone's own: it is
+([instances](../operations/instances.md)). The choice is the phone's own: it is
 stored in the app's preferences, never in a project scope, and is not synced.
 
 ## What a theme is
@@ -33,7 +34,7 @@ on read. The 13 tokens, in their editor groups:
 | Status | `success`, `danger`, `warning` |
 
 Unedited, `textSecondary` and `textTertiary` are `textPrimary` at 72% and 60%
-(light) or 70% and 50% (dark), and `textDisabled` at 25% or 30%, as before.
+(light) or 70% and 50% (dark), and `textDisabled` at 25% or 30%.
 An edited one is opaque. Choosing a surface family drops the surface and text
 edits; choosing an accent drops the accent edits; Shuffle and Reset drop all
 of them.
@@ -55,11 +56,9 @@ follow the start page's families; Pure is true black for OLED screens.
 
 ## Accents and contrast
 
-Until October 2026 the default blue was `#007AFF` in light mode, which is
-3.5:1 on `bgOverlay` and 3.8:1 on `bgBase`, under WCAG AA (4.5:1) for the
-small accent text the apps use (links, "Change image", counts). Teal, red,
-pink and purple were also under 4.5:1 on a light surface, and dark purple
-`#6C63FF` was 3.8:1 on the dark overlay. The presets are now:
+The apps use the accent for small text (links, "Change image", counts), so
+every preset must reach WCAG AA (4.5:1). The old light blue `#007AFF` reached
+only 3.5:1 on `bgOverlay`, hence `#0066cc`. The presets:
 
 | Accent | Light | Dark |
 |---|---|---|
@@ -77,7 +76,17 @@ pink and purple were also under 4.5:1 on a light surface, and dark purple
 | Graphite | `#52525b` | `#a1a1aa` |
 
 Every preset clears 4.5:1 on the ForkMesh `bgBase`, `bgRaised` and
-`bgOverlay` as it is, so with the default surfaces nothing is adjusted.
+`bgOverlay` as it is, under white labels in light mode and the near-black
+`onPrimary` label in dark, so with the default surfaces nothing is adjusted.
+Accents suit buttons and larger text, not small captions. Unknown accent names
+fall back to blue.
+
+The fixed text and status colours follow the same rule: every light-mode text
+colour clears WCAG AA (4.5:1) on `bgBase`, `bgRaised` and `bgOverlay` and
+inside its own 11% status-badge tint. `FmColors.swift` and `ForkMeshTheme.kt`
+carry the same values: `textSecondary` 72%, `textTertiary` 60%, `success`
+`#0F7A3B`, `warning` `#8F5A0A`, `offline` `#5F6672` (`offlineOnLight`, light
+only). `textDisabled` stays 25%.
 
 **Keep colours readable** (on by default) makes that a rule for every theme:
 `accent`, `textPrimary`, `success`, `danger` and `warning` are moved to at
@@ -119,6 +128,20 @@ shows; a failed fetch keeps the last colours. Turning the switch off drops
 them. `AppTheme.instance(themeColors:)` and `SettingsService.effectiveTheme`
 (`ForkMeshCore/Sources/FMAccount/InstanceTheme.swift`) hold the rule; the
 fetch runs from `ThemedAppView` in `App/ForkMeshApp.swift`.
+
+## Background image (iOS)
+
+The picture is downscaled to 2800 px, saved as JPEG in Application Support
+`wallpapers/` and named in `appearance/backgroundImage`;
+`appearance/backgroundDim` (0 to 90%, default 40%) lays `bgBase` over it.
+`FmWallpaperBackdrop` draws it once behind `AppHomeView`. With a picture,
+`fm.canvas` is clear (otherwise `bgBase`); pages paint `fm.canvas`;
+`listSurface` drops to 60%; reading surfaces use `readingSurface` and
+`readingGutter`; terminals paint `terminalSurface` (terminal black at 80%).
+Bars, inputs, chips, sheets, cards and covers keep solid fills. Every pushed
+page gets the clear navigation container through `shellPageClearance()` or
+`shellDock` (iOS 18 and later). A conversation's own background wins over the
+app background. Android has the accents but not the background image.
 
 ## Where it lives
 

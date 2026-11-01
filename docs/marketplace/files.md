@@ -2,11 +2,11 @@
 
 `marketplace/packages/files` (Market id `files`, entrypoint `builtin:files`)
 is a file explorer on the desktop, iPhone and Android for each device's own
-files and for SMB network shares on the local network. It was asked for so a
-USB disk shared by the router (see [openwrt.md](openwrt.md), Network shares)
-can be browsed from ForkMesh, from the files editor and from a Files shortcut,
-with the same explorer working on every device. The user-facing description
-is the package [README](../../marketplace/packages/files/README.md).
+files and for SMB network shares on the local network, such as a USB disk
+shared by the router ([openwrt.md](openwrt.md), Network shares). The
+user-facing description is the package
+[README](../../marketplace/packages/files/README.md). Part of
+[Marketplace](README.md).
 
 It is bundled, off by default and account-synced, with
 `install.installedBefore: "2026-10-19"` so existing accounts get it

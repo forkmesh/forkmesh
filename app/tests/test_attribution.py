@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UTM capture, attribution and acquisition reporting (docs/attribution.md).
+"""UTM capture, attribution and acquisition reporting (docs/app/attribution.md).
 
 The real ``attribution.py`` runs against an in-memory SQLite standing in for
 D1, with the handful of Worker primitives it borrows from entry.py replaced
@@ -1043,4 +1043,4 @@ def test_worker_wiring_emits_the_named_events_and_schedules_cron():
         encoding="utf-8")
     assert "attribution_sessions" in migration and "attribution_events" in migration
     assert (ROOT / "migrations" / "down" / "0174_attribution.sql").is_file()
-    assert (REPO / "docs" / "attribution.md").is_file()
+    assert (REPO / "docs" / "app" / "attribution.md").is_file()

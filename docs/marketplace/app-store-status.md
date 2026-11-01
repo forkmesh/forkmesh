@@ -3,13 +3,13 @@
 `marketplace/packages/app-store-status` shows the iOS app as App Store Connect
 sees it, on every client: the web dashboard (`/dashboard/app-store-status`),
 the Qt desktop (rail page `builtin:app-store-status`), the iPhone app and the
-Android app.
+Android app. Part of [Marketplace](README.md).
 
 ## Where the data comes from
 
 Only the operator's desktop holds the App Store Connect API key
 (`~/.appstoreconnect/private_keys/AuthKey_<id>.p8`, see
-[../native/IOS_RELEASE.md](../native/IOS_RELEASE.md)). The relay never sees
+[../native/IOS_RELEASE.md](../native/IOS_RELEASE.md)). The server never sees
 the key and never calls Apple. Instead:
 
 1. The **iOS App Store status** shortcut (`.forkmesh/shortcuts/ios-app-store-status.sh`)
@@ -36,12 +36,11 @@ instead, so the desktop's App Store Connect credentials still answer. The phone
 falls back when `GET /api/app-store-status` fails with a "not there" code
 (`not_found`, `http_404`, `method_not_allowed`, `http_405`, or a
 not-installed code), answers with no snapshot, or answers with a snapshot
-published before screenshots existed (see "A snapshot from before 1.1.0"
-below). Other failures (offline, 5xx)
-do not trigger the fallback. Without a paired desktop the phone does not try.
+published before screenshots existed (see "Stale snapshots" below). Other
+failures (offline, 5xx) do not trigger the fallback. Without a paired desktop the phone does not try.
 
 The request is `stats.appStoreStatus` on the desktop's owner-only `stats.`
-control family (LAN or relay). The desktop finds a checkout holding
+control family (LAN or through the App). The desktop finds a checkout holding
 `native/ios/tools/asc_store_report.py` (`forkmesh/forkmesh` first) and runs it
 there with `--json`. It passes `ASC_KEY_ID`, `ASC_ISSUER_ID` and
 `ASC_VENDOR_NUMBER` from its Actions variables, kills the run after 110 s, and
@@ -57,7 +56,7 @@ desktop could not fetch it either: <reason>". An older desktop answers
 Update it."
 
 The snapshot is account-scoped (`dataLifecycle.scope: "account"`): only the
-account that published it can read it. It is sealed with the relay's key in
+account that published it can read it. It is sealed with the server's key in
 `app_store_status_snapshots`, removed by package uninstall
 (`purge_account_data`) and by account deletion.
 
@@ -75,18 +74,15 @@ query of a desktop.
 | `GET /api/app-store-status/screenshots/<id>` | `{ok, id, mime, width, height, data}` (`data` is base64); `404 screenshot_not_found` until uploaded |
 | `PUT /api/app-store-status/screenshots/<id>` | stores one tester screenshot (body as the GET answer, at most 3 MB of picture); `409 screenshot_not_in_snapshot` unless the current snapshot lists that id |
 
-The API exists only once a deploy carrying this package has reached the app
-nodes. Until then the app's catch-all answers `404 {"error":"not_found"}`
-(the package never answers `not_found` for `GET /api/app-store-status`). On
-2026-10-15 the iPhone showed "App Store Status is unavailable / not found"
-because production was still on the previous release: the iPhone mapped only
-`http_404` to "This server does not offer App Store Status yet.", not the
-`not_found` code the server actually sends. It now maps `not_found`,
-`http_404`, `method_not_allowed` and `http_405` to that sentence.
+On a server without this package the App's catch-all answers
+`404 {"error":"not_found"}` (the package itself never answers `not_found` for
+`GET /api/app-store-status`). The iPhone maps `not_found`, `http_404`,
+`method_not_allowed` and `http_405` to "This server does not offer App Store
+Status yet."
 
 ## Snapshot format (`forkmesh-app-store-status-v1`)
 
-The worker keeps only these fields, clamps strings and list lengths, and
+The server module keeps only these fields, clamps strings and list lengths, and
 drops anything else. Dates are App Store Connect ISO 8601 strings
 (`2026-10-08T18:29:00Z` or with an offset); clients format them locally.
 
@@ -163,12 +159,11 @@ is not set or the app has no App Store version yet.
 
 TestFlight screenshot feedback carries the pictures the tester attached
 (`attributes.screenshots` on `betaFeedbackScreenshotSubmissions`: a signed
-`url`, `width`, `height` and `expirationDate`). The iOS in-app bug report on
-this page asked to see them (task fca77d15, 2026-10-16), so version 1.1.0
-shows each one as a thumbnail under its feedback row on every client, and a
-tap or click opens it full size.
+`url`, `width`, `height` and `expirationDate`). Since 1.1.0 every client shows
+each one as a thumbnail under its feedback row; a tap or click opens it full
+size.
 
-Apple's URLs are signed and expire, and the relay never calls Apple, so the
+Apple's URLs are signed and expire, and the server never calls Apple, so the
 desktop copies the pictures to the server:
 
 1. `collect()` gives every picture an id, the first 24 hex characters of
@@ -176,7 +171,7 @@ desktop copies the pictures to the server:
    picture keeps its id across runs. The row keeps Apple's `url` next to it.
 2. `publish()` PUTs the snapshot without the URLs (`public()`). The answer's
    `missingScreenshots` lists the ids the snapshot names that the server does
-   not hold yet; the worker also deletes stored pictures the new snapshot no
+   not hold yet; the server module also deletes stored pictures the new snapshot no
    longer names.
 3. For each missing id the report downloads Apple's URL, shrinks it to a JPEG
    of at most 3 MB and 2048 px with Pillow (without Pillow a JPEG or PNG under
@@ -184,7 +179,7 @@ desktop copies the pictures to the server:
    download or upload is printed ("uploaded 1 of 2 new tester feedback
    screenshots") and never fails the report.
 
-The worker keeps each picture sealed in `app_store_status_screenshots`
+The server module keeps each picture sealed in `app_store_status_screenshots`
 (account, id), checks the bytes really are a JPEG or PNG, and refuses ids the
 current snapshot does not list, so a client cannot store anything else there.
 Forgetting the snapshot, uninstalling and account deletion remove the
@@ -196,15 +191,11 @@ comes from `GET /screenshots/<id>`. A picture that is not uploaded yet shows a
 broken-picture tile and "This screenshot has not been uploaded yet. Run the
 iOS App Store status shortcut on your desktop again."
 
-### A snapshot from before 1.1.0 (2026-10-18)
+### Stale snapshots
 
-The iPhone's bug report asked again for the pictures on 2026-10-18. Apple
-returned a screenshot for every row, and production already ran 1.1.0, but
-the stored snapshot was published on 2026-10-15 by the older report. The
-worker cleans it on read to `screenshots: []` on every row, so no client had
-anything to show until the shortcut ran again.
-
-The iPhone now treats a snapshot as stale when it has screenshot feedback and
+A snapshot published by a report older than 1.1.0 is cleaned on read to
+`screenshots: []` on every row, so it has nothing to show until the shortcut
+runs again. The iPhone treats a snapshot as stale when it has screenshot feedback and
 none of those rows has a picture (`AppStoreSnapshot.lacksScreenshots`). It
 then asks the paired desktop the same way as the fallback above and shows the
 desktop's answer if it has pictures. If the desktop is unreachable or its

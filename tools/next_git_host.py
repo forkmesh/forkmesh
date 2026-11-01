@@ -20,7 +20,7 @@ bytes, base64url; ``setup`` generates it when absent). It is never printed
 or put on a command line: ``setup`` sends it on SSH stdin to
 ``caddy hash-password`` on each node, and only the bcrypt hash is written.
 Rotating it: delete the line, run ``setup --execute``, then give the
-Codemagic app the new URL (docs/OPERATIONS.md "Native app builds").
+Codemagic app the new URL (docs/operations/runbook.md "Native app builds").
 
 All SSH goes through ``next_common.Ssh`` (the fleet key, root, batch mode),
 the same sessions every other next_* tool opens. **Dry-run is the default.**

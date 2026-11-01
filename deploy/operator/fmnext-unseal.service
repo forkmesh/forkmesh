@@ -1,7 +1,7 @@
 # systemd --user unit for the operator box (NOT installed automatically).
 # Unseals every core node that reports "sealed" on /readyz (after a reboot,
 # a crash restart or an OOM kill), by piping DATA_KEY over SSH stdin into the
-# node's /usr/local/sbin/fmnext-unseal (docs/VAULT.md). Nodes that are
+# node's /usr/local/sbin/fmnext-unseal (docs/operations/vault.md). Nodes that are
 # already unsealed get no key. DATA_KEY is read from
 # ~/projects/forkmesh/config/fleet/DATA_KEY (or secrets.env) and never logged.
 [Unit]

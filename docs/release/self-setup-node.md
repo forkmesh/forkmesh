@@ -1,11 +1,15 @@
 # Self-setup node: DNS in, node running, no desktop
 
+Part of [Releases](README.md).
+
 A signed-in user can bring up a mirror node on their own server without the
 desktop: one install command (SSH) or one cloud-init script installs the
 native `forkmesh-mirror-node` service, links it to their account, waits for
 their DNS record, and serves the node over HTTPS through Caddy with a Let's
 Encrypt certificate. Whole white-label instances use a different path
-([../INSTANCES.md](../INSTANCES.md)).
+([self-hosted instances](../operations/instances.md)); the options for running your own
+infrastructure are in [self-hosting](../self-hosting.md), and what
+a mirror node does in [mirroring](../mirroring.md).
 
 ## Flow
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rewrite production ForkMesh hostnames to the ForkMesh Next hostnames.
 
-ForkMesh Next (docs/PLAN.md, Phase 0 step 2) must never send traffic to the
+ForkMesh Next (docs/operations/served-stack.md, Phase 0 step 2) must never send traffic to the
 production deployment. This tool finds every production hostname used as a
 host (URLs, bare host strings, ``git@ssh...`` remotes, URL userinfo) and maps
 it onto the Next hosts:
@@ -36,7 +36,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Directories rehosted by default (docs/PLAN.md). desktop/ is reference only.
+# Directories rehosted by default (docs/operations/served-stack.md). desktop/ is reference only.
 DEFAULT_ROOTS = ("app", "world", "www", "server", "tools", "marketplace", "conformance")
 
 SKIP_DIRS = frozenset({
@@ -62,7 +62,7 @@ FROZEN_FILES = frozenset({
     # records, and runbook.md is rendered from it by the recovery tool.
     "conformance/disaster-recovery/v1/runbook.json",
     "tools/forkmesh_disaster_recovery.py",
-    "www/docs/disaster-recovery/runbook.md",
+    "docs/disaster-recovery/runbook.md",
 })
 
 APEX = "forkmesh.com"

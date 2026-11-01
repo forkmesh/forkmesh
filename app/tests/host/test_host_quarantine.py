@@ -1,4 +1,4 @@
-"""IDS quarantine in the app host (docs/IDS.md): signed records, the view,
+"""IDS quarantine in the app host (docs/operations/intrusion-detection.md): signed records, the view,
 membership, peer unseal, the socket, the mesh and seal-restart. In
 process, with fakes."""
 

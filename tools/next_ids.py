@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ForkMesh Next intrusion detection, operator side (docs/IDS.md).
+"""ForkMesh Next intrusion detection, operator side (docs/operations/intrusion-detection.md).
 
     next_ids.py keygen      [--execute]        # operator release key (once)
     next_ids.py fingerprint                    # the fleet SSH key's SHA256 line
@@ -222,7 +222,7 @@ def push_expectation(fleet, ssh, runner, name, files=None, rescan=(),
     node = target(fleet, name)
     if not master:
         # The fleet's IDS is not set up yet (no key to sign with); a running
-        # IDS would then treat the change as unexpected (docs/IDS.md).
+        # IDS would then treat the change as unexpected (docs/operations/intrusion-detection.md).
         runner.say("%s: no %s in secrets.env; the IDS is not told about this "
                    "change" % (name, MASTER_NAME))
         return None

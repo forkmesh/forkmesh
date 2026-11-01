@@ -2,7 +2,7 @@
 """Lint user-facing copy for discouraged terminology (issue #508).
 
 The approved glossary, discouraged terms, allowances, and compatibility aliases
-live in ``www/docs/terminology.json``; ``www/docs/terminology.md`` is the human
+live in ``docs/terminology.json``; ``docs/terminology.md`` is the human
 guide. Only user-visible text is checked: HTML text and accessible attribute
 values, Markdown prose outside code and link targets, and sentence-like string
 literals in JavaScript, Dart, and C++ sources. Comments and code are ignored.
@@ -25,7 +25,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT_PATH = ROOT / "www" / "docs" / "terminology.json"
+CONTRACT_PATH = ROOT / "docs" / "terminology.json"
 REQUIRED_APPROVED_TERMS = (
     "repository", "pull request", "review", "branch", "fork", "mirror", "seed",
     "trusted maintainer",

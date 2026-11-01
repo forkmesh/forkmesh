@@ -1,10 +1,11 @@
 # Private rooms and direct messages
 
-Who can see a chat conversation, where that rule is enforced, and how direct
-messages are delivered. Related: [chat-everyone-channels.md](chat-everyone-channels.md),
+Part of [the App docs](README.md). Who can see a chat conversation, where that
+rule is enforced, and how direct messages are delivered. Encryption overview:
+[encryption](../encryption.md). Related: [chat-everyone-channels.md](chat-everyone-channels.md),
 [chat-push-previews.md](chat-push-previews.md),
 [chat-direct-calls.md](chat-direct-calls.md),
-[chat-unread-reminders.md](chat-unread-reminders.md).
+[chat-unread.md](chat-unread.md).
 
 ## Access rule
 
@@ -61,12 +62,11 @@ bound to the resource and body (`_chat_channel_signed_session`,
   deleting the room, or changing its creator invalidates the link.
 - The web link is `/chat#invite=<token>`: a fragment, so the token never
   reaches the server in a page request or `Referer`, and the API takes it in
-  the request body, so it never appears in a URL either. Until 2026-10-22 the
-  API path was `/api/chat/invites/<token>`, which put the token in every Caddy
-  access log line ([NODE_LOGS.md](../NODE_LOGS.md#caddy-access-log)); that
-  path now answers `410 token_path_retired`. The body was chosen over a
-  Caddy `regexp` log filter because no Caddy binary is available to validate
-  a new log config before it ships.
+  the request body, so it never lands in a Caddy access log line
+  ([node logs](../operations/node-logs.md#caddy-access-log)). The old path
+  `/api/chat/invites/<token>` answers `410 token_path_retired`. (A body was
+  chosen over a Caddy `regexp` log filter because no Caddy binary is at hand
+  to validate a new log config before it ships.)
 - Incoming webhook URLs are `/api/chat/webhooks?token=<64 hex>` (the
   `x-forkmesh-webhook-token` header works too). The access log replaces the
   `token` query value with `REDACTED` (`ACCESS_LOG_QUERY_KEYS` in
@@ -78,15 +78,13 @@ bound to the resource and body (`_chat_channel_signed_session`,
 A private channel's name is unique only among its creator's private channels
 (`name_bi` is the blind index of `chat-channel-private-name:<creator_bi>:<name>`);
 public channel names stay unique among public channels
-(`chat-channel-name:<name>`). Before 2026-10-22 every channel shared one name
-space, so creating or renaming a channel answered `409 channel_name_taken`
-when someone else's private channel, invisible to the caller, already had the
-name: anyone could test whether a private channel with a given name existed.
-Now the only `409` a caller can see names a public channel or one of their own
-private channels. Switching visibility moves the row to the other name space
-and is refused with `409` if that name is taken there. The `UNIQUE` constraint
-on `chat_channels.name_bi` is unchanged, so no migration was needed; channels
-made before the change keep their old global `name_bi` until they are renamed.
+(`chat-channel-name:<name>`). So the only `409 channel_name_taken` a caller
+can see names a public channel or one of their own private channels; with one
+shared name space anyone could test whether someone else's private channel
+had a given name. Switching visibility moves the row to the other name space
+and is refused with `409` if that name is taken there. The `UNIQUE`
+constraint on `chat_channels.name_bi` covers both; channels made before the
+split keep their old global `name_bi` until renamed.
 
 ## Channel limits and webhook pings
 
@@ -99,28 +97,22 @@ made before the change keep their old global `name_bi` until they are renamed.
   toward neither. The hourly budget counts successful `chat.channel.create`
   rows in `sensitive_audit_log` (`channel_creations_since`), not live
   channels, so deleting a channel and making a new one does not reset it.
-- There is no site-wide channel ceiling (removed 2026-10-28). The old
-  `MAX_CHAT_CHANNELS` (100) was shared by everyone, so five accounts at their
-  per-creator cap blocked channel creation for the whole site until they
-  deleted their channels. Counting only recently active channels would not
-  help, because the owner of a squatting channel can keep it active. Growth
-  is bounded per account by the two limits above instead.
+- There is no site-wide channel ceiling: a shared cap lets a few accounts at
+  their per-creator limit block channel creation for everyone (and counting
+  only active channels does not help, since a squatter can keep its channels
+  active). Growth is bounded per account by the two limits above.
 - An incoming webhook post to a public channel always pings the channel's
   creator, and pings the channel's readers (accounts with a
   `chat_channel_reads` row for it, which opening the channel writes; up to
   `MAX_CHANNEL_MEMBERS`, newest first) only when none of that channel's
   webhooks has posted in the last `WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS`
-  (10 minutes). Until 2026-10-28 that audience was the first
-  `MAX_CHANNEL_MEMBERS` active users of the whole site, so any account could
-  make a public channel and a webhook and push its own text to 500 phones,
-  over and over by deleting and recreating the channel. The check and the `last_used_at` write are one `UPDATE ...
-  WHERE NOT EXISTS ... RETURNING`, so parallel posts cannot all claim the
-  window, and the gate needs no new table. Before 2026-10-22 every post made
-  a ping (an uncoalesced phone banner) with the webhook's own title and text
-  for every active user, so anyone holding a webhook URL could flood every
-  phone. A steady stream of posts therefore pings the audience once, when it
-  starts after a quiet window; the messages themselves are all delivered.
-- Private channels take webhooks too (2026-10-22), so rooms fed by a tool
+  (10 minutes). The audience is the channel's own readers, never the site's
+  active users, so a webhook cannot push its text to every phone. The check
+  and the `last_used_at` write are one `UPDATE ... WHERE NOT EXISTS ...
+  RETURNING`, so parallel posts cannot all claim the window. A steady stream
+  of posts pings the audience once, when it starts after a quiet window; the
+  messages themselves are all delivered.
+- Private channels take webhooks too, so rooms fed by a tool
   (a deploy log, a mail log) can be private. The server writes a webhook
   message with the room cipher as it arrives (`_chat_channel_deliver`),
   marks the envelope `srv` and the frame `webhook` and `serverVisible`; every
@@ -149,10 +141,9 @@ it. Clients show "N messages on the server" or "Not stored on the server".
 - `forkmesh-received` and `forkmesh-superseded` on a DM socket have their own
   budget (`ROOM_RECEIPT_MAX_PER_WINDOW`, 40 per 10 s, frames up to 8 KiB,
   `chat_direct_receipt_envelope`) and are handled before the 20-frame message
-  limit. Before 2026-10-15 they shared that limit: a reconnecting phone sends a
-  key advertisement and a burst of resealed frames first, so its ack was
-  dropped without a reply, and the copies stayed on the server while the
-  sender already saw Delivered (from the push path) and Read.
+  limit: a reconnecting phone sends a key advertisement and a burst of
+  resealed frames first, and a shared limit would drop its ack and leave the
+  copies on the server.
 - The relay reports `{"kind":"forkmesh-server-copies","v":1,"stored":N}`
   after a store, a receipt, and on join. Unacknowledged rows expire after 7
   days.
@@ -160,7 +151,7 @@ it. Clients show "N messages on the server" or "Not stored on the server".
   sends a push.
 - Channels have many readers: no `ref`, receipts ignored.
 - A recipient whose copies wait more than a day gets one reminder email
-  ([chat-unread-reminders.md](chat-unread-reminders.md#direct-messages-waiting-on-the-server)).
+  ([chat-unread.md](chat-unread.md#direct-messages-waiting-on-the-server)).
 
 ### Re-sealing
 
@@ -214,10 +205,8 @@ iOS, Android):
   `ForkMeshRoom._direct_received` to the other account's sockets when a
   device acknowledges, and by the room's `delivered` path when a recipient
   phone posts `/api/chat/direct-messages/<id>/delivered?ref=` on receiving the
-  push ([chat-push-previews.md](chat-push-previews.md#delivery-receipt-route)).
-  Without the second path a recipient whose app was closed showed only Sent
-  until they opened the conversation, while Signal showed Delivered for the
-  same phone.
+  push ([chat-push-previews.md](chat-push-previews.md#delivery-receipt-route)),
+  so a recipient whose app is closed still shows Delivered.
 - `{"kind":"forkmesh-read","v":1}`: sent when `_mark_read` moves the reader's
   `last_read_count`. A hidden tab defers its `/read` until visible.
 - Channels reach only sending and sent. Ticks change only while the sender's
@@ -230,7 +219,7 @@ iOS, Android):
 DMs use the same sealed frames as channels: `thread-reply` (persist and
 notify), `reaction`, `edit` and `delete` (persist).
 
-A quoted reply (Signal style, iOS since 2026-10-15) is an ordinary `chat` frame
+A quoted reply (Signal style) is an ordinary `chat` frame
 with `"replyTo": {"id", "senderId", "sender", "text"}`, the text cut to 280
 characters. It appears in the conversation, not in a thread. Clients that do not
 know the field show the message text alone. Reply and react work on
@@ -239,6 +228,26 @@ applies an edit or delete only when the frame's `senderId` equals the target's
 `senderId`. After a delete the sender also sends `forkmesh-superseded` for the
 original ref, so an undelivered server copy is withdrawn; the delete frame
 itself stays until delivered.
+
+## Direct messages on the dashboard
+
+`/dashboard/chat` redirects to `/chat`, which lists direct messages in its own
+rail ([web-chat.md](web-chat.md#layout)). `mountDirectMessageStrip`
+(`dashboard-chat.js`) still runs where the old page's channel header exists: a
+strip of DM chips, each linking to `/chat?dm=<name>` with its unread badge; the
+`+` chip links to `/chat?dm=` (the new-DM picker). It reads
+`GET /api/chat/direct-messages?limit=20` once and refreshes only when the
+account event channel pushes the `direct-messages` topic (re-broadcast as the
+`forkmesh:direct-messages` window event). It is skipped in the World embed and
+for signed-out visitors.
+
+### "Add person" in a direct message
+
+A DM is strictly one-to-one, so "+ Add person" creates a **new private
+channel** with the current partner and the picked person
+(`POST /api/chat/channels`) and switches to it. The name is built from the
+participants' slugs plus a random suffix within `CHANNEL_NAME_RE`. History is
+not copied: it is end-to-end encrypted to the original two participants.
 
 ## Conversation list
 
@@ -255,9 +264,8 @@ Long-press a DM row (or open its Details) for **Delete Conversation** and
 - *Delete* hides the conversation's messages (`ChatExtras.hideMessage`) and
   records the time in `ChatWorkspace.removedConversations`. `directRows` skips
   the row until a message newer than that time arrives, or until you open the
-  conversation again (`ChatHub.select` restores it). Before this, Delete only
-  hid the messages, so an empty "No messages yet" row stayed in the list. A
-  relay `@node` room whose peer is gone shows as "direct message"; Delete is
+  conversation again (`ChatHub.select` restores it), so no empty "No messages
+  yet" row stays in the list. A relay `@node` room whose peer is gone shows as "direct message"; Delete is
   how you get rid of it.
 - *Block* adds the lowercased account name to `ChatWorkspace.blocked`. That
   person's DM row, messages (DMs and channels, by account name, node owner or
@@ -306,7 +314,7 @@ envelope, whose `body` is the base64 of the v3 frame, so the only v3 changes
 on the server are size limits. A v3 frame carries a 1088-byte ML-KEM
 ciphertext per recipient (about 1.7 KB per `keys` entry, 2.2 KB once the outer
 layer base64s it), and a 1 MiB file is base64'd three times (file, sealed
-body, outer body). Measured on the wire (2026-10-16):
+body, outer body). Measured on the wire:
 
 | Frame | Outer envelope |
 | --- | --- |
@@ -315,13 +323,13 @@ body, outer body). Measured on the wire (2026-10-16):
 | Text, 64 devices | about 145 KB |
 | Bundle (`e2ee-key` v3) | about 3.6 KB |
 
-| Limit | Was | Now | Why |
-| --- | --- | --- | --- |
-| `CHAT_HISTORY_MAX_BODY` (`app/src/entry.py`) | 1,900,000 | 3 MiB | A file frame over the cap was neither stored nor pushed. 1.9 MB was D1's 2 MB row limit; the served stack stores rows in rqlite, which has none. Still below `MAX_TEXT_BYTES` (4 MiB). |
-| `CHAT_HISTORY_REPLAY_MAX_BYTES` | 2 MiB | 4 MiB | The replay window adds rows newest first and stops at the budget, so a newest row bigger than the budget replayed nothing at all. It must be at least `CHAT_HISTORY_MAX_BODY`. |
-| `ROOM_LIVE_MAX_BYTES` | 16 KiB | 192 KiB | 16 KiB held about 6 v3 recipients. 192 KiB fits 64 devices plus an 11 KiB ink chunk; 150 frames per 10 s at that size is still less than the 20 x 4 MiB message lane. |
-| Host `ws_max_size` (`app/host/forkmesh_host/serve.py`) | 2 MiB | 4 MiB | uvicorn closed the socket (1009) before the app saw a file frame; it now matches `MAX_TEXT_BYTES`. |
-| Mesh `MESH_WS_MAX_SIZE` (`durable_cluster.py`) | 2 MiB | 4 MiB + 64 KiB | The same frame proxied between core nodes, plus the relay's `ref` and `recipients` stamps. |
+| Limit | Value | Why |
+| --- | --- | --- |
+| `CHAT_HISTORY_MAX_BODY` (`app/src/entry.py`) | 3 MiB | A file frame over the cap is neither stored nor pushed. rqlite has no row size limit; stays below `MAX_TEXT_BYTES` (4 MiB). |
+| `CHAT_HISTORY_REPLAY_MAX_BYTES` | 4 MiB | The replay window adds rows newest first and stops at the budget, so a newest row bigger than the budget would replay nothing. Must be at least `CHAT_HISTORY_MAX_BODY`. |
+| `ROOM_LIVE_MAX_BYTES` | 192 KiB | Fits 64 v3 devices plus an 11 KiB ink chunk; 150 frames per 10 s at that size is still less than the 20 x 4 MiB message lane. |
+| Host `ws_max_size` (`app/host/forkmesh_host/serve.py`) | 4 MiB | Matches `MAX_TEXT_BYTES`; smaller and uvicorn closes the socket (1009) before the app sees a file frame. |
+| Mesh `MESH_WS_MAX_SIZE` (`durable_cluster.py`) | 4 MiB + 64 KiB | The same frame proxied between core nodes, plus the relay's `ref` and `recipients` stamps. |
 
 Unchanged: `MAX_TEXT_BYTES` (4 MiB), the 20-frame and 40-receipt buckets,
 `ROOM_RECEIPT_MAX_BYTES` (receipts are plaintext ref lists),
@@ -335,24 +343,18 @@ On iOS a received file lives in memory (`ChatExtras.files`). Sharing or
 playing it writes the decrypted bytes to `tmp/chat-media/` with complete file
 protection. `ChatAttachmentView.sweepTemporaryFiles` deletes those files when
 the app goes to the background, and at launch also deletes leftover
-`viewonce-*` and `messages-voice*` recordings from a crash. Before, nothing
-ever deleted `tmp/chat-media/`.
+`viewonce-*` and `messages-voice*` recordings from a crash.
 The file in `tmp/chat-media/` is named by `ChatMediaFile` (`FMChat`): the
 first 24 hex characters of the SHA-256 of the message id, a dash, and the file
-name with `/`, `\` and `..` replaced. The message id comes from the sender, so
-until 2026-10-28 an id such as `../../Documents/x` wrote attacker bytes into
-the app's Documents folder (visible in the Files app) as soon as the message
-was drawn. `ChatMediaFile.url` also refuses a path whose folder is not
+name with `/`, `\` and `..` replaced, because the message id comes from the
+sender and an id such as `../../Documents/x` must not write outside the
+folder. `ChatMediaFile.url` also refuses a path whose folder is not
 `chat-media` itself. Guard: `FMChatTests/ChatMediaFileTests.swift`.
 
-What is still not covered (audit 2026-10-14):
+What is still not covered:
 
 - Files posted in a public `#` channel are not sealed, so the server can read
   them (`RelayService.isControllerReadableFrame`).
-- Device keys were trusted on first use with nothing tying a key to an account;
-  chat protocol v3 ([chat-protocol-v3.md](chat-protocol-v3.md), 2026-10-16)
-  binds each device key to its account in a signed bundle and holds any further
-  device of a DM account until the user approves it.
 - The server deletes a retained DM frame when one device of the recipient
   account acknowledges it, not when the file is viewed, and a view-once part
   can be downloaded again until the client calls consume.
@@ -361,11 +363,10 @@ What is still not covered (audit 2026-10-14):
 - Chat history JSON (text and file names, no file bytes) uses
   until-first-unlock protection. Since v3 it is excluded from backups, so it
   survives app and iOS updates (the file stays in Application Support) but not
-  a restore onto a new or erased phone. Keeping it out of backups is the v3
-  privacy choice: an unencrypted iTunes/Finder backup or iCloud backup would
-  otherwise carry readable chat text, and iOS has no per-file "encrypted
-  backups only" flag. Why history used to vanish after an app update, and the
-  fix, is in [../native/README.md](../native/README.md#architecture).
+  a restore onto a new or erased phone: an unencrypted iTunes/Finder or iCloud
+  backup would otherwise carry readable chat text, and iOS has no per-file
+  "encrypted backups only" flag. See
+  [../native/ARCHITECTURE.md](../native/ARCHITECTURE.md#architecture).
 - The desktop writes received files up to 512 KB in plaintext into its chat
   history; Android leaves `cacheDir/chat-media/` behind.
 
@@ -395,11 +396,10 @@ that follows their gravity samples:
 - Senders sample at 60 Hz. Receivers time each batch from its newest sample:
   that sample plays `motionPlaybackMarginMs` (100 ms) after the batch arrives,
   and older ones play before it. A new batch lands about one send interval
-  (88 ms at 150 frames per 10 s) later, so playback stays smooth. The pose is
-  about 100 ms behind the sender. Before this change, timing came from the
-  oldest sample with a 120 ms margin, which put the pose a whole batch further
-  behind. If a batch arrives late, the pose holds and then catches up; the
-  delay does not build up.
+  (88 ms at 150 frames per 10 s) later, so playback stays smooth and the pose
+  is about 100 ms behind the sender (timing from the oldest sample would add
+  a whole batch). If a batch arrives late, the pose holds and then catches
+  up; the delay does not build up.
 
 ## View-once video and voice messages
 
@@ -431,7 +431,7 @@ API (`app/src/chat_direct_media_api.py`, under
 - The web holds the `forkmesh-received` receipt for a view-once frame until it
   is opened, expired or withdrawn, because it keeps no local DM history.
 - Recording filters reuse the call engine's face, background and voice
-  stages ([chat-direct-calls.md](chat-direct-calls.md)); if a requested stage
+  stages ([call-filters.md](call-filters.md)); if a requested stage
   cannot start, nothing is recorded rather than sending raw media. The voice
   stage starts before the face stage, so the face models cannot starve the
   voice worklet's load, and the status names the stage that failed. Each change
@@ -521,7 +521,7 @@ from `localStorage` on load.
   10 minutes of DM messages after a reload.
 - An opened frame without `senderId` gets the sender's `node`; a frame whose
   `reactorId` is not the sender's `node` is dropped. Edits and deletes already
-  require the original's `senderId`, which v3 now authenticates.
+  require the original's `senderId`, which v3 authenticates.
 - Frames held for a pending or unknown device are opened when its bundle
   arrives or the user approves it, and go to the page as history, so they do
   not ring.
@@ -538,7 +538,7 @@ from `localStorage` on load.
 ## Legacy mesh rooms
 
 A "private room" label on frames in the shared World room is not access
-control: every device in that room can decrypt them. Clients no longer create
+control: every device in that room can decrypt them. Clients do not create
 such rooms; the phones still render old ones. Real private rooms are server
 rooms created through the channel API.
 

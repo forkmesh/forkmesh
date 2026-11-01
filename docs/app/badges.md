@@ -1,6 +1,7 @@
 # Achievement badges
 
-Badges are public recognition marks on a profile. The catalog is fixed; each
+Part of [the App docs](README.md). Badges are public recognition marks on a
+profile. The catalog is fixed; each
 badge is awarded once per account, automatically at a platform event or by a
 platform administrator. An award is permanent. Some badges have levels
 (default, bronze, silver, gold); a level only ever goes up.
@@ -34,7 +35,7 @@ platform administrator. An award is permanent. Some badges have levels
 - Badges belong to accounts. `GET /api/badges/<organization>` answers
   `{"ok": true, "kind": "organization", "badges": [], "progress": []}`, because
   an organization's `/@<name>` profile renders with the same document and asks
-  for badges; it used to get a 404 there. Grants to an organization stay 404.
+  for badges. Grants to an organization are 404.
 - Every award goes through `_award_badge`, an `INSERT OR IGNORE`; the email
   is sent only when the row is new, so retries never mail twice.
 - **Distinguished Contributor**: an active user account whose own
@@ -148,9 +149,8 @@ Rules and limits worth knowing:
 - **Daily Spinner** is the longest run ever, not the current one. Candidates
   are users whose count of active days beats their progress, least recently
   checked first, so a run that does not grow cannot starve other users.
-- **Night Watch** history starts when `0261` is deployed: the older
-  `online_hourly_nodes` keeps only 48 hours and at most 50 nodes per sample,
-  so it is not used. Every 10-minute sample credits 10 minutes to each live
+- **Night Watch** history starts with migration `0261`; `online_hourly_nodes`
+  keeps only 48 hours and at most 50 nodes per sample, so it is not used. Every 10-minute sample credits 10 minutes to each live
   node key (repository hosts, healthy HTTPS mirrors and present accounts),
   up to `NODE_UPTIME_MAX_KEYS` (2000) keys, before the 50-node cap applies.
 - **Brood and Lift Off** join through `repositories.key_bi`. Fork parents
@@ -163,8 +163,6 @@ Rules and limits worth knowing:
   work paid both as a microjob and as a contributor reward counts twice.
 - **Shopkeeper** leaves out first-party ForkMesh packages and the
   publisher's own use.
-- The first sweeps after deploy backfill existing activity 25 accounts per
-  badge per hour, and each award or level-up sends the badge email.
 
 ## Record badges
 
@@ -226,7 +224,7 @@ The hourly `badge-sweep` phase first runs `sweep_badge_records`:
    missing `forkmesh/pulls` branch the same way it answers an outage.
 
 Each record is one `badge_pull_facts` row keyed by `(repo_bi, kind, number)`
-(the table name predates issues sharing it), so reading a record twice never
+(issues share the table despite its name), so reading a record twice never
 counts it twice. Keys are stored as written; the queries map them to
 accounts through `nodes.pubkey` and `COALESCE(NULLIF(user_bi, ''),
 node_bi)`, so a node linked to its account later still earns, and an
@@ -365,7 +363,7 @@ ForkMesh's own rather than GitHub's:
 
 The image is requested through `ForkMeshAPI.url()`, because the public
 profile on forkmesh.com is proxied from the App while `/assets/` there is the
-marketing site's own folder, which does not carry the medallions. If that
+static site's own folder, which does not carry the medallions. If that
 fails it retries the same-origin path, then falls back to a plain grey disc
 with the badge's initial, so a relay without the files still renders the
 card.

@@ -45,13 +45,12 @@ are kept a day for replay protection.
 
 ### Organization repos
 
-Phones used to refuse locally unless the signed-in account equalled the repo
-owner name, so a member (or the serving account itself, when the row named the
-org or a core node such as `fmnext-n1`) saw "Only the repo owner can request
-desktop control for this repo." (2026-10-14). Now the phones sign as the
-signed-in account and name the repo by its serving account when that is the
-signed-in one, else by its public name (`Repository.displayOwner`). The relay
-decides who may ask. Screens that only hold a route `owner/name` (Actions rerun,
+The phones do not refuse locally by comparing the signed-in account with the
+repo owner name (that would lock out members, and the serving account itself
+when the row names the org or a core node such as `fmnext-n1`). They sign as
+the signed-in account and name the repo by its serving account when that is
+the signed-in one, else by its public name (`Repository.displayOwner`); the
+relay decides who may ask. Screens that only hold a route `owner/name` (Actions rerun,
 Releases) sign that owner as given: when it is another node's name, the
 member's desktop cannot match it to a local repo and reports "repository is not
 open on this desktop".

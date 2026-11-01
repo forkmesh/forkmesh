@@ -29,7 +29,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_PATH = ROOT / "tools" / "forkmesh_transports.py"
 CASES = ROOT / "conformance" / "transports" / "v1" / "cases.json"
-DOC = ROOT / "www" / "docs" / "transports.md"
+DOC = ROOT / "docs" / "transports.md"
 
 
 def _load_tool():
@@ -909,11 +909,11 @@ def test_documentation_covers_the_contract():
         assert label in doc
     for code in ("0", "2", "3", "4", "5", "6"):
         assert re.search(r"^\| `%s` \|" % code, doc, re.M), code
-    assert "(transports.md)" in (ROOT / "www" / "docs" / "README.md").read_text()
+    assert "(transports.md)" in (ROOT / "docs" / "README.md").read_text()
 
 
 def test_quality_gate_and_platform_matrix_run_this_suite():
-    config = json.loads((ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text())
+    config = json.loads((ROOT / "docs" / "engineering" / "quality-gates.json").read_text())
     gate = next(g for g in config["gates"] if g["id"] == "transport-conformance")
     assert "app/tests/test_transports.py" in gate["command"]
     assert "transport-conformance" in config["profiles"]["core"]

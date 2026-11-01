@@ -3,7 +3,7 @@
 Part of [the App docs](README.md). An open dashboard tab keeps running the
 JavaScript it loaded, so the dashboard shows an inline notice when a new
 version is deployed, like the World
-([deploy notice](../deploy/auto-deploy.md#world-deploy-notice)).
+([deploy notice](../operations/auto-deploy.md#world-deploy-notice)).
 
 `app/public/dashboard/js/09-update-notice.js` reads `rev` (the deploy's
 `BUILD_REV`) from `GET /api/version`. The first answer after boot is the

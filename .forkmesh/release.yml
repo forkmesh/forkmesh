@@ -271,7 +271,7 @@ jobs:
           # setup.exe on Windows, and a .dmg on macOS. Packaging is fail-closed:
           # publishing a bare executable without its runtime would recreate the
           # source-build onboarding failure this workflow exists to prevent.
-          # See www/docs/design/signed-installers.md.
+          # See docs/design/signed-installers.md.
           publish_assets=("$mirror_asset")
           if [ "$desktop_native" = 1 ]; then
           publish_assets+=("$staged")

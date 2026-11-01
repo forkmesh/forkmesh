@@ -4,7 +4,7 @@
 //
 // Shapes follow the agent loop in FMAgents/AgentProvider.swift
 // (AgentTurn, AgentToolCall) so a Gemma provider for the on-device coding agent
-// is a thin adapter; see docs/FMLocalAI.md.
+// is a thin adapter; see docs/native/ios/FMLocalAI.md.
 
 import FMBase
 import Foundation

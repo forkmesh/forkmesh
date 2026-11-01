@@ -15,7 +15,7 @@ Settings tab (`08-repo-detail-network.js`, `REPO_FEATURE_SWITCHES` in
 
 Off by default for every repository. A repository administrator (the same
 people who can switch Issues or Pull requests off,
-[repo-settings-access.md](repo-settings-access.md)) opens **Settings** on the
+[repo-settings.md](repo-settings.md)) opens **Settings** on the
 repository and ticks, in the Features group:
 
 - **Close stale pull requests** (`stalePulls`).
@@ -24,7 +24,7 @@ repository and ticks, in the Features group:
   first switch is on).
 
 Both are stored with the other feature switches in `repo_feature_settings`
-(`REPO_FEATURE_DEFAULTS`, [repo-features.md](repo-features.md)) and travel in
+(`REPO_FEATURE_DEFAULTS`, [repo-settings.md](repo-settings.md)) and travel in
 `POST /api/repo/<owner>/<repo>/about` `features`. There is no instance-wide
 default: an instance that wants it on turns it on per repository.
 
@@ -163,7 +163,7 @@ owner, repository, the time the switch was turned on, and the sweep cursor.
 maintainer's name, the head commit seen, and whether the head moved. Rows
 untouched for 60 days are pruned hourly. Repository deletion removes both
 tables' rows (`_REPO_SCOPED_TABLES`); a `DATA_KEY` rotation re-keys both
-(`tools/next_rekey.py`, [../REKEY.md](../REKEY.md)).
+(`tools/next_rekey.py`, [rekey](../operations/rekey.md)).
 
 ## Limits
 

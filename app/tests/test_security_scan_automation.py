@@ -206,7 +206,7 @@ def test_osv_findings_include_advisory_ids_without_exploit_text():
 
 def test_published_schema_requires_redaction_and_scan_limitations():
     schema = json.loads(
-        (ROOT / "www" / "docs" / "security-scan.schema.json").read_text(encoding="utf-8")
+        (ROOT / "docs" / "security-scan.schema.json").read_text(encoding="utf-8")
     )
     required = set(schema["required"])
     assert {"visibility", "scanner", "policy", "scan", "findings", "notices"} <= required
@@ -240,7 +240,7 @@ def test_rich_report_converts_to_compact_world_clipboard(tmp_path):
     )
     compact = scan_module.clipboard_report(rich)
     schema = json.loads(
-        (ROOT / "www" / "docs" / "security-clipboard.schema.json").read_text(
+        (ROOT / "docs" / "security-clipboard.schema.json").read_text(
             encoding="utf-8"
         )
     )
@@ -424,7 +424,7 @@ def test_scanner_bounds_findings_and_marks_truncation(monkeypatch, tmp_path):
     report = scan_module.build_report(
         tmp_path,
         repository_name="test/repository",
-        policy_path=ROOT / "www" / "docs" / "security-scan-policy.json",
+        policy_path=ROOT / "docs" / "security-scan-policy.json",
         offline=True,
     )
     assert len(report["findings"]) == scan_module.MAX_PUBLIC_FINDINGS

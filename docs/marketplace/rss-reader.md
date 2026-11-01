@@ -3,10 +3,11 @@
 `marketplace/packages/rss-reader` is a feed reader for the native iOS app, the
 native Android app and the desktop app. It is **local only**: every device
 checks the feeds itself and keeps its subscriptions, articles and read state
-on the device. There is no web page, no Worker API and no sync; ForkMesh's
+on the device. There is no web page, no server API and no sync; ForkMesh's
 servers never see what a person reads. The only shared thing is the package's
 installed state (`install.sync: "account"`), which follows the account the
-way every account-synced package does; the data does not.
+way every account-synced package does; the data does not. Part of
+[Marketplace](README.md).
 
 The design follows [NetNewsWire](https://netnewswire.com/) (Brent Simmons,
 Ranchero Software, MIT licensed): smart feeds, the timeline, the article view
@@ -217,8 +218,8 @@ The clients share one set of rules so a feed reads the same everywhere:
 python3 -m pytest -q marketplace/packages/rss-reader/tests
 ```
 
-The package test checks the manifest stays local-only (no Worker, no web
-page, no outbound origins) and that the NetNewsWire credit is present. Each
+The package test checks the manifest stays local-only (no `worker` block, no
+web page, no outbound origins) and that the NetNewsWire credit is present. Each
 client has its own suite: the desktop package test
 (`content/desktop/tests/test_rss_reader.cpp`, target
 `forkmesh-rss-reader-tests`),

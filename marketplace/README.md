@@ -1,7 +1,7 @@
 # ForkMesh Marketplace packages
 
 > Developer notes for this directory (sockets, generators, host runtime,
-> traps) are in [docs/marketplace/README.md](../docs/marketplace/README.md).
+> traps) are in [docs/marketplace/package-system.md](../docs/marketplace/package-system.md).
 
 This directory is the source catalog for creations that move through the
 ForkMesh ecosystem. Software extensions, virtual goods, agents, themes and
@@ -26,7 +26,8 @@ package type, version, price/licence model, entry points, permissions,
 screenshots, dependencies and provenance. Every listing supplies at least one
 image under `preview/` with alternative text. `SIGNATURE` signs the canonical
 manifest and the digest of every archived file, so mirrors can carry the bytes
-but cannot change the creator or content.
+but cannot change the creator or content
+([mirroring and software distribution](../docs/mirroring.md)).
 
 The source tree keeps one creation under `packages/<id>/`. A package with a
 `content/` folder is a plugin; a build adds only the plugins listed in
@@ -136,7 +137,7 @@ Its package list is generated from `catalog.json`; re-run
 `python3 app/tools/build_market_catalog.py` after adding or changing a package
 (`app/tests/test_market_landing.py` fails while page and catalog disagree).
 Planned extractions are described in
-[`www/docs/plugins/README.md`](../www/docs/plugins/README.md).
+[`docs/plugins/README.md`](../docs/plugins/README.md).
 
 ## Notable packages
 

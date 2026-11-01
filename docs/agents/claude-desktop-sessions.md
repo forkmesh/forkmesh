@@ -1,13 +1,15 @@
 # Claude Code agents as Claude desktop sessions
 
-Since 2026-10-24 every Claude Code agent the ForkMesh desktop runs is also a
-session in the Claude desktop app's **Code** tab, where it can be read and
-resumed. Codex agents stay ForkMesh-only. Code:
-`desktop/src/ClaudeDesktopSessions.{h,cpp}` (Qt Core only, test
-`forkmesh-claude-desktop-sessions-tests`) and
-`desktop/src/MainWindowClaudeDesktop.cpp`.
+Every Claude Code agent the ForkMesh desktop runs is also a session in the
+Claude desktop app's **Code** tab, where it can be read and resumed. Codex
+agents stay ForkMesh-only. Code: `desktop/src/ClaudeDesktopSessions.{h,cpp}`
+(Qt Core only, test `forkmesh-claude-desktop-sessions-tests`) and
+`desktop/src/MainWindowClaudeDesktop.cpp`. The desktop UI is in
+[../desktop/agents-ui.md](../desktop/agents-ui.md).
 
-## What was already true
+Part of [Agents](README.md).
+
+## Background
 
 - ForkMesh runs Claude Code as the real CLI: `claude --output-format
   stream-json --input-format stream-json --verbose --include-partial-messages`
@@ -17,10 +19,13 @@ resumed. Codex agents stay ForkMesh-only. Code:
   picks the session id; ForkMesh reads it back from the stream's
   `session_id` (`claudeResumeSessionId`, `AgentResumeIdentity.h`) and keeps
   its own copy of the stream events under `data/agents/sessions/`.
-- So each Claude Code agent already *was* a Claude Code session. Two things
-  kept it out of the Claude app.
+- So each agent is a Claude Code session; two things keep it out of the
+  Claude app on its own.
 
-## Why the Claude app did not list them (checked on this machine, Claude app 3.6556.2, CLI 2.1.309)
+## Why the Claude app does not list them
+
+Observed with Claude app 3.6556.2 and CLI 2.1.309.
+
 
 1. **Code-tab sessions are an index, not a folder scan.** The Code tab lists
    `~/.config/Claude/claude-code-sessions/<account>/<org>/local_<uuid>.json`
@@ -30,8 +35,8 @@ resumed. Codex agents stay ForkMesh-only. Code:
    what every stream-json run writes, and skip hard-linked files.
 2. **Most transcripts are not under `~/.claude`.** ForkMesh runs Claude under
    per-account config dirs (`CLAUDE_CONFIG_DIR=data/agents/accounts/claude/<id>`,
-   Settings > Agents accounts). On 2026-10-24 those held ~1,200 transcripts;
-   the Claude app only looks in `~/.claude/projects`.
+   Settings > Agents accounts); the Claude app only looks in
+   `~/.claude/projects`.
 
 ## The supported way in: `claude://resume?session=<uuid>`
 
@@ -72,17 +77,13 @@ private, unversioned state and it holds them in memory.
   `claudeAppSessionId`); a session already registered under the same id is
   not linked again, so archiving it in the Claude app sticks.
 - **Launching the link.** On Linux ForkMesh runs `xdg-open` itself (macOS:
-  `open`). `QDesktopServices::openUrl` passed only the first 5 of 24 links
-  on 2026-10-24 and dropped the rest without an error; Windows still uses it.
-  The first build saved ids under `claudeDesktopSessionId` before the link
-  went out, so that key is ignored.
+  `open`), because `QDesktopServices::openUrl` silently dropped all but the
+  first few links of a burst; Windows still uses it. The old
+  `claudeDesktopSessionId` key (saved before the link went out) is ignored.
   The launcher (`processreaper::startReleasedQuietly`) gives `xdg-open` null
-  stdin, stdout and stderr and drops `FORKMESH_DESKTOP_INSTANCE`. Before
-  2026-10-25 a Claude app started this way inherited ForkMesh's terminal, so
-  its Chromium errors (`nss_util.cc ... NSS error code: -8018`,
-  `global_accelerator_listener_linux.cc ... BindShortcuts`,
-  `gpu_persistent_cache.cc`) showed up in ForkMesh's console as if they were
-  ForkMesh's own.
+  stdin, stdout and stderr and drops `FORKMESH_DESKTOP_INSTANCE`, so the
+  Claude app's Chromium errors (`nss_util.cc ... NSS error code: -8018` and
+  similar) do not land in ForkMesh's console.
 - **Existing agents.** 90 s after start (and when the setting is switched
   on), `backfillClaudeDesktopSessions` links every account project folder
   into `~/.claude/projects` and registers every stored, finished Claude Code
@@ -108,7 +109,7 @@ private, unversioned state and it holds them in memory.
   is untouched.
 - **Codex** has no Claude app counterpart; Codex agents stay in the ForkMesh
   Agents panel and Sessions tab, which list, open, continue and show the
-  transcript of both kinds as before.
+  transcript of both kinds.
 - **Cloud and runner agents** (mirrors, cores, r1; [README.md](README.md),
   [../server/agent-jobs.md](../server/agent-jobs.md)) run on another machine,
   so their Claude session is not on this disk and "Open in Claude app" is

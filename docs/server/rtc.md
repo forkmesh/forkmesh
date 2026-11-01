@@ -3,9 +3,11 @@
 Group audio and video calls (Meet or Discord style) run through a selective
 forwarding unit (SFU) that ForkMesh writes and hosts itself. The SFU and the
 WebRTC protocol stack under it are our own Go code in `server/rtc/`, built only
-on the Go standard library: no Pion and no other third-party module (decided
-2026-10-21; `server/go.mod` has no requirements and keeps none). One-to-one
-calls stay peer to peer (`docs/app/chat-direct-calls.md`).
+on the Go standard library: no Pion and no other third-party module
+(`server/go.mod` has no requirements and keeps none). One-to-one calls stay
+peer to peer ([chat-direct-calls.md](../app/chat-direct-calls.md)). Home:
+[Go daemon](README.md). The engine replacing this stack is
+[FM Media](fm-media.md).
 
 The phones get their media engine from Google's open-source libwebrtc, built
 from source by our own CI (`native/webrtc/`, see "Phone media engine"), never a
@@ -23,7 +25,9 @@ video frame before it is packetized (see "Frame encryption") with a key that is
 shared through the channel's sealed chat messages, so the SFU forwards
 ciphertext it cannot read. What the SFU learns: that a call is running in some
 room (an opaque id), who is connected (opaque per-join peer ids), when, from
-which IP addresses, and the size and timing of packets.
+which IP addresses, and the size and timing of packets. The public summary is
+[encryption](../encryption.md); the v2 key schedule is
+[call-e2ee.md](call-e2ee.md).
 
 ## Packages (`server/rtc/`)
 
@@ -269,16 +273,14 @@ A DTLS 1.2 server only: in WebRTC the SFU answers or offers with
 - Handshake messages are fragmented to fit 1200-byte datagrams, reassembled on
   receipt, and retransmitted per flight (RFC 6347 4.2.4): after 300 ms, then
   doubling to at most 4 s, seven times, so a handshake fails 20.5 s after the
-  server's first flight. RFC 6347 suggests a 1 s first timer; with it one lost
-  datagram cost a second of the join, and the bench showed it under loss
-  ([call-bench.md](call-bench.md)). RFC 9147, the DTLS 1.3 successor, lowers
-  the suggestion to 100 ms; 300 ms stays above the round trip of any path a
-  call works on. The 4 s cap is below the RFCs' 60 s because a call that has
-  not connected in 20 s is not worth waiting for. It stays safe: the server
-  only keeps state and retransmits after the client has echoed the cookie, so
-  the address is proven, and each resend is the same flight, at most seven
-  times. The schedule moved on 2026-10-21 (it was 1 s doubling to 8 s, four
-  resends).
+  server's first flight. RFC 6347 suggests a 1 s first timer, which made one
+  lost datagram cost a second of the join under loss
+  ([call-bench.md](call-bench.md)); RFC 9147 (DTLS 1.3) suggests 100 ms, and
+  300 ms stays above the round trip of any path a call works on. The 4 s cap
+  is below the RFCs' 60 s because a call not connected in 20 s is not worth
+  waiting for. It stays safe: the server only keeps state and retransmits
+  after the client has echoed the cookie, so the address is proven, and each
+  resend is the same flight, at most seven times.
 - After the handshake the connection only does `ExportKeyingMaterial`
   (`EXTRACTOR-dtls_srtp`), alerts and close_notify. Application data and
   renegotiation are refused. Records use the 64-packet replay window.
@@ -357,8 +359,7 @@ the SFU, bundled on one transport, rtcp-mux required:
   makes every sender send a keyframe to everybody. A newcomer's answer
   usually arrives before its DTLS handshake ends, and a keyframe sent then
   could not reach it (and used up the one request a second), so its requests
-  wait until the handshake ends (both changed 2026-10-21; the second took a
-  second off video joins under loss).
+  wait until the handshake ends (a second off video joins under loss).
 - **Forwarding.** RTP from a sender is SRTP-decrypted with that participant's
   inbound context and re-encrypted with each receiver's outbound context.
   The header keeps its marker, timestamp, SSRC and sequence number; the
@@ -395,10 +396,9 @@ the SFU, bundled on one transport, rtcp-mux required:
   64 KiB. `/calls/health` answers `{"ok":true}` and does not say how many rooms
   are open.
 
-Loss repair and rate control below were added on 2026-10-21 after the bench
-([call-bench.md](call-bench.md)) showed the SFU had neither: under 1 fps of
-video at 5% loss and no video at all under a 1 Mbps cap. The before and after
-figures are there.
+Without the loss repair and rate control below the SFU gave under 1 fps of
+video at 5% loss and no video under a 1 Mbps cap; the before and after
+figures are in [call-bench.md](call-bench.md).
 
 #### What is negotiated
 
@@ -426,9 +426,9 @@ figures are there.
 
 #### Loss repair (NACK and RTX)
 
-A receiver's NACK is never forwarded: one receiver's NACKs made the sender
-retransmit to everybody (the reason it was removed), so the SFU repairs loss
-itself, one hop at a time.
+A receiver's NACK is never forwarded, because one receiver's NACKs would make
+the sender retransmit to everybody; the SFU repairs loss itself, one hop at a
+time.
 
 - **Downstream.** Every video track keeps the plain RTP the SFU forwarded,
   1024 slots, 256 KiB and 1 s at most (`packetCache`). A NACK from a receiver
@@ -559,12 +559,13 @@ The ICE candidate is in the SFU's SDP (`a=candidate`, ICE-lite, no trickle
 from the SFU); the client's trickled candidates are not needed.
 
 A join ticket proves the caller may join that room. The app server mints it for
-a member of the private channel (`POST /api/chat/channels/<id>/call-ticket`):
+a member of the private channel (`POST /api/chat/channels/<id>/call-ticket`,
+[chat-group-calls.md](../app/chat-group-calls.md)):
 `base64url(json{"room","peer","acct","exp"}) + "." + base64url(HMAC-SHA256)`
 under the secret `FORKMESH_CALLS_SECRET`, which the app and the SFU share.
 `room` is HMAC-SHA256 of the channel id (and, from key version 2 on, the
-channel's key version; see `docs/app/chat-group-calls.md`) under the same
-secret, so the SFU never sees the channel id, `peer` is random per join, and tickets live 60 s. `acct`
+channel's key version) under the same secret, so the SFU never sees the
+channel id, `peer` is random per join, and tickets live 60 s. `acct`
 is the first 32 hex digits of an HMAC of the account under the same secret: it
 lets the SFU count one account's places in a room without learning who the
 account is.
@@ -592,7 +593,9 @@ participants in the channel's sealed chat frames (never to the SFU). A sender
 draws a new key on every join or rejoin and rotates it whenever somebody
 leaves, and audio and video share one encryptor and so one counter, so a
 counter is never used twice under a key. Receivers keep a 1024-frame replay
-window per sender and key id; `docs/app/chat-group-calls.md` has the details.
+window per sender and key id; [chat-group-calls.md](../app/chat-group-calls.md)
+has the details. Version 2 (hybrid post-quantum sender keys, AES-256-GCM,
+batch-signed media) is [call-e2ee.md](call-e2ee.md).
 
 ## Phone media engine
 
@@ -602,8 +605,8 @@ CallKit can own the audio session (`RTCAudioSession.useManualAudio`, enabled in
 `provider(_:didActivate:)`).
 
 `native/webrtc/PIN` names the libwebrtc release branch and exact commit (branch
-8078, the one Chrome 156 stable ships, commit `2a990ce0ccd0`, picked
-2026-10-21 from chromiumdash's milestone list). `native/webrtc/build.sh ios`
+8078, the one Chrome 156 stable ships, commit `2a990ce0ccd0`, from
+chromiumdash's milestone list). `native/webrtc/build.sh ios`
 (macOS with Xcode) or `native/webrtc/build.sh android` (Linux) clones
 depot_tools, syncs exactly that commit from webrtc.googlesource.com (and fails
 if the checkout is anywhere else), applies every `native/webrtc/patches/*.patch`
@@ -640,9 +643,11 @@ the checkout) and `patches/0001-fm-frame-crypto-objc.patch` (regenerated by
   post-processing, so the native voice changer runs inside libwebrtc's audio path.
 
 The Android build needs the same pieces as JNI classes and a Linux machine with
-about 30 GB free; neither exists yet (2026-10-21). To move the pin, take the
+about 30 GB free; neither exists yet. To move the pin, take the
 `webrtc_branch` of the newest stable milestone from
 `https://chromiumdash.appspot.com/fetch_milestones` and its commit from
-`git ls-remote https://webrtc.googlesource.com/src refs/branch-heads/<n>`. The face, background and voice filters move to native code
-(Vision and Core Image on iOS, the same models on Android) because the WebView
-that ran them is gone.
+`git ls-remote https://webrtc.googlesource.com/src refs/branch-heads/<n>`.
+
+The face, background and voice filters run in native code (Vision and Core
+Image on iOS, the same models on Android) because the WebView that ran them
+is gone.

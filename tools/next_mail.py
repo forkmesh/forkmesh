@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ForkMesh Next core mail (docs/MAIL_LOG.md "Sending from the cores").
+"""ForkMesh Next core mail (docs/operations/mail-log.md "Sending from the cores").
 
     next_mail.py dkim [--execute]
     next_mail.py dns [--execute]
@@ -250,7 +250,7 @@ InternalHosts 127.0.0.1,::1
 
 AGENT_PATH = "/usr/local/lib/fmnext/mail_events_agent.py"
 AGENT_UNIT = """[Unit]
-Description=ForkMesh Next mail delivery events (docs/MAIL_LOG.md)
+Description=ForkMesh Next mail delivery events (docs/operations/mail-log.md)
 After=postfix.service
 
 [Service]

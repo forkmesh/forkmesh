@@ -7,7 +7,7 @@
   // reads that executor's bounded summary (GET actions/runs) and, when the
   // answering node advertises it, sends control requests back to the same node
   // (POST actions/control). Wire contract:
-  // www/docs/operations/mirror-actions-control.md.
+  // docs/operations/mirror-actions-control.md.
   //
   // The workflow list needs no session: it is read from .forkmesh/ in the
   // repository tree like any other file. Who sees runs, logs and controls:

@@ -7,7 +7,7 @@ vectors into profiles and names the defect classes each profile must detect.
 protocol and writes a report; ``attest`` retains reports as content-addressed
 evidence; badges are derived from that evidence only, and expire when the
 evidence ages past ``freshnessDays`` or the suite or profile changes.
-See www/docs/protocol/certification.md.
+See docs/protocol/certification.md.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ PROGRAM_PATH = PROGRAM_DIRECTORY / "program.json"
 REGISTRY_PATH = PROGRAM_DIRECTORY / "implementations.json"
 RESULTS_PATH = PROGRAM_DIRECTORY / "results.json"
 EVIDENCE_DIRECTORY = PROGRAM_DIRECTORY / "evidence"
-MARKDOWN_PATH = ROOT / "www" / "docs" / "protocol" / "certification-registry.md"
+MARKDOWN_PATH = ROOT / "docs" / "protocol" / "certification-registry.md"
 PUBLIC_DIRECTORY = ROOT / "www" / "public" / "docs" / "certification"
 PUBLIC_BADGES_PATH = PUBLIC_DIRECTORY / "badges.json"
 PUBLIC_EVIDENCE_DIRECTORY = PUBLIC_DIRECTORY / "evidence"

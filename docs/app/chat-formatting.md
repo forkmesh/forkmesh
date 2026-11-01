@@ -1,7 +1,7 @@
 # Chat message formatting
 
 Chat uses one Slack-style syntax in the web chat, desktop app, notification
-emails and desktop notifications. Home page: [app/README.md](README.md).
+emails and desktop notifications. Home page: [README.md](README.md).
 
 | Write | Shows as |
 |---|---|
@@ -24,7 +24,9 @@ Renderers share the same rules:
 | Desktop | `desktop/src/ChatFormat.h` | rich text, plain and notification text |
 | Server | `app/src/chat_format.py` | email HTML and plain text |
 
-Chat text is end-to-end encrypted, so emails never quote messages.
+Chat text is end-to-end encrypted
+([../../docs/encryption.md](../encryption.md)), so emails
+never quote messages.
 
 Tests: `app/tests/test_chat_formatting.py`, `testChatFormat` in
 `desktop/tests/test_chat_transport.cpp`.

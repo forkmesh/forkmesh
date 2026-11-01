@@ -2,7 +2,7 @@
 //
 // ?market=<forkmesh|forkmesh-community>&package=<id>[&view=feedback]
 // Without a package it lists the packages the signed-in account maintains.
-// API: docs/MARKETPLACE_RATINGS.md. Every untrusted string is written with
+// API: docs/marketplace/ratings.md. Every untrusted string is written with
 // textContent; nothing from a review becomes markup.
 (() => {
   "use strict";

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Familiar developer terminology contract (issue #508).
 
-www/docs/terminology.json is the approved glossary, discouraged-term list, and
+docs/terminology.json is the approved glossary, discouraged-term list, and
 compatibility-alias table; tools/terminology_lint.py enforces it on primary
 surfaces. These tests pin the lint's behavior (including the ways copy can
 fail it), keep primary surfaces clean, and prove every alias still resolves.
@@ -24,7 +24,7 @@ for extra in (ROOT / "tools", ROOT / "app" / "src", ROOT / "app" / "tools"):
 import static_routes  # noqa: E402
 import terminology_lint as lint  # noqa: E402
 
-GUIDE = ROOT / "www" / "docs" / "terminology.md"
+GUIDE = ROOT / "docs" / "terminology.md"
 CONTRACT = lint.load_contract()
 
 
@@ -75,12 +75,12 @@ def test_guide_documents_measurement_comprehension_and_evidence():
 def test_guide_is_published_in_the_docs_library_and_quality_gates():
     import docs_site
 
-    readme = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(terminology.md)" in readme
     assert "terminology.md" in docs_site.GUIDE_ORDER
 
     gates = json.loads(
-        (ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
+        (ROOT / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
     gate = next(item for item in gates["gates"] if item["id"] == "terminology-contract")
     assert "app/tests/test_terminology_contract.py" in gate["command"]
     for profile in ("core", "release"):
@@ -99,7 +99,7 @@ def test_primary_surfaces_have_no_unexplained_discouraged_terms():
     for relative in (
         "www/public/index.html",
         "www/public/docs/onboarding/index.html",
-        "www/docs/getting-started.md",
+        "docs/getting-started.md",
         "app/public/dashboard/js/06-repo-content.js",
         "app/public/dashboard/partials/views/microjobs.html",
     ):

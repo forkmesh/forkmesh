@@ -7,6 +7,8 @@ parts of Chromium that talk to Google, following what
 [ungoogled-chromium](https://github.com/ungoogled-software/ungoogled-chromium)
 removes.
 
+Part of [Desktop](README.md).
+
 Code: `desktop/src/WorkspaceBrowserPane.*` (the widget, its profile and page),
 `desktop/src/BrowserPrivacy.*` (the switches, the blocklist, the user agent and
 address parsing), `desktop/src/WebEngine.*` (the engine interface) and
@@ -16,11 +18,10 @@ address parsing), `desktop/src/WebEngine.*` (the engine interface) and
 ## The engine is a module
 
 Linking Qt WebEngine costs about 36 MB of resident memory in every process
-that links it, before a page is opened: the library's relocations and startup
-code, plus Qt Quick and QML, which it pulls in. Measured 2026-10-28 with a Qt
-Widgets program that only shows an empty window, offscreen: 24 MB linked
-without WebEngine, 60 MB with it. Most people never open the Browser tab or an
-agent browser window, so since 2026-10-28 the app no longer links it on Linux:
+that links it, before a page is opened (its relocations and startup code, plus
+Qt Quick and QML; an empty Qt Widgets window is 24 MB without it, 60 MB with
+it). Most people never open the Browser tab or an agent browser window, so on
+Linux the app does not link it ([empty shell](package-modules.md#the-empty-shell)):
 
 - `WebEngineQt.cpp` is built as `packages/web-engine.so` with a sidecar
   (`web-engine.json`, entrypoint `core:web-engine`), next to the package
@@ -48,7 +49,7 @@ agent browser window, so since 2026-10-28 the app no longer links it on Linux:
   (`FORKMESH_WEB_ENGINE_BUILT`), which is what lets Qt WebEngine start from a
   library loaded later.
 - macOS and Windows, where package modules are off, compile `WebEngineQt.cpp`
-  into the app as before (`forkmesh_embed_web_engine`); so do the test
+  into the app (`forkmesh_embed_web_engine`); so do the test
   programs that drive real pages (`forkmesh-agent-windows-tests`, window and
   perf tests). `forkmesh-web-engine-module-tests` checks the module path: Qt
   WebEngine is not mapped after start, is mapped after the first profile, and
@@ -58,8 +59,8 @@ agent browser window, so since 2026-10-28 the app no longer links it on Linux:
 
 `FORKMESH_BROWSER_PANE` is `ON` by default. When CMake finds Qt
 WebEngineWidgets (the same `QUIET` lookup the agent browser windows use) the
-pane embeds it (`FORKMESH_BROWSER_PANE_EMBEDS`); when it does not, the pane shows the address and opens pages in
-the system browser, as before. `-DFORKMESH_BROWSER_PANE=OFF` forces the system
+pane embeds it (`FORKMESH_BROWSER_PANE_EMBEDS`); when it does not, the pane
+shows the address and opens pages in the system browser. `-DFORKMESH_BROWSER_PANE=OFF` forces the system
 browser. On Debian and Ubuntu the package is `qt6-webengine-dev`.
 
 The installer's source build installs that package when it is missing
@@ -71,8 +72,7 @@ windows and the Video Mix DJ Studio's YouTube decks then open outside the app.
 
 A build tree configured before WebEngine was installed caches
 `Qt6WebEngineWidgets_DIR-NOTFOUND`, and Rebuild & restart and `desktop/run.sh`
-skip the configure step, so installing the package used to change nothing until
-someone deleted the build. When the lookup fails, CMake now adds Qt's CMake
+skip the configure step. So when the lookup fails, CMake adds Qt's CMake
 folder (the parent of `Qt6_DIR`) to `CMAKE_CONFIGURE_DEPENDS`. Installing any Qt
 module adds a folder there, Ninja sees the new modification time and re-runs
 CMake, and the lookup finds WebEngine on the next build.
@@ -94,10 +94,6 @@ package manager, goes through `pkexec` when it needs root (or shows the
 restart; the configure-depends folder above makes that build find WebEngine.
 Windows has no package for it, so the button there only explains what to
 install.
-
-The option used to default to `OFF` even though the app already linked
-WebEngine for agent windows, so most builds had a Browser tab that could not
-show a page.
 
 ## What "ungoogled" means here
 

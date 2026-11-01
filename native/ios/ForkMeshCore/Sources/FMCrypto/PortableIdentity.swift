@@ -1,6 +1,6 @@
 // The provider-neutral encrypted identity export (Kotlin: security/PortableIdentity.kt) shared
 // with the web client (app/public/portable-identity.js) and the Qt desktop, format documented in
-// www/docs/portable-identities.md.
+// docs/portable-identities.md.
 
 import FMBase
 import Foundation

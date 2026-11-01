@@ -190,7 +190,7 @@ def rotation_owner(ns, name, node_ids, index):
 def live_members(rows, now=None, stale_ms=None, exclude=()):
     """Live node ids from ``cluster_members`` rows: fresh heartbeat, not
     sealed and not quarantined (``exclude``: the verified quarantine set,
-    quarantine.py; docs/IDS.md). Pure, so every node derives the same set
+    quarantine.py; docs/operations/intrusion-detection.md). Pure, so every node derives the same set
     from the same rows."""
     now = now_ms() if now is None else now
     cutoff = now - (STALE_MS if stale_ms is None else stale_ms)

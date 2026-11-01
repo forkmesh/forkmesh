@@ -16,7 +16,7 @@ from pathlib import Path
 APP = Path(__file__).resolve().parents[1]
 SRC = APP / "src"
 PUBLIC = APP / "public"
-DOCS = APP.parent / "www" / "docs"
+DOCS = APP.parent / "docs"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 

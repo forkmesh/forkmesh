@@ -1,14 +1,16 @@
 # Collaboration intake and refs attestation
 
 How web issue, pull and discussion submissions become Git commits on a mirror,
-and how the relay learns which refs a mirror serves. Code: `server/intake.go`,
+and how the App learns which refs a mirror serves (home:
+[Go daemon](README.md); why mirrors take writes and how clones are routed:
+[mirroring](../mirroring.md)). Code: `server/intake.go`,
 `server/issue_reconcile.go`, `server/pull_metadata_refs.go`,
 `server/catalog.go`, `server/identity.go`. Background on convergence with the
 source desktop lives in the desktop's `desktop/src/UpstreamCheckoutSync.cpp`.
 
 ## Intake
 
-- **Doorbell.** The relay pushes a payload-free event whose topic is
+- **Doorbell.** The App pushes a payload-free event whose topic is
   `issues`, `pulls` or `discussions` and whose `repo` names the inbox. The
   daemon marks that inbox pending (`Daemon.handleNodeEvent`) and clears any
   backoff for it. Every socket reconnect adds a catch-up pass over all inboxes.
@@ -22,39 +24,34 @@ source desktop lives in the desktop's `desktop/src/UpstreamCheckoutSync.cpp`.
   `POST /v1/control/collaboration`; the same writer runs.
 - **Acknowledge.** `ackCollaboration` acknowledges exactly the row ids it wrote,
   with a signed `forkmesh-repostate-v1` statement of the refs digest after the
-  commit. The relay records that as an attested state for the repository.
-- **Fleet wake.** Once an acknowledgement drains at least one row, the relay
+  commit. The App records that as an attested state for the repository.
+- **Fleet wake.** Once an acknowledgement drains at least one row, the App
   also rings a `commits` doorbell for the repository
   (`_wake_mirrors_after_intake` in `app/src/entry.py`, through
   `schedule_repo_mirror_wake`, or `notify_repo_mirrors` when the doorbell
   object cannot be reached). Every mirror and instance watcher then fetches
   the commit the drainer just wrote.
 
-### Why intake wakes the fleet (2026-10-21)
+### Why intake wakes the fleet
 
-Issues deleted on forkmesh.com stayed listed on a mirror. The relay sent the
-`issues` doorbell when the delete was queued, so every node fetched at once,
-before the draining node had committed anything. The draining node then
-committed the delete, but nothing announced that commit: acknowledgements
-woke nobody, and a Go node's catalog publish is a `remote-clone` publish,
-which never rings `commits`. The other mirrors served the old tree until
-their next safety fetch, then every 30 minutes. Pull and discussion intake
-(including close and delete) had the same gap.
+The submission doorbell fires when the item is queued, before the draining
+node has committed it; acknowledgements wake nobody else, and a Go node's
+catalog publish (`remote-clone`) never rings `commits`. Without the wake, other
+mirrors would serve the old tree (for example a deleted issue) until their
+next safety fetch.
 
 The wake carries no refs digest. The acknowledgement signs the routing digest
 (default branch and tags), but mirrors check convergence against the digest
-of every head and tag (`refsSHA256`). A routing digest as the target would
+of every head and tag (`refsSHA256`); a routing digest as the target would
 never match and would keep a mirror retrying, so the wake asks for one fetch
 and leaves no target. The doorbell object keeps a pending wake that carries a
 digest instead of replacing it with a wake that has none
 (`_mirror_wake_fetch`).
 
-The daemon's relay safety fetch (`relaySafetySyncInterval`) went from 30 to
-5 minutes at the same time. It covers a lost doorbell. The 30 minutes were
-set on 2026-08-19 to spare the Cloudflare ingress Durable Object's free-plan
-allowance. The served stack no longer runs on Cloudflare, and a fetch with
-nothing new is a ref advertisement. The 5 minutes reach mirrors only with a
-rebuilt node binary. The relay wake works as soon as the app is deployed.
+The daemon's safety fetch (`relaySafetySyncInterval`, 5 minutes) covers a lost
+doorbell; a fetch with nothing new costs one ref advertisement. A change to it
+reaches mirrors only with a rebuilt node binary; the App's wake works as soon
+as the App is deployed.
 
 Tests: `test_every_mirror_drain_ack_wakes_the_fleet_to_fetch_the_new_commit`,
 `test_intake_wake_is_a_stateless_commits_doorbell_with_a_direct_fallback`
@@ -66,24 +63,21 @@ Tests: `test_every_mirror_drain_ack_wakes_the_fleet_to_fetch_the_new_commit`,
 
 The gateway can list one bare repository under several names: the node owner
 (`publishOwner`), the creator or source owner, and organization aliases
-(`acme/widgets` linked to `alice/widgets` in `org_repos`). The relay rewrites
+(`acme/widgets` linked to `alice/widgets` in `org_repos`). The App rewrites
 an alias to the linked repository before routing, so every name reaches the
 same inbox.
 
 - **Catch-up drains each repository once.** `preferredCollaborationAlias`
   picks the first gateway entry for a git directory that is not the node
-  owner, or the node owner when there is no other name. It used to accept
-  every non-node name, so a hosted repository with an organization alias was
-  drained twice per pass.
-- **The relay authorizes an alias drain against the linked repository.**
+  owner, or the node owner when there is no other name, so a hosted
+  repository with an organization alias is not drained twice per pass.
+- **The App authorizes an alias drain against the linked repository.**
   `_authorized_mirror_issue_signing_key` reads the public URL from the original
-  request. The public catalog lists the linked repository, never the alias, so
-  the mirror group lookup for `acme/widgets` found nothing and every alias drain
-  got `401 unauthorized`. On a single-organization instance this repeated for
-  the platform mirror and every hosted repository on each retry. When the
-  public name is an organization alias whose `org_repos` row points at the
-  routed owner, the lookup (and the flagship check) now uses the routed
-  `owner/repo`. An alias linked to a different owner still fails. Tests:
+  request, but the public catalog lists only the linked repository, never the
+  alias. When the public name is an organization alias whose `org_repos` row
+  points at the routed owner, the mirror group lookup (and the flagship check)
+  uses the routed `owner/repo`; otherwise every alias drain would get
+  `401 unauthorized`. An alias linked to a different owner still fails. Tests:
   `TestCollaborationCatchUpDrainsEachRepositoryOnce`,
   `test_mirror_intake_on_an_org_alias_uses_the_linked_repository_group`.
 
@@ -129,7 +123,7 @@ fields the payout check reads, and the pull number.
 ### Authors close and delete their own pulls
 
 The person who opened a pull request can close it or delete it, not only the
-repository's maintainers (task f9c7d2e2). Both are signed pull events that go
+repository's maintainers. Both are signed pull events that go
 through the pull inbox like a comment:
 
 - `{"type": "status", "state": "closed"}` closes. A reopen is not an author
@@ -266,7 +260,7 @@ code.
 
 ## Attestation and admission
 
-The relay routes clones only to a mirror whose live refs digest is in the
+The App routes clones only to a mirror whose live refs digest is in the
 repository's pin set: the source's current state hash plus attested history
 (`clone_state_pins` in `app/src/mirrors.py`). Mirrors add to that history
 through intake acknowledgements and merge-executor results. A repository with
@@ -287,7 +281,7 @@ no pin at all is not publicly routable.
 - **Never fabricate an issue.** A non-open event (claim, title, comment…) for
   an issue this node does not have returns `errIssueUnknown`: the loopback
   endpoint answers 503 `issue_not_synced` (`retryable: true`,
-  `Retry-After: 30`) and the relay-inbox drain leaves the row unacknowledged
+  `Retry-After: 30`) and the inbox drain leaves the row unacknowledged
   until the opening lands. A signed opening that finds a legacy placeholder at
   its number takes the number and replays the placeholder's events
   (`foldIssueEvents`).

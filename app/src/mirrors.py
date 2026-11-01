@@ -864,7 +864,7 @@ def build_repo_mirrors_payload(
             "discussionCount": _int_field(rec, "discussionCount"),
             "worktreeCount": _int_field(rec, "worktreeCount"),
             "artifactCount": _int_field(rec, "artifactCount"),
-            # A filtered or metadata-only replica (www/docs/offline-sync.md)
+            # A filtered or metadata-only replica (docs/offline-sync.md)
             # declares its scope; the availability proof never counts it as a
             # verified full copy. Absent on full mirrors and legacy records.
             **({

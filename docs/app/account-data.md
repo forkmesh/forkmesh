@@ -1,17 +1,16 @@
 # Your data: saved phone settings, the data inventory and the export
 
-Settings > Data on the iPhone does three things for the signed-in account:
+Part of [the App docs](README.md). Settings > Data on the phone does three
+things for the signed-in account:
 
-1. **Save to ForkMesh**: the home screen and bar layout, the news reader
-   subscriptions and the app settings are saved to the account, encrypted, so
-   a new phone or a reinstall can restore them.
-2. **Everything ForkMesh has about you**: every row in the database tied to
-   the account, its linked nodes, its email, the repositories it owns and each
-   organization it belongs to, browsable row by row, with per-item delete
-   where removing one row on its own is safe.
+1. **Save to ForkMesh**: the home screen and bar layout, news reader
+   subscriptions and app settings are saved to the account, encrypted, so a new
+   phone or a reinstall can restore them.
+2. **Everything ForkMesh has about you**: every database row tied to the
+   account, its linked nodes, its email, its repositories and its
+   organizations, browsable row by row, with per-row delete where that is safe.
 3. **Download your data**: the same inventory as one JSON file
-   (`GET /api/accounts/export`), which the phone already asked for before the
-   server had the route.
+   (`GET /api/accounts/export`).
 
 | Piece | Code |
 | --- | --- |
@@ -28,7 +27,7 @@ Settings > Data on the iPhone does three things for the signed-in account:
 ## API
 
 Every route needs a signed-in session (bearer token or same-origin cookie)
-and only ever reads or changes the caller's own rows.
+and only reads or changes the caller's own rows.
 
 | Route | Does |
 | --- | --- |
@@ -47,33 +46,33 @@ an account keeps at most 200 items and 4 MiB in total. A `PUT` with a stale
 
 ## How the saved items are encrypted
 
-No secret is shared by all of an account's devices (the identity seed and the
-owner keys are generated per device), so the phone cannot encrypt for its
-sibling devices without the vault's master password. The store therefore uses
-the same per-account key scheme as account-scoped packages:
+No secret is shared by all of an account's devices (identity seed and owner
+keys are per device), so the phone cannot encrypt for its siblings without the
+vault's master password. The store uses the per-account key scheme of
+account-scoped packages (background in
+[encryption](../encryption.md)):
 
 - Each account gets 256 bits of random key material in
   `account_store_keys.wrapped`, itself sealed with `DATA_KEY`.
-- Each row's `data` is AES-GCM sealed with that material (`seal_with`), so a
+- Each row's `data` is AES-GCM sealed with that material (`seal_with`): a
   database dump without the App's secret opens nothing, and one account's key
   opens no other account's rows.
 - The item key and kind stay plaintext columns so the inventory can list them;
   the label, device and value are inside the sealed blob.
 
-This is encryption at rest, not end-to-end: the App can open the rows, which is
-what lets the inventory and the export show them. End-to-end sealing would
-need the vault keyset (`VaultCrypto.sealPrivate`) and would leave a phone
-without an unlocked vault unable to restore.
+This is encryption at rest, not end-to-end: the App can open the rows, which
+lets the inventory and export show them. End-to-end sealing would need the
+vault keyset (`VaultCrypto.sealPrivate`) and leave a phone without an unlocked
+vault unable to restore.
 
 ## How the inventory finds everything
 
-The inventory does not keep a list of tables. On each request (memoized for a
-minute per account, the table catalogue for five minutes) it reads
-`sqlite_master` and `pragma_table_info` and scans every table that has a
-`*_bi` column or one of the plaintext name columns in `PLAIN_COLUMNS`. A new
-table keyed by account therefore shows up without any change here, and
-`test_every_table_with_a_hashed_identity_column_is_scanned` checks the whole
-runtime schema.
+The inventory keeps no list of tables. Each request (memoized a minute per
+account, the table catalogue five minutes) reads `sqlite_master` and
+`pragma_table_info` and scans every table with a `*_bi` column or a plaintext
+name column from `PLAIN_COLUMNS`, so a new account-keyed table shows up with no
+change here. `test_every_table_with_a_hashed_identity_column_is_scanned`
+checks the whole runtime schema.
 
 Rows are matched against three kinds of subject, in this order, and each row
 is counted once:
@@ -88,19 +87,18 @@ is counted once:
 
 Blind indexes are keyed HMACs of different inputs (organizations under an
 `org:` prefix), so matching any `*_bi` column by equality cannot pick up an
-unrelated row. Values are passed as one JSON array per column
+unrelated row. Values go in as one JSON array per column
 (`IN (SELECT value FROM json_each(?))`) so a long repository list does not
-multiply the statement, and a scan stops at 5000 rows per table and reports
+grow the statement; a scan stops at 5000 rows per table and reports
 `truncated`.
 
 Up to 40 tables (and 400 bound values) go into one `UNION ALL` statement that
-returns each matching row's identity columns as a `json_array`, plus one
-sentinel row. On the cores a local read that finds nothing is re-asked of the
-rqlite leader (`_confirm_miss` in `d1_rqlite.py`, with its own budget); one
-statement per table would have spent roughly 400 of those per inventory. With
-the batches an inventory is about ten statements, none of them empty. A batch
-that fails (a table dropped since the catalogue was read) is scanned again one
-table at a time.
+returns each match's identity columns as a `json_array`, plus one sentinel row
+so no statement comes back empty. The reason: on the cores a local read that
+finds nothing is re-asked of the rqlite leader (`_confirm_miss` in
+`d1_rqlite.py`), and one statement per table would cost about 400 of those per
+inventory; batched it is about ten statements. A failed batch (a table dropped
+since the catalogue was read) is rescanned one table at a time.
 
 ## What is shown, withheld and removable
 
@@ -124,11 +122,10 @@ table at a time.
   (`TOUCH_COLUMNS`: `approved_by_bi`, `reviewed_by_bi`, `last_used_by_bi`,
   `updated_by_bi`, …) keeps its sealed data closed for everyone: an admin who
   last used a sign-up code, or reviewed a report, does not get the record.
-- `STAFF_NOTE_TABLES` (`moderation_blocks`, `repo_terms_flags`) keep their
-  rows and plain columns (scope, category, whether content is hidden), but
-  their sealed `data` is shown as a fixed placeholder: it holds the moderator
-  or administrator who acted and their private reason or note, which the
-  blocked or flagged account must not read
+- `STAFF_NOTE_TABLES` (`moderation_blocks`, `repo_terms_flags`) show their
+  rows and plain columns (scope, category, hidden or not), but their sealed
+  `data` is a fixed placeholder: it names the acting moderator and their
+  private note, which the flagged account must not read
   (`test_moderator_notes_about_you_stay_with_the_moderators`).
 - `DELETABLE` lists the tables where one row can go on its own without
   breaking anything else (notifications, stars, follows, reactions, read
@@ -152,10 +149,10 @@ project-scoped keys (`p/`), sign-in, identity and chat keys, server and relay
 addresses, caches, read state and recents. A single value over 32 KiB is
 skipped too.
 
-Saving is off until the person switches on "Save my settings to ForkMesh".
-While it is on, the service saves when the app goes to the background and
-when it comes back, but only sources whose SHA-256 differs from the last copy
-saved for that account (`accountSync/hash/<account>/<key>`). Restore is
-explicit and asks first; it replaces the layout, subscriptions (local feeds
-keep their articles and fetch state when the address matches) and settings.
-Android has the same screens (`feature/account/settings/AccountDataScreens.kt`).
+Saving is off until the person turns on "Save my settings to ForkMesh". Then
+the service saves when the app goes to the background and when it returns,
+only for sources whose SHA-256 differs from the last saved copy
+(`accountSync/hash/<account>/<key>`). Restore is explicit and asks first; it
+replaces layout, subscriptions (local feeds keep articles and fetch state when
+the address matches) and settings. Android has the same screens
+(`feature/account/settings/AccountDataScreens.kt`).

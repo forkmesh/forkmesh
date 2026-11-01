@@ -128,7 +128,7 @@ class HostRuntime:
 
     @property
     def quarantined(self):
-        """This node is quarantined by the IDS (quarantine.py, docs/IDS.md):
+        """This node is quarantined by the IDS (quarantine.py, docs/operations/intrusion-detection.md):
         it serves nothing, like a sealed node, whatever the vault says."""
         membership = getattr(self.durable, "membership", None)
         return bool(getattr(membership, "self_quarantined", False))
@@ -148,7 +148,7 @@ class HostRuntime:
         self._set_queues(not active and not self.sealed)
         if active:
             print("read-only mode ON: no rqlite leader; serving reads from "
-                  "the local copy and refusing writes (docs/PLAN.md)",
+                  "the local copy and refusing writes (docs/operations/served-stack.md)",
                   flush=True)
         else:
             print("read-only mode OFF: writes are back", flush=True)
@@ -165,7 +165,7 @@ class HostRuntime:
     async def _on_quarantine(self, quarantined):
         if quarantined:
             print("ids: THIS NODE IS QUARANTINED; sealing and refusing to "
-                  "serve (docs/IDS.md)", flush=True)
+                  "serve (docs/operations/intrusion-detection.md)", flush=True)
             self.set_available(False)
             if self.vault is not None:
                 # DATA_KEY leaves memory; an unsealed process also exits

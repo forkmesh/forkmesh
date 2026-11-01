@@ -116,7 +116,7 @@ QWidget *buildSettingsPanel(const PanelOptions &options, QWidget *parent)
         "An IAM user's access key lets ForkMesh create fleet nodes on AWS (Add core node, "
         "or next_fleet.py create --provider aws). The key is stored encrypted on this "
         "device; the secret is never shown again. Give the user only the ForkMesh fleet "
-        "policy from docs/deploy/README.md, not administrator access."));
+        "policy from docs/operations/fleet-tooling.md, not administrator access."));
     intro->setWordWrap(true);
     intro->setObjectName(QStringLiteral("mutedLabel"));
     column->addWidget(intro);

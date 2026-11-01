@@ -8,7 +8,8 @@ desktop (rail label **Router**, icon `broadcast`), the iPhone and Android
 on one device shows it on the others. On Linux the desktop page is a lazily
 loaded package module ([../desktop/package-modules.md](../desktop/package-modules.md)).
 The user-facing description is the package
-[README](../../marketplace/packages/openwrt/README.md).
+[README](../../marketplace/packages/openwrt/README.md). Part of
+[Marketplace](README.md).
 
 ## Where it runs
 
@@ -86,9 +87,7 @@ can be done with them:
 - **Mount any disk when it is plugged in** sets the fstab `global` section's
   `anon_mount` (and `auto_mount`), which mounts unknown disks at
   `/mnt/<device>`. rpcd's `uci add` and `uci set` fail with "not found" when
-  `/etc/config/fstab` does not exist, which used to leave the switch unable to
-  turn on with no visible reason (the iPhone Storage screen showed no status
-  line). `uci get fstab` answering not found marks the config missing
+  `/etc/config/fstab` does not exist, so `uci get fstab` answering not found marks the config missing
   (`missingConfigs`); switching on then runs `/sbin/block detect` and writes
   its output (`fstabFromDetect`, falling back to fstools' default `global`
   section) to `/etc/config/fstab` with `file write`, rereads it and stages
@@ -103,8 +102,7 @@ can be done with them:
   configuration, its `share` / `sambashare` sections are listed and a mounted
   disk can be shared with or without guest access (`read_only no`,
   `create_mask 0666`, `dir_mask 0777`). Without one, the note names the
-  packages and offers **Install network sharing** (the user asked for a
-  button instead of a trip to the Packages screen). It confirms, then runs
+  packages and offers **Install network sharing**. It confirms, then runs
   the same path as the USB install below: update the package lists, install
   `ksmbd-server`, then `luci-app-ksmbd`, one at a time, with progress in the
   Storage log ("Installing ksmbd-server and luci-app-ksmbd…", "Could not
@@ -126,8 +124,8 @@ can be done with them:
   package"), then installs `kmod-usb-storage`, `kmod-usb-storage-uas`,
   `block-mount`, `kmod-fs-ext4`, `kmod-fs-vfat` and `kmod-fs-exfat` one at a
   time, so a package the release lacks does not stop the others. Progress and
-  the tail of each failure's output go to the Storage tab's log (it used to
-  show only on the Packages screen), then the page reloads and runs the USB
+  the tail of each failure's output go to the Storage tab's log, then the page
+  reloads and runs the USB
   check.
 - **Check USB storage** (`checkStorage` in each client, `storageFindings` and
   `storageReport` in each model) runs on demand, when the Storage tab or
@@ -265,7 +263,7 @@ signed-in account has.
   `market/packages/openwrt/data/`.
 - **Saving it in the Password Vault (desktop).** When a login store is
   installed (the host's `loginStoreName()` is not empty; see
-  [README.md](README.md#architecture), **Login store**), the sign-in form
+  [Login store](package-system.md#login-store)), the sign-in form
   shows **Save the password in Password Vault** (ticked by default) and **Use
   saved password**. After a successful sign-in with a typed password, the page
   calls `saveLogin` with the title `OpenWrt router (<host>)`, the router's

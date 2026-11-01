@@ -3,7 +3,7 @@
   "programVersion": "1.0.0-rc.1",
   "status": "proposed",
   "issue": 515,
-  "guide": "www/docs/funding/README.md",
+  "guide": "docs/funding/README.md",
   "currency": "USD",
   "versions": [
     {"version": "1.0.0-rc.1", "published": "2026-09-14", "change": "First published eligibility, selection, conflict, rail, independence, and reporting rules."}
@@ -200,7 +200,7 @@
       "app/tests/test_public_interest_funding.py::test_cancelled_round_publishes_lessons"
     ],
     "documentation": [
-      "www/docs/funding/README.md",
+      "docs/funding/README.md",
       "app/tests/test_public_interest_funding.py::test_program_guide_documents_operations"
     ],
     "telemetry": [

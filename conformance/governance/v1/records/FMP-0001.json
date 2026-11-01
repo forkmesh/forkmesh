@@ -12,7 +12,7 @@
   "disclosures": ["DISC-0001"],
   "links": [
     {"label": "Issue #513", "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/513"},
-    {"label": "Charter guide", "href": "www/docs/governance/README.md"}
+    {"label": "Charter guide", "href": "docs/governance/README.md"}
   ],
   "timeline": {
     "opened": "2026-09-14",

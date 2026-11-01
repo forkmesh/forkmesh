@@ -1,5 +1,6 @@
 # Stats board on the phone
 
+Part of [the native docs](README.md).
 The phone's **Stats** screen is a board of tiles, like the desktop's rail
 **Stats** page ([../desktop/diagnostics.md](../desktop/diagnostics.md), "Stats
 page"). Tiles can be added, removed, made wide and reordered. The layout is

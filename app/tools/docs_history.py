@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Git history for the documentation tree, read once per site build.
 
-``docs_site.py`` renders every page in ``www/docs`` plus the hand-written pages
+``docs_site.py`` renders every page in ``docs`` plus the hand-written pages
 under ``www/public/docs``; this module answers "when did each of those change,
 and what changed recently?" from a single ``git log`` pass over both trees.
 
@@ -21,7 +21,7 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[2]
 # Both halves of the hosted /docs/ tree: the rendered Markdown library and the
 # hand-authored HTML pages it links to.
-HISTORY_PATHS: tuple[str, ...] = ("www/docs", "www/public/docs")
+HISTORY_PATHS: tuple[str, ...] = ("docs", "www/public/docs")
 GIT_TIMEOUT_SECONDS = 120
 RECORD = "\x1e"
 FIELD = "\x1f"
@@ -214,6 +214,9 @@ def load_history(
     return history
 
 
+_FILE_CACHE: dict[tuple[str, str], FileHistory | None] = {}
+
+
 def file_history(path: str, repository: Path = REPOSITORY) -> FileHistory | None:
     """Dates for one path the ``--no-merges`` pass never saw.
 
@@ -221,6 +224,14 @@ def file_history(path: str, repository: Path = REPOSITORY) -> FileHistory | None
     or a merge that carried it in) has no authored commit of its own. Git's
     default history simplification keeps that merge, so it dates the file.
     """
+    key = (str(repository), path)
+    if key in _FILE_CACHE:
+        return _FILE_CACHE[key]
+    _FILE_CACHE[key] = record = _file_history(path, repository)
+    return record
+
+
+def _file_history(path: str, repository: Path) -> FileHistory | None:
     try:
         result = subprocess.run(
             ["git", "-C", str(repository), "log", "--format=%ct", "--", path],

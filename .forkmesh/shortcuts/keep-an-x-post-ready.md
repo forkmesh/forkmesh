@@ -61,7 +61,7 @@ current campaign, and proof (every claim traceable), and keep the best.
   technical voice; no hype words and no emoji runs.
 - At most one link: the campaign's landing page tagged
   `utm_source=x&utm_medium=social&utm_campaign=<campaign slug>`, on the
-  `ATTRIBUTION_ALLOWED_*` allowlists (`docs/attribution.md`). Leave the link
+  `ATTRIBUTION_ALLOWED_*` allowlists (`docs/app/attribution.md`). Leave the link
   out when the post is better without it.
 - At most two hashtags, only ones the campaign or the best posts use.
 

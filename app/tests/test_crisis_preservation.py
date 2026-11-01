@@ -19,7 +19,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = Path(__file__).resolve().parent
 SUITE = ROOT / "conformance" / "crisis-preservation" / "v1"
-DOC = ROOT / "www" / "docs" / "crisis-preservation.md"
+DOC = ROOT / "docs" / "crisis-preservation.md"
 CLI = ROOT / "tools" / "forkmesh_crisis_preservation.py"
 sys.path.insert(0, str(ROOT / "app" / "src"))
 if str(TESTS) not in sys.path:
@@ -271,7 +271,7 @@ def test_recovery_routes_avoid_lock_in():
             # Paid recovery must never be offered as available until it is sold.
             assert route["available"] is False
             assert "not for sale" in route["detail"]
-    business = (ROOT / "www" / "docs" / "business-model.md").read_text(encoding="utf-8")
+    business = (ROOT / "docs" / "business-model.md").read_text(encoding="utf-8")
     assert "Research preview; not for sale" in business
     assert "recovery" in business
     security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
@@ -482,9 +482,9 @@ def test_documentation_explains_every_scenario_reason_topic_and_budget():
         assert "| `%s` |" % code in doc, code
     for route in cp.ROUTES:
         assert "| `%s` |" % route["id"] in doc, route["id"]
-    readme = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(crisis-preservation.md)" in readme
-    imports = (ROOT / "www" / "docs" / "repository-imports.md").read_text(encoding="utf-8")
+    imports = (ROOT / "docs" / "repository-imports.md").read_text(encoding="utf-8")
     assert "(crisis-preservation.md)" in imports
 
     sys.path.insert(0, str(ROOT / "app" / "tools"))

@@ -4,7 +4,8 @@ The transport under FM Media ([fm-media.md](fm-media.md)): our own QUIC v1,
 a minimal HTTP/3 and WebTransport over HTTP/3, in Go, standard library only
 (no quic-go, no x/crypto, no x/net). The TLS 1.3 handshake is `crypto/tls`'s
 QUIC API (`tls.QUICServer`, `tls.QUICClient`, `QUICConn` events); everything
-else, packet protection included, is ours.
+else, packet protection included, is ours. Home: [Go daemon](README.md); the
+call server on top of it: [fmm-server.md](fmm-server.md).
 
 | Package | Role | Spec |
 | --- | --- | --- |
@@ -28,7 +29,8 @@ frag, _ := conn.ReceiveDatagram(ctx)
 ```
 
 - Media frames are already end-to-end encrypted by the client
-  ([rtc.md](rtc.md#frame-encryption)); QUIC adds hop encryption on top.
+  ([call-e2ee.md](call-e2ee.md), [rtc.md](rtc.md#frame-encryption)); QUIC
+  adds hop encryption on top.
   `Conn.MaxDatagramSize()` is the largest payload that fits one packet
   (about 1150 bytes at the default 1200-byte packet size), so the media layer
   fragments frames to that size.
@@ -60,8 +62,8 @@ QUIC (`server/rtc/quic`):
   crypto/cipher), and TLS_CHACHA20_POLY1305_SHA256 with our own ChaCha20 and
   Poly1305 (`chacha.go`). Go's TLS 1.3 suite choice cannot be configured, and
   a Go server picks ChaCha20 for any client that lists it first (devices
-  without AES hardware, our own Go client among them). That is why we wrote
-  ChaCha20 rather than refuse those clients. The code is ARX plus
+  without AES hardware, our own Go client among them), so we wrote ChaCha20
+  rather than refuse those clients. The code is ARX plus
   `math/bits` 64-bit limb arithmetic with no secret-dependent branches. It
   is checked against RFC 8439 vectors and RFC 9001 A.5, and was compared
   offline with x/crypto on 200,000 random inputs.
@@ -137,19 +139,18 @@ How a phone keeps a call when it changes networks.
 ## Multipath
 
 Idea 4 of [fm-media.md](fm-media.md#beyond-facetime): no audio dropout when
-a phone moves between Wi-Fi and cellular or when one of them goes bad.
-FaceTime and WebRTC switch one path at a time (migration, ICE restart), so
-audio stops for at least a round trip while they notice and move. With
-multipath both networks stay open and audio can travel on both.
+a phone moves between Wi-Fi and cellular or one of them goes bad. FaceTime
+and WebRTC switch one path at a time (migration, ICE restart), so audio stops
+for at least a round trip; with multipath both networks stay open and audio
+can travel on both.
 
 ### Draft and codepoints
 
-We implement **draft-ietf-quic-multipath-21** (17 March 2026). It was the
-newest revision on 2026-10-21 and is in the RFC Editor queue, so the wire
-format is settled. We use the codepoints the draft asks IANA for, not the
-provisional experiment values from draft-15 (`0x0f739bbc1b666d0d`,
-`0x15228c00`...), so we interoperate only with peers on the final values.
-Today those are our own Go client and server.
+We implement **draft-ietf-quic-multipath-21** (17 March 2026), which is in
+the RFC Editor queue, so the wire format is settled. We use the codepoints
+the draft asks IANA for, not the provisional experiment values from draft-15
+(`0x0f739bbc1b666d0d`, `0x15228c00`...), so we interoperate only with peers
+on the final values: today our own Go client and server.
 
 | Item | Codepoint |
 | --- | --- |
@@ -322,8 +323,8 @@ caller.
 relay, path A 15 ms each way (RTT 30 ms), path B 25 ms each way (RTT 50 ms),
 a 50 pps flow of 120-byte datagrams for 2.5 s. At 1.2 s path A starts
 dropping everything in both directions. The gap is the longest time between
-two arrivals at the receiver; the normal spacing is 20 ms. Measured
-2026-10-21 on an i9-10980XE at load 20 to 30, three runs:
+two arrivals at the receiver; the normal spacing is 20 ms. Measured on an
+i9-10980XE at load 20 to 30, three runs:
 
 | Case | Lost | Longest gap | Beyond 20 ms spacing |
 | --- | --- | --- | --- |
@@ -361,8 +362,8 @@ Detection stays under the 300 ms target. Audio is back at the standby core
 
 `TestMultipathBulkSpreadsAndKeysUpdate`: 3,000 1000-byte Bulk datagrams on
 two loopback paths, with a key update every 200 packets: both paths carry
-traffic (824 and 2,255 packets in one run), 15 key updates on one side and
-30 on the other, no errors.
+traffic (for example 824 and 2,255 packets), keys update on both sides, no
+errors.
 
 ### Deviations and choices
 
@@ -391,7 +392,7 @@ traffic (824 and 2,255 packets in one run), 15 key updates on one side and
 
 ## Datagram loss and the media layer
 
-`Config.DatagramLossExempt` (added 2026-10-21 for the FM Media call server,
+`Config.DatagramLossExempt` (for the FM Media call server,
 [fmm-server.md](fmm-server.md#datagrams-and-quics-own-congestion-control)):
 when a lost packet carried only DATAGRAM, ACK or PING frames, the loss does
 not start a congestion event. Persistent congestion still collapses the
@@ -399,14 +400,14 @@ window, and a lost packet with any other frame (stream data, flow control,
 connection ids) still halves it.
 
 Why: FM Media runs its own congestion control for media (receiver reports,
-delay gradient plus loss, FEC sized from measured loss). Under it, NewReno's
-reaction to random loss was harmful. At 5% loss there is a loss event every
-round trip, so the window stayed at its 2-packet minimum. About 26 kB/s got
-through at a 90 ms RTT, and the rest of the media waited in the datagram send
-queue: the measured RTT reached 1.87 s and the call broke. With the
-exemption the same link ran at a 92 to 117 ms RTT. `TestDatagramLossExemptKeepsTheWindowOpen`
-(10% loss) keeps the window at 12,000 bytes against 2,400 without it, and
-`TestDatagramLossExemptStillBacksOffForStreams` shows a stream still
+delay gradient plus loss, FEC sized from measured loss). NewReno's reaction
+to random loss fights it: at 5% loss there is a loss event every round trip,
+the window sits at its 2-packet minimum (about 26 kB/s at a 90 ms RTT), the
+rest of the media waits in the datagram send queue and the RTT reaches
+1.87 s. With the exemption the same link runs at 92 to 117 ms.
+`TestDatagramLossExemptKeepsTheWindowOpen` (10% loss) checks the window
+falls to half its start or less without the exemption and never shrinks with
+it; `TestDatagramLossExemptStillBacksOffForStreams` shows a stream still
 shrinks it.
 
 This is a deviation. RFC 9221 puts DATAGRAM frames under the connection's

@@ -1,5 +1,6 @@
 # #mesh push: waking phones that left the local room
 
+Part of [the native docs](README.md).
 `#mesh` is the LAN and Bluetooth room (`desktop/src/LocalMeshNode.*`, iOS
 `FMChat/Mesh/LocalMeshService.swift`, Android `chat/LocalMeshRoom.kt`). Its
 frames go device to device and never reach the server, and iOS suspends an
@@ -32,7 +33,7 @@ local alerts raised by the phone itself.
    each recipient to one push per 5 s. It then sends `New message` (payload
    `conversation: "#mesh"`, collapse id `mesh-room`) on the `chat` APNs topic
    to the token owner's phones. The message text never leaves the LAN, and
-   since chat protocol v3 the title no longer names the room either.
+   (since chat protocol v3) the title does not name the room.
 
 ## Local alerts over the mesh
 
@@ -96,8 +97,10 @@ secret plus `:mesh-wake-token-v1`. Tokens last 7 days.
 
 The `chat` topic keeps the existing iOS behaviour: the banner is suppressed
 while the app is in the foreground (`ApplePushBridge.willPresent`), and a tap
-opens Chat on `#mesh` (the payload's `conversation`, see `docs/app/README.md`). Ping mutes and quiet hours do not apply, the same as `#general`
-and channel pushes.
+opens Chat on `#mesh` (the payload's `conversation`, see
+[../app/README.md](../app/README.md)). Ping mutes and quiet hours do not
+apply, the same as `#general` and channel pushes. The token design is part of
+the [threat model](../protocol/threat-model.md).
 
 ## Limits
 
@@ -111,9 +114,7 @@ and channel pushes.
   `meshAlertIdentifier`, so whichever lands second replaces the first. When
   the wake lands second, the notification extension copies the readable title
   and text of the delivered local alert (`PushMeshWake`), so the banner stays
-  readable; it still sounds a second time. Before 2026-10-14 the wake
-  collapsed under `chat` and showed beside the local alert as a second,
-  "End-to-end encrypted" banner.
+  readable; it still sounds a second time.
 - iOS stops background Bluetooth work after a force quit, and a suspended
   app's LAN links drop. Neither can be helped from the app.
 - Waking needs the sender to reach the internet. A `#mesh` message sent with
@@ -125,7 +126,7 @@ and channel pushes.
 
 | Piece | Where |
 | --- | --- |
-| Routes, token, coalescing | `app/src/mesh_push.py`, wired in `app/src/app_runtime.py` and `app/src/entry.py`, listed in `world/tools/build_worker_footprint.py`; tests in `app/tests/test_mesh_push.py` |
+| Routes, token, coalescing | `app/src/mesh_push.py`, wired in `app/src/app_runtime.py` and `app/src/entry.py`; tests in `app/tests/test_mesh_push.py` |
 | iOS | `LocalMeshService` (`wakeTokenProvider`, `wakeSender`, `wakeTargets`), `MeshWire.swift` (`meshWakeTokenExpiry`), wired in `ForkMesh/Features/Chat/ChatFeature.swift`; tests in `LocalMeshTests.swift` |
 | Android | `LocalMeshRoom.wakeSender` / `wakeTargets`, `meshWakeTokenExpiry`, wired in `feature/chat/ChatFeature.kt`; tests in `LocalMeshQueueTest.kt` |
 | Local alerts | `meshAlert` (`MeshAlert.kt`, `MeshAlert.swift`; tests `MeshAlertTest.kt`, `MeshAlertTests.swift`), `onIncoming` (tests in `LocalMeshQueueTest.kt`, `LocalMeshTests.swift`), Android `ChatFeature.alertMesh` + `PingNotifier.postMesh`, iOS `ForkMesh/Features/Chat/MeshAlerts.swift` |

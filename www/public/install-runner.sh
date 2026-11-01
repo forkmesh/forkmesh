@@ -886,7 +886,7 @@ write_firewall_linux() {
 write_legacy_unit() {
   cat >"$UNIT_DIR/forkmesh-runner.service" <<EOF
 [Unit]
-Description=ForkMesh runner $NAME (agent jobs, docs/RUNNERS.md)
+Description=ForkMesh runner $NAME (agent jobs, docs/operations/runners.md)
 Wants=network-online.target forkmesh-runner-firewall.service
 After=network-online.target forkmesh-runner-firewall.service
 
@@ -940,7 +940,7 @@ EOF
 write_account_unit() {
   cat >"$UNIT_DIR/forkmesh-runner@.service" <<'EOF'
 [Unit]
-Description=ForkMesh runner of account %i (agent jobs, docs/RUNNERS.md)
+Description=ForkMesh runner of account %i (agent jobs, docs/operations/runners.md)
 Wants=network-online.target forkmesh-runner-firewall.service
 After=network-online.target forkmesh-runner-firewall.service
 

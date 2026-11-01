@@ -165,10 +165,10 @@ int main(int argc, char **argv)
 
     const QStringList tracked = {QStringLiteral("desktop/CMakeLists.txt"),
                                  QStringLiteral("world/CMakeLists.txt"),
-                                 QStringLiteral("www/docs/qt-client.md"),
+                                 QStringLiteral("docs/qt-client.md"),
                                  QStringLiteral("desktop/src/MainWindow.cpp")};
     check(trackedPathFor(tracked, QStringLiteral("docs/qt-client.md")) ==
-                  QLatin1String("www/docs/qt-client.md") &&
+                  QLatin1String("docs/qt-client.md") &&
               trackedPathFor(tracked, QStringLiteral("MainWindow.cpp")) ==
                   QLatin1String("desktop/src/MainWindow.cpp") &&
               trackedPathFor(tracked, QStringLiteral("desktop/CMakeLists.txt")) ==

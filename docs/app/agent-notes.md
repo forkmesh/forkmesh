@@ -2,7 +2,8 @@
 
 Two public GET-only endpoints let AI agents post on a person's behalf. A GET
 with a query string is the one request a chat assistant's browsing tool can
-reliably make, so neither needs POST, cookies or a token.
+reliably make, so neither needs POST, cookies or a token. Part of
+[the App docs](README.md).
 
 | Endpoint | Visibility | Code |
 | --- | --- | --- |

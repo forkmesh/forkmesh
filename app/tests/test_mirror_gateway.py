@@ -3108,7 +3108,7 @@ def test_archive_materializer_rejects_plaintext_before_external_helper(tmp_path)
 def test_source_never_enables_push_or_default_request_logging():
     source = (ROOT / "tools" / "mirror_gateway.py").read_text(encoding="utf-8")
     schema = json.loads(
-        (ROOT / "www" / "docs" / "mirror-gateway-config.schema.json").read_text(
+        (ROOT / "docs" / "mirror-gateway-config.schema.json").read_text(
             encoding="utf-8"))
     # Push exists but is never enabled implicitly: it requires an explicit
     # per-repository operations entry or the writable-owner allowlist, and

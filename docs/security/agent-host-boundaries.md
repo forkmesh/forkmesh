@@ -3,19 +3,20 @@
 What a desktop coding agent can read, execute and reach for each provider and
 mode, which secrets it can see, what limits its network, how injected
 instructions are handled, and what limits spend. Each claim is proven by a
-named check.
+named check. Part of [Security](README.md); the wider attacker model is in
+the [threat model](../protocol/threat-model.md).
 
 ## Run the checks
 
 ```sh
-cmake -S desktop -B /tmp/fm-build -G Ninja
-cmake --build /tmp/fm-build --target forkmesh-agent-boundary-tests \
+cmake -S desktop -B desktop/build -G Ninja
+cmake --build desktop/build --target forkmesh-agent-boundary-tests \
   forkmesh-codex-tests forkmesh-vm-runtime-tests forkmesh-agent-access-tests \
   forkmesh-agent-transport-tests
-/tmp/fm-build/forkmesh-agent-boundary-tests
+desktop/build/forkmesh-agent-boundary-tests
 ```
 
-`desktop/tests/test_agent_host_boundaries.cpp` prints one `PASS`/`FAIL` line
+[`desktop/tests/test_agent_host_boundaries.cpp`](../../desktop/tests/test_agent_host_boundaries.cpp) prints one `PASS`/`FAIL` line
 per check. It runs in a temporary `HOME` and XDG tree, drops `FORKMESH_HOME`
 and `FORKMESH_PROJECTS_DIR`, and plants canary secrets. Stand-in `claude` and
 `codex` executables go through the real launch paths (login shell, jail,
@@ -64,7 +65,7 @@ shell commands that name a non-local destination and web fetch/search tools,
 and asks, blocks or allows per the project rule (default Ask). Commands that
 hide their destination (encoded payloads, self-written programs, binaries with
 their own HTTP client) are not seen. Server runners have their own egress
-rules ([../RUNNERS.md](../RUNNERS.md)).
+rules ([runners](../operations/runners.md)).
 
 ## Prompt injection
 

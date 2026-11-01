@@ -550,18 +550,18 @@ int main(int argc, char *argv[])
               "heading anchors ignore inline code ticks");
 
         const auto doc = MarkdownRender::resolveRepoLink(
-            "README.md", "www/docs/product-promise.md#2-add-an-independent-mirror");
-        check(doc && doc->path == "www/docs/product-promise.md" &&
+            "README.md", "docs/product-promise.md#2-add-an-independent-mirror");
+        check(doc && doc->path == "docs/product-promise.md" &&
                   doc->fragment == "2-add-an-independent-mirror" && !doc->directory,
               "a relative link from the root README names a repository file and anchor");
 
-        const auto up = MarkdownRender::resolveRepoLink("www/docs/intro.md", "../README.md");
-        const auto here = MarkdownRender::resolveRepoLink("www/docs/intro.md", "./guide%20one.md");
-        const auto folder = MarkdownRender::resolveRepoLink("www/docs/intro.md", "operations/");
-        check(up && up->path == "www/README.md", "../ climbs out of the file's directory");
-        check(here && here->path == "www/docs/guide one.md",
+        const auto up = MarkdownRender::resolveRepoLink("docs/intro.md", "../README.md");
+        const auto here = MarkdownRender::resolveRepoLink("docs/intro.md", "./guide%20one.md");
+        const auto folder = MarkdownRender::resolveRepoLink("docs/intro.md", "operations/");
+        check(up && up->path == "README.md", "../ climbs out of the file's directory");
+        check(here && here->path == "docs/guide one.md",
               "./ stays in the file's directory and percent-escapes decode");
-        check(folder && folder->path == "www/docs/operations" && folder->directory,
+        check(folder && folder->path == "docs/operations" && folder->directory,
               "a trailing slash marks a folder link");
 
         check(!MarkdownRender::resolveRepoLink("README.md", "https://forkmesh.com") &&

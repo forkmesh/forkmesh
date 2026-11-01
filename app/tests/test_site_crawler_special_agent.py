@@ -319,7 +319,7 @@ def test_findings_map_to_repository_files(tool):
     assert tool.source_for("https://forkmesh.com/") == "www/templates/pages/index.html"
     assert tool.source_for("https://forkmesh.com/about") == "www/templates/pages/about.html"
     assert tool.source_for("https://forkmesh.com/docs/business-model/") == "www/templates/pages/docs/business-model/index.html"
-    assert tool.source_for("https://forkmesh.com/docs/accountless-reading/") == "www/docs/accountless-reading.md"
+    assert tool.source_for("https://forkmesh.com/docs/accountless-reading/") == "docs/accountless-reading.md"
     assert tool.source_for("https://forkmesh.com/robots.txt") == "www/public/robots.txt"
     assert tool.source_for("https://forkmesh.com/no-such-page") == ""
 

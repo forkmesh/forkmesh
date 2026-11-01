@@ -1,7 +1,10 @@
 # Desktop lifecycle: quitting and the processes it owns
 
-Part of [the desktop docs](README.md). What the desktop starts, what a quit
-stops, and what it deliberately leaves running.
+What the desktop starts, what a quit stops, what it deliberately leaves
+running, and running without a window (start at boot, the tray, keeping the
+computer awake).
+
+Part of [Desktop](README.md).
 
 Code: `desktop/src/ProcessReaper.{h,cpp}`, called from the end of `main()`.
 Test: `forkmesh-process-reaper-tests` (`desktop/tests/test_process_reaper.cpp`).
@@ -101,10 +104,9 @@ and its scope are gone.
 
 Stopping or timing out a step sends `systemctl --user kill --kill-whom=all`
 to its `forkmesh-action-<pid>-<run>-<step>.scope` as well as signalling the
-process group. The step has often already left its scope by then, and
-systemctl then prints `Failed to kill unit ... not loaded`. Nothing is wrong
-in that case, so the kill runs through `processreaper::startReleasedQuietly`
-with its output sent to the null device (2026-10-25).
+process group. The step has often already left its scope, and systemctl then
+prints a harmless `Failed to kill unit ... not loaded`, so the kill runs
+through `processreaper::startReleasedQuietly` with its output discarded.
 
 ## Limits
 
@@ -130,18 +132,12 @@ project's own state folder (not a sandboxed `HOME` or test profile).
 
 ### Why there is no separate engine
 
-From 2026-10-13 to 2026-10-16 a Go background engine, `forkmesh-core` in
-`desktop/core/`, took over method families from the desktop and talked to it
-over a local socket. It was removed on 2026-10-16. Every family it served
-already had a C++ handler, so the engine duplicated the desktop rather than
-replacing it: the IPC hop, the method fallbacks and two writers for the same
-files were the cost, and the phone still needed the desktop process for
-agents, teammates, wallet, Discord and pings. The parts worth keeping were the
-lifecycle ones (start at boot, run with no window, a tray icon), and they are
-now done by the desktop binary itself. Its service plug-ins and the iOS
-"Background services" mini-apps went with it, and so did its encrypted secrets
-vault, which was never finalized, so the plaintext settings it copied from
-stayed current.
+A Go background engine (`forkmesh-core`) was tried and removed: every method
+family it served already had a C++ handler, so it only added an IPC hop,
+method fallbacks and a second writer for the same files, while the phone still
+needed the desktop process for agents, teammates, wallet, Discord and pings.
+The desktop binary does the lifecycle parts itself (start at boot, run with no
+window, a tray icon). See [Retiring the Go engine](#retiring-the-go-engine).
 
 ### Settings
 
@@ -181,9 +177,8 @@ instance answers `yield` and shuts down the way SIGTERM does (with a 25 s
 `_Exit` backstop), and the new launch waits up to 45 s for the lock behind the
 splash ("Taking over from ForkMesh running without a window"). A window that
 took over (`tookOverFromBackgroundInstance()`) runs its deferred startup at
-once, like a windowless instance, instead of after the 5 s first-paint delay:
-the phones it serves were connected a moment ago, and the delay used to leave
-them with no LAN listener and no relay for about 8 s. A windowless
+once, like a windowless instance, instead of after the 5 s first-paint delay,
+because the phones it serves were connected a moment ago. A windowless
 instance that finds the lock held by a window exits without activating it. It
 writes its pid to `state/forkmesh-background.pid`.
 
@@ -201,12 +196,9 @@ stopping instance leaves behind:
 - At a reboot or log-out, systemd stops the agents' own
   `forkmesh-agent-*.scope` units at the same time as the desktop, so an
   agent's exit can reach `finishCliTranscriptRun` before the window closes.
-  It used to count as a crash: the session was relaunched into the dying
-  system, the relaunches failed, and after three attempts it was marked
-  failed, so the next start (often the headless unit at boot) had nothing to
-  resume (2026-10-16, sessions killed at 16:07 were failed by 16:08 and had
-  to be continued by hand). Now, while `desktopStopping()` (closing down or a
-  stop signal received), an exit leaves a running or waiting session as it
+  Counting it as a crash would relaunch into the dying system and mark the
+  session failed. So while `desktopStopping()` (closing down or a stop signal
+  received), an exit leaves a running or waiting session as it
   is (`keepCliRunForNextStart`), a turn that was only waiting for its
   background tasks included, and `processAgentQueue` starts nothing.
 - An exit with 143 or 129 (SIGTERM, SIGHUP from outside; a user stop marks
@@ -227,14 +219,12 @@ usual. Starting it when it already runs does nothing.
 
 ### Logging out
 
-Asked for on 2026-10-16: turn ForkMesh off, log out, and have it keep
-running. Two things stood in the way. Lingering was only turned on with
-**Start at boot**, so with just **Keep running** the user manager, and the
-windowless instance in it, stopped at log-out. And logging out with the
-window open never handed over: the compositor goes away, Qt `_exit`s on the
-broken display connection, and no `closeEvent` runs.
+With **Keep running** on, ForkMesh survives a log-out. Two things are needed:
+lingering, or the user manager and the windowless instance in it stop at
+log-out; and a hand-over before the compositor goes, because Qt `_exit`s on
+the broken display connection and no `closeEvent` runs.
 
-With **Keep running** on, the window (5 s after it starts, on a pool thread,
+So with **Keep running** on, the window (5 s after it starts, on a pool thread,
 `syncLogoutHandOver`) and the settings box install
 `~/.config/systemd/user/forkmesh-logout-<project>.service` and turn lingering
 on (the same `forkmesh-headless.linger` marker; the marker is released only
@@ -268,10 +258,8 @@ At log-out GNOME also restarts the user D-Bus
 (`gnome-session-restart-dbus.service`). GLib's shared session-bus connection,
 which gvfs and other GIO modules open inside ForkMesh, defaults to
 exit-on-close: when the bus goes it raises SIGTERM in the process itself
-(signal code -6, sender ForkMesh's own pid in the shutdown record). The
-windowless instance that had just taken over then shut down with its agents,
-or (2026-10-22, 17:12) survived only because an action was running, after
-which `desktopStopping()` stayed true and nothing new started. Right after
+(signal code -6, sender ForkMesh's own pid in the shutdown record), which
+would stop the windowless instance that had just taken over. Right after
 `QApplication` is built, `SessionBusGuard` (Linux, when GIO is found) takes
 that shared connection and turns exit-on-close off; when the bus closes it
 drops its reference and takes the new bus 5 s later, so a later restart is
@@ -290,9 +278,8 @@ log-out hand-over at all.
   `ExecStart` quoted for systemd, `Environment=QT_QPA_PLATFORM=offscreen`,
   `Restart=on-failure` with no start limit (`StartLimitIntervalSec=0`): the
   first restart comes after 10 s and the delay grows over 5 steps to at most
-  5 minutes (`RestartSteps=5`, `RestartMaxDelaySec=300`). It used to give up
-  for good after 5 starts in 10 minutes, so a bad minute at boot left the
-  computer without ForkMesh until the next reboot. `KillMode=mixed` so
+  5 minutes (`RestartSteps=5`, `RestartMaxDelaySec=300`), so a bad minute at
+  boot does not leave the computer without ForkMesh. `KillMode=mixed` so
   the desktop shuts down its own agents before systemd kills what is left,
   `WantedBy=default.target`, the ForkMesh path variables unset. Opening a
   window makes it exit 0, so the unit stays stopped until the next close or
@@ -319,15 +306,12 @@ log-out hand-over at all.
 
 ### Keeping the computer awake
 
-Reported on 2026-10-17: after a reboot, ForkMesh without a window stopped
-answering after 15 minutes. The machine had gone to sleep. Nobody was logged
-in, so the GDM login screen was the only session, and GNOME's default for it
-is to suspend after 900 s idle on AC power
+After a reboot with nobody logged in, the GDM login screen is the only
+session, and GNOME's default for it is to suspend after 900 s idle on AC power
 (`org.gnome.settings-daemon.plugins.power sleep-inactive-ac-timeout`). The
-user's own session had sleep set to `nothing`, but that setting is per user
-and the login screen runs as `Debian-gdm`. The journal showed it: boot at
-03:07:59, every ForkMesh line stops at 03:23:02, the next at 12:54 when
-someone woke the machine, and `/sys/power/suspend_stats/success` was 1.
+user's own "never sleep" setting does not apply, because the login screen runs
+as `Debian-gdm`; ForkMesh without a window then stops answering after 15
+minutes.
 
 Three parts, code `desktop/src/KeepAwake.{h,cpp}` and
 `BackgroundMode.cpp`:
@@ -379,7 +363,7 @@ Three parts, code `desktop/src/KeepAwake.{h,cpp}` and
   **Let my phones restart this computer**, in the same box, installs a
   second rule, `49-forkmesh-restart-<uid>.rules`, the same way; it grants
   only `org.freedesktop.login1.reboot` and `reboot-multiple-sessions`
-  (`docs/native/DESKTOP_UPDATE.md`).
+  ([../native/DESKTOP_UPDATE.md](../native/DESKTOP_UPDATE.md)).
 - **Never let this computer go to sleep** (Settings → General → STARTUP).
   Runs `pkexec systemctl mask sleep.target suspend.target hibernate.target
   hybrid-sleep.target suspend-then-hibernate.target` (`unmask` to undo). A
@@ -415,8 +399,8 @@ system tray. The window keeps its own tray icon while it is open.
 
 ### The top-bar badge
 
-Asked for on 2026-10-20: when ForkMesh is set to start without a window at
-boot, the window says so, shows whether it runs, and offers to turn it off.
+When ForkMesh is set to start without a window at boot, the window says so,
+shows whether it runs, and offers to turn it off.
 Code: `desktop/src/BackgroundRunnerBadge.{h,cpp}` (the chip, left of the view
 switcher in the top-right corner), `StartManager::diagnose`, `turnOff`,
 `runnerBadge` and `runnerReport` in `BackgroundMode.cpp`. Test:
@@ -436,7 +420,7 @@ switcher in the top-right corner), `StartManager::diagnose`, `turnOff`,
   (`activating`, systemd's back-off), *Failed*, *Not enabled* (the unit file
   is there but systemd does not report `enabled`), *Broken* (the program in
   `ExecStart` is gone) and *Unknown* (`systemctl --user` did not answer).
-- **Menu**: *Close window and keep running* (asked for on 2026-10-21) is
+- **Menu**: *Close window and keep running* is
   offered whenever the windowless instance is not already running, the usual
   *Ready* case. One click closes the window and hands over to `--headless`
   exactly as a close with *Keep running* on would (`startHeadless`, then the
@@ -470,6 +454,6 @@ a running engine (the pid in `state/core/endpoint.json`, signalled only if
 `com.forkmesh.core.<project>.plist` and on Windows the `forkmesh-core-<project>`
 Run value. If the engine was set to start with the computer, the desktop
 turns on both settings above and installs its own unit. The old binary and
-`state/core/` are left on disk. `install.sh` no longer installs
+`state/core/` are left on disk. `install.sh` does not install
 `forkmesh-core`.
 

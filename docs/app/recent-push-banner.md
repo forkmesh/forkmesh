@@ -1,7 +1,7 @@
 # Recent pushes banner
 
-A signed-in account that pushed a branch in the last hour sees a notice bar,
-like GitHub's:
+Part of the [App](README.md). A signed-in account that pushed a branch in the
+last hour sees a notice bar, like GitHub's:
 
 > **fix-login** had recent pushes 4 minutes ago  [Compare & pull request] [×]
 
@@ -34,12 +34,11 @@ compare page (`/<you>/<fork>/compare/<parent default>...<branch>`), because a
 compare read needs both branches on one repository, and the new pull request
 form there already sends to the parent (`pullRequestParent`). When the parent
 is a read-only mirror, the pull request is opened on the fork, as the form
-does. When the browser did not know the parent was a read-only mirror (on a
-self-hosted instance the flag can come only from the server's
-`INSTANCE_UPSTREAM`), the form tried the parent, fell back to the fork without
-a word, and contributors reported their pull request as having disappeared.
-`submitWebPullOpen` now returns `refusedBy` on that fallback and the form shows
-a notice naming the mirror and saying the pull request was opened on the fork.
+does. The browser may not know the parent is a read-only mirror (on a
+self-hosted instance the flag comes only from the server's
+`INSTANCE_UPSTREAM`), so on that fallback `submitWebPullOpen` returns
+`refusedBy` and the form names the mirror and says the pull request was opened
+on the fork; a silent fallback looked like a vanished pull request.
 
 ## Where it shows
 
@@ -48,8 +47,9 @@ pushed repository and (for a fork) its parent. Not on the compare page of the
 branch itself, and never to a signed-out visitor. The bar sits at the top of
 `<main>`, above the page, in `fm-flash fm-flash-warning` with a plain
 `fm-btn fm-btn-sm` button: the green `cta` is kept for each page's single
-create button (`app/public/dashboard/theme.json`), and up to three bars can
-show at once.
+create button (`app/public/dashboard/theme.json`,
+[dashboard-colors.md](dashboard-colors.md)), and up to three bars can show at
+once.
 
 ## Data and cost
 
@@ -61,13 +61,12 @@ replaces its row. Every recorded push deletes rows older than a day, so the
 table holds at most a day of pushes. Repository and account deletion remove
 their rows (`_REPO_SCOPED_TABLES`, `_delete_account_namespace`).
 
-A `DATA_KEY` rotation (`tools/next_rekey.py`, `docs/REKEY.md`) empties the
-table: `branch_bi` and `pull_bi` are blind indexes of prefixed strings, and
+A `DATA_KEY` rotation (`tools/next_rekey.py`, [rekey](../operations/rekey.md)) empties
+the table: `branch_bi` and `pull_bi` are blind indexes of prefixed strings, and
 `pull_bi` has the target's `repo_bi` inside it, so there is no plaintext to
-rebuild them from. Banners come back with the next push. A new `*_bi` table
-must be registered there too, or the deploy's
-`app/tests/host/test_next_rekey.py` gate fails, as it did for the 0279
-migration on 2026-10-21.
+rebuild them from. Banners come back with the next push. Every new `*_bi`
+table must be registered there too, or the deploy's
+`app/tests/host/test_next_rekey.py` gate fails.
 
 Writing happens on a push only: one catalog read for the repository (plus one
 for the parent of a fork, and its read-only check), one upsert per branch (at

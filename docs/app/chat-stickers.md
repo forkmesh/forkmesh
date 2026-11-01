@@ -3,7 +3,7 @@
 Anyone in a conversation can stick a sticker onto a message, the way iMessage
 lets you peel a sticker onto a bubble. Stickers sit tilted over the top-right
 corner of the message; reactions stay as chips under it. Home page:
-[app/README.md](README.md). Clients: the desktop (`desktop/src/StickerCatalog.h`,
+[README.md](README.md). Clients: the desktop (`desktop/src/StickerCatalog.h`,
 `MessageRow`), the web chat (`app/public/chat.js`), the World chat
 (`app/public/dashboard-chat.js`), iOS (`FMChat`) and Android (`core/chat`).
 

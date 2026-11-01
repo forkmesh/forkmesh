@@ -2,9 +2,9 @@
 
 Direct-message and channel pushes show the sender and text once the phone has
 opened the frame, while neither the server nor Apple sees the text, the
-sender or the channel name. Home page: [app/README.md](README.md). Related:
+sender or the channel name. Home page: [README.md](README.md). Related:
 [chat-private-rooms.md](chat-private-rooms.md),
-[mobile push notifications](../../www/docs/operations/mobile-push-notifications.md).
+[mobile push notifications](../operations/mobile-push-notifications.md).
 
 ## Model
 
@@ -25,41 +25,33 @@ sender or the channel name. Home page: [app/README.md](README.md). Related:
    or unknown device keeps "New message".
 4. On any failure the fallback alert stays.
 
-Since 2026-10-17 the iPhone opens a DM push that carries its frame without any
-request when it already holds that room's key from an earlier push (the room
-name is `chat-direct:<id>:v<keyVersion>`, cached only as a hash), and retries
-the pending fetch once on a network error, 429 or 5xx. A photo, voice, video
-or view-once message with no text says what arrived instead of "New message".
-Details: [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md).
+The iPhone opens a DM push that carries its frame without any request when it
+already holds that room's key from an earlier push (the room name is
+`chat-direct:<id>:v<keyVersion>`, cached only as a hash), and retries the
+pending fetch once on a network error, 429 or 5xx. A photo, voice, video or
+view-once message with no text says what arrived instead of "New message".
+Details: [docs/native/ios/FMChat.md](../native/ios/FMChat.md).
 
-Why the sender and channel left the payload (2026-10-16, chat protocol v3,
-[chat-protocol-v3.md](chat-protocol-v3.md#push-notifications)): the alert
-text and custom keys reach Apple in the clear, so "Direct message from X",
-"New message in #design" and `"sender":"x"` told Apple who wrote to whom and
-where, even with previews hidden on the phone. The push for a newly started
-conversation now says "New direct conversation" for the same reason. A
-channel push carries `channelId` and no `conversation`; its `thread-id` is
-`channel:<id>`. Until 2026-10-16 an office channel push also carried
-`conversation: "#office/<name>"` and used it as the `thread-id`, which named
-the room to Apple; clients now route an office push by `channelId`. Direct
-messages keep `conversation: "direct:<id>"` (an opaque id) and the mesh wake
-keeps `#mesh`.
+**Why no sender or channel in the payload**
+([chat-protocol-v3.md](chat-protocol-v3.md#push-notifications)): alert text and
+custom keys reach Apple in the clear, so "Direct message from X" or
+`"sender":"x"` would tell Apple who wrote to whom and where, even with
+previews hidden. A newly started conversation says "New direct conversation"
+for the same reason. A channel push carries `channelId` and no
+`conversation`; its `thread-id` is `channel:<id>`, and office pushes are routed
+by `channelId` too (a `#office/<name>` conversation would name the room).
+Direct messages keep `conversation: "direct:<id>"` (an opaque id) and the mesh
+wake keeps `#mesh`.
 
-A v3 frame no longer fits: a DM frame is sealed to at least two devices and
-each carries a 1088-byte ML-KEM ciphertext, so the outer envelope is about
-6 KB for two devices. `_sealed_frame` skips a frame string longer than the
-4 KB payload without parsing it, and the phone always takes the pending
-route. The recipient's desktop or browser usually acknowledges the frame
-before the phone's fetch (the 2026-10-15 note below), so an acknowledged row
-is kept for a preview grace instead of being deleted at once; see "Preview
-grace" below.
-
-Why the frame rides in the push (2026-10-15): the recipient's desktop or
-browser is usually connected to the conversation, receives the message within
-milliseconds and acknowledges it, and that acknowledgement deletes the relay's
-copy. The phone's fetch came a second later, got 404 and the banner stayed
-"End-to-end encrypted — open Chat in ForkMesh to read it." The frame is
-ciphertext sealed to device keys, so Apple sees nothing more than before.
+**Why the frame rides in the push, and the grace period.** The recipient's
+desktop or browser usually receives and acknowledges the message within
+milliseconds, before the phone's fetch, and an acknowledgement would delete
+the relay's copy. The frame is ciphertext sealed to device keys, so carrying
+it shows Apple nothing more. But a v3 DM frame is sealed to at least two
+devices, each with a 1088-byte ML-KEM ciphertext (about 6 KB for two), so it
+rarely fits: `_sealed_frame` skips a frame string longer than the 4 KB payload
+without parsing it, and the phone takes the pending route. So an acknowledged
+row is kept for a preview grace instead of being deleted at once (below).
 
 Android has no push transport; the account event socket frame for
 `direct-messages` carries the same fields. Direct-message pushes are never
@@ -67,7 +59,7 @@ collapsed or coalesced; channel pushes are coalesced per room.
 
 ## Preview grace
 
-`forkmesh-received` no longer deletes the matching DM rows: `chat_direct_received`
+`forkmesh-received` does not delete the matching DM rows: `chat_direct_received`
 sets `chat_history.acked_at` (migration 0269) on them. For
 `CHAT_DIRECT_ACKED_GRACE_MS` (120 s) such a row is readable only through
 `GET /api/chat/direct-messages/<id>/pending?ref=` (`PENDING_ACKED_GRACE_MS`
@@ -119,7 +111,7 @@ keeps no DM history, so the app still needs the server copy when it opens.
 404 for non-members, own messages or gone rows; 400 `invalid_ref`.
 
 Clients: `native/ios/NotificationService`
-([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)) and Android
+([docs/native/ios/FMChat.md](../native/ios/FMChat.md)) and Android
 `BackgroundLinkService` ([native/ANDROID.md](../native/ANDROID.md)). Both
 phones offer a notification-content setting applied after decryption.
 
@@ -135,8 +127,7 @@ A retained room frame marked `notify: true` wakes phones through
 public channel) or the public world room (`PUBLIC_WORLD_GENERAL_ROOM_KEY`).
 Every other room key, such as `legacy:room:<name>` or
 `repo:<owner>/<repo>:room:<name>`, wakes nobody and is not entered in the
-per-room coalescing memo. Before 2026-10-22 any room without a channel id
-woke every registered phone, and legacy rooms take sockets without signing
-in, so anyone could buzz every phone once per coalescing window per room name.
+per-room coalescing memo: legacy rooms take sockets without signing in, so
+letting them wake phones would let anyone buzz every phone.
 
 Tests: `app/tests/test_apns_push.py`, `app/tests/test_chat_pending_routes.py`.

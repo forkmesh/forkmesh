@@ -276,7 +276,7 @@ def _daemon_notice(source):
         '<span class="mono">server/cmd/forkmesh-mirror-node</span> from the '
         'running commit and run the update with '
         '<span class="mono">FORKMESH_INSTANCE_DAEMON</span> '
-        '(docs/INSTANCES.md).</p>' % _esc(
+        '(docs/operations/instances.md).</p>' % _esc(
             _short(source["daemonBuiltCommit"]) or "unknown commit"))
 
 

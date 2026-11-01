@@ -1,6 +1,6 @@
 """Mirror Actions control route and summary v2 revalidation in the Worker.
 
-The wire contract is www/docs/operations/mirror-actions-control.md.
+The wire contract is docs/operations/mirror-actions-control.md.
 """
 
 import ast

@@ -1,7 +1,8 @@
 # Public App pages: ledger, network, status, mirror rewards
 
-Standalone public pages in `app/public/` with no sign-in, styled with the
-website page kit ([docs/www/README.md](../www/README.md)).
+Part of [the App docs](README.md). Standalone public pages in `app/public/`
+with no sign-in, styled with the website page kit
+([docs/www/README.md](../www/README.md)).
 
 | Page | Data |
 | --- | --- |
@@ -29,12 +30,13 @@ Refresh requests a fresh on-chain read (`refresh=1`).
 - The Nodes section lists cores (`core:<node>`, from `cluster_members`
   heartbeats) and pool runners (`runner:<name>`); personal runners are never
   listed. Core rows page administrators continually by default. See
-  [RUNNERS.md](../RUNNERS.md).
+  [runners](../operations/runners.md).
 - A failing WebSocket constructor falls back to reconnect backoff.
-- A row turned red by Worker errors gives only the status code and the route
+- A row turned red by server errors gives only the status code and the route
   family (`_status_route_family`: `/api/<area>`, `/api/repo/[repository]/<kind>`,
   `/[repository]/info/refs`, `/@[account]`, or the first path segment;
   already-redacted private routes stay as they are), plus the extra count.
   The `error_log` message, which holds the exception and traceback, stays in
   the admin console; the one fixed phrase kept is "Exceeded allowed duration"
-  for Durable Object aborts (`app/tests/test_status_page.py`).
+  for aborts of the Durable Object emulation on the cores
+  (`app/tests/test_status_page.py`).

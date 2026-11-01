@@ -181,13 +181,13 @@ class DocsLibraryTest {
         assertEq(DocsTarget.External("mailto:hello@forkmesh.com"), library.resolve("README.md", "mailto:hello@forkmesh.com"))
         assertEq(DocsTarget.External("https://cdn.example.com/x.js"), library.resolve("README.md", "//cdn.example.com/x.js"))
         assertEq(DocsTarget.External("https://forkmesh.com/pricing"), library.resolve("operations/mirror-node.md", "/pricing"))
-        assertEq(DocsTarget.External("https://forkmesh.com/install.sh"), library.resolve("operations/mirror-node.md", "../../public/install.sh"))
+        assertEq(DocsTarget.External("https://forkmesh.com/install.sh"), library.resolve("operations/mirror-node.md", "../../www/public/install.sh"))
         assertEq(
             DocsTarget.External("https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/native/ANDROID.md#13-core"),
             library.resolve("operations/mirror-node.md", "../../../docs/native/ANDROID.md#13-core"),
         )
         assertEq(
-            DocsTarget.External("https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/missing.md"),
+            DocsTarget.External("https://app.forkmesh.com/forkmesh/forkmesh/tree/main/docs/missing.md"),
             library.resolve("README.md", "missing.md"),
         )
         assertEq(
@@ -198,7 +198,7 @@ class DocsLibraryTest {
         assertEq(null, library.resolve("README.md", "  "))
         assertEq("a b/é", DocsLibrary.percentDecode("a%20b/%C3%A9"))
         assertEq("100%", DocsLibrary.percentDecode("100%"))
-        assertEq("www/README.md", DocsLibrary.normalise("www/docs/./../README.md"))
+        assertEq("www/README.md", DocsLibrary.normalise("docs/../www/./README.md"))
     }
 
     fun testHeadingAnchorsFollowGitHub() {

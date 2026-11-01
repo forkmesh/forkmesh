@@ -5,14 +5,12 @@ Reviewers. It
 links the pull request's diff, patch and changed files, opens ChatGPT with a
 request to summarize the pull request, and copies a review prompt for a
 coding agent. It is the review-side counterpart of the issue prompt
-([ai-disclosure.md](ai-disclosure.md)).
+([ai-disclosure.md](ai-disclosure.md)); part of the [App](README.md).
 
-The box used to be **Review with your agent** and showed the whole review
-prompt on the page: about a dozen lines of instructions to an AI on every
-open pull request. People asked (October 2026) for the page not to carry
-those directions, for a ChatGPT button that gives a summary, and for the diff,
-the patch and links to the files instead. The prompt is still one click away
-(**Copy review prompt**) but is no longer drawn.
+The review prompt is one click away (**Copy review prompt**) but is not drawn:
+users did not want a dozen lines of AI instructions on every open pull
+request, and asked for a summary button, the diff, the patch and file links
+instead.
 
 Until October 2026 it was a box between the merge line and the tabs. It
 moved to the sidebar, with compact `h-6` buttons and 11px text, so the
@@ -149,17 +147,12 @@ Rules (the same in `app/host/forkmesh_host/pull_review_prompt.py` and
 
 ## Diff and text addresses
 
-The prompt used to point at the ledger's `changes.patch` through the
-repository read API (`/api/repo/<owner>/<repo>/raw?path=...&ref=<commit>`).
-That file exists only for patch-backed pull requests; a branch-backed or
-synced pull request fell back to the Files changed page, which is drawn by
-`dashboard.js`, so a chat assistant fetching it saw no diff at all. A user
-who pasted the prompt into ChatGPT got "the diff URL doesn't work"
-(October 2026).
-
-The prompt now uses the node's own plain-text routes
+The prompt uses the node's plain-text routes
 ([repo-views.md](repo-views.md), "Pull requests for AI reviewers"), which read
-the same bundle as the page and so cover every kind of open pull request:
+the same bundle as the page and so cover every kind of open pull request. The
+ledger's `changes.patch` exists only for patch-backed pulls, and the Files
+changed page is drawn by script, so a chat assistant fetching either saw no
+diff for a branch-backed pull.
 
 - `{diffUrl}` is `<pull url>.diff`: the patch the Files changed tab shows,
   `text/plain`.
@@ -191,7 +184,7 @@ the same bundle as the page and so cover every kind of open pull request:
   of the diff.
 
 Both answer only for a repository the gateway serves publicly; anything else
-falls through to the Worker, as the `.diff` route always has. The
+falls through to the app's own `.diff` route. The
 **Diff** and **Patch** links show when the page has a diff to show
 (`pull.patch` on the first view, `parsed.pullPatch.patch` in the dashboard).
 
@@ -211,9 +204,8 @@ into account.
 The answer is written to the author ("you"), ready to post: "Changes
 requested." with one bullet per issue (file:line, what is wrong, the fix),
 blockers marked and nits last; or, when nothing needs to change, only a short
-approval statement. The earlier version asked for a nine-section report to
-the maintainer, with "None" under every empty section, which made a clean
-pull request read like a long list of non-findings.
+approval statement, so a clean pull request does not read like a long list
+of non-findings.
 
 ```
 Review pull request #{number} in {repo} on {host}: {url}
@@ -257,11 +249,10 @@ markup and Tailwind utilities as the dashboard's `renderPullReviewPrompt`.
 clauses and reply rules, template parsing and caps, hidden characters,
 placeholders filled once, escaping, the diff and text addresses, the file
 links (deleted files and other-node heads unlinked, the 50-file cap and the
-toggle), the ChatGPT summary link (no review rules in it, the length limit), the
-Review with ChatGPT link (the whole prompt, the cut to 8000 characters with
-the address kept and the full prompt copied, lone surrogates),
-the first
-view (open, closed, merged, branch-backed, per origin, signed out), and parity
+toggle), the ChatGPT summary link (no review rules in it, the length limit),
+the Review with ChatGPT link (the whole prompt, the cut to 8000 characters with
+the address kept and the full prompt copied, lone surrogates), the first view
+(open, closed, merged, branch-backed, per origin, signed out), and parity
 with the dashboard's own functions run under node (fields, template, prompt
 and markup), the dashboard contract, the rebuilt bundle and the Tailwind
 utilities. The `.txt` route and its folding are in

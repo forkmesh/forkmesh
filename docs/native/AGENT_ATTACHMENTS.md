@@ -1,7 +1,8 @@
 # Attachments in agent detail and transcripts (native apps)
 
-Photos sent with a prompt, and files a transcript names, show in the agent
-detail on iOS and Android.
+Part of the [phone apps docs](README.md). Photos sent with a prompt, and files
+a transcript names, show in the agent detail on iOS and Android
+([DESKTOP_AGENTS.md](DESKTOP_AGENTS.md) covers the local control channel).
 
 ## Sources
 
@@ -131,8 +132,8 @@ Code: `desktop/src/LocalControlPromptImages.*`, `MainWindowLocalControl.cpp`,
 The composer's "+" menu ("Upload Text File" / "Text file") and `/file` add text
 files to any agent prompt. The relay's attachment store takes pictures only, so
 the text is folded into the prompt, each file wrapped in
-`===== BEGIN FILE name =====` / `===== END FILE name =====`. Every send path
-therefore receives files unchanged.
+`===== BEGIN FILE name =====` / `===== END FILE name =====`, so every send path
+receives files unchanged.
 
 Rules (`FMAgents/PromptTextFiles.swift`, `agents/PromptTextFiles.kt`): strict
 UTF-8 without NUL (BOM dropped, CRLF to LF), at most 32 KB per file and 5
@@ -159,5 +160,5 @@ differs from `lastError` after trimming, so a failure shows once.
 
 ## Limits
 
-- Full-size pictures and non-picture files do not cross the relay; previews and
-  names do.
+Full-size pictures and non-picture files do not cross the relay; previews and
+names do.

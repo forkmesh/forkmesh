@@ -1,20 +1,23 @@
 # Claude Code agent summaries switched off
 
-Added 2026-10-29. Code: `desktop/src/AgentSummaryPreload.h` (install and
-`BUN_OPTIONS`), `desktop/src/AgentSummaryPreloadScript.h` (the script),
+The desktop stops Claude Code's background agent-summary requests with a
+pinned preload script: what they cost, how the script works, where the desktop
+applies it, how to check it and what happens after a Claude Code update.
+Code: `desktop/src/AgentSummaryPreload.h` (install and `BUN_OPTIONS`),
+`desktop/src/AgentSummaryPreloadScript.h` (the script),
 `desktop/tests/test_agent_summary_preload.cpp`.
+
+Part of [Agents](README.md).
 
 ## What it stops
 
-Claude Code (since 2.1.232) starts a timer for each background agent or
-subagent. About every 30 seconds the timer sends that agent's whole transcript
-to the agent's own model (usually Opus) and asks for a 3–5 word description of
-its latest action. The answer only feeds Claude Code's own agents-panel status
-line. ForkMesh never shows that line, and it never reaches the model or the
-conversation. In its OpenTelemetry export these calls are
-`claude_code.api_request` events with `query_source = agent_summary`. Outside
-measurements put them at 16–26 % of all Claude Code spend. Claude Code has no
-setting to turn them off: `agentProgressSummaries: false` is ORed away, the
+Claude Code (since 2.1.232) starts a timer per background agent or subagent
+that, about every 30 seconds, sends the whole transcript to the agent's own
+model (usually Opus) for a 3–5 word status line. ForkMesh never shows that
+line and it never reaches the conversation. In the OpenTelemetry export these
+are `claude_code.api_request` events with `query_source = agent_summary`;
+outside measurements put them at 16–26 % of all Claude Code spend. Claude Code
+has no setting to turn them off: `agentProgressSummaries: false` is ORed away, the
 interval is a server flag clamped to 30–240 s, and the env vars that stop it
 (`CLAUDE_CODE_FORK_SUBAGENT=0`, `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`) also
 switch off subagents or background agents.
@@ -23,9 +26,8 @@ switch off subagents or background agents.
 
 The fix comes from Flamerix AI's gist
 <https://gist.github.com/flamerix-ai/c3905705cc4205e5de3011fa2e74efce>
-(`no-agent-summary.js` v2, MIT). We reviewed it and keep a pinned copy: the
-desktop never downloads it. The only change from upstream is that comments
-were moved here.
+(`no-agent-summary.js` v2, MIT). We keep a reviewed, pinned copy (the desktop
+never downloads it); the only change is that its comments moved here.
 
 - The script is a Bun `--preload`. Claude Code's native binary is a compiled
   Bun program, so `BUN_OPTIONS="--preload <file>"` loads the script before
@@ -58,9 +60,10 @@ call it:
 - `AgentRunner::processEnvironment` for the `claude-code` provider in the agent
   phase, before `extraEnvironment`.
 
-Claude Code agents started by the Claude app (`ClaudeDesktopSessions`) and
-short `claude -p` helpers (title and triage) are not covered. The helpers
-never run long enough for a summary timer.
+Claude Code agents started by the Claude app
+([claude-desktop-sessions.md](claude-desktop-sessions.md)) and short
+`claude -p` helpers (title and triage, too short for a summary timer) are not
+covered.
 
 Rules the helper enforces, all found by testing against Claude Code 2.1.309
 with Bun 1.4.4:
@@ -97,11 +100,11 @@ another wrapper, if the strings move outside the callback, or if the timer
 moves to `timers/promises` or a scheduler loop. After an update, check that
 `grep -a -F '[AgentSummary] Timer fired' "$(readlink -f "$(command -v claude)")"`
 still finds the string, and that the log line above appears in a run with a
-subagent. Upstream tested 2.1.257–2.1.312. We checked 2.1.309 on 2026-10-29
-with `claude -p --model haiku`, `CLAUDE_CODE_AGENT_PROGRESS_SUMMARIES=1`, and
-one subagent running `sleep 20` five times (about 2 minutes). With
-`pass`: 4 timers matched, `[AgentSummary] Forking` appeared 3 times in
-`--debug-file`. With `off`: the first timer was suppressed, 0 forks.
+subagent. Upstream tested 2.1.257–2.1.312. A check of 2.1.309
+(`claude -p --model haiku`, `CLAUDE_CODE_AGENT_PROGRESS_SUMMARIES=1`, one
+subagent running `sleep 20` five times): with `pass`, `[AgentSummary] Forking`
+appears in `--debug-file`; with `off`, the first timer is suppressed and there
+are no forks.
 
 On 2026-10-31 we checked 2.1.316, the npm `@anthropic-ai/claude-code-linux-x64`
 build in a scratch folder. Both anchors are still in the binary

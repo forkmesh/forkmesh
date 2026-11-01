@@ -268,7 +268,7 @@
           See the
           <a href="/docs/protocol/collaboration-event-v1.schema.json">event schema</a>
           and the repository's
-          <code>www/docs/design/conflict-safe-collaboration.md</code> for the
+          <code>docs/design/conflict-safe-collaboration.md</code> for the
           complete encoding, family matrix, migration, recovery, telemetry,
           and conformance rules.
         </p>
@@ -790,17 +790,19 @@
 
         <h2 id="self-hosting-a-mainnode">6. Self-hosting a mainnode</h2>
         <p>
-          A mainnode is the App in <code>app/</code>. The documented
-          self-hosting path deploys it as a Cloudflare Worker:
+          A mainnode is the app in <code>app/</code>, run on CPython by
+          <code>app/host/</code> with rqlite (or SQLite for a single server)
+          as its database. The <a href="/docs/self-hosting/">self-hosting
+          guide</a> compares a single instance with a multi-node fleet.
         </p>
 
-        <h3 id="deploy-the-relay">6.1 Deploy the relay</h3>
+        <h3 id="deploy-the-relay">6.1 Deploy the app</h3>
         <ol>
-          <li>Provision the Worker bindings — D1 for encrypted metadata and routing state, the room Durable Object for multiplayer interactions, and the configured edge-routing bindings. Repository bytes remain on independent encrypted mirror storage. <code>wrangler.toml</code> and <code>migrations/</code> define the schema; <code>migrate.sh</code> applies it.</li>
-          <li>Set the secrets the Worker needs (<code>DATA_KEY</code> / <code>HMAC</code> material for at-rest encryption, and any admin key). The catalog is encrypted at rest, so <code>DATA_KEY</code> must be stable across deploys.</li>
-          <li>Deploy with <code>app/deploy.sh</code>. It stamps build revision and target fingerprint vars into the Worker, then <strong>verifies the live App is actually serving them</strong> through <code>GET /api/version</code>. A mismatch fails loudly instead of reporting a phantom deployment.</li>
+          <li>Start an instance from <a href="/start">forkmesh.com/start</a>: it installs the app, database, Git gateway and HTTPS on your server over SSH (<a href="/docs/start-your-own-instance/">Start your own instance</a>). For several equal nodes behind DNS round robin, use <code>tools/next_fleet.py</code> and <code>tools/next_deploy.py</code> with a <code>deploy/fleet.toml</code>.</li>
+          <li><code>DATA_KEY</code> encrypts stored rows and keys the blind indexes; keep it off the database host's disk and back it up apart from the data (<a href="/docs/encryption/">Encryption and signatures</a>).</li>
+          <li>Repository bytes stay on desktop nodes and mirrors; the app stores signed metadata and routes clones to verified copies.</li>
         </ol>
-        <p>Your relay now answers the routes in §4 at your own host.</p>
+        <p>Your app now answers the routes in §4 at your own host.</p>
 
         <h3 id="point-a-client-at-it">6.2 Point a client at it</h3>
         <p>
@@ -809,7 +811,7 @@
           not edit code:
         </p>
         <ul>
-          <li>On the first-run screen, the <strong>Relay server</strong> field takes a bare host (e.g. <code>relay.example.com</code>, or <code>localhost:8787</code> for a local dev relay). The client expands it to the full room URL with <code>canonicalServerUrl</code> (<code>desktop/src/MainWindowInternal.h</code>) and persists it under <code>server/url</code>. <code>localhost</code> / <code>127.0.0.1</code> get <code>ws://</code>; everything else gets <code>wss://</code>.</li>
+          <li>On the first-run screen, the <strong>Relay server</strong> field takes a bare host (e.g. <code>relay.example.com</code>, or <code>localhost:8080</code> for a local app). The client expands it to the full room URL with <code>canonicalServerUrl</code> (<code>desktop/src/MainWindowInternal.h</code>) and persists it under <code>server/url</code>. <code>localhost</code> / <code>127.0.0.1</code> get <code>ws://</code>; everything else gets <code>wss://</code>.</li>
           <li>The mainnode path shape (<code>/api/repo/mainnode/forkmesh/rooms/general/ws</code>) is a network-wide protocol constant (<code>kMainnodeRoomPath</code>), the same on every mainnode, so only the host varies. An advanced user can paste a full <code>wss://…</code> URL to override the whole path if their deployment differs.</li>
           <li>Relay consumers (room connect and catalog bootstrap) read the stored <code>server/url</code>. Once mirror endpoints are known, the desktop verifies their signed health and reads configured SSH mirror remotes directly, so Mirrors and Pulls can continue through a relay outage.</li>
         </ul>
@@ -848,7 +850,8 @@
       <nav class="doc-siblings" aria-label="Other developer docs">
         <h2>More developer docs</h2>
         <ul>
-          <li><a href="/docs/cloudflare-worker">Relay &amp; website</a> — a historical note on the earlier Cloudflare-hosted architecture</li>
+          <li><a href="/docs/cloudflare-worker">App &amp; relay</a> — rooms, the repository catalog and room encryption</li>
+          <li><a href="/docs/architecture/">Architecture and availability</a> — equal core nodes, DNS round robin, mirrors</li>
           <li><a href="/docs/qt-client">Desktop client</a> — the Qt 6 node</li>
           <li><a href="/mobile">Mobile app</a> — the native iOS and Android apps</li>
           <li><a href="/changelog">Changelog</a> — release-by-release history</li>

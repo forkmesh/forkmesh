@@ -4,7 +4,7 @@
 The public site builds on whatever machine runs ``wrangler deploy`` and on
 clean CI sandboxes, so the renderer deliberately depends on nothing outside
 the standard library. It covers the GitHub-flavoured subset the files under
-``www/docs`` actually use: ATX headings, paragraphs, fenced and indented code,
+``docs`` actually use: ATX headings, paragraphs, fenced and indented code,
 nested ordered/unordered/task lists, block quotes, pipe tables, thematic
 breaks, HTML comments, inline code, emphasis, links, images, autolinks and a
 small allowlist of raw inline HTML (``<a id="…">`` anchors and the like).
@@ -429,7 +429,7 @@ class _Renderer:
                 i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "/\"'=")
             ):
                 match = BARE_URL_RE.match(text, i)
-                url = _trim_url(match.group(0))
+                url = _trim_url(match.group(0)) if match else ""
                 if url:
                     self.links.append(url)
                     out.append(f'<a href="{html.escape(url)}">{html.escape(url, quote=False)}</a>')

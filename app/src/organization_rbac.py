@@ -27,7 +27,7 @@ Roles, strongest first:
                 not an insider for world floors, chat channels or task boards.
 
 The module has no Worker dependencies so tests import it directly and the
-documentation table in www/docs/organization-roles.md is checked against it.
+documentation table in docs/organization-roles.md is checked against it.
 """
 
 ORG_ROLES = ("owner", "admin", "maintainer", "member", "auditor", "guest")

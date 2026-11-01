@@ -6,7 +6,7 @@ current or conflicted. The contract lives in
 ``conformance/sync-status/v1/model.json`` and the shared fixture in
 ``conformance/sync-status/v1/fixture.json``; the Go daemon, desktop, and mobile
 clients carry independent implementations that must match this one case for
-case (``www/docs/sync-status.md``).
+case (``docs/sync-status.md``).
 
 Output is built only from counts, timestamps, and closed vocabularies. Node
 names, peer addresses, object names, and free-form error text in the evidence

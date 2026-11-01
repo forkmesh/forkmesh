@@ -1,7 +1,7 @@
 {
   "schema": "forkmesh-certification-program-v1",
   "version": "1.0.0",
-  "governance": "www/docs/protocol/certification.md",
+  "governance": "docs/protocol/certification.md",
   "protocolSuite": "conformance/protocol/v1/manifest.json",
   "adapterProtocol": "forkmesh-conformance-adapter-v1",
   "freshnessDays": 90,

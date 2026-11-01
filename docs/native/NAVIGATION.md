@@ -1,8 +1,8 @@
 # Native app navigation and information architecture
 
-How the native apps are organised: tabs, the shell, routes, the You hub,
-search, system surfaces, the iPad layout, the sitemap and URLs, and the rules
-every new screen follows. Targets are iOS 26 and iPadOS 26 (Liquid Glass) and
+Part of the phone apps ([README.md](README.md)). How the native apps are
+organised: tabs, the shell, routes, the You hub, search, system surfaces, the
+iPad layout, the sitemap and URLs, and the rules every new screen follows. Targets are iOS 26 and iPadOS 26 (Liquid Glass) and
 Android; iPhone-specific shell details are marked. Row numbers such as **2.13**
 refer to [DESKTOP_PARITY.md](DESKTOP_PARITY.md); `#54` refers to
 [PARITY.md](PARITY.md).
@@ -39,11 +39,10 @@ returns to the repository in use, remembered across launches
 and says so inline. Android follows `CodeButton.plan`.
 
 The **new agent button** opens the composer (tap) or the voice prompt (touch
-and hold, listening until the finger lifts, §2.3; Android does the same since S015). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
-chat room header (`ShellNewAgentButton`); the DM and group conversation header
-leaves it and the avatar out to make room for the name, and opening the channel
-list brings the top bar back. It shows one
-four-point star per running agent (`ShellCounts.shared.agents`, at most 24)
+and hold, listening until the finger lifts, §2.3; Android too). On iPhone it is
+a 44 pt circle left of the avatar in the top bar and the chat room header
+(`ShellNewAgentButton`); the DM and group conversation header leaves it and the
+avatar out to make room for the name. It shows one four-point star per running agent (`ShellCounts.shared.agents`, at most 24)
 drawn by `ShellSparkleField`, which tilts with the accelerometer
 (`ShellSparkleTilt`, 30 Hz while visible). Reduce Motion stops the motion;
 Reduce Transparency keeps only the stars on a flat circle. The iPad keeps it in
@@ -57,41 +56,38 @@ sidebar), the **You hub** (the avatar, §4) and a More tab (Home replaces it).
 `HomeShell` holds the tab stacks, the top chrome, the bottom bar and shell
 pages that load in place.
 
-**Bottom bar** (`ShellBottomBar`). One Liquid Glass bar at the screen's
-bottom edge holding up to `ShellBarStyle.capacity` slots: `limit` (3 to 8,
-default 6; a folder is one slot) per row, times one or two rows. Home is always
-one of them (`ShellBarPrefs.keep`).
+**Bottom bar** (`ShellBottomBar`). One Liquid Glass bar at the bottom edge with
+up to `ShellBarStyle.capacity` slots: `limit` (3 to 8, default 6; a folder is
+one slot) per row, times one or two rows. Home is always one of them
+(`ShellBarPrefs.keep`).
 
-The bar floats: `ShellBottomBar.sideMargin` in from each side and
-`floatHeight` above the bottom edge. The Glass fill is a heavy material blur
-with a dark tint, so the bar takes its colour from what passes behind it; Clear
-is the iOS 26 clear glass. The default look is filled icons and the Lens
-selection: `ShellBarLens`, a colourless pane wider than its slot, drawn once
-behind the cells. It slides on its own spring, because a pick runs with
-animations off, and stretches briefly as it moves. A small `lensInset` centres
-the row, so the lens keeps the same gap to the bar's edge at both ends. The bar
-has no outline: `ShellBarBevel` lights the top edge and shades the bottom, which
-with the soft shadow reads as a rounded surface. Reduce Motion moves the lens
-without the slide or the stretch. The Settings preview and the iPad pane draw it
-in place. Saved styles keep their own selection, and older apps
-read an unknown `lens` as the default.
+The bar floats `ShellBottomBar.sideMargin` in from each side and `floatHeight`
+above the bottom edge. Glass is a heavy material blur with a dark tint, so the
+bar takes its colour from what passes behind it; Clear is iOS 26 clear glass.
+The default is filled icons with the Lens selection: `ShellBarLens`, a
+colourless pane wider than its slot, drawn once behind the cells, sliding on
+its own spring (a pick runs with animations off) and stretching briefly as it
+moves. `lensInset` keeps the lens the same gap from the bar's edge at both
+ends. No outline: `ShellBarBevel` lights the top edge and shades the bottom.
+Reduce Motion moves the lens without slide or stretch. Older apps read an
+unknown `lens` as the default.
 
 - Every pick runs through `ShellBottomBar.run`, which records the use and acts
   with animations disabled, so pages appear in place.
-- Every bottom-bar button lands on its first page: `HomeShell.landOnTop` gives
-  the tab's `NavigationStack` a new identity (`stackResets`) when untracked
-  pages cover it (`TabStackTops` counts tracked pages). A hub page already on
-  the stack pops back to itself (`AppRouter.openFromHub`).
+- Every bar button lands on its first page: `HomeShell.landOnTop` gives the
+  tab's `NavigationStack` a new identity (`stackResets`) when untracked pages
+  cover it (`TabStackTops` counts tracked pages). A hub page already on the
+  stack pops back to itself (`AppRouter.openFromHub`).
 - Back returns to Home when a pick from Home was popped (`HomeShell.leavePage`,
   `PageReturn`).
 - **Item menu** (long press, `ShellBarItemMenu`): package settings and removal
-  (the package's Market page), move, move to folder, add to or remove from
-  the bar (swap when full), hide, reset. Dragging places icons in the bar,
-  reorders them, or takes them out onto Home. **Folders** show a 2x2 preview and
-  open a popover.
+  (the package's Market page), move, move to folder, add to or remove from the
+  bar (swap when full), hide, reset. Dragging places, reorders or removes
+  icons. **Folders** show a 2x2 preview and open a popover.
 - **Sort** (`ShellBarSort`, `shell/bar-sort`): usual order, recently used, most
   used. Uses are recorded in `shell/bar-recent` (48 ids) and `shell/bar-uses`
-  (`count:id` lines); visits from other routes count too (`ShellBarPrefs.visit`).
+  (`count:id` lines); visits from other routes count too
+  (`ShellBarPrefs.visit`).
 - **Layout** (`ShellBarLayout` in FMApi, `shell/bar-layout`): hidden ids,
   folders, order and the ids allowed in the bar. Shared by every project.
 - **Style** (`ShellBarStyle`, `shell/bar-style`, edited in
@@ -100,300 +96,222 @@ read an unknown `lens` as the default.
   icon style and size, labels, selected-icon mark, slot count, counts,
   activity, badge look (`ShellBarMarks`), frequent-use glow and height. The
   default writes no key.
-- **Height** (`ShellBarStyle.rows`, `ShellBarRows`). `single` (default) is one
-  row. `double` makes the bar twice as tall: the slots fill two rows, the first
-  row taking the extra one when the count is odd (`rowSplit`), so it holds twice
-  the slot count without scrolling. Both rows scroll sideways together. Rows
-  sit `gap` apart; a full-width squares or circles bar spreads each row across
-  the bar. A double capsule turns into a rounded rectangle with a one-row
-  capsule's corner radius, and only the four corner slots take the outer
-  radius, so the glass does not clip the icons. One slot keeps a single row.
-- **Badge look** (`ShellBarStyle.marks`). `home` (default) draws bar badges
-  and activity exactly as `ShellHomeIcon` does, so the bar matches the grid
-  above it: solid accent `ShellHomeCountMark` pills anchored inside the icon's
-  top-right corner, the heartbeat count mirrored on the top-left, and
-  `ShellHomeActivityRing` tracing the tile (a halo for untiled icons). `plain`
-  keeps the older bare blue numbers beside the glyph. Capsule and panel bars
-  clip their content, so on them the pill is lowered until it overhangs the
-  glyph by no more than 6 pt. Home-style marks became the default after the
-  operator asked for the bar to look like the grid (2026-10-15); saves without
-  the key get it.
+- **Height** (`ShellBarStyle.rows`, `ShellBarRows`). `single` (default) or
+  `double`: two rows, the first taking the extra slot when the count is odd
+  (`rowSplit`); both scroll sideways together, `gap` apart. A full-width
+  squares or circles bar spreads each row across the bar. A double capsule
+  becomes a rounded rectangle with a one-row capsule's corner radius, and only
+  the four corner slots take the outer radius so the glass does not clip
+  icons. One slot keeps a single row.
+- **Badge look** (`ShellBarStyle.marks`). `home` (default) draws badges and
+  activity exactly as `ShellHomeIcon` does, so the bar matches the grid: solid
+  accent `ShellHomeCountMark` pills inside the icon's top-right corner, the
+  heartbeat count on the top-left, and `ShellHomeActivityRing` tracing the
+  tile (a halo for untiled icons). `plain` keeps bare blue numbers beside the
+  glyph. Capsule and panel bars clip their content, so there the pill is
+  lowered until it overhangs the glyph by at most 6 pt. Saves without the key
+  get `home`.
 
-**Home** (`ShellPage.home`, `ShellHome`) is the icon grid of every
-destination, in sections, with counts and activity:
+**Home** (`ShellPage.home`, `ShellHome`) is the icon grid of every destination,
+in sections, with counts and activity:
 
 - Sections: Go to, the current repository's sections (Pull requests, Issues,
   Commits, Branches, Releases, Actions, Discussions), and the hub groups (§4).
   Order is draggable and saved in `ShellMenuLayout` (`shell/menu-layout`).
-- Icons (`ShellHomeIcon`): style Outline (default), Filled, Accent or Tiles; 4,
-  5 (default) or 6 per row; sorting (custom, name, most or least used, recent,
-  needs attention, biggest count); categories can be hidden. Settings live in
+- Icons (`ShellHomeIcon`): Outline (default), Filled, Accent or Tiles; 4, 5
+  (default) or 6 per row; sorting (custom, name, most or least used, recent,
+  needs attention, biggest count); categories can be hidden. Settings:
   `ShellHomeSettingsSheet` and Settings > General > Home screen.
-- **Hide icons in the bottom bar** (on by default). Icons already in the
-  bottom bar, folder members included, leave Home so each destination shows
-  once; a Home search still finds them. iOS: `ShellHomeStyle.hideBarIcons`
-  (saves without the key get it on), applied in `ShellHomeStyle.arranged`
-  with the ids from `ShellBarPrefs.barIds`; the toggle sits above the Bottom
-  bar link in Home screen settings. Android: `DeviceSettings.homeHidesBarIcons`
-  (`home/hideBarIcons`), toggled in Settings > General > Home screen, drops
-  the bar's tabs (Agents, Inbox, Repos, Code, Chat) from Home's Go to section
-  (`HomeShell.homeEntries`). The operator asked for it on 2026-10-17.
-- Counts come from data already loaded or fetched when Home opens
-  (`ShellNavigatorCounts`; `ShellCounts`); `nil` means unknown and shows no
-  pill; zero shows no pill. `NavigatorCountPlan` (FMApi) decides the fetch:
-  only destinations on the grid (`HubGroups.current`, so uninstalled plugins
-  and hidden admin pages cost nothing), three at a time, at most once a minute,
-  every five minutes when iOS reports a serious thermal state or Low Power
-  Mode, and not at all when it is critical (the counts already shown stay).
-  A 2026-10-16 phone report (build 262, thermal state critical, 1.6 s of
-  freezes on the Chat tab) showed every launch and Home visit starting about
-  twenty loads at once (calories, steps, water, sleep, sugar break, stretch,
-  notes, tasks, calendar, orgs, admin, CRM, marketing, analytics), each
-  building its full screen model on the main actor; their replies landing
-  together blocked the UI for 450 to 850 ms and kept the radio and CPU busy on
-  a phone that was already throttling.
-- **Cached counts.** iOS saves the fetched counts, the assigned-tasks badge
-  and the bug count per project and user (`NavigatorCountCache`, FMApi, one
-  JSON string under `shell.navigatorCounts.<project>.<user>`), so Home shows
-  them at once, across launches, without asking the network. Home fetches
-  only the counts it has never had (`NavigatorCountPlan.missing`), each at
-  most once a session; a count is refreshed when its page opens
-  (`ShellNavigatorCounts.refresh(_:)`, from `RouteDestinationView`), with
-  the thin `fmLoading` bar at the top of that page while it loads. Repos and
-  Tasks write theirs from the list the page already loaded
-  (`ShellNavigatorCounts.adopt`, `adoptTasks`) instead of a second request.
-  Day counts (calendar, calories, steps, water, sleep, sugar break,
-  stretch: `NavigatorCountCache.daily`) are dropped at midnight so Home
-  fetches today's once. The operator asked for it on 2026-10-19 to make
-  going back to Home faster.
-- **Loading on each icon.** Home has no loading bar. While an icon's count is
-  being fetched, a small spinner (`ShellHomeCountSpinner`) sits where its
-  count pill goes: `ShellNavigatorCounts.pending` holds the kinds of the
-  running batch, and each count lands on its icon the moment its own reply
-  arrives (`landed`) instead of all together at the end. The repository
-  section icons and Code spin while `loadRepoCounts` reads the current
-  repository (`ShellCounts.loadingRepo`), Market while the organisation
-  packages load. An unread badge still wins over the spinner. VoiceOver reads
-  "Loading". The operator asked for per-icon indicators on 2026-10-19.
-- **Nothing resizes on load.** Home fits its tiles to the measured screen
-  (`fittedTile`), and every measurement used to start at zero each time Home
-  opened (its `@State` is rebuilt) and at launch (the bar height, the safe
-  area and the top chrome are measured after the first frame), so the grid
-  was laid out at full tile size and then shrank, scaling every icon. Those
-  sizes are now remembered on the device (`ShellLayoutMemory`,
-  `shell.layout.*`: bar height, bottom safe area, top chrome without a notice
-  or offline strip, Home's height and section header height) and the first
-  frame uses them. The organisation packages behind the Business icons (CRM,
-  Marketing, Analytics and the rest) were also read from the network on every
-  launch, so those icons appeared a moment later and pushed the grid into
-  more rows; `HubPackageState` now saves them per project and user
-  (`hub.orgPackages.<project>.<user>`, a reviewer mark included) and a read
-  that misses an organisation keeps the saved ones. The current repository's
-  section counts are saved per repository (`shell.repoCounts.<slug>`) and are
-  read again once a session (`ShellCounts.isFresh`). Reported by the operator
-  on 2026-10-19 ("choppy and shifty", "all the icons are resizing").
-- **Refresh everything.** The long-press menu on Home's background (and on a
-  tile or section) has **Refresh everything**: it re-reads the organisation
-  packages, then every count on the grid regardless of the cache, the
-  thermal state or the once-a-minute limit
-  (`ShellNavigatorCounts.refresh(guest:everything:)`, the bug count and the
-  RSS feeds included), the current repository's counts and pulls, the
-  account packages with the Market catalog, the fleet lights, the inbox and
-  the composer's targets (`HomeShell.refreshEverything`). Each icon shows its
-  spinner until its number lands. The operator asked for it on 2026-10-19.
-  Unread pills and the
-  running-agents heartbeat count are solid `fm.accent` (the user's highlight
-  colour) with `fm.onPrimary` digits, which keeps the bright dark-mode accents
-  (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items
-  with live work (`ShellBarItem.active`) show an activity halo drawn from a
+- **Hide icons in the bottom bar** (on by default): icons already in the bar,
+  folder members included, leave Home so each destination shows once; Home
+  search still finds them. iOS: `ShellHomeStyle.hideBarIcons` (saves without
+  the key get it on), applied in `ShellHomeStyle.arranged` with ids from
+  `ShellBarPrefs.barIds`. Android: `DeviceSettings.homeHidesBarIcons`
+  (`home/hideBarIcons`) drops the bar's tabs from Go to
+  (`HomeShell.homeEntries`).
+- **Counts** come from data already loaded or fetched when Home opens
+  (`ShellNavigatorCounts`, `ShellCounts`); `nil` (unknown) and zero show no
+  pill. `NavigatorCountPlan` (FMApi) decides the fetch: only destinations on
+  the grid (`HubGroups.current`, so uninstalled plugins and hidden admin pages
+  cost nothing), three at a time, at most once a minute, every five minutes on
+  a serious thermal state or Low Power Mode, and not at all when critical (the
+  counts shown stay). Fetching every count at once (about twenty screen models
+  built on the main actor) froze a throttling phone for up to 850 ms.
+- **Cached counts.** iOS saves fetched counts, the assigned-tasks badge and the
+  bug count per project and user (`NavigatorCountCache`, one JSON string under
+  `shell.navigatorCounts.<project>.<user>`), so Home shows them at once across
+  launches. Home fetches only counts it never had
+  (`NavigatorCountPlan.missing`), each at most once a session; a count
+  refreshes when its page opens (`ShellNavigatorCounts.refresh(_:)`, from
+  `RouteDestinationView`, with the thin `fmLoading` bar on that page). Repos
+  and Tasks write theirs from the list they loaded
+  (`ShellNavigatorCounts.adopt`, `adoptTasks`). Day counts (calendar,
+  calories, steps, water, sleep, sugar break, stretch:
+  `NavigatorCountCache.daily`) are dropped at midnight.
+- **Loading on each icon.** Home has no loading bar. A small spinner
+  (`ShellHomeCountSpinner`) sits where an icon's count pill goes while it is
+  fetched (`ShellNavigatorCounts.pending`), and each count lands as its own
+  reply arrives (`landed`). The repository icons and Code spin while
+  `loadRepoCounts` reads the current repository (`ShellCounts.loadingRepo`),
+  Market while organization packages load. An unread badge wins over the
+  spinner. VoiceOver reads "Loading".
+- **Nothing resizes on load.** Home fits tiles to the measured screen
+  (`fittedTile`), but its `@State` measurements start at zero each time Home
+  opens and at launch, which made the grid lay out full size and then shrink.
+  The sizes are remembered (`ShellLayoutMemory`, `shell.layout.*`: bar height,
+  bottom safe area, top chrome without a notice or offline strip, Home's
+  height and section header height) and the first frame uses them. The
+  organization packages behind the Business icons are saved per project and
+  user (`HubPackageState`, `hub.orgPackages.<project>.<user>`, a reviewer mark
+  included), and a read that misses an organization keeps the saved ones, so
+  icons do not appear late and reflow the grid. Repository section counts are
+  saved per repository (`shell.repoCounts.<slug>`) and re-read once a session
+  (`ShellCounts.isFresh`).
+- **Refresh everything** (long-press menu on Home's background, a tile or a
+  section): re-reads organization packages, then every count regardless of
+  cache, thermal state or limit (`ShellNavigatorCounts.refresh(guest:everything:)`,
+  bug count and RSS feeds included), the current repository's counts and
+  pulls, account packages with the Market catalog, fleet lights, the inbox and
+  the composer's targets (`HomeShell.refreshEverything`).
+- **Pills.** Unread pills and the running-agents heartbeat count are solid
+  `fm.accent` with `fm.onPrimary` digits, which keeps bright dark-mode accents
+  (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items with
+  live work (`ShellBarItem.active`) show an activity halo from a
   `TimelineView` (30 fps cap, still with Reduce Motion).
-- While a shortcut runs, the Shortcuts icon swaps that halo for a circular
-  progress bar (`ShellBarProgressRing`) drawn inside the icon's cell, around
-  the glyph (inside the tile when icons are tiles), and the glyph shrinks to
-  78% to make room. `ShellNavigatorCounts.progress` reads the running runs and
-  catalog entries of `ShortcutsStore` (`startedAtMs`, `expectedMs`, the last
-  run's duration) and keeps the one expected to finish last; the ring fills
-  as `elapsed / expected`, capped at 99% like the Shortcuts page's bar, and
-  updates twice a second. With no earlier run to estimate from it spins a
-  short arc instead. It follows the Show activity setting, and VoiceOver reads
-  "Running, N percent". The operator asked for it on 2026-10-18.
-  The activity halo stays on outside the ring (`ShellBarCellLabel.haloOutset`
-  widens it 8 pt when icons are not tiles, so the two do not overlap); the
-  operator asked for the halo back the same day.
-- Working buttons (`Kit/FmBusy.swift`) use the desktop's rule, so every
-  platform matches: a button that becomes disabled within a second of being
-  tapped is working, and `FmBusyRing` spins around its icon until the button is
-  enabled again, or for at most 60 seconds. A button with no icon gets the arc
-  swept around its rounded outline instead. The ring is the activity halo
-  without its glow (`FmBusy.turn`, `FmBusy.arc`, which `ShellActivityHalo`
-  shares), stands still with Reduce Motion, ignores touches and is hidden from
-  VoiceOver. A working button keeps its enabled look and ignores taps. The kit
-  buttons (`FmIconButton`, `FmToneButton`, `FmTextButton`, `FmFilledButton`,
-  `FmElevatedButton`, `FmOutlinedButton`, `FmPillButton`) detect this on their
-  own through `FmBusyTap` and `fmBusyTracking`, since call sites already write
-  `onPressed: model.busy ? nil : submit`. Their `busy:` argument overrides
-  the guess: `true` forces the ring, `false` turns it off for a button that is
-  disabled for another reason after a tap (a send button whose text was just
-  cleared). The floating action button is never disabled, so it shows the ring
-  only when told. On filled buttons the ring takes the label colour so it
-  shows against the fill. The operator asked for it on 2026-10-31.
-- The heartbeat (`ShellHeartbeatCount`) does not keep its own clock: it beats
-  once per turn of the activity ring (`ShellActivityHalo.turn`), when the
-  ring's bright head passes the top-left corner where the count sits
-  (`ShellHeartbeatCount.crossing`, 225°), so pulse and ring move together.
-  Both read the same wall clock, so they stay in step across separate
-  `TimelineView`s. The operator asked for the accent pills and the synced
-  pulse on 2026-10-15.
-- The current repository's section counts (`ShellCounts.repoCount`) load
-  from the shell, not only from Home, so a Pull requests icon pinned to the
-  bottom bar shows its open count on any page. The Pull requests page writes
-  its own open count back once its list loads (`RepoPullsTab`), and Home,
-  the bar and the page's Open chip all count a pull as open unless it is
-  closed or merged (`PullStatusFilter.open`). The operator asked for the
-  count on the mobile Pull requests icon on 2026-10-16.
-- The repository behind those icons and the **Code** button follows the
-  composer: picking a repository there (or the one it settles on at launch)
-  moves `ShellCounts.currentRepo` and `code/current-repo` to it
-  (`CodeCurrentRepo.follow`, from `AgentStartTarget.ref`), so Pull requests
-  opens that repository's pulls and shows its open count. Opening a
-  repository in Code still moves them too, and the composer picks that
-  repository the next time it opens there. The operator asked for the
-  repository icons to follow the composer on 2026-10-18.
+- **Shortcut progress.** While a shortcut runs, the Shortcuts icon shows a
+  circular progress bar (`ShellBarProgressRing`) around the glyph (inside the
+  tile when icons are tiles), and the glyph shrinks to 78%.
+  `ShellNavigatorCounts.progress` reads `ShortcutsStore`'s running runs
+  (`startedAtMs`, `expectedMs`, the last run's duration) and keeps the one
+  expected to finish last; the ring fills as `elapsed / expected`, capped at
+  99%, updated twice a second, or spins a short arc with no estimate. It
+  follows Show activity; VoiceOver reads "Running, N percent". The halo stays
+  outside the ring (`ShellBarCellLabel.haloOutset` widens it 8 pt for untiled
+  icons).
+- **Working buttons** (`Kit/FmBusy.swift`) use the desktop's rule: a button
+  that becomes disabled within a second of a tap is working, and `FmBusyRing`
+  spins around its icon (or around the outline of a button with no icon) until
+  it is enabled again, at most 60 s. The ring is the activity halo without its
+  glow (`FmBusy.turn`, `FmBusy.arc`, shared with `ShellActivityHalo`), stands
+  still with Reduce Motion, ignores touches and is hidden from VoiceOver; a
+  working button keeps its enabled look and ignores taps. The kit buttons
+  (`FmIconButton`, `FmToneButton`, `FmTextButton`, `FmFilledButton`,
+  `FmElevatedButton`, `FmOutlinedButton`, `FmPillButton`) detect this through
+  `FmBusyTap` and `fmBusyTracking`, since call sites already write
+  `onPressed: model.busy ? nil : submit`. `busy:` overrides the guess (`false`
+  for a button disabled for another reason, such as a send button whose text
+  was just cleared). The floating action button is never disabled, so it shows
+  the ring only when told. On filled buttons the ring takes the label colour.
+- **Heartbeat** (`ShellHeartbeatCount`) beats once per turn of the activity
+  ring (`ShellActivityHalo.turn`), as the ring's head passes the top-left
+  corner (`ShellHeartbeatCount.crossing`, 225°). Both read the wall clock, so
+  separate `TimelineView`s stay in step.
+- **Repository icons.** The current repository's section counts
+  (`ShellCounts.repoCount`) load from the shell, so a Pull requests icon in
+  the bar shows its count on any page. The Pull requests page writes its own
+  open count back (`RepoPullsTab`), and Home, the bar and the Open chip count a
+  pull as open unless closed or merged (`PullStatusFilter.open`). The
+  repository follows the composer: picking one there (or the one it settles on
+  at launch) moves `ShellCounts.currentRepo` and `code/current-repo`
+  (`CodeCurrentRepo.follow`, from `AgentStartTarget.ref`); opening a
+  repository in Code moves them too.
 - **New pull requests show at once.** `ShellPullsWatch` (iOS) is the one
-  reader of the current repository's pull list. It reads it when the
-  repository changes, when the app comes back to the foreground, when the
-  account event channel reconnects, and the moment the relay pushes a `pulls`
-  event frame (sent to the repository owner's channel by `notify_repo_host`
-  whenever a pull is submitted or changes). Repositories whose
-  owner is someone else get no frame, so the watch also polls every 20 s on a
-  cool phone, every 5 minutes when warm or in Low Power Mode, and not at all
-  when critical (`NewPullsMarker.pollEvery`). The Pull requests page takes
-  the watch's list instead of reading its own (`RepoPullsModel.adopt`),
-  supports pull to refresh, re-reads after the New PR sheet closes, and keeps
-  the list on screen when a refresh fails. Before 2026-10-18 the page read
-  its list once on open and the shell never re-read it, so a new pull did not
-  appear until the page was reopened; the operator asked for it to show
-  instantly.
-- **Unread badges on Pull requests, RSS Reader and Tasks.** The Pull
-  requests icon (and the Code icon beside Repos, whose count is the open
-  pulls) carries a solid accent badge with the number of open pulls newer
-  than the user last saw (`NewPullsMarker`, FMCode, `shell/pulls-seen`: the
-  highest pull number seen per repository, 40 repositories kept). A
-  repository seen for the first time records its highest number without a
-  badge, so a fresh install does not flag every open pull; the page clears
-  the badge while it is open. RSS Reader shows its unread article count, the
-  same number as its Unread smart feed, read from the reader's saved library
-  (`RSSReaderFeature.loaded`, cached by model revision); Home's first count
-  refresh of a session also refreshes the feeds that are due. Tasks shows the
-  open tasks assigned to the signed-in user (`TasksListModel.mineOpen`),
-  saved with Home's counts, refreshed on every `pings` frame (an assignment arrives as a ping) and
-  whenever the Tasks page reloads (`ShellNavigatorCounts.adoptTasks`). The
-  operator asked for the three badges on 2026-10-18.
-- **Bug count.** For an administrator the Bug icon shows how many reported
-  bugs are still `new`, the same number as the Report a bug sheet's Reported
-  tab. While no count is saved, Home's count refresh asks
-  `/api/bug-reports/inbox?status=new&limit=1` for the counts only, and the sheet writes its counts back whenever the
-  inbox reloads or a status changes (`ShellNavigatorCounts.adoptBugReports`).
-  Reports are readable by administrators only, so everyone else sees the
-  plain icon. The operator asked for the count on 2026-10-18.
+  reader of the current repository's pull list. It reads when the repository
+  changes, on return to the foreground, when the event channel reconnects, and
+  on a relay `pulls` frame (sent to the repository owner's channel by
+  `notify_repo_host` when a pull is submitted or changes). Others' repositories
+  get no frame, so it also polls every 20 s on a cool phone, every 5 minutes
+  when warm or in Low Power Mode, never when critical
+  (`NewPullsMarker.pollEvery`). The Pull requests page adopts the watch's list
+  (`RepoPullsModel.adopt`), supports pull to refresh, re-reads after the New PR
+  sheet closes, and keeps the list when a refresh fails.
+- **Unread badges.** Pull requests (and Code, whose count is open pulls) carry
+  the number of open pulls newer than the user last saw (`NewPullsMarker`,
+  FMCode, `shell/pulls-seen`: highest number seen per repository, 40
+  repositories). A repository seen for the first time records its highest
+  number without a badge; the page clears the badge while open. RSS Reader
+  shows its unread count from the saved library (`RSSReaderFeature.loaded`,
+  cached by model revision); Home's first refresh of a session also refreshes
+  due feeds. Tasks shows open tasks assigned to the user
+  (`TasksListModel.mineOpen`), refreshed on every `pings` frame and Tasks
+  reload (`ShellNavigatorCounts.adoptTasks`).
+- **Bug count** (administrators): reported bugs still `new`, as on the Report
+  a bug sheet's Reported tab. With nothing saved, Home asks
+  `/api/bug-reports/inbox?status=new&limit=1`; the sheet writes counts back on
+  reload or status change (`ShellNavigatorCounts.adoptBugReports`). Everyone
+  else sees the plain icon.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
-- **Update dot.** A plugin tile whose Market package changed version since
-  the user last opened it shows a small accent dot at the icon's bottom right
-  (`ShellHomeUpdateDot`; VoiceOver reads "Updated"). `AccountPackagesStore`
-  keeps the catalog version and the last viewed version of each package under
-  `packages/versions` on the device. A package never opened on this device
-  counts as unseen, so on a new install every plugin tile has a dot until it is
-  first opened; after that the dot comes back only when a new version is
-  published. Opening the plugin clears it: a Home pick
-  (`markViewed(hubItem:)`), any route or tab that belongs to the package
-  (`PackageGate.packageId(for:)`), its Market page, or installing it. The
-  operator asked for the dot on 2026-10-16, and on 2026-10-17 for it to show
-  on every unopened plugin after a new install.
-- **Clear all update dots.** Long-pressing Home's empty background (half a
-  second, `ShellHome.backgroundHold`, not while dragging a tile) opens a menu
-  with **Refresh everything**, **Clear all update dots**, **Home settings…**
-  and **Bottom bar settings…**. Clearing calls `AccountPackagesStore.markAllViewed()`, which
-  records every package's latest version as seen, so the dots return only when
-  a new version is published. The same item appears in the tile and section
-  long-press menus while any dot shows. The background fills at least one
-  screen (`minHeight: viewHeight`) so the space below a short grid answers the
-  press. The operator asked for it on 2026-10-18.
-  The background menu also offers **Show all update dots** while any plugin
-  tile with a known Market version has no dot:
-  `AccountPackagesStore.markAllUnviewed()` forgets every seen version, so each
-  such tile shows its dot again until it is tapped. The operator asked for it
-  the same day, to clear dots one icon at a time.
+- **Update dot.** A plugin tile whose Market package changed version since the
+  user last opened it shows a 6 pt accent dot at the bottom right
+  (`ShellHomeUpdateDot`; VoiceOver "Updated"). `AccountPackagesStore` keeps the
+  catalog and last viewed version per package under `packages/versions`. A
+  package never opened on this device counts as unseen, so a new install dots
+  every plugin tile. Opening the plugin clears it: a Home pick
+  (`markViewed(hubItem:)`), any of its routes or tabs
+  (`PackageGate.packageId(for:)`), its Market page, or installing it.
+- **Background menu.** Long-pressing Home's empty background (0.5 s,
+  `ShellHome.backgroundHold`, not while dragging) offers **Refresh
+  everything**, **Clear all update dots** (`AccountPackagesStore.markAllViewed()`),
+  **Show all update dots** (`markAllUnviewed()`, while any tile with a known
+  version has none), **Home settings…** and **Bottom bar settings…**. Clear
+  also appears in tile and section menus while any dot shows. The background
+  fills at least one screen (`minHeight: viewHeight`).
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
-  VoiceOver on the field always shows.
-- Home is built to fit one screen when possible (`fittedTile`).
-- **Logs** and **Diagnostics** are separate, install-gated Operate tiles. Logs
-  opens the live log tab; Diagnostics opens metric charts. Both share the
-  telemetry data captured on the phone.
-- Without section headers the grid starts 16 pt below the top chrome
-  (`gridTop`, counted in the fit), so the count pills that sit above the
-  first row's icons are not clipped by the bar. The operator asked for this
-  on 2026-10-15; at 8 pt the pills were cut off.
-- **Count pills stay in their own row.** The count pill (and the spinner)
-  hangs from the glyph's top-right corner and the heartbeat count from its
-  top-left, each rising at most 2 pt above the icon box
-  (`ShellHomeIcon.anchorRise`). They used to sit with their bottom edge
-  inside the icon, overhanging about 10 pt upwards; once `fittedTile`
-  shrank a full grid to 50 pt rows the pills covered the names of the row
-  above ("Usage", "Organizations", "Diagnostics"). The pills draw over the
-  update dot, which is now 6 pt instead of 8 pt so a grid where most
-  plugins have one stays calm. The operator asked on 2026-10-22 for a Home
-  where every name can be read at a glance while keeping every count.
+  VoiceOver the field always shows.
+- Home fits one screen when possible (`fittedTile`). Without section headers
+  the grid starts 16 pt below the top chrome (`gridTop`) so count pills are not
+  clipped.
+- **Logs** and **Diagnostics** are separate, install-gated Operate tiles (the
+  live log tab; metric charts), sharing the phone's telemetry.
+- **Count pills stay in their own row.** The count pill (or spinner) hangs
+  from the glyph's top-right corner and the heartbeat count from its top-left,
+  each rising at most 2 pt above the icon box (`ShellHomeIcon.anchorRise`), so
+  on a fitted grid of 50 pt rows they never cover the names of the row above.
+  Pills draw over the update dot.
 
-**Top chrome** (`ShellTopBar`). The project icon (`ShellProjectSlot`, 40 pt,
-opens the project drawer; touch and hold for 0.5 s goes to Home from any
-tab, closing open overlays, the same as `openProjectHome`, 2026-10-18), the telemetry strip centred (tiny health-coloured
-charts of phone metrics and, when a desktop answers `diag.watch`, desktop
-memory, CPU, disk and swap, each a line over a fill of its colour at 35 %, so
-a quiet chart still shows a band and not only a line on its top edge; on a
-Dynamic Island iPhone in portrait the strip moves to the status bar's right
-ear, see below), the new agent button and the avatar
-(`AvatarWithDot`, rounded square). The connection status is a 2 pt stroke
-around the square in the status colour (green online, amber away or
-connecting, red when diagnostics need attention, grey offline), not a corner
-dot, and the status emoji sits off the bottom-left corner, clear of the stroke
-(2026-10-18). The top
-bar has no background: on a tab root (`HomeShell.floatsChrome`, empty path) the
-list scrolls under it; pushed pages start below it so their back button is
-never covered. The offline strip appears only after the relay has been down
-`HomeShell.offlineGrace` (4 s).
+**Top chrome** (`ShellTopBar`):
+
+- The project icon (`ShellProjectSlot`, 40 pt) opens the project drawer;
+  touch and hold for 0.5 s goes to Home from any tab, closing overlays
+  (`openProjectHome`).
+- The telemetry strip, centred: tiny health-coloured charts of phone metrics
+  and, when a desktop answers `diag.watch`, desktop memory, CPU, disk and swap,
+  each a line over a 35% fill so a quiet chart still shows a band. On Dynamic
+  Island iPhones in portrait it moves to the status bar (below).
+- The new agent button and the avatar (`AvatarWithDot`, rounded square). The
+  connection status is a 2 pt stroke around the square (green online, amber
+  away or connecting, red when diagnostics need attention, grey offline); the
+  status emoji sits off the bottom-left corner.
+- No background: on a tab root (`HomeShell.floatsChrome`, empty path) the list
+  scrolls under it; pushed pages start below it so Back is never covered. The
+  offline strip appears only after the relay has been down
+  `HomeShell.offlineGrace` (4 s).
 
 **Bare top.** Pages that own the top of the screen (agent run page, diff
 pages, Watch) use `bareShellTop()`; `ShellChrome` counts registrations per tab
 and hides the top bar while any is on top. `ShellRootBarHider` hides the
-system navigation bar on tab roots and corrects stale top safe-area insets; on
-a pop back to the root it fades the top bar in during the transition
-(`ShellChrome.returnToRoot(on:)`). The hider sets the bar hidden through
-UIKit, so a page pushed straight from a notification tap into a freshly shown
-tab could inherit the hidden bar and lose its Back button. Ping detail pages
-(`InboxItemScreen`, `PingDetailScreen`, every ping kind and every entry point:
-inbox row, notification tap, Notifications list) use
-`shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`), which shows the
-bar again whenever the page is on top. Both pages also draw their own back
-link as the first thing on the page (`ping-detail-back`: "All pings" on
-`PingDetailScreen`, "Inbox" on `InboxItemScreen`), so the way back to the
-list never depends on the navigation bar (2026-10-28). Android's ping pages
-draw their own back button (`RoutePage`, `FmPanelHeader`) and the same back
-link (`PingBackLink` in `PingDetailScreen.kt`, test tag `ping-detail-back`,
-"All pings" and "Inbox").
+system navigation bar on tab roots, corrects stale top safe-area insets and
+fades the top bar in on a pop to the root (`ShellChrome.returnToRoot(on:)`).
+Because it hides the bar through UIKit, a page pushed straight from a
+notification into a fresh tab could inherit the hidden bar and lose Back. So
+ping detail pages (`InboxItemScreen`, `PingDetailScreen`, every entry point)
+use `shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`) and also
+draw their own back link first on the page (`ping-detail-back`: "All pings" or
+"Inbox"). Android's ping pages draw their own back button (`RoutePage`,
+`FmPanelHeader`) and the same link (`PingBackLink` in `PingDetailScreen.kt`).
 
-**Bottom clearance.** The bar floats over pages. `HomeShell.barClearance`
-(bar height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad)
-travels in each tab's `ShellDock` and is applied by `shellPageClearance()` as
-bottom safe area to every tab root and route page. Pages pushed by a
-`NavigationLink` closure or their own `navigationDestination` must add
-`.shellPageClearance()` themselves. Lists scroll under the glass; pinned bottom
-controls sit above it.
+**Bottom clearance.** The bar floats over pages. `HomeShell.barClearance` (bar
+height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad) travels
+in each tab's `ShellDock` and `shellPageClearance()` applies it as bottom safe
+area to every tab root and route page. Pages pushed by a `NavigationLink`
+closure or their own `navigationDestination` add `.shellPageClearance()`
+themselves. Lists scroll under the glass; pinned bottom controls sit above it.
 
 **Docked controls.** A page's bottom composer (agent run page, on-device agent,
-chat room, threads, DMs) uses `.shellDock { … }`: it sits `ShellDock.gap` above
-the capsule, measured inside `.ignoresSafeArea` against `ShellDock.barBottom`.
-With the keyboard up or on iPad it sits at the page's bottom.
+chat room, threads, DMs) uses `.shellDock { … }`: `ShellDock.gap` above the
+capsule, measured inside `.ignoresSafeArea` against `ShellDock.barBottom`. With
+the keyboard up or on iPad it sits at the page's bottom.
 
 **Tab mounting.** The selected tab is built first, at launch, even when Home
 covers it (Agents, the default, on an iPhone); Agents is mounted 2 s after
@@ -405,128 +323,97 @@ dot watcher only the first time it is shown (`AgentsTabLiveGate`), and keeps
 them after that.
 
 **Launch.** `AppRootView` shows the app over the launch colour the moment the
-services exist, with no fade (the operator asked for Home to snap in on
-2026-10-19), and the shell starts on Home unless a restored route, sheet or
-push wins.
+services exist, with no fade, and the shell starts on Home unless a restored
+route, sheet or push wins.
 
 **Forced update.** When the App Store has a newer version than the running
-build (`ClientVersionGate.availableUpdate`, the iTunes lookup for the app id) or
-the server's `/api/version` names a higher `minimumClientVersions.ios` (or
-answers 426), `AppHomeView` shows `UpdateRequiredView` in place of the sign-in
-flow, starter pack and shell: no way past it, only **Open the App Store** (the
-lookup's `trackViewUrl`). The store is read at launch and on each activation,
-at most every 15 minutes (`ClientVersionGate.storeRecheckInterval`); once found,
-the block stays until the updated app relaunches. Builds whose version cannot be
-parsed (`dev`) and builds newer than the store (TestFlight, App Review) are never
-blocked.
+build (`ClientVersionGate.availableUpdate`, the iTunes lookup for the app id)
+or `/api/version` names a higher `minimumClientVersions.ios` (or answers 426),
+`AppHomeView` shows `UpdateRequiredView` instead of sign-in, starter pack and
+shell, with only **Open the App Store** (`trackViewUrl`). The store is read at
+launch and on activation, at most every 15 minutes
+(`ClientVersionGate.storeRecheckInterval`); once found, the block stays until
+relaunch. Unparseable versions (`dev`) and builds newer than the store
+(TestFlight, App Review) are never blocked.
 
-**Diagnostics footer.** The version (with an **Update** pill when the App Store
-has a newer version, `ClientVersionGate.availableUpdate`), the desktop light
-(load from `diag.health`'s `level` via `DesktopLoadLightModel`; green through
-LAN or relay, a globe badge for relay), the office MacBook light
-(`BuildMacLightModel`, `diag.buildMac`), core node and runner lights
-(`ShellFleetLights`, from `/api/status`; runners show their agent counts), and
-service status dots (`ShellStatusDots`, systems claimed by installed
-`status-check-*` packages plus custom monitors). It lives in Settings > Profile
-and shows while the Diagnostics switch is on. Reads happen at shell start and
-app activation only, waiting 15 minutes after an all-green read and 2 minutes
-otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
+**Diagnostics footer** (Settings > Profile, while the Diagnostics switch is
+on): the version (with an **Update** pill from
+`ClientVersionGate.availableUpdate`), the desktop light (`diag.health`'s
+`level` via `DesktopLoadLightModel`; green through LAN or relay, a globe badge
+for relay), the office MacBook light (`BuildMacLightModel`, `diag.buildMac`),
+core node and runner lights (`ShellFleetLights`, from `/api/status`; runners
+show agent counts), and service status dots (`ShellStatusDots`, systems
+claimed by installed `status-check-*` packages plus custom monitors). Reads
+happen at shell start and activation only, 15 minutes after an all-green read
+and 2 minutes otherwise; no timers. Any check in trouble turns the avatar dot
+red.
 
 **Status dots above the Dynamic Island.** While Status Page is installed and
-Diagnostics is on, the same service dots (`ShellIslandStatusDots`, 5 pt, no
-ring) also sit in the thin strip of status bar above the Dynamic Island, so
-the checks stay visible on every page. The strip is the top safe-area inset
-minus the island's 48 pt (11 pt on a 59 pt inset, 14 pt on 62 pt); it shows
-only when that inset is at least 54 pt, which leaves out notched iPhones,
-landscape and iPad, where there is no room above a cut-out. The inset is the
-key window's top safe-area inset, or the overlay's global top plus its own
-inset when that is larger. The window is read because the overlay ignores the
-top safe area, and a view that does that reports a zero inset; the first
-version read only that inset, so on a full-screen shell it saw 0 and never
-drew the dots. The row is offset back to the screen's top edge, so it stays
-pinned above the island whatever the overlay's frame.
+Diagnostics is on, the service dots (`ShellIslandStatusDots`, 5 pt, no ring)
+also sit in the status bar strip above the island. The strip is the top
+safe-area inset minus the island's 48 pt (11 pt on a 59 pt inset); it shows
+only when the inset is at least 54 pt, which leaves out notched iPhones,
+landscape and iPad. The inset is read from the key window (or the overlay's
+global top plus its inset, if larger), because the overlay ignores the top
+safe area and so reports zero itself. The row is offset to the screen's top
+edge.
 
-**Machine lights above the clock.** While Diagnostics is on, the same view
-puts the footer's desktop light, the office MacBook light and the core node
-and runner lights (`ShellFooterDesktopLight`, `ShellFooterMacLight`,
-`ShellFleetLight`, glyphs at 10 to 11 pt in a 12 pt row) in the status bar's
-left ear, centred above the clock's side of the ear less its first 24 pt
-(`ShellIslandStatusDots.earLeadingInset`), so the screen's rounded corner does
-not clip the desktop light; the operator asked for that nudge on 2026-10-23,
-when the row was centred in the whole ear and the corner cut the first icon.
-The row's top is the strip height less
-12 pt (at least 1 pt), which leaves a couple of points between the icons and
-the time; the lights sit 8 pt apart and the node lights 1 pt apart. The ear is
-half of the screen width less the island's 126 pt. The operator asked on
-2026-10-23 for the lights above the time with more room; they first sat under
-it, starting 7 pt below the island's middle, with the node lights overlapping. Node lights follow Status Page and its filters like the
-footer's; the desktop light shows whenever Diagnostics is on, red while no
-desktop is connected. The shell refreshes the desktop load light on
-activation alongside the fleet. The desktop glyph itself turns green while
-that desktop is connected (LAN or relay), and each stacked other desktop's
-glyph turns green while its presence is online, so the desktops read like the
-node lights; otherwise the glyph stays `textSecondary` and the corner dot
-carries the state. The operator asked for that on 2026-10-30 (iOS
-`ShellFooterDesktopLight` and `ShellStackedDesktopLight`, Android
-`ShellDesktopLight` and `ShellStackedDesktopLight` in `DesktopLights.kt`).
+**Machine lights above the clock.** While Diagnostics is on, the footer's
+desktop, office MacBook, core node and runner lights (`ShellFooterDesktopLight`,
+`ShellFooterMacLight`, `ShellFleetLight`; 10-11 pt glyphs in a 12 pt row) sit in
+the status bar's left ear, centred over the ear less its first 24 pt
+(`ShellIslandStatusDots.earLeadingInset`) so the rounded corner does not clip
+them. The row's top is the strip height less 12 pt (at least 1 pt); lights sit
+8 pt apart, node lights 1 pt. The ear is half the screen width less the
+island's 126 pt. Node lights follow Status Page and its filters; the desktop
+light shows whenever Diagnostics is on, red while no desktop is connected. A
+desktop glyph turns green while that desktop is connected (LAN or relay) and
+each stacked desktop's glyph while its presence is online; otherwise it stays
+`textSecondary` and the corner dot carries the state (iOS
+`ShellFooterDesktopLight`, `ShellStackedDesktopLight`; Android
+`ShellDesktopLight`, `ShellStackedDesktopLight` in `DesktopLights.kt`).
 
 **Resource bars on the machine lights.** Each core node light and the desktop
 light carry three tiny bars (`ShellResourceBars`, 1.5 pt wide, 6 pt tall, on a
-`bgBase` plate in the icon's bottom-right corner, so the icon keeps its size):
-CPU, memory and disk, left to right. A bar fills to its percentage and is green
-below 75 %, orange from 75 % and red from 90 %, the desktop vitals' limits; a
-missing reading leaves an empty track. Core readings come from the status
-feed: each core publishes `cpuPct` (from `/proc/stat` between samples at least
-5 s apart), `memPct` (`MemTotal` less `MemAvailable`) and `diskPct` (the root
-file system, as `df` counts it) in its `host_metrics` row every 30 s, and
+`bgBase` plate in the bottom-right corner): CPU, memory, disk. Green below 75%,
+orange from 75%, red from 90% (the desktop vitals' limits); a missing reading
+leaves an empty track. Each core publishes `cpuPct` (from `/proc/stat`, samples
+at least 5 s apart), `memPct` (`MemTotal` less `MemAvailable`) and `diskPct`
+(root file system, as `df` counts) in its `host_metrics` row every 30 s, and
 `/api/status` adds `resources: {cpu, memory, disk}` to a `core:` system while
-that row is under 3 minutes old (`STATUS_CORE_METRICS_FRESH_MS`). The desktop's
-bars read the latest per-second desktop vitals (`DesktopVitals`) while the
-phone watches a linked desktop; with the bars on, a relayed desktop's globe
-moves to the icon's bottom-left. The VoiceOver labels add the three
-percentages. The operator asked for them on 2026-10-23, and for the desktop
-charts to leave the right ear now that its icon shows the same three numbers.
+that row is under 3 minutes old (`STATUS_CORE_METRICS_FRESH_MS`); see
+[architecture.md](../architecture.md) for the cores. The desktop's
+bars read the latest `DesktopVitals` while the phone watches a desktop; a
+relayed desktop's globe then moves to the bottom-left. VoiceOver labels add
+the percentages.
 
-**Telemetry charts above the battery.** On the same screens the top bar's
-telemetry strip leaves the bar (`ShellIslandStatusDots.earsShown`: an inset
-of at least 54 pt and not a compact height) and its charts
-(`TelemetryEarSparks`) sit in the right ear at the lights' height, above the
-signal, Wi-Fi and battery. The ear shows only the phone's own charts: the
-desktop's memory, CPU, disk and swap charts left it on 2026-10-23, since the
-desktop light's bars now carry them. Each chart is squeezed to fit the ear
-less 10 pt a side (`TelemetrySparks.fitted`, at most the strip's 12 pt), 12 pt
-tall, 1 pt apart. The in-bar strip still leads with the desktop group, 2 pt
-apart with 4 pt before the phone's charts. Elsewhere (notched
-iPhones, landscape, iPad) the strip stays in the bar.
+**Telemetry charts above the battery.** On the same screens the telemetry
+strip leaves the bar (`ShellIslandStatusDots.earsShown`: inset at least 54 pt,
+not compact height) and its charts (`TelemetryEarSparks`) sit in the right
+ear at the lights' height. The ear shows only the phone's charts (the desktop
+light's bars carry the desktop's), each squeezed to the ear less 10 pt a side
+(`TelemetrySparks.fitted`, at most 12 pt), 12 pt tall, 1 pt apart. The in-bar
+strip still leads with the desktop group, 2 pt apart with 4 pt before the
+phone's charts; notched iPhones, landscape and iPad keep it in the bar.
 
 **Agent token charts under the island.** While Diagnostics is on and the
 Agents package is installed, two charts (`ShellIslandTokenCharts`) hang from
-the Dynamic Island's bottom edge, touching it: tokens in on the left (accent),
-tokens out on the right (green). Together they span the island's 126 pt, 6 pt
-apart, 12 pt tall like the ear charts above the battery. Each point is how much
-the summed agent totals grew in that second, over the last 60 s
-(`AgentTokenSeries`); the charts tick on their own one-second clock, so they
-move every second and show a flat line while nothing flows. The totals come
-from `AgentTokenSeries.totals`: the desktop's `tokensIn` / `tokensOut` from
-each `diag.vitals` event while the phone watches a desktop (`DesktopVitals`
-keeps the latest pair), else every desktop row's own totals, plus every cloud
-and runner row's. Each total is keyed by its source, so a row that appears,
-leaves or switches source adds nothing that second, and a shrinking total
-counts as 0. The desktop also sends `agentTokens` (running sessions only,
-`{"<id>": [in, out]}`) for the agent tile's token ring. The island's bottom
-edge is the strip height plus the island's 37 pt (48 pt on a 59 pt inset, 51 pt
-on 62 pt).
+the island's bottom edge: tokens in on the left (accent), out on the right
+(green), together spanning 126 pt, 6 pt apart, 12 pt tall. Each point is how
+much the summed agent totals grew in that second over the last 60 s
+(`AgentTokenSeries`), ticking on their own one-second clock. Totals
+(`AgentTokenSeries.totals`): the desktop's `tokensIn` / `tokensOut` from each
+`diag.vitals` event while watching a desktop (`DesktopVitals`), else every
+desktop row's totals, plus every cloud and runner row's. Each total is keyed
+by source, so a row that appears, leaves or switches source adds nothing, and
+a shrinking total counts as 0. The desktop counts tokens as they stream and
+also sends `agentTokens` (running sessions, `{"<id>": [in, out]}`) for the
+agent tile's token ring ([DESKTOP_AGENTS.md](DESKTOP_AGENTS.md)). The island's
+bottom edge is the strip height plus 37 pt.
 
-Asked for from a phone screenshot on 2026-10-25. The first version showed only
-while a desktop with the new fields was being watched, and its totals grew only
-when a whole assistant message landed, so on 2026-10-27 the user saw nothing
-move and asked again. The desktop now counts tokens as they stream (see
-DESKTOP_AGENTS.md, token totals).
-
-These rows ignore touches, since a tap that high belongs to the status bar's
-scroll-to-top, and a troubled light blinks like the footer's. With the charts
-in the ear, the Diagnostics screen opens from its page (the `diagnostics`
-route) rather than a tap on the strip.
+These rows ignore touches (a tap that high is the status bar's scroll-to-top),
+and a troubled light blinks like the footer's. With the charts in the ear, the
+Diagnostics screen opens from its page (the `diagnostics` route).
 
 ### 2.0.1 Chat room layout (iOS)
 
@@ -539,7 +426,7 @@ route) rather than a tap on the strip.
 - DMs and groups use the conversation header instead: back circle, a pill with
   the avatar and the name beside it over the presence, route ("Direct · Wi-Fi",
   "Direct · Bluetooth", "Direct only") and server-copies line, and the call
-  buttons ([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)).
+  buttons ([docs/native/ios/FMChat.md](ios/FMChat.md)).
 - Under a DM's header, each device waiting for approval gets a banner with
   Approve, Block and the safety number; the transcript carries the matching
   system lines and "Your safety number with X changed". The DM details sheet
@@ -561,34 +448,28 @@ route) rather than a tap on the strip.
 - An office channel push names only its `channelId`; the tap opens the room
   with that id (`ShellChatBridge.officeConversation`).
 - A notification or link that opens a conversation (`ChatHub.switchConversation`)
-  bumps `ChatHub.revealRequests`. The chat screens then close what was left
-  covering the transcript: the channel drawer, a page pushed inside Chat, and
-  their sheets and alerts. Before this, a tap switched the conversation
-  underneath, so a phone left on the channel list or a details sheet stayed
-  there instead of showing the chat the banner named.
-- `.dm(user)` (the People sheet's Message button) names an
-  account. On iOS `ChatHub.switchConversation("@user")` opens that account's
-  direct message, or starts one (`ChatHub.accountRecipient` then `openPerson`),
-  as the chat person sheet does; only an exact relay peer id stays a peer room.
-  Before this it only matched people online right now, so anyone else opened an
-  empty room titled "@direct message". A `direct:` id is opened as is, not
-  wrapped as `@direct:…`.
+  bumps `ChatHub.revealRequests`, and the chat screens close whatever covers
+  the transcript (the channel drawer, a page pushed inside Chat, their sheets
+  and alerts), so the tap always shows the chat it named.
+- `.dm(user)` (the People sheet's Message button) names an account. On iOS
+  `ChatHub.switchConversation("@user")` opens or starts that account's direct
+  message (`ChatHub.accountRecipient` then `openPerson`), whether or not they
+  are online; only an exact relay peer id stays a peer room. A `direct:` id is
+  opened as is, not wrapped as `@direct:…`.
 - The composer is one glass line (`ChatComposerBar(glass: true)`) docked on the
   bar. Transcripts use `.defaultScrollAnchor(.bottom)` plus
   `chatKeepsEndInView`, and `chatFollowsOwnSend` scrolls the end into view
-  whenever the newest message of your own gets newer (sending, in a room, a
-  thread or Messages). It waits one main-queue turn so the new row has been
-  laid out: before 2026-10-17 a sent message could stay hidden under the
-  composer, because the only scroll ran in the same update that inserted the
-  row, and it ran only when the last row changed, which a later-stamped message
-  or event below yours prevents. Deleting your last message or loading older
-  history does not scroll.
+  whenever your own newest message gets newer (in a room, a thread or
+  Messages), even when a later-stamped row sits below it. It waits one
+  main-queue turn so the new row is laid out first; scrolling in the same
+  update left sent messages under the composer. Deleting your last message or
+  loading older history does not scroll.
 - Chat screens make no interface sounds (`.fmQuietSounds()`).
 - Members of relay `#channels` are counted from presence and posters (the relay
   stores ciphertext only); office and server rooms use the server's list.
   `@here`, `@channel` and `@everyone` are offered first, highlight as mentions,
   and ask before notifying six or more people. Link previews
-  (`ChatLinkPreviews`) are described in `native/ios/docs/FMChat.md`.
+  (`ChatLinkPreviews`) are described in `docs/native/ios/FMChat.md`.
 - Avatars paint on the first frame from `FmAvatarImages` and a persisted
   `ChatAvatarCache`.
 
@@ -632,13 +513,9 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 
 ### 2.0.2.1 First run
 
-- **Login** has "Forgot password?", which opens the relay's
-  `/forgot-password` (`AuthService.forgotPasswordUrl`) in an in-app Safari
-  sheet.
-- **Sign up** opens `/signup` in the same sheet and moves the flow to the
-  login form with "When your email is confirmed, log in here with your new
-  account." (`AuthFlowModel.signupOpened`), so closing the sheet lands on
-  login instead of leaving the app.
+Login, sign-up, onboarding and the permissions intro:
+[ONBOARDING.md](ONBOARDING.md).
+
 - **FmNeedsDesktopNote** ends with "Get the desktop app", which opens the
   project homepage's `/desktop` (`LegalLinks.desktop`).
 - **Placeholders** (`RoutePlaceholderView`, unbuilt repository sections) say
@@ -648,9 +525,8 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 ### 2.0.2.2 The tour
 
 The `tour` package shows the tour once after sign-in (`ShellTour.seen`,
-`fm.tour.seen.v1`) and keeps a Tour icon on Home. The operator asked on
-2026-10-24 for the tour to look like the screens it describes, to move, and
-to offer three depths.
+`fm.tour.seen.v1`) and keeps a Tour icon on Home. It looks like the screens it
+describes, moves, and offers three depths.
 
 - **Tracks** (`TourTrack`, `FMPackages/TourCatalog.swift`): Essentials (Home,
   Agents, the new agent button, Inbox, the hub), Advanced (adds hold to talk,
@@ -696,79 +572,66 @@ to offer three depths.
   control is one tap. A phone too narrow for the bar scrolls it sideways.
   Holding a square shows its name in a small popover (`FmHoldName`), and the
   tap it ends with is dropped. The unread badges are drawn over the whole bar
-  (`InboxBadgeKey` anchors) rather than on each square, because on iOS 26 the
-  glass container composited the squares above their own badges (2026-10-18).
+  (`InboxBadgeKey` anchors), because iOS 26's glass container composites the
+  squares above their own badges.
 - **Market** (`MarketScreen`): one slim navigation bar line with no
   background: back, the search field (`MarketSearchField`, in the title's
-  place), then a sort menu and a filter menu (`MarketSortMenu`,
-  `MarketFilterMenu`) whose icons turn blue and fill when set off the
-  defaults; the filter menu holds every filter as a submenu, the two toggles
-  and Clear filters. The search drawer and the row of filter chips under it
-  stacked three bands above the list. Flat cards with a 16:9 preview, rating,
-  installs and users, and one-tap Install/Open (`MarketModel.cardAction`).
-  Install state follows the account, organizations and `install.default` for
-  desktop-only packages. Package pages set "Show on" places.
-  An installed card also shows Uninstall, and each package page has a ⋯ menu
-  (top right) with Rate and Uninstall. Both ask `MarketModel.uninstallAction`
-  how this phone removes it: account packages leave every device
-  (`AccountPackagesStore.uninstall`, naming the packages that go with them),
-  per-phone switches turn off (`PackageGateSync.setOnDevice`), packages with a
-  phone screen hide from this phone (`PhonePackages.setRemoved`), and
-  organization packages with no phone screen are removed from an organization
-  you manage, with the data export to save after. Nothing is removed without a
-  confirmation (`PackageUninstall.swift`). Android mirrors it with the same
-  rules (`MarketModel.uninstallAction`, `PackageUninstall.kt`).
-  The package page's ⋯ menu also has "Send feedback or report a bug".
+  place), a sort menu and a filter menu (`MarketSortMenu`, `MarketFilterMenu`,
+  icons blue and filled when off the defaults; the filter menu holds every
+  filter, the two toggles and Clear filters). Flat cards with a 16:9 preview,
+  rating, installs and users, and one-tap Install/Open
+  (`MarketModel.cardAction`). Install state follows the account,
+  organizations and `install.default` for desktop-only packages. Package pages
+  set "Show on" places.
+  - An installed card shows Uninstall, and each package page's ⋯ menu has
+    Rate, Uninstall and "Send feedback or report a bug".
+  - `MarketModel.uninstallAction` decides how this phone removes a package:
+    account packages leave every device (`AccountPackagesStore.uninstall`,
+    naming the packages that go with them), per-phone switches turn off
+    (`PackageGateSync.setOnDevice`), packages with a phone screen hide from
+    this phone (`PhonePackages.setRemoved`), and organization packages with no
+    phone screen are removed from an organization you manage, with the data
+    export to save after. Nothing is removed without a confirmation
+    (`PackageUninstall.swift`; Android `PackageUninstall.kt`, same rules).
 - **Plugin pages** (iOS): every installed plugin's own screen has a ⋯ button
-  at the top right (accessibility id `plugin-more`). It opens one small popup
-  (`PluginQuickSheet`, user request 2026-10-18) instead of a menu of separate
-  pages: the plugin's name, a row of stars, one text box, "Send to agent" and
-  "Send", and, when this phone can remove the plugin, Uninstall under a
-  divider (one row per organization for an organization package).
+  at the top right (accessibility id `plugin-more`) that opens one small popup
+  (`PluginQuickSheet`): the plugin's name, stars, one text box, "Send to
+  agent", "Send", and Uninstall under a divider when this phone can remove it
+  (one row per organization for an organization package).
   `RouteDestinationView` applies `pluginMenu(for:)` (`PluginMenuViews.swift`)
   to every route `PluginMenu.packageId(for:)` (FMPackages) names: the home
-  screen of each package with a phone screen. Detail screens (a contact, a
-  note, a cove), the Market itself, the Agents, Inbox and Chat tabs and the
-  tour get none. To decide whether Uninstall is offered, opening a plugin page
+  screen of each package with a phone screen. Detail screens, the Market, the
+  Agents, Inbox and Chat tabs and the tour get none. Opening a plugin page
   loads only the catalog, the account's packages and your organizations'
-  installs (`MarketModel.refreshInstalls`, without the install counts and
-  ratings the Market shows); the package's reviews load when the popup opens.
-  `PluginFeedback` (FMPackages) holds what the popup sends:
-  - **Send** saves the rating when a star was tapped and files the text as
-    feedback when there is any; either alone is enough. Five stars need no
-    words. Below five, the Market's review rules still apply, so the text box
-    is the review's "what didn't work" and a second box, "What would make it
-    five stars?", appears for the improvement; the field errors show under
-    each box. The text goes to `POST /api/bug-reports` with `package`, so the
-    issue is tagged with the plugin, whether or not the Report a bug package
-    is installed. A short thanks shows on the plugin page after.
+  installs (`MarketModel.refreshInstalls`) to decide on Uninstall; reviews load
+  when the popup opens. `PluginFeedback` (FMPackages) holds what it sends:
+  - **Send** saves the rating if a star was tapped and files the text as
+    feedback if any; either alone is enough. Below five stars the Market's
+    review rules apply: the box is "what didn't work" and a second box, "What
+    would make it five stars?", appears. The text goes to
+    `POST /api/bug-reports` with `package`, whether or not Report a bug is
+    installed.
   - **Send to agent** closes the popup and opens the composer
-    (`SurfaceRouter.open(.compose(...))`) with a prompt naming the plugin,
-    its package id and the screen, then the text (and the stars, if tapped).
-    Nothing is filed with ForkMesh unless you also press Send.
-  - **Uninstall** closes the popup, then asks with the Market's confirmation
-    and rules; once it is done the page closes (after the data export is
-    saved, for an organization package).
-  The full rating form (`RatePackageSheet`) and the full report form
-  (`ReportBugSheet`, with severity and files) stay on the Market's package
-  page.
-  One ⋯ per screen: a screen that already has its own ⋯ menu adds
-  `PluginMenuItems()` (one "Rate, report or uninstall…" row that opens the
-  same popup) to the end of that menu instead, and
-  `PluginMenu.screenOwnsMenu` lists those routes so the shared button stays
-  off them (CRM, Special Agents, and Coves for a repository; Coves without a
-  repository is the repository picker and gets the shared button).
-  The CRM's own menu is its **More** section, so its "Rate, report or
-  uninstall…" row sits at the end of that list.
-  Calendar's Today moved from the system overflow (which draws its own ⋯) to
-  a plain button for the same reason.
+    (`SurfaceRouter.open(.compose(...))`) with a prompt naming the plugin, its
+    package id and the screen, then the text and stars. Nothing is filed
+    unless you also press Send.
+  - **Uninstall** uses the Market's confirmation and rules, then closes the
+    page (after the data export, for an organization package).
+  The full rating form (`RatePackageSheet`) and report form (`ReportBugSheet`)
+  stay on the Market's package page. One ⋯ per screen: a screen with its own ⋯
+  menu adds `PluginMenuItems()` (one "Rate, report or uninstall…" row) to the
+  end of it, and `PluginMenu.screenOwnsMenu` lists those routes (CRM, whose
+  menu is its **More** section; Special Agents; Coves for a repository).
+  Calendar's Today is a plain button rather than the system overflow, which
+  draws its own ⋯.
 - **Face Changer** (`.faceChanger`, `/dashboard/face-changer`): a native
   screen (`Features/FaceChanger/FaceChangerScreen.swift`), not the package's
   web page. It previews the camera through the bundled call page with the
   Face, Background, Voice and Hear myself controls that calls also use, and
   records a clip of up to five minutes to save or share. The choices live in
   `FaceChangerStudio.shared.look` and are the ones the next call uses
-  (`docs/app/chat-direct-calls.md`, Face Changer on the phones).
+  ([call-filters.md](../app/call-filters.md), Face Changer on the
+  phones).
 - **Booking** (`.booking(id)`, `/dashboard/booking`, Workspace group after
   Calendar): the account's booking page from `GET /api/booking`: the short
   link and per-type links with copy, share and open, pause, totals, upcoming
@@ -796,7 +659,7 @@ to offer three depths.
   the account actions and terminals (`UsageScreen.swift`, body
   `AgentAccountsPanel`), drawn natively instead of the package's web page.
   The Agents usage bars push it too
-  ([Usage](../marketplace-usage-feed-mastodon.md#usage-on-ios)).
+  ([Usage](../marketplace/usage.md#usage-on-ios)).
 - **RSS Reader** (`.rssReader`, `/dashboard/rss`, `forkmesh://rss-reader`,
   Personal group): a local-only feed reader laid out after NetNewsWire. Feeds
   are fetched, parsed and stored on the phone (`RSSReader*.swift` in
@@ -882,13 +745,13 @@ Holding the new agent button starts an agent by voice, without the keyboard.
 `ShellVoiceLaunch` (`Shell/ShellVoiceLaunch.swift`) runs it and
 `ShellVoiceLaunchOverlay` draws it over the whole shell.
 
-- **Hold to talk** (2026-10-17). The button tracks the finger itself with one
+- **Hold to talk.** The button tracks the finger itself with one
   `DragGesture` (`ShellNewAgentPress`) instead of a tap plus a long press,
   because a long press ends the moment it is recognized and so could not tell
   when the finger lifts. Lifting before 0.35 s (`ShellNewAgentButton.holdSeconds`)
   is a tap and opens the composer; moving more than 10 pt first does nothing.
   After 0.35 s the voice prompt opens and listens for as long as the finger
-  stays down: pauses no longer send (`PromptDictation.holds` skips the quiet
+  stays down: pauses do not send (`PromptDictation.holds` skips the quiet
   timers, the two-minute limit stays). Letting go sends. The microphone keeps
   recording for another 0.25 s so the last word is not clipped, then the
   recognizer is told the audio has ended (`finishSpeaking`: `endAudio`, or
@@ -901,16 +764,15 @@ Holding the new agent button starts an agent by voice, without the keyboard.
   (`PromptDictation.prime`: on iOS 26 it builds the `SpeechAnalyzer` and calls
   `prepareToAnalyze`, so the model is loaded before the microphone opens), and
   a held press opens the microphone after the summon chime's 0.42 s
-  (`VoiceLaunchChime.summonSeconds`) instead of waiting up to 0.8 s for the
-  chime's tail. The voice prompt's transcriber asks for fast results
+  (`VoiceLaunchChime.summonSeconds`), not at the chime's tail. The voice prompt's transcriber asks for fast results
   (`.fastResults` with `.volatileResults`), so words appear while they are
   being said; the composer's dictation keeps the default.
 
 - **Open.** The button's sparkle circle springs out of the top bar into a large
   orb in the upper middle of a dimmed, blurred screen, with the
   `VoiceLaunchChime.summon` chime (`FMAgentWatch/VoiceLaunchChimes.swift`) and
-  a medium haptic. The microphone opens when the chime ends (0.4 to 0.8 s),
-  because the chime and the recording cannot share the audio session.
+  a medium haptic. The microphone opens after the chime, because the chime
+  and the recording cannot share the audio session.
 - **Listen.** `PromptDictation` listens as the composer's dictation does (on the
   device when it can, nothing kept). Spokes around the orb follow
   `DictationMeter`, ripples speed up with the voice, and the words appear
@@ -1129,7 +991,7 @@ Every command uses `.keyboardShortcut`, so it shows in the hold-⌘ overlay.
 
 ### 6.1 App Intents, Siri and Shortcuts
 
-User guide: [`www/docs/mobile/siri.md`](../../www/docs/mobile/siri.md); update it
+User guide: [`docs/mobile/siri.md`](../mobile/siri.md); update it
 when a phrase or answer changes.
 
 - **Entities**: repositories, agent sessions, issues, pulls, notes, projects,
@@ -1271,7 +1133,7 @@ with the same notes and celesta, rendered by the Agent Watch synth.
   run, and the hub pages in `ShellLiveCounts.hubActive` (timers, running
   shortcuts, working teammates, Local AI downloads). `HomeShell` passes them in
   as `activeTabs` and `activeHub`; the bar's Show activity setting turns both
-  off. The operator asked for it on 2026-10-31.
+  off.
 - `NavigationSplitView` per list-and-detail destination: Agents (sessions,
   transcript), Inbox, Code (repositories, sections, content), Chat (channels,
   conversation, threads in an inspector), Notes, Tasks, CRM.
@@ -1284,91 +1146,78 @@ with the same notes and celesta, rendered by the Agent Watch synth.
 
 ### 7.1 iPhone Duo: the list beside the detail
 
-The operator asked on 2026-10-28 for the app on iPhone Duo's inner display to
-look like the desktop, with the list on the left and the detail on the right.
+On iPhone Duo's inner display the app looks like the desktop: the list on the
+left, the detail on the right.
 
 - **What decides it.** The shell measures its window, not the device:
-  `ShellPanes.metrics` (FMApi) turns on the two panes on a phone whose window is
-  at least 600 pt wide and 480 pt tall. The Duo's inner display (669 × 951 pt
-  upright, 951 × 669 pt on its side) passes. The 466 pt cover screen, a 50/50
-  Split View and a landscape iPhone do not, so they keep the phone layout.
-  Apple's own guidance is to rely on size classes. But developers report that
-  the Duo says "regular" width on both displays, so the size class cannot tell
-  them apart. The shell therefore sets `horizontalSizeClass` itself on phones:
-  regular when wide, compact otherwise, and compact inside each pane. Screens
-  that branch on it (Chat's channel sidebar, the issue board, project
-  timelines) follow.
+  `ShellPanes.metrics` (FMApi) turns on two panes on a phone whose window is at
+  least 600 pt wide and 480 pt tall. The Duo's inner display (669 × 951 pt
+  upright, 951 × 669 on its side) passes; the 466 pt cover screen, a 50/50
+  Split View and a landscape iPhone do not. The Duo reports "regular" width on
+  both displays, so the size class cannot tell them apart; the shell sets
+  `horizontalSizeClass` itself on phones (regular when wide, compact otherwise
+  and inside each pane), and screens that branch on it (Chat's channel
+  sidebar, the issue board, project timelines) follow.
 - **Panes** (`HomeShell.tabPanes`, `ShellPanes.layout`). Each tab shows its list
   (Agents, Inbox, Repos) in a column of 280–380 pt (40% of the width), a
-  hairline, then a `NavigationStack` for the detail. With nothing open, the
-  detail shows `ShellPanePlaceholder`. A list hub page (`ShellPanes.listKinds`:
-  Tasks, Notes, Settings, Hosts, Docs, Workflows and the like) takes the list
-  column itself, with a back button to the tab's list. Other hub pages
-  (Stats, World, packages) use the whole width. Chat keeps its own channel
-  sidebar at full width.
+  hairline, then a `NavigationStack` for the detail (`ShellPanePlaceholder`
+  when empty). A list hub page (`ShellPanes.listKinds`: Tasks, Notes, Settings,
+  Hosts, Docs, Workflows and the like) takes the list column, with a back
+  button to the tab's list. Other hub pages (Stats, World, packages) use the
+  whole width. Chat keeps its own channel sidebar at full width.
 - **Opening into the detail.** A route picked in the list replaces the detail
-  (`ShellPanes.picked`), as on the desktop. Picks made inside the detail push
-  as usual, with a back button. Screens whose rows push a view rather than a
-  route use `shellDetail(item:)`, `shellDetail(isPresented:)`, `ShellPaneLink`
-  or `shellPaneRowLink`. In the list column these hand the page to
-  `ShellDetailHost`, which shows it as the detail's root. Anywhere else they
-  behave exactly like `navigationDestination` and `NavigationLink`. A run
-  screen's leave action (`ShellChrome.leave`) closes a hosted page.
-- **Selection.** As on the desktop, the row whose item is open on the right
-  stays highlighted in the list (`shellPaneSelected`). The list column gets
-  the detail's first route as `shellPaneOpen` (`ShellPanes.opened`); the
-  repository lists match it with `ShellPanes.opens`. Agents compare the line
-  they opened, and the Inbox gives `shellPaneRowLink` an id that is compared
-  with the hosted page.
+  (`ShellPanes.picked`); picks inside the detail push with a back button.
+  Screens whose rows push a view rather than a route use
+  `shellDetail(item:)`, `shellDetail(isPresented:)`, `ShellPaneLink` or
+  `shellPaneRowLink`: in the list column these hand the page to
+  `ShellDetailHost` as the detail's root; anywhere else they behave like
+  `navigationDestination` and `NavigationLink`. A run screen's leave action
+  (`ShellChrome.leave`) closes a hosted page.
+- **Selection.** The row open on the right stays highlighted
+  (`shellPaneSelected`). The list column gets the detail's first route as
+  `shellPaneOpen` (`ShellPanes.opened`); repository lists match it with
+  `ShellPanes.opens`, Agents compare the line they opened, and the Inbox gives
+  `shellPaneRowLink` an id compared with the hosted page.
 - **Bars.** On its side the Duo shows `ShellSideRail`, a vertical Liquid Glass
-  rail on the left with the bottom bar's items, folders, menus and style. The
-  bottom bar goes away. Upright, the bottom bar stays. The top bar spans both
-  panes and always shows Search.
+  rail on the left with the bottom bar's items, folders, menus and style, and
+  no bottom bar. Upright, the bottom bar stays. The top bar spans both panes
+  and always shows Search.
 - **Rotation.** `ForkMesh-Info.plist` lists portrait and both landscapes for
-  iPhone, because Apple's Duo guidance says the inner display scales an app
-  that only supports portrait. At run time `FmOrientationLock` keeps other iPhones in
-  portrait. `allowRoomy` unlocks every orientation except upside down while the
-  window's shorter side is at least 600 pt. Folding back to the cover screen returns to portrait.
-  Hosted pages are dropped when the panes go away (`ShellDetailHost.clearAll`).
+  iPhone, because the Duo's inner display scales a portrait-only app. At run
+  time `FmOrientationLock` keeps other iPhones in portrait; `allowRoomy`
+  unlocks every orientation except upside down while the window's shorter
+  side is at least 600 pt. Hosted pages are dropped when the panes go away
+  (`ShellDetailHost.clearAll`).
 - **Build.** Until the app is built with Xcode 27 (the iOS 27 SDK; the office
-  Mac has Xcode 26.6), iOS runs it on the Duo in compatibility mode, and the
+  Mac has Xcode 26.6), iOS runs it on the Duo in compatibility mode and the
   layout above does not show. Edge-to-edge and the system's vertical bars need
   the iOS 27.1 SDK.
-- **App Store sizes.** The Duo's screenshot sizes are 2007 × 2853 or 2853 × 2007
-  for the inner display and 1398 × 2034 or 2034 × 1398 for the cover screen.
-  Xcode 26 has no Duo simulator, and Duo-sized copies of the iPhone 17 Pro
-  Max profile do not stand in for one. On 2026-10-29 the iOS 26.5 runtime
-  kept every third-party app in a 440 pt window, with black bars, on such a
-  screen. That happened with landscape declared, with the binary marked as
-  SDK 27.0 and with the Duo's model identifier `iPhone19,4`. Apple's own apps
-  filled the screen. Store-ready Duo shots need Xcode 27.1's iPhone Duo
-  simulator.
-- **Duo-sized shots on Xcode 26.** Simulator types with the Duo's own screen
-  sizes letterbox the app on the iOS 26.5 runtime: an iPhone-based one keeps
-  it at 440 pt, an iPad-based one scales it. The SpringBoard entitlement that
-  turns compatibility mode off makes an ad hoc signed app refuse to launch.
-  What works is an iPad mini simulator type at 3x (2232 × 3399, iPad mini
-  points, so iPadOS runs the app natively) with `SBMedusaMultitaskingEnabled`,
-  `SBFlexibleWindowingEnabled` and `SBChamoisWindowingEnabled` off in
-  `com.apple.springboard` (full screen apps, no window controls). In Debug,
-  `-FMStoreCanvas 669x951` (`StoreCanvas`) lays the whole app out in a canvas
-  of that size at the top left, hides the status bar and keeps 24 pt at the
-  top and 20 pt at the bottom as the safe area. The shell measures the canvas,
-  so the panes follow the Duo's rules, and the top-left 2007 × 2853 pixels are
-  a Duo inner-display shot. A width larger than the height turns the window
-  to landscape first (951 × 669 gives 2853 × 2007); 466 × 678 gives the cover
-  screen's 1398 × 2034. The 2026-10-30 set is in
-  `native/ios/docs/appstore/duo/`; store-ready shots from a real Duo simulator
-  still need Xcode 27.1.
+- **App Store sizes.** 2007 × 2853 (or 2853 × 2007) for the inner display,
+  1398 × 2034 (or 2034 × 1398) for the cover screen. Xcode 26 has no Duo
+  simulator; Duo-sized simulator types letterbox third-party apps on the iOS
+  26.5 runtime (an iPhone-based one keeps a 440 pt window, an iPad-based one
+  scales), and the SpringBoard entitlement that turns compatibility mode off
+  makes an ad hoc signed app refuse to launch. Store-ready Duo shots need
+  Xcode 27.1's iPhone Duo simulator.
+- **Duo-sized shots on Xcode 26.** Use an iPad mini simulator type at 3x
+  (2232 × 3399, so iPadOS runs the app natively) with
+  `SBMedusaMultitaskingEnabled`, `SBFlexibleWindowingEnabled` and
+  `SBChamoisWindowingEnabled` off in `com.apple.springboard`. In Debug,
+  `-FMStoreCanvas 669x951` (`StoreCanvas`) lays the app out in a canvas of that
+  size at the top left, hides the status bar and keeps 24 pt top and 20 pt
+  bottom safe area; the shell measures the canvas, so the top-left 2007 × 2853
+  pixels are a Duo inner-display shot. A width larger than the height turns
+  the window to landscape first (951 × 669 gives 2853 × 2007); 466 × 678 gives
+  the cover screen. The current set is in `native/ios/docs/appstore/duo/`.
 - **Store shots without taps.** In Debug builds `StoreScreenshotLaunch` reads
   launch arguments: `-FMStoreShots YES` skips the tour, the permissions intro
   and the starter pack, enters guest mode, and hides tips, the connection
-  banner, the spider, the aquarium, the status dots and the top bar's telemetry strip. Then `-FMStoreRoute <link>` opens
-  a link's whole stack (even for a guest, unlike a normal deep link), and
-  `-FMStoreTab <agents|inbox|code|chat>` opens a tab. `-FMStorePhoneLayout YES`
-  makes an iPad lay out as a phone (`StoreScreenshotLaunch.pad`), so the iPad
-  mini simulator (744 pt wide) shows the Duo's two panes for review. Release
-  builds ignore all of them.
+  banner, the spider, the aquarium, the status dots and the telemetry strip.
+  `-FMStoreRoute <link>` opens a link's whole stack (even for a guest),
+  `-FMStoreTab <agents|inbox|code|chat>` opens a tab, and
+  `-FMStorePhoneLayout YES` makes an iPad lay out as a phone
+  (`StoreScreenshotLaunch.pad`), so the iPad mini simulator (744 pt wide) shows
+  the Duo's two panes. Release builds ignore all of them.
 
 ## 8. Sitemap and routes
 
@@ -1458,7 +1307,7 @@ the website's own:
 | `/<owner>/<repo>/commit/<sha>`, `/commits/<ref>` | `.commit`, `.commits` |
 | `/<owner>/<repo>/actions[/runs/<id>]`, `/releases[/tag/<t>]`, `/mirrors`, `/agents`, `/worktrees`, `/about`, `/shortcuts` | the matching section, `.run`, `.release`, `.shortcuts(r)` |
 | `/@<name>` | `.profile(name)` |
-| `/dashboard/chat` | `.chat` (the web 308-redirects it to `/chat`, its one chat page since 2026-10-23; the app does not parse `/chat` yet, so a `/chat` link opens in the browser) |
+| `/dashboard/chat` | `.chat` (the web 308-redirects it to `/chat`; the app does not parse `/chat` yet, so a `/chat` link opens in the browser) |
 | `/dashboard/notes`, `/tasks`, `/calendar`, `/settings[/<section>]`, `/network`, `/ads`, `/repos`, `/profile`, `/people`, `/docs` | the matching route |
 | `/dashboard/apps` | `.settings(section: "apps")` |
 | `/ledger.html`, `/market.html`, `/status.html` | `.ledger`, `.market`, `.status` |

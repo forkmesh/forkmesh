@@ -3,7 +3,8 @@
 `marketplace/packages/cleanup` is a desktop rail page (Market id `cleanup`,
 entry point `builtin:cleanup`, off by default) that lists everything Claude
 Code, Codex and agent runs leave on this computer, says what each item is
-still attached to, and deletes what the user confirms.
+still attached to, and deletes what the user confirms. Part of
+[Marketplace](README.md).
 
 Agent sessions fill the disk with transcripts, scratchpads, worktrees,
 per-agent build trees, Actions sandboxes and caches. The package answers,

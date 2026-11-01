@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Leak-safe transport adapters and anonymity postures (issue #505).
 
-Implements forkmesh-transport-profile-v1 (www/docs/transports.md). A profile
+Implements forkmesh-transport-profile-v1 (docs/transports.md). A profile
 names the transport adapters a device has (direct clearnet, a SOCKS proxy onto
 Tor, I2P, or another privacy network, an overlay network such as a WireGuard
 mesh, and the local network) and one posture that decides which of them may

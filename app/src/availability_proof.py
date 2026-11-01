@@ -5,7 +5,7 @@ mirrors API already publishes: is it actually preserved, how independently, and
 what is still at risk. The contract lives in
 ``conformance/availability-proof/v1/model.json`` and the shared fixture in
 ``conformance/availability-proof/v1/fixture.json``; the model is documented in
-``www/docs/availability-proof.md``.
+``docs/availability-proof.md``.
 
 The input is a ``GET /api/repo/<owner>/<repo>/mirrors`` payload after the
 Worker overlays each node's signed endpoint receipt (``endpointFresh``,
@@ -165,7 +165,7 @@ REASONS = (
 )
 
 # A copy whose declared replicaScope is anything but "full" (a filtered,
-# metadata-only, or deferred-object replica; see www/docs/offline-sync.md)
+# metadata-only, or deferred-object replica; see docs/offline-sync.md)
 # never counts as verified, so it can never make or inflate a quorum.
 FULL_REPLICA_SCOPE = "full"
 

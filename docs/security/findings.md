@@ -6,14 +6,15 @@ Sentinel ([sentinel.md](sentinel.md)) keeps this page: fixed findings with the
 test that guards each fix, and open items that are already public. Unfixed
 findings that are not public are tracked on the organization task board in
 the `security` department and appear here only once their fix is on main.
-Update the checkpoint line after each review.
+Update the checkpoint line after each review. Part of
+[Security](README.md).
 
 Status words: **Fixed** means the fix is on main and the Guard test fails
 without it, and the guard runs in a gate: the `security` suite of
 `tools/run_critical_tests.py` (CI, the quality gate and the auto-deploy
 must-pass set) holds the S-2, S-5 and C-H5 guards, the account TOTP gate and
 the destructive-delete contract; the Go guards run with `go test` in
-`server/` in the same gates. Until 2026-10-15 none of these ran in any gate.
+`server/` in the same gates.
 **Fixed, unguarded** means no test guards it yet. **Partial** and **Open** are
 used only for items already public. Add a finding as one row;
 the last cell names the guard test (paths must exist).
@@ -139,13 +140,13 @@ IDs: `C-` code audit, `I-` infrastructure audit, `S-<n>` later reviews.
 
 | Item | Severity | Status | Where described | What remains |
 | --- | --- | --- | --- | --- |
-| TM-004 legacy issue, discussion and pull records bind no repository | High | Partial | protocol threat model, [README.md](README.md) | v1 intake closes at `EVENT_SIGNATURE_V1_INTAKE_UNTIL_MS` |
+| TM-004 legacy issue, discussion and pull records bind no repository | High | Partial | protocol threat model, [legacy event schemes](../protocol/signatures-and-authentication.md#repository-bound-legacy-event-schemes) | v1 intake closes at `EVENT_SIGNATURE_V1_INTAKE_UNTIL_MS` |
 | TM-006 catalog v1 signatures bind no visibility | High | Open | protocol threat model | v2 signing exists; v1 still accepted |
 | TM-008 a relay or mirror can withhold events | High | Open | protocol threat model | not started |
 | TM-014 tunnelled node traffic trusts the relay | High | Open | protocol threat model | not started |
 | TM-018 no account-key recovery protocol | High | Open | protocol threat model | not started |
-| Runner jobs share one uid; no private tmp or read-only system in the job scope | High | Partial | [RUNNERS.md](../RUNNERS.md) | job user, egress rules, owner opt-in and per-job grants are in |
-| Runner jobs run with the persistent HOME, not their session home | High | Open | [RUNNERS.md](../RUNNERS.md) | `HOME` must be set inside the scope after the uid switch |
+| Runner jobs share one uid; no private tmp or read-only system in the job scope | High | Partial | [runners](../operations/runners.md) | job user, egress rules, owner opt-in and per-job grants are in |
+| Runner jobs run with the persistent HOME, not their session home | High | Open | [runners](../operations/runners.md) | `HOME` must be set inside the scope after the uid switch |
 | Executable proof for agent boundaries | High | Partial | [agent-host-boundaries.md](agent-host-boundaries.md) | extend fixtures and checks |
 
 ## Private and operator-owned

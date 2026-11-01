@@ -1,13 +1,13 @@
 # Runner agents on the phone
 
-A runner agent is a cloud session (`/api/repo/<owner>/<repo>/agent-sessions`)
+Part of the [phone apps docs](README.md). A runner agent is a cloud session (`/api/repo/<owner>/<repo>/agent-sessions`)
 that a runner or a mirror runs on its own branch on the cores
-(`refs/heads/agent/<...>`, [RUNNERS.md](../RUNNERS.md)). A desktop agent is a
+(`refs/heads/agent/<...>`, [runners](../operations/runners.md)). A desktop agent is a
 session on one of the account's desktops, reached over local control or the
 relay ([DESKTOP_AGENTS.md](DESKTOP_AGENTS.md)). The phones, the web and the
 desktop give both kinds the same row, run screen, diff, merge and clean up,
-pull request and follow-up actions. This page covers what the App serves for
-runner sessions and how the clients use it.
+pull request and follow-up actions. This page covers what the App on the core
+nodes serves for runner sessions and how the clients use it.
 
 ## What the App serves for a runner session
 
@@ -16,8 +16,7 @@ All routes are the owner route `/api/repo/<owner>/<repo>/agent-sessions/<sid>`
 authorised by the account session and, for POST and DELETE, an allowed
 `Origin`. Signed desktop writes (merge, cleanup, link-pull, update) use the
 proof `forkmesh-owner-agent-branch-v1` ([../agents/README.md](../agents/README.md)).
-Code: `app/src/agent_branches.py`, imported lazily (listed in `LAZY_MODULES`,
-[app/worker-footprint.md](../app/worker-footprint.md)).
+Code: `app/src/agent_branches.py`.
 
 ### Session JSON
 
@@ -35,12 +34,11 @@ Code: `app/src/agent_branches.py`, imported lazily (listed in `LAZY_MODULES`,
 
 Merging an agent branch lands it on its base with no review, so only an owner
 may do it (`agent_branches.merge_allowed`): the node's owner for an owner-scope
-session, an owner of the organization for an organization session. Any member
-with Engineering access could merge before, which let contributors land agent
-work on `main` around the pull request owner-only merge. Everyone else gets
-`403 forbidden` (`required_action: open_pull`) and opens a pull request
-instead. The list response carries `canMergeAgentBranches`, and the web hides
-**Merge & clean up** when it is false. Update and clean up are unchanged.
+session, an owner of the organization for an organization session; otherwise
+contributors could land agent work on `main` around the owner-only pull
+request merge. Everyone else gets `403 forbidden` (`required_action:
+open_pull`) and opens a pull request instead. The list response carries `canMergeAgentBranches`, and the web hides
+**Merge & clean up** when it is false. Update and clean up are not owner-only.
 
 ### Diff: `GET …/<sid>/diff?page=0&pageSize=25`
 
@@ -89,7 +87,7 @@ cores.
   cores deploy an owner-approved merge while the desktop is offline. The key
   ("Deploy approval key" on Identity and recovery) goes in `approver_keys`
   under `[self_deploy]` in `deploy/fleet.toml`
-  ([../deploy/self-deploy.md](../deploy/self-deploy.md)).
+  ([../deploy/self-deploy.md](../operations/self-deploy.md)).
 
 **A run that pushed nothing.** A runner pushes its branch only when it
 committed something. `published_nothing` decides a missing branch has nothing
@@ -266,7 +264,7 @@ turns (up to 1200 each, newest kept, under 7600 total).
 ## Runner accounts on iOS
 
 The iPhone switches the Claude Code or Codex account a runner uses, using the
-endpoints in [../RUNNERS.md](../RUNNERS.md).
+endpoints in [runners](../operations/runners.md).
 
 - `RunnerAccountsPanel` sits in the usage sheet the Agents usage chip opens;
   without a desktop usage client a person icon opens `RunnerAccountsSheet`.
@@ -343,6 +341,6 @@ Each layer refuses what the one before it does not know:
 
 ## Related
 
-[DESKTOP_AGENTS.md](DESKTOP_AGENTS.md), [../RUNNERS.md](../RUNNERS.md),
+[DESKTOP_AGENTS.md](DESKTOP_AGENTS.md), [runners](../operations/runners.md),
 [../server/agent-jobs.md](../server/agent-jobs.md),
 [../server/merge-executor.md](../server/merge-executor.md)

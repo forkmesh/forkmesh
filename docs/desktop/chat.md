@@ -1,10 +1,15 @@
 # Desktop: chat encryption (protocols v3 and v4)
 
-Part of [the desktop docs](README.md). The protocols themselves are
+How the desktop implements chat encryption, device approval, safety numbers,
+direct delivery and chat state storage. The public overview of what is
+encrypted and how is [encryption](../encryption.md). The protocols
+themselves are
 [../app/chat-protocol-v3.md](../app/chat-protocol-v3.md) and, for direct
 messages, [../app/chat-protocol-v4.md](../app/chat-protocol-v4.md); this page
 says how the desktop implements them and where it chose between readings of
 the spec.
+
+Part of [Desktop](README.md).
 
 ## Code
 
@@ -35,86 +40,61 @@ state writer and its send gate) and
 
 `ChatDevice::local()` is the installation's one device. Its identity and
 prekeys live in QSettings, where the v2 key lived:
-`chat/e2ee/ed25519IdentityV3`, `chat/e2ee/prekeysV3`. The per-scope and
-per-room state, `chat/e2ee/ctrV3/<b64u(room)>` (send counters),
-`chat/e2ee/trustV3/<b64u(scope)>` (records, held frames, last safety
-number), `chat/e2ee/ratchetV4/<b64u(room)>` and `chat/e2ee/seenV3/<b64u(room)>`,
-lives under the same keys in its own ini file, `chat-seal/state.ini` in the
-core data folder (`storedStateFile()`, `data/core/chat-seal/state.ini` in the
-projects layout), so a chat write no longer rewrites `ForkMesh.conf` and no
-other settings write rewrites the chat state. In report #5 (2026-10-19) these
-keys were 684 KB of a 1029 KB `ForkMesh.conf`; every unrelated settings write
-cost 42 ms (fsync included) against that file and 21 ms without them, and a
-QSettings sync of it stalled the window 622 ms under IO load.
-`ChatDevice::local()` first moves any of these keys still in `ForkMesh.conf`
-(`migrateStoredState()`): it copies each key the state file lacks, syncs,
-checks every key reads back, and only then removes them from `ForkMesh.conf`.
-Until the move succeeds, reads fall back to `ForkMesh.conf` and a write that
-cannot reach the state file goes to `ForkMesh.conf` as before. The state file
-sits in the data folder, so the configuration backup, its restore and the
-complete-system bundle carry it with the rest of the data. Tests reset both
-stores with `clearStoredState()` and read through `storedSetting()`
-(`testStoredStateLeavesSettingsFile`).
-Since report #8 (2026-10-20) each of those keys is its own file beside
-`state.ini`: `chat-seal/<trustV3|ratchetV4|seenV3>/<b64u(name)>`
-(`storedStateKeyFile()`), written with `QSaveFile` (fsync, owner-only
-permissions). `state.ini` had grown to 748 KB (three direct-room trust
-scopes with held frames at about 140 KB each, one 91 KB ratchet), and the
-synchronous ratchet save after every v4 seal rewrote and fsynced all of it on
-the GUI thread (`ChatDevice::saveRatchets`, eight stalls in report #8). On the
-same loaded box a 91 KB ratchet save went from 122 ms to 33 ms.
-`migrateStoredState()` moves every `state.ini` key into its file, reads the
-file back, and only then drops the key from `state.ini`, at every start, so a
-key that an older build wrote back into `state.ini` replaces the file. An
-older build therefore finds no ratchet in `state.ini` and starts a new session
-instead of reusing message keys. Reads take the file, then `state.ini`, then
-`ForkMesh.conf`; a write that cannot reach the file removes the file and goes
-to `state.ini` as before (`testStoredStateKeysHaveTheirOwnFiles`).
-Since report #15 (2026-10-24) send counters are a stored-state family too,
-`chat-seal/ctrV3/<b64u(room)>`, and their reservation is written on the state
-writer instead of the GUI thread. `nextCounter()` used to write the reserved
-block (64 counters) straight into the 421 KB `ForkMesh.conf` with fsync on the
-GUI thread, the first send in each room after every start and every 64th
-after that (`ChatDevice::nextCounter -> RoomSeal::seal`, 17 stalls over
-500 ms on 2026-10-25). Now the next block is queued when half of the current
-one is used, and a counter beyond the block on disk raises the device's write
-ticket, so `SendGate` holds that frame until the reservation is on disk: a
-crash still cannot reuse a counter a peer has seen. A frame inside the stored
-block leaves at once. `migrateStoredState()` moves existing counters out of
-`ForkMesh.conf` like the other families, so a build older than this one
-starts that installation's counters from zero again and peers drop its
-frames as replays until the counter passes what they last saw
-(`testCountersPersist`, `testStoredStateLeavesSettingsFile`).
-The first sealed frame in each room after a start therefore leaves one state
-write later (about 35 ms on an NVMe disk), so a frame sent just before a test
-clears its captured frames can land after the clear: the transport tests call
-`settleSends()` (wait for the state writer, then pump events) before they
-clear and send the frame they check (`testDirectRoomRatchetRecovery` and the
-superseded-DM test failed on disk and passed on tmpfs without it).
-Held frames are capped per room at 64 frames and 128 KB (`kMaxHeldBytes`),
-newest first, and a scope saved before the byte cap is trimmed when it loads:
-on 2026-10-19 three direct rooms held 64 frames of about 8 KB each from
-pending devices, 950 KB of a 1.5 MB `ForkMesh.conf`, which every settings sync
-rewrote (`testHeldBudget`).
-The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
+`chat/e2ee/ed25519IdentityV3`, `chat/e2ee/prekeysV3`. The old
+`chat/e2ee/x25519PrivateV2` value is left in place and unused.
 
-`state.ini` itself is owner-only: `openStoredState()` creates it through
-`forkmesh::ownerfile::write` and restricts an existing one to 0600 before
-QSettings opens it, and QSettings' `QSaveFile` keeps that mode on every sync.
-The same header-only helper (`src/OwnerOnlyFile.h`, `QSaveFile` with 0600
-before the first byte) now writes the per-key files, the conversation history
-(`MainWindow::saveChatHistory`, DM and private-channel text, which used a plain
-`QFile` at the default umask and was truncated in place), the `#mesh` history
-(`LocalMeshNode::saveHistory`) and `paired-devices.json`. A crash mid-write
-leaves the previous file, and other local users cannot read message text.
+The per-scope and per-room state is kept out of `ForkMesh.conf`, because it
+grew to most of that file and every unrelated settings write (fsync included)
+had to rewrite it on the GUI thread. Each key is its own file under the core
+data folder (`data/core/chat-seal/`, `storedStateKeyFile()`), written with
+`QSaveFile` (fsync, owner-only):
+
+| Family | File |
+| --- | --- |
+| Send counters | `chat-seal/ctrV3/<b64u(room)>` |
+| Trust records, held frames, last safety number | `chat-seal/trustV3/<b64u(scope)>` |
+| v4 ratchet state | `chat-seal/ratchetV4/<b64u(room)>` |
+| Seen sets | `chat-seal/seenV3/<b64u(room)>` |
+
+- **Migration.** At every start `migrateStoredState()` moves any of these keys
+  still in `ForkMesh.conf` or the older `chat-seal/state.ini` into their files,
+  reads each file back, and only then removes the key from the old place. A
+  key an older build wrote back into `state.ini` therefore replaces the file,
+  and an older build finds no ratchet and starts a new session instead of
+  reusing message keys. Reads take the file, then `state.ini`, then
+  `ForkMesh.conf`; a write that cannot reach the file goes to `state.ini`.
+  Counters moved out of `ForkMesh.conf` restart from zero on a build older
+  than the move, and peers drop its frames as replays until the counter passes
+  what they last saw. Tests: `testStoredStateLeavesSettingsFile`,
+  `testStoredStateKeysHaveTheirOwnFiles`, `testCountersPersist`; tests reset
+  the stores with `clearStoredState()` and read through `storedSetting()`.
+- The files sit in the data folder, so the configuration backup, its restore
+  and the complete-system bundle carry them.
+- **Counter reservations** (64 counters a block) are written on the state
+  writer. The next block is queued when half of the current one is used; a
+  counter beyond the block on disk raises the device's write ticket, so
+  `SendGate` holds that frame until the reservation is on disk and a crash
+  cannot reuse a counter a peer has seen. A frame inside the stored block
+  leaves at once. The first sealed frame in each room after a start therefore
+  leaves one state write later, so transport tests call `settleSends()` (wait
+  for the writer, then pump events) before they clear captured frames.
+- **Held frames** are capped per room at 64 frames and 128 KB
+  (`kMaxHeldBytes`), newest first; an older scope is trimmed when it loads
+  (`testHeldBudget`).
+- **Owner-only files.** `openStoredState()` creates `state.ini` through
+  `forkmesh::ownerfile::write` and restricts an existing one to 0600 before
+  QSettings opens it. The same helper (`src/OwnerOnlyFile.h`, `QSaveFile` with
+  0600 before the first byte) writes the per-key files, the conversation
+  history (`MainWindow::saveChatHistory`, DM and private-channel text), the
+  `#mesh` history (`LocalMeshNode::saveHistory`) and `paired-devices.json`. A
+  crash mid-write leaves the previous file, and other local users cannot read
+  message text.
 
 - Prekeys rotate when the newest is 24 h old (checked at start, before each
   seal and before each bundle) and are wiped once expired; at most ten are
   kept. A rotation re-advertises the bundle on every relay room and mesh link.
-- Counters are reserved 64 at a time: the reserved high mark is written
-  synchronously before the first frame that uses it, so a crash skips
-  counters instead of reusing them (a reused counter would be dropped as a
-  replay).
+- Counters are reserved 64 at a time (see above), so a crash skips counters
+  instead of reusing them (a reused counter would be dropped as a replay).
 - Seen sets keep at most 256 senders per room; open scopes keep at most 512
   records. Both drop the least recently seen.
 - An open room with more than 64 devices seals to itself and the 63 most
@@ -128,15 +108,12 @@ leaves the previous file, and other local users cannot read message text.
   disk; an open writes it with the delayed writer, like the seen sets (see
   "State writes off the GUI thread" below).
 
-## State writes off the GUI thread (2026-10-22)
+## State writes off the GUI thread
 
-The stall log of 2026-10-21/22 had about 60 reports in this code: the ratchet
-save after every v4 seal (`ChatDevice::saveRatchets` <- `RoomSeal::sealV4`,
-mostly from `ServerNode::sendPresence`) waiting in `fdatasync` for 0.5 to 2.5 s
-under IO load, the trust scope re-serialised with all its held frames on every
-held frame (`ChatDevice::saveScope` <- `ChatDevice::hold` <- `RoomSeal::openV4`,
-20 reports, about 1 s each), and the delayed writer's own `QSaveFile` commits on
-the GUI thread. Now:
+Ratchet saves after every v4 seal, trust scopes re-serialised with all their
+held frames on every held frame, and `QSaveFile` commits can block in
+`fdatasync` for seconds under IO load, so none of them runs on the GUI thread.
+The rules:
 
 - **One ordered writer.** Every write of a `trustV3`, `ratchetV4` or `seenV3`
   key runs on one worker thread (a `QThreadPool` of one thread), first in,
@@ -159,18 +136,17 @@ the GUI thread. Now:
   `forkmesh::chatv3::SendGate`: while the device's latest ticket is not on
   disk, frames wait in order (unsealed ones too, so nothing overtakes) and go
   out when the worker reports the write done (`ChatDevice::whenWritten`). So
-  the guarantee of the old synchronous save holds: no sealed frame reaches a
-  peer before the ratchet step that produced it is on disk, and a crash before
+  no sealed frame reaches a peer before the ratchet step that produced it is on disk, and a crash before
   that point loses only frames that were never sent, so a restart cannot
   reuse a message key a peer has seen. The link counter of a mesh link is
   taken when the frame is released, so link frames stay in sequence. The
   gate follows the node's own device; a direct frame handed to the mesh must
   carry that device's key id (`sendDirectSealed`), and in the app every
   component uses `ChatDevice::local()`.
-- **What a crash can still lose** is what it could before: the delayed saves
-  of the last 2 s (the receive side of the ratchet, seen sets, held frames).
-  A failed write is handled as before (fallback to `state.ini`, then the
-  settings file); the gate opens once the write has been attempted.
+- **What a crash can lose** is the delayed saves of the last 2 s (the receive
+  side of the ratchet, seen sets, held frames). A failed write falls back to
+  `state.ini`, then the settings file; the gate opens once the write has been
+  attempted.
 - **Shutdown.** `aboutToQuit` and a `qAddPostRoutine` hook flush the dirty
   keys and wait for the worker; `ServerNode::shutdown` and
   `LocalMeshNode::stop` wait for pending writes and release their gated
@@ -183,27 +159,22 @@ the GUI thread. Now:
   behind it, so the direct-room transport tests pick the sealed frame out of
   what arrived instead of taking the last one.
 
-Two other GUI-thread costs from the same log:
+Two other GUI-thread costs handled the same way:
 
 - `MainWindow::startLocalMesh` derives the `#mesh` room key (210k PBKDF2
-  rounds in `RoomCrypto`, 1.2 s in four reports) on a worker first
+  rounds in `RoomCrypto`, over a second) on a worker first
   (`RoomCrypto::warmDefaultKey`) and builds the `LocalMeshNode` when it is
   cached.
-- `MainWindow::saveChatHistory` (1.4 s in three reports) copies the history
+- `MainWindow::saveChatHistory` copies the history
   (implicitly shared) and serialises and writes it on a one-thread writer, in
   order. `loadChatHistory` waits for that writer first, and the save from the
   close event waits for it, so nothing is lost on quit.
 
-Not changed: `RoomCrypto::decryptObject` in `ServerNode::processFrame` (three
-reports, all with the watchdog's machine-wide memory/IO starvation verdict;
-AES-GCM on a 4 MB frame takes milliseconds). Moving it off the thread would
-need an ordered pipeline for every relay frame type, because acks, receipts
-and `history-end` depend on arriving in order, and the seal open after it
-mutates the shared device on the GUI thread. The `RoomSeal::open` and
-`refreshChannelList` -> `conversationForChannel` reports were also starvation
-verdicts with stale frames (`setParticipants` and `conversationForChannel`
-are a few string operations); the real work in them was the per-frame saves
-above.
+`RoomCrypto::decryptObject` in `ServerNode::processFrame` stays on the GUI
+thread: AES-GCM on a 4 MB frame takes milliseconds, and moving it would need an
+ordered pipeline for every relay frame type (acks, receipts and `history-end`
+depend on order, and the seal open after it mutates the shared device on the
+GUI thread).
 
 ## Identities per room
 
@@ -219,14 +190,12 @@ above.
 
 ## Who can open a direct message
 
-Server DMs and private rooms go through `OfficeChannelMirror`. It used to start
-only from a successful signed heartbeat (or offline mode) and only when this
-desktop holds the account's own key, so two signed-in users still saw "Sign in
-with your account key": anyone right after sign-in, before the next heartbeat,
-and anyone who signed in with email and password on a desktop whose key is not
-the account's (`ownsDesktopKey` false in `activateAccountSession`).
+Server DMs and private rooms go through `OfficeChannelMirror`. It starts for a
+desktop holding the account's own key, and also for a desktop signed in with
+email and password whose key is not the account's (`ownsDesktopKey` false in
+`activateAccountSession`):
 
-- `startOfficeChannelMirror()` now also accepts an active account session that
+- `startOfficeChannelMirror()` accepts an active account session that
   has a token for the relay (`accountSessionTokenForUrl(catalogApiUrl())`).
   The mirror sends that token as `Authorization: Bearer` on every relay request
   (`OfficeChannelMirror::apiRequest`, through `setSessionProvider`, which only
@@ -258,7 +227,7 @@ exists only so the v3 vector tests can open the v3 DM vectors.
 - `open` returns `Own` for this device's frames coming back from the relay.
   `ServerNode` ignores them: no `forkmesh-received`, no key advertisement; it
   only uses the relay's recipient count on the echo for the sent mark of a
-  message it sent this session. Since own frames no longer open, the outbox
+  message it sent this session. Since own frames do not open, the outbox
   is filled only when a frame is sent, not from the relay's replay after a
   restart.
 - There is no history-replay exception: a frame already opened is `replay`.
@@ -358,7 +327,7 @@ badge, on a DM) shows the 60 digits in 12 groups, the QR code of the QR string
 "Mark as verified". A change to the approved set after both accounts have a
 device clears verified and adds "Your safety number with @name changed."
 
-## Relay hardening (2026-10-22)
+## Relay hardening
 
 The desktop side of [chat-relay-hardening.md](../app/chat-relay-hardening.md)
 (R1 to R7). Tests: `testNodeBinding` in `test_chat_v3.cpp`, and in
@@ -389,7 +358,7 @@ room tests and `testOfficeChannelMirror`.
   channels keep their `private` marks. `sendDirect` only posts a system line.
   `createPrivateChannel` on the shared room accepts only the device-local
   `#team`. "Message" on a person opens a server DM for the verified account
-  and is not offered for a guest; there is no relay fallback any more. Cove
+  and is not offered for a guest; there is no relay fallback. Cove
   invites, and the "opened your cove" notice, are server DMs
   (`OfficeChannelMirror::sendDirectText`, which opens the conversation
   without switching to it). On start `purgeRelayPrivateChannels` forgets the
@@ -402,8 +371,7 @@ room tests and `testOfficeChannelMirror`.
   (sealed to the room's devices, readable by anyone in the room), Nearby for
   `#mesh` ("anyone nearby can read it"), This device for `#team`,
   Server-visible for notices, and End-to-end only for server private channels
-  and DMs, whose members the server checks. The old relay private-channel
-  "End-to-end" badge is gone with those channels.
+  and DMs, whose members the server checks.
 - **Authenticated frames only (R3).** `sendEncrypted` seals every person
   frame, public channels included; there is no controller-readable path.
   ForkBot and teammate lines keep this device's `senderId` and name the bot in
@@ -411,7 +379,7 @@ room tests and `testOfficeChannelMirror`.
   shown under that bot's id but named "<bot> · via <poster>", the poster
   being the sending node's verified account or, unverified, `Guest NNNN`
   (from the node key's hash, `relayrules::guestLabel`), so any sealed sender,
-  a guest included, can no longer pass as ForkBot. The name is set on the
+  a guest included, cannot pass as ForkBot. The name is set on the
   message itself, so the transcript, list previews and notifications all show
   it; the office mirror hands the same verifier to its room nodes. Such a line
   never renames the device. An
@@ -456,8 +424,8 @@ room tests and `testOfficeChannelMirror`.
   `#mesh`: bundles carry `acct` = node id, frames carry no `ownerUser` and a
   received one is ignored, the beacon id is 12 random bytes drawn on start and
   on every network change (`renewBeaconId`), the beacon has no `node`, and the
-  start line says anyone nearby can read the room. A device no longer
-  re-seals its earlier messages: a joiner (direct or through another device)
+  start line says anyone nearby can read the room. A device does not
+  re-seal its earlier messages: a joiner (direct or through another device)
   gets only messages still queued for nobody (`resealOwnHistory`,
   `sendHistoryTo`); already delivered ones are forwarded only as their
   original sealed frames. Beacon peers are tracked by beacon id in

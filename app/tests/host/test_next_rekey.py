@@ -97,7 +97,7 @@ def test_every_blind_index_column_is_handled(schema_db):
     registered = {(t, c) for t, cols in rk.BI_COLUMNS.items() for c in cols}
     assert not in_schema - registered, (
         "add these *_bi columns to BI_COLUMNS in tools/next_rekey.py and "
-        "docs/REKEY.md: %s" % sorted(in_schema - registered))
+        "docs/operations/rekey.md: %s" % sorted(in_schema - registered))
     assert not registered - in_schema, (
         "BI_COLUMNS names columns the schema no longer has: %s"
         % sorted(registered - in_schema))
@@ -125,11 +125,11 @@ def test_every_ciphertext_token_and_dropped_table_exists(schema_db):
 
 
 def test_inventory_doc_names_every_registered_table():
-    doc = (paths.REPO_DIR / "docs" / "REKEY.md").read_text("utf-8")
+    doc = (paths.REPO_DIR / "docs" / "operations" / "rekey.md").read_text("utf-8")
     names = set(rk.BI_COLUMNS) | set(rk.CIPHER_COLUMNS) | set(rk.DROP_TABLES) \
         | set(rk.TOKEN_COLUMNS) | {rk.CHAT_TABLE[0]}
     missing = sorted(t for t in names if "`%s`" % t not in doc)
-    assert not missing, "docs/REKEY.md does not list: %s" % missing
+    assert not missing, "docs/operations/rekey.md does not list: %s" % missing
 
 
 # --------------------------------------------------------------------------

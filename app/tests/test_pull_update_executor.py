@@ -347,7 +347,7 @@ def test_gateway_config_advertises_one_executor_for_both_mutations():
     assert "update-pull-branch requires an operator-owned" in source
     assert "update-pull-branch" in refresh.PUBLIC_OPERATIONS
     schema = json.loads(
-        (ROOT / "www" / "docs" / "headless-mirror-refresh.schema.json")
+        (ROOT / "docs" / "headless-mirror-refresh.schema.json")
         .read_text(encoding="utf-8"))
     operations = schema["properties"]["operations"]
     assert "update-pull-branch" in operations["items"]["enum"]

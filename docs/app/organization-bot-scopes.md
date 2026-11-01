@@ -1,6 +1,6 @@
 # Organization bot scopes
 
-An organization bot token (`fmbot_<id>_<secret>`) is a revocable bearer
+Part of the [App docs](README.md). An organization bot token (`fmbot_<id>_<secret>`) is a revocable bearer
 credential minted on `POST /api/orgs/<org>/bot-tokens` (`org_bot_tokens_handler`
 in `app/src/entry.py`) by owners, admins and (task scopes only) members. The
 desktop's Genie credential mints the same kind of token with the task scopes.

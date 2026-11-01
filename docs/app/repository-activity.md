@@ -1,4 +1,4 @@
-# Repository activity (Pulse, leaderboard, achievements)
+# Repository activity (Pulse, leaderboard, achievements, traffic)
 
 Part of [the App docs](README.md). The repository **Insights** tab (linked as
 **Activity** from the About box) is a GitHub/Forgejo-style Pulse with a
@@ -12,7 +12,7 @@ The tab has a left sub-navigation (a wrapped row of pills below 768px):
 | --- | --- | --- |
 | Pulse (default) | `/<owner>/<repo>/insights?period=1w` | `pulse` |
 | Leaderboard | `?view=leaderboard`, all time with `&scope=all` | `pulse`, `pulse?period=all` |
-| Contributors | `?view=contributors` | `stats`, `history`, `traffic` (the previous Insights page, restyled) |
+| Contributors | `?view=contributors` | `stats`, `history`, `traffic` ([Traffic](#traffic)) |
 | Code frequency | `?view=frequency` | `stats` (52 weekly commit counts) and the period's `pulse.series` |
 | Recent commits | `?view=commits` | `history` (latest 60 commits of the selected branch) |
 
@@ -36,11 +36,11 @@ states `--dashboard-open`; every state is also a text label and an icon.
 `GET /api/repo/<owner>/<repo>/pulse?period=<24h|3d|1w|1m|all>[&person=<name>]`
 
 Served by the mirror gateway (`tools/mirror_gateway.py`,
-`GitRepository.pulse`). It is not a separately advertised gateway operation:
-a repository serves `pulse` exactly when it serves `stats`
-(`PULSE_CARRIER_OPERATION`, the same pattern as `branch-trash`), so no
-repository configuration, signed operation list or node binary changes. The
-app routes it like the other reads: the host fast path
+`GitRepository.pulse`; see [mirroring](../mirroring.md)). It is
+not a separately advertised operation: a repository serves `pulse` exactly
+when it serves `stats` (`PULSE_CARRIER_OPERATION`, as with `branch-trash`), so
+no repository configuration, signed operation list or node binary had to
+change. The app routes it like the other reads: the host fast path
 (`repo_fastpath.READ_OPERATIONS`), `REPO_HOST_READ_ACTIONS`,
 `HOSTED_API_READ_OPERATIONS` for private core-hosted repositories (a reader
 check, then a capability-signed core read; anyone else gets the same
@@ -104,20 +104,19 @@ Every rank is distinct. Equal scores are ordered by the work that is hardest
 to pad (`PULSE_TIE_BREAK`): merged pull requests, reviews, closed issues, then
 active days (UTC days in the window with any scored activity or commit), then
 commits, pull requests opened, issues opened and comments, and only then by
-name. Shared ranks (1, 1, 3) read as a bug to contributors and gave nobody a
-reason to do the harder work. Opening pull requests and issues scores so that
-newer contributors whose work is still in review show up; the daily cap keeps
-it from being padded. The payload's `scoring` carries `openedPerDay` and
-`tieBreak` so the "How the score works" note says the same thing as the
-server. The page shows the top three as a podium and each row's breakdown
-inline. Rank movement compares with the previous window
-of the same length; for all time, with the ranking a week earlier. People are
-matched by their case-folded name, so a git author name and a ledger account
-only merge when they are spelled the same.
+name: shared ranks (1, 1, 3) read as a bug and reward nobody for harder work.
+Opening pull requests and issues scores so newer contributors whose work is
+still in review show up; the daily cap stops padding. The payload's `scoring`
+carries `openedPerDay` and `tieBreak` so the "How the score works" note
+matches the server. The page shows the top three as a podium and each row's
+breakdown inline. Rank movement compares with the previous window of the same
+length (for all time, the ranking a week earlier). People are matched by
+case-folded name, so a git author and a ledger account merge only when spelled
+the same.
 
 ### Humans only
 
-The owner decided (2026-10-21) that only people are ranked. Bots, AI agents
+Only people are ranked (an owner decision). Bots, AI agents
 and mirror nodes are left out of the leaderboard, newcomers, top contributors,
 streaks and milestones, and their commits are left out of the commit counts,
 the "N authors" sentence, line counts and the committers chart; the "How the
@@ -196,9 +195,23 @@ request:
   hour (1m, all), so a window advances at most once per bucket and concurrent
   misses share one computation. A `person` answer is computed from the same
   index (about 10 ms).
-- Measured on a desktop: a 45,560-commit repository: first answer 1.1 s, later
-  periods 20-30 ms; a 62,808-commit repository with 1,100 commits a
-  week: 3.7 s for a week's first answer, then under 0.1 s.
+- Measured on a desktop: 45,560 commits, first answer 1.1 s, later periods
+  20-30 ms; 62,808 commits at 1,100 a week, 3.7 s for a week's first answer,
+  then under 0.1 s.
+
+## Traffic
+
+The Contributors view shows a 30-day chart of completed Git clones of a
+public repository. `GET /api/repo/<owner>/<repo>/traffic` returns one UTC-day
+bucket for each of the last 30 days, zero days included, plus the period
+total.
+
+The endpoint reads `product_clone_daily`, which the routed HTTPS upload-pack
+path increments after serving a clone. Private repositories answer as not
+found. Counting clones rather than requests keeps a Git client's several
+transport requests from showing as several clones.
+
+## Dashboard code and tests
 
 The dashboard code is a lazy chunk (`09-repo-activity.js`,
 `dashboard-page-repo-activity.js`) loaded on the first Insights view, so other

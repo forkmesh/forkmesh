@@ -19,7 +19,7 @@ namespace {
 
 const QString kWebOrigin = QStringLiteral("https://forkmesh.com");
 const QString kSourceTree = QStringLiteral("https://app.forkmesh.com/forkmesh/forkmesh/tree/main/");
-const QString kRepositoryPrefix = QStringLiteral("www/docs/");
+const QString kRepositoryPrefix = QStringLiteral("docs/");
 const QString kDependenciesPath = QStringLiteral("@dependencies");
 const QString kDependenciesArea = QStringLiteral("dependencies");
 const QString kDependenciesSchema = QStringLiteral("forkmesh-docs-dependencies-v1");
@@ -47,6 +47,21 @@ const QStringList kGuideOrder = {
     QStringLiteral("cloudflare-workers-ai-coding-agent.md"),
 };
 
+const QStringList kPillars = {
+    QStringLiteral("architecture.md"),
+    QStringLiteral("encryption.md"),
+    QStringLiteral("mirroring.md"),
+    QStringLiteral("self-hosting.md"),
+    QStringLiteral("censorship-resilience.md"),
+    QStringLiteral("protocol/threat-model.md"),
+};
+
+const QStringList kUnpublishedDirectories = {
+    QStringLiteral("community"),
+    QStringLiteral("finance"),
+    QStringLiteral("marketing"),
+};
+
 const QStringList kReservedSlugs = {
     QStringLiteral("business-model"),
     QStringLiteral("certification"),
@@ -67,15 +82,29 @@ const QStringList kReservedSlugs = {
 const QHash<QString, QString> &directoryAreas()
 {
     static const QHash<QString, QString> map = {
-        {QStringLiteral("design"), QStringLiteral("design")},
-        {QStringLiteral("engineering"), QStringLiteral("engineering")},
+        {QStringLiteral("protocol"), QStringLiteral("protocol")},
+        {QStringLiteral("design"), QStringLiteral("protocol")},
+        {QStringLiteral("conformance"), QStringLiteral("protocol")},
         {QStringLiteral("security"), QStringLiteral("security")},
         {QStringLiteral("operations"), QStringLiteral("operations")},
+        {QStringLiteral("disaster-recovery"), QStringLiteral("operations")},
+        {QStringLiteral("release"), QStringLiteral("operations")},
         {QStringLiteral("mobile"), QStringLiteral("mobile")},
-        {QStringLiteral("research"), QStringLiteral("strategy")},
-        {QStringLiteral("strategy"), QStringLiteral("strategy")},
-        {QStringLiteral("launch"), QStringLiteral("strategy")},
-        {QStringLiteral("superpowers"), QStringLiteral("superpowers")},
+        {QStringLiteral("governance"), QStringLiteral("project")},
+        {QStringLiteral("funding"), QStringLiteral("project")},
+        {QStringLiteral("desktop"), QStringLiteral("desktop")},
+        {QStringLiteral("agents"), QStringLiteral("desktop")},
+        {QStringLiteral("app"), QStringLiteral("app")},
+        {QStringLiteral("host"), QStringLiteral("app")},
+        {QStringLiteral("server"), QStringLiteral("app")},
+        {QStringLiteral("www"), QStringLiteral("app")},
+        {QStringLiteral("native"), QStringLiteral("native")},
+        {QStringLiteral("marketplace"), QStringLiteral("marketplace")},
+        {QStringLiteral("plugins"), QStringLiteral("marketplace")},
+        {QStringLiteral("world"), QStringLiteral("world")},
+        {QStringLiteral("office"), QStringLiteral("world")},
+        {QStringLiteral("tools"), QStringLiteral("tools")},
+        {QStringLiteral("engineering"), QStringLiteral("tools")},
     };
     return map;
 }
@@ -261,7 +290,7 @@ QString snippetFor(const QString &markdown, const QString &needle)
 
 QString DocsLibrary::bundledRoot()
 {
-    return QStringLiteral(":/forkmesh-market/packages/docs/repository/www/docs");
+    return QStringLiteral(":/forkmesh-market/packages/docs/repository/docs");
 }
 
 QString DocsLibrary::bundledDependencies()
@@ -282,23 +311,32 @@ QString DocsLibrary::dependenciesSource()
 const QList<DocsArea> &DocsLibrary::areas()
 {
     static const QList<DocsArea> list = {
+        {QStringLiteral("pillars"), QStringLiteral("Core documentation"),
+         QStringLiteral("Architecture, encryption, mirroring, self-hosting, censorship resilience and the threat model.")},
         {QStringLiteral("guides"), QStringLiteral("Guides"),
-         QStringLiteral("Getting started, the product promise, business model, identities, hosted "
-                        "repositories and imports.")},
-        {QStringLiteral("design"), QStringLiteral("Design"),
-         QStringLiteral("Protocol and federation design decisions.")},
-        {QStringLiteral("engineering"), QStringLiteral("Engineering"),
-         QStringLiteral("Quality gates, performance budgets and the definition of done.")},
+         QStringLiteral("Install, use and run ForkMesh: repositories, sync, chat, calls, identities and imports.")},
+        {QStringLiteral("protocol"), QStringLiteral("Protocol & design"),
+         QStringLiteral("The normative protocol suite, its conformance vectors and design decisions.")},
         {QStringLiteral("security"), QStringLiteral("Security"),
-         QStringLiteral("Security boundaries and local integration contracts.")},
+         QStringLiteral("Trust boundaries, keys, private repositories, chat encryption and reviews.")},
         {QStringLiteral("operations"), QStringLiteral("Operations"),
-         QStringLiteral("Deployment, recovery, gateways, headless nodes and service runbooks.")},
-        {QStringLiteral("mobile"), QStringLiteral("Mobile"),
-         QStringLiteral("Mobile node contract and the owned Git engine.")},
-        {QStringLiteral("strategy"), QStringLiteral("Strategy & research"),
-         QStringLiteral("Launch readiness, weekly briefs and pricing research.")},
-        {QStringLiteral("superpowers"), QStringLiteral("Plans & specs"),
-         QStringLiteral("Implementation plans and design specs for shipped features.")},
+         QStringLiteral("The served stack, fleet tooling, releases, recovery, gateways and headless nodes.")},
+        {QStringLiteral("mobile"), QStringLiteral("Phone apps"),
+         QStringLiteral("Using ForkMesh on iPhone, Apple Watch and Android.")},
+        {QStringLiteral("project"), QStringLiteral("Project"),
+         QStringLiteral("Governance, funding and the definition of done.")},
+        {QStringLiteral("desktop"), QStringLiteral("Desktop internals"),
+         QStringLiteral("How the Qt desktop app and its coding agents are built.")},
+        {QStringLiteral("app"), QStringLiteral("App & website internals"),
+         QStringLiteral("The Python app, its CPython host, the website and the Go daemon.")},
+        {QStringLiteral("native"), QStringLiteral("Phone app internals"),
+         QStringLiteral("How the iOS and Android apps are built and kept alike.")},
+        {QStringLiteral("marketplace"), QStringLiteral("Marketplace internals"),
+         QStringLiteral("Packages, plugins and the Market.")},
+        {QStringLiteral("world"), QStringLiteral("World & Office internals"),
+         QStringLiteral("The 3D World and the 2D Office.")},
+        {QStringLiteral("tools"), QStringLiteral("Tools & engineering"),
+         QStringLiteral("Repository tools, conformance suites and engineering rules.")},
         {QStringLiteral("schemas"), QStringLiteral("Schemas & data"),
          QStringLiteral("Machine-readable configuration and protocol schemas served verbatim.")},
     };
@@ -330,6 +368,8 @@ QString DocsLibrary::areaFor(const QString &path)
         return kDependenciesArea;
     if (path.endsWith(QLatin1String(".json")))
         return QStringLiteral("schemas");
+    if (kPillars.contains(path))
+        return QStringLiteral("pillars");
     const int slash = path.indexOf(QLatin1Char('/'));
     if (slash < 0)
         return QStringLiteral("guides");
@@ -567,6 +607,9 @@ bool DocsLibrary::load(const QString &root)
         const QString path = file.mid(base.size() + 1);
         if (path.startsWith(QLatin1Char('.')) || path.contains(QLatin1String("/.")))
             continue;
+        if (kUnpublishedDirectories.contains(path.section(QLatin1Char('/'), 0, 0)) &&
+            path.contains(QLatin1Char('/')))
+            continue;
         QFile handle(file);
         if (!handle.open(QIODevice::ReadOnly))
             continue;
@@ -601,6 +644,8 @@ bool DocsLibrary::load(const QString &root)
         const int areaB = areaOrder.value(b.area);
         if (areaA != areaB)
             return areaA < areaB;
+        if (a.area == QLatin1String("pillars") && a.path != b.path)
+            return kPillars.indexOf(a.path) < kPillars.indexOf(b.path);
         if (a.area == QLatin1String("guides")) {
             const int rankA = kGuideOrder.indexOf(a.path) < 0 ? kGuideOrder.size()
                                                                : kGuideOrder.indexOf(a.path);
@@ -808,7 +853,7 @@ QList<DocsHit> DocsLibrary::search(const QString &query, int limit) const
 
 QString DocsLibrary::pagePathFor(const QString &repositoryPath) const
 {
-    if (repositoryPath == QLatin1String("www/docs"))
+    if (repositoryPath == QLatin1String("docs"))
         return m_index.contains(QStringLiteral("README.md")) ? QStringLiteral("README.md")
                                                               : QString();
     if (!repositoryPath.startsWith(kRepositoryPrefix))

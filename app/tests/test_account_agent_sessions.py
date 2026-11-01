@@ -3,7 +3,7 @@
 
 A mirror runs the account's agent work for whichever repository the job named,
 which is rarely the repository the reader happens to have open. The desktop and
-the phone must not poll (www/docs/operations/polling-elimination.md), so asking
+the phone must not poll (docs/operations/polling-elimination.md), so asking
 repository by repository is not an option either: this route answers for the
 whole account in one indexed read, and the account event doorbell tells the
 clients when to ask again.

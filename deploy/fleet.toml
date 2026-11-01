@@ -2,7 +2,7 @@
 # --execute` from ~/projects/forkmesh/config/fleet/fleet-instances.json
 # (instance ids) and fleet-state.json (WireGuard public keys). Public
 # addresses stay in fleet-instances.json; the tools read them by label.
-# No secrets: every secret is a credential name only (docs/OPERATIONS.md).
+# No secrets: every secret is a credential name only (docs/operations/README.md).
 
 domain = "next.forkmesh.com"          # DNS suffix for the per-node nN hosts; its homepage Worker was retired 2026-09-27
 app_host = "app.forkmesh.com"         # round-robin A records over the core nodes
@@ -14,7 +14,7 @@ instance_tag = "forkmesh-next"        # hard guard in tools/next_fleet.py
 ssh_key_name = "fmnext-fleet"
 # sshd port on every node and runner, off 22 so the bots that sweep 22 stop
 # reaching it; privileged, so only root can listen there. Move a node with
-# `tools/next_fleet.py install nN --steps ssh-port --execute` (docs/deploy/ssh-port.md).
+# `tools/next_fleet.py install nN --steps ssh-port --execute` (docs/operations/ssh-port.md).
 ssh_port = 822
 # No fixed ACME issuer: for app/world the live core first in rendezvous
 # order (sha256 of hostname:node) issues and renews over HTTP-01; the others
@@ -48,12 +48,12 @@ gomemlimit = "150MiB"
 fk = true
 # Snapshot when the SQLite WAL reaches 32 MiB instead of rqlite's 4 MiB: at
 # 4 MiB each core snapshotted every ~3 min and rewrote the 70 MB database each
-# time, ~60 MB/min of disk writes per core (docs/deploy/README.md Traps).
+# time, ~60 MB/min of disk writes per core (docs/operations/fleet-tooling.md Traps).
 snap_wal_size = 33554432
 
 [caddy]
 # Upstream release binary, installed by `next_fleet.py install nN --steps caddy`
-# as /usr/local/bin/caddy (docs/OPERATIONS.md "Caddy"). sha256 of
+# as /usr/local/bin/caddy (docs/operations/runbook.md "Caddy version"). sha256 of
 # caddy_2.11.4_linux_amd64.tar.gz, checked against the release's signed
 # sha512 checksums file.
 version = "2.11.4"
@@ -70,7 +70,7 @@ gateway_port = 8790
 read_mode = "http"
 d1_log = true
 flagship_receive_pack = true
-# Vault (docs/VAULT.md): true = the app starts sealed and loads only the
+# Vault (docs/operations/vault.md): true = the app starts sealed and loads only the
 # bootstrap credentials (RQLITE_PASSWORD, FORKMESH_MESH_SECRET); every other
 # name below is sealed into the host_secrets table under DATA_KEY by
 # tools/next_vault.py sync, and DATA_KEY stays on the operator desktop,
@@ -79,7 +79,7 @@ flagship_receive_pack = true
 vault = true
 # With the vault on: a sealed node (reboot, crash restart) fetches DATA_KEY
 # from any live, unsealed core peer over the WireGuard mesh, so only a
-# restart of every node at once needs the desktop (docs/VAULT.md).
+# restart of every node at once needs the desktop (docs/operations/vault.md).
 vault_peer_unseal = true
 # Credentials the app always loads (LoadCredentialEncrypted=); with the vault
 # on, the app variables to seal into host_secrets instead.
@@ -159,7 +159,7 @@ enabled = true
 udp_port = 3479
 http_port = 7881
 # FM Media (QUIC and WebTransport) beside the WebRTC SFU; off until clients
-# exist (docs/deploy/calls.md "FM Media").
+# exist (docs/operations/call-servers.md "FM Media").
 fmm = false
 fmm_port = 4433
 
@@ -175,9 +175,9 @@ fmm_port = 4433
 reconciler = "dry"
 
 [ids]
-# Host intrusion detection (deploy/core/ids.py, docs/IDS.md): a root
+# Host intrusion detection (deploy/core/ids.py, docs/operations/intrusion-detection.md): a root
 # fmnext-ids service on every core and runner. false renders none of it.
-# Rolled out 2026-09-24 (docs/IDS.md).
+# Rolled out 2026-09-24 (docs/operations/intrusion-detection.md).
 enabled = true
 # SHA256 fingerprints of the keys allowed to log in over SSH (the fleet key:
 # `ssh-keygen -lf ~/projects/forkmesh/ssh/fleet/next_fleet_ed25519.pub`). A
@@ -194,14 +194,14 @@ ssh_foreign_ip_severity = "alert"
 # verifies, so a lockdown can only be cleared by rebuilding the node.
 operator_public_key = "qUPEQcNjLAkc3B0ET_fpiA9pCI73F210j63I9kOynsU"
 # Per-detector severity overrides ("info" | "alert" | "lockdown"), e.g.
-# listener_unexpected = "lockdown". Defaults: docs/IDS.md.
+# listener_unexpected = "lockdown". Defaults: docs/operations/intrusion-detection.md.
 severity = {}
 # Direct mail from the IDS itself for lockdown, test and unrecorded
 # incidents (works when every app is sealed or down): it submits to the
 # node's own Postfix on 127.0.0.1:25 (relay and Mailtrap fallback apply); in
 # a lockdown, whose firewall stops Postfix sending, it posts to the Mailtrap
 # API as root with the fallback relay's token from /etc/postfix/sasl_passwd.
-# No extra secret. mail_from empty: founders@forkmesh.com. docs/IDS.md.
+# No extra secret. mail_from empty: founders@forkmesh.com. docs/operations/intrusion-detection.md.
 direct_mail = true
 mail_to = "security@forkmesh.com"
 mail_from = ""
@@ -214,7 +214,7 @@ remove_voter = true
 # quarantine by the other cores (a strict majority).
 heartbeat_stale_s = 180
 
-# Phone-approved self-deploy (docs/deploy/self-deploy.md): a merge signed by
+# Phone-approved self-deploy (docs/operations/self-deploy.md): a merge signed by
 # an enrolled phone key is built and activated by the cores themselves.
 [self_deploy]
 enabled = false

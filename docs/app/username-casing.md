@@ -1,15 +1,12 @@
 # Username capitalization
 
-An account name is one identity in every capitalization: `AliceSmith`,
-`alicesmith` and `ALICESMITH` sign in to the same account, open the same
-`/@alicesmith` profile, and can never be registered twice. The stored name,
-the blind indexes (`blind_index(name)`), the `users.username` column,
-organization roles, permissions, routing and every comparison stay
-lowercase, as before.
-
-What changes is the text people read. An account may keep the capitalization
-its owner chose, so the dashboard shows `AliceSmith` where it used to show
-`alicesmith`.
+Part of [the App docs](README.md). An account name is one identity in every
+capitalization: `AliceSmith`, `alicesmith` and `ALICESMITH` sign in to the same
+account, open the same `/@alicesmith` profile, and can never be registered
+twice. The stored name, the blind indexes (`blind_index(name)`), the
+`users.username` column, organization roles, permissions, routing and every
+comparison are lowercase. Only displayed text keeps the capitalization the
+owner chose (`AliceSmith`).
 
 ## Where the casing is stored
 
@@ -24,8 +21,8 @@ after a rename, falls back to the stored name (`display_name`).
   name field. The name itself is still lowercased before any check.
 - **Settings → Public profile → Name capitalization**
   (`data-profile-page-name-case`) sends `nameCase` to
-  `POST /api/accounts/profile`. Accounts created before this change start
-  without a casing and show their stored name until their owner sets one.
+  `POST /api/accounts/profile`. Older accounts have no casing and show their
+  stored name until their owner sets one.
 
 ## Where it is returned
 

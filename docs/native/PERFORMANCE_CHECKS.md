@@ -1,558 +1,360 @@
 # Performance checks
 
-"Send diagnostics" on the phone starts an agent with a scrubbed diagnostics
-bundle (iOS: `DiagnosticsBundle` in `FMTools`, report from
-`PerformanceReport`; Android: `DiagnosticsBundle` in
-`core/.../tools/PerformanceDiagnostics.kt`). The prompt sends the agent here
-first and asks it to add its check below before committing, so each check
-starts from what the previous ones learned. Keep this page short: correct a
-wrong reading in place rather than adding a contradicting note. The DJ
-studio has its own button, bundle and page:
-[../marketplace/video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md).
+Part of the phone apps ([README.md](README.md)). "Send diagnostics" on the
+phone starts an agent with a scrubbed diagnostics bundle (iOS:
+`DiagnosticsBundle` in `FMTools`, report from `PerformanceReport`; Android:
+`DiagnosticsBundle` in `core/.../tools/PerformanceDiagnostics.kt`). The prompt
+sends the agent here first and asks it to add its check below before
+committing, so each check starts from what the previous ones learned. Keep this
+page short: correct a wrong reading in place rather than adding a
+contradicting note. The DJ studio has its own button, bundle and page:
+[video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md).
+The standing rules are in [iOS performance rules](#ios-performance-rules).
 
 ## Reading the bundle
 
 iOS report, section by section (`PerformanceReport.text`; at most 4000
-characters, lowest-ranked sections are trimmed first and say so):
+characters; the lowest-ranked sections are trimmed first and say so). A
+missing section is not always trimming: an older build may predate it (dates
+below say when each field arrived).
 
-- Header. `build ... commit <sha>`: check out that commit to read the code
-  that ran. `tab`, `screen`, `recent screens` are the state when the report
-  was built, not when the stalls happened. `stalls since launch` counts
-  frame, event-loop and named sync stalls of 200 ms or more; `paused while
-  visible N (longest X ms)` (since 2026-10-18) counts the times the whole
-  process stopped while the stall probes were running, which are not stalls
-  (see `FRAME`). `agents`
-  (lines listed, running, list view, agent dots, aquarium) and `watch`
-  (paired, app installed, reachable) since 2026-10-18: the watch bridge
-  reads and parses agent work only while a watch with the app is paired.
-  `chat history` (since 2026-10-29): the size of the stored chat history
-  files, which the app reads and restores at every launch. `screen` is the
-  page covering the tab when there is one (`Home`, `Report a bug`); before
-  2026-10-29 it gave only the tab, so on an iPhone, which opens on Home, a
-  report sent from Home read `tab: agents, screen: tab root`.
-- `FPS` comes from a 60 Hz probe (`TelemetryFrameProbe`), so about 60 is
-  normal even on a 120 Hz phone; it is not the display rate.
-- `FRAME` is the longest gap between two probe callbacks in each second,
-  `LOOP` the worst heartbeat lag in each second (`PerformanceMonitor`).
-  `avg` is the average of those per-second worsts. An average `LOOP` of
-  10-20 ms means the main thread is rarely idle; a high `max` alone is one
-  stall. An `uptime` of a few seconds makes every average a launch figure,
-  not a steady level. Compare the 5 minute average with the hour's: a `FRAME` average of
-  40-50 ms over an hour has been this phone's usual level (41 ms in the
-  2026-10-18 bundle, 51 ms in the 2026-10-17 one), so only a rise above it
-  points at the last few minutes. A `max` of tens of seconds with an
-  `uptime` not much longer, in a build without `paused while visible`, is
-  the process being suspended while the probes thought the app visible, not
-  a frozen main thread: the per-second rows go missing for that stretch, no
-  tracked operation lasts as long (one open across a suspension would), and
-  the stall's in-flight requests and sections are the resume burst. Since
-  2026-10-18 an off-main watch timer (`PerformanceMonitorService`, same
-  rate as the heartbeat) sees such a gap too, and the time it missed is
-  taken out of heartbeat lags, frame gaps and the telemetry `FRAME`.
-- `RELAY` is relay frames received. Before 2026-10-17 the hook was never
-  wired and it always read 0. Its `max` is the busiest second: dozens in
-  one second is the relay (re)joining a busy room (`world-general` answers a
-  hello from every peer), and every frame is opened and handled on the main
-  actor without a named section.
-- `Stalls by name` (before 2026-10-17 merged into `Slow events by name`,
-  where operations pushed the stalls out as `... N more`):
-  `eventLoop ui-isolate blocked` is the heartbeat catching a blocked main
-  thread, `frame` a late display callback, `sync <name>` a `timeSync`
-  section that names its culprit. `last` is the clock time of the newest.
-  A `frame` event's `vsyncMs=100` is the period of the 10 Hz stall probe,
-  not the display, and `buildMs` the time past it; a frame stall and an
-  event-loop stall a few milliseconds apart are one block seen twice.
-- `Main-actor work during stalls` (since 2026-10-18): the named sections
-  (`PerformanceMonitorService.section`, over 8 ms) that ran inside each
-  stall, summed per name. Sections nest (`relay.event` holds
-  `relay.control`, which holds the delta handling under it), so an outer
-  name's time includes its inner ones. A stall with no sections ran
-  unnamed work: SwiftUI's own updates, code not wrapped yet, or many short
-  main-actor jobs queued back to back (the heartbeat waits behind all of
-  them, so 65 relay frames of a few ms each read as one unnamed stall; look
-  at `RELAY` max). Since 2026-10-19 main-thread sections of 1 ms or more
-  are kept (the last 256), so such a burst sums under its name, and each
-  chat relay frame is a `relay.frame` section.
-  Launch (since 2026-10-29): `startup.services` holds everything
-  `AppServices.start` does on the main thread after the identity load, as
-  one block: `startup.init` (with `startup.auth`), `startup.projects`,
-  `startup.features` (one `startup.feature.<area>` each), `startup.wire`
-  and one `startup.<area>` per installer; over 200 ms it is its own `sync
-  startup.services` stall with the steps in its `sections`. `shell.start`
-  is the shell's first-appearance work and `chat.history.restore` the
-  stored chat history going back into the chat services. Before that only
-  `startup.auth` (5 ms) was named, so a launch stall read as unnamed work
-  with `startup.auth` beside it.
-  Since 2026-11-01 the section has a `(no named section)` row,
-  the sum of each stall's `unnamedMs`: the part of the block that no
-  section covered. The other rows are summed per name across stalls, and
-  an outer name includes its inner ones, so they do not add up to the
-  stall: in the 2026-11-01 bundle `startup.services` 38 ms held
-  `startup.features` 29 ms. When that row is most of the stall, read "Main
-  thread during stalls".
-  `surfaces.publish` (the widget, Live Activity and Shortcuts snapshot after
-  agent row changes) has been named since 2026-10-18. `watchSections` hands
-  every main-thread section of 1 ms or more to one watcher; the DJ studio
-  uses it to put app work in its long frames
-  ([../marketplace/video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md)).
-- `Stalls by time since shown` (since 2026-10-19): each stall's `shown`
-  (`launch` for the first time the app became visible, `resume` after) and
-  `shownMs`, how long after that it began, grouped into the first 10 s and
+- **Header.** `build ... commit <sha>`: check out that commit to read the code
+  that ran. `tab`, `screen`, `recent screens` are the state when the report was
+  built, not when the stalls happened; `screen` is the page covering the tab
+  (`Home`, `Report a bug`). Before 2026-10-29 it gave only the tab, so a report
+  from Home on an iPhone read `tab: agents, screen: tab root`.
+  - `stalls since launch`: frame, event-loop and named sync stalls of 200 ms
+    or more.
+  - `paused while visible N (longest X ms)` (2026-10-18): times the whole
+    process stopped while the stall probes ran. These are not stalls (see
+    `FRAME`).
+  - `agents` (lines listed, running, list view, agent dots, aquarium) and
+    `watch` (paired, app installed, reachable): the watch bridge parses agent
+    work only while a watch with the app is paired.
+  - `chat history` (2026-10-29): size of the stored chat history, which the
+    app reads at every launch.
+- **`FPS`** comes from a 60 Hz probe (`TelemetryFrameProbe`), so about 60 is
+  normal even on a 120 Hz phone.
+- **`FRAME`** is the longest gap between two probe callbacks in each second,
+  **`LOOP`** the worst heartbeat lag in each second (`PerformanceMonitor`);
+  `avg` averages those per-second worsts.
+  - An average `LOOP` of 10-20 ms means the main thread is rarely idle; a high
+    `max` alone is one stall.
+  - An `uptime` of a few seconds makes every average a launch figure.
+  - Compare the 5 minute average with the hour's: a `FRAME` average of 40-50 ms
+    over an hour is this phone's usual level, so only a rise above it points at
+    the last few minutes.
+  - An off-main watch timer (`PerformanceMonitorService`, same rate as the
+    heartbeat) sees a process suspension too, and the missed time is taken out
+    of heartbeat lags, frame gaps and the telemetry `FRAME`. In a build without
+    `paused while visible`, a `max` of tens of seconds with an `uptime` not
+    much longer is a suspension, not a frozen main thread: the per-second rows
+    go missing, no tracked operation lasts as long, and the stall's in-flight
+    requests are the resume burst.
+- **`RELAY`** is relay frames received (always 0 before 2026-10-17). Its `max`
+  is the busiest second: dozens in one second is the relay (re)joining a busy
+  room (`world-general` answers a hello from every peer), and every frame is
+  handled on the main actor.
+- **`Stalls by name`**: `eventLoop ui-isolate blocked` is the heartbeat
+  catching a blocked main thread, `frame` a late display callback,
+  `sync <name>` a `timeSync` section naming its culprit; `last` is the newest's
+  clock time. A `frame` event's `vsyncMs=100` is the 10 Hz stall probe's
+  period, `buildMs` the time past it. A frame stall and an event-loop stall a
+  few milliseconds apart are one block seen twice.
+- **`Main-actor work during stalls`**: named sections
+  (`PerformanceMonitorService.section`) that ran inside each stall, summed per
+  name. Main-thread sections of 1 ms or more are kept (the last 256).
+  - Sections nest (`relay.event` holds `relay.control`), so an outer name
+    includes its inner ones.
+  - A stall with no sections ran unnamed work: SwiftUI's own updates, unwrapped
+    code, or many short main-actor jobs queued back to back (65 relay frames of
+    a few ms read as one stall; check `RELAY` max). Each chat relay frame is a
+    `relay.frame` section.
+  - A `(no named section)` row (since 2026-11-01) sums each stall's
+    `unnamedMs`, the part of the block no section covered. When it is most of
+    the stall, read `Main thread during stalls`.
+- **`Main thread during stalls (leaf images < app frames)`** (since
+  2026-11-01): up to four samples of the main thread's stack per event-loop
+  stall, taken from the watch queue while the heartbeat was late
+  (`MainThreadSampler`), counted by signature: the leaf images (up to three,
+  e.g. `AttributeGraph < SwiftUICore`), then the two app frames nearest the
+  leaf (`ForkMesh +0x<offset>`, named with `atos`).
+  - System images with `no app frame`, or only the app's entry point after
+    them, mean SwiftUI, UIKit or Core Animation working on their own: layout,
+    a first build, a long list diff.
+  - `libsystem_kernel` at the leaf means the thread waited: a lock, a file
+    read, a Keychain or XPC round trip.
+  - A sample is taken 100 ms into a block and then once per heartbeat
+    interval, so a 350 ms block gives about three. This section and the one
+    above rank over the operation and endpoint tables, so they are not
+    trimmed first.
+  - Launch: `startup.services` holds everything `AppServices.start` does on the
+    main thread after the identity load: `startup.init` (with
+    `startup.auth`), `startup.projects`, `startup.features` (one
+    `startup.feature.<area>` each), `startup.wire` and one `startup.<area>` per
+    installer. Over 200 ms it is its own `sync startup.services` stall.
+    `shell.start` is the shell's first-appearance work, `chat.history.restore`
+    the stored history going back into the chat services.
+  - `surfaces.publish` is the widget, Live Activity and Shortcuts snapshot
+    after agent row changes. `watchSections` hands every section of 1 ms or
+    more to one watcher; the DJ studio uses it.
+- **`Stalls by time since shown`** (2026-10-19): each stall's `shown`
+  (`launch` or `resume`) and `shownMs`, grouped into the first 10 s and
   `later`. A stall in the first seconds of a resume belongs to the resume
   burst whatever screen it lands on.
-- `Stalls by screen` (since 2026-10-17): the same stalls grouped by the
-  tab and navigation stack showing when each was recorded
-  (`AppRouter.screenTitle`, the `screen` detail, also in `stalls.log`
-  lines). `not recorded` is a stall from an older build or one caught off
-  the main thread. Before 2026-10-29 a stall during launch or on the Home
-  page read `Agents`, the router's default tab: the router exists from the
-  end of `AppServices.start` and knew nothing of the launch screen or of
-  the Home page drawn over the tab. It reads `Launch` until the shell
-  starts and `Home` while Home covers the tab now; an `Agents` launch stall
-  in an older bundle (2026-10-18, 2026-10-19, 2026-10-29) was not the
-  Agents tab. A missing section is not always trimming: build 276
-  (commit b57c0d2) predates it, and a trimmed section says so. A screen
-  that was left can still own the work: a load it started keeps running
-  in `ApiService`'s caches after it is popped.
-- `Slow operations by name`: `track`ed awaits over 500 ms, over every
-  event kept (`events kept N/100`), while `HTTP endpoints` covers only
-  the last 5 minutes, so compare the same window. An operation that sits
-  near 8 s (`/api/repo/` reads) or 12 s (other GETs) is the request
-  timeout of `getJson`, not the main thread; one retried after a 5xx can
-  reach 24 s. Longer ones (31-32 s in the 2026-10-18 bundle, 534 s repo
-  reads in the 2026-10-19 one) were open while the app was in the
-  background: look for empty minutes in the per-minute rows. Since
-  2026-10-19 the time hidden or paused is taken out of an operation and
-  shown as `awayMs`, so such a read no longer tops the list and pushes the
-  rest into `... N more`. Waiting for the main actor between hops adds at
-  most about the `LOOP` max per hop (once `LOOP` is not a suspension); it
-  explains an operation a few hundred ms slower than its endpoint, not
-  seconds.
-- `In flight or finished during stalls`: requests open while a stall was
-  recorded. Correlation, not cause: a request that is in flight in many
-  stalls usually marks the burst the stalls happen in (resume, a ring, a
-  screen's first load); look at what runs on the main actor when that
-  burst lands. Weigh the count against how long the request was open: the
-  Agents list read was in flight for about 13 s of the 5 minutes yet in 8
-  of the stalls, which marks a burst; a request open most of the time is
-  in every stall and marks nothing.
-- `stalls.log tail`: the last lines of `diagnostics/stalls.log`. Release
-  stacks are unsymbolicated addresses; `libswift_Concurrency` under
-  `ForkMesh` frames means a main-actor task job, which is most app code.
-  Frame stalls carry no stack (the probe runs after the block), nor did
-  event-loop stalls before 2026-11-01; the other stacks are where slow
-  operations and `sync` sections started. Since 2026-11-01 an event-loop
+- **`Stalls by screen`**: stalls grouped by the tab and stack showing when
+  each was recorded (`AppRouter.screenTitle`, also in `stalls.log`). `not
+  recorded` is an older build or a stall caught off the main thread. The
+  screen reads `Launch` until the shell starts and `Home` while Home covers
+  the tab; before 2026-10-29 both read `Agents`, the router's default tab, so
+  an `Agents` launch stall in an older bundle was not the Agents tab. A screen
+  that was left can still own the work: a load it started keeps running in
+  `ApiService`'s caches.
+- **`Slow operations by name`**: `track`ed awaits over 500 ms, over every
+  event kept (`events kept N/100`); `HTTP endpoints` covers only the last
+  5 minutes, so compare the same window.
+  - Near 8 s (`/api/repo/` reads) or 12 s (other GETs) is `getJson`'s request
+    timeout, not the main thread; one retried after a 5xx can reach 24 s.
+  - Time hidden or paused is taken out and shown as `awayMs` (2026-10-19);
+    in older bundles, operations of minutes were open while the app was in the
+    background (look for empty per-minute rows).
+  - Main-actor hops add at most about the `LOOP` max each: that explains a
+    few hundred ms over the endpoint, not seconds.
+- **`In flight or finished during stalls`**: correlation, not cause. A request
+  in flight in many stalls usually marks the burst they happen in (resume, a
+  ring, a screen's first load); look at what runs on the main actor when it
+  lands. Weigh the count against how long it was open: a request open most of
+  the time is in every stall and marks nothing.
+- **`stalls.log tail`**: release stacks are unsymbolicated;
+  `libswift_Concurrency` under `ForkMesh` frames is a main-actor task job.
+  Frame stalls carry no stack (the probe runs after the block); an event-loop
   stall's stack is samples of the main thread taken while it was blocked
-  (`main thread at <lag>ms:`, four leaf frames and up to eight app frames).
-  Since 2026-10-19 each frame of an operation's stack also gives
-  `+0x<offset>` from its image's load address; `atos -o
+  (`main thread at <lag>ms:`, four leaf frames and up to eight app frames);
+  the other stacks are where slow operations and `sync` sections started. Each frame
+  gives `+0x<offset>` from its image's load address: `atos -o
   ForkMesh.app.dSYM/Contents/Resources/DWARF/ForkMesh -l 0x100000000
-  <0x100000000 + offset>` against the dSYM of the bundle's build names it.
-- `Main thread during stalls (leaf images < app frames)` (since
-  2026-11-01): up to four samples of the main thread's stack per
-  event-loop stall, taken from the watch queue while the heartbeat was
-  late (`MainThreadSampler`), counted by signature. A signature is the
-  leaf images (up to three, e.g. `AttributeGraph < SwiftUICore`) and then
-  the two app frames nearest the leaf (`ForkMesh +0x<offset>`; name them
-  with `atos` as for operation stacks). System images with `no app
-  frame`, or with only the app's entry point after them, mean SwiftUI,
-  UIKit or Core Animation working on their own: layout, a first build, a
-  long list diff. `libsystem_kernel` at the leaf means the thread waited:
-  a lock, a file read, a Keychain or XPC round trip. A sample is taken
-  half a stall threshold (100 ms) into a block and then once per
-  heartbeat interval, so a 350 ms block gives about three.
-- `App log` and `Busiest log lines` are optional (the user can leave logs
-  out). `Connected to ... room` counts relay (re)connects; each one follows a
-  resume or a dropped socket.
+  <0x100000000 + offset>` with the build's dSYM names it.
+- **`App log`** and **`Busiest log lines`** are optional. `Connected to ...
+  room` counts relay (re)connects; each follows a resume or a dropped socket.
+
+## iOS performance rules
+
+The shell's account avatar shares the phone-motion feed with the Genie view.
+Agent Watch feel defaults on unless the user turns it off; Reduce Motion stops
+the avatar movement but does not change that saved preference.
+
+A tab hidden under Home or behind another tab starts only the work the shell
+needs from it (Agents: the list, for the counts); streams, follows and
+watchers wait until it is first shown (`AgentsTabLiveGate`). SwiftUI evaluates
+every `@State` default each time the parent builds the view and keeps only
+the first, so a default does no reads or parsing in `init`
+(`AgentReadTracker` reads its store on first use).
+
+- No Keychain write per received frame on the main actor (`SecItemDelete` plus
+  `SecItemAdd` is a round trip to `securityd`). The chat replay book is written
+  at most every 250 ms off the main thread (`ChatKeyring.persistReplay`).
+- Parse API replies of 16 KB or more off the main actor
+  (`decodeResponseAsync`, `ApiParse.parseAsync`, `ApiParse.modelAsync`),
+  including documents read in batches (`publishedIssues`) and replies that
+  bypass `ApiService` (`ApiPackagesTransport.parse`; `PackagesClient.crm`
+  builds `CrmOrganizationData` in a detached task).
+- Write `@Observable` properties only when the value changes; every write
+  notifies, equal or not, including refreshes on every return to the app
+  (`AccountPackagesStore`, `HubPackageState`, `OrganizationPackagesLedger`,
+  `ShellNavigatorCounts`).
+- A scene-phase refresh runs on every inactive-to-active change (Control
+  Center, Notification Center, a system alert); gate it on age
+  (`AccountPackagesStore.refreshIfStale`) or a real return (`AppReturnGate`).
+- Read and decode stored files off the main actor at launch and restore a list
+  in one write (`ChatHub.attachHistory(inBackground:)`, batched `restore`s):
+  everything in `AppServices.start` after the identity load runs on the main
+  thread in one block. Name every launch step (`startup.<step>`).
+- Parse message text once per text, not per redraw (`ChatTextCache`).
+- Compute derived lists once per body and pass them down.
+- Do not let a ring cancel a load in flight; mark it and run one more load
+  afterwards, or none when the load's reads had not gone out yet. Join
+  in-flight loads (`loadIfStale`, shared reads).
+- Fan out independent reads (`PackagesClient.organizationPackages([String])`)
+  instead of asking each organization in turn.
+- Read only what a screen needs (`publishedPullHeads`, front matter only) and
+  keep ledgers between rings unless something relevant changed.
+- Build the selected tab first; other tabs later or on first visit. Hidden
+  tabs set `shellTabHidden` and pause frame-rate animations.
+- Fan out live values to small observed objects (one row redraws, not the
+  list); throttle shell counts (`ThrottledSnapshot`, at most 4 reads a
+  second); bump roster revisions only on real changes.
+- Decode images once through `FmImageCache` (48 MB cap), never in `body`.
+- Build Home and bottom-bar groups once per redraw and hand the installed set
+  down (`HubGroups.current(guest:installed:)`); `installedGatedPackages` reads
+  project settings once and indexes account state and catalog by id, so a
+  redraw is not quadratic in the package count.
+- Home tiles take their lookups from the layout built once per body;
+  `ShellHomeIcon` keeps only the shown fields (`ShellHomeIconFace`), not the
+  action closure, so SwiftUI skips unchanged icons.
+- The performance monitor ignores frame gaps that reach back into the
+  background.
+- Walking the view or accessibility tree (the Genie spider, the aquarium,
+  `GenieScreenScan`) runs on the main thread and builds accessibility
+  elements; scan on page and tab changes, then rarely, and cache each walk.
+- Parse agent transcripts off the main actor (`beatsFromTranscript` costs about
+  58 ms per 64 KB, `AgentTranscriptFormat.blocks` about 16 ms).
+  `TranscriptBeatCache` parses in a detached task once per transcript length;
+  live feeds re-read only the transcript that moved
+  (`ControlWatchFeeds.revision`, `AgentEagleFeed`).
+- Wrap main-actor work that grows with the account's data in
+  `PerformanceMonitorService.section(name)`. A section over 8 ms is named in
+  the `sections` detail of any stall it falls inside; one over 200 ms is its
+  own `sync` stall.
 
 ## Checks so far
 
-Newest first. Each entry: date and branch; what the bundle showed; the
-cause; the fix; what was ruled out; what the bundle lacked.
+Newest first. Each entry: date and branch; what the bundle showed; the cause;
+the fix; what was ruled out; what the bundle lacked.
 
-- 2026-11-01, `46-app-detected-performance-issue` (1.5.0 (327), commit
-  421a5f2, iPhone16,2, "tab: agents, screen: tab root", `uptime 49s`;
-  22 agent lines, 15 running, Eagle view, no watch app). Showed: "froze for
-  0.4 s (2 freezes)": event-loop stalls of 352 and 260 ms and a 248 ms
-  frame, all at 00:35:22, all `launch, first 10s`, all on `Home`; the only
-  named work inside them was `startup.services` 38 ms (which holds
-  `startup.features` 29 ms, so the rows do not add up), `shell.start` 24 ms
-  and four rows the report trimmed. So the 2026-10-29 fix held (the launch
-  block was about 420 ms then), and most of the 612 ms ran outside any
-  section, after the shell had started. Chat history was 137 KB, too
-  small to matter. Chat channels, owner keys and desktops were in flight
-  (the launch requests), and the `agents/list` reads of four repositories
-  finished at 00:35:23. Reading: an iPhone opens on Home, but the selected
-  tab (Agents, the router's default) is built under it at launch, and
-  before this change `NAVIGATION.md` said Agents was mounted 2 s later.
-  `AgentsScreen.onAppear` ran in full while hidden. It loaded the list
-  (which Home's counts need) and also started the Eagle feed, which streams
-  the transcript of every running desktop row (`since: 0`) and handles each
-  chunk on the main actor (`TranscriptFollower.apply`: a 200,000-character
-  suffix and a line scan of the text). It also started the agent dot
-  watcher (`AgentDotsWatch`: up to 12 relay watch targets plus a second
-  set of control-feed streams), whether the dots bar was on or not.
-  Separately, `HomeShell` creates `AgentsScreen()` on every pass of its
-  body (inside `NavigationStack`), and SwiftUI evaluates every `@State`
-  default each time, even though it keeps only the first. One of those
-  defaults, `AgentReadTracker`, parsed the stored read marks
-  (`agents/seenFinishedAt`, up to 400 entries) every time; the shell is
-  redrawn many times in the launch burst (one per count kind, per
-  `ShellCounts` write). Cause: not proven. The bundle did not name the
-  work, and the largest block is probably SwiftUI's first build of the
-  shell, Home and the hidden list. What was found and fixed is main-thread
-  work in that window that Home does not need. Fix: the hidden Agents tab
-  waits until it is first shown before it starts the Eagle follows and
-  the dot watcher, and keeps them after that (`AgentsTabLiveGate`, read in
-  `AgentsScreen.followDialogs` and `syncDots`; `onChange(of:
-  shellTabHidden)` starts them). The list load and the `ShellCounts`
-  writes are unchanged. `AgentReadTracker` reads its store the first time
-  it is used, not in `init`, so a discarded rebuild costs nothing (the
-  parse of up to 400 marks was not timed). Tests:
-  `testATrackerReadsItsStoredMarksOnlyWhenFirstUsed` (fails without the
-  fix: 20 reads for 20 discarded trackers),
+- **2026-11-01, `46-app-detected-performance-issue`** (1.5.0 (327), 421a5f2,
+  iPhone16,2, `uptime 49s`; 22 agent lines, 15 running, Eagle view, no watch
+  app). Showed: event-loop stalls of 352 and 260 ms and a 248 ms frame at
+  launch on `Home`; the only named work was `startup.services` 38 ms (holding
+  `startup.features` 29 ms) and `shell.start` 24 ms, so most of the 612 ms ran
+  outside any section. Cause, not proven: an iPhone opens on Home but builds
+  the selected tab (Agents) under it, and `AgentsScreen.onAppear` ran in full
+  while hidden. Besides the list Home's counts need, it started the Eagle feed
+  (every running desktop row's transcript from `since: 0`, each chunk handled
+  on the main actor by `TranscriptFollower.apply`) and the agent dot watcher
+  (`AgentDotsWatch`, up to 12 relay watch targets). `HomeShell` also re-created
+  `AgentsScreen()` on each body pass, so the `AgentReadTracker` `@State`
+  default re-parsed up to 400 read marks each time. Fix: the hidden Agents tab
+  starts the Eagle follows and the dot watcher only when first shown
+  (`AgentsTabLiveGate`, read in `AgentsScreen.followDialogs` and `syncDots`);
+  `AgentReadTracker` reads its store on first use. Tests:
+  `testATrackerReadsItsStoredMarksOnlyWhenFirstUsed`,
   `testTheHiddenAgentsTabStartsItsLiveWorkOnlyOnceShownAndKeepsIt`,
   `testAnEventLoopStallCarriesTheMainThreadSamplesTakenWhileItWasBlocked`,
   `testASignatureNamesTheLeafImagesThenTheNearestAppFrames`,
-  `testStallsSayHowMuchRanOutsideNamedSectionsAndWhereTheMainThreadWas`,
-  and on Darwin `testTheMainThreadCanBeSampledFromAnotherThread`. Ruled
-  out: the launch block (`startup.services` 38 ms); chat history (137 KB);
-  the slow repository reads and `agents/list` 403s (network, and they
-  finished after the stalls); the watch bridge (no watch app); the
-  MetricKit CPU exceptions (1.4.1, a week earlier). Not measured: how many
-  times the shell redraws in the launch burst; the
-  phone's cost of the Eagle and dot streams at launch (they wait for the
-  desktop link, so they may land after the first second); SwiftUI's first
-  build. Bundle gaps closed: event-loop stalls carry samples of the main
-  thread's stack (`MainThreadSampler`, taken from the watch queue while the
-  heartbeat is late), shown in "Main thread during stalls", and
-  `unnamedMs`, the part no section covered, shown as `(no named section)`
-  in "Main-actor work during stalls". Both sections now rank above the
-  operation and endpoint tables, so they are not trimmed first. Still
-  missing: the samples are unsymbolicated, so reading the app frames needs
-  `atos` and the build's dSYM.
-
-- 2026-10-29, `2672-agents-tab-freeze-fix` (1.5.0 (324), commit
-  cb5b44d, iPhone16,2, "tab: agents, screen: tab root"). Showed: "froze
-  for 0.3 s (2 freezes)" with `uptime 13s`: two event-loop stalls of 344
-  and 343 ms and a 372 ms frame, at 22:48:01-02, all `launch, first 10s`,
-  all filed under `Agents`; the only named work inside them was
-  `startup.auth` (5 ms); the Agents list read (4.8 s) and chat channels
-  finished after the stalls; `FRAME` avg 72 ms is a 13 s launch average.
-  Reading: telemetry starts in `AppServices.init`, about 22:48:01.7, and
-  `startup.auth` runs inside it, so one stall is the synchronous rest of
-  `AppServices.start` after the identity load (feature registration,
-  `wire`, 19 installers, all unnamed). `Agents` was the router's default
-  title, not the screen: the launch screen was up, and an iPhone opens on
-  Home. Cause (the largest measured part of that block): `installChat`
-  read and decoded the whole stored chat history (`relay-<scope>.json`,
-  up to 200 messages for each channel, room and direct conversation)
-  with `Data(contentsOf:)` and the byte parser, then put it back one
-  message at a time: each insert copied its conversation's array (O(n²)
-  per conversation), each restored direct message rescheduled a save
-  (`onChange` per message), `isDirect` validated 32 hex digits through
-  `Character` ranges about four times per message (25 ms per pass over
-  22,400 messages), and a deep `snapshot != loaded` compare (29 ms)
-  decided whether a purge needed saving. Measured (release `ForkMeshCore`
-  on x86, about one A17 core), 2.8 MB (8 channels, 4 rooms and 40 direct
-  conversations of 200): read 50 ms, restore 39 ms, direct restore 80 ms,
-  about 170 ms on the main thread; 6.2 MB (100 direct conversations):
-  100 + 96 + 226, about 420 ms, the size of the bundle's block. How big
-  this phone's history is the bundle could not say. Fix: the app attaches
-  the history with `inBackground: true` (`ChatHub.loadHistoryInBackground`:
-  read and decoded in a detached task; until then nothing is saved, so a
-  half-loaded state never overwrites the file; what arrives meanwhile is
-  merged), and the restores (`RelayService.restoreHistory`,
-  `DirectMessageService.restore`, `OfficeChannelService.restore`) group by
-  conversation and merge once (`RelayService.merging`), with one change
-  notice; `validChannelId` checks UTF-8 bytes; the purge check compares
-  item counts. Now about 28 ms (2.8 MB) and 70 ms (6.2 MB) on the main
-  thread, as `chat.history.restore`, with the read off it. Android had the
-  same per-message copies in `RelayRoom`, `DirectMessageService` and
-  `OfficeChannelService` (now `mergeSorted`); its history read in
-  `ChatDepth.install` is still synchronous. Tests:
-  `testRestoringDirectHistoryReportsOneChangeAndKeepsTheNewestInOrder`
-  (fails without the fix: one change per message),
-  `testABackgroundAttachReturnsBeforeTheHistoryIsReadAndKeepsWhatArrivesMeanwhile`,
-  `testRestoringRelayHistoryMergesWithWhatIsShownInOrder`,
-  `testOfficeRestoreKeepsTheNewestAndSkipsKnownIds`,
-  `testChannelIdsAreExactlyThirtyTwoLowercaseHexDigits`; Android
-  `testRestoresMergeOnceInOrderAndKeepTheNewest`. Ruled out: the Agents
-  tab (no rows yet: its list read finished at 22:48:06, and
-  `agents.lines`, `agents.eagle` and `agents.mergeRows` never reached
-  1 ms); the slow operations of 3-5 s (network, after the stalls); the
-  watch bridge (no watch app installed); the MetricKit CPU exceptions
-  (1.4.1, four days earlier); Keychain, owner keys and room seals (all
-  read in detached tasks at launch). (The tab was built under Home
-  all the same, and once its list arrived it started the Eagle follows and
-  the dot watcher; see 2026-11-01.) Not measured, still on the main
-  thread at launch: WebRTC setup in `NativeCallMedia.shared`
-  (`installCalls`), the local-model folder scan and free-space query
-  (`LocalAIFeature.register`), the MetricKit payload replay
-  (`installInsights`), TipKit's store (`installNavigation`) and the
-  second stall's work, which ran no named section (likely the shell's
-  first build). Bundle gaps closed: every launch step is a section
-  (`startup.services` and the `startup.*` inside it, `shell.start`,
-  `chat.history.restore`), so the next launch stall names its step; the
-  stall screen reads `Launch` before the shell starts and `Home` under
-  Home (`AppRouter.cover`), and so does the header's `screen`; the header
-  gives the stored `chat history` size. Still missing: the main thread's
-  stack during an event-loop stall, so SwiftUI's first build of the shell
-  is still unnamed.
-
-- 2026-10-21, `2424-improve-mobile-chat-room` (no bundle; the user: "the
-  app is very laggy", around chat). Read the chat paths the 2026-10-19
-  entry left open, plus the chat screens' redraws. Found: the direct
-  messages closed and reopened every watched room (up to 16, each a
-  `room-access` read, a socket and a signed key frame, then a history replay
-  opened in full) on every `.resumed`, including closing Control Center or
-  an alert, not only after the background; each `.resumed` also refreshed
-  office rooms, direct messages, read marks (fetched again by the event
-  channel's connect), the member directory and chat retention; both
-  refreshes wrote `rooms`, `records`, `loading`, `lastError` and
-  `nextCursor` even when nothing changed, and every write redrew the open
-  conversation and the channel list. On screen, the conversation built its
-  rows two or three times per redraw (`conversationItems`, `rows` for
-  `chatFollowsOwnSend`, the info page's lookup); a peer typing redrew the
-  whole transcript every 2.5 s; the online light ran a `repeatForever`
-  shadow animation; every bubble and `ChatLinkText` re-parsed its text
-  (links, references, formatting) on every parent redraw; the channel list
-  rebuilt `directRows` about seven times per redraw, each rebuilding the
-  roster groups once per direct message. Fix: `AppReturnGate` (FMAccount)
-  lets the chat and retention observers refresh only on a resume after
-  `.paused`, `.hidden` or `.detached`; `DirectMessageService` reopens rooms
-  only when `foreground` really changes; `ChatHub.applyReadMarks` joins a
-  fetch in flight and skips one within 5 s (`force` for the read-marks
-  push); the refreshes write only changed values and show `loading` only
-  while the list is empty; the conversation builds its items once per body;
-  the typing bubble is its own view (`MessagesTypingRow`); the online light
-  pulses its opacity from a `TimelineView`; parsed text is cached
-  (`ChatTextCache`, 1024 entries); the channel list computes `directRows`
-  and `memberGroups` once and hands them down. Tests:
-  `testAQuickInactiveStepKeepsDirectRoomsOpen`,
-  `testAReturnIsOnlyAResumeAfterTheBackground`, the read-marks throttle in
-  `ChatReadMarksTests`. Not fixed: a replayed direct-message frame is still
-  opened in full before it is found to be a duplicate (now only after a
-  real return); the Message Info swipe redraws the conversation on every
-  drag frame (`infoDrag` is read in `body`); `trustChanged` bumps
-  `trustRevision` on every room connect; relay channel history has no
-  per-room cap. Not measured on a phone: no bundle came with the report.
-
-- 2026-10-19, `2321-slow-ios-app-performance` (1.4.1 (291), commit
-  63b65a9, iPhone16,2, Code tab root after Shortcuts and
-  fmnext-n1/forkmesh; the user: "laggy when we switch to it"). Showed: 11
-  stalls in 24 minutes, none in the last 5; 6 on Chat (up to 368 ms), 2 on
-  Agents (1262 ms at 16:22:00, when the 24 minute uptime began, so the
-  launch), one each on the repository and Shortcuts; no named section in
-  any; chat direct messages, channels and reads, desktops and app commands
-  in flight, the requests a return starts; `RELAY` up to 65 frames in one
-  second (66 in the hour) and two `Connected to app.forkmesh.com · room
-  world-general` in 5 minutes; after three empty minutes (the app in the
-  background) the return minute's worst `LOOP` was 185 ms and `FRAME`
-  224 ms. The top slow operations were repository reads (tree, blobs,
-  branches, history) of about 534 s each. Cause (the largest measured; the
-  phone's Keychain time is not measured): every fresh sealed relay frame,
-  and a rejoined `world-general` answers with a hello from every peer, made
-  `ChatKeyring.recordSeen` re-encode the room's whole replay book (up to
-  256 senders by 1024 counters; 68 KB for 60 senders by 300) and write it
-  with `SecItemDelete` plus `SecItemAdd`, synchronously on the main actor.
-  Each frame is its own short main-actor job outside any section, so the
-  heartbeat saw the queue of them as one unnamed stall. Measured on x86
-  (release, about one A17 core): one encode of that book 1.9 ms, so 65
-  frames about 125 ms before any Keychain time (3.1 s in a debug build).
-  Fix: the book is marked dirty and written at most once per 250 ms per
-  room on a utility queue,
-  and at once when the app leaves the foreground
-  (`ChatKeyring.persistPendingReplay`); the 65 frames then cost 0.6 ms
-  on the caller and one write (a test fails without it: 65 writes on the
-  calling thread). The shell also archived its navigation into
-  `@SceneStorage` on the inactive step of every return; the archive carries
-  `savedAt`, so it always changed and rebuilt the root shell as the app came
-  back. It is archived only on `.background` now. Ruled out: the 534 s
-  operations are requests left open while the app was in the background
-  (the same endpoints answered in 228-254 ms in the last 5 minutes), not
-  slow reads; the relay's own resume (presence only, while connected); the
-  direct-message history replay as the main cost (the server replays only
-  unacknowledged frames, under a message and byte cap). Not fixed: on every
-  return from the background the direct messages close and reopen each
-  watched room (up to 16) and open every replayed frame in full, seen or
-  not; every `.resumed`, closing Control Center included, refreshes chat
-  channels, direct messages and read marks (read marks twice, again on the
-  event channel's connect), and `records`, `rooms` and `loading` are
-  written unconditionally; `nextCounter` writes the counter to the Keychain
-  on every send (it must be durable before the frame leaves). The 1262 ms
-  launch stall had no section; it was the launch block, not the Agents tab
-  (see the 2026-10-29 check). Bundle gaps closed: main-thread
-  sections of 1 ms or more are kept, so a burst of short jobs sums by name,
-  and chat relay frames are `relay.frame`; stalls carry `shown` and
-  `shownMs`, grouped in "Stalls by time since shown"; operations leave out
-  time hidden or paused (`awayMs`); operation stacks give image offsets
-  for `atos`. Still missing: the main thread's stack during an event-loop
-  stall; the phone's Keychain write time.
-
-- 2026-10-18, `2284-slow-ios-app-performance` (1.4.1 (284), commit
-  d11bec0, iPhone16,2, Agents tab root). Showed: "froze for 86.0 s (4
-  freezes)" with `uptime 1m50s`: one frame and one event-loop stall of
-  about 86 s (last 15:38:59, so starting about 10 s after the telemetry
-  started) and three pairs of about 0.7 s; `FRAME` and `LOOP` averages of
-  4 s are that one second averaged over about 22 sampled seconds (the
-  rest of the 110 s has no samples); no slow operation near 86 s (the
-  largest total is 9.6 s, and the list is sorted by total); chat
-  channels, direct messages and reads in flight, the requests a return
-  to the app starts; `relay.send.hello` (sent on each connect) inside two
-  stalls. Cause: the process was stopped for about 86 s while both stall
-  probes were armed, and the probes read the gap as a frozen main
-  thread. The heartbeat and frame probe park only when the scene phase
-  says the app went to the background. The monitor was installed as
-  `.resumed` whatever UIKit's state was, and heard lifecycle changes only
-  through `AppServices`, which subscribes after the identity load. So a
-  launch in the background (Bluetooth or audio, both in
-  `UIBackgroundModes`), a change during that load, or a suspension while
-  `.inactive` (the probes run then on purpose) left them armed, and every
-  frame and heartbeat gap after the suspension counted. Which of these
-  happened on this phone the bundle cannot say. Fix: a watch timer on its
-  own queue ticks with the heartbeat. A gap it saw too (or one still
-  pending when a beat or frame arrives) is a pause: it is subtracted from
-  the heartbeat lag, the frame gap and the telemetry frame, logged as
-  `[pause] process paused N ms while visible`, and counted in the header.
-  A real block of the main thread with the rest of the process running
-  is still a stall, with `pausedMs` when a pause overlapped it.
-  `AppLifecycle` starts from `UIApplication.applicationState`, and the
-  monitor observes it from the moment it is installed. Ruled out: a real
-  86 s hang (no operation spans it, and the burst in flight is the resume
-  one); the pull ledger reads (`.forkmesh/pulls/<n>` trees, 24 in 5
-  minutes at about 540 ms, plus blobs) finished after the stalls and are
-  network time; MetricKit's 1.0 GB of disk writes is from the day before.
-  Not checked: what the three pairs of about 0.7 s ran; they name no
-  section over 8 ms besides `relay.send.hello` (73 ms), so it was
-  SwiftUI's own updates or unwrapped code. Bundle gaps closed: pauses are
-  told apart from stalls and counted (`paused while visible` in the
-  header, `[pause]` lines in `stalls.log`). Still missing: symbolicated
-  stacks, and what started the process (a background launch or a user
-  launch).
-
-- 2026-10-18, `2228-slow-ios-app-performance` (1.4.1 (276), commit
-  b57c0d2, iPhone16,2, Agents tab root). Showed: "froze for 0.5 s": 23
-  stalls in 5 minutes (39 in the hour), up to 540 ms, as loop and frame
-  pairs a second apart; `FRAME` avg 72 ms and `LOOP` 44 ms over 5 minutes
-  against 41 and 21 over the hour; the Agents list read (`POST
-  .../agents/list`, 2.6 s average, up to 9.8 s) in flight in 8 stalls,
-  direct-message `room-access` in 6; `MEM` up to 469 MB. No stack, no
-  named section, no screen per stall. Measured (release build of
-  `ForkMeshCore` on x86, about one A17 core) what runs on the main actor
-  in an Agents ring and per streamed delta: the desktop's `agents.list`
-  (200 rows) 7 ms; the tab's lines 6 ms a body; the Eagle view (the
-  default) re-extracted every followed run's line (1.4 ms each) on each
-  delta of any run; the watch bridge parsed up to four whole transcripts
-  with `beatsFromTranscript` on the main actor per publish (58 ms per
-  64 KB LAN tail, 15 ms per 16 KB relay tail), publishing on every ring and
-  LAN list change after its own `agents/list` read. Cause (the largest
-  measured, not proven: the bundle does not say whether a watch was
-  paired): the watch bridge's transcript parse, up to about 230 ms a
-  publish, landing in the same ring burst as the Eagle re-reads and the
-  list rebuilds. Fix: `TranscriptBeatCache` parses in a detached task once
-  per transcript length (injectable, so a test sees the thread); the Eagle
-  feed re-reads only the run whose feed moved (`ControlWatchFeeds.revision`;
-  10 deltas to one of six runs read 10 transcripts, not 60). Ruled out by
-  measurement: opening the sealed list (7.7 MB for 300 sessions, 1.1 s of
-  decrypting, but the main actor never waited over 2 ms); chat history
-  replay (ML-KEM 0.18 ms a message; room seals load in a detached task);
-  the follower's attachment scan (3-15 ms a delta on 200 KB, but the
-  desktop's first follow reply lists attachments, so it never runs); the
-  agent dots' beat parsing (its `@Sendable` load closures run off the main
-  actor, checked); the Genie and aquarium scan (timed, never 200 ms; it can
-  hold 100-190 ms unreported every 10 s or more). Not fixed: each ring
-  re-downloads every sealed snapshot with its 16 KB transcript tail, twice
-  with a watch (the bridge runs its own `AgentsListModel`); the list needs
-  only the metadata, so the desktop should seal the transcript apart
-  (desktop, relay and both phones). Every fresh sealed frame, hellos and
-  presence included and not only chat messages, wrote the replay book to
-  the Keychain on the main actor (fixed 2026-10-19, below); a v4 message
-  still writes its ratchet there. Bundle gaps
-  closed: stalls carry `sections`, the named main-actor work over 8 ms that
-  ran inside them, summed in "Main-actor work during stalls"; nested
-  sections record one `sync` stall; sections wrap relay frames
-  (`relay.event`, `relay.control`), the desktop list (`agents.desktopList`,
-  `agents.mergeRows`), the tab's lines (`agents.lines`), the Eagle feed
-  (`agents.eagle`), chat receive (`chat.direct.receive`,
-  `chat.office.receive`, `chat.office.history`) and the watch publish
-  (`watch.fit`, `watch.context`); the header gains `agents` and `watch`.
-  Still missing: SwiftUI's own update cost (the Eagle rows' 60 Hz ticker
-  timelines, list diffing) shows only as unnamed time; symbolicated stacks.
-
-- 2026-10-17, `2214-slow-ios-app-performance` (1.4.1 (275), iPhone16,2,
-  Inbox tab, screen Shortcuts after forkmesh/forkmesh). Showed: "froze
-  for 0.3 s": an event-loop stall of 324 ms and a 354 ms frame at
-  22:58:36, 17 stalls in the hour; at 22:58:15 the repository overview
-  listed `.forkmesh/issues/open` (746 ms), which starts the issue read;
-  `FRAME` avg 51 ms and `LOOP` avg 24 ms; a DJ jam presence POST every
-  4.5 s with a deck playing behind other screens; slow operations of 8 s
-  and 9-15 s. Cause: `ApiService.publishedIssues` fetched the issue
-  records in batches of 50 (parsed off the main actor, being over 16 KB)
-  and then parsed every record's JSON (forkmesh/forkmesh has had 730
-  issue numbers) on the main actor in one pass. That pass is the stall. It lands after
-  the user has left the overview, because the read runs in the issues
-  cache. Fix: the records are parsed and sorted in a detached task
-  (`issueRecord`, injectable so a test sees the thread), and so are the
-  release manifests the same overview reads. Ruled out: the
-  8 s and 12 s operations are request timeouts (tree reads failed 2 of 5),
-  not a busy main thread; the Shortcuts screen reads the phone's copy in a
-  detached task; the presence reply and the 30 Hz now-playing chip are
-  steady small work, not a 300 ms block (not measured; a deck playing off
-  screen keeps the studio's poll, player ticks and AUTOMIX loop running,
-  so the earlier "the DJ studio's animations stop" holds only when no deck
-  plays). Bundle gaps closed: every stall records the screen showing
-  (`PerformanceMonitorService.screenName`) and the report groups stalls
-  by screen. Still missing: symbolicated stacks.
-- 2026-10-17, `2194-slow-ios-app-performance` (1.4.1 (268), iPhone16,2,
-  Agents tab). Showed: 21 stalls in an hour (up to 620 ms), none in the last
-  5 minutes; `/api/orgs` in flight in 8 of them, with chat channels, direct
-  messages, owner keys, desktops and channel members; operations of 3-5 s
-  whose endpoints answered in about 300 ms; two relay reconnects in 5
-  minutes. Cause: every return to the app (including closing Control
-  Center or Notification Center, which goes inactive and back) refreshes the
-  account's packages, the organization package state and Home's counts, and
-  each of those rewrote observed state the shell reads (`state`,
-  `monitors`, `installed`, `adReviewer`, `fetched`, the organization
-  ledger) even when nothing had changed, so Home, its grid and the bottom
-  bar were rebuilt several times inside the resume burst. Fix: those writes
-  happen only on a real change, and the scene-phase refresh of account
-  packages skips when the last one is under a minute old
-  (`AccountPackagesStore.refreshIfStale`). Ruled out: reply parsing and
-  owner-sealed unsealing (already off the main actor), the Agents list
-  polling (it has none; rings are debounced), the DJ studio (its
-  animations stop when no deck plays). Bundle gaps closed: stalls get their
-  own section with the time of the newest, and `RELAY` is wired. (Its
-  operations of 3-5 s were read as main-thread waits; see "Slow
-  operations" above for why that reading overstated it.)
-- 2026-10-16, `2158-slow-ios-app-performance`: Home's count refresh flooded
-  a hot phone; counts now follow `NavigatorCountPlan` (fresh for 60 s, 300 s
-  when warm, three reads at a time).
-- 2026-10-16, `2134-slow-ios-app-performance`: a launch ring re-read every
-  agent list; rings during a load now run one more load afterwards.
-- 2026-10-16, `2124-slow-ios-app-performance`: the frame probe reported a
-  whole skipped tick as the stall (inflated 100 ms holds to 200 ms);
-  Keychain room keys, sleep detection and Core Motion history moved off the
-  main thread on resume.
-- 2026-10-14/15, `1994` and `2071`: the Genie spider's accessibility scan
-  hitched the main thread every 2-3 s; scans back off. Chat history saves
-  moved to a utility queue.
-- 2026-10-13, `1996-ios-performance`: shell redraws per relay frame and per
+  `testStallsSayHowMuchRanOutsideNamedSectionsAndWhereTheMainThreadWas`, and
+  on Darwin `testTheMainThreadCanBeSampledFromAnotherThread`. Ruled out: the
+  launch block, chat history (137 KB), slow repository reads and
+  `agents/list` 403s (finished after the stalls), the watch bridge, the 1.4.1
+  MetricKit CPU exceptions. Not measured: shell redraws in the launch burst,
+  the Eagle and dot streams' cost at launch, SwiftUI's first build. Bundle gaps
+  closed: main-thread samples and `unnamedMs` (above). Still missing: samples
+  are unsymbolicated, so app frames need `atos` and the build's dSYM.
+- **2026-10-29, `2672-agents-tab-freeze-fix`** (1.5.0 (324), cb5b44d).
+  Showed: two event-loop stalls of about 344 ms and a 372 ms frame at
+  `uptime 13s`, all `launch, first 10s`, filed under `Agents`; only
+  `startup.auth` named. Cause: the synchronous rest of `AppServices.start`,
+  the largest measured part being `installChat` reading and decoding the whole
+  chat history (`relay-<scope>.json`, up to 200 messages per conversation) and
+  restoring it message by message: O(n²) array copies, a save rescheduled per
+  direct message, `isDirect` validating hex through `Character` ranges, a deep
+  `snapshot != loaded` compare. Measured about 170 ms for 2.8 MB and 420 ms for
+  6.2 MB of history. `Agents` was the router's default title; the launch
+  screen was up. Fix: `ChatHub.loadHistoryInBackground` (read off the main
+  thread; nothing saved until loaded; arrivals merged); restores group by
+  conversation and merge once (`RelayService.merging`); `validChannelId`
+  checks UTF-8 bytes; the purge check compares counts. Now 28-70 ms on the
+  main thread. Android had the same copies (`RelayRoom`,
+  `DirectMessageService`, `OfficeChannelService`, now `mergeSorted`); its
+  history read in `ChatDepth.install` is still synchronous. Tests include
+  `testRestoringDirectHistoryReportsOneChangeAndKeepsTheNewestInOrder` and
+  Android `testRestoresMergeOnceInOrderAndKeepTheNewest`. Ruled out: the
+  Agents tab, network operations, the watch bridge, Keychain reads. Not
+  measured, still on the main thread at launch: WebRTC setup
+  (`installCalls`), the local-model folder scan (`LocalAIFeature.register`),
+  MetricKit replay, TipKit. Gaps closed: every launch step is a section; the
+  screen reads `Launch`/`Home`; the header gives `chat history`. Still
+  missing: the main thread's stack during an event-loop stall.
+- **2026-10-21, `2424-improve-mobile-chat-room`** (no bundle; "very laggy"
+  around chat). Found: direct messages closed and reopened every watched room
+  (up to 16) on every `.resumed`, including closing Control Center; each
+  `.resumed` refreshed rooms, direct messages, read marks, members and
+  retention, writing state even when unchanged; the conversation built its
+  rows two or three times per redraw; typing redrew the transcript every
+  2.5 s; the online light ran a `repeatForever` shadow; bubbles re-parsed text
+  on every redraw; the channel list rebuilt `directRows` about seven times.
+  Fix: `AppReturnGate` (refresh only after `.paused`, `.hidden` or
+  `.detached`); rooms reopen only when `foreground` changes;
+  `ChatHub.applyReadMarks` joins a fetch in flight and skips one within 5 s;
+  only changed values are written; items built once per body;
+  `MessagesTypingRow`; the light pulses from a `TimelineView`; `ChatTextCache`
+  (1024 entries); `directRows` computed once. Not fixed: replayed frames are
+  opened in full before dedupe; the Message Info swipe redraws per drag frame;
+  `trustChanged` bumps on every connect; relay channel history has no per-room
+  cap.
+- **2026-10-19, `2321-slow-ios-app-performance`** (1.4.1 (291), 63b65a9;
+  "laggy when we switch to it"). Showed: 11 unnamed stalls in 24 minutes, the
+  return-burst requests in flight, `RELAY` up to 65 frames in one second.
+  Cause: every fresh sealed relay frame made `ChatKeyring.recordSeen`
+  re-encode the room's replay book (up to 256 senders by 1024 counters) and
+  rewrite it in the Keychain on the main actor; 65 frames cost about 125 ms
+  before Keychain time. The shell also archived navigation into
+  `@SceneStorage` on every inactive step, and `savedAt` always changed, so the
+  root rebuilt on return. Fix: the book is written at most once per 250 ms per
+  room on a utility queue and at once on leaving the foreground
+  (`ChatKeyring.persistPendingReplay`); navigation is archived only on
+  `.background`. Ruled out: the 534 s repository reads (open in the
+  background), the relay's resume, the direct-message replay. `nextCounter`
+  still writes the Keychain on every send (it must be durable first). Gaps
+  closed: 1 ms sections, `relay.frame`, `shown`/`shownMs`, `awayMs`, `atos`
+  offsets.
+- **2026-10-18, `2284-slow-ios-app-performance`** (1.4.1 (284), d11bec0).
+  Showed: "froze for 86.0 s" at `uptime 1m50s`, with no operation spanning
+  it. Cause: the process was stopped while both stall probes were armed. The
+  probes park only on a background scene phase, and the monitor started as
+  `.resumed` and heard lifecycle changes only after the identity load, so a
+  background launch (Bluetooth or audio), a change during that load, or a
+  suspension while `.inactive` left them armed. Fix: an off-main watch timer
+  detects pauses, subtracts them, logs `[pause] process paused N ms while
+  visible` and counts them in the header; `AppLifecycle` starts from
+  `UIApplication.applicationState`. A real block with the process running is
+  still a stall, with `pausedMs` when a pause overlapped.
+- **2026-10-18, `2228-slow-ios-app-performance`** (1.4.1 (276), b57c0d2).
+  Showed: 23 stalls in 5 minutes up to 540 ms, the Agents list read in flight
+  in 8. Cause (largest measured, not proven): the watch bridge parsed up to
+  four transcripts with `beatsFromTranscript` on the main actor per publish
+  (up to about 230 ms), and the Eagle view re-read every followed run on each
+  delta. Fix: `TranscriptBeatCache` parses in a detached task once per
+  transcript length; the Eagle feed re-reads only the run that moved
+  (`ControlWatchFeeds.revision`). Ruled out by measurement: opening the sealed
+  list, chat history replay, the attachment scan, agent dots, the Genie scan.
+  Not fixed: each ring re-downloads every sealed snapshot with its 16 KB
+  transcript tail (twice with a watch); the desktop should seal the transcript
+  apart. Gaps closed: stalls carry `sections`; sections wrap relay frames,
+  agent list and lines, Eagle, chat receive and watch publish; the header
+  gains `agents` and `watch`.
+- **2026-10-17, `2214-slow-ios-app-performance`** (1.4.1 (275)). Cause:
+  `ApiService.publishedIssues` parsed every issue record's JSON on the main
+  actor in one pass (730 issues), after the user had left the overview. Fix:
+  records and the overview's release manifests are parsed in a detached task
+  (`issueRecord`). Ruled out: 8 s and 12 s operations (request timeouts). Gap
+  closed: stalls record their screen.
+- **2026-10-17, `2194-slow-ios-app-performance`** (1.4.1 (268)). Cause: every
+  return (including closing Control Center) refreshed packages, organization
+  package state and Home's counts, each rewriting observed state even when
+  unchanged, so Home rebuilt several times in the resume burst. Fix: writes
+  only on change; `AccountPackagesStore.refreshIfStale` skips a refresh under a
+  minute old. Gap closed: stalls have their own section; `RELAY` is wired.
+- **2026-10-16**: Home's count refresh now follows `NavigatorCountPlan` (fresh
+  for 60 s, 300 s when warm, three reads at a time) (`2158`); rings during a
+  load run one more load afterwards (`2134`); the frame probe no longer
+  reports a whole skipped tick as the stall, and Keychain room keys, sleep
+  detection and Core Motion history moved off the main thread on resume
+  (`2124`).
+- **2026-10-14/15** (`1994`, `2071`): the Genie spider's accessibility scan
+  backs off; chat history saves moved to a utility queue.
+- **2026-10-13** (`1996-ios-performance`): shell redraws per relay frame and
   count change, hidden tabs animating, repeated picture decodes, quadratic
   Home layout ([README.md](README.md), Recent changes).
-
-The standing rules these produced are in [README.md](README.md), "iOS
-performance rules".
 
 ## Adding a check
 
 1. Check out the bundle's commit and read the code that ran.
-2. Find the burst or screen the stalls belong to before reading code
-   paths; say what in the bundle points there.
-3. Fix the cause with a test in `ForkMeshCore` (or Android `core`) that
-   fails without the fix.
+2. Find the burst or screen the stalls belong to before reading code paths;
+   say what in the bundle points there.
+3. Fix the cause with a test in `ForkMeshCore` (or Android `core`) that fails
+   without the fix.
 4. Add an entry under "Checks so far" in the format above, and correct
    "Reading the bundle" where it misled you.
 5. If you had to guess because the bundle lacked something, make the app
-   collect it (`PerformanceReport`, `PerformanceMonitorService`) in the
-   same change and list it as a gap closed.
+   collect it (`PerformanceReport`, `PerformanceMonitorService`) in the same
+   change and list it as a gap closed.

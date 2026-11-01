@@ -1,6 +1,6 @@
 """Provider-independent repository identity and verified dependency routes.
 
-Implements ``forkmesh-dependency-workflows-v1`` (www/docs/dependency-workflows.md,
+Implements ``forkmesh-dependency-workflows-v1`` (docs/dependency-workflows.md,
 conformance/dependencies/v1/contract.json). Pure and js-free: the public
 repository index, the dependency conformance probe, and the tests share it.
 

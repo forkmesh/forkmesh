@@ -24,4 +24,4 @@ def load():
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             return module
-    raise SystemExit("forkmesh_integration.py not found; see www/docs/integrations.md")
+    raise SystemExit("forkmesh_integration.py not found; see docs/integrations.md")

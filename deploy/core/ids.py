@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""fmnext-ids: host intrusion detection for ForkMesh Next nodes (docs/IDS.md).
+"""fmnext-ids: host intrusion detection for ForkMesh Next nodes (docs/operations/intrusion-detection.md).
 
 Runs as root (``fmnext-ids.service``) on the three core nodes and the
 runner; Python stdlib only, plus ``cryptography`` for the rare Ed25519

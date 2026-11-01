@@ -2,7 +2,7 @@
 
 Each side has its own exhaustive suite (test_actions_control_worker.py,
 test_actions_control_gateway.py). Those prove each half matches
-www/docs/operations/mirror-actions-control.md; this file proves the halves
+docs/operations/mirror-actions-control.md; this file proves the halves
 match *each other*, by handing one side's real output to the other side's real
 validator. A drift in a key name, a pattern or a bound fails here even when
 both suites still pass.

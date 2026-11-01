@@ -11,7 +11,7 @@ the GitHub/GitLab mirror card.
 | Settings, API, daemon config and reports | `app/src/repository_archive_sync.py` |
 | Route | `REPO_ARCHIVE_SYNC_RE` in `app/src/urls.py` |
 | Table | `repo_archive_syncs` (`app/migrations/0288_repo_archive_syncs.sql`) |
-| Upload | `server/hosted_archive_sync.go`, fed by `hosted_repos.replicas` ([../HOSTED_REPOS.md](../HOSTED_REPOS.md#internet-archive-backups)) |
+| Upload | `server/hosted_archive_sync.go`, fed by `hosted_repos.replicas` ([core-hosted repositories](../operations/core-hosted-repositories.md#internet-archive-backups)) |
 | Settings card | `app/public/dashboard/js/06-repo-content.js` (`renderRepoArchiveSync`), mounted in `08-repo-detail-network.js` |
 | Tests | `app/tests/test_repository_archive_sync.py`, `server/hosted_archive_sync_test.go` |
 
@@ -86,7 +86,7 @@ Errors: `invalid_identifier`, `invalid_access_key`, `invalid_secret`,
   `archive.org/metadata`, with `redirect: "manual"`.
 - **Stop backing up** deletes the stored keys. It does not delete anything
   already on archive.org; the owner removes an item there.
-- The stored keys are listed in `www/docs/relay-data-retention.md`.
+- The stored keys are listed in `docs/relay-data-retention.md`.
 
 ## Not covered
 

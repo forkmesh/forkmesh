@@ -1,10 +1,11 @@
 # Native iOS builds on the office Mac
 
-Every push that touches `native/ios/` (or `codemagic.yaml`) builds the phone
-app on the office MacBook and emails a tap-to-install link for the team's
-registered iPhones. No Codemagic minutes and no TestFlight review are used. The
-same Mac also builds tagged releases, App Store submissions of `main`, and the
-macOS desktop `.dmg`. Codemagic remains the fallback ([IOS_RELEASE.md](IOS_RELEASE.md)).
+Part of the phone apps ([README.md](README.md)). Every push that touches
+`native/ios/` (or `codemagic.yaml`) builds the phone app on the office MacBook
+and emails a tap-to-install link for the team's registered iPhones, with no
+Codemagic minutes and no TestFlight review. The same Mac builds tagged
+releases, App Store submissions of `main`, and the macOS desktop `.dmg`.
+Codemagic remains the fallback ([IOS_RELEASE.md](IOS_RELEASE.md)).
 
 ## Pieces
 
@@ -21,9 +22,9 @@ macOS desktop `.dmg`. Codemagic remains the fallback ([IOS_RELEASE.md](IOS_RELEA
 | `deploy/operator/forkmesh-mac-adhoc-publish.{service,timer}` | `~/.config/systemd/user/` | Runs the publisher every 15 seconds |
 | `tools/office-mac.sh` | Operator desktop | Logs in to the Mac as `build`, runs a command, or prints its address (`--find`) |
 
-The publishing half runs outside Actions because it needs the fleet SSH key,
-which never goes into an Actions variable. The action only holds a key that
-can log in as `build` on the Mac.
+Publishing runs outside Actions because it needs the fleet SSH key, which
+never goes into an Actions variable; the action only holds a key that can log
+in as `build` on the Mac.
 
 ## The Mac
 
@@ -33,7 +34,7 @@ can log in as `build` on the Mac.
   `/usr/local/libexec/fm-autopatch.sh` at boot: on the first boot of a new
   macOS build it re-applies the root patches once and reboots (log in
   `/Users/Shared/fm-autopatch.<build>.log`), which restores Wi-Fi after an
-  update provided the KDK for that build is reachable or cached.
+  update if the KDK for that build is reachable or cached.
 - One admin account, `build`. Xcode 26 with the iOS platform and the Metal
   toolchain.
 - The system `xcodeproj` gem cannot read Xcode 26 projects, so xcodeproj 1.27
@@ -56,60 +57,37 @@ can log in as `build` on the Mac.
 
 - The source lives in one fixed folder, `~/ci/tree`, because Xcode keys
   DerivedData by project path. It is a partial (`blob:none`), sparse checkout
-  of `native/ios/`, `codemagic.yaml`, `conformance/`, the changelog the build
-  bundles (`changelog/` and `tools/changelog.py`, which
+  of `native/ios/`, `/native/fixtures/`, `codemagic.yaml`, `conformance/`, the
+  changelog the build bundles (`changelog/` and `tools/changelog.py`, which
   `native/ios/tools/changelog_stamp.py` loads), and the files outside them
   that the ForkMeshCore tests read (`app/src/apns.py`,
-  `app/src/app_runtime.py`, the browser call-segmentation models in
-  `app/public/assets/call-segmentation/` that `CallSegmentTests` compares
-  against the bundled ones, the vault, people and secure-drive fixtures under
-  `marketplace/packages/*/tests/fixtures/`, and the two performance playbooks
-  `docs/native/PERFORMANCE_CHECKS.md` and
-  `docs/marketplace/video-mix-dj-studio-performance.md`).
-- `test_the_mac_checkout_holds_every_file_the_core_tests_read` in
-  `tools/test_mac_adhoc_deploy.py` finds those files itself: in every test file
-  that builds the repository root from `#filePath` (or calls a `func` defined
-  in one; a local `let map` there once made every `.map(` call count, and
-  flagged `DiffImagesTests`, which only names `office/public/logo.svg`), each string literal or `Type.constant` from `Sources/` passed as a
-  call's first argument that names an existing repository path with a `/` in
-  it. Each must be covered by `MAC_IOS_FETCH_SCRIPT` in
-  `tools/forkmesh-release-host.py`, so a new test that reads a file outside
-  `native/ios/` fails here instead of on the Mac.
-- The 2026-10-18 04:20 App Store build of `f123cb5c0dd8` failed after 19
-  minutes in "Test ForkMeshCore": `DiagnosticsBundleTests` reads
-  `docs/native/PERFORMANCE_CHECKS.md`, which the sparse checkout did not hold
-  (`NSCocoaErrorDomain Code=260`). The guard test then listed its paths by
-  hand and missed it; `DjVitalsTests` (the DJ studio playbook) would have
-  failed the next build the same way, and `SecureDriveInteropTests` skipped
-  silently without its fixtures.
-- The 2026-10-21 19:53 ad hoc build of `9edbec22155b` failed in "Bundle the
-  changelog": the one-changelog change made `changelog_stamp.py` load
-  `tools/changelog.py` and read `changelog/changelog.json`, neither of which
-  the sparse checkout held. `test_the_mac_checkout_holds_every_file_the_build_steps_read`
-  now finds every `ROOT / "..."` path (with `ROOT` the repository root) in the
-  `native/ios/tools/*.py` scripts `codemagic.yaml` runs and checks
-  `MAC_IOS_FETCH_SCRIPT` covers it.
-- The 2026-10-28 App Store build of `d55f97daed95` (iOS 1.5.0) failed in "Test
-  ForkMeshCore": the `FMCodeInsight` tests find `native/fixtures/insight/` by
-  walking up from their own `#filePath`, which the guard test neither matched
-  (it looked for `#file`) nor resolved (it only tried paths from the repository
-  root). It now follows walk-up lookups from the test's folder, and the sparse
-  checkout holds `/native/fixtures/`.
-- The 2026-10-29 and 2026-10-30 App Store builds (`1b28b0231c39`,
-  `b57ffa5bc4f4`) failed in "Test ForkMeshCore" with `skippedFiles: got 4, want
-  5` in `InsightGoldenTests`. `expected.json` had been written from a fixture
-  folder holding a git-ignored `node_modules` file that was never committed,
-  so every fresh checkout (the Mac's, and the Android tests') skipped one file
-  fewer than the desktop had. The fixture now commits
-  `repo/vendor/left-pad/index.js` (not ignored), and the desktop writer
-  reproduces the committed `expected.json` byte for byte from the committed
-  tree (`docs/marketplace/codebase-analysis.md`, "Parity tests").
+  `app/src/app_runtime.py`, the call-segmentation models in
+  `app/public/assets/call-segmentation/`, the vault, people and secure-drive
+  fixtures under `marketplace/packages/*/tests/fixtures/`, and the
+  performance playbooks [PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md) and
+  [video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md)).
+  A file missing from the checkout fails "Test ForkMeshCore" or "Bundle the
+  changelog" on the Mac with `NSCocoaErrorDomain Code=260`, or skips a test
+  silently.
+- Two tests in `tools/test_mac_adhoc_deploy.py` keep `MAC_IOS_FETCH_SCRIPT`
+  (in `tools/forkmesh-release-host.py`) complete, so a new file read outside
+  `native/ios/` fails on the desktop instead of on the Mac:
+  - `test_the_mac_checkout_holds_every_file_the_core_tests_read` scans every
+    test file that builds the repository root from `#filePath` (or calls a
+    `func` defined in one), plus walk-up lookups from the test's own folder,
+    for string literals or `Type.constant`s from `Sources/` passed as a call's
+    first argument that name an existing repository path containing `/`.
+  - `test_the_mac_checkout_holds_every_file_the_build_steps_read` checks every
+    `ROOT / "..."` path in the `native/ios/tools/*.py` scripts `codemagic.yaml`
+    runs.
+- Test fixtures must be fully committed: a golden file written from a folder
+  holding a git-ignored file makes every fresh checkout disagree with it
+  ([codebase-analysis.md](../marketplace/codebase-analysis.md), "Parity tests").
 - Each run fetches its commit at depth 1 from `MAC_BUILD_GIT_URL` and checks it
   out with `git clean -ffdx`. Fetch and checkout retry together (six times,
-  20 s apart) because a core may advertise a commit before it holds every blob,
-  and the checkout fetches the blobs lazily: on 2026-10-14 it died with
-  `fatal: early EOF` / `could not fetch ... from promisor remote` while the
-  fetch alone was retried.
+  20 s apart): a core may advertise a commit before it holds every blob, and
+  the checkout fetches blobs lazily (`fatal: early EOF` /
+  `could not fetch ... from promisor remote`).
 - When the fetch fails, the step asks the cores for `main` and prints one
   `ERROR:` line naming the cause (commit not published yet, broken on the
   Mac's side, or the cores unreadable from the desktop too). The "Action
@@ -128,18 +106,18 @@ can log in as `build` on the Mac.
   `ios-release`, `ios-app-store`, `desktop-build`) are waited for, never
   killed, for up to two hours. A run removes the lock only while it owns it
   (`~/ci/lock/owner`).
-- Several shortcuts can run at once; each runs in its own unit and they take
-  turns through the lock.
+- Several shortcuts can run at once, each in its own unit, taking turns
+  through the lock.
 
 ## Finding the Mac
 
 The address comes from DHCP. The workflow's first step tries the hint address
-(`MAC_BUILD_HOST`, when configured), then scans the desktop's /24 for
-port 22 and tries ssh on each open host. ssh checks the host key by the
-`forkmesh-mac` alias (`HostKeyAlias`, `StrictHostKeyChecking=yes`), so a
-machine with a different key is refused before the key is offered. mDNS is not
-used: the desktop's firewall drops the Mac's unicast replies and the Actions
-sandbox cannot reach Avahi.
+(`MAC_BUILD_HOST`, when configured), then scans the desktop's /24 for port 22
+and tries ssh on each open host. ssh checks the host key by the `forkmesh-mac`
+alias (`HostKeyAlias`, `StrictHostKeyChecking=yes`), so a machine with a
+different key is refused before the key is offered. mDNS is not used: the
+desktop's firewall drops the Mac's unicast replies and the Actions sandbox
+cannot reach Avahi.
 
 `tools/office-mac.sh` and the release host (`find_build_mac`) share the last
 found address in `~/projects/forkmesh/state/mac-build/address`. After the Mac
@@ -188,9 +166,9 @@ build on the Mac. It runs `tools/mac_adhoc_deploy.py --execute` (without
   or newer, and builds the served commit.
 - It finds the Mac like the release host (key and pinned host key in
   `~/projects/forkmesh/ssh/mac-build/`) and does not go through Actions.
-- It behaves like an Actions ad hoc run on the Mac: writes `~/ci/ios-latest`,
-  takes the lock (`LOCK_SCRIPT`), cancels older `ci/*` builds and waits for
-  releases. A newer build cancels it; it then exits 0 with "cancelled".
+- It behaves like an Actions ad hoc run: writes `~/ci/ios-latest`, takes the
+  lock (`LOCK_SCRIPT`), cancels older `ci/*` builds and waits for releases. A
+  newer build cancels it; it then exits 0 with "cancelled".
 - It fetches into `~/ci/tree`, writes the steps from the Mac's own
   `codemagic.yaml`, and runs them through `mac_adhoc_job.sh`.
 - Stopping it (Stop, Ctrl-C, `--stop`) kills the Mac's build tree through
@@ -223,49 +201,41 @@ build on the Mac. It runs `tools/mac_adhoc_deploy.py --execute` (without
   errors first; else the failing `mac.run`'s `fatal:`/`ERROR:` lines) and a
   `Fix:` hint from `FAILURE_HINTS` (Swift error, fetch from the cores, cores
   behind, Mac away, lock held, no IPA, CoreSimulator wedged).
-- actool can fail the watch asset catalog with `Failed to launch
-  AssetCatalogSimulatorAgent via CoreSimulator spawn` (the 2026-10-16 ad hoc
-  builds of `ad97f78c7fd4` and `665987101809`, Mac up 6 days; the 19:40 build
-  that day had passed). The cause was not the service: dyld could not load
-  `UIKitCore` from the mounted watchOS 26.5 runtime
-  (`F_ADDFILESIGS_RETURN) failed with errno=94`), and `dd` of that file from
-  `/Library/Developer/CoreSimulator/Volumes/watchOS_23T570` stopped at 61 MiB
-  with `Bad message`, the sealed volume's hash check. The backing
-  `WatchOSSimulatorRuntime_Cryptex.dmg` under `/System/Library/AssetsV2` read
-  cleanly, and `xcrun simctl runtime unmount <id>` followed by a
-  CoreSimulatorService restart and `xcrun simctl runtime scan-and-mount`
-  mounted it again with the file whole: the damage lived in the mount, not
-  the image. Restarting the service alone, as the first retry did, left the
-  bad mount in place. An unmounted runtime is not remounted by `simctl list`
-  or `runtime verify` (verify then fails with -67068); actool reports `No
-  available simulator runtimes for platform watchsimulator` until
-  `scan-and-mount` runs.
-- The archive step greps its log for that line, prints the
-  `F_ADDFILESIGS_RETURN` file if there is one, shuts the simulators down,
-  unmounts every runtime disk image (`simctl runtime list` ids), kills the
-  service, runs `scan-and-mount`, waits up to a minute for as many
-  `CoreSimulator/Volumes` mounts as before (about 7 s on the office Mac) and
-  archives once more. A second failure stops the build with a `Fix:` to run
-  again or reboot the Mac.
-- Compiler crashes: see the section below.
 - The same text goes to the admins as an operator Ping (`notify_failure`, key
   `mac-adhoc-failure`, `POST /api/accounts/admin-operator-alert` on the
   `MAC_BUILD_GIT_URL` host, signed with this desktop's node identity like
   `next_autodeploy.Notifier`): title `<mode> failed: <phase>`, then the cause,
-  the fix, the commit, the Mac, the Mac run folder, the log and
-  `--status`. Stop, Ctrl-C, a cancelled run and a dry run send nothing; a Ping
-  that cannot be sent is logged and does not change the exit code.
+  the fix, the commit, the Mac, the Mac run folder, the log and `--status`.
+  Stop, Ctrl-C, a cancelled run and a dry run send nothing; a Ping that cannot
+  be sent is logged and does not change the exit code.
+
+### CoreSimulator wedged
+
+actool can fail the watch asset catalog with `Failed to launch
+AssetCatalogSimulatorAgent via CoreSimulator spawn`. The cause is a damaged
+mount of the watchOS simulator runtime, not the service: dyld cannot load
+`UIKitCore` from it (`F_ADDFILESIGS_RETURN) failed with errno=94`) while the
+backing `WatchOSSimulatorRuntime_Cryptex.dmg` reads cleanly. Restarting the
+service alone leaves the bad mount; an unmounted runtime is not remounted by
+`simctl list` or `runtime verify` (verify fails with -67068, actool reports
+`No available simulator runtimes for platform watchsimulator`) until
+`scan-and-mount` runs.
+
+So the archive step greps its log for that line, prints the
+`F_ADDFILESIGS_RETURN` file if any, shuts the simulators down, unmounts every
+runtime disk image (`simctl runtime list` ids), kills the service, runs
+`xcrun simctl runtime scan-and-mount`, waits up to a minute for as many
+`CoreSimulator/Volumes` mounts as before (about 7 s on the office Mac) and
+archives once more. A second failure stops the build with a `Fix:` to run
+again or reboot the Mac.
 
 ### Compiler crashes
 
-The 2026-10-18 03:24 ad hoc build of `7feff82345c7` failed after 19 minutes
-because `swift-frontend` (Swift 6.3.3, Xcode 26.6) crashed while optimizing the
-whole-module `ForkMesh` compile: LLVM's `lower-expect` pass on the value
-witness of `AgentRunActionChip` (`AgentRunScreen.swift`) called a garbage
-address. That file had not changed since the 02:23 build of `390f439cc869`,
-which passed, and an unsigned archive of the same tree right after succeeded
-in 13 minutes: the crash does not repeat. A crash prints no `error:` line, so the step's "Every error"
-grep found nothing and the Ping showed only `!! Archive … failed`.
+`swift-frontend` (Swift 6.3.3, Xcode 26.6) can crash while optimizing the
+whole-module `ForkMesh` compile (seen in LLVM's `lower-expect` pass) on a tree
+that built before and builds again right after: the crash does not repeat. A
+crash prints no `error:` line, so without special handling the Ping showed
+only `!! Archive … failed`.
 
 - The signed archive step looks for the crash banner (`submit a bug report …
   crash backtrace`, Swift's and Clang's), prints the stack's numbered lines
@@ -285,7 +255,7 @@ from the local checkout's `main`. It takes the lock as `desktop-build <commit>`,
 feeds a `git archive` of `main` into `~/desktop-release/src-main`
 (`MAC_DESKTOP_SOURCE_SCRIPT`) and runs `tools/package/macos_universal_on_mac.sh`
 (`MAC_DESKTOP_BUILD_SCRIPT`). Every build is a full one; the Qt, OpenSSL,
-libwebp and nghttp3 caches in `~/desktop-release` stay. Output is kept in
+libwebp and nghttp3 caches in `~/desktop-release` stay. Output goes to
 `~/projects/forkmesh/data/mac-adhoc/desktop/<time>/mac-build.log` and the
 `.dmg` is copied next to it and checked against the build's `sha256` line.
 Nothing is published. The phone's Desktops page can start this and the ad hoc
@@ -316,7 +286,7 @@ rollout for a tagged release").
 ## Release builds
 
 The release host (`tools/forkmesh-release-host.py`,
-[`docs/release/README.md`](../release/README.md)) uses the same Mac, key and
+[../release/README.md](../release/README.md)) uses the same Mac, key and
 address rules for `desktop-release vX.Y.Z` (the universal `.dmg` from a
 `git archive` of the release commit in `~/desktop-release/src-<version>`) and
 `ios-release vX.Y.Z` (the `ios-native-release` steps with App Store submission,
@@ -443,10 +413,9 @@ systemctl --user daemon-reload && systemctl --user enable --now forkmesh-mac-adh
 
 ## What's new changelog
 
-Every build bundles the ForkMesh changelog, `changelog/changelog.json`, the
-same file forkmesh.com/changelog shows ([../changelog.md](../changelog.md)).
-The app shows it from the version row of the You hub
-([NAVIGATION.md](NAVIGATION.md)).
+Every build bundles `changelog/changelog.json`, the same file
+forkmesh.com/changelog shows ([../changelog.md](../engineering/changelog.md)). The app
+shows it from the version row of the You hub ([NAVIGATION.md](NAVIGATION.md)).
 
 - **iOS.** The step "Bundle the changelog" runs
   `native/ios/tools/changelog_stamp.py`, which exports the file from the
@@ -457,71 +426,54 @@ The app shows it from the version row of the You hub
   `changelog.json` asset (`bundleChangelog`); otherwise the empty placeholder
   `app/src/changelog/changelog.json` ships. The release host's APK build
   passes `tools/changelog.py export --platform android`.
-
-Until 2026-10-21 the shortcut (`mac_adhoc_deploy.write_changelog`) generated
-each ad hoc build's notes from `git log` since the previous build in
-`state/mac-adhoc/published.json` and sent them to the Mac as
-`steps/changelog.json`; that history now lives in the shared file, and the
-generator only drafts lines (`tools/changelog.py draft`).
+- `tools/changelog.py draft` drafts lines from `git log`; it no longer writes
+  per-build notes.
 
 ## Swift rules the Mac archive enforces
 
 Linux checks only parse the app target, so the archive is the first full
-compile. Keep to these:
+compile. Each rule below comes from a failed archive:
 
 - The app targets iOS 17: use only APIs available there (for example the
   one-value `onGeometryChange`, and `getCurrentConfigurations` instead of the
   async `currentConfigurations()`).
 - Keep SwiftUI modifier chains under roughly fifteen; split large `body`s into
-  typed pieces (as `HomeShell` and `GenieSpiderLayer` do) to stay inside the
-  type checker's budget. The 2026-10-17 ad hoc build failed on
-  `ShellNewAgentButton.body`, a 25-modifier chain with a ternary hint and an
-  `any Tip` ternary; it now builds in `pressable`, `described`, `tipped` and
-  `body`, with the hint as a plain computed property.
+  typed pieces (as `HomeShell`, `GenieSpiderLayer` and `ShellNewAgentButton`
+  do) to stay inside the type checker's budget. Prefer plain computed
+  properties to ternaries inside the chain.
 - Inside a long modifier chain, a plain type error is often reported only as
   "unable to type-check this expression in reasonable time". Never give a
-  `body` local the name of a property its closures use: the 2026-10-22 ad hoc
-  build of `e4d1620af4e6` failed on `ChatChannelSidebar.body`, where
-  `let groups: [MemberGroup]` (added in `fe664f0c09`) hid the
-  `@State groups: ChannelGroupsStore?` that the group alerts call
-  `groups?.update` on. The local is now `memberGroups`, and the body is split
-  into `list`, `peopleSheets`, `channelSheets`, `alerts` and `dialogs`, with
-  typed `movingKey` and `shown(_:)` bindings instead of inline
-  `Binding(get:set:)` closures.
+  `body` local the name of a property its closures use (a `let groups` once hid
+  `@State groups` in `ChatChannelSidebar`). Use typed bindings instead of
+  inline `Binding(get:set:)` closures.
 - Pass `popoverTip` a concrete tip type, never `any Tip`: an existential picks
   the iOS 26 overload (`popoverTip(_:isPresented:attachmentAnchor:arrowEdge:action:)`)
   and the archive fails on availability. To choose between tips, branch in a
-  `@ViewBuilder` with one `popoverTip` per tip (the 2026-10-17 ad hoc build of
-  `6e0b9032db` failed on `ShellNewAgentButton`'s `any Tip` property).
+  `@ViewBuilder` with one `popoverTip` per tip.
 - `FMDesktopRemote` and `FMInsights` both declare `DesktopHealth`; a file that
   imports both must qualify it.
 - Main-actor APIs called from static helpers or from a plain struct's `init`
-  need that helper or `init` marked `@MainActor` (the 2026-10-14 ad hoc build
-  failed on `PackageUninstallRequest.init` reading `AccountPackagesStore`).
+  need that helper or `init` marked `@MainActor`.
 - `JSONValue` literals take only integer literals; wrap computed `Int`s as
   `JSONValue(x)`.
 - `JSON.encode` takes a `JSONValue` or a `JSONObject`, and a bare dictionary
-  literal fits both; write `JSON.encode([...] as JSONObject)` (the 2026-10-15
-  ad hoc build failed on `MiniAppClient.cachedApps`).
+  literal fits both; write `JSON.encode([...] as JSONObject)`.
 - `WidgetRoute.url` returns `URL?`, which `Link(destination:)` does not take;
   widgets wrap a tappable row in `WidgetRouteLink(route) { … }`, which links
-  only when the route has a URL (the 2026-10-15 ad hoc build failed on
-  `SummaryLiveActivity`'s agent, shortcut and timer rows).
+  only when the route has a URL.
 - A bare `catch` binds an immutable `error` that shadows a view's
-  `@State var error`; assign the property as `self.error = …` inside the
-  `catch` (the 2026-10-15 ad hoc build failed on `ProcessDetailScreen` in
-  `DiagnosticsScreens.swift`).
-- Linux never compiles the `#if canImport(Network)` or `canImport(Security)`
-  code or the Apple-only targets in `native/ios/Nexus`, so check them on the
-  Mac for iOS (`xcodebuild -scheme Nexus-Package -destination
-  generic/platform=iOS build CODE_SIGNING_ALLOWED=NO` in the package;
-  `NexusUI` is iOS-only and does not build for macOS). Call `withTimeout(_:operation:)` without a label, give a
-  `Void` `withCheckedThrowingContinuation` an explicit
-  `CheckedContinuation<Void, Error>`, and describe an `NWError` with
-  `error.debugDescription` (its POSIX, DNS and TLS codes have none). Every
-  `testTarget` path must exist, or SwiftPM rejects the package.
-  `SecCertificateCopyValues` is macOS-only; read certificate dates with
-  `SecCertificateCopyNotValidBeforeDate`/`AfterDate` behind
-  `#available(iOS 18, …)`. The 2026-10-17 ad hoc build at `6f4d8e7d60`
-  failed on `NetworkTransport.swift` for these reasons; the same check then
-  found the missing `Tests/NexusStoreTests` and `WebInspector.swift`.
+  `@State var error`; assign the property as `self.error = …` inside it.
+- Linux never compiles `#if canImport(Network)` or `canImport(Security)` code
+  or the Apple-only targets in `native/ios/Nexus`, so check them on the Mac
+  (`xcodebuild -scheme Nexus-Package -destination generic/platform=iOS build
+  CODE_SIGNING_ALLOWED=NO` in the package; `NexusUI` is iOS-only and does not
+  build for macOS). There:
+  - call `withTimeout(_:operation:)` without a label;
+  - give a `Void` `withCheckedThrowingContinuation` an explicit
+    `CheckedContinuation<Void, Error>`;
+  - describe an `NWError` with `error.debugDescription` (its POSIX, DNS and TLS
+    codes have no description);
+  - every `testTarget` path must exist, or SwiftPM rejects the package;
+  - `SecCertificateCopyValues` is macOS-only; read certificate dates with
+    `SecCertificateCopyNotValidBeforeDate`/`AfterDate` behind
+    `#available(iOS 18, …)`.

@@ -1,4 +1,4 @@
-"""The Markdown tree under www/docs is rendered into the hosted /docs/ tree.
+"""The Markdown tree under docs is rendered into the hosted /docs/ tree.
 
 app/tools/docs_site.py runs during ``build_site_assets.py www``; these tests
 pin the contract: every document and schema gets a URL, hand-written pages are
@@ -19,7 +19,7 @@ import pytest
 WWW = Path(__file__).resolve().parents[1]
 REPOSITORY = WWW.parent
 PUBLIC = WWW / "public"
-DOCS = WWW / "docs"
+DOCS = WWW.parent / "docs"
 APP_TOOLS = REPOSITORY / "app" / "tools"
 if str(APP_TOOLS) not in sys.path:
     sys.path.insert(0, str(APP_TOOLS))
@@ -33,9 +33,10 @@ def test_every_markdown_document_and_json_file_has_a_hosted_url():
     catalog = docs_site.load_catalog()
     sources = {entry.source for entry in catalog.entries if entry.source}
     expected = {
-        f"www/docs/{path.relative_to(DOCS).as_posix()}"
+        f"docs/{path.relative_to(DOCS).as_posix()}"
         for path in DOCS.rglob("*")
         if path.is_file() and path.suffix in {".md", ".json"}
+        and docs_site.is_published(path.relative_to(DOCS).as_posix())
     }
     assert sources == expected
     urls = [entry.url for entry in catalog.entries]
@@ -118,7 +119,7 @@ def test_pages_cross_link_each_other():
     assert "More in Operations" in page
     assert "Previous</span>" in page and "Next</span>" in page
     assert 'class="dp-outline"' in page
-    assert f'href="{docs_site.SOURCE_TREE_URL}www/docs/operations/mirror-node.md"' in page
+    assert f'href="{docs_site.SOURCE_TREE_URL}docs/operations/mirror-node.md"' in page
     assert 'href="/docs-page.css?v=${version}"' in page
     assert 'src="/docs-page.js?v=${version}"' in page
     assert 'src="/site-header.js?v=${version}"' in page
@@ -215,6 +216,11 @@ def test_markdown_renderer_escapes_untrusted_html():
     assert "javascript:" not in doc.html and "<a>x</a>" in doc.html
 
 
+def test_markdown_renderer_keeps_a_bare_scheme_as_text():
+    doc = docs_markdown.render('Links must start with https://").')
+    assert "https://&quot;)." in doc.html and "<a " not in doc.html
+
+
 def test_www_stage_renders_the_library(tmp_path, monkeypatch):
     import build_site_assets
 
@@ -242,35 +248,35 @@ def test_history_log_parser_follows_renames_and_additions():
         [
             f"{record}c3{field}300{field}Ada{field}Rename the guide{field}c2",
             "",
-            "R087\twww/docs/old.md\twww/docs/new.md",
-            "M\twww/docs/other.md",
+            "R087\tdocs/old.md\tdocs/new.md",
+            "M\tdocs/other.md",
             f"{record}c2{field}200{field}Ada{field}Edit the guide",
             "",
-            "M\twww/docs/old.md",
-            "D\twww/docs/gone.md",
+            "M\tdocs/old.md",
+            "D\tdocs/gone.md",
             f"{record}c1{field}100{field}Bob{field}Add the guide",
             "",
-            "A\twww/docs/old.md",
+            "A\tdocs/old.md",
             f"{record}c0{field}50{field}Bob{field}Older edit",
             "",
-            "M\twww/docs/other.md",
+            "M\tdocs/other.md",
         ]
     )
     commits, files = docs_history.parse_log(output)
     assert [commit.sha for commit in commits] == ["c3", "c2", "c1", "c0"]
     assert [commit.parent for commit in commits] == ["c2", "", "", ""]
-    assert commits[0].changes[0] == docs_history.Change("renamed", "www/docs/new.md", "www/docs/old.md")
+    assert commits[0].changes[0] == docs_history.Change("renamed", "docs/new.md", "docs/old.md")
     # The older commits that named old.md are the same document as new.md.
-    assert commits[1].changes[0].path == "www/docs/new.md"
+    assert commits[1].changes[0].path == "docs/new.md"
     assert commits[1].changes[1].status == "removed"
-    guide = files["www/docs/new.md"]
+    guide = files["docs/new.md"]
     assert (guide.added, guide.updated, guide.revisions, guide.added_known) == (100, 300, 3, True)
-    other = files["www/docs/other.md"]
+    other = files["docs/other.md"]
     assert (other.added, other.updated, other.revisions, other.added_known) == (50, 300, 2, False)
 
 
 def test_history_degrades_without_a_repository(tmp_path):
-    history = docs_history.load_history(tmp_path, ("www/docs",))
+    history = docs_history.load_history(tmp_path, ("docs",))
     assert history is docs_history.EMPTY and not history.available
 
 

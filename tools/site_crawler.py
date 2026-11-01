@@ -167,7 +167,7 @@ def source_for(url, root=PROJECT):
         candidates += [f"www/templates/pages/{path}.html", f"www/templates/pages/{path}/index.html"]
         if path.startswith("docs/"):
             rest = path[len("docs/"):]
-            candidates += [f"www/docs/{rest}.md", f"www/docs/{rest}/README.md", f"www/docs/{rest}/index.md"]
+            candidates += [f"docs/{rest}.md", f"docs/{rest}/README.md", f"docs/{rest}/index.md"]
         candidates += [f"www/public/{path}", f"www/public/{path}.html", f"www/public/{path}/index.html"]
     for candidate in candidates:
         if (root / candidate).is_file():

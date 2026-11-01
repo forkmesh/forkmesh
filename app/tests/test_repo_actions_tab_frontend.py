@@ -3,7 +3,7 @@
 
 Workflows run inside a desktop; the website shows what a mirror's attested
 Actions executor publishes and sends control requests back to that same node.
-Wire contract: www/docs/operations/mirror-actions-control.md.
+Wire contract: docs/operations/mirror-actions-control.md.
 
 These pin the parts a refactor could silently drop: the tab is addressable on a
 hard refresh, the fragment ships in the bundle, the page never claims controls

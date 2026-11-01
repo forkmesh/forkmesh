@@ -1,6 +1,6 @@
 # Repository File Edits
 
-The file viewer at `app.forkmesh.com/<owner>/<repo>/blob/<path>` can edit
+Part of [the App docs](README.md). The file viewer at `app.forkmesh.com/<owner>/<repo>/blob/<path>` can edit
 existing text files. Saving posts to
 `POST /api/repo/<owner>/<repo>/file-edit`:
 
@@ -18,8 +18,8 @@ existing text files. Saving posts to
 | `op` | `edit` (default), `delete` or `rename` |
 | `newPath` | The new path for `rename` (may be in another folder); `409 conflict` if taken |
 
-`app/src/repository_file_edits.py` reads the live tree, builds a blob, trees
-and a commit authored by the signed-in account.
+`app/src/repository_file_edits.py` reads the live tree and builds a blob,
+trees and a commit authored by the signed-in account.
 
 ## Who can do what
 
@@ -53,20 +53,18 @@ every path with it too.
 
 ## Proposals: editing without write access
 
-Like GitHub, a reader without write access can still edit a file: the change
-becomes a pull request. ForkMesh does not need a fork or a branch on the
-repository for this. Its pull requests carry a signed, self-contained patch and
-format-patch commit series (the same model forks and
-[remote forks](remote-forks.md) use), and the node that takes it in turns that
-series into commits on the base it was cut from and merges those
-([../server/pull-heads.md](../server/pull-heads.md)). A website fork needs a linked managed
-mirror and finishes asynchronously, so it cannot back an instant edit; pushing
-a namespaced branch into someone else's repository would give readers a write
-path they do not have today.
+A reader without write access can still edit a file: the change becomes a
+pull request, with no fork or branch on the repository. ForkMesh pull requests
+carry a signed, self-contained patch and format-patch series (the model forks
+and [remote forks](remote-forks.md) use), which the receiving node turns into
+commits on the base it was cut from
+([../server/pull-heads.md](../server/pull-heads.md)). A website fork needs a
+linked managed mirror and finishes asynchronously, so it cannot back an
+instant edit, and pushing a namespaced branch would give readers a write path
+they do not have.
 
-`mode: "propose"` therefore builds the same commit as `commit` but pushes
-nothing. It reads the current blob at the branch tip (checking its OID), and
-returns:
+`mode: "propose"` builds the same commit as `commit` but pushes nothing. It
+reads the current blob at the branch tip (checking its OID) and returns:
 
 | Field | Meaning |
 | --- | --- |
@@ -77,12 +75,12 @@ returns:
 | `commits` | One-commit format-patch mbox with the author and message |
 | `subject` | The commit message, used as the pull request title |
 
-The base branch must exist; proposals never create branches. The browser then
-signs the pull with its web key (`signWebPullContent`, the signer behind the
-new pull request form), posts it to `/api/repo/<owner>/<repo>/pulls`, stores
-an optimistic record and opens the new pull request. The `head` name is
-provenance only: it is not a branch on the repository, so the node stores the
-pull as a patch rather than a branch-backed pull. Each proposal is audited as
+The base branch must exist; proposals never create branches. The browser
+signs the pull with its web key (`signWebPullContent`, the new pull request
+form's signer; see [encryption and signatures](../encryption.md)),
+posts it to `/api/repo/<owner>/<repo>/pulls`, stores an optimistic record and
+opens the new pull request. The `head` name is provenance only, not a branch,
+so the node stores the pull as a patch. Each proposal is audited as
 `repository.file_edit_proposal`.
 
 ## Editor
@@ -90,8 +88,8 @@ pull as a patch rather than a branch-backed pull. Each proposal is audited as
 The editor asks `mode: "probe"` when it opens. A reader gets the notice "You
 don't have write access to this repository. Saving proposes your change as a
 pull request.", the branch field is fixed to the current branch as the base,
-and the button reads **Propose changes**. A writer keeps the current behaviour
-and can tick **Propose as a pull request instead of committing**. A `403` with
+and the button reads **Propose changes**. A writer commits, or can tick
+**Propose as a pull request instead of committing**. A `403` with
 `canPropose` on save (for example after a permission change) switches the open
 editor to proposing. A signed-out visitor who clicks **Edit file** is sent to
 `/login?next=<this page>`.
@@ -115,14 +113,13 @@ the file viewer (`openRepoNewFile`): a path that starts in the folder being
 browsed, the text, the branch and a commit message. It probes access like the
 editor: a writer commits with `create: true` and lands on the new file's
 page; a reader (or a writer who ticks the box) proposes the file as a pull
-request through the same signed proposal flow. **Upload a file instead** sends any
-file up to 2 MB as base64 (`encoding: "base64"`), committed byte for byte; a
-proposal carries it as a `GIT binary patch` (`binary_patch`) that `git am`
-replays. A read-only mirror shows the
-button disabled with the fork hint, and a signed-out visitor is sent to
-`/login?next=<this page>`. Tests: `app/tests/test_web_add_file.py`.
+request through the same signed proposal flow. **Upload a file instead**
+sends any file up to 2 MB as base64 (`encoding: "base64"`), committed byte for
+byte; a proposal carries it as a `GIT binary patch` (`binary_patch`) that
+`git am` replays. A read-only mirror shows the button disabled with the fork
+hint, and a signed-out visitor is sent to `/login?next=<this page>`.
 
-Tests: `app/tests/test_repository_file_edits.py` (proposals replay with
+Tests: `app/tests/test_web_add_file.py`, `app/tests/test_repository_file_edits.py` (proposals replay with
 `git am --3way`, the patch matches `git diff`, writers still commit, direct
 writes by readers are refused, signed-out callers get 401),
 `app/browser_tests/tests/dashboard-file-edit.spec.js` (writer save, reader

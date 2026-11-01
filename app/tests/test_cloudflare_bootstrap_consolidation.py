@@ -454,7 +454,7 @@ def test_token_only_discovery_is_read_only_and_fails_closed_when_ambiguous():
 
 def test_bootstrap_docs_describe_single_app_main_db_and_external_legacy_cutover():
     docs = (
-        ROOT / "www/docs/operations/automation-and-cloudflare-bootstrap.md"
+        ROOT / "docs/operations/automation-and-cloudflare-bootstrap.md"
     ).read_text(encoding="utf-8")
     assert "Workers KV Storage edit" in docs
     assert "generates `DATA_KEY`" in docs

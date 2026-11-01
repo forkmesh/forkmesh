@@ -137,13 +137,13 @@
         </p>
 
         <h2 id="relay-mode">Relay Mode</h2>
-        <p>Start a local relay:</p>
-        <pre><code>cd ../app
-uvx --from workers-py pywrangler dev</code></pre>
+        <p>Start a local app on CPython with a throwaway database:</p>
+        <pre><code>cd app/host
+../../.venv/bin/python -m forkmesh_host serve --port 8080 --db sqlite:/tmp/fm.sqlite --migrate</code></pre>
         <p>The client starts without setup input and connects to the ForkMesh mainnode:</p>
         <pre><code>wss://app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
         <p>For local relay testing, use this server URL instead:</p>
-        <pre><code>ws://127.0.0.1:8787/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
+        <pre><code>ws://127.0.0.1:8080/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
         <p>
           Default rooms fetch a relay-derived shared passphrase after account
           or signed-node authentication. The client applies
@@ -196,7 +196,8 @@ uvx --from workers-py pywrangler dev</code></pre>
         <h2>More developer docs</h2>
         <ul>
           <li><a href="/docs/protocol">Protocol spec</a> — identity, signatures, HTTP API, self-hosting a mainnode</li>
-          <li><a href="/docs/cloudflare-worker">Relay &amp; website</a> — where the App and relay run</li>
+          <li><a href="/docs/self-hosting/">Self-hosting</a> — node, mirror, instance or fleet</li>
+          <li><a href="/docs/cloudflare-worker">App &amp; relay</a> — where the app runs: equal core nodes behind DNS round robin</li>
           <li><a href="/mobile">Mobile app</a> — the native iOS and Android apps</li>
           <li><a href="/changelog">Changelog</a> — release-by-release history</li>
         </ul>

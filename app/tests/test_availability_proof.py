@@ -15,7 +15,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SUITE = ROOT / "conformance" / "availability-proof" / "v1"
-DOC = ROOT / "www" / "docs" / "availability-proof.md"
+DOC = ROOT / "docs" / "availability-proof.md"
 sys.path.insert(0, str(ROOT / "app" / "src"))
 
 import availability_proof  # noqa: E402
@@ -165,7 +165,7 @@ def test_every_risk_is_explained_with_a_reachable_remediation():
         for risk in entry["expect"]["risks"]:
             assert risk["action"]["href"] == (
                 "https://forkmesh.com/docs/availability-proof/#" + risk["code"])
-    readme = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(availability-proof.md)" in readme
 
 

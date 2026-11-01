@@ -2204,7 +2204,7 @@
   let newRepoSetupStartedAt = 0;
 
   // What this relay's own nodes can host (GET /api/hosted-repositories,
-  // docs/HOSTED_REPOS.md): "core" = the Next core nodes keep a replica each,
+  // docs/operations/core-hosted-repositories.md): "core" = the Next core nodes keep a replica each,
   // so private repositories, a first commit, an import from a public forge and
   // an organization owner are offered, within the account's quota.
   let hostedSettings = null;

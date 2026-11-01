@@ -74,19 +74,23 @@ fall back to deleting or re-cloning a checkout: stop and report, or move it
 aside. `app/tests/test_no_unguarded_destructive_deletes.py` enforces this; see
 `docs/engineering/destructive-actions.md`.
 
-## The served stack (ForkMesh Next)
+## The served stack
 
-forkmesh.com, app.forkmesh.com and world.forkmesh.com run the stack that was
-built as ForkMesh Next: three self-hosted core nodes and a runner tier, no
-Cloudflare Workers, D1 or Durable Objects. `app/host/`, `deploy/`,
-`tools/next_*.py` and `tools/cutover_*.py` drive it; `docs/PLAN.md` and
-`docs/NEXT_ADOPTION.md` describe it.
+app.forkmesh.com and world.forkmesh.com are served directly by three equal,
+self-hosted core nodes (Caddy, the Python app on CPython, rqlite, the Go Git
+gateway) through DNS round robin, plus an untrusted runner tier. There is no
+proxy in front and no single point of failure: a failed core leaves DNS, and
+with two down the survivor serves read-only. The old Cloudflare Worker relay
+(Workers, D1, Durable Objects) is gone; do not describe or rebuild it.
+`app/host/`, `deploy/` and `tools/next_*.py` drive the stack; `docs/operations/served-stack.md`
+and `docs/operations/operator-files.md` describe it, `docs/architecture.md` summarises
+it.
 
 - Vultr instances are labelled `fmnext-*` and tagged `forkmesh-next`. Never add
   them to the desktop's saved hosts.
 - Its operator files live in `~/projects/forkmesh/data/core/{config,ssh,logs}/fleet`
   and `data/core/fleet` (reached through the `~/projects/forkmesh/<root>` links
-  too; moved 2026-09-24 and 2026-10-19, `docs/NEXT_ADOPTION.md`); the
+  too; moved 2026-09-24 and 2026-10-19, `docs/operations/operator-files.md`); the
   never-erase rule applies.
   `~/projects/forkmesh-backup` is the retired Next folder, kept as a backup:
   never erase it either.
@@ -103,7 +107,10 @@ them (`docs/desktop/build-and-test.md#ccache`).
 
 Source files hold code; human-readable text lives in `docs/`. Do not add
 comments or docstrings. Put the reason for a change in the matching
-`docs/*.md`; `docs/README.md` maps each subsystem to its home page. The only exceptions are lines tools read: shebangs, encoding
+`docs/*.md`; `docs/README.md` maps each subsystem to its home page. Keep docs
+short, link related pages, and link the core pages (`docs/architecture.md`,
+`encryption.md`, `mirroring.md`, `self-hosting.md`, `censorship-resilience.md`,
+`protocol/threat-model.md`) instead of re-explaining them. The only exceptions are lines tools read: shebangs, encoding
 lines, build tags and `//go:embed`, lint/type directives, license headers,
 build markers in templates, and user-facing help or UI text.
 
@@ -126,7 +133,7 @@ something a user can notice adds one plain sentence with
 the file itself, so nothing needs re-rendering. Each note is one line and git
 merges the file with `merge=union`, so a conflict there is rare; if one
 happens, keep both sides' lines and run `python3 tools/changelog.py check`.
-See `docs/changelog.md`.
+See `docs/engineering/changelog.md`.
 
 ## Desktop layout modes: Control Tower and Focus
 

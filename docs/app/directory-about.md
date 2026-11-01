@@ -1,7 +1,8 @@
 # Folder About boxes
 
-User guide: [www/docs/folder-about.md](../../www/docs/folder-about.md) (the file
-format, limits and fallbacks).
+Part of [the App docs](README.md). User guide:
+[docs/folder-about.md](../folder-about.md) (the file format,
+limits and fallbacks).
 
 A folder's About box is read from `<folder>/.forkmesh/info.json`, the file the
 repository-level About already uses at the root (`MainWindowRepoDetail.cpp`
@@ -67,10 +68,9 @@ exists but is not usable JSON), `name`, `description`, `descriptionSource`
 Folders listed in the instance's project-address table (`repo_projects`,
 [server-update.md](server-update.md)) get an About without a committed file:
 `source: "project"`, the display name from the table, everything else from
-the README and logo. This makes the Bolt monorepo (about 60 folders, each with
-`logo.png`/`logo.svg` and a README starting with `**Live Site:**`) work
-without committing 60 files, while every other folder keeps today's
-behaviour. The table applies only to its repository name and, when short
+the README and logo, so a monorepo such as Bolt (about 60 folders, each with
+`logo.png`/`logo.svg` and a README starting with `**Live Site:**`) needs no
+committed file per folder. The table applies only to its repository name and, when short
 addresses name an owner, only under that owner (the path owner or the backing
 node).
 
@@ -92,10 +92,10 @@ Bolt's project READMEs open.
 `08-repo-detail-network.js`.
 
 - The folder About **replaces** the repository About inside a folder rather
-  than stacking above it. Folder views already hide the repository rail
-  (focus mode with the file explorer on the left), so "above" would have meant
-  bringing back the whole repository rail (stars, forks, watch, releases) on
-  every folder; the repository About stays one click away on the root.
+  than stacking above it: folder views hide the repository rail (focus mode
+  with the file explorer on the left), and stacking would bring the whole
+  rail back on every folder. The repository About stays one click away on the
+  root.
 - It is a sibling aside in the same grid column; showing it restores the
   two-column grid that focus mode collapses, hiding it collapses it again.
 - The page asks only when the folder's tree has a `.forkmesh` folder or

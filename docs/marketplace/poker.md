@@ -1,10 +1,9 @@
 # Poker
 
-No-limit Texas Hold'em for ForkMesh users, played with virtual chips. The
-owner asked for a poker plugin that looks great as a native desktop page, on
-phones and on the web, where ForkMesh users play each other with virtual
-chips, with sounds, a dealer and everything a standard game has, made to look
-realistic and fun.
+No-limit Texas Hold'em between ForkMesh users for virtual chips, with a
+dealer, bots, side pots, turn clocks and synthesized sounds, as a native
+desktop page, on phones and on the web. Part of
+[Marketplace](README.md).
 
 Package: [`marketplace/packages/poker`](../../marketplace/packages/poker/README.md).
 Every account installs it for itself (`install.sync: "account"`); tables are
@@ -18,7 +17,7 @@ chips and can collect 2,000 free chips every four hours.
 
 | Path | What it does |
 | --- | --- |
-| `content/worker/poker.py` | The Worker API at `/api/poker`: wallets, the lobby, tables, seats, the dealer (shuffle, blinds, betting rounds, side pots, showdown), hand evaluation, bots, chat, invites, export and purge. The build allows one module per package, so the engine lives here too. |
+| `content/worker/poker.py` | The server module (run by the App) for `/api/poker`: wallets, the lobby, tables, seats, the dealer (shuffle, blinds, betting rounds, side pots, showdown), hand evaluation, bots, chat, invites, export and purge. The build allows one module per package, so the engine lives here too. |
 | `content/web/view.html`, `content/web/page.js` | The dashboard page `/dashboard/poker`: lobby, the felt table, cards, chips, the dealer, action bar, chat, Web Audio sounds and the optional spoken dealer. Laid out for phones too. |
 | `content/desktop/Poker*.{h,cpp}`, `content/desktop/tests/test_poker_model.cpp` | The native desktop page (`builtin:poker`), painted with QPainter, with its own synthesized sounds; see [Desktop page](#desktop-page). |
 | `native/ios/ForkMeshCore/Sources/FMPackages/Poker{Models,Game,Model,Synth}.swift`, `native/ios/ForkMesh/Features/Packages/Poker*.swift` | The iPhone models, rules helpers, screen model, sound synthesis, lobby and full-screen table (SwiftUI). Tests: `FMPackagesTests/PokerTests.swift`, `FMApiTests/PokerRouteTests.swift`. |
@@ -67,9 +66,8 @@ and the table publishes `commitment = SHA-256(h[0] + "," + ... + "," + h[51])`.
 When it ends, `lastHand.reveal` holds all 52 `hashes` and, in `cards`, the
 index, card and salt of only the cards that became public (the board and the
 hands shown at showdown). Anyone can check those cards sat where the
-committed deck said, while folded, mucked and burned cards stay secret. (The
-first version revealed the whole deck and salt; a review found that gave away
-every folded hand.)
+committed deck said, while folded, mucked and burned cards stay secret
+(revealing the whole deck would give away every folded hand).
 
 ## Stakes
 
@@ -95,7 +93,7 @@ come from a fixed list and always end in "(bot)" on screen.
 There is no polling. Every change to a table rings each seated player and
 everyone who opened the table in the last ten minutes with the account
 doorbell topic `package:poker` (`runtime.notify_account`). Package topics are
-never coalesced by the relay, so two actions a second apart both arrive.
+never coalesced by the App, so two actions a second apart both arrive.
 Clients re-read the table when the doorbell rings, when the page opens, when
 the socket reconnects and when the app returns to the foreground.
 
@@ -256,7 +254,7 @@ Aces`, `High Card, King`.
 ## Look and sound
 
 Every client draws the same table so it feels like one game on every device
-(the desktop has its own skin since 2026-10-30, see [Desktop skin](#desktop-skin)):
+(the desktop has its own skin, see [Desktop skin](#desktop-skin)):
 
 - A dark room around an oval table: a polished walnut rail, a padded black
   leather arm rest, and green felt (`#0d5c3a` centre to `#083d27` edge, with
@@ -361,12 +359,10 @@ refresh.
 
 ### Desktop skin
 
-On 2026-10-30 the owner asked for the desktop page to follow a neon poker
-concept delivered as an integration kit (`poker_plugin_asset_kit.zip`: a
-concept image, SVG cards, chips, felt, plates and buttons, a QSS starting
-point and a stand-alone preview). The kit asked for a reskin only, so the
-animations, turn clock, state and requests are unchanged. What the desktop
-takes from it:
+The desktop page follows a neon poker concept delivered as an asset kit
+(`poker_plugin_asset_kit.zip`: concept image, SVG cards, chips, felt, plates,
+buttons, QSS). It is a reskin only: animations, turn clock, state and
+requests are shared with the other clients. What the desktop takes from it:
 
 - **Cards** are the kit's SVGs, `content/desktop/cards/<rank>_<suit>.svg`
   (ranks `2`..`10`, `J`, `Q`, `K`, `A`; suits `S`, `H`, `D`, `C`) and
@@ -376,10 +372,9 @@ takes from it:
   module's files) the painted cards described above are drawn instead.
 - **Card faces** are written by `tools/poker_card_svgs.py` (run it after
   changing the design; `app/tests/test_poker_card_svgs.py` fails when the
-  files and the script disagree). The kit's cards drew each suit as a `♠ ♥ ♦ ♣`
-  text glyph with no font named, so on a machine whose default font lacks the
-  glyphs Qt SVG drew nothing and the cards showed only their rank. Every suit
-  is now a vector path, so only the rank letters depend on a font. The faces
+  files and the script disagree). Every suit is a vector path, not a
+  `♠ ♥ ♦ ♣` glyph (Qt SVG draws nothing for a glyph the default font lacks),
+  so only the rank letters depend on a font. The faces
   have a rank and suit in the top-left and bottom-right corners, the standard
   pip layout for 2 to 10 (pips below the middle turned upside down), a large
   centre suit on the aces, and two-ended court cards: a gold-framed panel with
@@ -403,10 +398,7 @@ takes from it:
 
 ### Desktop layout
 
-The reskin kept the old page layout (a button bar above the table, the action
-bar under it and the chat column beside it), so on 2026-10-30 the owner said
-the new layout was not showing. The table page now follows the concept's layout
-too: the table fills the page and the controls float over the room in navy
+The table page follows the concept's layout: the table fills the page and the controls float over the room in navy
 panels with a gold edge (`PokerPage::placeOverlays`, rerun on every resize and
 whenever a panel's contents change).
 

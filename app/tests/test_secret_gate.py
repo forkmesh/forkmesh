@@ -27,7 +27,7 @@ import secret_gate as gate  # noqa: E402
 
 CORPUS = ROOT / "conformance" / "secrets" / "v1" / "corpus.json"
 BUILDER = ROOT / "conformance" / "secrets" / "v1" / "build_corpus.py"
-DOC = ROOT / "www" / "docs" / "security" / "secret-scanning.md"
+DOC = ROOT / "docs" / "security" / "secret-scanning.md"
 
 
 def synthetic(seed, length):
@@ -171,7 +171,7 @@ def test_public_report_scanner_detects_through_the_contract(tmp_path):
     (tmp_path / "dev.py").write_text(
         'password = "correct-horse-battery-staple-example"\n', encoding="utf-8")
     policy = json.loads(
-        (ROOT / "www" / "docs" / "security-scan-policy.json").read_text())
+        (ROOT / "docs" / "security-scan-policy.json").read_text())
     assert "secretRules" not in policy
     assert policy["secretContract"] == gate.CONTRACT_ID
     findings = security_scan.scan_secrets(
@@ -186,7 +186,7 @@ def test_public_report_scanner_detects_through_the_contract(tmp_path):
 def test_new_files_do_not_trip_the_contract():
     paths = [
         CORPUS, BUILDER, ROOT / "tools" / "secret_gate.py", Path(__file__),
-        DOC, ROOT / "www" / "docs" / "operations" / "node-operator-policy.md",
+        DOC, ROOT / "docs" / "operations" / "node-operator-policy.md",
     ]
     report = gate.scan_files(
         [(str(path.relative_to(ROOT)), path.read_bytes()) for path in paths])

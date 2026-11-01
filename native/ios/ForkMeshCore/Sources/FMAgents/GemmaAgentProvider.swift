@@ -1,4 +1,4 @@
-// Gemma 4 on this iPhone as an agent provider. See docs/FMLocalAI.md, "Writing GemmaAgentProvider".
+// Gemma 4 on this iPhone as an agent provider. See docs/native/ios/FMLocalAI.md, "Writing GemmaAgentProvider".
 //
 // History stays OpenAI Chat Completions shaped, exactly like OpenAiProvider,
 // so the loop and the transcript do not change; the model itself is reached

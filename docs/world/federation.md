@@ -1,12 +1,16 @@
 # World federation
 
+Part of [World](README.md).
 Federated hexes let a person walk from one ForkMesh World onto a neighbouring
 World's hexagons inside the same page, keep their own name, and use what
 stands there. Every World runs the same World code; each hexagon has one
 owner, and everything on it is read from, and acted on at, the owner.
 
 This page is the protocol other instances implement to join. Parts marked
-*(planned)* are not built yet.
+*(planned)* are not built yet. The shared map it runs on:
+[World mesh](mesh.md); instance
+federation in general: [instance-federation.md](../app/instance-federation.md);
+running an instance: [Self-hosting](../self-hosting.md).
 
 ## Who owns a hexagon
 
@@ -86,21 +90,24 @@ visit socket is `?visitor=`; both sides see each other live.
 ## Rendering and routing
 
 - **Client.** `WorldFederation` (`world/public/world/world-federation.js`)
-  keeps one context per owner: its API origin and visitor token. Nothing is
+  keeps one context per owner: its API origin and a visitor token minted
+  there from a visa this World issued. Nothing is
   fetched until something on that owner's ground needs it; the token is
   shared by concurrent callers, renewed a minute before it expires, and
   replaced by a plain visa whenever there is no token (an owner that answers
-  404, or one whose exchange failed; see Rollout). Calls carry `Authorization: Bearer`, `credentials: "omit"` and
+  404, or one whose exchange failed; see [Rollout](#rollout)). Calls carry `Authorization: Bearer`, `credentials: "omit"` and
   `mode: "cors"`, and only paths in `FEDERATED_PATHS` (the same list as the
-  server's) are ever sent. Reads are cached per owner and path for `maxAge`.
+  server's) are ever sent, so no cookie crosses origins. A visa lives a
+  minute, so the one just tried is reused for the socket fallback rather
+  than asking again. Reads are cached per owner and path for `maxAge`.
 - **Routing.** `fetchJSONAt(x, z, path)` sends a call for something standing
   at a point to that point's owner (`worldMeshOwnerAt`), or to the World the
   page stands in when the ground is its own; home's ground goes to home with
   the page's own session. While the page stands in a neighbour's World
-  ([README](README.md#world-mesh), Standing in another World), the town's
+  ([Standing in another World](mesh.md#standing-in-another-world)), the town's
   public reads go to that World without the visitor token. A building's runtime is given the `fetchJSON`
   of the owner of the hexagon it stands on. `visitorSession(world)` is the
-  identity shown there (`name@home`).
+  identity the page holds at that owner (`name@home`), for the owner's UI.
 - **Visits.** The visit socket asks the federation for its credential:
   `?visitor=<token>`, or `?visa=` for an owner without the exchange.
 - **The Office.** When the page stands in a neighbour's World,
@@ -122,19 +129,6 @@ visit socket is `?visitor=`; both sides see each other live.
   never sent: owner calls carry the bearer token.
 - **Owner-only actions** (administration, an owner's private rooms) stay
   read-only for visitors, with a note, instead of failing.
-
-## The page's federation client
-
-`world/public/world/world-federation.js` keeps one context per owner: its API
-origin and a visitor token minted there from a visa this World issued.
-Tokens are fetched lazily, the first time something on that owner's ground
-needs one, shared by concurrent callers, cached until a minute before they
-expire, and sent as a bearer header with credentials omitted, so no cookie
-crosses origins. A visa lives a minute, so the one just tried is reused for
-the socket fallback rather than asking again. Reads are cached per owner and
-path for `maxAge`, and nothing outside `FEDERATED_PATHS` is ever sent
-across. `visitorSession` is the identity the page holds at that owner
-(`name@home`), for the owner's UI.
 
 ## Interactive neighbour scenes
 

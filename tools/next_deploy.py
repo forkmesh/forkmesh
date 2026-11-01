@@ -455,7 +455,7 @@ done
            current=CURRENT, previous=PREVIOUS, keep_n=KEEP_RELEASES + 1)
 
 
-# Vault on (docs/VAULT.md): DATA_KEY arrives as the first stdin line, is kept
+# Vault on (docs/operations/vault.md): DATA_KEY arrives as the first stdin line, is kept
 # in an unexported shell variable (printf is a bash builtin: never an argv or
 # the environment) and is handed to the restarted app's unseal socket.
 VAULT_READ_KEY = """
@@ -875,7 +875,7 @@ def skipped_cores(fleet, ssh, runner, explicit=None, environ=None, dns=None,
                              len(left), len(cores), need))
     for name, why in sorted(reasons.items()):
         runner.say("%s: skipped (%s); it catches up when it is back "
-                   "(docs/deploy/auto-deploy.md)" % (name, why))
+                   "(docs/operations/auto-deploy.md)" % (name, why))
     return reasons
 
 

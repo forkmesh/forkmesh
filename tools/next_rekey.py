@@ -7,7 +7,7 @@
 
 Runs **only on the operator desktop**, against a local SQLite file (a backup
 pulled with ``tools/next_backup.py``; ``.gz`` or already gunzipped). It never
-talks to a node, rqlite or production. docs/REKEY.md has the inventory this
+talks to a node, rqlite or production. docs/operations/rekey.md has the inventory this
 tool implements and the rollout runbook.
 
 What ``run`` does, in memory, row by row:
@@ -73,7 +73,7 @@ import forkmesh_safe_delete  # noqa: E402
 TOOL_VERSION = 1
 
 # --------------------------------------------------------------------------
-# The inventory (docs/REKEY.md). app/tests/host/test_next_rekey.py fails when
+# The inventory (docs/operations/rekey.md). app/tests/host/test_next_rekey.py fails when
 # the schema grows a *_bi column or a table this registry does not name.
 
 # Emptied: state that is invalid under a new key anyway, or that a user or
@@ -605,7 +605,7 @@ class Keyset:
         return hmac.compare_digest(self._secret.encode(), other._secret.encode())
 
     def fingerprint(self):
-        """The vault key_id (docs/VAULT.md), shown by next_vault.py status."""
+        """The vault key_id (docs/operations/vault.md), shown by next_vault.py status."""
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parents[1]
                                    / "app" / "host"))

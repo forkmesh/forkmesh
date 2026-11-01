@@ -1,7 +1,7 @@
 """Activation-to-revenue metric dictionary and weekly scorecard contract.
 
-``www/docs/outcome-metrics.json`` is the one definition of every
-scorecard row and ``www/docs/activation-revenue-scorecard.md`` is the weekly
+``docs/outcome-metrics.json`` is the one definition of every
+scorecard row and ``docs/activation-revenue-scorecard.md`` is the weekly
 template. Every metric must reconcile to a source that exists, and no report
 may treat a 100-row page as the whole population.
 """
@@ -14,7 +14,7 @@ import sys
 
 
 REPO = Path(__file__).resolve().parents[2]
-DOCS = REPO / "www" / "docs"
+DOCS = REPO / "docs"
 DICTIONARY_PATH = DOCS / "outcome-metrics.json"
 SCORECARD_PATH = DOCS / "activation-revenue-scorecard.md"
 ATTRIBUTION_PATH = REPO / "app" / "src" / "attribution.py"

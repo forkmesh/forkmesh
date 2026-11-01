@@ -6,7 +6,7 @@ desktop debug bar, under the version on iPhone and Android, and on the web's
 dashboard page `/dashboard/status-monitors`. Each check is its own package
 (`marketplace/packages/status-check-*`) that depends on it, the user can add
 their own monitors, and the install state follows the account across every
-device.
+device. Part of [Marketplace](README.md).
 
 ## Code map
 
@@ -43,7 +43,8 @@ device.
 | `status-check-mirrors` | every `mirror:<name>` (off by default) |
 
 Every check is on by default except Mirrors, since a fleet of mirrors would
-crowd the row.
+crowd the row. `durable_objects` counts room requests aborted by the cores'
+Durable Object emulation (`durable.py`).
 
 The checks choose which dots a user sees; they do not start or stop the
 server's sampler. `record_status_sample` keeps checking every system each
@@ -58,10 +59,10 @@ The `flagship_repository` probe (`_flagship_repository_probe` in
 discussion and a pull request, each from an eligible mirror. A repository
 with no discussions or no pull requests is healthy, because those tabs show
 zero rows. Deleting the last discussion removes `.forkmesh/discussions`
-entirely, so the probe first lists `.forkmesh` and only reads the folder if
-it is there; asking for the missing folder directly answered 404 and turned
-the row red ("Discussions collection failed (HTTP 404)", 2026-10-21). A
-failed or unattributed read of `.forkmesh` itself still counts as an outage.
+entirely, so the probe first lists `.forkmesh` and reads the folder only if
+it is there (asking for it directly answers 404, "Discussions collection
+failed (HTTP 404)"). A failed or unattributed read of `.forkmesh` itself still
+counts as an outage.
 
 A third-party package can add dots the same way: depend on `status-page`,
 set `install.sync: "account"`, and declare a `status.monitor` contribution.
@@ -71,9 +72,8 @@ set `install.sync: "account"`, and declare a `status.monitor` contribution.
 The error log renames a failing private or unpublished repository route to
 `/private-or-unpublished-repository/<kind>` (or `/repository-route-redacted/`),
 where `<kind>` is `[api:<route>]`, `[git-info-refs]`, `[git-upload-pack]`,
-`[release-blob]` or `[page]`. The sampler used to bucket by path prefix, so a
-redacted `/api/repo/<o>/<r>/pulls` 503 no longer started with `/api/` and
-painted the Website row red (2026-10-21, 17:56 to 18:16 UTC).
+`[release-blob]` or `[page]`. A redacted path no longer starts with `/api/`,
+so bucketing by prefix would paint an API error on the Website row.
 `_status_error_route_path` maps each kind back to a stand-in path of the same
 route family before bucketing, so a redacted API error lands on API, a git
 error on Realtime, a page error on Website, and a 502/503/504 on a mirror-served
@@ -81,11 +81,10 @@ content route is skipped exactly as its public form is.
 
 ### A new fleet node's uptime starts at its first sample
 
-Core, runner and mirror rows appear when a node joins the fleet. The 30-day
-uptime and coverage used to count every day of the window as expected, so a
-core added on 2026-10-14 showed 25.78% uptime on 2026-10-21 while every one of
-its daily bars was green. For those rows the days before the node's first
-recorded sample are left out of the 30-day expected total. Their daily bars
+Core, runner and mirror rows appear when a node joins the fleet. For those
+rows the days before the node's first recorded sample are left out of the
+30-day expected total (otherwise a week-old core shows about 25% uptime with
+every daily bar green). Their daily bars
 still show no data. Fixed rows keep counting every day, because a gap there is
 a missed sample, not a system that did not exist yet.
 
@@ -157,13 +156,11 @@ the web shows green when the address answered at all.
 
 Every grid in `content/web/view.html` (the page body, the two-column row, its
 right column, and the Checks, Settings and Your monitors lists) sets
-`grid-cols-1`, so each track is `minmax(0, 1fr)`. A bare `grid` sizes its
-implicit column to the widest row's min-content, and the one-line truncated
-check summaries and monitor addresses then pushed every check row past its
-card: the switches drew over the Settings column and the view scrolled
-sideways. `.sp-switch` sets `min-height: 0` because the dashboard gives every
-button `min-height: 44px` on touch screens, which stretched the switches into
-tall pills on phones. Inputs and the select take the accent focus border.
+`grid-cols-1`, so each track is `minmax(0, 1fr)`: a bare `grid` sizes its
+implicit column to the widest row's min-content, and truncated summaries and
+addresses push rows past their card. `.sp-switch` sets `min-height: 0`
+because the dashboard gives every button `min-height: 44px` on touch screens,
+which stretches switches into tall pills. Inputs and the select take the accent focus border.
 
 ### Event-only states
 

@@ -1,6 +1,6 @@
 package mirrornode
 
-// Runner role (docs/RUNNERS.md, PLAN.md Phase 5).
+// Runner role (docs/operations/runners.md, PLAN.md Phase 5).
 //
 // A runner holds no repository and serves nothing. It claims agent leases
 // from the app's runner API (POST /api/runners/claim), clones the one leased
@@ -123,7 +123,7 @@ func newRunnerAgentJobs(d *Daemon) (*agentJobRunner, error) {
 		}
 	} else {
 		log.Printf("runner: WARNING jobs run as the daemon's own user and can read its node key; " +
-			"run the daemon as root with runner.jobUid/jobUser (docs/RUNNERS.md) before serving other owners")
+			"run the daemon as root with runner.jobUid/jobUser (docs/operations/runners.md) before serving other owners")
 	}
 	if raw, err := os.ReadFile("/etc/resolv.conf"); err == nil {
 		box.dnsAllow = loopbackResolvers(string(raw))

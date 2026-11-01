@@ -306,7 +306,7 @@ class HostASGI:
         return _js.Request(url, method, headers, body, None, cf)
 
     def _edge_client(self, scope, headers, method):
-        """x-forkmesh-edge-client (deploy/core/edge_client.md): always
+        """x-forkmesh-edge-client (docs/www/edge-client.md): always
         stripped; when it verifies and the request came through Caddy
         (loopback peer), its visitor replaces cf-connecting-ip/country."""
         value = headers.get(request_guard.EDGE_HEADER)

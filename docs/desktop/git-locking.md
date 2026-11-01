@@ -1,7 +1,14 @@
 # Desktop: Git index queue and lock recovery
 
-Part of [the desktop docs](README.md). Code: `desktop/src/GitIndexQueue.{h,cpp}`;
-tests: `desktop/tests/test_git_index_queue.cpp` (`forkmesh-git-index-queue-tests`).
+Index-writing Git commands for one repository run one at a time through a
+per-repository queue, with timeouts long enough for big merges and a retry
+policy that removes only orphaned `index.lock` files. This page covers the
+queue, the timeouts, lock contention and the lock-free background reads.
+
+Part of [Desktop](README.md).
+
+Code: `desktop/src/GitIndexQueue.{h,cpp}`; tests:
+`desktop/tests/test_git_index_queue.cpp` (`forkmesh-git-index-queue-tests`).
 
 ## Why
 
@@ -67,13 +74,12 @@ when the lock is younger than 60 s or held.
 
 `git status` refreshes the index's stat cache when it can, which means taking
 `index.lock` for a moment and renaming it over `index`. A background read that
-did that inside an agent's worktree could collide with the agent's own `git
-add`, and could even rename away a stale `index.lock` that the compare
-header's Clear lock button was about to show. Every read the desktop starts in
-the background runs with `GIT_OPTIONAL_LOCKS=0`: `runGitCaptureDirect` and,
-since 2026-10-16, `runGitDetached` (the Source Control badge, the Git page's
-dirty check, transcript and code map reads). Until then `runGitDetached` set
-nothing and only the Go engine's route set it.
+does that inside an agent's worktree can collide with the agent's own `git
+add`, and can even rename away a stale `index.lock` that the compare header's
+Clear lock button is about to show. Every read the desktop starts in
+the background runs with `GIT_OPTIONAL_LOCKS=0`: `runGitCaptureDirect` and
+`runGitDetached` (the Source Control badge, the Git page's
+dirty check, transcript and code map reads).
 
 ## Tests
 

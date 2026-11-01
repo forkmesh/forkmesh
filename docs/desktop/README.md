@@ -9,35 +9,51 @@ daemon in `server/` (see [../server/README.md](../server/README.md)). The same
 binary runs on the deploy box as the "flagship" node, built from the primary
 checkout.
 
-User-facing guide: [www/docs/qt-client.md](../../www/docs/qt-client.md).
-Topic pages in this folder:
+This folder is for developers. How to use the app is in the
+[desktop app guide](../qt-client.md); how the desktop fits with the core
+nodes, mirrors and phones is in [architecture](../architecture.md); what it
+signs and encrypts is in [encryption](../encryption.md); mirrors and releases
+are in [mirroring](../mirroring.md); running your own instance is in
+[self-hosting](../self-hosting.md); what keeps working when the core nodes are
+unreachable is in [censorship resilience](../censorship-resilience.md); what
+an attacker can do with the desktop's keys is in the
+[threat model](../protocol/threat-model.md). Back to the
+[documentation home](../README.md).
 
-- [build-and-test.md](build-and-test.md): CMake, `run.sh`, Rebuild & restart, ctest, CI
-- [diagnostics.md](diagnostics.md): logs, stall watchdog, crash repair, inline notices, Health and Memory pages
-- [tmp-disk.md](tmp-disk.md): the TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings
-- [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
-- [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
-- [claude-code-parity.md](claude-code-parity.md): what Claude Code desktop has that the Agents workspace has or lacks; workspace shortcuts, prompt drops, Open in, `.worktreeinclude`
-- [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in; reviewing a pull request there (comments, approve, request changes)
-- [git-change-arrows.md](git-change-arrows.md): the arrows between the two sides of the Git page's split diff that revert, stage or unstage one change block
-- [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch prompt it drafts in the composer, and the cleanup of merged pull requests and branches
-- [pull-review-all.md](pull-review-all.md): Review all with AI on the Pull requests list: the read-only review prompt, the report the agent writes, and the threads, verdicts and summary ForkMesh posts from it
-- [tasks-page.md](tasks-page.md): Tasks page layout, top-search filtering, row and detail design, task work items and delete cleanup
-- [saved-searches.md](saved-searches.md): saved searches, their pings, and the security-pertinent alarm
-- [ui-redesign.md](ui-redesign.md): the interface redesign plan: design tokens, components, welcome and sign-in, expanded sidebar, phases and rules
-- [windows.md](windows.md): Windows-only behaviour, installer, registry settings, Actions lock
-- [git-locking.md](git-locking.md): per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout
-- [package-modules.md](package-modules.md): optional packages built as shared modules, loaded only when installed
-- [shell.md](shell.md): the empty shell: a project with nothing installed, core services that start and stop with their packages, memory measurements and what is still core
-- [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window (including keeping the computer from sleeping)
-- [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
-- [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
-- [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
-- [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
-- [browser.md](browser.md): the embedded browser (Browser tab and side browser), the Chromium switches and blocked hosts that ungoogle it, its profile
-- [busy-ring.md](busy-ring.md): the spinning ring around a button's icon while its work runs, and around an active left-rail icon, on desktop, web and phones
-- [side-rail-and-terminals.md](side-rail-and-terminals.md): the right-hand side rail (drag workflows, pages and links onto it), its small browser, terminal tabs and the MCP terminal tools for agents
-- Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
+## Pages
+
+| Page | Covers |
+| --- | --- |
+| [build-and-test.md](build-and-test.md) | CMake, `run.sh`, ccache, Rebuild & restart, ctest, CI, portability rules |
+| [windows.md](windows.md) | Windows cross-build, registry settings, Actions lock, uninstaller |
+| [lifecycle.md](lifecycle.md) | What a quit stops and leaves running; running without a window, start at boot, keeping the computer awake |
+| [diagnostics.md](diagnostics.md) | Logs, inline notices, Debug bar, stall watchdog, crash repair, Health, Memory and Stats pages |
+| [tmp-disk.md](tmp-disk.md) | The TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings |
+| [networking.md](networking.md) | Relay transport, HTTP/3, host and fleet logs, Network page, fleet operations, local mesh, phone LAN control, firewall |
+| [package-modules.md](package-modules.md) | Packages built as shared modules, plugin pages apart from the window, the empty shell and core services that follow their packages |
+| [ui-redesign.md](ui-redesign.md) | The new interface: design tokens, components, the two layout modes, the shell, and pages without their own topic page |
+| [side-rail-and-terminals.md](side-rail-and-terminals.md) | The right-hand side rail, its browser, terminal tabs and the MCP terminal tools for agents |
+| [busy-ring.md](busy-ring.md) | The spinning ring around a working button or rail icon, on desktop, web and phones |
+| [markdown-preview.md](markdown-preview.md) | One render path for every Markdown preview and its GitHub-style styling |
+| [browser.md](browser.md) | The embedded ungoogled Chromium browser, its switches, blocked hosts and profile |
+| [agents-ui.md](agents-ui.md) | The Agents page: list, detail pane, Claude Code session control, transcript, composer, cloud rows, Models board |
+| [sessions-page.md](sessions-page.md) | The Sessions page and its side panels |
+| [agent-usage.md](agent-usage.md) | Agent accounts and the Usage page |
+| [special-agents.md](special-agents.md) | Special agents: agent choice, permissions, sessions and their rail page |
+| [activity-and-sounds.md](activity-and-sounds.md) | Watch, Listen, the announcer, interface sounds and Voice Changer |
+| [claude-code-parity.md](claude-code-parity.md) | What Claude Code desktop has that the Agents workspace has or lacks |
+| [branch-diffs.md](branch-diffs.md) | The Git page's diffs: change arrows, wide branch and pull diffs, reviewing a pull request |
+| [git-locking.md](git-locking.md) | Per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout |
+| [pull-merge-all.md](pull-merge-all.md) | Merge all and Review all with AI on the Pull requests list |
+| [tasks-page.md](tasks-page.md) | The Tasks page: layout, filters, detail, work items and delete cleanup |
+| [notes.md](notes.md) | The Notes page: local and cloud notes, versions, signed requests |
+| [saved-searches.md](saved-searches.md) | Saved searches, their pings and the security-pertinent alarm |
+| [shortcuts.md](shortcuts.md) | The Shortcuts page, one-tap runs and the per-repository queue |
+| [chat.md](chat.md) | Chat encryption, device approval, safety numbers, direct delivery, chat state storage |
+| [genie.md](genie.md) | The Genie spider pet, its health, and the marketing coach |
+
+Agent runs across desktop, mirrors, web and phone, and the agent sandbox, are
+in [../agents/README.md](../agents/README.md).
 
 ## Code map
 
@@ -56,7 +72,7 @@ Everything is in `desktop/`.
 | `src/AppPaths.*`, `src/ProjectRegistry.*`, `src/SingleInstance.*` | Project layout, project list, per-project lock and socket |
 | `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/BackgroundRunnerBadge.*`, `src/TrayMode.*`, `src/KeepAwake.*` | Running without a window (`--headless`), start at boot, the top-bar badge, the tray, keeping the computer awake ([lifecycle](lifecycle.md#running-without-a-window)) |
 | `src/PackageModules.*`, `cmake/ForkMeshPackageModules.cmake` | Optional packages built as lazily loaded shared modules ([package-modules](package-modules.md)) |
-| `src/CorePackageServices.*`, `src/MainWindowCorePackageServices.cpp` | Core background services that run only while one of their packages is installed ([shell](shell.md)) |
+| `src/CorePackageServices.*`, `src/MainWindowCorePackageServices.cpp` | Core background services that run only while one of their packages is installed ([package modules](package-modules.md#the-empty-shell)) |
 | `src/Theme.h`, `src/DesignTokens.*`, `src/UiKit.*`, `resources/theme/` | Classic style sheets, design tokens and components of the new interface ([ui-redesign](ui-redesign.md)) |
 | `src/Agent*`, `src/ClaudeStreamSession.*`, `src/CodexAppServerSession.*` | Local agent runtimes, guardrails, worktrees, access gates |
 | `src/ProjectAgentAccess.*`, `src/AgentRunRules.*`, `src/AgentNetworkGate.*` | Agent access policy, run/ask/deny decisions, external-call and destructive-command gate |
@@ -86,9 +102,8 @@ Everything is in `desktop/`.
   run side by side, each with its own window or windowless instance, tray,
   and start-at-boot unit. The socket name carries the
   project and, for a state folder outside the default place, the first 16
-  hex digits of the SHA-256 of that folder. Until 2026-10-15 it used
-  `qHash`, which Qt seeds per process, so two launches of a sandboxed
-  profile never found each other's socket.
+  hex digits of the SHA-256 of that folder (not `qHash`, which Qt seeds per
+  process).
 - **Projects.** The project picker lists every slug-named folder in the
   projects root, hidden folders and symlinks excluded. Removing a project
   never deletes it: `project.json` is set aside so the folder is unlisted, and
@@ -103,7 +118,7 @@ Everything is in `desktop/`.
   project with no logo saves the instance's logo as `logo.png`: the `logo`
   path from `GET /api/instance`, else its favicon. Project settings is a page
   of the main window.
-- **An instance belongs to one project (2026-10-21).** A project may hold
+- **An instance belongs to one project.** A project may hold
   several instances (rarely), but two projects never share one, so their
   accounts, chat and data cannot mix. Each project records the origins of its
   instances (`host[:port]`, production aliases folded to `app.forkmesh.com`)
@@ -113,18 +128,17 @@ Everything is in `desktop/`.
   "Add mainnode server", signing in to another instance, connecting a deployed
   relay and editing the relay address all refuse an instance another project
   uses (`ProjectRegistry::instanceOwner`) and offer to open that project. The
-  new-project dialog no longer offers the current project's instances, which
-  belong to it. Projects that already shared an instance before this rule are
-  left as they are.
-- **Add project dialog (2026-10-25).** Matches the phone's New project sheet.
+  new-project dialog does not offer the current project's instances. Projects
+  that shared an instance before this rule are left as they are.
+- **Add project dialog.** Matches the phone's New project sheet.
   It takes a name, an optional instance address with a Check button, a logo,
   "Use my account in this project" (off by default, so a new project is a new
   account unless asked) and one of three plugin packs, the phone's
   `StarterPack`: Minimal (`code`), Standard (`agents`, `chat`, `inbox`,
   `code`, `tour`) and Everything (every bundled plugin but the organization
   ones), each with its dependencies (`projects::starterPackages`). A fourth
-  pack, Empty (desktop only, 2026-10-28), installs nothing at all
-  ([shell.md](shell.md)). Check reads
+  pack, Empty (desktop only), installs nothing at all
+  ([empty shell](package-modules.md#starting-empty)). Check reads
   `/api/version` (the `x-forkmesh-worker` header, or `ok` with `rev` and
   `worker`) and then `/api/instance`, filling the name from the instance's
   project name and the logo from its `logo` path or favicon; an instance
@@ -133,8 +147,7 @@ Everything is in `desktop/`.
   `GET /api/start/instances` by project name and host, with Add to fill and
   check it. A project created with a checked instance seeds it as
   `project/instanceChosen` and connects to it on first start instead of
-  asking. The description field is gone from this dialog; Project settings
-  still edits it.
+  asking. Project settings edits the description.
 - **Project menu.** The instance, account and repository live as rows in the
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no
@@ -212,7 +225,7 @@ Everything is in `desktop/`.
   placeholder keeps the page's index in the section stack, because the rail's
   button ids and every `setCurrentIndex` caller address pages by index.
   Closing the window docks the page back. Package pages use their own window
-  (see [../marketplace/README.md](../marketplace/README.md)).
+  (see [own window](../marketplace/package-system.md#own-window)).
 - **Home.** A home-screen grid of every rail page, arranged into pages, with
   live counts read from the rail buttons themselves so they never disagree.
   The open repository's Code icon carries its open pull requests ("3 open
@@ -231,7 +244,7 @@ Everything is in `desktop/`.
   and search hits. Rules: [../marketplace/core-plugins.md](../marketplace/core-plugins.md).
 - **Chat.** Relay rooms, server office channels and direct messages share one
   sidebar. Read marks, retention preferences and formatting sync with the
-  account; see [../app/chat-read-sync.md](../app/chat-read-sync.md) and
+  account; see [../app/chat-unread.md](../app/chat-unread.md#read-state-across-devices) and
   [../app/chat-formatting.md](../app/chat-formatting.md). Encryption, device
   approval, safety numbers and direct delivery: [chat.md](chat.md).
 - **Notices.** There are no floating toasts. A message is shown inline on the
@@ -250,24 +263,22 @@ Everything is in `desktop/`.
   the event loop, and Git on the GUI thread shows up in the stall log.
   Index-writing commands for one repository run one at a time through
   `GitIndexQueue`; see [git-locking.md](git-locking.md). Timer-driven
-  refreshes load pulls with `reloadPullsInBackground()`. The mesh converge
-  completion reports failures too, so with the synchronous `reloadPulls()`
-  a repository whose mirrors were unreachable froze the window for 1-3 s
-  on every cycle, waiting on the Git index lock in `PullStore::baseTip()`
-  (2026-10-31, `tests/validate_pull_refresh_responsiveness.py`).
+  refreshes, the mesh converge completion included, load pulls with
+  `reloadPullsInBackground()`: the synchronous `reloadPulls()` waits on the
+  Git index lock in `PullStore::baseTip()` and froze the window for seconds
+  per cycle (`tests/validate_pull_refresh_responsiveness.py`).
 - **No display polling.** The desktop has no timers that re-read the relay
   for display. Updates arrive over the account event socket
   (`MainWindowRepoSync.cpp` handles topics such as `cloud-agents`, `tasks`,
   `chat-read`, `direct-messages`); catch-up reads are bounded by floors
   measured in minutes. See
-  [www/docs/operations/polling-elimination.md](../../www/docs/operations/polling-elimination.md).
+  [docs/operations/polling-elimination.md](../operations/polling-elimination.md).
 - **Backups run at background priority.** The hourly and "Back up now"
   `tar -czf` (`MainWindow::takeBackupNow`, `MainWindowData.cpp`) starts with
   nice 19 and, on Linux, the lowest best-effort I/O priority; `gzip` inherits
-  both. Its first run lands right after login and packs the whole data
-  folder, which held a core and the disk at full priority while calls and
-  audio in other apps were starting (2026-10-19). Idle I/O class is not used
-  because a disk kept busy by agents could starve the backup outright.
+  both, because its first run lands right after login and packs the whole
+  data folder. Idle I/O class is not used because a disk kept busy by agents
+  could starve the backup outright.
 - **Branch lifecycle.** Deleting an agent, a branch row or a worktree deletes
   every copy of the branch (local, `origin/<b>`, `forkmesh-mesh/<b>`) and
   writes a tombstone so the mesh converge does not bring it back. Branches can
@@ -299,8 +310,7 @@ Everything is in `desktop/`.
   and widgets, drive browser windows, suggest sessions, list and message
   agents and runners, and cut releases
   ([../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
-  [../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md),
-  [../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md),
+  [../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md),
   [../tools/mcp-releases.md](../tools/mcp-releases.md)).
 - **Launch targets:** `forkmesh <target>` takes a `forkmesh://` link, an
   absolute folder path or a `file://` URL. A path after `--project` is a
@@ -329,8 +339,7 @@ keeps opening the file manager. macOS has no entry.
 
 The app-menu and dock icon is the `forkmesh` icon that `desktop/install.sh`
 puts in `~/.local/share/icons/hicolor`. In-app updates never re-run that
-script, so a launcher installed before the logo changed kept showing the old
-square icon with its black background. Five seconds after the window opens,
+script, so five seconds after the window opens
 `src/DesktopLauncherIcon.cpp` rewrites those icons (16 to 512 px, the scalable
 SVG and the unthemed `~/.local/share/icons/forkmesh.png` if present) from the
 transparent `:/app/forkmesh.png` and `:/app/forkmesh.svg` built into the app,
@@ -338,10 +347,8 @@ then rebuilds the GTK icon cache. It only acts when
 `~/.local/share/applications/forkmesh.desktop` exists, writes only files whose
 bytes differ, and does nothing on Windows or macOS.
 
-The prebuilt install (`www/public/install.sh` without a source checkout) never
-ran `desktop/install.sh`, so it left no app-menu entry: a user who closed the
-window had no way back except typing `~/.local/bin/forkmesh` in a terminal
-(onboarding feedback, 2026-10-28). The same startup step now writes
+The prebuilt install (`www/public/install.sh` without a source checkout) does
+not run `desktop/install.sh`, so the same startup step writes
 `~/.local/share/applications/forkmesh.desktop` itself, with the same keys as
 `desktop/install.sh`, before the icon pass, so the icons follow at once. It
 writes the entry only when none exists and the running binary is the installed
@@ -349,13 +356,12 @@ writes the entry only when none exists and the running binary is the installed
 AppImage run never adds a launcher, and a launcher the user edited is never
 overwritten. `forkmesh-launcher-icon-tests` covers both rules.
 
-A launcher written before the projects layout still ran
-`~/.local/share/forkmesh/src/qt_client/build/forkmesh`, a binary the in-app
-update never rebuilds. Clicking the icon started that months-old build, which
-stopped with "could not recover an interrupted mirror Actions configuration
-(configuration_lock_unavailable)" because its settings folder,
-`~/.config/ForkMesh`, is now a link into the project (2026-10-30). The same
-startup step therefore repairs an existing launcher: when the entry has
+A launcher written before the projects layout may still run a stale
+`~/.local/share/forkmesh/src/qt_client/build/forkmesh`, which fails with
+"could not recover an interrupted mirror Actions configuration
+(configuration_lock_unavailable)" because `~/.config/ForkMesh` is now a link
+into the project. The same startup step therefore repairs an existing
+launcher: when the entry has
 `Name=ForkMesh` and its `Exec` names a missing binary or one inside the retired
 `~/.local/share/forkmesh` tree, it is rewritten to run the current client.
 The current client is `~/.local/bin/forkmesh` when installed, otherwise the
@@ -366,14 +372,11 @@ any other existing binary is left as it is.
 ### Signing in
 
 The desktop signs in with the email and password the user types, sending the
-email as `identifier` (`AccountCapability::passwordLoginRequest`). It used to
-send the account name from the instance step as `nodeName`, and the relay's
-login (`app/src/entry.py` `_account_login`) checks the password of the account
-named by `nodeName` first and ignores the email. The instance step pre-fills a
-suggested name, so a user whose real username differed got "Incorrect email or
-password" for the right password, each try counted toward the lockout, and the
-same password kept working on the website (onboarding feedback, 2026-10-28).
-With the email as the identifier, a correct password for a different account
+email as `identifier` (`AccountCapability::passwordLoginRequest`), not the
+name from the instance step as `nodeName`: the relay's login
+(`app/src/entry.py` `_account_login`) checks the account named by `nodeName`
+first and ignores the email, so a pre-filled name that differs from the real
+username would reject the right password. With the email as the identifier, a correct password for a different account
 gets through the password check; the device proof, signed for the selected
 name, then fails, the password-only fallback returns the real account, and
 the existing selected-account check revokes that session and says which
@@ -382,23 +385,24 @@ username the email belongs to. Nothing is switched silently.
 The wrong-password message says the desktop and the website share one account.
 A `too_many_attempts` answer shows the relay's `retryAfterMs` as a wait time
 (`AccountCapability::loginLockoutMessage`) and says the password has not
-changed, so a pause no longer reads like a wrong password. Every desktop
+changed, so a pause does not read like a wrong password. Every desktop
 password box for the account (welcome card and classic dialog) has an eye
 button (`kit::addPasswordReveal`), like the website.
 
 ## Data layout and paths
 
 `src/AppPaths.cpp` resolves `~/projects/<project>/` (override with
-`FORKMESH_PROJECTS_DIR` or `FORKMESH_HOME`):
+`FORKMESH_PROJECTS_DIR` or `FORKMESH_HOME`). The full layout and its
+resolution rules are in
+[../tools/projects-layout.md](../tools/projects-layout.md):
 
 | Folder | Holds |
 | --- | --- |
-| `data/` | Node identity key, local stores, `data/secrets/` |
-| `config/` | `QSettings` file (`config/ForkMesh/ForkMesh.conf`), `agent-rules.json` in the home project |
-| `cache/`, `state/`, `logs/` | Caches, runtime state, logs |
-| `ssh/` | Fleet SSH key (`forkmesh_shared_ed25519`) |
+| `data/core/` | Node identity key, local stores, `secrets/`, and the settings (`config/`), `ssh/` (fleet key `forkmesh_shared_ed25519`), `state/`, `logs/` and `cache/` folders |
+| `data/<plugin>/` | Each plugin's own data |
+| `config/`, `ssh/`, `state/`, `logs/` | Links into `data/core` on a box that has moved; the real folders before |
 | `toolchain/` | Bundled build tools |
-| `src/` | The source checkout (primary checkout in the home project) |
+| `src/` | The source checkout (primary checkout in the home project); its `.git` holds every local branch and agent worktree, so nothing may delete it |
 
 Each project has a `project.json` (name, `created`, `agentAccess`). Legacy
 locations (`~/.local/share/ForkMesh`, `~/.config/ForkMesh`, `~/.forkmesh`) are
@@ -448,9 +452,9 @@ Details, manual CMake, test targets and known failures:
   for running agents.
 - **Update path.** The desktop update pulls the primary checkout with
   `git pull --ff-only`. It must never delete or re-clone the primary source
-  checkout: its `.git` holds every local branch and every agent worktree, and
-  an earlier update that fell back to `rm -rf` and a fresh clone after one
-  failed pull erased all of them. A failed pull stops the update, reports why
+  checkout: its `.git` holds every local branch and every agent worktree (an
+  update that fell back to `rm -rf` and a fresh clone after one failed pull
+  erased all of them on 2026-09-29). A failed pull stops the update, reports why
   and changes nothing (or moves the checkout aside); a fresh clone runs only
   when there is no checkout, into a missing or empty folder.
   `app/tests/test_desktop_update_keeps_checkout.py` covers it.
@@ -462,52 +466,22 @@ Details, manual CMake, test targets and known failures:
 
 ## Desktop agent sandboxing
 
-Agents run in Git worktrees of the open repository, inside layered controls.
-The full description is in
-[../agents/README.md](../agents/README.md#desktop-agent-sandboxing) and
-[../agents/access-rules.md](../agents/access-rules.md).
-
-- **Folder lock (Linux, default on).** Landlock restricts an agent to its
-  worktree, the project's top-level folders except `data/`, `config/`,
-  `cache/`, `state/`, `logs/` and `ssh/`, and a few shared tool and scratch
-  paths.
-- **External-call gate.** `AgentNetworkGate.*` classifies Bash, WebFetch and
-  WebSearch calls. For Claude Code a PreToolUse hook asks the desktop over a
-  local socket; an unreachable socket denies. Legacy script providers ask the
-  same gate. The gate works per tool call; it is not a network sandbox.
-- **Access policy.** A project's `agentAccess` merges with the global rules
-  (`effectiveAgentAccess`); `agentrules::decide` turns the result into run,
-  ask or deny for every provider. The global rules file lives where no
-  agent's folder lock reaches, so an agent cannot loosen its own rules.
-- **KVM workspace (optional).** Agents can run in a QEMU/KVM guest, which is
-  then the boundary.
-- **Memory containment.** Each agent runs in its own systemd scope inside a
-  capped slice ([../agents/memory.md](../agents/memory.md)). `AgentJail.h` is
-  a resource fence, not a security sandbox.
-
-### Guardrails and why
-
-- **Destructive commands** (recursive deletes outside temp folders, force
-  pushes, remote branch deletes, `git reset --hard`, `git clean -f`,
-  `git branch -D`, stash drops, history rewrites, disk wipes) are classified
-  by `classifyCommandRisk` and, by default, wait for the user's approval. A
-  single mistaken command can erase unrecoverable data.
-- **Tool allowlist.** An optional list of tool families; tools outside it are
-  not offered to the model, so a tool a newer agent CLI adds stays off.
-- **Access failures** (a refused folder or host) prompt the user instead of
-  failing silently.
-- **Recursive deletes in the desktop itself** go through
-  `forkmesh::safedelete::removeTree`, which refuses `HOME`, checkouts, other
-  worktrees and protected project folders
-  ([../engineering/destructive-actions.md](../engineering/destructive-actions.md)).
+Agents run in Git worktrees of the open repository inside a folder lock
+(Landlock), an external-call gate, a destructive-command gate, the project
+and global access rules, an optional KVM workspace and a capped memory slice.
+Each layer, and what it enforces per provider, is in
+[../agents/access-rules.md](../agents/access-rules.md); memory limits in
+[../agents/memory.md](../agents/memory.md).
 
 ## Security
 
-- The node identity key lives under `data/`; losing it loses the account. Never
-  delete `~/projects/forkmesh/{data,config,ssh,state,logs}` or the primary
-  checkout (see `AGENTS.md`).
+- The node identity key lives under `data/core/`; losing it loses the account.
+  Never delete `~/projects/forkmesh/{data,config,ssh,state,logs}` or the
+  primary checkout (see `AGENTS.md`). What an attacker can and cannot do with
+  the desktop's keys is in the
+  [threat model](../protocol/threat-model.md).
 - Bearer tokens are held in memory and never written to `QSettings`
-  ([www/docs/qt-client.md](../../www/docs/qt-client.md#multiple-relay-instances)).
+  ([docs/qt-client.md](../qt-client.md#multiple-relay-instances)).
 - Cloud credentials (Settings → Cloud) are sealed with AES-256-GCM under a
   0600 key file in `data/secrets/`; the settings file holds only ciphertext
   ([networking.md](networking.md#aws-credentials)).
@@ -525,32 +499,32 @@ The full description is in
 - **Several desktops on one account.** Each desktop that signs in with its own
   key becomes an enabled `desktop_node` device with `owner_sign`, so every one
   of them may sign owner actions. Switching back to a cached account session
-  (`restoreCachedAccountSession` in `MainWindowAccounts.cpp`) used to keep
-  owner-signing only when the account's primary key (the first desktop's) was
-  this desktop's key, so the second desktop always lost it and the "Account
-  switched" dialog said owner-signed actions stayed disabled. When the primary
-  key differs, the desktop now reads `GET /api/accounts/desktops` with the same
-  session and restores signing when its key is on that list
-  (`SessionCache::mayRestoreDesktopCapability`). The dialog now says which of
-  the two states it ended in.
+  (`restoreCachedAccountSession` in `MainWindowAccounts.cpp`) keeps
+  owner-signing when this desktop's key is the account's primary key, or, when
+  it is not, when `GET /api/accounts/desktops` (same session) lists it
+  (`SessionCache::mayRestoreDesktopCapability`). The "Account switched" dialog
+  says which state it ended in.
 - Agents are sandboxed as described in
-  [Desktop agent sandboxing](#desktop-agent-sandboxing).
+  [agent access rules](../agents/access-rules.md).
 - Actions steps run in a bubblewrap sandbox unless a workflow says
   `sandbox: false` ([below](#actions-outside-the-sandbox)).
 - A desktop Actions step stops after 90 minutes unless the step sets
   `timeout-minutes` (1–1440, as on the instance runner), which replaces that
   limit for the step; the run's 4-hour limit still caps it. Any other value
-  makes the workflow invalid. Before this the desktop ignored the key, so
-  `.forkmesh/desktop-ci.yml` could not get past 90 minutes
-  ([build-and-test.md](build-and-test.md#ci)).
+  makes the workflow invalid ([build-and-test.md](build-and-test.md#ci)).
+
+## Actions and pull requests
+
+How desktop Actions runs and pull request checks behave beyond the sandbox
+and timeout rules above. The Git page and pull review are in
+[branch-diffs.md](branch-diffs.md).
 
 ### Actions outside the sandbox
 
 A sandboxed step runs as uid 65534 with a fresh home and `/tmp`, its own
 `/proc`, and no view of the user's files (`ActionRunner::sandboxArguments`).
 A workflow that has to work on this computer itself sets a top-level
-`sandbox: false` (`no`, `off` and `0` work too). The disk cleanup that first
-used it moved to the Workflows page on 2026-10-18
+`sandbox: false` (`no`, `off` and `0` work too), as the disk cleanup does
 ([../tools/free-disk-space.md](../tools/free-disk-space.md)).
 
 ```yaml
@@ -600,34 +574,26 @@ redirect it), `app/tests/test_workflow_files.py`.
 
 A pull request's checks wait for approval while its author has no merged pull
 request in the repository (`PullAuthorTrust::isEstablished`). Not merged is
-not the same as new: the ping used to say "their first contribution" for an
-author's fifth unmerged pull request too. The ping now counts the author's pull
-requests in the repository up to this one, merged, closed and open alike
+not the same as new, so the ping counts the author's pull requests in the
+repository up to this one, merged, closed and open alike
 (`PullAuthorTrust::pullOrdinal`), and says "their 3rd pull request here and
 none merged yet"; only a real first one reads "First pull request needs your
 approval". Test: `desktop/tests/test_crypto.cpp`.
 
-One ping per pull request, not per workflow: `applyWorkflowScan` used to ping
-inside its workflow loop, so a held pull request in a repository with two pull
-request workflows ("CI tests", "Desktop client CI tests") filed two identical
-rows. The held runs are now collected and `notifyHeldActionRuns` files one row
-naming every held workflow, linked to the first held run.
+One ping per pull request, not per workflow: `applyWorkflowScan` collects the
+held runs and `notifyHeldActionRuns` files one row naming every held
+workflow, linked to the first held run.
 
-No re-ping for every held pull request on restart: `cancelSupersededRuns`
-treated any newer run of the same workflow in the repository as superseding, so
-pull request #90's held "CI tests" run cancelled #85's, and the cancelled run was
-deleted (`actions/autoDeleteCancelledRuns`). After a restart the check sweep
-(`applyPullCheckHeads`) found no run for those heads, queued them again, and
-pinged "Nth pull request needs your approval" for each one. A run now supersedes
-only runs of the same workflow for the same pull request (`pullNumber`, 0 for a
-push), so held runs survive and the sweep's already-ran check skips them. Test:
-`testSupersedeKeepsOtherPullsHeld` in `desktop/tests/test_window_resize.cpp`.
+A run supersedes (`cancelSupersededRuns`) only runs of the same workflow for
+the same pull request (`pullNumber`, 0 for a push). Superseding across pull
+requests would cancel and delete (`actions/autoDeleteCancelledRuns`) other
+pulls' held runs, and the check sweep (`applyPullCheckHeads`) would re-queue
+and re-ping each after a restart. Test: `testSupersedeKeepsOtherPullsHeld` in
+`desktop/tests/test_window_resize.cpp`.
 
-The Actions page's approval pane says why a run is held. It used to show only
-the diff of the workflow file against the last approved copy, so a held pull
-request whose workflow was unchanged read "No changes from the approved
-workflow" above an Approve button, with no hint of what needed approving.
-`MainWindow::showRun` now opens the banner with the reason: the pull request
+The Actions page's approval pane says why a run is held, not just the
+workflow diff (which reads "No changes" for an unchanged workflow).
+`MainWindow::showRun` opens the banner with the reason: the pull request
 number and author for a first-time contributor, a workflow that is new or
 changed, or repository files that changed since the last approval (and whether
 automatic approval is off). When the workflow is unchanged, the diff pane
@@ -654,26 +620,24 @@ callers no longer wait for a count. Test:
 
 ### New pull request pings count new pull requests only
 
-`applyPullsInboxEntries` counted every inbox entry it accepted. Two kinds of
-entry are not new pull requests: review and lifecycle events, and a replayed
-delivery that `PullStore::applyRemotePull` recognises as already stored (it
-returns true so the entry is acknowledged). Inbox drains overlap when a GET
-lands before the previous drain's acknowledging DELETE, so on 2026-10-21 three
-new pull requests filed five pings ("2 new pull requests", "3 new pull
-requests" and three single ones). `applyRemotePull` now reports through
-`opened` whether it wrote a pull request, `PullsInboxOutcome::opened` counts
-those, and only they ping and name the author and title.
+Two kinds of inbox entry are not new pull requests: review and lifecycle
+events, and a replayed delivery that `PullStore::applyRemotePull` recognises
+as already stored (it returns true so the entry is acknowledged). Replays
+happen when inbox drains overlap (a GET lands before the previous drain's
+acknowledging DELETE). So `applyRemotePull` reports through `opened` whether it
+wrote a pull request, `PullsInboxOutcome::opened` counts those, and only they
+ping and name the author and title.
 
 ### Pull list shows whether a pull's code is on this machine
 
 Some open pull requests have no local branch holding their code, so Fix,
 Resolve and agent checkouts cannot start from them. The branch-state worker
-(`MainWindow::refreshPullBranchState`) now looks for the code under the same
+(`MainWindow::refreshPullBranchState`) looks for the code under the same
 names `localPullAgentBranch` uses (`pullLocalBranchCandidates`: the signed head
 first for a branch-backed pull, `pr/<n>` first for a stored patch) and records
 the one it found in `PullBranchState::codeBranch`. Ahead/behind and the
 worktree mark are measured on that branch, so a relay pull held as `pr/<n>` is
-no longer shown as unmeasured. When no candidate exists the row paints a faded
+measured too. When no candidate exists the row paints a faded
 `cloud` icon in place of the branch icon and the hover text says "Code not on
 this machine"; otherwise it names the branch. Closed and merged pulls are not
 measured and keep the plain branch icon.
@@ -718,8 +682,7 @@ measured and keep the plain branch icon.
 - **Ordering branches by age costs a stat per loose head.**
   `readBranchRefFiles()` orders loose heads under `refs/heads` by
   modification time; on a WSL checkout under `/mnt/c` with ~190 heads that
-  is 280 ms warm and over a second cold, and restoring the last repository
-  at startup froze for 1.1 s on it. `repoDefaultBranchFast()` sorts by
+  costs over a second cold. `repoDefaultBranchFast()` sorts by
   name, so it takes the names-only walk
   (`walkBranchRefFiles(dir, false)`); a path that only needs names should
   too.
@@ -744,8 +707,8 @@ measured and keep the plain branch icon.
   `MainWindow::paintEvent` calls `noteHostPainted()` and then finishes the
   startup splash, a child widget. `StartupSplash::pump()` queues the frame
   with `update()` while the host is inside a paint event
-  (`Qt::WA_WState_InPaintEvent`); a synchronous `repaint()` there logged
-  "QWidget::repaint: Recursive repaint detected" on every launch.
+  (`Qt::WA_WState_InPaintEvent`); a synchronous `repaint()` there logs
+  "QWidget::repaint: Recursive repaint detected".
   `tests/test_startup_splash.cpp` fails on that warning.
 - **`MainWindowInternal.h` is in the precompiled header.** Editing it, or
   `MainWindow.h`, recompiles every `MainWindow*.cpp`. New helper bodies go in
@@ -759,11 +722,10 @@ measured and keep the plain branch icon.
   targets. A `ninja ... | tail` pipeline hides the build's exit status.
 - **New `Q_OBJECT` headers** must be listed for moc. Several classes avoid
   `Q_OBJECT` on purpose and use `std::function` callbacks.
-- **External and cloud agent rows have negative ids** (`<= -1000`, cloud rows
-  `<= -1000000`). A guard like `sessionId < 0` silently excludes them; use
-  `isExternalSession()`/`isCloudSession()`.
-- **`AgentSession::name` is the repository name**, not the task title (that is
-  `issueTitle`). It also seeds the agent's colour and voice.
+- **Agent traps** (negative ids of external and cloud rows,
+  `AgentSession::name` being the repository name, the two completion paths):
+  [agent runs](../agents/README.md#traps). `AgentSession::name` also seeds the
+  agent's colour and voice.
 - **Show a chat row as soon as it is inserted.** `addMessageRow` calls
   `row->show()` right after `insertWidget`; otherwise the layout counts new
   rows as empty for one pass and paints squeezed rows.
@@ -834,14 +796,11 @@ measured and keep the plain branch icon.
   download.** `syncPrivateRepository()` falls back to
   `downloadPrivateReplica()` when the owner signing capability is missing,
   which is right for a collaborator's copy but wrong for a repository this
-  account created on this computer: a guest creating a Private repository got
-  "Private repository is unavailable or this account is not authorized". A
-  record owned by `accountOwner()` with a local source now stays local and
-  says it needs a signed-in account to publish.
-- **Mesh converge backs off a repository whose mirrors all fail.** A
-  registered repository whose network copy is gone failed the background
-  converge on every sweep, about once a minute, forever. When no route can
-  be read, `convergeSourceRepoFromMesh()` records a failure in
+  account created here ("Private repository is unavailable or this account is
+  not authorized"). A record owned by `accountOwner()` with a local source
+  stays local and says it needs a signed-in account to publish.
+- **Mesh converge backs off a repository whose mirrors all fail.** When no
+  route can be read, `convergeSourceRepoFromMesh()` records a failure in
   `m_pollBackoff` under `mesh-converge:<repo>`: background passes then wait
   1, 2, 4 … up to 30 minutes, a skipped pass is not an attempt, and any
   successful read clears it. A forced converge (opening the repository, an
@@ -849,8 +808,7 @@ measured and keep the plain branch icon.
 
 ## Related docs
 
-- [www/docs/qt-client.md](../../www/docs/qt-client.md): user guide
-- [www/docs/operations/desktop-control-node.md](../../www/docs/operations/desktop-control-node.md): Control page
-- [www/docs/engineering/definition-of-done.md](../../www/docs/engineering/definition-of-done.md)
-- [../engineering/destructive-actions.md](../engineering/destructive-actions.md): guarded deletes
-- [../native/DESKTOP_PARITY.md](../native/DESKTOP_PARITY.md): native app parity with the desktop
+- [Desktop control node](../operations/desktop-control-node.md): Control page
+- [Definition of done](../engineering/definition-of-done.md)
+- [Destructive actions](../engineering/destructive-actions.md): guarded deletes
+- [Native app parity](../native/DESKTOP_PARITY.md) with the desktop

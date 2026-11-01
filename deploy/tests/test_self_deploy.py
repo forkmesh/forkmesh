@@ -176,7 +176,7 @@ def test_path_rules_match_the_desktop_auto_deploy():
     paths = ["app/src/entry.py", "app/tests/test_x.py", "server/runner.go",
              "server/runner_test.go", "deploy/core/render.py", "deploy/core/x.md",
              "tools/next_deploy.py", "tools/mirror_gateway.py", "www/public/a.html",
-             "www/docs/a.md", "desktop/src/main.cpp", "marketplace/catalog.json"]
+             "docs/a.md", "desktop/src/main.cpp", "marketplace/catalog.json"]
     for path in paths:
         assert self_deploy.release_path(path) == next_autodeploy.release_path(path), path
         assert self_deploy.roll_path(path) == next_autodeploy.roll_path(path), path

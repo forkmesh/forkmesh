@@ -7,7 +7,7 @@ package mirrornode
 // redacted summary the gateway's actions-status operation reads, and consumes
 // the owner-authorized control requests the gateway's actions-control
 // operation couriers in (actions_control.go). Wire contract:
-// www/docs/operations/mirror-actions-control.md.
+// docs/operations/mirror-actions-control.md.
 //
 // This executes shell commands a repository supplies, on a machine that also
 // holds the node's signing key, so the rules are strict:

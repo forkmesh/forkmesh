@@ -1,19 +1,17 @@
 # Updating a pull request (revisions)
 
-Contributors could not update a pull request. A pull opened from the web, from
-a fork or from a `pr/<account>/` branch is a signed snapshot of a patch, and
-nothing linked it back to its branch; the contributor guide said to open a new
-pull request after pushing more commits. People who rewrote their branch the
-GitHub way (amend, rebase) also hit "force push not allowed". Branches on
-repositories the cores hold or host can now be force-pushed by whoever may
-write them, keeping every replaced tip ([CORE_PUSH.md](../CORE_PUSH.md#force-pushes));
-revisions cover the rest: a pull sent as a patch series from someone's own
-copy, which has no branch on the cores to push to.
+Part of the [App](README.md). A pull opened from the web, from a fork or from
+a `pr/<account>/` branch is a signed snapshot of a patch, with nothing linking
+it back to its branch. Branches on repositories the cores hold or host can be
+force-pushed by whoever may write them, keeping every replaced tip
+([core push](../operations/core-push.md#force-pushes)); revisions cover the rest: a
+pull sent as a patch series from someone's own copy, which has no branch on
+the cores to push to.
 
-A pull now has revisions. The author signs the branch's current state again and
-sends it as a new revision of the same number; comments, reviews and the number
-stay. Because the revision is compared fresh, rewritten history needs no force
-push: push it to a new branch and update the pull from that branch.
+The author signs the branch's current state again and sends it as a new
+revision of the same number; comments, reviews and the number stay. Because
+the revision is compared fresh, rewritten history (amend, rebase) needs no
+force push: push it to a new branch and update the pull from that branch.
 
 ## Wire format
 
@@ -68,11 +66,11 @@ nobody reviewed. Review threads anchor to `creationHeadOid`, which the
 revision changes, so threads on changed lines show as outdated.
 
 An accepted revision also dismisses every approval in the relay's review
-ledger (`branch_protection.dismiss_approvals`); requests for changes stay.
-Without that, an author could collect an owner's approval on a harmless
-patch, send a revision with different code, and merge into a protected
-branch on the old approval, because the ledger's latest state per account
-is not tied to a head. A merge already in flight is still caught by
+ledger (`branch_protection.dismiss_approvals`,
+[branch-protection.md](branch-protection.md)); requests for changes stay. The
+ledger's latest state per account is not tied to a head, so otherwise an
+author could collect approval on a harmless patch, revise it, and merge into a
+protected branch on the old approval. A merge already in flight is still caught by
 `stale_pull_metadata`. Signed review events in the pull's own ledger are not
 rewritten; reviews made before the revision show as on an older version.
 

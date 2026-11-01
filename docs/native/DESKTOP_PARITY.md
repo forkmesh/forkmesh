@@ -1,10 +1,9 @@
 # Native app parity with the Qt desktop
 
-This page compares the native apps with the Qt desktop: which desktop
-capabilities belong on a phone, how the phone reaches them, and how the work is
-split into workstreams WS8 to WS21. [PARITY.md](PARITY.md) covers the phone's
-own feature set (WS1 to WS7) and the watch app; [NAVIGATION.md](NAVIGATION.md)
-covers where each capability lives in the app.
+Part of the phone apps ([README.md](README.md)). Which desktop capabilities
+belong on a phone, how the phone reaches them, and the workstreams WS8 to WS21.
+[PARITY.md](PARITY.md) covers the phone's own features (WS1 to WS7) and the
+watch app; [NAVIGATION.md](NAVIGATION.md) covers where each capability lives.
 
 ## Legend
 
@@ -27,7 +26,7 @@ Paths: `D/` is `desktop/src/`, `MP/` is `marketplace/packages/`, `NI/` is
 - **DC**: desktop control. The phone drives the owner's desktop over the local
   control channel (`D/LocalControl.h`: pairing, AES-256-GCM frames, method
   families), on the same LAN or end-to-end encrypted through the owner's node
-  socket on the relay. DC is how anything that lives only on the desktop (saved
+  socket on the relay ([encryption.md](../encryption.md)). DC is how anything that lives only on the desktop (saved
   hosts, SSH keys, worktrees, CLI sessions, local ledgers) reaches the phone.
 - **Device**: runs on the phone.
 

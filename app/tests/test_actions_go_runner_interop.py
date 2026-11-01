@@ -13,7 +13,7 @@ suite cannot show that they agree. This test runs both for real:
 4. the gateway serves that summary, and the Worker's validator accepts what
    the gateway served.
 
-Wire contract: www/docs/operations/mirror-actions-control.md.
+Wire contract: docs/operations/mirror-actions-control.md.
 """
 
 import base64

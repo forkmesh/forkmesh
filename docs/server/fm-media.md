@@ -1,10 +1,12 @@
 # FM Media: our own call engine
 
-Decided 2026-10-21: calls move off libwebrtc to an engine we write ourselves,
-and it has to measure better than WebRTC before it becomes the default. This
-page is the plan and the record of decisions; [rtc.md](rtc.md) describes the
-WebRTC stack that serves calls until then, and [call-bench.md](call-bench.md)
-the bench that decides "better".
+Calls move off libwebrtc to an engine we write ourselves (decided
+2026-10-21); it becomes the default only where it measures better than WebRTC.
+This page is the plan and the record of decisions. [rtc.md](rtc.md) is the
+WebRTC stack that serves calls until then, [call-bench.md](call-bench.md) the
+bench that decides "better", [fmm-protocol.md](fmm-protocol.md) the wire
+format. Home: [Go daemon](README.md); the public view of call encryption is
+[encryption](../encryption.md).
 
 ## What we write and what we take from the platform
 
@@ -22,14 +24,14 @@ signal processing, the same split FaceTime uses:
 
 Everything else is ours.
 
-In the browser two of these fall short (measured 2026-10-21 on Chromium 151,
+In the browser two of these fall short (Chromium 151,
 [../app/fmm-browser.md](../app/fmm-browser.md)): WebCodecs Opus has no DRED
 and no in-band FEC decoding, so the browser conceals with plain Opus PLC, and
 WebCodecs has no long-term reference control, so the browser's encoder
 answers recovery requests with keyframes. Chromium's echo canceller offers
 `true`, `false` and `"remote-only"`; under `true` the Chrome-wide canceller
-takes the AudioWorklet's playout as its reference, which could not be
-checked acoustically headless and is the open risk there.
+takes the AudioWorklet's playout as its reference, which cannot be checked
+acoustically headless and is the open risk.
 
 ## Layers
 
@@ -55,8 +57,8 @@ checked acoustically headless and is the open risk there.
    Opus concealment and in-band FEC; a video frame buffer that releases
    whole decodable frames and asks for a keyframe only when it must.
 5. **SFU.** The rooms, tickets, account caps and failover of the current SFU,
-   over QUIC ([fmm-server.md](fmm-server.md)). Decided 2026-10-21: no
-   bridge to WebRTC participants for now. A room runs on the engine of its
+   over QUIC ([fmm-server.md](fmm-server.md)). No bridge to WebRTC
+   participants for now. A room runs on the engine of its
    first joiner until it empties, and clients that speak both follow it.
 
 ## One engine core for every client
@@ -71,10 +73,9 @@ voice code is.
 
 ## Beyond FaceTime
 
-Decided 2026-10-21: matching WebRTC is not the goal; the engine has to be
-first in class. FaceTime already uses its own stack, the device's voice
-processing, hardware codecs and long-term reference frames, so beating it
-takes ideas it does not use. Five of them, each measurable on the bench:
+Matching WebRTC is not the goal. FaceTime already uses its own stack, the
+device's voice processing, hardware codecs and long-term reference frames, so
+beating it takes ideas it does not use. Five, each measurable on the bench:
 
 1. **The face keeps moving when the video cannot.** Below the bitrate where
    real video holds (about 150 kbps), the sender switches its camera track to
@@ -100,11 +101,11 @@ takes ideas it does not use. Five of them, each measurable on the bench:
    multipath keeps Wi-Fi and cellular open together and sends audio over both
    while either is weak; each client also keeps a warm standby session on a
    second core, so a core failure moves the call in well under a second
-   instead of a rejoin.
+   instead of a rejoin ([architecture](../architecture.md)).
 5. **Post-quantum, group-verified encryption.** Media keys come from a hybrid
    X25519 + ML-KEM-768 exchange per epoch, with a new epoch on every join and
    leave and a short verification code every participant can compare. The
-   servers carry only ciphertext and headers.
+   servers carry only ciphertext and headers ([call-e2ee.md](call-e2ee.md)).
 
 Targets, measured on the bench (and by hand against FaceTime on two iPhones
 with the Network Link Conditioner, since FaceTime cannot be driven by a
@@ -135,14 +136,8 @@ test):
 | 8. Switch | FM Media is the default wherever it beats the baseline on the bench |
 | 9. Beyond FaceTime | every target in the table above is met on the bench |
 
-Phases 3 to 7 build the five ideas in from the start rather than after the
-switch: the face stream and long-term reference recovery in the core,
-DRED in the Opus build and the audio buffer, multipath and the standby core
-in the QUIC layer, and the hybrid key exchange in the core every client
-shares.
-
-Status lives in the commits of each phase; this table changes only when the
-plan does.
-
-The engine core's wire format, algorithms and measurements are in
-[fmm-protocol.md](fmm-protocol.md).
+Phases 3 to 7 build the five ideas in from the start: the face stream and
+long-term reference recovery in the core, DRED in the Opus build and the
+audio buffer, multipath and the standby core in the QUIC layer, and the
+hybrid key exchange in the shared core. Status lives in each phase's commits;
+this table changes only when the plan does.

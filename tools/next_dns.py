@@ -9,7 +9,7 @@
     next_dns.py undrain nN    [--execute]
 
 Dry-run is the default: without --execute changes are printed only.
-docs/OPERATIONS.md, section "DNS health failover".
+docs/operations/runbook.md, section "DNS health failover".
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def check_token_file(path):
     try:
         mode = Path(path).stat().st_mode
     except FileNotFoundError:
-        raise ToolError("missing %s (the DNS token file; docs/OPERATIONS.md)"
+        raise ToolError("missing %s (the DNS token file; docs/operations/operator-files.md)"
                         % path) from None
     if not stat.S_ISREG(mode):
         raise GuardError("%s is not a regular file" % path)
@@ -476,7 +476,7 @@ def health_round(fleet, cf, runner, prober=probe_state, now=None, path=None):
         if not offline and dns_rules.READY not in {
                 found for _node, found, _extra in probed}:
             runner.say("health: no core is fully ready; read-only cores "
-                       "count as healthy until one is (docs/PLAN.md)")
+                       "count as healthy until one is (docs/operations/served-stack.md)")
         for node, found, extra in probed:
             ok = serving[node["name"]]
             if not offline:

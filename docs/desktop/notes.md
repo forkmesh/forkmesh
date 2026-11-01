@@ -1,9 +1,10 @@
 # Desktop: the Notes page
 
-Part of [the desktop docs](README.md). Code: the Notes plugin's
+The Notes page lists local and cloud notes, opens, saves and shares them,
+keeps versions and signs its relay requests. Code: the Notes plugin's
 `marketplace/packages/notes/content/desktop/NotesPage.cpp` (`requestNotes()`,
 `refreshNotes()`, `renderNotesList()`), built as `notes.so` apart from the
-window since 2026-10-25 ([package modules](package-modules.md#plugins-built-apart-from-the-window));
+window ([package modules](package-modules.md#plugins-built-apart-from-the-window));
 the quick-add "take a note", note links and the note-to-task/issue conversions
 reach it through `NativePackageHost`. List-row rules in
 `desktop/src/NoteListEntry.h`, request proof in `desktop/src/NoteRequestProof.h`,
@@ -14,6 +15,8 @@ The comments panel is the plugin's `NoteCommentsPanel.cpp`, the faces
 `NotePageDialogs.cpp` (emoji picker, Customize, page Share) and the rules in
 `desktop/src/NotePages.h`.
 Server: `app/src/notes.py`, with the `_NotesRuntime` boundary in `app/src/entry.py`.
+
+Part of [Desktop](README.md).
 
 ## Where the list comes from
 
@@ -34,7 +37,7 @@ Public; local notes are Private), a comment icon with `openComments` when above
 or "Oct 29, 2025", then "· by <name>" when `lastEditedBy` is someone else
 (`noteLastEditLabel()` in `NoteTools.h`, English month and AM/PM whatever the
 system locale). The fields come from `GET /api/notes`
-([notes-activity.md](../app/notes-activity.md#unread-notes-and-the-last-edit));
+([notes](../app/notes.md#unread-notes-and-the-last-edit));
 a Local + cloud note uses its cloud twin's, and a local-only note is never
 unread. A save keeps those fields and makes you the last editor until the next
 listing.
@@ -145,9 +148,9 @@ of asking to discard.
 When the relay answers 409 `version_conflict` it sends the current note. The
 editor then shows "Keep mine" (save your text on top of their version) and
 "Take theirs" (load their version and drop yours; for Local + cloud the disk
-copy is rewritten to match). Autosave pauses until one is chosen. A conflict is
-no longer saved as a stray local copy of a Cloud only note; other cloud errors
-still fall back to this computer as before.
+copy is rewritten to match). Autosave pauses until one is chosen. A conflict
+never creates a stray local copy of a Cloud only note; other cloud errors fall
+back to this computer.
 
 ## Editing a note with AI
 
@@ -354,9 +357,8 @@ On the server, a request with `node`, `ts` and `sig` is resolved only by
 cookie; `_NotesRuntime.json_body()` keeps the raw body digest for it. Any
 other request uses the password session. A signed request carries no
 `Origin`, so `same_origin()` accepts the complete `node`/`ts`/`sig` triple or
-a real bearer token (not the dashboard's `cookie` marker). Before this, any
-`sig` value lifted the origin check while the cookie still signed the request
-in. A bad signature resolves to no account (401). Owner, share and visibility
+a real bearer token (not the dashboard's `cookie` marker), so a stray `sig`
+cannot lift the origin check for a cookie-signed request. A bad signature resolves to no account (401). Owner, share and visibility
 checks apply as for a session.
 
 The live room (`/api/notes/<id>/ws`) is cookie-authenticated in the browser,
@@ -397,8 +399,8 @@ dashboard and World open it from their own origin; the desktop does not use it
   four pages, starts with `%PDF` and has one page object per page; a landscape
   Letter page is 792 × 612 pt; an unwritable path fails.
 - `desktop/tests/test_window_resize.cpp` `checkNoteSaveAlert`: finds the title
-  and storage controls by object name, since the search box is now the first
-  line edit on the page.
+  and storage controls by object name (the search box is the first line edit
+  on the page).
 - `desktop/tests/test_note_request_proof.cpp` (`forkmesh-note-request-proof-tests`):
   the signed resource string, body digests, and that the proof name matches
   `NOTES_REQUEST_PROOF` in `app/src/entry.py`.

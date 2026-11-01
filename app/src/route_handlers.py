@@ -1646,7 +1646,7 @@ async def _ring_cloud_agent_readers(env, record, topic="cloud-agents"):
     A payload-free "cloud-agents" frame on the account event socket. Without
     it nothing tells a desktop or a phone that a mirror claimed, ran or
     finished a job: no client polls for it
-    (www/docs/operations/polling-elimination.md), so the run would stay
+    (docs/operations/polling-elimination.md), so the run would stay
     invisible until somebody opened that exact repository and refreshed.
 
     Its own topic, not the "agents" one a desktop's snapshot push rings

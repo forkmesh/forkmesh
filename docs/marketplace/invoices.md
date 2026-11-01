@@ -2,15 +2,12 @@
 
 An organization plugin for billing: members create invoices, link them to CRM
 contacts, email them with a private view-and-pay link, and see when each one is
-opened, viewed and paid. The owner asked for invoicing in the Market that
-links to the CRM and everything else it touches, sends invoices by email, and
-shows when an invoice is opened.
+opened, viewed and paid. Part of [Marketplace](README.md).
 
 Package: [`marketplace/packages/invoices`](../../marketplace/packages/invoices/README.md).
 Members manage invoices on the web (`/dashboard/invoices`, laid out for
 phones too), in a native desktop page, and in native iPhone and Android
-screens; the client reads theirs on a public page at `/invoice`. The owner
-asked for every part to be manageable on mobile and desktop, so each app
+screens; the client reads theirs on a public page at `/invoice`. Each app
 offers the same actions as the web page: create, edit, duplicate, email and
 remind, record payments, void, reopen, delete, settings, install, and the
 analytics.
@@ -19,7 +16,7 @@ analytics.
 
 | Path | What it does |
 | --- | --- |
-| `content/worker/invoices.py` | The Worker API at `/api/invoices`: invoices, settings, CRM contact reads, sending, payments, tracking routes, the overdue sweep, export and purge. |
+| `content/worker/invoices.py` | The server module (run by the App) for `/api/invoices`: invoices, settings, CRM contact reads, sending, payments, tracking routes, the overdue sweep, export and purge. |
 | `content/web/view.html`, `content/web/page.js` | The dashboard page: totals, the invoice table, recent activity, the editor, the detail sheet with history, and the send, payment and settings dialogs. |
 | `content/www/invoice.{html,js,css}` | The client's page at `/invoice?t=<token>`, printable to PDF. Built with no site header, analytics or `innerHTML`. |
 | `content/desktop/InvoicesPage.{h,cpp}` | The native desktop page and its registration (`/api/invoices`, proof `forkmesh-invoices-request-v1`). |

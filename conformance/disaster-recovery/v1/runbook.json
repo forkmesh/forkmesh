@@ -1,6 +1,6 @@
 {
   "schema": "forkmesh-disaster-runbook-v1",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "updated": "2026-09-14",
   "issue": 518,
   "reviewIntervalDays": 90,
@@ -96,7 +96,7 @@
       "title": "Verify the bootstrap kit",
       "topic": "offline-bootstrap",
       "role": "verifier",
-      "docs": ["www/docs/disaster-recovery/README.md#the-bootstrap-kit"],
+      "docs": ["docs/disaster-recovery/README.md#the-bootstrap-kit"],
       "steps": [
         {"role": "verifier", "action": "Copy the kit from removable media to a local directory. Do not run anything from it yet."},
         {"role": "verifier", "action": "Verify the kit with the kit public key written on paper.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "kit", "verify", "<KIT>", "--trusted-key", "<KIT KEY FROM PAPER>"], "expect": "Exit 0 and the manifest digest you wrote on the printed runbook.", "unsafe": "Never take the trusted key from the kit itself; a forged kit carries its own key."},
@@ -115,7 +115,7 @@
       "title": "Find mirrors and contacts without the website",
       "topic": "independent-discovery",
       "role": "coordinator",
-      "docs": ["www/docs/disaster-recovery/README.md#the-community-roster"],
+      "docs": ["docs/disaster-recovery/README.md#the-community-roster"],
       "steps": [
         {"role": "coordinator", "action": "Check the roster from the verified kit and list its mirrors, addresses, and contacts.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "roster", "check", "<KIT>/roster.json"], "expect": "Exit 0, the active keys, and every mirror address."},
         {"role": "mirror-operator", "action": "Try each mirror address, starting with the ones that need no DNS.", "run": ["git", "ls-remote", "<MIRROR URL>"]},
@@ -133,7 +133,7 @@
       "title": "Inventory every surviving copy",
       "topic": "clean-restoration",
       "role": "mirror-operator",
-      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "docs": ["docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
       "steps": [
         {"role": "mirror-operator", "action": "List the refs of every mirror, clone, and export people still hold.", "run": ["git", "-C", "<COPY>", "for-each-ref", "--format=%(refname) %(objectname)"]},
         {"role": "verifier", "action": "Verify each removable-media export against the pinned export keys.", "run": ["python3", "tools/forkmesh_offline_sync.py", "verify", "<MEDIA>", "--trusted-key", "<EXPORT KEY>"]},
@@ -151,7 +151,7 @@
       "title": "Restore an origin from surviving copies",
       "topic": "emergency-mirror",
       "role": "mirror-operator",
-      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "docs": ["docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
       "steps": [
         {"role": "mirror-operator", "action": "Create the new origin from the verified surviving mirror.", "run": ["git", "clone", "--mirror", "<SURVIVING MIRROR>", "<NEW ORIGIN>"]},
         {"role": "mirror-operator", "action": "Push newer work from each local clone. Git refuses anything that is not a fast-forward.", "run": ["git", "-C", "<LOCAL CLONE>", "push", "--atomic", "<NEW ORIGIN>", "refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*"], "unsafe": "Never add --force. A rejected push means the copies diverged; keep both and review."}
@@ -170,7 +170,7 @@
       "title": "Serve a read-only emergency mirror from plain files",
       "topic": "emergency-mirror",
       "role": "mirror-operator",
-      "docs": ["www/docs/offline-sync.md#fetch-over-a-link-that-keeps-dropping"],
+      "docs": ["docs/offline-sync.md#fetch-over-a-link-that-keeps-dropping"],
       "steps": [
         {"role": "mirror-operator", "action": "Copy a verified repository into a directory to serve.", "run": ["git", "clone", "--mirror", "<VERIFIED COPY>", "<SERVE DIR>/<NAME>.git"]},
         {"role": "mirror-operator", "action": "Write the files a static HTTP clone needs.", "run": ["git", "-C", "<SERVE DIR>/<NAME>.git", "update-server-info"]},
@@ -189,7 +189,7 @@
       "title": "Check that a surviving mirror serves reads",
       "topic": "emergency-mirror",
       "role": "verifier",
-      "docs": ["www/docs/operations/service-roles.md#checking-a-running-role"],
+      "docs": ["docs/operations/service-roles.md#checking-a-running-role"],
       "steps": [
         {"role": "verifier", "action": "Probe the mirror's relay role.", "run": ["python3", "tools/forkmesh_service_roles.py", "probe", "--role", "relay", "--base-url", "<MIRROR URL>", "--param", "owner=<OWNER>", "--param", "repository=<REPOSITORY>"], "expect": "Exit 0 (pass) or 3 (degraded). Exit 4 means nothing answered: treat it as loss, never as an empty repository."}
       ],
@@ -205,7 +205,7 @@
       "title": "Accept pushes and pull requests without the hosted service",
       "topic": "emergency-mirror",
       "role": "mirror-operator",
-      "docs": ["www/docs/operations/service-roles.md#starting-the-independent-profiles"],
+      "docs": ["docs/operations/service-roles.md#starting-the-independent-profiles"],
       "steps": [
         {"role": "mirror-operator", "action": "Check the node before starting it.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--preflight", "--json"]},
         {"role": "mirror-operator", "action": "Start the node with the hosted tunnel disabled and your own endpoints.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--disable-cloudflared", "--upstream", "<ROSTER MIRROR URL>", "--catalog-url", "<ROSTER CATALOG URL>"], "unsafe": "Leaving --upstream at its default points the node at forkmesh.com, which is unavailable."}
@@ -222,7 +222,7 @@
       "title": "Clone over the local network with no DNS",
       "topic": "local-network",
       "role": "mirror-operator",
-      "docs": ["www/docs/transports.md#postures"],
+      "docs": ["docs/transports.md#postures"],
       "steps": [
         {"role": "mirror-operator", "action": "Write a lan-only transport profile from the roster's pinned addresses.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "roster", "profile", "<KIT>/roster.json", "--out", "<LAN PROFILE>"]},
         {"role": "verifier", "action": "Confirm the mirror's route uses a pinned address and needs no DNS.", "run": ["python3", "tools/forkmesh_transports.py", "plan", "--profile", "<LAN PROFILE>", "<MIRROR URL>"]},
@@ -241,7 +241,7 @@
       "title": "Carry repositories on removable media",
       "topic": "removable-media",
       "role": "mirror-operator",
-      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "docs": ["docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
       "steps": [
         {"role": "mirror-operator", "action": "Export a signed copy to the media.", "run": ["python3", "tools/forkmesh_offline_sync.py", "export", "<REPO>", "<MEDIA>", "--signing-key", "<EXPORT SEED>", "--repository", "<OWNER/NAME>"]},
         {"role": "verifier", "action": "On the receiving side, verify the media against the pinned export key.", "run": ["python3", "tools/forkmesh_offline_sync.py", "verify", "<MEDIA>", "--trusted-key", "<EXPORT KEY>"]},
@@ -259,7 +259,7 @@
       "title": "Replace a lost or stolen signing key",
       "topic": "key-recovery",
       "role": "key-custodian",
-      "docs": ["www/docs/disaster-recovery/README.md#key-recovery", "www/docs/portable-identities.md#recovery-drills", "www/docs/operations/node-backup-and-recovery.md#moving-or-replacing-an-identity-key"],
+      "docs": ["docs/disaster-recovery/README.md#key-recovery", "docs/portable-identities.md#recovery-drills", "docs/operations/node-backup-and-recovery.md#moving-or-replacing-an-identity-key"],
       "steps": [
         {"role": "mirror-operator", "action": "Generate the successor key on a machine that verified the kit.", "run": ["python3", "tools/forkmesh_offline_sync.py", "keygen", "<SUCCESSOR SEED>"]},
         {"role": "key-custodian", "action": "The first custodian writes and signs the rotation statement.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "key", "rotate", "--roster", "<ROSTER>", "--recovery-key", "<RECOVERY SEED>", "--revoke", "<LOST KEY>", "--successor", "<SUCCESSOR KEY>", "--holder", "<HOLDER>", "--reason", "<REASON>", "--issued", "<YYYY-MM-DD>", "--out", "<ROTATION>"], "unsafe": "The lost key must never sign its own replacement, and the threshold must never be lowered during an incident."},
@@ -280,7 +280,7 @@
       "title": "Restore from the newest backup that verifies",
       "topic": "clean-restoration",
       "role": "verifier",
-      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "docs": ["docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
       "steps": [
         {"role": "verifier", "action": "Verify copies newest first. Stop at the first that verifies.", "run": ["python3", "tools/forkmesh_offline_sync.py", "verify", "<MEDIA>", "--trusted-key", "<EXPORT KEY>"], "unsafe": "Never import a copy that failed verification, and never repair a bundle by hand."},
         {"role": "mirror-operator", "action": "Import the verified copy into an empty repository.", "run": ["python3", "tools/forkmesh_offline_sync.py", "import", "<MEDIA>", "<EMPTY REPO>", "--trusted-key", "<EXPORT KEY>"]}
@@ -298,7 +298,7 @@
       "title": "Restore a mirror node from its encrypted backup",
       "topic": "clean-restoration",
       "role": "mirror-operator",
-      "docs": ["www/docs/operations/node-backup-and-recovery.md#restoring-a-node"],
+      "docs": ["docs/operations/node-backup-and-recovery.md#restoring-a-node"],
       "steps": [
         {"role": "verifier", "action": "Rehearse the archive in scratch space first.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--passphrase-file", "<PASSPHRASE FILE>", "--restore-drill", "<ARCHIVE>"]},
         {"role": "mirror-operator", "action": "Dry-run, then restore onto the new host.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--passphrase-file", "<PASSPHRASE FILE>", "--restore", "<ARCHIVE>", "--dry-run"]},
@@ -316,7 +316,7 @@
       "title": "Reconcile regions that worked apart",
       "topic": "removable-media",
       "role": "mirror-operator",
-      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "docs": ["docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
       "steps": [
         {"role": "mirror-operator", "action": "Each region exports with its own key, and the media travels both ways.", "run": ["python3", "tools/forkmesh_offline_sync.py", "export", "<REGION REPO>", "<MEDIA>", "--signing-key", "<REGION SEED>"]},
         {"role": "mirror-operator", "action": "Each region imports the other's media. Diverged branches are kept under refs/forkmesh-offline/conflicts/.", "run": ["python3", "tools/forkmesh_offline_sync.py", "import", "<MEDIA>", "<REGION REPO>", "--trusted-key", "<OTHER REGION KEY>"], "unsafe": "Never force-push a region's branch over the other's kept-aside work."},
@@ -334,7 +334,7 @@
       "title": "Return to normal service cleanly",
       "topic": "clean-restoration",
       "role": "coordinator",
-      "docs": ["www/docs/disaster-recovery/README.md#clean-restoration"],
+      "docs": ["docs/disaster-recovery/README.md#clean-restoration"],
       "steps": [
         {"role": "mirror-operator", "action": "Compare the returning service's refs with the restored network before anything syncs.", "run": ["git", "ls-remote", "<RETURNING SERVICE URL>"]},
         {"role": "mirror-operator", "action": "Push restored work to the returning service as fast-forwards only.", "run": ["git", "-C", "<RESTORED>", "push", "--atomic", "<RETURNING SERVICE URL>", "refs/heads/*:refs/heads/*"], "unsafe": "Never let the returning service overwrite work done during the incident."},
@@ -532,14 +532,14 @@
       "tools/forkmesh_service_roles.py",
       "tools/forkmesh_transports.py",
       "tools/verify_migration_report.py",
-      "www/docs/disaster-recovery/README.md",
-      "www/docs/disaster-recovery/runbook.md",
-      "www/docs/crisis-preservation.md",
-      "www/docs/offline-sync.md",
-      "www/docs/portable-identities.md",
-      "www/docs/transports.md",
-      "www/docs/operations/node-backup-and-recovery.md",
-      "www/docs/operations/service-roles.md"
+      "docs/disaster-recovery/README.md",
+      "docs/disaster-recovery/runbook.md",
+      "docs/crisis-preservation.md",
+      "docs/offline-sync.md",
+      "docs/portable-identities.md",
+      "docs/transports.md",
+      "docs/operations/node-backup-and-recovery.md",
+      "docs/operations/service-roles.md"
     ]
   }
 }

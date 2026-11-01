@@ -1,7 +1,35 @@
 # Agent access rules
 
-What every desktop agent may reach and run, and where each rule is enforced.
-The run lifecycle is in [README.md](README.md).
+What every desktop agent may reach and run, and where each rule is enforced:
+the sandbox layers, the global and project rules, destructive commands,
+external calls, per-provider enforcement and teammate permissions. What the
+sandbox does not defend against is in the
+[threat model](../protocol/threat-model.md).
+
+Part of [Agents](README.md).
+
+## Layers
+
+Agents run in Git worktrees of the open repository
+([run lifecycle](README.md#local-runs-desktop)), inside layered controls:
+
+| Layer | Code | What it does |
+| --- | --- | --- |
+| Folder lock (Linux, default on) | `AgentGuardrails.*`, Landlock | Restricts the agent to its worktree, the project's top-level folders except `data/`, `config/`, `cache/`, `state/`, `logs/` and `ssh/`, and a few shared tool and scratch paths |
+| External-call gate | `AgentNetworkGate.*` | Classifies Bash, WebFetch and WebSearch calls (and scripts that import network modules). For Claude Code a PreToolUse hook in `--settings` asks the desktop over a local socket; an unreachable socket denies. Legacy script providers ask the same gate. It works per tool call; it is not a network sandbox |
+| Destructive-command gate | `classifyCommandRisk` | Recursive deletes, force pushes, history rewrites and disk wipes wait for the user's approval by default, because one mistaken command can erase unrecoverable data ([below](#destructive-commands)) |
+| Tool allowlist (optional) | `AgentToolPolicy.*` | Tools outside the listed families are not offered, so a tool a newer agent CLI adds stays off ([below](#tool-allowlist)) |
+| Access policy | `ProjectAgentAccess.*`, `AgentRunRules.*` | Project and global rules merged into one run, ask or deny decision ([below](#global-rules-and-project-rules)) |
+| KVM workspace (optional) | `VirtualMachineRuntime.*` | The agent runs in a QEMU/KVM guest, which is then the boundary ([user guide](../qt-client.md#kvm-isolated-coding-workspace)) |
+| Memory and CPU containment | `AgentResources.*` | Each agent in its own systemd scope inside a capped slice ([memory.md](memory.md)); `AgentJail.h` is a resource fence, not a security sandbox |
+
+- **Access failures** (a refused folder or host) prompt the user instead of
+  failing silently (`AgentAccessFailure.*`).
+- **Recursive deletes in the desktop itself** go through
+  `forkmesh::safedelete::removeTree`, which refuses `HOME`, checkouts, other
+  worktrees and protected project folders
+  ([destructive actions](../engineering/destructive-actions.md)).
+- **Not covered:** MCP tools and the `openai` legacy provider.
 
 ## Global rules and project rules
 
@@ -118,7 +146,7 @@ patterns where recursive deletes run without asking:
 ### External calls
 
 `AgentNetworkGate.*` classifies Bash, Monitor, WebFetch and WebSearch calls
-([README.md](README.md#desktop-agent-sandboxing)).
+([layers](#layers)).
 
 - **Monitor runs a shell command too.** Its `command` gets the same external
   call and destructive command checks as a Bash command (`isShellTool`).
@@ -210,4 +238,4 @@ path grants nothing.
   ([../server/agent-jobs.md](../server/agent-jobs.md)).
 - [Organization bot scopes](../app/organization-bot-scopes.md).
 - MCP window tools need the intake token
-  ([../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md)).
+  ([../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md)).

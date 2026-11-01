@@ -1,5 +1,8 @@
 # Destructive actions
 
+The repository rule is in `AGENTS.md`; this page explains the helpers and the
+contract test. Part of [Engineering](README.md).
+
 ## The rule
 
 No code deletes a folder tree, or runs a git command that throws away commits,
@@ -40,9 +43,9 @@ but inherits `FORKMESH_HOME` still cannot reach real folders. Symlinks are
 unlinked, never followed. Paths are compared after resolving symlinks in the
 deepest folder above the target that exists, so `/var/...` and
 `/private/var/...` on macOS compare equal even when the target's own parent
-does not exist yet (the Go helper resolved only an existing parent until
-2026-10-15, so the agent work folder check in `server/sandbox.go` accepted a
-folder under the node key's folder on macOS).
+does not exist yet (resolving only an existing parent once let the agent work
+folder check in `server/sandbox.go` accept a folder under the node key's folder
+on macOS).
 
 | Language | Helper | Own worktree | Move aside |
 | --- | --- | --- | --- |
@@ -76,10 +79,8 @@ It runs in the `security` suite of `tools/run_critical_tests.py` (CI and the
 quality gate) and in the auto-deploy must-pass set, so a new unguarded delete
 blocks a deploy. Outside a git checkout, as in the deploy gate's archive, it
 walks the folders instead and skips generated trees (`build*`,
-`app/src_build`, `node_modules`). Until 2026-10-15 it ran in no gate and had
-gone stale: three iOS single-file removes were unlisted and the Go desktop
-engine of that time was not scanned at all. That engine was removed on
-2026-10-16 ([lifecycle.md](../desktop/lifecycle.md#running-without-a-window)).
+`app/src_build`, `node_modules`). Running in a gate is what keeps it current:
+a contract test outside every gate goes stale unnoticed.
 
 Each hit must be in a helper file or match an `ALLOW` entry (path, line regex,
 and a reason of at least four words). The test also fails on stale entries,

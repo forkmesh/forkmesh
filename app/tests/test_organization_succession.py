@@ -17,7 +17,7 @@ MIGRATIONS = ROOT / "migrations"
 ENTRY = SRC / "entry.py"
 URLS = SRC / "urls.py"
 SCHEMA = SRC / "schema.py"
-DOC = ROOT.parent / "www" / "docs" / "operations" / "organization-succession.md"
+DOC = ROOT.parent / "docs" / "operations" / "organization-succession.md"
 
 sys.path.insert(0, str(SRC))
 import organization_succession as policy  # noqa: E402

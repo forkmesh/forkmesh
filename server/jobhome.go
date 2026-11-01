@@ -1,6 +1,6 @@
 package mirrornode
 
-// Per-session job homes and provider credential hand-over (docs/RUNNERS.md).
+// Per-session job homes and provider credential hand-over (docs/operations/runners.md).
 //
 // A job never runs with the job user's persistent HOME: that home holds the
 // provider logins, and a job that could write it (settings.json hooks, a

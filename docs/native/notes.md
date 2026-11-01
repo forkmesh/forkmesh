@@ -1,7 +1,8 @@
 # Notes in the phone apps
 
-The web Notes page is the reference (`docs/app/notes-sharing.md`). Each phone
-app has its own section below.
+Part of the [phone apps docs](README.md). The web Notes page is the reference
+([notes.md](../app/notes.md)); each phone app has its own
+section below.
 
 ## Android
 
@@ -19,7 +20,7 @@ comments sheet, the faces and the "Here now" list.
   Public is `visibility == public`.
 - Search matches the title and the body through the server:
   `GET /api/notes?query=<text>` (`NotesApi.search`, see
-  `docs/app/notes-convert.md`), asked 250 ms after the last keystroke
+  [notes.md](../app/notes.md#turning-a-note-into-a-task-or-an-issue)), asked 250 ms after the last keystroke
   (`NotesLogic.SEARCH_MS`). The request runs in a `LaunchedEffect` keyed on the
   query, so a newer keystroke cancels it, and an answer is used only while the
   box still holds the query it was for (`NoteSearch`). Until it answers the
@@ -28,7 +29,7 @@ comments sheet, the faces and the "Here now" list.
   (`NotesLogic.searchResults`). A query over 200 characters is not sent and
   matches titles only.
 - **Rows** follow "Unread notes and the last edit" in
-  `docs/app/notes-activity.md`; `NoteRows.info` reads `unread`,
+  `docs/app/notes.md`; `NoteRows.info` reads `unread`,
   `lastEditedBy`, `myLastViewedAt`, `unreadComments`, `openComments` and the
   shares from each note. A row shows:
   - an accent dot before the title, which is bold, when the note is `unread`
@@ -319,7 +320,7 @@ presence line and the comments sheet. Every request goes through the `ToolsApiCa
   apply to the server's answer. A query over 200 characters is not sent. The
   text is percent-encoded so `&` or `#` stay part of the query.
 - **Rows** follow "Unread notes and the last edit" in
-  `docs/app/notes-activity.md` and look like Android's (`NoteListRow`, built
+  `docs/app/notes.md` and look like Android's (`NoteListRow`, built
   from `NotesListModel.row`):
   - an accent dot on the note icon and a bold title when the note is unread
     (VoiceOver reads "Unread");

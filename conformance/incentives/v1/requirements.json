@@ -1,7 +1,7 @@
 {
   "schema": "forkmesh-incentive-independence-conformance-v1",
   "issue": 516,
-  "documentation": "www/docs/incentive-independence.md",
+  "documentation": "docs/incentive-independence.md",
   "invariant": "Repository access, identity, contribution, governance, and essential network participation work fully without a token, blockchain, reward system, or speculative asset.",
   "requirements": [
     {

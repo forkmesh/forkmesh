@@ -1,8 +1,14 @@
 # MCP connector: `create_agent`
 
-`tools/forkmesh_mcp_server.py` can add an agent to the ForkMesh desktop's
-Agents list, so an agent working through the connector can hand a follow-up
-task to a new agent, running at once or parked until the user starts it.
+Part of [the tools docs](README.md); the MCP server itself is in
+[agent tools](../agents/tools.md#forkmesh-mcp-server).
+
+`create_agent` on `tools/forkmesh_mcp_server.py` adds an agent to the
+desktop's Agents list, so an agent can hand a follow-up task to a new agent,
+running at once or parked until the user starts it. The agent-intake socket
+described here also carries the window, hub, terminal and release tools
+([mcp-desktop-tools.md](mcp-desktop-tools.md),
+[mcp-releases.md](mcp-releases.md)).
 
 ## The tool
 
@@ -40,13 +46,12 @@ without a task, the link is added afterwards through `recordOrgTaskFields`.
 `handoff` is for an agent that is itself linked to a task and wants another
 agent to finish it. The desktop takes the task id from the calling session
 (the token names it), so the caller need not know it; a `task` that differs
-is refused (`task_mismatch`) and a caller with no task gets `no_task`. After
-the new agent is created the caller is unlinked
-(`unlinkAgentSessionFromOrgTask`, shared with **Detach from task**), so its
-own end no longer completes the task and deleting it no longer deletes the
-task. Both sessions' logs record the handoff. The caller should write the
-prompt as a brief: what is done, what is left and where, since the new agent
-sees only that prompt.
+is refused (`task_mismatch`) and a caller with no task gets `no_task`. Once
+the new agent exists the caller is unlinked (`unlinkAgentSessionFromOrgTask`,
+shared with **Detach from task**), so its end no longer completes the task and
+deleting it no longer deletes the task. Both sessions' logs record the
+handoff. Write the prompt as a brief (what is done, what is left and where):
+the new agent sees only that prompt.
 
 To hand over a branch as well, pass it as `branch` and stop working on it:
 the new agent reuses the agent worktree that holds it.

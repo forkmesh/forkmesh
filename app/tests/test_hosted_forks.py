@@ -1,4 +1,4 @@
-"""Website forks of hosted repositories (docs/HOSTED_REPOS.md, "Forks").
+"""Website forks of hosted repositories (docs/operations/core-hosted-repositories.md, "Forks").
 
 A Fork click on a public hosted repository creates a hosted repository the
 caller owns, marked forkedFrom the parent and indexed on its forks list. The

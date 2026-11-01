@@ -3,42 +3,35 @@
 Part of [the App docs](README.md). A repository can be used as a forum: the
 example/forum mirror (forum.example.org) carries 609 issues and about
 5,900 comments in a dozen languages, with single threads over 600 KB of JSON.
-Every cap on the issue path was sized for small project trackers and cut that
-forum short (the list stopped at 500 open issues). They were raised together
-on 2026-10-21; keep paired values in step.
+The caps on the issue path are sized for that; keep paired values in step.
 
-| Limit | Where | Was | Now | Bounds |
-| --- | --- | --- | --- | --- |
-| `MAX_COLLABORATION_TREE_ENTRIES` | `tools/mirror_gateway.py` | 500 (shared `MAX_TREE_ENTRIES`) | 50,000 | entries listed in `.forkmesh/issues/open` and the other collaboration folders |
-| `MAX_JSON_BLOB` | `tools/mirror_gateway.py` | 2 MiB | 16 MiB | one issue record read through `/blobs` (a larger one is cut and fails to parse) |
-| `maxIssueRecordBytes` | `server/issue_reconcile.go` | 2 MiB | 16 MiB | one issue record the git node still merges across mirrors (pair with `MAX_JSON_BLOB`) |
-| `maxIssueGitOutput` | `server/issue_reconcile.go` | 256 MiB | 1 GiB | all issue records read by one reconcile pass |
-| `MAX_JSON_OUTPUT` | `tools/mirror_gateway.py` | 8 MiB | 32 MiB | one `/blobs` batch (50 issue files) |
-| `MAX_SEARCH_RESULTS` | `tools/mirror_gateway.py` | 60 | 200 | code search hits |
-| `MAX_BUNDLE_BYTES` | `app/host/forkmesh_host/repo_views.py` | 8 MiB | 32 MiB | the host-built issues bundle behind the first view |
-| `MAX_BODY_CHARS` | `repo_views.py`, `repo_ssr_issue.py` | 60,000 | 262,144 | markdown rendered per body or comment on the server (GitHub allows 65,536 characters) |
-| `MAX_EVENTS` | `app/host/forkmesh_host/repo_ssr_issue.py` | 400 | 5,000 | events in the server-rendered issue page |
-| `TIMELINE_FIRST`, `STREAM_CHUNK` | `repo_ssr_issue.py` | (one piece) | 10, 10 | timeline items in the first flushed part of the issue page, then items per later part; every comment is still sent |
-| `ISSUE_TIMELINE_FIRST`, `ISSUE_TIMELINE_BATCH` | `06-repo-content.js` | all at once | 10, 15 | items the dashboard draws at once, then per idle callback |
-| labels per list row | `repo_views.py` | 6 | 20 | labels in the server-rendered list |
-| `IMMUTABLE_CACHE_ENTRY_MAX` | `app/host/forkmesh_host/repo_fastpath.py` | 4 MiB | 16 MiB | the largest commit-pinned response kept in the host cache |
-| `MAX_ISSUE_BYTES` | `app/src/entry.py` | 64 KiB | 256 KiB | a web-posted issue or comment body in UTF-8 bytes (65,536 CJK or Cyrillic characters need up to about 190 KB) |
-| `MAX_PENDING_ISSUES`, `MAX_PENDING_DISCUSSIONS` | `app/src/entry.py` | 500 | 2,000 | web posts waiting for the git node |
-| `MAX_PENDING_PER_AUTHOR` | `app/src/entry.py` | 50 | 100 | the same, per author |
-| `MAX_NOTIFICATIONS_PER_RECIPIENT` | `app/src/entry.py` | 500 | 2,000 | notifications kept per account |
-| title, body, labels, per-run counts | `app/src/repository_provider_mirror.py` | 240 chars, 16,000 chars, 8 labels, 10 issues and 20 comments per run, 20 replies per discussion | 256, 262,144, 100, 100, 500, all replies | the in-app provider mirror; `tools/forge_sync.py` (see [forge-sync](../../www/docs/forge-sync.md)) never had caps |
+| Limit | Where | Value | Bounds |
+| --- | --- | --- | --- |
+| `MAX_COLLABORATION_TREE_ENTRIES` | `tools/mirror_gateway.py` | 50,000 | entries listed in `.forkmesh/issues/open` and the other collaboration folders |
+| `MAX_JSON_BLOB` | `tools/mirror_gateway.py` | 16 MiB | one issue record read through `/blobs` (a larger one is cut and fails to parse) |
+| `maxIssueRecordBytes` | `server/issue_reconcile.go` | 16 MiB | one issue record the git node still merges across mirrors (pair with `MAX_JSON_BLOB`) |
+| `maxIssueGitOutput` | `server/issue_reconcile.go` | 1 GiB | all issue records read by one reconcile pass |
+| `MAX_JSON_OUTPUT` | `tools/mirror_gateway.py` | 32 MiB | one `/blobs` batch (50 issue files) |
+| `MAX_SEARCH_RESULTS` | `tools/mirror_gateway.py` | 200 | code search hits |
+| `MAX_BUNDLE_BYTES` | `app/host/forkmesh_host/repo_views.py` | 32 MiB | the host-built issues bundle behind the first view |
+| `MAX_BODY_CHARS` | `repo_views.py`, `repo_ssr_issue.py` | 262,144 | markdown rendered per body or comment on the server (GitHub allows 65,536 characters) |
+| `MAX_EVENTS` | `app/host/forkmesh_host/repo_ssr_issue.py` | 5,000 | events in the server-rendered issue page |
+| `TIMELINE_FIRST`, `STREAM_CHUNK` | `repo_ssr_issue.py` | 10, 10 | timeline items in the first flushed part of the issue page, then items per later part; every comment is still sent |
+| `ISSUE_TIMELINE_FIRST`, `ISSUE_TIMELINE_BATCH` | `06-repo-content.js` | 10, 15 | items the dashboard draws at once, then per idle callback |
+| labels per list row | `repo_views.py` | 20 | labels in the server-rendered list |
+| `IMMUTABLE_CACHE_ENTRY_MAX` | `app/host/forkmesh_host/repo_fastpath.py` | 16 MiB | the largest commit-pinned response kept in the host cache |
+| `MAX_ISSUE_BYTES` | `app/src/entry.py` | 256 KiB | a web-posted issue or comment body in UTF-8 bytes (65,536 CJK or Cyrillic characters need up to about 190 KB) |
+| `MAX_PENDING_ISSUES`, `MAX_PENDING_DISCUSSIONS` | `app/src/entry.py` | 2,000 | web posts waiting for the git node |
+| `MAX_PENDING_PER_AUTHOR` | `app/src/entry.py` | 100 | the same, per author |
+| `MAX_NOTIFICATIONS_PER_RECIPIENT` | `app/src/entry.py` | 2,000 | notifications kept per account |
+| title, body, labels, per-run counts | `app/src/repository_provider_mirror.py` | 256 chars, 262,144 chars, 100 labels, 100 issues and 500 comments per run, all replies | the in-app provider mirror; `tools/forge_sync.py` (see [forge-sync](../forge-sync.md)) has no caps |
 
 ## The issue index
 
-The issues list used to download every open issue record (and the whole
-closed history once Closed was chosen) to show 25 titles, and every issue page
-downloaded the open records again for mentions and sub-issues. Since
-2026-10-21 they read commit-pinned summaries instead. Measured on
-example/forum, the first index (with each opening description) cut the
-issues bundle from 13 MB (3.6 MB gzip) to 2.7 MB (836 KB gzip); the slim
-index below drops the descriptions and the mention lists, and a synthetic
-forum of the same shape (609 issues, 6,000 comments, 400 people) comes to
-about 490 KB, 56 KB gzip.
+The issues list and issue pages read commit-pinned summaries rather than
+every issue record (downloading all records for example/forum is 13 MB). A
+synthetic forum of the same shape (609 issues, 6,000 comments, 400 people)
+gives an index of about 490 KB, 56 KB gzip.
 
 - **`issue-index?ref=<commit>`.** One entry per issue folder under
   `.forkmesh/issues/open`, `.forkmesh/issues/closed` and the legacy
@@ -101,21 +94,20 @@ about 490 KB, 56 KB gzip.
   server renderer takes them from the bundle's answer; both then draw the
   picture from the repository's own raw URL pinned to that commit, which the
   host serves as `immutable` and keeps in memory, so a thread's faces are not
-  asked for again on the next visit (with a branch name they were `no-cache`,
-  32 revalidations per visit on bbs#519), over the initial (`loading="lazy"`, `width`/`height`, `alt=""`,
+  asked for again on the next visit (a branch name would be `no-cache`), over
+  the initial (`loading="lazy"`, `width`/`height`, `alt=""`,
   `referrerpolicy="no-referrer"`). A person not listed keeps the initial, so
   no page asks for a file that is not there, and nothing ever loads from the
   provider.
 - **`issue-search?ref=&q=`.** Free-text search. Typing in the search box
   filters the loaded rows on number, title, author and the
-  status/labels/milestone line at once, as before, and after 250 ms asks
-  this for the rest; the answer is the numbers whose number, title,
+  status/labels/milestone line at once, and after 250 ms asks this for the
+  rest; the answer is the numbers whose number, title,
   description, author, status line **or live comments** contain the text
   (case-insensitive substring, the client's rule), across open and closed
-  issues. Differences from the old client-side search: comments are now
-  searched too (a deleted comment is not, an edited one by its latest
-  text); lower-casing is Python's, which differs from JavaScript's only for
-  a handful of characters. The searchable text of each record is kept per
+  issues. Comments are searched too (a deleted comment is not, an edited one
+  by its latest text); lower-casing is Python's, which differs from
+  JavaScript's only for a handful of characters. The searchable text of each record is kept per
   blob id up to `ISSUE_SEARCH_CACHE_CHARS`, and each answer is commit-keyed
   like the index. One search reads at most `ISSUE_INDEX_READ_BYTES` of
   uncached records, the index's budget, so a public search never holds every
@@ -139,8 +131,8 @@ about 490 KB, 56 KB gzip.
   sent as UTF-8 rather than `\u` escapes, which matters for a forum in
   Persian, Russian and Chinese and compresses better. At most
   `ISSUE_INDEX_MAX_ISSUES` (50,000) entries and `MAX_JSON_OUTPUT` bytes:
-  past either the answer says `truncated: true` and the dashboard uses the
-  old reads.
+  past either the answer says `truncated: true` and the dashboard falls back
+  to per-record reads.
 - **Who reads it.** `loadRepoIssues` (after the `.forkmesh/issues` listing
   that names the commit), `loadRepoIssueRelationIndex` (with the issue's
   number on an issue page, the full index on a pull page) and the list
@@ -162,8 +154,8 @@ about 490 KB, 56 KB gzip.
 
 ## Long threads load progressively
 
-The first HTML of an issue page carries the whole thread, as the forum asks
-, but is sent in parts: the top (shell, header, opening
+The first HTML of an issue page carries the whole thread, but is sent in
+parts: the top (shell, header, opening
 post, first ten items) first, then ten items at a time (see
 [repo-views.md](repo-views.md#issue-page-first-view), **Long threads**).
 Measured locally with a synthetic thread of poorly compressible text (about
@@ -175,8 +167,7 @@ shell included, one core:
 | 98 | 264 KB | 781 KB | 204 KB | 241 KB, 52 KB | 32 ms | 124 ms |
 | 500 | 1.3 MB | 3.0 MB | 864 KB | 241 KB, 52 KB | 87 ms | 601 ms |
 
-Before, the first byte waited for the whole page (the 124 ms / 601 ms column
-plus the bundle read). About 30 KB of the first part's gzip is the
+Without parts the first byte would wait for the whole page. About 30 KB of the first part's gzip is the
 dashboard shell before the issue (116 KB of it is one inline `<style>`
 block): the next saving for slow links is a smaller shell for server-rendered
 pages, not fewer comments. Of the first part, the browser paints the top
@@ -185,7 +176,7 @@ as soon as it arrives; later cards are `content-visibility: auto`.
 ## Mirrored attachments
 
 `tools/forge_attachments.py` (see
-[forge-sync.md](../../www/docs/forge-sync.md#attachments)) keeps a mirror's
+[forge-sync.md](../forge-sync.md#attachments)) keeps a mirror's
 images and files in the repository itself, so they count against its size:
 
 | Limit | Value | Where |

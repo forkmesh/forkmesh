@@ -17,7 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "social_signals.py"
 VECTORS = ROOT / "conformance" / "social-signals" / "v1" / "vectors.json"
-DOC = ROOT / "www" / "docs" / "social-signals.md"
+DOC = ROOT / "docs" / "social-signals.md"
 
 spec = importlib.util.spec_from_file_location("social_signals", TOOL)
 social = importlib.util.module_from_spec(spec)
@@ -267,8 +267,8 @@ def test_documentation_covers_the_contract():
     for phrase in ("tools/social_signals.py", "app/public/social-signals.js", "--disable",
                    "Failure and recovery", "signer_mismatch", "Not yet"):
         assert phrase in text
-    assert "(social-signals.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
-    gates = json.loads((ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
+    assert "(social-signals.md)" in (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    gates = json.loads((ROOT / "docs" / "engineering" / "quality-gates.json").read_text(encoding="utf-8"))
     gate = next(item for item in gates["gates"] if item["id"] == "social-signal-portability")
     assert gate["command"][1:] == ["tools/social_signals.py", "gate"]
     assert all("social-signal-portability" in gates["profiles"][name] for name in ("core", "release"))

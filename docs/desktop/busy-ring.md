@@ -1,16 +1,13 @@
 # Busy ring: a spinner around the icon while something runs
 
-Since 2026-10-31 every platform shows the same "working" mark: a thin ring
-around a button's icon whose bright arc turns once every 1.6 s and fades over
-70 % of the circle, on a faint 14 % track. It is the activity halo the phone
-apps' bottom bar already drew around an active item (`ShellActivityHalo` on
-iOS and Android), now also on buttons and on the left rails. A button with no
-icon gets the same sweep around its rounded outline instead.
+Every platform shows the same
+"working" mark: a thin ring around a button's icon whose bright arc turns once
+every 1.6 s and fades over 70 % of the circle, on a faint 14 % track. It is the
+phone apps' activity halo (`ShellActivityHalo` on iOS and Android), used on
+buttons and on the left rails too. A button with no icon gets the same sweep
+around its rounded outline.
 
-The user asked for it in one sentence: "when we click on any button that does
-something show a spinner around the icon please on all platforms; also when
-shortcuts are running show the spinner on the left rail; show any active left
-rails with a spinner on the icon similar to how we do in mobile".
+Part of [Desktop](README.md).
 
 ## The rule: disabled right after a click means working
 
@@ -55,8 +52,7 @@ Code: `desktop/src/BusyRing.{h,cpp}`.
   now disabled becomes busy until its `EnabledChange` back to enabled.
   `busyring::watchClick` does the same for a programmatic `click()`.
 - `startButtonSpin` / `stopButtonSpin` (Git sync, pull all, unsynced commits)
-  now show the ring around the button's own icon instead of swapping it for a
-  spinning refresh glyph. The restart buttons keep their own progress glyph,
+  show the ring around the button's own icon. The restart buttons keep their own progress glyph,
   which shows how far the rebuild has got.
 
 ### Left rail
@@ -71,8 +67,8 @@ by `paintRailButtonHook`), in the icon column and in the expanded rows:
   `updateAgentsTabIndicator`); **Code** is active while any shortcut runs
   (`refreshShortcutRailActivity`, called when a run starts and finishes).
 - `setActivityBlink(true)`: the deploy activity of **Control** and
-  **Network**. This used to blink a small green lamp; the ring replaces it so
-  there is one "working" mark.
+  **Network** (the ring replaced a green lamp, so there is one "working"
+  mark).
 - the button itself is busy (`fmBusy`), for example after the click watcher
   saw it disable itself.
 

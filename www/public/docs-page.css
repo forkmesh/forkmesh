@@ -294,7 +294,7 @@ body.dp-body {
   min-width: 0;
 }
 
-.dp-nav summary {
+.dp-nav > summary {
   cursor: pointer;
   list-style: none;
   padding: 0.6rem 0.9rem;
@@ -304,11 +304,11 @@ body.dp-body {
   font-weight: 800;
 }
 
-.dp-nav summary::-webkit-details-marker {
+.dp-nav > summary::-webkit-details-marker {
   display: none;
 }
 
-.dp-nav summary::before {
+.dp-nav > summary::before {
   content: "☰";
   margin-right: 0.6rem;
   color: var(--docs-soft);
@@ -319,15 +319,58 @@ body.dp-body {
 }
 
 .dp-nav-group {
-  margin-bottom: 1.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.dp-nav-group[open] {
+  margin-bottom: 1.25rem;
+}
+
+.dp-nav-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.42rem 0.9rem;
+  border-radius: 0.85rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dp-nav-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dp-nav-group > summary::before {
+  content: "›";
+  color: var(--docs-soft);
+  font-weight: 900;
+  transition: transform 0.15s ease;
+}
+
+.dp-nav-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.dp-nav-group > summary:hover {
+  background: var(--docs-hover);
 }
 
 .dp-nav-group h2 {
-  margin: 0 0 0.5rem;
-  padding: 0 0.9rem;
+  display: inline;
+  margin: 0;
   color: var(--docs-fg);
   font-size: 0.93rem;
   font-weight: 900;
+}
+
+.dp-nav-group:first-of-type > summary h2 {
+  color: var(--docs-link);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dp-nav-group > summary::before {
+    transition: none;
+  }
 }
 
 .dp-nav-link {
@@ -1362,7 +1405,7 @@ body.dp-body {
     grid-template-columns: 260px minmax(0, 1fr);
   }
 
-  .dp-nav summary {
+  .dp-nav > summary {
     display: none;
   }
 

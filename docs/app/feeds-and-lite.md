@@ -1,6 +1,7 @@
 # Feeds, the lite view and the forum home page
 
-All of it is the `read-surfaces` instance plugin (an `OPT_IN` plugin, so it
+Part of [the App docs](README.md). All of it is the `read-surfaces` instance
+plugin (an `OPT_IN` plugin, so it
 is off on instances and on forkmesh.com until an admin turns it on under
 Plugins, or `FORKMESH_CORE_PLUGINS` names it). While it is off the host
 answers none of these paths, repository pages carry no feed or lite links,
@@ -8,10 +9,11 @@ and the sidebar's Lite link stays hidden.
 
 Some readers of a public repository's issues never run the dashboard: people
 behind DNS tunnels or other slow, filtered links, and people who follow a
-forum by email through a feed-to-mail tool such as rss2email. A forum
+forum by email through a feed-to-mail tool such as rss2email (see
+[censorship resilience](../censorship-resilience.md)). A forum
 mirrored from GitHub issues (`example/forum` below) is the case this was
-built for. Three read surfaces serve them without
-JavaScript, from data the node already has:
+built for. Three read surfaces serve them without JavaScript, from data the
+node already has:
 
 | Address | What it is |
 | --- | --- |
@@ -25,19 +27,18 @@ JavaScript, from data the node already has:
 | `/` | The forum home page, on an instance with a home repository |
 | `/<o>/<r>/mirror` | How to help: run a mirror, join the federation, register it |
 
-The user-facing guide is [www/docs/feeds-and-email.md](../../www/docs/feeds-and-email.md).
+The user-facing guide is [docs/feeds-and-email.md](../feeds-and-email.md).
 
 ## Where they are answered
 
 `app/host/forkmesh_host/read_surfaces.py`, called from `HostASGI._http`
-right after the `/api/repo/` fast path and before static assets and the
-Worker. `read_surfaces.target(scope)` recognises the paths (owners in
+right after the `/api/repo/` fast path and before static assets and the App
+entry point. `read_surfaces.target(scope)` recognises the paths (owners in
 `repo_ssr.RESERVED_OWNERS` and `*.git` names are never matched, so
 `/api/...`, `/dashboard/...` and Git URLs are untouched). A repository the
 node's gateway does not serve publicly, a missing issue index, or no home
 repository for `/` makes `handle` return `False` and the request goes on to
-the Worker exactly as before, so on forkmesh.com and on any node without the
-fast path nothing changes. A `.atom` path is never read as a repository file
+the App unchanged. A `.atom` path is never read as a repository file
 path because it never reaches the repository routes.
 
 Only the long `/<owner>/<repo>` form is routed. A short repository address
@@ -108,8 +109,8 @@ Atom 1.0 with the threading extension of RFC 4685
   `TAG_DATE`, not the current one.
 - A thread entry has `<thr:total>` with its comment count and a
   `rel="replies"` link to its own feed with `thr:count`. A comment entry has
-  `<thr:in-reply-to ref="<thread id>" href="<issue page>" type="text/html">`,
-  which is what feed readers and rss2email use to thread replies.
+  `<thr:in-reply-to>` whose `ref` is the thread id, whose link points at the
+  issue page and whose `type` is `text/html`, which is what feed readers and rss2email use to thread replies.
 - Authors: a mirrored `github:<login>` is `@login` with
   `<uri>https://github.com/<login></uri>`; an account on the instance is its
   name with the profile URL.
@@ -172,7 +173,7 @@ An admin picks a home repository in the admin console, Platform → Home page
 (`instance_console.render_home` / `save_home`, setting row `home`,
 `app/src/instance_home.py`). `GET /api/instance` reports it as
 `"home": {"repository": "owner/name"}` (or `null`). The host reads that
-document through the in-process Worker (`read_surfaces.instance_doc`,
+document through the in-process App (`read_surfaces.instance_doc`,
 remembered for a minute) when `/` is asked for; with a home repository whose
 issues the gateway serves publicly, `/` is the forum page instead of the
 redirect to `/dashboard`:
@@ -205,23 +206,22 @@ repository, `/` behaves as before.
 - The issue list ends with "Feed · Lite view", in the server-rendered first
   view (`repo_views._list`) and in the dashboard (`repoIssueFeedLinks` in
   `09-read-surfaces.js`, appended by `renderRepoIssues`). The server adds
-  it only while `read-surfaces` is on (`_plugins_off()`); before 2026-10-24
-  every instance's first view showed the links, which led nowhere with the
-  plugin off.
+  it only while `read-surfaces` is on (`_plugins_off()`), since the links
+  lead nowhere with the plugin off.
 - The sidebar's bottom row (Security, Privacy, Terms) has a "Lite" link to
   `/lite`; on a repository page a click handler points it at that
   repository's lite list, or at the thread when an issue is open.
 
 Every read-surface page wraps its body in `<!--email_off-->` …
-`<!--/email_off-->`: behind Cloudflare, Email Address Obfuscation otherwise
-injects an `email-decode.min.js` script into any page with an address-like
-string, which broke the "no JavaScript" promise of the lite pages.
+`<!--/email_off-->`, so an instance behind a Cloudflare proxy with Email
+Address Obfuscation does not inject an `email-decode.min.js` script and break
+the "no JavaScript" promise.
 
 ## Asking for mirrors
 
 The forum needs independent copies more than anything else, so every read
 surface asks for them while a repository is below its mirror goal
-([mirror-quota.md](mirror-quota.md)). The texts and markup live in
+([mirror-quota.md](../mirror-quota.md)). The texts and markup live in
 `app/host/forkmesh_host/mirror_help.py`.
 
 **When.** `mirror_help.help_state(quota, home)` decides: with a mirror quota
@@ -229,7 +229,7 @@ answer, only when it has a goal and fewer healthy mirrors than the goal
 (`{healthy, target, known: true}`); without one (the API is off, slow or
 missing), only for the instance's home repository, and then without a count
 (`known: false`), because the message matters more than the number. The
-quota is read through the Worker (`read_surfaces.quota_for`, anonymous,
+quota is read through the App (`read_surfaces.quota_for`, anonymous,
 `QUOTA_BUDGET_SECONDS`, or `QUOTA_PAGE_BUDGET_SECONDS` for the how-to-help
 page) and remembered for `QUOTA_FRESH_SECONDS`; a failed read keeps the last
 good answer. The help state is part of each cache key, so a page changes when

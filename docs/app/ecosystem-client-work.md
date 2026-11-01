@@ -1,7 +1,8 @@
-# Client-work tools from the 2026-10-27 X thread
+# Client-work tools in the Ecosystem
 
-Analysis behind `tools/ecosystem_client_work.json` and the "Work & client
-management" category (`work-management`) of the [Ecosystem](ecosystem.md).
+Part of [the App docs](README.md). Analysis behind
+`tools/ecosystem_client_work.json` and the "Work & client management" category
+(`work-management`) of the [Ecosystem](ecosystem.md).
 
 ## The thread
 
@@ -12,10 +13,9 @@ platform covering **project tracking, client chat, docs and images, invoicing
 and payments**. A day later it had about 37,000 views, 360 likes, 485 bookmarks
 and 141 replies.
 
-X shows logged-out readers about 27 replies and its API pages no further, so
-this analysis covers those 27 and their sub-threads (read through
-`api.fxtwitter.com` on 2026-10-28). The other replies were not reachable;
-signing in to X and re-reading the thread would show them.
+This covers the 27 replies X shows logged-out readers and their sub-threads
+(read through `api.fxtwitter.com` on 2026-10-28); the rest need a signed-in
+read.
 
 ## What the replies said
 
@@ -95,7 +95,8 @@ Levels are the ones stored under `internal` (`overlap`, `threat`,
 - **What we do not.** A client who has no account cannot see a project, and
   ForkMesh does not issue invoices or take payments for its users. Both are
   the thread's core asks. Building invoicing would mean handling users'
-  money, which `payments-and-plans.md` rules out (Patreon is the only rail).
+  money, which [payments-and-plans.md](payments-and-plans.md) rules out
+  (Patreon is the only rail).
 - **Ideas worth keeping.** Per-item client visibility and a revocable
   read-only link per outside person (Loftside), and an MCP server that lets
   an agency's agents use the workspace as their shared record (Taskip and the

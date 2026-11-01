@@ -18,7 +18,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "forkmesh_integration.py"
 CONTRACT = ROOT / "conformance" / "integrations" / "v1" / "contract.json"
-DOC = ROOT / "www" / "docs" / "integrations.md"
+DOC = ROOT / "docs" / "integrations.md"
 EXAMPLES = ROOT / "conformance" / "integrations" / "v1" / "examples"
 SECRET = "test-webhook-secret"
 
@@ -639,5 +639,5 @@ def test_documentation_publishes_the_whole_contract(fm, contract):
         assert example["path"] in doc
     for code, meaning in contract["interfaces"]["cli"]["exitCodes"].items():
         assert "| %s | %s |" % (code, meaning) in doc
-    readme = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(integrations.md)" in readme

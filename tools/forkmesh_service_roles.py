@@ -2,7 +2,7 @@
 """Service-role contract suite for independently self-hosted ForkMesh roles.
 
 The v1 manifest in ``conformance/service-roles/v1/manifest.json`` (documented
-in ``www/docs/operations/service-roles.md``) names every network role an
+in ``docs/operations/service-roles.md``) names every network role an
 operator may run: its hosted implementation, its independent profile, the
 HTTP contract that profile must answer, required and optional dependencies
 with documented substitutes, default endpoints and their overrides, canonical

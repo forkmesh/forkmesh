@@ -920,7 +920,7 @@ NOTIFICATION_KINDS = frozenset({
     # hosted (web-created) one. Split out of repo_activity so "Code pushes"
     # can be switched off on its own; see notify_code_push.
     "code_push",
-    # ForkMesh Next host intrusion detection (docs/IDS.md): an IDS incident
+    # ForkMesh Next host intrusion detection (docs/operations/intrusion-detection.md): an IDS incident
     # on a node, delivered to every admin by forkmesh_host.ids_alerts.
     # Admin-only; never muted and never held back by quiet hours.
     "security_alert",
@@ -6522,7 +6522,7 @@ async def _cron_watchdog_completion(env):
 # reason as the sampler below; bound on the first served /api response.
 _api_metrics = _LazyModule("api_metrics")
 # UTM capture, attribution sessions and the acquisition reports
-# (docs/attribution.md). Loaded on the first served HTML navigation.
+# (docs/app/attribution.md). Loaded on the first served HTML navigation.
 _attribution = _LazyModule("attribution")
 _not_found_log = _LazyModule("not_found_log")
 _admin_path_rules = _LazyModule("admin_path")
@@ -16842,7 +16842,7 @@ record_hosted_branch_count = _hosted_git.export(
 ssh_git_password = _hosted_git.export("ssh_git_password")
 contributor_push_allowed = _hosted_git.export("contributor_push_allowed")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
-# docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
+# docs/operations/core-hosted-repositories.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.
 hosted_push_candidates = _hosted_git.export("hosted_push_candidates")
 hosted_push_limit = _hosted_git.export("hosted_push_limit")
@@ -18267,7 +18267,7 @@ async def repo_mirrors_handler(env, request, owner, repo):
             source_of_truth["cloneAvailable"] = False
     payload["sourceOfTruth"] = source_of_truth
     # Where the repository has reached, in the shared state model every
-    # client renders (www/docs/sync-status.md).
+    # client renders (docs/sync-status.md).
     payload["syncStatus"] = mirrors_payload_status(payload)
     # Overlay router-counted traffic on the legacy publisher tallies.
     serve_counts = {}
@@ -18403,7 +18403,7 @@ async def repo_mirrors_handler(env, request, owner, repo):
         owner_user = owner_users.get(node_name, "")
         if owner_user:
             mirror["ownerUser"] = owner_user
-    # Availability proof and risk (www/docs/availability-proof.md). Computed
+    # Availability proof and risk (docs/availability-proof.md). Computed
     # last because it reads the signed endpoint receipts and direct clone
     # probes overlaid above; the report reproduces from this same payload.
     payload["availability"] = mirrors_payload_availability(payload)
@@ -24346,7 +24346,7 @@ async def _account_totp_ok(env, rec, code):
 
 DESKTOP_NODE_CAPABILITIES = "browse,comment,submit_issue,submit_pr,host_repo,mirror_repo,publish_repo,owner_sign"
 # A mobile node authors, publishes and signs as the owner but never hosts or
-# mirrors (www/docs/mobile/mobile-node-contract.md section 2).
+# mirrors (docs/mobile/mobile-node-contract.md section 2).
 MOBILE_NODE_CAPABILITIES = "browse,comment,submit_issue,submit_pr,publish_repo,owner_sign"
 CLIENT_CAPABILITIES = "browse,comment,submit_issue,submit_pr"
 BROWSER_CONTROL_CAPABILITIES = "desktop_control"
@@ -24708,7 +24708,7 @@ async def _account_login(env, request):
     # Which kind of node the supplied pubkey belongs to. Absent means the
     # legacy desktop path; "mobile_node" binds a phone key with the reduced
     # MOBILE_NODE_CAPABILITIES and never becomes the account's primary key
-    # (www/docs/mobile/mobile-node-contract.md section 3).
+    # (docs/mobile/mobile-node-contract.md section 3).
     requested_device_kind = clean_string(data.get("deviceKind", ""), 40)
     if requested_device_kind not in ("", "desktop_node", "mobile_node"):
         return json_response({"error": "invalid_device_kind"}, status=400)
@@ -25026,7 +25026,7 @@ async def _account_devices(env, request, target_device_id="", action=""):
     the login upsert never re-enables a revoked row, so the node must bind a
     new key) and revokes every session that device's logins minted; the
     caller's own session is reported in ``currentRevoked`` and its cookie
-    cleared. See www/docs/mobile/mobile-node-contract.md section 4.
+    cleared. See docs/mobile/mobile-node-contract.md section 4.
     """
     method = method_name(request)
     data = {}
@@ -33912,7 +33912,7 @@ async def repository_imports_handler(env, request, path):
     return await service.handle(env, request, path)
 
 
-# Preservation-first crisis onboarding (www/docs/crisis-preservation.md). A plan
+# Preservation-first crisis onboarding (docs/crisis-preservation.md). A plan
 # is a pure function of its query, so it is public and edge-cacheable. The
 # assessment and drill read owner-only migration reports, so they run in
 # tools/forkmesh_crisis_preservation.py and never send a report here.
@@ -38426,7 +38426,7 @@ async def enqueue_notification(env, recipient, kind, title, body="", repo="",
     if callable(delivery_settings):
         muted, paused = await delivery_settings(env, recipient, int(Date.now()))
         if kind == "security_alert" or force:
-            # Intrusion alerts (docs/IDS.md) always ring: a Pings setting
+            # Intrusion alerts (docs/operations/intrusion-detection.md) always ring: a Pings setting
             # cannot mute them and quiet hours do not hold the phone banner.
             muted, paused = set(), False
         if kind in muted:
@@ -47282,7 +47282,7 @@ async def install_diag_handler(env, request):
 _marketplace_runtime = _LazyModule("marketplace_runtime")
 _MarketplaceGovernanceRuntime = _marketplace_runtime.export("_MarketplaceGovernanceRuntime")
 # Account-based Market star ratings and required improvement reviews
-# (docs/MARKETPLACE_RATINGS.md): a pure route module plus its narrow adapter.
+# (docs/marketplace/ratings.md): a pure route module plus its narrow adapter.
 _MarketplaceReviewsRuntime = _marketplace_runtime.export("_MarketplaceReviewsRuntime")
 marketplace_reviews = _LazyModule("marketplace_reviews")
 
@@ -47507,7 +47507,7 @@ async def package_ratings_handler(env, request):
     # Anonymous per-browser writes are retired: a Market rating now belongs
     # to a signed-in, email-verified account, and anything under five stars
     # must carry an improvement review (app/src/marketplace_reviews.py,
-    # docs/MARKETPLACE_RATINGS.md). The rows already stored stay readable.
+    # docs/marketplace/ratings.md). The rows already stored stay readable.
     return json_response({
         "ok": False,
         "error": "account_rating_required",
@@ -51701,7 +51701,7 @@ async def _https_mirror_public_context(env, owner, repo):
         hosted_nodes_of = globals().get("hosted_core_nodes")
         if target.get("source") == "hosted-web" and callable(hosted_nodes_of):
             # A ForkMesh-hosted repository is served by the core nodes, which
-            # publish no catalog record of their own (docs/HOSTED_REPOS.md).
+            # publish no catalog record of their own (docs/operations/core-hosted-repositories.md).
             # Each is still admitted only by its signed repository proof.
             hosted_nodes = set(hosted_nodes_of(env))
             if hosted_nodes:
@@ -54249,7 +54249,7 @@ def _git_push_signature_message(owner, repo, method, ts, body_sha256):
     Signed by a mobile/desktop device key (or an org member's account key)
     over ``forkmesh-git-push-v1\\n{owner}\\n{repo}\\n{method}\\n{ts}\\n
     {sha256hex(body)}``; the empty advertisement GET signs the sha256 of the
-    empty byte string (www/docs/mobile/mobile-node-contract.md section 7).
+    empty byte string (docs/mobile/mobile-node-contract.md section 7).
     """
     owner = str(owner or "").strip().lower()
     repo = str(repo or "").strip()

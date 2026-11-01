@@ -1,10 +1,11 @@
 # Group audio and video calls in private channels
 
-Anyone in a private channel can start or join a group call from the channel's
-Voice call and Video call buttons on `/chat` (2026-10-21). Up to 16 people can
-be in one call. Media goes through ForkMesh's own call server (an SFU,
-`docs/server/rtc.md`) and stays end-to-end encrypted: the server forwards
-every frame without being able to decrypt it. One-to-one calls in direct
+Part of [the App docs](README.md). Anyone in a private channel can start or
+join a group call from the channel's Voice call and Video call buttons on
+`/chat`. Up to 16 people can be in one call. Media goes through ForkMesh's own
+call server (an SFU, [../server/rtc.md](../server/rtc.md)) and stays
+end-to-end encrypted ([encryption](../encryption.md)): the server
+forwards every frame without being able to decrypt it. One-to-one calls in direct
 messages are unchanged and stay peer to peer
 ([chat-direct-calls.md](chat-direct-calls.md)).
 
@@ -27,8 +28,8 @@ are known to the relay, so a call there could not be end-to-end encrypted
    `calls_unavailable`.
 2. The client opens the WebSocket, sends `join` with the ticket, offers its
    microphone (and camera) as `sendonly` tracks, and answers every offer the
-   server sends as people join and leave (protocol in `docs/server/rtc.md`,
-   "signal"). The server names each forwarded stream after its sender's peer
+   server sends as people join and leave (protocol in
+   [../server/rtc.md](../server/rtc.md), "signal"). The server names each forwarded stream after its sender's peer
    id (`msid`).
 
 ## Removing a member moves the call
@@ -38,17 +39,15 @@ version 1 keeps the original `forkmesh-call-room-v1` derivation, and every
 later version hashes `forkmesh-call-room-v2`, the channel id and the version.
 Removing a member, or closing a public channel, raises the key version and
 closes the chat room (`revoke_room`). The call server has no control path to
-eject a peer, so before 2026-10-28 a removed member who was in a call stayed
-in it, kept receiving everyone's media and still held the current media keys
-until someone left.
-
-Now the remaining members move: when the chat room reconnects under a new room
+eject a peer, so instead the remaining members move to a new call room: when
+the chat room reconnects under a new room
 name, or the channel list shows a new key version, `chat.js` calls
 `groupCalls.channelRekeyed(channelKey, chatRoom)`. If that differs from the
 room the call joined under, the client leaves the call server (its `out`
 presence makes the others rotate their send keys), fetches a new ticket, which
 names the new room, and joins again. The removed member cannot get a ticket
-and is left alone in the old room. The phone apps do the same. The Android group call page runs a copy of
+and is left alone in the old room. The phone apps do the same. The Android
+group call page runs a copy of
 `chat-group-calls.js`: `GroupCallFeature` passes the channel's room name
 (`chat-channel:<id>:v<keyVersion>`) as the fifth `join` argument and forwards
 every `OfficeChannelService.onRoomOpened` for the call's channel to the page's
@@ -61,8 +60,9 @@ reports the new room name.
 
 ## Every core runs a call server
 
-The fleet's three cores each run `forkmesh-calls` (`docs/deploy/calls.md`), so
-losing one or two of them keeps calls working. A room lives in one process at
+The fleet's three cores each run `forkmesh-calls`
+([../deploy/calls.md](../operations/call-servers.md)), so losing one or two of them keeps
+calls working ([architecture](../architecture.md)). A room lives in one process at
 a time, so everybody in a call has to reach the same server: `chat_call_pick`
 in `entry.py` uses rendezvous hashing, the highest SHA-256 of
 `room + "\n" + url` among the servers that answered their
@@ -184,9 +184,8 @@ clear.
   video: the browser's single worker counts for both senders, and the iPhone
   attaches one `RTCFmFrameEncryptor` (one `fm::FrameSendKey`, whose mutex
   guards the counter; libwebrtc calls `Encrypt` from the audio and the video
-  encoder threads) to both its senders. Until 2026-10-21 the iPhone had one
-  encryptor per sender, each counting from 1 under the same key, so audio frame
-  n and video frame n shared an IV. Installing the key that is already in use
+  encoder threads) to both its senders (one encryptor per sender would make
+  audio frame n and video frame n share an IV). Installing the key that is already in use
   keeps the counter running (worker `send-key`, `FrameSendKey::Set`); only a
   different key starts it again from 1. The worker also handles its messages
   one at a time, so two installs cannot interleave around a key import.
@@ -194,9 +193,8 @@ clear.
   channel in a `group-call-key` frame `{peer, keyId, key}` over the room's
   end-to-end encryption, never to the call server. It draws a new key with the
   next key id on every `joined`, the first join and every rejoin after a
-  failover alike, installs it and shares it; before 2026-10-21 a rejoin
-  installed the old key again and the counter restarted, repeating IVs. It
-  sends its current key again whenever a new participant appears. A key frame
+  failover alike (reusing the old key on a rejoin would restart the counter
+  and repeat IVs), installs it and shares it. It sends its current key again whenever a new participant appears. A key frame
   for a peer id bound to a different sender is ignored (see "Who is in the
   call").
 - **Rotation.** When somebody leaves, every remaining sender draws a new key,
@@ -214,15 +212,14 @@ clear.
   waiting on retransmissions can arrive a second or more after the audio sent
   with it. Receiving the same key again (senders re-share whenever someone
   joins) keeps the window; a different key under the same id starts a new one.
-- **What the server could do.** It still cannot decrypt or forge media, and it
-  can no longer replay old frames into the call. It can drop, delay or reorder
+- **What the server could do.** It cannot decrypt, forge or replay media. It can drop, delay or reorder
   media, or label one person's stream with another's peer id; the receiver
   then holds the wrong key and decodes nothing.
 
 ## Live quality widget
 
 The group call panel shows the same quality pill and charts as direct calls
-(`docs/app/chat-direct-calls.md`, "Live quality widget", 2026-10-22). `chat.js`
+([chat-direct-calls.md](chat-direct-calls.md#live-quality-widget)). `chat.js`
 mounts it in the panel head when you join (`syncGroupCallQuality`): on FM
 Media it reads the worker's `stats` reply through `fmmStatsReader` (round-trip
 time and loss from congestion control, bitrate and frame rate from the
@@ -237,13 +234,13 @@ through its own worklet, so only received WebRTC audio tracks are measured.
   only for the channel on screen. A participant who switches to another
   channel stays in the call, but somebody who joins meanwhile does not get
   that participant's key (and sees a blank tile) until they come back.
-- The iPhone joins natively once the app carries the native WebRTC engine
-  (`docs/server/rtc.md`, "Phone media engine"). Android (2026-10-23) runs
+- The iPhone joins natively once the app carries the native media engine
+  ([../server/rtc.md](../server/rtc.md), "Phone media engine"). Android runs
   this file's `createGroupCalls` in a WebView page
   (`native/android/app/src/main/assets/group-call/`, copies kept current by
   `app/tools/sync_android_group_call.py`), with FM Media and the compare
-  code since 2026-10-28, signing with the room seal's key through the
-  native bridge (`docs/native/ANDROID.md`, "Group calls on FM Media").
+  code, signing with the room seal's key through the native bridge
+  ([../native/ANDROID.md](../native/ANDROID.md), "Group calls on FM Media").
 - `app/tests/test_group_call_frame_crypto.py` runs the real worker in node
   against `fm_frame_crypto.cc` built with OpenSSL: frames cross both ways,
   replays are dropped and reordering inside the window is accepted on both
@@ -253,11 +250,11 @@ through its own worklet, so only received WebRTC audio tracks are measured.
 
 ## Face and voice on both engines
 
-`prepareLocal` (the face and voice changer stages from `createFmmLocal`) used
-to run only on the FM Media path: a call that fell back to WebRTC sent the raw
-camera and microphone even when a face or voice was chosen. Both engines now
-send the prepared stream (`outgoingMedia`), and mute and camera-off apply to
-the prepared tracks as well as the raw ones (2026-10-24).
+Both engines send the prepared stream (`outgoingMedia`: the face and voice
+changer stages from `createFmmLocal` via `prepareLocal`), so a call that falls
+back to WebRTC never sends the raw camera or microphone when a face or voice
+is chosen. Mute and camera-off apply to the prepared tracks as well as the raw
+ones.
 
 `createGroupCalls` also takes `acquireMedia(media)`: a caller that already has
 its camera and microphone open (the World, which also tracks the face and

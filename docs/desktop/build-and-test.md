@@ -1,8 +1,10 @@
 # Desktop: build, rebuild and test
 
-Part of [the desktop docs](README.md). The user-facing build guide with
+The user-facing build guide with
 per-distribution package commands is
-[www/docs/qt-client.md](../../www/docs/qt-client.md#build-and-run-from-source).
+[docs/qt-client.md](../qt-client.md#build-and-run-from-source).
+
+Part of [Desktop](README.md).
 
 ## Requirements
 
@@ -11,7 +13,7 @@ From `desktop/CMakeLists.txt`:
 - Qt 6.4 or newer: Widgets, Network, Svg, Concurrent (required); DBus on Linux
   (required); Multimedia/MultimediaWidgets, OpenGL/OpenGLWidgets, Bluetooth,
   WebEngineWidgets (optional, found `QUIET`). Without WebEngine, agent browser
-  windows ([../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md)) open
+  windows ([../tools/mcp-desktop-tools.md](../tools/mcp-desktop-tools.md)) open
   in the system browser, and so do pages in the Browser tab
   ([browser.md](browser.md)).
 - OpenSSL 3.0 or newer; 3.5 for every feature. See [OpenSSL](#openssl).
@@ -68,8 +70,7 @@ units (`FORKMESH_HEAVY_JOBS`, override `FORKMESH_HEAVY_JOBS_OVERRIDE`).
 
 ### Skipping the configure step
 
-`cmake -B build` cost about 10 s on every launch even when nothing changed (the
-4,900-line `CMakeLists.txt`, its globs and the package modules). run.sh now
+`cmake -B build` costs about 10 s even when nothing changed, so run.sh
 writes the configure arguments, plus the path of `ccache` if one is installed,
 to `build/run-sh-configure.args` after a successful configure, and skips the
 step when `CMakeCache.txt` and `build.ninja` (or `Makefile`) exist, the
@@ -84,9 +85,8 @@ run configure again.
 ### Build lock
 
 Two builds in the same `build/` overwrite each other's objects and the shared
-precompiled header (`cmake_pch.hxx.pch`). On 2026-10-23 one build failed with
-`PCH file ... not found` because a second build replaced the header mid-build.
-`run`, `rebuild`, `test`, `clean` and `launch` take `build/.run-sh.lock` (a
+precompiled header (`cmake_pch.hxx.pch`), which fails with
+`PCH file ... not found`. `run`, `rebuild`, `test`, `clean` and `launch` take `build/.run-sh.lock` (a
 directory holding the owner's pid) before touching the tree. A second run.sh
 prints `==> Waiting for the build already running in <dir> (pid N)...` and
 waits. A lock whose pid is gone, or which has had no pid for about five
@@ -105,12 +105,7 @@ jobs). Install it with `brew install ccache`; the next run configures again
 because the stamp records ccache's path.
 
 Checkouts share cached objects, so a new agent worktree compiles only the files
-it changed. Before 2026-10-25 every agent configured a fresh tree in its scratch
-folder and compiled all ~380 app sources plus the tests, because each compile
-line carried that worktree's absolute path: the global
-`FORKMESH_SOURCE_DIR="<checkout>/desktop"` definition, the `-I`, source and PCH
-paths, and (in Debug) the build directory. `~/.ccache` sat at 85 % misses
-with its 5 GiB full. Now:
+it changed. That needs compile lines free of the checkout's absolute path:
 
 - Only `src/SourceDir.cpp` gets `FORKMESH_SOURCE_DIR`; code reads
   `forkmesh::sourceDir()` (`src/SourceDir.h`). That one file recompiles per
@@ -120,22 +115,14 @@ with its 5 GiB full. Now:
   build directory.
 - The precompiled header is named `<MainWindowInternal.h>`, so CMake's
   `cmake_pch.hxx` holds no absolute path and the PCH matches across checkouts.
-- rcc writes each file's modification time into `qrc_*.cpp`, and a fresh
-  checkout stamps every file with the time it was made, so the ~30 resource
-  units (the 47 MB marketplace one among them) missed in every worktree.
-  `RULE_LAUNCH_CUSTOM` runs every custom command, AUTORCC included, under
-  `QT_RCC_SOURCE_DATE_OVERRIDE=1`, which pins that time.
+- rcc writes each file's modification time into `qrc_*.cpp`, which differs in
+  every fresh checkout. `RULE_LAUNCH_CUSTOM` runs every custom command, AUTORCC
+  included, under `QT_RCC_SOURCE_DATE_OVERRIDE=1`, which pins that time.
 - Relative paths only match when the build tree sits at the same place in
   every checkout: `desktop/build` (what run.sh and the commands below use).
   A tree in the agent scratch folder still compiles everything. AGENTS.md
-  tells agents to build there.
-
-Measured 2026-10-25 on three fresh worktrees with one cache (Debug, three
-small test targets plus PCH-free and PCH app objects, 168 compiles): the
-second and third worktree hit 137 and 139. The misses were `SourceDir.cpp`
-and the `qrc_*.cpp` units from a tree configured before the rcc time was
-pinned; with it pinned, rcc writes the same 1-second time for every file and
-the third worktree hit all 27 regenerated resource units.
+  tells agents to build there. With this, a second fresh worktree misses only
+  `SourceDir.cpp`.
 
 With `hash_dir=false` a Debug object compiled in another checkout keeps that
 checkout's directory as its debug compile directory; debuggers find the source
@@ -164,13 +151,12 @@ else the first line containing `error:` or starting `fatal:` (300 characters),
 else the output's tail. Each step's output is also kept in
 `desktop/build/run-sh-last-step.log`.
 
-The desktop's log is C++ in the running app and run.sh is a shell script, so the
-two cannot share one implementation; `app/tests/test_desktop_run_sh_restart_log.py`
-pins the shared wording against the C++ strings and runs run.sh with a fake
-`cmake` to check the order, the quiet mode, the failure line, the configure
-skip, `launch` and the build lock. run.sh does not
-copy the parts of Rebuild & restart that it never did: it builds once (no extra pass when the sources move), and does not build the
-Go mirror-node companion, install, or record restart history for the countdown.
+The two cannot share one implementation (C++ and shell), so
+`app/tests/test_desktop_run_sh_restart_log.py` pins the shared wording against
+the C++ strings and runs run.sh with a fake `cmake` to check the order, the
+quiet mode, the failure line, the configure skip, `launch` and the build lock.
+run.sh builds once (no extra pass when sources move) and does not build the Go
+mirror-node companion, install, or record restart history.
 
 ## Machine-wide compile gate
 
@@ -201,10 +187,8 @@ installs only a build of an unchanged tree.
 
 The build is incremental: Ninja recompiles only the sources that changed in that
 checkout since the last build. It does not see edits that are still in an agent's
-worktree under `.worktrees/` until they are merged into the checkout. On
-2026-10-24 three clicks (19:57, 20:06, 20:16) each ran `cmake --build`, found
-nothing to compile, and relaunched within seconds. That looked like a restart
-that skipped the rebuild. So after a successful build, the restart now says what it
+worktree under `.worktrees/` until they are merged into the checkout. So that
+a no-op build does not look like a skipped rebuild, the restart says what it
 compiled. `compiledSources()` (`src/RestartTiming.h`) reads the
 `Building … object` lines of every pass, and `rebuiltSummary()` makes the line:
 `Rebuilt N changed files: A.cpp, B.cpp …` (the first five), or `No source
@@ -216,11 +200,9 @@ the relaunch, so a failed install leaves no stale notice.
 
 ### Compile cache for the restart
 
-Until 2026-10-25 the restart compiled through `~/.ccache`, the cache every agent
-build on the machine also wrote to. It was capped at 5 GiB, full, and missed
-85 % of the time after 36,886 cleanups, so agent builds evicted the restart's
-objects long before the next restart. The build step now sets its own cache
-(`ccacheEnvironment()` in `src/RestartTiming.h`):
+The restart uses its own cache, because agent builds sharing `~/.ccache`
+evicted its objects long before the next restart (`ccacheEnvironment()` in
+`src/RestartTiming.h`):
 
 - with the fast scratch disk on, the fast disk's `ccache` folder at 40 GiB, the
   same cache and size agents get (`AgentScratch.h`), so a change an agent
@@ -253,16 +235,11 @@ deletes the checkout, whose `.git` holds every local branch and agent worktree.
 - The build commit id is in a generated `ForkMeshBuildCommit.h` included only by
   `src/DesktopBuildCommit.cpp`, whose `forkmesh::desktopBuildCommit()` everything
   else calls; `FORKMESH_VERSION` is not a cache variable or compile definition.
-  Until 2026-10-25 `src/main.cpp` and `src/MainWindowHostInstall.cpp` included
-  the header, so every commit recompiled both on the next restart (12 to 19 s
-  each on an idle machine, minutes behind agent builds), and the 23,000-line
-  `tests/test_window_resize.cpp` in agent test builds.
+  Including the header anywhere else makes every commit recompile that file.
 - Install `ccache` (with room, e.g. `ccache -M 30G`), `ninja` and `mold`.
 - The generated `marketplace.qrc` embeds every package (about 47 MB of C++
-  through AUTORCC by October 2026). Compiling that one file took 1.3 GiB, and
-  the app library and `forkmesh-package-tests` each compiled their own copy, so
-  on the 4 GiB CI runner the compiler was killed once CRM 1.37.0 added its
-  grants CSV. It goes through `qt_add_big_resources` now: rcc writes the data
+  through AUTORCC; 1.3 GiB to compile, enough to get the compiler killed on a
+  4 GiB runner). It goes through `qt_add_big_resources`: rcc writes the data
   straight into an object file, built once by `forkmesh-marketplace-resources`
   and linked by the app, the window and perf tests (through
   `forkmesh-resources`) and `forkmesh-package-tests`. Bundle other large
@@ -291,16 +268,13 @@ Widgets; iterate on those before building the app.
 - `.forkmesh/desktop-ci.yml` builds and runs the critical Qt contracts; it is
   separate from `.forkmesh/ci.yml` and gates nothing.
 - Qt builds use at most two compiler jobs. The desktop workflow keeps its
-  cache independently from the Worker and deployment workflows, so parallel
-  runs do not force a cold Qt rebuild.
-- The desktop workflow's step sets `timeout-minutes: 220`. The desktop
-  runner's default step limit is 90 minutes, and a change to `MainWindow.h`
-  misses ccache for every `MainWindow*.cpp` in `forkmesh-window-tests`: at
-  two jobs on a busy desktop that rebuild alone ran past 90 minutes. Run 8092
-  on 2026-10-25 (main `f86a1b189b`, which carried a `MainWindow.h` change)
-  was killed at 66% with "Critical Qt client contracts exceeded the process
-  time limit". The objects it did compile stay in the kept cache, so the
-  next run starts further on.
+  cache apart from the other workflows, so parallel runs do not force a cold
+  Qt rebuild.
+- The desktop workflow's step sets `timeout-minutes: 220`, above the runner's
+  default 90 minutes, because a `MainWindow.h` change rebuilds every
+  `MainWindow*.cpp` and at two jobs that alone can pass 90 minutes ("Critical
+  Qt client contracts exceeded the process time limit"). Compiled objects stay
+  in the kept cache, so a rerun starts further on.
 - CI never builds the `forkmesh` app target; `src/main.cpp` and the app link
   are only checked by building locally.
 - `.forkmesh/release.yml` and `tools/package/*.sh` produce release binaries
@@ -351,7 +325,7 @@ delta search runs and the step stays within its CPU limit
 - `MainWindow.h` declares its `test*` hooks inside `#ifdef
   FORKMESH_WINDOW_TESTS`, so a hook's definition needs the same guard. Without
   it the window tests still build but the app (`forkmesh`) fails with "no
-  declaration matches", as `testRepoTabRowPanel` did on 2026-10-24. Build the
+  declaration matches". Build the
   `forkmesh` target, not only `forkmesh-window-tests`, after adding one.
 - Two ninja processes linking the same target leave a binary that crashes in
   `ld.so` before `main` while ninja reports it up to date. Delete that one

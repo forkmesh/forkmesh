@@ -2,7 +2,7 @@
 """forkmesh-conformance-adapter-v1 adapter for the clean-room Python verifier.
 
 Reads one JSON request per line on stdin and writes one JSON response per line
-(www/docs/protocol/certification.md#adapter-protocol). ``--fault`` deliberately
+(docs/protocol/certification.md#adapter-protocol). ``--fault`` deliberately
 breaks one protocol property so the harness can prove it detects that class of
 defect; a faulted run is never evidence and cannot be attested.
 """

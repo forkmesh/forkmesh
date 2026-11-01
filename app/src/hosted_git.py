@@ -29,7 +29,7 @@ Two deliberate boundaries:
 A later signed publication from the user's own desktop node takes the record
 over through the normal catalog path — nothing here claims source authority.
 
-**Core hosting (ForkMesh Next, docs/HOSTED_REPOS.md).** With
+**Core hosting (ForkMesh Next, docs/operations/core-hosted-repositories.md).** With
 ``HOSTED_GIT_CORE_NODES`` set, the relay's own trusted core nodes hold every
 hosted repository (``hosted_repos.py``, server/hosted.go), so the create form
 also offers private visibility (served only to router capabilities, readable by
@@ -1035,7 +1035,7 @@ async def hosted_repository_handler(env, request, path):
 
 
 # ---------------------------------------------------------------------------
-# Core hosting (HOSTED_GIT_CORE_NODES; docs/HOSTED_REPOS.md)
+# Core hosting (HOSTED_GIT_CORE_NODES; docs/operations/core-hosted-repositories.md)
 # ---------------------------------------------------------------------------
 
 HOSTED_GIT_READ_OPERATIONS = frozenset({"git-info-refs", "git-upload-pack"})

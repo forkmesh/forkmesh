@@ -1,9 +1,9 @@
 # Codebase analysis plugins
 
-Five Market packages look at the code of a repository open in ForkMesh. Two
-were built-in desktop features turned into plugins; three are new, share one
-analysis engine, and run on the desktop, the iPhone and Android with the same
-results (see [On phones](#on-phones)).
+Part of [Marketplace](README.md). Five Market packages look at the
+code of a repository open in ForkMesh. Two are built-in desktop features as
+switches; three share one analysis engine and give the same results on the
+desktop, the iPhone and Android (see [On phones](#on-phones)).
 
 | Package | What it shows | Page |
 | --- | --- | --- |
@@ -104,16 +104,16 @@ more than the highest module a module uses (cycles share a layer).
 and measures each version with `git show`, for Ember's trend chart.
 
 Equal lines in the duplication step are found with a 64-bit FNV-1a hash of
-the normalized line's UTF-16 code units followed by a murmur finalizer. It
-replaced `qHash`, whose AES-based variant on some CPUs gave the same value for
-short repeated lines (`VALUES (?,?,?,?,?,?)` and the same with one more `?`),
-so the duplicated-line count depended on the CPU and differed from the phones.
+the normalized line's UTF-16 code units followed by a murmur finalizer, not
+`qHash`: its AES-based variant collides on some CPUs for short repeated lines
+(`VALUES (?,?,?,?,?,?)` and the same with one more `?`), which made the count
+depend on the CPU and differ from the phones.
 
 The engine never writes to the repository and runs only read-only git
 commands with `GIT_OPTIONAL_LOCKS=0`, so it never takes the index lock an
 agent or the user may need.
 
-On this repository (October 2026) one analysis reads 5,700 source files with
+On this repository one analysis reads 5,700 source files with
 22,000 import edges and a year of history (8,000 commits) in about 9 seconds.
 
 ## Host contract
@@ -210,8 +210,8 @@ The Swift tests (`Tests/FMCodeInsightTests`) and Kotlin tests
 coupling, module node and edge, the 45 path probes, and every page model
 value. `FM_INSIGHT_FIXTURE=<dir>` (Swift) and `FORKMESH_INSIGHT_FIXTURE=<dir>`
 (Kotlin) point the golden tests at another fixture: run the desktop golden
-writer on any folder with a `repo/` and a `history.log` to compare a real tree.
-In October 2026 a 3,113-file tree with 404 commits matched on every field.
+writer on any folder with a `repo/` and a `history.log` to compare a real tree
+(a 3,113-file tree with 404 commits matched on every field).
 
 Synapse's graph, lobes and queries match exactly. Its 3D positions are
 compared after 1, 10, 60 and 300 layout iterations: the Swift port keeps Qt's

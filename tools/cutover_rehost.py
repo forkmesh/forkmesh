@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The inverse of tools/rehost.py, for the production cutover (docs/CUTOVER.md)."""
+"""The inverse of tools/rehost.py, for the production cutover (docs/operations/served-stack.md)."""
 
 from __future__ import annotations
 
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
     root = Path(args.root).resolve()
     if args.apply and on_main_line(root):
         print("cutover_rehost: refusing to rewrite a checkout of main; --apply "
-              "only on a release worktree (docs/CUTOVER.md)", file=sys.stderr)
+              "only on a release worktree (docs/operations/served-stack.md)", file=sys.stderr)
         return 2
     if args.compare:
         if not args.production:

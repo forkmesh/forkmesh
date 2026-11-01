@@ -421,7 +421,7 @@ struct RepoLink {
 };
 
 // A relative markdown link inside the repository file `basePath` (such as
-// "www/docs/intro.md") names another repository path, resolved against that
+// "docs/intro.md") names another repository path, resolved against that
 // file's directory. Anything else - a URL with a scheme, an absolute or
 // protocol-relative path, a same-document "#anchor" - is not a repository
 // link and yields nullopt.

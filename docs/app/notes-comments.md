@@ -63,7 +63,7 @@ comment, and a name that cannot open the note is left as plain text.
 Every change sends `{"type": "note-comments"}` to the note's room, so open
 clients reload the comments within a second. Changes are also logged in
 the note's activity as `comment`, `resolve` and `reopen`
-(`docs/app/notes-activity.md`).
+(`docs/app/notes.md`).
 
 ### Finding the quoted passage
 
@@ -128,7 +128,7 @@ polled peer is forgotten 20 seconds after its last poll; the desktop polls
 every 5 seconds while a note is open and sends `left` when it closes the note.
 Presence lives in the room's memory only: nothing about who opened a note is
 written by these routes (views are counted separately, see
-`docs/app/notes-activity.md`).
+`docs/app/notes.md`).
 
 ### What every client shows
 

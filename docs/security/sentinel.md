@@ -5,11 +5,10 @@ Its run playbook is `.forkmesh/shortcuts/review-security.md`, its standing
 rules are the `.forkmesh/skills/security-review.skill` repository skill, and
 the record it keeps is [findings.md](findings.md).
 `app/tests/test_security_sentinel_teammate.py` pins the parts of the
-definition that keep it safe.
-
-It exists because security review otherwise happens in bursts while many
-changes land daily across trust boundaries; no other teammate's lane covers
-it.
+definition that keep it safe. It exists because many changes cross trust
+boundaries every day and no other teammate's lane reviews them. Part of
+[Security](README.md); attacker model:
+[threat model](../protocol/threat-model.md).
 
 ## Lanes
 
@@ -25,9 +24,9 @@ it.
 `POST /api/security/report` (`security_report_handler` in `app/src/entry.py`)
 is the private channel for people (the form at `/security-report` and
 Desktop → Settings → Security) and for AI agents and scanners, which
-`AGENTS.md`, `SECURITY.md` and `llms.txt` ask to report there right away. The
-request came from the operator on 2026-10-22: a scan that finds a hole should
-reach us at once, not sit in someone else's transcript.
+[`AGENTS.md`](../../AGENTS.md), [`SECURITY.md`](../../SECURITY.md) and
+`llms.txt` ask to report there right away, so a scan that finds a hole reaches
+us at once instead of sitting in someone else's transcript.
 
 Each valid report is stored encrypted and emailed to `SECURITY_EMAIL`, then:
 
@@ -35,7 +34,7 @@ Each valid report is stored encrypted and emailed to `SECURITY_EMAIL`, then:
   in the `security` department, routed to an agent at priority 5, linking the
   flagship repository; and
 - every platform admin gets a `security_alert` Ping linking that task. Ping
-  settings and quiet hours cannot mute that kind (`docs/IDS.md`), so it rings
+  settings and quiet hours cannot mute that kind ([intrusion detection](../operations/intrusion-detection.md)), so it rings
   like an intrusion alert. Resubmitting the same report reuses one Ping.
 
 The endpoint is anonymous, so the report is hostile input. The task's details
@@ -54,10 +53,9 @@ are bulk. The pool is marked in the row's `ts` without a schema change: kept
 rows have an even millisecond, bulk rows an odd one (the sealed body keeps the
 exact time). When `MAX_SECURITY_REPORTS` are held, a new report evicts the
 oldest bulk row; with no bulk row left it is still emailed and pinged but not
-stored. A flood from one source therefore only churns its own bulk reports,
-and no flood can evict a kept report. Before 2026-10-28 the oldest row was
-evicted, then a full table dropped every new report; 100 IPv4 addresses or one
-IPv6 /56 could fill it.
+stored. A flood from one source only churns its own bulk reports, and no
+flood can evict a kept report (evicting the oldest row let 100 IPv4 addresses
+or one IPv6 /56 fill the table and drop every new report).
 The agent working such a task does not call the webhook again (`AGENTS.md`),
 which would loop.
 
@@ -74,7 +72,7 @@ The repository is public, so an unfixed exploitable finding never goes into a
 public issue, chat, commit message or [findings.md](findings.md). It is filed
 on the organization task board in the `security` department, readable only by
 members. A finding moves into the register when its fix lands on main.
-Outside reporters use `SECURITY.md`.
+Outside reporters use [SECURITY.md](../../SECURITY.md).
 
 ## A finding is fixed when a test guards it
 

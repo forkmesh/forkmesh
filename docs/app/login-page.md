@@ -1,6 +1,7 @@
 # The login page
 
-`app/public/login.html` is the sign-in form at `/login`. It loads the shared
+Part of [the App docs](README.md). `app/public/login.html` is the sign-in
+form at `/login`. It loads the shared
 auth stylesheet `www/public/auth-page-theme.css` and the map backdrop from
 `www/public/auth-mesh.js` ([docs/www/auth-mesh.md](../www/auth-mesh.md)).
 

@@ -1,5 +1,5 @@
 -- Account-based Market star ratings with required improvement reviews
--- (docs/MARKETPLACE_RATINGS.md, app/src/marketplace_reviews.py).
+-- (docs/marketplace/ratings.md, app/src/marketplace_reviews.py).
 --
 -- One current rating per (marketplace, package, account). A rating below five
 -- stars carries a structured review ("what didn't work" and "how we can

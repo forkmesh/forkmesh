@@ -1,7 +1,7 @@
 # Accounts and moderation
 
 Part of [the App docs](README.md). Built for forums whose readers may be at
-risk, for example one mirrored from GitHub issues, which typically ask for:
+risk (for example one mirrored from GitHub issues), which typically ask:
 
 - the server should not have to hold identifying data such as email addresses;
 - people should not reuse names tied to their other activity, so random,
@@ -9,10 +9,10 @@ risk, for example one mirrored from GitHub issues, which typically ask for:
 - moderators must be able to edit or delete posts and block accounts;
 - easy sign-up must not hand the forum to trolls and spam.
 
-Every part is a setting. With the defaults nothing changes: sign-up needs an
-email, people choose their usernames, nobody is held for review and new
-accounts have no daily limits. Moderators, blocks, hidden posts and locks work
-on every server, forkmesh.com included, once somebody uses them.
+Every part is a setting. The defaults change nothing: sign-up needs an email,
+people choose their usernames, nobody is held for review and new accounts have
+no daily limits. Moderators, blocks, hidden posts and locks work on every
+server once somebody uses them.
 
 ## The setting
 
@@ -53,7 +53,7 @@ page view, the email honeypot, Turnstile or its backup puzzle, the per-address
 throttle, username moderation) and adds, before any account lookup:
 
 - `closed`: refused with `signup_closed` (403), logged like every other
-  blocking refusal (`log_blocked_signup`, [signup-failure-pings](signup-failure-pings.md)).
+  blocking refusal (`log_blocked_signup`, [signup-challenge](signup-challenge.md#signup-failure-pings)).
 - `optional`/`invite`: the email field may be empty. A given address is
   validated, indexed and verified exactly as before. Without one the account
   stores `email: ""`, no `email_bi`, and gets a recovery code (below).
@@ -68,10 +68,9 @@ asks `GET /api/accounts/handle-suggestion`), pre-fills the suggestion, makes
 the username read-only under `require`, shows "Sign-up is closed" for `closed`,
 and after an email-free sign-up shows the recovery code once, with Copy and an
 "I saved my recovery code" box before Continue. An account without an address
-goes straight to the dashboard: there is nothing to confirm, so the
-unverified-email gate (issue #592,
-`app/tests/test_unverified_account_gate.py`) does not apply to it, and `openEmailFreeAccount` is the only place the page
-links to the dashboard.
+goes straight to the dashboard (nothing to confirm, so the unverified-email
+gate, `app/tests/test_unverified_account_gate.py`, does not apply);
+`openEmailFreeAccount` is the only place the page links to the dashboard.
 
 ### Random names
 
@@ -89,7 +88,7 @@ filter, up to six tries.
 server cannot prove a name was suggested to this browser, but nobody can pick
 a name they use elsewhere. Existing accounts keep their names, but a rename
 under `require` must also pick such a name (`random_handle_required`). The
-copy on the form says why: a random name keeps this account apart from your other
+form says why: a random name keeps this account apart from your other
 accounts.
 
 ### Recovery codes instead of email
@@ -121,9 +120,9 @@ explains itself instead of failing:
   forgot-password by email (still answers the usual opaque `ok`).
 - The unverified gate (`_account_email_unverified`) only holds accounts that
   have an address to confirm, so email-free accounts are never held.
-- Renaming needs a verified address (`email_not_verified`); Settings now says
-  "An account without an email keeps its username". That keeps the random name
-  persistent.
+- Renaming needs a verified address (`email_not_verified`), which keeps the
+  random name persistent; Settings says "An account without an email keeps its
+  username".
 - Features that are reserved for verified addresses stay reserved: video
   uploads in issues (`repo_media_api.py`, `email_unverified`), contributor
   pushes and web forks (`hosted_git.py`). Their existing messages say to verify
@@ -140,11 +139,9 @@ Who moderates a repository (`moderation.can_moderate_repo`):
   (`org_repos`, or the organization the URL names);
 - **moderators** of those organizations, and **instance moderators**.
 
-A moderator is not a new organization role. Roles
-(`organization_rbac.py`) grant repository permissions, World floors, chat
-channels and settings; a moderator is a duty next to whatever role the person
-has (a member, or someone who is not in the organization at all), so the RBAC
-matrix and its published table are unchanged. Moderators are rows in
+A moderator is not an organization role (`organization_rbac.py`): it is a
+duty next to whatever role the person has, even none, so the RBAC matrix is
+unchanged. Moderators are rows in
 `moderation_roles` keyed by scope: the organization's `org_bi`, or the instance
 scope `blind_index("moderation-scope:instance")`.
 
@@ -223,7 +220,7 @@ against the server's output).
   Hide/Unhide on every post, Lock/Unlock in the sidebar, and a "Show the
   hidden text (moderators only)" reveal under hidden posts.
 - The first view (`app/host/forkmesh_host/repo_moderation.py`) reads the same
-  answer anonymously beside the Worker request, like reactions (fresh 5 s,
+  answer anonymously beside the App request, like reactions (fresh 5 s,
   stale up to 5 min, 150 ms budget, forgotten on a write through this node),
   applies it before rendering and keys the render cache by it. When the state
   hides something and the full issue view cannot be drawn, the host serves the
@@ -258,8 +255,8 @@ its posts (or marks it trusted), which stamps `moderation_trusted_at` on the
 account record (`moderation.can_trust`). The stamp is server-wide, so an
 organization's own moderators can approve a post into their repositories but
 do not trust the author anywhere else, and `trust` from an organization scope
-answers 403: anyone can create an organization, and before 2026-10-24 a
-spammer could make one and trust their own accounts everywhere.
+answers 403: anyone can create an organization, so an organization-level trust
+would let a spammer trust their own accounts everywhere.
 Accounts created before the setting was turned on (`approvalSince`) never
 need it, so switching it on does not hold the existing community. Anonymous
 posts (when `accountRequired` is off) are always held while approval is on.
@@ -293,7 +290,7 @@ throttle limits how many accounts one network can make.
 ## Mirrored GitHub content
 
 example/forum is filled by `tools/forge_sync.py` in mirror mode
-([forge-sync](../../www/docs/forge-sync.md)): GitHub wins every field, a
+([forge-sync](../forge-sync.md)): GitHub wins every field, a
 ForkMesh change to a mirrored title, body, state or comment is replaced on the
 next pass, and authors are `github:<login>`, not accounts. So:
 
@@ -308,9 +305,8 @@ next pass, and authors are `github:<login>`, not accounts. So:
 
 ## Storage and privacy
 
-Migration `0292_accounts_moderation` (written as 0290 and renumbered when it
-merged after main's `0290_pull_ai_reviews` and `0291_repo_mirror_quota`; the
-newest migration must restamp the schema fingerprint, `test_local_migrations`):
+Migration `0292_accounts_moderation` (the newest migration must restamp the
+schema fingerprint, `test_local_migrations`; [d1.md](d1.md)):
 
 | Table | Keys (blind indexes) | Payload (encrypted) |
 | --- | --- | --- |
@@ -321,10 +317,11 @@ newest migration must restamp the schema fingerprint, `test_local_migrations`):
 | `moderation_post_counts` | `account_bi`, plain `day`, `kind`, `count` | none |
 | `moderation_log` | `scope_bi` | `{scope, actor, action, target, detail}` |
 
-No table has an address or browser column. Every payload carries the
+No table has an address or browser column. Payloads are sealed under
+`DATA_KEY` ([encryption](../encryption.md)). Every payload carries the
 plaintext its blind indexes were made from (`scope` as `org:<name>` or
 `moderation-scope:instance`, `repo` as `<owner>/<repo>`, the account name), so
-`tools/next_rekey.py` recomputes them ([REKEY.md](../REKEY.md)); the counters
+`tools/next_rekey.py` recomputes them ([rekey](../operations/rekey.md)); the counters
 are emptied instead. A repository delete purges flags and queue
 (`_REPO_SCOPED_TABLES`); an account delete purges roles, blocks, counters and
 queued posts.

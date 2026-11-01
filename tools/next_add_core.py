@@ -712,7 +712,7 @@ class FleetBackend:
                     "%s: Vultr never published reverse DNS for %d new addresses; "
                     "the last one, %s, is kept. Open a Vultr ticket for it and "
                     "resume, or remove it (next_fleet.py destroy %s --yes "
-                    "--execute) and add the core later (docs/MAIL_LOG.md)"
+                    "--execute) and add the core later (docs/operations/mail-log.md)"
                     % (job.name, VM_ATTEMPTS, instance["main_ip"], job.name))
             self.discard_vm(job, instance)
         ip = instance["main_ip"]
@@ -1144,7 +1144,7 @@ class FleetBackend:
         if not status.startswith("ok"):
             raise ToolError("%s cannot send mail: PTR %s %s. Fix the PTR, or set "
                             "mail_relay on %s in deploy/fleet.toml, then resume "
-                            "(docs/MAIL_LOG.md)"
+                            "(docs/operations/mail-log.md)"
                             % (job.name, node["public_ipv4"], status, job.name))
         job.say("%s: PTR %s %s" % (job.name, node["public_ipv4"], status))
 

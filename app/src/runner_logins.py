@@ -1,4 +1,4 @@
-"""Web sign-in of a runner's provider CLI (docs/RUNNERS.md, "Web sign-in").
+"""Web sign-in of a runner's provider CLI (docs/operations/runners.md, "Web sign-in").
 
 A runner has no node account and no node event channel, so the website cannot
 reach it the way it reaches a mirror's login terminal (node_terminal.py). This

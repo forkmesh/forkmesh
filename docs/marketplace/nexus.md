@@ -1,6 +1,6 @@
 # NEXUS package (desktop)
 
-Part of [the Marketplace docs](README.md). Code:
+Part of [Marketplace](README.md). Code:
 `marketplace/packages/nexus/content/desktop/`. The iPhone has its own NEXUS
 screen, built from the Swift package in `native/ios/Nexus`
 ([../native/NEXUS.md](../native/NEXUS.md)); this package is the desktop

@@ -520,7 +520,7 @@ async def render(env, params, admin_query="", now=None):
         shell.page_head(
             "Intrusion detection",
             "Incidents reported by the IDS on every core and runner "
-            "(docs/IDS.md): node health, incidents over time, grouped by "
+            "(docs/operations/intrusion-detection.md): node health, incidents over time, grouped by "
             "detector or node, and the full incident log. Alerts and "
             "lockdowns page administrators; info incidents are only logged.",
             crumb="Security")

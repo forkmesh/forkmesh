@@ -162,8 +162,8 @@ def test_watchlist_stances_topics_and_evidence_pages_are_valid():
     assert len(names) == len(set(names))
     assert {entry["stance"] for entry in watchlist["subreddits"]} <= set(tool.STANCES)
     for topic in watchlist["topics"]:
-        page = PROJECT / "www" / (topic["evidence"].strip("/") + ".md")
-        index = PROJECT / "www" / topic["evidence"].strip("/") / "README.md"
+        page = PROJECT / (topic["evidence"].strip("/") + ".md")
+        index = PROJECT / topic["evidence"].strip("/") / "README.md"
         assert page.is_file() or index.is_file(), topic["evidence"]
         assert topic["id"] in CHARTER.read_text(encoding="utf-8")
 

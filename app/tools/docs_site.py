@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Render the ``www/docs`` Markdown library into the hosted ``/docs/`` tree.
+"""Render the ``docs`` Markdown library into the hosted ``/docs/`` tree.
 
-Every ``*.md`` under ``www/docs`` becomes ``/docs/<path>/`` with a shared shell
+Every ``*.md`` under ``docs`` becomes ``/docs/<path>/`` with a shared shell
 (site header, search, area sidebar, on-page outline, previous/next, related
 documents and backlinks). Sibling JSON schemas are copied verbatim so the
 ``schema.json`` links keep working, and the hand-written ``/docs/`` landing
@@ -27,7 +27,7 @@ import docs_markdown
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 WWW = REPOSITORY / "www"
-DOCS_ROOT = WWW / "docs"
+DOCS_ROOT = REPOSITORY / "docs"
 PUBLIC_DOCS = WWW / "public" / "docs"
 DOCS_URL_PREFIX = "/docs/"
 LIBRARY_URL = "/docs/library/"
@@ -56,30 +56,63 @@ class Area:
 
 
 AREAS: tuple[Area, ...] = (
-    Area("product", "Product docs", "Hand-written guides for the desktop app, protocol and hosted service."),
-    Area("guides", "Guides", "Getting started, the product promise, business model, identities, hosted repositories and imports."),
-    Area("design", "Design", "Protocol and federation design decisions."),
-    Area("engineering", "Engineering", "Quality gates, performance budgets and the definition of done."),
-    Area("security", "Security", "Security boundaries and local integration contracts."),
-    Area("operations", "Operations", "Deployment, recovery, gateways, headless nodes and service runbooks."),
-    Area("mobile", "Mobile", "Mobile node contract, the owned Git engine and Siri on iPhone."),
-    Area("strategy", "Strategy & research", "Launch readiness, weekly briefs and pricing research."),
-    Area("superpowers", "Plans & specs", "Implementation plans and design specs for shipped features."),
+    Area("pillars", "Core documentation", "Architecture, encryption, mirroring, self-hosting, censorship resilience and the threat model."),
+    Area("product", "Product pages", "Hand-written overviews of the desktop app, protocol and hosted service."),
+    Area("guides", "Guides", "Install, use and run ForkMesh: repositories, sync, chat, calls, identities and imports."),
+    Area("protocol", "Protocol & design", "The normative protocol suite, its conformance vectors and design decisions."),
+    Area("security", "Security", "Trust boundaries, keys, private repositories, chat encryption and reviews."),
+    Area("operations", "Operations", "The served stack, fleet tooling, releases, recovery, gateways and headless nodes."),
+    Area("mobile", "Phone apps", "Using ForkMesh on iPhone, Apple Watch and Android."),
+    Area("project", "Project", "Governance, funding and the definition of done."),
+    Area("desktop", "Desktop internals", "How the Qt desktop app and its coding agents are built."),
+    Area("app", "App & website internals", "The Python app, its CPython host, the website and the Go daemon."),
+    Area("native", "Phone app internals", "How the iOS and Android apps are built and kept alike."),
+    Area("marketplace", "Marketplace internals", "Packages, plugins and the Market."),
+    Area("world", "World & Office internals", "The 3D World and the 2D Office."),
+    Area("tools", "Tools & engineering", "Repository tools, conformance suites and engineering rules."),
     Area("schemas", "Schemas & data", "Machine-readable configuration and protocol schemas served verbatim."),
 )
 AREA_BY_KEY = {area.key: area for area in AREAS}
+# Folders that hold internal working notes; they stay in the repository but are
+# not published on the site or in the app bundles.
+UNPUBLISHED_DIRECTORIES = frozenset({"finance", "marketing", "community"})
+# Areas written for people building ForkMesh; the phone bundle leaves them out.
+DEVELOPER_AREAS = frozenset({"desktop", "app", "native", "marketplace", "world", "tools"})
 DIRECTORY_AREAS = {
     "": "guides",
-    "design": "design",
-    "engineering": "engineering",
+    "protocol": "protocol",
+    "design": "protocol",
+    "conformance": "protocol",
     "security": "security",
     "operations": "operations",
+    "disaster-recovery": "operations",
+    "release": "operations",
     "mobile": "mobile",
-    "research": "strategy",
-    "strategy": "strategy",
-    "launch": "strategy",
-    "superpowers": "superpowers",
+    "governance": "project",
+    "funding": "project",
+    "desktop": "desktop",
+    "agents": "desktop",
+    "app": "app",
+    "host": "app",
+    "server": "app",
+    "www": "app",
+    "native": "native",
+    "marketplace": "marketplace",
+    "plugins": "marketplace",
+    "world": "world",
+    "office": "world",
+    "tools": "tools",
+    "engineering": "tools",
 }
+# The core documentation, in reading order.
+PILLARS = (
+    "architecture.md",
+    "encryption.md",
+    "mirroring.md",
+    "self-hosting.md",
+    "censorship-resilience.md",
+    "protocol/threat-model.md",
+)
 # Curated order for the top-level guides; everything else sorts by title.
 GUIDE_ORDER = (
     "README.md",
@@ -111,7 +144,7 @@ PRODUCT_PAGES: tuple[tuple[str, str, str], ...] = (
     ("/docs/contributions/", "Contribution counting", "How ForkMesh counts commits, issues, pull requests, reviews and repositories."),
     ("/docs/protocol/", "Protocol spec", "Signed collaboration objects, routing and the wire format."),
     ("/docs/git-compatibility/", "Git compatibility", "Generated stock-Git support matrix."),
-    ("/docs/cloudflare-worker/", "Relay & website", "The Cloudflare Worker that coordinates discovery and routing."),
+    ("/docs/cloudflare-worker/", "App & relay", "The app on the core nodes: rooms, the repository catalog and room encryption."),
     ("/docs/qt-client/", "Desktop client", "The Qt desktop application."),
 )
 
@@ -174,7 +207,7 @@ def reserved_slugs() -> set[str]:
 
 
 def document_url(relative: str, reserved: set[str] | None = None) -> str:
-    """Hosted URL for a ``www/docs``-relative Markdown path."""
+    """Hosted URL for a ``docs``-relative Markdown path."""
     reserved = reserved_slugs() if reserved is None else reserved
     if relative == "README.md":
         return LIBRARY_URL
@@ -193,8 +226,14 @@ def asset_url(relative: str) -> str:
 
 
 def area_for(relative: str) -> str:
+    if relative in PILLARS:
+        return "pillars"
     directory = relative.split("/")[0] if "/" in relative else ""
     return DIRECTORY_AREAS.get(directory, "guides")
+
+
+def is_published(relative: str) -> bool:
+    return relative.split("/")[0] not in UNPUBLISHED_DIRECTORIES
 
 
 def _guide_rank(relative: str) -> tuple[int, str]:
@@ -257,7 +296,10 @@ def load_catalog(docs_root: Path = DOCS_ROOT) -> Catalog:
         )
         for url, title, description in PRODUCT_PAGES
     ]
-    sources = sorted(path for path in docs_root.rglob("*.md") if path.is_file())
+    sources = sorted(
+        path for path in docs_root.rglob("*.md")
+        if path.is_file() and is_published(path.relative_to(docs_root).as_posix())
+    )
     documents: dict[str, Entry] = {}
     for path in sources:
         relative = path.relative_to(docs_root).as_posix()
@@ -266,12 +308,12 @@ def load_catalog(docs_root: Path = DOCS_ROOT) -> Catalog:
             title="",
             description="",
             area=area_for(relative),
-            source=f"www/docs/{relative}",
-            history_path=f"www/docs/{relative}",
+            source=f"docs/{relative}",
+            history_path=f"docs/{relative}",
         )
     assets: dict[str, Entry] = {}
     for path in sorted(docs_root.rglob("*.json")):
-        if not path.is_file():
+        if not path.is_file() or not is_published(path.relative_to(docs_root).as_posix()):
             continue
         relative = path.relative_to(docs_root).as_posix()
         assets[relative] = Entry(
@@ -280,8 +322,8 @@ def load_catalog(docs_root: Path = DOCS_ROOT) -> Catalog:
             description=_asset_description(path),
             area="schemas",
             kind="asset",
-            source=f"www/docs/{relative}",
-            history_path=f"www/docs/{relative}",
+            source=f"docs/{relative}",
+            history_path=f"docs/{relative}",
         )
 
     for relative, entry in documents.items():
@@ -299,6 +341,8 @@ def load_catalog(docs_root: Path = DOCS_ROOT) -> Catalog:
     def sort_key(item: tuple[str, Entry]):
         relative, entry = item
         order = [area.key for area in AREAS].index(entry.area)
+        if entry.area == "pillars":
+            return (order, PILLARS.index(relative), "", entry.title.lower())
         if entry.area == "guides":
             return (order, *_guide_rank(relative), entry.title.lower())
         return (order, len(GUIDE_ORDER), "", entry.title.lower())
@@ -386,9 +430,9 @@ def _link_rewriter(relative: str, documents: dict[str, Entry], assets: dict[str,
             return target
         path, _, fragment = target.partition("#")
         suffix = f"#{fragment}" if fragment else ""
-        repo_relative = posixpath.normpath(posixpath.join("www/docs", directory, path))
-        if repo_relative.startswith("www/docs/"):
-            inner = repo_relative[len("www/docs/"):]
+        repo_relative = posixpath.normpath(posixpath.join("docs", directory, path))
+        if repo_relative.startswith("docs/"):
+            inner = repo_relative[len("docs/"):]
             if inner in documents:
                 url = documents[inner].url
                 entry.outgoing.add(url)
@@ -470,7 +514,11 @@ def meta_html(entry: Entry) -> str:
 def sidebar_html(catalog: Catalog, current: str) -> str:
     parts: list[str] = []
     for area, members in catalog.grouped():
-        parts.append(f'<section class="dp-nav-group"><h2>{_e(area.label)}</h2>')
+        expanded = area.key == "pillars" or any(entry.url == current for entry in members)
+        parts.append(
+            f'<details class="dp-nav-group"{" open" if expanded else ""}>'
+            f'<summary><h2>{_e(area.label)}</h2></summary>'
+        )
         for entry in members:
             active = " active" if entry.url == current else ""
             aria = ' aria-current="page"' if entry.url == current else ""
@@ -479,7 +527,7 @@ def sidebar_html(catalog: Catalog, current: str) -> str:
                 f' data-search-title="{_e(entry.title)}" data-search-body="{_e(entry.description)}"'
                 f' data-search-href="{_e(entry.url)}">{_e(entry.title)}</a>'
             )
-        parts.append("</section>")
+        parts.append("</details>")
     return "\n".join(parts)
 
 
@@ -777,7 +825,7 @@ def history_page_html(catalog: Catalog) -> str:
     if len(history.commits) > HISTORY_LIMIT:
         body.append(
             f'<p class="dp-note">Showing the {HISTORY_LIMIT} most recent changes of '
-            f'{len(history.commits)}. <a href="{_e(SOURCE_TREE_URL + "www/docs")}">Read the rest '
+            f'{len(history.commits)}. <a href="{_e(SOURCE_TREE_URL + "docs")}">Read the rest '
             "in the repository.</a></p>"
         )
 

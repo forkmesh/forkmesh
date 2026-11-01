@@ -49,5 +49,5 @@ are no toasts.
 - `tests/test_design_system_inventory.py`: the inventory against the real
   sources and the page against the website's page conventions.
 
-See `docs/marketplace/README.md` for the `www.page` socket and desktop rail
+See `docs/marketplace/package-system.md` for the `www.page` socket and desktop rail
 links.

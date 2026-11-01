@@ -1,6 +1,6 @@
 # Diff review on the phone
 
-Both apps show every diff (a branch against its base, one commit, a pull
+Part of the [phone apps docs](README.md). Both apps show every diff (a branch against its base, one commit, a pull
 request's patch, a desktop agent's changes) in one continuous review stream,
 like the desktop's diff pane. The Apple Watch has its own compact review of an
 agent's changes, read through the phone (see [PARITY.md](PARITY.md), section
@@ -60,16 +60,12 @@ One sideways-scrolling row of small buttons:
 
 All settings are saved under `diff/*` in app preferences.
 
-On both platforms the row has no bar behind it (iOS 2026-10-18, Android
-2026-10-20): each button is its own
-glass square with an accent tint when on, like the Inbox squares. The squares
-are 30 pt with a 17 pt icon and 4 pt gaps; 36 pt squares with 20 pt icons
-pushed most of the row off an iPhone screen. Holding any of them shows its
-name in a small popover (`FmHoldName`, `native/ios/ForkMesh/Kit`), and the tap
-that ends the hold is dropped so it does not also flip the switch. Android
-draws the same 30 dp squares with `fmGlass` and shows the name with
-`FmTooltip`, whose long press consumes the release, so the hold does not
-also tap.
+The row has no bar behind it: each button is its own glass square with an
+accent tint when on, like the Inbox squares, 30 pt with a 17 pt icon and 4 pt
+gaps (larger squares push most of the row off an iPhone screen). Holding one
+shows its name in a small popover (iOS `FmHoldName` in
+`native/ios/ForkMesh/Kit`, Android `FmTooltip` over `fmGlass` squares), and the
+release that ends the hold does not also tap.
 
 The **health strip** shows `+A −D` and six pills (Merge, Complexity, Quality,
 Security, Network, Practices), each an icon and score tinted green, orange or
@@ -251,4 +247,4 @@ desktop.
   New events are signed with the `branch-comment` v2 string and posted as
   `{"branch", "event"}` to the pull inbox. A sent comment shows as pending until
   a node writes it into the ledger. See
-  `www/docs/design/pull-review-threads.md`.
+  [pull-review-threads.md](../design/pull-review-threads.md).

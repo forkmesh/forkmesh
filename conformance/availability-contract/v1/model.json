@@ -6,7 +6,7 @@
   "signatureDomain": "forkmesh-availability-contract-report-v1",
   "version": "1.0.0",
   "updated": "2026-09-14",
-  "documentation": "www/docs/availability-contract.md",
+  "documentation": "docs/availability-contract.md",
   "fixture": "conformance/availability-contract/v1/fixture.json",
   "referenceImplementation": "app/src/availability_contract.py",
   "dependsOn": ["conformance/availability-proof/v1/model.json"],

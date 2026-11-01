@@ -1,4 +1,4 @@
--- ForkMesh Next: leaderless cron rotation and DNS health (docs/OPERATIONS.md).
+-- ForkMesh Next: leaderless cron rotation and DNS health (docs/operations/README.md).
 --
 -- host_cron_runs: which core host ran (part of) which cron minute of the
 -- rotating cron coordinator (app/host/forkmesh_host/durable_cluster.py).

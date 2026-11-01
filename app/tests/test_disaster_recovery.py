@@ -23,7 +23,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_PATH = ROOT / "tools" / "forkmesh_disaster_recovery.py"
-DOC = ROOT / "www" / "docs" / "disaster-recovery" / "README.md"
+DOC = ROOT / "docs" / "disaster-recovery" / "README.md"
 
 
 def _load(name, path):
@@ -116,9 +116,9 @@ def _procedure(runbook, procedure_id):
     (lambda r: _procedure(r, "restore-node-backup")["steps"][0]["run"].append("--restore-everything"),
      "forkmesh-mirror-node has no flag --restore-everything"),
     (lambda r: _procedure(r, "choose-good-backup").update(rollback=[]), "procedure choose-good-backup needs rollback"),
-    (lambda r: _procedure(r, "clone-over-lan-without-dns").update(docs=["www/docs/transports.md#no-such-heading"]),
+    (lambda r: _procedure(r, "clone-over-lan-without-dns").update(docs=["docs/transports.md#no-such-heading"]),
      "has no heading #no-such-heading"),
-    (lambda r: r["kit"]["files"].remove("www/docs/transports.md"), "kit.files is missing www/docs/transports.md"),
+    (lambda r: r["kit"]["files"].remove("docs/transports.md"), "kit.files is missing docs/transports.md"),
     (lambda r: r["kit"]["files"].remove("tools/forkmesh_offline_sync.py"),
      "kit.files is missing tools/forkmesh_offline_sync.py"),
     (lambda r: _procedure(r, "clone-over-lan-without-dns").update(topic="removable-media"), "topic local-network has no procedure"),
@@ -276,8 +276,8 @@ def test_kit_refuses_wrong_keys_and_any_change(kit, keys):
         assert report["state"] == "failed"
         return report["problems"]
 
-    assert "digest mismatch: www/docs/offline-sync.md" in broken(
-        lambda d: (d / "www/docs/offline-sync.md").write_text("changed"))
+    assert "digest mismatch: docs/offline-sync.md" in broken(
+        lambda d: (d / "docs/offline-sync.md").write_text("changed"))
     assert "unlisted file in the kit: tools/extra.py" in broken(lambda d: (d / "tools/extra.py").write_text("x"))
     assert "missing file: tools/forkmesh_transports.py" in broken(lambda d: (d / "tools/forkmesh_transports.py").unlink())
     assert any("does not match the manifest" in p or "signature" in p for p in broken(
@@ -415,6 +415,7 @@ def test_exercise_validation_requires_owners_and_matching_evidence():
         assert any("corrective owner" in e for e in errors(lambda r: r["findings"][0].pop("correctiveOwner")))
     other_version = copy.deepcopy(RUNBOOK)
     other_version["updated"] = "2099-01-01"
+    other_version["version"] = exercise["runbookVersion"]
     assert any("changed without a version bump" in e for e in tool.exercise_errors(name, exercise, other_version))
 
 
@@ -473,12 +474,12 @@ def test_documentation_covers_the_contract():
                    tool.ROTATION_SCHEMA, tool.ROTATION_SIGNED_SCHEMA, tool.REPORT_SCHEMA,
                    tool.EXERCISE_SCHEMA, tool.TELEMETRY_SCHEMA):
         assert schema in doc, schema
-    index = (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+    index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
     assert "(disaster-recovery/README.md)" in index and "(disaster-recovery/runbook.md)" in index
 
 
 def test_quality_gate_and_platform_matrix_run_this_suite():
-    config = json.loads((ROOT / "www" / "docs" / "engineering" / "quality-gates.json").read_text())
+    config = json.loads((ROOT / "docs" / "engineering" / "quality-gates.json").read_text())
     gate = next(g for g in config["gates"] if g["id"] == "disaster-recovery-conformance")
     assert "app/tests/test_disaster_recovery.py" in gate["command"]
     assert "disaster-recovery-conformance" in config["profiles"]["core"]

@@ -1,5 +1,9 @@
 # Chat protocol v3: signed, post-quantum, forward-secret chat
 
+Part of [the App docs](README.md); background in
+[encryption](../encryption.md) and the
+[threat model](../protocol/threat-model.md).
+
 Status: adopted 2026-10-16. Replaces RoomSeal v2 (`type:"sealed", v:2`,
 `type:"e2ee-key", v:2`) on every client (iOS `FMCrypto/RoomSeal.swift`,
 Android `crypto/RoomSeal.kt`, desktop `desktop/src/RoomSeal.cpp`, web
@@ -7,7 +11,7 @@ Android `crypto/RoomSeal.kt`, desktop `desktop/src/RoomSeal.cpp`, web
 ignores v2 frames, so nothing can be downgraded. Every client and the server
 are deployed together.
 
-DM rooms (strict policy) now use v4 sealed frames with a per-message ratchet:
+DM rooms (strict policy) use v4 sealed frames with a per-message ratchet:
 [chat-protocol-v4.md](chat-protocol-v4.md). Everything else on this page still
 applies to them.
 
@@ -17,7 +21,7 @@ every client must open: `conformance/chat/v3/vectors.json` (checked by
 
 ## Why
 
-The 2026-10-16 audit of v2 found (details in
+An audit of v2 found (details in
 [chat-private-rooms.md](chat-private-rooms.md)):
 
 1. The server could read future DMs: it holds the outer room passphrase,
@@ -360,7 +364,7 @@ while the focus rule holds.
 
 ## Push notifications
 
-APNs payloads for chat and DMs no longer carry the sender or channel name:
+APNs payloads for chat and DMs carry no sender or channel name:
 the visible title is "New message" and there is no `sender` field. The iOS
 notification service extension opens the v3 frame (the prekeys, identity and
 trust records are in the shared keychain group) and fills the sender and text

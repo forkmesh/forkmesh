@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The production cutover's DNS flip (docs/CUTOVER.md, section "DNS")."""
+"""The production cutover's DNS flip (docs/operations/served-stack.md, section "DNS")."""
 
 from __future__ import annotations
 
