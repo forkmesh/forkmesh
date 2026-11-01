@@ -28,7 +28,9 @@ its views and clipboard live in the Tools feature.
 `StretchScreen`, `SpeechScreen`, `VaultScreen`, `VaultShareScreen`, `VaultSettingsScreen`,
 `TelemetryScreen(focusMetric:logCategory:)`, `TelemetryStrip`, `ReportBugSheet(screen:onFinished:)`,
 `BugReportButton(onReport:)` (a 48 pt glass button the shell places in the prompt bar beside send),
-`DevPerformanceOverlay` (debug builds). Screens are pushed inside the shell's NavigationStack.
+`DevPerformanceOverlay` (debug builds; a resize, such as iPhone Duo folding, drops the dragged
+pill position so it returns to its top-right resting place instead of keeping a point clamped
+to the old size). Screens are pushed inside the shell's NavigationStack.
 The Logs Home package opens TelemetryScreen's Logs tab; the Diagnostics package opens its Stats tab.
 
 ## Telemetry (`AppTelemetry.swift`, `TelemetryLogic.swift`)
