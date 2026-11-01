@@ -121,6 +121,13 @@ object InboxRoutes {
         }
         if (kind == "desktop_ping" && meta.str("sessionId").isNotEmpty()) return Route.Agent(meta.str("sessionId"))
         val number = meta.int("number")
+        when (kind.trim().lowercase()) {
+            "action_approval" -> RepoRef.parse(repo)?.let { if (number > 0) return Route.Pull(it, number, PullTab.Checks) }
+            "action_failed" -> RepoRef.parse(repo)?.let { ref ->
+                val run = meta.long("runId")
+                if (run > 0) return Route.Run(ref, run.toString())
+            }
+        }
         NotificationDeepLink.parse(href)?.let { return route(it) }
         val ref = RepoRef.parse(repo) ?: return null
         return when (kind) {
@@ -152,7 +159,11 @@ object InboxRoutes {
         return when (link.initialTab) {
             RepoDetailTab.Issues -> if (link.number > 0) Route.Issue(ref, link.number) else Route.Repo(ref, RepoSection.Issues)
             RepoDetailTab.Pulls ->
-                if (link.number > 0) Route.Pull(ref, link.number, PullTab.Conversation) else Route.Repo(ref, RepoSection.Pulls)
+                if (link.number > 0) {
+                    Route.Pull(ref, link.number, PullTab.of(link.section) ?: PullTab.Conversation)
+                } else {
+                    Route.Repo(ref, RepoSection.Pulls)
+                }
             RepoDetailTab.Discussions ->
                 if (link.number > 0) Route.Discussion(ref, link.number) else Route.Repo(ref, RepoSection.Discussions)
             RepoDetailTab.Commits ->

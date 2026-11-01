@@ -247,11 +247,22 @@ def test_a_first_time_author_is_never_auto_approved():
         in resolve
     )
     # The startup/settings sweep must not quietly release them either.
-    sweep = _function(ACTIONS, "int MainWindow::autoApproveAwaitingRuns(")
+    sweep = _function(ACTIONS, "void MainWindow::autoApproveAwaitingRuns(")
     assert "if (run.firstTimePullAuthor) {" in sweep
     assert sweep.index("if (run.firstTimePullAuthor) {") < sweep.index(
         "resolveActionApproval(repo, run)"
     )
+
+
+def test_the_auto_approval_sweep_reverifies_off_the_gui_thread():
+    sweep = _function(ACTIONS, "void MainWindow::autoApproveAwaitingRuns(")
+    worker = sweep.index("runOffThread<")
+    assert worker < sweep.index("workflowContentAt(")
+    assert worker < sweep.index("bindActionRepositoryState(")
+    apply = sweep[worker:]
+    assert "findRun(checked.id)" in apply
+    assert "live->status != ActionStatus::AwaitingApproval" in apply
+    assert "live->firstTimePullAuthor" in apply
 
 
 def test_the_gate_survives_a_restart():

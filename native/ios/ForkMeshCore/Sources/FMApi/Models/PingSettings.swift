@@ -392,6 +392,7 @@ public struct PingSettings: Equatable, Sendable {
             PingKindOption(kind: "host_offline", label: "Host went offline", email: true),
             PingKindOption(kind: "timer_finished", label: "Timers and alarms"),
             PingKindOption(kind: "desktop_ping", label: "Pings from your desktop"),
+            PingKindOption(kind: "agent_approval", label: "Agent approvals from your desktop"),
             PingKindOption(kind: "plugin_activity", label: "App package activity"),
         ]),
     ]

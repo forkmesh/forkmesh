@@ -2362,7 +2362,14 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
         side->setMinimumWidth(260);
     }
     body->addWidget(side);
-    body->addWidget(tabs);
+    auto *center = new QWidget;
+    auto *centerLayout = new QVBoxLayout(center);
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->setSpacing(0);
+    centerLayout->addWidget(tabs, 1);
+    centerLayout->addWidget(m_contactsBody, 1);
+    m_contactsBody->hide();
+    body->addWidget(center);
     auto *detail = new QFrame;
     detail->setObjectName(QStringLiteral("crmDetailPanel"));
     detail->setFrameShape(QFrame::StyledPanel);
@@ -5463,8 +5470,6 @@ void CrmFeature::renderSheetTabs(const QString &select)
                 continue;
             // Deleted, here or by another member; its page goes, the table stays.
             QWidget *page = m_tabs->widget(index);
-            if (m_contactsBody->parentWidget() == page)
-                m_contactsPage->layout()->addWidget(m_contactsBody);
             m_tabs->removeTab(index);
             page->deleteLater();
         }
@@ -5520,13 +5525,10 @@ void CrmFeature::syncSheetTab()
 {
     const int index = m_tabs->currentIndex();
     const QString id = sheetTabId(index);
+    m_tabs->setVisible(id.isEmpty());
+    m_contactsBody->setVisible(!id.isEmpty());
     if (id.isEmpty())
         return;
-    QWidget *page = m_tabs->widget(index);
-    if (m_contactsBody->parentWidget() != page) {
-        page->layout()->addWidget(m_contactsBody);
-        m_contactsBody->show();
-    }
     // Selecting the tab's list or pipeline applies its fields and puts its
     // contacts in the table.
     const int sheetIndex = m_sheet->findData(id);
