@@ -103,17 +103,6 @@ struct SessionsPageUi : public QObject {
     QPointer<QLabel> emptyTitle;
     QPointer<QLabel> emptyBody;
     QPointer<ClaudeTranscriptView> transcript;
-    QPointer<QPlainTextEdit> composer;
-    QPointer<QWidget> targetRow;
-    QPointer<QComboBox> toCombo;
-    QPointer<QComboBox> alsoCombo;
-    QPointer<QToolButton> forward;
-    QPointer<QWidget> newRow;
-    QPointer<QComboBox> repoCombo;
-    QPointer<QComboBox> providerCombo;
-    QPointer<QPushButton> send;
-    QPointer<QPushButton> plus;
-    QPointer<QLabel> composerNote;
 
     QPointer<QPushButton> filterButton;
     QPointer<QAction> searchIcon;
@@ -122,14 +111,11 @@ struct SessionsPageUi : public QObject {
     QPointer<QFrame> branchBadge;
     QPointer<QLabel> branchText;
     QPointer<QPushButton> panelToggle;
+    QPointer<QWidget> center;
     QPointer<QWidget> column;
     QVBoxLayout *columnLayout = nullptr;
     QPointer<QWidget> emptyColumn;
-    QVBoxLayout *composerSlot = nullptr;
-    QPointer<QWidget> composerHost;
-    QHBoxLayout *composerHostLayout = nullptr;
     QPointer<QWidget> starters;
-    QPointer<QLabel> composerModel;
     QPointer<forkmesh::ui::SessionSidePanels> details;
     bool next = false;
     bool panelOpen = true;
@@ -740,25 +726,6 @@ void retintSessionsIcons(SessionsPageUi *ui)
         ui->panelToggle->setIcon(sessionsPanelIcon(Theme::color(Theme::Role::FgMuted)));
 }
 
-void placeSessionsComposer(SessionsPageUi *ui)
-{
-    if (!ui || !ui->next || !ui->composerHost || !ui->composerSlot ||
-        !ui->columnLayout || !ui->composerHostLayout)
-        return;
-    const bool centred = ui->newMode;
-    QWidget *target = centred ? ui->emptyColumn.data() : ui->column.data();
-    if (!target || ui->composerHost->parentWidget() == target)
-        return;
-    if (centred) {
-        ui->composerHostLayout->setContentsMargins(0, 0, 0, 0);
-        ui->composerSlot->addWidget(ui->composerHost);
-    } else {
-        ui->composerHostLayout->setContentsMargins(24, 0, 24, 16);
-        ui->columnLayout->addWidget(ui->composerHost);
-    }
-    ui->composerHost->show();
-}
-
 }
 
 QString MainWindow::sessionsTitle(const AgentSession &session) const
@@ -886,6 +853,7 @@ QWidget *MainWindow::buildSessionsSection()
 
     auto *center = new QWidget;
     center->setObjectName(QStringLiteral("sessionsCenter"));
+    ui->center = center;
     center->setAttribute(Qt::WA_StyledBackground, true);
     auto *centerLayout = new QVBoxLayout(center);
     centerLayout->setContentsMargins(0, 0, 0, 0);
@@ -1062,9 +1030,7 @@ QWidget *MainWindow::buildSessionsSection()
         emptyColumnLayout->setSpacing(6);
         emptyColumnLayout->addWidget(ui->emptyTitle);
         emptyColumnLayout->addWidget(ui->emptyBody);
-        ui->composerSlot = new QVBoxLayout;
-        ui->composerSlot->setContentsMargins(0, 22, 0, 0);
-        emptyColumnLayout->addLayout(ui->composerSlot);
+        emptyColumnLayout->addSpacing(22);
         ui->starters = new QWidget(ui->emptyColumn);
         ui->starters->setObjectName(QStringLiteral("sessionsStarters"));
         auto *startersLayout = new QHBoxLayout(ui->starters);
@@ -1106,12 +1072,11 @@ QWidget *MainWindow::buildSessionsSection()
             startersLayout->addWidget(card, 1);
             const QString prompt = starter.at(2);
             connect(card, &QPushButton::clicked, this, [this, prompt] {
-                if (!m_sessionsUi || !m_sessionsUi->composer ||
-                    !m_sessionsUi->composer->isEnabled())
+                if (!m_issueQuickAdd)
                     return;
-                m_sessionsUi->composer->setPlainText(prompt);
-                m_sessionsUi->composer->moveCursor(QTextCursor::End);
-                m_sessionsUi->composer->setFocus(Qt::OtherFocusReason);
+                m_issueQuickAdd->setPlainText(prompt);
+                m_issueQuickAdd->moveCursor(QTextCursor::End);
+                m_issueQuickAdd->setFocus(Qt::OtherFocusReason);
             });
         }
         ui->starters->hide();
@@ -1143,148 +1108,6 @@ QWidget *MainWindow::buildSessionsSection()
         ui->columnLayout->addWidget(ui->centerStack, 1);
     } else {
         centerLayout->addWidget(ui->centerStack, 1);
-    }
-
-    auto *composerBox = new QFrame(center);
-    composerBox->setObjectName(QStringLiteral("sessionsComposer"));
-    auto *composerLayout = new QVBoxLayout(composerBox);
-    if (next)
-        composerLayout->setContentsMargins(10, 12, 8, 8);
-    else
-        composerLayout->setContentsMargins(12, 10, 12, 10);
-    composerLayout->setSpacing(6);
-    ui->composer = new QPlainTextEdit(composerBox);
-    ui->composer->setObjectName(QStringLiteral("sessionsComposerInput"));
-    ui->composer->setTabChangesFocus(true);
-    ui->composer->setFixedHeight(next ? 60 : 84);
-    composerLayout->addWidget(ui->composer);
-
-    auto *controls = new QHBoxLayout;
-    controls->setSpacing(8);
-    ui->plus = new QPushButton(composerBox);
-    ui->plus->setObjectName(next ? QStringLiteral("sessionsPlus")
-                                 : QStringLiteral("ghostButton"));
-    ui->plus->setCursor(Qt::PointingHandCursor);
-    ui->plus->setFixedSize(28, 28);
-    ui->plus->setToolTip(QStringLiteral(
-        "Add files or photos (Ctrl+U), a folder, slash commands, connectors or plugins"));
-    setOcticon(ui->plus, QStringLiteral("plus"), 16);
-    connect(ui->plus, &QPushButton::clicked, this,
-            [this, plus = ui->plus, input = ui->composer] {
-                if (plus && input)
-                    openComposerPlusMenu(plus, input);
-            });
-    installComposerPlusShortcut(ui->composer);
-    controls->addWidget(ui->plus);
-    ui->targetRow = new QWidget(composerBox);
-    auto *targetLayout = new QHBoxLayout(ui->targetRow);
-    targetLayout->setContentsMargins(0, 0, 0, 0);
-    targetLayout->setSpacing(6);
-    auto *toLabel = new QLabel(QStringLiteral("To"), ui->targetRow);
-    toLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    auto *toCombo = new SessionsPickerCombo;
-    toCombo->setParent(ui->targetRow);
-    toCombo->setObjectName(QStringLiteral("sessionsToCombo"));
-    toCombo->setMinimumWidth(180);
-    toCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    toCombo->setMinimumContentsLength(18);
-    ui->toCombo = toCombo;
-    auto *alsoLabel = new QLabel(QStringLiteral("Also send to"), ui->targetRow);
-    alsoLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    auto *alsoCombo = new SessionsPickerCombo;
-    alsoCombo->setParent(ui->targetRow);
-    alsoCombo->setObjectName(QStringLiteral("sessionsAlsoCombo"));
-    alsoCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    alsoCombo->setMinimumContentsLength(14);
-    ui->alsoCombo = alsoCombo;
-    ui->forward = new QToolButton(ui->targetRow);
-    ui->forward->setObjectName(QStringLiteral("sessionsForward"));
-    ui->forward->setText(QString::fromUtf8("Forward last reply to\xE2\x80\xA6"));
-    ui->forward->setToolTip(
-        QStringLiteral("Send this session's latest reply to another session "
-                       "as a message from this session"));
-    ui->forward->setPopupMode(QToolButton::InstantPopup);
-    ui->forward->setCursor(Qt::PointingHandCursor);
-    auto *forwardMenu = new QMenu(ui->forward);
-    ui->forward->setMenu(forwardMenu);
-    targetLayout->addWidget(toLabel);
-    targetLayout->addWidget(toCombo);
-    targetLayout->addWidget(alsoLabel);
-    targetLayout->addWidget(alsoCombo);
-    targetLayout->addWidget(ui->forward);
-    controls->addWidget(ui->targetRow);
-
-    ui->newRow = new QWidget(composerBox);
-    auto *newLayout = new QHBoxLayout(ui->newRow);
-    newLayout->setContentsMargins(0, 0, 0, 0);
-    newLayout->setSpacing(6);
-    auto *repoLabel = new QLabel(QStringLiteral("Repository"), ui->newRow);
-    repoLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    ui->repoCombo = new QComboBox(ui->newRow);
-    ui->repoCombo->setObjectName(QStringLiteral("sessionsRepoCombo"));
-    ui->repoCombo->setMinimumWidth(180);
-    auto *providerLabel = new QLabel(QStringLiteral("Agent"), ui->newRow);
-    providerLabel->setObjectName(QStringLiteral("sessionsComposerLabel"));
-    ui->providerCombo = new QComboBox(ui->newRow);
-    ui->providerCombo->setObjectName(QStringLiteral("sessionsProviderCombo"));
-    for (const auto &[id, label] :
-         QList<QPair<QString, QString>>{
-             {QStringLiteral("claude-code"), QStringLiteral("Claude Code")},
-             {QStringLiteral("codex"), QStringLiteral("Codex")},
-             {QStringLiteral("claude-api"), QStringLiteral("Claude API")},
-             {QStringLiteral("openai"), QStringLiteral("OpenAI")}})
-        ui->providerCombo->addItem(label, id);
-    if (ui->providerCombo->findData(defaultAgentProvider()) < 0)
-        ui->providerCombo->addItem(defaultAgentProvider(), defaultAgentProvider());
-    selectDefaultAgentProvider(ui->providerCombo);
-    newLayout->addWidget(repoLabel);
-    newLayout->addWidget(ui->repoCombo);
-    newLayout->addWidget(providerLabel);
-    newLayout->addWidget(ui->providerCombo);
-    ui->newRow->hide();
-    controls->addWidget(ui->newRow);
-
-    ui->composerNote = new QLabel(composerBox);
-    ui->composerNote->setObjectName(QStringLiteral("sessionsComposerNote"));
-    ui->composerNote->setWordWrap(true);
-    ui->composerNote->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    controls->addWidget(ui->composerNote, 1);
-    if (next) {
-        ui->composerModel = new QLabel(composerBox);
-        ui->composerModel->setObjectName(QStringLiteral("sessionsComposerModel"));
-        ui->composerModel->setTextFormat(Qt::PlainText);
-        ui->composerModel->hide();
-        controls->addWidget(ui->composerModel);
-        ui->send = new QPushButton(composerBox);
-        ui->send->setObjectName(QStringLiteral("sessionsSend"));
-        ui->send->setCursor(Qt::PointingHandCursor);
-        ui->send->setToolTip(QStringLiteral("Send (Enter)"));
-        ui->send->setFixedSize(28, 28);
-        ui->send->setProperty("sessionsRound", true);
-        ui->send->setProperty("nextIconRole", int(Theme::Role::OnAccent));
-        setOcticon(ui->send, QStringLiteral("arrow-left"), 14, 90.0);
-    } else {
-        ui->send = new QPushButton(QStringLiteral("Send"), composerBox);
-        ui->send->setObjectName(QStringLiteral("sessionsSend"));
-        ui->send->setCursor(Qt::PointingHandCursor);
-        setOcticon(ui->send, QStringLiteral("paper-airplane"), 14);
-    }
-    controls->addWidget(ui->send);
-    composerLayout->addLayout(controls);
-    if (next) {
-        ui->composerHost = new QWidget(ui->column);
-        ui->composerHost->setObjectName(QStringLiteral("sessionsComposerHost"));
-        ui->composerHostLayout = new QHBoxLayout(ui->composerHost);
-        ui->composerHostLayout->setContentsMargins(24, 0, 24, 16);
-        ui->composerHostLayout->setSpacing(0);
-        ui->composerHostLayout->addStretch(1);
-        ui->composerHostLayout->addWidget(composerBox, 100);
-        ui->composerHostLayout->addStretch(1);
-        composerBox->setMaximumWidth(760);
-        composerBox->setProperty("sessionsHosted", true);
-        ui->columnLayout->addWidget(ui->composerHost);
-    } else {
-        centerLayout->addWidget(composerBox);
     }
 
     split->addWidget(sidebar);
@@ -1336,60 +1159,6 @@ QWidget *MainWindow::buildSessionsSection()
         if (m_sessionsUi && m_sessionsUi->openId != 0)
             switchToAgentsTab(m_sessionsUi->openId);
     });
-    connect(ui->send, &QPushButton::clicked, this,
-            [this] { sendSessionsComposer(); });
-    toCombo->beforePopup = [this] {
-        if (m_sessionsUi && m_sessionsUi->toCombo)
-            fillSessionsPicker(m_sessionsUi->toCombo,
-                               m_sessionsUi->toCombo->currentData().toInt(), 0,
-                               QString());
-    };
-    alsoCombo->beforePopup = [this] {
-        if (m_sessionsUi && m_sessionsUi->alsoCombo)
-            fillSessionsPicker(m_sessionsUi->alsoCombo,
-                               m_sessionsUi->alsoCombo->currentData().toInt(), 0,
-                               QStringLiteral("No one else"));
-    };
-    connect(forwardMenu, &QMenu::aboutToShow, this, [this, forwardMenu] {
-        forwardMenu->clear();
-        const int from = m_sessionsUi ? m_sessionsUi->openId : 0;
-        if (from == 0 || sessionsLastReply(from).isEmpty()) {
-            forwardMenu->addAction(QStringLiteral("No reply to forward yet"))
-                ->setEnabled(false);
-            return;
-        }
-        SessionsPickerCombo picker;
-        fillSessionsPicker(&picker, 0, from, QString());
-        for (int row = 0; row < picker.count(); ++row) {
-            const int to = picker.itemData(row).toInt();
-            forwardMenu->addAction(picker.itemText(row), this, [this, from, to] {
-                QString why;
-                if (forwardLastSessionReply(from, to, &why))
-                    flashMessage(QStringLiteral("Forwarded the last reply of "
-                                                "session #%1 to session #%2.")
-                                     .arg(from)
-                                     .arg(to));
-                else
-                    flashMessage(why, true);
-            });
-        }
-        if (forwardMenu->isEmpty())
-            forwardMenu->addAction(QStringLiteral("No other session"))
-                ->setEnabled(false);
-    });
-
-    ui->composer->installEventFilter(new SessionsEventHook(
-        [this](QObject *, QEvent *event) {
-            if (event->type() != QEvent::KeyPress)
-                return false;
-            auto *key = static_cast<QKeyEvent *>(event);
-            if ((key->key() != Qt::Key_Return && key->key() != Qt::Key_Enter) ||
-                (key->modifiers() & Qt::ShiftModifier))
-                return false;
-            sendSessionsComposer();
-            return true;
-        },
-        ui->composer));
     page->installEventFilter(new SessionsEventHook(
         [this](QObject *, QEvent *event) {
             if (event->type() == QEvent::Show && m_sessionsUi)
@@ -1400,6 +1169,17 @@ QWidget *MainWindow::buildSessionsSection()
             return false;
         },
         page));
+    QWidget *composerPane = next ? ui->column.data() : center;
+    composerPane->installEventFilter(new SessionsEventHook(
+        [this](QObject *, QEvent *event) {
+            if (event->type() == QEvent::Show || event->type() == QEvent::Hide)
+                QTimer::singleShot(0, this, [this] { updateQuickAddEnterTarget(); });
+            if (event->type() == QEvent::Show || event->type() == QEvent::Hide ||
+                event->type() == QEvent::Resize)
+                schedulePositionGlobalFooterOverlays();
+            return false;
+        },
+        composerPane));
 
     connect(ui->transcript, &ClaudeTranscriptView::referenceActivated, this,
             &MainWindow::openAgentTranscriptReference);
@@ -1514,15 +1294,15 @@ QWidget *MainWindow::buildSessionsSection()
                     if (item->data(kSessionAddableRole).toBool() &&
                         at.x() >= rect.right() - 26) {
                         startNewSessionInSessionsPage();
-                        if (!m_sessionsUi || !m_sessionsUi->repoCombo)
+                        if (!m_issuesRepoCombo)
                             return true;
                         for (int index = 0; index < m_repositories.size(); ++index) {
                             const RepositoryRecord &repo = m_repositories.at(index);
                             if (repo.owner + QLatin1Char('/') + repo.name != key)
                                 continue;
-                            const int row = m_sessionsUi->repoCombo->findData(index);
+                            const int row = m_issuesRepoCombo->findData(index);
                             if (row >= 0) {
-                                m_sessionsUi->repoCombo->setCurrentIndex(row);
+                                m_issuesRepoCombo->setCurrentIndex(row);
                                 break;
                             }
                         }
@@ -2413,94 +2193,52 @@ void MainWindow::fillSessionsPicker(QComboBox *combo, int keepId, int excludeId,
 void MainWindow::refreshSessionsComposer()
 {
     SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer)
+    if (!ui)
         return;
-    ui->targetRow->setVisible(!ui->newMode);
-    ui->newRow->setVisible(ui->newMode);
-    placeSessionsComposer(ui);
     if (ui->starters)
         ui->starters->setVisible(ui->newMode);
-    if (ui->composerModel)
-        ui->composerModel->hide();
-    if (ui->newMode) {
-        if (ui->repoCombo->property("sessionsRepoCount").toInt() !=
-                int(m_repositories.size()) ||
-            ui->repoCombo->count() == 0) {
-            const int keep = ui->repoCombo->count() > 0
-                                 ? ui->repoCombo->currentData().toInt()
-                                 : resolveAgentRepositoryIndex(m_repoDetailIndex);
-            QSignalBlocker block(ui->repoCombo);
-            ui->repoCombo->clear();
-            for (int index = 0; index < m_repositories.size(); ++index) {
-                const RepositoryRecord &repo = m_repositories.at(index);
-                if (repo.previewOnly || repo.localPath.trimmed().isEmpty())
-                    continue;
-                ui->repoCombo->addItem(repo.owner + QLatin1Char('/') + repo.name,
-                                       index);
-            }
-            const int at = ui->repoCombo->findData(keep);
-            ui->repoCombo->setCurrentIndex(at >= 0 ? at : 0);
-            ui->repoCombo->setProperty("sessionsRepoCount",
-                                       int(m_repositories.size()));
-        }
-        const bool canStart = ui->repoCombo->count() > 0;
-        ui->composer->setEnabled(canStart);
-        ui->send->setEnabled(canStart);
-        if (ui->plus)
-            ui->plus->setEnabled(canStart);
-        ui->composer->setPlaceholderText(
-            QString::fromUtf8("Describe the task for the new session\xE2\x80\xA6"));
-        ui->composerNote->setText(
-            canStart ? QString()
-                     : QStringLiteral("Add a repository with a local checkout "
-                                      "to start a session."));
+    updateQuickAddEnterTarget();
+    schedulePositionGlobalFooterOverlays();
+}
+
+int MainWindow::sessionsComposerTarget(QString *blocked) const
+{
+    const SessionsPageUi *ui = m_sessionsUi;
+    if (!ui || ui->newMode || ui->openId == 0 || !sessionsPageOnScreen())
+        return 0;
+    const int id = ui->openId;
+    if (blocked) {
+        if (sessionsDesktopRow(id))
+            *blocked = QStringLiteral("This session belongs to the Claude app, so it can "
+                                      "only be watched here. Right-click it and pick Open "
+                                      "in Claude app to reply, or send its last reply to "
+                                      "another session.");
+        else if (isExternalSession(id) && !isCloudSession(id) &&
+                 !outsideAgentSteerable(id))
+            *blocked = QStringLiteral("This Claude Code session runs outside ForkMesh "
+                                      "without a messaging socket, so it can only be "
+                                      "watched. Send its last reply to another session "
+                                      "instead.");
+    }
+    return id;
+}
+
+QWidget *MainWindow::sessionsComposerPane() const
+{
+    if (!m_sessionsUi)
+        return nullptr;
+    return m_sessionsUi->next ? m_sessionsUi->column.data()
+                              : m_sessionsUi->center.data();
+}
+
+void MainWindow::sessionsComposerSent(int sessionId)
+{
+    SessionsPageUi *ui = m_sessionsUi;
+    if (!ui || sessionId == 0 || sessionId != ui->openId)
         return;
-    }
-    const AgentSession *session =
-        ui->openId == 0 ? nullptr : sessionsFind(ui->openId);
-    QString note;
-    bool enabled = session != nullptr;
-    if (!session) {
-        note = QStringLiteral("Open a session or start a new one.");
-    } else if (sessionsDesktopRow(session->id)) {
-        enabled = false;
-        note = QStringLiteral("This session belongs to the Claude app, so it can only "
-                              "be watched here. Right-click it and pick Open in Claude "
-                              "app to reply, or forward its reply to another session.");
-    } else if (isExternalSession(session->id) && !isCloudSession(session->id) &&
-               !outsideAgentSteerable(session->id)) {
-        enabled = false;
-        note = QStringLiteral("This Claude Code session runs outside ForkMesh "
-                              "without a messaging socket, so it can only be "
-                              "watched. Forward its reply to another session "
-                              "instead.");
-    }
-    ui->composer->setEnabled(enabled);
-    ui->send->setEnabled(enabled);
-    if (ui->plus)
-        ui->plus->setEnabled(enabled);
-    if (ui->composerModel && session) {
-        QStringList parts;
-        const QString mode = sessionsModeLabel(*session);
-        if (!mode.isEmpty())
-            parts << mode;
-        QString model = agentModelLabel(session->model);
-        if (model.isEmpty())
-            model = cliProviderLabel(session->provider);
-        if (!model.trimmed().isEmpty())
-            parts << model.trimmed();
-        ui->composerModel->setText(parts.join(QString::fromUtf8(" \xC2\xB7 ")));
-        ui->composerModel->setVisible(!parts.isEmpty());
-    }
-    ui->forward->setEnabled(session != nullptr);
-    ui->toCombo->setEnabled(enabled);
-    ui->alsoCombo->setEnabled(enabled);
-    ui->composerNote->setText(note);
-    ui->composer->setPlaceholderText(
-        session ? QString::fromUtf8("Message #%1 \xE2\x80\x94 Enter sends, "
-                                    "Shift+Enter adds a line")
-                      .arg(session->id)
-                : QString());
+    if (ui->transcript)
+        ui->transcript->jumpToBottom();
+    scheduleSessionsPageRefresh();
 }
 
 void MainWindow::refreshSessionsRelayStrip()
@@ -2670,10 +2408,6 @@ void MainWindow::openSessionInSessionsPage(int sessionId)
             }
         }
     }
-    if (changed) {
-        fillSessionsPicker(ui->toCombo, sessionId, 0, QString());
-        fillSessionsPicker(ui->alsoCombo, 0, 0, QStringLiteral("No one else"));
-    }
     refreshSessionsHeader();
     refreshSessionsComposer();
     refreshSessionsRelayStrip();
@@ -2708,9 +2442,9 @@ void MainWindow::startNewSessionInSessionsPage()
     }
     ui->emptyTitle->setText(QStringLiteral("Start a new session"));
     ui->emptyBody->setText(
-        QStringLiteral("Choose the repository and the agent below, describe the "
-                       "task, and press Enter. The session opens here and its "
-                       "transcript streams in as it works."));
+        QStringLiteral("Describe the task in the composer below and press "
+                       "Enter. The session starts in the repository and with "
+                       "the agent the composer has picked."));
     ui->centerStack->setCurrentIndex(0);
     if (ui->list) {
         QSignalBlocker block(ui->list);
@@ -2720,7 +2454,8 @@ void MainWindow::startNewSessionInSessionsPage()
     refreshSessionsHeader();
     refreshSessionsComposer();
     refreshSessionsRelayStrip();
-    ui->composer->setFocus(Qt::OtherFocusReason);
+    if (m_issueQuickAdd)
+        m_issueQuickAdd->setFocus(Qt::OtherFocusReason);
 }
 
 void MainWindow::prepareSessionsTranscript(int sessionId)
@@ -3016,53 +2751,6 @@ void MainWindow::renderSessionsTranscriptSlice(quint64 generation)
     }
 }
 
-void MainWindow::sendSessionsComposer()
-{
-    SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer || !ui->composer->isEnabled())
-        return;
-    const QString text = ui->composer->toPlainText().trimmed();
-    if (text.isEmpty())
-        return;
-    if (ui->newMode) {
-        const int repoIndex =
-            ui->repoCombo->count() > 0 ? ui->repoCombo->currentData().toInt() : -1;
-        const QString provider = ui->providerCombo->currentData().toString();
-        const int id = startAdHocAgentForRepo(repoIndex, text, provider,
-                                              /*createPr=*/false, QString(),
-                                              QString(), /*genie=*/false,
-                                              /*switchToTab=*/false);
-        if (id == 0)
-            return;
-        ui->composer->clear();
-        openSessionsPanels(ui);
-        refreshSessionsList();
-        openSessionInSessionsPage(id);
-        return;
-    }
-    int to = ui->toCombo ? ui->toCombo->currentData().toInt() : 0;
-    if (to == 0)
-        to = ui->openId;
-    const int also = ui->alsoCombo ? ui->alsoCombo->currentData().toInt() : 0;
-    if (to == 0)
-        return;
-    const auto deliver = [this](int target, const QString &message) {
-        if (isExternalSession(target) && !isCloudSession(target))
-            deliverToExternalSession(target, message);
-        else
-            sendPromptToAgentSession(target, message);
-    };
-    deliver(to, text);
-    if (also != 0 && also != to)
-        deliver(also, text);
-    ui->composer->clear();
-    if (ui->alsoCombo)
-        ui->alsoCombo->setCurrentIndex(0);
-    if (to == ui->openId && ui->transcript)
-        ui->transcript->jumpToBottom();
-    scheduleSessionsPageRefresh();
-}
-
 void MainWindow::deliverToExternalSession(int sessionId, const QString &text)
 {
     const auto surfaced = m_externalSurfaced.constFind(sessionId);
@@ -3247,24 +2935,27 @@ void MainWindow::showSessionsContextMenu(int sessionId, const QPoint &globalPos)
         return;
     const bool outside = isExternalSession(sessionId) && !isCloudSession(sessionId);
     QMenu menu(this);
-    if (sessionsDesktopRow(sessionId)) {
-        const QString uuid = sessionsOutsideSession(sessionId).uuid;
-        QAction *open = menu.addAction(QStringLiteral("Open in Claude app"), this,
-                                       [this, uuid] { queueClaudeDesktopLink(uuid, true); });
-        open->setEnabled(forkmesh::claudedesktop::isSessionId(uuid));
-        QMenu *message =
+    const auto addForward = [this, &menu, sessionId] {
+        QMenu *forward =
             menu.addMenu(QString::fromUtf8("Send its last reply to\xE2\x80\xA6"));
         SessionsPickerCombo picker;
         fillSessionsPicker(&picker, 0, sessionId, QString());
         for (int row = 0; row < picker.count(); ++row) {
             const int to = picker.itemData(row).toInt();
-            message->addAction(picker.itemText(row), this, [this, sessionId, to] {
+            forward->addAction(picker.itemText(row), this, [this, sessionId, to] {
                 QString why;
                 if (!forwardLastSessionReply(sessionId, to, &why) && !why.isEmpty())
                     flashMessage(why, true);
             });
         }
-        message->setEnabled(!message->isEmpty());
+        forward->setEnabled(!forward->isEmpty());
+    };
+    if (sessionsDesktopRow(sessionId)) {
+        const QString uuid = sessionsOutsideSession(sessionId).uuid;
+        QAction *open = menu.addAction(QStringLiteral("Open in Claude app"), this,
+                                       [this, uuid] { queueClaudeDesktopLink(uuid, true); });
+        open->setEnabled(forkmesh::claudedesktop::isSessionId(uuid));
+        addForward();
         menu.exec(globalPos);
         return;
     }
@@ -3295,6 +2986,7 @@ void MainWindow::showSessionsContextMenu(int sessionId, const QPoint &globalPos)
                            [this, sessionId, to] { promptSessionsMessage(sessionId, to); });
     }
     message->setEnabled(!message->isEmpty());
+    addForward();
     menu.addSeparator();
     menu.addAction(QString::fromUtf8("Delete\xE2\x80\xA6"), this, [this, sessionId] {
         deleteAgentSessionFromRow(sessionId);
@@ -3337,28 +3029,28 @@ int MainWindow::testSessionsTranscriptMatches(const QString &text)
     return matches;
 }
 
-void MainWindow::testSessionsComposerSend(const QString &text, int alsoTo)
+void MainWindow::testSessionsComposerSend(const QString &text)
 {
-    SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer)
+    if (!m_issueQuickAdd || !m_quickAddSendToAgentButton)
         return;
-    if (alsoTo != 0 && ui->alsoCombo) {
-        fillSessionsPicker(ui->alsoCombo, alsoTo, 0, QStringLiteral("No one else"));
-    }
-    ui->composer->setPlainText(text);
-    QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-    QCoreApplication::sendEvent(ui->composer, &press);
+    m_issueQuickAdd->setPlainText(text);
+    m_quickAddSendToAgentButton->click();
 }
 
 QString MainWindow::testSessionsComposerState() const
 {
-    const SessionsPageUi *ui = m_sessionsUi;
-    if (!ui || !ui->composer)
-        return QString();
-    return QStringLiteral("%1|%2|%3")
-        .arg(ui->composer->isEnabled() ? 1 : 0)
-        .arg(ui->toCombo ? ui->toCombo->currentData().toInt() : 0)
-        .arg(ui->composerNote ? ui->composerNote->text() : QString());
+    QString blocked;
+    const int target = sessionsComposerTarget(&blocked);
+    const QWidget *pane = sessionsComposerPane();
+    const bool docked =
+        pane && m_footerDock && m_globalOverlayHost && m_footerDock->isVisible() &&
+        m_footerDock->width() == pane->width() &&
+        m_footerDock->x() == pane->mapTo(m_globalOverlayHost, QPoint()).x();
+    return QStringLiteral("%1|%2|%3|%4")
+        .arg(blocked.isEmpty() ? 1 : 0)
+        .arg(target)
+        .arg(docked ? 1 : 0)
+        .arg(blocked);
 }
 
 QStringList MainWindow::testSessionsRelayStrip() const

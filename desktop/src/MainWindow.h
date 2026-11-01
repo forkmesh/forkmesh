@@ -1047,7 +1047,7 @@ public:
     int testSessionsOpenId() const;
     bool testSessionsTranscriptIdle() const;
     int testSessionsTranscriptMatches(const QString &text);
-    void testSessionsComposerSend(const QString &text, int alsoTo = 0);
+    void testSessionsComposerSend(const QString &text);
     QString testSessionsComposerState() const;
     QStringList testSessionsRelayStrip() const;
     void testCloudLogMonitorLine(const QString &line)
@@ -6064,7 +6064,9 @@ private:
     void readSessionsExternalTranscript(int sessionId);
     void scheduleSessionsTranscriptSlice();
     void renderSessionsTranscriptSlice(quint64 generation);
-    void sendSessionsComposer();
+    int sessionsComposerTarget(QString *blocked = nullptr) const;
+    QWidget *sessionsComposerPane() const;
+    void sessionsComposerSent(int sessionId);
     void deliverToExternalSession(int sessionId, const QString &text);
     void showSessionsContextMenu(int sessionId, const QPoint &globalPos);
     void promptSessionsMessage(int fromId, int toId);
