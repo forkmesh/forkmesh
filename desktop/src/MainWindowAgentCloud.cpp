@@ -2435,6 +2435,9 @@ int MainWindow::retireMergedCloudAgentSessions(const QString &owner,
 // under it goes to the relay. 0 when what is on screen is not a cloud run.
 int MainWindow::quickAddCloudFollowUpSessionId() const
 {
+    if (const int open = sessionsComposerTarget();
+        open != 0 && isCloudSession(open))
+        return m_cloudAgentSessions.contains(open) ? open : 0;
     if (!isCloudSession(m_selectedAgentSessionId) ||
         !m_cloudAgentSessions.contains(m_selectedAgentSessionId))
         return 0;

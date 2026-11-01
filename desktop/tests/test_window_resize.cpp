@@ -16815,20 +16815,21 @@ void checkSessionsPage(MainWindow &window)
 
     window.testSetAgentSessionLiveTransport(first.id, true);
     window.testSetAgentSessionLiveTransport(second.id, true);
-    check(window.testSessionsComposerState().startsWith(
-              QStringLiteral("1|%1|").arg(first.id)),
-          QStringLiteral("the composer is enabled and addressed to the open session "
-                         "(%1)")
+    check(waitUntil([&] {
+              return window.testSessionsComposerState().startsWith(
+                  QStringLiteral("1|%1|1|").arg(first.id));
+          }),
+          QStringLiteral("the global composer docks over the Sessions column and "
+                         "is addressed to the open session (%1)")
               .arg(window.testSessionsComposerState()));
-    window.testSessionsComposerSend(QStringLiteral("please cover the relay strip"),
-                                    second.id);
+    window.testSessionsComposerSend(QStringLiteral("please cover the relay strip"));
     check(waitUntil([&] {
               return window.testSessionsTranscriptIdle() &&
                      window.testSessionsTranscriptMatches(
                          QStringLiteral("please cover the relay strip")) > 0;
           }),
-          QStringLiteral("Enter in the composer sends through "
-                         "sendPromptToAgentSession and the turn shows live"));
+          QStringLiteral("sending from the global composer reaches the open session "
+                         "through sendPromptToAgentSession and the turn shows live"));
 
     QString why;
     check(!window.relayBetweenSessions(planner.id, first.id,
@@ -16844,12 +16845,9 @@ void checkSessionsPage(MainWindow &window)
               return window.testSessionsOpenId() == second.id &&
                      window.testSessionsTranscriptIdle() &&
                      window.testSessionsTranscriptMatches(
-                         QStringLiteral("please cover the relay strip")) > 0 &&
-                     window.testSessionsTranscriptMatches(
                          QStringLiteral("another agent, not the user")) > 0;
           }),
-          QStringLiteral("Also send to reached the second session and the "
-                         "forwarded reply arrived wrapped as an agent message"));
+          QStringLiteral("the forwarded reply arrived wrapped as an agent message"));
     check(window.testSessionsRelayStrip().join(QLatin1Char(' ')).contains(
               QStringLiteral("#%1").arg(first.id)),
           QStringLiteral("the strip shows the conversation between sessions (%1)")

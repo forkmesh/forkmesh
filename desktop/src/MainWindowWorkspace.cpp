@@ -2195,7 +2195,7 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
              QStringLiteral("Delete session"));
 }
 
-void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
+void NextAccess::placeWorkspaceComposer(MainWindow &window, QWidget *pane)
 {
     if (!window.m_footerDock || !window.m_promptOverlayHost)
         return;
@@ -2204,7 +2204,7 @@ void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
         return;
     Chrome *chrome = chromeOf(window);
     const bool centred = chrome && chrome->applied && chrome->composerReady &&
-                         overDetail && !window.m_promptOverlayCollapsed &&
+                         pane && !window.m_promptOverlayCollapsed &&
                          !window.m_promptOverlayFloating &&
                          !window.m_promptOverlayDetached;
     if (chrome && chrome->composerReady && centred != chrome->composerDocked) {
@@ -2250,7 +2250,7 @@ void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
     window.m_promptOverlayHost->setFixedHeight(host);
     if (window.m_issueQuickAdd)
         window.m_issueQuickAdd->setMaximumHeight(QWIDGETSIZE_MAX);
-    const int available = window.m_agentDetail ? window.m_agentDetail->width() : 0;
+    const int available = pane->width();
     const int side = qMax(kComposerSidePad, (available - kComposerWidth) / 2);
     row->setContentsMargins(side, 8, side, kComposerBottomPad);
     row->invalidate();

@@ -921,6 +921,8 @@ void MainWindow::updateAgentActionState()
 // names an agent.
 int MainWindow::quickAddFollowUpAgentSessionId() const
 {
+    if (const int open = sessionsComposerTarget(); open > 0)
+        return open;
     const QWidget *agentOutput = m_agentOutputStack;
     if (m_selectedAgentSessionId >= 0 && agentOutput && agentOutput->isVisible())
         return m_selectedAgentSessionId;
@@ -1047,9 +1049,12 @@ void MainWindow::updateQuickAddEnterTarget()
         refreshQuickAddSendToChannelButton();
         return;
     }
-    const int target = quickAddFollowUpAgentSessionId();
+    const int sessionsOpen = sessionsComposerTarget();
+    const int target = sessionsOpen != 0 ? sessionsOpen
+                                         : quickAddFollowUpAgentSessionId();
     const bool room = !promptChatRoom().isEmpty();
-    const bool toAgent = target >= 0 && !room && m_quickAddSendToAgentButton;
+    const bool toAgent = (target >= 0 || sessionsOpen != 0) && !room &&
+                         m_quickAddSendToAgentButton;
     QString pullBranch;
     const AgentSession *pullAgent = quickAddPullDetailAgent(&pullBranch);
     const bool targetingPullAgent = pullAgent && pullAgent->id == target &&

@@ -3,8 +3,8 @@
 Part of [Desktop](README.md). The Sessions page is the Claude-desktop way to
 manage the sessions the [Agents page](agents-ui.md) lists: one list of every
 session (Claude app sessions included), the open session's live transcript,
-side panels with its progress and context, and a composer that talks to it or
-relays between sessions.
+side panels with its progress and context, and the global prompt composer
+docked under the transcript to talk to it.
 
 ## Code map
 
@@ -51,12 +51,15 @@ Rail **Sessions** (`sessionsNavButton`, rail key `sessions`, section
   last six messages to or from the open session; click one to open the other
   session), and the page's own `ClaudeTranscriptView`. It never borrows the
   Agents page's view.
-- **Composer.** Enter sends, Shift+Enter adds a line. **To** defaults to the
-  open session; **Also send to** sends the same text to a second session;
-  **Forward last reply to…** sends the open session's latest reply to another
-  session. In new-session mode the row shows Repository and Agent instead,
-  and Send calls `startAdHocAgentForRepo` without leaving the page, then opens
-  the new session.
+- **Composer.** The page has no composer of its own. The footer prompt
+  (`#promptWrapper`) docks over the centre column, capped at 760 px and
+  centred, the way it docks over the Agents page's detail pane
+  (`positionGlobalFooterOverlays`, `sessionsComposerPane`). Its add button
+  and Enter go to the open session (`sessionsComposerTarget`); with no session
+  open, or in new-session mode, its new button starts one in the repository
+  and agent its own pickers hold. A page-local second composer had drifted
+  out of layout and duplicated the footer prompt, so it was removed;
+  forwarding a reply moved to the row menu.
 
 ## Claude app sessions
 
@@ -105,7 +108,8 @@ ForkMesh registers its own agents there is in
   headings put the fold chevron after the name, as the Claude app does
   (`kSessionTrailingChevronRole`).
 - Opening a Claude app row reads its transcript like an outside session
-  (`sessionsOutsideSession` gives the path), with the composer disabled.
+  (`sessionsOutsideSession` gives the path); sending to it is refused with
+  the reason.
   Its row menu opens it in the Claude app (the `claude://resume` link) and
   offers **Send its last reply to…**; Rename, Fork, Mark as unread and Delete
   are off, as those belong to the Claude app.
@@ -117,7 +121,7 @@ app's Code tab menus.
 
 - **Row:** Open in (Agents, Claude app), Continue, Stop, Pin (P), Mark as
   unread (U), Rename… (R), Fork (F), Move to section, Send message to another
-  session…, Archive (A), Delete… (D). The letters work while the menu is open
+  session…, Send its last reply to…, Archive (A), Delete… (D). The letters work while the menu is open
   (`SessionsMenuKeys`, since Qt does not fire shortcuts of a stand-alone
   popup). A disabled entry's tooltip says why. The list allows
   Ctrl/Shift-click; when the clicked row is in a selection of several, Pin,
@@ -246,8 +250,8 @@ right column in Control Tower
 - **Sending.** Local and cloud sessions go through `sendPromptToAgentSession`.
   An external Claude Code session is messaged through `ClaudePeerMessaging`
   (the same peer check as the phone's outside-session prompt: refused or held
-  messages are reported). One with no messaging socket shows the composer
-  disabled with the reason.
+  messages are reported). Sending to one with no messaging socket is refused
+  with the reason.
 
 ## Messages between sessions
 
@@ -314,8 +318,7 @@ layout (`MainWindowSessions.cpp`, `63-sessions.qss`).
   browser buttons: nothing on this page backs them.
 - **Transcript and composer.**
   - The transcript column is capped at 808 px and centred.
-  - The composer is a centred rounded card with ghost pickers, the open
-    session's mode and model, and a round send button.
-- **New-session mode.** The header is hidden. The composer moves under a
-  centred "Start a new session" heading with three starter cards, which fill
-  the prompt but never send.
+  - The docked footer prompt sits under it, centred, at most 760 px wide.
+- **New-session mode.** The header is hidden. A centred "Start a new session"
+  heading shows three starter cards, which fill the footer prompt but never
+  send.
