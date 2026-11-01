@@ -118,6 +118,7 @@ const backgroundContext = {
   importScripts() {},
   ForkMeshVaultBackground: { install: () => ({ forget: async () => {} }) },
   ForkMeshRepoBackground: { install: () => {} },
+  ForkMeshForumBackground: { install: () => {} },
   async fetch(url, options) {
     const target = new URL(url);
     const body = options.body === undefined ? null : JSON.parse(options.body);

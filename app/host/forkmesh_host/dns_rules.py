@@ -3,9 +3,10 @@
 Pure standard library, so the operator tool can import it from the repo and
 every release carries it inside app/host. The hard guards live here once:
 
-* ``check_name``: a record name must be ``next.forkmesh.com`` or under it;
+* ``check_name``: a record name must be ``app.forkmesh.com``,
+  ``world.forkmesh.com``, or ``next.forkmesh.com`` or under it;
 * ``check_reconciler_name``: the automatic reconciler may only ever touch
-  ``app.next.forkmesh.com`` and ``world.next.forkmesh.com`` (the per-node
+  ``app.forkmesh.com`` and ``world.forkmesh.com`` (the per-node
   ``nN.next`` records are managed by hand with ``next_dns.py ensure``);
 * ``plan_set``: never empties a record set, A records only, TTL 60, DNS only
   (proxied false);
@@ -23,8 +24,8 @@ import socket
 import ssl
 
 ZONE_APEX = "next.forkmesh.com"
-RECONCILER_NAMES = frozenset({"app.next.forkmesh.com",
-                              "world.next.forkmesh.com"})
+PRODUCTION_NAMES = frozenset({"app.forkmesh.com", "world.forkmesh.com"})
+RECONCILER_NAMES = PRODUCTION_NAMES
 TTL = 60
 PROXIED = False
 FAILS_TO_REMOVE = 3
@@ -41,10 +42,13 @@ class DnsGuardError(ValueError):
 
 
 def check_name(name) -> str:
-    """The normalized name, or DnsGuardError unless inside next.forkmesh.com."""
+    """The normalized name, or DnsGuardError unless a production name or
+    inside next.forkmesh.com."""
     value = str(name or "").strip().lower()
     if value.endswith("."):
         value = value[:-1]
+    if value in PRODUCTION_NAMES:
+        return value
     if value != ZONE_APEX and not value.endswith("." + ZONE_APEX):
         raise DnsGuardError("refusing DNS record %r: outside %s"
                             % (name, ZONE_APEX))

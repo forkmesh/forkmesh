@@ -397,8 +397,8 @@ struct FmNeedsDesktopNote: View {
         HStack(alignment: .top, spacing: FmSpace.x2) {
             FmIcon(icon, size: 18, color: fm.warning)
             copy
-            FmMessageTools("\(FmNeedsDesktopNote.headline)\n\(explanation)")
         }
+        .fmMessageTools("\(FmNeedsDesktopNote.headline)\n\(explanation)")
         .padding(FmSpace.x3)
         .background(fm.bgOverlay)
         .clipShape(FmRoundedShape(radius: FmRadius.md))

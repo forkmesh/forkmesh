@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "MainWindowAgentsInternal.h"
+#include "OverflowActionRow.h"
 #include "TaskWorkItems.h"
 
 #include <QCheckBox>
@@ -432,5 +433,17 @@ QString MainWindow::testAgentViewTaskButtonState(int sessionId)
     if (!m_agentViewTaskButton || m_agentViewTaskButton->isHidden())
         return QString();
     return m_agentViewTaskButton->toolTip();
+}
+
+QString MainWindow::testAgentWorkflowButtonState(int sessionId)
+{
+    ensureRepoDetailTabBuilt(3);
+    m_agentWorkflowButtonKey = QStringLiteral("-");
+    refreshAgentWorkflowLink(findAgentSession(sessionId));
+    if (!m_agentWorkflowButton || m_agentWorkflowButton->isHidden() ||
+        !m_agentHeaderActions ||
+        !m_agentHeaderActions->isAncestorOf(m_agentWorkflowButton))
+        return QString();
+    return m_agentWorkflowButton->toolTip();
 }
 #endif

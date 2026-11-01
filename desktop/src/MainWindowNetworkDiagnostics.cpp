@@ -177,6 +177,8 @@ BackoffNetworkAccessManager *requestFirewallManager(QNetworkAccessManager *manag
 
 constexpr int kFirewallRuleDeniedRole = Qt::UserRole + 1;
 constexpr int kFirewallDenyDialogResult = 2;
+constexpr int kFirewallAllowAllDialogResult = 3;
+constexpr qint64 kFirewallAllowAllMsecs = 60 * 1000;
 // On a decision row's first cell: the request it was about.
 constexpr int kFirewallHistoryMethodRole = Qt::UserRole + 2;
 constexpr int kFirewallHistoryUrlRole = Qt::UserRole + 3;
@@ -319,22 +321,46 @@ int restoreDefaultApprovedFirewallRules(BackoffNetworkAccessManager *manager)
     return restored;
 }
 
-// One open prompt per host. The prompt runs inside the request that reached
-// the unlisted host, and the app often fires several requests at one host
-// together (startup's relay reads); each used to stack its own dialog for the
-// same question. Later requests now wait for the open prompt's answer.
 struct PendingFirewallPrompt {
     QPointer<QDialog> dialog;
+    QString host;
     bool decided = false;
     BackoffNetworkAccessManager::FirewallVerdict verdict =
         BackoffNetworkAccessManager::FirewallDenyOnce;
     QString rule;
 };
 
-QHash<QString, std::shared_ptr<PendingFirewallPrompt>> &pendingFirewallPrompts()
+std::shared_ptr<PendingFirewallPrompt> &openFirewallPrompt()
 {
-    static QHash<QString, std::shared_ptr<PendingFirewallPrompt>> prompts;
-    return prompts;
+    static std::shared_ptr<PendingFirewallPrompt> prompt;
+    return prompt;
+}
+
+void waitForFirewallPrompt(const PendingFirewallPrompt &open)
+{
+    if (open.decided || !open.dialog)
+        return;
+    QEventLoop wait;
+    QObject::connect(open.dialog.data(), &QDialog::finished, &wait,
+                     &QEventLoop::quit);
+    QObject::connect(open.dialog.data(), &QObject::destroyed, &wait,
+                     &QEventLoop::quit);
+    wait.exec();
+}
+
+void releaseInputGrabsForFirewallPrompt()
+{
+    for (QWidget *popup = QApplication::activePopupWidget(); popup;) {
+        popup->close();
+        QWidget *next = QApplication::activePopupWidget();
+        if (next == popup)
+            break;
+        popup = next;
+    }
+    if (QWidget *grabber = QWidget::mouseGrabber())
+        grabber->releaseMouse();
+    if (QWidget *grabber = QWidget::keyboardGrabber())
+        grabber->releaseKeyboard();
 }
 } // namespace
 
@@ -1512,6 +1538,26 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
     m_requestFirewallStatus = new QLabel;
     m_requestFirewallStatus->setObjectName("mutedLabel");
     firewallRow->addWidget(m_requestFirewallStatus, 1);
+    m_requestFirewallAllowAllButton = new QPushButton;
+    m_requestFirewallAllowAllButton->setObjectName("repoAction");
+    m_requestFirewallAllowAllButton->setCursor(Qt::PointingHandCursor);
+    setOcticon(m_requestFirewallAllowAllButton, "clock", 14);
+    m_requestFirewallAllowAllTicker = new QTimer(m_requestFirewallAllowAllButton);
+    m_requestFirewallAllowAllTicker->setInterval(1000);
+    connect(m_requestFirewallAllowAllTicker, &QTimer::timeout, this,
+            &MainWindow::refreshFirewallAllowAllButton);
+    connect(m_requestFirewallAllowAllButton, &QPushButton::clicked, this, [this] {
+        auto *manager = requestFirewallManager(m_networkAccess);
+        if (!manager)
+            return;
+        if (manager->firewallAllowingAll())
+            manager->stopAllowingAllFirewall();
+        else
+            manager->allowAllFirewallFor(kFirewallAllowAllMsecs);
+        refreshFirewallAllowAllButton();
+    });
+    firewallRow->addWidget(m_requestFirewallAllowAllButton);
+    refreshFirewallAllowAllButton();
     whitelistLayout->addLayout(firewallRow);
 
     auto *ruleRow = new QHBoxLayout;
@@ -2790,23 +2836,50 @@ MainWindow::promptFirewallRequest(const QString &method, const QUrl &url,
     if (!requestFirewallCanPrompt())
         return BackoffNetworkAccessManager::FirewallDenyOnce;
 
+    auto *manager = requestFirewallManager(m_networkAccess);
     const QString host = url.host().toLower();
-    if (const std::shared_ptr<PendingFirewallPrompt> open =
-            pendingFirewallPrompts().value(host)) {
-        if (!open->decided && open->dialog) {
-            QEventLoop wait;
-            connect(open->dialog.data(), &QDialog::finished, &wait, &QEventLoop::quit);
-            connect(open->dialog.data(), &QObject::destroyed, &wait, &QEventLoop::quit);
-            wait.exec();
+    for (;;) {
+        if (manager && manager->firewallAllowingAll()) {
+            if (ruleOut)
+                ruleOut->clear();
+            return BackoffNetworkAccessManager::FirewallAllowOnce;
         }
-        if (!open->decided)
+        const std::shared_ptr<PendingFirewallPrompt> open = openFirewallPrompt();
+        if (!open)
+            break;
+        waitForFirewallPrompt(*open);
+        if (openFirewallPrompt() == open && !open->dialog)
+            openFirewallPrompt().reset();
+        if (!open->decided && open->dialog)
             return BackoffNetworkAccessManager::FirewallDenyOnce;
-        if (ruleOut && open->verdict != BackoffNetworkAccessManager::FirewallDenyOnce &&
-            !open->rule.isEmpty())
-            *ruleOut = open->rule;
-        return open->verdict;
+        if (open->host == host) {
+            if (!open->decided)
+                return BackoffNetworkAccessManager::FirewallDenyOnce;
+            if (ruleOut &&
+                (open->verdict == BackoffNetworkAccessManager::FirewallAllow ||
+                 open->verdict == BackoffNetworkAccessManager::FirewallDeny) &&
+                !open->rule.isEmpty())
+                *ruleOut = open->rule;
+            else if (ruleOut &&
+                     open->verdict == BackoffNetworkAccessManager::FirewallAllowOnce)
+                ruleOut->clear();
+            return open->verdict;
+        }
+        if (manager && !BackoffNetworkAccessManager::isOnThisMachine(url)) {
+            QString matched;
+            const BackoffNetworkAccessManager::FirewallMatch match =
+                manager->firewallDecision(url, &matched);
+            if (match != BackoffNetworkAccessManager::FirewallUnlisted) {
+                if (ruleOut)
+                    *ruleOut = matched;
+                return match == BackoffNetworkAccessManager::FirewallAllowed
+                           ? BackoffNetworkAccessManager::FirewallAllowOnce
+                           : BackoffNetworkAccessManager::FirewallDenyOnce;
+            }
+        }
     }
 
+    releaseInputGrabsForFirewallPrompt();
     QApplication::alert(this, 0);
     if (!isActiveWindow())
         postNotification(QStringLiteral("ForkMesh firewall"),
@@ -2977,6 +3050,18 @@ MainWindow::promptFirewallRequest(const QString &method, const QUrl &url,
                                     QDialogButtonBox::DestructiveRole);
     deny->setCursor(Qt::PointingHandCursor);
     setOcticon(deny, "x", 16);
+    auto *allowAll = buttons->addButton(QStringLiteral("Allow all for 1 minute"),
+                                        QDialogButtonBox::ActionRole);
+    allowAll->setObjectName("firewallAllowAllButton");
+    allowAll->setAutoDefault(false);
+    allowAll->setCursor(Qt::PointingHandCursor);
+    allowAll->setToolTip(QStringLiteral(
+        "Let every connection through for the next minute without asking, "
+        "this one included. Nothing is remembered, and destinations you "
+        "denied stay denied."));
+    setOcticon(allowAll, "clock", 16);
+    connect(allowAll, &QPushButton::clicked, &dialog,
+            [&dialog] { dialog.done(kFirewallAllowAllDialogResult); });
     auto *allow = buttons->addButton(QStringLiteral("Allow"),
                                      QDialogButtonBox::AcceptRole);
     allow->setCursor(Qt::PointingHandCursor);
@@ -3014,27 +3099,56 @@ MainWindow::promptFirewallRequest(const QString &method, const QUrl &url,
 
     auto pending = std::make_shared<PendingFirewallPrompt>();
     pending->dialog = &dialog;
-    // Record the answer as the dialog closes, before exec() unwinds, so the
-    // requests waiting on this host read it on their way out.
+    pending->host = host;
+    QPointer<BackoffNetworkAccessManager> decidingManager = manager;
     connect(&dialog, &QDialog::finished, &dialog,
-            [pending, ruleEdit](int result) {
+            [pending, ruleEdit, decidingManager](int result) {
         pending->verdict = result == QDialog::Accepted
                                ? BackoffNetworkAccessManager::FirewallAllow
                            : result == kFirewallDenyDialogResult
                                ? BackoffNetworkAccessManager::FirewallDeny
+                           : result == kFirewallAllowAllDialogResult
+                               ? BackoffNetworkAccessManager::FirewallAllowOnce
                                : BackoffNetworkAccessManager::FirewallDenyOnce;
         pending->rule =
             BackoffNetworkAccessManager::canonicalFirewallRule(ruleEdit->text());
         pending->decided = true;
+        if (decidingManager) {
+            if (result == kFirewallAllowAllDialogResult) {
+                decidingManager->allowAllFirewallFor(kFirewallAllowAllMsecs);
+            } else if (!pending->rule.isEmpty() &&
+                       (pending->verdict == BackoffNetworkAccessManager::FirewallAllow ||
+                        pending->verdict == BackoffNetworkAccessManager::FirewallDeny)) {
+                if (pending->verdict == BackoffNetworkAccessManager::FirewallAllow)
+                    decidingManager->addFirewallRule(pending->rule);
+                else
+                    decidingManager->addFirewallDenyRule(pending->rule);
+                QSettings settings;
+                settings.setValue(kRequestFirewallWhitelistSetting,
+                                  decidingManager->firewallRules());
+                settings.setValue(kRequestFirewallDenylistSetting,
+                                  decidingManager->firewallDenyRules());
+            }
+        }
+        if (openFirewallPrompt() == pending)
+            openFirewallPrompt().reset();
     });
-    pendingFirewallPrompts().insert(host, pending);
+    openFirewallPrompt() = pending;
+    dialog.show();
+    dialog.raise();
+    dialog.activateWindow();
     dialog.exec();
-    if (pendingFirewallPrompts().value(host) == pending)
-        pendingFirewallPrompts().remove(host);
+    if (openFirewallPrompt() == pending)
+        openFirewallPrompt().reset();
 
-    if (ruleOut && pending->verdict != BackoffNetworkAccessManager::FirewallDenyOnce &&
+    if (ruleOut &&
+        (pending->verdict == BackoffNetworkAccessManager::FirewallAllow ||
+         pending->verdict == BackoffNetworkAccessManager::FirewallDeny) &&
         !pending->rule.isEmpty())
         *ruleOut = pending->rule;
+    else if (ruleOut &&
+             pending->verdict == BackoffNetworkAccessManager::FirewallAllowOnce)
+        ruleOut->clear();
     return pending->verdict;
 }
 
@@ -3072,6 +3186,34 @@ void MainWindow::warnOutdatedClientVersion()
     });
 }
 
+void MainWindow::refreshFirewallAllowAllButton()
+{
+    if (!m_requestFirewallAllowAllButton)
+        return;
+    auto *manager = requestFirewallManager(m_networkAccess);
+    const bool active = manager && manager->firewallAllowingAll();
+    if (active) {
+        const qint64 seconds = (manager->firewallAllowAllRemainingMs() + 999) / 1000;
+        m_requestFirewallAllowAllButton->setText(
+            QStringLiteral("Stop allowing all (%1 s)").arg(seconds));
+        m_requestFirewallAllowAllButton->setToolTip(QStringLiteral(
+            "Every connection is let through without asking until the timer "
+            "runs out. Click to ask again now."));
+    } else {
+        m_requestFirewallAllowAllButton->setText(
+            QStringLiteral("Allow all for 1 minute"));
+        m_requestFirewallAllowAllButton->setToolTip(QStringLiteral(
+            "Let every connection through for the next minute without asking. "
+            "Nothing is remembered, and destinations you denied stay denied."));
+    }
+    if (m_requestFirewallAllowAllTicker) {
+        if (active && !m_requestFirewallAllowAllTicker->isActive())
+            m_requestFirewallAllowAllTicker->start();
+        else if (!active)
+            m_requestFirewallAllowAllTicker->stop();
+    }
+}
+
 bool MainWindow::authorizeFirewallConnection(const QString &method, const QUrl &url)
 {
     auto *manager = requestFirewallManager(m_networkAccess);
@@ -3101,7 +3243,8 @@ bool MainWindow::authorizeFirewallConnection(const QString &method, const QUrl &
     const QString canonical =
         BackoffNetworkAccessManager::canonicalFirewallRule(rule);
     if (!canonical.isEmpty() &&
-        verdict != BackoffNetworkAccessManager::FirewallDenyOnce) {
+        (verdict == BackoffNetworkAccessManager::FirewallAllow ||
+         verdict == BackoffNetworkAccessManager::FirewallDeny)) {
         if (verdict == BackoffNetworkAccessManager::FirewallAllow)
             manager->addFirewallRule(canonical);
         else
@@ -3112,7 +3255,9 @@ bool MainWindow::authorizeFirewallConnection(const QString &method, const QUrl &
         settings.setValue(kRequestFirewallDenylistSetting,
                           manager->firewallDenyRules());
     }
-    const bool allowed = verdict == BackoffNetworkAccessManager::FirewallAllow;
+    const bool allowed =
+        verdict == BackoffNetworkAccessManager::FirewallAllow ||
+        verdict == BackoffNetworkAccessManager::FirewallAllowOnce;
     recordFirewallRequest(method, url, canonical, allowed);
     return allowed;
 }

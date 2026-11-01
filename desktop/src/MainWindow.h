@@ -1500,6 +1500,12 @@ public:
     }
     void testRemoveChannelGroup(const QString &group) { removeChannelGroup(group); }
     void testSetChannels(const QStringList &channels) { setChannels(channels); }
+    void testStartLocalMesh() { startLocalMesh(); }
+    bool testHasLocalMesh() const { return m_localMesh != nullptr; }
+    bool testCorePackageServiceRunning(const QString &id) const
+    {
+        return corePackageServiceRunning(id);
+    }
     void testSetOfficeConversations(const QStringList &conversations)
     {
         m_officeConversations = conversations;
@@ -3656,6 +3662,7 @@ public:
     }
     QMenu *testAgentTaskLinkMenu(int sessionId);
     QString testAgentViewTaskButtonState(int sessionId);
+    QString testAgentWorkflowButtonState(int sessionId);
     bool testAgentDetailTitleWraps() const;
     QString testRenderAgentDetailTitle(const QString &text);
     QString testAgentStatusCellBadges(int sessionId, const AgentDiffStat &stat) const;
@@ -5195,6 +5202,7 @@ private:
     void takeBackupNow(bool automatic);
     void refreshBackupTable();
     void pruneOldBackups();
+    QStringList partialBackupPaths() const;
     void removePartialBackups();
     QStringList backupExcludeRoots() const;
     void restoreConfigArchive(const QString &archivePath);
@@ -5916,6 +5924,7 @@ private:
     promptFirewallRequest(const QString &method, const QUrl &url,
                           QString *ruleOut);
     bool authorizeFirewallConnection(const QString &method, const QUrl &url);
+    void refreshFirewallAllowAllButton();
     // Says, once a session, that this build is older than the minimum
     // supported release and that is why nothing reaches the network.
     void warnOutdatedClientVersion();
@@ -6626,7 +6635,8 @@ private:
     bool resolveActionApproval(const RepositoryRecord &repo,
                                const ActionRun &run);
     bool approveActionRun(int runId, QString *error = nullptr);
-    int autoApproveAwaitingRuns(const RepositoryRecord &repo);
+    void autoApproveAwaitingRuns(const RepositoryRecord &repo,
+                                 bool announce = false);
     struct WorkflowScanEntry {
         QString path;    // .forkmesh/<file>
         QString content; // the file as it is at the scanned commit
@@ -7048,6 +7058,7 @@ private:
     bool agentSessionHasLiveTransport(int sessionId) const;
     bool handOffAgentSessionToProvider(int sessionId, const QString &provider);
     void applyComposerSelectionToAgentSession(int sessionId);
+    void applyComposerModeToTargetSession();
     void sendPromptToSelectedAgent(const QString &prompt);
 
     void sendPromptToAgentSession(int sessionId, const QString &prompt);
@@ -7991,6 +8002,7 @@ private:
         QString dir;
         QString signature;
         QStringList branches;
+        BranchRefFiles files;
     };
     void requestRepoBranchOrder(const QString &dir) const;
     void applyRepoBranchOrder(const BranchOrderLoad &load);
@@ -12280,6 +12292,8 @@ private:
     };
     QCheckBox *m_requestFirewallEnabledCheck = nullptr;
     QLabel *m_requestFirewallStatus = nullptr;
+    QPushButton *m_requestFirewallAllowAllButton = nullptr;
+    QTimer *m_requestFirewallAllowAllTicker = nullptr;
     QLineEdit *m_requestFirewallRuleEdit = nullptr;
     QTableWidget *m_requestFirewallRulesTable = nullptr;
     QTableWidget *m_requestFirewallHistoryTable = nullptr;
@@ -14470,8 +14484,8 @@ private:
     QToolButton *m_agentStatusPill = nullptr; // compact model + outcome control
     QLabel *m_agentMeta = nullptr;
     QFrame *m_agentMetaPopup = nullptr;
-    QLabel *m_agentWorkflowLink = nullptr;
-    QString m_agentWorkflowLinkKey;
+    QPushButton *m_agentWorkflowButton = nullptr;
+    QString m_agentWorkflowButtonKey;
     QPushButton *m_agentPopOutButton = nullptr;
     QLabel *m_agentNetPanel = nullptr;   // live API-traffic graphic
     QPushButton *m_agentViewPrButton = nullptr;
@@ -15478,7 +15492,7 @@ private:
                               const QString &titledBy);
     void renameAgentSessionInteractive(int sessionId);
     QString claudeInitialSessionTitle(const AgentSession &session) const;
-    void syncClaudePermissionMode(int sessionId);
+    void syncClaudePermissionMode(int sessionId, const QString &cliModeBefore);
     void showClaudeElicitation(int sessionId, const QJsonObject &event);
     void answerClaudeElicitation(int sessionId, const QString &key,
                                  const QString &action, const QJsonObject &content);

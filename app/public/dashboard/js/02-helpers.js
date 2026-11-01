@@ -2234,7 +2234,7 @@
 
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
-  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "forum", "mirrors", "actions", "security"];
   const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an

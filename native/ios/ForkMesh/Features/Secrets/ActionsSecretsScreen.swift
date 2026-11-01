@@ -41,8 +41,7 @@ struct ActionsSecretsScreen: View {
                 Label("Desktop not connected", systemImage: "desktopcomputer")
             } description: {
                 Text("Actions variables and secrets live on your desktop. Pair this phone with it to manage them.")
-            } actions: {
-                FmMessageTools("Desktop not connected. Actions variables and secrets live on your desktop. Pair this phone with it to manage them.")
+                    .fmMessageTools("Desktop not connected. Actions variables and secrets live on your desktop. Pair this phone with it to manage them.")
             }
                 .navigationTitle("Actions secrets")
         }

@@ -480,6 +480,12 @@ public struct PushOpen: Equatable, Hashable, Sendable, CustomStringConvertible {
 
     public static let alarms: Set<String> = ["power"]
 
+    private static let pullHref = try! NSRegularExpression(pattern: "^/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/pulls?/[0-9]+$")
+
+    public static func checksHref(_ href: String) -> String {
+        DartRegex.matches(pullHref, href) ? href + "/checks" : href
+    }
+
     /// The tapped notification's `userInfo` (or the bridge's map). Values print with string
     /// interpolation, trimmed; an href that is not a same-site path is dropped.
     public init(arguments: [AnyHashable: Any]) {
@@ -491,9 +497,11 @@ public struct PushOpen: Equatable, Hashable, Sendable, CustomStringConvertible {
         let origin = field("origin")
         let category = NotificationCategoryId(rawValue: field("category"))
         let opensAgent = category == .agentFinished || category == .agentFailed
+        let sameSite = href.hasPrefix("/") && !href.hasPrefix("//") ? href : ""
+        let checks = category == .actionsApproval || field("kind") == "action_approval"
         self.init(
             topic: field("topic"), alertId: field("alertId"),
-            href: href.hasPrefix("/") && !href.hasPrefix("//") ? href : "",
+            href: checks ? PushOpen.checksHref(sameSite) : sameSite,
             origin: origin.isEmpty ? field("host") : origin, agent: opensAgent ? field("sessionId") : "",
             title: field("title"), subtitle: field("subtitle"), body: field("body"), kind: field("kind"),
             repo: field("repo"), receivedMs: DartCore.intTryParse(field("receivedMs")) ?? 0,

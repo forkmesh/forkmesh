@@ -2,8 +2,8 @@
 """Leaderless sharing of the app/world TLS certificate between core nodes.
 
 No object storage, no DNS token and no fixed issuer. Every core node runs the
-same code and config shape; for each shared name (app.next, world.next) the
-node that should issue or renew is chosen deterministically among the
+same code and config shape; for each shared name (app.forkmesh.com,
+world.forkmesh.com) the node that should issue or renew is chosen deterministically among the
 **live** core nodes: rendezvous hashing on the hostname over the nodes whose
 certsync server answers (self included). If that node dies, the next one in
 rendezvous order takes over at the next sync.

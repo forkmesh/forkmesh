@@ -230,6 +230,59 @@ extension ApiService {
         }
     }
 
+    static let myBugReportsMissing = "This relay cannot list your reports yet. Update the relay and try again."
+
+    public func myBugReports(offset: Int = 0) async -> MyBugReports {
+        var query: [(String, String)] = []
+        if offset > 0 { query.append(("offset", String(offset))) }
+        let response: HTTPResponse
+        do {
+            response = try await http.send(HTTPRequest(
+                method: "GET", url: url("/api/bug-reports/mine", query),
+                headers: withAuth(["Accept": "application/json"]), timeout: 20))
+        } catch {
+            if ApiService.wasCancelled(error) { return .cancelledLoad }
+            return .failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        if response.status == 401 || response.status == 403 {
+            return .failure("Sign in to see the bugs you reported.")
+        }
+        if response.status == 404 || response.status == 405 {
+            return .failure(ApiService.myBugReportsMissing)
+        }
+        guard response.ok, let decoded = try? JSON.parse(response.body), let map = decoded.objectValue else {
+            return .failure("Your reports could not be loaded. Try again in a moment.")
+        }
+        return MyBugReports(json: map)
+    }
+
+    public func confirmBugReportFixed(id: String) async -> MyBugReportConfirmation {
+        let response: HTTPResponse
+        do {
+            response = try await http.send(HTTPRequest(
+                method: "POST", url: url("/api/bug-reports/mine"),
+                headers: withAuth(["Accept": "application/json", "Content-Type": "application/json"]),
+                body: JSON.encodeData(.object(["report": .string(id), "fixed": .bool(true)])), timeout: 20))
+        } catch {
+            return .failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        switch response.status {
+        case 401, 403: return .failure("Sign in to confirm a fix.")
+        case 404 where ApiParse.errorCode(response.body) == "report_missing":
+            return .failure("That report no longer exists.")
+        case 404, 405: return .failure(ApiService.myBugReportsMissing)
+        default: break
+        }
+        guard response.ok, let decoded = try? JSON.parse(response.body), let map = decoded.objectValue else {
+            return .failure("The fix could not be confirmed. Try again in a moment.")
+        }
+        let counts = map.obj("counts")
+        let report = map["report"]?.objectValue.map(MyBugReport.init(json:))
+        return MyBugReportConfirmation(
+            ok: true, report: report, previous: map.str("previous"),
+            counts: Dictionary(uniqueKeysWithValues: counts.keys.map { ($0, counts.int($0)) }))
+    }
+
     // MARK: Profiles and user status
 
     /// `GET /api/accounts/<name>` for a user account, or nil when `key` is not one. A miss is

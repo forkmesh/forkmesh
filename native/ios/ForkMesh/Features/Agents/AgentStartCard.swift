@@ -487,7 +487,7 @@ struct AgentNote: View {
                 .fmText(.bodySmall, color: color, height: 1.4)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools(text)
+                .fmMessageTools(text)
         }
     }
 }

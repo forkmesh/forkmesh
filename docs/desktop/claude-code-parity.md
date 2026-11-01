@@ -105,6 +105,18 @@ wrapping, the same as picking it (the setting is saved and a live run gets the
 new mode on its next message). The key is not taken when the mode picker is
 hidden.
 
+**A picked mode sticks to the session (2026-11-01).** Picking a mode in the
+dropdown, or with Shift+Tab, stores it on the session the composer is aimed at
+right away (`applyComposerModeToTargetSession`) and switches a live Claude
+Code process to it when the CLI allows. Before, the pick was stored only when
+a message was sent, so any redraw of the session (`syncQuickAddControlsToAgentSession`)
+put the old mode back in the dropdown. Also, answering a permission card copies
+the CLI's mode back onto the session (`syncClaudePermissionMode`) only when that
+answer changed the CLI's mode, for example leaving plan mode. A process
+launched under Edit cannot become Auto in the middle of a turn, so the copy
+used to turn a session switched to Auto back into Edit; now Auto stays stored
+and the next launch runs under it.
+
 **`/` opens the command menu.** When the prompt is empty, no chat room is
 open and the composer's **+** button is visible, typing `/` puts the `/` in the prompt and
 opens the "/" menu (`openQuickAddSlashActions`) with its filter focused, so

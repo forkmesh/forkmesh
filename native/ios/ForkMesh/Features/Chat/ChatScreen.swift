@@ -662,7 +662,7 @@ private struct ChatTranscript<Drawer: View>: View {
                 Text(verbatim: "Only ForkMesh posts in this channel.")
                     .fmText(.bodyMedium, color: fm.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .fmMessageTools("Only ForkMesh posts in this channel.", alignment: .center)
+                    .fmMessageTools("Only ForkMesh posts in this channel.")
                     .padding(.horizontal, FmSpace.x4)
                     .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     .chatGlass(RoundedRectangle(cornerRadius: 24, style: .continuous), border: fm.border)

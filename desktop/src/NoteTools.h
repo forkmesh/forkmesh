@@ -54,6 +54,12 @@ inline NoteLink parseNoteLink(const QString &value)
     const QString host = url.host().toLower();
     if (host.isEmpty())
         return {};
+    const QString published = QStringLiteral("/notes/");
+    if (path.startsWith(published)) {
+        const QString id = path.mid(published.size()).toLower();
+        return isNoteId(id) ? NoteLink{id, host, QString(), QString()}
+                            : NoteLink{};
+    }
     const QString prefix = QStringLiteral("/dashboard/notes");
     const QUrlQuery query(url);
     QString id;

@@ -13,6 +13,7 @@ public enum NotificationActionId: String, CaseIterable, Sendable {
     case sendToAgent = "fm.sendToAgent"
     case approvePull = "fm.approvePull"
     case openLog = "fm.openLog"
+    case approveChecks = "fm.approveChecks"
 
     public var title: String {
         switch self {
@@ -27,10 +28,11 @@ public enum NotificationActionId: String, CaseIterable, Sendable {
         case .sendToAgent: return "Send to agent"
         case .approvePull: return "Approve PR"
         case .openLog: return "Open log"
+        case .approveChecks: return "Approve"
         }
     }
 
-    public var requiresAuthentication: Bool { self == .approve || self == .merge || self == .approvePull }
+    public var requiresAuthentication: Bool { self == .approve || self == .merge || self == .approvePull || self == .approveChecks }
     public var isDestructive: Bool { self == .merge || self == .deny }
     public var opensApp: Bool { self == .open || self == .openLog || self == .sendToAgent }
     public var isTextInput: Bool { self == .reply || self == .continueRun }
@@ -44,6 +46,7 @@ public enum NotificationCategoryId: String, CaseIterable, Sendable {
     case mention
     case dm
     case ciFailed = "ci-failed"
+    case actionsApproval = "actions-approval"
     case ping
 
     public var actions: [NotificationActionId] {
@@ -54,11 +57,12 @@ public enum NotificationCategoryId: String, CaseIterable, Sendable {
         case .pullReview: return [.open, .approvePull]
         case .mention, .dm: return [.reply, .markRead]
         case .ciFailed: return [.openLog, .sendToAgent]
+        case .actionsApproval: return [.approveChecks, .open]
         case .ping: return [.open, .markRead]
         }
     }
 
-    public var isTimeSensitive: Bool { self == .agentApproval }
+    public var isTimeSensitive: Bool { self == .agentApproval || self == .actionsApproval }
 
     public static func forPing(kind: String, topic: String = "") -> NotificationCategoryId {
         switch topic.lowercased() {
@@ -73,6 +77,7 @@ public enum NotificationCategoryId: String, CaseIterable, Sendable {
         case "pull_submitted", "review_requested", "pr-review": return .pullReview
         case "mention": return .mention
         case "ci_failed", "ci-failed", "action_failed": return .ciFailed
+        case "action_approval", "actions-approval": return .actionsApproval
         default: return .ping
         }
     }
@@ -89,6 +94,7 @@ public struct NotificationPayload: Equatable, Sendable {
     public var number: Int
     public var channel: String
     public var runId: String
+    public var head: String
 
     public init(category: String, fields: [String: String]) {
         func value(_ key: String) -> String { fields[key]?.trimmingCharacters(in: .whitespaces) ?? "" }
@@ -103,10 +109,11 @@ public struct NotificationPayload: Equatable, Sendable {
         number = Int(value("number")) ?? 0
         channel = value("channel")
         runId = value("runId")
+        head = value("head").lowercased()
     }
 
     public static let userInfoKeys = [
-        "kind", "topic", "alertId", "href", "sessionId", "approvalId", "repo", "number", "channel", "runId", "origin", "host",
+        "kind", "topic", "alertId", "href", "sessionId", "approvalId", "repo", "number", "channel", "runId", "origin", "host", "head",
     ]
 }
 
@@ -121,10 +128,15 @@ public enum NotificationCommand: Equatable, Sendable {
     case retry(sessionId: String)
     case compose(ComposeTarget)
     case approvePull(RepoRef, number: Int)
+    case approveChecks(RepoRef, number: Int, head: String)
     case ignore(reason: String)
 }
 
 public enum NotificationActionRouter {
+    public static func isCommitId(_ text: String) -> Bool {
+        (text.utf8.count == 40 || text.utf8.count == 64) && text.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+
     public static func route(for payload: NotificationPayload) -> Route? {
         switch payload.category {
         case .agentApproval where !payload.sessionId.isEmpty && !payload.approvalId.isEmpty:
@@ -133,6 +145,8 @@ public enum NotificationActionRouter {
             if !payload.sessionId.isEmpty { return .agent(id: payload.sessionId) }
         case .ciFailed:
             if let repo = RepoRef(slug: payload.repo), !payload.runId.isEmpty { return .run(repo, id: payload.runId) }
+        case .actionsApproval:
+            if let repo = RepoRef(slug: payload.repo), payload.number > 0 { return .pull(repo, number: payload.number, tab: .checks) }
         case .dm:
             if !payload.channel.isEmpty { return .dm(user: payload.channel) }
         case .mention:
@@ -183,6 +197,11 @@ public enum NotificationActionRouter {
         case .approvePull:
             guard let repo = RepoRef(slug: payload.repo), payload.number > 0 else { return .ignore(reason: "no pull request") }
             return .approvePull(repo, number: payload.number)
+        case .approveChecks:
+            guard let repo = RepoRef(slug: payload.repo), payload.number > 0, isCommitId(payload.head) else {
+                return .open(route(for: payload), href: payload.href)
+            }
+            return .approveChecks(repo, number: payload.number, head: payload.head)
         }
     }
 }

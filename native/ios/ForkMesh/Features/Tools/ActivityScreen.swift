@@ -213,7 +213,7 @@ private struct ActivityErrorState: View {
                 Text(message)
                     .fmText(.bodyMedium, color: fm.textSecondary)
                     .multilineTextAlignment(.center)
-                FmMessageTools(message)
+                    .fmMessageTools(message)
                 FmTextButton("Retry", icon: "refresh", onPressed: onRetry)
                     .accessibilityHint(Text("Retry network activity"))
             }

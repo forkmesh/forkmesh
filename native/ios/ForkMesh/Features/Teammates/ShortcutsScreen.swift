@@ -215,7 +215,7 @@ struct ShortcutLastOutput: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                FmMessageTools(status.line)
+                    .fmMessageTools(status.line)
             }
         }
     }

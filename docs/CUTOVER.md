@@ -118,7 +118,7 @@ cores must be exported back first.
 | `tools/cutover_dns.py` | `plan`, `flip`, `rollback`, `soa-min-ttl`; only the two production app names, A content must be a core address |
 | `tools/cutover_identity.py` | `plan`, `apply`, `rollback`, `put-www-secret`, `install-data-key`, `restore-data-key` |
 | `tools/cutover_rehost.py` | `--check`, `--apply --root DIR` (refuses a `main` checkout), `--compare` |
-| `deploy/core/render.py` | optional `[production]` table: production host names, certsync names, and `[production.vars]` rendered into `app.env` as `FORKMESH_VAR_*` (secret-looking names are refused) |
+| `deploy/core/render.py` | optional `[production]` table: `FORKMESH_SERVES_PRODUCTION=1` and `[production.vars]` rendered into `app.env` as `FORKMESH_VAR_*` (secret-looking names are refused). The host names are `app_host` / `world_host` at the top of `fleet.toml`. The `app.next` / `world.next` redirect names were retired on 2026-11-01 ([OPERATIONS.md](OPERATIONS.md#dns-health-failover)). |
 
 `next_fleet install nN --steps daemon` re-pins the gateway's
 `routerPublicKey`, `dashboard.canonicalOrigin` and `dashboard.assetsRoot`;

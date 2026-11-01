@@ -77,7 +77,7 @@ struct RepoFileScreen: View {
             VStack(spacing: FmSpace.x2) {
                 Text(error)
                     .multilineTextAlignment(.center)
-                FmMessageTools(error)
+                    .fmMessageTools(error)
             }
             .padding(24)
         } else {

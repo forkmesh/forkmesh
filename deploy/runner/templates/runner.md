@@ -6,7 +6,7 @@ This machine is an **untrusted, outbound-only** runner (docs/PLAN.md Phase 5).
   no FORKMESH_MESH_SECRET, and it is not a WireGuard peer of the core.
 - Inbound traffic: SSH only (nftables). No public hostname.
 - The daemon (`forkmesh-mirror-node`, `"role": "runner"`) claims agent and
-  Actions leases from https://app.next.forkmesh.com, runs one job at a time
+  Actions leases from https://app.forkmesh.com, runs one job at a time
   in its own systemd unit as the unprivileged user `forkmesh-job` (the
   daemon runs as root to start it, with runner.jobUid), pushes the result
   branch with the per-job capability from the lease, and wipes the workdir.

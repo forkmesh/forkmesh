@@ -297,7 +297,7 @@ struct AgentAttachmentViewer: View {
                         .font(.footnote)
                         .foregroundStyle(saveFailed ? Color.red : Color.white.opacity(0.9))
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                        .fmMessageTools(saveStatus, color: Color.white.opacity(0.9))
+                        .fmMessageTools(saveStatus)
                         .padding(.horizontal, 16)
                         .accessibilityIdentifier("inline-notice")
                 }
@@ -362,7 +362,7 @@ struct AgentAttachmentViewer: View {
                         .font(.callout)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
-                    FmMessageTools(problem, color: Color.white.opacity(0.8))
+                        .fmMessageTools(problem)
                 }
                 .foregroundStyle(Color.white.opacity(0.8))
             } else {

@@ -486,7 +486,7 @@ private struct NotePageHeader: View {
                     .accessibilityAddTraits(.isHeader)
             }
             if !page.description.dartTrimmed.isEmpty {
-                NotePreview(markdown: page.description)
+                NotePreview(markdown: page.description, document: false)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(FmSpace.x3)
                     .background(tint.opacity(0.08))

@@ -99,9 +99,9 @@ struct PullReviewScreen: View {
                 Label("Could not load the review", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(error)
+                    .fmMessageTools(error)
             } actions: {
                 Button("Try again") { Task { await session.load() } }
-                FmMessageTools(error)
             }
         } else {
             ProgressView("Loading the pull request…")

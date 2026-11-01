@@ -76,6 +76,8 @@ public enum PackageRoutes {
         case "analytics": return .analytics(section: nil)
         case "competitors": return .competitors
         case "invoices": return .invoices(organization: nil, invoice: nil)
+        case "surveys": return .surveys(organization: nil, survey: nil)
+        case "booking": return .booking(id: nil)
         case "ledger": return .ledger(section: nil)
         case "vault": return .vault(section: nil)
         case "calories": return .calories
@@ -101,6 +103,7 @@ public enum PackageRoutes {
         case "usage": return .usage
         case "rssReader": return .rssReader
         case "instanceFeed": return .instanceFeed(post: nil)
+        case "mastodon": return .mastodon
         case "secureDrive": return .secureDrive
         case "spiderRoom": return .spiderRoom
         case "workflows": return .workflows
@@ -137,7 +140,7 @@ public enum PackageRoutes {
         return MarketPackage.nativeDestinations.first { $0.value == id }?.key
     }
 
-    public static let businessPackageIds = ["crm", "marketing", "analytics", "competitor", "invoices", "ledger"]
+    public static let businessPackageIds = ["crm", "marketing", "analytics", "competitor", "invoices", "surveys", "ledger"]
 
     public static func hubRoutes(installed: Set<String>, adReviewer: Bool = false) -> [(id: String, title: String, route: Route)] {
         var rows: [(id: String, title: String, route: Route)] = [("market", "Market", .market(filter: nil))]
@@ -145,6 +148,7 @@ public enum PackageRoutes {
             ("crm", "CRM", .crm(pipeline: nil)), ("marketing", "Marketing", .marketing(section: nil)),
             ("analytics", "Analytics", .analytics(section: nil)), ("competitor", "Competitors", .competitors),
             ("invoices", "Invoices", .invoices(organization: nil, invoice: nil)),
+            ("surveys", "Surveys", .surveys(organization: nil, survey: nil)),
         ]
         for (id, title, route) in entries where installed.contains(id) { rows.append((id, title, route)) }
         if adReviewer { rows.append(("ads", "Ad review", .ads)) }

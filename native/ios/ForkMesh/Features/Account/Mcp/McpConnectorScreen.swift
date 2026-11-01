@@ -169,7 +169,7 @@ struct McpTokensScreen: View {
             SettingsEmptyNote(
                 title: model.error.isEmpty ? "No tokens" : "Tokens unavailable",
                 text: model.error.isEmpty ? "Create one below and paste it into your MCP client." : model.error)
-                .fmMessageTools(model.error, alignment: .top)
+                .fmMessageTools(model.error)
                 .padding(FmSpace.x4)
         } else {
             VStack(spacing: 0) {

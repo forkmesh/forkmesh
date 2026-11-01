@@ -124,9 +124,17 @@ python3 tools/next_ids.py status n3 n4 n5 r1
 ### DNS health failover
 
 `tools/next_dns.py health-loop --execute` runs as the `fmnext-dns-health`
-user unit on the operator box and manages `app.forkmesh.com`,
-`world.forkmesh.com` and their `next` aliases (one A record per member, AAAA
-for members with IPv6).
+user unit on the operator box and manages `app.forkmesh.com` and
+`world.forkmesh.com` (one A record per member, AAAA for members with IPv6),
+plus each core's own `nN.next.forkmesh.com`.
+
+The old aliases `app.next.forkmesh.com` and `world.next.forkmesh.com` were
+retired on 2026-11-01. They only redirected to the production names. No tool
+writes them now, Caddy no longer serves them and certsync no longer renews
+their certificates. `fleet.toml`'s `app_host` and `world_host` are now the
+production names; `[production]` only switches on production mode and holds
+`[production.vars]`. Delete any leftover `app.next` or `world.next` records
+in the Cloudflare dashboard.
 
 - Every 30 s it sends a TLS-verified `GET /readyz` to each core. A sealed,
   quarantined or locked-down node fails. A read-only core (no rqlite leader,

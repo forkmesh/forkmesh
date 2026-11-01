@@ -269,9 +269,12 @@ fun FmConfirmDialog(
                 if (body != null) {
                     val style = LocalTextStyle.current
                     SelectionContainer {
-                        Text(body, style = style.copy(color = Fm.colors.textSecondary, lineHeight = style.fontSize * 1.4f))
+                        Text(
+                            body,
+                            Modifier.fmMessageTools("$title\n$body"),
+                            style = style.copy(color = Fm.colors.textSecondary, lineHeight = style.fontSize * 1.4f),
+                        )
                     }
-                    FmMessageTools("$title\n$body")
                 }
                 if (fields != null) fields()
             }

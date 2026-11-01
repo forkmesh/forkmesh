@@ -1,0 +1,33 @@
+.sv-wrap { max-width: 720px; margin: 0 auto; padding: 42px 20px 80px; }
+.sv-status { color: var(--muted); line-height: 1.6; }
+.sv-sheet { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 32px; }
+.sv-kicker { margin: 0 0 6px; color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.sv-title { margin: 0; font-size: 24px; line-height: 1.3; }
+.sv-muted { margin: 8px 0 0; color: var(--muted); line-height: 1.6; }
+.sv-note { font-size: 13px; }
+.sv-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sv-questions { display: grid; gap: 26px; margin: 28px 0 0; padding: 0; list-style: none; }
+.sv-question { margin: 0; padding: 0; border: 0; min-width: 0; }
+.sv-question legend, .sv-question > label { display: block; padding: 0; font-weight: 600; line-height: 1.45; }
+.sv-question[data-invalid="true"] legend, .sv-question[data-invalid="true"] > label { color: var(--danger); }
+.sv-required { color: var(--danger); margin-left: 4px; }
+.sv-help { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.sv-choices { display: grid; gap: 8px; margin-top: 12px; }
+.sv-choice { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; line-height: 1.4; }
+.sv-choice:has(input:checked) { border-color: var(--link); }
+.sv-choice input { margin-top: 3px; accent-color: var(--link); }
+.sv-input { box-sizing: border-box; width: 100%; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--foreground); font: inherit; }
+.sv-input:focus { outline: 2px solid var(--link); outline-offset: 1px; }
+textarea.sv-input { min-height: 120px; resize: vertical; }
+.sv-scale { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.sv-scale label { display: grid; place-items: center; min-width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-weight: 600; }
+.sv-scale label:has(input:checked) { border-color: var(--link); background: var(--link); color: var(--background); }
+.sv-scale input { position: absolute; opacity: 0; pointer-events: none; }
+.sv-scale label:has(input:focus-visible) { outline: 2px solid var(--link); outline-offset: 2px; }
+.sv-scale-ends { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+.sv-error { margin: 22px 0 0; color: var(--danger); }
+.sv-actions { margin-top: 26px; }
+.sv-done p { margin: 12px 0 0; line-height: 1.6; }
+.sv-credit { margin-top: 24px; color: var(--muted); font-size: 12.5px; text-align: center; }
+.sv-credit a { color: var(--link); text-decoration: none; }
+@media (max-width: 560px) { .sv-sheet { padding: 22px 18px; } }

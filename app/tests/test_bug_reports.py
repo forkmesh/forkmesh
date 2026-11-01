@@ -160,6 +160,14 @@ class _Runtime:
             return None
 
         async def d1_first(env, sql, *args):
+            if "WHERE report_id=? AND reporter_bi=? AND account=?" in sql:
+                report_id, reporter_bi, account = args
+                for row in runtime.rows:
+                    if (row["report_id"], row["reporter_bi"],
+                            row["account"]) == (report_id, reporter_bi,
+                                                account):
+                        return dict(row, status=row.get("status", "new"))
+                return None
             if "SELECT status FROM bug_reports" in sql:
                 for row in runtime.rows:
                     if row["report_id"] == args[0]:
@@ -184,9 +192,13 @@ class _Runtime:
 
         async def d1_all(env, sql, *args):
             runtime.queries.append((sql, args))
+            mine = "WHERE reporter_bi=? AND account=?" in sql
+            selected = [row for row in runtime.rows
+                        if not mine or (row["reporter_bi"], row["account"])
+                        == tuple(args[:2])]
             if "GROUP BY status" in sql:
                 counts = {}
-                for row in runtime.rows:
+                for row in selected:
                     status = row.get("status", "new")
                     counts[status] = counts.get(status, 0) + 1
                 return [{"status": key, "n": value}
@@ -200,8 +212,10 @@ class _Runtime:
                     key=lambda row: row["chunk_index"])
             if "FROM bug_reports" in sql:
                 *filters, limit, offset = args
+                if mine:
+                    filters = []
                 rows = [dict(row, status=row.get("status", "new"))
-                        for row in runtime.rows
+                        for row in selected
                         if not filters or row.get("status", "new") == filters[0]]
                 rows.sort(key=lambda row: (row["created_at"], row["report_id"]),
                           reverse=True)
@@ -229,6 +243,15 @@ class _Runtime:
                 for row in runtime.rows:
                     if row["report_id"] == report_id:
                         row["status"] = status
+                runtime.updates.append(args)
+            elif "UPDATE bug_reports SET data=?, status='closed'" in sql:
+                data, report_id, reporter_bi, account = args
+                for row in runtime.rows:
+                    if (row["report_id"], row["reporter_bi"],
+                            row["account"]) == (report_id, reporter_bi,
+                                                account):
+                        row["data"] = data
+                        row["status"] = "closed"
                 runtime.updates.append(args)
             elif "UPDATE bug_reports" in sql:
                 runtime.updates.append(args)
@@ -787,6 +810,165 @@ def test_admin_downloads_an_attachment_as_a_private_file():
     assert posted.status == 405
 
 
+# --- A reporter's own reports -------------------------------------------------
+
+def _mine(module, query="", headers=None, method="GET", body=None):
+    return asyncio.run(module["bug_reports_mine_handler"](
+        object(), _Request(
+            method, body, headers,
+            url="https://app.forkmesh.test/api/bug-reports/mine" + query)))
+
+
+def _file_reports_from_two_people(runtime, module):
+    runtime.account = "alice"
+    _submit(module, {"message": "Alice: chat badge never clears.",
+                     "contact": "alice@example.test", "platform": "ios",
+                     "screen": "chat",
+                     "attachments": [{"name": "screen.png",
+                                      "contentType": "image/png",
+                                      "data": "cGl4ZWxz"}]})
+    runtime.now += 1000
+    runtime.account = "bob"
+    _submit(module, {"message": "Bob: the Repos tab spins forever."})
+    runtime.now += 1000
+    runtime.account = ""
+    _submit(module, {"message": "Anonymous: login screen froze."},
+            headers={"cf-connecting-ip": "203.0.113.9"})
+    runtime.now += 1000
+    runtime.account = "alice"
+    _submit(module, {"message": "Alice: settings page is blank."})
+    for row, report_id in zip(runtime.rows, "abcd"):
+        row["report_id"] = report_id * 32
+    for row in runtime.attachments:
+        row["report_id"] = "a" * 32
+
+
+def test_a_reporter_sees_only_their_own_reports_and_their_status():
+    runtime = _Runtime()
+    module = runtime.namespace()
+    _file_reports_from_two_people(runtime, module)
+    runtime.rows[0]["status"] = "triaged"
+
+    response = _mine(module, headers={"authorization": "Bearer token"})
+
+    assert response.status == 200
+    assert response.headers["cache-control"].startswith("no-store")
+    body = response.json
+    assert [item["message"] for item in body["reports"]] == [
+        "Alice: settings page is blank.", "Alice: chat badge never clears."]
+    assert [item["status"] for item in body["reports"]] == ["new", "triaged"]
+    assert body["counts"] == {"new": 1, "triaged": 1, "closed": 0}
+    older = body["reports"][1]
+    assert older["screen"] == "chat"
+    assert older["platform"] == "ios"
+    assert older["confirmedFixedAt"] == 0
+    assert older["attachments"] == [{"name": "screen.png", "size": 6}]
+    assert "account" not in older
+    assert "contact" not in older
+    assert body["nextOffset"] is None
+
+
+def test_my_reports_page():
+    runtime = _Runtime()
+    module = runtime.namespace()
+    _file_reports_from_two_people(runtime, module)
+    headers = {"authorization": "Bearer token"}
+
+    first = _mine(module, "?limit=1", headers).json
+    second = _mine(module, "?limit=1&offset=1", headers).json
+
+    assert [item["id"] for item in first["reports"]] == ["d" * 32]
+    assert first["nextOffset"] == 1
+    assert [item["id"] for item in second["reports"]] == ["a" * 32]
+    assert second["nextOffset"] is None
+
+
+def test_my_reports_need_a_bearer_session():
+    runtime = _Runtime()
+    module = runtime.namespace()
+    _file_reports_from_two_people(runtime, module)
+
+    no_bearer = _mine(module)
+    cookie_only = _mine(module, headers={"cookie": "session=x"})
+    runtime.account = ""
+    signed_out = _mine(module, headers={"authorization": "Bearer stale"})
+    runtime.account = "alice"
+    deleted = _mine(module, headers={"authorization": "Bearer token"},
+                    method="DELETE")
+    confirm = _mine(module, method="POST",
+                    body={"report": "a" * 32, "fixed": True})
+
+    assert no_bearer.status == 401
+    assert cookie_only.status == 401
+    assert signed_out.status == 401
+    assert deleted.status == 405
+    assert confirm.status == 401
+    assert "reports" not in signed_out.json
+    assert runtime.rows[0].get("status", "new") == "new"
+
+
+def test_a_reporter_confirms_their_report_is_fixed():
+    runtime = _Runtime()
+    module = runtime.namespace()
+    _file_reports_from_two_people(runtime, module)
+    headers = {"authorization": "Bearer token"}
+    runtime.now += 5000
+
+    response = _mine(module, headers=headers, method="POST",
+                     body={"report": "a" * 32, "fixed": True})
+
+    assert response.status == 200
+    body = response.json
+    assert body["previous"] == "new"
+    assert body["report"]["id"] == "a" * 32
+    assert body["report"]["status"] == "closed"
+    assert body["report"]["confirmedFixedAt"] == runtime.now
+    assert body["counts"] == {"new": 1, "triaged": 0, "closed": 1}
+    assert runtime.rows[0]["status"] == "closed"
+    stored = json.loads(runtime.rows[0]["data"][len("sealed:"):])
+    assert stored["confirmedFixedAt"] == runtime.now
+    assert stored["message"] == "Alice: chat badge never clears."
+    assert stored["contact"] == "alice@example.test"
+
+    runtime.now += 5000
+    again = _mine(module, headers=headers, method="POST",
+                  body={"report": "a" * 32, "fixed": True})
+    assert again.json["report"]["confirmedFixedAt"] == runtime.now - 5000
+    assert len(runtime.updates) == 1
+
+    runtime.account = "root"
+    runtime.admins.add("root")
+    inbox = _inbox(module, headers=headers).json
+    confirmed = [item for item in inbox["reports"] if item["id"] == "a" * 32]
+    assert confirmed[0]["confirmedFixedAt"] == runtime.now - 5000
+
+
+def test_a_reporter_cannot_confirm_someone_elses_report():
+    runtime = _Runtime()
+    module = runtime.namespace()
+    _file_reports_from_two_people(runtime, module)
+    headers = {"authorization": "Bearer token"}
+
+    bobs = _mine(module, headers=headers, method="POST",
+                 body={"report": "b" * 32, "fixed": True})
+    anonymous = _mine(module, headers=headers, method="POST",
+                      body={"report": "c" * 32, "fixed": True})
+    unknown = _mine(module, headers=headers, method="POST",
+                    body={"report": "e" * 32, "fixed": True})
+    not_fixed = _mine(module, headers=headers, method="POST",
+                      body={"report": "a" * 32, "fixed": False})
+    status = _mine(module, headers=headers, method="POST",
+                   body={"report": "a" * 32, "status": "closed"})
+
+    assert bobs.status == 404
+    assert anonymous.status == 404
+    assert unknown.status == 404
+    assert not_fixed.status == 400
+    assert status.status == 400
+    assert runtime.updates == []
+    assert all(row.get("status", "new") == "new" for row in runtime.rows)
+
+
 # --- Wiring ------------------------------------------------------------------
 
 def test_the_route_is_dispatched_before_the_account_router():
@@ -802,6 +984,8 @@ def test_the_route_is_dispatched_before_the_account_router():
     assert inbox_at < accounts_at
     assert "bug_reports_handler" in runtime_source
     assert "bug_reports_inbox_handler" in runtime_source
+    assert runtime_source.index('"/api/bug-reports/mine"') < accounts_at
+    assert "bug_reports_mine_handler" in runtime_source
 
 
 def test_entry_exports_the_handler_as_a_lazy_module():
@@ -812,6 +996,7 @@ def test_entry_exports_the_handler_as_a_lazy_module():
     assert '_bug_reports = _LazyModule("bug_reports")' in entry_source
     assert 'bug_reports_handler = _bug_reports.export(' in entry_source
     assert 'bug_reports_inbox_handler = _bug_reports.export(' in entry_source
+    assert 'bug_reports_mine_handler = _bug_reports.export(' in entry_source
     assert "import bug_reports" not in entry_source
 
 

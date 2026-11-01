@@ -119,6 +119,27 @@ final class DesktopActionsTests: XCTestCase {
         XCTAssertEqual(model.workflows.count, 2)
     }
 
+    func testARunnerRunTheDesktopDoesNotHaveIsReadFromTheServer() async {
+        let channel = FakeActionsChannel()
+        channel.replies["repos.actions"] = DesktopActionsTests.desktopReply(runs: [DesktopActionsTests.runningRun])
+        let http = FakeHTTPClient()
+        http.on("GET", path: "/api/repo/alice/tool/actions/runs", json: [
+            "ok": true, "node": "runner", "source": "runner", "controlAvailable": true, "workflows": .array([]),
+            "runs": .array([.object(["id": 50100, "workflow": "CI", "status": "failed", "createdAt": 9_000, "finishedAt": 9_500])]),
+        ])
+        http.on("GET", path: "/api/repo/alice/tool/actions/runs/50100/log", json: ["ok": true, "runId": 50100, "log": "error: boom\n"])
+        let model = RepoActionsModel(
+            client: api(http), repo: repo, desktop: DesktopActions(channel: channel, desktopName: "studio"))
+        await model.load()
+        XCTAssertTrue(model.fromDesktop)
+        XCTAssertNil(model.run(50100))
+        await model.follow(runId: 50100)
+        XCTAssertFalse(model.fromDesktop)
+        XCTAssertEqual(model.run(50100)?.status, .failed)
+        XCTAssertEqual(model.logLines(50100), ["error: boom"])
+        model.stop()
+    }
+
     func testUnknownRepoOnTheDesktopFallsBackToTheServer() async {
         let channel = FakeActionsChannel()
         channel.failures["repos.actions"] = LocalControlException("unknown_repo")

@@ -13864,7 +13864,8 @@ void MainWindow::requestRepoBranchOrder(const QString &dir) const
         [dir] {
             BranchOrderLoad load;
             load.dir = dir;
-            load.signature = readBranchRefFiles(dir).signature;
+            load.files = readBranchRefFiles(dir);
+            load.signature = load.files.signature;
             load.branches = listRepoBranches(dir);
             return load;
         },
@@ -13873,9 +13874,7 @@ void MainWindow::requestRepoBranchOrder(const QString &dir) const
             self->applyRepoBranchOrder(load);
             const QString pending = self->m_branchOrderPendingDir;
             self->m_branchOrderPendingDir.clear();
-            if (!pending.isEmpty() && pending == self->repoGitDir() &&
-                (pending != load.dir ||
-                 readBranchRefFiles(pending).signature != load.signature))
+            if (!pending.isEmpty() && pending == self->repoGitDir())
                 self->requestRepoBranchOrder(pending);
         });
 }
@@ -13887,7 +13886,7 @@ void MainWindow::applyRepoBranchOrder(const BranchOrderLoad &load)
     m_branchesGitOrderDir = load.dir;
     m_branchesGitOrder = load.branches;
     m_branchesGitOrderSig = load.signature;
-    const BranchRefFiles files = readBranchRefFiles(load.dir);
+    const BranchRefFiles &files = load.files;
     const QStringList branches =
         files.readable ? orderBranchesLike(files.branches, load.branches)
                        : load.branches;

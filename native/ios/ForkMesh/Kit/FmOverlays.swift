@@ -70,21 +70,76 @@ struct FmNoticeLine: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                FmMessageTools(message)
                 if let actionLabel = actionLabel, let onAction = onAction {
                     FmTextButton(actionLabel, minHeight: 32, onPressed: onAction)
                 }
                 if let onDismiss = onDismiss {
-                    FmIconButton(label: "Dismiss", onPressed: onDismiss) {
-                        FmIcon("close", size: 14, color: fm.textTertiary)
-                    }
-                    .frame(width: 28, height: 28)
+                    FmCountdownClose(
+                        key: message,
+                        seconds: isError ? FmNoticeLine.errorSeconds : FmNoticeLine.infoSeconds,
+                        tint: isError ? fm.danger : fm.textTertiary,
+                        onDismiss: onDismiss
+                    )
                 }
             }
             .padding(.vertical, FmSpace.x1)
+            .contentShape(Rectangle())
+            .onTapGesture { open(message) }
             .accessibilityElement(children: .contain)
+            .accessibilityAction(named: Text("Open in composer")) { open(message) }
             .accessibilityIdentifier("inline-notice")
         }
+    }
+
+    static let infoSeconds: Double = 6
+    static let errorSeconds: Double = 10
+
+    @MainActor
+    private func open(_ message: String) {
+        FmHaptics.tap()
+        FmMessageHandoff.send(message)
+        onDismiss?()
+    }
+}
+
+struct FmCountdownClose: View {
+    @Environment(\.fmPalette) private var fm
+
+    let key: String
+    let seconds: Double
+    let tint: Color
+    let onDismiss: () -> Void
+
+    @State private var left: CGFloat = 1
+
+    var body: some View {
+        FmIconButton(label: "Dismiss", onPressed: onDismiss) {
+            ZStack {
+                Circle()
+                    .stroke(fm.border, lineWidth: 1.5)
+                Circle()
+                    .trim(from: 0, to: left)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                FmIcon("close", size: 10, color: fm.textTertiary)
+            }
+            .frame(width: 22, height: 22)
+        }
+        .frame(width: 28, height: 28)
+        .task(id: key) { await countDown() }
+    }
+
+    @MainActor
+    private func countDown() async {
+        var reset: Transaction = Transaction()
+        reset.disablesAnimations = true
+        withTransaction(reset) { left = 1 }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        guard !Task.isCancelled else { return }
+        withAnimation(.linear(duration: seconds)) { left = 0 }
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        guard !Task.isCancelled else { return }
+        onDismiss()
     }
 }
 

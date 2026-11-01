@@ -30,7 +30,7 @@ def test_desktop_token_reads_the_qsettings_variables_line(tmp_path):
 
 def test_repository_url_embeds_the_quoted_password(tmp_path):
     url = tool.repository_url(fleet(tmp_path), "a/b+c")
-    assert url == "https://fmnext-ci:a%2Fb%2Bc@app.next.forkmesh.com/git/forkmesh-next.git"
+    assert url == "https://fmnext-ci:a%2Fb%2Bc@app.forkmesh.com/git/forkmesh-next.git"
 
 
 def test_create_app_records_the_id_and_never_prints_the_password(tmp_path, sandbox, capsys):
@@ -103,9 +103,9 @@ def test_full_clone_and_redacted_logs():
     for name in tool.WORKFLOWS:
         assert data["workflows"][name]["environment"]["vars"]["CM_CLONE_UNSHALLOW"] == "true"
     assert tool.CLONE_VARIABLES == {"CM_CLONE_UNSHALLOW": "true"}
-    line = "git clone --depth 50 https://fmnext-ci:s3cr-et_X@app.next.forkmesh.com/git/x.git d"
+    line = "git clone --depth 50 https://fmnext-ci:s3cr-et_X@app.forkmesh.com/git/x.git d"
     assert tool.redact(line) == \
-        "git clone --depth 50 https://fmnext-ci:***@app.next.forkmesh.com/git/x.git d"
+        "git clone --depth 50 https://fmnext-ci:***@app.forkmesh.com/git/x.git d"
 
 
 def test_mirror_build_waits_for_the_mirror_and_pushes_nothing(tmp_path, sandbox):

@@ -196,15 +196,78 @@ Copy link instead.
 
 The ⋯ menu has Copy link (any cloud note you can open), Copy public link and
 Open published page (published notes), and Export Markdown…, which writes
-`# <title>` plus the body to `<slug>.md` (the web's file name rule). A
+`# <title>` plus the body to `<slug>.md` (the web's file name rule), and
+Export PDF… (see below). A
 published note also shows Copy public link beside "Live on the web".
+
+## Diagrams, page layout and PDF export
+
+The rules are [notes-documents.md](../app/notes-documents.md); the desktop
+keeps them in `desktop/src/NoteDocument.h` (layout line parsing and writing,
+page breaks, ```` ```svg ```` figure detection with the 262144-byte cap, the
+contents headings, `pdfFileName()`), and draws with
+`desktop/src/NoteDocumentRender.h` (figure images, the preview objects, the
+PDF writer).
+
+Preview: `MarkdownEditor::setPreviewHooks()` lets the Notes page change the
+source before Qt imports it and touch the document afterwards; only
+`NotesPage::setupNotePreview()` sets them, so READMEs, issues and pull
+requests keep ```` ```svg ```` as code. Each figure and page break becomes a
+paragraph holding a random token (`withObjectPlaceholders()`), and the layout
+line is dropped. After the import `applyNotePreviewObjects()` swaps each token
+for an image: the diagram drawn by `QSvgRenderer` on a white card at the
+screen's device pixel ratio, scaled to the column and centred, with the
+caption under it in small muted text in the same paragraph; or a dashed rule
+labelled "Page break". `href`s that do not start with `data:` or `#` are
+removed from the SVG before it is drawn, so a shared diagram cannot read a
+file on this computer. When the preview gets narrower or wider the images are
+redrawn in place (80 ms after the last resize). Comment anchoring is
+unchanged: an image is one object character, and the caption is text that is
+also in the Markdown.
+
+Export PDF… sits in the ⋯ menu after Export Markdown… (`NotesPage::exportPdf()`).
+Its dialog has Paper, Orientation, Margins, Cover page, Contents, Page numbers,
+prefilled from the note's layout line, and "Save as this note's page layout"
+(ticked, shown only to the owner and editors). Then it asks for the file
+(`<slug>.pdf` in Documents) and writes it with `writeNotePdfFile()`: one
+`QTextDocument` laid out on a `QPdfWriter` at 300 dpi with no page margins of
+its own, painted page by page with the page numbers drawn in the bottom
+margin. The file is written through `QSaveFile`. When "Save as this note's
+page layout" is ticked and `withLayout()` changes the text (it always adds the
+line to a note without one), the editor text is replaced in one undo step, so
+it saves like any edit.
+
+Laying out on the PDF writer: Qt converts fonts by points, and block margins
+above and below, frame padding and image sizes from 96-dpi pixels; left and
+right block margins and the page size are in device pixels. Figures are
+rasterised at 300 dpi (at most 16 million pixels). Code blocks at the top level
+are wrapped in a frame (grey panel, hairline border). Before painting,
+`keepNotePdfBlocksTogether()` moves a heading whose next line falls on the
+next page, and a figure or code block that would be split but fits on a page,
+to a new page. The cover's emoji is drawn into an image, since colour emoji
+fonts do not embed in a PDF. Remote images (`https:`) are not fetched, as in
+the preview; their alt text is printed instead.
 
 ## Links to a note
 
-`forkmesh://note/<id>`, `<relay>/dashboard/notes?note=<id>` and
-`<relay>/dashboard/notes/<id>` open the note in the app, both when clicked
-inside it (`openBodyReference()`, `openReferenceLink()`) and when the system
-hands the link to the app (`main.cpp`, `isLocalActionLink()`). A web link is
+`forkmesh://note/<id>`, `<relay>/dashboard/notes?note=<id>`,
+`<relay>/dashboard/notes/<id>` and the published page `<relay>/notes/<id>`
+open the note in the app, both when clicked inside it (`openBodyReference()`,
+`openReferenceLink()`) and when the system hands the link to the app
+(`main.cpp`, `isLocalActionLink()`). A published note is readable by anyone
+through `GET /api/notes/<id>` (role `public`), so its page link opens in the
+app too instead of leaving for the browser.
+
+A task converted from a note carries the note's published link in its details
+("Converted from the note … (published at …)"). The Tasks page sends every
+link in a task's detail and field panes through the window's
+`note.openLink` command first (`MainWindow::runWindowCommand()`), so a note link
+opens the Notes page and only other links go to the browser. The web Tasks page
+(`taskNoteLinkHref()` in `09-tasks.js`) opens such a link, or a
+`/dashboard/notes` link, on the dashboard Notes page in the same tab, and the
+phone apps route `/notes/<id>` (32 hex characters, the server's own match in
+`app_runtime.py`) to the note instead of reading it as an `owner/repo`
+shortcut. A web link is
 only taken when its host is the relay this app uses; a link to another host
 says so instead of opening something else. `forkmesh::notes::parseNoteLink()`
 is the single parser.
@@ -325,6 +388,14 @@ dashboard and World open it from their own origin; the desktop does not use it
   capture, the Preview search text, thread grouping and order, resolve rights,
   mention spans and suggestions, error and time wording, and the presence
   peers, labels, line, "+N", editing state, initials and colour hash.
+- `desktop/tests/test_note_document.cpp` (`forkmesh-note-document-tests`):
+  every row of the shared cases in
+  [notes-documents.md](../app/notes-documents.md#shared-cases), figure sizes and
+  the dropped external references, preview objects (token gone, figure centred
+  on a white card at the device pixel ratio, redrawn when the column narrows),
+  and real PDFs: a note with a cover, contents, a figure and a page break gives
+  four pages, starts with `%PDF` and has one page object per page; a landscape
+  Letter page is 792 × 612 pt; an unwritable path fails.
 - `desktop/tests/test_window_resize.cpp` `checkNoteSaveAlert`: finds the title
   and storage controls by object name, since the search box is now the first
   line edit on the page.
