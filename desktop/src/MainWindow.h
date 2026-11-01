@@ -3656,6 +3656,7 @@ public:
     }
     QMenu *testAgentTaskLinkMenu(int sessionId);
     QString testAgentViewTaskButtonState(int sessionId);
+    QString testAgentWorkflowButtonState(int sessionId);
     bool testAgentDetailTitleWraps() const;
     QString testRenderAgentDetailTitle(const QString &text);
     QString testAgentStatusCellBadges(int sessionId, const AgentDiffStat &stat) const;
@@ -14461,8 +14462,8 @@ private:
     QToolButton *m_agentStatusPill = nullptr; // compact model + outcome control
     QLabel *m_agentMeta = nullptr;
     QFrame *m_agentMetaPopup = nullptr;
-    QLabel *m_agentWorkflowLink = nullptr;
-    QString m_agentWorkflowLinkKey;
+    QPushButton *m_agentWorkflowButton = nullptr;
+    QString m_agentWorkflowButtonKey;
     QPushButton *m_agentPopOutButton = nullptr;
     QLabel *m_agentNetPanel = nullptr;   // live API-traffic graphic
     QPushButton *m_agentViewPrButton = nullptr;

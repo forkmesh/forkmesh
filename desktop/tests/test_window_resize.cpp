@@ -7,6 +7,7 @@
 #include "../src/MainWindowNextAccess.h"
 #include "../src/InstanceTheme.h"
 #include "../src/OverflowActionRow.h"
+#include "../src/RepoWorkflow.h"
 #include "../src/GitLayout.h"
 #include "../src/WorkspaceLayout.h"
 #include "../src/OfficeChannelMirror.h"
@@ -15383,6 +15384,31 @@ void checkAgentTaskLink(MainWindow &window)
     check(window.testAgentViewTaskButtonState(owned.id)
               .contains(QStringLiteral("Open the organization task")),
           QStringLiteral("a linked agent's task button opens its task"));
+
+    forkmesh::repoworkflows::Workflow workflow = forkmesh::repoworkflows::fromTeammate(
+        forkmesh::teammates::Store::qualityAssuranceTemplate());
+    workflow.name = QStringLiteral("Nightly QA");
+    QDir(tree.path()).mkpath(forkmesh::repoworkflows::kFolder);
+    QFile workflowFile(QDir(tree.path()).filePath(
+        forkmesh::repoworkflows::kFolder + QLatin1Char('/') + workflow.id +
+        QStringLiteral(".json")));
+    const bool workflowWritten =
+        workflowFile.open(QIODevice::WriteOnly) &&
+        workflowFile.write(QJsonDocument(workflow.toJson()).toJson()) > 0;
+    workflowFile.close();
+    AgentSession fromWorkflow = loose;
+    fromWorkflow.id = 181913;
+    fromWorkflow.teammateId = workflow.id;
+    window.testAddAgentSession(fromWorkflow);
+    check(workflowWritten &&
+              window.testAgentWorkflowButtonState(fromWorkflow.id)
+                  .contains(QStringLiteral("Nightly QA")),
+          QStringLiteral("an agent a workflow started shows a Workflow button "
+                         "in the header action row naming that workflow"));
+    check(window.testAgentWorkflowButtonState(loose.id).isEmpty(),
+          QStringLiteral("an agent no workflow started shows no Workflow "
+                         "button"));
+    window.testRemoveAgentSession(fromWorkflow.id);
     check(!window.testCanLinkAgentSessionToOrgTask(-1005) &&
               !window.testCanLinkAgentSessionToOrgTask(0),
           QStringLiteral("external and unknown sessions cannot be linked"));
