@@ -85,6 +85,7 @@ public struct NexusRootView: View {
         }
         .environment(\.nexusClose, onClose)
         .tint(.cyan)
+        .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
         .task { model.loadHistory() }
         .alert("NEXUS", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK", role: .cancel) {} } message: { Text(model.error ?? "") }
