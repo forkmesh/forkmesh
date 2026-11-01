@@ -2724,6 +2724,21 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-note-document-tests
+        tests/test_note_document.cpp
+        src/NoteDocument.h
+        src/NoteDocumentRender.h
+        src/NoteTools.h
+        src/MarkdownRender.h
+    )
+    target_include_directories(forkmesh-note-document-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-note-document-tests PRIVATE Qt6::Gui Qt6::Svg)
+    if(APPLE)
+        set_target_properties(forkmesh-note-document-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-note-pages-tests
         tests/test_note_pages.cpp
         src/NotePages.h
@@ -4777,6 +4792,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-note-comments-tests)
     add_test(NAME forkmesh-note-pages-tests
              COMMAND forkmesh-note-pages-tests)
+    add_test(NAME forkmesh-note-document-tests
+             COMMAND forkmesh-note-document-tests)
+    set_tests_properties(forkmesh-note-document-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-tip-tests COMMAND forkmesh-tip-tests)
     add_test(NAME forkmesh-window-tests COMMAND forkmesh-window-tests)
     add_test(NAME forkmesh-startup-splash-tests

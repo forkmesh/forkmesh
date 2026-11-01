@@ -73,7 +73,6 @@ import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.docs.DocsMarkdown
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.openExternalUrl
-import com.forkmesh.nativeapp.feature.docs.DocsBlockView
 import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.format.relativeTime
@@ -87,6 +86,8 @@ import com.forkmesh.nativeapp.notes.NoteEmoji
 import com.forkmesh.nativeapp.notes.NotePage
 import com.forkmesh.nativeapp.notes.NoteCommentsPayload
 import com.forkmesh.nativeapp.notes.NoteConflictException
+import com.forkmesh.nativeapp.notes.NoteDocument
+import com.forkmesh.nativeapp.notes.NoteSegment
 import com.forkmesh.nativeapp.notes.NoteFilter
 import com.forkmesh.nativeapp.notes.NoteLink
 import com.forkmesh.nativeapp.notes.NotePeer
@@ -414,6 +415,7 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
     private var showHistory by mutableStateOf(false)
     private var showShare by mutableStateOf(false)
     private var showLinks by mutableStateOf(false)
+    private var showPdf by mutableStateOf(false)
     private var menu by mutableStateOf(false)
     private var roomGeneration by mutableIntStateOf(0)
     private var room: WebSocketClient? = null
@@ -704,6 +706,7 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
                                     menu = false
                                     exporter.launch(NotesLogic.exportFileName(titleText))
                                 })
+                                FmDropdownMenuItem(text = NoteDocument.MENU_LABEL, onClick = { menu = false; showPdf = true })
                                 com.forkmesh.nativeapp.feature.planning.NoteConvertItems(note, id, { titleText }, { markdown }, status, scope) { menu = false }
                                 if (owner) {
                                     FmDropdownMenuItem(text = "Share", onClick = { menu = false; showShare = true })
@@ -883,6 +886,21 @@ class NoteEditorScreen(private val noteId: String?, private val openComment: Str
         }
         if (showPeople) {
             NotePeopleSheet(presenceLabel, peers) { showPeople = false }
+        }
+        if (showPdf) {
+            NotePdfSheet(NoteDocument.layout(markdown), canSave = canEdit && conflict == null, onDismiss = { showPdf = false }) { layout, save ->
+                showPdf = false
+                if (save) {
+                    val next = NoteDocument.withLayout(markdown, layout)
+                    if (next != markdown) {
+                        val shift = next.length - markdown.length
+                        edited(TextFieldValue(next, TextRange((body.selection.start + shift).coerceIn(0, next.length), (body.selection.end + shift).coerceIn(0, next.length))))
+                    }
+                }
+                if (!NotePdfPrinter.print(context, titleText, NoteEmoji.of(note ?: emptyMap()), markdown, layout)) {
+                    status.error("The PDF could not be made.")
+                }
+            }
         }
         if (pickingEmoji) {
             NoteEmojiPicker(if (id == null) newEmoji else NoteEmoji.of(note ?: emptyMap()), onPick = { picked ->
@@ -1300,12 +1318,21 @@ private fun MarkdownField(value: TextFieldValue, onChange: (TextFieldValue) -> U
 
 @Composable
 private fun MarkdownPreview(markdown: String, modifier: Modifier, onLink: (String) -> Unit) {
-    val parsed = remember(markdown) { DocsMarkdown.parse(markdown) }
+    val references = remember(markdown) { DocsMarkdown.parse(markdown).references }
+    val parts = remember(markdown) {
+        NoteDocument.segments(markdown).mapNotNull { segment ->
+            when (segment) {
+                is NoteSegment.Markdown -> DocsMarkdown.blocks(segment.text).takeIf { it.isNotEmpty() }?.let { NotePreviewPart.Blocks(it) }
+                is NoteSegment.Figure -> NotePreviewPart.Figure(segment.figure)
+                NoteSegment.PageBreak -> NotePreviewPart.PageBreak
+            }
+        }
+    }
     Column(modifier.verticalScroll(rememberScrollState())) {
-        if (parsed.blocks.isEmpty()) {
+        if (parts.isEmpty()) {
             Text("Nothing to preview yet.", style = Fm.text.bodyMedium.copy(color = Fm.colors.textTertiary))
         }
-        for (block in parsed.blocks) DocsBlockView(block, parsed.references, onLink)
+        for (part in parts) NotePreviewPartView(part, references, onLink)
     }
 }
 

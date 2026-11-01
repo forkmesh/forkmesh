@@ -409,6 +409,37 @@
     return match ? `${match[1] || ""}${match[2]} data-md-figure ${match[3]}${match[4] || ""}` : html;
   }
 
+  const NOTE_SVG_MAX_BYTES = 262144;
+  const NOTE_PAGE_BREAK_LINE = /^\s*<!--\s*pagebreak\s*-->\s*$/i;
+  const NOTE_LAYOUT_LINE = /^\s*<!--\s*page:([\s\S]*?)-->\s*$/i;
+
+  function noteSvgFigure(info, code) {
+    const words = /^\s*(\S+)\s*([\s\S]*?)\s*$/.exec(String(info || ""));
+    if (!words || words[1].toLowerCase() !== "svg") return null;
+    const svg = String(code || "");
+    const start = svg.replace(/^(?:\s+|<\?xml[\s\S]*?\?>|<!--[\s\S]*?-->)*/, "");
+    if (!/^<svg[\s>/]/i.test(start)) return null;
+    if (new TextEncoder().encode(svg).length > NOTE_SVG_MAX_BYTES) return null;
+    return { caption: words[2], svg };
+  }
+
+  function noteSvgDataUrl(svg) {
+    const bytes = new TextEncoder().encode(svg);
+    let binary = "";
+    for (let at = 0; at < bytes.length; at += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
+    }
+    return `data:image/svg+xml;base64,${btoa(binary)}`;
+  }
+
+  function noteFigureHtml(figure) {
+    const caption = figure.caption ? `<figcaption>${escapeHtml(figure.caption)}</figcaption>` : "";
+    return `<figure class="note-figure"><img src="${noteSvgDataUrl(figure.svg)}" alt="${escapeHtml(figure.caption || "Diagram")}" decoding="async" />${caption}</figure>`;
+  }
+
+  const NOTE_PAGE_BREAK_HTML =
+    '<div class="note-page-break" role="separator" aria-label="Page break"><span>Page break</span></div>';
+
   // Small, dependency-free markdown renderer: headings, fenced code blocks,
   // block quotes, nested ordered/unordered lists, tables, hr, raw HTML blocks,
   // and paragraphs, with basic inline formatting, links and images. Not a full
@@ -485,14 +516,22 @@
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
-      const fence = line.match(/^\s*(```|~~~)/);
+      if (context?.noteDocument && (NOTE_LAYOUT_LINE.test(line) || NOTE_PAGE_BREAK_LINE.test(line))) {
+        closeLists();
+        if (NOTE_PAGE_BREAK_LINE.test(line)) out.push(NOTE_PAGE_BREAK_HTML);
+        i++;
+        continue;
+      }
+      const fence = line.match(/^\s*(```|~~~)(.*)$/);
       if (fence) {
         closeLists();
         const code = [];
         i++;
         while (i < lines.length && !new RegExp(`^\\s*${fence[1]}`).test(lines[i])) { code.push(lines[i]); i++; }
         i++;
-        out.push(`<pre class="my-3 overflow-auto rounded-md border border-border bg-secondary/40 p-3 text-xs"><code class="font-mono">${escapeHtml(code.join("\n"))}</code></pre>`);
+        const figure = context?.noteDocument ? noteSvgFigure(fence[2], code.join("\n")) : null;
+        out.push(figure ? noteFigureHtml(figure)
+          : `<pre class="my-3 overflow-auto rounded-md border border-border bg-secondary/40 p-3 text-xs"><code class="font-mono">${escapeHtml(code.join("\n"))}</code></pre>`);
         continue;
       }
       const heading = line.match(/^(#{1,6})\s+(.*)$/);

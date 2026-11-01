@@ -411,6 +411,7 @@ struct NoteEditorScreen: View {
     @State private var confirmDiscard: Bool = false
     @State private var history: ToolsSheet<NoteHistoryModel>?
     @State private var share: ToolsSheet<NoteShareModel>?
+    @State private var exportingPdf: Bool = false
 
     init(noteId: String? = nil, openComment: String? = nil) {
         if let api = Services.get(ApiService.self) {
@@ -472,6 +473,9 @@ struct NoteEditorScreen: View {
                 Task { await model.refreshMeta() }
             }) { (box: ToolsSheet<NoteShareModel>) in
                 NoteShareSheet(model: box.value)
+            }
+            .sheet(isPresented: $exportingPdf) {
+                NotePdfSheet(model: model, onClose: { exportingPdf = false })
             }
             .sheet(isPresented: commentsShown(model)) {
                 if let comments = model.comments {
@@ -546,6 +550,8 @@ struct NoteEditorScreen: View {
             if let sheet = model.shareModel() {
                 share = ToolsSheet(sheet)
             }
+        case "export_pdf":
+            exportingPdf = true
         case "copy_link":
             copy(model.accessLink)
         case "open_public":
@@ -872,22 +878,56 @@ private struct NoteExport: Transferable {
     }
 }
 
+private enum NotePreviewItem {
+    case block(DocsBlock)
+    case figure(NoteFigure)
+    case pageBreak
+}
+
 struct NotePreview: View {
     @Environment(\.fmPalette) private var fm
     let markdown: String
+    var document: Bool = true
+
+    private var items: [NotePreviewItem] {
+        let parts: [NoteDocumentPart] = document ? NoteDocument.parts(markdown) : [.markdown(markdown)]
+        var out: [NotePreviewItem] = []
+        for part in parts {
+            switch part {
+            case let .markdown(text):
+                out.append(contentsOf: DocsMarkdown.blocks(text).map { (block: DocsBlock) -> NotePreviewItem in .block(block) })
+            case let .figure(figure):
+                out.append(.figure(figure))
+            case .pageBreak:
+                out.append(.pageBreak)
+            }
+        }
+        return out
+    }
 
     var body: some View {
-        let blocks: [DocsBlock] = DocsMarkdown.blocks(markdown)
+        let items: [NotePreviewItem] = self.items
         VStack(alignment: .leading, spacing: FmSpace.x2) {
-            if blocks.isEmpty {
+            if items.isEmpty {
                 Text("Nothing written yet.")
                     .fmText(.bodyMedium, color: fm.textTertiary)
             }
-            ForEach(Array(blocks.enumerated()), id: \.offset) { (pair: (offset: Int, element: DocsBlock)) in
-                block(pair.element)
+            ForEach(Array(items.enumerated()), id: \.offset) { (pair: (offset: Int, element: NotePreviewItem)) in
+                item(pair.element)
             }
         }
         .textSelection(.enabled)
+    }
+
+    @ViewBuilder private func item(_ item: NotePreviewItem) -> some View {
+        switch item {
+        case let .block(value):
+            block(value)
+        case let .figure(figure):
+            NoteFigureView(figure: figure)
+        case .pageBreak:
+            NotePageBreakView()
+        }
     }
 
     private func inline(_ source: String) -> Text {

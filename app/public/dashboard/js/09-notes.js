@@ -411,13 +411,198 @@
     const preview = $("[data-note-preview]");
     if (preview) {
       preview.innerHTML = markdown.trim()
-        ? renderMarkdown(markdown)
+        ? renderMarkdown(markdown, { noteDocument: true })
         : '<p class="notes-preview-empty">Nothing written yet.</p>';
       markNoteCommentsInPreview(preview);
     }
     const words = markdown.split(/\s+/).filter(Boolean).length;
     const counts = $("[data-note-counts]");
     if (counts) counts.textContent = `${words} ${words === 1 ? "word" : "words"} · ${Math.max(1, Math.round(words / 220))} min read · Markdown`;
+  }
+
+  const NOTE_LAYOUT_DEFAULTS = {
+    size: "a4", orientation: "portrait", margins: "normal", cover: "no", contents: "no", numbers: "yes",
+  };
+  const NOTE_LAYOUT_CHOICES = {
+    size: ["a4", "letter", "legal"], orientation: ["portrait", "landscape"], margins: ["narrow", "normal", "wide"],
+    cover: ["yes", "no"], contents: ["yes", "no"], numbers: ["yes", "no"],
+  };
+  const NOTE_PAPER_MM = { a4: [210, 297], letter: [215.9, 279.4], legal: [215.9, 355.6] };
+  const NOTE_MARGIN_MM = { narrow: 12.7, normal: 25.4, wide: 38.1 };
+
+  function noteLayoutLineIndex(lines) {
+    let fence = "";
+    for (let i = 0; i < lines.length; i++) {
+      const marker = /^\s*(```|~~~)/.exec(lines[i]);
+      if (fence) {
+        if (marker && marker[1] === fence) fence = "";
+      } else if (marker) {
+        fence = marker[1];
+      } else if (NOTE_LAYOUT_LINE.test(lines[i])) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function noteLines(markdown) {
+    return String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
+  }
+
+  function noteLayoutRead(markdown) {
+    const layout = { ...NOTE_LAYOUT_DEFAULTS };
+    const lines = noteLines(markdown);
+    const at = noteLayoutLineIndex(lines);
+    if (at < 0) return layout;
+    for (const pair of NOTE_LAYOUT_LINE.exec(lines[at])[1].split(";")) {
+      const [key, value] = pair.split("=").map((part) => String(part || "").trim().toLowerCase());
+      if (Object.hasOwn(NOTE_LAYOUT_CHOICES, key) && NOTE_LAYOUT_CHOICES[key].includes(value)) layout[key] = value;
+    }
+    return layout;
+  }
+
+  function noteLayoutLine(layout) {
+    return `<!-- page: ${Object.keys(NOTE_LAYOUT_DEFAULTS).map((key) =>
+      `${key}=${NOTE_LAYOUT_CHOICES[key].includes(layout?.[key]) ? layout[key] : NOTE_LAYOUT_DEFAULTS[key]}`).join("; ")} -->`;
+  }
+
+  function noteWithLayout(markdown, layout) {
+    const lines = noteLines(markdown);
+    const at = noteLayoutLineIndex(lines);
+    if (at >= 0) lines.splice(at, 1);
+    while (lines.length && !lines[0].trim()) lines.shift();
+    return `${noteLayoutLine(layout)}\n\n${lines.join("\n")}`;
+  }
+
+  function notePdfFileName(title) {
+    return `${String(title || "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "note"}.pdf`;
+  }
+
+  function notePrintStyles(layout) {
+    const [width, height] = NOTE_PAPER_MM[layout.size];
+    const [pageWidth, pageHeight] = layout.orientation === "landscape" ? [height, width] : [width, height];
+    const margin = NOTE_MARGIN_MM[layout.margins];
+    const numbers = layout.numbers === "yes"
+      ? '@bottom-center { content: counter(page) " / " counter(pages); font: 9pt -apple-system, "Segoe UI", system-ui, Roboto, Arial, sans-serif; color: #57606a; }'
+      : "";
+    const coverPage = layout.cover === "yes" && numbers ? "@page :first { @bottom-center { content: none; } }" : "";
+    const mono = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+    return `@page { size: ${pageWidth}mm ${pageHeight}mm; margin: ${margin}mm; ${numbers} }
+${coverPage}
+html { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+body { margin: 0; background: #fff; color: #1f2328; font: 11pt/1.45 -apple-system, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif; overflow-wrap: break-word; }
+h1, h2, h3, h4, h5, h6 { margin: 16pt 0 6pt; line-height: 1.25; font-weight: 600; break-after: avoid; page-break-after: avoid; }
+h1 { font-size: 20pt; } h2 { font-size: 15pt; } h3 { font-size: 12.5pt; } h4 { font-size: 11pt; } h5, h6 { font-size: 10pt; }
+body > article > :first-child { margin-top: 0; }
+p { margin: 0 0 8pt; }
+a { color: #0969da; text-decoration: none; }
+ul, ol { margin: 0 0 8pt; padding-left: 18pt; }
+li { margin: 2pt 0; }
+.list-none { list-style: none; }
+.-ml-5 { margin-left: -18pt; }
+.flex { display: flex; align-items: flex-start; gap: 6pt; }
+.text-center { text-align: center; }
+pre { margin: 0 0 10pt; padding: 8pt; border: .5pt solid #d0d7de; border-radius: 4pt; background: #f6f8fa; font: 9pt/1.4 ${mono}; white-space: pre-wrap; break-inside: avoid; }
+code { border-radius: 2pt; background: #f6f8fa; padding: 0 2pt; font: 9pt ${mono}; }
+pre code { background: none; padding: 0; }
+blockquote { margin: 0 0 8pt; border-left: 2pt solid #d0d7de; padding-left: 10pt; color: #57606a; }
+table { width: 100%; margin: 0 0 10pt; border-collapse: collapse; font-size: 9.5pt; }
+th, td { border: .5pt solid #d0d7de; padding: 3pt 5pt; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; }
+tr, img { break-inside: avoid; }
+img { max-width: 100%; }
+hr { margin: 12pt 0; border: 0; border-top: .5pt solid #d0d7de; }
+.note-figure { margin: 10pt 0 12pt; text-align: center; break-inside: avoid; }
+.note-figure img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.note-figure figcaption { margin-top: 4pt; font-size: 9pt; color: #57606a; }
+.note-page-break { break-after: page; page-break-after: always; height: 0; margin: 0; border: 0; }
+.note-page-break span { display: none; }
+.note-cover { break-after: page; page-break-after: always; padding-top: ${Math.round((pageHeight - 2 * margin) * 0.22)}mm; text-align: center; }
+.note-cover-emoji { font-size: 48pt; line-height: 1.2; }
+.note-cover h1 { margin: 10pt 0 8pt; font-size: 28pt; }
+.note-cover-date { font-size: 12pt; color: #57606a; }
+.note-contents { break-after: page; page-break-after: always; }
+.note-contents ol { list-style: none; margin: 0; padding: 0; }
+.note-contents li { margin: 0 0 5pt; }
+.note-contents .note-contents-2 { padding-left: 16pt; font-size: 10pt; }`;
+  }
+
+  function notePrintDocument({ title, emoji = "", markdown, layout, date = new Date() }) {
+    const heading = String(title || "").trim() || "Untitled note";
+    let body = renderMarkdown(markdown, { noteDocument: true }).replace(/ loading="lazy"/g, "");
+    const contents = [];
+    body = body.replace(/<h([1-6]) data-repo-markdown-heading="([^"]*)"/g, (whole, level, slug) => `<h${level} id="note-${slug}" data-repo-markdown-heading="${slug}"`);
+    for (const match of body.matchAll(/<h([12]) id="(note-[^"]*)"[^>]*>([\s\S]*?)<\/h\1>/g)) {
+      contents.push(`<li class="note-contents-${match[1]}"><a href="#${match[2]}">${match[3].replace(/<[^>]*>/g, "")}</a></li>`);
+    }
+    const when = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(date);
+    const cover = layout.cover === "yes"
+      ? `<section class="note-cover">${emoji ? `<div class="note-cover-emoji">${escapeHtml(emoji)}</div>` : ""}<h1>${escapeHtml(heading)}</h1><div class="note-cover-date">${escapeHtml(when)}</div></section>`
+      : "";
+    const list = layout.contents === "yes"
+      ? `<section class="note-contents"><h1>Contents</h1><ol>${contents.join("")}</ol></section>`
+      : "";
+    const lead = layout.cover === "yes" ? "" : `<h1>${escapeHtml(heading)}</h1>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(notePdfFileName(title).replace(/\.pdf$/, ""))}</title><style>${notePrintStyles(layout)}</style></head><body>${cover}${list}<article>${lead}${body}</article></body></html>`;
+  }
+
+  function printNoteDocument(html) {
+    document.querySelector("[data-note-print-frame]")?.remove();
+    const frame = document.createElement("iframe");
+    frame.dataset.notePrintFrame = "";
+    frame.setAttribute("sandbox", "allow-same-origin allow-modals");
+    frame.setAttribute("aria-hidden", "true");
+    frame.tabIndex = -1;
+    frame.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none";
+    frame.addEventListener("load", async () => {
+      const images = [...(frame.contentDocument?.images || [])];
+      await Promise.all(images.map((image) => image.decode().catch(() => null)));
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+    }, { once: true });
+    frame.srcdoc = html;
+    document.body.append(frame);
+    return frame;
+  }
+
+  function openNotePdfDialog() {
+    closeNotePopovers();
+    const note = state.notesView.selected; if (!note) return;
+    const area = $("[data-note-markdown]");
+    const layout = noteLayoutRead(area?.value || "");
+    document.querySelectorAll("[data-note-pdf-field]").forEach((field) => {
+      const key = field.dataset.notePdfField;
+      if (field.type === "checkbox") field.checked = layout[key] === "yes";
+      else field.value = layout[key];
+    });
+    const canSave = noteCanEdit(note) && !area?.readOnly;
+    $("[data-note-pdf-save-row]").hidden = !canSave;
+    $("[data-note-pdf-save]").checked = canSave;
+    $("[data-note-pdf-dialog]").showModal();
+  }
+
+  function exportNotePdf() {
+    const layout = {};
+    document.querySelectorAll("[data-note-pdf-field]").forEach((field) => {
+      const key = field.dataset.notePdfField;
+      layout[key] = field.type === "checkbox" ? (field.checked ? "yes" : "no") : field.value;
+    });
+    $("[data-note-pdf-dialog]").close();
+    const area = $("[data-note-markdown]");
+    if (!$("[data-note-pdf-save-row]").hidden && $("[data-note-pdf-save]").checked) {
+      const next = noteWithLayout(area.value, layout);
+      if (next !== area.value) {
+        area.value = next;
+        area.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+    const resolved = noteLayoutRead(noteLayoutLine(layout));
+    printNoteDocument(notePrintDocument({
+      title: $("[data-note-title]")?.value || "",
+      emoji: state.notesView.selected?.emoji || "",
+      markdown: area.value,
+      layout: resolved,
+    }));
   }
 
   function renderNoteMode(note) {
@@ -2098,7 +2283,7 @@
     const markdown = state.notesView.pageContent.get(note.id);
     const body = markdown === undefined ? '<p class="notes-preview-empty">Loading…</p>'
       : markdown === null ? '<p class="notes-preview-empty">This note could not be loaded.</p>'
-      : markdown.trim() ? renderMarkdown(markdown) : '<p class="notes-preview-empty">Nothing written yet.</p>';
+      : markdown.trim() ? renderMarkdown(markdown, { noteDocument: true }) : '<p class="notes-preview-empty">Nothing written yet.</p>';
     const edited = noteEditedLabel(note);
     return `<article class="notes-page-note" id="note-page-${escapeHtml(entry.id)}" data-note-page-anchor="${escapeHtml(entry.id)}">
         <header class="notes-page-note-head">
@@ -2817,6 +3002,13 @@
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       void recordNoteActivity("export");
     });
+    $("[data-note-export-pdf]")?.addEventListener("click", openNotePdfDialog);
+    $("[data-note-pdf-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      exportNotePdf();
+    });
+    document.querySelectorAll("[data-note-pdf-cancel]").forEach((button) =>
+      button.addEventListener("click", () => $("[data-note-pdf-dialog]").close()));
     $("[data-note-delete]")?.addEventListener("click", () => {
       closeNotePopovers();
       const note = view.selected; if (!note) return;

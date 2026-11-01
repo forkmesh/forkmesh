@@ -8,6 +8,8 @@
 #include <QSet>
 #include <QUrl>
 
+#include <memory>
+
 class MarkdownEditor;
 class QCheckBox;
 class QComboBox;
@@ -25,6 +27,7 @@ namespace forkmesh::notes {
 class NoteCommentsPanel;
 class NotePageView;
 class NotePresenceFaces;
+struct NotePreviewState;
 
 class NotesPage : public forkmesh::market::NativePackageWidget
 {
@@ -76,6 +79,8 @@ private:
     void copyNoteLink();
     void copyNotePublicLink();
     void exportNote();
+    void exportPdf();
+    void setupNotePreview();
     bool noteAutosaveApplies() const;
     void scheduleNoteAutosave();
     void autosaveNote();
@@ -196,6 +201,7 @@ private:
     QJsonArray m_pages;
     QString m_customizeWhenLoaded;
     int m_pagesSequence = 0;
+    std::unique_ptr<NotePreviewState> m_notePreview;
 };
 
 }
