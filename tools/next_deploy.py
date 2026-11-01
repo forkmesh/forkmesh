@@ -958,6 +958,12 @@ def half_activated(state):
             and state.get("current") != state.get("running"))
 
 
+def say_activation_output(runner, name, stderr, limit=20):
+    text = (stderr or b"").decode("utf-8", "replace")
+    for line in [line for line in text.splitlines() if line.strip()][-limit:]:
+        runner.say("%s: activation: %s" % (name, line[:300]))
+
+
 def activate_node(fleet, node, rev, ssh, runner, vault, key):
     ip = node["public_ipv4"]
     script = activate_script(rev, node_host(fleet, node["name"]), vault=vault)
@@ -966,6 +972,8 @@ def activate_node(fleet, node, rev, ssh, runner, vault, key):
             completed = ssh.run(ip, script, input_bytes=key, check=False,
                                 timeout=1200)
             code = completed.returncode
+            if code != 0:
+                say_activation_output(runner, node["name"], completed.stderr)
         except (ToolError, subprocess.TimeoutExpired) as error:
             runner.say("%s: activation session ended early (%s); checking the "
                        "node" % (node["name"], error))

@@ -53,7 +53,9 @@ fit together and what happens when one fails:
   symlinks. The operator box keeps the `KEEP_RELEASES` newest tarballs.
 - **Rolling restart gate.** Each node must report `/readyz` and the new
   `BUILD_REV`; a failing node goes back to its previous release and the rollout
-  stops. Migrations run once, through any healthy rqlite node.
+  stops. The node's own messages (Caddy, unseal, gate, rollback) are printed as
+  `nN: activation: ...` lines in the deploy log, so a rollback names its cause.
+  Migrations run once, through any healthy rqlite node.
 - **A core down does not block a release.** `upload`, `restart` and `all`
   leave out a core that is held or out of DNS (`dns-health.json`, the
   `next_dns.py` health loop) or that SSH cannot reach, as long as a majority

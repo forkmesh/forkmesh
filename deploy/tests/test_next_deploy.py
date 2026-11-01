@@ -102,15 +102,18 @@ def test_restart_executes_in_order_and_stops_at_first_failed_gate(tmp_path):
     def activate(host, script, stdin):
         activations.append(host)
         code = 4 if host == "203.0.113.13" else 0
-        return subprocess.CompletedProcess(["ssh"], code, b"", b"gate failed")
+        return subprocess.CompletedProcess(["ssh"], code, b"", b"vault: unseal after restart failed\nrelease failed its gate\n")
     old = "aaaaaaaaaaaa"
     data = fleet(tmp_path)
     states = {"203.0.113.11": lambda: (REV, REV), "203.0.113.12": lambda: (REV, REV),
               "203.0.113.13": lambda: (old, old)}
     ssh = FakeSsh([(lambda host, script: "switch_to" in script, activate),
                    state_answer(states)])
+    out = io.StringIO()
     with pytest.raises(ToolError, match="n3 failed.*current aaaaaaaaaaaa"):
-        next_deploy.restart(data, REV, ssh, Runner(execute=True))
+        next_deploy.restart(data, REV, ssh, Runner(execute=True, out=out))
+    assert "n3: activation: vault: unseal after restart failed" in out.getvalue()
+    assert "n3: activation: release failed its gate" in out.getvalue()
     expected = ips_in_order(data)
     assert activations == expected[:expected.index("203.0.113.13") + 1]
     assert not any("/status" in script for _, script, _ in ssh.runs)
