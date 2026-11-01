@@ -718,6 +718,43 @@ would remove that. For the few seconds the steps take, a package page not yet
 built is missing from search results and its rail button. `main.cpp` logs its
 startup lines through `logStartupTrace` like the rest of the trace.
 
+### Installing a package keeps the other pages (report #20)
+
+`syncNativePackagePages` used to delete every package page and build all of
+them again whenever the installed set changed, so one Market install rebuilt
+CRM, Calories, OpenWrt, Workflows, Marketing and the rest on the GUI thread
+(4.8 s, 8.1 s and 7.6 s stalls on 2026-11-01, followed by seconds of deferred
+style polish). It also sent you back to Market when you installed something
+from a package page you had open. Now it only removes the pages whose
+`(id, entrypoint)` dropped out, and only builds the ones that are missing: one
+missing page is built at once, so a single install opens on a ready page;
+two or more added beside pages already built (Install all, a pack) go through
+the `buildNextNativePackagePage` chain, which skips pages already built. A
+window with no pages yet still builds them in one pass, which the window
+tests rely on. Test: the Install all check in `forkmesh-window-tests
+--package-only` and `app/tests/test_desktop_package_rail_startup.py`.
+
+Other fixes from the same report:
+
+- **Market previews arrive ready to paint.** The worker converts each decoded
+  preview to `RGB32` or `ARGB32_Premultiplied`, and `applyMarketPreview` calls
+  `QPixmap::fromImage(..., Qt::NoOpaqueDetection)`, so the GUI thread no longer
+  scans every pixel for alpha and converts the image (1.5 s).
+- **CRM column moves do not refit every row.** In `CrmFeature::applyColumnOrder`
+  each `moveSection` made the table refit its `ResizeToContents` Actions column
+  over every contact row (612 ms for one snapshot). The first real move pins
+  those sections to `Fixed` at their current width, and they go back to
+  `ResizeToContents` once after the last move. A pass with nothing to move
+  touches no resize mode.
+- **The agent recycle bin loads on a worker.** `reloadAgentRecycleBin` reads
+  the bin with `runOffThread` (one read at a time, a call during a read queues
+  one more) and starting an agent no longer waits for it (1.2 s).
+- **Already fixed:** both crash records (the `refreshChannelList` crash during
+  local-mesh startup, and the teardown crash) happened before `d149be9982`.
+- **Nothing to fix:** the `DeployLogFollower::deliverFileLines` frame on the
+  2.4 s polish stall is a stray symbol; the stall was the posted Polish event
+  of the package pages rebuilt three seconds earlier.
+
 ### Background file writes
 
 `src/BackgroundFileWriter.{h,cpp}` (`forkmesh::diskwrite`) moves `QSaveFile`

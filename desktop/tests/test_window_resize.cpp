@@ -21969,10 +21969,24 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         }
         const bool incomplete = installedBefore.size() < everything.size();
         const bool enabledBefore = installAll && installAll->isEnabled();
+        QHash<QString, QPointer<forkmesh::market::NativePackageWidget>> pagesBefore;
+        for (const QString &id : std::as_const(installedBefore)) {
+            if (forkmesh::market::NativePackageWidget *page = window.testNativePackagePage(id))
+                pagesBefore.insert(id, page);
+        }
+        const auto pagesKept = [&window, &pagesBefore] {
+            QStringList rebuilt;
+            for (auto it = pagesBefore.cbegin(); it != pagesBefore.cend(); ++it) {
+                if (!it.value() || window.testNativePackagePage(it.key()) != it.value())
+                    rebuilt << it.key();
+            }
+            return rebuilt;
+        };
         if (installAll && installAll->isEnabled())
             installAll->click();
         QApplication::processEvents();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const QStringList rebuiltByInstall = pagesKept();
         bool allInstalled = !everything.isEmpty();
         for (const QString &id : everything)
             allInstalled = allInstalled && window.testPackageInstalled(id);
@@ -21993,6 +22007,15 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         }
         QApplication::processEvents();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const QStringList rebuiltByRemoval = pagesKept();
+        check(!pagesBefore.isEmpty() && rebuiltByInstall.isEmpty() &&
+                  rebuiltByRemoval.isEmpty(),
+              QStringLiteral("installing and removing other packages keeps the "
+                             "pages already built (pages=%1, rebuilt by install=%2, "
+                             "by removal=%3)")
+                  .arg(pagesBefore.size())
+                  .arg(rebuiltByInstall.join(QLatin1Char(',')),
+                       rebuiltByRemoval.join(QLatin1Char(','))));
     }
     check(previewDecodesFirstOpen > 0 &&
               previewDecodesFirstOpen <= packageCards.size() &&
