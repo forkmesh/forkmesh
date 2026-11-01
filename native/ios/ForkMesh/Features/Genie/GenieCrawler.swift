@@ -60,6 +60,8 @@ final class GenieCrawler {
     @ObservationIgnored var avoid: @MainActor () -> [CGRect] = { [] }
     @ObservationIgnored var knocked: @MainActor (GenieKnock) -> Void = { _ in }
     @ObservationIgnored var loose: @MainActor (Bool) -> Void = { _ in }
+    @ObservationIgnored var silks: @MainActor () -> Bool = { true }
+    @ObservationIgnored var asleep: @MainActor () -> Bool = { false }
 
     init(prefs: KeyValueStore? = Services.get(KeyValueStore.self)) {
         self.prefs = prefs
@@ -148,7 +150,7 @@ final class GenieCrawler {
     }
 
     func wander() {
-        guard ready, wanders, parked == nil, !held, track == nil, tumble == nil, !still() else { return }
+        guard ready, wanders, parked == nil, !held, track == nil, tumble == nil, !still(), !asleep() else { return }
         guard !UIAccessibility.isReduceMotionEnabled, !UIAccessibility.isVoiceOverRunning else { return }
         if glass {
             let wanted: CGPoint = GenieGlass.wander(from: spot, arena: arena, random: { Double.random(in: 0..<1) })
@@ -159,7 +161,7 @@ final class GenieCrawler {
             fall()
             return
         }
-        if GenieGravity.lowness(on, gravity: gravity()) < GenieGravity.ceiling, Double.random(in: 0..<1) < GenieCrawler.silkOdds,
+        if silks(), GenieGravity.lowness(on, gravity: gravity()) < GenieGravity.ceiling, Double.random(in: 0..<1) < GenieCrawler.silkOdds,
             dangle(from: on)
         {
             return

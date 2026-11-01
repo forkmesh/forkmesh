@@ -35,6 +35,7 @@
   {"date": "2026-10-31", "area": "Desktop", "text": "The session Context panel now shows colour-coded usage like Claude Code, and the Environment panel has a Remote control switch that shows your connected phone or explains how to connect one."},
   {"date": "2026-10-31", "area": "Settings", "text": "The Settings header and the heading of the section you are reading now stay at the top as you scroll, on the desktop, the web and both phone apps."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "A button that is working on something now shows a spinning ring around its icon until it is done, and left-rail icons ring while their section has work running, such as agents or shortcuts, on the desktop, the website and the phone apps."},
+  {"date": "2026-11-01", "area": "iPhone", "text": "Choose the Cloud Dragon as your Genie mascot, a fluffy dragon with 20 little activities, from the touch and hold menu or Settings."},
   {"date": "2026-10-31", "area": "Desktop", "text": "Hovering a pull request in the list shows a button that opens its changes in Git in one click."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The desktop CRM's first load is faster for large organizations: the first contacts show at once and the rest load in the background."},
   {"date": "2026-10-31", "area": "iPhone", "text": "The CRM opens faster for large organizations on iPhone and Android: the first contacts show at once and the rest load in the background."},
