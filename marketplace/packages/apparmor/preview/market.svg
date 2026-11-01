@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">AppArmor</title>
+  <desc id="desc">The AppArmor overview: profiles and processes by mode as coloured bars, a 24-hour chart of denials, and a list of items worth a look.</desc>
+  <rect width="1200" height="720" fill="#f6f8fb"/>
+  <rect x="42" y="38" width="1116" height="644" rx="18" fill="#ffffff" stroke="#d7dee9" stroke-width="2"/>
+  <g transform="translate(100 66) scale(0.72) translate(-94 -70)">
+    <path d="M94 88l38-18 38 18v46c0 44-38 59-38 59s-38-15-38-59z" fill="#1d6f42"/>
+    <path d="M113 131l13 13 28-35" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="196" y="106" fill="#172033" font-family="system-ui, sans-serif" font-size="34" font-weight="700">AppArmor</text>
+  <text x="196" y="138" fill="#62708a" font-family="system-ui, sans-serif" font-size="16">AppArmor is on · 96 profiles (41 enforce, 3 complain) · 58 of 412 processes confined · 23 denials in 7 days</text>
+  <rect x="842" y="70" width="122" height="40" rx="9" fill="#ffffff" stroke="#d7dee9"/>
+  <text x="866" y="96" fill="#235fdb" font-family="system-ui, sans-serif" font-size="16" font-weight="650">Live view</text>
+  <rect x="978" y="70" width="128" height="40" rx="9" fill="#235fdb"/>
+  <text x="1008" y="96" fill="#fff" font-family="system-ui, sans-serif" font-size="16" font-weight="650">Refresh</text>
+  <g font-family="system-ui, sans-serif" font-size="16">
+    <text x="94" y="196" fill="#172033" font-weight="700">Overview</text>
+    <text x="196" y="196" fill="#64748b">Profiles</text>
+    <text x="286" y="196" fill="#64748b">Processes</text>
+    <text x="390" y="196" fill="#64748b">Events</text>
+    <rect x="92" y="205" width="80" height="3" rx="1.5" fill="#235fdb"/>
+  </g>
+  <line x1="84" y1="208" x2="1116" y2="208" stroke="#d7dee9"/>
+  <g font-family="system-ui, sans-serif" font-size="15">
+    <text x="94" y="242" fill="#172033" font-weight="700">Profiles · 96</text>
+    <rect x="94" y="252" width="490" height="14" rx="7" fill="#e5e7eb"/>
+    <path d="M101 252h203v14h-203a7 7 0 0 1 0-14z" fill="#27834a"/>
+    <rect x="304" y="252" width="15" height="14" fill="#d08a00"/>
+    <rect x="319" y="252" width="230" height="14" fill="#6b7280"/>
+    <path d="M549 252h28a7 7 0 0 1 0 14h-28z" fill="#a3a9b4"/>
+    <rect x="94" y="278" width="11" height="11" rx="2" fill="#27834a"/><text x="111" y="288" fill="#334155">enforce 41</text>
+    <rect x="200" y="278" width="11" height="11" rx="2" fill="#d08a00"/><text x="217" y="288" fill="#334155">complain 3</text>
+    <rect x="310" y="278" width="11" height="11" rx="2" fill="#6b7280"/><text x="327" y="288" fill="#334155">unconfined 46</text>
+    <rect x="440" y="278" width="11" height="11" rx="2" fill="#a3a9b4"/><text x="457" y="288" fill="#334155">disabled 6</text>
+    <text x="626" y="242" fill="#172033" font-weight="700">Running processes · 412</text>
+    <rect x="626" y="252" width="490" height="14" rx="7" fill="#e5e7eb"/>
+    <path d="M633 252h59v14h-59a7 7 0 0 1 0-14z" fill="#27834a"/>
+    <rect x="692" y="252" width="10" height="14" fill="#d08a00"/>
+    <path d="M702 252h407a7 7 0 0 1 0 14h-407z" fill="#6b7280"/>
+    <rect x="626" y="278" width="11" height="11" rx="2" fill="#27834a"/><text x="643" y="288" fill="#334155">enforce 51</text>
+    <rect x="740" y="278" width="11" height="11" rx="2" fill="#d08a00"/><text x="757" y="288" fill="#334155">complain 7</text>
+    <rect x="852" y="278" width="11" height="11" rx="2" fill="#6b7280"/><text x="869" y="288" fill="#334155">unconfined 354</text>
+  </g>
+  <text x="94" y="330" fill="#172033" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Events in the last 24 hours</text>
+  <line x1="130" y1="346" x2="1116" y2="346" stroke="#e2e8f0"/>
+  <line x1="130" y1="446" x2="1116" y2="446" stroke="#cbd5e1"/>
+  <text x="118" y="351" fill="#64748b" font-family="system-ui, sans-serif" font-size="13" text-anchor="end">6</text>
+  <text x="118" y="451" fill="#64748b" font-family="system-ui, sans-serif" font-size="13" text-anchor="end">0</text>
+  <g fill="#b42318">
+    <rect x="216" y="430" width="30" height="16"/>
+    <rect x="462" y="396" width="30" height="50"/>
+    <rect x="503" y="363" width="30" height="83"/>
+    <rect x="544" y="413" width="30" height="33"/>
+    <rect x="790" y="430" width="30" height="16"/>
+    <rect x="995" y="380" width="30" height="66"/>
+    <rect x="1036" y="413" width="30" height="33"/>
+  </g>
+  <g fill="#d08a00">
+    <rect x="503" y="346" width="30" height="17"/>
+    <rect x="749" y="413" width="30" height="33"/>
+    <rect x="995" y="363" width="30" height="17"/>
+  </g>
+  <g font-family="system-ui, sans-serif" font-size="13" fill="#64748b">
+    <text x="134" y="466">11:00</text><text x="380" y="466">17:00</text><text x="626" y="466">23:00</text><text x="872" y="466">05:00</text>
+  </g>
+  <line x1="84" y1="492" x2="1116" y2="492" stroke="#d7dee9"/>
+  <text x="94" y="522" fill="#172033" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Worth a look</text>
+  <g font-family="system-ui, sans-serif" font-size="16">
+    <text x="94" y="558" fill="#b42318">/usr/sbin/cupsd</text><text x="400" y="558" fill="#475569">9 denials. If the program misbehaves, select them in Events and allow them.</text>
+    <text x="94" y="594" fill="#b42318">nvidia_modprobe</text><text x="400" y="594" fill="#475569">6 denials. If the program misbehaves, select them in Events and allow them.</text>
+    <text x="94" y="630" fill="#9a6200">tcpdump (pid 4120)</text><text x="400" y="630" fill="#475569">Runs unconfined although profile tcpdump matches it. Restart the program.</text>
+    <text x="94" y="666" fill="#9a6200">myapp</text><text x="400" y="666" fill="#475569">In complain mode: it logs but blocks nothing. Switch to enforce once quiet.</text>
+  </g>
+</svg>

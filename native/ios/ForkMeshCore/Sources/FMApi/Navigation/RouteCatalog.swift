@@ -161,6 +161,8 @@ public enum RouteCatalog {
         case .analytics: return "Analytics"
         case .competitors: return "Competitors"
         case .invoices: return "Invoices"
+        case .surveys: return "Surveys"
+        case .booking: return "Booking"
         case .ads: return "Ad review"
         case .ledger: return "Ledger"
         case .vault: return "Vault"
@@ -190,6 +192,7 @@ public enum RouteCatalog {
         case .usage: return "Usage"
         case .rssReader: return "RSS Reader"
         case .instanceFeed: return "Feed"
+        case .mastodon: return "Mastodon"
         case .secureDrive: return "Secure Drive"
         case .spiderRoom: return "Spider Room"
         case .workflows: return "Workflows"
@@ -254,6 +257,8 @@ public enum RouteCatalog {
         case .analytics: return "chart.xyaxis.line"
         case .competitors: return "binoculars"
         case .invoices: return "receipt"
+        case .surveys: return "list.clipboard"
+        case .booking: return "calendar.badge.clock"
         case .ads: return "rectangle.and.text.magnifyingglass"
         case .ledger: return "creditcard"
         case .vault: return "key"
@@ -282,6 +287,7 @@ public enum RouteCatalog {
         case .usage: return "gauge.with.dots.needle.33percent"
         case .rssReader: return "dot.radiowaves.up.forward"
         case .instanceFeed: return "bubble.left.and.bubble.right"
+        case .mastodon: return "at"
         case .secureDrive: return "lock.shield"
         case .spiderRoom: return "arkit"
         case .workflows: return "point.3.connected.trianglepath.dotted"
@@ -377,6 +383,7 @@ public enum HubCatalog {
         .destination(.notes, guestAction: "use notes"),
         .destination(.tasks(filter: nil), guestAction: "use tasks"),
         .destination(.calendar(date: nil, mode: .month)),
+        .destination(.booking(id: nil), guestAction: "set up a booking page", needsRegistration: true),
         .destination(.timers),
         .destination(.fileExplorer),
         .destination(.nexus),
@@ -400,6 +407,7 @@ public enum HubCatalog {
         .destination(.analytics(section: nil), needsRegistration: true),
         .destination(.competitors, needsRegistration: true),
         .destination(.invoices(organization: nil, invoice: nil), needsRegistration: true),
+        .destination(.surveys(organization: nil, survey: nil), needsRegistration: true),
         .destination(.ads, needsRegistration: true),
         .destination(.ledger(section: nil), needsRegistration: true),
     ]
@@ -424,6 +432,7 @@ public enum HubCatalog {
         .destination(.poker(table: nil)),
         .destination(.rssReader),
         .destination(.instanceFeed(post: nil)),
+        .destination(.mastodon),
         .destination(.secureDrive),
         .destination(.spiderRoom),
         .destination(.localAI),

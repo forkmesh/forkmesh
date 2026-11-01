@@ -2,11 +2,17 @@
 
 #include "ClaudeTranscriptTools.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QRegularExpression>
+#include <QSet>
 #include <QUrl>
 
 #include <algorithm>
+#include <functional>
 
 namespace forkmesh::sessioninsights {
 
@@ -92,6 +98,123 @@ QString hostOf(const QString &url)
     return host.isEmpty() ? url.trimmed() : host;
 }
 
+qint64 estimateTokens(qint64 chars)
+{
+    return chars <= 0 ? 0 : (chars + 3) / 4;
+}
+
+qint64 contextWindowFor(qint64 used, qint64 configured, const QString &model)
+{
+    constexpr qint64 kMillion = 1000000;
+    if (model.contains(QLatin1String("[1m]"), Qt::CaseInsensitive))
+        return qMax(configured, kMillion);
+    if (configured > 0 && used > configured)
+        return used <= kMillion ? kMillion : used;
+    return configured;
+}
+
+ContextSplit splitContext(const ContextUse &use, qint64 used, qint64 window, qint64 memory)
+{
+    ContextSplit split;
+    split.window = qMax<qint64>(0, window);
+    split.used = qBound<qint64>(0, used, split.window > 0 ? split.window : used);
+    split.free = qMax<qint64>(0, split.window - split.used);
+    const qint64 fixed =
+        qMin(split.used, use.baseline > 0 ? use.baseline : qMax<qint64>(0, memory));
+    split.memory = qMin(qMax<qint64>(0, memory), fixed);
+    split.system = fixed - split.memory;
+    const qint64 conversation = split.used - fixed;
+    const qint64 chars = use.messageChars + use.toolChars;
+    split.toolUse = chars > 0 ? qint64(double(conversation) * use.toolChars / chars) : 0;
+    split.messages = conversation - split.toolUse;
+    return split;
+}
+
+QString memoryProjectSlug(const QString &path)
+{
+    QString slug = path;
+    for (QChar &ch : slug)
+        if (!(ch.isLetterOrNumber() && ch.unicode() < 128))
+            ch = QLatin1Char('-');
+    return slug;
+}
+
+QList<MemoryFile> memoryFiles(const QString &cwd, const QString &home)
+{
+    QList<MemoryFile> files;
+    const QFileInfo start(cwd);
+    if (cwd.isEmpty() || !start.isDir())
+        return files;
+    const QString root = start.canonicalFilePath();
+    QSet<QString> seen;
+    const auto label = [&root, &home](const QString &path) {
+        if (path.startsWith(root + QLatin1Char('/')))
+            return path.mid(root.size() + 1);
+        if (!home.isEmpty() && path.startsWith(home + QLatin1Char('/')))
+            return QLatin1String("~/") + path.mid(home.size() + 1);
+        return path;
+    };
+    std::function<void(const QString &, const QString &, int, int)> add =
+        [&](const QString &path, const QString &name, int depth, int lineLimit) {
+            const QString canonical = QFileInfo(path).canonicalFilePath();
+            if (canonical.isEmpty() || seen.contains(canonical) || !QFileInfo(canonical).isFile())
+                return;
+            seen.insert(canonical);
+            QFile file(canonical);
+            if (!file.open(QIODevice::ReadOnly))
+                return;
+            QString text = QString::fromUtf8(file.read(512 * 1024));
+            if (lineLimit > 0)
+                text = text.section(QLatin1Char('\n'), 0, lineLimit - 1);
+            files << MemoryFile{canonical, name.isEmpty() ? label(canonical) : name,
+                                estimateTokens(text.size())};
+            if (depth >= 4)
+                return;
+            const QDir dir = QFileInfo(canonical).absoluteDir();
+            for (const QString &line : text.split(QLatin1Char('\n'))) {
+                const QString trimmed = line.trimmed();
+                if (trimmed.size() < 2 || !trimmed.startsWith(QLatin1Char('@')) ||
+                    trimmed.contains(QLatin1Char(' ')))
+                    continue;
+                QString target = trimmed.mid(1);
+                if (target.startsWith(QLatin1String("~/")))
+                    target = home + target.mid(1);
+                else if (QDir::isRelativePath(target))
+                    target = dir.filePath(target);
+                add(target, QString(), depth + 1, 0);
+            }
+        };
+    QStringList chain;
+    for (QDir dir(root);; ) {
+        chain.prepend(dir.absolutePath());
+        if (!dir.cdUp())
+            break;
+    }
+    if (!home.isEmpty())
+        add(QDir(home).filePath(QStringLiteral(".claude/CLAUDE.md")), QString(), 0, 0);
+    for (const QString &dir : chain)
+        for (const char *name : {"CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"})
+            add(QDir(dir).filePath(QLatin1String(name)), QString(), 0, 0);
+    if (files.isEmpty()) {
+        if (!home.isEmpty())
+            add(QDir(home).filePath(QStringLiteral(".codex/AGENTS.md")), QString(), 4, 0);
+        for (const QString &dir : chain)
+            add(QDir(dir).filePath(QStringLiteral("AGENTS.md")), QString(), 4, 0);
+        return files;
+    }
+    if (home.isEmpty())
+        return files;
+    for (auto dir = chain.crbegin(); dir != chain.crend(); ++dir) {
+        const QString memory = QDir(home).filePath(
+            QStringLiteral(".claude/projects/%1/memory/MEMORY.md").arg(memoryProjectSlug(*dir)));
+        if (QFileInfo(memory).isFile()) {
+            add(memory, QStringLiteral("MEMORY.md (auto memory)"), 4, 200);
+            break;
+        }
+    }
+    return files;
+}
+
 void Collector::clear()
 {
     m_tasks.clear();
@@ -101,6 +224,7 @@ void Collector::clear()
     m_tools.clear();
     m_pending.clear();
     m_shells.clear();
+    m_context = ContextUse();
     m_clock = 0;
     m_calls = 0;
     m_errors = 0;
@@ -113,6 +237,7 @@ bool Collector::ingest(const QJsonObject &event)
         return false;
     bool changed = m_tasks.ingest(event);
     const QString type = event.value(QStringLiteral("type")).toString();
+    applyContext(type, event);
     if (type == QLatin1String("_local_user"))
         return applyNotifications(event.value(QStringLiteral("text")).toString()) || changed;
     if (type != QLatin1String("assistant") && type != QLatin1String("user"))
@@ -138,6 +263,77 @@ bool Collector::ingest(const QJsonObject &event)
         }
     }
     return changed;
+}
+
+bool Collector::applyContext(const QString &type, const QJsonObject &event)
+{
+    ContextUse &use = m_context;
+    if (type == QLatin1String("system")) {
+        const QString subtype = event.value(QStringLiteral("subtype")).toString();
+        if (subtype == QLatin1String("init")) {
+            const auto count = [&event](const char *key) {
+                const QJsonValue value = event.value(QLatin1String(key));
+                return value.isArray() ? int(value.toArray().size()) : -1;
+            };
+            use.tools = count("tools");
+            use.mcpServers = count("mcp_servers");
+            use.skills = count("skills");
+            use.agents = count("agents");
+            const QString model = event.value(QStringLiteral("model")).toString();
+            if (!model.isEmpty())
+                use.model = model;
+        } else if (subtype == QLatin1String("compact_boundary")) {
+            ++use.compactions;
+            use.messageChars = 0;
+            use.toolChars = 0;
+        } else {
+            return false;
+        }
+        ++use.revision;
+        return true;
+    }
+    if (type == QLatin1String("_local_user")) {
+        use.messageChars += event.value(QStringLiteral("text")).toString().size();
+        ++use.revision;
+        return true;
+    }
+    if (type != QLatin1String("assistant") && type != QLatin1String("user"))
+        return false;
+    const QJsonObject message = event.value(QStringLiteral("message")).toObject();
+    if (type == QLatin1String("assistant")) {
+        const QJsonObject usage = message.value(QStringLiteral("usage")).toObject();
+        const auto number = [&usage](const char *key) {
+            return qint64(usage.value(QLatin1String(key)).toDouble());
+        };
+        const qint64 input = number("input_tokens") + number("cache_creation_input_tokens") +
+                             number("cache_read_input_tokens");
+        if (input > 0) {
+            if (use.baseline < 0)
+                use.baseline =
+                    qMax<qint64>(0, input - estimateTokens(use.messageChars + use.toolChars));
+            use.latest = input + number("output_tokens");
+        }
+    }
+    const QJsonValue content = message.value(QStringLiteral("content"));
+    if (content.isString())
+        use.messageChars += content.toString().size();
+    for (const QJsonValue &value : content.toArray()) {
+        const QJsonObject block = value.toObject();
+        const QString blockType = block.value(QStringLiteral("type")).toString();
+        if (blockType == QLatin1String("text")) {
+            use.messageChars += block.value(QStringLiteral("text")).toString().size();
+        } else if (blockType == QLatin1String("tool_use") ||
+                   blockType == QLatin1String("server_tool_use")) {
+            use.toolChars += block.value(QStringLiteral("name")).toString().size() +
+                             QJsonDocument(block.value(QStringLiteral("input")).toObject())
+                                 .toJson(QJsonDocument::Compact)
+                                 .size();
+        } else if (blockType == QLatin1String("tool_result")) {
+            use.toolChars += tt::toolResultText(block.value(QStringLiteral("content"))).size();
+        }
+    }
+    ++use.revision;
+    return true;
 }
 
 void Collector::touchOutput(const QString &id, const QString &path, const QString &name,

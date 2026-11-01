@@ -1500,6 +1500,12 @@ public:
     }
     void testRemoveChannelGroup(const QString &group) { removeChannelGroup(group); }
     void testSetChannels(const QStringList &channels) { setChannels(channels); }
+    void testStartLocalMesh() { startLocalMesh(); }
+    bool testHasLocalMesh() const { return m_localMesh != nullptr; }
+    bool testCorePackageServiceRunning(const QString &id) const
+    {
+        return corePackageServiceRunning(id);
+    }
     void testSetOfficeConversations(const QStringList &conversations)
     {
         m_officeConversations = conversations;
@@ -5196,6 +5202,7 @@ private:
     void takeBackupNow(bool automatic);
     void refreshBackupTable();
     void pruneOldBackups();
+    QStringList partialBackupPaths() const;
     void removePartialBackups();
     QStringList backupExcludeRoots() const;
     void restoreConfigArchive(const QString &archivePath);
@@ -5917,6 +5924,7 @@ private:
     promptFirewallRequest(const QString &method, const QUrl &url,
                           QString *ruleOut);
     bool authorizeFirewallConnection(const QString &method, const QUrl &url);
+    void refreshFirewallAllowAllButton();
     // Says, once a session, that this build is older than the minimum
     // supported release and that is why nothing reaches the network.
     void warnOutdatedClientVersion();
@@ -6627,7 +6635,8 @@ private:
     bool resolveActionApproval(const RepositoryRecord &repo,
                                const ActionRun &run);
     bool approveActionRun(int runId, QString *error = nullptr);
-    int autoApproveAwaitingRuns(const RepositoryRecord &repo);
+    void autoApproveAwaitingRuns(const RepositoryRecord &repo,
+                                 bool announce = false);
     struct WorkflowScanEntry {
         QString path;    // .forkmesh/<file>
         QString content; // the file as it is at the scanned commit
@@ -7992,6 +8001,7 @@ private:
         QString dir;
         QString signature;
         QStringList branches;
+        BranchRefFiles files;
     };
     void requestRepoBranchOrder(const QString &dir) const;
     void applyRepoBranchOrder(const BranchOrderLoad &load);
@@ -12272,6 +12282,8 @@ private:
     };
     QCheckBox *m_requestFirewallEnabledCheck = nullptr;
     QLabel *m_requestFirewallStatus = nullptr;
+    QPushButton *m_requestFirewallAllowAllButton = nullptr;
+    QTimer *m_requestFirewallAllowAllTicker = nullptr;
     QLineEdit *m_requestFirewallRuleEdit = nullptr;
     QTableWidget *m_requestFirewallRulesTable = nullptr;
     QTableWidget *m_requestFirewallHistoryTable = nullptr;

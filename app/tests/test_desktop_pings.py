@@ -344,3 +344,141 @@ def test_delete_refusals():
         response = _post(module, _delete_body(**bad), SIGNED, method="DELETE")
         assert response["status"] == 400, bad
     assert calls["sql"] == [] and calls["events"] == []
+
+
+APPROVAL_ID = "0123456789abcdef0123456789abcdef"
+PUSH_ICONS = (SRC / "push_icons.py").read_text(encoding="utf-8")
+
+
+def _post_approval(module, body, query=None, method="POST"):
+    url = "https://app.forkmesh.com/api/notifications/agent-approval"
+    if query:
+        url += "?" + urlencode(query)
+    request = _Request(url, method)
+    request.body = body
+    return asyncio.run(module.agent_approval_ping_handler(None, request))
+
+
+def _approval_body(**overrides):
+    body = {"sessionId": "12", "approvalId": APPROVAL_ID,
+            "agent": "Claude Code",
+            "summary": "Wants to run a command in alice/app"}
+    body.update(overrides)
+    return body
+
+
+def test_agent_approval_route_kind_and_catalog_are_wired():
+    assert '    "agent_approval",\n' in ENTRY
+    assert ('agent_approval_ping_handler = _desktop_pings.export(\n'
+            '    "agent_approval_ping_handler")') in ENTRY
+    assert '"/api/notifications/agent-approval"' in APP_RUNTIME
+    assert "return await agent_approval_ping_handler(self.env, request)" in (
+        APP_RUNTIME)
+    assert ('("agent_approval", "devices", '
+            '"Agent approvals from your desktop")') in PING_SETTINGS
+    assert '"agent_approval": ' in PUSH_ICONS
+
+
+def test_desktop_signs_the_same_approval_proof_route_and_canonical():
+    module, _ = _load()
+    source = (DESKTOP / "src" / "LocalControlAgentOps.cpp").read_text(
+        encoding="utf-8")
+    assert f'QStringLiteral("{module.AGENT_APPROVAL_PROOF}")' in source
+    assert 'QStringLiteral("/api/notifications/agent-approval")' in source
+    test = (DESKTOP / "tests" / "test_local_control_agentops.cpp").read_text(
+        encoding="utf-8")
+    assert ('"forkmesh-account-agent-approval-ping-v1\\nalice\\n12\\n") +\n'
+            '                           facts.id +') in test
+    assert ('"\\nClaude Code\\nWants to run a command in alice/app\\n"\n'
+            '                                          "1700000000000"') in test
+    fields = module.agent_approval_fields(_approval_body())
+    assert module.agent_approval_canonical(
+        "alice", "1700000000000", fields).decode() == (
+        "forkmesh-account-agent-approval-ping-v1\nalice\n12\n" + APPROVAL_ID
+        + "\nClaude Code\nWants to run a command in alice/app\n1700000000000")
+    assert 'QRegularExpression pattern(QStringLiteral("^[0-9a-f]{32}$"))' in (
+        source)
+    assert module.AGENT_APPROVAL_AGENT_MAX == 80
+    assert module.AGENT_APPROVAL_SUMMARY_MAX == 200
+    header = (DESKTOP / "src" / "LocalControlAgentOps.h").read_text(
+        encoding="utf-8")
+    assert "kMaxPingSummaryChars = 200;" in header
+    assert "kMaxPingAgentChars = 80;" in header
+
+
+def test_a_signed_approval_is_filed_with_approve_and_deny_routing():
+    module, calls = _load()
+    response = _post_approval(module, _approval_body(), SIGNED)
+    assert response["status"] == 200
+    fields = module.agent_approval_fields(_approval_body())
+    assert calls["verified"] == [
+        ("jett", "proof", module.agent_approval_canonical("jett", "123", fields))]
+    [(recipient, kind, title, kwargs)] = calls["enqueued"]
+    assert (recipient, kind, title) == (
+        "jett", "agent_approval", "Claude Code needs your approval")
+    assert kwargs["body"] == "Wants to run a command in alice/app"
+    assert kwargs["source"] == "desktop"
+    assert kwargs["dedupe"] == "agent-approval:" + APPROVAL_ID
+    assert kwargs["ts"] == NOW
+    assert kwargs["meta"] == {
+        "category": "agent-approval", "sessionId": "12",
+        "approvalId": APPROVAL_ID, "agent": "Claude Code"}
+
+
+def test_a_session_approval_needs_no_signature_and_blank_text_is_filled():
+    module, calls = _load(session_account="jett")
+    response = _post_approval(module, _approval_body(agent="", summary=" "))
+    assert response["status"] == 200
+    assert calls["verified"] == []
+    [(_, _, title, kwargs)] = calls["enqueued"]
+    assert title == "An agent needs your approval"
+    assert kwargs["body"] == "Wants your approval"
+
+
+def test_an_unusual_agent_name_on_one_line_is_accepted():
+    module, calls = _load(session_account="jett")
+    response = _post_approval(
+        module, _approval_body(agent="Agent \ue000 caf\u00e9 \U0001F916"))
+    assert response["status"] == 200
+    [(_, _, title, _)] = calls["enqueued"]
+    assert title.startswith("Agent \ue000 caf\u00e9")
+
+
+def test_approval_refusals():
+    module, calls = _load(signature_ok=False)
+    assert _post_approval(module, _approval_body(), SIGNED)["status"] == 401
+    assert _post_approval(module, _approval_body())["status"] == 401
+    assert _post_approval(
+        module, _approval_body(), SIGNED, method="GET")["status"] == 405
+
+    module, calls = _load()
+    for bad in (dict(approvalId="A" * 32), dict(approvalId="0" * 31),
+                dict(approvalId=7), dict(sessionId=""), dict(sessionId="a b"),
+                dict(sessionId="x" * 65), dict(agent="x" * 81),
+                dict(summary="x" * 201), dict(summary="two\nlines"),
+                dict(agent="tab\there"), dict(summary="a\u2028b"),
+                dict(agent="zero\u200bwidth"), dict(agent=None)):
+        response = _post_approval(module, _approval_body(**bad), SIGNED)
+        assert response["status"] == 400, bad
+    assert _post_approval(module, ["x"], SIGNED)["status"] == 400
+    assert calls["enqueued"] == []
+
+    module, calls = _load()
+    url_signed = _Request(
+        "https://app.forkmesh.com/api/notifications/desktop?"
+        + urlencode(SIGNED), "POST")
+    url_signed.body = _approval_body()
+    response = asyncio.run(module.agent_approval_ping_handler(None, url_signed))
+    assert response["status"] == 401
+
+    module, calls = _load(account={"status": "suspended"})
+    assert _post_approval(module, _approval_body(), SIGNED)["status"] == 401
+    assert calls["enqueued"] == []
+
+
+def test_the_apns_banner_carries_the_approval():
+    source = ENTRY.split("async def _apns_ping_alert(")[1].split(
+        "\nasync def ")[0]
+    assert 'record.get("kind") == "agent_approval"' in source
+    assert 'alert["category"] = "agent-approval"' in source
+    assert 'alert["approvalId"]' in source

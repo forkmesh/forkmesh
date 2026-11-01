@@ -1,7 +1,11 @@
 #include "SessionInsights.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTemporaryDir>
 
 #include <iostream>
 
@@ -155,6 +159,114 @@ static void testCardOrder()
     check(movedCard(defaults, QStringLiteral("nope"), 0) == defaults, "unknown card ignored");
 }
 
+static QJsonObject reply(qint64 input, qint64 output, const QString &text)
+{
+    return QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("assistant")},
+        {QStringLiteral("message"),
+         QJsonObject{{QStringLiteral("content"),
+                      QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                             {QStringLiteral("text"), text}}}},
+                     {QStringLiteral("usage"),
+                      QJsonObject{{QStringLiteral("input_tokens"), 4},
+                                  {QStringLiteral("cache_creation_input_tokens"), 6},
+                                  {QStringLiteral("cache_read_input_tokens"), input - 10},
+                                  {QStringLiteral("output_tokens"), output}}}}}};
+}
+
+static void testContext()
+{
+    Collector c;
+    c.ingest(QJsonObject{{QStringLiteral("type"), QStringLiteral("system")},
+                         {QStringLiteral("subtype"), QStringLiteral("init")},
+                         {QStringLiteral("model"), QStringLiteral("claude-opus[1m]")},
+                         {QStringLiteral("tools"), QJsonArray{QStringLiteral("Read"),
+                                                              QStringLiteral("Bash")}},
+                         {QStringLiteral("mcp_servers"), QJsonArray{}},
+                         {QStringLiteral("skills"), QJsonArray{QStringLiteral("pdf")}}});
+    c.ingest(QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                         {QStringLiteral("text"), QString(400, QLatin1Char('p'))}});
+    c.ingest(reply(20100, 50, QString(400, QLatin1Char('r'))));
+    c.ingest(toolUse(QStringLiteral("r1"), QStringLiteral("Read"),
+                     {{QStringLiteral("file_path"), QStringLiteral("/repo/a")}}));
+    c.ingest(toolResult(QStringLiteral("r1"), QString(4000, QLatin1Char('x'))));
+    c.ingest(reply(22000, 100, QStringLiteral("done")));
+    const ContextUse &use = c.context();
+    check(use.baseline == 20000, "baseline is the first turn minus the prompt");
+    check(use.latest == 22100, "latest is the last turn's input and output");
+    check(use.tools == 2 && use.mcpServers == 0 && use.skills == 1 && use.agents == -1,
+          "init counts tools, MCP servers and skills");
+    check(use.messageChars == 804 && use.toolChars > 4000, "conversation chars by kind");
+    check(contextWindowFor(use.latest, 200000, use.model) == 1000000, "[1m] model has 1M");
+    check(contextWindowFor(250000, 200000, QString()) == 1000000, "overflow means 1M");
+    check(contextWindowFor(1000, 200000, QString()) == 200000, "configured window kept");
+
+    const ContextSplit split = splitContext(use, use.latest, 200000, 3000);
+    check(split.memory == 3000 && split.system == 17000, "memory comes out of the baseline");
+    check(split.messages + split.toolUse == 2100 && split.toolUse > split.messages,
+          "conversation split by length");
+    check(split.free == 177900, "free space");
+
+    ContextUse bare;
+    const ContextSplit plain = splitContext(bare, 5000, 10000, 1000);
+    check(plain.memory == 1000 && plain.system == 0 && plain.messages == 4000,
+          "no usage events: all but memory is messages");
+
+    const quint64 before = c.context().revision;
+    c.ingest(QJsonObject{{QStringLiteral("type"), QStringLiteral("system")},
+                         {QStringLiteral("subtype"), QStringLiteral("compact_boundary")}});
+    check(c.context().compactions == 1 && c.context().messageChars == 0 &&
+              c.context().toolChars == 0 && c.context().revision > before,
+          "compaction resets the conversation");
+    c.clear();
+    check(c.context().latest == 0 && c.context().baseline == -1, "clear resets context");
+}
+
+static void write(const QString &path, const QByteArray &text)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly))
+        file.write(text);
+}
+
+static void testMemoryFiles()
+{
+    QTemporaryDir dir;
+    const QString home = dir.filePath(QStringLiteral("home"));
+    const QString repo = home + QStringLiteral("/code/repo");
+    const QString work = repo + QStringLiteral("/sub");
+    QDir().mkpath(work);
+    write(home + QStringLiteral("/.claude/CLAUDE.md"), QByteArray(40, 'u'));
+    write(repo + QStringLiteral("/CLAUDE.md"), "@AGENTS.md\n");
+    write(repo + QStringLiteral("/AGENTS.md"), QByteArray(400, 'a'));
+    write(work + QStringLiteral("/CLAUDE.local.md"), QByteArray(8, 'l'));
+    write(home + QStringLiteral("/.claude/projects/") + memoryProjectSlug(QDir(repo).canonicalPath()) +
+              QStringLiteral("/memory/MEMORY.md"),
+          "one\ntwo\n");
+    const QList<MemoryFile> files = memoryFiles(work, QDir(home).canonicalPath());
+    QStringList labels;
+    for (const MemoryFile &file : files)
+        labels << file.label;
+    check(labels == QStringList{QStringLiteral("~/.claude/CLAUDE.md"),
+                                QStringLiteral("~/code/repo/CLAUDE.md"),
+                                QStringLiteral("~/code/repo/AGENTS.md"),
+                                QStringLiteral("CLAUDE.local.md"),
+                                QStringLiteral("MEMORY.md (auto memory)")},
+          "memory files: user, ancestors, imports, local, auto memory");
+    check(files.size() == 5 && files.at(2).tokens == 100, "tokens estimated from size");
+    check(memoryProjectSlug(QStringLiteral("/home/f/src/.worktrees/x")) ==
+              QStringLiteral("-home-f-src--worktrees-x"),
+          "memory slug matches Claude Code's project folders");
+
+    const QString codex = dir.filePath(QStringLiteral("codex"));
+    write(codex + QStringLiteral("/AGENTS.md"), QByteArray(4, 'c'));
+    const QList<MemoryFile> agents = memoryFiles(codex, dir.filePath(QStringLiteral("none")));
+    check(agents.size() == 1 && agents.first().label == QStringLiteral("AGENTS.md"),
+          "without CLAUDE.md the AGENTS.md chain is used");
+    check(memoryFiles(QString(), home).isEmpty(), "no folder, no files");
+}
+
 int main()
 {
     testOutputs();
@@ -162,6 +274,8 @@ int main()
     testBackground();
     testProgressAndClear();
     testCardOrder();
+    testContext();
+    testMemoryFiles();
     if (failures == 0)
         std::cout << "session insights tests passed\n";
     return failures == 0 ? 0 : 1;

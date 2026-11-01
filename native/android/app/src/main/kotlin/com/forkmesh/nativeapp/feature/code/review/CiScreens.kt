@@ -1,6 +1,8 @@
 package com.forkmesh.nativeapp.feature.code.review
 
 import com.forkmesh.nativeapp.ui.kit.confirmAction
+import androidx.compose.ui.platform.LocalContext
+import com.forkmesh.nativeapp.feature.account.projects.UserPresence
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -70,7 +72,7 @@ import com.forkmesh.nativeapp.ui.kit.FmMessageTools
 import androidx.compose.foundation.layout.Spacer
 
 @Composable
-private fun runColor(status: ActionsRunStatus) = when (status) {
+internal fun runColor(status: ActionsRunStatus) = when (status) {
     ActionsRunStatus.Success -> Fm.colors.success
     ActionsRunStatus.Failed, ActionsRunStatus.Rejected -> Fm.colors.danger
     ActionsRunStatus.AwaitingApproval -> Fm.colors.warning
@@ -117,8 +119,10 @@ internal class ActionsScreen(private val repo: Repository, private val commit: S
                 delay(wait)
             }
         }
+        val context = LocalContext.current
         suspend fun control(kind: ActionsControlKind, runId: Int? = null, workflow: String? = null, branch: String? = null, enabled: Boolean? = null) {
             if (kind.isDestructive && !messenger.confirmAction(kind.label, kind.label)) return
+            if (kind.needsAuthentication && !UserPresence.confirm(context, messenger, "Confirm it's you to ${kind.label.lowercase()}.")) return
             io { model.send(kind, runId, workflow, branch, enabled) }
             tick.bump()
             model.notice?.let { status.report(it.text, !it.good) }
@@ -137,7 +141,7 @@ internal class ActionsScreen(private val repo: Repository, private val commit: S
                 item {
                     InfoCard(if (summary.node.isEmpty()) "Actions" else "Runs on ${summary.node}") {
                         if (model.fromDesktop) Note("Live from ${summary.node} over its desktop connection.")
-                        if (summary.actionsEnabled != null && model.canControl && !model.fromDesktop) {
+                        if (summary.actionsEnabled != null && model.showsSwitches) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("Actions enabled", Modifier.weight(1f), color = Fm.colors.textPrimary)
                                 FmSwitch(checked = summary.actionsEnabled == true, onCheckedChange = { on ->
@@ -146,6 +150,9 @@ internal class ActionsScreen(private val repo: Repository, private val commit: S
                             }
                         }
                         if (!model.canControl) Note("This node does not accept remote control; runs are read-only here.")
+                        if (model.canManageSecrets) {
+                            FmToneButton("Secrets", onPressed = { navigator.push(ActionSecretsScreen(repo)) }, icon = "key_outlined")
+                        }
                     }
                 }
                 if (model.workflows.isNotEmpty()) {
@@ -168,7 +175,7 @@ internal class ActionsScreen(private val repo: Repository, private val commit: S
                                                 }
                                             }, tone = FmTone.Accent)
                                         }
-                                        if (model.canControl && !model.fromDesktop) {
+                                        if (model.showsSwitches) {
                                             FmSwitch(checked = workflow.enabled, onCheckedChange = { on ->
                                                 scope.launch { control(ActionsControlKind.SetWorkflowEnabled, workflow = workflow.path, enabled = on) }
                                             })
@@ -242,6 +249,7 @@ internal class ActionRunScreen(
         val tick = rememberTick()
         val scope = rememberCoroutineScope()
         val messenger = LocalFmMessenger.current
+        val context = LocalContext.current
         val runStatus = rememberFmStatus()
         val logStatus = rememberFmStatus()
         val copy = rememberCopyText(logStatus)
@@ -286,6 +294,7 @@ internal class ActionRunScreen(
                                 FmToneButton(kind.label, onPressed = {
                                     scope.launch {
                                         if (kind.isDestructive && !messenger.confirmAction(kind.label, kind.label)) return@launch
+                                        if (kind.needsAuthentication && !UserPresence.confirm(context, messenger, "Confirm it's you to ${kind.label.lowercase()} run #${run.id}.")) return@launch
                                         io { model.send(kind, runId = run.id) }
                                         tick.bump()
                                         model.notice?.let { runStatus.report(it.text, !it.good) }
@@ -330,9 +339,14 @@ internal class ActionRunScreen(
                     }
                 }
                 item {
-                    InfoCard(if (model.fromDesktop && run.status.isActive) "Log (live)" else "Log") {
+                    val live = (model.fromDesktop || model.hasFullLog(runId)) && run.status.isActive
+                    InfoCard(if (live) "Log (live)" else "Log") {
                         val lines = CiLog.lines(run.logTail)
                         if (lines.isEmpty()) Note("No log yet.")
+                        model.logProblems[runId]?.let { Note(it, Fm.colors.danger) }
+                        if (model.hasFullLog(runId)) {
+                            FmToneButton("Full log", onPressed = { navigator.push(RunLogScreen(repo, model, runId)) }, icon = "article_outlined")
+                        }
                         SelectionContainer {
                             Column(Modifier.horizontalScroll(rememberScrollState())) {
                                 for (line in lines) Mono(line)
@@ -643,6 +657,7 @@ internal fun ChecksSummaryCard(repo: Repository, pull: Int, navigator: Navigator
         tick.bump()
     }
     tick.value
+    if (model.summary?.isRunner == true && !model.fromDesktop) return
     val checks = model.checks(pull)
     InfoCard("Checks") {
         Note(checks.label)

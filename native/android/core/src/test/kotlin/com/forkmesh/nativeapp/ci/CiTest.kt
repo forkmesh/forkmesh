@@ -20,10 +20,54 @@ class FakeCiClient : CiClient {
     var mirrors: Map<String, Any?> = emptyMap()
     val announcements = ArrayList<List<String>>()
 
+    var controlAnswer: Map<String, Any?> = emptyMap()
+    var checks: RunnerPullChecks? = null
+    var checksFailure: Exception? = null
+    val checksRequests = ArrayList<PullChecksRequest>()
+    var checksAnswer: Map<String, Any?> = mapOf("ok" to true)
+    var checksActionFailure: Exception? = null
+    val logs = HashMap<Int, RunnerRunLog>()
+    var logFailure: Exception? = null
+    val logCalls = ArrayList<Int>()
+    var secretList = emptyList<ActionSecret>()
+    var secretFailure: Exception? = null
+    val secretCalls = ArrayList<String>()
+
     override fun actionsRuns(repo: RepoRef) = summary
-    override fun actionsControl(repo: RepoRef, request: ActionsControlRequest) {
+    override fun actionsControl(repo: RepoRef, request: ActionsControlRequest): Map<String, Any?> {
         controlFailure?.let { throw it }
         controls.add(request)
+        return controlAnswer
+    }
+    override fun pullChecks(repo: RepoRef, number: Int): RunnerPullChecks {
+        checksFailure?.let { throw it }
+        return checks ?: RunnerPullChecks(number)
+    }
+    override fun pullChecksAction(repo: RepoRef, number: Int, request: PullChecksRequest): Map<String, Any?> {
+        checksActionFailure?.let { throw it }
+        checksRequests.add(request)
+        return checksAnswer
+    }
+    override fun runLog(repo: RepoRef, runId: Int): RunnerRunLog {
+        logCalls.add(runId)
+        logFailure?.let { throw it }
+        return logs[runId] ?: throw CiError(404, "run_not_found")
+    }
+    override fun actionSecrets(repo: RepoRef): List<ActionSecret> {
+        secretFailure?.let { throw it }
+        return secretList
+    }
+    override fun putActionSecret(repo: RepoRef, name: String, value: String): Map<String, Any?> {
+        secretFailure?.let { throw it }
+        secretCalls.add("PUT $name $value")
+        secretList = (secretList.filter { it.name != name } + ActionSecret(name, 5, "alice"))
+        return mapOf("ok" to true, "name" to name, "updatedAt" to 5L)
+    }
+    override fun deleteActionSecret(repo: RepoRef, name: String): Map<String, Any?> {
+        secretFailure?.let { throw it }
+        secretCalls.add("DELETE $name")
+        secretList = secretList.filter { it.name != name }
+        return mapOf("ok" to true, "name" to name)
     }
     override fun webhooks(repo: RepoRef, action: String, fields: Map<String, Any?>): Map<String, Any?> {
         webhookCalls.add(action to fields)

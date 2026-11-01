@@ -4781,6 +4781,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-window-tests COMMAND forkmesh-window-tests)
     add_test(NAME forkmesh-startup-splash-tests
              COMMAND forkmesh-startup-splash-tests)
+    add_test(NAME forkmesh-local-mesh-gate-window-tests
+             COMMAND forkmesh-window-tests --local-mesh-gate-only)
     add_test(NAME forkmesh-teammates-window-tests
              COMMAND forkmesh-window-tests --teammates-only)
     add_test(NAME forkmesh-task-agent-avatar-window-tests

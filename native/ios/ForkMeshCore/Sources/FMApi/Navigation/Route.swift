@@ -174,6 +174,8 @@ public enum Route: Codable, Hashable, Sendable {
     case analytics(section: String?)
     case competitors
     case invoices(organization: String?, invoice: String?)
+    case surveys(organization: String?, survey: String?)
+    case booking(id: String?)
     case ads
     case ledger(section: String?)
     // Personal (WS21 and existing screens)
@@ -201,6 +203,7 @@ public enum Route: Codable, Hashable, Sendable {
     case usage
     case rssReader
     case instanceFeed(post: String?)
+    case mastodon
     case secureDrive
     case spiderRoom
     case workflows
@@ -300,6 +303,8 @@ public enum Route: Codable, Hashable, Sendable {
         case .analytics: return .analytics
         case .competitors: return .competitors
         case .invoices: return .invoices
+        case .surveys: return .surveys
+        case .booking: return .booking
         case .ads: return .ads
         case .ledger: return .ledger
         case .vault: return .vault
@@ -326,6 +331,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .usage: return .usage
         case .rssReader: return .rssReader
         case .instanceFeed: return .instanceFeed
+        case .mastodon: return .mastodon
         case .secureDrive: return .secureDrive
         case .spiderRoom: return .spiderRoom
         case .workflows: return .workflows
@@ -361,8 +367,8 @@ public enum Route: Codable, Hashable, Sendable {
         case profile, people, docs, search
         case notes, note, notePage, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, runners, provision, network, node
-        case market, package, crm, contact, crmOrg, marketing, analytics, competitors, invoices, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, nexus, faceChanger, videoMixDjStudio, poker, appStoreStatus, usage, rssReader, instanceFeed, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
+        case market, package, crm, contact, crmOrg, marketing, analytics, competitors, invoices, surveys, booking, ads, ledger
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, nexus, faceChanger, videoMixDjStudio, poker, appStoreStatus, usage, rssReader, instanceFeed, mastodon, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
         case ember, strata, synapse
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
@@ -388,11 +394,11 @@ public enum Route: Codable, Hashable, Sendable {
             case .search, .tour, .updateRequired, .launchedAgent: return "WS8"
             case .desktops, .desktop, .provision, .node: return "WS16"
             case .network, .stats, .status, .admin, .activity, .logs, .diagnostics, .appStoreStatus: return "WS20"
-            case .market, .package, .crm, .contact, .crmOrg, .marketing, .analytics, .competitors, .invoices, .ads,
-                .ledger:
+            case .market, .package, .crm, .contact, .crmOrg, .marketing, .analytics, .competitors, .invoices, .surveys,
+                .booking, .ads, .ledger:
                 return "WS19"
             case .vault, .coves, .cove: return "WS21"
-            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .openWrtRouter, .fileExplorer, .nexus, .faceChanger, .videoMixDjStudio, .poker, .rssReader, .instanceFeed, .secureDrive, .spiderRoom, .workflows, .localAI, .ember, .strata, .synapse, .orgs,
+            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .openWrtRouter, .fileExplorer, .nexus, .faceChanger, .videoMixDjStudio, .poker, .rssReader, .instanceFeed, .mastodon, .secureDrive, .spiderRoom, .workflows, .localAI, .ember, .strata, .synapse, .orgs,
                 .org:
                 return "existing"
             case .projects, .projectAccess: return "WS1"

@@ -17870,6 +17870,37 @@ else:
           QStringLiteral("the shared app frame reserves exactly one pixel for "
                          "the perimeter on every side"));
 
+    if (app.arguments().contains(QStringLiteral("--local-mesh-gate-only"))) {
+        check(window.testCorePackageServiceRunning(QStringLiteral("local-mesh")),
+              QStringLiteral("the local-mesh service runs in a new window, so "
+                             "only the session gate can keep the mesh down"));
+        check(!window.testHasChatBackend(),
+              QStringLiteral("a new window has no chat session yet"));
+        window.testStartLocalMesh();
+        QElapsedTimer warm;
+        warm.start();
+        while (warm.elapsed() < 2000) {
+            QApplication::processEvents();
+            QThread::msleep(10);
+        }
+        check(!window.testHasLocalMesh(),
+              QStringLiteral("a network change before a chat session does not "
+                             "start the local mesh"));
+        window.testSetClosingDown(true);
+        window.testStartLocalMesh();
+        QApplication::processEvents();
+        check(!window.testHasLocalMesh(),
+              QStringLiteral("a closing window does not start the local mesh"));
+        window.testSetClosingDown(false);
+        window.testSetChannels({QStringLiteral("#general"),
+                                QStringLiteral("#lobby")});
+        check(window.testChatSidebarRows().contains(QStringLiteral("#lobby")),
+              QStringLiteral("the sidebar lists the channels (rows = %1)")
+                  .arg(window.testChatSidebarRows().join(QStringLiteral(", "))));
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (app.arguments().contains(QStringLiteral("--deploy-log-badges-only"))) {
         checkDeployLogBadges(window);
         stopChildProcesses(window);

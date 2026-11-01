@@ -151,15 +151,14 @@ QPushButton#sessionsSend:disabled {
     color: @fgSubtle; background-color: @surfaceRaised; border-color: @border;
 }
 
-QScrollArea#sessionsDetails {
-    background-color: @bg; border: none; border-left: 1px solid @border;
-}
+QScrollArea#sessionsDetails { background-color: @bg; border: none; }
 QWidget#sessionsDetailsInner { background-color: @bg; }
 QFrame#sessionsDetailCard {
-    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+    background: transparent; border: none; border-bottom: 1px solid @border; border-radius: 0px;
 }
+QFrame#sessionsDetailCard[sessionsLast="true"] { border-bottom: none; }
 QPushButton#sessionsDetailHeader {
-    background: transparent; border: none; border-radius: 12px; padding: 0px;
+    background: transparent; border: none; border-radius: 0px; padding: 0px;
     text-align: left;
 }
 QPushButton#sessionsDetailHeader:hover, QPushButton#sessionsDetailHeader:pressed {
@@ -170,23 +169,23 @@ QPushButton#sessionsDetailHeader:hover, QPushButton#sessionsDetailHeader:pressed
 QWidget#sessionsDetailBody, QWidget#sessionsDetailRow { background: transparent; }
 #sessionsDetailText { color: @fgSecondary; font-size: 13px; background: transparent; }
 #sessionsDetailTrailing { color: @fgSubtle; font-size: 11px; background: transparent; }
-QProgressBar#sessionsContextBar {
-    background-color: @surfaceActive; border: none; border-radius: 3px;
-    min-height: 6px; max-height: 6px;
-}
-QProgressBar#sessionsContextBar::chunk { background-color: @accent; border-radius: 3px; }
-QProgressBar#sessionsContextBar[sessionsLevel="high"]::chunk { background-color: @warning; }
-QProgressBar#sessionsContextBar[sessionsLevel="full"]::chunk { background-color: @danger; }
 #sessionsContextUsed { color: @fg; font-size: 13px; font-weight: 600; background: transparent; }
+#sessionsContextUsed[sessionsLevel="high"] { color: @warning; }
+#sessionsContextUsed[sessionsLevel="full"] { color: @danger; }
+QPushButton#sessionsMemoryToggle {
+    background: transparent; border: none; padding: 0px; text-align: left;
+}
 #sessionsContextWindow { color: @fgMuted; font-size: 12px; background: transparent; }
 #sessionsDetailShare { color: @fgMuted; font-size: 11px; background: transparent; }
 #sessionsRemoteStatus { color: @fgMuted; font-size: 12px; background: transparent; }
-QFrame#sessionsDetailCard[sessionsDragging="true"] { border-color: @accent; }
+QFrame#sessionsDetailCard[sessionsDragging="true"] {
+    background-color: @surfaceRaised; border-bottom-color: @accent;
+}
 #sessionsDetailChevron { background: transparent; }
 #sessionsDetailHint { color: @fgSubtle; font-size: 12px; background: transparent; }
 QPushButton#sessionsDetailMore {
     color: @accent; background: transparent; border: none; font-size: 12px;
-    text-align: left; padding: 4px 14px;
+    text-align: left; padding: 4px 0px;
 }
 QPushButton#sessionsDetailMore:hover { text-decoration: underline; }
 QToolButton#sessionsSubSessionStop {
@@ -194,4 +193,3 @@ QToolButton#sessionsSubSessionStop {
     border-radius: 6px; font-size: 11px; padding: 1px 8px;
 }
 QToolButton#sessionsSubSessionStop:hover { color: @danger; border-color: @danger; }
-QWidget#workspaceDetailsHost QScrollArea#sessionsDetails { border-left: none; }
