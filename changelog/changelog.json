@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Desktop", "text": "The desktop no longer crashes when the network changes during startup, and automatic Actions approval and the spell-check dictionary no longer freeze the window while they load."},
   {"date": "2026-11-01", "area": "Server", "text": "The network page's stats and leaderboards update again; their snapshot had stopped refreshing because the contributors board read each account separately."},
   {"date": "2026-11-01", "area": "Market", "text": "Mastodon now works in the iPhone and Android apps: sign in to your own server and read, post, reply, boost, favourite, bookmark, search and follow without leaving the app."},
   {"date": "2026-10-31", "area": "Projects", "text": "Repository forums now take part on ForkMesh: signed-in people post, reply, like and edit, and the forum's operators pin, close, archive, unlist, move and hide topics, silence accounts and edit categories, all saved as signed records in the repository."},
