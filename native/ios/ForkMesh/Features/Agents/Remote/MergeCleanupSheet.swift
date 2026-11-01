@@ -385,7 +385,7 @@ struct MergeFailureNote: View {
             if let onFix {
                 HStack(spacing: FmSpace.x2) {
                     FmToneButton(
-                        label: "Fix with agent", icon: "auto_awesome_outlined", tone: .accent, height: 32,
+                        label: "Fix with agent", icon: "auto_awesome_outlined", tone: .accent, height: 32, busy: fix.sending,
                         onPressed: fix.sending || fix.sent ? nil : { Task { await onFix() } })
                         .accessibilityIdentifier("merge-fix-conflicts")
                     if fix.sending {

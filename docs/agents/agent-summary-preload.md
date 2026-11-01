@@ -103,6 +103,14 @@ one subagent running `sleep 20` five times (about 2 minutes). With
 `pass`: 4 timers matched, `[AgentSummary] Forking` appeared 3 times in
 `--debug-file`. With `off`: the first timer was suppressed, 0 forks.
 
+On 2026-10-31 we checked 2.1.316, the npm `@anthropic-ai/claude-code-linux-x64`
+build in a scratch folder. Both anchors are still in the binary
+(`[AgentSummary] Timer fired` twice, `agent_summary` 11 times), the preload
+loads (`preload active mode=off bun=1.4.4`), and in the same subagent run
+`off` logged `summary timer #1 suppressed (setTimeout, delay=30000)` while
+`pass` logged `summary timer #1 passed`. That run ended after about 30 seconds,
+before the timer fired, so it has no fork count.
+
 ## License and terms
 
 The gist warns that changing a client's runtime behaviour may conflict with

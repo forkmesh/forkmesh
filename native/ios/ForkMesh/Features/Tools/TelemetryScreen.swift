@@ -314,6 +314,7 @@ private struct TelemetryLogRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .onLongPressGesture {
             CaptureHold.noteHandled()
             UIPasteboard.general.string = entry.description

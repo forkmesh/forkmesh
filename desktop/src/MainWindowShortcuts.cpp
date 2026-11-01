@@ -1606,6 +1606,8 @@ void MainWindow::loadShortcutsPanel()
                         [runEntryLater, path = entry.path, scope = entry.scope, script] {
                             runEntryLater(path, scope, script);
                         });
+                if (script && shortcutRunning(entry.path))
+                    forkmesh::ui::busyring::setBusy(runButton, true);
                 m_shortcutsTable->setCellWidget(row, ShortcutRunButtonColumn, runButton);
             }
 
@@ -1773,6 +1775,8 @@ void MainWindow::loadShortcutsPanel()
         title->setAttribute(Qt::WA_TransparentForMouseEvents);
         titleRow->addWidget(icon);
         titleRow->addWidget(title, 1);
+        if (script && shortcutRunning(path))
+            forkmesh::ui::busyring::setBusy(card, true, icon);
 
         auto *editButton = new QPushButton;
         editButton->setObjectName("ghostButton");
@@ -2072,6 +2076,15 @@ QProcess *MainWindow::shortcutProcess(const QString &filePath) const
     return nullptr;
 }
 
+void MainWindow::refreshShortcutRailActivity()
+{
+    bool running = false;
+    for (const auto &run : std::as_const(m_shortcutRuns))
+        running = running || run.running;
+    if (auto *rail = dynamic_cast<ActivityRailButton *>(m_repoViewButton))
+        rail->setRailActive(running);
+}
+
 bool MainWindow::shortcutRunning(const QString &filePath) const
 {
     return shortcutProcess(filePath) != nullptr;
@@ -2127,6 +2140,7 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
     run.filePath = filePath;
     run.steps = meta.steps;
     m_shortcutRuns.append(run);
+    refreshShortcutRailActivity();
     for (qsizetype i = 0; m_shortcutRuns.size() > kKeptShortcutRuns && i < m_shortcutRuns.size();) {
         if (m_shortcutRuns.at(i).running)
             ++i;
@@ -2167,6 +2181,7 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
             run->stopped = process->property("shortcutStopRequested").toBool();
             run->message = message;
         }
+        refreshShortcutRailActivity();
         appendShortcutOutput(runId, message + QLatin1Char('\n'));
         if (runId == m_shortcutShownRun)
             showShortcutRun(runId);

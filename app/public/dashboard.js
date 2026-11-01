@@ -85,7 +85,9 @@
     },
     notifications: [],
     notificationUnread: 0,
-    selectedNotificationId: "",
+    notificationTotal: 0,
+    notificationsLoaded: false,
+    notificationsFailed: false,
     issuesView: {
       filter: "open",
       items: [],
@@ -681,6 +683,10 @@
     const ready = typeof genie?.isOff === "function";
     toggle.setAttribute("aria-checked", ready && genie.isOff() ? "false" : "true");
     toggle.disabled = !ready;
+    const mascot = $("[data-genie-mascot]");
+    if (!mascot) return;
+    mascot.disabled = typeof genie?.setMascot !== "function";
+    if (!mascot.disabled) mascot.value = genie.mascot();
   }
 
   function saveGenieSetting(shown) {
@@ -692,6 +698,10 @@
 
   function watchGenieSetting() {
     window.addEventListener("forkmesh:genie", renderGenieSetting);
+    document.addEventListener("change", (event) => {
+      const mascot = event.target.closest?.("[data-genie-mascot]");
+      if (mascot) window.ForkMeshGenie?.setMascot?.(mascot.value);
+    });
     if (document.readyState !== "complete") {
       document.addEventListener("DOMContentLoaded", renderGenieSetting, { once: true });
     }
@@ -943,6 +953,7 @@
       "forkmesh.analyticsConsent.v1",
       "forkmesh.apiOrigin",
       "forkmesh.dashboard.theme",
+      "forkmesh.genie.mascot",
       "forkmesh.genie.off",
       "forkmesh.theme",
     ]);
@@ -1170,13 +1181,127 @@
       if (button._idleHtml === undefined) button._idleHtml = button.innerHTML;
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
-      button.innerHTML = loadingHtml(escapeHtml(label));
+      const icon = button.querySelector("svg, i[data-lucide]");
+      button.innerHTML = icon ? `${icon.outerHTML} ${escapeHtml(label)}` : loadingHtml(escapeHtml(label));
+      if (icon) setButtonBusyRing(button, true);
       return;
     }
     if (button._idleHtml !== undefined) button.innerHTML = button._idleHtml;
     button._idleHtml = undefined;
     button.disabled = false;
     button.removeAttribute("aria-busy");
+    setButtonBusyRing(button, false);
+  }
+
+  const BUSY_RING_CAP_MS = 60000;
+  const busyRings = new WeakMap();
+
+  function busyRingIcon(button) {
+    for (const icon of button.querySelectorAll("svg, i[data-lucide], img")) {
+      if (icon.closest(".fm-busy-ring")) continue;
+      const rect = icon.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return icon;
+    }
+    return null;
+  }
+
+  function placeBusyRing(button, ring) {
+    const icon = busyRingIcon(button);
+    if (!icon) {
+      ring.setAttribute("data-outline", "");
+      Object.assign(ring.style, { left: "0", top: "0", width: "100%", height: "100%" });
+      return;
+    }
+    ring.removeAttribute("data-outline");
+    const box = button.getBoundingClientRect();
+    const at = icon.getBoundingClientRect();
+    const side = Math.min(at.width, at.height) + 8;
+    Object.assign(ring.style, {
+      left: `${at.left - box.left - button.clientLeft + (at.width - side) / 2}px`,
+      top: `${at.top - box.top - button.clientTop + (at.height - side) / 2}px`,
+      width: `${side}px`,
+      height: `${side}px`,
+    });
+  }
+
+  function buttonStillBusy(button) {
+    return button.isConnected && (button.disabled || button.getAttribute("aria-busy") === "true");
+  }
+
+  function setButtonBusyRing(button, busy, editor = null) {
+    if (!button) return;
+    const entry = busyRings.get(button);
+    if (!busy) {
+      if (!entry) return;
+      busyRings.delete(button);
+      entry.observer.disconnect();
+      clearTimeout(entry.cap);
+      clearInterval(entry.editorWatch);
+      entry.ring.remove();
+      button.classList.remove("fm-busy-host");
+      return;
+    }
+    if (entry) {
+      if (!entry.ring.isConnected) button.append(entry.ring);
+      placeBusyRing(button, entry.ring);
+      return;
+    }
+    const ring = document.createElement("span");
+    ring.className = "fm-busy-ring";
+    ring.setAttribute("aria-hidden", "true");
+    if (getComputedStyle(button).position === "static") button.classList.add("fm-busy-host");
+    button.append(ring);
+    placeBusyRing(button, ring);
+    const observer = new MutationObserver(() => {
+      if (!buttonStillBusy(button)) {
+        setButtonBusyRing(button, false);
+      } else if (!ring.isConnected) {
+        button.append(ring);
+        placeBusyRing(button, ring);
+      }
+    });
+    observer.observe(button, { attributes: true, attributeFilter: ["disabled", "aria-busy"], childList: true });
+    const cap = setTimeout(() => setButtonBusyRing(button, false), BUSY_RING_CAP_MS);
+    const editorWatch = editor ? setInterval(() => {
+      if (busyEditorText(editor) === "") setButtonBusyRing(button, false);
+    }, 400) : 0;
+    busyRings.set(button, { ring, observer, cap, editorWatch });
+  }
+
+  let busyPressEditor = null;
+
+  function busyEditorText(element) {
+    if (!element) return null;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.value;
+    if (element.isContentEditable) return element.textContent || "";
+    return null;
+  }
+
+  function noteBusyPressEditor(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = document.activeElement;
+    busyPressEditor = button && busyEditorText(editor) ? editor : null;
+  }
+
+  function watchButtonBusy(event) {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    const editor = busyPressEditor;
+    busyPressEditor = null;
+    if (!button || button.disabled || button.hasAttribute("data-no-busy") ||
+        button.getAttribute("role") === "switch" || button.hasAttribute("aria-haspopup")) return;
+    setTimeout(() => setTimeout(() => {
+      if (editor && busyEditorText(editor) === "") return;
+      if (buttonStillBusy(button) && !busyRings.has(button)) setButtonBusyRing(button, true, editor);
+    }, 0), 0);
+  }
+
+  document.addEventListener("pointerdown", noteBusyPressEditor, true);
+  document.addEventListener("click", watchButtonBusy, true);
+
+  function setNavWorking(nav, working) {
+    for (const icon of document.querySelectorAll(`[data-nav="${nav}"] .dashboard-nav-icon`)) {
+      icon.classList.toggle("is-working", Boolean(working));
+    }
   }
 
   // One formatter for the page: building an Intl.NumberFormat per call cost
@@ -1916,6 +2041,11 @@
     if (repoKey(repo).toLowerCase() === wanted || repoCanonicalKey(repo).toLowerCase() === wanted) {
       return true;
     }
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (name && repoLogicalOwners(repo).some((value) =>
+      value.kind === "organization" && `${value.owner.toLowerCase()}/${name}` === wanted)) {
+      return true;
+    }
     return Array.isArray(repo?._repoAliases) && repo._repoAliases.includes(wanted);
   }
 
@@ -1937,6 +2067,15 @@
     const currentName = String(repo?.name || "").trim().toLowerCase();
     if (owner === currentOwner && name === currentName) return null;
     return { owner, name, key: `${owner}/${name}` };
+  }
+
+  function repoForkParentRepository(parent) {
+    if (!parent?.key || typeof findRepository !== "function") return null;
+    try {
+      return findRepository(parent.key);
+    } catch (_) {
+      return null;
+    }
   }
 
   function repoMirrorOf(repo) {
@@ -1993,8 +2132,11 @@
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(repoDisplayName(parent.key))}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>${contribute}`;
+      const parentRepo = repoForkParentRepository(parent);
+      const parentLabel = parentRepo ? repoDisplayName(parentRepo) : repoDisplayName(parent.key);
+      const parentHref = repoLinkUrl(parentRepo || { owner: parent.owner, name: parent.name });
+      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(parentLabel)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(parentHref)}" class="${linkClass}">${escapeHtml(parentLabel)}</a></span>${contribute}`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();
@@ -6342,8 +6484,23 @@
     return normalizeSettingsSection(parts[0] === "dashboard" && parts[1] === "settings" ? parts[2] || "" : "");
   }
 
+  function bindSettingsStickyHeader() {
+    const layout = $("[data-settings-layout]");
+    const header = $("[data-settings-account-header]");
+    if (!layout || !header || layout.dataset.settingsStickyBound) return;
+    layout.dataset.settingsStickyBound = "true";
+    const sync = () => {
+      const pinned = getComputedStyle(header).position === "sticky";
+      layout.style.setProperty("--settings-sticky-top", pinned ? `${header.offsetHeight}px` : "0px");
+    };
+    sync();
+    if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(header);
+    window.addEventListener("resize", sync);
+  }
+
   function setSettingsSection(section, { scroll = true, push = false } = {}) {
     const activeSection = normalizeSettingsSection(section);
+    bindSettingsStickyHeader();
     if (!state.settingsView) state.settingsView = {};
     state.settingsView.section = activeSection;
     if (push) {
@@ -11444,7 +11601,7 @@
     $$("[data-notification-bell-on]").forEach((el) => { el.classList.toggle("hidden", Boolean(until)); });
     $$("[data-notification-bell-off]").forEach((el) => { el.classList.toggle("hidden", !until); });
     const toggle = $("#notificationToggle");
-    if (toggle) toggle.title = until ? label : "Ping notifications";
+    if (toggle) toggle.title = until ? label : "Pings";
     // The status line right above already says how long, so while a pause runs
     // this only has to offer the way to change it.
     $$("[data-ping-pause-toggle]").forEach((el) => {
@@ -14720,7 +14877,6 @@
           return (Array.isArray(data?.repos) ? data.repos : []).map((item) => ({
             owner,
             name: String(item?.repo || "").trim(),
-            linkedNode: String(item?.node || "").trim(),
             source: "organization-alias",
             organizationOwned: true,
             cloneOnline: true,
@@ -29078,7 +29234,6 @@
               : `${issuePersonNameHtml(author)} started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
             ${isPulls ? renderPullAiModelChip(values, body, parsed.repoCollabSettings) : ""}
           </div>
-          ${isPulls && stateKey === "open" ? renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "") : ""}
           ${recordTabs}
         </header>
         ${isPulls ? `<div data-repo-pull-conflict-slot class="fm-conflict-slot">${renderRepoPullConflictBanner(repo, number, parsed)}</div>` : ""}
@@ -29120,8 +29275,9 @@
               </div>` : ""}
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
-            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "", values.authorName || "")}</span>`) : ""}
             ${isPulls ? renderPullAiReviewSidebar(repo, number) : ""}
+            ${isPulls && stateKey === "open" ? sidebarSection("Diff and files", renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
@@ -29402,12 +29558,11 @@
       .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
   }
 
-  function renderIssueAiPrompt(repo, number, title, template = "") {
+  function renderIssueAiPrompt(repo, number, title, template = "", extraButtons = "") {
     const prompt = issueAiPromptText(repo, number, title, template);
-    return `<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-start gap-2 rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] text-muted-foreground">
-            <i data-lucide="bot" class="h-4 w-4 shrink-0"></i>
-            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 flex-1 break-words font-mono text-foreground">${escapeHtml(prompt)}</code>
-            <button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>
+    return `<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">
+            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${extraButtons}</span>
           </div>`;
   }
 
@@ -29552,11 +29707,13 @@ Your reply
     const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
     const link = "font-medium text-[var(--dashboard-link)] hover:underline";
+    const button = "inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary";
     const diffLinks = raw
-      ? `<a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a>`
+      ? `
+            <span class="flex items-center gap-3"><a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a></span>`
       : "";
     const toggleButton = toggle
-      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="chevron-down" class="h-3.5 w-3.5"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
+      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="chevron-down" class="h-3 w-3"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
       : "";
     let rows = files.map(([path, href]) => (href
       ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${escapeHtml(path)}</a></li>`
@@ -29564,14 +29721,11 @@ Your reply
     if (more > 0) rows += `<li class="text-muted-foreground">and ${more} more</li>`;
     const listing = rows
       ? `
-            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} overflow-hidden border-t border-border bg-background px-3 py-2 font-mono text-[12px] leading-5 text-foreground">${rows}</ul>`
+            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
       : "";
-    return `<section data-repo-pull-review-prompt aria-label="Diff and files" class="mt-3 min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">
-            <div class="flex min-w-0 flex-wrap items-center gap-2 py-1 pl-3 pr-1">
-              <i data-lucide="code" class="h-4 w-4 shrink-0"></i><span class="whitespace-nowrap font-semibold text-foreground">Diff and files</span>${diffLinks}
-              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">${toggleButton}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="external-link" class="h-3.5 w-3.5"></i>Summarize in ChatGPT</a><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button></span>
-            </div>${listing}
-          </section>`;
+    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1.5 text-[12px]">${diffLinks}${listing}
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button><a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3 w-3"></i>Summarize in ChatGPT</a>${toggleButton}</span>
+          </div>`;
   }
 
   function togglePullReviewPrompt(button) {
@@ -29687,10 +29841,14 @@ Your reply
       }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
-    const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
+    const agentStatusValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
       ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-attention/40 px-1.5 font-mono text-[11px] leading-[18px] text-attention">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
-      : `<span class="text-muted-foreground">No agent assigned</span>`}
-        <button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy MCP prompt</button>`;
+      : `<span class="text-muted-foreground">No agent assigned</span>`}`;
+    const issueMcpButton = `<button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="h-3 w-3"></i>Copy MCP prompt</button>`;
+    const agentValue = `${agentStatusValue}
+        <div class="mt-2">${closed || instancePluginOff("issue-ai-prompt")
+          ? `<span class="flex flex-wrap items-center gap-1">${issueMcpButton}</span>`
+          : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "", issueMcpButton)}</div>`;
     const labelValue = labels.length
       ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>`
       : `<span class="text-muted-foreground">No labels</span>`;
@@ -29758,7 +29916,6 @@ Your reply
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
             ${issueViewsHtml(repo, number)}
           </p>
-          ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
         <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -29833,7 +29990,6 @@ Your reply
               ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
-          ${item && !closed && !instancePluginOff("issue-ai-prompt") ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
         </header>
         <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -29857,7 +30013,7 @@ Your reply
           </div>
           <aside class="min-w-0 self-start">
             ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "font-semibold")}</span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
-            ${section("Agent", bar("w-2/3"))}
+            ${section("Agent", item && !closed && !instancePluginOff("issue-ai-prompt") ? `${bar("w-2/3")}<div class="mt-2">${renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")}</div>` : bar("w-2/3"))}
             ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
             ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
             ${section("Milestone", item ? (item.milestone ? `<span class="font-semibold">${escapeHtml(item.milestone)}</span>` : `<span class="text-muted-foreground">No milestone</span>`) : bar("w-2/3"))}
@@ -30753,6 +30909,7 @@ Your reply
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+    if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -30960,6 +31117,7 @@ Your reply
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
       if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
@@ -34130,7 +34288,7 @@ Your reply
   }
 
   const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
-  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch", "stalePulls", "stalePullsDeleteBranch"];
 
   function repoFirstViewSeed(repo) {
     let seed = null;
@@ -47437,6 +47595,8 @@ Your reply
               <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="actions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Actions (run this repository's workflows)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="protectDefaultBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Protect the default branch: it changes only by merging a pull request an organization owner or admin approved</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Close stale pull requests: when a maintainer's comment or change request gets no reply from the author, ForkBot reminds them after 1, 3 and 7 days and closes the pull request after 8</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="stalePullsDeleteBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />When ForkBot closes a stale pull request, also delete its head branch if that branch is in this repository and is not the default or a protected branch</label>
             </fieldset>
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
@@ -48548,44 +48708,62 @@ Your reply
     return formatDate(value);
   }
 
-  function renderNotificationPreview() {
-    const countEl = $("[data-notification-count]");
-    const badge = $("[data-notification-badge]");
-    const list = $("[data-notification-preview-list]");
+  function renderNotificationBadge() {
     const unread = Number(state.notificationUnread) || 0;
-    if (countEl) countEl.textContent = unread === 1 ? "1 new" : `${unread} new`;
-    badge?.classList.toggle("hidden", unread <= 0);
-    if (!list) return;
-    const items = state.notifications.slice(0, 5);
-    if (!items.length) {
-      list.innerHTML = '<div class="px-3 py-4 text-xs text-muted-foreground">No pings yet. Mentions, PRs, assignments, shares, bounties, releases, and host status changes will appear here.</div>';
-      return;
-    }
-    list.innerHTML = items.map((item) => {
-      const lead = notificationLead(item);
-      const unreadItem = !item.readAt;
-      const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
-      const avatar = lead.actor
-        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(lead.actor.replace(/^@/, "")) ? botAvatarSvg(botAvatarKind(lead.actor.replace(/^@/, "")), "h-4 w-4") : escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+    $("[data-notification-badge]")?.classList.toggle("hidden", unread <= 0);
+    $$("[data-notification-count]").forEach((el) => {
+      el.textContent = String(unread);
+    });
+    const bell = $("#notificationToggle");
+    if (bell) bell.setAttribute("aria-label", unread > 0 ? `Pings, ${unread} unread` : "Pings");
+  }
+
+  function notificationAvatarHtml(item, lead) {
+    const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+    const login = lead.actor.replace(/^@/, "");
+    return lead.actor
+      ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(login) ? botAvatarSvg(botAvatarKind(login), "h-4 w-4") : escapeHtml(login.charAt(0) || "?")}</span>
           <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
-        : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
-      return `
-      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
-        <div class="flex items-start gap-2.5">
-          <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${avatar}</span></span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
-              <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
-              ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
-            </div>
-            <p class="mt-0.5 line-clamp-2 break-words text-xs leading-5 ${unreadItem ? "text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</p>
-          </div>
+      : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
+  }
+
+  function notificationTargetHref(item) {
+    return item?.href ? repoPublicHref(homeFeedHref(item)) : "";
+  }
+
+  function notificationRowHtml(item, { expanded = false } = {}) {
+    const id = escapeHtml(item.id || "");
+    const lead = notificationLead(item);
+    const unreadItem = !item.readAt;
+    const href = notificationTargetHref(item);
+    const tag = href ? "a" : "button";
+    const target = href ? `href="${escapeHtml(href)}"` : `type="button" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}"`;
+    const kindLabel = pingKindLabel(item.kind);
+    const settingsTitle = kindLabel ? `${kindLabel}: ping settings` : "Ping settings";
+    const when = Number(item.ts) || 0;
+    return `
+      <li data-notification-row data-ping-id="${id}" data-ping-unread="${unreadItem ? "true" : "false"}" class="${unreadItem ? "bg-background" : "bg-card"}">
+        <div class="flex items-start gap-1 px-2 py-2">
+          <${tag} ${target} data-notification-open="${id}" class="flex min-w-0 flex-1 items-start gap-3 rounded-md px-1 py-1 text-left">
+            <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${notificationAvatarHtml(item, lead)}</span></span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-2">
+                <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <time ${when ? `datetime="${escapeHtml(new Date(when).toISOString())}"` : ""} class="shrink-0 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</time>
+                ${unreadItem ? '<span data-notification-unread-dot class="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" role="img"></span>' : ""}
+              </span>
+              <span class="mt-0.5 block line-clamp-2 break-words text-sm leading-5 ${unreadItem ? "font-medium text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</span>
+            </span>
+          </${tag}>
+          <span class="flex shrink-0 items-center">
+            ${unreadItem ? `<button type="button" data-ping-mark-read="${id}" title="Mark as read" aria-label="Mark as read" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="check" aria-hidden="true"></i></button>` : ""}
+            <button type="button" data-ping-row-toggle="${id}" aria-expanded="${expanded ? "true" : "false"}" aria-controls="ping-detail-${id}" title="${expanded ? "Hide details" : "Show details"}" aria-label="${expanded ? "Hide details" : "Show details"}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="${expanded ? "chevron-up" : "chevron-down"}" aria-hidden="true"></i></button>
+            <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(kindLabel ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="settings" aria-hidden="true"></i></a>
+          </span>
         </div>
-      </button>
+        ${expanded ? `<div id="ping-detail-${id}" data-ping-row-detail class="border-t border-border px-4 py-4">${notificationDetailHtml(item)}</div>` : ""}
+      </li>
     `;
-    }).join("");
-    window.lucide?.createIcons();
   }
 
   function notificationLead(item) {
@@ -48605,14 +48783,9 @@ Your reply
       : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
-  function renderNotificationDetail(item) {
-    const detail = $("[data-notification-modal-detail]");
-    if (!detail) return;
-    if (!item) {
-      detail.innerHTML = '<div class="text-sm text-muted-foreground">Select a ping to read it.</div>';
-      return;
-    }
-    detail.innerHTML = `
+  function notificationDetailHtml(item) {
+    const href = notificationTargetHref(item);
+    return `
       <div class="flex items-start gap-3">
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
@@ -48622,15 +48795,14 @@ Your reply
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
+      <p class="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
-      <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        ${href ? `<a href="${escapeHtml(href)}" data-notification-open="${escapeHtml(item.id || "")}" class="fm-btn fm-btn-sm">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
-    window.lucide?.createIcons();
   }
 
   // Where a ping's settings live: its own row on the Pings settings page when
@@ -48802,56 +48974,15 @@ Your reply
     form.hidden = !isRepoOwner(repo);
   }
 
-  function renderNotificationModal() {
-    const list = $("[data-notification-modal-list]");
-    if (!list) return;
-    if (!state.notifications.length) {
-      list.innerHTML = '<div class="p-3 text-xs text-muted-foreground">No pings yet.</div>';
-      renderNotificationDetail(null);
-      return;
-    }
-    const selected = state.notifications.find((item) => item.id === state.selectedNotificationId)
-      || state.notifications[0];
-    state.selectedNotificationId = selected?.id || "";
-    list.innerHTML = state.notifications.map((item) => {
-      const active = item.id === state.selectedNotificationId;
-      const lead = notificationLead(item);
-      const settingsTitle = pingKindLabel(item.kind)
-        ? `${pingKindLabel(item.kind)}: ping settings`
-        : "Ping settings";
-      // The trailing gear is the "settings" column: it opens this kind's row
-      // on the Pings settings page, where it can be switched off.
-      return `
-        <div data-notification-row class="mb-1 flex items-stretch gap-1 rounded-md ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
-          <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="min-w-0 flex-1 rounded-md px-3 py-2 text-left transition-colors">
-            <span class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">
-                ${notificationInstanceLogoHtml()}
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-                  <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
-                </span>
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
-                <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
-              </span>
-            </span>
-          </button>
-          <a href="${escapeHtml(pingSettingsHref(item.kind))}" data-ping-settings-link="${escapeHtml(pingKindLabel(item.kind) ? item.kind : "")}" title="${escapeHtml(settingsTitle)}" aria-label="${escapeHtml(settingsTitle)}" class="flex w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background/60 hover:text-foreground transition-colors">
-            <i data-lucide="settings" class="h-3.5 w-3.5"></i>
-          </a>
-        </div>
-      `;
-    }).join("");
-    renderNotificationDetail(selected);
-  }
-
   async function loadNotifications() {
     const node = state.session?.nodeName || "";
     if (!node) {
       state.notifications = [];
       state.notificationUnread = 0;
-      renderNotificationPreview();
+      state.notificationTotal = 0;
+      state.notificationsLoaded = true;
+      renderNotificationBadge();
+      renderPingsPage();
       renderHomeFeed();
       return;
     }
@@ -48859,6 +48990,8 @@ Your reply
       const data = await fetchJson(`/api/notifications?node=${encodeURIComponent(node)}`);
       state.notifications = Array.isArray(data.notifications) ? data.notifications : [];
       state.notificationUnread = Number(data.unread) || 0;
+      state.notificationTotal = Number(data.total) || state.notifications.length;
+      state.notificationsFailed = false;
       // The relay owns the pause deadline, so this refresh is how a pause set
       // on another surface (the desktop app) reaches an open dashboard.
       state.session = {
@@ -48869,9 +49002,12 @@ Your reply
     } catch (_) {
       state.notifications = [];
       state.notificationUnread = 0;
+      state.notificationTotal = 0;
+      state.notificationsFailed = true;
     }
-    renderNotificationPreview();
-    renderNotificationModal();
+    state.notificationsLoaded = true;
+    renderNotificationBadge();
+    renderPingsPage();
     renderPingPause();
     renderHomeFeed();
     celebrateNewPings(state.notifications);
@@ -48885,30 +49021,11 @@ Your reply
       .catch(() => {});
   }
 
-  function setNotificationDropdownOpen(open) {
-    const toggle = $("#notificationToggle");
-    const dropdown = $("#notificationDropdown");
-    dropdown?.classList.toggle("hidden", !open);
-    toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-    // The pause presets are a submenu of this dropdown, so they collapse with
-    // it rather than being left open behind the next thing that opens.
-    if (!open) setPingPauseMenuOpen(false);
-  }
-
   function setAccountMenuOpen(open) {
     const toggle = $("#accountMenuToggle");
     const dropdown = $("#accountMenuDropdown");
     dropdown?.classList.toggle("hidden", !open);
     toggle?.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-
-  function setNotificationModalOpen(open) {
-    if (open) ensureDeferredMarkup("dialogs");
-    const modal = $("#notificationModal");
-    if (!modal) return;
-    modal.classList.toggle("hidden", !open);
-    modal.classList.toggle("flex", open);
-    if (open) renderNotificationModal();
   }
 
   async function markNotificationsRead(ids = [], all = false) {
@@ -48917,6 +49034,7 @@ Your reply
     try {
       await fetch("/api/notifications", {
         method: "POST",
+        keepalive: true,
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           node, ids, all,
@@ -48925,18 +49043,6 @@ Your reply
       });
     } catch (_) {}
     await loadNotifications();
-  }
-
-  async function openNotification(id, modal = false) {
-    const item = state.notifications.find((candidate) => candidate.id === id);
-    if (!item) return;
-    state.selectedNotificationId = id;
-    renderNotificationModal();
-    if (!item.readAt) await markNotificationsRead([id]);
-    if (modal) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-    }
   }
 
   // Each page is its own document (marked <body data-page="...">). Boot runs
@@ -49587,15 +49693,6 @@ Your reply
       return;
     }
 
-    const notificationToggle = event.target.closest("#notificationToggle");
-    if (notificationToggle) {
-      event.stopPropagation();
-      const dropdown = $("#notificationDropdown");
-      setNotificationDropdownOpen(dropdown?.classList.contains("hidden"));
-      if (state.session?.nodeName) loadNotifications();
-      return;
-    }
-
     const accountMenuToggle = event.target.closest("#accountMenuToggle");
     if (accountMenuToggle) {
       event.stopPropagation();
@@ -49661,29 +49758,15 @@ Your reply
       return;
     }
 
-    // Ping settings gear (bell footer, pings modal header, each modal row, the
-    // detail pane): a real link to /dashboard/settings/notifications, switched
-    // in place when this already is the settings page.
     const pingSettingsLink = event.target.closest("[data-ping-settings-link]");
     if (pingSettingsLink) {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(false);
       if (openPingSettingsInPlace(pingSettingsLink)) event.preventDefault();
       return;
     }
 
     if (handlePingSettingsClick(event)) {
       event.stopPropagation();
-      return;
-    }
-
-    const notificationOpen = event.target.closest("[data-notification-open]");
-    if (notificationOpen) {
-      await openNotification(
-        notificationOpen.dataset.notificationOpen || "",
-        !event.target.closest("#notificationModal"),
-      );
       return;
     }
 
@@ -49714,17 +49797,6 @@ Your reply
     if (pauseToggle) {
       event.stopPropagation();
       setPingPauseMenuOpen($("[data-ping-pause-menu]")?.hidden !== false);
-      return;
-    }
-
-    if (event.target.closest("[data-show-all-notifications]")) {
-      setNotificationDropdownOpen(false);
-      setNotificationModalOpen(true);
-      return;
-    }
-
-    if (event.target.closest("[data-close-notification-modal], [data-notification-modal-backdrop]")) {
-      setNotificationModalOpen(false);
       return;
     }
 
@@ -49899,8 +49971,8 @@ Your reply
       $("[data-profile-popover]")?.classList.add("hidden");
       $("[data-profile-toggle]")?.setAttribute("aria-expanded", "false");
     }
-    if (!event.target.closest("#notificationToggle, #notificationDropdown")) {
-      setNotificationDropdownOpen(false);
+    if (!event.target.closest("[data-ping-pause-form]")) {
+      setPingPauseMenuOpen(false);
     }
     if (!event.target.closest("#accountMenuToggle, #accountMenuDropdown")) {
       setAccountMenuOpen(false);
@@ -52028,8 +52100,7 @@ Your reply
 	    }
 	    if (event.key === "Escape") {
 	      setProfileModalOpen(false);
-	      setNotificationDropdownOpen(false);
-	      setNotificationModalOpen(false);
+	      setPingPauseMenuOpen(false);
 	      setAgentModalOpen(false);
 	      setNewRepoModalOpen(false);
 	      closeRepoBranchMenus();
@@ -54299,9 +54370,16 @@ Your reply
     "--dashboard-accent-rgb", "--dashboard-attention-rgb", "--dashboard-destructive-rgb",
     "--dashboard-success-rgb", "--dashboard-primary-rgb",
   ]);
+  const COMMENT_REACTION_CHEER_KEY = "forkmesh.reactionCheer.v1";
+  const COMMENT_REACTION_CHEER_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+  const COMMENT_REACTION_CHEER_KEEP = 400;
+  const COMMENT_REACTION_CHEER_COMMENTS = 3;
+  const COMMENT_REACTION_CHEER_BITS = 54;
+  const COMMENT_REACTION_CHEER_NOTE_MS = 4200;
   const commentReactionUi = {
     inflight: new Set(),
     confetti: new Set(),
+    cheering: false,
     picker: null,
     who: null,
     whoChip: null,
@@ -54367,12 +54445,16 @@ Your reply
         const data = await fetchJson(`${repoApiBase(repo)}/reactions?kind=${parts.kind}&number=${parts.number}`, { fresh: signedIn });
         if (!data || data.ok === false || !data.reactions || typeof data.reactions !== "object") return null;
         if (!state.commentReactions) state.commentReactions = {};
-        state.commentReactions[subject] = { base, reactions: data.reactions, signedIn: data.signedIn === true };
+        state.commentReactions[subject] = {
+          base, reactions: data.reactions, signedIn: data.signedIn === true,
+          reactedAt: data.reactedAt && typeof data.reactedAt === "object" ? data.reactedAt : null,
+        };
         if (data.tips && typeof data.tips === "object") {
           if (!state.commentTips) state.commentTips = {};
           state.commentTips[subject] = data.tips;
         }
         refreshCommentReactionBars(subject);
+        scheduleCommentReactionCheer(subject);
         if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(subject);
         return data;
       } catch (_) {
@@ -54577,6 +54659,190 @@ Your reply
       ], { duration: 1100 + Math.random() * 500, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards" })
         .finished.catch(() => {}).then(() => piece.remove());
     }
+  }
+
+  function commentReactionCheerSeen(me) {
+    try {
+      const seen = JSON.parse(localStorage.getItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`) || "{}");
+      return seen && typeof seen === "object" && !Array.isArray(seen) ? seen : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function commentReactionCheerRemember(me, cheers) {
+    const seen = commentReactionCheerSeen(me);
+    for (const cheer of cheers) seen[cheer.key] = Math.max(Number(seen[cheer.key]) || 0, cheer.latest);
+    const kept = Object.entries(seen)
+      .filter(([, at]) => Number.isFinite(Number(at)))
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, COMMENT_REACTION_CHEER_KEEP);
+    try {
+      localStorage.setItem(`${COMMENT_REACTION_CHEER_KEY}:${me}`, JSON.stringify(Object.fromEntries(kept)));
+    } catch (_) {}
+  }
+
+  function commentReactionCheers(subject, now = Date.now()) {
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    const entry = state.commentReactions?.[subject];
+    const detail = state.repoRecordDetail;
+    if (!me || !entry?.reactedAt || !detail?.parsed
+      || commentReactionSubject(detail.kind, detail.number) !== subject) return [];
+    const seen = commentReactionCheerSeen(me);
+    const cheers = [];
+    for (const [comment, emojis] of Object.entries(entry.reactedAt)) {
+      if (!emojis || typeof emojis !== "object") continue;
+      if (commentReactionAuthor(subject, comment).toLowerCase() !== me) continue;
+      const key = `${entry.base}|${subject}|${comment}`;
+      const since = Math.max(Number(seen[key]) || 0, now - COMMENT_REACTION_CHEER_WINDOW_MS);
+      const times = Object.entries(emojis).filter(([emoji, at]) => commentReactionKnown(emoji) && Number.isFinite(Number(at)));
+      const fresh = new Set(times.filter(([, at]) => Number(at) > since).map(([emoji]) => emoji));
+      const tallies = (Array.isArray(entry.reactions?.[comment]) ? entry.reactions[comment] : [])
+        .filter((tally) => fresh.has(tally.emoji));
+      if (!tallies.length) continue;
+      const bar = document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="${CSS.escape(comment)}"]`);
+      if (!bar) continue;
+      cheers.push({ comment, key, bar, tallies, latest: Math.max(...times.map(([, at]) => Number(at))) });
+    }
+    return cheers.sort((a, b) => (a.bar.compareDocumentPosition(b.bar) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  }
+
+  function scheduleCommentReactionCheer(subject) {
+    if (commentReactionUi.cheering) return;
+    if (document.hidden) {
+      document.addEventListener("visibilitychange", () => scheduleCommentReactionCheer(subject), { once: true });
+      return;
+    }
+    const cheers = commentReactionCheers(subject).slice(0, COMMENT_REACTION_CHEER_COMMENTS);
+    if (!cheers.length) return;
+    commentReactionCheerRemember(String(state.session.nodeName).toLowerCase(), cheers);
+    commentReactionUi.cheering = true;
+    void (async () => {
+      try {
+        for (const cheer of cheers) await playCommentReactionCheer(subject, cheer);
+      } finally {
+        commentReactionUi.cheering = false;
+      }
+    })();
+  }
+
+  function commentReactionCheerText(subject, cheer) {
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    const names = [];
+    for (const tally of cheer.tallies) {
+      for (const person of Array.isArray(tally.people) ? tally.people : []) {
+        const name = String(person?.name || "");
+        if (name && name.toLowerCase() !== me && !names.some((seen) => seen.toLowerCase() === name.toLowerCase())) names.push(name);
+      }
+    }
+    const kind = commentReactionParts(subject)?.kind;
+    const what = cheer.comment !== "body" ? "comment"
+      : ({ issue: "issue", pull: "pull request", discussion: "discussion" })[kind] || "post";
+    const rest = names.length - 2;
+    const who = !names.length ? "People"
+      : rest > 0 ? `${names.slice(0, 2).join(", ")} and ${rest} other${rest === 1 ? "" : "s"}`
+        : names.join(" and ");
+    return { who, what };
+  }
+
+  function showCommentReactionCheerNote(subject, cheer) {
+    const { who, what } = commentReactionCheerText(subject, cheer);
+    const glyphs = cheer.tallies.slice(0, 6).map((tally) => commentReactionGlyph(tally.emoji, tally.custom)).join("");
+    const note = document.createElement("div");
+    note.className = "fm-reaction-cheer-note";
+    note.setAttribute("role", "status");
+    note.setAttribute("aria-live", "polite");
+    note.innerHTML = `<span class="fm-reaction-cheer-glyphs" aria-hidden="true">${glyphs}</span><span><strong>${escapeHtml(who)}</strong> reacted to your ${escapeHtml(what)}</span>`;
+    document.querySelectorAll(".fm-reaction-cheer-note").forEach((old) => old.remove());
+    document.body.append(note);
+    setTimeout(() => note.remove(), COMMENT_REACTION_CHEER_NOTE_MS);
+  }
+
+  function commentReactionCheerWait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function playCommentReactionCheer(subject, cheer) {
+    const motion = commentReactionMotionOk();
+    let bar = cheer.bar.isConnected ? cheer.bar
+      : document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="${CSS.escape(cheer.comment)}"]`);
+    if (!bar) return;
+    let rect = bar.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      bar.scrollIntoView({ behavior: motion ? "smooth" : "auto", block: "center" });
+      if (motion) await commentReactionCheerWait(650);
+      rect = bar.getBoundingClientRect();
+    }
+    showCommentReactionCheerNote(subject, cheer);
+    const card = bar.parentElement || bar;
+    card.classList.remove("fm-reaction-cheer-glow");
+    void card.offsetWidth;
+    card.classList.add("fm-reaction-cheer-glow");
+    setTimeout(() => card.classList.remove("fm-reaction-cheer-glow"), 2600);
+    if (!motion || typeof Element.prototype.animate !== "function") {
+      await commentReactionCheerWait(1200);
+      return;
+    }
+    for (const tally of cheer.tallies) {
+      const chip = bar.querySelector(`[data-reaction="${CSS.escape(tally.emoji)}"]`);
+      if (!chip) continue;
+      chip.classList.remove("fm-reaction-pop");
+      void chip.offsetWidth;
+      chip.classList.add("fm-reaction-pop");
+      chip.addEventListener("animationend", () => chip.classList.remove("fm-reaction-pop"), { once: true });
+    }
+    const originX = Math.min(Math.max(rect.left + Math.min(rect.width, 160) / 2, 16), window.innerWidth - 16);
+    const originY = Math.min(Math.max(rect.top + rect.height / 2, 16), window.innerHeight - 16);
+    const layer = document.createElement("div");
+    layer.className = "fm-reaction-cheer";
+    layer.setAttribute("aria-hidden", "true");
+    document.body.append(layer);
+    const ring = document.createElement("span");
+    ring.className = "fm-reaction-cheer-ring";
+    ring.style.left = `${originX}px`;
+    ring.style.top = `${originY}px`;
+    layer.append(ring);
+    ring.animate([
+      { transform: "scale(.2)", opacity: .9 },
+      { transform: `scale(${Math.max(window.innerWidth, window.innerHeight) / 30})`, opacity: 0 },
+    ], { duration: 1100, easing: "cubic-bezier(.15,.7,.3,1)", fill: "forwards" });
+    const weights = cheer.tallies.map((tally) => Math.max(1, Number(tally.count) || 1));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    const pool = [];
+    cheer.tallies.forEach((tally, index) => {
+      const share = Math.max(4, Math.round((COMMENT_REACTION_CHEER_BITS * weights[index]) / total));
+      for (let n = 0; n < share; n += 1) pool.push(commentReactionGlyph(tally.emoji, tally.custom));
+    });
+    const reach = Math.hypot(window.innerWidth, window.innerHeight);
+    const flights = pool.map((glyph, index) => {
+      const bit = document.createElement("span");
+      bit.className = "fm-reaction-cheer-bit";
+      bit.innerHTML = glyph;
+      bit.style.fontSize = `${Math.round(20 + Math.random() * 26)}px`;
+      layer.append(bit);
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7;
+      const distance = reach * (0.28 + Math.random() * 0.42);
+      const dx = Math.cos(angle) * distance;
+      const dy = Math.sin(angle) * distance;
+      const spin = (Math.random() - 0.5) * 720;
+      const at = (x, y) => `translate(calc(${originX + x}px - 50%), calc(${originY + y}px - 50%))`;
+      return bit.animate([
+        { transform: `${at(0, 0)} scale(.2) rotate(0deg)`, opacity: 0 },
+        { transform: `${at(dx * 0.18, dy * 0.18)} scale(1.15) rotate(${spin * 0.2}deg)`, opacity: 1, offset: 0.1 },
+        { transform: `${at(dx, dy)} scale(1) rotate(${spin * 0.7}deg)`, opacity: 1, offset: 0.6 },
+        { transform: `${at(dx * 1.1, dy + reach * 0.35)} scale(.8) rotate(${spin}deg)`, opacity: 0 },
+      ], {
+        duration: 1700 + Math.random() * 1100,
+        delay: (index % 3) * 140 + Math.random() * 220,
+        easing: "cubic-bezier(.12,.75,.35,1)",
+        fill: "both",
+      }).finished.catch(() => {});
+    });
+    const origin = { left: originX, top: originY, width: 0, height: 0 };
+    commentReactionConfetti(origin);
+    setTimeout(() => commentReactionConfetti(origin), 260);
+    await Promise.all(flights);
+    layer.remove();
   }
 
   function commentReactionPlace(el, anchor, prefer = "below") {
@@ -56463,6 +56729,224 @@ Your reply
     return loadDashboardChunk("notes").then((chunk) => chunk.initNotesPage(...args));
   }
 
+  const PINGS_PAGE_SIZE = 40;
+  const pingsView = {
+    filter: "all",
+    older: [],
+    expanded: new Set(),
+    loadingMore: false,
+    moreFailed: false,
+    wired: false,
+  };
+
+  function pingsPageItems() {
+    const seen = new Set();
+    const items = [];
+    for (const item of [...state.notifications, ...pingsView.older]) {
+      const id = String(item?.id || "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      items.push(item);
+    }
+    return items.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+  }
+
+  function pingsPageVisible(items) {
+    return pingsView.filter === "unread" ? items.filter((item) => !item.readAt) : items;
+  }
+
+  function pingsPageHasMore(items) {
+    const total = Number(state.notificationTotal) || 0;
+    return items.length < total;
+  }
+
+  function pingsBlankslateHtml(icon, title, desc, action = "") {
+    return `
+      <div class="fm-blankslate">
+        <i data-lucide="${icon}" aria-hidden="true"></i>
+        <p class="fm-blankslate-title">${escapeHtml(title)}</p>
+        <p class="fm-blankslate-desc">${escapeHtml(desc)}</p>
+        ${action}
+      </div>
+    `;
+  }
+
+  function renderPingsFilter() {
+    $$("[data-pings-filter]").forEach((button) => {
+      button.setAttribute("aria-pressed", button.dataset.pingsFilter === pingsView.filter ? "true" : "false");
+    });
+  }
+
+  function renderPingsPage() {
+    const list = $("[data-pings-list]");
+    if (!list) return;
+    renderPingsFilter();
+    const signedIn = Boolean(state.session?.nodeName);
+    const controls = $("[data-pings-account-controls]");
+    const toolbar = $("[data-pings-toolbar]");
+    const more = $("[data-pings-more]");
+    if (controls) controls.hidden = !signedIn;
+    if (toolbar) toolbar.hidden = !signedIn;
+    if (!signedIn) {
+      if (more) more.hidden = true;
+      const next = encodeURIComponent(`${location.pathname}${location.search}`);
+      list.innerHTML = pingsBlankslateHtml(
+        "bell",
+        "Sign in to see your pings",
+        "Mentions, pull requests, assignments, shares and host status changes for your account show up here.",
+        `<a href="/login?next=${next}" class="fm-btn fm-btn-sm mt-3">Log in</a>`,
+      );
+      window.lucide?.createIcons();
+      return;
+    }
+    if (!state.notificationsLoaded) {
+      if (more) more.hidden = true;
+      list.innerHTML = '<p class="px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading pings...</p>';
+      return;
+    }
+    const items = pingsPageItems();
+    const visible = pingsPageVisible(items);
+    const markAll = $("[data-pings-mark-all]");
+    if (markAll) markAll.disabled = !((Number(state.notificationUnread) || 0) > 0 || items.some((item) => !item.readAt));
+    if (state.notificationsFailed && !items.length) {
+      list.innerHTML = pingsBlankslateHtml("triangle-alert", "Pings could not be loaded", "Check your connection and reload the page.");
+    } else if (!visible.length) {
+      list.innerHTML = pingsView.filter === "unread"
+        ? pingsBlankslateHtml("check-check", "You're all caught up", "No unread pings. Switch to All to see the ones you have read.")
+        : pingsBlankslateHtml("bell", "No pings yet", "Mentions, pull requests, assignments, shares, bounties, releases and host status changes will appear here.");
+    } else {
+      list.innerHTML = `<ul class="divide-y divide-border">${visible.map((item) => notificationRowHtml(item, {
+        expanded: pingsView.expanded.has(String(item.id || "")),
+      })).join("")}</ul>`;
+    }
+    if (more) {
+      more.hidden = !pingsPageHasMore(items);
+      const button = more.querySelector("[data-pings-load-more]");
+      if (button) {
+        button.disabled = pingsView.loadingMore;
+        button.textContent = pingsView.loadingMore
+          ? "Loading..."
+          : pingsView.moreFailed ? "Could not load more. Try again" : "Load more";
+      }
+    }
+    window.lucide?.createIcons();
+  }
+
+  async function loadMorePings() {
+    const node = state.session?.nodeName || "";
+    if (!node || pingsView.loadingMore) return;
+    pingsView.loadingMore = true;
+    pingsView.moreFailed = false;
+    renderPingsPage();
+    try {
+      const offset = pingsPageItems().length;
+      const data = await fetchJson(`/api/notifications?node=${encodeURIComponent(node)}&limit=${PINGS_PAGE_SIZE}&offset=${offset}`);
+      const page = Array.isArray(data.notifications) ? data.notifications : [];
+      pingsView.older = pingsView.older.concat(page);
+      if (Number(data.total)) state.notificationTotal = Number(data.total);
+      if (!page.length) state.notificationTotal = pingsPageItems().length;
+    } catch (_) {
+      pingsView.moreFailed = true;
+    }
+    pingsView.loadingMore = false;
+    renderPingsPage();
+  }
+
+  function markPingsReadLocally(ids, all = false) {
+    const now = Date.now();
+    const wanted = new Set(ids.map(String));
+    for (const item of [...state.notifications, ...pingsView.older]) {
+      if (!item.readAt && (all || wanted.has(String(item.id || "")))) item.readAt = now;
+    }
+  }
+
+  async function markPingsRead(ids, all = false) {
+    const fresh = all
+      ? (Number(state.notificationUnread) || 0)
+      : pingsPageItems().filter((item) => ids.includes(String(item.id || "")) && !item.readAt).length;
+    markPingsReadLocally(ids, all);
+    state.notificationUnread = all ? 0 : Math.max(0, (Number(state.notificationUnread) || 0) - fresh);
+    renderNotificationBadge();
+    renderPingsPage();
+    await markNotificationsRead(all ? [] : ids, all);
+    markPingsReadLocally(ids, all);
+    renderPingsPage();
+  }
+
+  function setPingsFilter(filter) {
+    pingsView.filter = filter === "unread" ? "unread" : "all";
+    const url = new URL(location.href);
+    if (pingsView.filter === "unread") url.searchParams.set("filter", "unread");
+    else url.searchParams.delete("filter");
+    history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    renderPingsPage();
+  }
+
+  function focusPingControl(selector) {
+    $(selector)?.focus();
+  }
+
+  async function handlePingsPageClick(event) {
+    const page = event.target.closest("[data-pings-page]");
+    if (!page) return;
+    const filter = event.target.closest("[data-pings-filter]");
+    if (filter) {
+      setPingsFilter(filter.dataset.pingsFilter);
+      return;
+    }
+    if (event.target.closest("[data-pings-mark-all]")) {
+      await markPingsRead([], true);
+      return;
+    }
+    if (event.target.closest("[data-pings-load-more]")) {
+      await loadMorePings();
+      return;
+    }
+    const markRead = event.target.closest("[data-ping-mark-read]");
+    if (markRead) {
+      const id = markRead.dataset.pingMarkRead || "";
+      await markPingsRead([id]);
+      focusPingControl(`[data-ping-row-toggle="${CSS.escape(id)}"]`);
+      return;
+    }
+    const toggle = event.target.closest("[data-ping-row-toggle]");
+    if (toggle) {
+      const id = toggle.dataset.pingRowToggle || "";
+      if (pingsView.expanded.has(id)) pingsView.expanded.delete(id);
+      else pingsView.expanded.add(id);
+      renderPingsPage();
+      focusPingControl(`[data-ping-row-toggle="${CSS.escape(id)}"]`);
+      return;
+    }
+    const open = event.target.closest("[data-notification-open]");
+    if (open) {
+      const id = open.dataset.notificationOpen || "";
+      const item = pingsPageItems().find((candidate) => String(candidate.id || "") === id);
+      if (!item) return;
+      if (open.tagName === "BUTTON") {
+        if (pingsView.expanded.has(id)) pingsView.expanded.delete(id);
+        else pingsView.expanded.add(id);
+        renderPingsPage();
+        focusPingControl(`button[data-notification-open="${CSS.escape(id)}"]`);
+        if (!item.readAt) await markPingsRead([id]);
+        return;
+      }
+      if (!item.readAt) setTimeout(() => { void markPingsRead([id]); }, 0);
+    }
+  }
+
+  function initPingsPage() {
+    if (!$("[data-pings-page]")) return;
+    const bell = $("#notificationToggle");
+    bell?.setAttribute("aria-current", "page");
+    pingsView.filter = new URLSearchParams(location.search).get("filter") === "unread" ? "unread" : "all";
+    if (!pingsView.wired) {
+      pingsView.wired = true;
+      document.addEventListener("click", (event) => { void handlePingsPageClick(event); });
+    }
+    renderPingsPage();
+    renderPingPause();
+  }
   const pluginMenuState = { plugin: null, account: null, loading: null };
 
   function currentPluginPage() {
@@ -60023,7 +60507,7 @@ Your reply
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agent-profiles": "/dashboard-page-agent-profiles.js?v=5f1b0cdbc981",
-    "agents": "/dashboard-page-agents.js?v=8e608cb03ff4",
+    "agents": "/dashboard-page-agents.js?v=a3f434dc50d9",
     "apps": "/dashboard-page-apps.js?v=9e800893389a",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
@@ -60031,7 +60515,7 @@ Your reply
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=9c271809708a",
+    "notes": "/dashboard-page-notes.js?v=442e6e5ce3ee",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=38ff59fc7239",
     "tasks": "/dashboard-page-tasks.js?v=06cd84632de4",
@@ -60091,6 +60575,7 @@ Your reply
     runnersEl,
     sendTextToPrompt,
     setAgentLoginStatus,
+    setNavWorking,
     setRepoTab,
     showAgentLoginModal,
     shownAccountName,
@@ -60158,7 +60643,7 @@ Your reply
   // DEFERRED_MARKUP); ensureDeferredMarkup adds it on first use.
   function deferredMarkup(name) {
     return {
-      "dialogs": { marker: "#notificationModal", after: null, html: "    <div\n      data-profile-modal\n      class=\"hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileModalTitle\"\n    >\n      <button data-profile-modal-backdrop type=\"button\" aria-label=\"Close profile settings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileModalTitle\" class=\"fm-dialog-title\">Profile settings</h2>\n            <p class=\"fm-dialog-desc\">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>\n          </div>\n          <button data-profile-modal-close type=\"button\" aria-label=\"Close profile settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <div class=\"flex items-start justify-between gap-3 border-b border-border pb-4\">\n            <div class=\"min-w-0\">\n              <p class=\"text-sm font-medium text-foreground\">Email verification</p>\n              <p data-profile-email-status class=\"mt-1 text-xs text-muted-foreground\">Sign in to view email status.</p>\n            </div>\n            <button data-profile-verify-email type=\"button\" class=\"fm-btn fm-btn-sm shrink-0\">\n              Send link\n            </button>\n          </div>\n\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Solana payout address\n            <input data-profile-solana type=\"text\" inputmode=\"latin\" autocomplete=\"off\" placeholder=\"Your public Solana address\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n            <span class=\"text-xs leading-5 text-muted-foreground\">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>\n            <span class=\"text-xs leading-5 text-muted-foreground\">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>\n          </label>\n\n          <form data-credential-scope class=\"contents\">\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Current password\n            <input data-profile-password type=\"password\" autocomplete=\"current-password\" placeholder=\"Required to save payout changes\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n          </label>\n          </form>\n\n          <p data-profile-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n            Save profile\n          </button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      data-profile-about-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileAboutModalTitle\"\n    >\n      <button data-profile-about-modal-backdrop type=\"button\" aria-label=\"Close about editor\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-3xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileAboutModalTitle\" class=\"fm-dialog-title\">Edit about yourself</h2>\n            <p class=\"fm-dialog-desc\">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>\n          </div>\n          <button data-profile-about-modal-close type=\"button\" aria-label=\"Close about editor\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <label class=\"grid gap-2 text-xs font-medium text-muted-foreground\">\n            About yourself\n            <textarea data-profile-about-textarea rows=\"14\" maxlength=\"32000\" spellcheck=\"true\" class=\"min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\" placeholder=\"# Hi, I'm ...\"></textarea>\n          </label>\n          <p data-profile-about-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-about-cancel type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-profile-about-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Save about</button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      id=\"notificationModal\"\n      class=\"hidden fixed inset-0 z-[80] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"notificationModalTitle\"\n    >\n      <button data-notification-modal-backdrop type=\"button\" aria-label=\"Close pings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-4xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"notificationModalTitle\" class=\"fm-dialog-title\">Pings</h2>\n            <p class=\"fm-dialog-desc\">Read node, repository, and network updates.</p>\n          </div>\n          <div class=\"flex shrink-0 items-center gap-1\">\n            <a href=\"/dashboard/settings/notifications\" data-ping-settings-link=\"\" title=\"Ping settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible\">\n              <i data-lucide=\"settings\" aria-hidden=\"true\"></i>\n              Ping settings\n            </a>\n            <button data-close-notification-modal type=\"button\" aria-label=\"Close pings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n              <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n            </button>\n          </div>\n        </div>\n\n        <div class=\"grid min-h-0 flex-1 md:grid-cols-[19rem_minmax(0,1fr)]\">\n          <div data-notification-modal-list class=\"max-h-80 overflow-y-auto border-b border-border p-2 md:max-h-none md:border-b-0 md:border-r\"></div>\n          <article data-notification-modal-detail class=\"min-h-0 overflow-y-auto p-5\"></article>\n        </div>\n      </div>\n    </div>\n\n    <!--\n      Provider sign-in, streamed from the owner's own node (agent-terminal.js).\n      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser\n      could only complete on a machine with the desktop app installed.\n    -->\n    <div\n      data-agent-login-modal\n      class=\"fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"agentLoginModalTitle\"\n    >\n      <button data-agent-login-backdrop type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"agentLoginModalTitle\" data-agent-login-title class=\"fm-dialog-title flex items-center gap-2\"><i data-lucide=\"terminal\" class=\"h-4 w-4 text-muted-foreground\"></i>Sign in on your node</h2>\n            <p data-agent-login-status class=\"fm-dialog-desc\">Connecting\u2026</p>\n          </div>\n          <button data-agent-login-close type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div data-agent-login-surface class=\"fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2\"></div>\n        <p data-agent-login-footer class=\"border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground\">\n          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command \u2014 not a shell \u2014 and the credential itself is created on the provider's site, never here.\n        </p>\n      </div>\n    </div>\n\n    <div\n      data-feedback-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"feedbackModalTitle\"\n    >\n      <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"absolute inset-0 cursor-default\"></button>\n      <form data-feedback-form class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"feedbackModalTitle\" class=\"fm-dialog-title\">Send feedback</h2>\n            <p class=\"fm-dialog-desc\">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>\n          </div>\n          <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-3\">\n          <label class=\"grid gap-1.5 text-xs font-medium text-muted-foreground\">\n            Your feedback\n            <textarea data-feedback-message name=\"message\" rows=\"6\" minlength=\"2\" maxlength=\"2000\" required placeholder=\"What should we know?\" class=\"min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\"></textarea>\n          </label>\n          <p data-feedback-status class=\"min-h-4 text-xs text-muted-foreground\" role=\"status\" aria-live=\"polite\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-feedback-close type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-feedback-submit type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Send feedback</button>\n        </div>\n      </form>\n    </div>\n" },
+      "dialogs": { marker: "#profileModalTitle", after: null, html: "    <div\n      data-profile-modal\n      class=\"hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileModalTitle\"\n    >\n      <button data-profile-modal-backdrop type=\"button\" aria-label=\"Close profile settings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileModalTitle\" class=\"fm-dialog-title\">Profile settings</h2>\n            <p class=\"fm-dialog-desc\">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>\n          </div>\n          <button data-profile-modal-close type=\"button\" aria-label=\"Close profile settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <div class=\"flex items-start justify-between gap-3 border-b border-border pb-4\">\n            <div class=\"min-w-0\">\n              <p class=\"text-sm font-medium text-foreground\">Email verification</p>\n              <p data-profile-email-status class=\"mt-1 text-xs text-muted-foreground\">Sign in to view email status.</p>\n            </div>\n            <button data-profile-verify-email type=\"button\" class=\"fm-btn fm-btn-sm shrink-0\">\n              Send link\n            </button>\n          </div>\n\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Solana payout address\n            <input data-profile-solana type=\"text\" inputmode=\"latin\" autocomplete=\"off\" placeholder=\"Your public Solana address\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n            <span class=\"text-xs leading-5 text-muted-foreground\">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>\n            <span class=\"text-xs leading-5 text-muted-foreground\">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>\n          </label>\n\n          <form data-credential-scope class=\"contents\">\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Current password\n            <input data-profile-password type=\"password\" autocomplete=\"current-password\" placeholder=\"Required to save payout changes\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n          </label>\n          </form>\n\n          <p data-profile-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n            Save profile\n          </button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      data-profile-about-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileAboutModalTitle\"\n    >\n      <button data-profile-about-modal-backdrop type=\"button\" aria-label=\"Close about editor\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-3xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileAboutModalTitle\" class=\"fm-dialog-title\">Edit about yourself</h2>\n            <p class=\"fm-dialog-desc\">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>\n          </div>\n          <button data-profile-about-modal-close type=\"button\" aria-label=\"Close about editor\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <label class=\"grid gap-2 text-xs font-medium text-muted-foreground\">\n            About yourself\n            <textarea data-profile-about-textarea rows=\"14\" maxlength=\"32000\" spellcheck=\"true\" class=\"min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\" placeholder=\"# Hi, I'm ...\"></textarea>\n          </label>\n          <p data-profile-about-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-about-cancel type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-profile-about-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Save about</button>\n        </div>\n      </div>\n    </div>\n\n    <!--\n      Provider sign-in, streamed from the owner's own node (agent-terminal.js).\n      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser\n      could only complete on a machine with the desktop app installed.\n    -->\n    <div\n      data-agent-login-modal\n      class=\"fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"agentLoginModalTitle\"\n    >\n      <button data-agent-login-backdrop type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"agentLoginModalTitle\" data-agent-login-title class=\"fm-dialog-title flex items-center gap-2\"><i data-lucide=\"terminal\" class=\"h-4 w-4 text-muted-foreground\"></i>Sign in on your node</h2>\n            <p data-agent-login-status class=\"fm-dialog-desc\">Connecting\u2026</p>\n          </div>\n          <button data-agent-login-close type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div data-agent-login-surface class=\"fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2\"></div>\n        <p data-agent-login-footer class=\"border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground\">\n          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command \u2014 not a shell \u2014 and the credential itself is created on the provider's site, never here.\n        </p>\n      </div>\n    </div>\n\n    <div\n      data-feedback-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"feedbackModalTitle\"\n    >\n      <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"absolute inset-0 cursor-default\"></button>\n      <form data-feedback-form class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"feedbackModalTitle\" class=\"fm-dialog-title\">Send feedback</h2>\n            <p class=\"fm-dialog-desc\">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>\n          </div>\n          <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-3\">\n          <label class=\"grid gap-1.5 text-xs font-medium text-muted-foreground\">\n            Your feedback\n            <textarea data-feedback-message name=\"message\" rows=\"6\" minlength=\"2\" maxlength=\"2000\" required placeholder=\"What should we know?\" class=\"min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\"></textarea>\n          </label>\n          <p data-feedback-status class=\"min-h-4 text-xs text-muted-foreground\" role=\"status\" aria-live=\"polite\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-feedback-close type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-feedback-submit type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Send feedback</button>\n        </div>\n      </form>\n    </div>\n" },
       "agent": { marker: "#agentModal", after: "#agentModalToggle", html: "<div\n  id=\"agentModal\"\n  class=\"fm-popover hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]\"\n  role=\"dialog\"\n  aria-labelledby=\"agentModalTitle\"\n>\n  <div class=\"fm-popover-header\">\n    <div class=\"min-w-0 py-1\">\n      <h2 id=\"agentModalTitle\" class=\"fm-popover-title\">Start an agent</h2>\n      <p class=\"text-xs text-muted-foreground\">Run on an agent-capable node owned by your account.</p>\n    </div>\n    <button data-agent-modal-close type=\"button\" aria-label=\"Close agent composer\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n      <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n    </button>\n  </div>\n  <form data-repo-agent-new-form class=\"grid gap-3 p-3 text-xs\">\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Repository\n      <select data-agent-modal-repo name=\"repository\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Run on\n      <select data-agent-modal-target name=\"targetNode\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"><option value=\"\">Choose an owned node\u2026</option></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Agent and model\n      <select data-repo-agent-new-agent-model required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <input data-repo-agent-new-provider name=\"provider\" type=\"hidden\" value=\"claude-code\" />\n    <input data-repo-agent-new-model name=\"model\" type=\"hidden\" value=\"\" />\n    <div data-agent-modal-login class=\"hidden flex-col gap-1.5\">\n      <button data-agent-modal-login-start type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"key\" aria-hidden=\"true\"></i>\n        <span data-agent-modal-login-label>Sign in to agent</span>\n      </button>\n      <a data-agent-modal-login-desktop href=\"#\" class=\"text-xs text-accent hover:underline\">Or hand this off to the <span data-desktop-brand>ForkMesh </span>desktop app</a>\n    </div>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Task\n      <textarea data-repo-agent-new-input name=\"prompt\" required maxlength=\"8000\" rows=\"5\" class=\"w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground\" placeholder=\"Describe the change you want the agent to make\u2026\"></textarea>\n    </label>\n    <input data-repo-agent-new-file-input type=\"file\" accept=\"image/png,image/jpeg,image/webp,image/gif\" multiple class=\"hidden\" />\n    <div class=\"flex flex-wrap items-center gap-2\">\n      <button data-repo-agent-new-attach type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"image-plus\" aria-hidden=\"true\"></i>\n        Attach images\n      </button>\n      <span class=\"text-xs text-muted-foreground\">or paste a screenshot into the task</span>\n    </div>\n    <div data-repo-agent-new-attachments class=\"hidden\"></div>\n    <label class=\"flex items-center gap-2 text-foreground\">\n      <input name=\"createPr\" type=\"checkbox\" class=\"h-4 w-4 rounded border-border\" />\n      Create a pull request when the run finishes\n    </label>\n    <p class=\"text-xs leading-5 text-muted-foreground\">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>\n    <p data-repo-agent-new-hint class=\"text-xs leading-5 text-muted-foreground\">The request is saved durably and starts when the selected node claims it.</p>\n    <div class=\"flex justify-end border-t border-border pt-3\">\n      <button type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n        <i data-lucide=\"play\" aria-hidden=\"true\"></i>\n        Start agent\n      </button>\n    </div>\n  </form>\n</div>\n" },
     }[name] || null;
   }
@@ -60175,6 +60660,7 @@ Your reply
     "network": initNetworkPage,
     "ads": initAdsPage,
     "runners": initRunnersPage,
+    "pings": initPingsPage,
     "agents": initAgentsPage,
     "docs": initDocsPage,
     "apps": initAppsPage,

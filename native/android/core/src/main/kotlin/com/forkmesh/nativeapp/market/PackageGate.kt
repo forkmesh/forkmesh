@@ -59,7 +59,7 @@ object PackageGate {
         put(DISCUSSIONS, Route.Kind.Discussion)
         put(ACTIONS, Route.Kind.Run)
         put(RELEASES, Route.Kind.Release)
-        put("notes", Route.Kind.Notes, Route.Kind.Note)
+        put("notes", Route.Kind.Notes, Route.Kind.Note, Route.Kind.NotePage)
         put("tasks", Route.Kind.Tasks, Route.Kind.Task)
         put("calendar", Route.Kind.Calendar, Route.Kind.Event)
         put("timers", Route.Kind.Timers)

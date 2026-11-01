@@ -168,6 +168,7 @@ internal class QuickEditScreen(
                         filled = true,
                         height = 32.dp,
                         modifier = Modifier.padding(end = FmSpace.x3),
+                        busy = submitting,
                     )
                 },
             )

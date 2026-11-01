@@ -184,8 +184,8 @@ internal class RssSettingsScreen : Screen() {
                 Divider()
                 SettingsRow("Text Size", value = "${settings.textSize} pt") {
                     Row {
-                        FmIconButton("remove", "Smaller text", onPressed = if (settings.textSize > RssSettings.MIN_TEXT) ({ update { it.copy(textSize = it.textSize - 1) } }) else null)
-                        FmIconButton("add", "Larger text", onPressed = if (settings.textSize < RssSettings.MAX_TEXT) ({ update { it.copy(textSize = it.textSize + 1) } }) else null)
+                        FmIconButton("remove", "Smaller text", onPressed = if (settings.textSize > RssSettings.MIN_TEXT) ({ update { it.copy(textSize = it.textSize - 1) } }) else null, busy = false)
+                        FmIconButton("add", "Larger text", onPressed = if (settings.textSize < RssSettings.MAX_TEXT) ({ update { it.copy(textSize = it.textSize + 1) } }) else null, busy = false)
                     }
                 }
                 Divider()
@@ -358,7 +358,7 @@ internal class RssFeedInfoScreen(private val feedId: String) : Screen() {
                         FmTextButton(onClick = {
                             service.mutate { it.renameFeed(feed.id, name) }
                             status.show("Name saved.")
-                        }, enabled = name.isNotBlank() && name != feed.displayTitle) { Text("Save Name") }
+                        }, enabled = name.isNotBlank() && name != feed.displayTitle, busy = false) { Text("Save Name") }
                         if (feed.customTitle.isNotEmpty()) {
                             FmTextButton(onClick = {
                                 service.mutate { it.renameFeed(feed.id, "") }
@@ -417,7 +417,7 @@ internal class RssFeedInfoScreen(private val feedId: String) : Screen() {
                                 .onFailure { error -> addressError = service.errorText(error) }
                             checking = false
                         }
-                    }, enabled = !checking && address.isNotBlank() && address.trim() != feed.url) { Text("Save Address") }
+                    }, enabled = !checking && address.isNotBlank() && address.trim() != feed.url, busy = checking) { Text("Save Address") }
                 }
                 if (feed.previousUrls.isNotEmpty()) {
                     Divider()

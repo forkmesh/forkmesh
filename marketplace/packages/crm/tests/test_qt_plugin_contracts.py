@@ -1352,3 +1352,24 @@ def test_the_desktop_card_shows_how_far_and_how_long_an_email_was_read():
     assert 'text(email, "readingReported") == QLatin1String("no")' in line
     assert "lines << (toots ? linkedEmailLine(email) : linkedEmailReport(email));" in FEATURE
     assert "history << QStringLiteral(\"- \") + linkedEmailLine(email);" in FEATURE
+
+
+def _feature_function(name):
+    return FEATURE.split(f"void CrmFeature::{name}(", 1)[1].split("\n}\n", 1)[0]
+
+
+def test_desktop_reads_a_first_page_of_contacts_then_the_rest_in_the_background():
+    load = _feature_function("loadOrganization")
+    assert 'summaryQuery.addQueryItem(QStringLiteral("contacts"), QString::number(kContactFirstPage));' in load
+    assert "const quint64 generation = ++m_contactsGeneration;" in load
+    assert "loadRemainingContacts(organization, next, generation);" in load
+    assert load.index("if (next.isEmpty()) {") < load.index("cacheSummary(payload);")
+    rest = _feature_function("loadRemainingContacts")
+    assert "if (generation != m_contactsGeneration || organization != m_shownOrganization)" in rest
+    assert 'query.addQueryItem(QStringLiteral("limit"), QString::number(kContactPageFetch));' in rest
+    assert "m_revision.clear();" in rest.split("if (!ok) {", 1)[1].split("return;", 1)[0]
+    assert "if (!known.contains(" in rest
+    assert rest.index("if (next.isEmpty()) {") < rest.index("cacheSummary(summary);")
+    assert "constexpr int kContactFirstPage = 250;" in FEATURE
+    assert "constexpr int kContactPageFetch = 1000;" in FEATURE
+    assert 'summaryObject.value(QStringLiteral("customers")).toInt(customers)' in FEATURE

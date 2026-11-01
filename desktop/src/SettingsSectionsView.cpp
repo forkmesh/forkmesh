@@ -503,6 +503,34 @@ SettingsSectionsView::SettingsSectionsView(QWidget *parent) : QWidget(parent)
     m_scroll->setWidget(m_content);
     m_hitOverlay = new SearchHitOverlay(m_content, this);
 
+    m_sticky = new QWidget(m_scroll->viewport());
+    m_sticky->setObjectName(QStringLiteral("settingsStickyHeader"));
+    m_sticky->setAttribute(Qt::WA_StyledBackground, true);
+    m_sticky->setCursor(Qt::PointingHandCursor);
+    auto *stickyColumn = new QVBoxLayout(m_sticky);
+    stickyColumn->setContentsMargins(0, 8, 0, 8);
+    stickyColumn->setSpacing(4);
+    m_stickyTitleRow = new QWidget;
+    m_stickyTitleRow->setObjectName(QStringLiteral("settingsStickyTitleRow"));
+    auto *stickyHeading = new QHBoxLayout(m_stickyTitleRow);
+    stickyHeading->setContentsMargins(0, 0, 0, 0);
+    stickyHeading->setSpacing(8);
+    m_stickyIcon = new QLabel;
+    m_stickyIcon->setObjectName(QStringLiteral("settingsStickyIcon"));
+    m_stickyIcon->setFixedSize(16, 16);
+    m_stickyTitle = new QLabel;
+    m_stickyTitle->setObjectName(QStringLiteral("settingsStickyTitle"));
+    stickyHeading->addWidget(m_stickyIcon);
+    stickyHeading->addWidget(m_stickyTitle);
+    stickyHeading->addStretch(1);
+    m_stickySub = new QLabel;
+    m_stickySub->setObjectName(QStringLiteral("settingsStickySub"));
+    m_stickySub->hide();
+    stickyColumn->addWidget(m_stickyTitleRow);
+    stickyColumn->addWidget(m_stickySub);
+    m_sticky->hide();
+    m_sticky->installEventFilter(this);
+
     row->addWidget(sidebar);
     row->addWidget(m_scroll, 1);
 
@@ -869,7 +897,8 @@ void SettingsSectionsView::setCurrentSubSection(int index, int sub)
     m_pendingJump = -1;
     const int y = subs.at(sub).anchor->mapTo(m_content, QPoint(0, 0)).y();
     m_jumping = true;
-    m_scroll->verticalScrollBar()->setValue(qMax(0, y - kSubJumpMargin));
+    m_scroll->verticalScrollBar()->setValue(
+        qMax(0, y - kSubJumpMargin - stickyTitleHeight()));
     m_jumping = false;
     setCurrent(index);
     updateCurrentSub();
@@ -941,7 +970,8 @@ void SettingsSectionsView::updateCurrentSub()
     int current = -1;
     if (m_current >= 0) {
         const QVector<SubSection> subs = visibleSubSections(m_current);
-        const int line = m_scroll->verticalScrollBar()->value() + kReadingLine;
+        const int line =
+            m_scroll->verticalScrollBar()->value() + stickyTitleHeight() + kReadingLine;
         if (!subs.isEmpty())
             current = 0;
         for (int i = 1; i < subs.size(); ++i) {
@@ -952,6 +982,72 @@ void SettingsSectionsView::updateCurrentSub()
     }
     m_currentSub = current;
     syncNavSubs();
+    updateSticky();
+}
+
+int SettingsSectionsView::stickyTitleHeight()
+{
+    m_sticky->ensurePolished();
+    const QMargins margins = m_sticky->layout()->contentsMargins();
+    return margins.top() + m_stickyTitleRow->sizeHint().height() + margins.bottom();
+}
+
+void SettingsSectionsView::updateSticky()
+{
+    const int top = m_scroll->verticalScrollBar()->value();
+    const bool shown = m_current >= 0 && m_current < count() &&
+                       !m_sections.at(m_current).frame->isHidden() &&
+                       m_sections.at(m_current).titleLabel->mapTo(m_content, QPoint(0, 0)).y() <
+                           top;
+    if (!shown) {
+        m_sticky->hide();
+        return;
+    }
+    const Section &section = m_sections.at(m_current);
+    const int titleHeight = stickyTitleHeight();
+    m_stickyTitle->setText(section.title);
+    m_stickyIcon->setPixmap(section.icon->pixmap());
+    m_stickyIcon->setVisible(!section.icon->pixmap().isNull());
+    const bool next = property(kNextLayout).toBool();
+    m_stickyTitleRow->layout()->setContentsMargins(next ? 0 : 26, 0, 0, 0);
+
+    QLabel *subLabel = nullptr;
+    const QVector<SubSection> subs = visibleSubSections(m_current);
+    if (m_currentSub >= 0 && m_currentSub < subs.size()) {
+        QLabel *label = qobject_cast<QLabel *>(subs.at(m_currentSub).label.data());
+        if (label && label->mapTo(m_content, QPoint(0, 0)).y() < top + titleHeight)
+            subLabel = label;
+    }
+    if (subLabel)
+        m_stickySub->setText(plainText(subLabel->text()).simplified());
+    m_stickySub->setVisible(subLabel != nullptr);
+
+    const auto mark = [](QWidget *widget, bool on) {
+        if (widget->property(kLitProperty).toBool() == on)
+            return;
+        widget->setProperty(kLitProperty, on);
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
+    };
+    mark(m_stickyTitle, m_litHeading && m_litHeading == section.titleLabel);
+    mark(m_stickySub, subLabel && m_litHeading == subLabel);
+
+    int bottomLimit = QWIDGETSIZE_MAX;
+    for (int i = m_current + 1; i < count(); ++i) {
+        if (!m_sections.at(i).frame->isHidden()) {
+            bottomLimit = m_sections.at(i).frame->y() - top;
+            break;
+        }
+    }
+    const QMargins margins =
+        m_content->layout() ? m_content->layout()->contentsMargins() : QMargins();
+    const int height = m_sticky->sizeHint().height();
+    m_sticky->setGeometry(m_content->x() + margins.left(), qMin(0, bottomLimit - height),
+                          qMax(0, m_content->width() - margins.left() - margins.right()),
+                          height);
+    m_sticky->show();
+    m_sticky->raise();
 }
 
 void SettingsSectionsView::syncNavSubs()
@@ -1162,6 +1258,16 @@ bool SettingsSectionsView::eventFilter(QObject *watched, QEvent *event)
     }
     if (event->type() == QEvent::MouseButtonRelease &&
         static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+        if (watched == m_sticky) {
+            const int index = m_current;
+            const int y = int(static_cast<QMouseEvent *>(event)->position().y());
+            if (m_stickySub->isVisible() && y >= m_stickySub->geometry().top() - 2)
+                setCurrentSubSection(index, m_currentSub);
+            else
+                setCurrentIndex(index);
+            emit sectionActivated(index);
+            return true;
+        }
         for (int i = 0; i < count(); ++i) {
             if (m_sections.at(i).header == watched) {
                 setExpanded(i, !m_sections.at(i).expanded);

@@ -1002,6 +1002,7 @@ struct ChatMessageRow: View {
             }
         }
         .contentShape(Rectangle())
+        .textSelection(.disabled)
         .contextMenu { menu }
         .sheet(isPresented: $selecting) { FmSelectableTextSheet(text: copyText) }
         .confirmationDialog("Delete message?", isPresented: $confirmDelete, titleVisibility: .visible) {

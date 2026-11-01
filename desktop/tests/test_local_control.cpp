@@ -320,6 +320,7 @@ static void testLoopback()
               "approval reaches the phone");
         check(server->isPaired(phoneKey.publicKey), "remembered");
         check(server->isConnected(phoneKey.publicKey), "connected");
+        check(server->connectedLocally(phoneKey.publicKey), "connected on the network");
 
         phone.send({{"id", 2}, {"method", "agents.list"}, {"params", QJsonObject{{"x", 5}}}});
         check(waitFor([&] { return !phone.response(2).isEmpty(); }), "request answered");
@@ -630,6 +631,32 @@ static void testRelay()
     deliver(phone);
     check(phone.response(3).value("error").toString() == "lan_only",
           "files stay on the LAN");
+
+    check(!server.connectedLocally(pairedPhone.publicKey), "relayed phone is not local");
+    int devicesChanged = 0;
+    server.onDevicesChanged = [&] { ++devicesChanged; };
+    server.setRemoteOff(true);
+    check(server.remoteOff() && devicesChanged == 1, "remote control off is announced");
+    phone.send({{"id", 900}, {"method", "agents.list"}});
+    deliver(phone);
+    check(phone.response(900).value("error").toString() == "remote_off",
+          "remote control off refuses requests");
+    server.broadcast("remote.test");
+    deliver(phone);
+    check(phone.event("remote.test").isEmpty(), "remote control off holds back events");
+    phone.send({{"id", 901}, {"method", "ping"}});
+    deliver(phone);
+    check(phone.response(901).contains("result"), "ping still answers while off");
+    server.setRemoteOff(false);
+    server.onDevicesChanged = nullptr;
+    phone.send({{"id", 902}, {"method", "agents.list"}});
+    deliver(phone);
+    check(phone.response(902).value("result").toObject().value("method").toString() ==
+              "agents.list",
+          "remote control back on routes requests");
+    server.broadcast("remote.test");
+    deliver(phone);
+    check(!phone.event("remote.test").isEmpty(), "remote control back on pushes events");
 
     // Gate 2 families: routed by the longest prefix, before onRequest and
     // before the built-in files.* methods, and never for a bare prefix.

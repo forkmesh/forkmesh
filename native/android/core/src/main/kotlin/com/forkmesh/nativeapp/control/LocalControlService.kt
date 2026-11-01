@@ -295,6 +295,7 @@ object ControlErrorText {
         "not_connected", "closed" -> "The desktop is not connected."
         "timeout" -> "The desktop did not answer in time."
         "not_paired" -> "Approve this phone on the desktop first."
+        "remote_off" -> "Remote control is off on the desktop. Turn it on in a session's Environment panel there."
         "pair_on_lan" -> "Sign this phone and the desktop in to the same ForkMesh account, or approve this phone on the desktop while both are on the same network; after that it works from anywhere."
         "not_owner" -> "Only the account that owns this desktop can manage its hosts."
         "confirmation_required", "confirmation_mismatch" -> "That change was not confirmed. Try again."

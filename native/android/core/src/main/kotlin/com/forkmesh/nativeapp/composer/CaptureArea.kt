@@ -11,7 +11,7 @@ data class CaptureArea(val x: Double, val y: Double, val width: Double, val heig
     }
 }
 
-data class CaptureHit(val width: Double, val height: Double, val actionable: Boolean)
+data class CaptureHit(val width: Double, val height: Double, val actionable: Boolean, val text: Boolean = false)
 
 object CaptureAreaRules {
     const val MINIMUM_SIDE = 16.0
@@ -40,13 +40,14 @@ object CaptureAreaRules {
         return CaptureArea(left, top, right - left, bottom - top)
     }
 
-    fun isContent(elementWidth: Double, elementHeight: Double, boundsWidth: Double, boundsHeight: Double): Boolean {
+    fun isContent(elementWidth: Double, elementHeight: Double, boundsWidth: Double, boundsHeight: Double, text: Boolean = false): Boolean {
         if (elementWidth <= 0 || elementHeight <= 0) return false
+        if (text) return true
         return elementWidth * elementHeight <= boundsWidth * boundsHeight * LARGEST_ELEMENT_SHARE
     }
 
     fun isBlank(hits: List<CaptureHit>, boundsWidth: Double, boundsHeight: Double): Boolean =
-        hits.none { it.actionable || isContent(it.width, it.height, boundsWidth, boundsHeight) }
+        hits.none { it.actionable || isContent(it.width, it.height, boundsWidth, boundsHeight, it.text) }
 
     fun fitted(width: Int, height: Int, longSide: Int = LONG_SIDE_PX): Pair<Int, Int> {
         val long = max(width, height)

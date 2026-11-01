@@ -154,6 +154,7 @@ internal class LocalFileEditorScreen(
                         filled = true,
                         height = 32.dp,
                         modifier = Modifier.padding(end = FmSpace.x3),
+                        busy = busy,
                     )
                 },
             )

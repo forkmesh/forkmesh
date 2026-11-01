@@ -2171,6 +2171,15 @@ class Default:
         if delegated is not None:
             return delegated
 
+        if (url.path == "/apt" or url.path.startswith("/apt/")) \
+                and not instance_branded(self.env):
+            apt_target = apt_redirect_target(url.path)
+            if not apt_target or method_name(request) not in ("GET", "HEAD"):
+                return json_response(
+                    {"error": "not_found"}, status=404, cache_control="no-store")
+            return Response("", status=302, headers={
+                "location": apt_target, "cache-control": "no-store"})
+
         if str(request.headers.get("authorization") or "")[7:].strip() \
                 .startswith("fmat_"):
             denied = await apps_rest_gate(self.env, request, url.path)

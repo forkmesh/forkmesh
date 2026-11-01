@@ -3266,3 +3266,50 @@ def test_crm_mastodon_hosts_match_the_manifest_origins():
     manifest = json.loads((CRM_PACKAGE / "manifest.json").read_text())
     origins = set(manifest["worker"]["outboundOrigins"])
     assert {"https://" + host for host in crm.MASTODON_HOSTS} <= origins
+
+
+def test_contacts_page_with_a_cursor_and_the_summary_sends_the_first_page():
+    runtime = Runtime()
+    names = ["Contact %02d" % index for index in range(7)]
+    call(runtime.use("POST", body={
+        "csv": "name,email\n" + "".join(
+            "%s,c%02d@example.com\n" % (name, index) for index, name in enumerate(names)),
+        "fileName": "people.csv"}), "/api/crm/acme/contacts/import")
+    everyone = call(runtime.use("GET"), "/api/crm/acme/contacts")["data"]
+    assert "next" not in everyone and len(everyone["contacts"]) == 7
+
+    seen, cursor, pages = [], "", 0
+    while True:
+        query = {"limit": "3"}
+        if cursor:
+            query["cursor"] = cursor
+        page = call(runtime.use("GET", query=query), "/api/crm/acme/contacts")["data"]
+        seen += [contact["id"] for contact in page["contacts"]]
+        pages += 1
+        cursor = page["next"]
+        if not cursor:
+            break
+    assert pages == 3
+    assert seen == [contact["id"] for contact in everyone["contacts"]]
+
+    summary = call(runtime.use("GET", query={"contacts": "2"}), "/api/crm/acme")["data"]
+    assert [contact["id"] for contact in summary["contacts"]] == seen[:2]
+    assert summary["contactsTotal"] == 7 and summary["summary"]["contacts"] == 7
+    assert summary["contactsNext"]
+    rest = call(runtime.use("GET", query={"limit": "1000", "cursor": summary["contactsNext"]}),
+                "/api/crm/acme/contacts")["data"]
+    assert [contact["id"] for contact in rest["contacts"]] == seen[2:] and rest["next"] == ""
+
+    revision = summary["revision"]
+    unchanged = call(runtime.use("GET", query={"contacts": "2", "since": revision}),
+                     "/api/crm/acme")["data"]
+    assert unchanged.get("unchanged") is True
+    last = everyone["contacts"][-1]["id"]
+    call(runtime.use("PATCH", body={"nextStep": "Call"}), f"/api/crm/acme/contacts/{last}")
+    changed = call(runtime.use("GET", query={"contacts": "2", "since": revision}),
+                   "/api/crm/acme")["data"]
+    assert not changed.get("unchanged") and changed["contacts"][0]["id"] == last
+
+    whole = call(runtime.use("GET"), "/api/crm/acme")["data"]
+    assert "contactsNext" not in whole and len(whole["contacts"]) == 7
+    assert "customers" in whole["summary"]

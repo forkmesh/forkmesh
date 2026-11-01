@@ -153,6 +153,11 @@ def _publish_handler(bounded_json, authorize_repo, authorize_author, publish,
     async def org_repo_node(_env, alias, repo):
         return (org_nodes or {}).get((alias, repo), "")
 
+    async def repo_organization(_env, node, repo):
+        found = [alias for (alias, name), linked in (org_nodes or {}).items()
+                 if linked == node and name == repo]
+        return found[0] if len(found) == 1 else ""
+
     return _load("ap_publish_handler", "_ap_public_repo_owner", extra_globals={
         "method_name": lambda _request: "POST",
         "ensure_schema": ensure_schema,
@@ -166,6 +171,7 @@ def _publish_handler(bounded_json, authorize_repo, authorize_author, publish,
         "urlparse": urlparse,
         "safe_segment": lambda value: str(value or ""),
         "_org_repo_node": org_repo_node,
+        "_repo_organization": repo_organization,
         "_ap_origin": lambda _env, _request=None: "https://forkmesh.com",
         "_authorize_repo_inbox_owner": authorize_repo,
         "_ap_publish_authorized": authorize_author,

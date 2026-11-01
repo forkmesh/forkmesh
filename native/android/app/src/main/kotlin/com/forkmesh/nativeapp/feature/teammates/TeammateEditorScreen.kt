@@ -165,6 +165,7 @@ internal class TeammateEditorScreen(private val id: String?) : Screen() {
                             if (id == null) "Add teammate" else "Save changes",
                             onClick = if (saving || issues.isNotEmpty() || changes.isEmpty()) null else ({ save() }),
                             icon = "check",
+                            busy = saving,
                         )
                         if (saving) CircularProgressIndicator(Modifier.padding(start = FmSpace.x2))
                     }

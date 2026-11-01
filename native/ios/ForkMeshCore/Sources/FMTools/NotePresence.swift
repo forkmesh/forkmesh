@@ -6,11 +6,27 @@ import Observation
 
 public typealias NoteSocketOpen = @MainActor (_ noteId: String) async throws -> WebSocketConnection
 
+public enum NotePeerState: String, Equatable, Sendable {
+    case viewing, editing
+}
+
 public struct NotePeer: Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let seen: Int64
     public let draftAt: Int64
+    public let state: NotePeerState
+
+    public init(id: String, name: String, seen: Int64, draftAt: Int64 = 0, state: NotePeerState = .viewing) {
+        self.id = id
+        self.name = name
+        self.seen = seen
+        self.draftAt = draftAt
+        self.state = state
+    }
+
+    public var editing: Bool { state == .editing }
+    public var stateLabel: String { "\(name) · \(state.rawValue)" }
 
     public var initials: String {
         let parts = name.split(whereSeparator: { !($0.isLetter || $0.isNumber) })
@@ -25,24 +41,40 @@ public enum NoteRoomEvent: Equatable, Sendable {
     case updated(version: Int)
     case deleted
     case accessChanged
+    case commentsChanged
 }
 
 public struct NotePresence: Sendable {
     public static let presenceMillis: Int64 = 15_000
     public static let draftMillis = 180
     public static let editingMillis: Int64 = 5_000
+    public static let typingMillis: Int64 = 10_000
     static let peerFrames: Set<String> = ["presence", "cursor", "draft"]
 
     public let clientId: String
     private var known: [String: NotePeer] = [:]
     private var order: [String] = []
+    private var typedAt: Int64 = 0
 
     public init(clientId: String) {
         self.clientId = clientId
     }
 
-    public var presenceFrame: String {
-        JSON.encode(.object(["type": "presence", "clientId": .string(clientId)]))
+    public mutating func typed(now: Int64) {
+        typedAt = now
+    }
+
+    public func localState(now: Int64) -> NotePeerState {
+        typedAt > 0 && now - typedAt < Self.typingMillis ? .editing : .viewing
+    }
+
+    public func presenceFrame(state: NotePeerState) -> String {
+        JSON.encode(.object(["type": "presence", "clientId": .string(clientId), "state": .string(state.rawValue)]))
+    }
+
+    static func state(_ frame: JSONObject, type: String, previous: NotePeer?) -> NotePeerState {
+        if let declared = NotePeerState(rawValue: ToolsJSON.text(frame["state"], "")) { return declared }
+        return type == "presence" ? .viewing : previous?.state ?? .viewing
     }
 
     public func draftFrame(title: String, markdown: String, baseVersion: Int) -> String {
@@ -64,7 +96,12 @@ public struct NotePresence: Sendable {
             if previous == nil { order.append(sender) }
             let trimmed = ToolsJSON.text(frame["name"], "").dartTrimmed
             let name = String((trimmed.isEmpty ? "Collaborator" : trimmed).prefix(32))
-            known[sender] = NotePeer(id: sender, name: name, seen: now, draftAt: type == "draft" ? now : previous?.draftAt ?? 0)
+            known[sender] = NotePeer(
+                id: sender, name: name, seen: now, draftAt: type == "draft" ? now : previous?.draftAt ?? 0,
+                state: Self.state(frame, type: type, previous: previous))
+        }
+        if type == "leave" && fromPeer && known.removeValue(forKey: sender) != nil {
+            order.removeAll { $0 == sender }
         }
         let event: NoteRoomEvent?
         switch type {
@@ -76,6 +113,7 @@ public struct NotePresence: Sendable {
         case "note-updated": event = .updated(version: ToolsJSON.int(frame["version"]))
         case "note-deleted": event = .deleted
         case "access-changed": event = .accessChanged
+        case "note-comments": event = .commentsChanged
         default: event = nil
         }
         return (event, newcomer)
@@ -85,16 +123,19 @@ public struct NotePresence: Sendable {
         let stale = order.filter { now - (known[$0]?.seen ?? 0) > Self.presenceMillis * 5 / 2 }
         for id in stale { known[id] = nil }
         order.removeAll { known[$0] == nil }
-        return order.compactMap { known[$0] }
+        return order.compactMap { known[$0] }.map { (peer: NotePeer) -> NotePeer in
+            let drafting = peer.draftAt > 0 && now - peer.draftAt < Self.editingMillis
+            return NotePeer(id: peer.id, name: peer.name, seen: peer.seen, draftAt: peer.draftAt, state: drafting ? .editing : peer.state)
+        }
     }
 
     public mutating func label(open: Bool, now: Int64) -> String {
         if !open { return "Offline — edits still save" }
         let present = peers(now: now)
-        if let editing = present.first(where: { $0.draftAt > 0 && now - $0.draftAt < Self.editingMillis }) {
+        if let editing = present.first(where: \.editing) {
             return "\(editing.name) is editing…"
         }
-        if present.count == 1 { return "Live · \(present[0].name) is here" }
+        if present.count == 1 { return "Live · \(present[0].name) is viewing" }
         if !present.isEmpty { return "Live · \(present.count) others here" }
         return "Live"
     }
@@ -120,13 +161,17 @@ public final class NoteRoomModel {
     @ObservationIgnored var runTask: Task<Void, Never>?
     @ObservationIgnored var tickTask: Task<Void, Never>?
     @ObservationIgnored var draftTask: Task<Void, Never>?
+    @ObservationIgnored var stateTask: Task<Void, Never>?
     @ObservationIgnored private var draftGeneration = 0
     @ObservationIgnored private var stopped = false
+    @ObservationIgnored private var sentState: NotePeerState?
     public let noteId: String
 
     public private(set) var connected = false
     public private(set) var everConnected = false
     public private(set) var faces: [NotePeer] = []
+    public private(set) var everyone: [NotePeer] = []
+    public private(set) var overflow = 0
     public private(set) var label = ""
 
     public init(
@@ -156,6 +201,7 @@ public final class NoteRoomModel {
         runTask?.cancel()
         tickTask?.cancel()
         draftTask?.cancel()
+        stateTask?.cancel()
         runTask = nil
         let socket = connection
         connection = nil
@@ -177,7 +223,7 @@ public final class NoteRoomModel {
                 connection = socket
                 connected = true
                 everConnected = true
-                await send(presence.presenceFrame)
+                await announce()
                 refresh()
                 startTicker()
                 for try await message in socket.messages {
@@ -188,6 +234,7 @@ public final class NoteRoomModel {
             tickTask?.cancel()
             connection = nil
             connected = false
+            sentState = nil
             presence.clear()
             refresh()
             if stopped || Task.isCancelled { return }
@@ -206,7 +253,7 @@ public final class NoteRoomModel {
             while true {
                 do { try await sleep(Int(NotePresence.presenceMillis)) } catch { return }
                 guard let self, self.connected else { return }
-                await self.send(self.presence.presenceFrame)
+                await self.announce()
                 self.refresh()
             }
         }
@@ -215,7 +262,7 @@ public final class NoteRoomModel {
     func handle(_ text: String) -> Bool {
         let (event, newcomer) = presence.receive(text, now: clock.nowMillis)
         if newcomer {
-            let frame = presence.presenceFrame
+            let frame = presence.presenceFrame(state: localState)
             Task { await self.send(frame) }
         }
         refresh()
@@ -240,12 +287,42 @@ public final class NoteRoomModel {
 
     public func refresh() {
         let now = clock.nowMillis
-        faces = Array(presence.peers(now: now).prefix(Self.maxFaces))
+        everyone = presence.peers(now: now)
+        faces = Array(everyone.prefix(Self.maxFaces))
+        overflow = max(0, everyone.count - Self.maxFaces)
         label = presence.label(open: connected, now: now)
+    }
+
+    public var localState: NotePeerState { presence.localState(now: clock.nowMillis) }
+
+    private func announce() async {
+        let state = localState
+        sentState = state
+        await send(presence.presenceFrame(state: state))
+    }
+
+    public func typed() {
+        presence.typed(now: clock.nowMillis)
+        checkState()
+        stateTask?.cancel()
+        let sleep = self.sleep
+        stateTask = Task { [weak self] in
+            do { try await sleep(Int(NotePresence.typingMillis)) } catch { return }
+            self?.checkState()
+        }
+    }
+
+    func checkState() {
+        let state = localState
+        guard connected, state != sentState else { return }
+        sentState = state
+        let frame = presence.presenceFrame(state: state)
+        Task { await self.send(frame) }
     }
 
     public func draftChanged(title: String, markdown: String, baseVersion: Int) {
         draftGeneration += 1
+        typed()
         guard connected else { return }
         let generation = draftGeneration
         let frame = presence.draftFrame(title: title, markdown: markdown, baseVersion: baseVersion)

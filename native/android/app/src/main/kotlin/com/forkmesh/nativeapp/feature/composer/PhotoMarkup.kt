@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.composer
 
+import androidx.compose.foundation.text.selection.DisableSelection
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import android.app.Activity
 import android.graphics.Bitmap
@@ -219,128 +220,130 @@ private fun MarkupEditor(source: Bitmap, name: String, confirmLabel: String, don
     }
 
     FmSoundOnShow()
-    Dialog(
-        onDismissRequest = ::discard,
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false),
-    ) {
-        Column(Modifier.fmTapSounds().fillMaxSize().background(Color(0xFF111111)).systemBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
-                FmTextButton(onClick = ::discard, contentColor = Color.White) { Text("Discard") }
-                Spacer(Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .then(if (strokes.isNotEmpty() && !saving) Modifier.clickable { strokes = strokes.dropLast(1) } else Modifier)
-                        .semantics {
-                            role = Role.Button
-                            contentDescription = "Undo"
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    FmIcon("undo", size = 22.dp, tint = if (strokes.isEmpty()) Color.White.copy(alpha = 0.35f) else Color.White)
-                }
-                if (saving) {
-                    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                        FmCircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    }
-                } else {
-                    FmTextButton(onClick = ::accept, contentColor = Fm.colors.accent) { Text(confirmLabel) }
-                }
-            }
-            FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x3))
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(FmSpace.x2)
-                    .onSizeChanged { box = it },
-            ) {
-                Canvas(
-                    Modifier
-                        .fillMaxSize()
-                        .semantics { contentDescription = "Drawing area" }
-                        .pointerInput(tool, color, fit, saving) {
-                            if (saving) return@pointerInput
-                            awaitEachGesture {
-                                val down = awaitFirstDown()
-                                down.consume()
-                                val start = Markup.normalize(down.position.x, down.position.y, fit)
-                                var stroke = MarkupStroke(tool, color, listOf(start))
-                                current = stroke
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) break
-                                    change.consume()
-                                    stroke = Markup.extend(stroke, Markup.normalize(change.position.x, change.position.y, fit))
-                                    current = stroke
-                                }
-                                current = null
-                                if (Markup.isVisible(stroke)) strokes = strokes + stroke
-                            }
-                        },
-                ) {
-                    drawImage(
-                        image,
-                        dstOffset = IntOffset(fit.left.toInt(), fit.top.toInt()),
-                        dstSize = IntSize(fit.width.toInt(), fit.height.toInt()),
-                    )
-                    drawIntoCanvas { canvas -> MarkupRender.draw(canvas.nativeCanvas, strokes + listOfNotNull(current), fit) }
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = FmSpace.x3, vertical = FmSpace.x1),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                for ((value, face) in toolIcons) {
-                    val picked = value == tool
-                    Box(
-                        Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(if (picked) Color.White.copy(alpha = 0.18f) else Color.Transparent)
-                            .clickable { tool = value }
-                            .semantics {
-                                role = Role.RadioButton
-                                selected = picked
-                                contentDescription = face.second
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        FmIcon(face.first, size = 24.dp, tint = Color.White)
-                    }
-                }
-            }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(start = FmSpace.x3, end = FmSpace.x3, top = FmSpace.x1, bottom = FmSpace.x3),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Markup.COLORS.forEachIndexed { index, value ->
-                    val picked = value == color
+    DisableSelection {
+        Dialog(
+            onDismissRequest = ::discard,
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false),
+        ) {
+            Column(Modifier.fmTapSounds().fillMaxSize().background(Color(0xFF111111)).systemBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
+                    FmTextButton(onClick = ::discard, contentColor = Color.White) { Text("Discard") }
+                    Spacer(Modifier.weight(1f))
                     Box(
                         Modifier
                             .size(44.dp)
-                            .clickable { color = value }
+                            .clip(CircleShape)
+                            .then(if (strokes.isNotEmpty() && !saving) Modifier.clickable { strokes = strokes.dropLast(1) } else Modifier)
                             .semantics {
-                                role = Role.RadioButton
-                                selected = picked
-                                contentDescription = colorNames.getOrElse(index) { "Color" }
+                                role = Role.Button
+                                contentDescription = "Undo"
                             },
                         contentAlignment = Alignment.Center,
                     ) {
+                        FmIcon("undo", size = 22.dp, tint = if (strokes.isEmpty()) Color.White.copy(alpha = 0.35f) else Color.White)
+                    }
+                    if (saving) {
+                        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                            FmCircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        }
+                    } else {
+                        FmTextButton(onClick = ::accept, contentColor = Fm.colors.accent) { Text(confirmLabel) }
+                    }
+                }
+                FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x3))
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(FmSpace.x2)
+                        .onSizeChanged { box = it },
+                ) {
+                    Canvas(
+                        Modifier
+                            .fillMaxSize()
+                            .semantics { contentDescription = "Drawing area" }
+                            .pointerInput(tool, color, fit, saving) {
+                                if (saving) return@pointerInput
+                                awaitEachGesture {
+                                    val down = awaitFirstDown()
+                                    down.consume()
+                                    val start = Markup.normalize(down.position.x, down.position.y, fit)
+                                    var stroke = MarkupStroke(tool, color, listOf(start))
+                                    current = stroke
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) break
+                                        change.consume()
+                                        stroke = Markup.extend(stroke, Markup.normalize(change.position.x, change.position.y, fit))
+                                        current = stroke
+                                    }
+                                    current = null
+                                    if (Markup.isVisible(stroke)) strokes = strokes + stroke
+                                }
+                            },
+                    ) {
+                        drawImage(
+                            image,
+                            dstOffset = IntOffset(fit.left.toInt(), fit.top.toInt()),
+                            dstSize = IntSize(fit.width.toInt(), fit.height.toInt()),
+                        )
+                        drawIntoCanvas { canvas -> MarkupRender.draw(canvas.nativeCanvas, strokes + listOfNotNull(current), fit) }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = FmSpace.x3, vertical = FmSpace.x1),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    for ((value, face) in toolIcons) {
+                        val picked = value == tool
                         Box(
                             Modifier
-                                .size(if (picked) 30.dp else 26.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
-                                .background(Color(value))
-                                .border(if (picked) 3.dp else 1.dp, Color.White.copy(alpha = if (picked) 1f else 0.4f), CircleShape),
-                        )
+                                .background(if (picked) Color.White.copy(alpha = 0.18f) else Color.Transparent)
+                                .clickable { tool = value }
+                                .semantics {
+                                    role = Role.RadioButton
+                                    selected = picked
+                                    contentDescription = face.second
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            FmIcon(face.first, size = 24.dp, tint = Color.White)
+                        }
                     }
-                    if (index < Markup.COLORS.lastIndex) Spacer(Modifier.width(FmSpace.x1))
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = FmSpace.x3, end = FmSpace.x3, top = FmSpace.x1, bottom = FmSpace.x3),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Markup.COLORS.forEachIndexed { index, value ->
+                        val picked = value == color
+                        Box(
+                            Modifier
+                                .size(44.dp)
+                                .clickable { color = value }
+                                .semantics {
+                                    role = Role.RadioButton
+                                    selected = picked
+                                    contentDescription = colorNames.getOrElse(index) { "Color" }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(if (picked) 30.dp else 26.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(value))
+                                    .border(if (picked) 3.dp else 1.dp, Color.White.copy(alpha = if (picked) 1f else 0.4f), CircleShape),
+                            )
+                        }
+                        if (index < Markup.COLORS.lastIndex) Spacer(Modifier.width(FmSpace.x1))
+                    }
                 }
             }
         }

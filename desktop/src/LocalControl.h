@@ -173,7 +173,11 @@ public:
     // Devices with an authenticated connection open now, paired or waiting.
     QList<Device> connectedDevices() const;
     bool isConnected(const QString &key) const;
+    bool connectedLocally(const QString &key) const;
     void forget(const QString &key);
+
+    void setRemoteOff(bool off);
+    bool remoteOff() const { return m_remoteOff; }
 
     void approvePairing(int connectionId);
     void denyPairing(int connectionId);
@@ -322,4 +326,5 @@ private:
     QStringList m_relayUndelivered;
     QStringList m_relayToldGone;
     QTimer *m_maintenanceTimer = nullptr;
+    bool m_remoteOff = false;
 };

@@ -1145,6 +1145,7 @@ private fun CredentialSheet(
                     }
                 }),
                 tone = FmTone.Accent, filled = true, modifier = Modifier.fillMaxWidth(),
+                busy = saving,
             )
             if (credential != null && credential.id in session.phoneIds.value) {
                 FmToneButton("Remove from this phone", onPressed = {

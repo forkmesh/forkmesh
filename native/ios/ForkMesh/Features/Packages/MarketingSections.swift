@@ -243,6 +243,7 @@ struct MarketingContentSection: View {
             }
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             MarketingStatusMenu(model: model, kind: .content, id: item.id, current: item.status)
             if item.channel == "x" && overview.x.connected && overview.canManageSettings && item.status != "published" {
@@ -456,6 +457,7 @@ struct MarketingCampaignsSection: View {
             }
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             MarketingStatusMenu(model: model, kind: .campaign, id: campaign.id, current: campaign.status)
             Button("Delete", systemImage: "trash", role: .destructive) { Task { _ = await model.delete(.campaign, id: campaign.id) } }
@@ -655,6 +657,7 @@ struct MarketingAdsSection: View {
             }
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             Button("Log results", systemImage: "chart.bar.doc.horizontal") {
                 present(.form(MarketingDraft(kind: .adResults, id: ad.id, overview: overview, json: ad.json, zone: model.timeZone)))
@@ -734,6 +737,7 @@ struct MarketingGrowthSection: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .textSelection(.disabled)
                 .contextMenu {
                     MarketingStatusMenu(model: model, kind: .experiment, id: experiment.id, current: experiment.status)
                     Button("Delete", systemImage: "trash", role: .destructive) {
@@ -859,6 +863,7 @@ struct MarketingRedditSection: View {
                             .font(.caption)
                             .buttonStyle(.borderless)
                         }
+                        .textSelection(.disabled)
                         .contextMenu {
                             MarketingStatusMenu(model: model, kind: .redditThread, id: thread.id, current: thread.status)
                             if let url = URL(string: thread.json.str("url")) {

@@ -101,6 +101,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.feature.navigation.ShellMenuGrid
 import com.forkmesh.nativeapp.ui.kit.fmGlass
+import com.forkmesh.nativeapp.ui.kit.fmBusyRing
 import com.forkmesh.nativeapp.ui.kit.FmBackdropHost
 import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
 import androidx.compose.ui.unit.Dp
@@ -631,19 +632,23 @@ class HomeShell : Screen() {
                         modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
                         header = { if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, voice = voiceHold) },
                     ) {
+                        val hubActive = barCandidates.drop(baseCells.size).any { it.active }
                         barItems.forEach { item ->
                             val isSelected = item.selected
+                            val railActive = if (item === homeItem) hubActive else item.agents && item.badge > 0
                             NavigationRailItem(
                                 selected = isSelected,
                                 onClick = item.onClick,
                                 icon = {
-                                    BadgeIcon(
-                                        item.icon, item.badge, if (isSelected) Fm.colors.textPrimary else Fm.colors.textTertiary, 24,
-                                        badgeColor = if (item.agents && needsYou == 0) Fm.colors.accent else Fm.colors.danger,
-                                        pulse = if (item.agents) LaunchFlight.landings else 0,
-                                        modifier = if (item.agents) Modifier.launchTarget() else Modifier,
-                                        desktopOffline = item.agents && desktopOffline,
-                                    )
+                                    Box(Modifier.fmBusyRing(railActive, inset = (-5).dp)) {
+                                        BadgeIcon(
+                                            item.icon, item.badge, if (isSelected) Fm.colors.textPrimary else Fm.colors.textTertiary, 24,
+                                            badgeColor = if (item.agents && needsYou == 0) Fm.colors.accent else Fm.colors.danger,
+                                            pulse = if (item.agents) LaunchFlight.landings else 0,
+                                            modifier = if (item.agents) Modifier.launchTarget() else Modifier,
+                                            desktopOffline = item.agents && desktopOffline,
+                                        )
+                                    }
                                 },
                                 label = { Text(item.title) },
                                 colors = NavigationRailItemDefaults.colors(

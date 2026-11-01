@@ -111,6 +111,8 @@ constexpr int kMastodonFollowersPage = 80;
 constexpr int kMastodonFollowersMax = 2000;
 // Flows past this many are dropped by the worker when settings are saved.
 constexpr int kMaxFlows = 12;
+constexpr int kContactFirstPage = 250;
+constexpr int kContactPageFetch = 1000;
 // Every list and pipeline is a tab ahead of All activity, Zoho Mail boxes and
 // Import CSV list. A pipeline no list is bound to gets a client-side tab under
 // this id prefix, and "No pipeline" holds contacts whose flow is none of them.
@@ -3036,6 +3038,7 @@ void CrmFeature::loadOrganization()
         QString::number(QDateTime::currentDateTime().offsetFromUtc() / 60));
     if (!m_revision.isEmpty())
         summaryQuery.addQueryItem(QStringLiteral("since"), m_revision);
+    summaryQuery.addQueryItem(QStringLiteral("contacts"), QString::number(kContactFirstPage));
     request(QByteArrayLiteral("GET"),
             organizationPath(QStringLiteral("?") + summaryQuery.toString(QUrl::FullyEncoded)), {},
             [this, organization](bool ok, const QJsonObject &payload,
@@ -3069,10 +3072,63 @@ void CrmFeature::loadOrganization()
                       true);
             return;
         }
+        const quint64 generation = ++m_contactsGeneration;
         applyOrganization(payload);
         m_shownOrganization = organization;
-        cacheSummary(payload);
+        const QString next = text(payload, "contactsNext");
+        if (next.isEmpty()) {
+            m_pagedSummary = {};
+            cacheSummary(payload);
+        } else {
+            m_pagedSummary = payload;
+            loadRemainingContacts(organization, next, generation);
+        }
         syncToots(true);
+    });
+}
+
+void CrmFeature::loadRemainingContacts(const QString &organization, const QString &cursor,
+                                       quint64 generation)
+{
+    setStatus(QStringLiteral("Loading contacts, %1 of %2…")
+                  .arg(QLocale().toString(m_contacts.size()),
+                       QLocale().toString(m_pagedSummary.value(QStringLiteral("contactsTotal"))
+                                              .toInt(m_contacts.size()))));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("limit"), QString::number(kContactPageFetch));
+    query.addQueryItem(QStringLiteral("cursor"), cursor);
+    request(QByteArrayLiteral("GET"),
+            organizationPath(QStringLiteral("/contacts?") + query.toString(QUrl::FullyEncoded)), {},
+            [this, organization, generation](bool ok, const QJsonObject &payload,
+                                             const QString &error) {
+        if (generation != m_contactsGeneration || organization != m_shownOrganization)
+            return;
+        if (!ok) {
+            m_pagedSummary = {};
+            m_revision.clear();
+            setStatus(QStringLiteral("Some contacts did not load: %1").arg(error), true);
+            return;
+        }
+        QSet<QString> known;
+        for (const QJsonValue &value : std::as_const(m_contacts))
+            known.insert(text(value.toObject(), "id"));
+        QJsonArray contacts = m_contacts;
+        for (const QJsonValue &value : payload.value(QStringLiteral("contacts")).toArray()) {
+            if (!known.contains(text(value.toObject(), "id")))
+                contacts.append(value);
+        }
+        QJsonObject summary = m_pagedSummary;
+        summary.insert(QStringLiteral("contacts"), contacts);
+        const QString next = text(payload, "next");
+        summary.insert(QStringLiteral("contactsNext"), next);
+        m_pagedSummary = next.isEmpty() ? QJsonObject() : summary;
+        applyOrganization(summary);
+        if (next.isEmpty()) {
+            cacheSummary(summary);
+            setStatus(QStringLiteral("Organization CRM loaded · role: %1").arg(m_role));
+            return;
+        }
+        loadRemainingContacts(organization, next, generation);
     });
 }
 
@@ -3132,12 +3188,16 @@ void CrmFeature::applyOrganization(const QJsonObject &payload)
     // of being just another field; left off entirely when nobody has filled in
     // a value.
     qint64 pipelineValue = 0;
-    for (const QJsonValue &value : std::as_const(m_contacts))
+    int customers = 0;
+    for (const QJsonValue &value : std::as_const(m_contacts)) {
         pipelineValue += qint64(value.toObject().value(QStringLiteral("value")).toDouble());
+        if (text(value.toObject(), "stage") == QLatin1String("customer"))
+            ++customers;
+    }
     m_summary->setText(QStringLiteral(
         "%1 contacts · %2 customers · %3 email sends · %4 imported mail groups%5")
         .arg(summaryObject.value(QStringLiteral("contacts")).toInt())
-        .arg(summaryObject.value(QStringLiteral("customers")).toInt())
+        .arg(summaryObject.value(QStringLiteral("customers")).toInt(customers))
         .arg(summaryObject.value(QStringLiteral("sent")).toInt())
         .arg(summaryObject.value(QStringLiteral("mailGroups")).toInt())
         .arg(pipelineValue > 0
@@ -4649,8 +4709,11 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     const QJsonObject custom = contact.value(QStringLiteral("fields")).toObject();
     for (auto entry = custom.constBegin(); entry != custom.constEnd(); ++entry) {
         const QString value = entry.value().toString().trimmed();
-        if (!value.isEmpty())
-            addField(customColumnLabel(entry.key()), valueLabel(value, {}), false);
+        if (!value.isEmpty()) {
+            const QString label = sheetColumnLabel(entry.key());
+            addField(label.isEmpty() ? customColumnLabel(entry.key()) : label,
+                     valueLabel(value, {}), false);
+        }
     }
     const int emails = int(m_contactEmails.value(contactId).size());
     const int toots = int(m_contactToots.value(contactId).size());
@@ -6925,21 +6988,66 @@ bool CrmFeature::sheetCarriesField(const QString &field) const
     return false;
 }
 
+QStringList CrmFeature::sheetLayoutFields() const
+{
+    const QJsonObject sheet = activeSheet();
+    if (!storedSheet(sheet))
+        return {};
+    QStringList fields;
+    for (const QJsonValue &value : sheet.value(QStringLiteral("columns")).toArray()) {
+        const QJsonObject column = value.toObject();
+        const QString field = text(column, "field");
+        if (field.isEmpty() || column.value(QStringLiteral("hidden")).toBool() ||
+            fields.contains(field))
+            continue;
+        const bool shown = std::any_of(m_columns.cbegin(), m_columns.cend(),
+                                       [this, &field](const ContactColumnSpec &spec) {
+            return viewField(spec) == field;
+        });
+        if (shown)
+            fields << field;
+    }
+    return fields;
+}
+
+QString CrmFeature::sheetColumnLabel(const QString &field) const
+{
+    const QJsonObject sheet = activeSheet();
+    if (!storedSheet(sheet) || field.isEmpty())
+        return QString();
+    for (const QJsonValue &value : sheet.value(QStringLiteral("columns")).toArray()) {
+        const QJsonObject column = value.toObject();
+        if (text(column, "field") == field)
+            return text(column, "label").trimmed();
+    }
+    return QString();
+}
+
 bool CrmFeature::columnHiddenInView(const ContactColumnSpec &column) const
 {
     if (column.kind == ContactColumnSpec::Actions ||
         column.kind == ContactColumnSpec::AddColumn)
         return false;
-    if (allColumnsView())
+    if (allColumnsView()) {
+        const QStringList layout = sheetLayoutFields();
+        if (!layout.isEmpty())
+            return !layout.contains(viewField(column));
         return column.kind == ContactColumnSpec::CustomField &&
                !sheetCarriesField(column.key);
+    }
     return !tableViewFields().contains(viewField(column));
 }
 
 void CrmFeature::applyColumnVisibility()
 {
-    for (int index = 0; index < m_columns.size(); ++index)
-        m_contactsTable->setColumnHidden(index, columnHiddenInView(m_columns.at(index)));
+    for (int index = 0; index < m_columns.size(); ++index) {
+        const ContactColumnSpec &column = m_columns.at(index);
+        m_contactsTable->setColumnHidden(index, columnHiddenInView(column));
+        if (QTableWidgetItem *header = m_contactsTable->horizontalHeaderItem(index)) {
+            const QString label = sheetColumnLabel(sheetField(column));
+            header->setText(label.isEmpty() ? column.label : label);
+        }
+    }
     applyColumnOrder();
 }
 
@@ -6947,9 +7055,27 @@ void CrmFeature::applyColumnOrder()
 {
     QHeaderView *header = m_contactsTable->horizontalHeader();
     m_orderingColumns = true;
-    if (allColumnsView()) {
+    const QStringList layout = allColumnsView() ? sheetLayoutFields() : QStringList();
+    if (allColumnsView() && layout.isEmpty()) {
         for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical)
             header->moveSection(header->visualIndex(logical), logical);
+    } else if (!layout.isEmpty()) {
+        QList<int> placed;
+        int target = 0;
+        for (const QString &field : layout) {
+            for (int logical = 0; logical < m_columns.size() && logical < header->count();
+                 ++logical) {
+                if (placed.contains(logical) || viewField(m_columns.at(logical)) != field)
+                    continue;
+                header->moveSection(header->visualIndex(logical), target++);
+                placed << logical;
+                break;
+            }
+        }
+        for (int logical = 0; logical < m_columns.size() && logical < header->count(); ++logical) {
+            if (!placed.contains(logical))
+                header->moveSection(header->visualIndex(logical), target++);
+        }
     } else {
         int target = 0;
         for (const QString &field : tableViewFields()) {
@@ -6991,6 +7117,9 @@ QStringList CrmFeature::builtinViewFields() const
     };
     QStringList fields;
     if (m_tableViewId == QLatin1String(kAllTableView)) {
+        const QStringList layout = sheetLayoutFields();
+        if (!layout.isEmpty())
+            return layout;
         for (const ContactColumnSpec &column : m_columns) {
             const QString field = viewField(column);
             if (field.isEmpty() || fields.contains(field) ||

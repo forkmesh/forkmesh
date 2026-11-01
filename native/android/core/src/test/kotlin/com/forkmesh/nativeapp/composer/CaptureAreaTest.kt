@@ -30,6 +30,12 @@ class CaptureAreaTest {
         expect(!CaptureAreaRules.isContent(0.0, 44.0, 390.0, 844.0))
     }
 
+    fun testTextCountsAsContentAtAnySize() {
+        expect(CaptureAreaRules.isContent(390.0, 700.0, 390.0, 844.0, text = true))
+        expect(!CaptureAreaRules.isContent(0.0, 0.0, 390.0, 844.0, text = true))
+        expect(!CaptureAreaRules.isBlank(listOf(CaptureHit(390.0, 700.0, actionable = false, text = true)), 390.0, 844.0))
+    }
+
     fun testABlankPointHasNoControlAndNoSmallElementUnderIt() {
         expect(CaptureAreaRules.isBlank(emptyList(), 390.0, 844.0))
         expect(CaptureAreaRules.isBlank(listOf(CaptureHit(390.0, 700.0, actionable = false)), 390.0, 844.0))

@@ -6,6 +6,20 @@ extension PackagesClient {
         "/api/crm/" + (try Self.segment(organization)) + rest
     }
 
+    public static let crmFirstContacts = 250
+    public static let crmContactsPageSize = 1000
+
+    public func crmContactsPage(_ organization: String, cursor: String, limit: Int = PackagesClient.crmContactsPageSize) async throws -> (
+        contacts: [CrmContact], next: String
+    ) {
+        let reply = try await call(
+            "GET", try crmPath(organization, "/contacts"),
+            query: [("limit", String(min(max(1, limit), Self.crmContactsPageSize))), ("cursor", cursor)])
+        let next = reply.str("next")
+        let contacts = await Task.detached(priority: .userInitiated) { reply.maps("contacts").map(CrmContact.init(json:)) }.value
+        return (contacts, next == cursor ? "" : next)
+    }
+
     public func bulkUpdateCrmContacts(_ organization: String, edits: [JSONObject]) async throws -> (
         contacts: [CrmContact], missing: [String]
     ) {

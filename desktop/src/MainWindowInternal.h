@@ -54,6 +54,7 @@
 #include "DesignTokens.h"
 #include "NextShellHooks.h"
 #include "UiKit.h"
+#include "BusyRing.h"
 #include "VerticalIconButton.h"
 #include "VirtualMachineRuntime.h"
 
@@ -2185,6 +2186,19 @@ public:
         m_samples[resource].onClicked = std::move(handler);
     }
 
+    void setExpanded(bool expanded, int side)
+    {
+        m_expanded = expanded;
+        if (expanded)
+            setFixedSize(ResourceCount * side + (ResourceCount - 1) * kExpandedGap,
+                         side);
+        else
+            setFixedSize(side, side);
+        update();
+    }
+
+    bool isExpanded() const { return m_expanded; }
+
     SparklineHoverContent hoverContent(int resource) const
     {
         static const char *const titles[ResourceCount] = {
@@ -2300,8 +2314,14 @@ private:
 
     QRectF quadrantRect(int resource) const
     {
-        constexpr qreal gap = 1.0;
         const QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        if (m_expanded) {
+            const qreal cellWidth =
+                (box.width() - (ResourceCount - 1) * kExpandedGap) / ResourceCount;
+            return QRectF(box.left() + resource * (cellWidth + kExpandedGap),
+                          box.top(), cellWidth, box.height());
+        }
+        constexpr qreal gap = 1.0;
         const qreal cellWidth = (box.width() - gap) / 2.0;
         const qreal cellHeight = (box.height() - gap) / 2.0;
         const int row = resource / 2;
@@ -2322,7 +2342,8 @@ private:
     void paintQuadrant(QPainter &p, int resource, const QRectF &box) const
     {
         QPainterPath cardPath;
-        cardPath.addRoundedRect(box, 2, 2);
+        const qreal radius = m_expanded ? 4 : 2;
+        cardPath.addRoundedRect(box, radius, radius);
         QColor card = palette().color(QPalette::WindowText);
         card.setAlpha(28);
         p.setPen(Qt::NoPen);
@@ -2330,9 +2351,56 @@ private:
         p.drawPath(cardPath);
 
         const Sample &sample = m_samples[resource];
-        const QRectF area = box.adjusted(1.0, 1.0, -1.0, -1.0);
-        if (area.height() < 2 || sample.history.size() < 2)
-            return;
+        const qreal inset = m_expanded ? 1.5 : 1.0;
+        const QRectF area = box.adjusted(inset, inset, -inset, -inset);
+        if (area.height() >= 2 && sample.history.size() >= 2)
+            paintCurve(p, sample, cardPath, area);
+        if (m_expanded)
+            paintCaption(p, resource, box);
+    }
+
+    void paintCaption(QPainter &p, int resource, const QRectF &box) const
+    {
+        static const char *const labels[ResourceCount] = {"CPU", "MEM", "SWAP",
+                                                          "DISK"};
+        const Sample &sample = m_samples[resource];
+        const QString label = QString::fromLatin1(labels[resource]);
+        const double pct = sample.history.isEmpty()
+                               ? 0.0
+                               : sample.history.last() / sample.max * 100.0;
+        const QString value =
+            sample.history.isEmpty()
+                ? QStringLiteral("…")
+                : QString::number(qRound(pct)) + QStringLiteral("%");
+        QFont f = font();
+        double pt = f.pointSizeF() > 0 ? qMin(8.0, f.pointSizeF()) : 7.0;
+        const double avail = box.width() - 6;
+        for (; pt > 5.5; pt -= 0.5) {
+            f.setPointSizeF(pt);
+            const QFontMetrics fm(f);
+            if (fm.horizontalAdvance(label) <= avail &&
+                fm.horizontalAdvance(value) <= avail)
+                break;
+        }
+        f.setPointSizeF(pt);
+        p.setFont(f);
+        const int lineH = QFontMetrics(f).height();
+        const double topY = box.top() + (box.height() - lineH * 2) / 2.0;
+        QColor lab = palette().color(QPalette::WindowText);
+        lab.setAlpha(170);
+        p.setPen(lab);
+        p.drawText(QRectF(box.left() + 3, topY, box.width() - 6, lineH),
+                   Qt::AlignVCenter | Qt::AlignHCenter, label);
+        QColor val = gaugeColor(pct);
+        val.setAlpha(210);
+        p.setPen(val);
+        p.drawText(QRectF(box.left() + 3, topY + lineH, box.width() - 6, lineH),
+                   Qt::AlignVCenter | Qt::AlignHCenter, value);
+    }
+
+    void paintCurve(QPainter &p, const Sample &sample,
+                    const QPainterPath &cardPath, const QRectF &area) const
+    {
 
         p.save();
         p.setClipPath(cardPath);
@@ -2354,16 +2422,18 @@ private:
         p.setPen(Qt::NoPen);
         p.drawPolygon(fill);
         QPen pen(line);
-        pen.setWidthF(1.0);
+        pen.setWidthF(m_expanded ? 1.2 : 1.0);
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
         p.drawPolyline(curve);
         p.restore();
     }
 
+    static constexpr int kExpandedGap = 2;
     Sample m_samples[ResourceCount];
     int m_maxPoints = 60;
     int m_hoveredResource = -1;
+    bool m_expanded = false;
 };
 
 class ProcessMemorySparkline : public QWidget
@@ -9009,17 +9079,18 @@ public:
             m_spinAngle = (m_spinAngle + 30) % 360;
             update();
         });
-        m_blinkTimer = new QTimer(this);
-        m_blinkTimer->setInterval(550);
-        connect(m_blinkTimer, &QTimer::timeout, this, [this] {
-            m_blinkOn = !m_blinkOn;
-            update();
-        });
         m_desktopOfflineTimer = new QTimer(this);
         m_desktopOfflineTimer->setInterval(80);
         connect(m_desktopOfflineTimer, &QTimer::timeout, this, [this] {
             m_desktopOfflineStep = (m_desktopOfflineStep + 1) % kDesktopOfflineSteps;
             update();
+        });
+        setProperty("fmBusyPaintsSelf", true);
+        m_ringTimer = new QTimer(this);
+        m_ringTimer->setInterval(busyring::kFrameMs);
+        connect(m_ringTimer, &QTimer::timeout, this, [this] {
+            if (!window()->isMinimized())
+                update();
         });
     }
 
@@ -9185,14 +9256,22 @@ public:
         if (m_blink == on)
             return;
         m_blink = on;
-        m_blinkOn = true;
-        if (m_blink && isVisible())
-            m_blinkTimer->start();
-        else
-            m_blinkTimer->stop();
+        syncRingTimer();
         update();
     }
     bool activityBlink() const { return m_blink; }
+
+    void setRailActive(bool on)
+    {
+        if (m_active == on)
+            return;
+        m_active = on;
+        syncRingTimer();
+        update();
+    }
+    bool railActive() const { return m_active; }
+    bool busy() const { return m_busy; }
+    bool ringShown() const { return m_active || m_busy || m_blink; }
 
     void setDesktopOffline(bool on)
     {
@@ -9214,21 +9293,33 @@ public:
     }
 
 protected:
+    bool event(QEvent *e) override
+    {
+        if (e->type() == QEvent::DynamicPropertyChange &&
+            static_cast<QDynamicPropertyChangeEvent *>(e)->propertyName() == "fmBusy") {
+            const bool busy = property("fmBusy").toBool();
+            if (m_busy != busy) {
+                m_busy = busy;
+                syncRingTimer();
+                update();
+            }
+        }
+        return QPushButton::event(e);
+    }
     void showEvent(QShowEvent *e) override
     {
         if (m_syncing)
             m_spinTimer->start();
-        if (m_blink)
-            m_blinkTimer->start();
         if (m_desktopOffline)
             m_desktopOfflineTimer->start();
         QPushButton::showEvent(e);
+        syncRingTimer();
     }
     void hideEvent(QHideEvent *e) override
     {
         m_spinTimer->stop();
-        m_blinkTimer->stop();
         m_desktopOfflineTimer->stop();
+        m_ringTimer->stop();
         QPushButton::hideEvent(e);
     }
     void paintEvent(QPaintEvent *) override
@@ -9281,6 +9372,9 @@ protected:
         else
             p.drawPixmap(iconRect.topLeft(),
                          tintedOcticonPixmap(m_iconName, fg, iconPx));
+        if (ringShown())
+            busyring::paint(p, busyring::aroundIcon(iconRect), busyring::accent(),
+                            busyring::phase());
 
         // Commits waiting to sync: an amber "N↑" pill on the icon's left
         // shoulder, kept clear of the blue changed-files badge (or the sync
@@ -9374,17 +9468,6 @@ protected:
                              s));
         }
 
-        if (m_blink && m_blinkOn) {
-            const int d = 8;
-            const QRect lamp(iconRect.right() - 2, iconRect.bottom() - d + 1,
-                             d, d);
-            p.setPen(Qt::NoPen);
-            p.setBrush(Theme::remapColor(QColor(dark ? "#0d1117" : "#ffffff")));
-            p.drawEllipse(lamp.adjusted(-2, -2, 2, 2));
-            p.setBrush(QColor("#3fb950"));
-            p.drawEllipse(lamp);
-        }
-
         if (m_desktopOffline) {
             const int d = 8;
             const QRect dot(iconRect.left() - d + 2, iconRect.bottom() - d + 1,
@@ -9434,11 +9517,19 @@ private:
         state.captionAlwaysVisible = m_captionAlwaysVisible;
         state.captionVisible = captionVisible();
         state.blink = m_blink;
-        state.blinkOn = m_blinkOn;
+        state.busy = ringShown();
         state.desktopOffline = m_desktopOffline;
         state.desktopOfflineLevel = desktopOfflineLevel();
         state.iconPainter = m_iconPainter;
         return state;
+    }
+
+    void syncRingTimer()
+    {
+        if (ringShown() && isVisible())
+            m_ringTimer->start();
+        else
+            m_ringTimer->stop();
     }
 
     int railButtonWidth() const
@@ -9488,13 +9579,14 @@ private:
     bool m_badgeBeside = false;
     bool m_captionAlwaysVisible = true;
     bool m_blink = false;
-    bool m_blinkOn = true;
+    bool m_active = false;
+    bool m_busy = false;
     bool m_desktopOffline = false;
     static constexpr int kDesktopOfflineSteps = 30;
     int m_desktopOfflineStep = 0;
     QTimer *m_spinTimer = nullptr;
-    QTimer *m_blinkTimer = nullptr;
     QTimer *m_desktopOfflineTimer = nullptr;
+    QTimer *m_ringTimer = nullptr;
     int m_spinAngle = 0;
     std::function<void()> m_badgeObserver;
     std::function<void()> m_badgeOrderObserver;

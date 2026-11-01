@@ -28,8 +28,23 @@
     return normalizeSettingsSection(parts[0] === "dashboard" && parts[1] === "settings" ? parts[2] || "" : "");
   }
 
+  function bindSettingsStickyHeader() {
+    const layout = $("[data-settings-layout]");
+    const header = $("[data-settings-account-header]");
+    if (!layout || !header || layout.dataset.settingsStickyBound) return;
+    layout.dataset.settingsStickyBound = "true";
+    const sync = () => {
+      const pinned = getComputedStyle(header).position === "sticky";
+      layout.style.setProperty("--settings-sticky-top", pinned ? `${header.offsetHeight}px` : "0px");
+    };
+    sync();
+    if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(header);
+    window.addEventListener("resize", sync);
+  }
+
   function setSettingsSection(section, { scroll = true, push = false } = {}) {
     const activeSection = normalizeSettingsSection(section);
+    bindSettingsStickyHeader();
     if (!state.settingsView) state.settingsView = {};
     state.settingsView.section = activeSection;
     if (push) {
@@ -5130,7 +5145,7 @@
     $$("[data-notification-bell-on]").forEach((el) => { el.classList.toggle("hidden", Boolean(until)); });
     $$("[data-notification-bell-off]").forEach((el) => { el.classList.toggle("hidden", !until); });
     const toggle = $("#notificationToggle");
-    if (toggle) toggle.title = until ? label : "Ping notifications";
+    if (toggle) toggle.title = until ? label : "Pings";
     // The status line right above already says how long, so while a pause runs
     // this only has to offer the way to change it.
     $$("[data-ping-pause-toggle]").forEach((el) => {

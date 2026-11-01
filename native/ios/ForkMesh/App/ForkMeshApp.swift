@@ -100,6 +100,7 @@ struct ThemedAppView: View {
         let settings: SettingsService = services.settings
         ForkMeshTheme(theme: settings.effectiveTheme, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
             AppHomeView(auth: services.auth)
+                .textSelection(.enabled)
                 .signInPresenter(services.signIn)
                 .background { FmWallpaperBackdrop(name: settings.backgroundImage, dim: settings.backgroundDim) }
                 .background { CaptureHoldAnchor().accessibilityHidden(true) }

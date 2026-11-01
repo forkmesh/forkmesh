@@ -24,6 +24,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | World (3D) | `world/` | [world/README.md](world/README.md) |
 | World voice, camera and channels | `world/public/world/world-voice*.js`, `world-channels.js`, `app/public/call-avatar-*.js` | [world/voice.md](world/voice.md) |
 | World Genie spider | `world/public/world/scene/genie-spider.js`, `scene/runtime/genie-spider.js` | [world/genie-spider.md](world/genie-spider.md) |
+| Cloud Dragon mascot | `www/public/assets/cloud-dragon/`, `tools/cloud_dragon_art.py` | [www/cloud-dragon.md](www/cloud-dragon.md) |
 | Native apps (iOS, watchOS, Android) | `native/` | [native/README.md](native/README.md) |
 | Marketplace packages | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
 | Plugins and the core: which plugins a build adds | `marketplace/plugins.json`, `marketplace/tools/marketplace_lib.py`, `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py` | [marketplace/plugins.md](marketplace/plugins.md) |
@@ -93,9 +94,10 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/issue-assignment-deadline.md](app/issue-assignment-deadline.md): the optional assignee deadline bar on issues, set with `assignmentHours` in `.forkmesh/issues.json`.
 - [app/issue-assignment-limit.md](app/issue-assignment-limit.md): the issue page's Assign button and the one-open-issue rule for self-assignment (freed by a linked pull request), set with `assignmentLimit` in `.forkmesh/issues.json`.
 - [app/bot-avatars.md](app/bot-avatars.md): built-in avatars for bots and system accounts (Actions, git node, runners, AI review, `[bot]` names) and the account override.
-- [app/profile-avatar.md](app/profile-avatar.md): how profile and header avatars fall back to the account lookup and contributor rosters, like issue avatars.
+- [app/profile-avatar.md](app/profile-avatar.md): how profile and header avatars fall back to the account lookup and contributor rosters, like issue avatars, and the admin top bar's avatar and Back to dashboard button.
 - [app/ai-disclosure.md](app/ai-disclosure.md): the "AI model(s) used" field on pull requests (optionally required per repository) and the copyable AI prompt on open issues.
 - [app/pull-review-prompt.md](app/pull-review-prompt.md): the "Diff and files" box on open pull requests: diff, patch and file links, Summarize in ChatGPT, and the copyable review prompt with its security-minded default and `.forkmesh/pulls.json` `reviewPromptTemplate`.
+- [app/stale-pulls.md](app/stale-pulls.md): the optional per-repository rule that has ForkBot remind a pull request's author 1, 3 and 7 days after an unanswered maintainer comment or change request and close it after 8.
 - [PERF_PAGES.md](PERF_PAGES.md): page performance techniques.
 - [GIT_ERROR_MESSAGES.md](GIT_ERROR_MESSAGES.md): what failing Git commands show.
 - [Folder About boxes](../www/docs/folder-about.md): the `<folder>/.forkmesh/info.json` file format for a folder's own About box and logo (user guide); [app/directory-about.md](app/directory-about.md) has the API, caching and permissions.
@@ -104,7 +106,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [security/NODE_LINK_GRANT.md](security/NODE_LINK_GRANT.md), [security/agent-host-boundaries.md](security/agent-host-boundaries.md), [security/sentinel.md](security/sentinel.md), [security/findings.md](security/findings.md).
 - [dependency-security-audit-2026-09-13.md](dependency-security-audit-2026-09-13.md): dependency audit snapshot.
 - [engineering/third-party-dependencies.md](engineering/third-party-dependencies.md): which third-party packages we removed or replaced with our own code, which we keep and why, and the next candidate.
-- [release/linux-baseline.md](release/linux-baseline.md), [release/self-setup-node.md](release/self-setup-node.md).
+- [release/linux-baseline.md](release/linux-baseline.md), [release/apt.md](release/apt.md), [release/self-setup-node.md](release/self-setup-node.md).
 
 ## Special agents
 

@@ -140,13 +140,13 @@ class CrmPipelineEditorScreen(private val model: CrmModel, start: CrmFlowDraft) 
                         Box(Modifier.size(9.dp).clip(CircleShape).background(CrmColors.stage(CrmText.slug(stage), draft.flow)))
                         Spacer(Modifier.width(8.dp))
                         FmTextField(stage, { value -> draft = draft.copy(stages = draft.stages.toMutableList().also { it[index] = value }) }, Modifier.weight(1f), hint = "Stage")
-                        FmIconButton("arrow_upward", "Move up", onPressed = if (index > 0) ({ draft = draft.copy(stages = draft.stages.toMutableList().also { it.add(index - 1, it.removeAt(index)) }) }) else null)
-                        FmIconButton("delete_outline", "Remove stage", onPressed = if (draft.stages.size > 1) ({ draft = draft.copy(stages = draft.stages.filterIndexed { i, _ -> i != index }) }) else null)
+                        FmIconButton("arrow_upward", "Move up", onPressed = if (index > 0) ({ draft = draft.copy(stages = draft.stages.toMutableList().also { it.add(index - 1, it.removeAt(index)) }) }) else null, busy = false)
+                        FmIconButton("delete_outline", "Remove stage", onPressed = if (draft.stages.size > 1) ({ draft = draft.copy(stages = draft.stages.filterIndexed { i, _ -> i != index }) }) else null, busy = false)
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FmTextField(newStage, { newStage = it }, Modifier.weight(1f), hint = "Add a stage")
-                    FmIconButton("add_circle", "Add stage", onPressed = if (newStage.isBlank()) null else ({ draft = draft.copy(stages = draft.stages + newStage.trim()); newStage = "" }))
+                    FmIconButton("add_circle", "Add stage", onPressed = if (newStage.isBlank()) null else ({ draft = draft.copy(stages = draft.stages + newStage.trim()); newStage = "" }), busy = false)
                 }
                 Text("Contacts at a stage you rename move with it; contacts at a stage you remove go to the first stage.", style = Fm.text.bodySmall, color = Fm.colors.textSecondary)
                 if (!draft.isNew && (model.data?.flows?.size ?: 0) > 1) {
@@ -316,7 +316,7 @@ class CrmTabSettingsScreen(private val model: CrmModel, private val item: CrmTab
                                 Text(column.label, style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
                                 if (column.custom) Text("Custom", style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
                             }
-                            FmIconButton("arrow_upward", "Move up", onPressed = if (index > 0) ({ columns = columns.toMutableList().also { it.add(index - 1, it.removeAt(index)) } }) else null)
+                            FmIconButton("arrow_upward", "Move up", onPressed = if (index > 0) ({ columns = columns.toMutableList().also { it.add(index - 1, it.removeAt(index)) } }) else null, busy = false)
                             if (column.custom || column.field in CrmColumnCatalog.DELETABLE) FmIconButton("delete_outline", "Delete column", onPressed = { pendingColumn = column })
                             FmSwitch(!column.hidden, { shown -> columns = columns.toMutableList().also { it[index] = column.copy(hidden = !shown) } })
                         }
@@ -500,7 +500,7 @@ class CrmImportScreen(private val model: CrmModel, private val csv: String, priv
                                 progress = null
                             }
                         }
-                    }, enabled = preview != null && progress == null) { Text("Import") }
+                    }, enabled = preview != null && progress == null, busy = progress != null) { Text("Import") }
                 }
             }
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -47,7 +47,7 @@ public struct SurfaceEntityRef: Codable, Hashable, Sendable {
             return SurfaceEntityRef(kind: .issue, id: SurfaceEntityRef.numbered(repo, number))
         case let .pull(repo, number, _) where number > 0:
             return SurfaceEntityRef(kind: .pull, id: SurfaceEntityRef.numbered(repo, number))
-        case let .note(id) where !id.isEmpty:
+        case let .note(id, _) where !id.isEmpty:
             return SurfaceEntityRef(kind: .note, id: id)
         case let .agent(id) where !id.isEmpty:
             return SurfaceEntityRef(kind: .agent, id: id)

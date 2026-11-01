@@ -70,6 +70,7 @@ struct FmPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .overlay {
                 FmRoundedShape(radius: cornerRadius)
                     .fill(highlight)

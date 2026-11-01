@@ -220,6 +220,23 @@ destination, in sections, with counts and activity:
   The activity halo stays on outside the ring (`ShellBarCellLabel.haloOutset`
   widens it 8 pt when icons are not tiles, so the two do not overlap); the
   operator asked for the halo back the same day.
+- Working buttons (`Kit/FmBusy.swift`) use the desktop's rule, so every
+  platform matches: a button that becomes disabled within a second of being
+  tapped is working, and `FmBusyRing` spins around its icon until the button is
+  enabled again, or for at most 60 seconds. A button with no icon gets the arc
+  swept around its rounded outline instead. The ring is the activity halo
+  without its glow (`FmBusy.turn`, `FmBusy.arc`, which `ShellActivityHalo`
+  shares), stands still with Reduce Motion, ignores touches and is hidden from
+  VoiceOver. A working button keeps its enabled look and ignores taps. The kit
+  buttons (`FmIconButton`, `FmToneButton`, `FmTextButton`, `FmFilledButton`,
+  `FmElevatedButton`, `FmOutlinedButton`, `FmPillButton`) detect this on their
+  own through `FmBusyTap` and `fmBusyTracking`, since call sites already write
+  `onPressed: model.busy ? nil : submit`. Their `busy:` argument overrides
+  the guess: `true` forces the ring, `false` turns it off for a button that is
+  disabled for another reason after a tap (a send button whose text was just
+  cleared). The floating action button is never disabled, so it shows the ring
+  only when told. On filled buttons the ring takes the label colour so it
+  shows against the fill. The operator asked for it on 2026-10-31.
 - The heartbeat (`ShellHeartbeatCount`) does not keep its own clock: it beats
   once per turn of the activity ring (`ShellActivityHalo.turn`), when the
   ring's bright head passes the top-left corner where the count sits
@@ -1232,6 +1249,12 @@ with the same notes and celesta, rendered by the Agent Watch synth.
   width, the phone layout in compact width.
 - Sidebar: the four tabs, `TabSection`s for the hub groups, then Search and
   Settings; customizable with `.tabViewCustomization`.
+- Items with live work show the activity ring (`fmBusyRing`) around their
+  icon in the sidebar, from the same signals as the bar: Agents while agents
+  run, and the hub pages in `ShellLiveCounts.hubActive` (timers, running
+  shortcuts, working teammates, Local AI downloads). `HomeShell` passes them in
+  as `activeTabs` and `activeHub`; the bar's Show activity setting turns both
+  off. The operator asked for it on 2026-10-31.
 - `NavigationSplitView` per list-and-detail destination: Agents (sessions,
   transcript), Inbox, Code (repositories, sections, content), Chat (channels,
   conversation, threads in an inspector), Notes, Tasks, CRM.

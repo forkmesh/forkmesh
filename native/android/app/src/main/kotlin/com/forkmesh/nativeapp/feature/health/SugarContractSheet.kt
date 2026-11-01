@@ -105,10 +105,12 @@ internal fun SugarContractSheet(initial: SugarContract) {
                     FmIconButton(
                         "remove", "Fewer signatures",
                         onPressed = if (contract.signers > SugarContract.SIGNER_RANGE.first) ({ contract = contract.withSigners(contract.signers - 1) }) else null,
+                        busy = false,
                     )
                     FmIconButton(
                         "add", "More signatures",
                         onPressed = if (contract.signers < SugarContract.SIGNER_RANGE.last) ({ contract = contract.withSigners(contract.signers + 1) }) else null,
+                        busy = false,
                     )
                 }
             }

@@ -185,6 +185,15 @@ struct HomeShell: View {
         live?.value ?? ShellLiveCounts()
     }
 
+    private var sidebarActiveTabs: Set<AppTab> {
+        guard ShellBarPrefs.shared.barStyle.showActivity, ShellCounts.shared.agents > 0 else { return [] }
+        return [.agents]
+    }
+
+    private var sidebarActiveHub: Set<String> {
+        ShellBarPrefs.shared.barStyle.showActivity ? liveCounts.hubActive : []
+    }
+
     private var primaryBarItems: [ShellBarItem] {
         let live: ShellLiveCounts = liveCounts
         let order: [Int] = HomeShellCatalog.bottomBarOrder
@@ -842,7 +851,9 @@ struct HomeShell: View {
         if usesSplit {
             NavigationSplitView {
                 ShellSidebar(
-                    router: router, badges: badges, guest: auth?.isGuest ?? false,
+                    router: router, badges: badges,
+                    activeTabs: sidebarActiveTabs, activeHub: sidebarActiveHub,
+                    guest: auth?.isGuest ?? false,
                     onSelectTab: { (tab: AppTab) in selectTab(tab) },
                     onOpen: { (route: Route) in openRoute(route) })
             } detail: {
