@@ -543,14 +543,24 @@ void MainWindow::fetchGenieCrm(qint64 since)
                 QStringLiteral("crm"), contribution, QByteArrayLiteral("GET"), path, {},
                 [this, since](bool loaded, const QJsonObject &summary, const QString &failure) {
                     if (loaded) {
-                        m_genieCrm = GenieCrmCounts::read(summary, since);
-                        m_genieCrmKnown = true;
-                        m_genieCrmDigest = GenieCrmDigest::read(summary, QDateTime::currentMSecsSinceEpoch(),
-                                                                genieSpiderLessons());
-                        m_genieSigns.emailsSent = m_genieCrm.emailsSent;
-                        m_genieSigns.contactsTouched = m_genieCrm.contactsTouched;
-                        m_genieSigns.replies = m_genieCrm.replies;
-                        m_genieSigns.bounced = m_genieCrm.bounced;
+                        const GenieLessons lessons = genieSpiderLessons();
+                        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                        runOffThread<std::pair<GenieCrmCounts, GenieCrmDigest>>(
+                            [summary, since, nowMs, lessons] {
+                                return std::make_pair(GenieCrmCounts::read(summary, since),
+                                                      GenieCrmDigest::read(summary, nowMs, lessons));
+                            },
+                            [this](std::pair<GenieCrmCounts, GenieCrmDigest> read) {
+                                m_genieCrm = read.first;
+                                m_genieCrmKnown = true;
+                                m_genieCrmDigest = std::move(read.second);
+                                m_genieSigns.emailsSent = m_genieCrm.emailsSent;
+                                m_genieSigns.contactsTouched = m_genieCrm.contactsTouched;
+                                m_genieSigns.replies = m_genieCrm.replies;
+                                m_genieSigns.bounced = m_genieCrm.bounced;
+                                finishGenieMeasure();
+                            });
+                        return;
                     } else {
                         m_genieCrmDigest = GenieCrmDigest();
                         m_genieCrmDigest.source = GenieSource::Failed;

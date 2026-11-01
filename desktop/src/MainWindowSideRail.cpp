@@ -623,7 +623,7 @@ void MainWindow::refreshSideRail()
                 continue;
             }
             const bool running = repoWorkflowRunner()->isRunning(item.repo, item.id);
-            const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(repoIndex, item.id));
+            const QList<rw::Run> runs = repoWorkflowRuns(repoIndex, item.id);
             QString status = running ? rw::kStatusRunning
                                      : (runs.isEmpty() ? QString() : runs.first().status);
             QStringList tip{QStringLiteral("%1 · %2").arg(found.workflow.name, item.repo),

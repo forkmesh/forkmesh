@@ -5,6 +5,7 @@
 #include <QAbstractItemView>
 #include <QAction>
 #include <QApplication>
+#include <QBackingStore>
 #include <QButtonGroup>
 #include <QChildEvent>
 #include <QComboBox>
@@ -818,6 +819,27 @@ QString cellDisplayText(const QString &text, int maxChars)
     if (text.at(keep - 1).isHighSurrogate())
         --keep;
     return text.left(keep) + QChar(0x2026);
+}
+
+QPixmap shownPixels(const QWidget *widget)
+{
+    if (!widget || !widget->isVisible() || widget->size().isEmpty())
+        return QPixmap();
+    QWidget *top = widget->window();
+    QBackingStore *store = top ? top->backingStore() : nullptr;
+    QPaintDevice *device = store ? store->paintDevice() : nullptr;
+    if (!device || device->devType() != QInternal::Image)
+        return QPixmap();
+    const auto *image = static_cast<const QImage *>(device);
+    const qreal dpr = top->devicePixelRatioF();
+    const QRect logical(widget->mapTo(top, QPoint()), widget->size());
+    const QRect source(QPoint(qRound(logical.x() * dpr), qRound(logical.y() * dpr)),
+                       QSize(qRound(logical.width() * dpr), qRound(logical.height() * dpr)));
+    if (!image->rect().contains(source))
+        return QPixmap();
+    QPixmap pixels = QPixmap::fromImage(image->copy(source));
+    pixels.setDevicePixelRatio(dpr);
+    return pixels;
 }
 
 namespace {

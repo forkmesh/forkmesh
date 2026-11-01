@@ -169,6 +169,7 @@ private:
 
     Catalog m_localCatalog;
     QJsonObject m_local;
+    bool m_localLoaded = false;
     QJsonArray m_localWorkflows;
     QJsonArray m_localRuns;
     QJsonArray m_entries;

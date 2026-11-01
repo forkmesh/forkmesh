@@ -625,8 +625,11 @@ cannot drift.
   `QScrollBar::actionTriggered`, never on programmatic clamps.
 - `ScrollJumpButtons` shows a jump-to-latest arrow off the tail, with a dot
   when new content arrived.
-- Rebuilding the transcript on screen holds a grab of the last frame
-  (`setBatchHoldsFrame`) and restores the position in the same thaw.
+- Rebuilding the transcript on screen holds a copy of the last frame
+  (`setBatchHoldsFrame`) and restores the position in the same thaw. The copy
+  comes from the window's backing store (`kit::shownPixels`), not
+  `QWidget::grab`, which would polish every hidden widget in the window
+  ([diagnostics](diagnostics.md#rules-from-the-stall-runs-of-2026-10-31-and-2026-11-01)).
   `CacheLabel` estimates heights only from its on-screen width.
 - Sending a follow-up jumps to the tail; a resume keeps the rendered rows; a
   cloud follow-up is drawn at once until the relay history replaces it.

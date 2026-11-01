@@ -9046,6 +9046,8 @@ private:
     int repoIndexForKey(const QString &repoKey) const;
     QString repoWorkflowRunsRoot(int repoIndex) const;
     QString repoWorkflowRunsFile(int repoIndex, const QString &workflowId) const;
+    QList<forkmesh::repoworkflows::Run> repoWorkflowRuns(int repoIndex,
+                                                         const QString &workflowId) const;
     bool findRepoWorkflow(int repoIndex, const QString &workflowId,
                           forkmesh::repoworkflows::Workflow *workflow) const;
     QString startRepoWorkflow(int repoIndex, const forkmesh::repoworkflows::Workflow &workflow,
@@ -13251,6 +13253,7 @@ private:
     };
     forkmesh::repoworkflows::Runner *m_repoWorkflowRunner = nullptr;
     QHash<int, RepoWorkflowHandle> m_repoWorkflowHandles;
+    QHash<QString, QList<forkmesh::repoworkflows::Run>> m_repoWorkflowRunsCache;
     int m_repoWorkflowHandleSerial = 0;
     bool m_repoWorkflowSwitchToTab = false;
     struct PendingRepoWorkflowApproval {
@@ -14246,6 +14249,8 @@ private:
     ElidingStatusLabel *m_actionRunLogPath = nullptr;
     QLabel *m_actionApprovalBanner = nullptr;
     QPlainTextEdit *m_actionLog = nullptr;
+    int m_actionLogShownRunId = -1;
+    size_t m_actionLogShownHash = 0;
     QTextBrowser *m_actionDiff = nullptr;
     // Extra run panes docked to the right of the primary detail, left to right.
     QSplitter *m_actionDetailSplitter = nullptr;
