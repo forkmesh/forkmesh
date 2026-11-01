@@ -891,9 +891,13 @@
       const nodeName = String(account?.nodeName || "").trim();
       if (!payload?.portable || !nodeName) return null;
 
+      const stored = readSession();
+      const storedCase = String(stored?.nodeName || "").toLowerCase() === nodeName.toLowerCase()
+        ? stored?.nameCase : "";
       const hydrated = {
         ...account,
         nodeName,
+        nameCase: account.nameCase || storedCase || "",
         sessionToken: "cookie",
         portable: true,
         controllerIndependent: payload.controllerIndependent === true,
@@ -11928,7 +11932,7 @@
     if (locationInput && document.activeElement !== locationInput) {
       locationInput.value = session?.profileLocation || "";
     }
-    if (nameCaseInput && document.activeElement !== nameCaseInput) {
+    if (nameCaseInput && document.activeElement !== nameCaseInput && !nameCaseInput.dataset.edited) {
       nameCaseInput.value = session?.nameCase || session?.nodeName || "";
       nameCaseInput.placeholder = session?.nodeName || "username";
     }
@@ -12564,6 +12568,11 @@
         followersPublic: Boolean($("[data-profile-page-followers-public]")?.checked),
         profileLinks: collectProfileLinks(),
       });
+      const nameCaseInput = $("[data-profile-page-name-case]");
+      if (nameCaseInput) {
+        delete nameCaseInput.dataset.edited;
+        nameCaseInput.value = state.session?.nameCase || state.session?.nodeName || "";
+      }
       setProfilePageHint("[data-profile-public-hint]", "Public profile saved.", "good");
     } catch (error) {
       const messages = {
@@ -52053,6 +52062,9 @@ Your reply
     state.nodeNameAvailability.timer = window.setTimeout(checkNodeNameAvailability, 250);
   });
   $("[data-profile-rename-password]")?.addEventListener("input", updateRenameButton);
+  $("[data-profile-page-name-case]")?.addEventListener("input", (event) => {
+    event.target.dataset.edited = "1";
+  });
   $("[data-profile-delete-confirm]")?.addEventListener("input", () => {
     const button = $("[data-profile-delete-account]");
     if (!button) return;

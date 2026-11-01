@@ -25779,6 +25779,7 @@ async def _account_sessions(env, request, target_session_id=""):
                 # Never return the cookie token itself here.
                 "account": {
                     "nodeName": actor,
+                    "nameCase": account_names.display_name(rec, actor),
                     "status": clean_string(
                         rec.get("status", "active"), 32),
                     "emailVerified": bool(rec.get("email_verified")),

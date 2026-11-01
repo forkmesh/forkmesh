@@ -4605,6 +4605,9 @@
     state.nodeNameAvailability.timer = window.setTimeout(checkNodeNameAvailability, 250);
   });
   $("[data-profile-rename-password]")?.addEventListener("input", updateRenameButton);
+  $("[data-profile-page-name-case]")?.addEventListener("input", (event) => {
+    event.target.dataset.edited = "1";
+  });
   $("[data-profile-delete-confirm]")?.addEventListener("input", () => {
     const button = $("[data-profile-delete-account]");
     if (!button) return;

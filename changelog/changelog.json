@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Settings", "text": "Changing the capitalization of your username in Settings no longer resets before you can save it."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Sessions page now uses the main prompt composer, docked and centred under the transcript, instead of its own composer."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Network page no longer freezes the window for seconds while requests are flowing, and the running-agent squares in the top bar use far less CPU."},
   {"date": "2026-11-01", "area": "Market", "text": "Installing or removing a package no longer freezes the desktop for seconds while every other package page is rebuilt, and no longer sends you back to the Market from the page you had open."},
