@@ -19,6 +19,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 
 namespace {
@@ -412,6 +413,47 @@ bool BackoffNetworkAccessManager::removeFirewallDenyRule(const QString &rule)
 void BackoffNetworkAccessManager::setFirewallPrompt(FirewallPrompt prompt)
 {
     m_firewallPrompt = std::move(prompt);
+}
+
+void BackoffNetworkAccessManager::allowAllFirewallFor(qint64 msecs)
+{
+    if (msecs <= 0) {
+        stopAllowingAllFirewall();
+        return;
+    }
+    if (!m_firewallAllowAllTimer) {
+        m_firewallAllowAllTimer = new QTimer(this);
+        m_firewallAllowAllTimer->setSingleShot(true);
+        connect(m_firewallAllowAllTimer, &QTimer::timeout, this,
+                &BackoffNetworkAccessManager::stopAllowingAllFirewall);
+    }
+    const bool wasActive = m_firewallAllowAllAnnounced;
+    m_firewallAllowAllUntil = QDeadlineTimer(msecs);
+    m_firewallAllowAllTimer->start(std::chrono::milliseconds(msecs));
+    m_firewallAllowAllAnnounced = true;
+    if (!wasActive)
+        emit firewallAllowAllChanged(true);
+}
+
+void BackoffNetworkAccessManager::stopAllowingAllFirewall()
+{
+    const bool wasActive = m_firewallAllowAllAnnounced;
+    m_firewallAllowAllAnnounced = false;
+    m_firewallAllowAllUntil = QDeadlineTimer();
+    if (m_firewallAllowAllTimer)
+        m_firewallAllowAllTimer->stop();
+    if (wasActive)
+        emit firewallAllowAllChanged(false);
+}
+
+bool BackoffNetworkAccessManager::firewallAllowingAll() const
+{
+    return !m_firewallAllowAllUntil.hasExpired();
+}
+
+qint64 BackoffNetworkAccessManager::firewallAllowAllRemainingMs() const
+{
+    return firewallAllowingAll() ? m_firewallAllowAllUntil.remainingTime() : 0;
 }
 
 void BackoffNetworkAccessManager::setOffMachineRequestsBlocked(bool blocked)
@@ -1421,8 +1463,11 @@ QNetworkReply *BackoffNetworkAccessManager::createRequest(
         // nothing is remembered, so a rule added later still applies.
         const bool decoration =
             request.attribute(forkmesh::kFaviconProbeAttribute).toBool();
+        if (firewallAllowingAll())
+            rule.clear();
         const FirewallVerdict verdict =
-            m_firewallPrompt && !decoration
+            firewallAllowingAll() ? FirewallAllowOnce
+            : m_firewallPrompt && !decoration
                 ? m_firewallPrompt(method, url, &rule)
                 : FirewallDenyOnce;
         const QString canonical = canonicalFirewallRule(rule);
@@ -1432,7 +1477,8 @@ QNetworkReply *BackoffNetworkAccessManager::createRequest(
             else if (verdict == FirewallDeny)
                 addFirewallDenyRule(canonical);
         }
-        const bool allowed = verdict == FirewallAllow;
+        const bool allowed =
+            verdict == FirewallAllow || verdict == FirewallAllowOnce;
         if (!decoration)
             emit firewallRequestDecided(method, url, canonical, allowed);
         if (!allowed) {
