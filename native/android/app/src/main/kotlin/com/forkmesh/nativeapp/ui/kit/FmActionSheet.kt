@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -84,47 +85,49 @@ fun FmActionSheet(
     val surface = if (c.dark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
     val hairline = c.textPrimary.copy(alpha = 0.12f)
     Dialog(onDismissRequest = { leave(onDismiss) }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { leave(onDismiss) },
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            Column(
+        DisableSelection {
+            Box(
                 Modifier
-                    .widthIn(max = 480.dp)
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(FmActionSheetMetrics.margin)
-                    .graphicsLayer { translationY = rise.value * size.height },
-                verticalArrangement = Arrangement.spacedBy(FmActionSheetMetrics.gap),
+                    .fillMaxSize()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { leave(onDismiss) },
+                contentAlignment = Alignment.BottomCenter,
             ) {
                 Column(
                     Modifier
+                        .widthIn(max = 480.dp)
                         .fillMaxWidth()
-                        .background(surface, RoundedCornerShape(FmActionSheetMetrics.corner))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(FmActionSheetMetrics.margin)
+                        .graphicsLayer { translationY = rise.value * size.height },
+                    verticalArrangement = Arrangement.spacedBy(FmActionSheetMetrics.gap),
                 ) {
-                    if (title != null || message != null) {
-                        Column(
-                            Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4, vertical = 14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            if (title != null) Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.textSecondary, textAlign = TextAlign.Center)
-                            if (message != null) Text(message, fontSize = 13.sp, color = c.textSecondary, textAlign = TextAlign.Center)
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(surface, RoundedCornerShape(FmActionSheetMetrics.corner))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+                    ) {
+                        if (title != null || message != null) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4, vertical = 14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                if (title != null) Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.textSecondary, textAlign = TextAlign.Center)
+                                if (message != null) Text(message, fontSize = 13.sp, color = c.textSecondary, textAlign = TextAlign.Center)
+                            }
+                        }
+                        actions.forEachIndexed { index, action ->
+                            if (index > 0 || title != null || message != null) Spacer(Modifier.fillMaxWidth().height(0.5.dp).background(hairline))
+                            SheetRow(action.label, if (action.destructive) c.danger else c.accent, FontWeight.Normal) {
+                                if (action.destructive) haptics.warning() else haptics.selection()
+                                leave { onPick(index) }
+                            }
                         }
                     }
-                    actions.forEachIndexed { index, action ->
-                        if (index > 0 || title != null || message != null) Spacer(Modifier.fillMaxWidth().height(0.5.dp).background(hairline))
-                        SheetRow(action.label, if (action.destructive) c.danger else c.accent, FontWeight.Normal) {
-                            if (action.destructive) haptics.warning() else haptics.selection()
-                            leave { onPick(index) }
-                        }
+                    Box(Modifier.fillMaxWidth().background(surface, RoundedCornerShape(FmActionSheetMetrics.corner))) {
+                        SheetRow(cancelLabel, c.accent, FontWeight.SemiBold) { leave(onDismiss) }
                     }
-                }
-                Box(Modifier.fillMaxWidth().background(surface, RoundedCornerShape(FmActionSheetMetrics.corner))) {
-                    SheetRow(cancelLabel, c.accent, FontWeight.SemiBold) { leave(onDismiss) }
                 }
             }
         }

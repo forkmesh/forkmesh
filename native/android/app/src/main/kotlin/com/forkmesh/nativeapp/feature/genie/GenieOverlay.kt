@@ -82,6 +82,7 @@ import com.forkmesh.nativeapp.model.PingCelebration
 import com.forkmesh.nativeapp.shell.ShellBar
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmSpace
@@ -290,67 +291,69 @@ fun GenieOverlay() {
         }
         val sideDp = side.dp
         fun spot(time: Double): GeniePoint = crawler.position(time)
-        Box(
-            Modifier
-                .offset {
-                    val p = spot(now)
-                    IntOffset(((p.x - side / 2) * density.density).roundToInt(), ((p.y - side / 2) * density.density).roundToInt())
-                }
-                .size(sideDp)
-                .graphicsLayer { rotationZ = crawler.rotation(now).toFloat() }
-                .semantics {
-                    role = Role.Button
-                    contentDescription = "Genie spider. Tap for a tip, touch and hold for more."
-                    testTag = "genie"
-                }
-                .pointerInput(unread, suggestions, autoSend) {
-                    detectTapGestures(
-                        onTap = {
-                            val time = System.nanoTime() / 1e9
-                            if (time - lastHint > 60) hint = 0
-                            val lines = GenieHints.lines(GenieHintContext(unread = unread, suggestions = suggestions, autoSendOn = autoSend))
-                            GenieSpiderState.say(lines[hint % lines.size])
-                            hint += 1
-                            lastHint = time
-                            GenieSpiderState.react(GenieReaction.Wave)
-                            haptics.tap()
-                        },
-                        onLongPress = {
-                            haptics.palette()
-                            menu = true
-                        },
-                    )
-                }
-                .pointerInput(width, side) {
-                    val tracker = VelocityTracker()
-                    detectDragGestures(
-                        onDragStart = {
-                            tracker.resetTracking()
-                            crawler.grab(System.nanoTime() / 1e9)
-                            GenieSpiderState.react(GenieReaction.Giggle)
-                        },
-                        onDragEnd = {
-                            val v = tracker.calculateVelocity()
-                            crawler.release(GenieVector(v.x / density.density.toDouble(), v.y / density.density.toDouble()), width, side, System.nanoTime() / 1e9)
-                        },
-                        onDragCancel = { crawler.release(GenieVector.ZERO, width, side, System.nanoTime() / 1e9) },
-                    ) { change, amount ->
-                        change.consume()
-                        tracker.addPosition(change.uptimeMillis, change.position)
-                        crawler.drag(amount.x / density.density.toDouble(), amount.y / density.density.toDouble())
+        FmHoldArea {
+            Box(
+                Modifier
+                    .offset {
+                        val p = spot(now)
+                        IntOffset(((p.x - side / 2) * density.density).roundToInt(), ((p.y - side / 2) * density.density).roundToInt())
                     }
-                },
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val time = now
-                val active = cue?.let { c -> (time - c.at).takeIf { it >= 0 && it < c.reaction.duration }?.let { c.reaction to it } }
-                GeniePainter(
-                    mood = mood, level = 0.0, t = time, reaction = active?.first, reactionAge = active?.second ?: 0.0,
-                    leanX = crawler.gravity.dx.toFloat(), leanY = 0f, stride = crawler.gait(time),
-                ).paint(this)
-            }
-            FmDropdownMenu(menu, { menu = false }) {
-                GenieMenu(crawler, close = { menu = false }, parked = parked, time = { System.nanoTime() / 1e9 })
+                    .size(sideDp)
+                    .graphicsLayer { rotationZ = crawler.rotation(now).toFloat() }
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Genie spider. Tap for a tip, touch and hold for more."
+                        testTag = "genie"
+                    }
+                    .pointerInput(unread, suggestions, autoSend) {
+                        detectTapGestures(
+                            onTap = {
+                                val time = System.nanoTime() / 1e9
+                                if (time - lastHint > 60) hint = 0
+                                val lines = GenieHints.lines(GenieHintContext(unread = unread, suggestions = suggestions, autoSendOn = autoSend))
+                                GenieSpiderState.say(lines[hint % lines.size])
+                                hint += 1
+                                lastHint = time
+                                GenieSpiderState.react(GenieReaction.Wave)
+                                haptics.tap()
+                            },
+                            onLongPress = {
+                                haptics.palette()
+                                menu = true
+                            },
+                        )
+                    }
+                    .pointerInput(width, side) {
+                        val tracker = VelocityTracker()
+                        detectDragGestures(
+                            onDragStart = {
+                                tracker.resetTracking()
+                                crawler.grab(System.nanoTime() / 1e9)
+                                GenieSpiderState.react(GenieReaction.Giggle)
+                            },
+                            onDragEnd = {
+                                val v = tracker.calculateVelocity()
+                                crawler.release(GenieVector(v.x / density.density.toDouble(), v.y / density.density.toDouble()), width, side, System.nanoTime() / 1e9)
+                            },
+                            onDragCancel = { crawler.release(GenieVector.ZERO, width, side, System.nanoTime() / 1e9) },
+                        ) { change, amount ->
+                            change.consume()
+                            tracker.addPosition(change.uptimeMillis, change.position)
+                            crawler.drag(amount.x / density.density.toDouble(), amount.y / density.density.toDouble())
+                        }
+                    },
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val time = now
+                    val active = cue?.let { c -> (time - c.at).takeIf { it >= 0 && it < c.reaction.duration }?.let { c.reaction to it } }
+                    GeniePainter(
+                        mood = mood, level = 0.0, t = time, reaction = active?.first, reactionAge = active?.second ?: 0.0,
+                        leanX = crawler.gravity.dx.toFloat(), leanY = 0f, stride = crawler.gait(time),
+                    ).paint(this)
+                }
+                FmDropdownMenu(menu, { menu = false }) {
+                    GenieMenu(crawler, close = { menu = false }, parked = parked, time = { System.nanoTime() / 1e9 })
+                }
             }
         }
         offer?.let { current ->

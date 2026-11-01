@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -253,33 +254,35 @@ class DiscordChannelScreen(private val channelId: String) : Screen() {
 private fun DiscordMessageRow(message: DiscordMessage, onLongPress: () -> Unit) {
     val colors = Fm.colors
     val haptics = LocalHapticFeedback.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = {},
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-            )
-            .padding(vertical = FmSpace.x2),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (message.self) "${message.sender} (you)" else message.sender,
-                style = Fm.text.titleSmall.copy(color = FmColors.senderColor(message.sender)),
-            )
-            Spacer(Modifier.width(FmSpace.x2))
-            Text(messageTime(message.timestamp), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
-            if (message.edited) Text("  (edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
-        }
-        if (message.text.isNotEmpty()) ChatMessageBody(message.text + if (message.truncated) "…" else "")
-        if (message.fileName.isNotEmpty()) Text(message.fileName, style = Fm.text.bodyMedium.copy(color = colors.accent))
-        if (message.reactions.isNotEmpty()) {
-            Row(Modifier.padding(top = 2.dp)) {
-                for (reaction in message.reactions) {
-                    Text("${reaction.emoji} ${reaction.count}  ", style = Fm.text.bodySmall)
+    FmHoldArea {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongPress()
+                    },
+                )
+                .padding(vertical = FmSpace.x2),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (message.self) "${message.sender} (you)" else message.sender,
+                    style = Fm.text.titleSmall.copy(color = FmColors.senderColor(message.sender)),
+                )
+                Spacer(Modifier.width(FmSpace.x2))
+                Text(messageTime(message.timestamp), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+                if (message.edited) Text("  (edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+            }
+            if (message.text.isNotEmpty()) ChatMessageBody(message.text + if (message.truncated) "…" else "")
+            if (message.fileName.isNotEmpty()) Text(message.fileName, style = Fm.text.bodyMedium.copy(color = colors.accent))
+            if (message.reactions.isNotEmpty()) {
+                Row(Modifier.padding(top = 2.dp)) {
+                    for (reaction in message.reactions) {
+                        Text("${reaction.emoji} ${reaction.count}  ", style = Fm.text.bodySmall)
+                    }
                 }
             }
         }

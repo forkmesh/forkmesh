@@ -63,6 +63,7 @@ struct ShellSuggestionChips: View {
                 .contentShape(Circle())
         }
         .buttonStyle(ShellBarButtonStyle())
+        .textSelection(.disabled)
         .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
             CaptureHold.noteHandled()
             held = true

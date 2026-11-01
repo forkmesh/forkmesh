@@ -299,6 +299,7 @@ struct RepoActionsList: View {
                 .tint(workflow.enabled ? fm.warning : fm.success)
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             if workflow.canDispatch && model.canControl {
                 Button {

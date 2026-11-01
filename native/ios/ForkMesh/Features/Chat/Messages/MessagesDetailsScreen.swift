@@ -201,6 +201,7 @@ struct MessagesDetailsScreen: View {
                     Text(name)
                     Spacer()
                 }
+                .textSelection(.disabled)
                 .contextMenu { personPictureButtons(name) }
                 .swipeActions {
                     if let room = officeRoom, room.canManage {

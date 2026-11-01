@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Image
@@ -15,6 +16,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.R
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.fmTapSounds
 import com.forkmesh.nativeapp.ui.theme.FmColors
 import androidx.compose.foundation.clickable
@@ -194,42 +196,44 @@ fun ProjectSwitcherTitle(
         return
     }
     val active by projects.active.collectAsState()
-    Row(
-        modifier
-            .testTag("home-project-switcher")
-            .combinedClickable(
-                onClickLabel = "Switch project or add a new one",
-                role = Role.Button,
-                onLongClick = onLongPress,
-                onLongClickLabel = onLongPress?.let { "Go Home" },
-            ) {
-                onOpen()
-                ProjectDrawer.open()
-            },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (iconOnly) {
-            ProjectIcon(active, size = 40.dp)
-            return@Row
-        }
-        if (icon) {
-            ProjectIcon(active, size = 36.dp)
-            Spacer(Modifier.width(FmSpace.x3))
-        }
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    active.label,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Fm.colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                FmIcon("expand_more", size = 20.dp, tint = Fm.colors.textSecondary)
+    FmHoldArea(onLongPress != null) {
+        Row(
+            modifier
+                .testTag("home-project-switcher")
+                .combinedClickable(
+                    onClickLabel = "Switch project or add a new one",
+                    role = Role.Button,
+                    onLongClick = onLongPress,
+                    onLongClickLabel = onLongPress?.let { "Go Home" },
+                ) {
+                    onOpen()
+                    ProjectDrawer.open()
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (iconOnly) {
+                ProjectIcon(active, size = 40.dp)
+                return@Row
             }
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Fm.colors.textTertiary)
+            if (icon) {
+                ProjectIcon(active, size = 36.dp)
+                Spacer(Modifier.width(FmSpace.x3))
+            }
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        active.label,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Fm.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    FmIcon("expand_more", size = 20.dp, tint = Fm.colors.textSecondary)
+                }
+                if (subtitle != null) {
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Fm.colors.textTertiary)
+                }
             }
         }
     }
@@ -551,16 +555,18 @@ private fun ProjectRow(
         }
         Box {
             FmIconButton(icon = "more_vert", label = "Project actions", onPressed = { menu = true })
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.fmTapSounds()) {
-                if (project.hasInstance) DropdownMenuItem(text = { Text("Test connection") }, onClick = { menu = false; onTest() })
-                if (onEdit != null) DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onEdit() })
-                DropdownMenuItem(
-                    text = { Text(if (project.logo.isEmpty()) "Choose logo…" else "Change logo…") },
-                    onClick = { menu = false; onChooseLogo() },
-                )
-                if (onRemoveLogo != null) DropdownMenuItem(text = { Text("Remove logo") }, onClick = { menu = false; onRemoveLogo() })
-                if (onRemove != null) {
-                    DropdownMenuItem(text = { Text("Remove", color = c.danger) }, onClick = { menu = false; onRemove() })
+            DisableSelection {
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.fmTapSounds()) {
+                    if (project.hasInstance) DropdownMenuItem(text = { Text("Test connection") }, onClick = { menu = false; onTest() })
+                    if (onEdit != null) DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onEdit() })
+                    DropdownMenuItem(
+                        text = { Text(if (project.logo.isEmpty()) "Choose logo…" else "Change logo…") },
+                        onClick = { menu = false; onChooseLogo() },
+                    )
+                    if (onRemoveLogo != null) DropdownMenuItem(text = { Text("Remove logo") }, onClick = { menu = false; onRemoveLogo() })
+                    if (onRemove != null) {
+                        DropdownMenuItem(text = { Text("Remove", color = c.danger) }, onClick = { menu = false; onRemove() })
+                    }
                 }
             }
         }

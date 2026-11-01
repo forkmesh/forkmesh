@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -142,7 +143,9 @@ fun DataFolderAlert() {
     if (setup) {
         val local = remember { Navigator(DataFolderScreen()) }
         Dialog(onDismissRequest = { setup = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) { local.top.Content(local) }
+            SelectionContainer {
+                Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) { local.top.Content(local) }
+            }
         }
         return
     }

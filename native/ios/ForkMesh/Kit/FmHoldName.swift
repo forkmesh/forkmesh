@@ -12,6 +12,7 @@ struct FmHoldName: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .textSelection(.disabled)
             .simultaneousGesture(
                 LongPressGesture(minimumDuration: Self.holdSeconds)
                     .onChanged { (_: Bool) in held.wrappedValue = false }

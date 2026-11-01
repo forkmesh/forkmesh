@@ -145,6 +145,7 @@ struct SecureDriveDevicesView: View {
                 }
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             if !device.removed && !device.isThisDevice && canWrite {
                 Button(role: .destructive) {

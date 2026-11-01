@@ -206,6 +206,7 @@ struct CrmMailPane: View {
                                 .tint(.indigo)
                             }
                         }
+                        .textSelection(.disabled)
                         .contextMenu {
                             ForEach(boxes.filter { $0 != message.box }, id: \.self) { target in
                                 Button("Move to \(target)", systemImage: "tray.and.arrow.down") {
@@ -575,6 +576,7 @@ struct CrmDecksPane: View {
                         CrmDeckRow(link: link, contact: data.contact(id: link.contactId))
                     }
                     .buttonStyle(.plain)
+                    .textSelection(.disabled)
                     .contextMenu {
                         Button("Copy link", systemImage: "link") { CrmClipboard.copy(link.url) }
                         if link.active {

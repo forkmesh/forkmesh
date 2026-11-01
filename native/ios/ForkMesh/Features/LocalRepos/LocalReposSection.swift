@@ -138,6 +138,7 @@ private struct LocalReposSectionContent: View {
                         FmRowDivider()
                     }
                     LocalRepoTile(record: record) { opened = record }
+                        .textSelection(.disabled)
                         .contextMenu {
                             Button("Open") { opened = record }
                             if record.isPublished && model.canSync {

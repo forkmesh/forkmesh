@@ -66,6 +66,7 @@ import com.forkmesh.nativeapp.tools.TelemetryMetric
 import com.forkmesh.nativeapp.tools.TelemetryRange
 import com.forkmesh.nativeapp.tools.TelemetryScreenText
 import com.forkmesh.nativeapp.tools.clockStamp
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmPagerSounds
@@ -372,36 +373,38 @@ internal class TelemetryScreen(
         val context = LocalContext.current
         val mono = Fm.mono(size = FmType.meta, height = FmType.leadingSnug)
         val ink = logCategoryColor(entry.category, 1)
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = {},
-                    onLongClick = {
-                        copyToClipboard(context, entry.toString())
-                        copyStatus.show(TelemetryScreenText.COPIED_LINE)
-                    },
+        FmHoldArea {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = {
+                            copyToClipboard(context, entry.toString())
+                            copyStatus.show(TelemetryScreenText.COPIED_LINE)
+                        },
+                    )
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(clockStamp(entry.timestampMs), style = mono.copy(color = c.textTertiary))
+                Spacer(Modifier.width(8.dp))
+                FmIcon(
+                    entry.category.iconName(),
+                    modifier = Modifier.padding(top = 1.dp),
+                    size = 14.dp,
+                    tint = if (ink == c.textPrimary) c.textSecondary else ink,
+                    contentDescription = entry.category.label,
                 )
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Text(clockStamp(entry.timestampMs), style = mono.copy(color = c.textTertiary))
-            Spacer(Modifier.width(8.dp))
-            FmIcon(
-                entry.category.iconName(),
-                modifier = Modifier.padding(top = 1.dp),
-                size = 14.dp,
-                tint = if (ink == c.textPrimary) c.textSecondary else ink,
-                contentDescription = entry.category.label,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                entry.message,
-                modifier = Modifier.weight(1f),
-                maxLines = 8,
-                overflow = TextOverflow.Ellipsis,
-                style = mono.copy(color = c.textPrimary),
-            )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    entry.message,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 8,
+                    overflow = TextOverflow.Ellipsis,
+                    style = mono.copy(color = c.textPrimary),
+                )
+            }
         }
     }
 }

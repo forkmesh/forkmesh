@@ -10,6 +10,7 @@ struct FmMessageActionsModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contentShape(Rectangle())
+            .textSelection(.disabled)
             .contextMenu {
                 if !text.isEmpty {
                     Button(action: copy) { Label("Copy text", systemImage: "doc.on.doc") }
