@@ -694,6 +694,58 @@ returned, so summed frame totals overstate a function's own cost.
   `forkmesh::settings::put`, which skips unchanged values.
 - **No work for a link that is already down.** `ServerNode::shutdown` sends
   `bye` (one x25519 seal per room member) only while `m_wsReady`.
+- **Do not `grab()` a widget inside the main window.** On a visible widget,
+  `QWidget::grab` first delivers pending resize events to every widget in the
+  window that has never been shown, which polishes and lays out hidden rich-text
+  labels everywhere (`STALL-20261101T154849825-p1962648-0051`: a ~700 ms rich-text layout under
+  `prepareToRender`). Copy the pixels already on screen with
+  `forkmesh::ui::kit::shownPixels`, which reads the window's backing store. The
+  transcript's held frame uses it and falls back to the blank canvas;
+  `flyToComposer` falls back to `grab()` only if the backing store cannot be read.
+  Drag pixmaps and test grabs can still use `grab()`.
+- **Create a view inside its parent.** Under the application style sheet, moving
+  a built `QTableWidget` into a parent restyles it and its headers, scroll
+  bars and viewport. `buildRewardPoolControlCard` creates its two tables with
+  the card as parent (`…-p970989-0017`). The Control Node tabs still build each
+  card unparented and move it about four times (body, scroll area, tabs).
+- **Delete row widgets instead of hiding them.** `QTreeWidget::clear` hides
+  each item widget before its `deleteLater`. When accessibility is on, each
+  hide builds an accessible interface for the widget and every child, about
+  1 s for a big range (`…-p1962648-0065`). `clearScmTree` deletes the
+  Source Control rows outright. When a menu or modal dialog is open it uses a
+  plain `clear()` instead, because a nested event loop may still be running a
+  row's handler. The working-tree rebuild also keeps `clear()`, because its
+  rows' stage buttons start it.
+- **Repo workflow runs are written in the background.** `repoWorkflowRunChanged`
+  merges the run into `m_repoWorkflowRunsCache` (`rw::mergeRun`) and queues the
+  JSON with `diskwrite::writeLater`; readers go through `repoWorkflowRuns`, so
+  they see the queued state. The run's Markdown output is queued the same way
+  (`…-0064`: the `QSaveFile` fsync took ~700 ms).
+- **Hand the side panels the event list, not one event at a time.**
+  `SessionSidePanels::appendActivity` shares the session's event list and starts
+  its sliced ingest at the first event it has not seen. Copying every event of
+  a long session on a switch touched pages the process had swapped out
+  (`…-0060`, 1.2 s).
+- **Measure colour emoji once.** For a bitmap colour font (Noto Color Emoji),
+  Qt decodes the glyph's PNG each time it measures it, so every `elidedText`
+  and `drawText` over an emoji repeats the decode. `ChatPreviewLabel` (the prompt
+  bar's chat preview) draws its rows into a pixmap. It redraws that pixmap only
+  when the lines, size, font or colours change. Its `sizeHint` no longer lays
+  out the hidden rich-text copy, since the `Ignored` width policy discards
+  that width (`…-p970989-0005`, `-0010`, `-0012`, `-0013`).
+- **Do not re-set an unchanged run log.** `showRun` keeps the run id and a hash
+  of the log it showed, and skips `setPlainText` and the scroll to the end when
+  the same run comes back with the same text and the view still holds all of it.
+  Building the Actions tab shows the latest run and the notification click shows
+  it again, and each layout of emoji lines repeats the colour-glyph decode
+  above (`…-p970989-0016`).
+- **Spin only the rows on screen.** `animateRunningAgentIcons` rebuilds a
+  running row's spinner pixmap only when the table is shown and the row is in
+  the viewport; progress and ticker text still update on every tick
+  (`…-p970989-0009`).
+- **Off the GUI thread:** reading the Genie CRM summary (`GenieCrmCounts::read`,
+  `GenieCrmDigest::read`, `…-p970989-0006`). The Workflows package's
+  `loadLocal` stops when the host's payload has not changed.
 - **Match a URL against a rule list once per URL.** The Network page's
   endpoint table rebuilt every 120 ms while a row faded and matched each
   endpoint against all 208 catalog patterns, and each match re-canonicalized
@@ -738,6 +790,43 @@ Marketing are the heaviest); building each page only when it is first opened
 would remove that. For the few seconds the steps take, a package page not yet
 built is missing from search results and its rail button. `main.cpp` logs its
 startup lines through `logStartupTrace` like the rest of the trace.
+
+### Installing a package keeps the other pages (report #20)
+
+`syncNativePackagePages` used to delete every package page and build all of
+them again whenever the installed set changed, so one Market install rebuilt
+CRM, Calories, OpenWrt, Workflows, Marketing and the rest on the GUI thread
+(4.8 s, 8.1 s and 7.6 s stalls on 2026-11-01, followed by seconds of deferred
+style polish). It also sent you back to Market when you installed something
+from a package page you had open. Now it only removes the pages whose
+`(id, entrypoint)` dropped out, and only builds the ones that are missing: one
+missing page is built at once, so a single install opens on a ready page;
+two or more added beside pages already built (Install all, a pack) go through
+the `buildNextNativePackagePage` chain, which skips pages already built. A
+window with no pages yet still builds them in one pass, which the window
+tests rely on. Test: the Install all check in `forkmesh-window-tests
+--package-only` and `app/tests/test_desktop_package_rail_startup.py`.
+
+Other fixes from the same report:
+
+- **Market previews arrive ready to paint.** The worker converts each decoded
+  preview to `RGB32` or `ARGB32_Premultiplied`, and `applyMarketPreview` calls
+  `QPixmap::fromImage(..., Qt::NoOpaqueDetection)`, so the GUI thread no longer
+  scans every pixel for alpha and converts the image (1.5 s).
+- **CRM column moves do not refit every row.** In `CrmFeature::applyColumnOrder`
+  each `moveSection` made the table refit its `ResizeToContents` Actions column
+  over every contact row (612 ms for one snapshot). The first real move pins
+  those sections to `Fixed` at their current width, and they go back to
+  `ResizeToContents` once after the last move. A pass with nothing to move
+  touches no resize mode.
+- **The agent recycle bin loads on a worker.** `reloadAgentRecycleBin` reads
+  the bin with `runOffThread` (one read at a time, a call during a read queues
+  one more) and starting an agent no longer waits for it (1.2 s).
+- **Already fixed:** both crash records (the `refreshChannelList` crash during
+  local-mesh startup, and the teardown crash) happened before `d149be9982`.
+- **Nothing to fix:** the `DeployLogFollower::deliverFileLines` frame on the
+  2.4 s polish stall is a stray symbol; the stall was the posted Polish event
+  of the package pages rebuilt three seconds earlier.
 
 ### Background file writes
 

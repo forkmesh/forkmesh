@@ -82,6 +82,7 @@
         <file alias="stopwatch.svg">icons/octicons/stopwatch.svg</file>
         <file alias="sun.svg">icons/octicons/sun.svg</file>
         <file alias="sync.svg">icons/octicons/sync.svg</file>
+        <file alias="table.svg">icons/octicons/table.svg</file>
         <file alias="tag.svg">icons/octicons/tag.svg</file>
         <file alias="terminal.svg">icons/octicons/terminal.svg</file>
         <file alias="thumbsup.svg">icons/octicons/thumbsup.svg</file>

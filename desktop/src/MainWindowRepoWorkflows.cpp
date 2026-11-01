@@ -2,6 +2,7 @@
 #include "MainWindowInternal.h"
 #include "LocalControl.h"
 #include "LocalControlInsights.h"
+#include "BackgroundFileWriter.h"
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
 #include "TeammateStore.h"
@@ -231,6 +232,13 @@ QString MainWindow::repoWorkflowRunsFile(int repoIndex, const QString &workflowI
     const QString root = repoWorkflowRunsRoot(repoIndex);
     const QString id = forkmesh::teammates::Store::safeId(workflowId);
     return root.isEmpty() || id.isEmpty() ? QString() : QDir(root).filePath(id + QStringLiteral(".json"));
+}
+
+QList<rw::Run> MainWindow::repoWorkflowRuns(int repoIndex, const QString &workflowId) const
+{
+    const QString file = repoWorkflowRunsFile(repoIndex, workflowId);
+    const auto cached = m_repoWorkflowRunsCache.constFind(file);
+    return cached != m_repoWorkflowRunsCache.cend() ? cached.value() : rw::loadRuns(file);
 }
 
 bool MainWindow::findRepoWorkflow(int repoIndex, const QString &workflowId, rw::Workflow *workflow) const
@@ -614,9 +622,12 @@ void MainWindow::repoWorkflowRunChanged(const rw::Run &run)
 {
     const int repoIndex = repoIndexForKey(run.repo);
     const QString file = repoWorkflowRunsFile(repoIndex, run.workflowId);
-    if (!file.isEmpty()) {
+    if (!file.isEmpty() && !run.id.isEmpty()) {
         QStringList dropped;
-        rw::saveRun(file, run, &dropped);
+        const QList<rw::Run> runs =
+            rw::mergeRun(repoWorkflowRuns(repoIndex, run.workflowId), run, &dropped);
+        m_repoWorkflowRunsCache.insert(file, runs);
+        forkmesh::diskwrite::writeLater(file, rw::encodeRuns(runs));
         const QString outputs = QDir(repoWorkflowRunsRoot(repoIndex)).filePath(run.workflowId);
         for (const QString &runId : std::as_const(dropped)) {
             const QString stale = QDir(outputs).filePath(runId + QStringLiteral(".md"));
@@ -633,14 +644,8 @@ QString MainWindow::finishRepoWorkflowRun(const rw::Run &run, const QString &mar
     const QString root = repoWorkflowRunsRoot(repoIndex);
     QString path;
     if (!root.isEmpty()) {
-        const QString folder = QDir(root).filePath(run.workflowId);
-        if (QDir().mkpath(folder)) {
-            path = QDir(folder).filePath(run.id + QStringLiteral(".md"));
-            QSaveFile file(path);
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate) || file.write(markdown.toUtf8()) < 0 ||
-                !file.commit())
-                path.clear();
-        }
+        path = QDir(QDir(root).filePath(run.workflowId)).filePath(run.id + QStringLiteral(".md"));
+        forkmesh::diskwrite::writeLater(path, markdown.toUtf8());
     }
     if (run.trigger.startsWith(QLatin1String("By hand")) || run.trigger.contains(QLatin1String("rail"))) {
         if (run.status == rw::kStatusSuccess)
@@ -664,7 +669,7 @@ void MainWindow::checkRepoWorkflowSchedules()
             if (!listing.error.isEmpty() || workflow.isSpecialAgent() || workflow.scheduleNode().isEmpty() ||
                 repoWorkflowRunner()->isRunning(key, workflow.id))
                 continue;
-            const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(index, workflow.id));
+            const QList<rw::Run> runs = repoWorkflowRuns(index, workflow.id);
             const qint64 last = runs.isEmpty() ? 0 : runs.first().startedAtMs;
             const Config schedule = rw::scheduleConfig(workflow, last);
             if (schedule.schedule.mode == forkmesh::teammates::kScheduleContinuous ||
@@ -1091,7 +1096,7 @@ void MainWindow::refreshWorkflowPins()
             button->setProperty("workflowRepo", pin.repo);
             button->setProperty("workflowId", pin.workflowId);
             const bool running = repoWorkflowRunner()->isRunning(pin.repo, pin.workflowId);
-            const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(repoIndex, pin.workflowId));
+            const QList<rw::Run> runs = repoWorkflowRuns(repoIndex, pin.workflowId);
             QString status = running ? rw::kStatusRunning : (runs.isEmpty() ? QString() : runs.first().status);
             QStringList tip{QStringLiteral("%1 · %2").arg(workflow.name, pin.repo), workflow.triggerSummary()};
             if (running) {
@@ -1403,7 +1408,7 @@ void MainWindow::showWorkflowPinMenu(const QString &repo, const QString &workflo
                     setActiveTeammateRepoIndex(repoIndex);
                     showTeammateHome(workflowId);
                 });
-    const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(repoIndex, workflowId));
+    const QList<rw::Run> runs = repoWorkflowRuns(repoIndex, workflowId);
     if (!runs.isEmpty() && !runs.first().outputFile.isEmpty() && QFileInfo(runs.first().outputFile).isFile()) {
         const QString output = runs.first().outputFile;
         connect(menu.addAction(QStringLiteral("Open the last output")), &QAction::triggered, this,
@@ -1512,7 +1517,7 @@ QJsonObject MainWindow::nativePackageRepositoryWorkflows()
                                         {QStringLiteral("shortcuts"), shortcuts}});
         for (const rw::Listing &listing : rw::listRepositoryWorkflows(repo.localPath)) {
             const rw::Workflow &workflow = listing.workflow;
-            const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(index, workflow.id));
+            const QList<rw::Run> runs = repoWorkflowRuns(index, workflow.id);
             const bool running = repoWorkflowRunner()->isRunning(key, workflow.id);
             QJsonObject row{{QStringLiteral("repo"), key},
                             {QStringLiteral("id"), workflow.id},
@@ -1688,7 +1693,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
         const rw::Workflow workflow = listing->workflow;
         if (action == QLatin1String("get")) {
             QJsonArray runs;
-            for (const rw::Run &run : rw::loadRuns(repoWorkflowRunsFile(repoIndex, workflowId)))
+            for (const rw::Run &run : repoWorkflowRuns(repoIndex, workflowId))
                 runs.append(run.toJson());
             QJsonObject data{{QStringLiteral("workflow"), workflow.toJson()},
                              {QStringLiteral("repo"), repo},
@@ -1745,7 +1750,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                           QStringLiteral("%1 is running.").arg(workflow.name));
                     return;
                 }
-                const QList<rw::Run> runs = rw::loadRuns(repoWorkflowRunsFile(repoIndex, workflowId));
+                const QList<rw::Run> runs = repoWorkflowRuns(repoIndex, workflowId);
                 const bool recent = !runs.isEmpty() && nowMs() - runs.first().startedAtMs < 5000;
                 reply(recent && runs.first().status == rw::kStatusSuccess,
                       recent ? QJsonObject{{QStringLiteral("runId"), runs.first().id}} : QJsonObject(),

@@ -1050,6 +1050,15 @@ public:
     void testSessionsComposerSend(const QString &text, int alsoTo = 0);
     QString testSessionsComposerState() const;
     QStringList testSessionsRelayStrip() const;
+    QStringList testSessionsListLayout() const;
+    QStringList testSessionsContextMenu(int sessionId);
+    QStringList testSessionsHeaderMenu(const QString &label);
+    bool testSessionsHeaderAction(const QString &label, const QString &objectName);
+    bool testSessionsMenuAction(int sessionId, const QString &objectName);
+    bool testSessionsMenuKey(int sessionId, int key);
+    QString testSessionsNewSection(const QList<int> &sessionIds, const QString &name);
+    void testSetSessionsShowArchived(bool show);
+    void testSelectSessions(const QList<int> &sessionIds);
     void testCloudLogMonitorLine(const QString &line)
     {
         handleCloudLogMonitorLine(line);
@@ -6068,6 +6077,24 @@ private:
     void sendSessionsComposer();
     void deliverToExternalSession(int sessionId, const QString &text);
     void showSessionsContextMenu(int sessionId, const QPoint &globalPos);
+    QMenu *buildSessionsContextMenu(int sessionId, QWidget *parent);
+    void showSessionsHeaderContextMenu(const QString &groupKey, const QPoint &globalPos);
+    QMenu *buildSessionsHeaderMenu(const QString &groupKey, QWidget *parent);
+    QList<int> sessionsSelectedIds() const;
+    void startNewSessionInSessionsPageFor(const QString &repoKey);
+    QString sessionsKey(const AgentSession &session) const;
+    bool sessionsPinned(const AgentSession &session) const;
+    bool sessionsArchived(const AgentSession &session) const;
+    QString sessionsSectionOf(const AgentSession &session) const;
+    QList<QPair<QString, QString>> sessionsSectionList() const;
+    void setSessionsPinned(const QList<int> &sessionIds, bool pinned);
+    void setSessionsArchived(const QList<int> &sessionIds, bool archived);
+    void moveSessionsToSection(const QList<int> &sessionIds, const QString &sectionId);
+    QString createSessionsSection(const QList<int> &sessionIds, const QString &name);
+    void promptNewSessionsSection(const QList<int> &sessionIds);
+    void saveSessionsOrganization();
+    QString sessionsForkBlocker(int sessionId);
+    void forkSessionFromSessionsPage(int sessionId);
     void promptSessionsMessage(int fromId, int toId);
     void fillSessionsPicker(QComboBox *combo, int keepId, int excludeId,
                             const QString &noneLabel);
@@ -6951,6 +6978,7 @@ private:
     void setAgentTeammateFilter(AgentTeammateFilter filter);
     QList<int> selectedAgentSessionIds() const;
     void deleteSelectedAgentSessions();
+    void deleteAgentSessionsConfirmed(const QList<int> &sessionIds);
     void refreshAgentTaskLinkUi(int sessionId);
     void reprioritizeAgentSessions(int sourceSessionId, int targetSessionId,
                                    bool placeAfterTarget);
@@ -8923,6 +8951,8 @@ private:
     void loadAgentReadState();
     QString agentReadKey(const AgentSession &session) const;
     bool agentSessionUnread(const AgentSession &session) const;
+    bool agentSessionUnreadable(const AgentSession &session) const;
+    void markAgentSessionUnread(int sessionId);
     bool agentSessionWatched(int sessionId) const;
     bool noteAgentSessionSeen(const AgentSession &session);
     void markAgentSessionRead(int sessionId);
@@ -9049,6 +9079,8 @@ private:
     int repoIndexForKey(const QString &repoKey) const;
     QString repoWorkflowRunsRoot(int repoIndex) const;
     QString repoWorkflowRunsFile(int repoIndex, const QString &workflowId) const;
+    QList<forkmesh::repoworkflows::Run> repoWorkflowRuns(int repoIndex,
+                                                         const QString &workflowId) const;
     bool findRepoWorkflow(int repoIndex, const QString &workflowId,
                           forkmesh::repoworkflows::Workflow *workflow) const;
     QString startRepoWorkflow(int repoIndex, const forkmesh::repoworkflows::Workflow &workflow,
@@ -13233,6 +13265,7 @@ private:
     QSet<int> m_teammateCreatorSessions;
     QSet<int> m_teammateDoneUnseen;
     QHash<QString, qint64> m_agentSeenFinishedAt;
+    QSet<QString> m_agentMarkedUnread;
     qint64 m_agentReadBaselineMs = 0;
     // Automatic @Name hand-offs are deliberately shallow so two teammates
     // cannot bounce a reply loop forever. Direct human mentions always start
@@ -13255,6 +13288,7 @@ private:
     };
     forkmesh::repoworkflows::Runner *m_repoWorkflowRunner = nullptr;
     QHash<int, RepoWorkflowHandle> m_repoWorkflowHandles;
+    QHash<QString, QList<forkmesh::repoworkflows::Run>> m_repoWorkflowRunsCache;
     int m_repoWorkflowHandleSerial = 0;
     bool m_repoWorkflowSwitchToTab = false;
     struct PendingRepoWorkflowApproval {
@@ -14250,6 +14284,8 @@ private:
     ElidingStatusLabel *m_actionRunLogPath = nullptr;
     QLabel *m_actionApprovalBanner = nullptr;
     QPlainTextEdit *m_actionLog = nullptr;
+    int m_actionLogShownRunId = -1;
+    size_t m_actionLogShownHash = 0;
     QTextBrowser *m_actionDiff = nullptr;
     // Extra run panes docked to the right of the primary detail, left to right.
     QSplitter *m_actionDetailSplitter = nullptr;
@@ -15971,6 +16007,8 @@ private:
     QPointer<QComboBox> m_chatRetentionCombo;
     QTimer *m_agentRecycleSweepTimer = nullptr; // periodic pruneExpiredChatHistory()
     bool m_agentRecyclePurgeInFlight = false;
+    bool m_agentRecycleReloadInFlight = false;
+    bool m_agentRecycleReloadPending = false;
     QHash<QString, MessageRow *> m_visibleRows; // messageId -> row (current conv)
     QString m_activeChatThreadRootId;
     QSplitter *m_chatSplit = nullptr;

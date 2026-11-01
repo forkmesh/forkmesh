@@ -1942,9 +1942,32 @@ QWidget *MainWindow::buildAgentRecycleBinBar()
 
 void MainWindow::reloadAgentRecycleBin()
 {
-    m_agentRecycled =
-        m_agentStore ? m_agentStore->loadRecycledSessions() : QList<AgentSession>();
-    updateAgentRecycleBinBar();
+    if (!m_agentStore) {
+        m_agentRecycled.clear();
+        updateAgentRecycleBinBar();
+        return;
+    }
+    if (m_agentRecycleReloadInFlight) {
+        m_agentRecycleReloadPending = true;
+        return;
+    }
+    m_agentRecycleReloadInFlight = true;
+    AgentStore *store = m_agentStore;
+    runOffThread<QList<AgentSession>>(
+        [store] {
+            const forkmesh::BackgroundScope activity(
+                QStringLiteral("agents"),
+                QStringLiteral("read the agent recycle bin"),
+                forkmesh::ActionTelemetry::Execution::Worker);
+            return store->loadRecycledSessions();
+        },
+        [this](QList<AgentSession> sessions) {
+            m_agentRecycleReloadInFlight = false;
+            m_agentRecycled = std::move(sessions);
+            updateAgentRecycleBinBar();
+            if (std::exchange(m_agentRecycleReloadPending, false))
+                reloadAgentRecycleBin();
+        });
 }
 
 QList<AgentSession> MainWindow::agentRecycledInOpenRepo() const

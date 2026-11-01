@@ -1794,6 +1794,13 @@ void MainWindow::deleteSelectedAgentSessions()
         deleteAgentSessionFromRow(sessionIds.first());
         return;
     }
+    deleteAgentSessionsConfirmed(sessionIds);
+}
+
+void MainWindow::deleteAgentSessionsConfirmed(const QList<int> &sessionIds)
+{
+    if (sessionIds.isEmpty())
+        return;
     if (auto *existing = findChild<QMessageBox *>(
             QStringLiteral("agentBulkDeleteConfirm"))) {
         existing->show();
@@ -2355,6 +2362,8 @@ void MainWindow::loadAgentReadState()
     const QVariantMap seen = settings.value(kAgentSeenFinishedAtSetting).toMap();
     for (auto it = seen.cbegin(); it != seen.cend(); ++it)
         m_agentSeenFinishedAt.insert(it.key(), it.value().toLongLong());
+    const QStringList marked = settings.value(kAgentMarkedUnreadSetting).toStringList();
+    m_agentMarkedUnread = QSet<QString>(marked.cbegin(), marked.cend());
 }
 
 QString MainWindow::agentReadKey(const AgentSession &session) const
@@ -2372,15 +2381,22 @@ QString MainWindow::agentReadKey(const AgentSession &session) const
     return session.id > 0 ? QString::number(session.id) : QString();
 }
 
-bool MainWindow::agentSessionUnread(const AgentSession &session) const
+bool MainWindow::agentSessionUnreadable(const AgentSession &session) const
 {
     if (session.finishedAtMs <= 0 || session.merged || session.deletedAtMs > 0 ||
         session.associationOnly || session.runInFlight() ||
         session.status == AgentStatus::Queued)
         return false;
-    const QString key = agentReadKey(session);
-    if (key.isEmpty())
+    return !agentReadKey(session).isEmpty();
+}
+
+bool MainWindow::agentSessionUnread(const AgentSession &session) const
+{
+    if (!agentSessionUnreadable(session))
         return false;
+    const QString key = agentReadKey(session);
+    if (m_agentMarkedUnread.contains(key))
+        return true;
     return session.finishedAtMs >
            qMax(m_agentReadBaselineMs, m_agentSeenFinishedAt.value(key));
 }
@@ -2395,6 +2411,10 @@ bool MainWindow::noteAgentSessionSeen(const AgentSession &session)
 {
     if (!agentSessionUnread(session))
         return false;
+    if (m_agentMarkedUnread.remove(agentReadKey(session))) {
+        const QStringList marked(m_agentMarkedUnread.cbegin(), m_agentMarkedUnread.cend());
+        QSettings().setValue(kAgentMarkedUnreadSetting, marked);
+    }
     m_agentSeenFinishedAt.insert(agentReadKey(session), session.finishedAtMs);
     if (m_agentSeenFinishedAt.size() > 400) {
         QSet<QString> live;
@@ -2428,6 +2448,27 @@ void MainWindow::markAgentSessionRead(int sessionId)
                 continue;
             if (QTableWidgetItem *title = m_agentTable->item(row, kAgentIssueColumn))
                 title->setData(kAgentUnreadRole, false);
+            break;
+        }
+    }
+    notifyLocalControlAgentsChanged();
+}
+
+void MainWindow::markAgentSessionUnread(int sessionId)
+{
+    const AgentSession *session = findAgentSession(sessionId);
+    if (!session || !agentSessionUnreadable(*session))
+        return;
+    m_agentMarkedUnread.insert(agentReadKey(*session));
+    const QStringList marked(m_agentMarkedUnread.cbegin(), m_agentMarkedUnread.cend());
+    QSettings().setValue(kAgentMarkedUnreadSetting, marked);
+    if (m_agentTable) {
+        for (int row = 0; row < m_agentTable->rowCount(); ++row) {
+            QTableWidgetItem *lead = m_agentTable->item(row, kAgentIdColumn);
+            if (!lead || lead->data(Qt::UserRole).toInt() != sessionId)
+                continue;
+            if (QTableWidgetItem *title = m_agentTable->item(row, kAgentIssueColumn))
+                title->setData(kAgentUnreadRole, true);
             break;
         }
     }

@@ -16763,6 +16763,8 @@ void checkSessionsPage(MainWindow &window)
         session.branchName = QStringLiteral("agent/%1").arg(id);
         session.status = status;
         session.createdAtMs = now - id;
+        if (status == AgentStatus::Success)
+            session.finishedAtMs = now - 60000 - id;
         window.testAddAgentSession(session);
         return session;
     };
@@ -16854,6 +16856,100 @@ void checkSessionsPage(MainWindow &window)
               .arg(window.testSessionsRelayStrip().join(QStringLiteral(" | "))));
 
     window.testSetAgentSessionLiveTransport(first.id, false);
+    window.testSetAgentSessionLiveTransport(second.id, false);
+    const QStringList rowMenu = window.testSessionsContextMenu(second.id);
+    const QString rowMenuText = rowMenu.join(QStringLiteral(" | "));
+    check(rowMenu.contains(QStringLiteral("Open in >")) &&
+              rowMenu.contains(QStringLiteral("Pin\tP")) &&
+              rowMenu.contains(QStringLiteral("Rename…\tR")) &&
+              rowMenuText.contains(QStringLiteral("Fork\tF")) &&
+              rowMenu.contains(QStringLiteral("Move to section >")) &&
+              rowMenu.contains(QStringLiteral("Archive\tA")) &&
+              rowMenu.contains(QStringLiteral("Delete…\tD")) &&
+              rowMenuText.contains(QStringLiteral("\tU")),
+          QStringLiteral("a session row's menu offers Open in, Pin, Mark as unread, "
+                         "Rename, Fork, Move to section, Archive and Delete with their "
+                         "keys (%1)")
+              .arg(rowMenuText));
+    const auto groupOf = [&window](int id) {
+        QString group;
+        for (const QString &row : window.testSessionsListLayout()) {
+            if (row.startsWith(QStringLiteral("# ")))
+                group = row.mid(2);
+            else if (row == QString::number(id))
+                return group;
+        }
+        return QStringLiteral("<not listed>");
+    };
+    check(window.testSessionsMenuKey(second.id, Qt::Key_P) &&
+              groupOf(second.id) == QStringLiteral("Pinned"),
+          QStringLiteral("pressing P in the open menu pins the session into a Pinned "
+                         "group (%1)")
+              .arg(window.testSessionsListLayout().join(QStringLiteral(" | "))));
+    check(window.testSessionsMenuAction(second.id, QStringLiteral("sessionsPinAction")) &&
+              groupOf(second.id) != QStringLiteral("Pinned"),
+          QStringLiteral("Unpin takes the session out of the Pinned group"));
+    window.showSessionsPage(planner.id);
+    waitUntil([&] { return window.testSessionsOpenId() == planner.id; });
+    const bool wasUnread =
+        window.testSessionsContextMenu(planner.id).contains(QStringLiteral("Mark as read\tU"));
+    check(window.testSessionsMenuAction(planner.id, QStringLiteral("sessionsUnreadAction")) &&
+              window.testSessionsContextMenu(planner.id).contains(
+                  wasUnread ? QStringLiteral("Mark as unread\tU")
+                            : QStringLiteral("Mark as read\tU")),
+          QStringLiteral("Mark as unread flips the open session's read state and it "
+                         "stays that way while it is open (%1)")
+              .arg(window.testSessionsContextMenu(planner.id).join(QStringLiteral(" | "))));
+    window.testSessionsMenuAction(planner.id, QStringLiteral("sessionsUnreadAction"));
+
+    window.testSessionsNewSection({second.id}, QStringLiteral("Release work"));
+    check(groupOf(second.id) == QStringLiteral("Release work"),
+          QStringLiteral("New section files the session under its own header (%1)")
+              .arg(window.testSessionsListLayout().join(QStringLiteral(" | "))));
+    const QStringList headerMenu = window.testSessionsHeaderMenu(QStringLiteral("Release work"));
+    const QString headerMenuText = headerMenu.join(QStringLiteral(" | "));
+    check(headerMenu.contains(QStringLiteral("New session")) &&
+              headerMenu.contains(QStringLiteral("New section…")) &&
+              headerMenu.contains(QStringLiteral("Rename section…")) &&
+              headerMenuText.contains(QStringLiteral("Move up")) &&
+              headerMenu.contains(QStringLiteral("Select all")) &&
+              headerMenuText.contains(QStringLiteral("Collapse all")) &&
+              headerMenuText.contains(QStringLiteral("Expand all")) &&
+              headerMenu.contains(QStringLiteral("Archive all (1)")) &&
+              headerMenuText.contains(QStringLiteral("Delete all sessions (1)")) &&
+              headerMenu.contains(QStringLiteral("Delete section")),
+          QStringLiteral("a section header's menu offers the section actions (%1)")
+              .arg(headerMenuText));
+    window.testSelectSessions({second.id, planner.id});
+    check(window.testSessionsContextMenu(second.id).contains(QStringLiteral("Pin 2 sessions\tP")),
+          QStringLiteral("the row menu acts on the whole selection when the row is in it"));
+    window.testSelectSessions({});
+
+    check(window.testSessionsMenuAction(second.id, QStringLiteral("sessionsArchiveAction")) &&
+              !window.testSessionsListIds().contains(second.id),
+          QStringLiteral("Archive hides the session from the list"));
+    window.testSetSessionsShowArchived(true);
+    check(groupOf(second.id) == QStringLiteral("Archived (1)"),
+          QStringLiteral("Archived sessions shows it under an Archived header (%1)")
+              .arg(window.testSessionsListLayout().join(QStringLiteral(" | "))));
+    check(window.testSessionsHeaderAction(QStringLiteral("Archived (1)"),
+                                          QStringLiteral("sessionsHeaderArchiveAllAction")) &&
+              groupOf(second.id) == QStringLiteral("Release work"),
+          QStringLiteral("Unarchive all puts the session back in its section"));
+    window.testSetSessionsShowArchived(false);
+    check(window.testSessionsHeaderAction(QStringLiteral("Release work"),
+                                          QStringLiteral("sessionsHeaderDeleteSectionAction")) &&
+              groupOf(second.id) != QStringLiteral("Release work") &&
+              window.testSessionsListIds().contains(second.id),
+          QStringLiteral("Delete section removes the header and keeps its sessions"));
+    {
+        QSettings settings;
+        for (const QString &key :
+             {QStringLiteral("sessions/pins"), QStringLiteral("sessions/sectionOf"),
+              QStringLiteral("sessions/archived"), QStringLiteral("sessions/sections")})
+            settings.remove(key);
+    }
+
     window.testSetAgentSessionLiveTransport(second.id, false);
     window.testRemoveAgentSession(first.id);
     window.testRemoveAgentSession(second.id);
@@ -21969,10 +22065,24 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         }
         const bool incomplete = installedBefore.size() < everything.size();
         const bool enabledBefore = installAll && installAll->isEnabled();
+        QHash<QString, QPointer<forkmesh::market::NativePackageWidget>> pagesBefore;
+        for (const QString &id : std::as_const(installedBefore)) {
+            if (forkmesh::market::NativePackageWidget *page = window.testNativePackagePage(id))
+                pagesBefore.insert(id, page);
+        }
+        const auto pagesKept = [&window, &pagesBefore] {
+            QStringList rebuilt;
+            for (auto it = pagesBefore.cbegin(); it != pagesBefore.cend(); ++it) {
+                if (!it.value() || window.testNativePackagePage(it.key()) != it.value())
+                    rebuilt << it.key();
+            }
+            return rebuilt;
+        };
         if (installAll && installAll->isEnabled())
             installAll->click();
         QApplication::processEvents();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const QStringList rebuiltByInstall = pagesKept();
         bool allInstalled = !everything.isEmpty();
         for (const QString &id : everything)
             allInstalled = allInstalled && window.testPackageInstalled(id);
@@ -21993,6 +22103,15 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         }
         QApplication::processEvents();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const QStringList rebuiltByRemoval = pagesKept();
+        check(!pagesBefore.isEmpty() && rebuiltByInstall.isEmpty() &&
+                  rebuiltByRemoval.isEmpty(),
+              QStringLiteral("installing and removing other packages keeps the "
+                             "pages already built (pages=%1, rebuilt by install=%2, "
+                             "by removal=%3)")
+                  .arg(pagesBefore.size())
+                  .arg(rebuiltByInstall.join(QLatin1Char(',')),
+                       rebuiltByRemoval.join(QLatin1Char(','))));
     }
     check(previewDecodesFirstOpen > 0 &&
               previewDecodesFirstOpen <= packageCards.size() &&

@@ -169,7 +169,9 @@ page. The rail menu, the ⋯ menu and a plugin's icon on Home share one
   the app already links (`diffDecodeWebp`, `FORKMESH_HAVE_WEBP`), reading at
   most 16 MB; seven packages (App Store Status, RSS Reader, Code Map, Size
   Map, Strata, Ember, Synapse) ship only `.webp` previews. PNG and SVG need no
-  plugin.
+  plugin. The worker also hands back the image in the pixmap's own
+  format, so `QPixmap::fromImage` on the GUI thread has nothing to scan or
+  convert ([diagnostics.md](../desktop/diagnostics.md), report #20).
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,
   alt}]`, up to eight absolute `https://forkmesh.com/market/previews/...`
   URLs; a listed `.svg` is sent as its `.webp` sibling. Every SVG preview has a

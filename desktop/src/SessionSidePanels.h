@@ -80,6 +80,7 @@ public:
     void clearActivity();
     void append(const QJsonObject &event);
     void replaceActivity(const QList<QJsonObject> &events);
+    void appendActivity(const QList<QJsonObject> &events, qsizetype from);
     void setDetails(const Details &details);
     void setRemoteActions(std::function<void(bool)> toggle, std::function<void()> connect);
     void setSubSessions(const QList<SubSession> &subSessions, bool canStop,
