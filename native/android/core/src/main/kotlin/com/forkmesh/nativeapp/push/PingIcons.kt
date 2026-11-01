@@ -43,6 +43,8 @@ val PING_KIND_ICONS: Map<String, String> = mapOf(
     "timer_finished" to "⌛",
     "desktop_ping" to "💻",
     "agent_approval" to "✋",
+    "action_approval" to "🚦",
+    "action_failed" to "❌",
     "repo_activity" to "📦",
     "code_push" to "📤",
     "security_alert" to "🚨",

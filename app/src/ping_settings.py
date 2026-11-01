@@ -63,6 +63,8 @@ PING_KIND_CATALOG = (
     ("mirror_request", "repositories", "Mirror requests"),
     ("repository_hosted", "repositories", "Imports finished hosting"),
     ("package_review", "repositories", "Reviews of your Market packages"),
+    ("action_approval", "repositories", "Checks waiting for your approval"),
+    ("action_failed", "repositories", "Failed workflow runs"),
     ("org_succession", "organizations", "Organization succession"),
     ("organization_task_update", "organizations", "Tasks"),
     ("bounty_funded", "rewards", "Bounties funded"),

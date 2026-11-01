@@ -39,6 +39,8 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "timer_finished" -> "timer_outlined"
     "desktop_ping" -> "desktop_windows_outlined"
     "agent_approval" -> "verified_user_outlined"
+    "action_approval" -> "verified_user_outlined"
+    "action_failed" -> "error_outline"
     "repo_activity" -> "commit_outlined"
     "code_push" -> "commit_outlined"
     "security_alert" -> "gpp_maybe_outlined"

@@ -41,6 +41,8 @@ PUSH_KIND_ICONS = {
     "timer_finished": "\u231B",
     "desktop_ping": "\U0001F4BB",
     "agent_approval": "\u270B",
+    "action_approval": "\U0001F6A6",
+    "action_failed": "\u274C",
     "repo_activity": "\U0001F4E6",
     "code_push": "\U0001F4E4",
     "security_alert": "\U0001F6A8",

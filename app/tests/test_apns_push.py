@@ -1820,3 +1820,17 @@ def test_an_agent_approval_carries_its_approval_and_breaks_through(apns):
         dict(_PING, category="agent-finished"), "pings"))
     assert "interruption-level" not in finished["aps"]
     assert "approvalId" not in finished
+
+
+def test_an_actions_approval_carries_the_pull_head_and_breaks_through(apns):
+    alert = dict(_PING, category="actions-approval", runId="700",
+                 repo="forkmesh/site", number="7", head="1" * 40)
+    payload = json.loads(apns.alert_payload(alert, "pings"))
+    assert payload["aps"]["category"] == "actions-approval"
+    assert payload["aps"]["interruption-level"] == "time-sensitive"
+    assert (payload["runId"], payload["repo"], payload["number"],
+            payload["head"]) == ("700", "forkmesh/site", "7", "1" * 40)
+    failed = json.loads(apns.alert_payload(
+        dict(_PING, category="ci-failed", runId="701"), "pings"))
+    assert "interruption-level" not in failed["aps"]
+    assert failed["runId"] == "701"

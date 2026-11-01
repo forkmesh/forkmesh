@@ -909,6 +909,8 @@ NOTIFICATION_KINDS = frozenset({
     "timer_finished",
     "desktop_ping",
     "agent_approval",
+    "action_approval",
+    "action_failed",
     # Something moved in a repository you host or help run, with nothing
     # filed in an inbox to show for it (adhoc #295): a push, a merged pull
     # request. Issues, pull requests and comments keep their own kinds.
@@ -3603,6 +3605,13 @@ async def _apns_ping_alert(env, record):
         alert["approvalId"] = clean_string(meta.get("approvalId", ""), 64)
         if session:
             alert["threadId"] = "agent-approval:" + session
+    if (record.get("kind") in ("action_approval", "action_failed")
+            and isinstance(meta, dict)):
+        alert["category"] = clean_string(meta.get("category", ""), 40)
+        alert["runId"] = clean_string(str(meta.get("runId") or ""), 20)
+        alert["number"] = clean_string(str(meta.get("number") or ""), 12)
+        alert["head"] = clean_string(meta.get("head", ""), 64)
+        alert["repo"] = item["repo"]
     return alert
 
 
@@ -40858,7 +40867,7 @@ def _push_alert_item(it, aliases=None, avatars=None):
         # email links to: the numbered record when the ping names one, else
         # the site path the ping stored for itself.
         "href": ((item_path + _notification_stored_tail(
-                     it, stored_repo, number)) if item_path
+                     it, stored_repo, number if segment else 0)) if item_path
                  else _notification_stored_path(it.get("href", ""))),
     }
 
@@ -40930,7 +40939,8 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     # The record path when the ping names one, else whatever exact
     # address it recorded for itself.
     path = _notification_item_path(repo, segment, number)
-    path = ((path + _notification_stored_tail(it, stored_repo, number))
+    path = ((path + _notification_stored_tail(
+                it, stored_repo, number if segment else 0))
             if path else _notification_stored_path(it.get("href", "")))
     url = _notification_item_url(base_url, path)
     when = _format_email_ts(it.get("ts"))

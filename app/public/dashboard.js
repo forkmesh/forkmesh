@@ -48675,6 +48675,8 @@ Your reply
       timer_finished: "timer",
       desktop_ping: "monitor",
       agent_approval: "hand",
+      action_approval: "shield-check",
+      action_failed: "circle-x",
       hackathon_squad: "users",
       hackathon_reward: "gift",
       badge: "award",

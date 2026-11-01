@@ -126,6 +126,8 @@ public struct ForkNotification: Equatable, Hashable, Sendable, Identifiable {
         case "timer_finished": return "Timer"
         case "desktop_ping": return "Desktop"
         case "agent_approval": return "Approval"
+        case "action_approval": return "Checks to approve"
+        case "action_failed": return "Run failed"
         case "repo_activity": return "Repo activity"
         case "code_push": return "Code push"
         default: return "Notification"
