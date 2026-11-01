@@ -95,6 +95,7 @@ struct BranchesScreen: View {
                             .disabled(running != nil)
                         }
                     }
+                    .textSelection(.disabled)
                     .contextMenu {
                         if !branch.isDefault {
                             if defaultRow != nil {

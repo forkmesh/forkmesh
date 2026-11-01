@@ -149,6 +149,37 @@ copy is rewritten to match). Autosave pauses until one is chosen. A conflict is
 no longer saved as a stray local copy of a Cloud only note; other cloud errors
 still fall back to this computer as before.
 
+## Editing a note with AI
+
+While a note you can edit (owner or editor, any storage, a new unsaved note
+too) is open in the editor, the window's composer edits that note. The page
+answers `hostPromptTarget()` with "edit this note with AI…" as the placeholder,
+the action "Edit this note with Claude Code" (or Codex: the default agent), and
+`appliesToOpen`, so the composer's **add** button (Enter, and "Add" in the new
+layout) sends the text to the note, while **new** keeps its usual job of
+starting a session, issue, task or new note. A page view, a view-only note or
+no open note gives no target, and the composer behaves as on any other page.
+
+`submitHostPrompt()` sends the default agent, through the host's `askAgent`,
+`noteAiEditPrompt()` from `NoteTools.h`: the instruction, the title and the
+whole body between markers, asking for one JSON object `{"title", "markdown"}`
+holding the complete note after the edit and treating the body as material,
+not instructions. The agent runs read-only (plan mode, low effort, five-minute
+limit). Attachments, an empty instruction, an unresolved save conflict or a
+default agent other than Claude Code or Codex are refused with a notice and
+the text stays in the composer.
+
+While it works the title and source are read-only and the save label reads
+"AI is editing…"; a second instruction is refused. `parseNoteAiEdit()` takes
+the first `{` to the last `}` (so a fenced or chatty answer still reads) and
+needs a string `markdown`; the title is used only when it differs (cut to 200
+characters). The new body replaces the source in one undo step, so Ctrl+Z in
+Write brings the old text back; the note then saves the usual way (autosave
+for Cloud only, an immediate Save for Local and Local + cloud, which adds a
+version). The answer is dropped when another note was opened, the note was
+deleted, or its text or title changed meanwhile (a reload from the relay), and
+the notice says why.
+
 ## Sharing
 
 Share (owner only) opens a people panel: User / Organization, name, Can edit /
@@ -219,10 +250,24 @@ the preview; their alt text is printed instead.
 
 ## Links to a note
 
-`forkmesh://note/<id>`, `<relay>/dashboard/notes?note=<id>` and
-`<relay>/dashboard/notes/<id>` open the note in the app, both when clicked
-inside it (`openBodyReference()`, `openReferenceLink()`) and when the system
-hands the link to the app (`main.cpp`, `isLocalActionLink()`). A web link is
+`forkmesh://note/<id>`, `<relay>/dashboard/notes?note=<id>`,
+`<relay>/dashboard/notes/<id>` and the published page `<relay>/notes/<id>`
+open the note in the app, both when clicked inside it (`openBodyReference()`,
+`openReferenceLink()`) and when the system hands the link to the app
+(`main.cpp`, `isLocalActionLink()`). A published note is readable by anyone
+through `GET /api/notes/<id>` (role `public`), so its page link opens in the
+app too instead of leaving for the browser.
+
+A task converted from a note carries the note's published link in its details
+("Converted from the note … (published at …)"). The Tasks page sends every
+link in a task's detail and field panes through the window's
+`note.openLink` command first (`MainWindow::runWindowCommand()`), so a note link
+opens the Notes page and only other links go to the browser. The web Tasks page
+(`taskNoteLinkHref()` in `09-tasks.js`) opens such a link, or a
+`/dashboard/notes` link, on the dashboard Notes page in the same tab, and the
+phone apps route `/notes/<id>` (32 hex characters, the server's own match in
+`app_runtime.py`) to the note instead of reading it as an `owner/repo`
+shortcut. A web link is
 only taken when its host is the relay this app uses; a link to another host
 says so instead of opening something else. `forkmesh::notes::parseNoteLink()`
 is the single parser.

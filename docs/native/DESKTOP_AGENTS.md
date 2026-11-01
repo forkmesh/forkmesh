@@ -106,6 +106,14 @@ ten minutes.
   soon as they arrive, merged with the node runs it already had; the node runs
   follow when the API answers. Before this the list waited for both, so the
   account API held back a desktop that had answered over the LAN.
+- **No empty list before the desktop answers (2026-11-01).** The Agents tab
+  showed "No agent sessions yet" as soon as the relay's session list came back
+  empty, while `AgentControlCenter` was still dialling the desktop (LAN grace,
+  then the relay handshake); the desktop's agents appeared seconds later. The
+  center now sets `listed` once its first full load (the desktop in use and the
+  account's node runs, not the other desktops) has published, and
+  `resetForProjectSwitch` clears it on iOS. Until then an empty list shows the
+  "Loading agents" skeleton on both phones (`awaitingFirstList`).
 - `onMeshChanged` sets `dialQueued` when it queues an automatic dial and
   ignores further calls until the dial starts. Before that, the status read
   `connecting` only once the queued dial ran, so a second trigger in between (a

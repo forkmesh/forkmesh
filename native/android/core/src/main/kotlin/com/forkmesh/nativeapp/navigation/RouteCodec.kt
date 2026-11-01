@@ -199,6 +199,7 @@ object RouteCodec {
             Route.Kind.VideoMixDjStudio -> Route.VideoMixDjStudio
             Route.Kind.Poker -> Route.Poker(s("table"))
             Route.Kind.InstanceFeed -> Route.InstanceFeed(s("post"))
+            Route.Kind.Mastodon -> Route.Mastodon
             Route.Kind.SecureDrive -> Route.SecureDrive
             Route.Kind.Files -> Route.Files
             Route.Kind.Nexus -> Route.Nexus

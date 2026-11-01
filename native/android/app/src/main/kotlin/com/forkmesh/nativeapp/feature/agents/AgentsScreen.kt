@@ -324,10 +324,14 @@ internal class AgentsScreen : Screen() {
         }
     }
 
+    private fun awaitingFirstList(): Boolean =
+        !AgentsFeature.control.listed && AgentsList.flatten(shown).isEmpty() && AgentsList.sealed(shown) == 0 &&
+            liveDesktopRows().isEmpty()
+
     @Composable
     private fun Pending(): Boolean {
         val c = Fm.colors
-        if (!loaded && loading) {
+        if ((!loaded && loading) || awaitingFirstList()) {
             Box(Modifier.fillMaxWidth().height(320.dp)) { FmSkeletonList(rows = 4, label = "Loading agents") }
             return true
         }

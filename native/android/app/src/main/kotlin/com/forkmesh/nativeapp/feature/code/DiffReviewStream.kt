@@ -86,6 +86,7 @@ import com.forkmesh.nativeapp.ui.kit.FmChangeBadge
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatus
@@ -679,76 +680,78 @@ private fun FileHeaderRow(
     val detail = DiffReviewText.detail(file)
     DisableSelection {
         Box(modifier) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 36.dp)
-                    .background(if (viewed) c.bgOverlay else c.bgRaised)
-                    .combinedClickable(
-                        onClick = {
-                            if (viewed) {
-                                haptics.selection()
-                                model.toggleFold(index)
-                            } else {
-                                onJumpToFile(index)
-                            }
-                        },
-                        onLongClick = { menu = true },
-                    )
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (viewed) {
-                    FmIcon(if (folded) "chevron_right" else "expand_more", size = 18.dp, tint = c.textSecondary, contentDescription = DiffReviewText.foldHint(folded))
-                    Spacer(Modifier.width(4.dp))
-                }
-                FmChangeBadge(diffChangeKind(file.status), size = 18.dp)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = if (viewed) c.textSecondary else c.textPrimary)) {
-                            append(DiffReviewText.name(file))
-                        }
-                        if (detail.isNotEmpty()) withStyle(SpanStyle(color = c.textTertiary, fontSize = 11.sp)) { append("  $detail") }
-                    },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis,
-                    style = Fm.mono(size = 13.sp),
-                )
-                Spacer(Modifier.width(4.dp))
-                if (file.binary) {
-                    Text("BIN", style = Fm.mono(size = 11.sp, color = c.textTertiary))
-                } else {
-                    Row(Modifier.semantics(mergeDescendants = true) { contentDescription = DiffReviewText.countsTooltip(file) }) {
-                        Text("+${file.additions}", style = Fm.mono(size = 11.sp, weight = FmType.emphasis, color = c.success))
-                        Spacer(Modifier.width(3.dp))
-                        Text("−${file.deletions}", style = Fm.mono(size = 11.sp, weight = FmType.emphasis, color = c.danger))
-                    }
-                }
-                Spacer(Modifier.width(2.dp))
-                Box(
-                    Modifier
-                        .size(36.dp)
-                        .clickable { haptics.selection(); menu = true }
-                        .semantics { contentDescription = "File actions" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    FmIcon("more_horiz", size = 18.dp, tint = c.textSecondary)
-                }
-                Spacer(Modifier.width(2.dp))
+            FmHoldArea {
                 Row(
                     Modifier
-                        .height(26.dp)
-                        .border(1.dp, if (viewed) c.success.copy(alpha = .7f) else c.border, RoundedCornerShape(6.dp))
-                        .clickable { onToggleViewed(index) }
-                        .semantics { contentDescription = (if (viewed) "Viewed. " else "Not viewed. ") + DiffReviewText.viewedHint(viewed) }
-                        .padding(horizontal = 6.dp),
+                        .fillMaxWidth()
+                        .heightIn(min = 36.dp)
+                        .background(if (viewed) c.bgOverlay else c.bgRaised)
+                        .combinedClickable(
+                            onClick = {
+                                if (viewed) {
+                                    haptics.selection()
+                                    model.toggleFold(index)
+                                } else {
+                                    onJumpToFile(index)
+                                }
+                            },
+                            onLongClick = { menu = true },
+                        )
+                        .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FmIcon(if (viewed) "check_box" else "check_box_outline_blank", size = 16.dp, tint = if (viewed) c.success else c.textTertiary)
-                    Spacer(Modifier.width(3.dp))
-                    Text("Viewed", style = Fm.text.labelSmall.copy(color = if (viewed) c.success else c.textSecondary, fontWeight = FmType.emphasis))
+                    if (viewed) {
+                        FmIcon(if (folded) "chevron_right" else "expand_more", size = 18.dp, tint = c.textSecondary, contentDescription = DiffReviewText.foldHint(folded))
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    FmChangeBadge(diffChangeKind(file.status), size = 18.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = if (viewed) c.textSecondary else c.textPrimary)) {
+                                append(DiffReviewText.name(file))
+                            }
+                            if (detail.isNotEmpty()) withStyle(SpanStyle(color = c.textTertiary, fontSize = 11.sp)) { append("  $detail") }
+                        },
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.MiddleEllipsis,
+                        style = Fm.mono(size = 13.sp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    if (file.binary) {
+                        Text("BIN", style = Fm.mono(size = 11.sp, color = c.textTertiary))
+                    } else {
+                        Row(Modifier.semantics(mergeDescendants = true) { contentDescription = DiffReviewText.countsTooltip(file) }) {
+                            Text("+${file.additions}", style = Fm.mono(size = 11.sp, weight = FmType.emphasis, color = c.success))
+                            Spacer(Modifier.width(3.dp))
+                            Text("−${file.deletions}", style = Fm.mono(size = 11.sp, weight = FmType.emphasis, color = c.danger))
+                        }
+                    }
+                    Spacer(Modifier.width(2.dp))
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clickable { haptics.selection(); menu = true }
+                            .semantics { contentDescription = "File actions" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        FmIcon("more_horiz", size = 18.dp, tint = c.textSecondary)
+                    }
+                    Spacer(Modifier.width(2.dp))
+                    Row(
+                        Modifier
+                            .height(26.dp)
+                            .border(1.dp, if (viewed) c.success.copy(alpha = .7f) else c.border, RoundedCornerShape(6.dp))
+                            .clickable { onToggleViewed(index) }
+                            .semantics { contentDescription = (if (viewed) "Viewed. " else "Not viewed. ") + DiffReviewText.viewedHint(viewed) }
+                            .padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FmIcon(if (viewed) "check_box" else "check_box_outline_blank", size = 16.dp, tint = if (viewed) c.success else c.textTertiary)
+                        Spacer(Modifier.width(3.dp))
+                        Text("Viewed", style = Fm.text.labelSmall.copy(color = if (viewed) c.success else c.textSecondary, fontWeight = FmType.emphasis))
+                    }
                 }
             }
             Box(

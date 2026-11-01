@@ -244,4 +244,103 @@ class BugReportApiTest {
         val missing = Wired(status = 404, body = mapOf("error" to "attachment_missing")).api.bugReportAttachment("r1", "a1")
         expect(missing.message.contains("no longer available"), missing.message)
     }
+
+    fun testASignedInUserListsTheBugsTheyReported() {
+        val wired = Wired(
+            status = 200,
+            body = mapOf(
+                "ok" to true, "offset" to 50, "nextOffset" to 100,
+                "counts" to mapOf("new" to 1, "triaged" to 2, "closed" to 3),
+                "reports" to listOf(
+                    mapOf(
+                        "id" to "b".repeat(32), "status" to "triaged", "severity" to "high", "platform" to "android",
+                        "appVersion" to "0.1.0+1", "createdAt" to 1_783_463_371_000, "message" to "Repos tab spins.",
+                        "screen" to "code", "package" to "notes", "confirmedFixedAt" to 0,
+                        "attachments" to listOf(mapOf("name" to "screen.png", "size" to 6)),
+                    ),
+                ),
+            ),
+        )
+        wired.api.sessionTokenProvider = { "session-token" }
+        val page = wired.api.myBugReports(offset = 50)
+        expect(page.ok)
+        assertEq(2, page.counts["triaged"])
+        assertEq(100, page.nextOffset)
+        val report = page.reports.single()
+        assertEq("b".repeat(32), report.id)
+        assertEq("triaged", report.status)
+        assertEq("high", report.severity)
+        assertEq("0.1.0+1", report.appVersion)
+        assertEq("code", report.screen)
+        assertEq("notes", report.packageId)
+        assertEq(1_783_463_371_000L, report.createdAt)
+        assertEq(0L, report.confirmedFixedAt)
+        expect(!report.confirmedFixed)
+        assertEq("screen.png", report.attachments.single().name)
+        assertEq(6L, report.attachments.single().size)
+        val request = wired.transport.requests.single()
+        assertEq("GET", request.method)
+        assertEq("/api/bug-reports/mine", request.path())
+        assertEq(mapOf("offset" to "50"), request.query())
+        assertEq("Bearer session-token", request.headers["Authorization"])
+        val first = Wired(status = 200, body = mapOf("ok" to true, "reports" to emptyList<Any>(), "nextOffset" to null))
+        val empty = first.api.myBugReports()
+        expect(empty.ok)
+        expect(empty.reports.isEmpty())
+        assertEq(null, empty.nextOffset)
+        assertEq(emptyMap<String, String>(), first.transport.requests.single().query())
+    }
+
+    fun testMyReportsRefusalsAreSentences() {
+        val signedOut = Wired(status = 401, body = mapOf("error" to "sign_in_required")).api.myBugReports()
+        expect(!signedOut.ok)
+        expect(signedOut.message.contains("Sign in"), signedOut.message)
+        val old = Wired(status = 404, body = mapOf("error" to "not_found")).api.myBugReports()
+        expect(old.message.contains("Update the relay"), old.message)
+        val offline = Wired().apply { offline = IOException("no route to host") }.api.myBugReports()
+        expect(offline.message.contains("Could not reach ForkMesh"), offline.message)
+        val cancelled = Wired().apply { this.offline = java.io.InterruptedIOException("interrupted") }.api.myBugReports()
+        expect(cancelled.cancelled)
+        assertEq("", cancelled.message)
+    }
+
+    fun testAReporterConfirmsTheirBugIsFixed() {
+        val id = "c".repeat(32)
+        val wired = Wired(
+            status = 200,
+            body = mapOf(
+                "ok" to true, "previous" to "triaged",
+                "counts" to mapOf("new" to 0, "triaged" to 0, "closed" to 1),
+                "report" to mapOf("id" to id, "status" to "closed", "message" to "Repos tab spins.", "confirmedFixedAt" to 1_783_463_999_000),
+            ),
+        )
+        wired.api.sessionTokenProvider = { "session-token" }
+        val result = wired.api.confirmBugReportFixed(id)
+        expect(result.ok)
+        assertEq("triaged", result.previous)
+        assertEq(1, result.counts["closed"])
+        val report = result.report!!
+        assertEq("closed", report.status)
+        assertEq(1_783_463_999_000L, report.confirmedFixedAt)
+        expect(report.confirmedFixed)
+        val request = wired.transport.requests.single()
+        assertEq("POST", request.method)
+        assertEq("/api/bug-reports/mine", request.path())
+        assertEq(mapOf("report" to id, "fixed" to true), request.bodyJson())
+        assertEq("Bearer session-token", request.headers["Authorization"])
+    }
+
+    fun testConfirmingSomeoneElsesReportIsRefused() {
+        val missing = Wired(status = 404, body = mapOf("error" to "report_missing")).api.confirmBugReportFixed("r1")
+        expect(!missing.ok)
+        assertEq(null, missing.report)
+        assertEq("That report is no longer in your list.", missing.message)
+        val signedOut = Wired(status = 401, body = mapOf("error" to "sign_in_required")).api.confirmBugReportFixed("r1")
+        expect(signedOut.message.contains("Sign in"), signedOut.message)
+        val old = Wired(status = 404, body = mapOf("error" to "not_found")).api.confirmBugReportFixed("r1")
+        expect(old.message.contains("Update the relay"), old.message)
+        val noReport = Wired(status = 200, body = mapOf("ok" to true)).api.confirmBugReportFixed("r1")
+        expect(!noReport.ok)
+        expect(noReport.message.contains("could not be confirmed"), noReport.message)
+    }
 }

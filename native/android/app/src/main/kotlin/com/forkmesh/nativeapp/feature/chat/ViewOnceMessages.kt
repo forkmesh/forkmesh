@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -458,109 +459,111 @@ private fun ViewOnceRecorderDialog(conversation: String, kind: ViewOnceKind, onC
         }
     }
 
-    Dialog(
-        onDismissRequest = { if (phase != RecordPhase.Sending) close() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
-    ) {
-        Column(
-            Modifier.fillMaxSize().background(Color.Black).padding(FmSpace.x4),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    DisableSelection {
+        Dialog(
+            onDismissRequest = { if (phase != RecordPhase.Sending) close() },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (kind == ViewOnceKind.VIDEO) "View-once video" else "View-once voice message",
-                    modifier = Modifier.weight(1f),
-                    style = Fm.text.titleMedium.copy(color = Color.White),
-                )
-                FmIconButton(icon = "close", label = "Discard and close", color = Color.White, onPressed = { if (phase != RecordPhase.Sending) close() })
-            }
-            Text(
-                "The other person can play it once. It is deleted after that, or after 7 days.",
-                modifier = Modifier.fillMaxWidth(),
-                style = Fm.text.bodySmall.copy(color = Color.White.copy(alpha = 0.7f)),
-            )
-            Spacer(Modifier.height(FmSpace.x3))
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                when {
-                    !allowed -> PermissionNote(kind, asked) { permission.launch(permissionsFor(kind)) }
-                    phase == RecordPhase.Review || phase == RecordPhase.Sending -> file?.let { ReviewPlayer(kind, it, durationMs) }
-                    kind == ViewOnceKind.VIDEO -> Box(
-                        Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(FmRadius.md)).background(Color.DarkGray)
-                            .semantics { contentDescription = "Front camera preview" },
-                    ) {
-                        AndroidView(
-                            factory = { ctx ->
-                                SurfaceView(ctx).apply {
-                                    this.holder.addCallback(object : SurfaceHolder.Callback {
-                                        override fun surfaceCreated(created: SurfaceHolder) {
-                                            holder = created
-                                            if (!video.preview(created)) error = "The camera could not be opened."
-                                        }
-
-                                        override fun surfaceChanged(changed: SurfaceHolder, format: Int, width: Int, height: Int) {}
-
-                                        override fun surfaceDestroyed(destroyed: SurfaceHolder) {
-                                            if (phase == RecordPhase.Recording) video.stop()
-                                            holder = null
-                                            video.release()
-                                        }
-                                    })
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    else -> Waveform(levels, Modifier.fillMaxWidth().height(120.dp))
-                }
-            }
-            Spacer(Modifier.height(FmSpace.x3))
-            val limit = ViewOnceCodec.durationLabel(kind.maxDurationMs)
-            val clock = when (phase) {
-                RecordPhase.Recording -> "${ViewOnceCodec.durationLabel(elapsed)} / $limit · ${ViewOnceCodec.durationLabel(kind.maxDurationMs - elapsed)} left"
-                RecordPhase.Review, RecordPhase.Sending -> ViewOnceCodec.durationLabel(durationMs)
-                RecordPhase.Ready -> "Up to $limit"
-            }
-            Text(
-                clock,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                style = Fm.text.titleSmall.copy(color = if (phase == RecordPhase.Recording) Fm.colors.danger else Color.White),
-            )
-            if (error.isNotEmpty()) {
-                Text(
-                    error,
-                    modifier = Modifier.padding(top = FmSpace.x1).semantics { liveRegion = LiveRegionMode.Assertive },
-                    style = Fm.text.bodySmall.copy(color = Fm.colors.danger),
-                    textAlign = TextAlign.Center,
-                )
-            }
-            if (phase == RecordPhase.Sending) {
-                Text(progress, modifier = Modifier.padding(top = FmSpace.x1), style = Fm.text.bodySmall.copy(color = Color.White))
-            }
-            Spacer(Modifier.height(FmSpace.x3))
-            Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x3), verticalAlignment = Alignment.CenterVertically) {
-                when (phase) {
-                    RecordPhase.Ready -> RecordButton(
-                        recording = false,
-                        enabled = allowed && (kind == ViewOnceKind.VOICE || holder != null),
-                        label = if (kind == ViewOnceKind.VIDEO) "Start recording video" else "Start recording voice",
-                        onTap = ::startRecording,
+            Column(
+                Modifier.fillMaxSize().background(Color.Black).padding(FmSpace.x4),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (kind == ViewOnceKind.VIDEO) "View-once video" else "View-once voice message",
+                        modifier = Modifier.weight(1f),
+                        style = Fm.text.titleMedium.copy(color = Color.White),
                     )
-                    RecordPhase.Recording -> RecordButton(recording = true, enabled = true, label = "Stop recording", onTap = ::stopRecording)
-                    RecordPhase.Review -> {
-                        FmToneButton(label = "Discard", icon = "delete_outline", tone = FmTone.Danger, onPressed = ::close, height = 44.dp)
-                        FmToneButton(
-                            label = "Record again",
-                            icon = "replay",
-                            onPressed = {
-                                discardFile()
-                                error = ""
-                                phase = RecordPhase.Ready
-                            },
-                            height = 44.dp,
-                        )
-                        FmToneButton(label = "Send", icon = "send", tone = FmTone.Accent, filled = true, onPressed = ::send, height = 44.dp)
+                    FmIconButton(icon = "close", label = "Discard and close", color = Color.White, onPressed = { if (phase != RecordPhase.Sending) close() })
+                }
+                Text(
+                    "The other person can play it once. It is deleted after that, or after 7 days.",
+                    modifier = Modifier.fillMaxWidth(),
+                    style = Fm.text.bodySmall.copy(color = Color.White.copy(alpha = 0.7f)),
+                )
+                Spacer(Modifier.height(FmSpace.x3))
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    when {
+                        !allowed -> PermissionNote(kind, asked) { permission.launch(permissionsFor(kind)) }
+                        phase == RecordPhase.Review || phase == RecordPhase.Sending -> file?.let { ReviewPlayer(kind, it, durationMs) }
+                        kind == ViewOnceKind.VIDEO -> Box(
+                            Modifier.fillMaxWidth().aspectRatio(3f / 4f).clip(RoundedCornerShape(FmRadius.md)).background(Color.DarkGray)
+                                .semantics { contentDescription = "Front camera preview" },
+                        ) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    SurfaceView(ctx).apply {
+                                        this.holder.addCallback(object : SurfaceHolder.Callback {
+                                            override fun surfaceCreated(created: SurfaceHolder) {
+                                                holder = created
+                                                if (!video.preview(created)) error = "The camera could not be opened."
+                                            }
+
+                                            override fun surfaceChanged(changed: SurfaceHolder, format: Int, width: Int, height: Int) {}
+
+                                            override fun surfaceDestroyed(destroyed: SurfaceHolder) {
+                                                if (phase == RecordPhase.Recording) video.stop()
+                                                holder = null
+                                                video.release()
+                                            }
+                                        })
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                        else -> Waveform(levels, Modifier.fillMaxWidth().height(120.dp))
                     }
-                    RecordPhase.Sending -> FmToneButton(label = "Sending", icon = "send", onPressed = null, height = 44.dp)
+                }
+                Spacer(Modifier.height(FmSpace.x3))
+                val limit = ViewOnceCodec.durationLabel(kind.maxDurationMs)
+                val clock = when (phase) {
+                    RecordPhase.Recording -> "${ViewOnceCodec.durationLabel(elapsed)} / $limit · ${ViewOnceCodec.durationLabel(kind.maxDurationMs - elapsed)} left"
+                    RecordPhase.Review, RecordPhase.Sending -> ViewOnceCodec.durationLabel(durationMs)
+                    RecordPhase.Ready -> "Up to $limit"
+                }
+                Text(
+                    clock,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    style = Fm.text.titleSmall.copy(color = if (phase == RecordPhase.Recording) Fm.colors.danger else Color.White),
+                )
+                if (error.isNotEmpty()) {
+                    Text(
+                        error,
+                        modifier = Modifier.padding(top = FmSpace.x1).semantics { liveRegion = LiveRegionMode.Assertive },
+                        style = Fm.text.bodySmall.copy(color = Fm.colors.danger),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                if (phase == RecordPhase.Sending) {
+                    Text(progress, modifier = Modifier.padding(top = FmSpace.x1), style = Fm.text.bodySmall.copy(color = Color.White))
+                }
+                Spacer(Modifier.height(FmSpace.x3))
+                Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x3), verticalAlignment = Alignment.CenterVertically) {
+                    when (phase) {
+                        RecordPhase.Ready -> RecordButton(
+                            recording = false,
+                            enabled = allowed && (kind == ViewOnceKind.VOICE || holder != null),
+                            label = if (kind == ViewOnceKind.VIDEO) "Start recording video" else "Start recording voice",
+                            onTap = ::startRecording,
+                        )
+                        RecordPhase.Recording -> RecordButton(recording = true, enabled = true, label = "Stop recording", onTap = ::stopRecording)
+                        RecordPhase.Review -> {
+                            FmToneButton(label = "Discard", icon = "delete_outline", tone = FmTone.Danger, onPressed = ::close, height = 44.dp)
+                            FmToneButton(
+                                label = "Record again",
+                                icon = "replay",
+                                onPressed = {
+                                    discardFile()
+                                    error = ""
+                                    phase = RecordPhase.Ready
+                                },
+                                height = 44.dp,
+                            )
+                            FmToneButton(label = "Send", icon = "send", tone = FmTone.Accent, filled = true, onPressed = ::send, height = 44.dp)
+                        }
+                        RecordPhase.Sending -> FmToneButton(label = "Sending", icon = "send", onPressed = null, height = 44.dp)
+                    }
                 }
             }
         }
@@ -830,113 +833,115 @@ private fun ViewOnceViewer(entry: ViewOnceEntry, onClose: () -> Unit) {
         onDispose { dropCopy() }
     }
 
-    Dialog(
-        onDismissRequest = {
-            dropCopy()
-            onClose()
-        },
-        properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = SecureFlagPolicy.SecureOn),
-    ) {
-        Column(
-            Modifier.fillMaxSize().background(Color.Black).padding(FmSpace.x4),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    DisableSelection {
+        Dialog(
+            onDismissRequest = {
+                dropCopy()
+                onClose()
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = SecureFlagPolicy.SecureOn),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(entry.kind.label, modifier = Modifier.weight(1f), style = Fm.text.titleMedium.copy(color = Color.White))
-                FmIconButton(
-                    icon = "close",
-                    label = if (started) "Close. The message is gone." else "Close without playing",
-                    color = Color.White,
-                    onPressed = {
-                        dropCopy()
-                        onClose()
-                    },
-                )
-            }
-            Text(ViewOnceCapture.SCREEN_NOTE, modifier = Modifier.fillMaxWidth(), style = Fm.text.bodySmall.copy(color = Color.White.copy(alpha = 0.7f)))
-            Spacer(Modifier.height(FmSpace.x3))
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val playing = file
-                when {
-                    phase == ViewerPhase.Loading -> Text(
-                        "Downloading and decrypting...",
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        style = Fm.text.bodyMedium.copy(color = Color.White),
-                    )
-                    phase == ViewerPhase.Failed -> Text(
-                        message,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
-                        style = Fm.text.bodyMedium.copy(color = Color.White),
-                        textAlign = TextAlign.Center,
-                    )
-                    phase == ViewerPhase.Finished -> Text(
-                        "Opened. This message has been deleted.",
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        style = Fm.text.bodyMedium.copy(color = Color.White),
-                        textAlign = TextAlign.Center,
-                    )
-                    playing != null && entry.kind == ViewOnceKind.VIDEO -> AndroidView(
-                        factory = { ctx ->
-                            VideoView(ctx).apply {
-                                setOnPreparedListener { media ->
-                                    media.isLooping = false
-                                    start()
-                                    begin()
-                                }
-                                setOnCompletionListener { finish() }
-                                setOnErrorListener { _, _, _ ->
-                                    message = "This video could not be played."
-                                    dropCopy()
-                                    phase = ViewerPhase.Failed
-                                    true
-                                }
-                                setVideoPath(playing.absolutePath)
-                            }
+            Column(
+                Modifier.fillMaxSize().background(Color.Black).padding(FmSpace.x4),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(entry.kind.label, modifier = Modifier.weight(1f), style = Fm.text.titleMedium.copy(color = Color.White))
+                    FmIconButton(
+                        icon = "close",
+                        label = if (started) "Close. The message is gone." else "Close without playing",
+                        color = Color.White,
+                        onPressed = {
+                            dropCopy()
+                            onClose()
                         },
-                        onRelease = { it.stopPlayback() },
-                        modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
-                            .semantics { contentDescription = "Video message from the sender, playing once" },
                     )
-                    playing != null -> {
-                        DisposableEffect(playing) {
-                            val next = MediaPlayer()
-                            runCatching {
-                                next.setDataSource(playing.absolutePath)
-                                next.setOnCompletionListener { finish() }
-                                next.setOnErrorListener { _, _, _ ->
+                }
+                Text(ViewOnceCapture.SCREEN_NOTE, modifier = Modifier.fillMaxWidth(), style = Fm.text.bodySmall.copy(color = Color.White.copy(alpha = 0.7f)))
+                Spacer(Modifier.height(FmSpace.x3))
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    val playing = file
+                    when {
+                        phase == ViewerPhase.Loading -> Text(
+                            "Downloading and decrypting...",
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            style = Fm.text.bodyMedium.copy(color = Color.White),
+                        )
+                        phase == ViewerPhase.Failed -> Text(
+                            message,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                            style = Fm.text.bodyMedium.copy(color = Color.White),
+                            textAlign = TextAlign.Center,
+                        )
+                        phase == ViewerPhase.Finished -> Text(
+                            "Opened. This message has been deleted.",
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            style = Fm.text.bodyMedium.copy(color = Color.White),
+                            textAlign = TextAlign.Center,
+                        )
+                        playing != null && entry.kind == ViewOnceKind.VIDEO -> AndroidView(
+                            factory = { ctx ->
+                                VideoView(ctx).apply {
+                                    setOnPreparedListener { media ->
+                                        media.isLooping = false
+                                        start()
+                                        begin()
+                                    }
+                                    setOnCompletionListener { finish() }
+                                    setOnErrorListener { _, _, _ ->
+                                        message = "This video could not be played."
+                                        dropCopy()
+                                        phase = ViewerPhase.Failed
+                                        true
+                                    }
+                                    setVideoPath(playing.absolutePath)
+                                }
+                            },
+                            onRelease = { it.stopPlayback() },
+                            modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+                                .semantics { contentDescription = "Video message from the sender, playing once" },
+                        )
+                        playing != null -> {
+                            DisposableEffect(playing) {
+                                val next = MediaPlayer()
+                                runCatching {
+                                    next.setDataSource(playing.absolutePath)
+                                    next.setOnCompletionListener { finish() }
+                                    next.setOnErrorListener { _, _, _ ->
+                                        message = "This voice message could not be played."
+                                        dropCopy()
+                                        phase = ViewerPhase.Failed
+                                        true
+                                    }
+                                    next.setOnPreparedListener {
+                                        it.start()
+                                        begin()
+                                    }
+                                    next.prepareAsync()
+                                    player = next
+                                }.onFailure {
+                                    next.release()
                                     message = "This voice message could not be played."
                                     dropCopy()
                                     phase = ViewerPhase.Failed
-                                    true
                                 }
-                                next.setOnPreparedListener {
-                                    it.start()
-                                    begin()
-                                }
-                                next.prepareAsync()
-                                player = next
-                            }.onFailure {
-                                next.release()
-                                message = "This voice message could not be played."
-                                dropCopy()
-                                phase = ViewerPhase.Failed
+                                onDispose {}
                             }
-                            onDispose {}
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            FmIcon("graphic_eq", size = 64.dp, tint = Fm.colors.accent)
-                            Spacer(Modifier.height(FmSpace.x2))
-                            Text(
-                                "${ViewOnceCodec.durationLabel(position)} / ${entry.durationLabel}",
-                                modifier = Modifier.semantics { contentDescription = "Voice message playing once" },
-                                style = Fm.text.titleSmall.copy(color = Color.White),
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                FmIcon("graphic_eq", size = 64.dp, tint = Fm.colors.accent)
+                                Spacer(Modifier.height(FmSpace.x2))
+                                Text(
+                                    "${ViewOnceCodec.durationLabel(position)} / ${entry.durationLabel}",
+                                    modifier = Modifier.semantics { contentDescription = "Voice message playing once" },
+                                    style = Fm.text.titleSmall.copy(color = Color.White),
+                                )
+                            }
                         }
                     }
                 }
-            }
-            if (phase == ViewerPhase.Finished || phase == ViewerPhase.Failed) {
-                FmToneButton(label = "Close", onPressed = onClose, tone = FmTone.Accent, height = 44.dp)
+                if (phase == ViewerPhase.Finished || phase == ViewerPhase.Failed) {
+                    FmToneButton(label = "Close", onPressed = onClose, tone = FmTone.Accent, height = 44.dp)
+                }
             }
         }
     }

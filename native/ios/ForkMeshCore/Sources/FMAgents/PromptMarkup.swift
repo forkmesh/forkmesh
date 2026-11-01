@@ -81,8 +81,11 @@ public enum CaptureAreaRules {
         return CaptureArea(x: left, y: top, width: right - left, height: bottom - top)
     }
 
-    public static func isContent(elementWidth: Double, elementHeight: Double, boundsWidth: Double, boundsHeight: Double) -> Bool {
+    public static func isContent(
+        elementWidth: Double, elementHeight: Double, boundsWidth: Double, boundsHeight: Double, isText: Bool = false
+    ) -> Bool {
         if elementWidth <= 0 || elementHeight <= 0 { return false }
+        if isText { return true }
         return elementWidth * elementHeight <= boundsWidth * boundsHeight * largestElementShare
     }
 }

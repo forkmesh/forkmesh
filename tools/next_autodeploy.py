@@ -409,13 +409,12 @@ def fleet_hosts(text: str, instances=None) -> dict:
     import tomllib
     import render
     data = tomllib.loads(text)
-    production = data.get("production") or {}
     cores = [n for n in data.get("nodes") or [] if n.get("role", "core") == "core"]
     render.fill_public_addresses(cores, instances)
     nodes = [{"name": n["name"], "ip": n["public_ipv4"]} for n in cores]
     return {"domain": data.get("domain", ""),
-            "app_host": production.get("app_host") or data.get("app_host", ""),
-            "world_host": production.get("world_host") or data.get("world_host", ""),
+            "app_host": data.get("app_host", ""),
+            "world_host": data.get("world_host", ""),
             "nodes": nodes}
 
 

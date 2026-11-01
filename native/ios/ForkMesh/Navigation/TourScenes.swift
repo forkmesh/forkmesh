@@ -397,6 +397,7 @@ struct TourVoiceScene: View {
         }
         .frame(width: 150, height: 150)
         .contentShape(Circle())
+        .textSelection(.disabled)
         .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 40, perform: {}, onPressingChanged: { (down: Bool) in
             pressed(down)
         })

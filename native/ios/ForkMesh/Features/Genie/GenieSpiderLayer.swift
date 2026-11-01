@@ -18,6 +18,7 @@ struct GenieSpiderLayer: View {
     @State private var coach: GenieHandCoach = GenieHandCoach.shared
     @State private var screen: GenieScreenPlayer = GenieScreenPlayer.shared
     @State private var outreach: GenieOutreachCoach = GenieOutreachCoach.shared
+    @State private var director: CloudDragonDirector = CloudDragonDirector.shared
     @State private var notifications: NotificationService? = Services.get(NotificationService.self)
     @State private var area: CGSize = .zero
     @GestureState private var grip: GenieGrip = GenieGrip()
@@ -26,7 +27,7 @@ struct GenieSpiderLayer: View {
 
     nonisolated static let clearEvery: Double = 1.5
 
-    private var size: CGFloat { min(scaled, GenieCrawler.base * 1.35) }
+    private var size: CGFloat { min(scaled, GenieCrawler.base * 1.35) * hub.mascotRatio }
 
     private var scale: CGFloat { GenieHub.fitted(hub.scale * grip.pinch) }
 
@@ -86,6 +87,9 @@ struct GenieSpiderLayer: View {
                 outreach.stageHidden = hidden
                 screen.active = scenePhase == .active
                 motion.begin()
+                #if DEBUG
+                CloudDragonLab.start()
+                #endif
                 hub.scene(active: scenePhase == .active)
                 hub.refreshVitals()
             }
@@ -108,6 +112,7 @@ struct GenieSpiderLayer: View {
             .task { await crawler.run() }
             .task { await screen.run() }
             .task { await outreach.run() }
+            .task { await director.run() }
             .task {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(GenieSpiderLayer.clearEvery))
@@ -189,7 +194,7 @@ struct GenieSpiderLayer: View {
     }
 
     private var spider: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / frameRate, paused: paused)) {
+        TimelineView(.animation(minimumInterval: interval, paused: paused)) {
             (timeline: TimelineViewDefaultContext) in
             let now: Date = timeline.date
             let place: CGPoint = crawler.point(at: now)
@@ -221,6 +226,11 @@ struct GenieSpiderLayer: View {
     private var frameRate: Double {
         if crawler.track?.flying == true || crawler.tumbling { return 60 }
         return coach.showing?.trick.magic != nil ? 30 : 24
+    }
+
+    private var interval: Double? {
+        guard hub.dragon else { return 1.0 / frameRate }
+        return director.lively ? nil : 1.0 / 30
     }
 
     private func magic(at now: Date, place: CGPoint) -> [GenieGlimmer] {
@@ -270,22 +280,25 @@ struct GenieSpiderLayer: View {
         return GenieAvatar(
             mood: mood, level: level, cue: cues.cue, ambient: true,
             lean: lean, vitals: hub.vitals, at: now, stride: crawler.stride(at: now),
-            show: coach.showing, gaze: coach.gaze(from: place) ?? screen.gaze(from: place, at: now), alarm: alarm)
+            show: coach.showing, gaze: coach.gaze(from: place) ?? screen.gaze(from: place, at: now), alarm: alarm,
+            place: place, turn: crawler.rotation(at: now), held: held, side: shown)
             .frame(width: shown, height: shown)
             .overlay { ear }
             .overlay { handBadge }
             .rotationEffect(.degrees(crawler.rotation(at: now)))
             .modifier(GenieTwist(manipulation: coach.manipulation, base: scale))
             .scaleEffect(lift)
-            .shadow(color: glow, radius: radius, y: drop)
+            .modifier(GenieGlowShadow(on: !hub.dragon, color: glow, radius: radius, drop: drop))
     }
 
     private func touchable(_ content: some View) -> some View {
         content
             .contentShape(Circle().scale(0.82))
             .onTapGesture { tapped() }
+            .textSelection(.disabled)
             .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 10) {
                 CaptureHold.noteHandled()
+                director.poke()
                 hub.openMenu()
             }
             .simultaneousGesture(handleGesture)
@@ -294,6 +307,7 @@ struct GenieSpiderLayer: View {
 
     private func tapped() {
         guard !crawler.held, !grip.dragging, Date().timeIntervalSince(movedAt) > 0.35 else { return }
+        director.poke()
         hub.tap()
     }
 
@@ -306,7 +320,7 @@ struct GenieSpiderLayer: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(Text("Genie"))
             .accessibilityValue(Text(accessibilityValue))
-            .accessibilityHint(Text("Tap for a tip. Touch and hold for more options, including Talk and Hide the spider. Drag it to an edge to tuck it away. Pinch to resize. Turn on hand play to use the front camera."))
+            .accessibilityHint(Text("Tap for a tip. Touch and hold for more options, including Talk and \(hub.dragon ? "Hide the dragon" : "Hide the spider"). Drag it to an edge to tuck it away. Pinch to resize. Turn on hand play to use the front camera."))
             .accessibilityAction { hub.tap() }
             .accessibilityAction(named: Text("Talk")) { hub.openBubble() }
             .accessibilityAction(named: Text("More options")) { hub.openMenu() }
@@ -316,7 +330,7 @@ struct GenieSpiderLayer: View {
             .accessibilityAction(named: Text("Make smaller")) { hub.resized(to: hub.scale * 0.8) }
             .accessibilityAction(named: Text("Do a trick")) { coach.surprise() }
             .accessibilityAction(named: hands) { coach.toggle() }
-            .accessibilityAction(named: Text("Hide the spider")) { hub.setSpiderHidden(true, fromMenu: true) }
+            .accessibilityAction(named: Text(hub.dragon ? "Hide the dragon" : "Hide the spider")) { hub.setSpiderHidden(true, fromMenu: true) }
             .accessibilityIdentifier("shell-genie-button")
     }
 
@@ -384,6 +398,7 @@ struct GenieSpiderLayer: View {
             .onChanged { (value: SimultaneousGesture<MagnifyGesture, DragGesture>.Value) in
                 movedAt = Date()
                 guard value.first == nil, !grip.pinching, let translation = value.second?.translation else { return }
+                director.poke()
                 crawler.drag(by: translation)
                 GenieTouchCoach.shared.moved(to: crawler.spot)
             }
@@ -651,7 +666,11 @@ struct GenieSpiderMenu: View {
                 hub.closeMenu()
                 hub.resetPlace()
             }
-            row("eye.slash", "Hide the spider", id: "genie-menu-hide") {
+            row(hub.dragon ? "ladybug" : "flame", hub.dragon ? "Switch to the spider" : "Switch to Cloud Dragon", id: "genie-menu-mascot") {
+                hub.closeMenu()
+                hub.setMascot(hub.mascot.other)
+            }
+            row("eye.slash", hub.dragon ? "Hide the dragon" : "Hide the spider", id: "genie-menu-hide") {
                 hub.setSpiderHidden(true, fromMenu: true)
             }
         }
@@ -752,6 +771,21 @@ struct GenieHealthCard: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(title) \(Int((value * 100).rounded())) percent"))
+    }
+}
+
+struct GenieGlowShadow: ViewModifier {
+    let on: Bool
+    let color: Color
+    let radius: CGFloat
+    let drop: CGFloat
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if on {
+            content.shadow(color: color, radius: radius, y: drop)
+        } else {
+            content
+        }
     }
 }
 

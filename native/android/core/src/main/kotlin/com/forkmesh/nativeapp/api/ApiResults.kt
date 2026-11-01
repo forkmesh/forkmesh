@@ -232,6 +232,89 @@ data class BugReportStatusChange(
     }
 }
 
+data class MyBugReport(
+    val id: String,
+    val status: String,
+    val severity: String,
+    val platform: String,
+    val appVersion: String,
+    val createdAt: Long,
+    val message: String,
+    val screen: String,
+    val packageId: String,
+    val confirmedFixedAt: Long,
+    val attachments: List<BugReportInboxAttachment>,
+) {
+    val confirmedFixed: Boolean get() = confirmedFixedAt > 0
+
+    companion object {
+        fun from(json: Map<String, Any?>) = MyBugReport(
+            id = json.str("id"),
+            status = json.str("status", "new"),
+            severity = json.str("severity", "normal"),
+            platform = json.str("platform"),
+            appVersion = json.str("appVersion"),
+            createdAt = json.long("createdAt"),
+            message = json.str("message"),
+            screen = json.str("screen"),
+            packageId = json.str("package"),
+            confirmedFixedAt = json.long("confirmedFixedAt"),
+            attachments = json.maps("attachments").map(BugReportInboxAttachment::from),
+        )
+    }
+}
+
+data class MyBugReports(
+    val ok: Boolean,
+    val reports: List<MyBugReport> = emptyList(),
+    val counts: Map<String, Int> = emptyMap(),
+    val nextOffset: Int? = null,
+    val message: String = "",
+    val cancelled: Boolean = false,
+) {
+    companion object {
+        val CANCELLED_LOAD = MyBugReports(ok = false, cancelled = true)
+
+        fun from(json: Map<String, Any?>): MyBugReports {
+            val counts = json.obj("counts")
+            return MyBugReports(
+                ok = true,
+                reports = json.maps("reports").map(MyBugReport::from),
+                counts = counts.keys.associateWith { counts.int(it) },
+                nextOffset = if (json["nextOffset"] == null) null else json.int("nextOffset"),
+            )
+        }
+
+        fun failure(message: String) = MyBugReports(ok = false, message = message)
+    }
+}
+
+data class MyBugReportConfirmation(
+    val ok: Boolean,
+    val report: MyBugReport? = null,
+    val previous: String = "",
+    val counts: Map<String, Int> = emptyMap(),
+    val message: String = "",
+) {
+    companion object {
+        fun from(json: Map<String, Any?>): MyBugReportConfirmation {
+            val report = json.obj("report")
+            if (report.str("id").isEmpty()) return failure(MY_BUG_REPORT_CONFIRM_FAILED)
+            val counts = json.obj("counts")
+            return MyBugReportConfirmation(
+                ok = true,
+                report = MyBugReport.from(report),
+                previous = json.str("previous"),
+                counts = counts.keys.associateWith { counts.int(it) },
+            )
+        }
+
+        fun failure(message: String) = MyBugReportConfirmation(ok = false, message = message)
+
+        const val MY_BUG_REPORT_CONFIRM_FAILED = "The fix could not be confirmed. Try again in a moment."
+    }
+}
+
 class BugReportFile(val ok: Boolean, val data: ByteArray = ByteArray(0), val contentType: String = "", val message: String = "") {
     companion object {
         fun failure(message: String) = BugReportFile(ok = false, message = message)

@@ -1,7 +1,7 @@
-"""``GET /health/mobile`` on world.next: world/worker.js mobileWorldHealth().
+"""``GET /health/mobile`` on world.forkmesh.com: world/worker.js mobileWorldHealth().
 
 On Cloudflare the World Worker answered this from its static-asset binding.
-On Next, Caddy serves world.next from the release's ``world/dist`` and routes
+On Next, Caddy serves world.forkmesh.com from the release's ``world/dist`` and routes
 only ``/health/mobile`` to the app (deploy/core/caddy_routes.py); the host
 answers it here, before the Worker entry, when the request's Host is the
 World origin's host. It checks the same asset contracts against the files in

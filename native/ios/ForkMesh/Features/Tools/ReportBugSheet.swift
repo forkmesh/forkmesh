@@ -15,6 +15,7 @@ struct ReportBugSheet: View {
     @State private var model: ReportBugModel
     @State private var importing = false
     @State private var inbox: BugReportInboxModel?
+    @State private var mine: MyBugReportsModel?
     @State private var tab = 0
     private let onClose: (() -> Void)?
     private let onFinished: ((Bool) -> Void)?
@@ -31,8 +32,11 @@ struct ReportBugSheet: View {
         _model = State(initialValue: ReportBugModel(
             screen: screen, package: package, packageName: packageName, build: build, signedIn: signedIn,
             api: Services.get(ApiService.self)))
-        let admin = package.isEmpty && (Services.get(AuthService.self)?.session?.isAdmin ?? false)
+        let isAdmin = Services.get(AuthService.self)?.session?.isAdmin ?? false
+        let admin = package.isEmpty && isAdmin
         _inbox = State(initialValue: admin ? BugReportInboxModel(api: Services.get(ApiService.self)) : nil)
+        let reporter = package.isEmpty && signedIn && !isAdmin
+        _mine = State(initialValue: reporter ? MyBugReportsModel(api: Services.get(ApiService.self)) : nil)
         self.onClose = onClose
         self.onFinished = onFinished
     }
@@ -46,9 +50,18 @@ struct ReportBugSheet: View {
                            FmSegmentTab(label: BugReportInboxModel.tabReported, count: inbox.counts["new"])],
                     index: tab, onChanged: { tab = $0 })
                     .accessibilityIdentifier("report-bug-tabs")
+            } else if mine != nil {
+                FmSegmentTabBar(
+                    tabs: [FmSegmentTab(label: BugReportInboxModel.tabReport),
+                           FmSegmentTab(label: MyBugReportsModel.tabMine)],
+                    index: tab, onChanged: { tab = $0 })
+                    .accessibilityIdentifier("report-bug-tabs")
             }
             if let inbox, tab == 1 {
                 BugReportInboxView(model: inbox)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else if let mine, tab == 1 {
+                MyBugReportsView(model: mine)
                     .frame(maxHeight: .infinity, alignment: .top)
             } else {
                 ScrollView {

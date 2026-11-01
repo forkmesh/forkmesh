@@ -484,6 +484,7 @@ struct ShellBarFolderCell: View {
                 .contentShape(shape)
         }
         .buttonStyle(ShellBarButtonStyle())
+        .textSelection(.disabled)
         .contextMenu {
             ShellBarFolderMenu(
                 folder: folder, items: items, prefs: prefs, onOpen: { open = true }, onName: onName,
@@ -562,6 +563,7 @@ struct ShellBarFolderCell: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(ShellBarButtonStyle())
+        .textSelection(.disabled)
         .contextMenu {
             ShellBarItemMenu(
                 item: item, items: items, prefs: prefs,

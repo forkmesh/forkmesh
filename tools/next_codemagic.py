@@ -6,7 +6,7 @@
     next_codemagic.py create-app [--team <id>] [--execute]   # once; see below
 
 The Codemagic application clones
-``https://fmnext-ci:<GIT_CI_PASSWORD>@app.next.forkmesh.com/git/forkmesh-next.git``
+``https://fmnext-ci:<GIT_CI_PASSWORD>@app.forkmesh.com/git/forkmesh-next.git``
 (tools/next_git_host.py). Its id is kept in ``<config>/codemagic-next.json``
 (0600; ``appId`` is not secret). Workflows are in ``codemagic.yaml``.
 

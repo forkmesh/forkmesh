@@ -1,0 +1,62 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "forum",
+  "name": "Forum",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Repositories",
+  "version": "1.0.0",
+  "summary": "The Forum tab of a repository: a Discourse-style forum with categories, subcategories, tags, Latest and Top lists and topic pages, kept in the repository so every mirror carries it.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A forum's categories with their colours, topic counts and latest topics"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "web": "builtin:forum",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "repository.forum.read",
+      "label": "Read the forums kept in repositories you can access",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account",
+    "places": ["web"]
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

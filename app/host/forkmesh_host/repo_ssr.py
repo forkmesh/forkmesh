@@ -130,7 +130,7 @@ SHORT_SUB_RE = re.compile(
 SUB_TABS = ("issues", "pulls", "discussions", "insights", "projects", "actions")
 SUB_OTHER_ROUTES = frozenset({
     "branches", "commits", "sizemap", "releases", "mirrors", "agents",
-    "settings", "compare", "network", "security"})
+    "settings", "compare", "network", "security", "forum"})
 
 
 def short_sub_target(scope):
@@ -1054,7 +1054,7 @@ def inject(page, data, short=False):
         payload["followers"] = followers
     if about and isinstance(about.get("features"), dict):
         payload["features"] = {key: bool(value) for key, value in about["features"].items()
-                               if key in ("issues", "pulls", "discussions")}
+                               if key in ("issues", "pulls", "discussions", "forum")}
     quota = cached_quota(data["owner"], data["repo"])
     if quota is not None:
         payload["mirrorQuota"] = quota
@@ -1451,6 +1451,7 @@ COUNT_PENDING = "..."
 TABS = (("code", "Code", "code-2", ""), ("issues", "Issues", "circle-dot", "openIssues"),
         ("pulls", "Pull requests", "git-pull-request", "openPulls"),
         ("discussions", "Discussions", "message-square", "discussions"),
+        ("forum", "Forum", "messages-square", ""),
         ("insights", "Insights", "chart-no-axes-combined", ""),
         ("projects", "Projects", "chart-gantt", ""), ("actions", "Actions", "workflow", ""),
         ("security", "Security", "shield", ""))
@@ -1482,6 +1483,8 @@ def _tabs(base, about, counts, selected="code"):
     shown = []
     for key, label, icon, count_key in TABS:
         if key in ("issues", "pulls", "discussions") and features.get(key) is False:
+            continue
+        if key == "forum" and features.get(key) is not True:
             continue
         count = ""
         if count_key and count_key in counts:

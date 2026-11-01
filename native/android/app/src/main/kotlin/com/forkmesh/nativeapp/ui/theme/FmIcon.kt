@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.ui.theme
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,15 +83,17 @@ fun FmIcon(
             .semantics { if (contentDescription != null) this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = glyph,
-            color = tint,
-            style = TextStyle(
-                fontFamily = FmIcons.family(name),
-                fontSize = fontSize,
-                lineHeight = fontSize,
-                platformStyle = PlatformTextStyle(includeFontPadding = false),
-            ),
-        )
+        DisableSelection {
+            Text(
+                text = glyph,
+                color = tint,
+                style = TextStyle(
+                    fontFamily = FmIcons.family(name),
+                    fontSize = fontSize,
+                    lineHeight = fontSize,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                ),
+            )
+        }
     }
 }

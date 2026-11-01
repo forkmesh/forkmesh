@@ -79,6 +79,7 @@ struct AllAgentsScreen: View {
                     } label: {
                         AgentRunRow(row: row)
                     }
+                    .textSelection(.disabled)
                     .contextMenu {
                         if row.canStop {
                             Button(role: .destructive) {
