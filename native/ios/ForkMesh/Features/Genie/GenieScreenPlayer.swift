@@ -26,12 +26,19 @@ final class GenieScreenPlayer {
         let hub: GenieHub = GenieHub.shared
         return active && !hidden && crawler.settled && !crawler.tumbling && crawler.parked == nil && !hub.holdsStill
             && !GenieHandCoach.shared.on && !UIAccessibility.isVoiceOverRunning && !AquariumDirector.shared.spiderPlaying
+            && !CloudDragonDirector.shared.napping
     }
 
     func run() async {
         try? await Task.sleep(for: .seconds(Double.random(in: GenieScreenPlay.firstGap)))
         while !Task.isCancelled {
-            if idle { await attempt() }
+            if idle {
+                if GenieHub.shared.dragon {
+                    await dragonAttempt()
+                } else {
+                    await attempt()
+                }
+            }
             try? await Task.sleep(for: .seconds(Double.random(in: GenieScreenPlay.gap)))
         }
     }
@@ -63,6 +70,7 @@ final class GenieScreenPlayer {
     }
 
     func stop() {
+        if CloudDragonDirector.shared.playing { CloudDragonDirector.shared.end() }
         if let show = show { GenieHandCoach.shared.cancel(show: show) }
         show = nil
         focus = nil
@@ -132,6 +140,58 @@ final class GenieScreenPlayer {
         show = nil
         focus = nil
         thread = nil
+        acting = false
+    }
+
+    private func dragonAttempt() async {
+        let crawler: GenieCrawler = GenieCrawler.shared
+        let director: CloudDragonDirector = CloudDragonDirector.shared
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        let marks: [GenieLandmark] = GenieScreenScan.shared.current().filter { crawler.full.intersects($0.rect) }
+        let kinds: [DragonKind] = marks.isEmpty ? DragonKind.allCases : Array(Set(marks.map { DragonKind($0.kind) }))
+        guard let act = director.draw(kinds: kinds) else { return }
+        let fitting: [GenieLandmark] = marks.filter { act.fits.contains(DragonKind($0.kind)) }
+        acting = true
+        var facing: Double = 0
+        if crawler.wanders, let mark = fitting.randomElement() {
+            let blockers: [CGRect] = GenieKeepClear.shared.buttons
+            let target: CGPoint
+            let edge: GenieEdge?
+            if crawler.glass {
+                target = GenieScreenPlay.beside(for: mark, arena: crawler.arena, side: crawler.side, blockers: blockers)
+                edge = nil
+            } else {
+                let perch: (CGPoint, GenieEdge) = GenieScreenPlay.perch(for: mark, arena: crawler.arena, side: crawler.side, blockers: blockers)
+                target = perch.0
+                edge = perch.1
+            }
+            let going: Bool = edge.map { crawler.visit(target, on: $0) } ?? crawler.visit(target)
+            if going {
+                let deadline: Date = Date().addingTimeInterval(GenieScreenPlay.approach)
+                while crawler.track != nil, Date() < deadline {
+                    try? await Task.sleep(for: .seconds(GenieScreenPlayer.poll))
+                    if Task.isCancelled || interrupted {
+                        stop()
+                        return
+                    }
+                }
+            }
+            guard !interrupted, crawler.track == nil else {
+                stop()
+                return
+            }
+            let angle: Double = crawler.turn * Double.pi / 180
+            let dx: Double = Double(mark.center.x - crawler.spot.x)
+            let dy: Double = Double(mark.center.y - crawler.spot.y)
+            facing = dx * cos(angle) + dy * sin(angle) < 0 ? -1 : 1
+            let now: Date = Date()
+            focus = (mark.rect, now, now.addingTimeInterval(act.duration), false)
+        }
+        let start: Date = Date()
+        director.begin(act, facing: facing, at: start)
+        guard await wait(until: start.addingTimeInterval(act.duration)) else { return }
+        director.end()
+        focus = nil
         acting = false
     }
 

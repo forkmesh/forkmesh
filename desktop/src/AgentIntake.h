@@ -16,6 +16,7 @@ namespace forkmesh::agentintake {
 inline const QString SocketEnv = QStringLiteral("FORKMESH_AGENT_INTAKE");
 inline const QString TokenEnv = QStringLiteral("FORKMESH_AGENT_INTAKE_TOKEN");
 inline const QString CreateMethod = QStringLiteral("agents.create");
+inline const QString LinkBranchMethod = QStringLiteral("agents.link_branch");
 inline const QString ReleaseMethodPrefix = QStringLiteral("releases.");
 inline const QString ReleaseListMethod = QStringLiteral("releases.list");
 inline const QString ReleaseCreateMethod = QStringLiteral("releases.create");
@@ -52,6 +53,20 @@ struct CreateRequest {
     int priority = 50;
 };
 
+struct LinkBranchRequest {
+    QString branch;
+    QString worktree;
+};
+
+struct LinkBranchTarget {
+    bool found = false;
+    bool local = true;
+    bool running = false;
+    bool directCheckout = false;
+    QString branch;
+    QString baseBranch;
+};
+
 struct ReleaseRequest {
     QString method;
     QString owner;
@@ -72,6 +87,10 @@ bool worktreePathValid(const QString &path);
 bool taskIdValid(const QString &taskId);
 bool parseCreateRequest(const QJsonObject &params, CreateRequest *out,
                         QString *error);
+bool parseLinkBranchRequest(const QJsonObject &params, LinkBranchRequest *out,
+                            QString *error);
+bool linkBranchProtected(const QString &branch, const QString &baseBranch);
+QString linkBranchRefusal(const LinkBranchTarget &target, const QString &branch);
 bool releaseTagValid(const QString &tag);
 bool parseReleaseRequest(const QString &method, const QJsonObject &params,
                          ReleaseRequest *out, QString *error);

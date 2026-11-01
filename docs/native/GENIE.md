@@ -43,6 +43,8 @@ tested on Linux); views and platform glue are in
 | Suggestion mode, auto-send and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Features/Genie/ShellAutoSend.swift`, `Features/Genie/ShellAutoSendReview.swift`, `FMAssistant/GenieAutoSend.swift`, `Shell/ShellPocket.swift`, `Shell/ShellMailStatus.swift` | `GenieOutreachTests`, `GenieAutoSendTests` |
 | Aquarium fish on the phone | `FMAssistant/Aquarium{Fish,Tank}.swift`, `Features/Aquarium/AquariumLayer.swift` | `AquariumTests` |
 | Spider Room, the spider in the room in AR ([../marketplace/spider-room.md](../marketplace/spider-room.md)) | `FMAssistant/RoomSpider{,Space,Acts}.swift`; `Features/SpiderRoom/SpiderRoom{Screen,Director,Body}.swift` | `RoomSpiderTests` |
+| Cloud Dragon: poses, springs, habits, rig, tail mesh, naps | `FMAssistant/CloudDragon{,Acts,Atlas,Body,Rig,Mind}.swift` | `CloudDragonTests` |
+| Cloud Dragon painter, art, director | `Features/Genie/CloudDragon{Art,Painter,Effects,Avatar,Director,Lab}.swift`, `Resources/CloudDragon/` | parse only |
 | Overlay, gestures, menu, hub | `Features/Genie/GenieSpiderLayer.swift`, `GenieCrawler.swift`, `GenieHub.swift`, `GenieBubbles.swift` | parse only |
 | Motion, avatar, window, speech, Apple engine, shell bridge | `Features/Genie/GenieMotion.swift`, `GenieAvatar.swift`, `GenieSheet.swift`, `GenieSpeechVoice.swift`, `AppleGenieEngine.swift`, `GenieShellBridge.swift` | parse only |
 
@@ -74,6 +76,78 @@ giggles on a bump. When a fresh `badge` ping celebrates, the spider says
 is absolute gravity, negated so the spider stays upright against the room;
 forward-back tilt is measured against a slowly settling rest pitch. Three hard
 jolts within 0.9 s are a shake; one softer jolt is a bump.
+
+## The Cloud Dragon
+
+A second mascot, chosen instead of the spider (`genie/mascot`, `spider` by
+default; Settings > General > Mascot or "Switch to Cloud Dragon" in the
+long-press menu; the change is live). It is the web Cloud Dragon
+(`www/public/assets/cloud-dragon/`, `docs/www/cloud-dragon.md` once that
+lands) ported to iPhone: the same
+atlas (`Resources/CloudDragon/cloud-dragon-atlas.webp` and `.json`, byte for
+byte, named so they do not clash in the flat app bundle), the same skeleton,
+springs, 20 activities, 9 habits and 7 reactions. Only drawing and plays change:
+crawling, falling, climbing, tucking, tumbling, walking on glass, keep-clear,
+hide, the menu, bubbles, voice, hints, vitals and the outreach face all run on
+the same `GenieCrawler` and `GenieHub`. If the atlas cannot load the spider is
+shown.
+
+- **One puppet.** `FMAssistant/CloudDragon*.swift` is pure Swift with no
+  SwiftUI. `DragonBody.frame(scene, atlas)` advances 38 spring values
+  (`DragonKey`, same stiffness classes and constants as the web), the staged
+  turn, the 28-segment tail chain, the limbs (stretchy one-bone IK) and returns
+  a `DragonFrame`: an ordered list of layer transforms, tail parts, props and
+  the head. The painter only draws that list, so the draw order, the tail
+  tuck (first 42% behind the body, the rest in front), planted feet moving back
+  at exactly body speed and the staged turn are unit tested.
+- **Painting.** `CloudDragonPainter` draws with `Canvas` and `GraphicsContext`:
+  each atlas layer and prop is cropped once into its own image
+  (`CloudDragonArt`), the tail is 56 textured triangles per frame (clip to the
+  triangle, apply the texture matrix, draw the column of the strip), and the
+  rest of the web's code-drawn effects (flame, confetti, steam, notes, dust,
+  smoke) are drawn in code. The canvas is three times the mascot's box so
+  effects leave it, is drawn asynchronously and takes no touches; only the
+  mascot's circle does. There is no drop shadow glow around it.
+- **Size.** 96 pt, against the spider's 92, with the same Dynamic Type and
+  pinch scaling (0.6 to 2.2).
+- **Gait.** The layer's stride phase is distance travelled divided by 11 pt
+  per half step (the spider's); the dragon rescales it to 0.171 of its own
+  size per half step, so a planted foot moves back at body speed and a
+  lifted foot swings forward. Walls and the ceiling rotate the whole avatar as
+  they do for the spider; the pointer-like inputs (hand cursor, screen focus)
+  are rotated into the dragon's own frame so its eyes point the right way.
+- **Rate.** 60 fps (display rate) while walking, flying, held, acting, reacting
+  or talking; 30 fps when idle; paused when the app is inactive. With Reduce
+  Motion it snaps to poses, draws nothing on its own and takes no plays or naps.
+- **Plays.** `GenieScreenPlayer.dragonAttempt` replaces the spider's screen
+  plays: a shuffled bag of the 20 activities (`DragonActivity.drawn`) filtered
+  by the kinds the screen scanner found (`DragonKind`), perches beside a
+  fitting element as the spider does, faces it and plays, or plays where it
+  stands when it cannot travel ("Stay put"). `CloudDragonDirector` holds the
+  play, the nap and debug cues, and keeps the layer's frame rate.
+- **Naps.** After 45 s with nothing going on (no touch, bubble, menu, hand,
+  reaction or play) it sleeps on a cloud; a touch, or anything else, wakes it
+  with a stretch (`DragonNap`). The crawler does not wander while it sleeps.
+- **Not on iPhone:** no silk (the dragon never dangles from a thread by
+  itself), no spider legs.
+- **Tricks and hand play** keep their timing and effects. `DragonTrick`
+  maps each leg, eye and mouth move onto paws, feet, lids, gaze and mouth
+  (`DragonTrick.overlay`), and the spider's stage transform (spin, hop, grow,
+  fade, hue) and emoji particles are applied to the dragon. The 30 genie
+  effects (`GenieMagic`) draw as usual.
+- **Aquarium fish** and the screen player see the dragon as the spider: they
+  read `GenieCrawler`'s position and `GenieScreenPlayer.acting`, so fish still
+  keep clear of it, ask it to wave or look, and wait while it plays.
+- **Differences from the web:** the web's 30 page interactions are not ported
+  (the web has not finished them); there is no pointer, so "pointer near"
+  becomes a touch, hand cursor or open menu; the web's idle wander and play
+  cadence is the iPhone's (5 to 13 s wander, one play every 16 to 34 s); the
+  wave every 21 s is not used; low health droops the lids; speaking moves the
+  mouth, listening perks the ears and thinking looks up.
+- **Debug.** In Debug builds `-FMDragonLab YES` signs in as a guest and reads
+  commands from `Documents/dragon-lab.txt` (`activity coffee`, `habit sneeze`,
+  `reaction cheer`, `sleep`, `wake`, `stroll x y`, `fling vx vy`, `mascot spider`
+  and others, see `CloudDragonLab`). None of it is in Release.
 
 ## Gravity, crawling and tucking away
 
