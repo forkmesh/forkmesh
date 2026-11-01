@@ -547,3 +547,69 @@ final class StallLogFileTests: XCTestCase {
         XCTAssertTrue(gate.isReturn(.resumed))
     }
 }
+
+extension PerformanceMonitorTests {
+    func testAnEventLoopStallCarriesTheMainThreadSamplesTakenWhileItWasBlocked() async throws {
+        let calls = Lines()
+        let ui = DispatchQueue(label: "test.ui")
+        let watch = DispatchQueue(label: "test.watch")
+        let monitor = PerformanceMonitorService(
+            stallThreshold: .milliseconds(120), heartbeatInterval: .milliseconds(20), sectionFloor: .milliseconds(30),
+            logSink: { _ in }, heartbeatQueue: ui, watchQueue: watch,
+            mainStackSampler: {
+                calls.add("sample")
+                return [0x1000, 0x2000, 0x3000]
+            })
+        monitor.startHeartbeat()
+        try await sleep(100)
+        XCTAssertTrue(calls.all.isEmpty, "an idle main thread is never sampled")
+
+        ui.async {
+            monitor.timeSync("shell.start") { self.busyWait(milliseconds: 60) }
+            self.busyWait(milliseconds: 240)
+        }
+        try await sleep(500)
+        monitor.stopHeartbeat()
+
+        let stall = try XCTUnwrap(monitor.events.first { $0.kind == .eventLoop })
+        XCTAssertFalse(calls.all.isEmpty)
+        XCTAssertLessThanOrEqual(calls.all.count, PerformanceMonitorService.samplesPerStall)
+        let stack = try XCTUnwrap(stall.details["mainStack"]?.stringValue)
+        XCTAssertEqual(stack.components(separatedBy: " | ").count, calls.all.count, stack)
+        XCTAssertTrue(stall.stackTrace.hasPrefix("main thread at "), stall.stackTrace)
+        let unnamed = try XCTUnwrap(stall.details["unnamedMs"]?.intValue)
+        XCTAssertGreaterThanOrEqual(unnamed, stall.durationMs - 80, "\(stall.details)")
+        XCTAssertLessThanOrEqual(unnamed, stall.durationMs - 50, "\(stall.details)")
+    }
+
+    func testASignatureNamesTheLeafImagesThenTheNearestAppFrames() {
+        typealias Frame = MainThreadSampler.Frame
+        let frames = [
+            Frame(image: "libsystem_kernel.dylib", offset: 0x10, inApp: false),
+            Frame(image: "AttributeGraph", offset: 0x20, inApp: false),
+            Frame(image: "AttributeGraph", offset: 0x24, inApp: false),
+            Frame(image: "SwiftUICore", offset: 0x30, inApp: false),
+            Frame(image: "SwiftUI", offset: 0x40, inApp: false),
+            Frame(image: "ForkMesh", offset: 0x1221c58, inApp: true),
+            Frame(image: "SwiftUICore", offset: 0x50, inApp: false),
+            Frame(image: "ForkMesh", offset: 0x12e68, inApp: true),
+            Frame(image: "ForkMesh", offset: 0x8, inApp: true),
+        ]
+        XCTAssertEqual(
+            MainThreadSampler.signature(frames),
+            "libsystem_kernel.dylib < AttributeGraph < SwiftUICore < ForkMesh +0x1221c58 < ForkMesh +0x12e68")
+        XCTAssertEqual(MainThreadSampler.signature(Array(frames.prefix(2))), "libsystem_kernel.dylib < AttributeGraph < no app frame")
+        let kept = PerformanceMonitorService.mainFrames(Array(0..<9).map { UInt($0) }, frames)
+        XCTAssertEqual(kept, [0, 1, 2, 3, 5, 7, 8])
+    }
+
+    #if canImport(Darwin)
+    func testTheMainThreadCanBeSampledFromAnotherThread() async throws {
+        XCTAssertNil(await Task.detached { MainThreadSampler.forMainThread() }.value, "only the main thread can name itself")
+        let sampler = try XCTUnwrap(await MainActor.run { MainThreadSampler.forMainThread() })
+        let frames = await Task.detached { sampler() }.value
+        XCTAssertFalse(frames.isEmpty)
+        XCTAssertTrue(MainThreadSampler.resolve(frames).contains { $0.image != "???" })
+    }
+    #endif
+}

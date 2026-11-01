@@ -12,6 +12,7 @@ import SwiftUI
 struct AgentsScreen: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.shellTabHidden) private var tabHidden
     @State private var model: AgentsListModel
     @State private var notice: FmNotice?
     @State private var bulkNotice: FmNotice?
@@ -37,6 +38,7 @@ struct AgentsScreen: View {
     @State private var stopAllCount = 0
     @State private var folderFolds = AgentFolderFolds.load(Services.get(KeyValueStore.self))
     @State private var opened: AgentOpenedLine?
+    @State private var live = AgentsTabLiveGate()
 
     private static let leaveDelay: Duration = .milliseconds(500)
 
@@ -97,6 +99,12 @@ struct AgentsScreen: View {
             model.start()
             followDialogs()
             syncDots()
+        }
+        .onChange(of: tabHidden) { (_: Bool, hidden: Bool) in
+            if !hidden {
+                followDialogs()
+                syncDots()
+            }
         }
         .task { await HostsFeature.agents?.refresh() }
         .task { await attention?.refresh() }
@@ -168,7 +176,17 @@ struct AgentsScreen: View {
         return "eagle:" + center.rows.map { $0.isActive ? "+" + $0.id : $0.id }.joined(separator: ",")
     }
 
+    private func liveAllowed() -> Bool {
+        var gate: AgentsTabLiveGate = live
+        let allowed: Bool = gate.allows(hidden: tabHidden)
+        if gate != live {
+            live = gate
+        }
+        return allowed
+    }
+
     private func followDialogs() {
+        guard liveAllowed() else { return }
         if listView == .eagle, let center = HostsFeature.agents {
             eagle.follow(center.rows, feeds: { ControlWatchFeeds(center) }) { row in
                 (try? await center.transcript(row, since: 0).text) ?? ""
@@ -179,6 +197,7 @@ struct AgentsScreen: View {
     }
 
     private func syncDots() {
+        guard liveAllowed() else { return }
         guard !runningIds.isEmpty,
               let screen = AgentWatchScreen.forAgentsTab(
                 model.groups, center: HostsFeature.agents, ownerAccount: { model.ownerAccount(for: $0) }) else {

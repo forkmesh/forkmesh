@@ -160,3 +160,62 @@ final class AgentReadStateTests: XCTestCase {
         XCTAssertFalse(tracker.lines([run])[0].unread)
     }
 }
+
+final class AgentReadTrackerLaunchTests: XCTestCase {
+    final class CountingStore: KeyValueStore, @unchecked Sendable {
+        let inner = InMemoryKeyValueStore()
+        private let lock = NSLock()
+        private var stringReads = 0
+        var reads: Int { lock.withLock { stringReads } }
+
+        func string(forKey key: String) -> String? {
+            lock.withLock { stringReads += 1 }
+            return inner.string(forKey: key)
+        }
+        func bool(forKey key: String) -> Bool? { inner.bool(forKey: key) }
+        func int(forKey key: String) -> Int? { inner.int(forKey: key) }
+        func double(forKey key: String) -> Double? { inner.double(forKey: key) }
+        func stringList(forKey key: String) -> [String]? { inner.stringList(forKey: key) }
+        func set(_ value: String, forKey key: String) { inner.set(value, forKey: key) }
+        func set(_ value: Bool, forKey key: String) { inner.set(value, forKey: key) }
+        func set(_ value: Int, forKey key: String) { inner.set(value, forKey: key) }
+        func set(_ value: Double, forKey key: String) { inner.set(value, forKey: key) }
+        func set(_ value: [String], forKey key: String) { inner.set(value, forKey: key) }
+        func remove(_ key: String) { inner.remove(key) }
+        func contains(_ key: String) -> Bool { inner.contains(key) }
+        var keys: Set<String> { inner.keys }
+        func clear() { inner.clear() }
+    }
+
+    private func cloudLine(_ id: String, status: String, completed: Int) -> AgentLine {
+        AgentLines.line(
+            .launched(
+                Repository(owner: "forkmesh", name: "forkmesh"),
+                AgentLaunchSession(sessionId: id, status: status, updatedAtMs: completed, completedAtMs: completed),
+                [], cloud: true))
+    }
+
+    @MainActor func testATrackerReadsItsStoredMarksOnlyWhenFirstUsed() async {
+        let store = CountingStore()
+        var full = AgentReadState(baselineMs: 0)
+        for n in 1...AgentReadState.limit { full.markRead(cloudLine("s\(n)", status: "completed", completed: n)) }
+        full.save(store.inner)
+        let discarded = (0..<20).map { _ in AgentReadTracker(store: store, nowMs: 0) }
+        XCTAssertEqual(store.reads, 0, "a screen rebuilt by every shell redraw must not parse the marks each time")
+
+        let tracker = discarded[0]
+        let line = cloudLine("s1", status: "completed", completed: 1)
+        XCTAssertEqual(tracker.lines([line]).map(\.unread), [false])
+        XCTAssertEqual(tracker.lines([line]).map(\.unread), [false])
+        XCTAssertEqual(store.reads, 1)
+        XCTAssertEqual(tracker.state.seen.count, AgentReadState.limit)
+    }
+
+    func testTheHiddenAgentsTabStartsItsLiveWorkOnlyOnceShownAndKeepsIt() {
+        var gate = AgentsTabLiveGate()
+        XCTAssertFalse(gate.allows(hidden: true), "under Home at launch")
+        XCTAssertFalse(gate.allows(hidden: true))
+        XCTAssertTrue(gate.allows(hidden: false))
+        XCTAssertTrue(gate.allows(hidden: true), "once shown it keeps following, as before")
+    }
+}
