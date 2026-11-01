@@ -29,17 +29,17 @@ object PackageGate {
     const val TOUR = "tour"
     const val WORKFLOWS = "workflows"
 
-    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor", "invoices")
+    val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor", "invoices", "surveys")
 
     val STARTER: Set<String> = setOf(AGENTS, CHAT, INBOX, CODE, TOUR)
 
     val DESKTOP_RELIANT: Set<String> = setOf(AGENTS, "desktops", "special-agents", "shortcuts", "hosts", "usage")
 
     val HUB_ITEMS: Map<String, String> = mapOf(
-        "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "timers" to "timers",
+        "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "booking" to "booking", "timers" to "timers",
         "desktops" to "desktops", "allAgents" to AGENTS, "teammates" to "special-agents", "shortcuts" to "shortcuts",
         "hosts" to "hosts", "network" to "network",
-        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices",
+        "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices", "surveys" to "surveys",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
         "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide", "speech" to "speech",
         "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "mastodon" to "mastodon", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity", "logs" to "logs", "diagnostics" to "diagnostics",
@@ -62,6 +62,7 @@ object PackageGate {
         put("notes", Route.Kind.Notes, Route.Kind.Note, Route.Kind.NotePage)
         put("tasks", Route.Kind.Tasks, Route.Kind.Task)
         put("calendar", Route.Kind.Calendar, Route.Kind.Event)
+        put("booking", Route.Kind.Booking)
         put("timers", Route.Kind.Timers)
         put("desktops", Route.Kind.Desktops, Route.Kind.Desktop)
         put("special-agents", Route.Kind.Teammates, Route.Kind.Teammate, Route.Kind.TeammateEditor)
@@ -73,6 +74,7 @@ object PackageGate {
         put("analytics", Route.Kind.Analytics)
         put("competitor", Route.Kind.Competitors)
         put("invoices", Route.Kind.Invoices)
+        put("surveys", Route.Kind.Surveys)
         put("ledger", Route.Kind.Ledger)
         put("vault", Route.Kind.Vault)
         put("coves", Route.Kind.Coves, Route.Kind.Cove)

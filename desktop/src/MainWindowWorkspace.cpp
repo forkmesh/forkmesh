@@ -2112,6 +2112,8 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
     if (window.m_agentStopButton && window.m_agentStopButton->isEnabled())
         addProxy(menu, window.m_agentStopButton, QStringLiteral("stop"));
     menu->addSeparator();
+    addProxy(menu, window.m_agentWorkflowButton, QStringLiteral("workflow"),
+             QStringLiteral("Open workflow"));
     addProxy(menu, window.m_agentViewTaskButton, QStringLiteral("checklist"));
     addProxy(menu, window.m_agentViewIssueButton,
              QStringLiteral("issue-opened"));

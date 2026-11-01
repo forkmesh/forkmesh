@@ -3,11 +3,13 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QElapsedTimer>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextLayout>
+#include <QThread>
 
 #include <iostream>
 
@@ -70,6 +72,24 @@ int main(int argc, char **argv)
 
     QTextDocument systemDocument;
     PromptSpellCheckHighlighter systemHighlighter(&systemDocument);
+    systemDocument.setPlainText(QStringLiteral("mispeling"));
+    check(formatsFor(systemDocument).isEmpty(),
+          "the system dictionary loads off the calling thread, so the first "
+          "highlight does not wait for it");
+    QElapsedTimer dictionaryWait;
+    dictionaryWait.start();
+    while (!PromptSpellCheckHighlighter::systemDictionaryLoaded() &&
+           dictionaryWait.elapsed() < 30000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(5);
+    }
+    check(PromptSpellCheckHighlighter::systemDictionaryLoaded(),
+          "the system dictionary finishes loading in the background");
+    QCoreApplication::processEvents();
+    if (systemHighlighter.spellCheckingAvailable())
+        check(!formatsFor(systemDocument).isEmpty(),
+              "a highlighter that asked before the dictionary loaded is "
+              "rehighlighted once it has");
     if (systemHighlighter.spellCheckingAvailable()) {
         check(systemHighlighter.isMisspelled(QStringLiteral("mispeling")),
               "the discovered system dictionary rejects a misspelling");

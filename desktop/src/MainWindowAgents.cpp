@@ -1241,21 +1241,6 @@ QWidget *MainWindow::buildAgentsTab()
     auto *topRow = new QVBoxLayout;
     topRow->setContentsMargins(0, 0, 0, 0);
     topRow->setSpacing(4);
-    m_agentWorkflowLink = new QLabel;
-    m_agentWorkflowLink->setObjectName(QStringLiteral("agentWorkflowLink"));
-    m_agentWorkflowLink->setTextFormat(Qt::RichText);
-    m_agentWorkflowLink->setTextInteractionFlags(Qt::LinksAccessibleByMouse |
-                                                 Qt::LinksAccessibleByKeyboard);
-    m_agentWorkflowLink->setCursor(Qt::PointingHandCursor);
-    m_agentWorkflowLink->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    m_agentWorkflowLink->hide();
-    connect(m_agentWorkflowLink, &QLabel::linkActivated, this, [this] {
-        const QString repo = m_agentWorkflowLink->property("workflowRepo").toString();
-        const QString id = m_agentWorkflowLink->property("workflowId").toString();
-        if (!repo.isEmpty() && !id.isEmpty())
-            openWorkflowInPage(repo, id);
-    });
-    topRow->addWidget(m_agentWorkflowLink, 0, Qt::AlignLeft);
     auto *statusRow = new QHBoxLayout;
     statusRow->setContentsMargins(0, 0, 0, 0);
     statusRow->setSpacing(8);
@@ -1308,6 +1293,7 @@ QWidget *MainWindow::buildAgentsTab()
         {m_agentCloudCleanupButton, 12, "trash", nullptr},
         {m_agentCloudUpdateButton, 10, "download", nullptr},
         {m_agentCloudActionsButton, 11, "workflow", nullptr},
+        {m_agentWorkflowButton, 2, "workflow", "Open workflow"},
         {m_agentViewTaskButton, 15, "checklist", nullptr},
         {m_agentCreateIssueButton, 16, "issue-opened", "Create issue"},
         {m_agentViewIssueButton, 14, "issue-opened", "Open issue"},
@@ -2451,6 +2437,18 @@ void MainWindow::buildAgentDetailActionButtons()
     m_agentCloudUpdateButton->hide();
     connect(m_agentCloudUpdateButton, &QPushButton::clicked, this,
             [this] { updateCloudAgentBranch(m_selectedAgentSessionId); });
+    m_agentWorkflowButton = railActionButton(
+        QStringLiteral("workflow"), QStringLiteral("Workflow"),
+        "Open the workflow that started this agent session");
+    m_agentWorkflowButton->setObjectName(QStringLiteral("agentWorkflowButton"));
+    m_agentWorkflowButton->hide();
+    connect(m_agentWorkflowButton, &QPushButton::clicked, this, [this] {
+        const QString repo =
+            m_agentWorkflowButton->property("workflowRepo").toString();
+        const QString id = m_agentWorkflowButton->property("workflowId").toString();
+        if (!repo.isEmpty() && !id.isEmpty())
+            openWorkflowInPage(repo, id);
+    });
     m_agentCloudActionsButton = railActionButton(
         QStringLiteral("workflow"), QStringLiteral("Actions"),
         "Open the Actions the merge started on the base branch");

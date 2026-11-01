@@ -36,7 +36,9 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | Tools | `tools/` | [tools/README.md](tools/README.md) |
 | Conformance suites | `conformance/` | [conformance/README.md](conformance/README.md) |
 | Marketing | `marketplace/packages/marketing/`, marketing special agents | [marketing/README.md](marketing/README.md) |
+| Booking Page (short booking link, `/meet`, emailed confirmations) | `marketplace/packages/booking/` | [marketplace/booking.md](marketplace/booking.md) |
 | Invoicing (CRM-linked invoices, email, open tracking) | `marketplace/packages/invoices/` | [marketplace/invoices.md](marketplace/invoices.md) |
+| Surveys (question builder, public answer link, results, CSV export) | `marketplace/packages/surveys/` | [marketplace/surveys.md](marketplace/surveys.md) |
 | Poker (Texas Hold'em for virtual chips on web, desktop, iPhone and Android) | `marketplace/packages/poker/`, `native/ios/.../Poker*`, `native/android/.../poker` | [marketplace/poker.md](marketplace/poker.md) |
 
 ## Served stack

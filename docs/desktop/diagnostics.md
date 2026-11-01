@@ -832,6 +832,65 @@ returned, so summed frame totals overstate a function's own cost.
     three `qobject_cast`s. The "list rows stack one per row with a small
     preview" check in `--market-view-only` failed before this change too.
 
+- 2026-10-31 stall run (pids 4081746, 50335, 2836152):
+  - Mastodon timelines (`STALL-…-p4081746-0051`, `-0069`, 1.0–1.3 s):
+    `MastodonFeature::showStatuses` built every `PostCard` of a page in one
+    pass when the reply landed, and the style-sheet polish for each card ran
+    there too. `appendStatusCards` now adds cards for about 12 ms per
+    event-loop turn and queues the rest. A page switch (`m_generation`) or a
+    cleared list (`m_listEpoch`) drops the queued cards, and Load more
+    appears only once the last card of the page is in.
+  - The same sample showed PCRE working inside `renderContent`: `attribute()`
+    compiled (and JIT-compiled) a new expression for every `href` and
+    `class` lookup on each `<a>` and `<span>`. It now keeps one compiled
+    expression per attribute name, and skips the match when the name does
+    not appear in the tag at all.
+  - Backups (`-p50335-0011`, 594 ms): `pruneOldBackups` unlinked old
+    multi-GB snapshots from the tar process's `finished` handler. The GUI
+    thread still lists what to remove (`partialBackupPaths` is empty while a
+    backup runs, so a `.part` being written is never picked). The unlinks run
+    on `QThreadPool`, and the backup table refreshes when they finish.
+  - No change: `ActionRunStrip::paintBadges` (`-p4081746-0070`) draws six
+    cached pixmaps, and the process had 249 MB swapped out at that moment.
+    `-p50335-0025` carries the starvation verdict (swap full, memory PSI
+    37 %). Stalls without a sample, or with no application frame, give
+    nothing to fix.
+
+- 2026-11-01 stall run (pid 7560, 53 stalls, load 50–64 on 36 CPUs):
+  - Worktree lookups (`STALL-…-p7560-0020`, `-0042`, 0.6–0.9 s):
+    `worktreePathForBranch` on the GUI thread rebuilt the worktree listing
+    from files every call, which means opening `gitdir`, `HEAD` and the
+    branch ref of each of the 57 agent worktrees, once per
+    `branchWorkDir` during a branch switch. Path lookups now go through
+    `worktreeLayoutForCaller`, which keeps the listing while
+    `worktreeListStamp` (stat calls only) is unchanged. Tip SHAs in that copy
+    can be stale, and path lookups never read them. The worktrees panel still
+    reads fresh tips. A worktree whose folder was deleted without a prune
+    keeps its old record; `WorktreeLookup::Live` still checks the folder
+    exists.
+  - CRM tab switch (`-0005`, 1.4 s, sampled frames named
+    `UserActivityLog::record`, which already saves in the background):
+    `CrmFeature::syncSheetTab` moved the shared contacts body into the open
+    list's tab page. Under the application style sheet that reparent
+    re-polished every row's action cell widgets. The body now stays beside
+    the tab widget in one column. A list tab hides `m_tabs` and shows the
+    body; any other tab does the reverse.
+  - Quick-add settings (`-0023`, 551 ms, fsync): `syncQuickAddControlsToAgentSession`
+    sets the provider, model and mode combos when a session opens. Their
+    handlers wrote the same values back through a fresh `QSettings` each,
+    the mode handler twice and the model handler on both of its signals. That
+    meant up to six rewrites and fsyncs per click. They now share one
+    `QSettings` and write through `forkmesh::settings::put`, which skips
+    unchanged values.
+  - Relay link loss (`-0025`, 582 ms): `handleLinkLost` -> `connectionChanged`
+    -> `ServerNode::shutdown` sealed a `bye` for every room member (one
+    x25519 each) with the link already down, then closed the socket.
+    `shutdown` now sends `bye` only while `m_wsReady`.
+  - Not changed: `renderPageNotices` (`-0028`, 1.4 s) spent its time in the
+    layout pass that `setVisible` starts. Most of the remaining stalls are
+    text shaping, paint and style polish with no application frame, sampled
+    while the load average was well above the CPU count.
+
 ### Startup: installed package pages after first paint (2026-10-25)
 
 A launch log showed three long gaps before the window appeared: about

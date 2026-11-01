@@ -78,8 +78,9 @@ def test_contributor_board_resolves_human_account_names():
 def test_contributor_board_hides_private_profiles_behind_a_label():
     network = ENTRY.split("async def network_leaderboards", 1)[1].split(
         "# --- Referral program", 1)[0]
-    lookup = network.index('await _account_row(env, label)')
+    lookup = network.index('await _account_identity_recs_by_bi(')
     assert network.index('contrib_rows = await') < lookup
+    assert '_account_row(env, label)' not in network
     assert '.get("profile_private")' in network[lookup:]
     assert lookup < network.index('"Private contributor"') < network.index(
         '"contributors": contrib_board')

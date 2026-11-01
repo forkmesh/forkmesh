@@ -31,7 +31,7 @@ public enum ShellPanes {
 
     public static let listKinds: Set<Route.Kind> = [
         .agents, .allAgents, .teammates, .shortcuts, .inbox, .repos, .localRepos, .people, .docs, .notes, .tasks,
-        .calendar, .timers, .desktops, .hosts, .runners, .market, .crm, .marketing, .invoices, .coves, .workflows,
+        .calendar, .timers, .desktops, .hosts, .runners, .market, .crm, .marketing, .invoices, .surveys, .booking, .coves, .workflows,
         .settings, .orgs, .projects, .rssReader, .logs,
     ]
 

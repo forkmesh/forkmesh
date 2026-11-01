@@ -491,6 +491,11 @@ signed with the v3 key (`native/android/README.md`); the default application id
   token and a typed name after the screen lock (`UserPresence.confirm`).
   Approving an agent request always opens the app; only Deny works from a
   notification.
+  Approving waiting checks from a notification opens the pull request's
+  Checks card with the approval queued for five minutes and bound to the
+  notification's head; the card asks for the screen lock and then sends it
+  (iOS approves in place after Face ID). Approve and Run workflow on the
+  Actions screens ask for the screen lock too.
 
 ## 10. Platform choices
 
@@ -585,6 +590,8 @@ signed with the v3 key (`native/android/README.md`); the default application id
 - Chat and ping times use a 12-hour clock; agent prompts keep 24-hour stamps.
 - The prompt composer has no mic button; dictation is `/dictate`, and a quiet
   stop after words sends the prompt (`SpeechDictation` `onQuiet`).
+- Approving waiting checks from a notification opens the app (the screen lock
+  needs an on-screen dialog to fall back to); iOS approves from the banner.
 
 iOS features Android does not have, because they need an Apple-only API:
 

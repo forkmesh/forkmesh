@@ -140,6 +140,8 @@ object RouteCatalog {
         Route.Kind.Analytics -> "Analytics"
         Route.Kind.Competitors -> "Competitors"
         Route.Kind.Invoices -> "Invoices"
+        Route.Kind.Surveys -> "Surveys"
+        Route.Kind.Booking -> "Booking"
         Route.Kind.Ads -> "Ads"
         Route.Kind.Ledger -> "Ledger & tips"
         Route.Kind.Vault -> "Vault"
@@ -231,6 +233,8 @@ object RouteCatalog {
         Route.Kind.Analytics -> "show_chart"
         Route.Kind.Competitors -> "travel_explore"
         Route.Kind.Invoices -> "receipt_long"
+        Route.Kind.Surveys -> "assignment"
+        Route.Kind.Booking -> "event"
         Route.Kind.Ads -> "ads_click"
         Route.Kind.Ledger -> "account_balance_wallet"
         Route.Kind.Vault -> "key"
@@ -333,6 +337,7 @@ object HubCatalog {
         HubItem.destination(Route.Notes, guestAction = "use notes"),
         HubItem.destination(Route.Tasks(null), guestAction = "use tasks"),
         HubItem.destination(Route.Calendar(null, CalendarMode.Month), needsRegistration = true),
+        HubItem.destination(Route.Booking(null), needsRegistration = true, guestAction = "set up a booking page"),
         HubItem.destination(Route.Timers, needsRegistration = true),
         HubItem.destination(Route.Nexus),
     )
@@ -356,6 +361,7 @@ object HubCatalog {
         HubItem.destination(Route.Analytics(null), needsRegistration = true, guestAction = "see product analytics"),
         HubItem.destination(Route.Competitors, needsRegistration = true, guestAction = "keep a competitor watchlist"),
         HubItem.destination(Route.Invoices(null, null), needsRegistration = true, guestAction = "send invoices"),
+        HubItem.destination(Route.Surveys(null, null), needsRegistration = true, guestAction = "run surveys"),
         HubItem.destination(Route.Ads, needsRegistration = true, guestAction = "manage your ads"),
         HubItem.destination(Route.Ledger(null), needsRegistration = true),
     )

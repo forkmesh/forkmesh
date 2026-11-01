@@ -1774,6 +1774,8 @@ void MainWindow::setChannels(const QStringList &channels)
         m_currentConversation.clear();
     refreshChannelList();
     updateHomeStats();
+    if (!m_channelList)
+        return;
     if (m_currentConversation.isEmpty() && !m_channels.isEmpty())
         selectFirstChannel(); // the first rendered row; triggers switchConversation
     else if (everyoneGeneralArrived &&
@@ -3653,8 +3655,6 @@ void MainWindow::removeChatMember(const QString &id, const QString &name)
 
 void MainWindow::refreshChannelList()
 {
-    QSignalBlocker blocker(m_channelList);
-    m_channelList->clear();
     // m_channels stays the flat, load-bearing order (unread priority reads
     // it); the tree is just that list folded into the user's groups plus the
     // providers' automatic ones.
@@ -3667,6 +3667,10 @@ void MainWindow::refreshChannelList()
     m_chatSidebarRows = ChannelGroups::layout(
         m_channelGroups, sidebarChannels,
         [this](const QString &channel) { return autoGroupForChannel(channel); });
+    if (!m_channelList)
+        return;
+    QSignalBlocker blocker(m_channelList);
+    m_channelList->clear();
 
     // Same look as the CHANNELS / DIRECT MESSAGES section labels
     // (#sectionLabel: 11px, bold, 1px letter spacing). Pinned in pixels

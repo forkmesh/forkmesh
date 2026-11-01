@@ -16,6 +16,14 @@ public struct CIError: Error, Equatable, Sendable, CustomStringConvertible {
 
     public var description: String {
         switch (status, code) {
+        case (_, "stale_head"): return "The pull request has a newer commit. Review it before approving."
+        case (_, "not_awaiting_approval"): return "These checks are no longer waiting for approval."
+        case (_, "author_unknown"): return "Only the pull request's verified author can be trusted from here."
+        case (_, "invalid_name"): return "A secret name uses A-Z, 0-9 and _, does not start with a digit, and has at most 64 characters."
+        case (_, "invalid_value"): return "A secret value is 1 byte to 48 KiB of text."
+        case (_, "too_many_secrets"): return "This repository already has the most secrets it can have."
+        case (_, "run_not_found"): return "This run was not found."
+        case (_, "not_available"): return "This instance does not run checks for pull requests."
         case (_, "forbidden"), (_, "not_authorized"), (403, _): return "Only the repository owner and organization writers can do that."
         case (_, "actions_node_unavailable"), (503, _): return "The node that runs this repository's actions is not reachable right now."
         case (_, "invalid_session"), (401, _): return "Sign in again to manage this repository."
@@ -39,7 +47,15 @@ public struct CIError: Error, Equatable, Sendable, CustomStringConvertible {
 @MainActor
 public protocol CIClient: AnyObject {
     func actionsRuns(_ repo: RepoRef) async throws -> ActionsSummary
-    func actionsControl(_ repo: RepoRef, _ request: ActionsControlRequest) async throws
+    @discardableResult
+    func actionsControl(_ repo: RepoRef, _ request: ActionsControlRequest) async throws -> JSONObject
+    func actionsRunLog(_ repo: RepoRef, runId: Int) async throws -> ActionsRunLog
+    func pullChecks(_ repo: RepoRef, number: Int) async throws -> PullChecks
+    func pullChecksAction(_ repo: RepoRef, number: Int, _ body: JSONObject) async throws -> JSONObject
+    func actionsSecrets(_ repo: RepoRef) async throws -> [RepoActionSecret]
+    @discardableResult
+    func setActionsSecret(_ repo: RepoRef, name: String, value: String) async throws -> JSONObject
+    func deleteActionsSecret(_ repo: RepoRef, name: String) async throws
     func webhooks(_ repo: RepoRef, action: String, fields: JSONObject) async throws -> JSONObject
     func securityScans(_ repo: RepoRef, operation: String, query: [(String, String)]) async throws -> JSONObject
     func securityTriage(_ repo: RepoRef, scanId: String, findingId: String, status: String, note: String) async throws -> JSONObject
@@ -80,8 +96,35 @@ extension ApiService: CIClient {
         ActionsSummary(json: try await ciSend("GET", CIRequests.repoPath(repo, "actions/runs")))
     }
 
-    public func actionsControl(_ repo: RepoRef, _ request: ActionsControlRequest) async throws {
-        _ = try await ciSend("POST", CIRequests.repoPath(repo, "actions/control"), body: request.body)
+    @discardableResult
+    public func actionsControl(_ repo: RepoRef, _ request: ActionsControlRequest) async throws -> JSONObject {
+        try await ciSend("POST", CIRequests.repoPath(repo, "actions/control"), body: request.body)
+    }
+
+    public func actionsRunLog(_ repo: RepoRef, runId: Int) async throws -> ActionsRunLog {
+        ActionsRunLog(json: try await ciSend("GET", CIRequests.repoPath(repo, "actions/runs/\(runId)/log")), runId: runId)
+    }
+
+    public func pullChecks(_ repo: RepoRef, number: Int) async throws -> PullChecks {
+        PullChecks(json: try await ciSend("GET", CIRequests.repoPath(repo, "pulls/\(number)/checks")))
+    }
+
+    public func pullChecksAction(_ repo: RepoRef, number: Int, _ body: JSONObject) async throws -> JSONObject {
+        try await ciSend("POST", CIRequests.repoPath(repo, "pulls/\(number)/checks"), body: body)
+    }
+
+    public func actionsSecrets(_ repo: RepoRef) async throws -> [RepoActionSecret] {
+        let data = try await ciSend("GET", CIRequests.repoPath(repo, "actions/secrets"))
+        return data.maps("secrets").prefix(RepoActionSecret.limit).compactMap(RepoActionSecret.init(json:))
+    }
+
+    @discardableResult
+    public func setActionsSecret(_ repo: RepoRef, name: String, value: String) async throws -> JSONObject {
+        try await ciSend("PUT", CIRequests.repoPath(repo, "actions/secrets/\(name)"), body: ["value": .string(value)])
+    }
+
+    public func deleteActionsSecret(_ repo: RepoRef, name: String) async throws {
+        _ = try await ciSend("DELETE", CIRequests.repoPath(repo, "actions/secrets/\(name)"))
     }
 
     public func webhooks(_ repo: RepoRef, action: String, fields: JSONObject) async throws -> JSONObject {
