@@ -195,12 +195,12 @@ def test_the_box_escapes_every_value():
 def test_the_box_shows_links_not_the_prompt():
     html = prp.render(values(), 12)
     assert "<pre" not in html and "Ground rules" not in html.split('data-dashboard-copy="', 1)[0]
-    assert "Copy review prompt" in html and "Copied" in html
+    assert "copy-icon" in html and "copy-check" in html
     assert 'aria-label="Copy the review prompt for this pull request"' in html
     url = "https://git.example.test/acme/bolt/pull/12"
     assert '<a href="%s.diff" data-repo-pull-diff-link' % url in html
     assert '<a href="%s.patch" data-repo-pull-patch-link' % url in html
-    assert "prompt-toggle" not in html and "data-repo-pull-review-files" not in html
+    assert "data-repo-pull-review-files" not in html
     branch = prp.render(values(has_diff=False), 12, "Short {url}")
     assert "data-repo-pull-diff-link" not in branch
 
@@ -214,21 +214,27 @@ def test_changed_files_link_to_the_head_branch():
         ["old name.txt", ""]]
     html = prp.render(got, 12)
     assert ('<li class="truncate"><a href="https://git.example.test/acme/bolt/blob/'
-            'src/limits.py?ref=feature%2Flimits"') in html
+            'src/limits.py?ref=feature%2Flimits" title="src/limits.py" '
+            'class="text-[var(--dashboard-link)] hover:underline">limits.py</a></li>') in html
     assert '<li class="truncate" title="old name.txt">old name.txt</li>' in html
+    assert "data-repo-pull-files-more" not in html
     remote = values(dict(PULL, head="bob:feature"), patch=PATCH)
     assert [href for _, href in remote["files"]] == ["", ""]
 
 
-def test_many_files_collapse_behind_a_toggle():
-    patch = "".join("diff --git a/f%d b/f%d\n" % (n, n) for n in range(prp.FILE_LINKS_MAX + 3))
+def test_the_box_names_three_files_and_links_the_rest():
+    patch = "".join("diff --git a/d/f%d b/d/f%d\n" % (n, n) for n in range(prp.FILE_LINKS_MAX + 3))
     got = values(patch=patch)
     assert len(got["files"]) == prp.FILE_LINKS_MAX and got["fileCount"] == prp.FILE_LINKS_MAX + 3
     html = prp.render(got, 12)
-    assert 'data-repo-pull-review-prompt-toggle aria-expanded="false" ' \
-           'aria-controls="repo-pull-review-prompt-12"' in html
-    assert '<ul id="repo-pull-review-prompt-12" data-repo-pull-review-files class="max-h-28 ' in html
-    assert "and 3 more" in html and "- and 3 more" in prp.summary_text(got)
+    assert html.count("<li class=\"truncate\">") == prp.FILES_SHOWN == 3
+    assert ">f0</a>" in html and ">f2</a>" in html and ">f3</a>" not in html
+    assert ('<a href="https://git.example.test/acme/bolt/pull/12/files" data-repo-record-tab="files" '
+            'data-repo-pull-files-more ') in html
+    assert ">+%d more files</a>" % (prp.FILE_LINKS_MAX) in html
+    assert "- and 3 more" in prp.summary_text(got)
+    one = prp.render(values(patch="".join("diff --git a/f%d b/f%d\n" % (n, n) for n in range(4))), 12)
+    assert ">+1 more file</a>" in one
 
 
 def test_chatgpt_asks_for_a_summary_with_the_diff_and_files():
@@ -277,8 +283,8 @@ def test_the_box_opens_chatgpt_with_the_prompt():
                             "https://git.example.test/acme/bolt/pull/12\n")
     assert 'aria-label="Review with ChatGPT: opens ChatGPT with the review prompt filled in"' in attrs
     assert "data-dashboard-copy" not in attrs
-    assert "<span>Review with ChatGPT</span></a>" in markup and "lucide-bot" in markup
-    assert markup.index("Copy review prompt") < markup.index("Review with ChatGPT")
+    assert "<span>Review with ChatGPT</span>" not in markup and "lucide-bot" in markup
+    assert markup.index("Copy the review prompt") < markup.index("Review with ChatGPT")
     assert markup.index("Review with ChatGPT") < markup.index("Summarize in ChatGPT")
 
 
@@ -405,7 +411,7 @@ JS_PRELUDE = "\n".join(
     + [_const(name) for name in (
         "PULL_REVIEW_PROMPT_MAX", "PULL_REVIEW_FIELD_LIMITS", "PULL_SUMMARY_CHATGPT_URL",
         "PULL_SUMMARY_URL_LIMIT", "PULL_REVIEW_CHATGPT_MAX", "PULL_REVIEW_FILE_LINKS_MAX",
-        "PULL_REVIEW_FILES_COLLAPSE", "PULL_REVIEW_PATH_LIMIT", "PULL_REVIEW_LONE_SURROGATE", "PULL_REVIEW_INVISIBLE",
+        "PULL_REVIEW_FILES_SHOWN", "PULL_REVIEW_PATH_LIMIT", "PULL_REVIEW_LONE_SURROGATE", "PULL_REVIEW_INVISIBLE",
         "PULL_REVIEW_PROMPT_DEFAULT")]
     + [_function(name) for name in (
         "normalizePullReviewTemplate", "cleanPullReviewField",
@@ -524,18 +530,17 @@ def test_the_dashboard_shows_the_box_on_open_pulls_only():
     assert 'kind === "discussions" ? null : loadRepoCollabSettings(repo)' in load
 
 
-def test_the_toggle_and_copy_are_wired():
-    assert 'closest("[data-repo-pull-review-prompt-toggle]")' in NETWORK
-    assert "togglePullReviewPrompt(reviewPromptToggle)" in NETWORK
-    toggle = _function("togglePullReviewPrompt")
-    assert 'setAttribute("aria-expanded"' in toggle and '"Show less" : "Show all"' in toggle
+def test_more_files_and_copy_are_wired():
+    # "+N more files" is a record tab link: it opens Files changed in place.
+    assert "togglePullReviewPrompt" not in NETWORK
+    tab = NETWORK[NETWORK.index('closest("[data-repo-record-tab]'):]
+    assert tab.index("event.preventDefault()") < tab.index("setRepoRecordSection(")
     # The copy buttons use the shared data-dashboard-copy handler.
     assert 'closest("[data-dashboard-copy]")' in NETWORK
 
 
 def test_the_bundle_is_rebuilt():
-    for name in ("renderPullReviewPrompt", "togglePullReviewPrompt",
-                 "data-repo-pull-review-prompt-toggle", "reviewPromptTemplate"):
+    for name in ("renderPullReviewPrompt", "data-repo-pull-files-more", "reviewPromptTemplate"):
         assert name in BUNDLE
     assert _function("renderPullReviewPrompt") in BUNDLE
 
