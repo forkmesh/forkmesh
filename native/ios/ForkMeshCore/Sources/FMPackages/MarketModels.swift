@@ -269,7 +269,7 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
     }
 
     public static let nativeDestinations: [String: String] = [
-        "crm": "crm", "marketing": "marketing", "analytics": "analytics", "competitor": "competitors", "invoices": "invoices", "booking": "booking",
+        "crm": "crm", "marketing": "marketing", "analytics": "analytics", "competitor": "competitors", "invoices": "invoices", "surveys": "surveys", "booking": "booking",
         "ledger": "ledger", "vault": "vault", "calories": "calories", "notes": "notes", "tasks": "tasks",
         "calendar": "calendar", "timers": "timers", "steps": "steps", "water": "water", "sleep": "sleep",
         "sugar-break": "sugarBreak", "stretch": "stretch", "food-guide": "foodGuide", "speech": "speech", "status-page": "status", "tour": "tour", "aquarium": "aquarium", "capture": "capture",

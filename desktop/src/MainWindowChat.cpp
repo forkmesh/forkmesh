@@ -3767,6 +3767,8 @@ QWidget *MainWindow::buildNetworkLogDock()
                 m_quickAddModeSelector->setToolTip(
                     description + QStringLiteral(". Click to choose a mode."));
             });
+    connect(m_quickAddModeSelector, QOverload<int>::of(&QComboBox::activated), this,
+            [this](int) { applyComposerModeToTargetSession(); });
     {
         const QString description =
             QStringLiteral("Permission mode: %1")

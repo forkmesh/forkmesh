@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Surveys dashboard</title>
+  <desc id="desc">A dark dashboard listing open and draft surveys with response counts, beside one survey's results with option bars and an average rating.</desc>
+  <rect width="1200" height="675" rx="28" fill="#0b1020"/>
+  <rect x="36" y="36" width="1128" height="603" rx="22" fill="#11182b" stroke="#2b3654"/>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="76" y="98" fill="#f0f6fc" font-size="34" font-weight="700">Surveys</text>
+    <text x="76" y="132" fill="#8b949e" font-size="18">Build a survey, share its link, and read the answers as they arrive.</text>
+    <rect x="980" y="70" width="148" height="44" rx="8" fill="#238636"/>
+    <text x="1054" y="99" fill="#ffffff" font-size="17" font-weight="600" text-anchor="middle">New survey</text>
+
+    <rect x="76" y="166" width="500" height="436" rx="14" fill="#0d1117" stroke="#2b3654"/>
+    <text x="100" y="204" fill="#8b949e" font-size="15">Survey</text>
+    <text x="470" y="204" fill="#8b949e" font-size="15">Responses</text>
+    <line x1="76" y1="220" x2="576" y2="220" stroke="#2b3654"/>
+
+    <text x="100" y="258" fill="#f0f6fc" font-size="19" font-weight="600">Team offsite feedback</text>
+    <text x="100" y="282" fill="#8b949e" font-size="14">5 questions · last answer 4 min ago</text>
+    <rect x="370" y="246" width="62" height="26" rx="13" fill="#12361f" stroke="#2ea043"/>
+    <text x="401" y="264" fill="#3fb950" font-size="13" font-weight="600" text-anchor="middle">Open</text>
+    <text x="540" y="266" fill="#f0f6fc" font-size="20" font-weight="700" text-anchor="end">48</text>
+    <line x1="76" y1="304" x2="576" y2="304" stroke="#1f2940"/>
+
+    <text x="100" y="342" fill="#f0f6fc" font-size="19" font-weight="600">Customer onboarding</text>
+    <text x="100" y="366" fill="#8b949e" font-size="14">8 questions · last answer 2 h ago</text>
+    <rect x="370" y="330" width="62" height="26" rx="13" fill="#12361f" stroke="#2ea043"/>
+    <text x="401" y="348" fill="#3fb950" font-size="13" font-weight="600" text-anchor="middle">Open</text>
+    <text x="540" y="350" fill="#f0f6fc" font-size="20" font-weight="700" text-anchor="end">131</text>
+    <line x1="76" y1="388" x2="576" y2="388" stroke="#1f2940"/>
+
+    <text x="100" y="426" fill="#f0f6fc" font-size="19" font-weight="600">Q4 product priorities</text>
+    <text x="100" y="450" fill="#8b949e" font-size="14">3 questions · by dana</text>
+    <rect x="362" y="414" width="70" height="26" rx="13" fill="#161b22" stroke="#30363d"/>
+    <text x="397" y="432" fill="#8b949e" font-size="13" font-weight="600" text-anchor="middle">Draft</text>
+    <text x="540" y="434" fill="#8b949e" font-size="20" font-weight="700" text-anchor="end">0</text>
+    <line x1="76" y1="472" x2="576" y2="472" stroke="#1f2940"/>
+
+    <text x="100" y="510" fill="#f0f6fc" font-size="19" font-weight="600">Hiring process review</text>
+    <text x="100" y="534" fill="#8b949e" font-size="14">6 questions · closed 3 days ago</text>
+    <rect x="356" y="498" width="76" height="26" rx="13" fill="#161b22" stroke="#30363d"/>
+    <text x="394" y="516" fill="#8b949e" font-size="13" font-weight="600" text-anchor="middle">Closed</text>
+    <text x="540" y="518" fill="#f0f6fc" font-size="20" font-weight="700" text-anchor="end">22</text>
+
+    <rect x="600" y="166" width="528" height="436" rx="14" fill="#0d1117" stroke="#2b3654"/>
+    <text x="628" y="208" fill="#f0f6fc" font-size="20" font-weight="700">Team offsite feedback</text>
+    <text x="628" y="234" fill="#8b949e" font-size="14">Results · 48 responses</text>
+
+    <text x="628" y="276" fill="#f0f6fc" font-size="16" font-weight="600">1. How was the offsite?</text>
+    <text x="628" y="306" fill="#c9d1d9" font-size="14">Great</text>
+    <rect x="720" y="294" width="300" height="12" rx="6" fill="#1f2940"/>
+    <rect x="720" y="294" width="198" height="12" rx="6" fill="#2f81f7"/>
+    <text x="1100" y="306" fill="#8b949e" font-size="14" text-anchor="end">32 · 66%</text>
+    <text x="628" y="334" fill="#c9d1d9" font-size="14">Fine</text>
+    <rect x="720" y="322" width="300" height="12" rx="6" fill="#1f2940"/>
+    <rect x="720" y="322" width="81" height="12" rx="6" fill="#2f81f7"/>
+    <text x="1100" y="334" fill="#8b949e" font-size="14" text-anchor="end">13 · 27%</text>
+    <text x="628" y="362" fill="#c9d1d9" font-size="14">Poor</text>
+    <rect x="720" y="350" width="300" height="12" rx="6" fill="#1f2940"/>
+    <rect x="720" y="350" width="21" height="12" rx="6" fill="#2f81f7"/>
+    <text x="1100" y="362" fill="#8b949e" font-size="14" text-anchor="end">3 · 7%</text>
+
+    <text x="628" y="410" fill="#f0f6fc" font-size="16" font-weight="600">2. Rate the venue</text>
+    <text x="628" y="452" fill="#f0f6fc" font-size="34" font-weight="700">4.3</text>
+    <text x="690" y="452" fill="#8b949e" font-size="14">average of 5</text>
+    <rect x="820" y="448" width="28" height="8" rx="3" fill="#2f81f7"/>
+    <rect x="860" y="442" width="28" height="14" rx="3" fill="#2f81f7"/>
+    <rect x="900" y="430" width="28" height="26" rx="3" fill="#2f81f7"/>
+    <rect x="940" y="404" width="28" height="52" rx="3" fill="#2f81f7"/>
+    <rect x="980" y="396" width="28" height="60" rx="3" fill="#2f81f7"/>
+
+    <text x="628" y="500" fill="#f0f6fc" font-size="16" font-weight="600">3. One word for it</text>
+    <rect x="628" y="516" width="472" height="36" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="644" y="540" fill="#c9d1d9" font-size="14">“Energising”</text>
+    <rect x="628" y="558" width="472" height="36" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="644" y="582" fill="#c9d1d9" font-size="14">“Overdue — let's do it twice a year”</text>
+  </g>
+</svg>

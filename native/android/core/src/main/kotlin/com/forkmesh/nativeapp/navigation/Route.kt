@@ -167,6 +167,7 @@ sealed class Route {
     data class Analytics(val section: String?) : Route() { override val kind get() = Kind.Analytics }
     data object Competitors : Route() { override val kind get() = Kind.Competitors }
     data class Invoices(val organization: String?, val invoice: String?) : Route() { override val kind get() = Kind.Invoices }
+    data class Surveys(val organization: String?, val survey: String?) : Route() { override val kind get() = Kind.Surveys }
     data class Booking(val booking: String?) : Route() { override val kind get() = Kind.Booking }
     data object Ads : Route() { override val kind get() = Kind.Ads }
     data class Ledger(val section: String?) : Route() { override val kind get() = Kind.Ledger }
@@ -239,7 +240,7 @@ sealed class Route {
         Provision("provision", "WS16"), Network("network", "WS20"), Node("node", "WS16"),
         Market("market", "WS19"), Package("package", "WS19"), Crm("crm", "WS19"), Contact("contact", "WS19"),
         CrmOrg("crmOrg", "WS19"), Marketing("marketing", "WS19"), Analytics("analytics", "WS19"),
-        Competitors("competitors", "WS19"), Invoices("invoices", "WS19"), Ads("ads", "WS19"), Ledger("ledger", "WS19"),
+        Competitors("competitors", "WS19"), Invoices("invoices", "WS19"), Surveys("surveys", "WS19"), Ads("ads", "WS19"), Ledger("ledger", "WS19"),
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
         Steps("steps", "existing"), Water("water", "existing"), Sleep("sleep", "existing"), SugarBreak("sugarBreak", "existing"),
         Stretch("stretch", "existing"), FoodGuide("foodGuide", "existing"), Speech("speech", "existing"),

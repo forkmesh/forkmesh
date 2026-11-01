@@ -191,10 +191,10 @@ void MainWindow::renameAgentSessionInteractive(int sessionId)
     dialog->open();
 }
 
-void MainWindow::syncClaudePermissionMode(int sessionId)
+void MainWindow::syncClaudePermissionMode(int sessionId, const QString &cliModeBefore)
 {
     ClaudeStreamSession *stream = m_streamSessions.value(sessionId);
-    if (!stream || !stream->hostControl())
+    if (!stream || !stream->hostControl() || stream->permissionMode() == cliModeBefore)
         return;
     const QString label =
         forkmesh::claudecontrol::permissionModeLabel(stream->permissionMode());

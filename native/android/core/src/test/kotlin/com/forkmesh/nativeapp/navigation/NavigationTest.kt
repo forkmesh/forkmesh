@@ -30,7 +30,8 @@ class NavigationTest {
         Route.Desktop("d", "logs"), Route.Hosts, Route.Host("mirror35", null), Route.Provision("v1"), Route.Network(null),
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Invoices(null, null),
-        Route.Invoices("acme", "0123456789abcdef0123456789abcdef"), Route.Ads,
+        Route.Invoices("acme", "0123456789abcdef0123456789abcdef"), Route.Surveys(null, null),
+        Route.Surveys("acme", "0123456789abcdef0123456789abcdef"), Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
         Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.Speech, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.Mastodon, Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Logs, Route.Diagnostics, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
@@ -365,7 +366,7 @@ class NavigationTest {
     }
 
     fun testAccountOnlyBusinessItemsAskAGuestToSignIn() {
-        listOf(Route.Crm(null), Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Ads, Route.Coves(null)).forEach {
+        listOf(Route.Crm(null), Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Surveys(null, null), Route.Ads, Route.Coves(null)).forEach {
             expect(HubCatalog.guestAction(it) != null)
         }
         expect(HubCatalog.guestAction(Route.Market(null)) == null)
@@ -616,7 +617,7 @@ class NavigationTest {
         val gated = listOf(
             Route.Notes, Route.Note(""), Route.Note("n1"), Route.NotePage("p1"), Route.Tasks(null), Route.Task("t"), Route.Booking(null), Route.AllAgents,
             Route.Hosts, Route.Host("mirror35", null), Route.Crm(null), Route.Contact("c"), Route.CrmOrg("o"),
-            Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Ads, Route.Vault(null),
+            Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Surveys(null, null), Route.Ads, Route.Vault(null),
             Route.Coves(null), Route.Cove("c1"), Route.Calories, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.Approval("7/a1"), Route.InstalledApps,
         )
         for (route in gated) {

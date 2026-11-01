@@ -164,6 +164,7 @@ Planned extractions are described in
 | [`crm`](packages/crm/manifest.json), [`marketing`](packages/marketing/manifest.json) | Organization packages with web and desktop pages and a worker API. |
 | [`booking`](packages/booking/README.md) | Personal booking page at one short link (`/meet?<name>`): people book a free time, the meeting lands on your ForkMesh calendar, and ForkMesh emails both sides. |
 | [`invoices`](packages/invoices/README.md) | Organization invoices linked to CRM contacts, emailed with a private view-and-pay link, with open, view, pay-click and overdue tracking. |
+| [`surveys`](packages/surveys/README.md) | Organization surveys with choice, text and rating questions, a private link anyone can answer, live results, response management and CSV export on the web, desktop and phones. |
 | [`poker`](packages/poker/README.md) | No-limit Texas Hold'em between ForkMesh users for virtual chips, with a dealer, bots, side pots, turn clocks and synthesized sounds on the web, desktop and phones. |
 | [`competitor`](packages/competitor/manifest.json), [`notes`](packages/notes/README.md), [`tasks`](packages/tasks/README.md), [`calendar`](packages/calendar/README.md) | Organization competitor list; dashboard pages for host notes, tasks and calendar services. |
 

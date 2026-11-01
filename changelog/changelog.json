@@ -12,6 +12,10 @@
  ],
  "notes": [
   {"date": "2026-11-01", "area": "iPhone", "text": "Notices on iPhone and Android close themselves after a few seconds, with a ring around the close button counting down, and tapping a notice or alert message opens it in the composer instead of showing copy and send icons."},
+  {"date": "2026-11-01", "area": "Projects", "text": "Notes can hold diagrams (svg code blocks drawn as figures), page breaks and a page layout, and Export PDF turns a note into a paginated PDF with an optional cover page, contents and page numbers on the web, desktop, iPhone and Android."},
+  {"date": "2026-11-01", "area": "Agents", "text": "Switching an agent to Auto from the mode dropdown now sticks instead of going back to Edit."},
+  {"date": "2026-11-01", "area": "Agents", "text": "The way back to the workflow that started an agent is now a Workflow button in the agent's top bar, next to Add task and Stop."},
+  {"date": "2026-11-01", "area": "Market", "text": "New Surveys plugin: build surveys with choice, text and rating questions, share a link anyone can answer, and read the results and responses on the web, desktop, iPhone and Android."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The firewall prompt no longer freezes the window when several connections ask at once, and a new Allow all for 1 minute button lets everything through for the next minute."},
   {"date": "2026-11-01", "area": "Android", "text": "Booking Page is on Android: copy or share your booking link, see who booked, cancel a meeting with a note, and change your hours and meeting types."},
   {"date": "2026-11-01", "area": "iPhone", "text": "Booking Page is on iPhone: copy or share your booking link, see who booked, cancel a meeting with a note, and change your hours and meeting types."},

@@ -3,6 +3,8 @@
 #include <QStringList>
 #include <QWidget>
 
+#include <functional>
+
 class QKeyEvent;
 class QListWidget;
 class QPlainTextEdit;
@@ -41,6 +43,11 @@ public:
 
     void setMentionCandidates(const QStringList &names);
 
+    using PreviewSource = std::function<QString(const QString &)>;
+    using PreviewFinish = std::function<void(QTextBrowser *)>;
+    void setPreviewHooks(PreviewSource source, PreviewFinish finish);
+    void refreshPreview();
+
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
@@ -65,6 +72,8 @@ private:
     QStringList m_attachments;
     QStringList m_attachmentPlaceholders;
     QString m_basePath;
+    PreviewSource m_previewSource;
+    PreviewFinish m_previewFinish;
 
     QStringList m_mentionCandidates;
     QListWidget *m_mentionPopup = nullptr;
