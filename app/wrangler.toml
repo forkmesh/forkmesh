@@ -170,6 +170,7 @@ run_worker_first = [
   "!/referral/",
   "!/reset-password/",
   "!/start/",
+  "!/start-discourse-mirror/",
 ]
 
 [[routes]]

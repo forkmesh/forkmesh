@@ -2362,7 +2362,14 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
         side->setMinimumWidth(260);
     }
     body->addWidget(side);
-    body->addWidget(tabs);
+    auto *center = new QWidget;
+    auto *centerLayout = new QVBoxLayout(center);
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->setSpacing(0);
+    centerLayout->addWidget(tabs, 1);
+    centerLayout->addWidget(m_contactsBody, 1);
+    m_contactsBody->hide();
+    body->addWidget(center);
     auto *detail = new QFrame;
     detail->setObjectName(QStringLiteral("crmDetailPanel"));
     detail->setFrameShape(QFrame::StyledPanel);
@@ -3169,6 +3176,8 @@ void CrmFeature::applyOrganization(const QJsonObject &payload)
     m_decks = payload.value(QStringLiteral("decks")).toArray();
     m_viewerName = text(payload.value(QStringLiteral("outreach")).toObject(), "name");
     m_settings = payload.value(QStringLiteral("settings")).toObject();
+    if (!m_tableViewPicked)
+        m_tableViewId = defaultTableViewId();
     renderTableViews();
     m_role = text(payload, "role");
     m_canManageSettings =
@@ -5461,8 +5470,6 @@ void CrmFeature::renderSheetTabs(const QString &select)
                 continue;
             // Deleted, here or by another member; its page goes, the table stays.
             QWidget *page = m_tabs->widget(index);
-            if (m_contactsBody->parentWidget() == page)
-                m_contactsPage->layout()->addWidget(m_contactsBody);
             m_tabs->removeTab(index);
             page->deleteLater();
         }
@@ -5518,13 +5525,10 @@ void CrmFeature::syncSheetTab()
 {
     const int index = m_tabs->currentIndex();
     const QString id = sheetTabId(index);
+    m_tabs->setVisible(id.isEmpty());
+    m_contactsBody->setVisible(!id.isEmpty());
     if (id.isEmpty())
         return;
-    QWidget *page = m_tabs->widget(index);
-    if (m_contactsBody->parentWidget() != page) {
-        page->layout()->addWidget(m_contactsBody);
-        m_contactsBody->show();
-    }
     // Selecting the tab's list or pipeline applies its fields and puts its
     // contacts in the table.
     const int sheetIndex = m_sheet->findData(id);
@@ -7096,6 +7100,18 @@ QJsonArray CrmFeature::tableViews() const
     return m_settings.value(QStringLiteral("tableViews")).toArray();
 }
 
+QString CrmFeature::defaultTableViewId() const
+{
+    const QString id = text(m_settings, "defaultTableView");
+    if (id == QLatin1String(kAllTableView))
+        return id;
+    for (const QJsonValue &value : tableViews()) {
+        if (text(value.toObject(), "id") == id)
+            return id;
+    }
+    return QString::fromLatin1(kDefaultTableView);
+}
+
 bool CrmFeature::builtinTableView() const
 {
     return m_tableViewId == QLatin1String(kDefaultTableView) ||
@@ -7184,9 +7200,9 @@ void CrmFeature::renderTableViews()
     }
     int index = m_tableView->findData(m_tableViewId);
     if (index < 0) {
-        m_tableViewId = QString::fromLatin1(kDefaultTableView);
+        m_tableViewId = defaultTableViewId();
         m_tableViewDraft.clear();
-        index = 0;
+        index = std::max(0, m_tableView->findData(m_tableViewId));
     }
     const bool modified = builtinTableView() && !m_tableViewDraft.isEmpty();
     if (modified)
@@ -7204,6 +7220,7 @@ void CrmFeature::selectTableView(const QString &id)
     if (id != m_tableViewId)
         m_tableViewDraft.clear();
     m_tableViewId = id;
+    m_tableViewPicked = true;
     renderTableViews();
     applyColumnVisibility();
 }
@@ -7219,6 +7236,11 @@ void CrmFeature::showTableViewMenu()
     menu.addAction(QString::fromUtf8("Delete view\xE2\x80\xA6"), this,
                    [this] { deleteTableView(); })
         ->setEnabled(!builtinTableView());
+    const bool opensFirst = m_tableViewId == defaultTableViewId();
+    menu.addAction(opensFirst ? QStringLiteral("Lists open in this view")
+                              : QStringLiteral("Make default view"),
+                   this, [this] { makeTableViewDefault(); })
+        ->setEnabled(!opensFirst && !(builtinTableView() && !m_tableViewDraft.isEmpty()));
     menu.exec(m_tableViewMenu->mapToGlobal(QPoint(0, m_tableViewMenu->height())));
 }
 
@@ -7302,6 +7324,7 @@ void CrmFeature::addTableView(const QString &name, const QStringList &fields, co
                              {QStringLiteral("name"), name},
                              {QStringLiteral("columns"), QJsonArray::fromStringList(fields)}});
     m_tableViewId = id;
+    m_tableViewPicked = true;
     m_tableViewDraft.clear();
     saveTableViews(views, done);
     applyColumnVisibility();
@@ -7352,6 +7375,26 @@ void CrmFeature::deleteTableView()
     }
 }
 
+void CrmFeature::makeTableViewDefault()
+{
+    const QString id = m_tableViewId == QLatin1String(kDefaultTableView) ? QString() : m_tableViewId;
+    const QString name = m_tableView ? m_tableView->currentText() : QString();
+    m_settings.insert(QStringLiteral("defaultTableView"), id);
+    request(QByteArrayLiteral("PUT"), organizationPath(QStringLiteral("/settings")),
+            QJsonObject{{QStringLiteral("defaultTableView"), id}},
+            [this, name](bool ok, const QJsonObject &payload, const QString &error) {
+        if (!ok) {
+            setStatus(QStringLiteral("The default view was not saved: %1").arg(error), true);
+            loadOrganization();
+            return;
+        }
+        m_settings.insert(QStringLiteral("defaultTableView"),
+                          text(payload.value(QStringLiteral("settings")).toObject(),
+                               "defaultTableView"));
+        setStatus(QString::fromUtf8("Lists now open in \xE2\x80\x9C%1\xE2\x80\x9D.").arg(name));
+    });
+}
+
 void CrmFeature::saveTableViews(const QJsonArray &views, const QString &done)
 {
     m_settings.insert(QStringLiteral("tableViews"), views);
@@ -7364,9 +7407,11 @@ void CrmFeature::saveTableViews(const QJsonArray &views, const QString &done)
             loadOrganization();
             return;
         }
+        const QJsonObject settings = payload.value(QStringLiteral("settings")).toObject();
         m_settings.insert(QStringLiteral("tableViews"),
-                          payload.value(QStringLiteral("settings")).toObject()
-                              .value(QStringLiteral("tableViews")).toArray());
+                          settings.value(QStringLiteral("tableViews")).toArray());
+        m_settings.insert(QStringLiteral("defaultTableView"),
+                          text(settings, "defaultTableView"));
         renderTableViews();
         applyColumnVisibility();
         if (!done.isEmpty())

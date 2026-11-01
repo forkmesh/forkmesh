@@ -2608,8 +2608,8 @@ void ServerNode::shutdown()
         m_presenceTimer->stop();
     if (m_connectTimeoutTimer)
         m_connectTimeoutTimer->stop();
-    QJsonObject bye = makeMessage("bye");
-    sendEncrypted(bye, true);
+    if (m_wsReady)
+        sendEncrypted(makeMessage("bye"), true);
     m_sendGate.releaseAll();
     const bool wasConnected = m_wsReady;
     closeCurrentSocket();

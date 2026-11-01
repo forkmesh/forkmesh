@@ -161,6 +161,7 @@ enum NavigationRoutes {
             guard case let .instanceFeed(post) = route else { return AnyView(FeedScreen()) }
             return AnyView(FeedScreen(post: post))
         }
+        fallback(routes, .mastodon) { _ in AnyView(MastodonScreen()) }
         fallback(routes, .secureDrive) { _ in AnyView(SecureDriveScreen()) }
         fallback(routes, .spiderRoom) { _ in AnyView(SpiderRoomScreen()) }
         fallback(routes, .workflows) { _ in AnyView(WorkflowsScreen()) }

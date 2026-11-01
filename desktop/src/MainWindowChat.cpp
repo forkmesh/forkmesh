@@ -3687,17 +3687,18 @@ QWidget *MainWindow::buildNetworkLogDock()
             return;
         const QString provider = m_quickAddAgentProvider->currentData().toString();
         const QString model = selectedModelComboValue(m_quickAddClaudeModel);
+        QSettings settings;
         if (provider == QLatin1String("claude-code")) {
-            QSettings().setValue(kClaudeCodeModelSetting, model);
+            forkmesh::settings::put(settings, kClaudeCodeModelSetting, model);
         } else if (agentIsCodexProvider(provider)) {
             const QString safeModel = codexChatGptModelId(model);
-            QSettings().setValue(kCodexModelSetting, safeModel);
+            forkmesh::settings::put(settings, kCodexModelSetting, safeModel);
             if (m_codexModelEdit)
                 m_codexModelEdit->setText(safeModel);
         } else if (agentIsCloudflareAiProvider(provider)) {
-            QSettings().setValue(kCloudflareAiModelSetting, model);
+            forkmesh::settings::put(settings, kCloudflareAiModelSetting, model);
         } else if (agentIsLocalLlamaProvider(provider)) {
-            QSettings().setValue(kLocalLlamaModelSetting, model);
+            forkmesh::settings::put(settings, kLocalLlamaModelSetting, model);
         }
         refreshQuickAddAgentModelSelector();
         scheduleTeammateRailRefresh();
@@ -3754,10 +3755,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     }
     connect(m_quickAddModeSelector, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
-                QSettings().setValue(kClaudeAutoModeSetting,
-                                     m_quickAddModeSelector->currentData().toBool());
-                QSettings().setValue(kAgentModeSetting,
-                                     m_quickAddModeSelector->currentText());
+                QSettings settings;
+                forkmesh::settings::put(settings, kClaudeAutoModeSetting,
+                                        m_quickAddModeSelector->currentData().toBool());
+                forkmesh::settings::put(settings, kAgentModeSetting,
+                                        m_quickAddModeSelector->currentText());
                 const QString description =
                     QStringLiteral("Permission mode: %1")
                         .arg(m_quickAddModeSelector->currentText());
@@ -3865,8 +3867,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     };
     connect(m_quickAddAgentProvider, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this, syncQuickAddAgentControls, refreshQuickAddModelPicker](int) {
-                QSettings().setValue(
-                    kQuickAddAgentProviderSetting,
+                QSettings settings;
+                forkmesh::settings::put(
+                    settings, kQuickAddAgentProviderSetting,
                     m_quickAddAgentProvider->currentData().toString());
                 refreshQuickAddModelPicker();
                 syncQuickAddAgentControls();
@@ -3940,6 +3943,8 @@ QWidget *MainWindow::buildNetworkLogDock()
                                                QSizePolicy::Fixed);
     connect(m_quickAddSendToAgentButton, &QPushButton::clicked, this, [this] {
         if (!m_issueQuickAdd)
+            return;
+        if (quickAddPackageAppliesToOpen() && submitQuickAddToPackage())
             return;
         const QString typed = m_issueQuickAdd->toPlainText().trimmed();
         // A cloud run open above takes the message through the relay. Its node

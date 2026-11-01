@@ -16,10 +16,6 @@ from next_common import GuardError
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = (REPO / ".forkmesh" / "deploy-nodes.yml").read_text("utf-8")
 FLEET_TOML = """domain = "next.example.com"
-app_host = "app.next.example.com"
-world_host = "world.next.example.com"
-
-[production]
 app_host = "app.example.com"
 world_host = "world.example.com"
 
@@ -581,7 +577,7 @@ def test_failures_ping_and_only_a_repeat_emails(tmp_path):
     assert notifier.sent[-1][2] is False
 
 
-def test_fleet_hosts_uses_production_names_and_core_nodes_only():
+def test_fleet_hosts_uses_the_app_and_world_names_and_core_nodes_only():
     hosts = auto.fleet_hosts(FLEET_TOML)
     assert hosts["app_host"] == "app.example.com"
     assert hosts["world_host"] == "world.example.com"

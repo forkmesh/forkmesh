@@ -16,7 +16,7 @@ const exported = [
   "crmMastodonKey", "crmBlueskyActor", "crmGithubUser", "crmLiveAccounts",
   "crmHttpsUrl", "crmPictureUrl", "crmPlainText", "crmGithubEventLine",
   "crmContactLabel", "crmContactUrl", "crmListUrl", "crmDeleteColumnItems", "crmVisibleColumns",
-  "selectCrmTableView", "crmTableViewId", "state",
+  "selectCrmTableView", "crmTableViewId", "state", "makeCrmTableViewDefault", "crmTableViewMenuItems",
   "crmSetColumnHidden", "crmTableViewDraftFields", "saveCrmTableViewDraft",
   "crmOwnerMatches", "crmFocusMatches", "crmFlow", "crmInvestorFlow",
   "crmAccountChip", "crmAccountProof",
@@ -261,6 +261,19 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
        "Save view names the new view on its own");
   same(page.crmTableViewId(), saved.id, "the saved view is the one open");
   same(page.crmTableViewDraftFields(), null, "a saved view is no longer modified");
+  const menuLabel = () => page.crmTableViewMenuItems().find((item) => /default|open in/i.test(item.label || ""));
+  same([menuLabel().label, menuLabel().disabled], ["Make default view", false], "a custom view can be made the default");
+  await page.makeCrmTableViewDefault();
+  same(puts.at(-1), { defaultTableView: saved.id }, "Make default view stores the view for the organization");
+  same(page.state.crmView.settings.defaultTableView, saved.id, "the page keeps the new default");
+  same([menuLabel().label, menuLabel().disabled], ["Lists open in this view", true], "the default view says so");
+  page.selectCrmTableView("all");
+  same(page.crmTableViewId(), "all", "another view can still be picked");
+  page.selectCrmTableView("default");
+  same(page.crmTableViewId(), "default", "the built-in Default view can still be picked");
+  page.selectCrmTableView("view-gone");
+  same(page.crmTableViewId(), saved.id, "an unknown view falls back to the organization's default");
+  page.state.crmView.settings = { ...page.state.crmView.settings, defaultTableView: "" };
 
   {
     const day = 86400000; const now = 1_800_000_000_000;

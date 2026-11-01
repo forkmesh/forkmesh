@@ -189,6 +189,14 @@ matching `FORKMESH_MCP_TOKEN` gives write access and anything else is
 read-only. CRM tools and `list_tasks`/`get_task` need the token even to read.
 Agent, window and release tools need the desktop's intake socket
 (`FORKMESH_AGENT_INTAKE`).
+`link_branch` is left out of `tools/list` entirely without both intake
+variables (`INTAKE_ONLY_TOOLS`), since it can only ever act on the calling
+desktop session. It fixes an agent that started in the main checkout
+(no branch, no worktree) and later moved its work to a branch: once linked,
+the desktop's diff viewer, task link and merge flow use that branch
+([../tools/mcp-create-agent.md](../tools/mcp-create-agent.md#linking-a-branch-to-your-own-session-link_branch)).
+`tools/test_forkmesh_mcp_server.py` drops the intake variables before it
+pins the tool names, so it passes inside a desktop agent too.
 
 The issue, milestone, project and pull stores (`.forkmesh/issues`,
 `.forkmesh/projects`, `.forkmesh/pulls`) are read and written in the working
@@ -210,7 +218,7 @@ written through to wherever it pointed.
 | Pull requests | `open_pr_from_branch`, `get_pr_diff` | The PR carries the MCP marker |
 | CRM | `crm_list_organizations`, `crm_get_pipeline`, `crm_list_contacts`, `crm_get_contact`, `crm_list_activity`, `crm_update_contact`, `crm_find_duplicates`, `crm_check_accounts`, `crm_merge_contacts` | Signed CRM API |
 | Tasks | `list_tasks`, `get_task`, `create_task`, `update_task`, `complete_task`, `reopen_task`, `attach_work_item`, `detach_work_item`, `delete_task`, `restore_task` | Signed `/api/tasks`; delete is soft |
-| Agents | `create_agent` | Desktop socket; 12 per 10 minutes; `task` / `handoff` hand an organization task to the new agent |
+| Agents | `create_agent`, `link_branch` | Desktop socket; `create_agent` 12 per 10 minutes, `task` / `handoff` hand an organization task to the new agent; `link_branch` (listed only when the socket is there) links a branch the calling agent created to its own session |
 | Releases | `list_releases`, `create_release`, `publish_release` | Desktop socket; 6 per 10 minutes |
 | Ledger | `record_expense` | Signed `POST /api/ledger/expenses`; the signed-in account must be an administrator with two-factor sign-in ([../finance/cfo.md](../finance/cfo.md#recording-expenses)) |
 | Email | `send_email` | Sends through the local Zoho Mail account set up with `tools/zoho_mail.py`, no confirmation step, then logs outside recipients in the CRM's Initiatives list ([../tools/zoho-mail.md](../tools/zoho-mail.md)) |

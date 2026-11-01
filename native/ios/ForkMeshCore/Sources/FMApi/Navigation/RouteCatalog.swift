@@ -190,6 +190,7 @@ public enum RouteCatalog {
         case .usage: return "Usage"
         case .rssReader: return "RSS Reader"
         case .instanceFeed: return "Feed"
+        case .mastodon: return "Mastodon"
         case .secureDrive: return "Secure Drive"
         case .spiderRoom: return "Spider Room"
         case .workflows: return "Workflows"
@@ -282,6 +283,7 @@ public enum RouteCatalog {
         case .usage: return "gauge.with.dots.needle.33percent"
         case .rssReader: return "dot.radiowaves.up.forward"
         case .instanceFeed: return "bubble.left.and.bubble.right"
+        case .mastodon: return "at"
         case .secureDrive: return "lock.shield"
         case .spiderRoom: return "arkit"
         case .workflows: return "point.3.connected.trianglepath.dotted"
@@ -424,6 +426,7 @@ public enum HubCatalog {
         .destination(.poker(table: nil)),
         .destination(.rssReader),
         .destination(.instanceFeed(post: nil)),
+        .destination(.mastodon),
         .destination(.secureDrive),
         .destination(.spiderRoom),
         .destination(.localAI),

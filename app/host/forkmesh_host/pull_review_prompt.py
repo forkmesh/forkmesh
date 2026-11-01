@@ -21,8 +21,10 @@ FIELD_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 INVISIBLE_RE = re.compile(
     r"[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064"
     r"\u2066-\u2069\ufeff]")
+LONE_SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 CHATGPT_URL = "https://chatgpt.com/"
 CHATGPT_URL_LIMIT = 14000
+CHATGPT_PROMPT_LIMIT = 8000
 FILE_LINKS_MAX = 50
 FILES_COLLAPSE = 5
 PATH_LIMIT = 300
@@ -62,7 +64,8 @@ def normalize_template(value):
 
 
 def clean_field(value, limit=0):
-    text = INVISIBLE_RE.sub("", FIELD_CONTROL_RE.sub(" ", str(value or "")))
+    text = INVISIBLE_RE.sub("", FIELD_CONTROL_RE.sub(" ", LONE_SURROGATE_RE.sub(
+        "\ufffd", str(value or ""))))
     text = re.sub(r" {2,}", " ", text).strip(" ")
     return text[:limit].rstrip(" ") if limit else text
 
@@ -175,8 +178,44 @@ def is_open(pull):
     return str((pull or {}).get("state") or "open").strip().lower() == "open"
 
 
+def quote(text):
+    return urllib.parse.quote(text, safe=URL_SAFE)
+
+
+def chatgpt_prompt(prompt, url):
+    prompt = LONE_SURROGATE_RE.sub("\ufffd", prompt)
+    if len(quote(prompt)) <= CHATGPT_PROMPT_LIMIT:
+        return prompt, False
+    head = url + "\n\n"
+    budget = CHATGPT_PROMPT_LIMIT - len(quote(head)) - len(quote("\u2026"))
+    cut = []
+    for ch in prompt:
+        budget -= len(quote(ch))
+        if budget < 0:
+            break
+        cut.append(ch)
+    cut = "".join(cut)
+    return ("" if url in cut else head) + cut + "\u2026", True
+
+
+def chatgpt_link(prompt, url, button):
+    text, shortened = chatgpt_prompt(prompt, url)
+    copy = ' data-dashboard-copy="%s"' % esc(prompt) if shortened else ""
+    label = ("Review with ChatGPT: opens ChatGPT with the start of the review prompt and copies "
+             "the full prompt" if shortened else
+             "Review with ChatGPT: opens ChatGPT with the review prompt filled in")
+    title = ("The prompt is too long for a link: ChatGPT opens with its start, and the full "
+             "prompt is copied to paste instead" if shortened else
+             "Open ChatGPT in a new tab with this prompt")
+    return ('<a href="%s" target="_blank" rel="noopener noreferrer"%s data-repo-pull-review-chatgpt '
+            'aria-label="%s" title="%s" class="%s">%s<span>Review with ChatGPT</span></a>' % (
+                esc(CHATGPT_URL + "?q=" + quote(text)), copy, label,
+                title, button, icon("bot", "h-3 w-3")))
+
+
 def render(values, number, template=""):
-    prompt = esc(prompt_text(values, template))
+    text = prompt_text(values, template)
+    prompt = esc(text)
     files = values.get("files") or []
     more = values.get("fileCount", 0) - len(files)
     toggle = len(files) + (1 if more > 0 else 0) > FILES_COLLAPSE
@@ -215,10 +254,10 @@ def render(values, number, template=""):
         'data-dashboard-copy="%s" aria-label="Copy the review prompt for this pull request" '
         'title="Copy a review prompt for your coding agent" class="copy-button %s">%s%s<span '
         'class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span>'
-        '</button><a href="%s" target="_blank" rel="noopener noreferrer" '
+        '</button>%s<a href="%s" target="_blank" rel="noopener noreferrer" '
         'data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this '
         'pull request" class="%s">%sSummarize in ChatGPT</a>%s</span>\n'
         '          </div>' % (
             diff_links, listing, prompt, button, icon("copy", "copy-icon h-3 w-3"),
-            icon("check", "copy-check h-3 w-3"), esc(chatgpt_url(values)), button,
-            icon("external-link", "h-3 w-3"), toggle_button))
+            icon("check", "copy-check h-3 w-3"), chatgpt_link(text, values["url"], button),
+            esc(chatgpt_url(values)), button, icon("external-link", "h-3 w-3"), toggle_button))

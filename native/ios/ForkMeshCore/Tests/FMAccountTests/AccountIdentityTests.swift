@@ -334,7 +334,7 @@ final class SettingsCatalogTests: XCTestCase {
         XCTAssertEqual(SettingsCatalog.visible("", available: [.legal, .data]).map(\.id), [.data, .legal])
         XCTAssertTrue(SettingsCatalog.visible("zzz", available: all).isEmpty)
         XCTAssertEqual(SettingsCatalog.entries.count, SettingsSectionId.allCases.count)
-        for word in ["sound", "Sounds", "mute", "silent", "audio", "volume", "genie", "Spider"] {
+        for word in ["sound", "Sounds", "mute", "silent", "audio", "volume", "genie", "Spider", "dragon", "Mascot", "cloud dragon"] {
             XCTAssertTrue(SettingsCatalog.visible(word, available: all).map(\.id).contains(.general), word)
         }
     }
