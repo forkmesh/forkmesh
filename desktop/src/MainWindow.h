@@ -14979,6 +14979,12 @@ private:
     QJsonObject handleAgentIntakeRequest(const forkmesh::agentintake::Request &request);
     QJsonObject createAgentFromIntake(int requesterId,
                                       const forkmesh::agentintake::CreateRequest &request);
+    QJsonObject linkBranchFromIntake(int requesterId,
+                                     const forkmesh::agentintake::LinkBranchRequest &request);
+    QJsonObject verifyIntakeWorktree(const QString &gitDir, const QString &slug,
+                                     const QString &worktree, QString *branch,
+                                     QString *canonical);
+    bool sessionLinkedFromCheckout(int sessionId);
     QString agentIntakeSessionState(int sessionId) const;
     bool startHeldAgentSession(int sessionId);
     std::unique_ptr<forkmesh::agentintake::Server> m_agentIntake;

@@ -1404,7 +1404,7 @@ QString MainWindow::cachedSessionWorktree(int sessionId, const QString &repoLoca
     if (repoLocal.isEmpty() || branch.trimmed().isEmpty())
         return QString();
     auto live = m_streamWorktree.constFind(sessionId);
-    if (live != m_streamWorktree.constEnd())
+    if (live != m_streamWorktree.constEnd() && !sessionLinkedFromCheckout(sessionId))
         return *live;
     auto cached = m_sessionWorkdirCache.constFind(sessionId);
     if (cached != m_sessionWorkdirCache.constEnd()
@@ -1422,7 +1422,7 @@ QString MainWindow::cachedSessionWorktreeForUi(int sessionId,
     if (repoLocal.isEmpty() || branch.trimmed().isEmpty())
         return QString();
     const auto live = m_streamWorktree.constFind(sessionId);
-    if (live != m_streamWorktree.constEnd())
+    if (live != m_streamWorktree.constEnd() && !sessionLinkedFromCheckout(sessionId))
         return *live;
     const auto cached = m_sessionWorkdirCache.constFind(sessionId);
     if (cached != m_sessionWorkdirCache.constEnd() &&
