@@ -24,6 +24,7 @@
     { "id": "invoices", "version": "1.0.0", "manifest": "packages/invoices/manifest.json" },
     { "id": "surveys", "version": "1.0.0", "manifest": "packages/surveys/manifest.json" },
     { "id": "booking", "version": "1.0.0", "manifest": "packages/booking/manifest.json" },
+    { "id": "spreadsheets", "version": "1.0.0", "manifest": "packages/spreadsheets/manifest.json" },
     { "id": "analytics", "version": "1.8.2", "manifest": "packages/analytics/manifest.json" },
     { "id": "tasks", "version": "1.1.0", "manifest": "packages/tasks/manifest.json" },
     { "id": "calendar", "version": "1.1.0", "manifest": "packages/calendar/manifest.json" },
