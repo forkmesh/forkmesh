@@ -63,11 +63,19 @@ struct GenieAvatar: View {
     var show: GenieShow? = nil
     var gaze: CGPoint? = nil
     var alarm: Double = 0
+    var place: CGPoint? = nil
+    var turn: Double = 0
+    var held: Bool = false
+    var side: CGFloat = GenieCrawler.base
 
     private var tilt: CGSize { reduceMotion ? .zero : lean }
 
     var body: some View {
-        if let at = at {
+        if GenieHub.shared.dragon {
+            CloudDragonAvatar(
+                mood: mood, level: level, animated: animated, frameRate: frameRate, cue: cue, ambient: ambient, vitals: vitals, at: at,
+                stride: stride, show: show, gaze: gaze, alarm: alarm, place: place, turn: turn, held: held, side: side)
+        } else if let at = at {
             painted(at)
         } else if animated {
             TimelineView(.animation(minimumInterval: 1.0 / frameRate, paused: reduceMotion && mood != .speaking)) {
