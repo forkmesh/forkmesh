@@ -10638,6 +10638,7 @@
   const PULL_REVIEW_FILE_LINKS_MAX = 50;
   const PULL_REVIEW_FILES_COLLAPSE = 5;
   const PULL_REVIEW_PATH_LIMIT = 300;
+  const PULL_REVIEW_LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PULL_REVIEW_PROMPT_DEFAULT = `Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -10673,7 +10674,7 @@ Your reply
   }
 
   function cleanPullReviewField(value, limit = 0) {
-    const text = String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    const text = String(value ?? "").replace(PULL_REVIEW_LONE_SURROGATE, "\ufffd").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
       .replace(PULL_REVIEW_INVISIBLE, "")
       .replace(/ {2,}/g, " ")
       .replace(/^ +| +$/g, "");
@@ -10759,7 +10760,7 @@ Your reply
   }
 
   function pullReviewChatGptPrompt(value, url) {
-    const prompt = value.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd");
+    const prompt = value.replace(PULL_REVIEW_LONE_SURROGATE, "\ufffd");
     if (encodeURIComponent(prompt).length <= PULL_REVIEW_CHATGPT_MAX) return { text: prompt, shortened: false };
     const head = `${url}\n\n`;
     let budget = PULL_REVIEW_CHATGPT_MAX - encodeURIComponent(head).length - encodeURIComponent("\u2026").length;

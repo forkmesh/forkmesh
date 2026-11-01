@@ -21,6 +21,7 @@ FIELD_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 INVISIBLE_RE = re.compile(
     r"[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064"
     r"\u2066-\u2069\ufeff]")
+LONE_SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 CHATGPT_URL = "https://chatgpt.com/"
 CHATGPT_URL_LIMIT = 14000
 CHATGPT_PROMPT_LIMIT = 8000
@@ -63,7 +64,8 @@ def normalize_template(value):
 
 
 def clean_field(value, limit=0):
-    text = INVISIBLE_RE.sub("", FIELD_CONTROL_RE.sub(" ", str(value or "")))
+    text = INVISIBLE_RE.sub("", FIELD_CONTROL_RE.sub(" ", LONE_SURROGATE_RE.sub(
+        "\ufffd", str(value or ""))))
     text = re.sub(r" {2,}", " ", text).strip(" ")
     return text[:limit].rstrip(" ") if limit else text
 
@@ -181,7 +183,7 @@ def quote(text):
 
 
 def chatgpt_prompt(prompt, url):
-    prompt = re.sub(r"[\ud800-\udfff]", "\ufffd", prompt)
+    prompt = LONE_SURROGATE_RE.sub("\ufffd", prompt)
     if len(quote(prompt)) <= CHATGPT_PROMPT_LIMIT:
         return prompt, False
     head = url + "\n\n"

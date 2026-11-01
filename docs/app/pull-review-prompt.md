@@ -121,6 +121,12 @@ Rules (the same in `app/host/forkmesh_host/pull_review_prompt.py` and
 - Title, author and branch names come from the pull request's author: each is
   folded to one line and capped, so a title cannot add lines that read like
   instructions.
+- A lone UTF-16 surrogate in a title, author, branch or file name (JSON can
+  carry one as `"\ud800"`) becomes U+FFFD in `clean_field` and
+  `cleanPullReviewField`. Until November 2026 it reached
+  `encodeURIComponent` in the summary link, which throws `URIError`, and
+  `urllib.parse.quote`, which raises `UnicodeEncodeError`, so one such title
+  broke the box on the page and in the first view.
 - Every placeholder is filled once, in one pass: a title that contains
   `{url}` stays as written. Unknown placeholders stay as written.
 
