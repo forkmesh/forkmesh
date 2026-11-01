@@ -109,8 +109,8 @@ Atom 1.0 with the threading extension of RFC 4685
   `TAG_DATE`, not the current one.
 - A thread entry has `<thr:total>` with its comment count and a
   `rel="replies"` link to its own feed with `thr:count`. A comment entry has
-  `<thr:in-reply-to ref="<thread id>" href="<issue page>" type="text/html">`,
-  which is what feed readers and rss2email use to thread replies.
+  `<thr:in-reply-to>` whose `ref` is the thread id, whose link points at the
+  issue page and whose `type` is `text/html`, which is what feed readers and rss2email use to thread replies.
 - Authors: a mirrored `github:<login>` is `@login` with
   `<uri>https://github.com/<login></uri>`; an account on the instance is its
   name with the profile URL.

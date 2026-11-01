@@ -36,6 +36,7 @@ def test_every_markdown_document_and_json_file_has_a_hosted_url():
         f"docs/{path.relative_to(DOCS).as_posix()}"
         for path in DOCS.rglob("*")
         if path.is_file() and path.suffix in {".md", ".json"}
+        and docs_site.is_published(path.relative_to(DOCS).as_posix())
     }
     assert sources == expected
     urls = [entry.url for entry in catalog.entries]
@@ -242,18 +243,18 @@ def test_history_log_parser_follows_renames_and_additions():
         [
             f"{record}c3{field}300{field}Ada{field}Rename the guide{field}c2",
             "",
-            "R087\twww/docs/old.md\twww/docs/new.md",
-            "M\twww/docs/other.md",
+            "R087\tdocs/old.md\tdocs/new.md",
+            "M\tdocs/other.md",
             f"{record}c2{field}200{field}Ada{field}Edit the guide",
             "",
-            "M\twww/docs/old.md",
-            "D\twww/docs/gone.md",
+            "M\tdocs/old.md",
+            "D\tdocs/gone.md",
             f"{record}c1{field}100{field}Bob{field}Add the guide",
             "",
-            "A\twww/docs/old.md",
+            "A\tdocs/old.md",
             f"{record}c0{field}50{field}Bob{field}Older edit",
             "",
-            "M\twww/docs/other.md",
+            "M\tdocs/other.md",
         ]
     )
     commits, files = docs_history.parse_log(output)

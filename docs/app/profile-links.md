@@ -117,7 +117,7 @@ owners. `www/public/hackathon.js` (`profileLink`) links the leaderboards;
 underlines on hover.
 
 Notification emails need absolute links: `chat_format.to_html(source,
-profile_origin)` turns mention nodes into `<a href="{origin}/@name">`
+profile_origin)` turns mention nodes into links to `{origin}/@name`
 (`PROFILE_ORIGIN` when none is given; a mention inside a link label stays
 `<strong>`), and `_notification_actor_html` links the "by" name. The origin is
 the one `_notification_item_url` uses for the item link
