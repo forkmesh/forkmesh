@@ -3411,6 +3411,8 @@ class Default:
                         "/api/bug-reports/inbox/attachment",
                         "/api/bug-reports/inbox/attachment/"):
             return await bug_reports_inbox_handler(self.env, request)
+        if url.path in ("/api/bug-reports/mine", "/api/bug-reports/mine/"):
+            return await bug_reports_mine_handler(self.env, request)
 
         if url.path in ("/api/forkbot/chat", "/api/forkbot/chat/"):
             return await forkbot_chat_handler(self.env, request)

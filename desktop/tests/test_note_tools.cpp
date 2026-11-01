@@ -81,9 +81,21 @@ void testWebLinks()
                   .host == QStringLiteral("elsewhere.example"),
           "the parsed host is reported for the caller to check");
     check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId,
+                         hosts) == kId,
+          "the published page link opens the note in the app");
+    check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId +
+                             QStringLiteral("/"),
+                         hosts) == kId,
+          "a published page link with a trailing slash opens the note");
+    check(noteIdFromLink(QStringLiteral("https://elsewhere.example/notes/") + kId,
                          hosts)
               .isEmpty(),
-          "the public page is not a dashboard link");
+          "a published page on another host is not opened in the app");
+    check(noteIdFromLink(QStringLiteral("https://app.forkmesh.com/notes/") + kId +
+                             QStringLiteral("/extra"),
+                         hosts)
+              .isEmpty(),
+          "a longer path under /notes/ is not a note");
     check(noteIdFromLink(
               QStringLiteral("https://app.forkmesh.com/dashboard/notes"), hosts)
               .isEmpty(),

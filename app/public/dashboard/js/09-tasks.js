@@ -798,6 +798,27 @@
     return out + escapeHtml(text.slice(cursor));
   }
 
+  function taskNoteLinkHref(href, origin) {
+    let url;
+    let here;
+    try {
+      here = new URL(origin);
+      url = new URL(String(href || ""), here);
+    } catch {
+      return "";
+    }
+    const forkmeshHost = (host) => host === "forkmesh.com" || host.endsWith(".forkmesh.com");
+    if (url.protocol !== here.protocol || url.username || url.password) return "";
+    if (url.host !== here.host && !(forkmeshHost(url.hostname) && forkmeshHost(here.hostname))) return "";
+    const path = url.pathname.replace(/\/+$/, "");
+    const published = /^\/notes\/([0-9a-f]{32})$/i.exec(path);
+    if (published) return `/dashboard/notes?note=${published[1].toLowerCase()}`;
+    if (path === "/dashboard/notes" || /^\/dashboard\/notes\/[0-9a-f]{32}$/i.test(path)) {
+      return `${path}${url.search}`;
+    }
+    return "";
+  }
+
   function taskMarkdownHtml(value) {
     const html = renderMarkdown(String(value || ""), { repo: null, mentions: false });
     let literal = 0;
@@ -1911,6 +1932,15 @@
       if (attachment) {
         event.preventDefault();
         void expandTaskAttachment(attachment);
+        return;
+      }
+      const markdownLink = event.target.closest(".task-markdown a[href]");
+      const noteHref = markdownLink && !event.metaKey && !event.ctrlKey && !event.shiftKey
+        ? taskNoteLinkHref(markdownLink.getAttribute("href"), window.location.origin)
+        : "";
+      if (noteHref) {
+        event.preventDefault();
+        window.location.assign(noteHref);
         return;
       }
       const checkinState = event.target.closest("[data-task-checkin-state]");

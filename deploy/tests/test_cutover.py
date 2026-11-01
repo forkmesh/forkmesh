@@ -25,8 +25,7 @@ FLEET = REPO / "deploy" / "fleet.example.toml"
 KEYS = {"n1": "k" * 42 + "A=", "n2": "m" * 42 + "E=", "n3": "p" * 42 + "I="}
 ACCOUNT = "0123456789abcdef0123456789abcdef"
 ZONE = "fedcba9876543210fedcba9876543210"
-PRODUCTION = {"app_host": "app.forkmesh.com", "world_host": "world.forkmesh.com",
-              "vars": {"PUBLIC_BASE_URL": "https://forkmesh.com",
+PRODUCTION = {"vars": {"PUBLIC_BASE_URL": "https://forkmesh.com",
                        "APP_ORIGIN": "https://app.forkmesh.com",
                        "CORS_ALLOWED_ORIGINS": "https://forkmesh.com,https://app.forkmesh.com"}}
 
@@ -49,7 +48,7 @@ def rendered(loaded, node="n1"):
 def test_without_production_nothing_changes(tmp_path):
     files, manifest = rendered(fleet(tmp_path))
     assert "FORKMESH_SERVES_PRODUCTION" not in files["/etc/forkmesh-next/app.env"]
-    assert "app.forkmesh.com" not in files["/etc/caddy/Caddyfile"]
+    assert "FORKMESH_VAR_PUBLIC_BASE_URL" not in files["/etc/forkmesh-next/app.env"]
     assert manifest["tls_hosts"] == manifest["shared_hosts"]
 
 
@@ -59,30 +58,25 @@ def test_production_identity_renders_everywhere(tmp_path):
     caddy = files["/etc/caddy/Caddyfile"]
     env = files["/etc/forkmesh-next/app.env"]
     assert "app.forkmesh.com {" in caddy and "world.forkmesh.com {" in caddy
-    app_next = caddy.split("app.next.forkmesh.com {", 1)[1].split("\n}\n", 1)[0]
-    assert "redir https://app.forkmesh.com{uri} 308" in app_next
-    assert "@readiness path /readyz /health /api/version" in app_next
-    world_next = caddy.split("world.next.forkmesh.com {", 1)[1].split("\n}\n", 1)[0]
-    assert "redir https://world.forkmesh.com{uri} 308" in world_next
+    assert "app.next.forkmesh.com" not in caddy
+    assert "world.next.forkmesh.com" not in caddy
     assert "header_up Host app.forkmesh.com" in caddy
     certsync = json.loads(files["/etc/forkmesh-next/certsync.json"])
-    assert certsync["names"] == ["app.forkmesh.com", "world.forkmesh.com",
-                                 "app.next.forkmesh.com", "world.next.forkmesh.com"]
+    assert certsync["names"] == ["app.forkmesh.com", "world.forkmesh.com"]
     assert "FORKMESH_SERVES_PRODUCTION=1" in env
     assert "FORKMESH_VAR_PUBLIC_BASE_URL=https://forkmesh.com" in env
     hosts_line = [l for l in env.splitlines() if l.startswith("FORKMESH_PUBLIC_HOSTS=")][0]
     assert hosts_line.startswith("FORKMESH_PUBLIC_HOSTS=app.forkmesh.com,world.forkmesh.com,")
-    assert "app.next.forkmesh.com" in hosts_line
+    assert "app.next.forkmesh.com" not in hosts_line
     fragment = files["/etc/forkmesh-next/hosts.fragment"]
-    assert "127.0.0.1 app.forkmesh.com app.next.forkmesh.com" in fragment
+    assert "127.0.0.1 app.forkmesh.com\n" in fragment
     overrides = json.loads(files[render.DAEMON_OVERRIDES_PATH])
     assert overrides["catalogUrl"] == "https://app.forkmesh.com/api/repositories"
-    assert "FORKMESH_DNS_NAMES=app.next.forkmesh.com,world.next.forkmesh.com" in env
+    assert "FORKMESH_DNS_NAMES=app.forkmesh.com,world.forkmesh.com" in env
 
 
 @pytest.mark.parametrize("change,match", [
-    ({"app_host": "app.forkmesh.co"}, "app_host"),
-    ({"world_host": "evil.example"}, "world_host"),
+    ({"app_host": "app.forkmesh.com"}, "unknown"),
     ({"vars": {"DATA_KEY": "x"}}, "secret"),
     ({"vars": {"MAILTRAP_API_TOKEN": "x"}}, "secret"),
     ({"vars": {"NOT_A_WRANGLER_VAR": "x"}}, "not an app/wrangler.toml"),

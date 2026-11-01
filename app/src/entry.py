@@ -1453,6 +1453,7 @@ watch_github_actions = github_actions_watch.export("watch_github_actions")
 _bug_reports = _LazyModule("bug_reports")
 bug_reports_handler = _bug_reports.export("bug_reports_handler")
 bug_reports_inbox_handler = _bug_reports.export("bug_reports_inbox_handler")
+bug_reports_mine_handler = _bug_reports.export("bug_reports_mine_handler")
 # Reading those reports back (and the docs / World feedback) happens only in
 # the is_admin console, through its Support sections.
 _admin_support = _LazyModule("admin_support")

@@ -83,7 +83,8 @@ final class AppServices {
         // logged too; every stall goes to the unified log and
         // diagnostics/stalls.log in Application Support.
         let monitor: PerformanceMonitorService = PerformanceMonitorService(
-            stallLog: StallLogFile.forDevice(build: config.build))
+            stallLog: StallLogFile.forDevice(build: config.build),
+            mainStackSampler: MainThreadSampler.forMainThread())
         let frameSource: DisplayLinkFrameSource = DisplayLinkFrameSource()
         let lifecycle: AppLifecycle = AppLifecycle.shared
         monitor.installStallMonitors(frameSource: frameSource, lifecycleState: lifecycle.state)

@@ -735,7 +735,7 @@ class HostASGI:
                 _js.Headers({"content-type": "text/plain; charset=utf-8"}))
 
     def _world_health(self, scope, method):
-        """world.next's /health/mobile (world_health.py): static-file
+        """world.forkmesh.com's /health/mobile (world_health.py): static-file
         contracts only, no secrets, so it answers even while sealed."""
         del method
         from . import world_health

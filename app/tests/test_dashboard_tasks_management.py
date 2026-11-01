@@ -355,3 +355,53 @@ def test_task_feedback_is_inline_next_to_the_action_not_a_toast():
     for rule in (".task-notice {", '.task-notice[data-tone="bad"]', ".task-notice-undo {"):
         assert rule in TASK_SOURCE
     assert "position: fixed" not in TASK_SOURCE[TASK_SOURCE.index(".task-notice {"):TASK_SOURCE.index("[data-task-action-submit]")]
+
+
+_NOTE_LINK_HARNESS = r"""
+const fs = require("fs");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const start = source.indexOf("function taskNoteLinkHref(");
+let depth = 0;
+let end = -1;
+for (let index = source.indexOf("{", start); index < source.length; index += 1) {
+  if (source[index] === "{") depth += 1;
+  if (source[index] === "}" && --depth === 0) { end = index + 1; break; }
+}
+const taskNoteLinkHref = new Function(`${source.slice(start, end)}; return taskNoteLinkHref;`)();
+const id = "ab".repeat(16);
+const origin = "https://app.forkmesh.com";
+process.stdout.write(JSON.stringify([
+  `https://app.forkmesh.com/notes/${id}`,
+  `https://forkmesh.com/notes/${id.toUpperCase()}/`,
+  `/dashboard/notes?note=${id}&comment=${id}`,
+  `/dashboard/notes/${id}`,
+  `https://elsewhere.example/notes/${id}`,
+  `https://u:p@app.forkmesh.com/notes/${id}`,
+  `http://app.forkmesh.com/notes/${id}`,
+  `https://app.forkmesh.com/notes/nope`,
+  `https://app.forkmesh.com/notes/${id}/extra`,
+  `/forkmesh/src`,
+  `javascript:alert(1)`,
+].map((href) => taskNoteLinkHref(href, origin))));
+"""
+
+
+def test_task_note_links_open_the_dashboard_notes_page():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    source = ROOT / "public" / "dashboard" / "js" / "09-tasks.js"
+    result = subprocess.run(
+        [node, "-e", _NOTE_LINK_HARNESS, str(source)],
+        capture_output=True, text=True, timeout=60, check=True)
+    note = "ab" * 16
+    assert json.loads(result.stdout) == [
+        f"/dashboard/notes?note={note}",
+        f"/dashboard/notes?note={note}",
+        f"/dashboard/notes?note={note}&comment={note}",
+        f"/dashboard/notes/{note}",
+        "", "", "", "", "", "", "",
+    ]
+    js = assembled_dashboard_js()
+    assert 'event.target.closest(".task-markdown a[href]")' in js
+    assert "window.location.assign(noteHref)" in js
