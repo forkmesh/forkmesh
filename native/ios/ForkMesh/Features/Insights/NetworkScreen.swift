@@ -201,7 +201,7 @@ struct NodeDetailView: View {
                         Image(systemName: finding.severity.tone.symbol).foregroundStyle(finding.severity.tone.color)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .fmMessageTools(finding.message, alignment: .top)
+                    .fmMessageTools(finding.message)
                 }
             }
             if !node.owner.isEmpty {

@@ -58,9 +58,9 @@ struct IssueBoardScreen: View {
                 Label("Could not load issues", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(error)
+                    .fmMessageTools(error)
             } actions: {
                 Button("Try again") { Task { await board.refresh() } }
-                FmMessageTools(error)
             }
         } else if board.loading && board.issues.isEmpty {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -419,7 +419,7 @@ private struct AuthRevokedBanner: View {
                     .fmText(.bodySmall)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools("\(AuthService.revokedBannerMessage) \(AuthCopy.revokedDetail)")
+            .fmMessageTools("\(AuthService.revokedBannerMessage) \(AuthCopy.revokedDetail)")
         }
         .padding(.horizontal, FmSpace.x4)
         .padding(.vertical, FmSpace.x3)

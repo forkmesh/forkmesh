@@ -200,7 +200,7 @@ struct TerminalStatusLine: View {
                 .fmText(.bodySmall, color: color, height: 1.35)
                 .lineLimit(2, reservesSpace: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools(statusString)
+                .fmMessageTools(statusString)
             if notice.wrappedValue != nil {
                 FmIconButton(label: "Dismiss", onPressed: { notice.wrappedValue = nil }) {
                     FmIcon("close", size: 14, color: fm.textTertiary)

@@ -77,7 +77,7 @@ struct OnDeviceChatStatusBar: View {
             Text(chat.statusLine)
                 .fmText(.bodySmall, color: fm.textSecondary, tabular: true)
                 .lineLimit(1)
-                .fmMessageTools(chat.statusLine, alignment: .center)
+                .fmMessageTools(chat.statusLine)
             Spacer(minLength: FmSpace.x2)
             if let stats = chat.lastStats, !chat.isGenerating {
                 Text("\(stats.generatedTokens) tokens · prompt \(stats.promptTokens)")
@@ -167,9 +167,7 @@ struct OnDeviceChatBubble: View {
                 .background(fill)
                 .clipShape(FmRoundedShape(radius: FmRadius.lg))
                 .fmMessageActions(text: entry.text)
-            if entry.isError {
-                FmMessageTools(entry.text, color: fm.danger)
-            }
+                .fmMessageTools(entry.isError ? entry.text : nil)
             if !isUser {
                 Spacer(minLength: FmSpace.x7)
             }
@@ -260,8 +258,8 @@ struct OnDeviceChatApprovalBar: View {
                 Text(approval.summary)
                     .fmText(.bodyMedium, color: fm.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .fmMessageTools(approval.summary)
                 Spacer(minLength: 0)
-                FmMessageTools(approval.summary)
             }
             HStack(spacing: FmSpace.x2) {
                 FmToneButton(label: "Allow", icon: "check_rounded", tone: .accent, filled: true) { decide(true) }

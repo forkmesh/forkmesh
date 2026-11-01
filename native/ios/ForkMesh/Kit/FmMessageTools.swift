@@ -2,62 +2,6 @@ import FMApi
 import SwiftUI
 import UIKit
 
-struct FmMessageTools: View {
-    @Environment(\.fmPalette) private var fm
-    @State private var copied: Bool = false
-
-    private let text: String
-    private let color: Color?
-    private let handoff: ComposeTarget?
-
-    init(_ text: String, color: Color? = nil, handoff: ComposeTarget? = nil) {
-        self.text = text
-        self.color = color
-        self.handoff = handoff
-    }
-
-    var body: some View {
-        if MessageHandoff.canHandOff(text) {
-            HStack(spacing: 0) {
-                tool(copied ? "check" : "content_copy", label: copied ? "Copied" : "Copy message", action: copy)
-                tool("send_outlined", label: "Send to agent", action: send)
-            }
-            .fixedSize()
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("message-tools")
-        }
-    }
-
-    private func tool(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            FmIcon(icon, size: 13, color: color ?? fm.textTertiary)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(label))
-    }
-
-    private func copy() {
-        FmHaptics.tap()
-        UIPasteboard.general.string = MessageHandoff.cleaned(text)
-        copied = true
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            copied = false
-        }
-    }
-
-    private func send() {
-        FmHaptics.tap()
-        if let handoff {
-            FmMessageHandoff.compose(handoff)
-        } else {
-            FmMessageHandoff.send(text)
-        }
-    }
-}
-
 @MainActor
 enum FmMessageHandoff {
     static func send(_ text: String) {
@@ -89,19 +33,28 @@ enum FmMessageHandoff {
 
 struct FmMessageToolsModifier: ViewModifier {
     let text: String
-    let color: Color?
-    let alignment: VerticalAlignment
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        HStack(alignment: alignment, spacing: FmSpace.x1) {
+        if MessageHandoff.canHandOff(text) {
             content
-            FmMessageTools(text, color: color)
+                .contentShape(Rectangle())
+                .onTapGesture { open() }
+                .accessibilityAction(named: Text("Open in composer")) { open() }
+        } else {
+            content
         }
+    }
+
+    @MainActor
+    private func open() {
+        FmHaptics.tap()
+        FmMessageHandoff.send(text)
     }
 }
 
 extension View {
-    func fmMessageTools(_ text: String?, color: Color? = nil, alignment: VerticalAlignment = .firstTextBaseline) -> some View {
-        return modifier(FmMessageToolsModifier(text: text ?? "", color: color, alignment: alignment))
+    func fmMessageTools(_ text: String?) -> some View {
+        return modifier(FmMessageToolsModifier(text: text ?? ""))
     }
 }

@@ -431,7 +431,7 @@ struct AgentsScreen: View {
                 VStack(spacing: FmSpace.x3) {
                     Text(model.loadError ?? "")
                         .fmText(.bodyMedium, color: fm.textSecondary)
-                    FmMessageTools(model.loadError ?? "")
+                        .fmMessageTools(model.loadError ?? "")
                     FmToneButton(label: "Retry", onPressed: { Task { await model.refresh() } })
                 }
                 .frame(maxWidth: .infinity)

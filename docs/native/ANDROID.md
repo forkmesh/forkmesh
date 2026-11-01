@@ -1389,13 +1389,19 @@ feel like the iPhone app. Since 2026-10-20 the kit draws the iOS versions:
   Android used `onAccent`, near-black in dark mode); confirm dialogs have
   14 dp corners; `FmBottomBar` is the iOS glass capsule (50 dp, 8 dp side and
   4 dp vertical margin) instead of a flat strip with a top rule.
-- **Copy and send to agent (S008).** As on iOS (`Kit/FmMessageTools.swift`),
-  messages carry two 13 dp icons, copy and send to agent
-  (`ui/kit/FmMessageTools.kt`): `FmEmptyState`, `FmInlineStatus`,
-  `FmConnectionBanner` and `FmConfirmDialog` include them. Send to agent opens
-  the composer with `C/navigation/MessageHandoff.agentPrompt` ("The ForkMesh
-  Android app showed this message: …"); `NavigationFeature.install` sets the
-  hook (`FmMessageHandoff.compose`) so the kit does not depend on feature code.
+- **Tap a message to open it in the composer (S008).** As on iOS
+  (`Kit/FmMessageTools.swift`), messages no longer carry copy and send icons
+  (removed 2026-11-01): `Modifier.fmMessageTools(text)`
+  (`ui/kit/FmMessageTools.kt`) makes the message a tap target that opens the
+  composer with `C/navigation/MessageHandoff.agentPrompt` ("The ForkMesh
+  Android app showed this message: …"). `FmEmptyState`, `FmInlineStatus`,
+  `FmConnectionBanner` and `FmConfirmDialog` use it; `NavigationFeature.install`
+  sets the hook (`FmMessageHandoff.compose`) so the kit does not depend on
+  feature code.
+- **Notices close themselves.** A dismissible `FmInlineStatusLine` closes
+  after 6 seconds (10 for an error, `FmNoticeTiming`); `FmCountdownClose`
+  draws a ring around the X that empties over that time and restarts when the
+  message changes. Tapping the notice opens the composer and dismisses it.
 - **Haptics.** `FmHaptics` gains `send`, `palette`, `success`, `warning` and
   `error`, the iOS cues; success and error use the platform `Confirm` and
   `Reject` patterns.

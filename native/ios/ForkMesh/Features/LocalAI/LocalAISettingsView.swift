@@ -383,8 +383,8 @@ struct LocalAINotice: View {
             Text(text)
                 .fmText(.bodySmall, color: color)
                 .fixedSize(horizontal: false, vertical: true)
+                .fmMessageTools(text)
             Spacer(minLength: 0)
-            FmMessageTools(text)
         }
     }
 }
