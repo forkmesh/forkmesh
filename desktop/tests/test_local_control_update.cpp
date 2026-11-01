@@ -46,10 +46,14 @@ static void testNames()
 static void testComputerRestartBlockers()
 {
     const QString denied = QStringLiteral("Call to Reboot failed: Access denied\n");
-    check(computerRestartDenied(denied), "a bare Access denied is a refusal");
-    check(!computerRestartDenied(
-              QStringLiteral("Call to Reboot failed: Interactive authentication required.")),
-          "a polkit challenge is not the inhibitor refusal");
+    const QString challenge =
+        QStringLiteral("Call to Reboot failed: Interactive authentication required.");
+    check(computerRestartRefused(denied), "a bare Access denied is a refusal");
+    check(computerRestartRefused(challenge), "a polkit challenge is a refusal");
+    check(!computerRestartRefused(QStringLiteral("Failed to connect to bus")),
+          "other failures are not refusals");
+    check(computerRestartSummary(0).contains(QLatin1String("holding off shutdown")),
+          "the confirmation says the restart overrides what holds off shutdown");
 
     const QByteArray list = QByteArrayLiteral(
         "{\"type\":\"a(ssssuu)\",\"data\":[["
@@ -76,6 +80,10 @@ static void testComputerRestartBlockers()
     check(named.contains(QLatin1String("PackageKit (Updating the system)")) &&
               named.contains(QLatin1String("holding off shutdown")),
           "the refusal names what blocks shutdown");
+    const QString override = computerRestartFailure(1, challenge, plain);
+    check(override.contains(QLatin1String("PackageKit (Updating the system)")) &&
+              override.contains(QLatin1String("Let my phones restart this computer")),
+          "a blocker that needs the override names it and the setting that grants it");
     const QString unnamed = computerRestartFailure(1, denied);
     check(unnamed.contains(QLatin1String("systemd-inhibit --list")) &&
               !unnamed.contains(QLatin1String("Let my phones")),

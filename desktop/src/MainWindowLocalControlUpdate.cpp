@@ -149,7 +149,8 @@ void MainWindow::restartComputer()
 {
     QProcess *process = new QProcess(this);
     process->setProgram(QStringLiteral("systemctl"));
-    process->setArguments({QStringLiteral("--no-ask-password"), QStringLiteral("reboot")});
+    process->setArguments(
+        {QStringLiteral("--no-ask-password"), QStringLiteral("-i"), QStringLiteral("reboot")});
     process->setProcessChannelMode(QProcess::MergedChannels);
     const auto failed = [this, process](const QString &message) {
         if (!m_computerRestarting) {
@@ -176,7 +177,7 @@ void MainWindow::restartComputer()
                     return;
                 }
                 const QString output = QString::fromUtf8(process->readAllStandardOutput());
-                if (!updatectl::computerRestartDenied(output)) {
+                if (!updatectl::computerRestartRefused(output)) {
                     failed(updatectl::computerRestartFailure(exitCode, output));
                     return;
                 }

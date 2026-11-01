@@ -14,7 +14,7 @@ QString actionSummary(int agentsRunning, const QString &version);
 QString computerRestartActionName();
 QString computerRestartSubjectName();
 QString computerRestartSummary(int agentsRunning);
-bool computerRestartDenied(const QString &output);
+bool computerRestartRefused(const QString &output);
 QStringList computerRestartBlockers(const QByteArray &inhibitorsJson,
                                     const QStringList &sessionApps = {});
 QString computerRestartFailure(int exitCode, const QString &output,
