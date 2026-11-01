@@ -42,7 +42,7 @@ object PackageGate {
         "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor", "invoices" to "invoices",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
         "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide", "speech" to "speech",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity", "logs" to "logs", "diagnostics" to "diagnostics",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "poker" to "poker", "instanceFeed" to "instance-feed", "mastodon" to "mastodon", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity", "logs" to "logs", "diagnostics" to "diagnostics",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -98,6 +98,7 @@ object PackageGate {
         put("video-mix-dj-studio", Route.Kind.VideoMixDjStudio)
         put("poker", Route.Kind.Poker)
         put("instance-feed", Route.Kind.InstanceFeed)
+        put("mastodon", Route.Kind.Mastodon)
         put("secure-drive", Route.Kind.SecureDrive)
         put("files", Route.Kind.Files)
         put(WORKFLOWS, Route.Kind.Workflows)

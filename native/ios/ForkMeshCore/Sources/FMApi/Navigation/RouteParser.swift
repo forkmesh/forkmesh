@@ -281,6 +281,7 @@ public enum RouteParser {
         case "runners": return tail.isEmpty ? [.runners] : nil
         case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
         case "instance-feed": return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
+        case "mastodon": return tail.isEmpty ? [.mastodon] : nil
         case "secure-drive": return tail.isEmpty ? [.secureDrive] : nil
         case "spider-room": return tail.isEmpty ? [.spiderRoom] : nil
         case "workflows": return tail.isEmpty ? [.workflows] : nil
@@ -345,6 +346,8 @@ public enum RouteParser {
             return tail.isEmpty ? [.rssReader] : nil
         case "instance-feed":
             return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
+        case "mastodon":
+            return tail.isEmpty ? [.mastodon] : nil
         case "secure-drive":
             return tail.isEmpty ? [.secureDrive] : nil
         case "poker":

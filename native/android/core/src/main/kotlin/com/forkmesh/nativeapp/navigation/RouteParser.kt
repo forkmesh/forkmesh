@@ -268,6 +268,7 @@ object RouteParser {
             "video-mix-dj-studio", "dj-studio" -> if (first == null) listOf(Route.VideoMixDjStudio) else null
             "poker" -> if (first == null) listOf(Route.Poker(query["table"]?.trim()?.lowercase()?.takeIf(PokerApi::isTableId))) else null
             "instance-feed" -> if (first == null) listOf(Route.InstanceFeed(query["post"]?.trim()?.takeIf { it.isNotEmpty() })) else null
+            "mastodon" -> if (first == null) listOf(Route.Mastodon) else null
             "secure-drive" -> listOf(Route.SecureDrive)
             "files" -> listOf(Route.Files)
             "nexus" -> if (first == null) listOf(Route.Nexus) else null
@@ -314,7 +315,8 @@ object RouteParser {
                 if (tail.size == 3 && tail.all { it.isNotBlank() }) listOf(Route.Coves(null), Route.Cove(rest))
                 else listOf(Route.Coves(null))
             "coves" -> listOf(Route.Coves(null))
-            "home" -> listOf(AppTab.barOrder.first().root)
+            "mastodon" -> if (tail.isEmpty()) listOf(Route.Mastodon) else null
+            "home" ->listOf(AppTab.barOrder.first().root)
             else -> dashboard(all, query, me) ?: routes(all, query, me) ?: named(head, tail.firstOrNull()) ?: listOf(AppTab.barOrder.first().root)
         }
     }
@@ -341,6 +343,7 @@ object RouteParser {
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
         "instance-feed" -> listOf(Route.InstanceFeed(first))
+        "mastodon" -> if (first == null) listOf(Route.Mastodon) else null
         "poker" -> listOf(Route.Poker(null))
         "secure-drive" -> listOf(Route.SecureDrive)
         "files" -> listOf(Route.Files)
