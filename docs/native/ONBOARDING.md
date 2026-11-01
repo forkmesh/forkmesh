@@ -62,6 +62,12 @@ Taken from a reference recording, frame by frame.
 
 Reduce Motion turns all of this off: every piece appears in its final state.
 
+On a short screen the permissions page drops the card's header, strip and
+counter and keeps the permission list, because the full card pushed the title
+under the buttons on iPhone Duo's 678 pt cover screen. iOS picks the first
+version that fits (`ViewThatFits`), then scrolls; Android goes compact when the
+space above the buttons is under 600 dp and still scrolls.
+
 ## The permissions intro
 
 A fresh install of the iOS app shows no system permission prompt at launch or
