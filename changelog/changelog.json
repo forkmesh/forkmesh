@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-31", "area": "Desktop", "text": "With a note open, type a change in the composer and click Add to have AI edit that note; Ctrl+Z undoes it."},
   {"date": "2026-10-31", "area": "Agents", "text": "An agent that started in your checkout can now link the branch it moved its work to, so the desktop shows that branch's changes and can merge it."},
   {"date": "2026-11-01", "area": "Agents", "text": "On the phone apps, the Agents tab shows a loading list until your desktop answers instead of briefly saying there are no agent sessions."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The desktop CRM's All view now shows a list's own columns, order and names, as the web does, so imported columns such as a fit score or tier are no longer pushed far to the right."},
