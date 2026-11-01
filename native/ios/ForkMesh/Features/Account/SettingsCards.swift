@@ -6,6 +6,7 @@
 import FMAccount
 import FMAgents
 import FMApi
+import FMAssistant
 import FMBase
 import FMPush
 import SwiftUI
@@ -1104,6 +1105,14 @@ struct GenieSpiderCard: View {
             .tint(fm.accent)
             .accessibilityIdentifier("settings-genie-spider")
             SettingsNote(text: "The spider that crawls over the app. Off hides it completely: it stops wandering, listening and hand play. Touch and hold the spider and choose Hide the spider to hide it from there.")
+            Picker("Mascot", selection: Binding<String>(get: { hub.mascot.rawValue }, set: { (value: String) in hub.setMascot(GenieMascot(stored: value)) })) {
+                ForEach(GenieMascot.allCases, id: \.rawValue) { (mascot: GenieMascot) in
+                    Text(mascot.title).tag(mascot.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("settings-genie-mascot")
+            SettingsNote(text: "Choose the Genie spider or the Cloud Dragon, a fluffy dragon with 20 little activities. Both walk, climb, fall and talk the same way; the change is instant. The touch and hold menu has a switch too.")
         }
     }
 }
