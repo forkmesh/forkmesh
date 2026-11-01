@@ -104,6 +104,10 @@ class NavigationTest {
 
     fun testParsesDashboardAndCustomSchemeLinks() {
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes/n1")!!.stack)
+        val published = "ab".repeat(16)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://app.forkmesh.com/notes/$published")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://forkmesh.com/notes/$published/")!!.stack)
+        assertEq(listOf(Route.Repo(RepoRef("notes", "n1"), null)), RouteParser.parse("https://app.forkmesh.com/notes/n1")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n2")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://forkmesh.com/dashboard/notes/n1?note=n2")!!.stack)
         assertEq(listOf(Route.Notes), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=")!!.stack)
