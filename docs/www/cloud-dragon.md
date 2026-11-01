@@ -137,7 +137,10 @@ These exist only on the web. The native ports do not have them yet.
 
 `ForkMeshGenie.setMascot("dragon")`, the mascot's menu or Settings. Stored as
 `forkmesh.genie.mascot` and a `forkmesh_mascot` cookie, shared across
-forkmesh.com hosts like `forkmesh_genie`. The cookie is read first.
+forkmesh.com hosts like `forkmesh_genie`. The cookie is read first. The choice
+survives sign-out: the website header (`site-header.js`) and the dashboard
+(`02-helpers.js`) both keep `forkmesh.genie.mascot` when they clear the
+browser's ForkMesh keys.
 
 Only visitors who chose it pay for it: `dragon.js` (92 KB) and the 170 KB atlas load on
 demand and spider visitors fetch nothing. If they fail, the spider appears.
