@@ -1,0 +1,164 @@
+          <section data-view="booking" class="view active h-full overflow-y-auto bkd">
+            <style>
+              .bkd { --bkd-line: rgb(var(--dashboard-border-rgb)); --bkd-fg: rgb(var(--dashboard-foreground-rgb)); --bkd-muted: rgb(var(--dashboard-muted-foreground-rgb)); --bkd-primary: rgb(var(--dashboard-primary-rgb)); }
+              .bkd-tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--bkd-line); }
+              .bkd-tab { position: relative; flex: none; padding: 8px 12px; border: 0; background: none; color: var(--bkd-muted); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+              .bkd-tab:hover { color: var(--bkd-fg); }
+              .bkd-tab[aria-selected="true"] { color: var(--bkd-fg); font-weight: 600; }
+              .bkd-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--bkd-primary); }
+              .bkd-tab:focus-visible { outline: 2px solid var(--bkd-primary); outline-offset: -2px; border-radius: 6px; }
+              .bkd-count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: rgb(var(--dashboard-border-rgb) / .7); font-size: 11px; }
+              .bkd-link { font-size: 15px; font-weight: 600; color: var(--bkd-fg); word-break: break-all; }
+              .bkd-swatch { position: relative; display: inline-flex; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; }
+              .bkd-swatch input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+              .bkd-swatch:has(input:checked) { box-shadow: 0 0 0 2px rgb(var(--dashboard-card-rgb, 255 255 255)), 0 0 0 4px var(--bkd-primary); }
+              .bkd-swatch:has(input:focus-visible) { outline: 2px solid var(--bkd-primary); outline-offset: 4px; }
+              .bkd-day-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px 16px; }
+              .bkd-window { display: inline-flex; align-items: center; gap: 6px; }
+              .bkd-input { height: 32px; border-radius: 6px; border: 1px solid var(--bkd-line); background: rgb(var(--dashboard-background-rgb)); padding: 0 10px; font-size: 13px; color: var(--bkd-fg); }
+              .bkd-input:focus, .bkd textarea:focus, .bkd select:focus { outline: none; border-color: var(--bkd-primary); box-shadow: inset 0 0 0 1px var(--bkd-primary); }
+              .bkd-type-card { display: grid; gap: 12px; }
+              .bkd-type-card + .bkd-type-card { border-top: 1px solid var(--bkd-line); }
+              .bkd-type-main, .bkd-type-where, .bkd-row { display: grid; gap: 12px; }
+              .bkd-row { gap: 8px 16px; }
+              @media (min-width: 640px) {
+                .bkd-type-main { grid-template-columns: minmax(0, 1fr) 8rem; }
+                .bkd-type-main .bkd-span { grid-column: 1 / -1; }
+                .bkd-type-where { grid-template-columns: 9rem minmax(0, 1fr); }
+                .bkd-row { grid-template-columns: 9rem minmax(0, 1fr) auto; align-items: start; }
+              }
+              @media (min-width: 900px) { .bkd-type-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+              .bkd-highlight { background: rgb(var(--dashboard-primary-rgb) / .08); }
+              @media (max-width: 640px) { .bkd-day-row { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Booking</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Share one short link. People pick a free time, it lands on your calendar, and ForkMesh emails you both.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <a data-booking-open data-booking-requires-install href="#" target="_blank" rel="noopener" class="fm-btn hidden"><i data-lucide="external-link"></i>Open my page</a>
+                  <button data-booking-manage data-booking-requires-install type="button" class="fm-btn hidden"><i data-lucide="database"></i>Plugin data</button>
+                </div>
+              </div>
+              <div data-booking-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-booking-message-text class="fm-flash-body"></p></div>
+              <div data-booking-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-booking-message-text class="fm-flash-body"></p></div>
+
+              <section data-booking-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="calendar-clock"></i>
+                <h2 class="fm-blankslate-title">Create your booking page</h2>
+                <p class="fm-blankslate-desc">Pick a short link, set the hours you take meetings, and send the link to anyone. They choose a free time, the meeting goes on your ForkMesh calendar, and ForkMesh emails the details to both of you.</p>
+                <form data-booking-install-form class="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <label class="flex items-center overflow-hidden rounded-md border border-border bg-background text-control text-foreground">
+                    <span data-booking-install-prefix class="border-r border-border bg-secondary px-3 py-1.5 text-muted-foreground">forkmesh.com/meet?</span>
+                    <input data-booking-install-slug aria-label="Your link" required pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" maxlength="63" class="h-control w-44 bg-transparent px-2 text-control text-foreground outline-none">
+                  </label>
+                  <button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Create booking page</button>
+                </form>
+              </section>
+
+              <div data-booking-app class="hidden">
+                <section class="mb-4 rounded-lg border border-border bg-card">
+                  <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <div class="min-w-0">
+                      <p class="flex items-center gap-2 text-xs font-medium text-muted-foreground">Your booking link <span data-booking-status class="fm-label"></span></p>
+                      <a data-booking-link class="bkd-link mt-1 inline-block hover:underline" target="_blank" rel="noopener"></a>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <button data-booking-copy type="button" class="fm-btn fm-btn-sm"><i data-lucide="copy"></i><span data-booking-copy-label>Copy link</span></button>
+                      <button data-booking-toggle type="button" class="fm-btn fm-btn-sm"></button>
+                    </div>
+                  </div>
+                  <ul data-booking-type-links class="divide-y divide-border border-t border-border"></ul>
+                </section>
+
+                <div class="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Upcoming</p><p data-booking-stat="upcoming" class="mt-1 text-lg font-semibold text-foreground">—</p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Next 7 days</p><p data-booking-stat="next7Days" class="mt-1 text-lg font-semibold text-foreground">—</p><p data-booking-stat-hours class="text-xs text-muted-foreground"></p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Booked, last 30 days</p><p data-booking-stat="booked30Days" class="mt-1 text-lg font-semibold text-foreground">—</p></div>
+                  <div class="min-w-0 bg-card p-3"><p class="text-xs font-medium text-muted-foreground">Cancelled, last 30 days</p><p data-booking-stat="cancelled30Days" class="mt-1 text-lg font-semibold text-foreground">—</p></div>
+                </div>
+
+                <section class="rounded-lg border border-border bg-card">
+                  <div class="bkd-tabs px-2" role="tablist" aria-label="Booking sections">
+                    <button type="button" role="tab" class="bkd-tab" data-booking-tab="upcoming" aria-selected="true">Upcoming<span data-booking-upcoming-count class="bkd-count"></span></button>
+                    <button type="button" role="tab" class="bkd-tab" data-booking-tab="past" aria-selected="false">Past &amp; cancelled</button>
+                    <button type="button" role="tab" class="bkd-tab" data-booking-tab="types" aria-selected="false">Meeting types</button>
+                    <button type="button" role="tab" class="bkd-tab" data-booking-tab="hours" aria-selected="false">Hours</button>
+                    <button type="button" role="tab" class="bkd-tab" data-booking-tab="page" aria-selected="false">Page &amp; email</button>
+                  </div>
+
+                  <div data-booking-panel="upcoming" role="tabpanel"><div data-booking-upcoming></div></div>
+                  <div data-booking-panel="past" role="tabpanel" class="hidden"><div data-booking-past></div></div>
+
+                  <form data-booking-panel="types" data-booking-types-form role="tabpanel" class="hidden">
+                    <div data-booking-types></div>
+                    <div class="flex flex-wrap items-center gap-2 border-t border-border p-4">
+                      <button data-booking-add-type type="button" class="fm-btn fm-btn-sm"><i data-lucide="plus"></i>Add meeting type</button>
+                      <button type="submit" class="fm-btn fm-btn-sm ml-auto">Save meeting types</button>
+                    </div>
+                  </form>
+
+                  <form data-booking-panel="hours" data-booking-hours-form role="tabpanel" class="hidden">
+                    <div class="grid gap-3 border-b border-border p-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <label class="grid gap-1 text-xs text-muted-foreground">Time zone<select data-booking-field="timezone" class="bkd-input"></select></label>
+                      <label class="grid gap-1 text-xs text-muted-foreground">Shortest notice<select data-booking-field="minNoticeMinutes" class="bkd-input"></select></label>
+                      <label class="grid gap-1 text-xs text-muted-foreground">Book up to<select data-booking-field="maxDaysAhead" class="bkd-input"></select></label>
+                      <label class="grid gap-1 text-xs text-muted-foreground">Gap between meetings<select data-booking-field="bufferMinutes" class="bkd-input"></select></label>
+                      <label class="grid gap-1 text-xs text-muted-foreground">Start times every<select data-booking-field="slotStepMinutes" class="bkd-input"></select></label>
+                      <label class="grid gap-1 text-xs text-muted-foreground">Most meetings a day<input data-booking-field="dailyLimit" type="number" min="0" max="50" class="bkd-input" placeholder="No limit"></label>
+                    </div>
+                    <div data-booking-week class="divide-y divide-border"></div>
+                    <div class="flex flex-wrap items-center gap-3 border-t border-border p-4">
+                      <label class="flex items-center gap-2 text-sm text-foreground"><input data-booking-field="checkCalendar" type="checkbox">Never offer times that clash with my ForkMesh calendar</label>
+                      <button type="submit" class="fm-btn fm-btn-sm ml-auto">Save hours</button>
+                    </div>
+                  </form>
+
+                  <form data-booking-panel="page" data-booking-page-form role="tabpanel" class="hidden">
+                    <div class="grid gap-4 p-4 lg:grid-cols-2">
+                      <div class="grid content-start gap-3">
+                        <h2 class="text-sm font-semibold text-foreground">Page</h2>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Link<span class="flex items-center overflow-hidden rounded-md border border-border bg-background"><span data-booking-slug-prefix class="border-r border-border bg-secondary px-3 py-1.5 text-control text-muted-foreground"></span><input data-booking-field="slug" maxlength="63" class="h-control min-w-0 flex-1 bg-transparent px-2 text-control text-foreground outline-none"></span><span data-booking-slug-check class="text-xs"></span></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Name shown<input data-booking-field="displayName" maxlength="80" class="bkd-input"></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Headline<input data-booking-field="headline" maxlength="140" class="bkd-input"></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Welcome message<textarea data-booking-field="welcome" maxlength="1500" rows="3" class="rounded-md border border-border bg-background px-2.5 py-2 text-control text-foreground"></textarea></label>
+                        <fieldset class="grid gap-2"><legend class="mb-1 text-xs text-muted-foreground">Colour</legend><div data-booking-accents class="flex flex-wrap gap-3"></div></fieldset>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Clock<select data-booking-field="timeFormat" class="bkd-input"><option value="12h">12-hour (2:30 PM)</option><option value="24h">24-hour (14:30)</option></select></label>
+                      </div>
+                      <div class="grid content-start gap-3">
+                        <h2 class="text-sm font-semibold text-foreground">Email and calendar</h2>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Guests reply to<input data-booking-field="replyTo" type="email" maxlength="254" class="bkd-input" placeholder="you@example.com"><span>Confirmations come from ForkMesh; replies go to this address. Leave it empty to keep your address private.</span></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Send my booking emails to<input data-booking-field="notifyEmail" type="email" maxlength="254" class="bkd-input" placeholder="you@example.com"></label>
+                        <label class="flex items-center gap-2 text-sm text-foreground"><input data-booking-field="emailOwner" type="checkbox">Email me when someone books, moves or cancels</label>
+                        <label class="flex items-center gap-2 text-sm text-foreground"><input data-booking-field="addToCalendar" type="checkbox">Add booked meetings to my ForkMesh calendar</label>
+                        <p class="text-xs text-muted-foreground">You always get a ForkMesh notification. Guests always get a confirmation, a reminder the day before, and an email when the meeting moves or is cancelled.</p>
+                      </div>
+                    </div>
+                    <div class="flex border-t border-border p-4"><button type="submit" class="fm-btn fm-btn-sm ml-auto">Save page</button></div>
+                  </form>
+                </section>
+              </div>
+            </div>
+
+            <dialog data-booking-cancel-dialog aria-labelledby="booking-cancel-title" class="w-full max-w-md bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <form data-booking-cancel-form class="fm-dialog">
+                <div class="fm-dialog-header"><h2 id="booking-cancel-title" class="fm-dialog-title">Cancel this meeting?</h2></div>
+                <div class="fm-dialog-body grid gap-3">
+                  <p data-booking-cancel-summary class="text-sm text-foreground"></p>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Message to your guest<textarea data-booking-cancel-reason maxlength="600" rows="3" class="rounded-md border border-border bg-background px-2.5 py-2 text-control text-foreground" placeholder="Sorry, something came up."></textarea></label>
+                  <label class="flex items-center gap-2 text-sm text-foreground"><input data-booking-cancel-notify type="checkbox" checked>Email the guest that it is cancelled</label>
+                </div>
+                <div class="fm-dialog-footer"><button data-booking-dialog-close type="button" class="fm-btn fm-btn-sm">Keep it</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-danger">Cancel meeting</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-booking-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Booking data</h2></div>
+                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export your booking page and every booking as JSON, or uninstall Booking. Uninstalling downloads your export first, then deletes your page, so the link and every guest's change link stop working. Meetings already on your ForkMesh calendar stay there, and guests are not emailed.</p></div>
+                <div class="fm-dialog-footer"><button data-booking-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-booking-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-booking-export type="button" class="fm-btn fm-btn-sm">Export my data</button></div>
+              </div>
+            </dialog>
+          </section>

@@ -998,17 +998,7 @@ void MainWindow::setRepoActionsAutoApprove(bool on)
     if (!on)
         return;
 
-    const int resumed = autoApproveAwaitingRuns(repo);
-    if (resumed == 0)
-        return;
-    logSystem(QStringLiteral("Actions: queued %1 automatically approved pending "
-                             "run%2 for %3/%4.")
-                  .arg(resumed)
-                  .arg(resumed == 1 ? QString() : QStringLiteral("s"),
-                       repo.owner, repo.name));
-    refreshActionsTable();
-    updateNotificationButton();
-    processActionQueue();
+    autoApproveAwaitingRuns(repo, true);
 }
 
 void MainWindow::setRepoRequirePeerApproval(bool on)

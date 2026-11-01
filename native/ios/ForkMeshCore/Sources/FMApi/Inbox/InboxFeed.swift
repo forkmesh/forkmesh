@@ -166,6 +166,11 @@ public enum InboxRoutes {
             return .agent(id: meta.str("sessionId"))
         }
         let number = meta.int("number")
+        if let ref = RepoRef(slug: repo) {
+            if kind == "action_approval", number > 0 { return .pull(ref, number: number, tab: .checks) }
+            let runId = meta.int("runId")
+            if kind == "action_failed", runId > 0 { return .run(ref, id: String(runId)) }
+        }
         if let link = NotificationDeepLink.parse(href) {
             return route(link)
         }
@@ -186,7 +191,7 @@ public enum InboxRoutes {
         let ref = RepoRef(owner: link.repo.owner, name: link.repo.name)
         switch link.initialTab {
         case .issues: return link.number > 0 ? .issue(ref, number: link.number) : .repo(ref, section: .issues)
-        case .pulls: return link.number > 0 ? .pull(ref, number: link.number, tab: .conversation) : .repo(ref, section: .pulls)
+        case .pulls: return link.number > 0 ? .pull(ref, number: link.number, tab: link.pullTab) : .repo(ref, section: .pulls)
         case .discussions: return link.number > 0 ? .discussion(ref, number: link.number) : .repo(ref, section: .discussions)
         case .commits:
             if !link.reference.isEmpty { return .commit(ref, sha: link.reference) }

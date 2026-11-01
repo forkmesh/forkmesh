@@ -83,6 +83,13 @@ characters, lowest-ranked sections are trimmed first and say so):
   stored chat history going back into the chat services. Before that only
   `startup.auth` (5 ms) was named, so a launch stall read as unnamed work
   with `startup.auth` beside it.
+  Since 2026-11-01 the section has a `(no named section)` row,
+  the sum of each stall's `unnamedMs`: the part of the block that no
+  section covered. The other rows are summed per name across stalls, and
+  an outer name includes its inner ones, so they do not add up to the
+  stall: in the 2026-11-01 bundle `startup.services` 38 ms held
+  `startup.features` 29 ms. When that row is most of the stall, read "Main
+  thread during stalls".
   `surfaces.publish` (the widget, Live Activity and Shortcuts snapshot after
   agent row changes) has been named since 2026-10-18. `watchSections` hands
   every main-thread section of 1 ms or more to one watcher; the DJ studio
@@ -132,12 +139,28 @@ characters, lowest-ranked sections are trimmed first and say so):
 - `stalls.log tail`: the last lines of `diagnostics/stalls.log`. Release
   stacks are unsymbolicated addresses; `libswift_Concurrency` under
   `ForkMesh` frames means a main-actor task job, which is most app code.
-  Event-loop and frame stalls carry no stack (the probe runs after the
-  block); the stacks are where slow operations and `sync` sections started.
+  Frame stalls carry no stack (the probe runs after the block), nor did
+  event-loop stalls before 2026-11-01; the other stacks are where slow
+  operations and `sync` sections started. Since 2026-11-01 an event-loop
+  stall's stack is samples of the main thread taken while it was blocked
+  (`main thread at <lag>ms:`, four leaf frames and up to eight app frames).
   Since 2026-10-19 each frame of an operation's stack also gives
   `+0x<offset>` from its image's load address; `atos -o
   ForkMesh.app.dSYM/Contents/Resources/DWARF/ForkMesh -l 0x100000000
   <0x100000000 + offset>` against the dSYM of the bundle's build names it.
+- `Main thread during stalls (leaf images < app frames)` (since
+  2026-11-01): up to four samples of the main thread's stack per
+  event-loop stall, taken from the watch queue while the heartbeat was
+  late (`MainThreadSampler`), counted by signature. A signature is the
+  leaf images (up to three, e.g. `AttributeGraph < SwiftUICore`) and then
+  the two app frames nearest the leaf (`ForkMesh +0x<offset>`; name them
+  with `atos` as for operation stacks). System images with `no app
+  frame`, or with only the app's entry point after them, mean SwiftUI,
+  UIKit or Core Animation working on their own: layout, a first build, a
+  long list diff. `libsystem_kernel` at the leaf means the thread waited:
+  a lock, a file read, a Keychain or XPC round trip. A sample is taken
+  half a stall threshold (100 ms) into a block and then once per
+  heartbeat interval, so a 350 ms block gives about three.
 - `App log` and `Busiest log lines` are optional (the user can leave logs
   out). `Connected to ... room` counts relay (re)connects; each one follows a
   resume or a dropped socket.
@@ -146,6 +169,68 @@ characters, lowest-ranked sections are trimmed first and say so):
 
 Newest first. Each entry: date and branch; what the bundle showed; the
 cause; the fix; what was ruled out; what the bundle lacked.
+
+- 2026-11-01, `46-app-detected-performance-issue` (1.5.0 (327), commit
+  421a5f2, iPhone16,2, "tab: agents, screen: tab root", `uptime 49s`;
+  22 agent lines, 15 running, Eagle view, no watch app). Showed: "froze for
+  0.4 s (2 freezes)": event-loop stalls of 352 and 260 ms and a 248 ms
+  frame, all at 00:35:22, all `launch, first 10s`, all on `Home`; the only
+  named work inside them was `startup.services` 38 ms (which holds
+  `startup.features` 29 ms, so the rows do not add up), `shell.start` 24 ms
+  and four rows the report trimmed. So the 2026-10-29 fix held (the launch
+  block was about 420 ms then), and most of the 612 ms ran outside any
+  section, after the shell had started. Chat history was 137 KB, too
+  small to matter. Chat channels, owner keys and desktops were in flight
+  (the launch requests), and the `agents/list` reads of four repositories
+  finished at 00:35:23. Reading: an iPhone opens on Home, but the selected
+  tab (Agents, the router's default) is built under it at launch, and
+  before this change `NAVIGATION.md` said Agents was mounted 2 s later.
+  `AgentsScreen.onAppear` ran in full while hidden. It loaded the list
+  (which Home's counts need) and also started the Eagle feed, which streams
+  the transcript of every running desktop row (`since: 0`) and handles each
+  chunk on the main actor (`TranscriptFollower.apply`: a 200,000-character
+  suffix and a line scan of the text). It also started the agent dot
+  watcher (`AgentDotsWatch`: up to 12 relay watch targets plus a second
+  set of control-feed streams), whether the dots bar was on or not.
+  Separately, `HomeShell` creates `AgentsScreen()` on every pass of its
+  body (inside `NavigationStack`), and SwiftUI evaluates every `@State`
+  default each time, even though it keeps only the first. One of those
+  defaults, `AgentReadTracker`, parsed the stored read marks
+  (`agents/seenFinishedAt`, up to 400 entries) every time; the shell is
+  redrawn many times in the launch burst (one per count kind, per
+  `ShellCounts` write). Cause: not proven. The bundle did not name the
+  work, and the largest block is probably SwiftUI's first build of the
+  shell, Home and the hidden list. What was found and fixed is main-thread
+  work in that window that Home does not need. Fix: the hidden Agents tab
+  waits until it is first shown before it starts the Eagle follows and
+  the dot watcher, and keeps them after that (`AgentsTabLiveGate`, read in
+  `AgentsScreen.followDialogs` and `syncDots`; `onChange(of:
+  shellTabHidden)` starts them). The list load and the `ShellCounts`
+  writes are unchanged. `AgentReadTracker` reads its store the first time
+  it is used, not in `init`, so a discarded rebuild costs nothing (the
+  parse of up to 400 marks was not timed). Tests:
+  `testATrackerReadsItsStoredMarksOnlyWhenFirstUsed` (fails without the
+  fix: 20 reads for 20 discarded trackers),
+  `testTheHiddenAgentsTabStartsItsLiveWorkOnlyOnceShownAndKeepsIt`,
+  `testAnEventLoopStallCarriesTheMainThreadSamplesTakenWhileItWasBlocked`,
+  `testASignatureNamesTheLeafImagesThenTheNearestAppFrames`,
+  `testStallsSayHowMuchRanOutsideNamedSectionsAndWhereTheMainThreadWas`,
+  and on Darwin `testTheMainThreadCanBeSampledFromAnotherThread`. Ruled
+  out: the launch block (`startup.services` 38 ms); chat history (137 KB);
+  the slow repository reads and `agents/list` 403s (network, and they
+  finished after the stalls); the watch bridge (no watch app); the
+  MetricKit CPU exceptions (1.4.1, a week earlier). Not measured: how many
+  times the shell redraws in the launch burst; the
+  phone's cost of the Eagle and dot streams at launch (they wait for the
+  desktop link, so they may land after the first second); SwiftUI's first
+  build. Bundle gaps closed: event-loop stalls carry samples of the main
+  thread's stack (`MainThreadSampler`, taken from the watch queue while the
+  heartbeat is late), shown in "Main thread during stalls", and
+  `unnamedMs`, the part no section covered, shown as `(no named section)`
+  in "Main-actor work during stalls". Both sections now rank above the
+  operation and endpoint tables, so they are not trimmed first. Still
+  missing: the samples are unsymbolicated, so reading the app frames needs
+  `atos` and the build's dSYM.
 
 - 2026-10-29, `2672-agents-tab-freeze-fix` (1.5.0 (324), commit
   cb5b44d, iPhone16,2, "tab: agents, screen: tab root"). Showed: "froze
@@ -198,7 +283,9 @@ cause; the fix; what was ruled out; what the bundle lacked.
   1 ms); the slow operations of 3-5 s (network, after the stalls); the
   watch bridge (no watch app installed); the MetricKit CPU exceptions
   (1.4.1, four days earlier); Keychain, owner keys and room seals (all
-  read in detached tasks at launch). Not measured, still on the main
+  read in detached tasks at launch). (The tab was built under Home
+  all the same, and once its list arrived it started the Eagle follows and
+  the dot watcher; see 2026-11-01.) Not measured, still on the main
   thread at launch: WebRTC setup in `NativeCallMedia.shared`
   (`installCalls`), the local-model folder scan and free-space query
   (`LocalAIFeature.register`), the MetricKit payload replay

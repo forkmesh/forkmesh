@@ -17,8 +17,8 @@
   "listen": "10.77.0.1:8793",
   "max_days": 100,
   "names": [
-    "app.next.forkmesh.com",
-    "world.next.forkmesh.com"
+    "app.forkmesh.com",
+    "world.forkmesh.com"
   ],
   "node": "n1",
   "peers": {

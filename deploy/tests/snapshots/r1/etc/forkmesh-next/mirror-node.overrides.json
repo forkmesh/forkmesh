@@ -4,7 +4,7 @@
   "eventDrivenUpstreams": [],
   "role": "runner",
   "runner": {
-    "appUrl": "https://app.next.forkmesh.com",
+    "appUrl": "https://app.forkmesh.com",
     "jobCPUQuota": "90%",
     "jobMemoryMax": "600M",
     "jobMemorySwapMax": "1G",

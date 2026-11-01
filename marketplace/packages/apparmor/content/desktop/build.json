@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "AppArmorModel.h",
+    "AppArmorModel.cpp",
+    "AppArmorSystem.h",
+    "AppArmorSystem.cpp",
+    "AppArmorFeature.h",
+    "AppArmorFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_apparmor.cpp",
+    "AppArmorModel.h",
+    "AppArmorModel.cpp",
+    "AppArmorSystem.h",
+    "AppArmorSystem.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
+}

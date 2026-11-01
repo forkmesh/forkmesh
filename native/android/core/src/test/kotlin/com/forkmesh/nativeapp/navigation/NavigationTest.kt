@@ -26,13 +26,13 @@ class NavigationTest {
         Route.LocalRepos, Route.LocalRepo("l1"), Route.QuickEdit("l1", "a.txt"), Route.Chat, Route.Channel("general"),
         Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Profile("bob"), Route.People, Route.Docs,
         Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Note("n", "c1"), Route.NotePage("p1"), Route.NotePage("p1", "n1"), Route.Tasks("mine"), Route.Task("t"),
-        Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Timers, Route.Desktops,
+        Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Booking(null), Route.Booking("0123456789abcdef0123456789abcdef"), Route.Timers, Route.Desktops,
         Route.Desktop("d", "logs"), Route.Hosts, Route.Host("mirror35", null), Route.Provision("v1"), Route.Network(null),
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Invoices(null, null),
         Route.Invoices("acme", "0123456789abcdef0123456789abcdef"), Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.Speech, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Logs, Route.Diagnostics, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.Speech, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.Mastodon, Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Logs, Route.Diagnostics, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -104,6 +104,10 @@ class NavigationTest {
 
     fun testParsesDashboardAndCustomSchemeLinks() {
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes/n1")!!.stack)
+        val published = "ab".repeat(16)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://app.forkmesh.com/notes/$published")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://forkmesh.com/notes/$published/")!!.stack)
+        assertEq(listOf(Route.Repo(RepoRef("notes", "n1"), null)), RouteParser.parse("https://app.forkmesh.com/notes/n1")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n2")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://forkmesh.com/dashboard/notes/n1?note=n2")!!.stack)
         assertEq(listOf(Route.Notes), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=")!!.stack)
@@ -189,6 +193,14 @@ class NavigationTest {
         assertEq("Feed", RouteCatalog.title(Route.Kind.InstanceFeed))
         assertEq("comment", RouteCatalog.icon(Route.Kind.InstanceFeed))
         expect(HubCatalog.personal.any { it.route == Route.InstanceFeed(null) && it.needsRegistration })
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("https://app.forkmesh.com/dashboard/mastodon")!!.stack)
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("forkmesh://mastodon")!!.stack)
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("forkmesh://dashboard/mastodon")!!.stack)
+        assertEq(null, RouteParser.parse("forkmesh://mastodon/callback?code=x&state=y"))
+        assertEq(null, RouteParser.parse("https://app.forkmesh.com/dashboard/mastodon/extra"))
+        assertEq("Mastodon", RouteCatalog.title(Route.Kind.Mastodon))
+        assertEq("alternate_email", RouteCatalog.icon(Route.Kind.Mastodon))
+        expect(Route.Mastodon in HubCatalog.personal.mapNotNull { it.route })
         expect(Route.RssReader in HubCatalog.personal.mapNotNull { it.route })
         assertEq(listOf(Route.SecureDrive), RouteParser.parse("forkmesh://secure-drive")!!.stack)
         assertEq(listOf(Route.SecureDrive), RouteParser.parse("https://app.forkmesh.com/dashboard/secure-drive")!!.stack)
@@ -602,7 +614,7 @@ class NavigationTest {
 
     fun testGuestGateCoversEveryAccountRouteWhereverItComesFrom() {
         val gated = listOf(
-            Route.Notes, Route.Note(""), Route.Note("n1"), Route.NotePage("p1"), Route.Tasks(null), Route.Task("t"), Route.AllAgents,
+            Route.Notes, Route.Note(""), Route.Note("n1"), Route.NotePage("p1"), Route.Tasks(null), Route.Task("t"), Route.Booking(null), Route.AllAgents,
             Route.Hosts, Route.Host("mirror35", null), Route.Crm(null), Route.Contact("c"), Route.CrmOrg("o"),
             Route.Marketing(null), Route.Analytics(null), Route.Competitors, Route.Invoices(null, null), Route.Ads, Route.Vault(null),
             Route.Coves(null), Route.Cove("c1"), Route.Calories, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.Approval("7/a1"), Route.InstalledApps,

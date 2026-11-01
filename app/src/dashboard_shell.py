@@ -414,6 +414,7 @@ CACHE_BUSTED_ASSETS = (
     "security-report.js",
     "mirror-payouts.js",
     "start.js",
+    "start-discourse-mirror.js",
     "leaderboards.js",
     "ledger.js",
     "hackathon.js",
@@ -441,6 +442,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard-page-notes.js",
     "dashboard-page-referrals.js",
     "dashboard-page-repo-activity.js",
+    "dashboard-page-repo-forum.js",
     "dashboard-page-tasks.js",
 )
 

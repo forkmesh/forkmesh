@@ -263,6 +263,34 @@ static bool worktreeListForCaller(const QString &repoPath, QByteArray *out)
     return cachedWorktreeListPorcelain(repoPath, out);
 }
 
+static bool worktreeLayoutForCaller(const QString &repoPath, QByteArray *out)
+{
+    if (QThread::currentThread() != QCoreApplication::instance()->thread())
+        return worktreeListForCaller(repoPath, out);
+    struct Entry {
+        QString stamp;
+        QByteArray listing;
+    };
+    static QHash<QString, Entry> memo;
+    const QString key = QDir(repoPath).absolutePath();
+    const QString stamp = worktreeListStamp(repoPath);
+    if (!stamp.isEmpty()) {
+        const auto cached = memo.constFind(key);
+        if (cached != memo.constEnd() && cached->stamp == stamp) {
+            *out = cached->listing;
+            return true;
+        }
+    }
+    if (!worktreeListForCaller(repoPath, out))
+        return false;
+    if (!stamp.isEmpty()) {
+        if (memo.size() > 64)
+            memo.clear();
+        memo.insert(key, Entry{stamp, *out});
+    }
+    return true;
+}
+
 static QStringList unmergedFilesIn(const QString &dir)
 {
     QByteArray unmerged;
@@ -4100,7 +4128,7 @@ QString MainWindow::worktreePathForBranch(QString repoPath, QString branch,
     QByteArray out;
     // Served from the stamp-keyed memo while no worktree was added, removed
     // or switched; one git process otherwise.
-    const bool listed = worktreeListForCaller(repoPath, &out);
+    const bool listed = worktreeLayoutForCaller(repoPath, &out);
 #ifdef FORKMESH_WINDOW_TESTS
     if (m_testWorktreeListCompletedHook) {
         auto hook = std::move(m_testWorktreeListCompletedHook);

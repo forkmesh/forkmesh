@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.navigation
 
+import com.forkmesh.nativeapp.market.PackagesText
 import com.forkmesh.nativeapp.poker.PokerApi
 import java.net.URI
 import java.net.URLDecoder
@@ -30,6 +31,7 @@ object RouteParser {
         "settings", "status", "ledger", "market", "search", "explore", "new", "privacy", "terms", "oauth",
     )
     private val safeSegment = Regex("^[A-Za-z0-9._-]+$")
+    private val publishedNoteId = Regex("^[0-9a-f]{32}$")
     private val commitHash = Regex("^[0-9a-f]{7,64}$")
     private val marketPackage = Regex("^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
     private const val MARKET_PACKAGE_MAX = 96
@@ -97,6 +99,9 @@ object RouteParser {
         }
         when (first.lowercase()) {
             "dashboard" -> return dashboard(segments.drop(1), query, me)
+            "notes" -> if (first == "notes" && segments.size == 2 && publishedNoteId.matches(segments[1])) {
+                return listOf(Route.Notes, Route.Note(segments[1]))
+            }
             "ledger.html" -> return if (segments.size == 1) listOf(Route.Ledger(null)) else null
             "market.html" -> return if (segments.size == 1) listOf(Route.Market(null)) else null
             "status.html" -> return if (segments.size == 1) listOf(Route.Status) else null
@@ -261,6 +266,7 @@ object RouteParser {
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
             "openwrt" -> listOf(Route.OpenWrtRouter)
             "app-store-status" -> listOf(Route.AppStoreStatus)
+            "booking" -> if (first == null) listOf(Route.Booking(query["booking"]?.trim()?.lowercase()?.takeIf(PackagesText::isHexId))) else null
             "runners" -> if (first == null) listOf(Route.Runners) else null
             "usage" -> if (first == null) listOf(Route.Usage) else null
             "rss", "rss-reader" -> listOf(Route.RssReader)
@@ -268,6 +274,7 @@ object RouteParser {
             "video-mix-dj-studio", "dj-studio" -> if (first == null) listOf(Route.VideoMixDjStudio) else null
             "poker" -> if (first == null) listOf(Route.Poker(query["table"]?.trim()?.lowercase()?.takeIf(PokerApi::isTableId))) else null
             "instance-feed" -> if (first == null) listOf(Route.InstanceFeed(query["post"]?.trim()?.takeIf { it.isNotEmpty() })) else null
+            "mastodon" -> if (first == null) listOf(Route.Mastodon) else null
             "secure-drive" -> listOf(Route.SecureDrive)
             "files" -> listOf(Route.Files)
             "nexus" -> if (first == null) listOf(Route.Nexus) else null
@@ -314,7 +321,8 @@ object RouteParser {
                 if (tail.size == 3 && tail.all { it.isNotBlank() }) listOf(Route.Coves(null), Route.Cove(rest))
                 else listOf(Route.Coves(null))
             "coves" -> listOf(Route.Coves(null))
-            "home" -> listOf(AppTab.barOrder.first().root)
+            "mastodon" -> if (tail.isEmpty()) listOf(Route.Mastodon) else null
+            "home" ->listOf(AppTab.barOrder.first().root)
             else -> dashboard(all, query, me) ?: routes(all, query, me) ?: named(head, tail.firstOrNull()) ?: listOf(AppTab.barOrder.first().root)
         }
     }
@@ -337,10 +345,12 @@ object RouteParser {
         "openwrt" -> listOf(Route.OpenWrtRouter)
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
+        "booking" -> listOf(Route.Booking(first?.lowercase()?.takeIf(PackagesText::isHexId)))
         "runners" -> listOf(Route.Runners)
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
         "instance-feed" -> listOf(Route.InstanceFeed(first))
+        "mastodon" -> if (first == null) listOf(Route.Mastodon) else null
         "poker" -> listOf(Route.Poker(null))
         "secure-drive" -> listOf(Route.SecureDrive)
         "files" -> listOf(Route.Files)

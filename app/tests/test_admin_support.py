@@ -193,6 +193,21 @@ def test_bug_inbox_lists_new_reports_newest_first_and_opens_the_first():
     assert "<script" not in page.lower()
 
 
+def test_the_detail_shows_when_the_reporter_confirmed_the_fix():
+    h = Harness()
+    confirmed = h.report(0, status="closed", account="ada-lovelace",
+                         confirmedFixedAt=NOW - 60_000)
+    waiting = h.report(1, status="closed")
+
+    shown = h.get("view=bugs&status=closed&report=%s" % confirmed).body
+    pending = h.get("view=bugs&status=closed&report=%s" % waiting).body
+
+    assert "<dt>Reporter confirmed fixed</dt>" in shown
+    assert "not yet" not in shown
+    assert ('<dt>Reporter confirmed fixed</dt><dd><span class="muted">'
+            'not yet</span></dd>') in pending
+
+
 def test_a_report_does_not_link_to_a_repository_issue():
     h = Harness()
     h.report(0, issueRepo="forkmesh/forkmesh", issueNumber=712)
