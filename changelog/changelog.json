@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Market", "text": "Mastodon now works in the iPhone and Android apps: sign in to your own server and read, post, reply, boost, favourite, bookmark, search and follow without leaving the app."},
   {"date": "2026-10-31", "area": "Projects", "text": "Repository forums now take part on ForkMesh: signed-in people post, reply, like and edit, and the forum's operators pin, close, archive, unlist, move and hide topics, silence accounts and edit categories, all saved as signed records in the repository."},
   {"date": "2026-10-31", "area": "Projects", "text": "Instance admins can mirror a public Discourse forum into a repository's Forum tab from the new Start a Discourse mirror page, linked from /start, or with Mirror this forum in the browser extension; the copy runs on the instance as a scheduled workflow."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "Repositories can have a Discourse-style Forum tab on the web with categories, subcategories, tags, Latest and Top lists and topic pages, kept in the repository so every mirror carries it; owners turn it on in Settings and fill it from a Discourse forum with the Discourse Mirror plugin."},
