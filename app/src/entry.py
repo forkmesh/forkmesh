@@ -7997,14 +7997,18 @@ async def network_leaderboards(env):
     shared = globals().get("d1_shared_read")
     contrib_rows = await (shared(env, "contributor-board", contrib_scan)
                           if shared else contrib_scan())
-    private_contributors = set()
+    label_bis = {}
     for r in contrib_rows or []:
         label = clean_string(
             r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
-        if valid_node_name(label):
-            _, contributor_rec = await _account_row(env, label)
-            if (contributor_rec or {}).get("profile_private"):
-                private_contributors.add(label)
+        if valid_node_name(label) and label not in label_bis:
+            label_bis[label] = await blind_index(env, label)
+    contributor_recs = await _account_identity_recs_by_bi(
+        env, label_bis.values())
+    private_contributors = {
+        label for label, label_bi in label_bis.items()
+        if (contributor_recs.get(label_bi) or {}).get("profile_private")
+    }
     contrib_board = [
         {"name": "Private contributor" if clean_string(
              r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
@@ -18625,6 +18629,30 @@ async def _account_identity_rec_by_bi(env, name_bi):
     if not row:
         return None
     return await decrypt_row(env, row.get("data"))
+
+
+async def _account_identity_recs_by_bi(env, name_bis):
+    found = {}
+    pending = list(dict.fromkeys(str(bi) for bi in name_bis if bi))
+    for table, column in (("users", "user_bi"), ("nodes", "node_bi")):
+        missing = []
+        for offset in range(0, len(pending), 80):
+            chunk = pending[offset:offset + 80]
+            rows = await d1_all(
+                env,
+                "SELECT %s AS bi, data FROM %s WHERE %s IN (%s)" % (
+                    column, table, column, ",".join("?" for _bi in chunk)),
+                *chunk,
+            )
+            hits = {str(row.get("bi") or ""): row.get("data")
+                    for row in rows or []}
+            for bi in chunk:
+                if bi in hits:
+                    found[bi] = await decrypt_row(env, hits[bi])
+                else:
+                    missing.append(bi)
+        pending = missing
+    return found
 
 
 # name_bis whose users/nodes rows this isolate already refreshed via
@@ -54469,6 +54497,9 @@ async def _repo_organization_path(env, parts, query, public_only):
 
 
 async def _short_repo_board(env, rows):
+    if not rows or not repo_short_urls.canonical_owner(
+            await _repo_short_setting_row(env)):
+        return list(rows)
     shown = []
     for row in rows:
         owner, _, name = str(row.get("name") or "").partition("/")
