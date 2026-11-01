@@ -4,9 +4,9 @@
 # addresses stay in fleet-instances.json; the tools read them by label.
 # No secrets: every secret is a credential name only (docs/OPERATIONS.md).
 
-domain = "next.forkmesh.com"          # DNS suffix for the nN/app/world hosts; its homepage Worker was retired 2026-09-27
-app_host = "app.next.forkmesh.com"    # round-robin A records over the core nodes
-world_host = "world.next.forkmesh.com"
+domain = "next.forkmesh.com"          # DNS suffix for the per-node nN hosts; its homepage Worker was retired 2026-09-27
+app_host = "app.forkmesh.com"         # round-robin A records over the core nodes
+world_host = "world.forkmesh.com"
 region = "ewr"
 os_name = "Debian 13 x64 (trixie)"
 instance_label_prefix = "fmnext-"     # hard guard in tools/next_fleet.py
@@ -125,8 +125,6 @@ optional_secrets = [
 ]
 
 [production]
-app_host = "app.forkmesh.com"
-world_host = "world.forkmesh.com"
 
 [production.vars]
 PUBLIC_BASE_URL = "https://forkmesh.com"

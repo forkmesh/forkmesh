@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Caddy route snippets for app.next / world.next.
+"""Generate the Caddy route snippets for app.forkmesh.com / world.forkmesh.com.
 
 Cloudflare Workers Static Assets decide per request whether the Worker or the
 asset store answers; on the core nodes Caddy makes the same decision so that

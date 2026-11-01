@@ -365,7 +365,10 @@ private:
     void showColumn(const QString &id);
     void addColumnToSheet(const QString &id);
     bool sheetCarriesField(const QString &field) const;
+    QStringList sheetLayoutFields() const;
+    QString sheetColumnLabel(const QString &field) const;
     QJsonArray tableViews() const;
+    QString defaultTableViewId() const;
     QStringList tableViewFields() const;
     QStringList shownViewFields() const;
     bool builtinTableView() const;
@@ -380,6 +383,7 @@ private:
     void saveTableViewDraft();
     void renameTableView();
     void deleteTableView();
+    void makeTableViewDefault();
     void saveTableViews(const QJsonArray &views, const QString &done);
     void showSheetMenu(const QPoint &position);
     // Every list and pipeline is a tab ahead of the fixed ones, carrying a
@@ -750,6 +754,7 @@ private:
     QToolButton *m_tableViewMenu = nullptr;
     QToolButton *m_tableViewSave = nullptr;
     QString m_tableViewId = QStringLiteral("default");
+    bool m_tableViewPicked = false;
     QStringList m_tableViewDraft;
     bool m_orderingColumns = false;
     QString m_sortId;

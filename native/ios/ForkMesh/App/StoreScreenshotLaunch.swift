@@ -42,8 +42,16 @@ enum StoreScreenshotLaunch {
         UIDevice.current.userInterfaceIdiom == .pad && !(on && UserDefaults.standard.bool(forKey: phoneLayoutKey))
     }
 
+    static var lab: Bool {
+        #if DEBUG
+        return CloudDragonLab.on
+        #else
+        return false
+        #endif
+    }
+
     static func prepare(auth: AuthService, settings: SettingsService?) {
-        guard on else { return }
+        guard on || lab else { return }
         UserDefaults.standard.set(true, forKey: ShellTour.seenKey)
         DataFolderModel.shared.dismissedThisLaunch = true
         if let settings {

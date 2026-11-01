@@ -501,6 +501,7 @@ struct PromptComposer: View {
                 FmHaptics.selection()
                 stopDictation()
             }
+            .textSelection(.disabled)
             .onLongPressGesture(minimumDuration: 0.5) {
                 CaptureHold.noteHandled()
                 stopListeningOnOpen()

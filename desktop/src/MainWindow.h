@@ -1500,6 +1500,12 @@ public:
     }
     void testRemoveChannelGroup(const QString &group) { removeChannelGroup(group); }
     void testSetChannels(const QStringList &channels) { setChannels(channels); }
+    void testStartLocalMesh() { startLocalMesh(); }
+    bool testHasLocalMesh() const { return m_localMesh != nullptr; }
+    bool testCorePackageServiceRunning(const QString &id) const
+    {
+        return corePackageServiceRunning(id);
+    }
     void testSetOfficeConversations(const QStringList &conversations)
     {
         m_officeConversations = conversations;
@@ -4406,6 +4412,7 @@ private:
     QUrl nativePackageLinkUrl(const QString &id) const;
     forkmesh::market::NativePackageWidget *nativeLoginStore(QString *name) const;
     forkmesh::market::NativePackageWidget *quickAddPackagePromptTarget() const;
+    bool quickAddPackageAppliesToOpen() const;
     bool submitQuickAddToPackage();
     void openNativePackageWindow(const QString &id);
     void dockNativePackageWindow(const QString &id);
@@ -5194,6 +5201,7 @@ private:
     void takeBackupNow(bool automatic);
     void refreshBackupTable();
     void pruneOldBackups();
+    QStringList partialBackupPaths() const;
     void removePartialBackups();
     QStringList backupExcludeRoots() const;
     void restoreConfigArchive(const QString &archivePath);
@@ -6625,7 +6633,8 @@ private:
     bool resolveActionApproval(const RepositoryRecord &repo,
                                const ActionRun &run);
     bool approveActionRun(int runId, QString *error = nullptr);
-    int autoApproveAwaitingRuns(const RepositoryRecord &repo);
+    void autoApproveAwaitingRuns(const RepositoryRecord &repo,
+                                 bool announce = false);
     struct WorkflowScanEntry {
         QString path;    // .forkmesh/<file>
         QString content; // the file as it is at the scanned commit
@@ -7990,6 +7999,7 @@ private:
         QString dir;
         QString signature;
         QStringList branches;
+        BranchRefFiles files;
     };
     void requestRepoBranchOrder(const QString &dir) const;
     void applyRepoBranchOrder(const BranchOrderLoad &load);
@@ -14979,6 +14989,12 @@ private:
     QJsonObject handleAgentIntakeRequest(const forkmesh::agentintake::Request &request);
     QJsonObject createAgentFromIntake(int requesterId,
                                       const forkmesh::agentintake::CreateRequest &request);
+    QJsonObject linkBranchFromIntake(int requesterId,
+                                     const forkmesh::agentintake::LinkBranchRequest &request);
+    QJsonObject verifyIntakeWorktree(const QString &gitDir, const QString &slug,
+                                     const QString &worktree, QString *branch,
+                                     QString *canonical);
+    bool sessionLinkedFromCheckout(int sessionId);
     QString agentIntakeSessionState(int sessionId) const;
     bool startHeldAgentSession(int sessionId);
     std::unique_ptr<forkmesh::agentintake::Server> m_agentIntake;

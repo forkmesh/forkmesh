@@ -44,7 +44,7 @@ Topic pages:
 | [PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md) | No banner, or no phone ping, for what is already on screen |
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |
 | [STATS.md](STATS.md) | The Stats board: every desktop tile over `stats.tiles`, and the release-version tiles |
-| [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md), [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Screen capture and markup; issue and pull links in messages |
+| [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md), [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Screen capture and markup, selectable text; issue and pull links in messages |
 | [IOS_RELEASE.md](IOS_RELEASE.md), [MAC_BUILD.md](MAC_BUILD.md), [ANDROID.md](ANDROID.md) | iOS release pipeline, office Mac builds, Android design notes |
 | [DATA_FOLDER.md](DATA_FOLDER.md) | The projects folder (automatic, or one the user picks) that keeps settings, plugin data and the encrypted identity key through a reinstall |
 | [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |
@@ -441,6 +441,12 @@ avatar movement but does not silently change that saved feedback preference.
   rescheduling a save; `ChatHub.attachHistory(inBackground:)` and the
   batched `restore`s replace that. Name every launch step
   (`startup.<step>`) so the report says which one is slow.
+- A tab hidden under Home or behind another tab starts only the work the
+  shell needs from it (Agents: the list, for the counts); streams, follows
+  and watchers wait until it is first shown (`AgentsTabLiveGate`). SwiftUI
+  evaluates every `@State` default each time the parent builds the view,
+  and keeps only the first, so a default does no reads or parsing in
+  `init` (`AgentReadTracker` reads its store on first use).
 - Parse message text once per text, not once per redraw: `ChatLinkText` and
   the bubbles read `ChatTextCache`.
 - Compute derived lists once per body and pass them down.

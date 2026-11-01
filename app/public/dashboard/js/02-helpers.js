@@ -297,6 +297,10 @@
     const ready = typeof genie?.isOff === "function";
     toggle.setAttribute("aria-checked", ready && genie.isOff() ? "false" : "true");
     toggle.disabled = !ready;
+    const mascot = $("[data-genie-mascot]");
+    if (!mascot) return;
+    mascot.disabled = typeof genie?.setMascot !== "function";
+    if (!mascot.disabled) mascot.value = genie.mascot();
   }
 
   function saveGenieSetting(shown) {
@@ -308,6 +312,10 @@
 
   function watchGenieSetting() {
     window.addEventListener("forkmesh:genie", renderGenieSetting);
+    document.addEventListener("change", (event) => {
+      const mascot = event.target.closest?.("[data-genie-mascot]");
+      if (mascot) window.ForkMeshGenie?.setMascot?.(mascot.value);
+    });
     if (document.readyState !== "complete") {
       document.addEventListener("DOMContentLoaded", renderGenieSetting, { once: true });
     }
@@ -559,6 +567,7 @@
       "forkmesh.analyticsConsent.v1",
       "forkmesh.apiOrigin",
       "forkmesh.dashboard.theme",
+      "forkmesh.genie.mascot",
       "forkmesh.genie.off",
       "forkmesh.theme",
     ]);
@@ -2225,7 +2234,7 @@
 
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
-  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "forum", "mirrors", "actions", "security"];
   const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an

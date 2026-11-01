@@ -1222,7 +1222,7 @@ _URL_EXPORT_NAMES = (
     "AP_USER_SUB_RE", "AP_REPO_RE", "AP_REPO_SUB_RE", "AP_OBJECT_RE",
     "AP_OBJECT_MEDIA_RE", "REPO_FEDI_COMMENTS_RE", "REPO_AP_PUBLISH_RE",
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
-    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE",
+    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE", "REPO_FORUM_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
@@ -1456,6 +1456,7 @@ watch_github_actions = github_actions_watch.export("watch_github_actions")
 _bug_reports = _LazyModule("bug_reports")
 bug_reports_handler = _bug_reports.export("bug_reports_handler")
 bug_reports_inbox_handler = _bug_reports.export("bug_reports_inbox_handler")
+bug_reports_mine_handler = _bug_reports.export("bug_reports_mine_handler")
 # Reading those reports back (and the docs / World feedback) happens only in
 # the is_admin console, through its Support sections.
 _admin_support = _LazyModule("admin_support")
@@ -8013,14 +8014,18 @@ async def network_leaderboards(env):
     shared = globals().get("d1_shared_read")
     contrib_rows = await (shared(env, "contributor-board", contrib_scan)
                           if shared else contrib_scan())
-    private_contributors = set()
+    label_bis = {}
     for r in contrib_rows or []:
         label = clean_string(
             r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
-        if valid_node_name(label):
-            _, contributor_rec = await _account_row(env, label)
-            if (contributor_rec or {}).get("profile_private"):
-                private_contributors.add(label)
+        if valid_node_name(label) and label not in label_bis:
+            label_bis[label] = await blind_index(env, label)
+    contributor_recs = await _account_identity_recs_by_bi(
+        env, label_bis.values())
+    private_contributors = {
+        label for label, label_bi in label_bis.items()
+        if (contributor_recs.get(label_bi) or {}).get("profile_private")
+    }
     contrib_board = [
         {"name": "Private contributor" if clean_string(
              r.get("display_name", ""), MAX_NODE_NAME).strip().lower()
@@ -18643,6 +18648,30 @@ async def _account_identity_rec_by_bi(env, name_bi):
     if not row:
         return None
     return await decrypt_row(env, row.get("data"))
+
+
+async def _account_identity_recs_by_bi(env, name_bis):
+    found = {}
+    pending = list(dict.fromkeys(str(bi) for bi in name_bis if bi))
+    for table, column in (("users", "user_bi"), ("nodes", "node_bi")):
+        missing = []
+        for offset in range(0, len(pending), 80):
+            chunk = pending[offset:offset + 80]
+            rows = await d1_all(
+                env,
+                "SELECT %s AS bi, data FROM %s WHERE %s IN (%s)" % (
+                    column, table, column, ",".join("?" for _bi in chunk)),
+                *chunk,
+            )
+            hits = {str(row.get("bi") or ""): row.get("data")
+                    for row in rows or []}
+            for bi in chunk:
+                if bi in hits:
+                    found[bi] = await decrypt_row(env, hits[bi])
+                else:
+                    missing.append(bi)
+        pending = missing
+    return found
 
 
 # name_bis whose users/nodes rows this isolate already refreshed via
@@ -36261,7 +36290,8 @@ AP_REPO_SETTING_DEFAULTS = {
 }
 
 REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
-                         "actions": True, "protectDefaultBranch": False,
+                         "forum": False, "actions": True,
+                         "protectDefaultBranch": False,
                          "stalePulls": False, "stalePullsDeleteBranch": False}
 
 
@@ -54488,6 +54518,9 @@ async def _repo_organization_path(env, parts, query, public_only):
 
 
 async def _short_repo_board(env, rows):
+    if not rows or not repo_short_urls.canonical_owner(
+            await _repo_short_setting_row(env)):
+        return list(rows)
     shown = []
     for row in rows:
         owner, _, name = str(row.get("name") or "").partition("/")

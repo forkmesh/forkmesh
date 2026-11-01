@@ -595,6 +595,10 @@ signed with the v3 key (`native/android/README.md`); the default application id
 
 iOS features Android does not have, because they need an Apple-only API:
 
+- **Cloud Dragon** (2026-11-01): the second Genie mascot on iPhone
+  ([GENIE.md](GENIE.md#the-cloud-dragon)). It is iOS only until the owner asks
+  for it on Android; the Android spider is unchanged and Android has no mascot
+  choice yet.
 - **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
 - **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
   new dependency.
@@ -820,6 +824,18 @@ default in new projects except the chosen starter pack
     `data:` URI from the on-device cache.
   - **Appearance**: Light or Dark wraps the reader in
     `ForkMeshTheme(dark = …)`; Automatic follows the app.
+- **Mastodon** (`mastodon`, route `Route.Mastodon`, Personal group;
+  `/dashboard/mastodon`, `forkmesh://mastodon`). `C/mastodon/` holds the
+  host-JVM-tested part (server parsing, PKCE, the callback `state` check,
+  post HTML to segments, the character count, Link paging, models and the
+  client over a `MastodonTransport`); `A/feature/mastodon/` the Compose
+  screens and `MastodonState`. The browser returns to
+  `forkmesh://mastodon/callback`, which `MastodonFeature.onIntent` takes
+  before `NavigationFeature` so the code never becomes a route; the pending
+  sign-in lives in the project's `SecretStore` (`mastodon.pending.v1`), so a
+  process the system ended while the browser was open still finishes. The
+  iPhone uses `ASWebAuthenticationSession` for the same step
+  ([Mastodon](../marketplace/mastodon.md#on-the-phone)).
 
 ## 14. Chat features
 

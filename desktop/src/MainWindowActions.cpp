@@ -254,7 +254,7 @@ bool bindActionRepositoryState(ActionRun *run, const QString &mirror,
         error);
 }
 
-// code-health: allow(blocking-wait) one `git show <commit>:<workflow>` read from the local mirror, bounded (3 s start, 30 s finish, killed on failure). processActionQueue calls it on a runOffThread worker; approveActionRun, autoApproveAwaitingRuns and rerunSelectedRun call it on the GUI thread; the wait is un-pumped, which is what keeps autoApproveAwaitingRuns' by-reference walk over m_actionRuns safe (a pumped wait could let a reload rebuild the list), so switching to a keep-alive git helper is not a drop-in fix
+// code-health: allow(blocking-wait) one `git show <commit>:<workflow>` read from the local mirror, bounded (3 s start, 30 s finish, killed on failure). processActionQueue and autoApproveAwaitingRuns call it on a runOffThread worker; approveActionRun and rerunSelectedRun call it on the GUI thread
 QString workflowContentAt(const QString &mirror, const QString &commit,
                           const QString &path)
 {
@@ -9957,13 +9957,14 @@ bool MainWindow::resolveActionApproval(const RepositoryRecord &repo,
         run.repositoryTree, run.executionDigest);
 }
 
-int MainWindow::autoApproveAwaitingRuns(const RepositoryRecord &repo)
+void MainWindow::autoApproveAwaitingRuns(const RepositoryRecord &repo,
+                                         bool announce)
 {
     if (!m_actionStore || !repo.actionsEnabled || !repo.actionsAutoApprove)
-        return 0;
+        return;
 
-    int queued = 0;
-    for (ActionRun &run : m_actionRuns) {
+    QList<ActionRun> candidates;
+    for (const ActionRun &run : std::as_const(m_actionRuns)) {
         if (run.status != ActionStatus::AwaitingApproval ||
             run.owner != repo.owner || run.name != repo.name)
             continue;
@@ -9979,50 +9980,102 @@ int MainWindow::autoApproveAwaitingRuns(const RepositoryRecord &repo)
                                    : run.pullAuthor));
             continue;
         }
-
-        ActionRun verified = run;
-        QString snapshotError;
-        if (workflowContentAt(repo.mirrorPath, run.commit, run.workflowPath) !=
-                run.workflowContent ||
-            !bindActionRepositoryState(&verified, repo.mirrorPath,
-                                       &snapshotError) ||
-            verified.repositoryTree != run.repositoryTree ||
-            verified.executionDigest != run.executionDigest) {
-            logSystem(QStringLiteral(
-                          "Actions: keeping \"%1\" for %2/%3 @ %4 awaiting "
-                          "review because its saved repository state could not "
-                          "be reverified%5.")
-                          .arg(run.workflowName, run.owner, run.name,
-                               run.commit.left(8),
-                               snapshotError.isEmpty()
-                                   ? QString()
-                                   : QStringLiteral(": ") + snapshotError));
-            continue;
-        }
-        if (!resolveActionApproval(repo, run)) {
-            logSystem(QStringLiteral(
-                          "Actions: keeping \"%1\" for %2/%3 @ %4 awaiting "
-                          "review because its automatic approval could not be "
-                          "saved.")
-                          .arg(run.workflowName, run.owner, run.name,
-                               run.commit.left(8)));
-            continue;
-        }
-
-        run.status = ActionStatus::Queued;
-        m_actionStore->saveRun(run);
-        if (!m_actionQueue.contains(run.id))
-            m_actionQueue.append(run.id);
-        ++queued;
-        logSystem(QStringLiteral(
-                      "Actions: automatically approved \"%1\" for %2/%3 "
-                      "@ %4.")
-                      .arg(run.workflowName, run.owner, run.name,
-                           run.commit.left(8)));
+        candidates.append(run);
     }
-    if (queued > 0)
-        scheduleMirrorActionsSummary(0);
-    return queued;
+    if (candidates.isEmpty())
+        return;
+
+    struct Verdict {
+        ActionRun run;
+        bool verified = false;
+        QString error;
+    };
+    runOffThread<QList<Verdict>>(
+        [candidates, mirror = repo.mirrorPath] {
+            QList<Verdict> verdicts;
+            for (const ActionRun &run : candidates) {
+                ActionRun rebound = run;
+                Verdict verdict{run, false, QString()};
+                verdict.verified =
+                    workflowContentAt(mirror, run.commit, run.workflowPath) ==
+                        run.workflowContent &&
+                    bindActionRepositoryState(&rebound, mirror,
+                                              &verdict.error) &&
+                    rebound.repositoryTree == run.repositoryTree &&
+                    rebound.executionDigest == run.executionDigest;
+                verdicts.append(verdict);
+            }
+            return verdicts;
+        },
+        [this, owner = repo.owner, name = repo.name,
+         announce](QList<Verdict> verdicts) {
+            const RepositoryRecord *current = nullptr;
+            for (const RepositoryRecord &record : std::as_const(m_repositories))
+                if (record.owner == owner && record.name == name)
+                    current = &record;
+            if (!m_actionStore || !current || !current->actionsEnabled ||
+                !current->actionsAutoApprove)
+                return;
+            const RepositoryRecord repo = *current;
+            int queued = 0;
+            for (const Verdict &verdict : std::as_const(verdicts)) {
+                const ActionRun &checked = verdict.run;
+                ActionRun *live = findRun(checked.id);
+                if (!live || live->status != ActionStatus::AwaitingApproval ||
+                    live->firstTimePullAuthor ||
+                    live->commit != checked.commit ||
+                    live->workflowPath != checked.workflowPath ||
+                    live->workflowContent != checked.workflowContent ||
+                    live->repositoryTree != checked.repositoryTree ||
+                    live->executionDigest != checked.executionDigest)
+                    continue;
+                ActionRun &run = *live;
+                if (!verdict.verified) {
+                    logSystem(QStringLiteral(
+                                  "Actions: keeping \"%1\" for %2/%3 @ %4 awaiting "
+                                  "review because its saved repository state could not "
+                                  "be reverified%5.")
+                                  .arg(run.workflowName, run.owner, run.name,
+                                       run.commit.left(8),
+                                       verdict.error.isEmpty()
+                                           ? QString()
+                                           : QStringLiteral(": ") + verdict.error));
+                    continue;
+                }
+                if (!resolveActionApproval(repo, run)) {
+                    logSystem(QStringLiteral(
+                                  "Actions: keeping \"%1\" for %2/%3 @ %4 awaiting "
+                                  "review because its automatic approval could not be "
+                                  "saved.")
+                                  .arg(run.workflowName, run.owner, run.name,
+                                       run.commit.left(8)));
+                    continue;
+                }
+
+                run.status = ActionStatus::Queued;
+                m_actionStore->saveRun(run);
+                if (!m_actionQueue.contains(run.id))
+                    m_actionQueue.append(run.id);
+                ++queued;
+                logSystem(QStringLiteral(
+                              "Actions: automatically approved \"%1\" for %2/%3 "
+                              "@ %4.")
+                              .arg(run.workflowName, run.owner, run.name,
+                                   run.commit.left(8)));
+            }
+            if (queued == 0)
+                return;
+            scheduleMirrorActionsSummary(0);
+            if (announce)
+                logSystem(QStringLiteral("Actions: queued %1 automatically "
+                                         "approved pending run%2 for %3/%4.")
+                              .arg(queued)
+                              .arg(queued == 1 ? QString() : QStringLiteral("s"),
+                                   owner, name));
+            refreshActionsTable();
+            updateNotificationButton();
+            processActionQueue();
+        });
 }
 
 void MainWindow::rejectSelectedRun()

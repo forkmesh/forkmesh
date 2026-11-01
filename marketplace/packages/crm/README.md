@@ -20,6 +20,11 @@ generic package sockets and generated registries.
   lists the contact is on (`views`).
 - **Lists** (sheets): created by CSV import (named after the file, columns in
   the file's order) or by hand. Columns can be renamed, hidden or reordered.
+  In the **All** view a list shows its own layout on the web and the desktop
+  alike: only its shown columns, in its order, under its labels (1.46.1; the
+  desktop used to show every built-in column first, which pushed imported
+  columns such as a fit score far to the right). Its labels also name the
+  columns in the other views and in a contact's details.
   A list can be bound to a pipeline (`flow`, owners and admins only).
 - **Pipelines**: ordered stages. A contact is on a pipeline list when it is in
   that pipeline and the list is the first of the pipeline's lists (in the
@@ -41,6 +46,13 @@ generic package sockets and generated registries.
   sets shared across the organization. **Default** and **All** are built in;
   any member may save `tableViews`, every other setting is for owners and
   admins. Deleted built-in columns are recorded in `removedColumns`.
+- **Default view** (`defaultTableView` in settings): the view every list
+  opens in, a saved view's id or `all`; empty means the built-in Default. Any
+  member may set it from the view menu (**Make default view**), like
+  `tableViews`. The worker clears it when that view is deleted
+  (`_default_table_view`). A view a person picks still wins: the web page keeps
+  the pick in the browser until they pick the default again, and the desktop
+  keeps it for the session.
 
 ## Loading and paging
 

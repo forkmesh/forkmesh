@@ -169,6 +169,7 @@ struct ShellProjectSlot: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(ShellBarButtonStyle())
+            .textSelection(.disabled)
             .simultaneousGesture(LongPressGesture(minimumDuration: ShellProjectSlot.holdSeconds).onEnded { _ in
                 held = true
                 goHome()
@@ -185,6 +186,7 @@ struct ShellProjectSlot: View {
                 .frame(width: 40, height: 40)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
+                .textSelection(.disabled)
                 .onLongPressGesture(minimumDuration: ShellProjectSlot.holdSeconds) { goHome() }
                 .accessibilityLabel(Text("ForkMesh"))
                 .accessibilityHint(Text("Touch and hold to go Home"))

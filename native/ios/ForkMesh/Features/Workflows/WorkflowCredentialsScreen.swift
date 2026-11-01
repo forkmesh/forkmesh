@@ -84,6 +84,7 @@ struct WorkflowCredentialsScreen: View {
             leading: AnyView(FmIconTile(icon: "lock_outline", tint: WorkflowLook.color(app?.color ?? "", fallback: fm.accent))),
             trailing: AnyView(FmStatusBadge(label: onPhone ? "On this phone" : "Account only", color: onPhone ? fm.success : fm.textSecondary)),
             onTap: { editing = credential })
+            .textSelection(.disabled)
             .contextMenu {
                 if onPhone {
                     Button("Remove from this phone") { store.removePhoneCredential(credential.id) }

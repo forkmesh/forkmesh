@@ -32,7 +32,7 @@ class NavigationTest {
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Invoices(null, null),
         Route.Invoices("acme", "0123456789abcdef0123456789abcdef"), Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.Speech, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Logs, Route.Diagnostics, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.Speech, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.Poker(null), Route.Poker("0123456789abcdef0123456789abcdef"), Route.InstanceFeed(null), Route.Mastodon, Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Logs, Route.Diagnostics, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -104,6 +104,10 @@ class NavigationTest {
 
     fun testParsesDashboardAndCustomSchemeLinks() {
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes/n1")!!.stack)
+        val published = "ab".repeat(16)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://app.forkmesh.com/notes/$published")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note(published)), RouteParser.parse("https://forkmesh.com/notes/$published/")!!.stack)
+        assertEq(listOf(Route.Repo(RepoRef("notes", "n1"), null)), RouteParser.parse("https://app.forkmesh.com/notes/n1")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n2")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2")!!.stack)
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://forkmesh.com/dashboard/notes/n1?note=n2")!!.stack)
         assertEq(listOf(Route.Notes), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=")!!.stack)
@@ -189,6 +193,14 @@ class NavigationTest {
         assertEq("Feed", RouteCatalog.title(Route.Kind.InstanceFeed))
         assertEq("comment", RouteCatalog.icon(Route.Kind.InstanceFeed))
         expect(HubCatalog.personal.any { it.route == Route.InstanceFeed(null) && it.needsRegistration })
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("https://app.forkmesh.com/dashboard/mastodon")!!.stack)
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("forkmesh://mastodon")!!.stack)
+        assertEq(listOf(Route.Mastodon), RouteParser.parse("forkmesh://dashboard/mastodon")!!.stack)
+        assertEq(null, RouteParser.parse("forkmesh://mastodon/callback?code=x&state=y"))
+        assertEq(null, RouteParser.parse("https://app.forkmesh.com/dashboard/mastodon/extra"))
+        assertEq("Mastodon", RouteCatalog.title(Route.Kind.Mastodon))
+        assertEq("alternate_email", RouteCatalog.icon(Route.Kind.Mastodon))
+        expect(Route.Mastodon in HubCatalog.personal.mapNotNull { it.route })
         expect(Route.RssReader in HubCatalog.personal.mapNotNull { it.route })
         assertEq(listOf(Route.SecureDrive), RouteParser.parse("forkmesh://secure-drive")!!.stack)
         assertEq(listOf(Route.SecureDrive), RouteParser.parse("https://app.forkmesh.com/dashboard/secure-drive")!!.stack)

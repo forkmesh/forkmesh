@@ -40,7 +40,7 @@ public enum SettingsCatalog {
     public static let entries: [SettingsSectionEntry] = [
         .init(id: .quickSetup, title: "Quick setup", icon: "task_alt", keywords: ["start", "onboarding", "first run", "pair"]),
         .init(id: .profile, title: "Profile", icon: "person_outline", keywords: ["name", "display name", "status", "away", "avatar", "node id"]),
-        .init(id: .general, title: "General", icon: "tune", keywords: ["appearance", "theme", "dark", "light", "accent", "color", "colour", "surfaces", "contrast", "theme editor", "shuffle", "haptics", "vibration", "vibrate", "sounds", "audio", "mute", "silent", "noise", "volume", "beep", "click", "genie", "spider", "hide spider", "home screen", "icons", "icon style", "categories", "sort", "highlight", "frequently used"]),
+        .init(id: .general, title: "General", icon: "tune", keywords: ["appearance", "theme", "dark", "light", "accent", "color", "colour", "surfaces", "contrast", "theme editor", "shuffle", "haptics", "vibration", "vibrate", "sounds", "audio", "mute", "silent", "noise", "volume", "beep", "click", "genie", "spider", "dragon", "cloud dragon", "mascot", "hide spider", "home screen", "icons", "icon style", "categories", "sort", "highlight", "frequently used"]),
         .init(id: .repos, title: "Repositories on this phone", icon: "folder_outlined", keywords: ["commit", "author", "email", "branch", "local", "clone"]),
         .init(id: .agents, title: "Agents", icon: "smart_toy_outlined", keywords: ["provider", "model", "claude", "codex", "desktop", "default"]),
         .init(id: .voice, title: "Voice", icon: "tune_rounded", keywords: ["dictation", "speech", "language", "microphone", "listen", "speech to text", "on-device"]),
@@ -90,7 +90,7 @@ public enum SettingsCatalog {
         let folded = fold(raw).replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "_", with: "")
         if let exact = SettingsSectionId.allCases.first(where: { $0.rawValue.lowercased() == folded }) { return exact }
         let aliases: [String: SettingsSectionId] = [
-            "ssh": .sshKeys, "keys": .sshKeys, "appearance": .general, "theme": .general, "sounds": .general, "haptics": .general, "genie": .general, "spider": .general,
+            "ssh": .sshKeys, "keys": .sshKeys, "appearance": .general, "theme": .general, "sounds": .general, "haptics": .general, "genie": .general, "spider": .general, "dragon": .general, "mascot": .general,
             "recovery": .identity, "backup": .identity, "export": .data, "vulnerability": .security, "phone": .desktops,
             "devices": .nodes, "linknode": .nodes, "apitoken": .mcp, "token": .mcp, "orgs": .organizations, "installedapps": .apps, "integrations": .apps,
             "pings": .notifications, "push": .notifications, "chatlock": .chatPrivacy, "privacy": .chatPrivacy, "faceid": .chatPrivacy, "setup": .quickSetup, "quicksetup": .quickSetup,

@@ -128,6 +128,7 @@ struct DjSimilarSheet: View {
             }
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             Button("Load on Deck A", systemImage: "a.circle") { model.loadTrack(track, on: .a) }
             Button("Load on Deck B", systemImage: "b.circle") { model.loadTrack(track, on: .b) }

@@ -153,6 +153,7 @@ struct IssueBoardScreen: View {
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+        .textSelection(.disabled)
         .contextMenu {
             Menu("Move to…") {
                 ForEach(board.columns.filter { $0 != column.name }, id: \.self) { (target: String) in

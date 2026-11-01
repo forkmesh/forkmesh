@@ -955,6 +955,7 @@ struct DiffReviewStream<Header: View>: View {
                 go(DiffReviewRow.headerId(index))
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             fileMenu(index, file: file, viewed: viewed)
         }

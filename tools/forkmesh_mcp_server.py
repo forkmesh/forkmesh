@@ -140,8 +140,8 @@ WRITE_TOOLS = {
     "crm_merge_contacts", "crm_check_accounts", "marketing_save_ready_post",
     "create_task", "update_task", "complete_task", "reopen_task",
     "attach_work_item", "detach_work_item", "delete_task", "restore_task",
-    "create_agent", "create_release", "publish_release", "record_expense",
-    "send_email",
+    "create_agent", "link_branch", "create_release", "publish_release",
+    "record_expense", "send_email",
 }
 DESTRUCTIVE_TOOLS = {"delete_task", "crm_merge_contacts"}
 WINDOW_TOOLS = {"show_window", "read_window", "close_window",
@@ -153,6 +153,7 @@ HUB_READ_TOOLS = {"list_agents", "list_runners"}
 TERMINAL_TOOLS = {"list_terminals", "open_terminal", "read_terminal",
                   "type_in_terminal", "run_in_terminal", "close_terminal"}
 TERMINAL_READ_TOOLS = {"list_terminals", "read_terminal"}
+INTAKE_ONLY_TOOLS = {"link_branch"}
 
 
 def log(msg):
@@ -2960,6 +2961,44 @@ def tool_create_agent(args):
     return json.dumps(create_agent(args), indent=2)
 
 
+def agent_intake_available():
+    return bool((os.environ.get(AGENT_INTAKE_SOCKET_ENV) or "").strip() and
+                (os.environ.get(AGENT_INTAKE_TOKEN_ENV) or "").strip())
+
+
+def link_branch_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    branch = _agent_text(args, "branch").strip()
+    if not branch:
+        raise ValueError("branch is required")
+    if not agent_ref_valid(branch):
+        raise ValueError("branch is not a valid branch name")
+    params = {"branch": branch}
+    worktree = _agent_text(args, "worktree").strip()
+    if worktree:
+        if (len(worktree) > AGENT_MAX_PATH or "\x00" in worktree or
+                not os.path.isabs(worktree) or
+                os.path.normpath(worktree) != worktree):
+            raise ValueError("worktree must be a clean absolute path")
+        params["worktree"] = worktree
+    return params
+
+
+def link_branch(args):
+    reply = agent_intake_request("agents.link_branch", link_branch_params(args))
+    if not reply.get("ok"):
+        code = str(reply.get("error") or "refused")
+        message = str(reply.get("message") or "the desktop refused the request")
+        raise ValueError(f"{code}: {message}")
+    reply.pop("ok", None)
+    return reply
+
+
+def tool_link_branch(args):
+    return json.dumps(link_branch(args), indent=2)
+
+
 WINDOW_MAX_TITLE = 120
 WINDOW_MAX_BODY = 40000
 WINDOW_MAX_BUTTONS = 6
@@ -3793,9 +3832,7 @@ def tool_whoami(_args):
         info["crmAccount"] = None
         info["crmError"] = str(exc)
     info["crmTools"] = sorted(CRM_TOOLS)
-    info["canCreateAgents"] = bool(
-        (os.environ.get(AGENT_INTAKE_SOCKET_ENV) or "").strip() and
-        (os.environ.get(AGENT_INTAKE_TOKEN_ENV) or "").strip())
+    info["canCreateAgents"] = agent_intake_available()
     info["canOpenWindows"] = info["canCreateAgents"] and level != "read"
     info["windowTools"] = sorted(WINDOW_TOOLS)
     info["agentTools"] = sorted(HUB_TOOLS)
@@ -5355,6 +5392,37 @@ TOOLS += [
         "handler": tool_create_agent,
     },
     {
+        "name": "link_branch",
+        "description": "Link a branch you created to your own agent session "
+                       "on this ForkMesh desktop, so its agent detail shows "
+                       "the branch and its diff viewer, task link and merge "
+                       "flow use it, as for a session the desktop started in "
+                       "a worktree. Use it when you began in the main "
+                       "checkout and then put your work on a branch. The "
+                       "branch must exist in the session's repository; "
+                       "worktree, when given, must be the worktree of that "
+                       "repository that has the branch checked out. Your "
+                       "working directory does not change. Works only "
+                       "inside a running agent the desktop launched, and "
+                       "only on that agent's own session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "branch": {"type": "string",
+                           "description": "the branch you created, for "
+                                          "example 20-fix-login (not main, "
+                                          "master or the session's base "
+                                          "branch)"},
+                "worktree": {"type": "string",
+                             "description": "absolute path of the worktree "
+                                            "that has branch checked out, "
+                                            "when the work is in one"},
+            },
+            "required": ["branch"],
+        },
+        "handler": tool_link_branch,
+    },
+    {
         "name": "list_releases",
         "description": "List a repository's newest release tags on this "
                        "ForkMesh desktop with their commit, title and "
@@ -5856,7 +5924,10 @@ TOOLS_BY_NAME = {t["name"]: t for t in TOOLS}
 
 def tools_list_payload():
     tools = []
+    intake = agent_intake_available()
     for tool in TOOLS:
+        if tool["name"] in INTAKE_ONLY_TOOLS and not intake:
+            continue
         item = {key: tool[key]
                 for key in ("name", "description", "inputSchema")}
         writable = tool["name"] in WRITE_TOOLS or (
@@ -5918,7 +5989,9 @@ def handle_request(msg):
             "launched; the new agent appears in the desktop's Agents list): "
             "create_agent, optionally paused until the user starts it, linked "
             "to an organization task (task) or taking over this agent's own "
-            "task (handoff). "
+            "task (handoff); link_branch links a branch this agent created to "
+            "its own session so the desktop's diff viewer and merge flow show "
+            "it. "
             "Desktop releases (same condition): list_releases, "
             "create_release (bumps, tags and starts the release workflows "
             "and mirror rollout with no dialog), publish_release. "

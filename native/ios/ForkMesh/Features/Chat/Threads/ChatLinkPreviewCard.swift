@@ -126,6 +126,7 @@ struct ChatLinkPreviewCard: View {
         .overlay(shape.stroke(fm.border, lineWidth: 1))
         .contentShape(shape)
         .onTapGesture { openURL(url) }
+        .textSelection(.disabled)
         .contextMenu {
             Button(action: { openURL(url) }) { Label("Open link", systemImage: "safari") }
             Button(action: {

@@ -136,7 +136,7 @@ def test_rendered_core_installs_the_renderer_and_units(tmp_path):
     assert ("FORKMESH_REQUEST_RULES_FILE=/var/lib/forkmesh-next/app/"
             "request-rules.json") in env.splitlines()
     caddyfile = files["/etc/caddy/Caddyfile"][0]
-    for host in ("app.next.forkmesh.com", "world.next.forkmesh.com",
+    for host in ("app.forkmesh.com", "world.forkmesh.com",
                  "n1.next.forkmesh.com"):
         block = caddyfile[caddyfile.index("\n%s {" % host):]
         block = block[:block.index("\n}\n")]
@@ -154,18 +154,6 @@ def test_rendered_core_installs_the_renderer_and_units(tmp_path):
     assert "/etc/forkmesh-next/caddy/request-rules.caddy" in render.IDS_EXCLUDE
     if ids is not None:
         assert "/etc/forkmesh-next/caddy/request-rules.caddy" in json.dumps(ids)
-
-
-def test_production_legacy_hosts_import_the_rules(tmp_path):
-    fleet = render.load_fleet(FLEET, state_path=tmp_path / "none.json")
-    fleet["production"] = dict(render.PRODUCTION_HOSTS)
-    caddyfile = render.caddyfile(fleet, fleet["nodes"][0],
-                                 render.fleet_paths(fleet))
-    for host in render.tls_hosts(fleet):
-        block = caddyfile[caddyfile.index("\n%s {" % host):]
-        block = block[:block.index("\n}\n")]
-        assert "request-rules*.caddy" in block, host
-    assert "header_up Host app.forkmesh.com" in caddyfile
 
 
 class FakeApp(http.server.BaseHTTPRequestHandler):
@@ -226,7 +214,7 @@ def rules_live(tmp_path):
     (caddy_dir / "acme-http.caddy").write_text("# test\n")
     caddyfile = files["/etc/caddy/Caddyfile"][0]
     body = caddyfile[caddyfile.index("(client_headers)"):]
-    for host in ("app.next.forkmesh.com", "world.next.forkmesh.com",
+    for host in ("app.forkmesh.com", "world.forkmesh.com",
                  "n1.next.forkmesh.com"):
         body = body.replace("\n%s {" % host, "\nhttp://%s:%d {" % (host, http_port))
     admin = tmp_path / "admin.sock"
@@ -279,8 +267,8 @@ def rules_live(tmp_path):
     gateway.shutdown()
 
 
-APP = "app.next.forkmesh.com"
-WORLD = "world.next.forkmesh.com"
+APP = "app.forkmesh.com"
+WORLD = "world.forkmesh.com"
 NODE = "n1.next.forkmesh.com"
 
 

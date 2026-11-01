@@ -413,6 +413,7 @@ struct InboxRowLink: View {
                         .tint(.blue)
                 }
             }
+            .textSelection(.disabled)
             .contextMenu {
                 Button("Send to agent") { InboxComposeBox.send(model.prompt(for: item), fallback: $composing) }
                 if item.unread {

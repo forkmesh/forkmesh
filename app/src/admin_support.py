@@ -438,6 +438,10 @@ async def _bug_detail(env, row, csrf_field, admin_query, filters, now):
     status = str(row.get("status") or "new")
     account = str(row.get("account") or record.get("account") or "")
     contact = str(record.get("contact") or "")
+    try:
+        confirmed_at = int(record.get("confirmedFixedAt") or 0)
+    except (TypeError, ValueError):
+        confirmed_at = 0
     attachments = record.get("attachments") or []
     attachment_text = ", ".join(
         '<a href="%s">%s (%s bytes)</a>' % (
@@ -471,6 +475,10 @@ async def _bug_detail(env, row, csrf_field, admin_query, filters, now):
         ("Received", "%s · %s" % (
             shell.time_html(row.get("created_at"), now),
             _html_escape(shell.utc_label(row.get("created_at"))))),
+        ("Reporter confirmed fixed", ("%s · %s" % (
+            shell.time_html(confirmed_at, now),
+            _html_escape(shell.utc_label(confirmed_at))))
+         if confirmed_at else '<span class="muted">not yet</span>'),
     )
     return (
         '<div class="form-row" style="justify-content:space-between">'

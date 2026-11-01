@@ -38,6 +38,7 @@ struct AdminUsersScreen: View {
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if !user.isAdmin { actions(for: user) }
                             }
+                            .textSelection(.disabled)
                             .contextMenu { if !user.isAdmin { actions(for: user) } }
                     }
                 }

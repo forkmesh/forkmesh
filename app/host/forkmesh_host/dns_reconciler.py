@@ -1,4 +1,4 @@
-"""Leaderless DNS health for app.next / world.next, inside the app process.
+"""Leaderless DNS health for app / world.forkmesh.com, inside the app process.
 
 Replaces the operator desktop's ``fmnext-dns-health`` loop. Enabled with
 ``FORKMESH_DNS_RECONCILER=on`` (``dry`` = vote and decide, log what it
@@ -12,7 +12,7 @@ logs once, and never calls Cloudflare. A sealed node neither votes nor acts.
 Every 30 s each unsealed node:
 
 1. probes every core node (``FORKMESH_DNS_TARGETS``: ``n1=IP,...``) with a
-   TLS-verified ``GET https://app.next.forkmesh.com/readyz`` connected to
+   TLS-verified ``GET https://app.forkmesh.com/readyz`` connected to
    that node's IP, plus ``https://nN.next.forkmesh.com/readyz`` for the
    record's detail;
 2. turns the results into votes with hysteresis (dns_rules.VoterState:
@@ -22,12 +22,12 @@ Every 30 s each unsealed node:
    live members, the same computation on every node, no leader -- it reads
    the fresh votes of all live voters and the live A records, and applies at
    most one change (dns_rules.decide) when a strict majority agrees: remove a
-   down node's A records from app.next and world.next, or re-add a healthy
+   down node's A records from app and world.forkmesh.com, or re-add a healthy
    one. Before calling Cloudflare it advances ``last_change_ms`` in
    ``dns_reconciler_state`` with a compare-and-set, so at most one change
    happens per 5 minutes cluster-wide even if two nodes act at once.
 
-The hard guards (dns_rules): only app.next / world.next are ever written
+The hard guards (dns_rules): only app / world.forkmesh.com are ever written
 (``nN.next`` never), a set is never emptied, TTL 60, DNS only.
 """
 

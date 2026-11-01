@@ -122,6 +122,7 @@ struct ChatStickerBadge: View {
         }
         .buttonStyle(.plain)
         .help(placedBy)
+        .textSelection(.disabled)
         .contextMenu {
             if !placedBy.isEmpty {
                 Text(placedBy)

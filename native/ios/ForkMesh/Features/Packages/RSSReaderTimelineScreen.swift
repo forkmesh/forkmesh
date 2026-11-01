@@ -243,6 +243,7 @@ struct RSSReaderTimelineScreen: View {
             }
             .tint(.purple)
         }
+        .textSelection(.disabled)
         .contextMenu {
             Button {
                 model.toggleRead(article.id)

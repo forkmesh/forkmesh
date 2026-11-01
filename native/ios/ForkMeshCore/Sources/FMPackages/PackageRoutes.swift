@@ -101,6 +101,7 @@ public enum PackageRoutes {
         case "usage": return .usage
         case "rssReader": return .rssReader
         case "instanceFeed": return .instanceFeed(post: nil)
+        case "mastodon": return .mastodon
         case "secureDrive": return .secureDrive
         case "spiderRoom": return .spiderRoom
         case "workflows": return .workflows

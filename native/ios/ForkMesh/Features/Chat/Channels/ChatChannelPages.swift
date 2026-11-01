@@ -120,6 +120,7 @@ struct ChatChannelFilesScreen: View {
                         in: conversation, fromSelf: hub.messages(in: conversation).first { $0.id == item.messageId }?.isSelf ?? false))
             }
         }
+        .textSelection(.disabled)
         .contextMenu {
             Button(action: {
                 #if canImport(UIKit)
@@ -336,6 +337,7 @@ struct ChatChannelMembersScreen: View {
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
+                    .textSelection(.disabled)
                     .contextMenu {
                         if hub.canMessage(member) {
                             Button(action: { onMessage(member) }) { Label("Message", systemImage: "bubble.left") }

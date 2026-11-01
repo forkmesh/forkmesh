@@ -86,7 +86,8 @@ enum CaptureHold {
                 return frame.contains(point)
                     && CaptureAreaRules.isContent(
                         elementWidth: Double(frame.width), elementHeight: Double(frame.height),
-                        boundsWidth: Double(bounds.width), boundsHeight: Double(bounds.height))
+                        boundsWidth: Double(bounds.width), boundsHeight: Double(bounds.height),
+                        isText: node.accessibilityTraits.contains(.staticText))
             }
             for child in EyeClicker.children(of: node) where visit(child, depth: depth + 1) {
                 return true

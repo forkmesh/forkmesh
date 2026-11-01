@@ -61,6 +61,7 @@ struct CoveScreen: View {
                         Button("Delete", role: .destructive) { deleting = document }
                         Button("Rename") { renaming = document }
                     }
+                    .textSelection(.disabled)
                     .contextMenu {
                         Button("Rename", systemImage: "pencil") { renaming = document }
                         Button("Delete", systemImage: "trash", role: .destructive) { deleting = document }
