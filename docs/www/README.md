@@ -17,6 +17,7 @@ robin, and everything dynamic is proxied or redirected to the App.
 | [mobile-page.md](mobile-page.md) | The `/mobile` page and the landing page's phone section |
 | [investor-deck.md](investor-deck.md) | The investor deck's look, slides and page tracking |
 | [genie-spider.md](genie-spider.md) | The Genie spider guide on web pages |
+| [cloud-dragon.md](cloud-dragon.md) | The Cloud Dragon, a second mascot for web pages |
 | [site-crawler.md](site-crawler.md) | Crawler, the special agent that inspects the live site |
 
 How the site fits the network: [architecture](../architecture.md) and
@@ -41,6 +42,7 @@ instead of creating a second Worker.
 | `www/public/` | Static site: `index.html`, marketing pages, `blog/`, `docs/` (hand-written pages), `assets/`, `_redirects`, `_headers`. Every HTML page except `docs/git-compatibility/` is rendered from `www/templates/` |
 | `www/templates/`, `app/tools/site_templates.py` | Page templates with inheritance: `base.html`, `layouts/blog-post.html`, `partials/`, one child per page under `pages/`, and their renderer ([templates](templates.md)) |
 | `www/public/genie-spider.js` | The Genie spider on every website page and most App pages ([genie-spider](genie-spider.md)) |
+| `www/public/assets/cloud-dragon/` | The Cloud Dragon mascot, loaded only for those who choose it ([cloud-dragon](cloud-dragon.md)) |
 | `tools/site_crawler.py`, `.forkmesh/workflows/site-crawler.json` | Crawler, the special agent that crawls the live site read-only and reports broken links, SEO, accessibility and header issues ([site-crawler](site-crawler.md)) |
 | `www/public/site-header.js`, `home-header-auth.js`, `api-client.js` | Login state and the shared browser API client ([sessions](../app/auth-sessions.md)) |
 | `www/public/analytics.js`, `analytics-sdk.js` | Consent-gated first-party analytics ([analytics](../app/analytics.md)); the SDK is a generated copy. Conversion points (`data-forkmesh-product-action`) and markup experiments (`data-fm-experiment`) are listed under [conversion tracking](../app/analytics.md#conversion-tracking) |
@@ -146,6 +148,7 @@ python3 app/tools/build_site_assets.py www     # stage www/dist
 python3 -m pytest -q www/tests
 node --test www/tests/worker_routing.test.mjs
 node --test www/tests/genie_spider.test.mjs
+node --test www/tests/cloud_dragon.test.mjs
 ```
 
 ## Operations

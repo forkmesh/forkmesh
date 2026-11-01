@@ -4,7 +4,8 @@ Part of [the website docs](README.md). The same Genie spider as on the phone
 ([../native/GENIE.md](../native/GENIE.md)) and the desktop
 ([../desktop/genie.md](../desktop/genie.md)) appears on web pages as a guide.
 It has no health, speech or model, and says nothing until it is clicked. In the 3D World it is a different, autonomous spider:
-[../world/genie-spider.md](../world/genie-spider.md).
+[../world/genie-spider.md](../world/genie-spider.md). Visitors can pick the
+[Cloud Dragon](cloud-dragon.md) instead; it uses this file's behaviour.
 
 ## Where the code is
 

@@ -102,6 +102,7 @@ struct WebhooksList: View {
                         }
                         .tint(fm.accent)
                     }
+                    .textSelection(.disabled)
                     .contextMenu {
                         Button(hook.active ? "Pause" : "Resume") {
                             Task { await model.setActive(hook.id, !hook.active) }

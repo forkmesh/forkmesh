@@ -33,10 +33,12 @@ gets **Select area to copy…** instead, so one hold never opens two menus.
   image, then shows
   "Copied to clipboard". Discard leaves the clipboard alone.
 - Blank means nothing is under the finger: no enabled control, text field,
-  list row or cell in the hit view's ancestors, and no accessibility element
-  smaller than half the screen at that point within the touched screen's
-  view controller. Text, icons and images therefore keep their own long-press
-  behaviour; wallpaper, margins and gaps between rows do not.
+  list row or cell in the hit view's ancestors, no static text of any size,
+  and no other accessibility element smaller than half the screen at that
+  point within the touched screen's view controller. Text, icons and images
+  therefore keep their own long-press behaviour (a long body of text selects
+  instead of opening the pop-up; see "Selectable text" below); wallpaper,
+  margins and gaps between rows do not.
 - A hold on a control with its own hold never opens the pop-up. Such a hold
   can open a new layer (the New agent button opens voice or the palette at
   0.35 s), so the recogniser notes the top presented view at touch-down and
@@ -64,9 +66,10 @@ The same feature, with the same `capture` package switch
   point fires; the content then gets `ACTION_CANCEL` and the rest of that
   touch is swallowed, so nothing underneath also reacts.
 - Blank is decided from the Compose semantics tree (`RootForTest`): no node
-  under the finger with a click, long-click or text-input action, and no
-  node with text or a content description smaller than half the screen
-  (`CaptureAreaRules.isBlank`, in core with the iOS geometry). Non-Compose
+  under the finger with a click, long-click or text-input action, no node
+  with text (any size), and no node with a content description smaller than
+  half the screen (`CaptureAreaRules.isBlank`, in core with the iOS
+  geometry; `CaptureHit.text`). Non-Compose
   views (web views, text views, video and camera surfaces, clickable views)
   count as content. A control with its own hold (the New agent button, menus)
   carries a long-click action, so its hold never opens the pop-up; the check
@@ -83,6 +86,37 @@ The same feature, with the same `capture` package switch
   clipboard alone.
 - Home's background menu does not yet have "Select area to copy…" (one line
   in `shell/` can call `CaptureOverlay.show`).
+
+## Selectable text
+
+Since 2026-10-31 text anywhere in both phone apps can be selected and copied
+by holding a finger on it, and the capture hold above only fires on blank
+areas, so the two never compete.
+
+- iOS: `.textSelection(.enabled)` on `AppHomeView` in `ThemedAppView`
+  (`App/ForkMeshApp.swift`); the environment reaches every screen and the
+  sheets presented from them. Views with their own hold (`.contextMenu`,
+  long-press gestures, held names, explorer rows) set
+  `.textSelection(.disabled)` so a selectable Text's own menu does not take
+  the hold from them; so do the New agent button, the DJ pads and the
+  shared button styles (`FmPressStyle`, `FmMaterialButtonStyle`,
+  `FmIconButtonStyle`, `FmPillPressStyle`, the shell bar and Home buttons),
+  whose labels are controls, not text to copy.
+- Android: one `SelectionContainer` around the routes in `MainActivity`.
+  Elements with their own long click (`combinedClickable(onLongClick)`,
+  `detectTapGestures(onLongPress)`, `djPress`) sit in `FmHoldArea`
+  (`ui/kit/FmSelection.kt`, `DisableSelection` when the element has a hold),
+  or both the selection and the element's menu would start on one hold; the
+  DJ studio is wrapped whole. Kit buttons, tabs, pills, tooltips and menu
+  rows do not select their labels, and `FmIcon` glyphs (drawn as font text)
+  are never selectable. Dialogs, popups
+  and bottom sheets are separate windows, so each kit host gives its content
+  its own `SelectionContainer` (menus of buttons use `DisableSelection`)
+  instead of registering with the root container in the activity's window.
+- Chat message text is selected from the message's action sheet (Select
+  text), since holding a message opens that sheet. Rows that only tap keep
+  their text selectable.
+- Text fields keep their own selection; neither container affects them.
 
 ## iOS: PencilKit
 

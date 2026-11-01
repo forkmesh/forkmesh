@@ -118,7 +118,7 @@ Each part has one home page; its topic pages link back to it.
 | App (Python on the core nodes) | `app/` | [app/README.md](app/README.md) |
 | CPython host for the app | `app/host/` | [host/README.md](host/README.md) |
 | Go daemon (mirror, core, runner roles), calls | `server/` | [server/README.md](server/README.md) |
-| Website and docs site | `www/`, `app/tools/docs_site.py` | [www/README.md](www/README.md) |
+| Website, docs site and the Cloud Dragon mascot | `www/`, `app/tools/docs_site.py` | [www/README.md](www/README.md), [Cloud Dragon](www/cloud-dragon.md) |
 | Phone apps (iOS, watchOS, Android) | `native/` | [native/README.md](native/README.md) |
 | Marketplace packages and plugins | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
 | World (3D) and Office (2D) | `world/`, `office/` | [world/README.md](world/README.md), [office/README.md](office/README.md) |

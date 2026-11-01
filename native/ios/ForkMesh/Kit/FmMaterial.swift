@@ -14,6 +14,7 @@ struct FmMaterialButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .textSelection(.disabled)
             .overlay {
                 FmRoundedShape(radius: radius)
                     .fill(highlight)

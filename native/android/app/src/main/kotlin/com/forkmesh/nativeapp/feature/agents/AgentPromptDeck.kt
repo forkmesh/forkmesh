@@ -55,6 +55,7 @@ import com.forkmesh.nativeapp.control.PromptDeck
 import com.forkmesh.nativeapp.feature.tools.copyToClipboard
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmRadius
@@ -149,63 +150,65 @@ internal fun AgentPromptDeck(deck: PromptDeck, modifier: Modifier = Modifier, ta
         ) { fromFirst ->
             val shown = deck.clamped(deck.count - 1 - fromFirst)
             Box {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer {
-                            translationX = drag.value
-                            rotationZ = if (reduceMotion) 0f else drag.value / density.density * 0.04f
-                            transformOrigin = TransformOrigin(0.5f, 1f)
-                        }
-                        .background(c.bgRaised, shape)
-                        .background(c.accentSubtle, shape)
-                        .border(0.5.dp, c.border, shape)
-                        .pointerInput(deck.count, index) {
-                            val tracker = VelocityTracker()
-                            var total = 0f
-                            detectHorizontalDragGestures(
-                                onDragStart = {
-                                    total = 0f
-                                    tracker.resetTracking()
-                                },
-                                onDragEnd = {
-                                    val speed = tracker.calculateVelocity().x
-                                    val travel = (total + speed * 0.1f) / density.density
-                                    if (travel > 50f) step(older = true) else if (travel < -50f) step(older = false)
-                                    scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)) }
-                                },
-                                onDragCancel = { scope.launch { drag.animateTo(0f) } },
-                            ) { change, amount ->
-                                change.consume()
-                                tracker.addPosition(change.uptimeMillis, change.position)
-                                total += amount
-                                val free = if (total > 0) deck.older(index) != index else deck.newer(index) != index
-                                scope.launch { drag.snapTo(total * if (free) 0.6f else 0.15f) }
+                FmHoldArea {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                translationX = drag.value
+                                rotationZ = if (reduceMotion) 0f else drag.value / density.density * 0.04f
+                                transformOrigin = TransformOrigin(0.5f, 1f)
                             }
-                        }
-                        .combinedClickable(
-                            onClick = { expanded = !expanded },
-                            onLongClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                menu = true
-                            },
-                        )
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = if (expanded) Alignment.Top else Alignment.CenterVertically,
-                ) {
-                    FmIcon(if (shown == 0) "format_quote" else "history", size = 12.dp, tint = c.accent)
-                    Spacer(Modifier.width(FmSpace.x2))
-                    Text(
-                        if (expanded) deck.prompt(shown) else deck.headline(shown),
-                        Modifier.weight(1f),
-                        style = Fm.text.bodySmall.copy(color = c.textPrimary),
-                        maxLines = if (expanded) 8 else 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    val position = deck.position(shown)
-                    if (position.isNotEmpty()) {
+                            .background(c.bgRaised, shape)
+                            .background(c.accentSubtle, shape)
+                            .border(0.5.dp, c.border, shape)
+                            .pointerInput(deck.count, index) {
+                                val tracker = VelocityTracker()
+                                var total = 0f
+                                detectHorizontalDragGestures(
+                                    onDragStart = {
+                                        total = 0f
+                                        tracker.resetTracking()
+                                    },
+                                    onDragEnd = {
+                                        val speed = tracker.calculateVelocity().x
+                                        val travel = (total + speed * 0.1f) / density.density
+                                        if (travel > 50f) step(older = true) else if (travel < -50f) step(older = false)
+                                        scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)) }
+                                    },
+                                    onDragCancel = { scope.launch { drag.animateTo(0f) } },
+                                ) { change, amount ->
+                                    change.consume()
+                                    tracker.addPosition(change.uptimeMillis, change.position)
+                                    total += amount
+                                    val free = if (total > 0) deck.older(index) != index else deck.newer(index) != index
+                                    scope.launch { drag.snapTo(total * if (free) 0.6f else 0.15f) }
+                                }
+                            }
+                            .combinedClickable(
+                                onClick = { expanded = !expanded },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    menu = true
+                                },
+                            )
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = if (expanded) Alignment.Top else Alignment.CenterVertically,
+                    ) {
+                        FmIcon(if (shown == 0) "format_quote" else "history", size = 12.dp, tint = c.accent)
                         Spacer(Modifier.width(FmSpace.x2))
-                        Text(position, style = Fm.text.labelSmall.copy(color = c.textTertiary, fontFeatureSettings = "tnum"))
+                        Text(
+                            if (expanded) deck.prompt(shown) else deck.headline(shown),
+                            Modifier.weight(1f),
+                            style = Fm.text.bodySmall.copy(color = c.textPrimary),
+                            maxLines = if (expanded) 8 else 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val position = deck.position(shown)
+                        if (position.isNotEmpty()) {
+                            Spacer(Modifier.width(FmSpace.x2))
+                            Text(position, style = Fm.text.labelSmall.copy(color = c.textTertiary, fontFeatureSettings = "tnum"))
+                        }
                     }
                 }
                 FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

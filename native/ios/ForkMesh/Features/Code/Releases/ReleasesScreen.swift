@@ -175,6 +175,7 @@ struct ReleaseAssetRow: View {
                 .foregroundStyle(fm.textSecondary)
             Text(asset.shortSha).font(.caption2).monospaced().foregroundStyle(fm.textTertiary)
         }
+        .textSelection(.disabled)
         .contextMenu {
             Button("Copy SHA-256") { UIPasteboard.general.string = asset.sha256 }
         }

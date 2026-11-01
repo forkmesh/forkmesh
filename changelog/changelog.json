@@ -12,6 +12,10 @@
  ],
  "notes": [
   {"date": "2026-10-31", "area": "Other improvements", "text": "The docs have new core pages on architecture, encryption, mirroring, self-hosting and censorship resilience, and every page is shorter and links to them."},
+  {"date": "2026-11-01", "area": "Agents", "text": "On the phone apps, the Agents tab shows a loading list until your desktop answers instead of briefly saying there are no agent sessions."},
+  {"date": "2026-10-31", "area": "Desktop", "text": "The desktop CRM's All view now shows a list's own columns, order and names, as the web does, so imported columns such as a fit score or tier are no longer pushed far to the right."},
+  {"date": "2026-11-01", "area": "Other improvements", "text": "Choose the Cloud Dragon, a fluffy new mascot that burns, freezes and perches on page elements, from the mascot menu or Appearance settings."},
+  {"date": "2026-10-31", "area": "Other improvements", "text": "In the iPhone and Android apps you can now select and copy text anywhere, and holding a finger on text no longer opens the screen capture pop-up, which now only appears on blank areas."},
   {"date": "2026-10-31", "area": "Projects", "text": "A repository you create for an organization now shows the organization as its owner everywhere: in lists, fork links, stars and notifications, and its old address under your name forwards to the organization's."},
   {"date": "2026-10-31", "area": "Server", "text": "A self-hosted instance built from its own repository can merge the latest ForkMesh into that repository and update itself, at once or about once a day, from the Update page."},
   {"date": "2026-10-31", "area": "Server", "text": "Site admin pages show your profile picture in the top bar and have a Back to dashboard button that takes you out of admin."},

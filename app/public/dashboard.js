@@ -683,6 +683,10 @@
     const ready = typeof genie?.isOff === "function";
     toggle.setAttribute("aria-checked", ready && genie.isOff() ? "false" : "true");
     toggle.disabled = !ready;
+    const mascot = $("[data-genie-mascot]");
+    if (!mascot) return;
+    mascot.disabled = typeof genie?.setMascot !== "function";
+    if (!mascot.disabled) mascot.value = genie.mascot();
   }
 
   function saveGenieSetting(shown) {
@@ -694,6 +698,10 @@
 
   function watchGenieSetting() {
     window.addEventListener("forkmesh:genie", renderGenieSetting);
+    document.addEventListener("change", (event) => {
+      const mascot = event.target.closest?.("[data-genie-mascot]");
+      if (mascot) window.ForkMeshGenie?.setMascot?.(mascot.value);
+    });
     if (document.readyState !== "complete") {
       document.addEventListener("DOMContentLoaded", renderGenieSetting, { once: true });
     }
@@ -945,6 +953,7 @@
       "forkmesh.analyticsConsent.v1",
       "forkmesh.apiOrigin",
       "forkmesh.dashboard.theme",
+      "forkmesh.genie.mascot",
       "forkmesh.genie.off",
       "forkmesh.theme",
     ]);

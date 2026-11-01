@@ -359,6 +359,7 @@ struct CrmHomePane: View {
                 .accessibilityLabel("Mark \(contact.displayName) contacted")
             }
             .padding(.vertical, 6)
+            .textSelection(.disabled)
             .contextMenu {
                 Button("Skip for now", systemImage: "forward") { model.nextSkipped.insert(contact.id) }
             }

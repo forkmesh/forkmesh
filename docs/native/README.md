@@ -51,7 +51,7 @@ overview of every app is [apps.md](../apps.md). Per-app READMEs:
 | [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |
 | [RSS_READER_IOS.md](RSS_READER_IOS.md) | The local-only RSS Reader on iPhone |
 | [STATS.md](STATS.md) | The Stats board: every desktop tile over `stats.tiles`, and the release-version tiles |
-| [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md) | Screen capture and markup in the composer |
+| [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md) | Screen capture and markup in the composer, and selectable text |
 | [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Issue, task, pull request and commit links in messages |
 | [opus.md](opus.md) | Opus from a pinned Xiph commit with DRED, deep PLC and OSCE (`native/opus/`): pin, weights, `build.sh`, sizes, smoke tests, linking |
 | [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md) | Sounds, listening, ducking and Bluetooth held back while another app's call is up |

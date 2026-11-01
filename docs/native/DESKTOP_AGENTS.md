@@ -99,6 +99,11 @@ rings `agents.changed`.
 - `AgentControlCenter` reads the desktop and the account's node runs at the
   same time and publishes the desktop's rows as soon as they arrive; node runs
   follow when the API answers.
+- No empty list before the desktop answers: `AgentControlCenter` sets
+  `listed` once its first full load (the desktop in use and the account's node
+  runs, not the other desktops) has published, and `resetForProjectSwitch`
+  clears it on iOS. Until then an empty list shows the "Loading agents"
+  skeleton on both phones (`awaitingFirstList`), not "No agent sessions yet".
 - `onMeshChanged` sets `dialQueued` when it queues an automatic dial and
   ignores further triggers until the dial starts, so a second trigger cannot
   queue a dial that closes the first. Android also drops a retry scheduled

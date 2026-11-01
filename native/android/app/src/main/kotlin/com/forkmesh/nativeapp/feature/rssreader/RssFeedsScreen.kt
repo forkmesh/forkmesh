@@ -47,6 +47,7 @@ import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmHoldArea
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmPromptDialog
@@ -298,26 +299,28 @@ internal class RssFeedsScreen : Screen() {
     ) {
         val c = Fm.colors
         Column(Modifier.fillMaxWidth().background(c.bgRaised)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(onClick = onTap, onLongClick = onLongPress)
-                    .heightIn(min = 48.dp)
-                    .padding(start = if (indent) FmSpace.x7 else FmSpace.x4, end = FmSpace.x4),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { leading() }
-                Spacer(Modifier.width(FmSpace.x3))
-                Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyLarge.copy(color = if (muted) c.textTertiary else c.textPrimary))
-                if (mark != null) {
-                    Spacer(Modifier.width(FmSpace.x1))
-                    mark()
-                    if (count > 0) Spacer(Modifier.width(FmSpace.x1))
-                }
-                if (count > 0) Text("$count", style = Fm.text.bodyMedium.copy(color = c.textTertiary))
-                if (trailing != null) {
-                    Spacer(Modifier.width(FmSpace.x1))
-                    trailing()
+            FmHoldArea(onLongPress != null) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(onClick = onTap, onLongClick = onLongPress)
+                        .heightIn(min = 48.dp)
+                        .padding(start = if (indent) FmSpace.x7 else FmSpace.x4, end = FmSpace.x4),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { leading() }
+                    Spacer(Modifier.width(FmSpace.x3))
+                    Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyLarge.copy(color = if (muted) c.textTertiary else c.textPrimary))
+                    if (mark != null) {
+                        Spacer(Modifier.width(FmSpace.x1))
+                        mark()
+                        if (count > 0) Spacer(Modifier.width(FmSpace.x1))
+                    }
+                    if (count > 0) Text("$count", style = Fm.text.bodyMedium.copy(color = c.textTertiary))
+                    if (trailing != null) {
+                        Spacer(Modifier.width(FmSpace.x1))
+                        trailing()
+                    }
                 }
             }
             HorizontalDivider(Modifier.padding(start = if (indent) 84.dp else 52.dp), thickness = 1.dp, color = c.border)
