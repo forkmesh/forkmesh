@@ -62,12 +62,6 @@ Taken from a reference recording, frame by frame.
 
 Reduce Motion turns all of this off: every piece appears in its final state.
 
-On a short screen the permissions page drops the card's header, strip and
-counter and keeps the permission list, because the full card pushed the title
-under the buttons on iPhone Duo's 678 pt cover screen. iOS picks the first
-version that fits (`ViewThatFits`), then scrolls; Android goes compact when the
-space above the buttons is under 600 dp and still scrolls.
-
 ## The permissions intro
 
 A fresh install of the iOS app shows no system permission prompt at launch or
@@ -83,6 +77,13 @@ ask when it matters", and the note that saying no keeps the rest of the app
 working. VoiceOver reads each row's full `reason`. "Let's Get Started" moves to
 the starter pack; Skip and "skip and start" finish onboarding with the default
 pack. Finishing sets the intro to seen.
+
+On a short screen the page drops the card's header, strip and counter and
+keeps the permission list (so no count-down runs), because the full card
+pushed the title under the buttons on iPhone Duo's 678 pt cover screen. iOS
+picks the first version that fits (`ViewThatFits`), then scrolls; Android
+goes compact when the space above the buttons is under 600 dp and still
+scrolls. Both apps do it.
 
 The text lives in `PermissionPacing` (FMAccount) so a core test keeps it to
 five short rows. Installs that predate the screen never see it:
