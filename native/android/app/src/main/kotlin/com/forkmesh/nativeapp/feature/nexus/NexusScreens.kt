@@ -75,7 +75,7 @@ import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmIconTile
 import com.forkmesh.nativeapp.ui.kit.FmLinearProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmListRow
-import com.forkmesh.nativeapp.ui.kit.FmMessageTools
+import com.forkmesh.nativeapp.ui.kit.fmMessageTools
 import com.forkmesh.nativeapp.ui.kit.FmRowDivider
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
@@ -834,8 +834,7 @@ private fun PortRow(result: PortResult) {
         if (open && banner != null) {
             Spacer(Modifier.height(FmSpace.x2))
             Text(service.basis, style = Fm.text.bodySmall.copy(color = Fm.colors.textSecondary))
-            SelectionContainer { Text(banner, style = Fm.mono(color = Fm.colors.textSecondary)) }
-            FmMessageTools(banner)
+            SelectionContainer { Text(banner, Modifier.fmMessageTools(banner), style = Fm.mono(color = Fm.colors.textSecondary)) }
         }
     }
 }

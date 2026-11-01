@@ -185,7 +185,7 @@ struct DesktopReachLine: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
-            FmMessageTools(message)
+                .fmMessageTools(message)
         }
         .accessibilityElement(children: .contain)
     }

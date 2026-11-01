@@ -153,7 +153,7 @@ struct CodeInsightScreen<Content: View>: View {
             Text(text)
                 .fmText(.bodySmall, color: fm.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            FmMessageTools(text)
+                .fmMessageTools(text)
         }
     }
 
@@ -196,7 +196,6 @@ struct CodeInsightScreen<Content: View>: View {
     private func failure(title: String, message: String, icon: String, target: CodeInsightTarget) -> some View {
         VStack(spacing: FmSpace.x3) {
             FmEmptyState(icon: icon, title: title, message: message)
-            FmMessageTools(message)
             HStack(spacing: FmSpace.x2) {
                 FmTextButton("Try again", icon: "refresh", onPressed: { session.reanalyze(target) })
                 FmTextButton("Choose repository", onPressed: { choosing = true })
@@ -314,12 +313,10 @@ struct CodeInsightRepoPicker: View {
                             Text("Loading repositories…").fmText(.bodySmall, color: fm.textSecondary)
                         }
                     } else if let error {
-                        HStack(alignment: .top, spacing: FmSpace.x2) {
-                            Text(error)
-                                .fmText(.bodySmall, color: fm.textSecondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            FmMessageTools(error)
-                        }
+                        Text(error)
+                            .fmText(.bodySmall, color: fm.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fmMessageTools(error)
                     } else if accountTargets.isEmpty {
                         Text(needle.isEmpty ? "No repositories in this account yet." : "No repository matches.")
                             .fmText(.bodySmall, color: fm.textSecondary)

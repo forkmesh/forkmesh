@@ -123,10 +123,8 @@ struct InsightsUnavailableView: View {
         ContentUnavailableView {
             Label(title, systemImage: systemImage)
         } description: {
-            VStack(spacing: 8) {
-                Text(message)
-                FmMessageTools("\(title). \(message)")
-            }
+            Text(message)
+                .fmMessageTools("\(title). \(message)")
         }
     }
 }
@@ -143,7 +141,7 @@ struct InsightsErrorView: View {
         } description: {
             VStack(spacing: 8) {
                 Text(error.message)
-                FmMessageTools(error.code.isEmpty ? error.message : "\(error.message) (\(error.code))")
+                    .fmMessageTools(error.code.isEmpty ? error.message : "\(error.message) (\(error.code))")
                 if showDetails {
                     Text(error.code).font(.caption.monospaced()).foregroundStyle(.secondary)
                 }

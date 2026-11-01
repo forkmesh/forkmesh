@@ -68,8 +68,6 @@ import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.forkmesh.nativeapp.ui.kit.FmMessageTools
-import androidx.compose.foundation.layout.Spacer
 
 @Composable
 internal fun runColor(status: ActionsRunStatus) = when (status) {
@@ -353,16 +351,7 @@ internal class ActionRunScreen(
                             }
                         }
                         if (lines.isNotEmpty()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                FmToneButton("Copy log", onPressed = { copy("Log", lines.joinToString("\n")) })
-                                if (run.status == ActionsRunStatus.Failed || run.status == ActionsRunStatus.Rejected) {
-                                    Spacer(Modifier.weight(1f))
-                                    FmMessageTools(
-                                        lines.joinToString("\n"),
-                                        handoff = CiPrompts.fixFailedRun(run, CodeServices.ref(repo)).composeTarget,
-                                    )
-                                }
-                            }
+                            FmToneButton("Copy log", onPressed = { copy("Log", lines.joinToString("\n")) })
                         }
                         FmInlineStatus(logStatus)
                     }

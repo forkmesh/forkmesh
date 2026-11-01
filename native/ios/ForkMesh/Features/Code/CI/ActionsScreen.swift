@@ -741,14 +741,8 @@ struct ActionRunScreen: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: true, vertical: false)
                 }
-                HStack {
-                    ShareLink(item: model.fullLog(run.id)) {
-                        Label("Share log", systemImage: "square.and.arrow.up")
-                    }
-                    if run.status == .failed || run.status == .rejected {
-                        Spacer()
-                        FmMessageTools(lines.joined(separator: "\n"), handoff: CIPrompts.fixFailedRun(run, repo: model.repo))
-                    }
+                ShareLink(item: model.fullLog(run.id)) {
+                    Label("Share log", systemImage: "square.and.arrow.up")
                 }
             }
         }

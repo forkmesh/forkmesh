@@ -208,7 +208,7 @@ struct GenieMiniBubble: View {
                     .font(.caption2)
                     .foregroundStyle(Color(red: 1, green: 0.62, blue: 0.62))
                     .lineLimit(3)
-                    .fmMessageTools(problem, color: Color.white.opacity(0.7))
+                    .fmMessageTools(problem)
             }
             controls
         }

@@ -108,7 +108,7 @@ struct SshKeysScreen: View {
             SettingsEmptyNote(
                 title: model.error.isEmpty ? "No SSH keys yet" : "Keys unavailable",
                 text: model.error.isEmpty ? "Add the public half of a key to push and pull over SSH." : model.error)
-                .fmMessageTools(model.error, alignment: .top)
+                .fmMessageTools(model.error)
                 .padding(FmSpace.x4)
         }
     }
