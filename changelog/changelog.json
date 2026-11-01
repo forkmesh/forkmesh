@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Agents", "text": "On the phone apps, the Agents tab shows a loading list until your desktop answers instead of briefly saying there are no agent sessions."},
   {"date": "2026-10-31", "area": "Desktop", "text": "The desktop CRM's All view now shows a list's own columns, order and names, as the web does, so imported columns such as a fit score or tier are no longer pushed far to the right."},
   {"date": "2026-10-31", "area": "Other improvements", "text": "In the iPhone and Android apps you can now select and copy text anywhere, and holding a finger on text no longer opens the screen capture pop-up, which now only appears on blank areas."},
   {"date": "2026-10-31", "area": "Projects", "text": "A repository you create for an organization now shows the organization as its owner everywhere: in lists, fork links, stars and notifications, and its old address under your name forwards to the organization's."},
