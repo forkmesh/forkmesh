@@ -65,6 +65,7 @@ FRAGMENTS = (
     "09-recent-pushes.js",
     "09-referrals.js",
     "09-repo-activity.js",
+    "09-repo-forum.js",
     "09-runners.js",
     "09-season.js",
     "09-tasks.js",
@@ -120,6 +121,7 @@ LAZY_CHUNKS = {
     "notes": "09-notes.js",
     "referrals": "09-referrals.js",
     "repo-activity": "09-repo-activity.js",
+    "repo-forum": "09-repo-forum.js",
     "tasks": "09-tasks.js",
     "workflows": "09-workflows.js",
 }

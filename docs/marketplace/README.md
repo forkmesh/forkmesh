@@ -383,7 +383,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   posts from the people on one instance; [instance-feed.md](instance-feed.md)),
   `feed`, shown as Network Feed, and `mastodon`
   ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md);
-  the native desktop client: [mastodon.md](mastodon.md)).
+  the native desktop client: [mastodon.md](mastodon.md)), and
+  `discourse-mirror` (a read-only copy of a public Discourse forum in a Git
+  repository that mirrors carry; [discourse-mirror.md](discourse-mirror.md)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
 
@@ -534,5 +536,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [poker.md](poker.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [poker.md](poker.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md), [discourse-mirror.md](discourse-mirror.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).
