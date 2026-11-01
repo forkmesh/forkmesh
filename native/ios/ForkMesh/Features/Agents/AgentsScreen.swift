@@ -399,8 +399,12 @@ struct AgentsScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    private var awaitingFirstList: Bool {
+        model.isPendingFirstLoad || HostsFeature.agents.map { !$0.listed } ?? false
+    }
+
     @ViewBuilder private var pending: some View {
-        if model.isPendingFirstLoad {
+        if awaitingFirstList {
             FmSkeletonList(rows: 4, label: "Loading agents")
                 .frame(height: 320)
         } else if model.isFailed {
@@ -434,7 +438,7 @@ struct AgentsScreen: View {
             FmSwap(stateKey: listPhase(shown)) {
                 if !shown.isEmpty {
                     lineList(shown)
-                } else if model.isPendingFirstLoad || model.isFailed {
+                } else if awaitingFirstList || model.isFailed {
                     pending
                 } else if model.sealedCount == 0 {
                     emptyList
@@ -450,7 +454,7 @@ struct AgentsScreen: View {
 
     private func listPhase(_ shown: [AgentLine]) -> Int {
         if !shown.isEmpty { return 0 }
-        if model.isPendingFirstLoad { return 1 }
+        if awaitingFirstList { return 1 }
         if model.isFailed { return 2 }
         return 3
     }
