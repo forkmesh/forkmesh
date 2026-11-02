@@ -115,7 +115,10 @@ fails with "www/public is out of date with www/templates".
 A pre-push hook stops this: `tools/www_push_check.py` archives each commit
 pushed to `main` and runs `site_templates.py --check` and
 `build_market_catalog.py --check` on it; a stale page refuses the push with
-"Nothing was pushed". Pushes to other branches are not checked.
+"Nothing was pushed". Pushes to other branches are not checked. The archive
+holds only the paths the generators read (`ARCHIVED`), so a module a generator
+starts importing goes on that list too; `docs_markdown.py` was missing and the
+check refused every push to `main`.
 
 ```sh
 python3 tools/www_push_check.py install       # writes .git/hooks/pre-push
