@@ -265,10 +265,9 @@ struct TourSectionLabel: View {
     let text: String
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(0.6)
-            .foregroundStyle(fm.textTertiary)
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(fm.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 6)

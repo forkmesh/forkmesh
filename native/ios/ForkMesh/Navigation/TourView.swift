@@ -200,37 +200,41 @@ struct TourChooser: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: FmSpace.x4) {
-                TourChooserHero()
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Take the tour")
+                    .fmText(.displaySmall)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.top, FmSpace.x5)
+                Text("Pick how deep to go. Each stop shows the real screen.")
+                    .fmText(.bodyLarge, color: fm.textSecondary, height: FmType.leadingSnug)
                     .padding(.top, FmSpace.x2)
-                VStack(alignment: .leading, spacing: FmSpace.x2) {
-                    Text("Take the tour")
-                        .fmText(.titleLarge)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Pick how deep to go. Each stop shows the real screen, and you can try it right there.")
-                        .fmText(.bodyLarge, color: fm.textSecondary)
-                }
                 if let finished = finished {
-                    finishedCard(finished)
+                    group { finishedRow(finished) }
+                        .padding(.top, FmSpace.x5)
                 } else if let place = place {
-                    resumeCard(place)
+                    group { resumeRow(place) }
+                        .padding(.top, FmSpace.x5)
                 }
-                ForEach(TourTrack.allCases) { (option: TourTrack) in
-                    TourTrackCard(
-                        track: option, count: counts[option] ?? 0, done: done.contains(option),
-                        suggested: suggested == option,
-                        onPick: { onPick(option) })
+                group {
+                    ForEach(Array(TourTrack.allCases.enumerated()), id: \.element) {
+                        (entry: (offset: Int, element: TourTrack)) in
+                        if entry.offset > 0 {
+                            FmRowDivider(indent: FmSpace.x4)
+                        }
+                        TourTrackRow(
+                            track: entry.element, count: counts[entry.element] ?? 0,
+                            done: done.contains(entry.element), suggested: suggested == entry.element,
+                            onPick: { onPick(entry.element) })
+                    }
                 }
+                .padding(.top, FmSpace.x5)
                 if let onSkip = onSkip {
                     Button(finished == nil ? "Not now" : "Done for now", action: onSkip)
                         .fmText(.labelLarge, color: fm.textSecondary)
                         .frame(maxWidth: .infinity, minHeight: 44)
+                        .padding(.top, FmSpace.x4)
                         .accessibilityIdentifier("tour-skip")
                 }
-                Text("Tour stays on Home, so you can come back for the next track.")
-                    .fmText(.bodySmall, color: fm.textTertiary)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
             }
             .padding(.horizontal, FmSpace.x4)
             .padding(.bottom, FmSpace.x5)
@@ -242,85 +246,58 @@ struct TourChooser: View {
         TourTrack.allCases.first { !done.contains($0) }
     }
 
-    private func finishedCard(_ track: TourTrack) -> some View {
+    private func group<Rows: View>(@ViewBuilder _ rows: () -> Rows) -> some View {
+        VStack(spacing: 0) {
+            rows()
+        }
+        .background(fm.bgRaised)
+        .clipShape(FmRoundedShape(radius: FmRadius.lg * 2))
+    }
+
+    private func finishedRow(_ track: TourTrack) -> some View {
         HStack(spacing: FmSpace.x3) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 28, weight: .regular))
-                .foregroundStyle(fm.success)
-                .symbolEffect(.bounce, value: track)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(track.title) done")
                     .fmText(.titleSmall)
-                Text("Keep going with the next track, or close the tour and explore.")
-                    .fmText(.bodySmall, color: fm.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text("Keep going, or close the tour and explore.")
+                    .fmText(.bodyMedium, color: fm.textSecondary)
             }
             Spacer(minLength: 0)
+            Image(systemName: "checkmark")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(fm.success)
+                .symbolEffect(.bounce, value: track)
         }
-        .padding(FmSpace.x3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(fm.bgRaised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, FmSpace.x4)
+        .frame(minHeight: 60)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("tour-finished")
     }
 
-    private func resumeCard(_ place: (place: TourPlace, index: Int, total: Int)) -> some View {
+    private func resumeRow(_ place: (place: TourPlace, index: Int, total: Int)) -> some View {
         Button(action: { onResume(place.place, place.index) }) {
             HStack(spacing: FmSpace.x3) {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 28, weight: .regular))
-                    .foregroundStyle(fm.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Pick up where you left off")
-                        .fmText(.titleSmall)
-                    Text("\(place.place.track.title), stop \(place.index + 1) of \(place.total)")
-                        .fmText(.bodySmall, color: fm.textSecondary)
+                        .fmText(.titleSmall, color: fm.accent)
+                    Text("\(place.place.track.title) · stop \(place.index + 1) of \(place.total)")
+                        .fmText(.bodyMedium, color: fm.textSecondary)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(fm.textTertiary)
+                    .foregroundStyle(fm.textDisabled)
             }
-            .padding(FmSpace.x3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(fm.accentSubtle, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.horizontal, FmSpace.x4)
+            .frame(minHeight: 60)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FmPressStyle(highlight: fm.textPrimary.opacity(0.06)))
         .accessibilityIdentifier("tour-resume")
     }
 }
 
-struct TourChooserHero: View {
-    @Environment(\.fmPalette) private var fm
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: FmSpace.x3) {
-            ZStack {
-                Circle().fill(fm.accent)
-                ShellSparkleField(tilt: .zero, energy: 0.4, paused: reduceMotion, stars: 6)
-                Image(systemName: "plus")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Color.white)
-            }
-            .frame(width: 52, height: 52)
-            .clipShape(Circle())
-            .shadow(color: fm.accent.opacity(0.45), radius: 12, y: 4)
-            ForEach(["square.grid.2x2", "sparkles", "tray", "books.vertical"], id: \.self) { (symbol: String) in
-                Image(systemName: symbol)
-                    .font(.system(size: 20, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(fm.textSecondary)
-                    .frame(width: 40, height: 40)
-                    .background(fm.bgRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-struct TourTrackCard: View {
+struct TourTrackRow: View {
     @Environment(\.fmPalette) private var fm
 
     let track: TourTrack
@@ -329,81 +306,41 @@ struct TourTrackCard: View {
     let suggested: Bool
     let onPick: () -> Void
 
-    private var symbols: [String] {
-        TourCatalog.stops.filter { $0.track == track }.map(\.symbol)
-    }
-
     var body: some View {
         Button(action: onPick) {
-            VStack(alignment: .leading, spacing: FmSpace.x3) {
-                HStack(alignment: .top, spacing: FmSpace.x3) {
-                    Image(systemName: track.symbol)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(fm.onPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(fm.accent, in: Circle())
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: FmSpace.x2) {
-                            Text(track.title)
-                                .fmText(.titleMedium)
-                            if suggested {
-                                Text(track == .essentials ? "Start here" : "Up next")
-                                    .fmText(.labelSmall, color: fm.accent)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(fm.accentSubtle, in: Capsule())
-                            }
+            HStack(spacing: FmSpace.x3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: FmSpace.x2) {
+                        Text(track.title)
+                            .fmText(.titleSmall)
+                        if suggested {
+                            Text(track == .essentials ? "Start here" : "Up next")
+                                .fmText(.bodySmall, color: fm.accent, weight: FmType.emphasis)
                         }
-                        Text(meta)
-                            .fmText(.bodySmall, color: fm.textSecondary)
                     }
-                    Spacer(minLength: 0)
-                    Image(systemName: done ? "checkmark.seal.fill" : "chevron.right")
-                        .font(.system(size: done ? 20 : 13, weight: .semibold))
-                        .foregroundStyle(done ? fm.success : fm.textTertiary)
-                        .accessibilityHidden(true)
+                    Text(meta)
+                        .fmText(.bodyMedium, color: fm.textSecondary, tabular: true)
                 }
-                Text(track.summary)
-                    .fmText(.bodyMedium, color: fm.textSecondary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
-                    if track != .essentials {
-                        Image(systemName: "plus")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(fm.textTertiary)
-                    }
-                    ForEach(symbols, id: \.self) { (symbol: String) in
-                        Image(systemName: symbol)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(fm.accent)
-                            .frame(width: 24, height: 24)
-                            .background(fm.accentSubtle, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    }
-                }
-                .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                Image(systemName: done ? "checkmark" : "chevron.right")
+                    .font(.system(size: done ? 15 : 13, weight: .semibold))
+                    .foregroundStyle(done ? fm.success : fm.textDisabled)
+                    .accessibilityHidden(true)
             }
-            .padding(FmSpace.x4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(fm.bgRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(stroke, lineWidth: suggested ? 1.5 : 0.5)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, FmSpace.x4)
+            .frame(minHeight: 60)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FmPressStyle(highlight: fm.textPrimary.opacity(0.06)))
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(Text("\(track.title). \(meta). \(track.summary)\(done ? " Done." : "")"))
         .accessibilityIdentifier("tour-track-\(track.rawValue)")
     }
 
-    private var stroke: Color { suggested ? fm.accent.opacity(0.6) : fm.border }
-
     private var meta: String {
         let minutes: Int = TourCatalog.minutes(for: count)
-        return "\(count) stops, about \(minutes) min"
+        return "\(count) stops · about \(minutes) min"
     }
 }
 
@@ -444,11 +381,11 @@ struct TourPlayerHeader: View {
                 }
                 .accessibilityIdentifier("tour-close")
             }
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 ForEach(0..<count, id: \.self) { (at: Int) in
                     Capsule()
-                        .fill(at <= index ? fm.accent : fm.border)
-                        .frame(height: at == index ? 6 : 4)
+                        .fill(at <= index ? fm.textPrimary : fm.border)
+                        .frame(height: 3)
                         .frame(maxWidth: .infinity, minHeight: 16)
                         .contentShape(Rectangle())
                         .onTapGesture { onSelect(at) }
@@ -479,47 +416,32 @@ struct TourStopPage: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: FmSpace.x4) {
+            VStack(alignment: .leading, spacing: 0) {
                 TourStage(scene: stop.scene, title: stop.title, active: active)
                 hint
-                VStack(alignment: .leading, spacing: FmSpace.x2) {
-                    HStack(spacing: FmSpace.x2) {
-                        Image(systemName: stop.symbol)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(fm.accent)
-                            .accessibilityHidden(true)
-                        Text(stop.title)
-                            .fmText(.titleLarge)
-                            .accessibilityAddTraits(.isHeader)
-                    }
-                    Text(stop.message)
-                        .fmText(.bodyLarge, color: fm.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                VStack(alignment: .leading, spacing: FmSpace.x2) {
-                    ForEach(stop.tips, id: \.self) { (tip: String) in
-                        HStack(alignment: .firstTextBaseline, spacing: FmSpace.x2) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(fm.accent)
-                                .accessibilityHidden(true)
+                    .padding(.top, FmSpace.x3)
+                Text(stop.title)
+                    .fmText(.displaySmall)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.top, FmSpace.x5)
+                Text(stop.message)
+                    .fmText(.bodyLarge, color: fm.textSecondary, height: FmType.leadingSnug)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, FmSpace.x2)
+                if !stop.tips.isEmpty {
+                    VStack(alignment: .leading, spacing: FmSpace.x2) {
+                        ForEach(stop.tips, id: \.self) { (tip: String) in
                             Text(tip)
-                                .fmText(.bodyMedium, color: fm.textSecondary)
+                                .fmText(.bodyMedium, color: fm.textTertiary, height: FmType.leadingSnug)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    .padding(.top, FmSpace.x4)
                 }
                 if stop.fromMarket {
-                    HStack(spacing: FmSpace.x2) {
-                        Image(systemName: "bag")
-                            .foregroundStyle(fm.accent)
-                        Text("Not installed yet. Add it from the Market to use it.")
-                            .fmText(.bodySmall, color: fm.textSecondary)
-                    }
-                    .padding(FmSpace.x3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(fm.bgRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .accessibilityElement(children: .combine)
+                    Text("Not installed yet. Add it from the Market to use it.")
+                        .fmText(.bodyMedium, color: fm.textSecondary)
+                        .padding(.top, FmSpace.x4)
                 }
             }
             .padding(.horizontal, FmSpace.x4)
@@ -529,16 +451,14 @@ struct TourStopPage: View {
     }
 
     private var hint: some View {
-        HStack(spacing: FmSpace.x2) {
-            Image(systemName: "hand.tap.fill")
+        HStack(spacing: 6) {
+            Image(systemName: "hand.tap")
+                .font(.system(size: 13, weight: .semibold))
                 .symbolEffect(.pulse, options: .repeating, isActive: active && !reduceMotion)
             Text(stop.tryIt)
-                .fmText(.labelMedium, color: fm.accent)
+                .fmText(.bodyMedium, color: fm.textSecondary)
         }
-        .foregroundStyle(fm.accent)
-        .padding(.horizontal, FmSpace.x3)
-        .padding(.vertical, 6)
-        .background(fm.accentSubtle, in: Capsule())
+        .foregroundStyle(fm.textSecondary)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Try it: \(stop.tryIt)"))

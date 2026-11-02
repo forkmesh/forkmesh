@@ -570,8 +570,11 @@ describes, moves, and offers three depths.
   review and merge, the command palette, search and the bottom bar) and The
   whole shebang (adds chat, projects, desktops, Notes/Tasks/Calendar, the
   Market, personal tools, notifications and widgets, and looks). Each track
-  contains the one before it, so stops keep their order. A track card shows its
-  stop count, an estimate at 20 s a stop, and its stops' symbols.
+  contains the one before it, so stops keep their order. The chooser is one
+  grouped list: each track is a row with its name, "Start here" or "Up next"
+  on the suggested one, and its stop count with an estimate at 20 s a stop. A
+  stop page is the mock, a quiet hint, the title and its text; the tips are
+  plain lines under it ([SCREEN_POLISH.md](SCREEN_POLISH.md)).
 - **The package gate decides the stops.** A stop with `needs` (Agents, Inbox,
   Repos, Chat) is left out when that tab's package is not installed. A stop
   with `offers` (Desktops, Notes and the rest, personal tools) stays, but when
