@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-02", "area": "Desktop", "text": "Saving agent tool statistics no longer briefly freezes the window while agents are working."},
   {"date": "2026-11-01", "area": "Android", "text": "An inbox item no longer shows a second back link under its round glass back button."},
   {"date": "2026-11-01", "area": "iPhone", "text": "The back link on an inbox item is now a round glass button that stays in view as you scroll."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "The docs fit a phone screen without shifting sideways, the top navigation stays in place as you scroll, and the Extension and Mobile tabs now open their guides."},

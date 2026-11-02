@@ -843,6 +843,12 @@ commits and their fsync off the GUI thread.
   saved searches after a search or alert run (`SavedSearchStore::saveLater`;
   `save()` goes through `writeNow`, so a later click never lands under an
   older queued snapshot). `AgentStore::saveSession` skips byte-identical writes.
+- The tool-efficiency ledger's 5 s debounced save copies the ledger (Qt
+  containers share their data) and builds its ~100 KB JSON in `runOffThread`;
+  `finishBackgroundSave` queues the bytes only if no later `saveLater` (Clear,
+  shutdown) ran in between, so an older snapshot never lands on top. Building
+  the JSON on the GUI thread was a 575 ms stall under memory pressure
+  (`STALL-20261102T021331143-p970989-0063`).
 
 The agent transcript writers (`AgentStore`) append through
 `forkmesh::OrderedAppendWriter` (`src/OrderedAppendWriter.h`), one ordered
