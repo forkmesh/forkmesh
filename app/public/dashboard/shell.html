@@ -408,6 +408,16 @@
       .fm-merge-method { display: flex; min-width: 0; flex: 1 1 14rem; max-width: 100%; align-items: center; gap: 8px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-merge-method > span { white-space: nowrap; }
       .fm-merge-method select { width: 0; min-width: 0; flex: 1 1 auto; max-width: 18rem; height: var(--dashboard-control-height-sm); padding: 0 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; }
+      .fm-merge-files { margin-top: 16px; }
+      .fm-merge-files-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
+      .fm-merge-files-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-files-title svg, .fm-merge-files-title i { width: 16px; height: 16px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-files-blockers { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 10px 16px 0; list-style: none; }
+      .fm-merge-files-blockers li { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 999px; font-size: 12px; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-files-blockers li svg, .fm-merge-files-blockers li i { width: 14px; height: 14px; }
+      .fm-merge-files-blockers li[data-tone="bad"] svg { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-files-blockers li[data-tone="warn"] svg { color: rgb(var(--dashboard-attention-rgb)); }
+      .fm-merge-files-blockers li[data-tone="pending"] svg { color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-merge-buttons { display: flex; flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
       @media (max-width: 639px) {
         .fm-merge-buttons { flex-basis: 100%; }

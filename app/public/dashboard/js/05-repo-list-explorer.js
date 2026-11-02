@@ -1080,9 +1080,43 @@
       : null;
   }
 
+  const REPOSITORY_FORK_COUNTS_STORE = "forkmesh.repoForkCounts.v1";
+  const REPOSITORY_FORK_COUNTS_TTL_MS = 120000;
+
+  function loadStoredRepositoryForkCounts() {
+    const counts = new Map();
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      if (Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS) {
+        Object.entries(stored.counts || {}).forEach(([key, value]) => {
+          const found = repositoryForkCountsValue(value);
+          if (isRepoKey(key) && found) counts.set(key, found);
+        });
+        return { counts, asked: new Set((stored.asked || []).filter(isRepoKey)) };
+      }
+    } catch (_) {}
+    return { counts, asked: new Set() };
+  }
+
+  function storeRepositoryForkCounts() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      const fresh = Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS;
+      sessionStorage.setItem(REPOSITORY_FORK_COUNTS_STORE, JSON.stringify({
+        at: fresh ? Number(stored.at) : Date.now(),
+        counts: Object.fromEntries(state.repositoryForkCounts),
+        asked: [...state.repositoryForkCountsAsked],
+      }));
+    } catch (_) {}
+  }
+
   async function hydrateRepositoryForkCounts(root) {
+    if (!state.repositoryForkCounts) {
+      const stored = loadStoredRepositoryForkCounts();
+      state.repositoryForkCounts = stored.counts;
+      state.repositoryForkCountsAsked = stored.asked;
+    }
     const nodes = applyRepositoryForkCounts(root);
-    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
     if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
     const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
       .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
@@ -1104,6 +1138,7 @@
         });
       } catch (_) {}
     }
+    storeRepositoryForkCounts();
     applyRepositoryForkCounts(document);
   }
 

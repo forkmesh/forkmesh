@@ -171,6 +171,36 @@ base into the head branch (`update-pull-branch`, `_update_execute_locked`,
   cleanly and needs no update rather than "N commits behind".
 - A visitor sees the commands to merge the base locally and push.
 
+## Merge from Files changed
+
+A maintainer usually decides while reading the diff, so the Files changed tab
+ends with a merge bar (`renderRepoPullFilesMergeBar`, slot
+`[data-repo-pull-files-merge-slot]`, styles `.fm-merge-files`). It is not a
+second merge implementation: it renders the same `repoPullMergeModel` and the
+same footer as the box (`renderRepoPullMergeFooter`: footer text, merge
+method, *Merge without review*, *Merge pull request*), and its buttons carry
+the same `data-repo-pull-merge` / `data-repo-pull-merge-override` attributes,
+so the one click handler runs `handleRepoPullMerge` with the same pins,
+re-pinning, review rule and owner override. Rows that are not green (changes
+requested, review required, failing or running checks, conflicts, unmet
+rules) are listed above the footer as chips; *Merge details* opens the full
+box on Conversation.
+
+`updateRepoPullMergePanel` repaints both, and `patchRepoPullMutationProgress`
+patches the live progress block in both slots, so the step list, timer and
+result read the same on either tab. Visitors who cannot merge see no bar: the
+diff stays a review surface for them.
+
+## Live state arrives after the first paint
+
+The pull page paints once the record, diff, conversation and commits are read;
+agent activity, merge permission, readiness, merge base, checks, rules and
+required checks follow (`loadRepoPullLiveState`, `finishRepoPullLiveState`)
+and are patched into their slots. Until then `parsed.pullPending` is set and
+the model shows "Checking mergeability…", "Loading checks…" and "Loading merge
+readiness from the live mirror…", with no merge or override button, so nothing
+can be merged on partial state. The header button reads "Checking…".
+
 ## Live progress
 
 After *Merge pull request* or *Update branch* the box shows a spinner, the

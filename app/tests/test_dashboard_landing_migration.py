@@ -2125,7 +2125,10 @@ def test_dashboard_pull_timeline_includes_commits_and_live_branch_agents():
     assert "pullCommitPhrase(commits.length)" in refresh
     # Only signed-in members can read organization sessions, so a signed-out
     # visitor never starts the watch at all.
-    assert 'if (kind === "pulls" && state.session?.sessionToken) {' in dashboard_js
+    finish = dashboard_js[dashboard_js.index("async function finishRepoPullLiveState("):]
+    finish = finish[:finish.index("\n  }\n")]
+    assert "if (state.session?.sessionToken) {" in finish
+    assert "scheduleRepoPullActivityRefresh(repo, number," in finish
 
 
 def test_dashboard_pull_commits_follow_the_live_head_branch():

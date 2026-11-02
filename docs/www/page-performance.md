@@ -22,6 +22,9 @@ served stack: [served stack](../operations/served-stack.md); host fast path:
 | **Anonymous `about` cache.** 15 s fresh, then stale-while-refresh up to 5 minutes. | app |
 | **One request for a view's reads, even when the first view misses its budget.** A pull, issue or discussion page whose bundle is not ready in 40 ms still carries `window.__forkmeshView` with the unversioned `page-reads` address, so the browser joins the build already running instead of reading the pull ledger, `pull.md` and the conversation one after another. | `repo_ssr.finish`, `inject_view_reads` |
 | **Pull detail reads in parallel.** After the ledger commit is known, the pull's folder listing, patch, conversation, commits, agent activity, merge permission, readiness and merge base start together; checks and rules follow readiness. One shared folder listing per ledger commit tells the page which files exist, so a missing `commits.mbox` or `changes.patch` is never asked for (a missing file walked every mirror and then the app, about 1.5 s). Two loaders that need `/branches` share one read. | `loadRepoRecordDetail`, `readRepoPullFolder`, `repoPullFolderLacks` |
+| **Pull detail paints before its live state.** Once the ledger commit is known the record, patch, conversation and commits are read and the page is drawn; agent activity, merge permission, readiness, merge base, checks, rules and required checks keep loading and are patched into their slots (`docs/app/pull-merge-box.md`, "Live state arrives after the first paint"). Checks alone took a median 1.1 s on a production instance (2026-10-25 slow log), and the page used to wait for them. | `loadRepoPullLiveState`, `finishRepoPullLiveState` |
+| **The server's pull view stays until the dashboard paints.** When the host sends a pull's first view (`repo_views`, `h2.fm-ssr-h1` inside `[data-repo-ssr]`), the dashboard keeps its body (`keepRepoFirstViewPull`) and shows it in place of "Loading pull request #N from the live mirror…" (`takeRepoFirstViewPull`), the way issues keep theirs. Before, the visitor saw the pull, then a loader for several seconds (2026-10-25, about 7 s on a production pull), then the pull again. A cold first request that missed the 40 ms budget still has no view to keep and shows the loader. | `keepRepoFirstViewPull`, `takeRepoFirstViewPull` |
+| **Pull snapshot per browser.** After the live state lands, a public pull's record, diff (up to 400 KB), conversation, commits and checks are kept in `localStorage` (`forkmesh.pullSnapshots.v1`, the 12 most recent, 7 days). Opening that pull again draws the snapshot at once, with the merge controls in their pending state, and the live read replaces it. Private repositories are never stored. | `showRepoPullSnapshot`, `storeRepoPullSnapshot` |
 | **Issue and discussion detail.** An issue's permission and subscription reads start with its record; a discussion's replies start with its record. An issue the batched read reports missing (`null`) is not probed again; paths the batch did not answer are probed together. | `loadRepoRecordDetail`, `fetchRepoIssueBlob` |
 | **Icons drawn once.** Lucide keeps `data-lucide` on the SVG it draws, so each of the dashboard's ~140 `createIcons()` calls redrew every icon on the page (about 130 ms of the repository page's boot). `installIncrementalIcons` replaces it with a pass that draws only `<i data-lucide>` placeholders and SVGs whose name changed. | `02-helpers.js` |
 | **Mirror list repaint once per frame.** Every repository read reports the node that served it; the mirror lists repaint once per animation frame instead of once per read. | `renderRepoServedBy` |
@@ -152,6 +155,19 @@ long-polled `/api/runners/claim`). On single-vCPU cores slow lines mostly come
 from CPU shared with Git work and from clients sending one request per item.
 Rules that follow:
 
+- Do not make a page view pay for repository-wide work. The pull checks
+  read (`GET /pulls/<n>/checks`) used to queue checks for every open pull
+  once its 15 s memo lapsed (a median 1.1 s, up to 23 s); it now syncs only
+  the pull being viewed, and pushes plus the Actions cron still sync the whole
+  repository (`sync_repo(..., number=)` in `app/src/pull_actions.py`).
+- Remember answers that every page asks again. `POST /api/repo-fork-counts`
+  was the most frequent slow line on a production instance (1,364 in 24 hours,
+  median 760 ms, up to 32 s): the sidebar asks it on every page and each fork
+  re-read both default branches. A fork's answer is now kept for
+  `FRESH_SECONDS` (30 s) on the node, and for two minutes in the browser's
+  `sessionStorage` (`forkmesh.repoForkCounts.v1`). The forks are still read
+  one after another: concurrent tasks are banned in Worker Python
+  (`test_worker_task_concurrency.py`).
 - Prefer one batched read (`blobs` accepts up to 60 paths; view bundles; the
   public account directory) over one request per item.
 - Keep heavy history walks on the commit-graph (`git rev-list` with

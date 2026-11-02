@@ -14305,9 +14305,43 @@
       : null;
   }
 
+  const REPOSITORY_FORK_COUNTS_STORE = "forkmesh.repoForkCounts.v1";
+  const REPOSITORY_FORK_COUNTS_TTL_MS = 120000;
+
+  function loadStoredRepositoryForkCounts() {
+    const counts = new Map();
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      if (Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS) {
+        Object.entries(stored.counts || {}).forEach(([key, value]) => {
+          const found = repositoryForkCountsValue(value);
+          if (isRepoKey(key) && found) counts.set(key, found);
+        });
+        return { counts, asked: new Set((stored.asked || []).filter(isRepoKey)) };
+      }
+    } catch (_) {}
+    return { counts, asked: new Set() };
+  }
+
+  function storeRepositoryForkCounts() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(REPOSITORY_FORK_COUNTS_STORE) || "{}");
+      const fresh = Date.now() - Number(stored.at || 0) < REPOSITORY_FORK_COUNTS_TTL_MS;
+      sessionStorage.setItem(REPOSITORY_FORK_COUNTS_STORE, JSON.stringify({
+        at: fresh ? Number(stored.at) : Date.now(),
+        counts: Object.fromEntries(state.repositoryForkCounts),
+        asked: [...state.repositoryForkCountsAsked],
+      }));
+    } catch (_) {}
+  }
+
   async function hydrateRepositoryForkCounts(root) {
+    if (!state.repositoryForkCounts) {
+      const stored = loadStoredRepositoryForkCounts();
+      state.repositoryForkCounts = stored.counts;
+      state.repositoryForkCountsAsked = stored.asked;
+    }
     const nodes = applyRepositoryForkCounts(root);
-    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
     if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
     const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
       .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
@@ -14329,6 +14363,7 @@
         });
       } catch (_) {}
     }
+    storeRepositoryForkCounts();
     applyRepositoryForkCounts(document);
   }
 
@@ -25920,13 +25955,7 @@
     parsed.pullCommits = commits;
     parsed.pullAgents = agents;
     parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-    const timeline = $("[data-repo-pull-conversation]");
-    if (timeline) {
-      timeline.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
-      timeline.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
-    }
-    const count = $("[data-repo-pull-timeline-count]");
-    if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+    paintRepoPullTimeline(parsed);
     // An agent pushing to the head branch also grows the Commits tab, which
     // stays mounted (hidden) behind the conversation.
     const commitList = $("[data-repo-pull-commits]");
@@ -25961,6 +25990,26 @@
     if (!pullDetailIsCurrent(repo, number)) return;
     parsed.pullRequiredChecks = await loadRepoPullRequiredChecks(repo, values, readiness);
     if (!pullDetailIsCurrent(repo, number)) return;
+    paintRepoPullChecks(repo, parsed);
+    updateRepoPullMergePanel(repo, number, parsed);
+    void hydrateRepoPullAttention(repo, number, parsed);
+    window.lucide?.createIcons();
+    scheduleRepoPullActivityRefresh(repo, number,
+      agents.some((event) => pullAgentStatusIsActive(event.status)));
+  }
+
+  function paintRepoPullTimeline(parsed) {
+    const events = parsed.pullTimeline || [];
+    const timeline = $("[data-repo-pull-conversation]");
+    if (timeline) {
+      timeline.dataset.empty = events.length ? "false" : "true";
+      timeline.innerHTML = renderRepoPullConversation(events);
+    }
+    const count = $("[data-repo-pull-timeline-count]");
+    if (count) count.textContent = formatCount(events.length);
+  }
+
+  function paintRepoPullChecks(repo, parsed) {
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
@@ -25971,11 +26020,115 @@
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
     }
+  }
+
+  function loadRepoPullLiveState(repo, number, values) {
+    const readiness = loadRepoPullReadiness(repo, number, values);
+    const mergeAuthorized = loadRepoPullMergeAuthorization(repo);
+    const live = Promise.all([
+      loadRepoPullAgentActivity(repo, number, values),
+      mergeAuthorized,
+      mergeAuthorized.then((authorized) => loadRepoPullUpdateAuthorization(repo, values, authorized)),
+      loadRepoPullMergeBase(repo, values),
+      readiness,
+      readiness.then((result) => loadRepoPullChecks(repo, values, result)),
+      readiness.then((result) => loadRepoPullRules(repo, number, result)),
+      readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
+    ]);
+    live.catch(() => {});
+    return live;
+  }
+
+  async function finishRepoPullLiveState(repo, number, parsed, live) {
+    let rows = null;
+    try {
+      rows = await live;
+    } catch (_) {
+      rows = null;
+    }
+    if (state.repoRecordDetail?.parsed !== parsed) return;
+    if (rows) {
+      const [agents, mergeAuthorized, updateAuthorized, mergeBase, readiness, checks, rules, requiredChecks] = rows;
+      parsed.pullAgents = agents;
+      parsed.pullTimeline = buildRepoPullTimeline(
+        parsed.values || {}, parsed.pullConversation || [], parsed.pullCommits || [], agents);
+      parsed.pullMergeAuthorized = mergeAuthorized;
+      parsed.pullUpdateAuthorized = updateAuthorized;
+      parsed.pullMergeBase = mergeBase;
+      parsed.pullReadiness = readiness;
+      parsed.pullChecks = checks;
+      parsed.pullRules = rules;
+      parsed.pullRequiredChecks = requiredChecks;
+    }
+    parsed.pullPending = false;
+    paintRepoPullTimeline(parsed);
+    paintRepoPullChecks(repo, parsed);
     updateRepoPullMergePanel(repo, number, parsed);
+    if (rows) storeRepoPullSnapshot(repo, number, parsed);
     void hydrateRepoPullAttention(repo, number, parsed);
+    if (state.session?.sessionToken) {
+      scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
+        (event) => pullAgentStatusIsActive(event.status)));
+    }
+  }
+
+  const REPO_PULL_SNAPSHOT_STORE = "forkmesh.pullSnapshots.v1";
+  const REPO_PULL_SNAPSHOT_LIMIT = 12;
+  const REPO_PULL_SNAPSHOT_PATCH_MAX = 400000;
+  const REPO_PULL_SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  const REPO_PULL_SNAPSHOT_FIELDS = [
+    "values", "body", "pullMetadataCommit", "pullPatch", "pullConversation", "pullCommits",
+    "pullAgents", "pullChecks", "pullRules", "pullRequiredChecks", "repoCollabSettings",
+  ];
+
+  function repoPullSnapshotKey(repo, number) {
+    return `${String(repoKey(repo) || "").toLowerCase()}#${Number(number) || 0}`;
+  }
+
+  function readRepoPullSnapshots() {
+    try {
+      const rows = JSON.parse(localStorage.getItem(REPO_PULL_SNAPSHOT_STORE) || "[]");
+      return Array.isArray(rows) ? rows.filter((row) => row && typeof row.key === "string") : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function storeRepoPullSnapshot(repo, number, parsed) {
+    if (!repo || repo.isPrivate || !parsed?.values) return;
+    if (String(parsed.pullPatch?.patch || "").length > REPO_PULL_SNAPSHOT_PATCH_MAX) return;
+    const key = repoPullSnapshotKey(repo, number);
+    const snapshot = { key, at: Date.now(), parsed: {} };
+    REPO_PULL_SNAPSHOT_FIELDS.forEach((field) => {
+      if (parsed[field] !== undefined) snapshot.parsed[field] = parsed[field];
+    });
+    const rows = [snapshot, ...readRepoPullSnapshots().filter((row) => row.key !== key)];
+    for (let size = Math.min(rows.length, REPO_PULL_SNAPSHOT_LIMIT); size > 0; size = Math.floor(size / 2)) {
+      try {
+        localStorage.setItem(REPO_PULL_SNAPSHOT_STORE, JSON.stringify(rows.slice(0, size)));
+        return;
+      } catch (_) {}
+    }
+    try { localStorage.removeItem(REPO_PULL_SNAPSHOT_STORE); } catch (_) {}
+  }
+
+  function showRepoPullSnapshot(repo, number, container) {
+    if (!repo || repo.isPrivate || !container) return false;
+    const key = repoPullSnapshotKey(repo, number);
+    const entry = readRepoPullSnapshots().find((row) => row.key === key);
+    if (!entry?.parsed?.values || Date.now() - Number(entry.at || 0) > REPO_PULL_SNAPSHOT_MAX_AGE_MS) return false;
+    const parsed = { ...entry.parsed, pullPending: true, pullMergeAuthorized: false, pullUpdateAuthorized: false };
+    parsed.pullTimeline = buildRepoPullTimeline(parsed.values, parsed.pullConversation || [],
+      parsed.pullCommits || [], parsed.pullAgents || []);
+    try {
+      const html = renderRepoRecordDetail(repo, "pulls", number, parsed);
+      state.repoRecordDetail = { repo, kind: "pulls", number, parsed };
+      container.innerHTML = html;
+    } catch (_) {
+      return false;
+    }
     window.lucide?.createIcons();
-    scheduleRepoPullActivityRefresh(repo, number,
-      agents.some((event) => pullAgentStatusIsActive(event.status)));
+    return true;
   }
 
   function scheduleRepoPullActivityRefresh(repo, number, active) {
@@ -27776,7 +27929,10 @@
       .filter((run) => pullCheckStateMeta(run.status).outcome === "passed")
       .map((run) => run.workflow));
     const missingRequired = requiredNames.filter((name) => !passedNames.has(name));
-    if (summary.tone === "bad") {
+    if (parsed?.pullPending === true) {
+      checksRow.tone = "pending";
+      checksRow.title = "Loading checks…";
+    } else if (summary.tone === "bad") {
       checksRow.tone = "bad";
       checksRow.title = "Some checks failed";
     } else if (summary.tone === "pending") {
@@ -27802,8 +27958,13 @@
     checksRow.actions.push({ kind: "actions", label: runs.length ? "Open Actions" : "Run checks" });
     rows.push(checksRow);
 
+    const pending = parsed?.pullPending === true;
     const branchRow = { id: "branch", actions: [] };
-    if (!readiness.available) {
+    if (pending) {
+      branchRow.tone = "pending";
+      branchRow.title = "Checking mergeability…";
+      branchRow.detail = "Asking an online mirror for a merge trial of this pull request.";
+    } else if (!readiness.available) {
       branchRow.tone = "muted";
       branchRow.title = "Mergeability unknown";
       branchRow.detail = "No mirror answered a merge trial for this pull request just now. It is re-tried while the page is open.";
@@ -27885,6 +28046,9 @@
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
+    } else if (pending && !merged && !busy) {
+      footer.tone = "pending";
+      footer.text = "Loading merge readiness from the live mirror…";
     } else if (merged) {
       footer.tone = "good";
       footer.text = `Merged into ${baseBranch}. The merged state is pinned as current and every mirror is syncing it.`;
@@ -27924,8 +28088,9 @@
       footer.tone = "good";
       footer.text = `Ready to merge into ${baseBranch}. An online mirror lands the exact reviewed commits with a merge commit.`;
     }
-    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked;
+    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked && !pending;
     return {
+      pending,
       open: status === "open",
       authorized,
       merged,
@@ -28103,28 +28268,30 @@
 
   function patchRepoPullMutationProgress(repo, number, parsed, kind) {
     if (!pullDetailIsCurrent(repo, number)) return;
-    const slot = document.querySelector("[data-repo-pull-merge-slot]");
-    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
-    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const slots = [...document.querySelectorAll("[data-repo-pull-merge-slot], [data-repo-pull-files-merge-slot]")];
+    const blocks = slots.map((slot) => slot.querySelector(`[data-repo-pull-merge-progress="${kind}"]`));
+    const model = blocks.length && blocks.every(Boolean) ? repoPullMergeModel(repo, number, parsed) : null;
     const progress = kind === "merge"
       ? model?.footer.progress
       : model?.rows.find((row) => row.id === "branch")?.progress;
-    if (!block || !progress) {
+    if (!progress) {
       updateRepoPullMergePanel(repo, number, parsed);
       return;
     }
     const scratch = document.createElement("div");
     scratch.innerHTML = renderRepoPullMutationProgress(progress);
     const fresh = scratch.firstElementChild;
-    const now = block.querySelector("[data-repo-pull-merge-now]");
     const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
-    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
-    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
-      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
-      else now.removeAttribute(name);
+    blocks.forEach((block) => {
+      const now = block.querySelector("[data-repo-pull-merge-now]");
+      if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+      ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+        if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+        else now.removeAttribute(name);
+      });
+      block.dataset.state = fresh.dataset.state;
+      block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     });
-    block.dataset.state = fresh.dataset.state;
-    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
     window.lucide?.createIcons();
     startRepoPullMutationTicker();
   }
@@ -28235,6 +28402,15 @@
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
     }).join("");
+    return `
+      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
+        ${rows}
+        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
+        ${renderRepoPullMergeFooter(model)}
+      </section>`;
+  }
+
+  function renderRepoPullMergeFooter(model) {
     const footer = model.footer;
     const changes = footer.changes?.length
       ? `<ul class="fm-merge-changes">${footer.changes.map((change) => `<li>${escapeHtml(change)}</li>`).join("")}</ul>`
@@ -28257,14 +28433,30 @@
       ? `<button type="button" data-repo-pull-merge-override class="fm-btn fm-btn-danger"><i data-lucide="shield-alert"></i>Merge without review</button>`
       : "";
     return `
-      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
-        ${rows}
-        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
         <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
           ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
-        </div>
+        </div>`;
+  }
+
+  function renderRepoPullFilesMergeBar(repo, number, parsed) {
+    const model = repoPullMergeModel(repo, number, parsed);
+    if (!model.open && !model.merged) return "";
+    if (!model.authorized && !model.merged && !model.pending) return "";
+    const status = repoPullMergeStatus(model);
+    const blockers = model.merged || model.busy ? [] : model.rows.filter((row) => ["bad", "warn", "pending"].includes(row.tone));
+    const chips = blockers.length
+      ? `<ul class="fm-merge-files-blockers">${blockers.map((row) => `<li data-tone="${escapeHtml(row.tone)}"><i data-lucide="${PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted}"${row.tone === "pending" ? ' class="animate-spin"' : ""}></i>${escapeHtml(row.title)}</li>`).join("")}</ul>`
+      : "";
+    const details = status && !model.busy
+      ? `<button type="button" data-repo-pull-merge-status class="fm-btn fm-btn-sm"><i data-lucide="list-checks"></i>Merge details</button>`
+      : "";
+    return `
+      <section data-repo-pull-files-merge class="fm-merge-box fm-merge-files" aria-label="Merge this pull request">
+        <div class="fm-merge-files-head"><span class="fm-merge-files-title"><i data-lucide="git-merge"></i>Merge this pull request</span>${details}</div>
+        ${chips}
+        ${renderRepoPullMergeFooter(model)}
       </section>`;
   }
 
@@ -28287,6 +28479,9 @@
     const detail = blocking.map((row) => row.title);
     if (model.busy) {
       return { tone: "pending", icon: "loader-circle", label: "Merging…", detail: [model.footer.text] };
+    }
+    if (model.pending) {
+      return { tone: "pending", icon: "loader-circle", label: "Checking…", detail: [model.footer.text] };
     }
     if (failing.length || model.footer.tone === "bad") {
       const first = failing[0];
@@ -28337,6 +28532,8 @@
     const banner = document.querySelector("[data-repo-pull-conflict-slot]");
     const status = document.querySelector("[data-repo-pull-merge-status-slot]");
     if (status) status.innerHTML = renderRepoPullMergeStatus(repo, number, parsed);
+    const filesSlot = document.querySelector("[data-repo-pull-files-merge-slot]");
+    if (filesSlot) filesSlot.innerHTML = renderRepoPullFilesMergeBar(repo, number, parsed);
     if (banner) {
       const html = renderRepoPullConflictBanner(repo, number, parsed);
       if (banner.dataset.rendered !== html) {
@@ -29691,7 +29888,7 @@
                   <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks, repo)}</div>
                 </section>
               </div>
-              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
+              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}<div data-repo-pull-files-merge-slot class="min-w-0">${renderRepoPullFilesMergeBar(repo, number, parsed)}</div></div>
               <div data-repo-record-panel="badge" class="${recordPanelClass("badge")}">
                 <section class="overflow-hidden rounded-md border border-border">
                   <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="fingerprint" class="h-4 w-4 text-muted-foreground"></i>Badge</div>
@@ -30493,6 +30690,30 @@ Your reply
   function takeRepoFirstViewIssue(repo, number) {
     const kept = repoFirstViewIssue;
     repoFirstViewIssue = null;
+    if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
+    return kept.node;
+  }
+
+  let repoFirstViewPull = null;
+  function keepRepoFirstViewPull(detail) {
+    repoFirstViewPull = null;
+    const heading = detail?.querySelector?.("[data-repo-ssr] h2.fm-ssr-h1");
+    const match = /\/pulls?\/(\d+)(?:\/|$)/.exec(location.pathname);
+    if (!heading || !match) return;
+    const view = document.createElement("div");
+    view.className = "fm-ssr";
+    view.dataset.repoSsrPull = match[1];
+    for (let node = heading; node;) {
+      const next = node.nextSibling;
+      view.appendChild(node);
+      node = next;
+    }
+    repoFirstViewPull = { number: match[1], path: location.pathname, node: view };
+  }
+
+  function takeRepoFirstViewPull(repo, number) {
+    const kept = repoFirstViewPull;
+    repoFirstViewPull = null;
     if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
     return kept.node;
   }
@@ -31431,8 +31652,12 @@ Your reply
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     const staleMark = repoStaleReadMark();
     const reconnect = { key: viewKey, container, retry: () => loadRepoRecordDetail(repo, kind, number, preferMirror) };
-    if (!quietRefresh && !reconnecting) {
-      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
+    const snapshotShown = kind === "pulls" && !quietRefresh && !reconnecting
+      && showRepoPullSnapshot(repo, number, container);
+    let pullLive = null;
+    if (!quietRefresh && !reconnecting && !snapshotShown) {
+      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number)
+        : kind === "pulls" ? takeRepoFirstViewPull(repo, number) : null;
       if (firstView) {
         container.replaceChildren(firstView);
       } else {
@@ -31514,30 +31739,18 @@ Your reply
       if (kind === "pulls") {
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
-        const readiness = loadRepoPullReadiness(repo, number, values);
-        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules, requiredChecks] = await Promise.all([
+        pullLive = loadRepoPullLiveState(repo, number, values);
+        const [pullPatch, conversation, commits] = await Promise.all([
           loadRepoPullPatch(repo, number, pullMetadataCommit, values),
           loadRepoPullConversation(repo, number, pullMetadataCommit),
           loadRepoPullCommits(repo, number, pullMetadataCommit, values),
-          loadRepoPullAgentActivity(repo, number, values),
-          loadRepoPullMergeAuthorization(repo),
-          loadRepoPullMergeBase(repo, values),
-          readiness.then((result) => loadRepoPullChecks(repo, values, result)),
-          readiness.then((result) => loadRepoPullRules(repo, number, result)),
-          readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
         ]);
         if (pullPatch) parsed.pullPatch = pullPatch;
         parsed.pullConversation = conversation;
         parsed.pullCommits = commits;
-        parsed.pullAgents = agents;
-        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
-        parsed.pullMergeAuthorized = mergeAuthorized;
-        parsed.pullUpdateAuthorized = await loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized);
-        parsed.pullReadiness = await readiness;
-        parsed.pullMergeBase = mergeBase;
-        parsed.pullChecks = checks;
-        parsed.pullRules = rules;
-        parsed.pullRequiredChecks = requiredChecks;
+        parsed.pullAgents = [];
+        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, []);
+        parsed.pullPending = true;
       }
       if (kind === "issues") {
         const [mutationAuthorized, subscription] = await issueAccess;
@@ -31560,9 +31773,9 @@ Your reply
       }
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
-      if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
+      if ((quietRefresh || snapshotShown) && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
       if (quietRefresh && container.querySelector("[data-repo-issue-comment-editor]")) return;
-      const commentDraft = quietRefresh
+      const commentDraft = quietRefresh || snapshotShown
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
@@ -31582,14 +31795,8 @@ Your reply
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
       if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
-      if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       if (kind === "pulls") void loadPullAiReview(repo, number);
-      // Members watch an open pull for agent activity; signed-out visitors
-      // cannot read organization sessions at all, so they get no timer.
-      if (kind === "pulls" && state.session?.sessionToken) {
-        scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
-          (event) => pullAgentStatusIsActive(event.status)));
-      }
+      if (kind === "pulls") void finishRepoPullLiveState(repo, number, parsed, pullLive);
     } catch (error) {
       // The relay already accepted this numbered record. Keep its complete
       // detail visible while the mirror commit converges, then retry quietly.
@@ -48197,6 +48404,7 @@ Your reply
        </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    keepRepoFirstViewPull(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
