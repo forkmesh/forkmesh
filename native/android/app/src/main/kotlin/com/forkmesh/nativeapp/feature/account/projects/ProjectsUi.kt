@@ -76,6 +76,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import com.forkmesh.nativeapp.account.projects.ProbeResult
 import com.forkmesh.nativeapp.account.projects.Project
 import com.forkmesh.nativeapp.account.projects.ProjectCatalogEntry
@@ -316,75 +317,119 @@ private fun ProjectDrawerContent(projects: ProjectsService) {
             }
         }
     }
-    Column(Modifier.fillMaxSize().windowInsetsPadding(fmSafeAreaInsets())) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(c.bgBase)
+            .windowInsetsPadding(fmSafeAreaInsets())
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = FmSpace.x4),
+    ) {
         Text(
             "Projects",
-            style = MaterialTheme.typography.titleLarge,
+            style = Fm.text.displaySmall,
             color = c.textPrimary,
-            modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x4, bottom = FmSpace.x2),
+            modifier = Modifier.padding(top = FmSpace.x4).semantics { heading() },
         )
-        FmInlineStatus(ProjectActions.status, Modifier.padding(start = FmSpace.x4, end = FmSpace.x2, bottom = FmSpace.x2))
-        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-            items(list, key = { it.id }) { project ->
+        Text(
+            "Each project keeps its own sign-in, keys and data on this phone.",
+            style = Fm.text.bodyMedium.copy(color = c.textSecondary),
+            modifier = Modifier.padding(top = FmSpace.x1, bottom = FmSpace.x4),
+        )
+        FmInlineStatus(ProjectActions.status, Modifier.padding(bottom = FmSpace.x2))
+        ProjectDrawerGroup {
+            list.forEach { project ->
                 val isActive = project.id == active.id
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(if (isActive) c.bgOverlay else Color.Transparent)
+                        .heightIn(min = 60.dp)
                         .clickable(onClickLabel = if (isActive) "Close projects" else "Switch to ${project.label}", role = Role.Button) {
                             if (isActive) ProjectDrawer.close() else ProjectActions.switchTo(project.id, reopenDrawerOnError = true)
                         }
-                        .padding(horizontal = FmSpace.x4, vertical = FmSpace.x3),
+                        .padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ProjectIcon(project, size = 36.dp)
+                    ProjectIcon(project, size = 34.dp)
                     Spacer(Modifier.width(FmSpace.x3))
                     Column(Modifier.weight(1f)) {
-                        Text(project.label, style = Fm.text.bodyMedium, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(project.subtitle, style = Fm.text.bodySmall.copy(color = c.textTertiary), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(accounts[project.id].orEmpty(), style = Fm.text.bodySmall.copy(color = c.textSecondary), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(project.label, style = Fm.text.bodyLarge, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(project.subtitle, style = Fm.text.bodySmall.copy(color = c.textSecondary), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(accounts[project.id].orEmpty(), style = Fm.text.bodySmall.copy(color = c.textTertiary), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (isActive) FmIcon("check", size = 20.dp, tint = c.accent, contentDescription = "Active project")
                 }
+                ProjectDrawerDivider()
             }
-        }
-        HorizontalDivider(thickness = 1.dp, color = c.border)
-        ProjectDrawerAction("add", "Add project") {
-            ProjectDrawer.close()
-            scope.launch {
-                val added = messenger.showDialog<Project> { done -> AddProjectDialog(projects, done) } ?: return@launch
-                ProjectActions.switchTo(added.id, reopenDrawerOnError = true)
-            }
-        }
-        ProjectDrawerAction("group_outlined", "Invite people to ${active.label}") {
-            ProjectDrawer.close()
-            val project = active
-            scope.launch {
-                messenger.showDialog<Unit> { done -> InviteToProjectDialog(projects, project, done) }
-            }
-        }
-        if (canManage) {
-            ProjectDrawerAction("settings", "Manage projects") {
+            ProjectDrawerAction("add", "Add project", accent = true) {
                 ProjectDrawer.close()
-                AppNavigation.navigator.push(ProjectsScreen())
+                scope.launch {
+                    val added = messenger.showDialog<Project> { done -> AddProjectDialog(projects, done) } ?: return@launch
+                    ProjectActions.switchTo(added.id, reopenDrawerOnError = true)
+                }
             }
         }
-        Spacer(Modifier.height(FmSpace.x2))
+        Spacer(Modifier.height(FmSpace.x6))
+        ProjectDrawerGroup {
+            ProjectDrawerAction("group_outlined", "Invite people", description = "Invite people to ${active.label}", chevron = true) {
+                ProjectDrawer.close()
+                val project = active
+                scope.launch {
+                    messenger.showDialog<Unit> { done -> InviteToProjectDialog(projects, project, done) }
+                }
+            }
+            if (canManage) {
+                ProjectDrawerDivider()
+                ProjectDrawerAction("settings", "Manage projects", chevron = true) {
+                    ProjectDrawer.close()
+                    AppNavigation.navigator.push(ProjectsScreen())
+                }
+            }
+        }
+        Spacer(Modifier.height(FmSpace.x4))
     }
 }
 
 @Composable
-private fun ProjectDrawerAction(icon: String, label: String, onClick: () -> Unit) {
+private fun ProjectDrawerGroup(content: @Composable () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(Fm.colors.bgRaised),
+    ) { content() }
+}
+
+@Composable
+private fun ProjectDrawerDivider() {
+    HorizontalDivider(Modifier.padding(start = FmSpace.x4 + 34.dp + FmSpace.x3), thickness = 0.5.dp, color = Fm.colors.border)
+}
+
+@Composable
+private fun ProjectDrawerAction(
+    icon: String,
+    label: String,
+    accent: Boolean = false,
+    chevron: Boolean = false,
+    description: String? = null,
+    onClick: () -> Unit,
+) {
+    val c = Fm.colors
     Row(
         Modifier
             .fillMaxWidth()
+            .heightIn(min = 52.dp)
             .clickable(role = Role.Button, onClick = onClick)
+            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier)
             .padding(horizontal = FmSpace.x4, vertical = FmSpace.x3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FmIcon(icon, size = 20.dp, tint = Fm.colors.textSecondary)
+        Box(Modifier.width(34.dp), contentAlignment = Alignment.Center) {
+            FmIcon(icon, size = 22.dp, tint = if (accent) c.accent else c.textSecondary)
+        }
         Spacer(Modifier.width(FmSpace.x3))
-        Text(label, style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
+        Text(label, Modifier.weight(1f), style = Fm.text.bodyLarge, color = if (accent) c.accent else c.textPrimary)
+        if (chevron) FmIcon("chevron_right", size = 20.dp, tint = c.textTertiary)
     }
 }
 
