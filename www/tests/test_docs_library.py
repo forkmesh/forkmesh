@@ -519,3 +519,43 @@ def test_reader_script_keeps_reading_history_on_the_device():
     css = (PUBLIC / "docs-page.css").read_text(encoding="utf-8")
     for selector in (".dp-dock", ".dp-sheet", ".dp-peek", ".dp-figure", ".table-stack", ".dp-map-grid", ".dp-viewer"):
         assert selector in css, selector
+
+
+def test_docs_art_partials_match_the_generator():
+    import docs_art
+
+    assert docs_art.stale_partials() == []
+    for name in docs_art.partials():
+        assert f'partials/docs-art/{name}' in (
+            REPOSITORY / "www" / "templates" / "pages" / "docs" / "index.html"
+        ).read_text(encoding="utf-8")
+
+
+def test_pages_open_with_an_illustrated_hero_and_interwoven_rail():
+    catalog = docs_site.load_catalog()
+    entry = catalog.by_url()["/docs/censorship-resilience/"]
+    page = docs_site.page_html(catalog, entry)
+    hero = page[page.index('<header class="dp-hero">'):page.index("</header>", page.index('<header class="dp-hero">'))]
+    assert "<h1 " in hero and 'class="dp-hero-lead"' in hero and "data-docs-meta" in hero
+    assert 'class="dp-art"' in hero and 'class="dp-pillar-strip"' in hero
+    assert '<a href="/docs/censorship-resilience/" aria-current="page">' in hero
+    assert "<p>Part of the core documentation:" not in page
+    assert '<section class="dp-callout">' in page
+    assert 'class="dp-rail-card dp-rail-path"' in page and 'class="dp-rail-card dp-rail-related"' in page
+    assert page.count('class="dp-art"') == 2
+    for url, label in docs_site.DOCS_TABS:
+        assert f'href="{url}">{label}</a>' in page
+    other = docs_site.page_html(catalog, catalog.by_url()["/docs/operations/mirror-node/"])
+    assert 'class="dp-hero"' in other and 'class="dp-pillar-strip"' not in other
+    assert 'class="dp-nav-group current" open' in other
+
+
+def test_every_area_has_an_icon_and_an_illustration():
+    import docs_art
+
+    for area in docs_site.AREAS:
+        glyph, art = docs_site.AREA_STYLE[area.key]
+        assert glyph in docs_art.ICONS
+        assert 'class="dp-art"' in docs_art.art(art, "check")
+    for _, art in docs_site.PILLAR_LABELS.values():
+        assert 'class="dp-art"' in docs_art.art(art, "check")

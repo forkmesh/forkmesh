@@ -7,6 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLIC = ROOT / "www" / "public"
+DOCS_CSS = PUBLIC / "docs-page.css"
+DOCS_JS = PUBLIC / "docs-page.js"
 DOCS_PAGES = (PUBLIC / "docs" / "index.html",)
 CONTRIBUTION_GUIDE = PUBLIC / "docs" / "contributions" / "index.html"
 
@@ -57,9 +59,11 @@ def test_docs_pages_link_the_platform_tabs():
     for page in DOCS_PAGES:
         html = _read(page)
 
-        assert ">Desktop<" in html
-        assert '<a class="docs-tab" href="/docs/browser-extension/"><span>Extension</span></a>' in html
-        assert '<a class="docs-tab" href="/docs/mobile/"><span>Mobile</span></a>' in html
+        platforms = re.search(r'<nav class="dp-platforms"[^>]*>(.*?)</nav>', html, flags=re.DOTALL)
+        assert platforms, page
+        assert '<a class="active" href="/docs/">Desktop</a>' in platforms.group(1)
+        assert '<a class="" href="/docs/browser-extension/">Extension</a>' in platforms.group(1)
+        assert '<a class="" href="/docs/mobile/">Mobile</a>' in platforms.group(1)
         assert "Coming soon" not in html
         assert "coming soon" not in html
         assert 'aria-disabled="true"' not in html
@@ -68,17 +72,15 @@ def test_docs_pages_link_the_platform_tabs():
 
 
 def test_docs_top_nav_stays_put_on_a_phone_and_tabs_only_scroll_sideways():
+    css = _read(DOCS_CSS)
+    tabs = re.findall(r"\n\.dp-tabs \{(.*?)\}", css, flags=re.DOTALL)
+    assert any("overflow-y: hidden" in rule and "touch-action: pan-x" in rule for rule in tabs)
     for page in DOCS_PAGES:
         html = _read(page)
-
-        tabs = re.search(r"\.docs-tabs \{(.*?)\}", html, flags=re.DOTALL)
-        assert tabs, page
-        assert "overflow-y: hidden" in tabs.group(1)
-        assert "touch-action: pan-x" in tabs.group(1)
         phone = re.search(r"@media \(max-width: 767px\) \{(.*?)\n      \}", html, flags=re.DOTALL)
         assert phone, page
         assert "position: sticky" in phone.group(1)
-        assert ".docs-top-nav" in phone.group(1)
+        assert ".dp-toolbar" in phone.group(1)
 
 
 def test_docs_grids_cannot_widen_the_page_on_a_phone():
@@ -98,48 +100,76 @@ def test_docs_grids_cannot_widen_the_page_on_a_phone():
     )
 
 
-def test_docs_nav_spans_the_viewport_with_edge_pinned_sidebars():
+def test_docs_landing_shares_the_library_shell():
+    import sys
+
+    sys.path.insert(0, str(ROOT / "app" / "tools"))
+    import docs_site
+
     for page in DOCS_PAGES:
         html = _read(page)
 
-        # The shell is no longer a centered max-width container: the section
-        # nav hugs the left edge and the outline hugs the right edge.
-        assert "max-w-[1540px]" not in html
-        assert 'class="docs-shell grid w-full ' in html
-        assert 'class="docs-sidebar-left hidden lg:block"' in html
-        assert 'class="docs-sidebar-right hidden lg:block"' in html
-        assert "justify-self: start" in html
-        assert "justify-self: end" in html
-        assert "grid-template-columns: 270px minmax(0, 1fr) 270px" in html
+        assert 'href="/docs-page.css?v=${version}"' in html
+        assert 'src="/docs-page.js?v=${version}"' in html
+        assert 'src="/docs-explore.js?v=${version}"' in html
+        assert 'class="dp-body dp-home"' in html
+        assert '<main class="dp-shell">' in html
+        assert '<aside class="dp-sidebar">' in html
+        assert '<aside class="dp-rail">' in html
+        assert docs_site.SIDEBAR_PLACEHOLDER in html
+        assert "grid-template-columns: 272px minmax(0, 1fr) 248px" in _read(DOCS_CSS)
 
 
 def test_docs_nav_exposes_high_level_section_links():
+    import sys
+
+    sys.path.insert(0, str(ROOT / "app" / "tools"))
+    import docs_site
+
     for page in DOCS_PAGES:
         html = _read(page)
 
         tabs = re.search(
-            r'<nav\b[^>]*aria-label="Product documentation"[^>]*>(.*?)</nav>',
+            r'<nav\b[^>]*aria-label="Documentation areas"[^>]*>(.*?)</nav>',
             html,
             flags=re.DOTALL,
         )
         assert tabs, page
         strip = tabs.group(1)
-        for href, label in (
-            ("#welcome", "Desktop"),
-            ("#install", "Install"),
-            ("#quickstart", "Quickstart"),
-            ("#repository", "Concepts"),
-            ("#api-websockets", "APIs"),
-            ("#self-hosting", "Self-hosting"),
-            ("/docs/protocol", "Protocol spec"),
-            ("/docs/onboarding", "Team onboarding"),
-            ("#library", "Library"),
-        ):
+        for href, label in docs_site.DOCS_TABS:
             assert f'href="{href}"' in strip, (page, href)
             assert f">{label}<" in strip, (page, label)
-        # Every anchor the strip points at exists on the page.
-        for anchor in re.findall(r'href="#([^"]+)"', strip):
+        assert '<a class="active" href="/docs/">Overview</a>' in strip
+        for anchor in re.findall(r'href="/docs/#([^"]+)"', strip):
             assert f'id="{anchor}"' in html, (page, anchor)
+
+
+def test_docs_landing_leads_with_the_six_pillars():
+    for page in DOCS_PAGES:
+        html = _read(page)
+
+        pillars = re.search(r'<ol class="dh-pillars">(.*?)</ol>\s*</section>', html, flags=re.DOTALL)
+        assert pillars, page
+        cards = re.findall(r'<li\s+class="dh-pillar"', pillars.group(1))
+        assert len(cards) == 6
+        for title in (
+            "Resilient mirroring and distribution",
+            "Censorship and security threat model",
+            "Security and cryptography",
+            "Self-hosting a small team can run",
+            "Tested under real blocking",
+            "Fits the workflow you already have",
+        ):
+            assert title in pillars.group(1), title
+        assert pillars.group(1).count('class="dp-art"') == 6
+        assert 'id="who-it-is-for"' in html
+        assert html.index('id="pillars"') < html.index('id="mental-model"')
+        for href in re.findall(r'href="(/docs/[^"#]+)', pillars.group(1)):
+            relative = href[len("/docs/"):].strip("/")
+            assert (
+                (ROOT / "docs" / f"{relative}.md").is_file()
+                or (ROOT / "docs" / relative / "README.md").is_file()
+            ), href
 
 
 def test_docs_pages_keep_reference_like_docs_shell():
@@ -147,10 +177,11 @@ def test_docs_pages_keep_reference_like_docs_shell():
         html = _read(page)
 
         for marker in (
-            'class="docs-shell',
-            "Search...",
-            "Copy page",
+            'class="dp-shell',
+            "Search docs...",
+            "Copy link",
             "On this page",
+            "The six pillars",
             "The ForkMesh Mental Model",
             "Was this page helpful?",
             "Install ForkMesh Desktop",
@@ -171,40 +202,31 @@ def test_docs_pages_use_home_link_instead_of_github():
 
 
 def test_docs_pages_mount_the_universal_site_header():
-    # The shared header is the sole visible theme controller.
-    # The docs toolbar keeps only its search and product tabs beneath it.
     for page in DOCS_PAGES:
         html = _read(page)
 
         assert 'href="/site-header.css"' in html
         assert 'src="/site-header.js?v=${version}"' in html
         assert '<div data-forkmesh-header="simple"></div>' in html
-        # The duplicated chrome is gone; docs-specific tools stay.
         assert 'aria-label="Docs header"' not in html
         assert ">Contact Us<" not in html
         assert 'id="theme-toggle"' not in html
         assert "function applyTheme" not in html
         docs_header = re.search(r"<header\b[^>]*>", html, flags=re.DOTALL)
         assert docs_header, page
-        class_attribute = re.search(
-            r'class="([^"]*)"',
-            docs_header.group(0),
-        )
-        assert class_attribute, page
-        header_classes = set(class_attribute.group(1).split())
-        assert {"sticky", "top-0", "z-30"} <= header_classes, page
-        assert "z-50" not in header_classes, page
+        assert 'class="dp-toolbar"' in docs_header.group(0), page
         assert 'id="docs-search"' in html
+    toolbar = re.search(r"\n\.dp-toolbar \{(.*?)\}", _read(DOCS_CSS), flags=re.DOTALL)
+    assert toolbar
+    assert "position: sticky" in toolbar.group(1)
+    assert "z-index: 30" in toolbar.group(1)
 
 
 def test_docs_pages_keep_the_desktop_only_single_column_search_row():
     for page in DOCS_PAGES:
         html = _read(page)
 
-        assert (
-            'class="hidden h-20 w-full '
-            'grid-cols-1 items-center px-5 sm:px-8 md:grid lg:px-8"'
-        ) in html
+        assert '<div class="dp-toolbar-inner">' in html
         assert ".icon-button" not in html
         assert "html.dark .moon" not in html
         assert "html:not(.dark) .sun" not in html
@@ -230,17 +252,17 @@ def test_docs_pages_use_reduced_type_scale():
             assert old_size not in html
 
         for new_size in (
-            "text-[2.25rem]",
-            "text-[1.38rem]",
             "text-[1.78rem]",
             "text-[1.5rem]",
             "text-[1.1rem]",
-            "text-[1.02rem]",
         ):
             assert new_size in html
 
 
 def test_docs_pages_include_working_inline_search():
+    script = _read(DOCS_JS)
+    for marker in ("function renderDocsSearchResults", "docsSearchIndex", "event.metaKey || event.ctrlKey"):
+        assert marker in script
     for page in DOCS_PAGES:
         html = _read(page)
 
@@ -248,9 +270,8 @@ def test_docs_pages_include_working_inline_search():
             'id="docs-search"',
             'id="docs-search-panel"',
             'data-search-title="Repository model"',
-            "function renderDocsSearchResults",
-            "docsSearchIndex",
-            "event.metaKey || event.ctrlKey",
+            'data-search-title="The six pillars"',
+            'src="/docs-page.js?v=${version}"',
         ):
             assert marker in html
 
@@ -264,6 +285,9 @@ def test_docs_logo_keeps_same_pixels_across_theme_modes():
 
 
 def test_docs_pages_wire_helpfulness_feedback():
+    script = _read(DOCS_JS)
+    for marker in ('fetch("/api/feedback"', 'source: "docs"', 'vote: "like"', 'vote: "dislike"'):
+        assert marker in script
     for page in DOCS_PAGES:
         html = _read(page)
 
@@ -275,10 +299,6 @@ def test_docs_pages_wire_helpfulness_feedback():
             "data-feedback-form",
             "data-feedback-message",
             "What was confusing, missing, or could be improved?",
-            'fetch("/api/feedback"',
-            'source: "docs"',
-            'vote: "like"',
-            'vote: "dislike"',
         ):
             assert marker in html
 

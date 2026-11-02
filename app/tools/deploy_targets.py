@@ -118,6 +118,7 @@ def target_inputs(target):
             "app/tools/docs_site.py",
             "app/tools/docs_markdown.py",
             "app/tools/docs_figures.py",
+            "app/tools/docs_art.py",
             "app/tools/docs_history.py",
             "app/tools/site_templates.py",
             "app/src/blog_feed.py",
