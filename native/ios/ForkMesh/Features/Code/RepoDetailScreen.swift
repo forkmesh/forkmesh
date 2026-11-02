@@ -44,22 +44,21 @@ struct RepoDetailScreen: View {
             })
     }
 
-    private let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: FmSpace.x2), count: 3)
+    static let primaryCount: Int = 6
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: FmSpace.x3) {
+            let tiles: [RepoOverviewTile] = overview.tiles(canEditSettings: canEditSettings)
+            VStack(alignment: .leading, spacing: 0) {
                 header
                 actionRow
-                LazyVGrid(columns: columns, spacing: FmSpace.x2) {
-                    ForEach(overview.tiles(canEditSettings: canEditSettings)) { (tile: RepoOverviewTile) in
-                        RepoHubTile(tile: tile) {
-                            FmHaptics.selection()
-                            pushed = .section(tile.section, ref: nil)
-                        }
-                    }
+                    .padding(.top, FmSpace.x4)
+                sectionGroup(Array(tiles.prefix(RepoDetailScreen.primaryCount)), readme: true)
+                    .padding(.top, FmSpace.x5)
+                if tiles.count > RepoDetailScreen.primaryCount {
+                    sectionGroup(Array(tiles.dropFirst(RepoDetailScreen.primaryCount)), readme: false)
+                        .padding(.top, FmSpace.x5)
                 }
-                readmeRow
             }
             .padding(FmSpace.x4)
         }
@@ -134,7 +133,7 @@ struct RepoDetailScreen: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: FmSpace.x3) {
-            FmIconTile(icon: repo.isPrivate ? "lock_outline" : "book_outlined", tint: fm.accent, size: 40)
+            FmAvatar(name: repo.displayOwner, size: 40, fontSize: FmType.heading)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: FmSpace.x2) {
                     Text(repo.fullName)
@@ -164,7 +163,7 @@ struct RepoDetailScreen: View {
 
     private var actionRow: some View {
         HStack(spacing: FmSpace.x2) {
-            RepoHubAction(title: "Agent", symbol: "sparkles") {
+            RepoHubAction(title: "Agent", symbol: "sparkles", primary: true) {
                 AppNavigator.shared?.router.requestCompose(ComposeTarget(repo: ref))
             }
             RepoHubAction(title: "Issue", symbol: "plus.circle") {
@@ -182,26 +181,28 @@ struct RepoDetailScreen: View {
         }
     }
 
-    private var readmeRow: some View {
-        Button {
-            pushed = .readme
-        } label: {
-            HStack(spacing: FmSpace.x2) {
-                Image(systemName: "doc.richtext")
-                    .foregroundStyle(fm.textSecondary)
-                Text("README.md")
-                    .fmText(.labelLarge)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.footnote)
-                    .foregroundStyle(fm.textTertiary)
+    private func sectionGroup(_ tiles: [RepoOverviewTile], readme: Bool) -> some View {
+        VStack(spacing: 0) {
+            if readme {
+                RepoHubRow(title: "README.md", symbol: "doc.richtext", count: nil, identifier: "repo-hub-readme") {
+                    pushed = .readme
+                }
             }
-            .padding(.horizontal, FmSpace.x3)
-            .frame(height: 44)
-            .background(fm.bgRaised)
-            .clipShape(FmRoundedShape(radius: FmRadius.md))
+            ForEach(Array(tiles.enumerated()), id: \.element.id) { (entry: (offset: Int, element: RepoOverviewTile)) in
+                if readme || entry.offset > 0 {
+                    FmRowDivider(indent: 52)
+                }
+                RepoHubRow(
+                    title: entry.element.title, symbol: entry.element.symbol, count: entry.element.count,
+                    identifier: "repo-hub-\(entry.element.section.rawValue)"
+                ) {
+                    FmHaptics.selection()
+                    pushed = .section(entry.element.section, ref: nil)
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .background(fm.bgRaised)
+        .clipShape(FmRoundedShape(radius: FmRadius.lg * 2))
     }
 
     @ViewBuilder private var destinationView: some View {
@@ -220,44 +221,41 @@ struct RepoDetailScreen: View {
     }
 }
 
-struct RepoHubTile: View {
+struct RepoHubRow: View {
     @Environment(\.fmPalette) private var fm
 
-    let tile: RepoOverviewTile
+    let title: String
+    let symbol: String
+    let count: Int?
+    let identifier: String
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 4) {
-                Image(systemName: tile.symbol)
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(fm.accent)
-                    .frame(height: 22)
-                    .overlay(alignment: .topTrailing) {
-                        if let count = tile.count {
-                            Text(verbatim: RepoHubTile.countText(count))
-                                .fmText(.labelSmall, color: count > 0 ? Color.white : fm.textSecondary, tracking: 0, tabular: true)
-                                .lineLimit(1)
-                                .fixedSize()
-                                .padding(.horizontal, 5)
-                                .frame(minWidth: 18, minHeight: 16)
-                                .background(Capsule().fill(count > 0 ? fm.accent : fm.bgBase))
-                                .offset(x: 16, y: -6)
-                        }
-                    }
-                Text(tile.title)
-                    .fmText(.labelSmall, color: fm.textPrimary)
+            HStack(spacing: FmSpace.x3) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(fm.textSecondary)
+                    .frame(width: 24)
+                Text(title)
+                    .fmText(.bodyLarge, height: FmType.leadingTight)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                Spacer(minLength: FmSpace.x2)
+                if let count = count {
+                    Text(verbatim: RepoHubRow.countText(count))
+                        .fmText(.bodyLarge, color: fm.textTertiary, height: FmType.leadingTight, tabular: true)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(fm.textDisabled)
             }
-            .frame(maxWidth: .infinity, minHeight: 60)
-            .background(fm.bgRaised)
-            .clipShape(FmRoundedShape(radius: FmRadius.md))
+            .padding(.horizontal, FmSpace.x4)
+            .frame(minHeight: 48)
             .contentShape(Rectangle())
         }
-        .buttonStyle(FmPressStyle(highlight: fm.textPrimary.opacity(0.08), cornerRadius: FmRadius.md))
-        .accessibilityLabel(Text(tile.count.map { "\(tile.title), \($0)" } ?? tile.title))
-        .accessibilityIdentifier("repo-hub-\(tile.section.rawValue)")
+        .buttonStyle(FmPressStyle(highlight: fm.textPrimary.opacity(0.06)))
+        .accessibilityLabel(Text(count.map { "\(title), \($0)" } ?? title))
+        .accessibilityIdentifier(identifier)
     }
 
     static func countText(_ count: Int) -> String {
@@ -270,6 +268,7 @@ struct RepoHubAction: View {
 
     let title: String
     let symbol: String
+    var primary: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -281,13 +280,12 @@ struct RepoHubAction: View {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .semibold))
                 Text(title)
-                    .fmText(.labelMedium, color: fm.accent)
+                    .fmText(.labelMedium, color: primary ? fm.onPrimary : fm.textPrimary)
                     .lineLimit(1)
             }
-            .foregroundStyle(fm.accent)
+            .foregroundStyle(primary ? fm.onPrimary : fm.textPrimary)
             .frame(maxWidth: .infinity, minHeight: 44)
-            .background(fm.accentSubtle)
-            .clipShape(FmRoundedShape(radius: FmRadius.md))
+            .background(primary ? fm.accent : fm.bgRaised, in: Capsule())
         }
         .buttonStyle(.plain)
     }

@@ -269,6 +269,8 @@ final class InboxFeedTests: XCTestCase {
         let signedOut = InboxModel(client: client, node: { "" }, store: InMemoryKeyValueStore())
         await signedOut.load()
         XCTAssertEqual(signedOut.errors, ["Sign in to see your inbox."])
+        XCTAssertTrue(signedOut.signedOut)
+        XCTAssertFalse(model.signedOut)
     }
 
     @MainActor func testLocalPingsRedactDedupeAndRateLimit() {

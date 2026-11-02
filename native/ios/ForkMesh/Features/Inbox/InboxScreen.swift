@@ -105,57 +105,66 @@ struct InboxToolbarMenu: View {
     let onOpenSettings: () -> Void
     let onDeleteAll: () -> Void
 
+    private var hasFailedSync: Bool {
+        model.syncQueue.operations.contains(where: { $0.attempts >= PingSyncQueue.maxAttempts })
+    }
+
     var body: some View {
-        HStack(spacing: InboxSquare.spacing) {
-            square("envelope.open", color: fm.textPrimary, label: "Mark all read") {
+        Menu {
+            Button {
                 Task { await model.markAllRead() }
+            } label: {
+                Label("Mark all read", systemImage: "envelope.open")
             }
-            square(
-                "line.3.horizontal.decrease", color: model.unreadOnly ? fm.accent : fm.textPrimary,
-                tint: model.unreadOnly ? fm.accent : nil, label: "Unread only"
-            ) {
-                model.unreadOnly.toggle()
+            Toggle(isOn: Binding(get: { model.unreadOnly }, set: { model.unreadOnly = $0 })) {
+                Label("Unread only", systemImage: "line.3.horizontal.decrease")
             }
-            .accessibilityAddTraits(model.unreadOnly ? .isSelected : [])
-            pauseMenu
-            if model.syncQueue.operations.contains(where: { $0.attempts >= PingSyncQueue.maxAttempts }) {
-                square("exclamationmark.arrow.triangle.2.circlepath", color: fm.danger, label: "Discard changes that could not sync") {
+            Menu {
+                ForEach(PingPauseChoice.allCases, id: \.self) { (choice: PingPauseChoice) in
+                    Button(choice.label) { pause(choice) }
+                }
+                if model.isPaused {
+                    Button("Resume pings") { pause(nil) }
+                }
+            } label: {
+                Label(model.isPaused ? "Pings paused" : "Pause pings", systemImage: model.isPaused ? "bell.slash" : "moon.zzz")
+            }
+            if hasFailedSync {
+                Button(role: .destructive) {
                     model.syncQueue.discardFailed()
                     Task { await model.load() }
+                } label: {
+                    Label("Discard changes that could not sync", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
                 }
             }
-            square("gearshape", color: fm.textPrimary, label: "Ping settings", action: onOpenSettings)
-            square("trash", color: model.canDeleteAllPings ? fm.danger : fm.textDisabled, label: "Delete all pings", action: onDeleteAll)
-                .disabled(!model.canDeleteAllPings)
-                .accessibilityIdentifier("inbox-delete-all")
-        }
-    }
-
-    private func square(
-        _ icon: String, color: Color, tint: Color? = nil, label: String, action: @escaping () -> Void
-    ) -> some View {
-        FmHoldButton(label, action: action) {
-            InboxSquare(icon: icon, color: color)
-        }
-        .buttonStyle(.plain)
-        .inboxGlass(InboxSquare.shape, tint: tint, fallback: tint == nil ? fm.bgRaised : fm.accentSubtle)
-        .accessibilityLabel(label)
-    }
-
-    private var pauseMenu: some View {
-        Menu {
-            ForEach(PingPauseChoice.allCases, id: \.self) { (choice: PingPauseChoice) in
-                Button(choice.label) { pause(choice) }
+            Divider()
+            Button(action: onOpenSettings) {
+                Label("Ping settings", systemImage: "gearshape")
             }
-            if model.isPaused {
-                Button("Resume pings") { pause(nil) }
+            Button(role: .destructive, action: onDeleteAll) {
+                Label("Delete all pings", systemImage: "trash")
             }
+            .disabled(!model.canDeleteAllPings)
+            .accessibilityIdentifier("inbox-delete-all")
         } label: {
-            InboxSquare(icon: model.isPaused ? "bell.slash" : "moon.zzz", color: model.isPaused ? fm.warning : fm.textPrimary)
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(fm.textPrimary)
+                .frame(width: 44, height: 44)
+                .overlay(alignment: .topTrailing) {
+                    if model.unreadOnly || model.isPaused || hasFailedSync {
+                        Circle()
+                            .fill(hasFailedSync ? fm.danger : (model.isPaused ? fm.warning : fm.accent))
+                            .frame(width: 8, height: 8)
+                            .offset(x: -8, y: 8)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(Circle())
         }
-        .inboxGlass(InboxSquare.shape, tint: nil, fallback: fm.bgRaised)
-        .fmHoldName(model.isPaused ? "Pings paused" : "Pause pings")
-        .accessibilityLabel(model.isPaused ? "Pings paused" : "Pause pings")
+        .inboxGlass(Circle(), tint: nil, fallback: fm.bgRaised)
+        .accessibilityLabel("Inbox actions")
+        .accessibilityIdentifier("inbox-actions")
     }
 
     private func pause(_ choice: PingPauseChoice?) {
@@ -194,7 +203,7 @@ struct InboxList: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .accessibilityHidden(true)
-                InboxFilterBar(model: model, menu: menu)
+                InboxTitleBar(model: model, menu: menu)
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -212,9 +221,11 @@ struct InboxList: View {
                         .foregroundStyle(fm.textSecondary)
                         .fmMessageTools("\(model.pendingSyncCount) changes waiting to sync")
                 }
-                ForEach(model.errors, id: \.self) { (error: String) in
-                    Text(error).foregroundStyle(fm.danger)
-                        .fmMessageTools(error)
+                if !model.signedOut {
+                    ForEach(model.errors, id: \.self) { (error: String) in
+                        Text(error).foregroundStyle(fm.danger)
+                            .fmMessageTools(error)
+                    }
                 }
             }
             Section {
@@ -225,7 +236,12 @@ struct InboxList: View {
                         .listRowBackground(Color.clear)
                         .accessibilityIdentifier("inbox-loading")
                 }
-                if model.visible.isEmpty && model.loaded {
+                if model.signedOut {
+                    InboxSignedOut(compact: !model.visible.isEmpty)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                } else if model.visible.isEmpty && model.loaded {
                     Text(model.filter.emptyMessage).foregroundStyle(fm.textSecondary)
                 }
                 ForEach(model.visible) { (item: InboxItem) in
@@ -241,106 +257,89 @@ struct InboxList: View {
     }
 }
 
-struct InboxFilterBar: View {
+struct InboxTitleBar: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: InboxModel
     let menu: InboxToolbarMenu
 
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row.frame(maxWidth: .infinity)
-            ScrollView(.horizontal, showsIndicators: false) { row }
+    static let order: [InboxFilter] = [.approvals, .reviews, .assigned, .mentions, .pings]
+
+    private var subtitle: String {
+        let unread: Int = model.unreadCounts[model.filter] ?? 0
+        var parts: [String] = [model.filter.menuTitle]
+        if model.unreadOnly {
+            parts.append("unread only")
+        } else if model.loaded && !model.signedOut {
+            parts.append(unread == 0 ? "all read" : "\(unread) unread")
         }
+        return parts.joined(separator: " · ")
     }
 
-    private var row: some View {
-        let counts: [InboxFilter: Int] = model.unreadCounts
-        return InboxGlassGroup {
-            HStack(spacing: FmSpace.x2) {
-                HStack(spacing: InboxSquare.spacing) {
-                    ForEach(InboxFilter.allCases, id: \.self) { (filter: InboxFilter) in
-                        chip(filter, count: counts[filter] ?? 0)
+    var body: some View {
+        HStack(alignment: .top, spacing: FmSpace.x3) {
+            Menu {
+                filterButton(.all)
+                Divider()
+                ForEach(InboxTitleBar.order, id: \.self) { (filter: InboxFilter) in
+                    filterButton(filter)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: FmSpace.x1 + 2) {
+                        Text("Inbox")
+                            .fmText(.displaySmall)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(fm.textSecondary)
                     }
+                    Text(subtitle)
+                        .fmText(.bodyLarge, color: fm.textSecondary, height: FmType.leadingTight)
+                        .lineLimit(1)
+                        .contentTransition(.numericText())
                 }
-                menu
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, FmSpace.x2)
-            .padding(.vertical, FmSpace.x1 + 2)
+            .buttonStyle(.plain)
+            .tint(fm.textPrimary)
+            .sensoryFeedback(.selection, trigger: model.filter)
+            .accessibilityLabel(Text("Inbox, \(subtitle)"))
+            .accessibilityHint(Text("Choose what the inbox shows"))
+            .accessibilityIdentifier("inbox-filter-menu")
+            Spacer(minLength: 0)
+            menu
         }
-        .overlayPreferenceValue(InboxBadgeKey.self) { (badges: [InboxBadge]) in
-            GeometryReader { (proxy: GeometryProxy) in
-                ForEach(badges, id: \.filter) { (badge: InboxBadge) in
-                    let rect: CGRect = proxy[badge.anchor]
-                    Color.clear
-                        .frame(width: rect.width, height: rect.height)
-                        .overlay(alignment: .topTrailing) { badgeLabel(badge.count) }
-                        .position(x: rect.midX, y: rect.midY)
+        .padding(.horizontal, FmSpace.x4)
+        .padding(.top, FmSpace.x2)
+        .padding(.bottom, FmSpace.x2)
+        .genieKeepsClear()
+    }
+
+    private func filterButton(_ filter: InboxFilter) -> some View {
+        let count: Int = model.unreadCounts[filter] ?? 0
+        return Button {
+            withAnimation(reduceMotion ? nil : .snappy) {
+                model.filter = filter
+            }
+        } label: {
+            Label {
+                Text(filter.menuTitle)
+                if count > 0 {
+                    Text(count == 1 ? "1 unread" : "\(count) unread")
                 }
+            } icon: {
+                Image(systemName: model.filter == filter ? "checkmark" : filter.icon)
             }
-            .allowsHitTesting(false)
         }
-    }
-
-    private func chip(_ filter: InboxFilter, count: Int) -> some View {
-        let selected: Bool = model.filter == filter
-        return FmHoldButton(filter.label, action: {
-            model.filter = filter
-        }) {
-            InboxSquare(icon: filter.icon, color: selected ? fm.accent : fm.textPrimary)
-        }
-        .buttonStyle(.plain)
-        .inboxGlass(InboxSquare.shape, tint: selected ? fm.accent : nil, fallback: selected ? fm.accentSubtle : fm.bgRaised)
-        .anchorPreference(key: InboxBadgeKey.self, value: .bounds) { (anchor: Anchor<CGRect>) in
-            count > 0 ? [InboxBadge(filter: filter, count: count, anchor: anchor)] : []
-        }
-        .accessibilityLabel(filter.label)
-        .accessibilityValue(count > 0 ? "\(count) unread" : "")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private func badgeLabel(_ count: Int) -> some View {
-        Text(count > 99 ? "99+" : "\(count)")
-            .font(.system(size: 9, weight: .bold).monospacedDigit())
-            .foregroundStyle(Color.white)
-            .padding(.horizontal, 3)
-            .frame(minWidth: 14, minHeight: 14)
-            .background(fm.count, in: Capsule())
-            .fixedSize()
-            .offset(x: 5, y: -5)
-    }
-}
-
-struct InboxBadge {
-    let filter: InboxFilter
-    let count: Int
-    let anchor: Anchor<CGRect>
-}
-
-struct InboxBadgeKey: PreferenceKey {
-    static var defaultValue: [InboxBadge] { [] }
-
-    static func reduce(value: inout [InboxBadge], nextValue: () -> [InboxBadge]) {
-        value.append(contentsOf: nextValue())
-    }
-}
-
-struct InboxSquare: View {
-    static let side: CGFloat = 28
-    static let spacing: CGFloat = 4
-    static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 8, style: .continuous) }
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        Image(systemName: icon)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(color)
-            .frame(width: Self.side, height: Self.side)
-            .contentShape(Self.shape)
+        .accessibilityAddTraits(model.filter == filter ? .isSelected : [])
     }
 }
 
 extension InboxFilter {
+    var menuTitle: String {
+        self == .all ? "All activity" : label
+    }
+
     var icon: String {
         switch self {
         case .all: return "tray.full"
@@ -438,9 +437,7 @@ struct InboxRow: View {
         case .danger: return fm.danger
         case .success: return fm.success
         case .warning: return fm.warning
-        case .info: return .blue
-        case .accent: return .purple
-        case .neutral: return fm.textSecondary
+        case .info, .accent, .neutral: return fm.textSecondary
         }
     }
 
@@ -456,7 +453,7 @@ struct InboxRow: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(item.kindLabel).font(.caption.weight(.semibold)).foregroundStyle(item.unread ? tint : fm.textTertiary)
+                    Text(item.kindLabel).font(.caption.weight(.semibold)).foregroundStyle(item.unread ? fm.textSecondary : fm.textTertiary)
                     if !item.repo.isEmpty {
                         Text(item.repo).font(.caption).foregroundStyle(fm.textTertiary).lineLimit(1)
                     }
@@ -483,5 +480,36 @@ struct InboxRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.unread ? "Unread" : "Read"). \(item.kindLabel). \(item.title)\(instance.map { ". From \($0.label)" } ?? "")")
+    }
+}
+
+struct InboxSignedOut: View {
+    @Environment(\.fmPalette) private var fm
+    let compact: Bool
+
+    private func signIn() {
+        Task { _ = await AccountFeature.requireAccount(action: "see your inbox") }
+    }
+
+    var body: some View {
+        if compact {
+            HStack(spacing: FmSpace.x3) {
+                Text("Sign in to see reviews, approvals and mentions.")
+                    .fmText(.bodyMedium, color: fm.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                FmFilledButton("Sign in", minHeight: 36, onPressed: signIn)
+            }
+            .padding(.horizontal, FmSpace.x4)
+            .padding(.vertical, FmSpace.x3)
+        } else {
+            FmEmptyState(
+                icon: "inbox_outlined",
+                title: "Reviews, pings and approvals land here",
+                message: "Sign in to ForkMesh to see them.",
+                actionLabel: "Sign in",
+                onAction: signIn)
+                .frame(minHeight: 360)
+                .accessibilityIdentifier("inbox-signed-out")
+        }
     }
 }

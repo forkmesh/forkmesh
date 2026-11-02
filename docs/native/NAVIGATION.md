@@ -275,7 +275,7 @@ in sections, with counts and activity:
 - The project icon (`ShellProjectSlot`, 40 pt) opens the project drawer;
   touch and hold for 0.5 s goes to Home from any tab, closing overlays
   (`openProjectHome`).
-- The telemetry strip, centred: tiny health-coloured charts of phone metrics
+- The telemetry strip, centred, when the Diagnostics switch is on: tiny health-coloured charts of phone metrics
   and, when a desktop answers `diag.watch`, desktop memory, CPU, disk and swap,
   each a line over a 35% fill so a quiet chart still shows a band. On Dynamic
   Island iPhones in portrait it moves to the status bar (below).
@@ -953,7 +953,7 @@ in or Sign out) as small side-by-side buttons; projects are switched from the
 command palette's Switch project (and the iPad sidebar).
 
 - **Diagnostics switch** (under Suggestion mode, `hub-diagnostics-strip`;
-  `diagnostics/showStrip`, on by default) shows or hides the telemetry strip and
+  `diagnostics/showStrip`, off by default) shows or hides the telemetry strip and
   the profile footer.
 - **Version row** (last row; iOS `YouHubSheet.versionRow`, one small darker
   rectangle; Android `HubVersionRow`): "Version x (build)" with a slightly

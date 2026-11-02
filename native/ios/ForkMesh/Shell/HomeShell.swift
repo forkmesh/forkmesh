@@ -450,7 +450,7 @@ struct HomeShell: View {
     }
 
     private var diagnosticsEnabled: Bool {
-        settings?.showTelemetryStrip ?? true
+        settings?.showTelemetryStrip ?? false
     }
 
     private var islandSystems: [StatusLight] {
@@ -1266,7 +1266,7 @@ struct HomeShell: View {
                     Task { await fleet.probeCustom() }
                 }
             }
-            .onChange(of: settings?.showTelemetryStrip ?? true) { (_: Bool, enabled: Bool) in
+            .onChange(of: settings?.showTelemetryStrip ?? false) { (_: Bool, enabled: Bool) in
                 if enabled, statusPageOn, let fleet = fleet {
                     Task { await fleet.refresh() }
                 }

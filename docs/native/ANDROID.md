@@ -1552,16 +1552,10 @@ compile at run time, and `FmGlass.lens` then falls back to the plain blur.
 
 Most area rows now live with their area (sections 13 and 14). These remain:
 
-- **Inbox bar (S030).** `A/feature/inbox/InboxBar.kt` is iOS `InboxFilterBar`
-  and `InboxToolbarMenu`: one centred row of 28 dp glass squares (8 dp corners,
-  4 dp apart, 16 dp icons): the six filters, Mark all read, Unread only, a pause
-  menu (bedtime, or a warning-coloured bell-off while paused), Discard changes
-  that could not sync (only when a change ran out of attempts), Ping settings
-  and Delete all pings. The selected filter and an active Unread only take the
-  accent. Counts are a 14 dp badge offset 5 dp up and right, always blue
-  (`fm.count`), "99+" above 99. Holding a square shows its name; a narrow phone
-  scrolls the row. The squares draw glass without the 12 dp shadow, which
-  swamps a 28 dp shape.
+- **Inbox bar (S030).** `A/feature/inbox/InboxBar.kt` is iOS `InboxTitleBar`
+  and `InboxToolbarMenu`: the "Inbox ⌄" title opens the filter menu with unread
+  counts, and one glass "…" button holds the inbox actions
+  ([SCREEN_POLISH.md](SCREEN_POLISH.md)).
 - **Inbox instance logo (S122).** `SwipeRow` (`A/feature/inbox/InboxScreen.kt`)
   stacks the project's 16 dp `ProjectIcon` under the icon of every non-local
   ping and adds "From <project>" to its TalkBack label.

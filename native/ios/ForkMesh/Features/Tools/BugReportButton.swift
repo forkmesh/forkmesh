@@ -10,7 +10,7 @@ struct BugReportButton: View {
             FmHaptics.tap()
             onReport()
         }) {
-            FmGlassSurface(cornerRadius: FmRadius.full) {
+            FmGlassSurface(cornerRadius: FmRadius.full, floating: true) {
                 FmIcon("bug_report_outlined", size: 21, color: fm.textSecondary)
                     .frame(width: 48, height: 48)
             }

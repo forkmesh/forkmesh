@@ -37,6 +37,7 @@ overview of every app is [apps.md](../apps.md). Per-app READMEs:
 | [DESKTOP_PARITY.md](DESKTOP_PARITY.md) | Parity with the Qt desktop, route contract, desktop control families, extension targets |
 | [ANDROID.md](ANDROID.md) | Android design notes, and the "Differences kept on purpose" list |
 | [NAVIGATION.md](NAVIGATION.md) | Tabs, routes, Home grid, bars, the tour, sitemap and URLs |
+| [SCREEN_POLISH.md](SCREEN_POLISH.md) | Depth, headings, titles, rows and empty states on Agents, Inbox, Repos, Projects and Chat |
 | [THEMES.md](THEMES.md) | Accents and contrast, surface families, the theme editor, the background image |
 | [ONBOARDING.md](ONBOARDING.md) | Login and first-run screens, and when each system permission prompt comes up |
 | [DATA_FOLDER.md](DATA_FOLDER.md) | The projects folder that keeps settings, plugin data and the encrypted identity key through a reinstall |
