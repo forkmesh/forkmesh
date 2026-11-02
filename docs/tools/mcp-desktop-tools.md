@@ -101,6 +101,14 @@ at most 2048 characters), `title`, `window_id` and `width`/`height` (default
 900 by 640), sent as `windows.browse`. Typical use: a local dev server, a
 deployed preview or a pull request.
 
+- **Where.** The page opens as a tab in the **Agent pages** panel
+  (`#agentPagesPanel`, `MainWindow::dockAgentPage`) on the right of the main
+  window, beside the side browser, so it sits next to the agent instead of
+  floating over it ([side rail](../desktop/side-rail-and-terminals.md#agent-pages)).
+  `Registry::setBrowserDock` hands the frame to the window; `width` and
+  `height` then do not apply. When the side rail cannot show (window under
+  1000 px or a reduced view mode) the page gets its own window as before, and
+  raising a docked page the panel can no longer show turns it into one.
 - WebEngine is optional (`forkmesh_link_webengine`, `FORKMESH_HAVE_WEBENGINE`);
   with it `main()` sets `Qt::AA_ShareOpenGLContexts` first. Without it the URL
   goes to the system browser (`QDesktopServices::openUrl`) and the reply says

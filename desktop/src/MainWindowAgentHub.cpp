@@ -62,6 +62,7 @@ windows::Registry *MainWindow::agentWindows()
         m_agentWindows = std::make_unique<windows::Registry>(this);
         m_agentWindows->setAnswerHandler(
             [this](const QString &windowId) { answerAgentSuggestion(windowId); });
+        m_agentWindows->setBrowserDock([this](QWidget *frame) { return dockAgentPage(frame); });
     }
     return m_agentWindows.get();
 }

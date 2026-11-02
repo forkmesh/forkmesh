@@ -25,6 +25,7 @@ same page) and in the Booking screen of the iPhone and Android apps; guests use
 | `native/android/core/.../market/Booking.kt` | The Android app's decoding, labels, settings draft and API calls. |
 | `native/android/app/.../feature/booking/BookingScreens.kt` | The Android Booking screen and its settings. |
 | `tests/test_booking.py` | Worker tests against SQLite with a fake runtime. |
+| `tools/forkmesh_mcp_server.py` (`booking_get_page`, `booking_update_page`) | Agent tools that read and change the account's page, signed with `forkmesh-booking-request-v1` like the apps; see [agent tools](../agents/tools.md). |
 
 ## The short link
 

@@ -201,6 +201,10 @@ public:
     {
         m_externalOpener = std::move(opener);
     }
+    void setBrowserDock(std::function<bool(QWidget *)> dock)
+    {
+        m_browserDock = std::move(dock);
+    }
     bool raise(const QString &windowId);
     void answer(const QString &windowId, const QString &button, const QString &input);
     void markClosed(const QString &windowId);
@@ -226,6 +230,7 @@ private:
     QObject *m_widgetProfile = nullptr;
     std::function<void(const QString &)> m_answerHandler;
     std::function<bool(const QUrl &)> m_externalOpener;
+    std::function<bool(QWidget *)> m_browserDock;
     QHash<QString, WindowState> m_windows;
     forkmesh::agentintake::RateLimiter m_newWindows{kNewWindowLimit, kNewWindowWindowMs};
     int m_cascade = 0;
