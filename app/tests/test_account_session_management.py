@@ -7,6 +7,10 @@ from pathlib import Path
 import re
 from types import SimpleNamespace
 from urllib.parse import quote
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import account_names  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +117,7 @@ def _runtime(
         "json_response": response,
         "method_name": lambda request: request.method,
         "re": re,
+        "account_names": account_names,
     }
     exec(_source("_account_last_seen"), namespace)
     exec(_source("_account_email_activity"), namespace)
@@ -149,6 +154,7 @@ def test_session_list_is_account_scoped_and_shows_only_owner_visible_detail():
     # the last email that went out, with its outcome.
     assert response["body"]["account"] == {
         "nodeName": "alice",
+        "nameCase": "alice",
         "status": "active",
         "emailVerified": False,
         "kind": "user",
@@ -189,6 +195,7 @@ def test_session_list_reports_last_seen_and_last_email():
         object(), SimpleNamespace(method="GET", headers={})))
     assert response["body"]["account"] == {
         "nodeName": "alice",
+        "nameCase": "alice",
         "status": "active",
         "emailVerified": False,
         "kind": "user",

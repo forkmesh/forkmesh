@@ -23,6 +23,7 @@
   {"date": "2026-11-01", "area": "iPhone", "text": "The back link on an inbox item is now a round glass button that stays in view as you scroll."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "The docs fit a phone screen without shifting sideways, the top navigation stays in place as you scroll, and the Extension and Mobile tabs now open their guides."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "Old documentation links that moved now take you to the new page instead of a 404."},
+  {"date": "2026-11-01", "area": "Settings", "text": "Changing the capitalization of your username in Settings no longer resets before you can save it."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Sessions page now uses the main prompt composer, docked and centred under the transcript, instead of its own composer."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Network page no longer freezes the window for seconds while requests are flowing, and the running-agent squares in the top bar use far less CPU."},
   {"date": "2026-11-01", "area": "Market", "text": "Installing or removing a package no longer freezes the desktop for seconds while every other package page is rebuilt, and no longer sends you back to the Market from the page you had open."},
