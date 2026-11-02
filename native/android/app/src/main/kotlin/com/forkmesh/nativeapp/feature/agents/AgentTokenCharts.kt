@@ -62,6 +62,7 @@ private object TokenCharts {
     val SHADES = listOf(0.55f, 0.7f, 0.85f, 1f)
     const val EVERY_MS = 1_000L
     const val IDLE_MS = 200L
+    const val FRAME_SLACK_NANOS = 4_000_000L
 }
 
 @Composable
@@ -105,6 +106,7 @@ private fun AgentTokenCharts(modifier: Modifier = Modifier) {
     val output = remember { AgentTokenTank(chartWidth.value.toDouble(), TokenCharts.HEIGHT.value.toDouble(), seed = 2L) }
     var summary by remember { mutableStateOf(AgentTokenSeries.summary(series)) }
     var frame by remember { mutableLongStateOf(0L) }
+    var moving by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
             val feed = agentTokenFeed()
@@ -113,28 +115,30 @@ private fun AgentTokenCharts(modifier: Modifier = Modifier) {
             input.pour(series.input.lastOrNull() ?: 0.0, AgentTokenTank.scale(series.input, TokenCharts.INPUT_FLOOR))
             output.pour(series.output.lastOrNull() ?: 0.0, AgentTokenTank.scale(series.output, TokenCharts.OUTPUT_FLOOR))
             summary = AgentTokenSeries.summary(series)
+            moving = !(input.idle && output.idle)
             delay(TokenCharts.EVERY_MS)
         }
     }
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
-            withFrameNanos { now ->
+            val now = withFrameNanos { it }
+            if (last == 0L || now - last >= AgentTokenTank.FRAME_NANOS - TokenCharts.FRAME_SLACK_NANOS) {
                 if (last != 0L) {
                     val seconds = (now - last) / 1e9
                     input.advance(seconds)
                     output.advance(seconds)
                 }
                 last = now
+                frame++
             }
-            frame++
             if (input.idle && output.idle) {
                 last = 0L
                 delay(TokenCharts.IDLE_MS)
             }
         }
     }
-    TiltTanks(input, output)
+    TiltTanks(moving, input, output)
     Row(
         modifier
             .width(TokenCharts.WIDTH)
@@ -148,10 +152,11 @@ private fun AgentTokenCharts(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TiltTanks(vararg tanks: AgentTokenTank) {
+private fun TiltTanks(moving: Boolean, vararg tanks: AgentTokenTank) {
     val context = LocalContext.current
     val view = LocalView.current
-    DisposableEffect(Unit) {
+    DisposableEffect(moving) {
+        if (!moving) return@DisposableEffect onDispose {}
         val sensors = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {

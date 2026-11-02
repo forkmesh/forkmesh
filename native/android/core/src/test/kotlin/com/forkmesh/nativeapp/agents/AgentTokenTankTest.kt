@@ -114,4 +114,21 @@ class AgentTokenTankTest {
         run(tank, 1.0)
         assertEq(0, tank.grains)
     }
+
+    fun testThirtyFramesASecondRunTheSameSimulationAsTheDisplayRate() {
+        assertEq(33_333_333L, AgentTokenTank.FRAME_NANOS)
+        val paced = AgentTokenTank(60.0, 12.0, seed = 1L)
+        val fast = AgentTokenTank(60.0, 12.0, seed = 1L)
+        for (tank in listOf(paced, fast)) {
+            tank.drop(300.0)
+            tank.tilt(0.4, 0.1)
+        }
+        repeat(32 * 3) { paced.advance(1.0 / 32) }
+        repeat(128 * 3) { fast.advance(1.0 / 128) }
+        assertEq(fast.grains, paced.grains)
+        for (i in 0 until paced.grains) {
+            assertEq(fast.xs[i], paced.xs[i])
+            assertEq(fast.ys[i], paced.ys[i])
+        }
+    }
 }

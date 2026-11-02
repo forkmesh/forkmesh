@@ -422,11 +422,18 @@ stalled frame does not explode it), drawn on the point grid in four shades.
 Gravity is the accelerometer on the screen's axes (raw, so a shake sloshes
 too) plus a quarter of a g toward the bottom, so a phone lying flat still
 settles down, capped at 3 g; tilting pours the liquid to the low side and
-the surface stays level with the real ground. The frame clock (iOS
-`TimelineView(.animation)`, Android `withFrameNanos`) stops while both tanks
-are empty and nothing is owed, checked every second on iOS and every 200 ms
-on Android. A full tank costs about 13 ms of a desktop core per simulated
-second. Totals
+the surface stays level with the real ground. The tanks draw at 30 frames a
+second (`AgentTokenTank.framesPerSecond`; iOS
+`TimelineView(.animation(minimumInterval:))`, Android every `withFrameNanos`
+at least `FRAME_NANOS` apart), which runs the same 60 steps a second as the
+display rate would. The frame clock stops while both tanks are empty and
+nothing is owed, checked every second on iOS and every 200 ms on Android,
+and the accelerometer runs only while a tank holds or owes grains
+(`AgentTokenTanks.wantsMotion`). On iOS the fluid lives in a struct
+(`AgentTokenFluid`): on the class's stored arrays every element access paid a
+dynamic exclusivity check, and a full pair cost 127 ms of a desktop core per
+simulated second, now 33 ms, on the main thread
+([PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md)). Totals
 (`AgentTokenSeries.totals`): the desktop's `tokensIn` / `tokensOut` from each
 `diag.vitals` event while watching a desktop (`DesktopVitals`), else every
 desktop row's totals, plus every cloud and runner row's. Each total is keyed

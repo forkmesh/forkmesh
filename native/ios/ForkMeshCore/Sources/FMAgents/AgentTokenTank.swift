@@ -4,6 +4,7 @@ public final class AgentTokenTank {
     public static let leakSeconds = 12.0
     public static let pourSeconds = 1.0
     public static let stepsPerSecond = 60.0
+    public static let framesPerSecond = 30.0
     public static let maxAdvanceSeconds = 0.1
     public static let gravity = 180.0
     public static let flatBias = 0.25
@@ -24,66 +25,35 @@ public final class AgentTokenTank {
     public let width: Double
     public let height: Double
     public let capacity: Int
-    public private(set) var xs: [Double]
-    public private(set) var ys: [Double]
-    public private(set) var shades: [Int]
-    public private(set) var grains = 0
-    public private(set) var gravityX = 0.0
-    public private(set) var gravityY = AgentTokenTank.gravity
-
-    private let leakSeconds: Double
-    private var vxs: [Double]
-    private var vys: [Double]
-    private var lastXs: [Double]
-    private var lastYs: [Double]
-    private let gridColumns: Int
-    private let gridRows: Int
-    private var cellStart: [Int]
-    private var cellOf: [Int]
-    private var sorted: [Int]
-    private var neighbors = [Int](repeating: 0, count: AgentTokenTank.neighborLimit)
-    private var nearXs = [Double](repeating: 0, count: AgentTokenTank.neighborLimit)
-    private var nearYs = [Double](repeating: 0, count: AgentTokenTank.neighborLimit)
-    private var nearQs = [Double](repeating: 0, count: AgentTokenTank.neighborLimit)
-    private var random: UInt64
-    private var owed = 0.0
-    private var pourRate = 0.0
-    private var rainCarry = 0.0
-    private var leakCarry = 0.0
-    private var stepCarry = 0.0
+    private var fluid: AgentTokenFluid
 
     public init(width: Double, height: Double, seed: UInt64 = 1, leakSeconds: Double = AgentTokenTank.leakSeconds) {
         self.width = width
         self.height = height
-        self.leakSeconds = leakSeconds
         let capacity = max(0, Int(width.rounded(.down)) * Int(height.rounded(.down)))
         self.capacity = capacity
-        xs = [Double](repeating: 0, count: capacity)
-        ys = [Double](repeating: 0, count: capacity)
-        shades = [Int](repeating: 0, count: capacity)
-        vxs = [Double](repeating: 0, count: capacity)
-        vys = [Double](repeating: 0, count: capacity)
-        lastXs = [Double](repeating: 0, count: capacity)
-        lastYs = [Double](repeating: 0, count: capacity)
-        gridColumns = max(1, Int((width / AgentTokenTank.radius).rounded(.up)))
-        gridRows = max(1, Int((height / AgentTokenTank.radius).rounded(.up)))
-        cellStart = [Int](repeating: 0, count: gridColumns * gridRows + 1)
-        cellOf = [Int](repeating: 0, count: capacity)
-        sorted = [Int](repeating: 0, count: capacity)
-        random = seed == 0 ? 0x9E37_79B9_7F4A_7C15 : seed
+        fluid = AgentTokenFluid(width: width, height: height, capacity: capacity, seed: seed, leakSeconds: leakSeconds)
     }
 
-    public var idle: Bool { grains == 0 && owed < 1 && rainCarry < 1 }
+    public var xs: [Double] { fluid.xs }
+    public var ys: [Double] { fluid.ys }
+    public var shades: [Int] { fluid.shades }
+    public var grains: Int { fluid.grains }
+    public var gravityX: Double { fluid.gravityX }
+    public var gravityY: Double { fluid.gravityY }
+    public private(set) var stepsTaken = 0
+
+    public var idle: Bool { fluid.grains == 0 && fluid.owed < 1 && fluid.rainCarry < 1 }
 
     public func pour(tokens: Double, scale: Double) {
         guard capacity > 0, tokens > 0, scale > 0 else { return }
-        drop(min(1, tokens / scale) * Double(capacity) / leakSeconds)
+        drop(min(1, tokens / scale) * Double(capacity) / fluid.leakSeconds)
     }
 
     public func drop(_ count: Double) {
         guard count > 0 else { return }
-        owed += count
-        pourRate = owed / AgentTokenTank.pourSeconds
+        fluid.owed += count
+        fluid.pourRate = fluid.owed / AgentTokenTank.pourSeconds
     }
 
     public func tilt(x: Double, y: Double) {
@@ -96,20 +66,82 @@ public final class AgentTokenTank {
             gx *= most / length
             gy *= most / length
         }
-        gravityX = gx
-        gravityY = gy
+        fluid.gravityX = gx
+        fluid.gravityY = gy
     }
 
     public func advance(_ seconds: Double) {
         guard capacity > 0 else { return }
+        stepsTaken += fluid.advance(seconds)
+    }
+}
+
+struct AgentTokenFluid {
+    let width: Double
+    let height: Double
+    let capacity: Int
+    let leakSeconds: Double
+    var xs: [Double]
+    var ys: [Double]
+    var shades: [Int]
+    var grains = 0
+    var gravityX = 0.0
+    var gravityY = AgentTokenTank.gravity
+    var owed = 0.0
+    var pourRate = 0.0
+    var rainCarry = 0.0
+
+    private var vxs: [Double]
+    private var vys: [Double]
+    private var lastXs: [Double]
+    private var lastYs: [Double]
+    private let gridColumns: Int
+    private let gridRows: Int
+    private var cellStart: [Int]
+    private var fill: [Int]
+    private var cellOf: [Int]
+    private var sorted: [Int]
+    private var neighbors = [Int](repeating: 0, count: AgentTokenTank.neighborLimit)
+    private var nearXs = [Double](repeating: 0, count: AgentTokenTank.neighborLimit)
+    private var nearYs = [Double](repeating: 0, count: AgentTokenTank.neighborLimit)
+    private var nearQs = [Double](repeating: 0, count: AgentTokenTank.neighborLimit)
+    private var random: UInt64
+    private var leakCarry = 0.0
+    private var stepCarry = 0.0
+
+    init(width: Double, height: Double, capacity: Int, seed: UInt64, leakSeconds: Double) {
+        self.width = width
+        self.height = height
+        self.capacity = capacity
+        self.leakSeconds = leakSeconds
+        xs = [Double](repeating: 0, count: capacity)
+        ys = [Double](repeating: 0, count: capacity)
+        shades = [Int](repeating: 0, count: capacity)
+        vxs = [Double](repeating: 0, count: capacity)
+        vys = [Double](repeating: 0, count: capacity)
+        lastXs = [Double](repeating: 0, count: capacity)
+        lastYs = [Double](repeating: 0, count: capacity)
+        gridColumns = max(1, Int((width / AgentTokenTank.radius).rounded(.up)))
+        gridRows = max(1, Int((height / AgentTokenTank.radius).rounded(.up)))
+        cellStart = [Int](repeating: 0, count: gridColumns * gridRows + 1)
+        fill = cellStart
+        cellOf = [Int](repeating: 0, count: capacity)
+        sorted = [Int](repeating: 0, count: capacity)
+        random = seed == 0 ? 0x9E37_79B9_7F4A_7C15 : seed
+    }
+
+    mutating func advance(_ seconds: Double) -> Int {
         stepCarry += min(max(seconds, 0), AgentTokenTank.maxAdvanceSeconds) * AgentTokenTank.stepsPerSecond
+        var steps = 0
         while stepCarry >= 1 {
             step(1 / AgentTokenTank.stepsPerSecond)
             stepCarry -= 1
+            steps += 1
         }
+        return steps
     }
 
-    private func step(_ dt: Double) {
+    private mutating func step(_ dt: Double) {
         rain(dt)
         leak(dt)
         guard grains > 0 else { return }
@@ -130,7 +162,7 @@ public final class AgentTokenTank {
         }
     }
 
-    private func rain(_ dt: Double) {
+    private mutating func rain(_ dt: Double) {
         guard owed > 0 else { return }
         let due = min(owed, pourRate * dt)
         owed -= due
@@ -141,7 +173,7 @@ public final class AgentTokenTank {
         }
     }
 
-    private func leak(_ dt: Double) {
+    private mutating func leak(_ dt: Double) {
         guard grains > 0 else {
             leakCarry = 0
             return
@@ -153,7 +185,7 @@ public final class AgentTokenTank {
         }
     }
 
-    private func spawn() {
+    private mutating func spawn() {
         guard grains < capacity else { return }
         let i = grains
         let along = next()
@@ -186,7 +218,7 @@ public final class AgentTokenTank {
         return best
     }
 
-    private func remove(_ i: Int) {
+    private mutating func remove(_ i: Int) {
         let last = grains - 1
         xs[i] = xs[last]
         ys[i] = ys[last]
@@ -196,7 +228,7 @@ public final class AgentTokenTank {
         grains = last
     }
 
-    private func contain(_ i: Int) {
+    private mutating func contain(_ i: Int) {
         xs[i] = min(max(xs[i], 0.5), width - 0.5)
         ys[i] = min(max(ys[i], 0.5), height - 0.5)
     }
@@ -207,7 +239,7 @@ public final class AgentTokenTank {
         return row * gridColumns + column
     }
 
-    private func relax() {
+    private mutating func relax() {
         let radius = AgentTokenTank.radius
         for c in cellStart.indices { cellStart[c] = 0 }
         for i in 0..<grains {
@@ -216,7 +248,7 @@ public final class AgentTokenTank {
             cellStart[c + 1] += 1
         }
         for c in 0..<(gridColumns * gridRows) { cellStart[c + 1] += cellStart[c] }
-        var fill = cellStart
+        for c in cellStart.indices { fill[c] = cellStart[c] }
         for i in 0..<grains {
             sorted[fill[cellOf[i]]] = i
             fill[cellOf[i]] += 1
@@ -274,12 +306,42 @@ public final class AgentTokenTank {
         }
     }
 
-    private func next() -> Double {
+    private mutating func next() -> Double {
         var x = random
         x ^= x >> 12
         x ^= x << 25
         x ^= x >> 27
         random = x
         return Double((x &* 2_685_821_657_736_338_717) >> 11) / 9_007_199_254_740_992
+    }
+}
+
+public final class AgentTokenTanks {
+    public static let frameSeconds = 1 / AgentTokenTank.framesPerSecond
+
+    public let input: AgentTokenTank
+    public let output: AgentTokenTank
+    private var last: Date?
+
+    public init(width: Double, height: Double) {
+        input = AgentTokenTank(width: width, height: height, seed: 1)
+        output = AgentTokenTank(width: width, height: height, seed: 2)
+    }
+
+    public var idle: Bool { input.idle && output.idle }
+    public var wantsMotion: Bool { !idle }
+
+    public func advance(to date: Date) {
+        if let last {
+            let seconds = date.timeIntervalSince(last)
+            input.advance(seconds)
+            output.advance(seconds)
+        }
+        last = date
+    }
+
+    public func tilt(x: Double, y: Double) {
+        input.tilt(x: x, y: y)
+        output.tilt(x: x, y: y)
     }
 }
