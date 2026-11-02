@@ -75,6 +75,7 @@ One page per topic. Each links back here.
 | --- | --- |
 | [dashboard-colors](dashboard-colors.md) | Dashboard colour roles and theme.json |
 | [dashboard-components](dashboard-components.md) | Shared `fm-*` dashboard components |
+| [dashboard-home](dashboard-home.md) | The dashboard home page: rails, composer, sessions, pull requests and issues |
 | [web-composer](web-composer.md) | The dashboard prompt composer |
 | [web-desktop-parity](web-desktop-parity.md) | What works on the web and what still needs the desktop |
 | [seasonal-theme](seasonal-theme.md) | The platform-wide Halloween theme |

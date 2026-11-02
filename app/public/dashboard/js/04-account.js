@@ -3456,6 +3456,7 @@
         : "Verify email in profile";
     }
     applyAvatar(avatar, session);
+    renderHomeAccount(session);
     const publicProfileLink = $("[data-account-menu-public-profile]");
     if (publicProfileLink && session?.nodeName) {
       publicProfileLink.href = publicProfileUrl(session.nodeName);

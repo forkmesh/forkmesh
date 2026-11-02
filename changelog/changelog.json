@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-11-02", "area": "Agents", "text": "The agent token tanks under the phone's top island draw at 30 frames a second with about a quarter of the processor time they took, and stop reading the accelerometer while they are empty."},
+  {"date": "2026-11-02", "area": "Other improvements", "text": "The dashboard home is simpler: your repositories on the left, a cleaner prompt box, your agent sessions and open pull requests and issues in the middle, and the latest changelog and blog posts on the right."},
   {"date": "2026-11-02", "area": "Android", "text": "Your picture in the header now fills its status ring."},
   {"date": "2026-11-02", "area": "iPhone", "text": "Your picture in the header no longer tilts with the phone and now fills its status ring."},
   {"date": "2026-11-02", "area": "Other improvements", "text": "The docs use the whole phone screen, show JSON and config examples as readable tables, draw diagrams and page maps, add a bottom dock with link previews, and suggest what to read next from your own reading, kept only in your browser."},
