@@ -1966,7 +1966,9 @@
   }
 
   function initHomePage() {
+    renderHomeAccount();
     renderHomeBlogPosts();
+    void loadHomeChangelog();
     // The blog card fills in from the edge-cached feed; the baked markup
     // already shows its loading state.
     void loadHomeBlogPosts();
@@ -4501,6 +4503,16 @@
   $("[data-home-repos-show-more]")?.addEventListener("click", () => {
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
+  });
+  $("[data-home-repo-search-toggle]")?.addEventListener("click", () => {
+    const search = $("[data-home-repo-search]");
+    state.homeRepoSearchOpen = !state.homeRepoSearchOpen;
+    if (!state.homeRepoSearchOpen && search) search.value = "";
+    renderHomeRepositories();
+    if (state.homeRepoSearchOpen) search?.focus();
+  });
+  $$("[data-home-tab]").forEach((button) => {
+    button.addEventListener("click", () => setHomeTab(button.dataset.homeTab));
   });
   document.addEventListener("click", (event) => {
     const toggle = event.target?.closest?.("[data-repo-forks-toggle]");

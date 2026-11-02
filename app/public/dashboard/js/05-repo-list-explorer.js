@@ -1320,25 +1320,25 @@
     const status = live
       ? (repoServedByMirror(repo) ? "served by mirror" : "live host")
       : "offline";
-    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>`;
-    const logo = nativeRepositoryLogoMarkup(repo, "h-8 w-8")
-      || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
+    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by title="${status}" class="ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"><span class="sr-only">${status}</span></span>`;
+    const logo = nativeRepositoryLogoMarkup(repo, "h-5 w-5")
+      || '<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-3 w-3"></i></span>';
+    const label = entry.label || repoDisplayName(repo);
     const description = String(repo.description || "").trim();
     const views = Number(homeRepositoryViewTotals(repo)?.views) || 0;
     const forks = Math.max(Number(repo.forkCount) || 0, Number(nestedForks) || 0);
-    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+    const hint = [
+      label,
+      description,
+      views ? `${formatCount(views)} ${views === 1 ? "view" : "views"}` : "",
+      forks ? `${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(entry.href)}" data-home-repo-row title="${escapeHtml(hint)}" class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-secondary">
       ${logo}
-      <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
-        ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
-        <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          ${statusHtml}
-          ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
-          ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
-          ${forks ? `<span data-home-repo-fork-count class="inline-flex items-center gap-1" title="${escapeHtml(`${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}`)}"><i data-lucide="git-fork" class="h-3 w-3"></i>${escapeHtml(formatCount(forks))} ${forks === 1 ? "fork" : "forks"}</span>` : ""}
-          ${repositoryTermsBadge(repo, true)}
-        </span>
-      </span>
+      <span class="min-w-0 flex-1 truncate font-medium">${homeRepositoryLabelHtml(label)}</span>
+      ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
+      ${repositoryTermsBadge(repo, true)}
+      ${statusHtml}
     </a>`;
   }
 
@@ -1370,11 +1370,15 @@
     const all = homeRepositoryEntries();
     refreshHomeRepositoryViews(all);
     const searchField = $("[data-home-repo-search-field]");
+    const searchToggle = $("[data-home-repo-search-toggle]");
     const searchable = all.length >= HOME_REPO_SEARCH_MIN_REPOSITORIES;
-    searchField?.classList.toggle("hidden", !searchable);
-    searchField?.classList.toggle("flex", searchable);
     const search = $("[data-home-repo-search]");
     if (!searchable && search?.value) search.value = "";
+    const searchOpen = searchable && (state.homeRepoSearchOpen || Boolean(search?.value));
+    searchToggle?.classList.toggle("hidden", !searchable);
+    searchToggle?.setAttribute("aria-expanded", String(searchOpen));
+    searchField?.classList.toggle("hidden", !searchOpen);
+    searchField?.classList.toggle("flex", searchOpen);
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
     const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
@@ -1401,6 +1405,184 @@
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
     hydrateRepositoryForkCounts(container);
+    refreshHomeWork(all);
+  }
+
+  function homeGreeting(date = new Date()) {
+    const hour = date.getHours();
+    if (hour < 5 || hour >= 18) return "Good evening";
+    return hour < 12 ? "Good morning" : "Good afternoon";
+  }
+
+  function renderHomeAccount(session = state.session) {
+    const account = $("[data-home-account]");
+    if (!account) return;
+    const name = session?.nodeName ? userDisplayName(session.nodeName) : (session?.email || "");
+    const nameEl = $("[data-home-account-name]");
+    if (nameEl) nameEl.textContent = name || "Your account";
+    applyAvatar($("[data-home-account-avatar]"), session);
+    const greeting = $("[data-home-greeting]");
+    if (greeting) greeting.textContent = name ? `${homeGreeting()}, ${name}!` : `${homeGreeting()}!`;
+  }
+
+  function setHomeTab(tab) {
+    const active = tab === "feed" ? "feed" : "home";
+    $$("[data-home-tab]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.homeTab === active));
+    });
+    $$("[data-home-tab-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.homeTabPanel !== active;
+    });
+  }
+
+  const HOME_WORK_REPO_LIMIT = 6;
+  const HOME_WORK_ROW_LIMIT = 5;
+
+  function homeWorkStamp(value) {
+    let stamp = Number(value) || Date.parse(String(value || "")) || 0;
+    if (stamp > 0 && stamp < 10_000_000_000) stamp *= 1000;
+    return Number.isFinite(stamp) ? stamp : 0;
+  }
+
+  function homeWorkRepositories(entries) {
+    const aliases = profileRepositoryAliases(state.session);
+    if (!aliases.size) return [];
+    return entries
+      .filter((entry) => entry.repo && !entry.repo.isPrivate
+        && (entry.organization || repoBelongsToProfile(entry.repo, aliases)))
+      .slice(0, HOME_WORK_REPO_LIMIT);
+  }
+
+  async function loadHomeRepositoryWork(entry) {
+    const repo = entry.repo;
+    const label = entry.label;
+    const pullCount = repoCount(repo, ["openPulls", "pullCount", "pulls", "pullsCount"]);
+    const issueCount = repoCount(repo, ["openIssues", "issueCount", "issues", "issuesCount"]);
+    const [pulls, issues] = await Promise.all([
+      pullCount === 0 ? [] : loadRepoRecordsFromMirror(repo, repoCollectionConfig.pulls).catch(() => []),
+      issueCount === 0 ? null : fetchRepoIssueIndex(repo),
+    ]);
+    return {
+      pulls: pulls
+        .filter((pull) => String(pull.state || "").toLowerCase() === "open")
+        .map((pull) => ({
+          kind: "pull",
+          number: pull.number,
+          title: pull.title,
+          author: pull.author,
+          updatedAt: homeWorkStamp(pull.updatedAtMs || pull.createdAtMs),
+          href: `${entry.href}/pull/${pull.number}`,
+          repoLabel: label,
+        })),
+      issues: (Array.isArray(issues?.issues) ? issues.issues : [])
+        .map(issueFromIndex)
+        .filter((issue) => issue.status !== "closed" && !issue.deleted && Number.isFinite(issue.number))
+        .map((issue) => ({
+          kind: "issue",
+          number: issue.number,
+          title: issue.title,
+          author: issue.author,
+          comments: Number(issue.commentCount) || 0,
+          updatedAt: homeWorkStamp(issue.dateValue),
+          href: `${entry.href}/issues/${issue.number}`,
+          repoLabel: label,
+        })),
+    };
+  }
+
+  function refreshHomeWork(entries) {
+    if (!$("[data-home-pulls]") || state.repositoriesLoading) return;
+    const repos = homeWorkRepositories(entries);
+    const signature = repos.map((entry) => entry.href).sort().join("\n");
+    if (signature === state.homeWorkSignature) return;
+    state.homeWorkSignature = signature;
+    if (!repos.length) {
+      state.homeWork = { pulls: [], issues: [] };
+      renderHomeWork();
+      return;
+    }
+    Promise.all(repos.map((entry) => loadHomeRepositoryWork(entry).catch(() => ({ pulls: [], issues: [] }))))
+      .then((results) => {
+        if (state.homeWorkSignature !== signature) return;
+        const byRecent = (a, b) => b.updatedAt - a.updatedAt;
+        state.homeWork = {
+          pulls: results.flatMap((result) => result.pulls).sort(byRecent),
+          issues: results.flatMap((result) => result.issues).sort(byRecent),
+        };
+        renderHomeWork();
+      });
+  }
+
+  function homeWorkRow(item) {
+    const icon = item.kind === "pull"
+      ? pullStateIconHtml("open")
+      : '<i data-lucide="circle-dot" class="h-4 w-4 text-[var(--dashboard-open)]"></i>';
+    const meta = [
+      `${escapeHtml(item.repoLabel)}#${escapeHtml(String(item.number))}`,
+      item.author ? `Opened by ${issuePersonNameHtml(item.author, "", { inLink: true })}` : "",
+      item.updatedAt ? `Updated ${escapeHtml(formatTimeAgo(item.updatedAt))}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<a href="${escapeHtml(item.href)}" data-home-work-row="${item.kind}" class="fm-home-row">
+        <span class="fm-home-row-icon">${icon}</span>
+        <span class="min-w-0 flex-1">
+          <span class="fm-home-row-title">${escapeHtml(item.title)}</span>
+          <span class="fm-home-row-meta">${meta}</span>
+        </span>
+        ${item.comments ? `<span class="fm-home-row-end" title="${formatCount(item.comments)} comment${item.comments === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(item.comments)}</span>` : ""}
+      </a>`;
+  }
+
+  function renderHomeWork() {
+    const work = state.homeWork || { pulls: [], issues: [] };
+    [["pulls", work.pulls, "open pull request"], ["issues", work.issues, "open issue"]].forEach(([key, items, noun]) => {
+      const section = $(`[data-home-${key}-section]`);
+      const list = $(`[data-home-${key}]`);
+      const count = $(`[data-home-${key}-count]`);
+      if (!section || !list) return;
+      section.hidden = !items.length;
+      list.innerHTML = items.slice(0, HOME_WORK_ROW_LIMIT).map(homeWorkRow).join("");
+      if (count) count.textContent = items.length ? `${formatCount(items.length)} ${noun}${items.length === 1 ? "" : "s"}` : "";
+    });
+    window.lucide?.createIcons();
+  }
+
+  const HOME_CHANGELOG_NOTE_LIMIT = 4;
+  const HOME_CHANGELOG_URL = "/changelog.json";
+
+  function homeChangelogDate(value) {
+    const text = String(value || "");
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00`) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) return text;
+    return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function renderHomeChangelog() {
+    const container = $("[data-home-changelog-list]");
+    if (!container) return;
+    const notes = state.homeChangelogNotes;
+    if (notes === null) return;
+    container.innerHTML = notes.length
+      ? notes.map((note) => `<li>
+          <time datetime="${escapeHtml(note.date)}">${escapeHtml(homeChangelogDate(note.date))}</time>
+          <a href="/changelog" class="line-clamp-2">${escapeHtml(note.text)}</a>
+        </li>`).join("")
+      : '<li><p class="text-muted-foreground">The changelog is unavailable right now.</p></li>';
+  }
+
+  async function loadHomeChangelog() {
+    if (!$("[data-home-changelog-list]")) return;
+    try {
+      const response = await fetch(HOME_CHANGELOG_URL, { credentials: "omit", headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error(`changelog returned ${response.status}`);
+      const data = await response.json();
+      state.homeChangelogNotes = (Array.isArray(data?.notes) ? data.notes : [])
+        .filter((note) => note && note.text && note.date)
+        .map((note) => ({ date: String(note.date), text: String(note.text) }))
+        .slice(0, HOME_CHANGELOG_NOTE_LIMIT);
+    } catch (_) {
+      state.homeChangelogNotes = [];
+    }
+    renderHomeChangelog();
   }
 
   const HOME_FEED_CARD_LIMIT = 8;
@@ -1450,12 +1632,12 @@
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
     return `
-      <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
-        <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
+      <${tag}${hrefAttr} data-home-feed-kind="activity" class="fm-home-row">
+        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="text-muted-foreground"></i></span>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
-          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
-          <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
+          <span class="fm-home-row-title">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
+          ${item.body ? `<span class="fm-home-row-meta line-clamp-2">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
+          <span class="fm-home-row-meta">${meta}</span>
         </span>
       </${tag}>
     `;
@@ -1470,13 +1652,13 @@
     container.innerHTML = cards.length
       ? cards.join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
-        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-3">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="fm-home-empty">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
   // Home right-rail "Latest from the blog" (adhoc #381): the newest feature
-  // posts with their artwork, read from the blog's own RSS document. The feed
+  // posts, read from the blog's own RSS document. The feed
   // is derived from the shipped blog index and edge-cached for thirty minutes
   // (see blog_feed.py), so this is one cheap same-origin read per dashboard
   // load rather than a second hand-maintained copy of the post list.
@@ -1497,30 +1679,6 @@
     }
   }
 
-  // Artwork cannot take that shortcut: the blog images live in the WWW
-  // worker's asset bundle only (build_site_assets.shared_assets deliberately
-  // skips assets/blog for App and World), so a path-only src 404s on the
-  // dashboard's own origin and every card paints a broken image. Keep the
-  // feed's absolute URL, but only for ForkMesh's own sites, so a rewritten
-  // feed can still never make the dashboard fetch a foreign host.
-  const HOME_BLOG_IMAGE_HOSTS = new Set(["forkmesh.com", "www.forkmesh.com"]);
-
-  function homeBlogImageUrl(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    try {
-      const parsed = new URL(raw, window.location.origin);
-      if (parsed.origin === window.location.origin) {
-        return parsed.pathname + parsed.search;
-      }
-      if (parsed.protocol !== "https:") return "";
-      if (!HOME_BLOG_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) return "";
-      return parsed.href;
-    } catch (_) {
-      return "";
-    }
-  }
-
   function parseHomeBlogFeed(xml) {
     const doc = new DOMParser().parseFromString(String(xml || ""), "application/xml");
     if (doc.querySelector("parsererror")) return [];
@@ -1529,22 +1687,17 @@
         title: (item.querySelector("title")?.textContent || "").trim(),
         href: homeBlogUrl(item.querySelector("link")?.textContent),
         meta: (item.querySelector("category")?.textContent || "").trim(),
-        image: homeBlogImageUrl(item.querySelector("enclosure")?.getAttribute("url")),
       }))
       .filter((post) => post.title && post.href)
       .slice(0, HOME_BLOG_POST_LIMIT);
   }
 
-  function homeBlogPostCard(post) {
-    return `
-      <a href="${escapeHtml(post.href)}"${/^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : ""} class="group block overflow-hidden rounded-md border border-border hover:bg-secondary">
-        ${post.image ? `<img src="${escapeHtml(post.image)}" alt="" loading="lazy" class="block aspect-[16/9] w-full object-cover" />` : ""}
-        <span class="block px-3 py-2.5">
-          ${post.meta ? `<span class="block truncate font-mono text-[10px] uppercase text-muted-foreground">${escapeHtml(post.meta)}</span>` : ""}
-          <span class="mt-1 block text-sm font-semibold leading-5 text-foreground group-hover:text-accent">${escapeHtml(post.title)}</span>
-        </span>
-      </a>
-    `;
+  function homeBlogPostItem(post) {
+    const external = /^https:/.test(post.href) ? ' target="_blank" rel="noopener"' : "";
+    return `<li>
+        ${post.meta ? `<span class="fm-home-kicker">${escapeHtml(post.meta)}</span>` : ""}
+        <a href="${escapeHtml(post.href)}"${external} class="line-clamp-2">${escapeHtml(post.title)}</a>
+      </li>`;
   }
 
   function renderHomeBlogPosts() {
@@ -1552,32 +1705,24 @@
     if (!container) return;
     const posts = state.homeBlogPosts;
     if (posts === null) {
-      container.innerHTML = '<div class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</div>';
+      container.innerHTML = '<li><span class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</span></li>';
       return;
     }
     container.innerHTML = posts.length
-      ? posts.map(homeBlogPostCard).join("")
-      : '<div class="text-sm text-muted-foreground">Blog posts are unavailable right now.</div>';
+      ? posts.map(homeBlogPostItem).join("")
+      : '<li><p class="text-muted-foreground">Blog posts are unavailable right now.</p></li>';
   }
-
-  const HOME_DEVTO_IMAGE_HOSTS = new Set(["media2.dev.to", "dev-to-uploads.s3.amazonaws.com"]);
 
   function homeDevtoPost(article) {
     let href = "";
-    let image = "";
     try {
       const link = new URL(String(article?.url || ""));
       if (link.protocol === "https:" && link.hostname === "dev.to") href = link.href;
-    } catch (_) {}
-    try {
-      const cover = new URL(String(article?.cover_image || article?.social_image || ""));
-      if (cover.protocol === "https:" && HOME_DEVTO_IMAGE_HOSTS.has(cover.hostname)) image = cover.href;
     } catch (_) {}
     const when = Date.parse(String(article?.published_at || ""));
     return {
       title: String(article?.title || "").trim(),
       href,
-      image,
       meta: Number.isFinite(when) ? relativeTimeLabel(when) : "",
     };
   }
@@ -1585,7 +1730,7 @@
   async function loadHomeDevtoPosts(user) {
     const card = $("[data-home-blog-card]");
     card?.removeAttribute("data-instance-plugin");
-    const viewAll = card?.querySelector("a[href]");
+    const viewAll = card?.querySelector(".fm-home-more");
     if (viewAll) {
       viewAll.href = `https://dev.to/${encodeURIComponent(user)}`;
       viewAll.target = "_blank";
@@ -1674,7 +1819,18 @@
     renderHomeRepositories();
   }
 
-  const HOME_AGENT_LIMIT = 10;
+  const HOME_AGENT_LIMIT = 5;
+
+  function homeAgentStatusIcon(status) {
+    const key = String(status || "").toLowerCase();
+    if (["completed", "succeeded", "done", "merged"].includes(key)) {
+      return '<i data-lucide="check" class="text-success"></i>';
+    }
+    if (["failed", "error", "cancelled", "canceled", "stopped"].includes(key)) {
+      return '<i data-lucide="x" class="text-destructive"></i>';
+    }
+    return `<span class="h-2 w-2 rounded-full ${orgAgentStatusDotClass(status)}"></span>`;
+  }
 
   function homeAgentRow(session, account) {
     const owner = String(session.org || account || "").trim();
@@ -1688,21 +1844,20 @@
     const status = String(session.displayStatus || session.status || "unknown");
     const title = String(session.title || "").trim()
       || (session.issueNumber ? `Issue #${session.issueNumber}` : `${orgAgentProviderLabel(session)} session`);
+    const started = session.createdAt || session.updatedAt;
     const meta = [
       repoLabel,
       orgAgentProviderLabel(session),
       session.targetNode ? `on ${session.targetNode}` : "",
-      notificationTimeLabel(session.updatedAt || session.createdAt),
+      started ? `Started ${notificationTimeLabel(started)}` : "",
     ].filter(Boolean).map(escapeHtml);
+    const statusLabel = status.replace(/_/g, " ");
     return `
-      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card px-4 py-3 hover:bg-secondary/40">
-        <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full ${orgAgentStatusDotClass(session.status)}"></span>
+      <${tag}${hrefAttr} data-home-agent="${escapeHtml(String(session.id || ""))}" class="fm-home-row">
+        <span class="fm-home-row-icon">${homeAgentStatusIcon(session.status)}</span>
         <span class="min-w-0 flex-1">
-          <span class="flex min-w-0 items-start justify-between gap-3">
-            <span class="min-w-0 break-words text-sm font-medium text-foreground">${escapeHtml(title)}</span>
-            <span class="shrink-0 font-mono text-xs ${repoAgentStatusTone(session.status)}">${escapeHtml(status.replace(/_/g, " "))}</span>
-          </span>
-          <span class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">${meta.map((part) => `<span>${part}</span>`).join("")}</span>
+          <span class="fm-home-row-title">${escapeHtml(title)}</span>
+          <span class="fm-home-row-meta">${meta.join(" · ")} · <span class="${repoAgentStatusTone(session.status)}">${escapeHtml(statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1))}</span></span>
         </span>
       </${tag}>`;
   }
@@ -1718,14 +1873,15 @@
       count.textContent = data?.activeCount ? `${formatCount(data.activeCount)} running` : "";
     }
     if (data?.error) {
-      container.innerHTML = `<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">${escapeHtml(data.error)}</div>`;
+      container.innerHTML = `<div class="fm-home-empty">${escapeHtml(data.error)}</div>`;
       return;
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
       : seasonActive("halloween")
-        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
-        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+        ? `<div class="fm-home-empty flex items-center gap-4">${HALLOWEEN_PUMPKIN}<span>No agent sessions.</span></div>`
+        : '<div class="fm-home-empty">No agent sessions.</div>';
+    window.lucide?.createIcons();
   }
 
   async function loadHomeAgentSessions() {

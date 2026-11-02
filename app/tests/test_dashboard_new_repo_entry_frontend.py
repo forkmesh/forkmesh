@@ -56,7 +56,10 @@ def test_home_rail_no_longer_ships_an_inert_button():
     html = _read(HOME_VIEW)
     rail = html[html.index("Top repositories"):]
     rail = rail[:rail.index("</div>")]
-    assert "<button" not in rail, "the rail control is a link, not a bare button"
+    tag, _label = _new_control(rail)
+    assert not tag.startswith("<button"), "the rail control is a link, not a bare button"
+    for button in re.findall(r"<button\b[^>]*>", rail):
+        assert re.search(r"\bdata-home-[a-z-]+", button), button
 
 
 def test_the_flow_is_not_hooked_to_a_modal_that_the_home_page_never_ships():
