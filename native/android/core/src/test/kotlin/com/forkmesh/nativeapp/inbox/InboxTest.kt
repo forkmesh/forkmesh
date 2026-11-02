@@ -155,6 +155,8 @@ class InboxTest {
         val guest = InboxModel(client, { "" }, MemoryPrefStore())
         guest.load()
         assertEq(listOf("Sign in to see your inbox."), guest.errors)
+        expect(guest.signedOut)
+        expect(!model.signedOut)
     }
 
     fun testMarkAllReadAndPause() {
