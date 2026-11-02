@@ -83,6 +83,12 @@ on by default).
 - No account needed. Per-client rate limits (client stored only as a salted
   hash) and a global concurrency cap. The host must resolve to public
   addresses only.
+- A server that does not answer on its SSH port is the visitor's to fix, so it
+  is `400 ssh_unreachable` with `field: host`, like the other answers about
+  what they typed, and stays out of the error log. It was a 502 until 2026-11-01
+  and raised a new-error-group ping for each mistyped host. A keyscan that could
+  not run (helper gone quiet, `ssh-keyscan` failing to start) is
+  `503 launch_unavailable`, which is logged: that one is ours.
 - `instance_launches` stores no password, key or API key; rows expire after
   seven days. A run silent for 2 minutes is marked lost; setup continues on
   the server and a new launch with the same details follows it.

@@ -247,6 +247,20 @@ echo "8.8.4.4 ssh-dss AAAAB3NzaC1kc3MAAACB"
     assert writer.messages == [{"error": "refused address"}]
 
 
+def test_keyscan_separates_a_silent_server_from_a_scan_that_cannot_run(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(ssh_helper, "SSH_KEYSCAN", str(tmp_path / "missing"))
+    writer = Writer()
+    asyncio.run(ssh_helper.keyscan({"address": "8.8.4.4", "port": 22}, writer))
+    assert writer.messages == [{"error": "keyscan failed"}]
+    monkeypatch.setattr(ssh_helper, "SSH_KEYSCAN", fake_tool(
+        tmp_path, "ssh-keyscan", "exec sleep 2\n"))
+    monkeypatch.setattr(ssh_helper, "KEYSCAN_TIMEOUT", 0.05)
+    writer = Writer()
+    asyncio.run(ssh_helper.keyscan({"address": "8.8.4.4", "port": 22}, writer))
+    assert writer.messages == [{"error": "no answer"}]
+
+
 class ChunkedOutput:
     def __init__(self, chunks):
         self.chunks = list(chunks)
