@@ -56,6 +56,18 @@ struct InboxItemScreen: View {
         }
         .listStyle(.insetGrouped)
         .background(fm.canvas)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack {
+                FmIconButton(label: "Back", onPressed: { dismiss() }) {
+                    FmIcon("chevron_left", size: 30, color: fm.textPrimary)
+                        .frame(width: 44, height: 44)
+                        .shellGlass(Circle())
+                }
+                .accessibilityIdentifier("ping-detail-back")
+                Spacer()
+            }
+            .padding(.horizontal, FmSpace.x3)
+        }
         .navigationTitle(item.kindLabel)
         .navigationBarTitleDisplayMode(.inline)
         .shellKeepsNavigationBar()
@@ -79,9 +91,6 @@ struct InboxItemScreen: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            FmTextButton("Inbox", icon: "chevron_left", minHeight: 36, onPressed: { dismiss() })
-                .padding(.leading, -FmSpace.x3)
-                .accessibilityIdentifier("ping-detail-back")
             HStack(spacing: 12) {
                 FmIconTile(icon: item.icon, tint: fm.accent, size: 40, iconSize: 20)
                 VStack(alignment: .leading, spacing: 2) {
