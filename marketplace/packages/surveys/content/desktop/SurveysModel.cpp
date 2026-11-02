@@ -54,6 +54,7 @@ SurveySettings parseSettings(const QJsonObject &object)
     settings.closesAt = std::max<qint64>(0, integer(object, "closesAt"));
     settings.maxResponses = int(std::clamp<qint64>(integer(object, "maxResponses"), 0, kMaxResponsesLimit));
     settings.notifyOnResponse = flag(object, "notifyOnResponse", true);
+    settings.notifyOnVisit = flag(object, "notifyOnVisit", true);
     settings.shuffleOptions = flag(object, "shuffleOptions", false);
     return settings;
 }
@@ -66,6 +67,7 @@ QJsonObject settingsJson(const SurveySettings &settings)
         {QStringLiteral("closesAt"), double(std::max<qint64>(0, settings.closesAt))},
         {QStringLiteral("maxResponses"), std::clamp(settings.maxResponses, 0, kMaxResponsesLimit)},
         {QStringLiteral("notifyOnResponse"), settings.notifyOnResponse},
+        {QStringLiteral("notifyOnVisit"), settings.notifyOnVisit},
         {QStringLiteral("shuffleOptions"), settings.shuffleOptions},
     };
 }
@@ -168,6 +170,7 @@ Survey parseSurvey(const QJsonObject &object)
     survey.questions = parseQuestions(object.value(QStringLiteral("questions")).toArray());
     for (const QJsonValue &value : object.value(QStringLiteral("results")).toArray())
         survey.results.append(parseResult(value.toObject()));
+    survey.activity = parseActivity(object.value(QStringLiteral("activity")).toObject());
     survey.questionCount = object.contains(QStringLiteral("questionCount"))
         ? std::max<qint64>(0, integer(object, "questionCount"))
         : survey.questions.size();
@@ -193,6 +196,26 @@ QList<SurveyResponse> parseResponses(const QJsonArray &items)
     for (const QJsonValue &value : items)
         responses.append(parseResponse(value.toObject()));
     return responses;
+}
+
+SurveyActivity parseActivity(const QJsonObject &object)
+{
+    SurveyActivity activity;
+    if (object.contains(QStringLiteral("days")))
+        activity.days = std::max<qint64>(1, integer(object, "days"));
+    activity.views = std::max<qint64>(0, integer(object, "views"));
+    activity.visitors = std::max<qint64>(0, integer(object, "visitors"));
+    activity.interactions = std::max<qint64>(0, integer(object, "interactions"));
+    activity.starts = std::max<qint64>(0, integer(object, "starts"));
+    activity.submits = std::max<qint64>(0, integer(object, "submits"));
+    activity.leaves = std::max<qint64>(0, integer(object, "leaves"));
+    activity.lastActivityAt = std::max<qint64>(0, integer(object, "lastActivityAt"));
+    for (const QJsonValue &value : object.value(QStringLiteral("recent")).toArray()) {
+        const QJsonObject item = value.toObject();
+        activity.recent.append({text(item, "kind"), text(item, "detail"), text(item, "label"), text(item, "visitor"),
+                                integer(item, "at")});
+    }
+    return activity;
 }
 
 Summary parseSummary(const QJsonObject &object)
@@ -588,9 +611,38 @@ QStringList settingsLines(const SurveySettings &settings, const QTimeZone &zone)
         lines << QStringLiteral("At most %1").arg(countPhrase(settings.maxResponses, QStringLiteral("response")));
     lines << (settings.notifyOnResponse ? QStringLiteral("Pings the creator when responses arrive")
                                         : QStringLiteral("No Pings for new responses"));
+    lines << (settings.notifyOnVisit ? QStringLiteral("Pings the creator when someone opens or starts it")
+                                     : QStringLiteral("No Pings for visits"));
     if (settings.shuffleOptions)
         lines << QStringLiteral("Choice options shown in random order");
     return lines;
+}
+
+QString activityText(const SurveyActivity &activity, qint64 nowMs, const QTimeZone &zone)
+{
+    const QString period = QStringLiteral("last %1").arg(countPhrase(activity.days, QStringLiteral("day")));
+    if (activity.views <= 0 && activity.interactions <= 0)
+        return QStringLiteral("No visits in the ") + period;
+    QStringList parts{countPhrase(activity.views, QStringLiteral("view")),
+                      countPhrase(activity.visitors, QStringLiteral("visitor")),
+                      countPhrase(activity.interactions, QStringLiteral("interaction")),
+                      QStringLiteral("%1 started").arg(activity.starts),
+                      QStringLiteral("%1 sent").arg(activity.submits)};
+    if (activity.lastActivityAt > 0)
+        parts << QStringLiteral("last activity ") + relativeText(nowMs, activity.lastActivityAt, zone);
+    QString lead = period;
+    lead[0] = lead.at(0).toUpper();
+    return lead + QStringLiteral(": ") + parts.join(kDot);
+}
+
+QString visitEventText(const VisitEvent &event, qint64 nowMs, const QTimeZone &zone)
+{
+    const QString label = event.label.isEmpty() ? event.kind : event.label;
+    QStringList parts{label};
+    parts << QStringLiteral("visitor ") + (event.visitor.isEmpty() ? QStringLiteral("unknown") : event.visitor);
+    if (event.at > 0)
+        parts << relativeText(nowMs, event.at, zone);
+    return parts.join(kDot);
 }
 
 QString notInstalledError(const QJsonObject &payload)

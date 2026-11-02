@@ -64,6 +64,15 @@ BULK_TAG_FIELDS = ("addTags", "removeTags")
 # Sealed rows are packed into one JSON bind per UPDATE; D1 caps a bound string
 # at 2 MB, so each write stays well under it.
 BULK_WRITE_BYTES = 900_000
+SYNC_FIELDS = ("name", "email", "company", "title", "phone", "twitter", "mastodon",
+               "bluesky", "linkedin", "github", "website", "location", "stage", "value",
+               "nextStep", "owner", "source", "tags", "notes", "lastContactedAt")
+SYNC_CUSTOM_PREFIX = "fields."
+SYNC_MAX_ROWS = 500
+SYNC_MAX_COLUMNS = 60
+SYNC_PIPELINE_PREFIX = "pipeline:"
+SYNC_NO_PIPELINE = "no-pipeline"
+SYNC_RESERVED_LABELS = frozenset({"crm id"})
 # A CSV import may arrive in parts so the page can show real progress; every
 # part of one import carries the same client-chosen id.
 IMPORT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{7,63}$")
@@ -354,6 +363,10 @@ AUTO_EMAIL_FORKMESH_BRIEF = (
     "full node that hosts and mirrors repositories and runs Codex or Claude Code "
     "agents whose work becomes pull requests. The protocol, self-hosting and "
     "public clone are free; only bounded hosted services are paid.")
+AUTO_EMAIL_FORKMESH_MISSION = (
+    "Let developers collaborate on, mirror, and preserve source-code repositories "
+    "across independent hosts, without relying on any single hosting provider.")
+AUTO_EMAIL_OFFER_LIMIT = 6
 REFERRAL_ORIGIN = "https://forkmesh.com/r/"
 TRACK_ORIGIN = "https://app.forkmesh.com"
 TRACK_LOGO = "https://app.forkmesh.com/assets/logo-96.png"
@@ -1263,7 +1276,7 @@ def _route(path):
     match = re.fullmatch(
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
-        r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge"
+        r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge|sync"
         r"|toots|toot"
         r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
@@ -2829,6 +2842,346 @@ async def _write_sealed_contacts(runtime, org_bi, account_bi, actor, now, sealed
             account_bi, actor, now, json.dumps(chunk), org_bi,
         )
         chunk, size = {}, 0
+
+
+def _sync_field(field):
+    field = str(field or "")
+    if field in SYNC_FIELDS:
+        return field
+    if field.startswith(SYNC_CUSTOM_PREFIX):
+        key = field[len(SYNC_CUSTOM_PREFIX):]
+        if FIELD_KEY_RE.fullmatch(key) and key not in CONTACT_COLUMN_FIELDS:
+            return field
+    return ""
+
+
+def _sync_patch(source):
+    patch = {}
+    if not isinstance(source, dict):
+        return patch, ""
+    for field, value in source.items():
+        known = _sync_field(field)
+        if not known:
+            return {}, str(field)[:80]
+        if isinstance(value, (dict, bool)) or (isinstance(value, list) and known != "tags"):
+            return {}, known
+        if known.startswith(SYNC_CUSTOM_PREFIX):
+            patch.setdefault("fields", {})[known[len(SYNC_CUSTOM_PREFIX):]] = value
+        else:
+            patch[known] = value
+    return patch, ""
+
+
+def _sync_value(contact, field):
+    contact = contact if isinstance(contact, dict) else {}
+    if field.startswith(SYNC_CUSTOM_PREFIX):
+        fields = contact.get("fields") if isinstance(contact.get("fields"), dict) else {}
+        return _custom_fields(
+            {field[len(SYNC_CUSTOM_PREFIX):]: fields.get(field[len(SYNC_CUSTOM_PREFIX):])}
+        ).get(field[len(SYNC_CUSTOM_PREFIX):], "")
+    patch, _ = _sync_patch({field: contact.get(field)})
+    return _contact_data(patch).get(field)
+
+
+def _sync_expected(field, value):
+    if field.startswith(SYNC_CUSTOM_PREFIX):
+        return _sync_value({"fields": {field[len(SYNC_CUSTOM_PREFIX):]: value}}, field)
+    return _sync_value({field: value}, field)
+
+
+def _sync_contact(contact):
+    out = {"id": contact["id"], "flow": contact["flow"],
+           "updatedAt": contact["updatedAt"], "updatedBy": contact["updatedBy"],
+           "fields": contact["fields"]}
+    for field in SYNC_FIELDS:
+        out[field] = contact[field]
+    return out
+
+
+def _sync_columns(view_columns, contacts):
+    columns, fields, labels = [], set(), set()
+
+    def add(field, label):
+        if field in fields or len(columns) >= SYNC_MAX_COLUMNS:
+            return
+        label = _clean(label, 60) or field
+        base, number = label, 2
+        while label.lower() in labels or label.lower() in SYNC_RESERVED_LABELS:
+            label = "%s %d" % (base, number)
+            number += 1
+        fields.add(field)
+        labels.add(label.lower())
+        columns.append({"field": field, "label": label})
+
+    shown = [column for column in view_columns or [] if not column.get("hidden")]
+    named = {column["field"]: column["label"] for column in view_columns or []}
+    for field in ("name", "email"):
+        add(field, named.get(field) or CONTACT_COLUMN_LABELS[field])
+    for column in shown:
+        field = (SYNC_CUSTOM_PREFIX + column["field"]) if column.get("custom") else column["field"]
+        if _sync_field(field):
+            add(field, column["label"])
+    for field in SYNC_FIELDS:
+        add(field, named.get(field) or CONTACT_COLUMN_LABELS[field])
+    for column in view_columns or []:
+        if column.get("custom"):
+            add(SYNC_CUSTOM_PREFIX + column["field"], column["label"])
+    for contact in contacts:
+        for key in contact.get("fields") or {}:
+            if _sync_field(SYNC_CUSTOM_PREFIX + key):
+                add(SYNC_CUSTOM_PREFIX + key, key.replace("_", " ").title())
+    return columns
+
+
+async def _sync_list(runtime, org_bi, account_bi, actor, role, list_id):
+    list_id = _clean(list_id, 80)
+    flows = await _org_flows(runtime, org_bi)
+    views = await _org_list_views(runtime, org_bi)
+    pipeline_lists = _pipeline_lists(views)
+    stages = {flow["id"]: list(flow["stages"]) for flow in flows}
+    if CONTACT_ID_RE.fullmatch(list_id):
+        row = await _view_row(runtime, org_bi, list_id)
+        view = await _view_project(runtime, row, account_bi, role) if row else None
+        if not row or not _view_readable(
+                view, str(row.get("owner_bi") or ""), account_bi, actor, role):
+            return None
+        return ({"id": view["id"], "name": view["name"], "flow": view["flow"],
+                 "stages": stages.get(view["flow"], []), "canAdd": True},
+                view["columns"], lambda contact: _contact_in_view(contact, view, pipeline_lists),
+                flows, views)
+    if list_id.startswith(SYNC_PIPELINE_PREFIX):
+        flow_id = list_id[len(SYNC_PIPELINE_PREFIX):]
+        flow = next((item for item in flows if item["id"] == flow_id), None)
+        if not flow or flow_id in pipeline_lists:
+            return None
+        return ({"id": list_id, "name": flow["name"], "flow": flow_id,
+                 "stages": list(flow["stages"]), "canAdd": True},
+                [], lambda contact: contact.get("flow") == flow_id, flows, views)
+    if list_id == SYNC_NO_PIPELINE:
+        known = set(stages) | set(pipeline_lists)
+        return ({"id": list_id, "name": "No pipeline", "flow": "", "stages": [],
+                 "canAdd": False},
+                [], lambda contact: contact.get("flow") not in known, flows, views)
+    return None
+
+
+async def _sync_members(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT name FROM org_members WHERE org_bi=? ORDER BY name LIMIT 200", org_bi)
+    return [str(row.get("name") or "") for row in rows or [] if row.get("name")]
+
+
+async def _sync_read(runtime, org_bi, account_bi, actor, role):
+    found = await _sync_list(runtime, org_bi, account_bi, actor, role,
+                             runtime.query_params().get("list"))
+    if found is None:
+        return _response(runtime, {"error": "list_not_found"}, 404)
+    info, view_columns, member, _, _ = found
+    contacts = [contact for contact in await _contacts(runtime, org_bi) if member(contact)]
+    return _response(runtime, {
+        "ok": True, "list": info,
+        "columns": _sync_columns(view_columns, contacts),
+        "contacts": [_sync_contact(contact) for contact in contacts],
+        "members": await _sync_members(runtime, org_bi),
+        "canWrite": role not in ORG_READ_ONLY_ROLES,
+        "readAt": runtime.now(),
+    })
+
+
+def _sync_stage_error(contact, patch, flows):
+    if "stage" not in patch:
+        return None
+    flow = next((item for item in flows if item["id"] == contact.get("flow")), None)
+    if flow and contact.get("stage") not in flow["stages"]:
+        return {"error": "unknown_stage", "stages": list(flow["stages"])}
+    return None
+
+
+def _sync_contact_error(contact, patch):
+    if not contact.get("name") and not contact.get("email"):
+        return {"error": "name_or_email_required"}
+    if patch.get("email") and not contact.get("email"):
+        return {"error": "invalid_email"}
+    return None
+
+
+async def _sync_email_holders(runtime, org_bi, email_bis):
+    if not email_bis:
+        return {}
+    rows = await runtime.d1_all(
+        "SELECT contact_id,email_bi FROM crm_contacts WHERE org_bi=? AND email_bi IN "
+        "(SELECT value FROM json_each(?))",
+        org_bi, json.dumps(sorted(email_bis)))
+    return {str(row["email_bi"]): str(row["contact_id"]) for row in rows or []}
+
+
+async def _sync_write(runtime, org_bi, org_name, account_bi, actor, role, data):
+    found = await _sync_list(runtime, org_bi, account_bi, actor, role, data.get("list"))
+    if found is None:
+        return _response(runtime, {"error": "list_not_found"}, 404)
+    info, _, _, flows, views = found
+    updates = data.get("updates") if isinstance(data.get("updates"), list) else []
+    creates = data.get("creates") if isinstance(data.get("creates"), list) else []
+    if not updates and not creates:
+        return _response(runtime, {"error": "changes_required"}, 400)
+    if len(updates) + len(creates) > SYNC_MAX_ROWS:
+        return _response(runtime, {"error": "too_many_rows", "limit": SYNC_MAX_ROWS}, 413)
+    wanted = [str((item if isinstance(item, dict) else {}).get("id") or "").lower()
+              for item in updates]
+    rows = await runtime.d1_all(
+        "SELECT contact_id,org_name,created_by_name,updated_by_name,created_at,updated_at,"
+        "email_bi,data FROM crm_contacts WHERE org_bi=? AND contact_id IN "
+        "(SELECT value FROM json_each(?))",
+        org_bi, json.dumps([item for item in wanted if CONTACT_ID_RE.fullmatch(item)]))
+    by_id = {str(row["contact_id"]): row for row in rows or []}
+    results, staged, seen = [], [], set()
+    for item, contact_id in zip(updates, wanted):
+        item = item if isinstance(item, dict) else {}
+        if not CONTACT_ID_RE.fullmatch(contact_id) or contact_id in seen:
+            results.append({"id": contact_id[:32], "status": "error",
+                            "error": "duplicate_contact_id" if contact_id in seen
+                            else "invalid_contact_id"})
+            continue
+        seen.add(contact_id)
+        row = by_id.get(contact_id)
+        if not row:
+            results.append({"id": contact_id, "status": "missing"})
+            continue
+        existing = await runtime.open(row.get("data"))
+        existing = existing if isinstance(existing, dict) else {}
+        patch, bad = _sync_patch(item.get("set"))
+        expect = item.get("expect") if isinstance(item.get("expect"), dict) else {}
+        if bad or any(not _sync_field(field) for field in expect):
+            results.append({"id": contact_id, "status": "error", "error": "invalid_field",
+                            "field": bad or next(f for f in expect if not _sync_field(f))})
+            continue
+        current = _contact_fields(row, existing)
+        changed = [field for field, value in expect.items()
+                   if _sync_expected(field, value) != _sync_value(current, field)]
+        if changed:
+            results.append({"id": contact_id, "status": "conflict", "fields": changed,
+                            "contact": _sync_contact(current)})
+            continue
+        contact = _contact_data(patch, existing)
+        problem = _sync_stage_error(contact, patch, flows) or _sync_contact_error(contact, patch)
+        if problem:
+            results.append(dict(problem, id=contact_id, status="error"))
+            continue
+        if _edit_marks_contacted(patch, existing, contact):
+            _advance_contacted(contact, flows)
+        if contact == existing:
+            results.append({"id": contact_id, "status": "unchanged",
+                            "contact": _sync_contact(current)})
+            continue
+        email_bi = await _unique_email_bi(runtime, org_bi, contact.get("email"))
+        staged.append((len(results), contact_id, row, existing, contact, email_bi))
+        results.append(None)
+    holders = await _sync_email_holders(runtime, org_bi, {
+        entry[5] for entry in staged if entry[5] != str(entry[2].get("email_bi") or "")})
+    claimed = {}
+    now = runtime.now()
+    sealed, changes, email_moves = {}, [], []
+    for index, contact_id, row, existing, contact, email_bi in staged:
+        moved = email_bi != str(row.get("email_bi") or "")
+        holder = holders.get(email_bi, "") if moved else ""
+        if email_bi and ((holder and holder != contact_id)
+                         or claimed.get(email_bi, contact_id) != contact_id):
+            results[index] = {"id": contact_id, "status": "error",
+                              "error": "contact_email_exists"}
+            continue
+        if email_bi:
+            claimed[email_bi] = contact_id
+        if moved:
+            email_moves.append((index, contact_id, row, existing, contact, email_bi))
+            continue
+        sealed[contact_id] = await runtime.seal(contact)
+        changes.append((existing, contact))
+        results[index] = {"id": contact_id, "status": "updated", "contact": _sync_contact(
+            _contact_fields(dict(row, updated_by_name=actor, updated_at=now), contact))}
+    await _write_sealed_contacts(runtime, org_bi, account_bi, actor, now, sealed)
+    for index, contact_id, row, existing, contact, email_bi in email_moves:
+        try:
+            await runtime.d1_run(
+                "UPDATE crm_contacts SET email_bi=?,updated_by_bi=?,updated_by_name=?,"
+                "updated_at=?,data=? WHERE org_bi=? AND contact_id=?",
+                email_bi, account_bi, actor, now, await runtime.seal(contact), org_bi,
+                contact_id)
+        except Exception as error:
+            if not _unique_conflict(error):
+                raise
+            results[index] = {"id": contact_id, "status": "error",
+                              "error": "contact_email_exists"}
+            continue
+        changes.append((existing, contact))
+        results[index] = {"id": contact_id, "status": "updated", "contact": _sync_contact(
+            _contact_fields(dict(row, updated_by_name=actor, updated_at=now), contact))}
+    created = 0
+    for item in creates:
+        item = item if isinstance(item, dict) else {}
+        ref = _clean(item.get("ref"), 40)
+        result = await _sync_create(runtime, org_bi, org_name, account_bi, actor, info,
+                                    flows, item, claimed)
+        if result.pop("_created", False):
+            changes.append((None, result.pop("_contact")))
+            created += 1
+        results.append(dict(result, ref=ref))
+    if changes:
+        await runtime.audit(actor, "crm.contacts.sync", "organization", org_name,
+                            details={"contacts": len(changes), "created": created,
+                                     "list": info["id"]})
+        await _record_contact_changes(runtime, org_bi, account_bi, actor, changes, views)
+    return _response(runtime, {"ok": True, "list": info, "results": results})
+
+
+async def _sync_create(runtime, org_bi, org_name, account_bi, actor, info, flows, item,
+                       claimed):
+    if not info["canAdd"]:
+        return {"status": "error", "error": "list_cannot_add"}
+    request_id = str(item.get("requestId") or "").lower()
+    request_id = request_id if CONTACT_ID_RE.fullmatch(request_id) else ""
+    if request_id:
+        replay = await _contact_row(runtime, org_bi, request_id)
+        if replay:
+            return {"id": request_id, "status": "created", "replayed": True,
+                    "contact": _sync_contact(await _contact_project(runtime, replay))}
+    patch, bad = _sync_patch(item.get("set"))
+    if bad:
+        return {"status": "error", "error": "invalid_field", "field": bad}
+    if info["flow"]:
+        patch["flow"] = info["flow"]
+    if CONTACT_ID_RE.fullmatch(info["id"]):
+        patch["views"] = [info["id"]]
+    contact = _contact_data(patch)
+    placed = _flow_placement(contact, flows)
+    problem = None
+    if "stage" in patch and placed["stage"] != contact["stage"]:
+        flow = next((entry for entry in flows if entry["id"] == placed["flow"]), None)
+        problem = {"error": "unknown_stage", "stages": list(flow["stages"]) if flow else []}
+    contact = placed
+    problem = problem or _sync_contact_error(contact, patch)
+    if problem:
+        return dict(problem, status="error")
+    email_bi = await _unique_email_bi(runtime, org_bi, contact.get("email"))
+    taken = await _contact_taken(runtime, org_bi, email_bi)
+    if taken or (email_bi and email_bi in claimed):
+        return {"status": "error", "error": "contact_email_exists",
+                **({"existing": taken["contact_id"]} if taken else {})}
+    contact_id = request_id or runtime.new_id()
+    try:
+        inserted = await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                                         account_bi, actor, runtime.now(), contact)
+    except Exception as error:
+        if not _unique_conflict(error):
+            raise
+        return {"status": "error", "error": "contact_email_exists"}
+    if not inserted:
+        return {"status": "error", "error": "crm_full"}
+    if email_bi:
+        claimed[email_bi] = contact_id
+    await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
+    return {"id": contact_id, "status": "created", "_created": True, "_contact": contact,
+            "contact": _sync_contact(await _contact_project(
+                runtime, await _contact_row(runtime, org_bi, contact_id)))}
 
 
 async def _delete_custom_column(runtime, org_bi, org_name, account_bi, actor, data):
@@ -6403,7 +6756,8 @@ def _auto_email_lessons(sends):
 
 
 def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
-                       angle, flow_name, conversation, lessons, reason, activity=()):
+                       angle, flow_name, conversation, lessons, reason, activity=(),
+                       actor="", mission="", offers=()):
     name = _contact_label(contact)
     investor = link_kind == "deck"
     goal = ("This is our first contact with %s: introduce %s in a sentence and give "
@@ -6441,8 +6795,17 @@ def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
     lines += [
         "", "## About us: " + org_name,
         brief or "(No description saved: describe us only in general terms.)",
-        "", "## About " + name,
     ]
+    if mission:
+        lines += ["", "## Our mission", mission]
+    if actor:
+        lines += ["", "## About me, the sender",
+                  "%s, writing as %s on ForkMesh. Sign with my name only." % (sender, actor)]
+    if offers:
+        lines += ["", "## Pages you may offer (at most one or two that fit their next step, "
+                      "each exactly as given on its own line; leave out the rest)"]
+        lines += ["- %s: %s" % (label, url) for label, url in offers]
+    lines += ["", "## About " + name]
     lines += facts or ["- Nothing beyond the name is on record."]
     if notes:
         lines += ["", "Our notes on them:", notes]
@@ -7221,6 +7584,37 @@ async def _auto_email_link(runtime, flows, org_bi, org_name, account_bi, actor,
     return "referral", REFERRAL_ORIGIN + quote(actor)
 
 
+async def _auto_email_offers(runtime, org_bi, account_bi):
+    origin = _track_origin(runtime)
+    offers = []
+    try:
+        page = await runtime.d1_first(
+            "SELECT slug FROM booking_pages WHERE account_bi=? AND enabled=1", account_bi)
+    except Exception:
+        page = None
+    slug = _clean((page or {}).get("slug"), 63).lower()
+    if re.fullmatch(r"[a-z0-9-]{1,63}", slug):
+        offers.append(("Book a meeting with me", "%s/meet?%s" % (origin, slug)))
+    try:
+        rows = await runtime.d1_all(
+            "SELECT survey_id,data FROM survey_forms WHERE org_bi=? AND status='open' "
+            "ORDER BY published_at DESC LIMIT ?", org_bi, AUTO_EMAIL_OFFER_LIMIT)
+    except Exception:
+        rows = []
+    for row in rows or []:
+        survey_id = _clean(row.get("survey_id"), 64).lower()
+        if not re.fullmatch(r"[0-9a-f]{32}", survey_id):
+            continue
+        try:
+            data = await runtime.open(row.get("data"))
+        except Exception:
+            data = {}
+        title = _clean((data if isinstance(data, dict) else {}).get("title"), 120) or "Survey"
+        token = "%s.%s" % (survey_id, (await runtime.blind("survey-link:" + survey_id))[:24])
+        offers.append(("Survey: " + title, "%s/survey?t=%s" % (origin, token)))
+    return offers[:AUTO_EMAIL_OFFER_LIMIT]
+
+
 async def _auto_email_write(runtime, account_bi, prompt, link):
     ai_json = getattr(runtime, "ai_json", None)
     if ai_json is None:
@@ -7283,16 +7677,25 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         AUTO_EMAIL_FORKMESH_BRIEF if org_name == "forkmesh" else "")
     sends = await _auto_email_history(runtime, org_bi, now)
     note_link = "" if link_kind == "deck" else link
+    offers = await _auto_email_offers(runtime, org_bi, account_bi)
     prompt = _auto_email_prompt(
         org_name, from_name, brief, contact, mode, link_kind, link,
         _auto_email_angle([_clean(data.get("list"), 80), flow_name]), flow_name,
         await _auto_email_conversation(runtime, org_bi, contact_id),
         _auto_email_lessons(sends), _clean(data.get("reason"), 400),
-        await _auto_email_activity(runtime, org_bi, contact_id, contact))
+        await _auto_email_activity(runtime, org_bi, contact_id, contact),
+        actor=actor,
+        mission=AUTO_EMAIL_FORKMESH_MISSION if org_name == "forkmesh" else "",
+        offers=offers)
     learning = _auto_email_stats(sends)
     fallback = {"prompt": "\n\n".join((AUTO_EMAIL_RULES, prompt, AUTO_EMAIL_AGENT_REPLY)),
                 "link": link,
-                "linkKind": link_kind, "mode": mode, "learning": learning}
+                "linkKind": link_kind, "mode": mode, "learning": learning,
+                "offers": [{"label": label, "url": url} for label, url in offers]}
+    if data.get("promptOnly"):
+        return _response(runtime, dict(
+            fallback, ok=True, preview=True, to=recipient, fromEmail=from_email,
+            fromName=from_name))
     model = ""
     if data.get("subject") or data.get("text"):
         draft = _auto_email_draft(data.get("subject"), data.get("text"), note_link, prompt)
@@ -8186,7 +8589,7 @@ ACTIVITY_RECIPIENTS = 10
 ACTIVITY_SEEN_MAX = 512
 ACTIVITY_NAMED_ITEMS = frozenset({
     "import", "grants", "lookup", "bulk", "merge", "delete-column", "evidence",
-    "send", "link", "note",
+    "send", "link", "note", "sync",
     "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange",
     "auto", "rate"})
 ACTIVITY_PINGS = {
@@ -8194,6 +8597,7 @@ ACTIVITY_PINGS = {
     ("contacts", "import", "POST"): ("CRM contacts imported", "others", True),
     ("contacts", "grants", "POST"): ("CRM grants loaded", "others", True),
     ("contacts", "bulk", "POST"): ("CRM contacts updated", "team", True),
+    ("contacts", "sync", "POST"): ("CRM contacts updated from a spreadsheet", "team", True),
     ("contacts", "merge", "POST"): ("CRM contacts merged", "team", False),
     ("contacts", "delete-column", "POST"): ("CRM column removed", "team", False),
     ("contacts", "evidence", "POST"): ("CRM account evidence recorded", "team", True),
@@ -8346,6 +8750,8 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "contacts" and item in ("export", "duplicates"):
         allowed = ("GET",)
+    elif resource == "contacts" and item == "sync":
+        allowed = ("GET", "POST")
     elif resource == "emails" and item in ("send", "link", "toot", "toots"):
         allowed = ("POST",)
     elif resource == "mail" and item == "import":
@@ -8590,6 +8996,10 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
         if item == "bulk":
             return await _bulk_update_contacts(
                 runtime, org_bi, org_name, account_bi, actor, data)
+        if item == "sync":
+            if method == "GET":
+                return await _sync_read(runtime, org_bi, account_bi, actor, role)
+            return await _sync_write(runtime, org_bi, org_name, account_bi, actor, role, data)
         if item == "merge":
             return await _merge_contacts(runtime, org_bi, account_bi, actor, data)
         if item == "delete-column":

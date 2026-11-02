@@ -109,6 +109,41 @@ class SurveysTest {
         assertEq("a1b2c3d4", survey.question("a1b2c3d4")?.id)
     }
 
+    fun testDetailActivityAndVisitPings() {
+        val old = Survey.fromJson(detailJson())
+        assertEq(PageActivity(), old.activity)
+        assertEq("No visits in the last 30 days", old.activity.summary(jan10))
+        expect(old.settings.notifyOnVisit)
+        assertEq(true, old.settings.body["notifyOnVisit"])
+
+        val json = detailJson() + mapOf(
+            "activity" to mapOf(
+                "days" to 30, "views" to 8, "visitors" to 1, "interactions" to 3, "starts" to 1, "submits" to 1, "leaves" to 0,
+                "lastActivityAt" to jan10 - 300_000,
+                "recent" to listOf(
+                    mapOf("kind" to "submit", "detail" to "", "label" to "Sent the answers", "visitor" to "a3f9c1", "at" to jan10 - 300_000),
+                    mapOf("kind" to "start", "detail" to "a1b2c3d4", "label" to "Started answering", "visitor" to "a3f9c1", "at" to jan10 - 600_000),
+                    mapOf("kind" to "view", "label" to "Opened the survey", "visitor" to "a3f9c1", "at" to jan10 - 90_000_000),
+                ),
+            ),
+            "settings" to mapOf("notifyOnResponse" to false, "notifyOnVisit" to false),
+        )
+        val survey = Survey.fromJson(json)
+        assertEq(8, survey.activity.views)
+        assertEq("Last 30 days: 8 views · 1 visitor · 1 started · 1 sent · last activity 5m ago", survey.activity.summary(jan10))
+        assertEq(listOf("Sent the answers", "Started answering", "Opened the survey"), survey.activity.newest.map { it.label })
+        assertEq(listOf("5m ago", "10m ago", "1d ago"), survey.activity.newest.map { it.whenLabel(jan10) })
+        assertEq("a1b2c3d4", survey.activity.recent[1].detail)
+        assertEq("", survey.activity.recent[1].type)
+        expect(!survey.settings.notifyOnVisit && !survey.settings.notifyOnResponse)
+
+        val draft = SurveyDraft.of(survey, utc)
+        expect(!draft.notifyOnVisit)
+        assertEq(false, (draft.body(utc)["settings"] as Map<*, *>)["notifyOnVisit"])
+        assertEq(true, (draft.copy(notifyOnVisit = true).body(utc)["settings"] as Map<*, *>)["notifyOnVisit"])
+        assertEq(true, (SurveyDraft().body(utc)["settings"] as Map<*, *>)["notifyOnVisit"])
+    }
+
     fun testActionsFollowTheStatus() {
         val draft = Survey.fromJson(surveyJson(status = "draft", extra = mapOf("responseCount" to 0)))
         assertEq(listOf(SurveyAction.EDIT, SurveyAction.PUBLISH, SurveyAction.DUPLICATE, SurveyAction.DELETE), draft.actions)

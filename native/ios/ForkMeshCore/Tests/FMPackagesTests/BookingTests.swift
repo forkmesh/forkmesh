@@ -190,6 +190,72 @@ final class BookingTests: XCTestCase {
         XCTAssertEqual(BookingDraft.clock(545), "09:05")
     }
 
+    func testActivityDecodesAndSummarises() {
+        var json = overview()
+        let old = BookingOverview(json: json).activity
+        XCTAssertEqual(old, PageActivity())
+        XCTAssertTrue(old.isEmpty)
+        XCTAssertEqual(old.summary(now: monday), "No visits in the last 30 days")
+        XCTAssertEqual(old.newest, [])
+        var recent: [JSONValue] = [
+            [
+                "kind": "form", "type": "intro", "detail": "", "label": "Opened the details form for Intro call",
+                "visitor": "a3f9c1", "at": .int(monday - 7_200_000),
+            ],
+            ["kind": "view", "type": "", "label": "Opened your page", "visitor": "a3f9c1", "at": .int(monday - 7_300_000)],
+            ["kind": "view", "label": "", "at": 1],
+        ]
+        for step in 1...4 {
+            recent.append(["kind": "slot", "label": .string("Picked a time \(step)"), "visitor": "b0b0b0", "at": .int(monday - 86_400_000 * Int64(step))])
+        }
+        json["activity"] = [
+            "days": 30, "views": 42, "visitors": 12, "interactions": 9, "starts": 5, "submits": 3, "leaves": 7,
+            "lastActivityAt": .int(monday - 7_200_000), "recent": .array(recent),
+        ]
+        let activity = BookingOverview(json: json).activity
+        XCTAssertEqual(activity.views, 42)
+        XCTAssertEqual(activity.visitors, 12)
+        XCTAssertEqual(activity.interactions, 9)
+        XCTAssertEqual(activity.starts, 5)
+        XCTAssertEqual(activity.submits, 3)
+        XCTAssertEqual(activity.leaves, 7)
+        XCTAssertFalse(activity.isEmpty)
+        XCTAssertEqual(activity.recent.count, 6)
+        XCTAssertEqual(activity.recent[0], PageVisit(kind: "form", type: "intro", label: "Opened the details form for Intro call", visitor: "a3f9c1", at: monday - 7_200_000))
+        XCTAssertEqual(activity.summary(now: monday), "Last 30 days: 42 views · 12 visitors · 5 started · 3 sent · last activity 2h ago")
+        XCTAssertEqual(activity.newest.map(\.label), ["Opened the details form for Intro call", "Opened your page", "Picked a time 1", "Picked a time 2", "Picked a time 3"])
+        XCTAssertEqual(activity.newest.map { $0.when(now: monday) }, ["2h ago", "2h ago", "1d ago", "2d ago", "3d ago"])
+        XCTAssertEqual(PageVisit(label: "x").when(now: monday), "")
+
+        var single = PageActivity()
+        single.days = 1
+        single.views = 1
+        single.visitors = 1
+        XCTAssertEqual(single.summary(now: monday), "Last day: 1 view · 1 visitor · 0 started · 0 sent")
+        var clicks = PageActivity()
+        clicks.interactions = 2
+        XCTAssertEqual(clicks.summary(now: monday), "Last 30 days: 0 views · 0 visitors · 0 started · 0 sent")
+        XCTAssertEqual(PageActivity(json: ["days": 0, "views": -4]).summary(now: monday), "No visits in the last day")
+    }
+
+    func testNotifyVisitsRoundTrips() {
+        var json = overview()
+        let missing = BookingOverview(json: json)
+        XCTAssertTrue(missing.settings.notifyVisits)
+        XCTAssertTrue(BookingSettings().notifyVisits)
+        XCTAssertEqual(BookingDraft(overview: missing).body.optBool("notifyVisits"), true)
+        var settings = json.obj("settings")
+        settings["notifyVisits"] = false
+        json["settings"] = .object(settings)
+        let off = BookingOverview(json: json)
+        XCTAssertFalse(off.settings.notifyVisits)
+        var draft = BookingDraft(overview: off)
+        XCTAssertFalse(draft.notifyVisits)
+        XCTAssertEqual(draft.body.optBool("notifyVisits"), false)
+        draft.notifyVisits = true
+        XCTAssertEqual(draft.body.optBool("notifyVisits"), true)
+    }
+
     @MainActor func testClientPathsAndBodies() async throws {
         let transport = FakePackagesTransport()
         let client = PackagesClient(transport: transport)

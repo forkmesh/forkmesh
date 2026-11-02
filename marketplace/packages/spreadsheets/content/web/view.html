@@ -112,6 +112,12 @@
               .sheets-toast { position: absolute; left: 50%; bottom: 52px; z-index: 90; max-width: min(560px, 90%); transform: translateX(-50%); padding: 8px 14px; border-radius: 8px; background: rgb(var(--dashboard-foreground-rgb)); color: rgb(var(--dashboard-background-rgb)); font-size: 13px; box-shadow: 0 6px 20px rgb(1 4 9 / .3); }
               .sheets-print-frame { position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; }
               .sheets-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 8px 0; }
+              .sheets-crm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 8px 0; padding: 4px 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 6px; font-size: 12px; }
+              .sheets-crm > svg { width: 16px; height: 16px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .sheets-crm-conflicts { display: grid; gap: 8px; max-height: 420px; margin-top: 10px; overflow-y: auto; }
+              .sheets-crm-conflict { padding: 6px 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 6px; font-size: 13px; }
+              .sheets-crm-conflict legend { padding: 0 4px; }
+              .sheets-crm-conflict span { overflow-wrap: anywhere; color: rgb(var(--dashboard-muted-foreground-rgb)); }
               @media (max-width: 760px) { .sheets-ai { position: absolute; inset: 0 0 0 auto; z-index: 20; width: min(340px, 100%); } .sheets-font { width: 96px; } }
             </style>
 
@@ -166,6 +172,17 @@
                 <button data-sheets-download type="button" class="fm-btn fm-btn-sm"><i data-lucide="download"></i>Download</button>
               </div>
               <div data-sheets-conflict class="sheets-conflict fm-flash fm-flash-warning hidden"><i data-lucide="triangle-alert"></i><p class="fm-flash-body">This spreadsheet was saved on another device while you were editing.</p><div class="fm-flash-actions"><button type="button" data-sheets-conflict-reload class="fm-btn fm-btn-sm">Load their version</button><button type="button" data-sheets-conflict-keep class="fm-btn fm-btn-sm">Keep mine</button></div></div>
+              <div data-sheets-crm class="sheets-crm hidden" role="region" aria-label="Linked CRM list">
+                <i data-lucide="contact-round"></i>
+                <span class="text-muted-foreground">Linked to</span><span data-sheets-crm-name class="font-semibold text-foreground"></span>
+                <span data-sheets-crm-state class="text-muted-foreground" aria-live="polite"></span>
+                <button data-sheets-crm-problems type="button" class="fm-btn fm-btn-sm fm-btn-invisible hidden"><i data-lucide="triangle-alert"></i><span></span></button>
+                <span data-sheets-crm-error class="text-destructive hidden" role="alert"></span>
+                <span class="ml-auto"></span>
+                <button data-sheets-crm-refresh type="button" class="fm-btn fm-btn-sm" title="Read the list again and bring the CRM's changes into the sheet"><i data-lucide="refresh-cw"></i>Refresh from CRM</button>
+                <button data-sheets-crm-sync type="button" class="fm-btn fm-btn-sm"><i data-lucide="upload"></i>Sync to CRM</button>
+                <button data-sheets-crm-menu type="button" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon" aria-label="More CRM link actions" title="More CRM link actions"><i data-lucide="ellipsis"></i></button>
+              </div>
               <nav data-sheets-menubar class="sheets-menubar" aria-label="Spreadsheet menu"></nav>
               <div data-sheets-toolbar class="sheets-toolbar" role="toolbar" aria-label="Formatting"></div>
               <div class="sheets-formulabar">

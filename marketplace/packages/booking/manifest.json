@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "summary": "Share one short link to your calendar. People pick a free time and book a meeting, it lands on your ForkMesh calendar, and ForkMesh emails both of you the details.",
   "screenshots": [
     {
@@ -72,7 +72,7 @@
     },
     {
       "id": "booking.public.link",
-      "label": "Let anyone with your booking link see your free times and book a meeting with you",
+      "label": "Let anyone with your booking link see your free times and book a meeting, and count their visits for you",
       "risk": "sensitive"
     },
     {
@@ -92,7 +92,7 @@
     },
     {
       "id": "notifications.plugin.send",
-      "label": "Ping you when someone books, moves or cancels a meeting",
+      "label": "Ping you when someone opens your page, picks a time, books, moves or cancels a meeting",
       "risk": "low"
     },
     {

@@ -19,6 +19,16 @@ MAX_RESPONSES_LISTED = 2000
 MAX_RESULT_ROWS = 2000
 MAX_TEXT_ANSWERS = 20
 HOURLY_PER_RESPONDENT = 10
+MAX_VISITS = 1000
+MAX_RECENT_VISITS = 50
+VISIT_RETAIN_MS = 90 * 24 * 60 * 60 * 1000
+VISIT_SUMMARY_DAYS = 30
+VISITOR_HOURLY_EVENTS = 120
+SURVEY_HOURLY_EVENTS = 1500
+SURVEY_HOURLY_VISIT_PINGS = 10
+TRACK_KINDS = ("view", "start", "answer", "submit", "link", "leave")
+TRACK_START_KINDS = frozenset({"start", "answer"})
+TRACK_LINKS = frozenset({"forkmesh"})
 MANAGER_ROLES = frozenset({"owner", "admin"})
 STATUSES = ("draft", "open", "closed")
 QUESTION_TYPES = ("single", "multiple", "text", "paragraph", "rating")
@@ -31,6 +41,8 @@ ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 QID_RE = re.compile(r"^[0-9a-f]{8}$")
 TOKEN_RE = re.compile(r"^([0-9a-f]{32})\.([0-9a-f]{24})$")
+SESSION_RE = re.compile(r"^[0-9a-f]{32}$")
+COUNT_RE = re.compile(r"^(?:0|[1-9]\d?)$")
 ORIGIN_RE = re.compile(r"^https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?$")
 DEFAULT_SETTINGS = {
     "oneResponsePerPerson": False,
@@ -38,6 +50,7 @@ DEFAULT_SETTINGS = {
     "closesAt": 0,
     "maxResponses": 0,
     "notifyOnResponse": True,
+    "notifyOnVisit": True,
     "shuffleOptions": False,
 }
 DEFAULT_THANK_YOU = "Thank you for answering."
@@ -84,8 +97,23 @@ DATA_SCHEMA_UP = [
         BEFORE INSERT ON survey_responses
         WHEN (SELECT COUNT(*) FROM survey_responses WHERE survey_id=NEW.survey_id)>=10000
         BEGIN SELECT RAISE(ABORT,'survey_responses_full'); END""",
+    """CREATE TABLE IF NOT EXISTS survey_visits (
+        visit_id TEXT PRIMARY KEY,
+        org_bi TEXT NOT NULL,
+        survey_id TEXT NOT NULL REFERENCES survey_forms(survey_id) ON DELETE CASCADE,
+        visitor_key TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        pinged INTEGER NOT NULL DEFAULT 0 CHECK(pinged IN (0,1,2)),
+        created_at INTEGER NOT NULL CHECK(created_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_survey_visits_survey "
+    "ON survey_visits(survey_id,created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_survey_visits_visitor "
+    "ON survey_visits(survey_id,visitor_key,created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_survey_visits_org ON survey_visits(org_bi,created_at)",
 ]
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS survey_visits",
     "DROP TABLE IF EXISTS survey_responses",
     "DROP TABLE IF EXISTS survey_forms",
 ]
@@ -142,9 +170,9 @@ def _route(path):
     clean = str(path or "").rstrip("/")
     if clean == PREFIX:
         return ("organizations",)
-    match = re.fullmatch(r"/api/surveys/-/public/([0-9a-f]{32}\.[0-9a-f]{24})", clean)
+    match = re.fullmatch(r"/api/surveys/-/public/([0-9a-f]{32}\.[0-9a-f]{24})(/track)?", clean)
     if match:
-        return ("public", match.group(1))
+        return ("track" if match.group(2) else "public", match.group(1))
     match = re.fullmatch(
         r"/api/surveys/([a-z][a-z0-9-]{0,62})"
         r"(?:/(items)(?:/([0-9a-f]{32})"
@@ -166,7 +194,7 @@ def _settings(value, existing=None):
         if isinstance(existing, dict) and key in existing:
             result[key] = existing[key]
     value = value if isinstance(value, dict) else {}
-    for key in ("oneResponsePerPerson", "notifyOnResponse", "shuffleOptions"):
+    for key in ("oneResponsePerPerson", "notifyOnResponse", "notifyOnVisit", "shuffleOptions"):
         if key in value:
             result[key] = value.get(key) is True
     for key in ("opensAt", "closesAt"):
@@ -174,7 +202,7 @@ def _settings(value, existing=None):
             result[key] = _stamp(value.get(key))
     if "maxResponses" in value:
         result["maxResponses"] = min(MAX_RESPONSES, max(0, _integer(value.get("maxResponses"))))
-    for key in ("oneResponsePerPerson", "notifyOnResponse", "shuffleOptions"):
+    for key in ("oneResponsePerPerson", "notifyOnResponse", "notifyOnVisit", "shuffleOptions"):
         result[key] = result[key] is True
     for key in ("opensAt", "closesAt", "maxResponses"):
         result[key] = _integer(result[key])
@@ -517,6 +545,7 @@ async def _full_survey(runtime, org_bi, survey_id, viewer):
     survey["questions"] = questions
     survey["results"] = _results(questions, [item["answers"] for item in responses])
     survey["resultsCounted"] = len(responses)
+    survey["activity"] = await _activity(runtime, survey_id, questions, runtime.now())
     return survey
 
 
@@ -680,6 +709,7 @@ async def _delete(runtime, row, org_bi, viewer, actor):
     account_bi, role = viewer
     if role not in MANAGER_ROLES and str(row.get("created_by_bi") or "") != account_bi:
         return _response(runtime, {"error": "survey_delete_forbidden"}, 403)
+    await runtime.d1_run("DELETE FROM survey_visits WHERE survey_id=?", row["survey_id"])
     await runtime.d1_run("DELETE FROM survey_responses WHERE survey_id=?", row["survey_id"])
     await runtime.d1_run(
         "DELETE FROM survey_forms WHERE org_bi=? AND survey_id=?", org_bi, row["survey_id"])
@@ -853,6 +883,152 @@ async def _submit(runtime, token, body):
         "ok": True, "thankYou": str(data.get("thankYou") or DEFAULT_THANK_YOU)}, 201)
 
 
+def _track_detail(kind, value, questions):
+    detail = _clean(value, 16).lower()
+    if kind == "answer":
+        return detail if detail in {question["id"] for question in questions} else None
+    if kind == "link":
+        return detail if detail in TRACK_LINKS else None
+    if kind == "leave":
+        return detail if COUNT_RE.fullmatch(detail) else None
+    return "" if not detail else None
+
+
+async def _visit_key(runtime, survey_id, session):
+    address = str((_visitor(runtime) or {}).get("ip") or "").strip()
+    if address:
+        return (await runtime.blind("survey-visitor:%s:%s" % (survey_id, address)))[:32]
+    session = str(session or "").lower()
+    if SESSION_RE.fullmatch(session):
+        return (await runtime.blind("survey-visitor-session:%s:%s" % (survey_id, session)))[:32]
+    return ""
+
+
+async def _count(runtime, sql, *args):
+    row = await runtime.d1_first(sql, *args)
+    return _integer((row or {}).get("n"))
+
+
+async def _visit_ping(runtime, row, data, key, kind, now):
+    stage = 1 if kind == "view" else 2 if kind in TRACK_START_KINDS else 0
+    notify = getattr(runtime, "notify", None)
+    creator = _clean(row.get("created_by_name"), 64).lower()
+    if (not stage or not key or notify is None or not creator
+            or not _settings(data.get("settings"))["notifyOnVisit"]):
+        return 0
+    survey_id = row["survey_id"]
+    hour = now - now % HOUR_MS
+    prior = await _count(
+        runtime, "SELECT COALESCE(MAX(pinged),0) AS n FROM survey_visits "
+        "WHERE survey_id=? AND visitor_key=? AND created_at>=?", survey_id, key, hour)
+    if prior >= stage:
+        return 0
+    if await _count(runtime, "SELECT COUNT(*) AS n FROM survey_visits WHERE survey_id=? "
+                    "AND pinged>0 AND created_at>=?", survey_id, hour) >= SURVEY_HOURLY_VISIT_PINGS:
+        return 0
+    title = str(data.get("title") or "Untitled survey")
+    count = _integer(row.get("response_count"))
+    try:
+        sent = await notify(
+            creator, "plugin_activity",
+            ("👀 Someone opened your survey ‘%s’" if stage == 1
+             else "✍️ Someone started your survey ‘%s’") % title,
+            body="%d %s so far" % (count, "response" if count == 1 else "responses"),
+            href="%s?org=%s&survey=%s&tab=activity" % (PAGE_PATH, row.get("org_name"), survey_id),
+            dedupe="survey-visit:%s:%s:%d" % (survey_id, key, hour // HOUR_MS),
+            push=prior == 0)
+    except Exception:
+        return 0
+    return stage if sent else 0
+
+
+async def _track(runtime, token, body):
+    row = await _public_row(runtime, token)
+    if not row:
+        return _response(runtime, {"error": "survey_not_found"}, 404)
+    data = await _open_data(runtime, row)
+    kind = _clean(body.get("kind"), 16).lower()
+    detail = (_track_detail(kind, body.get("detail"), _stored_questions(data.get("questions")))
+              if kind in TRACK_KINDS else None)
+    if detail is None:
+        return _response(runtime, {"error": "invalid_event"}, 400)
+    now = runtime.now()
+    survey_id = row["survey_id"]
+    key = await _visit_key(runtime, survey_id, body.get("session"))
+    if key and await _count(
+            runtime, "SELECT COUNT(*) AS n FROM survey_visits WHERE survey_id=? AND visitor_key=? "
+            "AND created_at>=?", survey_id, key, now - HOUR_MS) >= VISITOR_HOURLY_EVENTS:
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    if await _count(runtime, "SELECT COUNT(*) AS n FROM survey_visits WHERE survey_id=? "
+                    "AND created_at>=?", survey_id, now - HOUR_MS) >= SURVEY_HOURLY_EVENTS:
+        return _response(runtime, {"error": "rate_limited"}, 429)
+    pinged = await _visit_ping(runtime, row, data, key, kind, now)
+    await runtime.d1_run(
+        "INSERT INTO survey_visits(visit_id,org_bi,survey_id,visitor_key,kind,detail,pinged,"
+        "created_at) VALUES(?,?,?,?,?,?,?,?)",
+        runtime.new_id(), row["org_bi"], survey_id, key, kind, detail, pinged, now)
+    if kind == "view":
+        await runtime.d1_run(
+            "DELETE FROM survey_visits WHERE survey_id=? AND (created_at<? OR visit_id NOT IN ("
+            "SELECT visit_id FROM survey_visits WHERE survey_id=? "
+            "ORDER BY created_at DESC,visit_id DESC LIMIT ?))",
+            survey_id, now - VISIT_RETAIN_MS, survey_id, MAX_VISITS)
+    return _response(runtime, {"ok": True}, 202)
+
+
+def _visit_label(row, titles):
+    kind, detail = str(row.get("kind") or ""), str(row.get("detail") or "")
+    if kind == "view":
+        return "Opened the survey"
+    if kind == "start":
+        return "Started answering"
+    if kind == "answer":
+        title = titles.get(detail)
+        return ("Answered “%s”" % title) if title else "Answered a question"
+    if kind == "submit":
+        return "Sent their answers"
+    if kind == "link":
+        return "Clicked the ForkMesh link"
+    if kind == "leave":
+        count = _integer(detail)
+        if not count:
+            return "Left without answering"
+        return "Left after answering %d %s" % (count, "question" if count == 1 else "questions")
+    return kind
+
+
+async def _activity(runtime, survey_id, questions, now, limit=MAX_RECENT_VISITS):
+    row = await runtime.d1_first(
+        "SELECT SUM(kind='view') AS views,"
+        "SUM(kind NOT IN ('view','leave')) AS interactions,"
+        "SUM(kind='start') AS starts,SUM(kind='submit') AS submits,SUM(kind='leave') AS leaves,"
+        "COUNT(DISTINCT CASE WHEN visitor_key<>'' THEN visitor_key END) AS visitors,"
+        "COALESCE(MAX(created_at),0) AS last FROM survey_visits "
+        "WHERE survey_id=? AND created_at>=?", survey_id, now - VISIT_SUMMARY_DAYS * DAY_MS)
+    row = row or {}
+    rows = await runtime.d1_all(
+        "SELECT kind,detail,visitor_key,created_at FROM survey_visits WHERE survey_id=? "
+        "ORDER BY created_at DESC,visit_id DESC LIMIT ?", survey_id, limit)
+    titles = {question["id"]: question["title"] for question in questions}
+    return {
+        "days": VISIT_SUMMARY_DAYS,
+        "views": _integer(row.get("views")),
+        "visitors": _integer(row.get("visitors")),
+        "interactions": _integer(row.get("interactions")),
+        "starts": _integer(row.get("starts")),
+        "submits": _integer(row.get("submits")),
+        "leaves": _integer(row.get("leaves")),
+        "lastActivityAt": _integer(row.get("last")),
+        "recent": [{
+            "kind": str(item.get("kind") or ""),
+            "detail": str(item.get("detail") or ""),
+            "label": _visit_label(item, titles),
+            "visitor": str(item.get("visitor_key") or "")[:6],
+            "at": _integer(item.get("created_at")),
+        } for item in rows or []],
+    }
+
+
 async def org_has_data(runtime, org_bi):
     return bool(await runtime.d1_first(
         "SELECT survey_id FROM survey_forms WHERE org_bi=? LIMIT 1", org_bi))
@@ -870,6 +1046,8 @@ async def export_org_data(runtime, org_bi, org_name):
         survey.pop("publicUrl", None)
         survey["questions"] = _stored_questions(data.get("questions"))
         survey["responses"] = await _responses(runtime, row["survey_id"], MAX_RESPONSES)
+        survey["activity"] = await _activity(runtime, row["survey_id"], survey["questions"], now,
+                                             MAX_VISITS)
         surveys.append(survey)
     return {
         "plugin": PLUGIN_ID,
@@ -881,6 +1059,7 @@ async def export_org_data(runtime, org_bi, org_name):
 
 
 async def purge_org_data(runtime, org_bi):
+    await runtime.d1_run("DELETE FROM survey_visits WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM survey_responses WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM survey_forms WHERE org_bi=?", org_bi)
 
@@ -891,6 +1070,8 @@ def _allowed(route):
         return ("GET",)
     if kind == "public":
         return ("GET", "POST")
+    if kind == "track":
+        return ("POST",)
     _, _, resource, item, action, response_id = route
     if not resource:
         return ("GET",)
@@ -933,7 +1114,7 @@ async def handle(runtime, path):
     if method not in allowed:
         return _response(runtime, {"error": "method_not_allowed"}, 405, ", ".join(allowed))
     await runtime.ensure_schema()
-    if route[0] == "public":
+    if route[0] in ("public", "track"):
         if method != "GET" and not runtime.same_origin():
             return _response(runtime, {"error": "origin_not_allowed"}, 403)
         if not await _public_schema_ready(runtime):
@@ -943,6 +1124,8 @@ async def handle(runtime, path):
         body, failure = await _body(runtime)
         if failure:
             return failure
+        if route[0] == "track":
+            return await _track(runtime, route[1], body)
         return await _submit(runtime, route[1], body)
     if method != "GET" and not runtime.same_origin():
         return _response(runtime, {"error": "origin_not_allowed"}, 403)

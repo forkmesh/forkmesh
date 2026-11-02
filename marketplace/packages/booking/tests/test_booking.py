@@ -108,9 +108,9 @@ class Runtime:
         self.mail.append(payload)
         return {"accepted": self.mail_ok, "messageId": "m%d" % len(self.mail),
                 "error": "" if self.mail_ok else "smtp_unavailable"}
-    async def notify(self, recipient, kind, title, body="", href="", dedupe=""):
+    async def notify(self, recipient, kind, title, body="", href="", dedupe="", push=True):
         self.pings.append({"to": recipient, "kind": kind, "title": title, "body": body,
-                           "href": href, "dedupe": dedupe})
+                           "href": href, "dedupe": dedupe, "push": push})
         return True
 
 
@@ -136,6 +136,12 @@ def book(runtime, start, slug="alice", type_id="30min", **extra):
             "notes": "Compilers", "startAt": start}
     body.update(extra)
     return call(runtime.use("POST", actor="", body=body), f"/api/booking/-/p/{slug}/{type_id}/book")
+
+
+def track(runtime, kind, slug="alice", **extra):
+    body = {"kind": kind, "session": "ab" * 16}
+    body.update(extra)
+    return call(runtime.use("POST", actor="", body=body), f"/api/booking/-/p/{slug}/track")
 
 
 def test_install_creates_a_page_named_after_the_account():
@@ -414,3 +420,148 @@ def test_manifest_matches_the_worker():
     catalog = json.loads((REPO / "marketplace" / "catalog.json").read_text())
     entry = next(item for item in catalog["packages"] if item["id"] == "booking")
     assert entry["version"] == manifest["version"]
+
+
+def test_tracking_accepts_known_events_and_drops_the_rest():
+    runtime = Runtime()
+    assert track(runtime, "view")["status"] == 202
+    assert track(runtime, "type", type="30min")["status"] == 202
+    assert track(runtime, "month", detail="2026-12")["status"] == 202
+    assert track(runtime, "day", detail="2026-11-03")["status"] == 202
+    assert track(runtime, "slot", detail=str(ms(2026, 11, 3, 15, 0)))["status"] == 202
+    assert track(runtime, "form")["status"] == 202
+    assert track(runtime, "field", detail="email", type="nope", extra="<script>")["status"] == 202
+    assert track(runtime, "link", detail="google")["status"] == 202
+    assert track(runtime, "leave", detail="form")["status"] == 202
+    for kind, extra in (("hover", {}), ("type", {"type": "nope"}), ("field", {"detail": "password"}),
+                        ("day", {"detail": "tomorrow"}), ("view", {"detail": "x" * 40}),
+                        ("slot", {"detail": "12"}), ("link", {"detail": "https://evil.example"})):
+        refused = track(runtime, kind, **extra)
+        assert refused["status"] == 400 and refused["data"]["error"] == "invalid_event", kind
+    assert track(runtime, "view", slug="nobody")["status"] == 404
+    assert call(runtime.use("GET", actor=""), "/api/booking/-/p/alice/track")["status"] == 405
+    rows = [dict(row) for row in runtime.db.execute(
+        "SELECT kind,type_id,detail,visitor_key FROM booking_visits ORDER BY created_at,visit_id")]
+    assert [row["kind"] for row in rows] == ["view", "type", "month", "day", "slot", "form",
+                                             "field", "link", "leave"]
+    assert rows[1]["type_id"] == "30min" and rows[6] == {
+        "kind": "field", "type_id": "", "detail": "email", "visitor_key": rows[0]["visitor_key"]}
+    assert len(rows[0]["visitor_key"]) == 32 and runtime.ip not in json.dumps(rows)
+    call(runtime.use("PUT", body={"enabled": False}), "/api/booking/page")
+    assert track(runtime, "view")["status"] == 404
+
+
+def test_tracking_rate_limits_per_connection_and_page():
+    runtime = Runtime()
+    for _ in range(booking.VISITOR_HOURLY_EVENTS):
+        assert track(runtime, "form")["status"] == 202
+    limited = track(runtime, "form")
+    assert limited["status"] == 429 and limited["data"]["error"] == "rate_limited"
+    runtime.ip = "198.51.100.8"
+    assert track(runtime, "form")["status"] == 202
+    runtime.clock += booking.HOUR_MS
+    runtime.ip = "203.0.113.9"
+    assert track(runtime, "form")["status"] == 202
+    runtime.db.execute("UPDATE booking_rate SET count=? WHERE bucket=?", (
+        booking.PAGE_HOURLY_EVENTS, hashlib.sha256(("booking-rate:track-page:bi:alice:%d" % (
+            runtime.clock // booking.HOUR_MS)).encode()).hexdigest()))
+    runtime.ip = "192.0.2.44"
+    assert track(runtime, "form")["data"]["error"] == "rate_limited"
+
+
+def test_visit_pings_once_per_visitor_an_hour_and_upgrade_when_they_start():
+    runtime = Runtime()
+    runtime.pings.clear()
+    track(runtime, "view")
+    track(runtime, "view")
+    track(runtime, "type", type="30min")
+    assert len(runtime.pings) == 1
+    ping = runtime.pings[0]
+    assert ping["to"] == "alice" and ping["kind"] == "plugin_activity" and ping["push"] is True
+    assert ping["title"] == "👀 Someone opened your booking page"
+    assert ping["href"] == "/dashboard/booking?tab=visits"
+    track(runtime, "slot", detail=str(ms(2026, 11, 3, 15, 0)), type="30min")
+    track(runtime, "form", type="30min")
+    assert len(runtime.pings) == 2
+    upgrade = runtime.pings[1]
+    assert upgrade["title"] == "🗓️ Someone is picking a time on your booking page"
+    assert upgrade["dedupe"] == ping["dedupe"] and upgrade["push"] is False
+    assert upgrade["body"] == "Looking at Meeting. You get another ping if they book."
+    runtime.ip = "198.51.100.20"
+    track(runtime, "view")
+    assert len(runtime.pings) == 3 and runtime.pings[2]["dedupe"] != ping["dedupe"]
+    runtime.clock += booking.HOUR_MS
+    runtime.ip = "203.0.113.9"
+    track(runtime, "view")
+    assert len(runtime.pings) == 4 and runtime.pings[3]["push"] is True
+    for index in range(booking.PAGE_HOURLY_VISIT_PINGS):
+        runtime.ip = "192.0.2.%d" % (index + 1)
+        track(runtime, "view")
+    assert len(runtime.pings) == 3 + booking.PAGE_HOURLY_VISIT_PINGS
+    runtime.clock += booking.HOUR_MS
+    call(runtime.use("PUT", body={"notifyVisits": False}), "/api/booking/page")
+    runtime.ip = "198.51.100.30"
+    track(runtime, "view")
+    assert len(runtime.pings) == 3 + booking.PAGE_HOURLY_VISIT_PINGS
+    assert owner(runtime)["settings"]["notifyVisits"] is False
+
+
+def test_privacy_mode_uses_the_page_session_and_never_pings_without_one():
+    runtime = Runtime()
+    runtime.pings.clear()
+    runtime.ip = ""
+    track(runtime, "view", session="cd" * 16)
+    track(runtime, "view", session="ef" * 16)
+    track(runtime, "view", session="not-a-session")
+    keys = [row[0] for row in runtime.db.execute("SELECT visitor_key FROM booking_visits")]
+    assert len(set(keys)) == 3 and "" in keys
+    assert len(runtime.pings) == 2
+
+
+def test_owner_overview_summarises_visits():
+    runtime = Runtime()
+    assert owner(runtime)["activity"]["views"] == 0 and owner(runtime)["activity"]["recent"] == []
+    track(runtime, "view")
+    track(runtime, "type", type="30min")
+    track(runtime, "slot", detail=str(ms(2026, 11, 3, 15, 0)), type="30min")
+    track(runtime, "form", type="30min")
+    track(runtime, "submit", type="30min")
+    runtime.ip = "198.51.100.21"
+    track(runtime, "view")
+    track(runtime, "prefs", detail="24h")
+    track(runtime, "leave", detail="calendar")
+    activity = owner(runtime)["activity"]
+    assert {key: activity[key] for key in ("days", "views", "visitors", "interactions", "starts",
+                                          "submits", "leaves")} == {
+        "days": 30, "views": 2, "visitors": 2, "interactions": 5, "starts": 1, "submits": 1, "leaves": 1}
+    assert activity["lastActivityAt"] == runtime.clock
+    labels = [item["label"] for item in activity["recent"]]
+    assert labels == ["Left on the calendar", "Switched to the 24h clock", "Opened your page",
+                      "Sent the booking form", "Opened the details form",
+                      "Picked 3:00 PM, Tuesday, 3 November 2026", "Chose Meeting", "Opened your page"]
+    assert all(len(item["visitor"]) == 6 for item in activity["recent"])
+    runtime.clock += booking.VISIT_SUMMARY_MS + 1
+    assert owner(runtime)["activity"]["views"] == 0
+    assert len(owner(runtime)["activity"]["recent"]) == 8
+
+
+def test_visits_are_pruned_exported_and_purged():
+    runtime = Runtime()
+    for index in range(5):
+        runtime.ip = "192.0.2.%d" % index
+        track(runtime, "view")
+    original = booking.MAX_VISITS
+    booking.MAX_VISITS = 3
+    try:
+        track(runtime, "view")
+    finally:
+        booking.MAX_VISITS = original
+    assert runtime.db.execute("SELECT COUNT(*) FROM booking_visits").fetchone()[0] == 3
+    exported = call(runtime.use("GET"), "/api/booking/export")["data"]["export"]
+    assert exported["activity"]["views"] == 3 and len(exported["activity"]["recent"]) == 3
+    runtime.clock += booking.VISIT_RETAIN_MS + 1
+    asyncio.run(booking.deliver_reminders(runtime))
+    assert runtime.db.execute("SELECT COUNT(*) FROM booking_visits").fetchone()[0] == 0
+    track(runtime, "view")
+    call(runtime.use("POST"), "/api/booking/uninstall")
+    assert runtime.db.execute("SELECT COUNT(*) FROM booking_visits").fetchone()[0] == 0

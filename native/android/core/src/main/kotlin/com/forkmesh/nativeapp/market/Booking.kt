@@ -249,6 +249,7 @@ data class BookingSettings(
     val emailOwner: Boolean = true,
     val addToCalendar: Boolean = true,
     val checkCalendar: Boolean = true,
+    val notifyVisits: Boolean = true,
     val types: List<BookingType> = emptyList(),
 ) {
     val twentyFour: Boolean get() = timeFormat == "24h"
@@ -284,7 +285,7 @@ data class BookingSettings(
         "minNoticeMinutes" to minNoticeMinutes, "maxDaysAhead" to maxDaysAhead, "bufferMinutes" to bufferMinutes,
         "slotStepMinutes" to slotStepMinutes, "dailyLimit" to dailyLimit.coerceIn(0, 50), "replyTo" to replyTo.trim(),
         "notifyEmail" to notifyEmail.trim(), "emailOwner" to emailOwner, "addToCalendar" to addToCalendar,
-        "checkCalendar" to checkCalendar, "types" to types.map { it.body() },
+        "checkCalendar" to checkCalendar, "notifyVisits" to notifyVisits, "types" to types.map { it.body() },
     )
 
     companion object {
@@ -302,7 +303,7 @@ data class BookingSettings(
                 json.int("minNoticeMinutes", 240), json.int("maxDaysAhead", 60), json.int("bufferMinutes"),
                 json.int("slotStepMinutes"), json.int("dailyLimit"), json.str("replyTo"), json.str("notifyEmail"),
                 json["emailOwner"] != false, json["addToCalendar"] != false, json["checkCalendar"] != false,
-                json.maps("types").map(BookingType::fromJson),
+                json["notifyVisits"] != false, json.maps("types").map(BookingType::fromJson),
             )
         }
     }
@@ -322,6 +323,7 @@ data class BookingOverview(
     val upcoming: List<BookingItem> = emptyList(),
     val past: List<BookingItem> = emptyList(),
     val stats: BookingStats = BookingStats(),
+    val activity: PageActivity = PageActivity(),
 ) {
     val prefix: String get() = Booking.host(origin) + "/meet?"
 
@@ -336,6 +338,7 @@ data class BookingOverview(
             json.obj("links").mapValues { jsonText(it.value) }, BookingSettings.fromJson(json.obj("settings")),
             BookingOptions.fromJson(json.obj("options")), json.maps("upcoming").mapNotNull(BookingItem::fromJson),
             json.maps("past").mapNotNull(BookingItem::fromJson), BookingStats.fromJson(json.obj("stats")),
+            PageActivity.fromJson(json.obj("activity")),
         )
     }
 }

@@ -87,8 +87,8 @@ int main(int argc, char **argv)
               !settings.value(QStringLiteral("notifyOnResponse")).toBool() &&
               settings.value(QStringLiteral("shuffleOptions")).toBool() &&
               settings.value(QStringLiteral("maxResponses")).toInt() == 0 &&
-              settings.value(QStringLiteral("opensAt")).toDouble() == 0 && settings.size() == 6,
-          "settings serialise all six fields");
+              settings.value(QStringLiteral("opensAt")).toDouble() == 0 && settings.size() == 7,
+          "settings serialise all seven fields");
 
     check(statusKey(scheduled) == QStringLiteral("scheduled") && statusKey(expired) == QStringLiteral("closed"),
           "the shown status prefers displayStatus");
@@ -360,6 +360,28 @@ int main(int argc, char **argv)
               settingLines.contains(QStringLiteral("No Pings for new responses")) &&
               settingLines.contains(QStringLiteral("Choice options shown in random order")),
           "settings read as sentences", settingLines.join(QLatin1Char('|')));
+    check(settingLines.contains(QStringLiteral("Pings the creator when someone opens or starts it")) &&
+              settingsJson(open.settings).value(QStringLiteral("notifyOnVisit")).toBool() &&
+              !parseSettings(object(R"({"notifyOnVisit": false})")).notifyOnVisit,
+          "visit pings default on and round-trip", settingLines.join(QLatin1Char('|')));
+    const Survey watched = parseSurvey(object(R"({"id": "h", "status": "open", "questions": [],
+        "activity": {"days": 30, "views": 42, "visitors": 12, "interactions": 18, "starts": 5, "submits": 3,
+                     "leaves": 2, "lastActivityAt": 1000,
+                     "recent": [{"kind": "start", "detail": "", "label": "Started answering",
+                                 "visitor": "a3f9c1", "at": 1000}]}})"));
+    const qint64 later = 1000 + 2 * 3600000LL;
+    check(activityText(watched.activity, later, utc) ==
+              QStringLiteral("Last 30 days: 42 views") + dot + QStringLiteral("12 visitors") + dot +
+                  QStringLiteral("18 interactions") + dot + QStringLiteral("5 started") + dot +
+                  QStringLiteral("3 sent") + dot + QStringLiteral("last activity 2 h ago"),
+          "activity reads as one line", activityText(watched.activity, later, utc));
+    check(watched.activity.recent.size() == 1 &&
+              visitEventText(watched.activity.recent.first(), later, utc) ==
+                  QStringLiteral("Started answering") + dot + QStringLiteral("visitor a3f9c1") + dot +
+                      QStringLiteral("2 h ago"),
+          "recent visits read as sentences");
+    check(activityText(open.activity, later, utc) == QStringLiteral("No visits in the last 30 days"),
+          "a survey without activity says so", activityText(open.activity, later, utc));
     SurveySettings limited;
     limited.maxResponses = 250;
     limited.closesAt = day;

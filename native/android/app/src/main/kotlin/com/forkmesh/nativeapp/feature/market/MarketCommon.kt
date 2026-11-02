@@ -1,6 +1,10 @@
 package com.forkmesh.nativeapp.feature.market
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -8,9 +12,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.market.PackageOrganization
+import com.forkmesh.nativeapp.market.PageActivity
+import com.forkmesh.nativeapp.ui.kit.FmCard
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmListRow
@@ -26,6 +35,25 @@ internal fun shortDate(ms: Long): String =
 @Composable
 internal fun ErrorLine(text: String) {
     if (text.isNotEmpty()) Text(text, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Fm.colors.danger, style = Fm.text.bodySmall)
+}
+
+@Composable
+internal fun PageActivityCard(activity: PageActivity, modifier: Modifier = Modifier, nowMs: Long = System.currentTimeMillis()) {
+    FmCard(modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Visits", style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
+            Text(
+                activity.summary(nowMs), Modifier.testTag("page-activity"), style = Fm.text.bodyMedium,
+                color = if (activity.isEmpty) Fm.colors.textSecondary else Fm.colors.textPrimary,
+            )
+            for (visit in activity.newest) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(visit.label, Modifier.weight(1f), style = Fm.text.bodySmall, color = Fm.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(visit.whenLabel(nowMs), style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
+                }
+            }
+        }
+    }
 }
 
 @Composable
