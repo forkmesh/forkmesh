@@ -2511,6 +2511,14 @@ def test_direct_app_root_health_version_and_mirror_identity_behavior():
     assert world_docs.headers.get("location") == (
         "https://forkmesh.com/docs/protocol/?part=routing"
     )
+    world_sitemap_request = Request("https://world.forkmesh.com/sitemap.xml")
+    world_sitemap = default._world_ingress_redirect(
+        world_sitemap_request, urlparse(world_sitemap_request.url)
+    )
+    assert world_sitemap.status == 308
+    assert world_sitemap.headers.get("location") == (
+        "https://forkmesh.com/sitemap.xml"
+    )
     world_shell_request = Request("https://world.forkmesh.com/world")
     assert default._world_ingress_redirect(
         world_shell_request, urlparse(world_shell_request.url)
