@@ -605,8 +605,10 @@ extension PerformanceMonitorTests {
 
     #if canImport(Darwin)
     func testTheMainThreadCanBeSampledFromAnotherThread() async throws {
-        XCTAssertNil(await Task.detached { MainThreadSampler.forMainThread() }.value, "only the main thread can name itself")
-        let sampler = try XCTUnwrap(await MainActor.run { MainThreadSampler.forMainThread() })
+        let elsewhere = await Task.detached { MainThreadSampler.forMainThread() }.value
+        XCTAssertNil(elsewhere, "only the main thread can name itself")
+        let onMain = await MainActor.run { MainThreadSampler.forMainThread() }
+        let sampler = try XCTUnwrap(onMain)
         let frames = await Task.detached { sampler() }.value
         XCTAssertFalse(frames.isEmpty)
         XCTAssertTrue(MainThreadSampler.resolve(frames).contains { $0.image != "???" })
