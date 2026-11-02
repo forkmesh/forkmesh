@@ -601,16 +601,11 @@ describes, moves, and offers three depths.
 
 ### 2.0.3 Other pages
 
-- **Inbox** (`InboxScreen`): one centered bar of small square icons at the
-  top of the list. The filters (All, Pings, Reviews, Assigned, Mentions,
-  Approvals) carry their unread count as a badge; the actions that used to
-  sit in a ⋯ menu (mark all read, unread only, pause pings, discard unsynced
-  changes, ping settings, delete all) are squares in the same bar, so every
-  control is one tap. A phone too narrow for the bar scrolls it sideways.
-  Holding a square shows its name in a small popover (`FmHoldName`), and the
-  tap it ends with is dropped. The unread badges are drawn over the whole bar
-  (`InboxBadgeKey` anchors), because iOS 26's glass container composites the
-  squares above their own badges.
+- **Inbox** (`InboxScreen`): the "Inbox ⌄" title (`InboxTitleBar`) is the
+  filter menu, with each filter's unread count, and one glass "…" button
+  (`InboxToolbarMenu`) holds mark all read, unread only, pause pings, discard
+  unsynced changes, ping settings and delete all
+  ([SCREEN_POLISH.md](SCREEN_POLISH.md)).
 - **Market** (`MarketScreen`): one slim navigation bar line with no
   background: back, the search field (`MarketSearchField`, in the title's
   place), a sort menu and a filter menu (`MarketSortMenu`, `MarketFilterMenu`,
