@@ -86,6 +86,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 | [Open Food Facts and USDA FoodData Central for the Calories package](#nutrition-data) | infrastructure | Optional, off unless enabled | marketplace-package | For users of the Calories package: the food names and barcodes they look up. |
 | [oEmbed and public APIs for chat link previews](#link-previews) | media-embed, social | Optional, off unless enabled | mobile, app-server | The link a user posted in chat and the device's IP address, when a preview for that site is built. |
 | [GIPHY for GIFs in comments](#giphy) | media-embed, social | Optional, off unless enabled | app-browser, app-server | The app sends GIPHY the trending and search requests a signed-in user makes in the GIF picker, with the administrator's key; every browser that shows a comment with a GIF loads it from GIPHY's media hosts, which see the viewer's IP address. |
+| [dev.to for Home's blog card](#devto-blog-posts) | social | Optional, off unless enabled | app-browser | On an instance whose administrator set a dev.to account, every visitor's browser that opens Home reads that account's newest articles from dev.to without credentials and loads their cover images from media2.dev.to or dev-to-uploads.s3.amazonaws.com; dev.to and Amazon see the visitor's IP address and browser. |
 | [Invidious and YouTube thumbnails for Video Mix DJ Studio](#video-mix-sources) | media-embed | Optional, off unless enabled | marketplace-package, mobile | For users of the package: video searches, the device's IP address and the thumbnails it loads. |
 | [Apple iTunes lookup for the current App Store version](#app-store-lookup) | package-registry | Optional, off unless enabled | mobile, marketplace-package | The device's IP address and the app id being looked up. |
 | [Hugging Face downloads for local voices and models](#hugging-face-models) | ai-provider | Optional, off unless enabled | desktop, mobile | The device's IP address and which voice or model file is downloaded. |
@@ -132,6 +133,7 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 | Open Food Facts and USDA FoodData Central for the Calories package | Food search in the package returns nothing; logged entries are unaffected. | Enter foods by hand. | **gap** |
 | oEmbed and public APIs for chat link previews | The link shows without a rich preview. | Turn off link previews. | **gap** |
 | GIPHY for GIFs in comments | The GIF picker reports the failure and GIFs already in comments do not load; comments, stickers and reactions keep working. | Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance. | tested |
+| dev.to for Home's blog card | Home's blog card shows no posts; the rest of Home keeps working. | Leave the dev.to account unset, so Home shows the instance blog and no visitor contacts dev.to. | **gap** |
 | Invidious and YouTube thumbnails for Video Mix DJ Studio | Video search in the package fails; saved mixes are unaffected. | Add local videos. | **gap** |
 | Apple iTunes lookup for the current App Store version | The update prompt and the Marketing package's App Store figures are not refreshed. | None needed. | **gap** |
 | Hugging Face downloads for local voices and models | A voice or local model that is not yet downloaded cannot be used. | Use a voice or model already on the device. | **gap** |
@@ -787,6 +789,24 @@ set. See [Self-hosting](self-hosting.md) and [Mirroring](mirroring.md).
 - **Known gap:** The privacy notice does not name GIPHY yet.
 - **Evidence:** `app/src/comment_gifs.py`, `app/public/dashboard/js/09-comment-gifs.js`, `docs/app/comment-reactions.md`
 
+<a id="devto-blog-posts"></a>
+
+### dev.to for Home's blog card
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** social
+- **Components:** app-browser
+- **Hosts:** `dev.to`
+- **Observes:** On an instance whose administrator set a dev.to account, every visitor's browser that opens Home reads that account's newest articles from dev.to without credentials and loads their cover images from media2.dev.to or dev-to-uploads.s3.amazonaws.com; dev.to and Amazon see the visitor's IP address and browser.
+- **Retention:** Set by dev.to (Forem) and Amazon Web Services.
+- **Jurisdiction:** Forem Systems, Inc. (United States); Amazon Web Services, Inc. (United States) for uploaded cover images.
+- **Canonical data:** None; the posts are read on each Home load and not stored.
+- **When it is gone:** Home's blog card shows no posts; the rest of Home keeps working.
+- **Recovery:** None required; the next Home load reads the posts again.
+- **Alternative:** Leave the dev.to account unset, so Home shows the instance blog and no visitor contacts dev.to.
+- **Known gap:** The privacy notice does not name dev.to yet, and no drill covers dev.to being unreachable.
+- **Evidence:** `app/public/dashboard/js/05-repo-list-explorer.js`, `app/src/instance_sidebar.py`, `docs/app/repo-views.md`
+
 <a id="video-mix-sources"></a>
 
 ### Invidious and YouTube thumbnails for Video Mix DJ Studio
@@ -949,6 +969,7 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `claude.com` | link | Comment describing the login URL Claude CLIs print. |
 | `ollama.com` | link | Gemma package download link. |
 | `duckduckgo.com` | link | CRM package opens a web search in the user's browser. |
+| `calendar.google.com` | link | Booking package's add-to-Google-Calendar link. |
 | `ai.google.dev` | link | Gemma package documentation link. |
 | `developers.cloudflare.com` | documentation | Deploy script help text. |
 | `docs.github.com` | documentation | Import token guidance. |
@@ -958,7 +979,6 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `about.gitea.com` | documentation | Import provider terms. |
 | `docs.gitea.com` | documentation | Import API usage guidance. |
 | `modelcontextprotocol.io` | documentation | MCP server docstring. |
-| `forkmesh.your-domain` | documentation | Self-host placeholder in the docs landing page. |
 | `www.w3.org` | namespace | XML, SVG, and ActivityStreams namespace identifiers. |
 | `schema.org` | namespace | JSON-LD structured data vocabulary. |
 | `www.ietf.org` | namespace | RTP transport-wide congestion control header-extension URI named in call SDP. |
@@ -969,6 +989,7 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `docs.oasis-open.org` | namespace | WebFinger/XRD namespace. |
 | `schemas.android.com` | namespace | Android XML namespace. |
 | `www.apple.com` | namespace | Property list DTD identifier. |
+| `schemas.openxmlformats.org` | namespace | Office Open XML namespaces in the Spreadsheets package's .xlsx export. |
 | `www.andymatuschak.org` | namespace | Sparkle appcast XML namespace. |
 | `ads.google.com` | link | Ad manager link in the Marketing package. |
 | `ads.microsoft.com` | link | Ad manager link in the Marketing package. |
