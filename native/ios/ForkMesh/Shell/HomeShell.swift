@@ -1308,9 +1308,10 @@ struct HomeShell: View {
                     runPalette(command)
                 })
             }
-            .sheet(isPresented: $showTour) {
-                TourView(onFinish: { showTour = false }, onJump: { (jump: TourJump) in tourJump(jump) })
-                    .preferredColorScheme(colorScheme)
+            .fullScreenCover(isPresented: $showTour) {
+                TourPlayer(
+                    track: .essentials, at: HomeShell.firstRunStop, onClose: { showTour = false },
+                    onJump: { (jump: TourJump) in tourJump(jump) })
             }
             .sheet(isPresented: $genie.sheetShown, onDismiss: genieClosed) {
                 if let session = genie.session {
@@ -1664,6 +1665,11 @@ struct HomeShell: View {
         } else if page != nil {
             page = nil
         }
+    }
+
+    static var firstRunStop: Int {
+        guard let place = ShellTour.place, place.track == .essentials else { return 0 }
+        return TourCatalog.index(of: place, in: ShellTour.stops(for: .essentials)) ?? 0
     }
 
     private func tourJump(_ jump: TourJump) {
