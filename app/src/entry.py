@@ -32164,8 +32164,6 @@ def _badge_record_numbers(tree):
 
 
 async def _badge_record_tree(env, owner, repo, path, ref=""):
-    # A folder (or the forkmesh/pulls branch) that was never committed is an
-    # empty listing; None means no host answered and the sweep must retry.
     action = "tree?path=" + quote(path, safe="")
     if ref:
         action += "&ref=" + quote(ref, safe="")

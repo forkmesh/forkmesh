@@ -1638,9 +1638,6 @@ def test_record_sweep_keeps_a_repo_pending_when_the_mirror_fails():
 
 
 def test_record_sweep_finishes_a_repo_without_record_folders():
-    # A repo that never had a pull, a closed issue or a discussion: the host
-    # answers 404 not_found for each folder (and for the forkmesh/pulls
-    # branch), which means "nothing to record", not "try again".
     db = _sqlite_badge_db()
     db.execute("INSERT INTO repo_state_history VALUES ('r1','h',20)")
     gateway = {"calls": [], "answer": lambda action: {"error": "not_found"}}

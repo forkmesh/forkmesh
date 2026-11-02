@@ -1016,9 +1016,7 @@ async def _forkbot_ai_interpret(env, command, context_text="", model=""):
             "body": fields["body"]}
 async def _forkbot_repo_gateway_json(env, owner, repo, action_query,
                                      allow_missing=False):
-    """Read public repository data through the normal HTTPS mirror gateway.
-    With allow_missing, a 404 whose body says the path is not in git is
-    returned as-is, so callers can tell "no such folder" from "no host"."""
+    """Read public repository data through the normal HTTPS mirror gateway."""
     owner = safe_segment(owner)
     repo = safe_segment(repo)
     raw_action = str(action_query or "")
