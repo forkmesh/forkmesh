@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-02", "area": "Market", "text": "CRM: every contact now sits in a named box for its company or project, found automatically from work email domains, websites, GitHub organizations and company names, and the box card brings together everyone there with every email, open, click, read, note and inbox message, including mail from new people at the same company."},
   {"date": "2026-11-02", "area": "Market", "text": "CRM: records that share an email address or X account count as one person, so Reach out and Follow up suggest each person once, and the web table shows one row per person with the other records a click away."},
   {"date": "2026-11-02", "area": "Server", "text": "The Diff and files box on a pull request names its first three changed files and links the rest to Files changed, with icon buttons for copying the review prompt and opening ChatGPT."},
   {"date": "2026-11-02", "area": "Projects", "text": "Creating a repository on the web now asks first whether it lives on your own computer or phone or on the servers, shows how much of your allowance you have used, and walks you through cloning and pushing afterwards."},

@@ -324,10 +324,9 @@ fields, and the grouping is worked out again on every load.
   record. A contact, a reply, a won or ended stage, or a **Skip** on any of
   their records counts for all of them, and **Why them** names the other
   records' shared keys. Desktop, web, iOS and Android all do this.
-- The web table shows one row per person (**One per person**, on by default,
-  off under **Possible duplicates**). A **+N same person** chip opens the other
-  records under the first row. **Never contacted** and **Quiet 30+ days** go by
-  the person, and the detail card lists the records under **Same person**.
+- **Never contacted** and **Quiet 30+ days** go by the person, and the detail
+  card lists the records under **Same person**. The web table groups whole
+  boxes (see [Boxes](#boxes)), and a person's records always share one box.
 
 This differs from **Possible duplicates**, which also matches GitHub profiles
 and names, is meant for merging, and folds a record away for good.
@@ -375,6 +374,69 @@ named for grants get the grant-funder angle.
 the prompt in the URL (or on the clipboard past 14,000 characters). Nothing is
 sent from the CRM and nothing is stored except a saved brief. Tests:
 `tests/test_ai_writer.py`.
+
+## Boxes
+
+A box is a named record for one company or project. Everyone the CRM knows
+there is in it, and everything tracked on those people adds up in it. Every
+contact is in exactly one box. The server works boxes out and keeps them, so
+every client reads the same ones. The web shows them; the desktop and phone
+apps do not show boxes yet.
+
+**Sorting contacts into boxes.** `GET /api/crm/<org>/boxes` first places
+every contact not yet in a box (`_assign_boxes` in `worker/crm.py`), so a new,
+imported, linked or looked-up contact lands in a box the next time any client
+loads boxes. The same company is detected by `_company_keys`:
+
+- the **work email domain**, from the email field and any address in a custom
+  column (`mail.sager.example` counts as `sager.example`; a country's second
+  level such as `.co.uk` or `.edu.cn` keeps three labels). Free mail
+  (`BOX_COMPANY_FREE_MAIL`: Gmail, Outlook, Proton and the like) and noreply
+  addresses never count;
+- the **website's domain**, unless it is a platform or profile host
+  (`BOX_PLATFORM_DOMAINS`: GitHub, GitLab, social networks, link shorteners,
+  blog and page hosts) or a profile path (`/@name`, `/~name`);
+- the **GitHub account or organization**;
+- the **company** name, ignoring "Freelance", "Independent" and the like;
+- the same person's email and X keys ([One person, several
+  records](#one-person-several-records)).
+
+Contacts that share any key form one box, also through a third contact. A new
+contact joins the existing box that matches its strongest key (email, then X,
+GitHub, domain, company). Otherwise a new box is named after the most common
+company among its people, then the most common domain, then the person. The
+box keeps every key its people brought, so the next person from that domain
+joins it. The CRM never moves a contact that is already in a box.
+
+**Tracking.** A box's card adds up, newest first:
+
+- every email to or from its people, with opens, clicks and reading time;
+- toots, deck views and notes;
+- inbox mail whose other party is one of its people or writes from the
+  company's domain. Mail from someone new at a known company shows as "same
+  company", and the inbox shows the box on that message.
+
+Nothing is copied: the box reads the people's own records, so tracking that
+arrives later shows up straight away.
+
+**Editing.**
+- Rename a box or keep box notes (`PATCH /boxes/<id>` with `name`, `notes`).
+  A box named by hand keeps its name.
+- **Move…** puts contacts into another box, or into a new one named on the
+  spot (`POST /boxes/move` with `contacts` and `box` or `name`;
+  `POST /boxes` with `contacts` and `name` starts a box). A moved contact is
+  pinned. A box left empty is removed, and the box it left recomputes its keys.
+- **Merge into another box** moves every person and appends the notes
+  (`POST /boxes/merge` with `from` and `into`).
+- Boxes are sealed like contacts, exported on uninstall and purged with the
+  organization (`crm_boxes`, `crm_box_members`).
+
+**Web.** **Group by box** (on by default, off under **Possible duplicates**)
+shows one row per box. Its name chip opens the box card, and **+N** shows the
+other people under the first row. The contact card names its box with
+**Move…**, and the row menu has **Open box** and **Move to box…**. Code:
+`crmGroups`, `crmGroupChip`, `renderCrmBox`, `crmMailBox`. Tests:
+`tests/test_boxes.py`, `tests/contact_detail_checks.js`.
 
 ## Email
 

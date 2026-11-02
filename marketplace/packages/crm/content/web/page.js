@@ -262,6 +262,270 @@ window.ForkMeshDashboard.registerPage("crm", ({
     renderCrmContacts();
   }
 
+  const CRM_BOX_SECOND_LEVEL = new Set(["ac", "co", "com", "edu", "go", "gob", "gov", "mil", "ne", "net", "or", "org"]);
+  const CRM_BOX_ACTIVITY_LIMIT = 200;
+  const CRM_MAIL_ADDRESS_RE = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,62}\.)+[a-z]{2,63}/g;
+  let crmBoxClicksWired = false;
+
+  function crmRegistrableDomain(host) {
+    const labels = String(host || "").toLowerCase().split(".").filter(Boolean);
+    if (labels.length < 2) return "";
+    const keep = labels.length >= 3 && labels[labels.length - 1].length === 2
+      && CRM_BOX_SECOND_LEVEL.has(labels[labels.length - 2]) ? 3 : 2;
+    return labels.slice(-keep).join(".");
+  }
+
+  function crmBoxIndex(list) {
+    const byId = new Map(); const byContact = new Map(); const byKey = new Map();
+    for (const box of list || []) {
+      byId.set(box.id, box);
+      for (const id of box.contacts || []) byContact.set(id, box);
+      for (const key of box.keys || []) if (!byKey.has(key)) byKey.set(key, box);
+    }
+    return { organization: state.crmView.organization, list: list || [], byId, byContact, byKey };
+  }
+
+  function crmBoxesReady() {
+    return Boolean(state.crmView.boxes) && state.crmView.boxes.organization === state.crmView.organization;
+  }
+
+  function crmBoxOf(contact) {
+    return crmBoxesReady() && contact ? state.crmView.boxes.byContact.get(contact.id) || null : null;
+  }
+
+  function crmBoxByName(name) {
+    const wanted = String(name || "").trim().toLowerCase();
+    if (!wanted || !crmBoxesReady()) return null;
+    return state.crmView.boxes.list.find((box) => box.name.trim().toLowerCase() === wanted) || null;
+  }
+
+  function crmGroups(contacts = state.crmView.contacts) {
+    const people = crmPersonGroups(contacts);
+    if (!crmBoxesReady()) return people;
+    const byId = new Map((contacts || []).map((contact) => [contact.id, contact]));
+    const groups = new Map();
+    for (const box of state.crmView.boxes.list) {
+      const members = (box.contacts || []).map((id) => byId.get(id)).filter(Boolean);
+      const group = { id: `box:${box.id}`, box, members };
+      for (const contact of members) groups.set(contact.id, group);
+    }
+    for (const [id, person] of people) if (!groups.has(id)) groups.set(id, person);
+    return groups;
+  }
+
+  function crmApplyBoxes(list) {
+    state.crmView.boxes = crmBoxIndex(list);
+    renderCrmContacts();
+    if ($(`[data-crm-box-dialog]`)?.open) renderCrmBox();
+    const line = $(`[data-crm-detail-box]`);
+    const contact = crmContactById(state.crmView.detailContactId);
+    if (line && contact) line.innerHTML = crmDetailBoxHtml(contact);
+  }
+
+  async function loadCrmBoxes() {
+    const organization = state.crmView.organization;
+    if (!organization || crmActiveShared()) return;
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/boxes"));
+      if (organization === state.crmView.organization) crmApplyBoxes(payload.boxes || []);
+    } catch (error) { crmMessage("error", `Could not load the boxes: ${error.message}`); }
+  }
+
+  async function crmBoxRequest(path, method, body, done) {
+    try {
+      const payload = await crmRequest(crmOrganizationPath(`/boxes${path}`), method, body);
+      crmApplyBoxes(payload.boxes || []);
+      if (done) crmMessage("notice", done);
+      return payload;
+    } catch (error) {
+      crmMessage("error", `Could not update the box: ${error.message}`);
+      return null;
+    }
+  }
+
+  async function promptCrmMoveToBox(ids) {
+    const count = ids.length === 1 ? "this contact" : `${ids.length} contacts`;
+    const name = String(window.prompt(`Move ${count} to which box? Type a box's name, or a new name to start a box.`) || "").trim().slice(0, 120);
+    if (!name) return null;
+    const box = crmBoxByName(name);
+    return crmBoxRequest("/move", "POST", box ? { contacts: ids, box: box.id } : { contacts: ids, name },
+      box ? `Moved ${count} to ${box.name}.` : `Started the box ${name}.`);
+  }
+
+  async function promptCrmMergeBox(boxId) {
+    const box = crmBoxesReady() ? state.crmView.boxes.byId.get(boxId) : null;
+    if (!box) return;
+    const name = String(window.prompt(`Merge ${box.name} into which box? Type its name.`) || "").trim();
+    if (!name) return;
+    const into = crmBoxByName(name);
+    if (!into || into.id === box.id) { crmMessage("error", `No other box is called ${name}.`); return; }
+    const payload = await crmBoxRequest("/merge", "POST", { from: box.id, into: into.id }, `Merged ${box.name} into ${into.name}.`);
+    if (payload) openCrmBox(into.id);
+  }
+
+  function crmMailAddresses(message) {
+    return String((message.sent ? message.to : message.from) || "").toLowerCase().match(CRM_MAIL_ADDRESS_RE) || [];
+  }
+
+  function crmMailMatch(message, has) {
+    const addresses = crmMailAddresses(message);
+    const exact = addresses.find((address) => has(`email:${address}`));
+    if (exact) return { address: exact, how: "email" };
+    const domain = addresses.find((address) => has(`domain:${crmRegistrableDomain(address.split("@")[1])}`));
+    return domain ? { address: domain, how: "domain" } : null;
+  }
+
+  function crmMailBox(message) {
+    if (!crmBoxesReady()) return null;
+    const byKey = state.crmView.boxes.byKey;
+    const match = crmMailMatch(message, (key) => byKey.has(key));
+    if (!match) return null;
+    const key = match.how === "email" ? `email:${match.address}` : `domain:${crmRegistrableDomain(match.address.split("@")[1])}`;
+    return { box: byKey.get(key), ...match };
+  }
+
+  function crmBoxMail(box) {
+    const keys = new Set(box.keys || []);
+    const items = [];
+    for (const message of state.crmView.mail || []) {
+      const match = crmMailMatch(message, (key) => keys.has(key));
+      if (!match) continue;
+      items.push({
+        at: Number(message.receivedAt || 0),
+        label: `${message.sent ? "Mail to" : "Mail from"} ${match.address}${match.how === "domain" ? " · same company" : ""}`,
+        text: message.subject || "No subject", url: crmHttpsUrl(message.providerUrl),
+      });
+    }
+    return items;
+  }
+
+  function crmBoxActivity(box, members) {
+    const items = [];
+    for (const contact of members) {
+      const who = crmContactLabel(contact);
+      for (const item of crmContactActivity(contact)) {
+        if (item.label === "Record edited" || item.label === "Record added") continue;
+        items.push({ ...item, label: `${item.label} · ${who}` });
+      }
+    }
+    items.push(...crmBoxMail(box));
+    return items.sort((first, second) => (second.at || 0) - (first.at || 0)).slice(0, CRM_BOX_ACTIVITY_LIMIT);
+  }
+
+  function crmBoxMembers(box) {
+    const byId = new Map(state.crmView.contacts.map((contact) => [contact.id, contact]));
+    return (box.contacts || []).map((id) => byId.get(id)).filter(Boolean);
+  }
+
+  function crmGroupChip(contact, groups, lead) {
+    const group = crmPersonOf(contact, groups);
+    if (!group.box) return crmPersonChip(contact, groups, lead);
+    const box = group.box;
+    const others = group.members.filter((one) => one.id !== contact.id);
+    if (!others.length && !box.named) return "";
+    const label = `<button type="button" data-crm-box-open="${escapeHtml(box.id)}" title="${escapeHtml(`Open the box ${box.name}: its people, emails, opens, clicks, mail and notes`)}" style="max-width:12rem" class="truncate rounded-full border border-border px-1.5 text-[10px] text-foreground hover:bg-secondary">${escapeHtml(box.name)}</button>`;
+    if (!lead || !others.length) return label;
+    const open = crmPersonOpen.has(group.id);
+    const names = others.slice(0, 8).map(crmContactLabel).join(", ") + (others.length > 8 ? `, and ${others.length - 8} more` : "");
+    return `${label}<button type="button" data-crm-person-open="${escapeHtml(group.id)}" aria-expanded="${open}" title="${escapeHtml(`Also in ${box.name}: ${names}. ${open ? "Click to fold them back under this row." : "Click to show them."}`)}" class="rounded-full border border-border px-1.5 text-[10px] text-primary hover:bg-secondary">${open ? "−" : "+"}${others.length}</button>`;
+  }
+
+  function crmDetailBoxHtml(contact) {
+    if (!crmBoxesReady()) return "";
+    const box = crmBoxOf(contact);
+    const count = box ? `${box.contacts.length} ${box.contacts.length === 1 ? "person" : "people"}` : "";
+    return `<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>Box</span>${box
+      ? `<button type="button" data-crm-box-open="${escapeHtml(box.id)}" class="crm-link text-xs font-semibold">${escapeHtml(box.name)}</button><span>${escapeHtml(count)}</span>`
+      : "<span>sorting this contact into a box…</span>"}<button type="button" data-crm-box-move="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-secondary">Move…</button></div>`;
+  }
+
+  function crmMailBoxChip(message) {
+    const found = crmMailBox(message);
+    if (!found) return "";
+    const why = found.how === "domain" ? `${found.address} is at the same company as ${found.box.name}` : `${found.address} is in ${found.box.name}`;
+    return `<button type="button" data-crm-box-open="${escapeHtml(found.box.id)}" title="${escapeHtml(why)}" style="max-width:12rem" class="mt-1 truncate rounded-full border border-border px-1.5 text-[10px] text-foreground hover:bg-secondary">${escapeHtml(found.box.name)}</button>`;
+  }
+
+  function openCrmBox(boxId) {
+    const dialog = $(`[data-crm-box-dialog]`);
+    if (!dialog || !crmBoxesReady() || !state.crmView.boxes.byId.has(boxId)) return;
+    const detail = $(`[data-crm-contact-detail-dialog]`);
+    if (detail?.open) detail.close();
+    state.crmView.boxId = boxId;
+    renderCrmBox();
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function renderCrmBox() {
+    const head = $(`[data-crm-box-head]`); const body = $(`[data-crm-box-body]`);
+    if (!head || !body) return;
+    const box = crmBoxesReady() ? state.crmView.boxes.byId.get(state.crmView.boxId) : null;
+    if (!box) { $(`[data-crm-box-dialog]`)?.close(); return; }
+    const members = crmBoxMembers(box);
+    const domains = (box.keys || []).filter((key) => key.startsWith("domain:")).map((key) => key.slice(7));
+    const last = Math.max(0, ...members.map((contact) => Number(contact.lastContactedAt || 0)));
+    const id = escapeHtml(box.id);
+    head.innerHTML = `
+      <div class="flex min-w-0 items-center gap-2"><input data-crm-box-name value="${escapeHtml(box.name)}" maxlength="120" aria-label="Box name" class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-base font-semibold text-foreground focus:border-primary focus:outline-none" /><button type="button" data-crm-box-rename="${id}" class="h-control-sm rounded-md border border-border px-3 text-xs font-semibold text-foreground hover:bg-secondary">Rename</button></div>
+      <p class="mt-1 text-xs text-muted-foreground">${escapeHtml([`${members.length} ${members.length === 1 ? "person" : "people"}`, domains.slice(0, 4).join(", "), last ? `last contacted ${relativeTimeLabel(last)}` : "nobody contacted yet"].filter(Boolean).join(" · "))}</p>`;
+    const people = members.map((contact) => `<li class="flex min-w-0 flex-wrap items-baseline gap-2 py-1.5"><button type="button" data-crm-person-detail="${escapeHtml(contact.id)}" class="crm-link truncate text-left text-sm">${escapeHtml(crmContactLabel(contact))}</button><span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">${escapeHtml([contact.email, contact.title, titleCaseSlug(contact.stage || "lead"), Number(contact.lastContactedAt) ? `contacted ${relativeTimeLabel(contact.lastContactedAt)}` : ""].filter(Boolean).join(" · "))}</span><button type="button" data-crm-box-move="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-secondary">Move…</button></li>`).join("");
+    const activity = crmBoxActivity(box, members);
+    body.innerHTML = `
+      <div class="grid gap-5">
+        <section>
+          <h3 class="crm-detail-heading">People</h3>
+          <ul class="divide-y divide-border">${people || `<li class="py-1.5 text-xs text-muted-foreground">The people in this box are still loading.</li>`}</ul>
+        </section>
+        <section>
+          <h3 class="crm-detail-heading">Activity</h3>
+          <p class="mb-2 text-xs text-muted-foreground">Every email, open, click, read, toot, deck view and note on the people here, and inbox mail from their addresses or their company's domain.</p>
+          ${activity.length ? `<ul class="grid gap-2">${activity.map(crmDetailLine).join("")}</ul>` : `<p class="text-xs text-muted-foreground">Nothing has been linked to this box yet.</p>`}
+        </section>
+        <section>
+          <h3 class="crm-detail-heading">Box notes</h3>
+          <textarea data-crm-box-notes rows="3" maxlength="8000" aria-label="Box notes" placeholder="What everyone at this company should know" class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-control text-foreground focus:border-primary focus:outline-none">${escapeHtml(box.notes || "")}</textarea>
+          <div class="mt-2 flex justify-end"><button type="button" data-crm-box-notes-save="${id}" class="h-control-sm rounded-md border border-border px-3 text-xs font-semibold text-foreground hover:bg-secondary">Save notes</button></div>
+        </section>
+        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+          <p class="text-xs text-muted-foreground">${escapeHtml(box.named ? "Named by a member." : "Named from the company the CRM found; rename it to keep a name of your own.")}</p>
+          <button type="button" data-crm-box-merge="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Merge into another box…</button>
+        </div>
+      </div>`;
+  }
+
+  function handleCrmBoxDialogClick(event) {
+    const id = state.crmView.boxId;
+    if (event.target.closest("[data-crm-box-rename]")) {
+      const name = String($(`[data-crm-box-name]`)?.value || "").trim();
+      if (name) void crmBoxRequest(`/${id}`, "PATCH", { name }, `Renamed the box to ${name}.`);
+      return;
+    }
+    if (event.target.closest("[data-crm-box-notes-save]")) {
+      void crmBoxRequest(`/${id}`, "PATCH", { notes: String($(`[data-crm-box-notes]`)?.value || "") }, "Box notes saved.");
+      return;
+    }
+    if (event.target.closest("[data-crm-box-merge]")) { void promptCrmMergeBox(id); return; }
+    const move = event.target.closest("[data-crm-box-move]");
+    if (move) { void promptCrmMoveToBox([move.dataset.crmBoxMove]); return; }
+    const person = event.target.closest("[data-crm-person-detail]");
+    if (person) {
+      $(`[data-crm-box-dialog]`)?.close();
+      openCrmContactDetail(person.dataset.crmPersonDetail);
+    }
+  }
+
+  function wireCrmBoxes() {
+    $(`[data-crm-box-dialog]`)?.addEventListener("click", handleCrmBoxDialogClick);
+    if (crmBoxClicksWired) return;
+    crmBoxClicksWired = true;
+    document.addEventListener("click", (event) => {
+      const open = event.target.closest?.("[data-crm-box-open]");
+      if (open) { event.preventDefault(); openCrmBox(open.dataset.crmBoxOpen); return; }
+      const move = event.target.closest?.("[data-crm-box-move]");
+      if (move && !move.closest("[data-crm-box-dialog]")) { event.preventDefault(); void promptCrmMoveToBox([move.dataset.crmBoxMove]); }
+    });
+  }
+
   function crmStatusClass(status) {
     return ["failed", "reject", "bounce", "soft bounce", "suspension"].includes(status)
       ? "text-destructive" : ["delivery", "delivered", "open", "click"].includes(status)
@@ -1939,7 +2203,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
         { label: "Email", disabled: !contact.email, run: () => openCrmEmail(contact) },
         { label: "Copy prompt", run: () => void copyCrmOutreachPrompt(contact) },
         { label: "Copy link", run: () => void copyCrmContactLink(id) },
+        { label: "Open box", disabled: !crmBoxOf(contact), run: () => openCrmBox(crmBoxOf(contact)?.id) },
       ]),
+      { label: "Move to box…", disabled: !crmBoxesReady(), run: () => void promptCrmMoveToBox(ids) },
       ...(pipelines.length ? [{ separator: true }, { heading: "Move to pipeline list" }, ...pipelines] : []),
       ...(stages.length ? [{ separator: true }, { heading: `Set stage in ${flow.name}` }, ...stages] : []),
       ...(moves.length ? [{ separator: true }, { heading: "Move to list" }, ...moves] : []),
@@ -3678,6 +3944,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
             ${crmLastContacted(contact)}
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-1">${crmProfileTiles(contact, [])}${crmEmailChipMarkup(contact)}</div>
+          <div data-crm-detail-box class="mt-2">${crmDetailBoxHtml(contact)}</div>
         </div>
       </div>`;
     const columns = [...CRM_BASE_COLUMNS, ...crmCustomFieldKeys().map((key) => ({
@@ -4011,7 +4278,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         || Number(a.lastContactedAt || 0) - Number(b.lastContactedAt || 0));
     }
     const sorted = crmSortContacts(matched);
-    return people && focus !== "duplicates" && crmGroupingPeople() ? crmOnePerPerson(sorted, people) : sorted;
+    return people && focus !== "duplicates" && crmGroupingPeople() ? crmOnePerPerson(sorted, crmGroups()) : sorted;
   }
 
   function renderCrmTabs() {
@@ -4143,14 +4410,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const contacts = crmFilteredContacts();
     const shared = Boolean(crmActiveShared());
     const people = crmPeople.open && !shared;
-    const persons = shared ? null : crmPersonGroups();
+    const persons = shared ? null : crmGroups();
     const grouped = crmGroupingPeople() && String($(`[data-crm-focus]`)?.value || "") !== "duplicates";
     const leads = new Set(); const placed = new Set();
     for (const contact of contacts) {
       const id = crmPersonOf(contact, persons).id;
       if (!placed.has(id)) { placed.add(id); leads.add(contact.id); }
     }
-    const personChip = (contact) => shared ? "" : crmPersonChip(contact, persons, grouped && leads.has(contact.id));
+    const personChip = (contact) => shared ? "" : crmGroupChip(contact, persons, grouped && leads.has(contact.id));
     const shownIds = new Set(contacts.map((contact) => contact.id));
     crmSelection.shown = contacts.map((contact) => contact.id);
     crmSelection.ids = new Set([...crmSelection.ids].filter((id) => !shared && shownIds.has(id)));
@@ -4441,7 +4708,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         ? `<a href="${escapeHtml(latest.providerUrl)}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">Open in Zoho ↗</a>` : "";
       return `<article class="rounded-md border border-border bg-secondary p-3">
         <div class="flex items-start justify-between gap-2"><p class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(latest.subject || "No subject")}</p><span class="flex shrink-0 items-center gap-1">${group.some((message) => message.mine) ? `<span title="From your own Zoho Mail: only you see it" class="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">Only you</span>` : ""}<span class="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">${group.length} ${group.length === 1 ? "message" : "messages"}</span></span></div>
-        <p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(latest.sender || latest.from || "Unknown sender")}</p>
+        <p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(latest.sender || latest.from || "Unknown sender")}</p>${crmMailBoxChip(latest)}
         <p class="mt-2 line-clamp-2 text-xs text-muted-foreground">${escapeHtml(latest.summary || "")}</p>
         <div class="mt-3 flex items-center justify-between gap-2"><select data-crm-mail-move="${escapeHtml(latest.id)}" class="rounded border border-border bg-background px-2 py-1 text-xs text-foreground">${boxes.map((box) => `<option value="${escapeHtml(box)}"${box === latest.box ? " selected" : ""}>${escapeHtml(box)}</option>`).join("")}</select><span class="text-xs">${provider}</span></div>
       </article>`;
@@ -7326,6 +7593,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       crmRefreshForkMeshAvatars();
       crmAutoSyncToots();
       crmAutoSyncZoho();
+      void loadCrmBoxes();
     } catch (error) {
       if (error.status === 409 && error.payload?.error === "plugin_not_installed") {
         const record = crmSelectedOrg(); if (record) record.installed = false;
@@ -7718,6 +7986,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-refresh]`)?.addEventListener("click", () => void loadCrm());
     $$(`[data-crm-dialog-close], [data-crm-contact-cancel], [data-crm-email-cancel], [data-crm-link-cancel], [data-crm-settings-cancel], [data-crm-sheet-cancel], [data-crm-pipeline-cancel], [data-crm-import-map-cancel], [data-crm-mastodon-cancel]`).forEach((button) => button.addEventListener("click", () => button.closest("dialog")?.close()));
     wireCrmTableParity();
+    wireCrmBoxes();
     if (sharedLink !== null) {
       if (!(await openCrmSharedOnly(sharedLink))) crmMessage("error", "Join or create an organization before using CRM. Nothing has been shared with you yet.");
       return;
