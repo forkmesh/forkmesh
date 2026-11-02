@@ -16479,14 +16479,6 @@ def _contribution_merge_reporter_activity(
 
 
 async def _contribution_forge_rows(env, subject_user_bi, now_ms):
-    """Return this account's forge-recorded activity on public hosted repos.
-
-    ``member_repo_activity`` is the cron projection of each public hosted
-    repository's pulse people view (see chat_member_stats), keyed by the
-    Worker-bound ``authorName`` of its pull and issue ledgers. One indexed
-    read (by user_bi), capped, with a freshness bound so a projection that
-    stopped refreshing cannot keep reporting a window that has moved on.
-    """
     rows = await d1_all(
         env,
         """SELECT activity.repo_bi, activity.pulls, activity.issues,
@@ -16512,7 +16504,6 @@ async def _contribution_forge_rows(env, subject_user_bi, now_ms):
         contributions.FORGE_ACTIVITY_MAX_REPOS,
     )
     forge = []
-    # The public catalog memo already holds most of these decrypted records.
     memo = globals().get("_CATALOG_ROW_DECRYPT_MEMO") or {}
     for row in rows or []:
         blob = str(row.get("data") or "")
@@ -16625,8 +16616,6 @@ async def _contribution_profile_payload(
     summary, days, recent_activity = _contribution_merge_reporter_activity(
         summary, days, recent_activity, reporter_activity)
 
-    # Forge-recorded web activity is a trailing-year aggregate per repository,
-    # so it only joins the default rolling window (one more indexed read).
     forge_note = None
     now_ms = int(Date.now())
     if contributions.contribution_rolling_range(

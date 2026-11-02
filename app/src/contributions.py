@@ -520,21 +520,12 @@ def build_profile_contribution_response(
     }
 
 
-# Forge-recorded web activity (pull requests opened, issues opened, and pull
-# reviews) comes from ``member_repo_activity``: the cron projection of each
-# public hosted repository's pulse "people" view, whose identities are the
-# Worker-bound ``authorName`` of the repository's pull and issue ledgers. Its
-# commit column keys on git author names, which a client can claim freely, so
-# commits are never taken from it. The projection stores trailing-365-day
-# totals per repository rather than per-day rows, so it can only answer the
-# rolling "last year" window the profile panel shows by default.
 FORGE_ACTIVITY_KINDS = ("issues", "pulls", "reviews")
 FORGE_ACTIVITY_MAX_REPOS = 50
 FORGE_ACTIVITY_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1000
 
 
 def contribution_rolling_range(from_value, to_value, now_ms=None):
-    """Return true only for the default 365-inclusive-day window ending today."""
     if now_ms is None:
         now_ms = int(time.time() * 1000)
     try:
@@ -557,16 +548,6 @@ def _forge_count(value):
 
 def merge_forge_activity(summary, project_totals, forge_rows,
                          from_value, to_value):
-    """Add forge-recorded collaboration not already in signed snapshots.
-
-    ``project_totals`` maps a logical project key to the snapshot counts the
-    profile already shows for it in this range. A forge row for the same
-    project only contributes what exceeds those counts, so a repository that
-    both a desktop snapshot and the forge record is never counted twice (the
-    combined figure is the larger of the two per kind). Returns the merged
-    summary, recent-activity entries for the added counts, and a coverage
-    note, or ``None`` when nothing was added.
-    """
     remaining = {}
     for project_bi, totals in (project_totals or {}).items():
         if project_bi:

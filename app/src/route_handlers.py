@@ -188,8 +188,6 @@ async def _contribution_activity_rows(
                     0 AS repository_count, '' AS project_bi
                FROM combined_days
              UNION ALL
-             /* Per-project snapshot totals, so forge-recorded activity on
-                the same logical project is merged instead of doubled. */
              SELECT 2 AS row_order, 'project' AS row_kind, '' AS day,
                     SUM(commits) AS commits, SUM(issues) AS issues,
                     SUM(pulls) AS pulls, SUM(reviews) AS reviews,
