@@ -1,6 +1,32 @@
 package com.forkmesh.nativeapp.feature.navigation
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.em
+import com.forkmesh.nativeapp.navigation.TourScene
+import com.forkmesh.nativeapp.navigation.TourShort
+import com.forkmesh.nativeapp.navigation.short
+import com.forkmesh.nativeapp.ui.kit.FmTextButton
+import com.forkmesh.nativeapp.ui.kit.fmGlass
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.animateColorAsState
 import com.forkmesh.nativeapp.ui.kit.FmRowDivider
@@ -98,59 +124,47 @@ object ShellTour {
     }
 }
 
-class TourScreen : Screen() {
+class TourScreen(private val startTrack: TourTrack? = null, private val startAt: Int = 0) : Screen() {
     override val title: String get() = "Tour"
     override val hidesShellChrome: Boolean get() = true
 
     private val progress = ShellTour.progress()
-    private var track by mutableStateOf<TourTrack?>(null)
-    private var stops by mutableStateOf<List<TourStop>>(emptyList())
-    private var index by mutableStateOf(0)
+    private var track by mutableStateOf(startTrack)
+    private var stops by mutableStateOf(startTrack?.let(ShellTour::stops).orEmpty())
+    private var index by mutableIntStateOf(startAt.coerceIn(0, maxOf(0, stops.size - 1)))
     private var done by mutableStateOf(progress.done)
     private var place by mutableStateOf(progress.place)
-    private var finished by mutableStateOf<TourTrack?>(null)
-    private var navigatorRef: Navigator? = null
+    private val direct = startTrack != null
 
     override fun onBack(): Boolean {
-        if (track == null) {
-            progress.markSeen()
-            return false
-        }
-        track = null
+        progress.markSeen()
+        if (track == null || direct) return false
+        leavePlayer()
         return true
     }
 
     @Composable
     override fun Content(navigator: Navigator) {
-        navigatorRef = navigator
         val haptics = FmHaptics.current
         val reduced = Fm.reducedMotion
-        Box(Modifier.fillMaxSize().background(Fm.colors.canvas).windowInsetsPadding(fmSafeAreaInsets())) {
-            AnimatedContent(
-                targetState = track,
-                transitionSpec = {
-                    if (reduced) {
-                        fadeIn(tween(0)) togetherWith fadeOut(tween(0))
-                    } else if (targetState != null) {
-                        (slideInHorizontally { it } + fadeIn()) togetherWith (slideOutHorizontally { -it } + fadeOut())
-                    } else {
-                        (slideInHorizontally { -it } + fadeIn()) togetherWith (slideOutHorizontally { it } + fadeOut())
-                    }
-                },
-                label = "tour-track",
-            ) { shown ->
-                if (shown == null) {
+        AnimatedContent(
+            targetState = track,
+            transitionSpec = { if (reduced) fadeIn(tween(0)) togetherWith fadeOut(tween(0)) else fadeIn() togetherWith fadeOut() },
+            label = "tour-player",
+        ) { shown ->
+            if (shown == null) {
+                Box(Modifier.fillMaxSize().background(Fm.colors.canvas).windowInsetsPadding(fmSafeAreaInsets())) {
                     TourChooser(
                         done = done,
                         resume = resumable(),
-                        finished = finished,
+                        finished = null,
                         onPick = { haptics.tap(); start(it, 0) },
                         onResume = { at, i -> haptics.tap(); start(at.track, i) },
                         onSkip = { close(navigator) },
                     )
-                } else {
-                    Player(shown, navigator)
                 }
+            } else {
+                key(shown) { Player(shown, navigator) }
             }
         }
     }
@@ -164,14 +178,12 @@ class TourScreen : Screen() {
     }
 
     private fun start(picked: TourTrack, at: Int) {
-        finished = null
         stops = ShellTour.stops(picked)
         index = at.coerceIn(0, maxOf(0, stops.size - 1))
         track = picked
-        remember()
     }
 
-    private fun remember() {
+    private fun rememberPlace() {
         val current = track ?: return
         val stop = stops.getOrNull(index) ?: return
         val next = TourPlace(current, stop.id)
@@ -179,25 +191,37 @@ class TourScreen : Screen() {
         place = next
     }
 
-    private fun finish(navigator: Navigator) {
-        val current = track
-        if (current != null) {
-            progress.markDone(current)
-            done = progress.done
-            ShellTour.refresh()
-        }
+    private fun complete(finished: TourTrack) {
+        progress.markDone(finished)
         progress.remember(null)
+        done = progress.done
         place = null
-        if (current == null || progress.nextAfter(current) == null) {
-            close(navigator)
-            return
-        }
-        finished = current
+        ShellTour.refresh()
+    }
+
+    private fun continueWith(next: TourTrack) {
+        val list = ShellTour.stops(next)
+        val seen = stops.map { it.id }.toSet()
+        stops = list
+        index = list.indexOfFirst { it.id !in seen }.takeIf { it >= 0 } ?: 0
+        track = next
+        rememberPlace()
+    }
+
+    private fun leavePlayer() {
+        progress.markSeen()
+        done = progress.done
+        place = progress.place
         track = null
+    }
+
+    private fun closePlayer(navigator: Navigator) {
+        if (direct) close(navigator) else leavePlayer()
     }
 
     private fun close(navigator: Navigator) {
         progress.markSeen()
+        ShellTour.refresh()
         if (navigator.top === this) navigator.pop()
     }
 
@@ -222,53 +246,127 @@ class TourScreen : Screen() {
 
     @Composable
     private fun Player(shown: TourTrack, navigator: Navigator) {
+        val c = Fm.colors
         val haptics = FmHaptics.current
         val reduced = Fm.reducedMotion
-        val pager = rememberPagerState(initialPage = index) { stops.size }
+        val count = stops.size
+        val pager = rememberPagerState(initialPage = index.coerceIn(0, count)) { count + 1 }
+        var settled by remember { mutableIntStateOf(index) }
+        LaunchedEffect(Unit) {
+            progress.markSeen()
+            ShellTour.refresh()
+            rememberPlace()
+        }
         LaunchedEffect(pager) {
-            snapshotFlow { pager.currentPage }.collect { page ->
-                if (page != index) {
-                    index = page
-                    haptics.selection()
-                    remember()
-                }
-            }
+            snapshotFlow { pager.settledPage }.collect { page -> if (page != index) index = page }
         }
         LaunchedEffect(index) {
+            if (index != settled) {
+                settled = index
+                if (index >= count) {
+                    haptics.success()
+                    complete(shown)
+                } else {
+                    haptics.selection()
+                    rememberPlace()
+                }
+            }
             if (pager.currentPage != index) {
                 if (reduced) pager.scrollToPage(index) else pager.animateScrollToPage(index)
             }
         }
+        val finished = index >= count
         val current = stops.getOrNull(index)
-        val last = index >= stops.size - 1
-        Column(Modifier.fillMaxSize()) {
-            TourPlayerHeader(shown, index, stops.size, onTracks = { track = null }, onClose = { close(navigator) }, onSelect = { at ->
-                if (at in stops.indices) index = at
-            })
-            HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { stops[it].id }) { page ->
-                TourStopPage(stops[page], active = page == pager.currentPage)
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4, vertical = FmSpace.x3),
-                horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (index > 0) {
-                    FmIconButton("chevron_left", "Back", onPressed = { index -= 1 }, modifier = Modifier.testTag("tour-back"))
+        val tint by animateColorAsState(
+            when {
+                finished -> c.success
+                current?.scene == TourScene.CODE -> tourMerged
+                else -> c.accent
+            },
+            tween(600),
+            label = "tour-backdrop",
+        )
+        val glow = if (c.dark) 0.26f else 0.13f
+        fun go(next: Int) {
+            if (next in 0..count) index = next
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(if (c.dark) Color.Black else c.bgBase)
+                .drawBehind {
+                    drawRect(
+                        Brush.radialGradient(
+                            listOf(tint.copy(alpha = glow), tint.copy(alpha = 0f)),
+                            center = Offset(size.width / 2f, size.height * 0.34f),
+                            radius = 320.dp.toPx(),
+                        ),
+                    )
                 }
-                val jump = current?.jump
-                if (current != null && jump != null && canJump(jump)) {
-                    FmOutlinedButton(current.jumpLabel, onClick = { take(jump, navigator) }, modifier = Modifier.testTag("tour-show-me"))
-                }
-                Spacer(Modifier.weight(1f))
-                FmFilledButton(if (last) "Finish" else "Next", onClick = {
-                    if (last) {
-                        haptics.success()
-                        finish(navigator)
-                    } else {
-                        index += 1
+                .testTag("tour-player"),
+        ) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(fmSafeAreaInsets())) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4).padding(top = FmSpace.x1),
+                    horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .fmGlass(CircleShape, interactive = true)
+                            .clickable(role = Role.Button) { if (index == 0) closePlayer(navigator) else go(index - 1) }
+                            .semantics { contentDescription = if (index == 0) "Close the tour" else "Back" }
+                            .testTag("tour-back"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        FmIcon(if (index == 0) "close" else "arrow_back", size = 20.dp, tint = c.textPrimary)
                     }
-                }, modifier = Modifier.testTag("tour-next"))
+                    TourDots(count, minOf(index, count - 1), ::go)
+                    Spacer(Modifier.weight(1f))
+                    if (!finished) {
+                        FmTextButton(
+                            onClick = { closePlayer(navigator) },
+                            contentColor = c.textSecondary,
+                            modifier = Modifier.testTag("tour-skip").semantics { stateDescription = "Closes the tour. Tour stays on Home." },
+                        ) { Text("Skip", style = Fm.text.labelLarge) }
+                    }
+                }
+                HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { if (it < stops.size) stops[it].id else "done" }) { page ->
+                    if (page < stops.size) {
+                        TourPlayerPage(stops[page], active = page == pager.currentPage)
+                    } else {
+                        TourDonePage(shown, progress.nextAfter(shown), active = page == pager.currentPage) { next ->
+                            haptics.tap()
+                            continueWith(next)
+                        }
+                    }
+                }
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = FmSpace.x5).padding(bottom = FmSpace.x2),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(FmSpace.x1),
+                ) {
+                    FmFilledButton(
+                        when {
+                            finished -> "Start using ForkMesh"
+                            index == count - 1 -> "Finish"
+                            else -> "Next"
+                        },
+                        onClick = { if (finished) closePlayer(navigator) else go(index + 1) },
+                        modifier = Modifier.fillMaxWidth().height(54.dp).testTag("tour-next"),
+                    )
+                    Box(Modifier.fillMaxWidth().height(44.dp), contentAlignment = Alignment.Center) {
+                        val jump = current?.jump
+                        if (current != null && !finished && jump != null && canJump(jump)) {
+                            FmTextButton(
+                                onClick = { take(jump, navigator) },
+                                contentColor = c.textSecondary,
+                                modifier = Modifier.testTag("tour-show-me"),
+                            ) { Text(current.jumpLabel, style = Fm.text.labelLarge) }
+                        }
+                    }
+                }
             }
         }
     }
@@ -276,6 +374,12 @@ class TourScreen : Screen() {
     companion object {
         const val TOUR_KEY = TourProgress.SEEN_KEY
         private const val JUMP_DELAY_MS = 300L
+
+        fun firstRunStop(): Int {
+            val at = ShellTour.progress().place ?: return 0
+            if (at.track != TourTrack.ESSENTIALS) return 0
+            return TourCatalog.index(at, ShellTour.stops(TourTrack.ESSENTIALS)) ?: 0
+        }
     }
 }
 
@@ -389,88 +493,156 @@ private fun TourTrackRow(track: TourTrack, count: Int, done: Boolean, suggested:
 }
 
 @Composable
-private fun TourPlayerHeader(track: TourTrack, index: Int, count: Int, onTracks: () -> Unit, onClose: () -> Unit, onSelect: (Int) -> Unit) {
+private fun TourDots(count: Int, index: Int, onSelect: (Int) -> Unit) {
     val c = Fm.colors
-    val shown = minOf(index + 1, count)
-    Column(Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4).padding(top = FmSpace.x1), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClick = onTracks)
-                    .semantics(mergeDescendants = true) { contentDescription = "Choose another track" }
-                    .padding(end = FmSpace.x2).testTag("tour-tracks"),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                FmIcon("chevron_left", size = 18.dp, tint = c.accent)
-                Text(track.title, style = Fm.text.labelLarge, color = c.accent)
+    val dot = if (count > 12) 5.dp else 6.dp
+    Row(
+        Modifier.clearAndSetSemantics {
+            contentDescription = "Stop ${index + 1} of $count"
+            setProgress { target ->
+                onSelect(target.toInt() - 1)
+                true
             }
-            Spacer(Modifier.weight(1f))
-            Text("$shown of $count", style = Fm.text.labelMedium.copy(fontFeatureSettings = "tnum"), color = c.textSecondary)
-            FmIconButton("close", "Close the tour", onPressed = onClose, color = c.textSecondary, iconSize = 20.dp, modifier = Modifier.testTag("tour-close"))
-        }
-        Row(
-            Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
-                contentDescription = "Stop $shown of $count"
-                setProgress { target ->
-                    onSelect(target.toInt() - 1)
-                    true
-                }
-            },
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            for (at in 0 until count) {
-                val fill by animateColorAsState(if (at <= index) c.textPrimary else c.border, label = "tour-segment")
-                Box(
-                    Modifier.weight(1f).height(16.dp).clickable(onClickLabel = "Go to stop ${at + 1}") { onSelect(at) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(Modifier.fillMaxWidth().height(3.dp).background(fill, CircleShape))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TourStopPage(stop: TourStop, active: Boolean) {
-    val c = Fm.colors
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = FmSpace.x4, vertical = FmSpace.x3),
-        verticalArrangement = Arrangement.spacedBy(FmSpace.x4),
+        },
+        horizontalArrangement = Arrangement.spacedBy(if (count > 12) 4.dp else 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            TourStage(stop.scene, stop.title, active, Modifier.widthIn(max = 420.dp))
-        }
-        TourHint(stop.tryIt, active)
-        Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-            Text(stop.title, style = Fm.text.displaySmall, color = c.textPrimary, modifier = Modifier.semantics { heading() })
-            Text(stop.message, style = Fm.text.bodyLarge, color = c.textSecondary)
-        }
-        if (stop.tips.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-                stop.tips.forEach { tip -> Text(tip, style = Fm.text.bodyMedium, color = c.textTertiary) }
+        for (at in 0 until count) {
+            val width by animateDpAsState(if (at == index) dot * 4 else dot, label = "tour-dot")
+            Box(Modifier.height(44.dp).tourTap { onSelect(at) }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(width, dot).background(if (at == index) c.textPrimary else c.textTertiary.copy(alpha = 0.5f), CircleShape))
             }
-        }
-        if (stop.fromMarket) {
-            Text("Not installed yet. Add it from the Market to use it.", style = Fm.text.bodyMedium, color = c.textSecondary)
         }
     }
 }
 
 @Composable
-private fun TourHint(text: String, active: Boolean) {
+private fun TourPlayerPage(stop: TourStop, active: Boolean) {
     val c = Fm.colors
-    val beat = rememberTourPulse(active)
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Row(
-            Modifier.clearAndSetSemantics { contentDescription = "Try it: $text" },
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    val short = stop.short
+    val line = if (stop.fromMarket) "Not installed yet. Add it from the Market." else short.line
+    Column(Modifier.fillMaxSize()) {
+        TourStage(stop.scene, short.headline, active, Modifier.weight(1f).fillMaxWidth())
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = FmSpace.x6)
+                .padding(top = FmSpace.x3, bottom = FmSpace.x4)
+                .clearAndSetSemantics {
+                    heading()
+                    contentDescription = "${short.headline}. $line ${stop.message}"
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
         ) {
-            FmIcon("touch_app", size = 14.dp, tint = c.textSecondary, modifier = Modifier.graphicsLayer { alpha = 0.55f + 0.45f * beat })
-            Text(text, style = Fm.text.bodyMedium, color = c.textSecondary)
+            TourHeadline(short)
+            Text(line, style = Fm.text.bodyLarge, color = c.textSecondary, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+private fun TourHeadline(short: TourShort) {
+    val c = Fm.colors
+    val style = Fm.text.displaySmall
+    val icon = with(LocalDensity.current) { style.fontSize.toDp() }
+    val emblem = short.emblem
+    val text = buildAnnotatedString {
+        short.headline.split(" ").forEachIndexed { at, word ->
+            if (at > 0) append(" ")
+            if (emblem != null && word == short.emblemBefore) {
+                appendInlineContent(EMBLEM, " ")
+                append(" ")
+            }
+            append(word)
+        }
+        withStyle(SpanStyle(color = c.accent)) { append(".") }
+    }
+    val inline = if (emblem == null) {
+        emptyMap()
+    } else {
+        mapOf(EMBLEM to InlineTextContent(Placeholder(1.em, 1.em, PlaceholderVerticalAlign.TextCenter)) { FmIcon(emblem, size = icon, tint = c.accent) })
+    }
+    Text(text, style = style, color = c.textPrimary, textAlign = TextAlign.Center, inlineContent = inline)
+}
+
+private const val EMBLEM = "emblem"
+
+@Composable
+private fun TourDonePage(track: TourTrack, next: TourTrack?, active: Boolean, onNext: (TourTrack) -> Unit) {
+    val c = Fm.colors
+    val reduced = Fm.reducedMotion
+    var drawn by remember { mutableStateOf(false) }
+    LaunchedEffect(active) { drawn = active }
+    val pop by animateFloatAsState(
+        if (drawn || reduced) 1f else 0f,
+        if (reduced) snap<Float>() else spring<Float>(dampingRatio = 0.5f, stiffness = 300f),
+        label = "tour-done-pop",
+    )
+    val shape = RoundedCornerShape(44.dp)
+    val shadow = Color.Black.copy(alpha = if (c.dark) 0.4f else 0.1f)
+    Column(Modifier.fillMaxSize().padding(bottom = FmSpace.x4), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier
+                .graphicsLayer {
+                    val k = 0.7f + 0.3f * pop
+                    scaleX = k
+                    scaleY = k
+                    alpha = pop.coerceIn(0f, 1f)
+                }
+                .size(140.dp)
+                .shadow(16.dp, shape, ambientColor = shadow, spotColor = shadow)
+                .background(c.bgRaised, shape)
+                .clearAndSetSemantics {},
+            contentAlignment = Alignment.Center,
+        ) {
+            FmIcon("check", size = 64.dp, tint = c.success)
+        }
+        Spacer(Modifier.weight(1f))
+        Column(
+            Modifier.padding(horizontal = FmSpace.x6),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
+        ) {
+            Text(
+                buildAnnotatedString {
+                    append("You're set")
+                    withStyle(SpanStyle(color = c.accent)) { append(".") }
+                },
+                style = Fm.text.displaySmall,
+                color = c.textPrimary,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text("${track.title} done. Tour stays on Home for later.", style = Fm.text.bodyLarge, color = c.textSecondary, textAlign = TextAlign.Center)
+        }
+        if (next != null) {
+            val added = ShellTour.stops(next).size - ShellTour.stops(track).size
+            Row(
+                Modifier
+                    .padding(horizontal = FmSpace.x5)
+                    .padding(top = FmSpace.x5)
+                    .fillMaxWidth()
+                    .heightIn(min = 64.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(c.bgRaised)
+                    .clickable(role = Role.Button) { onNext(next) }
+                    .padding(horizontal = FmSpace.x4)
+                    .testTag("tour-next-track"),
+                horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FmIcon("auto_awesome", size = 20.dp, tint = c.accent)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Keep going: ${next.title}", style = Fm.text.titleSmall, color = c.textPrimary)
+                    Text(
+                        "$added more stops · about ${TourCatalog.minutes(added)} min",
+                        style = Fm.text.bodyMedium.copy(fontFeatureSettings = FmType.tabular),
+                        color = c.textSecondary,
+                    )
+                }
+                FmIcon("chevron_right", size = 18.dp, tint = c.textDisabled)
+            }
         }
     }
 }
@@ -482,6 +654,6 @@ fun ShellFirstRun(navigator: Navigator) {
         if (progress.seen) return@LaunchedEffect
         if (!PackageGateFeature.isInstalled(PackageGate.TOUR)) return@LaunchedEffect
         progress.markSeen()
-        navigator.push(TourScreen())
+        navigator.push(TourScreen(TourTrack.ESSENTIALS, TourScreen.firstRunStop()))
     }
 }
