@@ -695,9 +695,20 @@ func (e *PullMutationExecutor) readPullMetadata(ctx context.Context, gitDir stri
 // already passed the owner node's signature validation when they were
 // committed; this executor still parses only a bounded projection and ignores
 // anything authored by the pull's own signer.
+//
+// A reviewer is an account, not a key: people sign from several device and
+// browser keys, so reviews are grouped by authorName. The Worker sets that
+// field itself from the signed-in session or from the account the signing key
+// is bound to (never from the client), so it names the account that holds the
+// key. A review with no account name falls back to its signing key. Reviews
+// from the pull author's account, under any key, never count.
 func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir string, request pullMutationRequest, meta *pullMetadata) bool {
 	if meta.author == "" {
 		return false
+	}
+	pullAccount := ""
+	if meta.matter != nil {
+		pullAccount = reviewAccount(meta.matter.values["authorName"])
 	}
 	prefix := fmt.Sprintf(".forkmesh/pulls/%d/", request.number)
 	listing, code, err := e.git(ctx, gitDir, "ls-tree", "-z", "--name-only", request.ExpectedPullsOid, "--", prefix)
@@ -725,10 +736,18 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 		if !ok || matter.values["type"] != "review" {
 			continue
 		}
-		reviewer := strings.TrimSpace(matter.values["author"])
+		key := strings.TrimSpace(matter.values["author"])
 		state := strings.TrimSpace(matter.values["state"])
-		if reviewer == "" || reviewer == meta.author || strings.TrimSpace(matter.values["sig"]) == "" {
+		if key == "" || key == meta.author || strings.TrimSpace(matter.values["sig"]) == "" {
 			continue
+		}
+		account := reviewAccount(matter.values["authorName"])
+		if account != "" && account == pullAccount {
+			continue
+		}
+		reviewer := "key:" + key
+		if account != "" {
+			reviewer = "account:" + account
 		}
 		if state == "approved" || state == "changes_requested" {
 			latest[reviewer] = state
@@ -746,6 +765,12 @@ func (e *PullMutationExecutor) reviewGateSatisfied(ctx context.Context, gitDir s
 		}
 	}
 	return approved
+}
+
+// reviewAccount normalises the account a review or pull record names, the way
+// the Worker binds it.
+func reviewAccount(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 // requiredChecksSatisfied applies .forkmesh/required-checks.json from the

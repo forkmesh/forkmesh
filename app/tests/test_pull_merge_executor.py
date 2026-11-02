@@ -699,3 +699,73 @@ def test_recovery_anchors_a_journaled_interrupted_install_before_fsck(
     result = refresh._merge_execute_locked(cfg, req)
     assert result["status"] == "merged"
     assert_fsck_clean(bare)
+
+
+def _review(key, account, state):
+    return (
+        "---\n"
+        "type: review\n"
+        f"id: review-{key}-{state}\n"
+        f"author: {key}\n"
+        f"authorName: {account}\n"
+        "ts: 2\n"
+        f"state: {state}\n"
+        "sig: owner-validated-test-signature\n"
+        "---\n\nReviewed.\n"
+    )
+
+
+@pytest.mark.parametrize("reviews, merged", [
+    # One account, several keys: the latest review of the account wins.
+    ([("bob-laptop", "bob", "changes_requested"),
+      ("bob-phone", "Bob", "changes_requested"),
+      ("bob-browser", "bob", "approved")], True),
+    # The pull author (key alice, account Alice) approving with a second key.
+    ([("alice-phone", "alice", "approved")], False),
+    # ... and objecting with one: their own reviews never count either way.
+    ([("bob-laptop", "bob", "approved"),
+      ("alice-phone", "ALICE", "changes_requested")], True),
+    # Two accounts: one objection still open blocks the merge.
+    ([("carol-laptop", "carol", "changes_requested"),
+      ("bob-laptop", "bob", "changes_requested"),
+      ("bob-phone", "bob", "approved")], False),
+    # A dismissed review clears that account's earlier objection.
+    ([("carol-laptop", "carol", "changes_requested"),
+      ("carol-phone", "carol", "dismissed"),
+      ("bob-phone", "bob", "approved")], True),
+    # Reviews with no account name stay keyed on their signing key.
+    ([("anon-1", "", "changes_requested"),
+      ("anon-2", "", "approved")], False),
+], ids=["same-account-keys", "author-second-key", "author-objection",
+        "two-accounts", "dismissed", "unnamed-keys"])
+def test_review_gate_keys_reviewers_by_account(tmp_path, reviews, merged):
+    bare, base, head, _pulls, _opening = repository(tmp_path)
+    cfg = config(tmp_path, bare)
+    work = tmp_path / "account-reviews"
+    run(["git", "clone", str(bare), str(work)], tmp_path)
+    run(["git", "config", "user.name", "Test"], work)
+    run(["git", "config", "user.email", "test@example.invalid"], work)
+    run(["git", "switch", "forkmesh/pulls"], work)
+    pull_dir = work / ".forkmesh/pulls/7"
+    (pull_dir / "0001-review.md").unlink()
+    for index, (key, account, state) in enumerate(reviews, start=2):
+        (pull_dir / ("%04d-review.md" % index)).write_text(
+            _review(key, account, state), encoding="utf-8")
+    run(["git", "add", "-A"], work)
+    run(["git", "commit", "-m", "account reviews"], work)
+    run(["git", "push", "origin", "forkmesh/pulls"], work)
+    reviewed_pulls = git_ref(bare, "refs/heads/forkmesh/pulls")
+    req = request(
+        cfg, base=base, head=head, pulls=reviewed_pulls,
+        request_id="merge_request_account_reviews",
+    )
+
+    result = refresh._merge_execute_locked(cfg, req)
+
+    if merged:
+        assert result["status"] == "merged", result
+        assert git_ref(bare, "refs/heads/main") != base
+    else:
+        assert result["status"] == "failed", result
+        assert result["error"] == "review_required"
+        assert git_ref(bare, "refs/heads/main") == base
