@@ -153,8 +153,9 @@ struct ProjectDrawer: View {
                 ProjectSwitcher(close: close(then:))
                     .frame(width: width)
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .background(fm.bgRaised.ignoresSafeArea())
-                    .shadow(color: Color.black.opacity(0.3), radius: 18, x: 6)
+                    .background(fm.bgBase.ignoresSafeArea())
+                    .compositingGroup()
+                    .shadow(color: Color.black.opacity(fm.dark ? 0.5 : 0.18), radius: 18, x: 6)
                     .offset(x: shown ? 0 : -(width + 24))
             }
         }
@@ -191,7 +192,7 @@ struct ProjectSwitcher: View {
         self.close = close
     }
 
-    static let explanation: String = "Each project has its own sign-in, keys and data on this phone, and can be attached to a ForkMesh instance."
+    static let explanation: String = "Each project keeps its own sign-in, keys and data on this phone."
 
     var body: some View {
         Group {
@@ -237,42 +238,66 @@ struct ProjectSwitcher: View {
     private func content(_ model: RelaySettingsModel) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                FmPanelHeader(title: "Projects")
+                Text("Projects")
+                    .fmText(.displaySmall)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.top, FmSpace.x3)
                 Text(ProjectSwitcher.explanation)
-                    .fmText(.bodySmall, color: fm.textSecondary, height: 1.35)
+                    .fmText(.bodyLarge, color: fm.textSecondary, height: FmType.leadingSnug)
                     .padding(.top, FmSpace.x2)
-                FmCard(padding: EdgeInsets(), radius: FmRadius.lg) {
-                    VStack(spacing: 0) {
-                        ForEach(Array(model.rows.enumerated()), id: \.element.id) {
-                            (entry: (offset: Int, element: RelayRowInfo)) in
-                            if entry.offset > 0 {
-                                FmRowDivider()
-                            }
-                            ProjectSwitcherRow(
-                                info: entry.element,
-                                online: entry.element.active && model.connection == .connected,
-                                onTap: entry.element.active || model.canSwitch
-                                    ? { switchTo(entry.element.relay) } : nil,
-                                onChooseInstance: { choosingInstance = entry.element.relay })
+                group {
+                    ForEach(Array(model.rows.enumerated()), id: \.element.id) {
+                        (entry: (offset: Int, element: RelayRowInfo)) in
+                        if entry.offset > 0 {
+                            FmRowDivider(indent: 60)
                         }
+                        ProjectSwitcherRow(
+                            info: entry.element,
+                            online: entry.element.active && model.connection == .connected,
+                            onTap: entry.element.active || model.canSwitch
+                                ? { switchTo(entry.element.relay) } : nil,
+                            onChooseInstance: { choosingInstance = entry.element.relay })
                     }
+                    FmRowDivider(indent: 60)
+                    actionRow("Add project", icon: "add", tint: model.canSwitch ? fm.accent : fm.textDisabled, chevron: false,
+                              onTap: model.canSwitch ? { adding = true } : nil)
+                        .accessibilityIdentifier("project-add")
                 }
-                .padding(.top, FmSpace.x3)
-                VStack(alignment: .leading, spacing: FmSpace.x3) {
-                    FmFilledButton("Add project", icon: "add", onPressed: model.canSwitch ? { adding = true } : nil)
+                .padding(.top, FmSpace.x5)
+                group {
                     if let active = model.rows.first(where: { $0.active })?.relay {
-                        FmOutlinedButton("Invite people to \(active.label)", icon: "group_outlined", onPressed: {
-                            inviting = true
-                        })
-                        .accessibilityIdentifier("project-invite")
+                        actionRow("Invite people to \(active.label)", icon: "group_outlined", tint: nil, chevron: true,
+                                  onTap: { inviting = true })
+                            .accessibilityIdentifier("project-invite")
+                        FmRowDivider(indent: 60)
                     }
-                    FmOutlinedButton("Manage projects", icon: "tune", onPressed: { managing = true })
+                    actionRow("Manage projects", icon: "tune", tint: nil, chevron: true, onTap: { managing = true })
                 }
-                .padding(.top, FmSpace.x3)
+                .padding(.top, FmSpace.x6)
             }
             .padding(FmSpace.x4)
         }
         .task { await model.refreshStatuses() }
+    }
+
+    private func group<Rows: View>(@ViewBuilder _ rows: () -> Rows) -> some View {
+        VStack(spacing: 0) {
+            rows()
+        }
+        .background(fm.bgRaised)
+        .clipShape(FmRoundedShape(radius: FmRadius.lg * 2))
+    }
+
+    private func actionRow(_ title: String, icon: String, tint: Color?, chevron: Bool, onTap: (() -> Void)?) -> some View {
+        FmListRow(
+            title: title,
+            leading: AnyView(
+                FmIcon(icon, size: 22, color: tint ?? fm.textSecondary)
+                    .frame(width: 32, height: 32)),
+            onTap: onTap,
+            showChevron: chevron,
+            titleColor: tint,
+            minHeight: 52)
     }
 
     /// The switch replaces the whole app underneath this drawer, so the drawer closes first.
@@ -327,7 +352,9 @@ struct ProjectSwitcherRow: View {
                 subtitleView: AnyView(subtitle),
                 leading: AnyView(ProjectIcon(project: info.relay, size: 32)),
                 trailing: info.active
-                    ? AnyView(Text("Active").fmText(.labelSmall, color: fm.accent))
+                    ? AnyView(
+                        FmIcon("check", size: 20, color: fm.accent)
+                            .accessibilityLabel(Text("Active")))
                     : nil,
                 onTap: onTap,
                 showChevron: false)
@@ -373,12 +400,16 @@ struct ProjectSwitcherRow: View {
                 }
             }
         } else {
-            (Text(info.relay.displayOrigin).foregroundColor(fm.textSecondary)
-                + Text(" · ").foregroundColor(fm.textTertiary)
-                + Text(info.who).foregroundColor(fm.textTertiary))
-                .fmText(.bodySmall)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(info.relay.displayOrigin)
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(info.who)
+                    .fmText(.bodySmall, color: fm.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
     }
 
