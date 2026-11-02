@@ -56,6 +56,7 @@ struct BookingScreen: View {
                 if let data = model.overview, data.installed {
                     linkSection(data)
                     statsSection(data.stats)
+                    PageActivitySection(activity: data.activity, now: now)
                     Section {
                         Picker("Show", selection: $tab) {
                             ForEach(BookingTab.allCases) { Text($0.title).tag($0) }
@@ -298,6 +299,27 @@ struct BookingScreen: View {
             share = BookingShare(items: [url])
         } else {
             FmHaptics.failure()
+        }
+    }
+}
+
+struct PageActivitySection: View {
+    let activity: PageActivity
+    let now: Int64
+
+    var body: some View {
+        Section("Visits") {
+            Text(activity.summary(now: now))
+                .font(.subheadline)
+                .foregroundStyle(activity.isEmpty ? .secondary : .primary)
+                .accessibilityIdentifier("page-activity")
+            ForEach(Array(activity.newest.enumerated()), id: \.offset) { _, visit in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(visit.label).font(.subheadline).lineLimit(2)
+                    Spacer(minLength: 8)
+                    Text(visit.when(now: now)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }

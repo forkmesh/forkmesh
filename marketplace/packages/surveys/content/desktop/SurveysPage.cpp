@@ -50,6 +50,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -1158,6 +1159,8 @@ void SurveysPage::renderDetail()
     if (!schedule.isEmpty())
         layout->addWidget(mutedLabel(schedule));
     layout->addWidget(mutedLabel(settingsLines(survey.settings).join(kDot)));
+    if (survey.detailed && survey.status != QLatin1String("draft"))
+        layout->addWidget(mutedLabel(activityText(survey.activity, now)));
 
     if (canCopyLink(survey)) {
         auto *linkRow = new QHBoxLayout;
@@ -1187,7 +1190,8 @@ void SurveysPage::renderDetail()
         tabs->setDocumentMode(true);
         tabs->addTab(resultsPage(), QStringLiteral("Results"));
         tabs->addTab(responsesPage(), QStringLiteral("Responses (%1)").arg(survey.responseCount));
-        tabs->setCurrentIndex(std::clamp(m_detailTab, 0, 1));
+        tabs->addTab(activityPage(), QStringLiteral("Activity"));
+        tabs->setCurrentIndex(std::clamp(m_detailTab, 0, 2));
         connect(tabs, &QTabWidget::currentChanged, this, [this](int index) {
             m_detailTab = index;
             if (index == 1 && m_responsesFor != m_detailId && !m_responsesLoading)
@@ -1278,6 +1282,33 @@ QWidget *SurveysPage::resultsPage()
             }
         }
     }
+    return page;
+}
+
+QWidget *SurveysPage::activityPage()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 8, 0, 0);
+    layout->setSpacing(6);
+    const SurveyActivity &activity = m_detail.activity;
+    const qint64 now = nowMs();
+    layout->addWidget(plainLabel(activityText(activity, now)));
+    if (activity.recent.isEmpty()) {
+        layout->addWidget(mutedLabel(m_detail.status == QLatin1String("draft")
+            ? QStringLiteral("Open the survey and share its link; visits show up here.")
+            : QStringLiteral("When someone opens the link, what they do shows up here. Opening it from this page "
+                             "does not count.")));
+        return page;
+    }
+    for (int index = 0; index < activity.recent.size(); ++index) {
+        if (index > 0)
+            layout->addWidget(separator());
+        layout->addWidget(plainLabel(visitEventText(activity.recent.at(index), now)));
+    }
+    layout->addWidget(mutedLabel(QStringLiteral("Visitors are counted by a one-way hash of their connection, never "
+                                                "their address. ForkMesh keeps the newest 1,000 events per survey "
+                                                "for 90 days.")));
     return page;
 }
 
@@ -1446,6 +1477,7 @@ void SurveysPage::surveyChanged(const QJsonObject &object, const QString &notice
         if (!complete && m_detail.id == survey.id && m_detail.detailed) {
             merged.questions = m_detail.questions;
             merged.results = m_detail.results;
+            merged.activity = m_detail.activity;
             merged.detailed = true;
         } else if (!complete) {
             merged.detailed = false;
@@ -1571,10 +1603,13 @@ void SurveysPage::openEditor(const Survey &survey, bool editing)
                                             "privacy mode cannot tell people apart, so there it has no effect."));
     auto *notify = new QCheckBox(QStringLiteral("Ping me when responses arrive (at most once an hour)"));
     notify->setChecked(settings.notifyOnResponse);
+    auto *notifyVisit = new QCheckBox(QStringLiteral("Ping me when someone opens or starts it"));
+    notifyVisit->setChecked(settings.notifyOnVisit);
     auto *shuffle = new QCheckBox(QStringLiteral("Show choice options in random order"));
     shuffle->setChecked(settings.shuffleOptions);
     settingsForm->addRow(onePerPerson);
     settingsForm->addRow(notify);
+    settingsForm->addRow(notifyVisit);
     settingsForm->addRow(shuffle);
     const auto dateRow = [](qint64 stamp, const QString &label, QCheckBox **check, QDateTimeEdit **edit) {
         auto *row = new QHBoxLayout;
@@ -1657,6 +1692,7 @@ void SurveysPage::openEditor(const Survey &survey, bool editing)
         SurveySettings chosen;
         chosen.oneResponsePerPerson = onePerPerson->isChecked();
         chosen.notifyOnResponse = notify->isChecked();
+        chosen.notifyOnVisit = notifyVisit->isChecked();
         chosen.shuffleOptions = shuffle->isChecked();
         chosen.opensAt = opensCheck->isChecked() ? opensEdit->dateTime().toMSecsSinceEpoch() : 0;
         chosen.closesAt = closesCheck->isChecked() ? closesEdit->dateTime().toMSecsSinceEpoch() : 0;
@@ -1825,9 +1861,13 @@ void SurveysPage::copyPublicLink()
 
 void SurveysPage::openPublicLink()
 {
-    const QUrl url(m_detail.publicUrl);
-    if (url.isValid() && url.scheme() == QLatin1String("https"))
-        QDesktopServices::openUrl(url);
+    QUrl url(m_detail.publicUrl);
+    if (!url.isValid() || url.scheme() != QLatin1String("https"))
+        return;
+    QUrlQuery query(url);
+    query.addQueryItem(QStringLiteral("preview"), QStringLiteral("1"));
+    url.setQuery(query);
+    QDesktopServices::openUrl(url);
 }
 
 void SurveysPage::openWebPage()

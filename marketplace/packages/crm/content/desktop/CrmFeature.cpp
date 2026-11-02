@@ -372,8 +372,6 @@ constexpr int kRowButtonWidth = 28;
 // their pictures at their own size, and a card reads one when it opens.
 constexpr int kDetailPhotoSize = 96;
 constexpr int kPeopleAvatarSize = 56;
-constexpr int kListAvatarSize = 22;
-constexpr int kListAvatars = 6;
 constexpr int kAccessAvatarSize = 18;
 constexpr int kAccessAvatars = 3;
 constexpr int kAvatarKeep = kPeopleAvatarSize * 2;
@@ -400,55 +398,6 @@ QIcon octicon(const QString &name, const QColor &color, int side = 20)
     }
     return icon;
 }
-
-class ListStageBar final : public QWidget
-{
-public:
-    struct Segment
-    {
-        QColor color;
-        int count = 0;
-    };
-
-    explicit ListStageBar(const QList<Segment> &segments, QWidget *parent = nullptr)
-        : QWidget(parent), m_segments(segments)
-    {
-        setFixedHeight(Theme::isNext() ? 4 : 6);
-        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    }
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        const bool next = Theme::isNext();
-        const QRectF bounds = next ? QRectF(rect()) : QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        const qreal radius = next ? bounds.height() / 2 : 3;
-        QPainterPath track;
-        track.addRoundedRect(bounds, radius, radius);
-        painter.setClipPath(track);
-        QColor empty = palette().color(QPalette::Mid);
-        empty.setAlpha(70);
-        painter.fillRect(bounds, next ? Theme::color(Theme::Role::SurfaceActive) : empty);
-        int total = 0;
-        for (const Segment &segment : std::as_const(m_segments))
-            total += segment.count;
-        if (total <= 0)
-            return;
-        qreal left = bounds.left();
-        for (const Segment &segment : std::as_const(m_segments)) {
-            if (segment.count <= 0)
-                continue;
-            const qreal width = bounds.width() * segment.count / total;
-            painter.fillRect(QRectF(left, bounds.top(), width, bounds.height()), segment.color);
-            left += width;
-        }
-    }
-
-private:
-    QList<Segment> m_segments;
-};
 
 class HeaderMenuButton final : public QToolButton
 {
@@ -810,8 +759,8 @@ constexpr int kMastodonInFlight = 4;
 constexpr int kMastodonPerHost = 2;
 constexpr qint64 kMastodonBackoffMs = 5 * 60 * 1000;
 constexpr int kReachMastodonReads = 40;
-constexpr int kNextUpcoming = 5;
 constexpr int kNextRenderDelayMs = 400;
+constexpr int kStatusShownMs = 6000;
 constexpr qint64 kMastodonFreshMs = 15 * 60 * 1000;
 constexpr qint64 kDayMs = 24LL * 60 * 60 * 1000;
 constexpr int kNextReplyDays = 60;
@@ -1933,7 +1882,7 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
 
     m_summary = new QLabel(QStringLiteral("Shared organization relationships"));
     m_summary->setObjectName(QStringLiteral("mutedLabel"));
-    outer->addWidget(m_summary);
+    m_summary->hide();
 
     m_status = new QLabel(QStringLiteral("Select an organization to load CRM."));
     m_status->setObjectName(QStringLiteral("mutedLabel"));
@@ -2072,19 +2021,133 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
         addEditStagesAction(&menu, flowId);
         menu.exec(m_stageStrip->mapToGlobal(position));
     });
-    m_nextCard = new QFrame(m_contactsBody);
+    m_nextCard = new QFrame;
     m_nextCard->setObjectName(QStringLiteral("crmNextContact"));
     m_nextCard->setAccessibleName(QStringLiteral("Who to contact next: reach out or follow up"));
     m_nextCard->setStyleSheet(QStringLiteral(
-        "QFrame#crmReachOutCard, QFrame#crmFollowUpCard "
+        "QFrame#crmReachOutCard, QFrame#crmFollowUpCard, QFrame#crmEmailPanel "
         "{ border: 1px solid palette(highlight); border-radius: 10px; }"));
+    m_nextCard->setMinimumWidth(320);
     {
-        auto *pair = new QHBoxLayout(m_nextCard);
-        pair->setContentsMargins(0, 0, 0, 0);
-        pair->setSpacing(Theme::isNext() ? 16 : 10);
+        auto *column = new QVBoxLayout(m_nextCard);
+        column->setContentsMargins(4, 10, 8, 8);
+        column->setSpacing(6);
+        if (Theme::isNext()) {
+            column->setContentsMargins(4, 16, 16, 8);
+            column->setSpacing(12);
+        }
+        auto *tabRow = new QWidget;
+        tabRow->setObjectName(QStringLiteral("crmNextTabs"));
+        tabRow->setAttribute(Qt::WA_StyledBackground, true);
+        auto *tabLayout = new QHBoxLayout(tabRow);
+        tabLayout->setContentsMargins(0, 0, 0, 0);
+        tabLayout->setSpacing(2);
+        for (const NextMode mode : {NextMode::ReachOut, NextMode::FollowUp}) {
+            const bool reach = mode == NextMode::ReachOut;
+            auto *tab = new QToolButton;
+            tab->setObjectName(reach ? QStringLiteral("crmReachOutTab")
+                                     : QStringLiteral("crmFollowUpTab"));
+            tab->setText(reach ? QStringLiteral("Reach out") : QStringLiteral("Follow up"));
+            tab->setAccessibleName(tab->text());
+            tab->setToolTip(reach
+                ? QStringLiteral("The best new lead on the open list who has never been contacted")
+                : QStringLiteral("Who on the open list is due a follow-up"));
+            tab->setProperty("crmRole", QStringLiteral("tab"));
+            tab->setCheckable(true);
+            tab->setChecked(mode == m_nextMode);
+            tab->setAutoRaise(true);
+            tab->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            tab->setCursor(Qt::PointingHandCursor);
+            connect(tab, &QToolButton::clicked, this, [this, mode] { selectNextMode(mode); });
+            tabLayout->addWidget(tab);
+            (reach ? m_reachTab : m_followTab) = tab;
+        }
+        tabLayout->addStretch(1);
+        column->addWidget(tabRow);
+        m_nextTabs = tabRow;
+        auto *scroll = new QScrollArea;
+        scroll->setObjectName(QStringLiteral("crmNextScroll"));
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_nextCardHolder = new QWidget;
+        m_nextCardHolder->setObjectName(QStringLiteral("crmNextHolder"));
+        auto *holder = new QVBoxLayout(m_nextCardHolder);
+        holder->setContentsMargins(0, 0, 0, 0);
+        holder->setSpacing(0);
+        scroll->setWidget(m_nextCardHolder);
+        column->addWidget(scroll, 1);
+        m_nextScroll = scroll;
+
+        m_emailPanel = new QFrame;
+        m_emailPanel->setObjectName(QStringLiteral("crmEmailPanel"));
+        m_emailPanel->setAccessibleName(QStringLiteral("Write email"));
+        auto *email = new QVBoxLayout(m_emailPanel);
+        email->setContentsMargins(14, 12, 14, 12);
+        email->setSpacing(8);
+        auto *emailHead = new QHBoxLayout;
+        m_emailTitle = new QLabel(QStringLiteral("Write email"));
+        m_emailTitle->setProperty("crmRole", QStringLiteral("name"));
+        QFont emailTitleFont = m_emailTitle->font();
+        emailTitleFont.setWeight(QFont::DemiBold);
+        m_emailTitle->setFont(emailTitleFont);
+        emailHead->addWidget(m_emailTitle, 1);
+        auto *emailClose = new QToolButton;
+        emailClose->setAutoRaise(true);
+        emailClose->setCursor(Qt::PointingHandCursor);
+        emailClose->setToolTip(QStringLiteral("Close without sending"));
+        emailClose->setAccessibleName(QStringLiteral("Close the email"));
+        emailClose->setIconSize(QSize(16, 16));
+        m_toolIcons.append({emailClose, QStringLiteral("x")});
+        emailHead->addWidget(emailClose);
+        email->addLayout(emailHead);
+        m_emailTo = new QLabel;
+        m_emailTo->setObjectName(QStringLiteral("mutedLabel"));
+        m_emailTo->setProperty("crmRole", QStringLiteral("subtitle"));
+        m_emailTo->setTextFormat(Qt::PlainText);
+        m_emailTo->setWordWrap(true);
+        email->addWidget(m_emailTo);
+        m_emailSubject = new QLineEdit;
+        m_emailSubject->setPlaceholderText(QStringLiteral("Subject"));
+        m_emailSubject->setAccessibleName(QStringLiteral("Email subject"));
+        email->addWidget(m_emailSubject);
+        m_emailBody = new QPlainTextEdit;
+        m_emailBody->setAccessibleName(QStringLiteral("Email body"));
+        m_emailBody->setPlaceholderText(QStringLiteral("The email"));
+        m_emailBody->setMinimumHeight(240);
+        email->addWidget(m_emailBody, 1);
+        m_emailOffers = new QWidget;
+        auto *offers = new QVBoxLayout(m_emailOffers);
+        offers->setContentsMargins(0, 0, 0, 0);
+        offers->setSpacing(4);
+        email->addWidget(m_emailOffers);
+        m_emailStatus = new QLabel;
+        m_emailStatus->setObjectName(QStringLiteral("mutedLabel"));
+        m_emailStatus->setProperty("crmRole", QStringLiteral("note"));
+        m_emailStatus->setWordWrap(true);
+        email->addWidget(m_emailStatus);
+        auto *emailActions = new QHBoxLayout;
+        emailActions->setSpacing(6);
+        m_emailSend = new QPushButton(QStringLiteral("Send with tracking"));
+        m_emailSend->setObjectName(QStringLiteral("primaryButton"));
+        m_emailSend->setCursor(Qt::PointingHandCursor);
+        m_emailSend->setToolTip(QStringLiteral("Send it now, get a ping when they open it or click, "
+                                               "and mark them contacted"));
+        emailActions->addWidget(m_emailSend);
+        m_emailRewrite = new QPushButton(QStringLiteral("Rewrite"));
+        m_emailRewrite->setProperty("crmVariant", QStringLiteral("outline"));
+        m_emailRewrite->setCursor(Qt::PointingHandCursor);
+        m_emailRewrite->setToolTip(QStringLiteral("Have the model write it again"));
+        emailActions->addWidget(m_emailRewrite);
+        emailActions->addStretch(1);
+        email->addLayout(emailActions);
+        m_emailPanel->hide();
+        column->addWidget(m_emailPanel, 1);
+        connect(emailClose, &QToolButton::clicked, this, [this] { closeEmailPanel(); });
+        connect(m_emailSend, &QPushButton::clicked, this, [this] { sendEmailPanel(); });
+        connect(m_emailRewrite, &QPushButton::clicked, this, [this] { writeEmailDraft(); });
     }
     m_nextCard->hide();
-    contactsLayout->addWidget(m_nextCard);
     contactsLayout->addWidget(m_stageStrip);
     contactsLayout->addLayout(filters);
     m_contactsTable = new ContactsTable(0, 0);
@@ -2426,6 +2489,7 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     centerLayout->addWidget(m_contactsBody, 1);
     m_contactsBody->hide();
     body->addWidget(center);
+    body->addWidget(m_nextCard);
     auto *detail = new QFrame;
     detail->setObjectName(QStringLiteral("crmDetailPanel"));
     detail->setFrameShape(QFrame::StyledPanel);
@@ -2452,9 +2516,10 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     body->setStretchFactor(0, 0);
     body->setStretchFactor(1, 1);
     body->setStretchFactor(2, 0);
-    body->setSizes({250, 900, 400});
+    body->setStretchFactor(3, 0);
+    body->setSizes({250, 900, 380, 400});
     if (Theme::isNext()) {
-        body->setSizes({300, 900, 400});
+        body->setSizes({300, 900, 420, 400});
         for (QTableWidget *table : {m_emailsTable, m_teamTable, m_mailTable, m_sheetsTable})
             table->setProperty("dataTable", true);
     }
@@ -2805,7 +2870,7 @@ void CrmFeature::applyInstallState()
         button->setVisible(m_installed);
     m_zohoSyncButton->setVisible(m_installed);
     m_zohoSyncButton->setEnabled(m_installed && canManage);
-    for (QToolButton *button : {m_overviewTab, m_importMenuButton}) {
+    for (QToolButton *button : {m_moreMenuButton, m_importMenuButton}) {
         if (button)
             button->setVisible(m_installed);
     }
@@ -3888,6 +3953,18 @@ void CrmFeature::renderContacts()
         m_fillRows = m_snapshot.sheetRows.value(m_sheet->currentData().toString());
         renderStageStrip();
         renderNextContact();
+        m_tableRanked.clear();
+        if (m_sortId.isEmpty() && !m_nextRanked.isEmpty()) {
+            QHash<QString, int> place;
+            for (int at = 0; at < m_nextRanked.size(); ++at)
+                place.insert(m_nextRanked.at(at), at);
+            const auto rank = [this, &place](int index) {
+                return place.value(m_fillSource.at(index).id, std::numeric_limits<int>::max());
+            };
+            std::stable_sort(m_fillRows.begin(), m_fillRows.end(),
+                             [&rank](int a, int b) { return rank(a) < rank(b); });
+            m_tableRanked = m_nextRanked;
+        }
         m_fillNext = 0;
         ++m_fillGeneration;
         m_filling = true;
@@ -4166,7 +4243,16 @@ NextContact CrmFeature::nextContact(NextMode mode) const
     };
     const QLocale locale;
     NextContact best;
-    std::tuple<int, int, qint64, QString> followKey;
+    using FollowKey = std::tuple<int, int, qint64, QString>;
+    struct FollowEntry
+    {
+        FollowKey key;
+        QString id;
+        int row = -1;
+        QString reason;
+        QString person;
+    };
+    QList<FollowEntry> followRanked;
     using ReachKey = std::tuple<int, qint64, int, qint64, double, double, int, qint64, QString>;
     struct ReachEntry
     {
@@ -4230,7 +4316,6 @@ NextContact CrmFeature::nextContact(NextMode mode) const
                       .arg(personKeysLabel(members))
                 : QString();
         QString reason;
-        bool better = false;
         if (mode == NextMode::ReachOut) {
             if (waiting || closed || last > 0)
                 continue;
@@ -4291,49 +4376,45 @@ NextContact CrmFeature::nextContact(NextMode mode) const
             if (!step.isEmpty())
                 reason += QStringLiteral(" Next step on the record: %1.").arg(step);
             reason += samePerson;
-            const auto key = std::make_tuple(tier, step.isEmpty() ? 1 : 0, order, id);
-            better = best.id.isEmpty() || key < followKey;
-            if (better)
-                followKey = key;
+            followRanked.append({std::make_tuple(tier, step.isEmpty() ? 1 : 0, order, id), id,
+                                 index, reason, personIds.first()});
         }
         duePeople.insert(personIds.first());
-        if (better) {
-            best.id = id;
-            best.row = index;
-            best.reason = reason;
-        }
     }
     best.due = int(duePeople.size());
-    if (mode == NextMode::ReachOut && !reachRanked.isEmpty()) {
-        std::sort(reachRanked.begin(), reachRanked.end(),
-                  [](const ReachEntry &a, const ReachEntry &b) { return a.key < b.key; });
+    const auto take = [&best](auto &ranked) {
+        if (ranked.isEmpty())
+            return;
+        std::sort(ranked.begin(), ranked.end(),
+                  [](const auto &a, const auto &b) { return a.key < b.key; });
         QSet<QString> seen;
-        reachRanked.erase(std::remove_if(reachRanked.begin(), reachRanked.end(),
-                                         [&seen](const ReachEntry &entry) {
-                                             if (seen.contains(entry.person))
-                                                 return true;
-                                             seen.insert(entry.person);
-                                             return false;
-                                         }),
-                          reachRanked.end());
-        best.id = reachRanked.first().id;
-        best.row = reachRanked.first().row;
-        best.reason = reachRanked.first().reason;
-        for (int at = 0; at < reachRanked.size(); ++at) {
-            best.ranked << reachRanked.at(at).id;
-            if (at > 0 && at <= kNextUpcoming)
-                best.upcoming << reachRanked.at(at).id;
-        }
-    }
+        ranked.erase(std::remove_if(ranked.begin(), ranked.end(),
+                                    [&seen](const auto &entry) {
+                                        if (seen.contains(entry.person))
+                                            return true;
+                                        seen.insert(entry.person);
+                                        return false;
+                                    }),
+                     ranked.end());
+        best.id = ranked.first().id;
+        best.row = ranked.first().row;
+        best.reason = ranked.first().reason;
+        for (const auto &entry : std::as_const(ranked))
+            best.ranked << entry.id;
+    };
+    if (mode == NextMode::ReachOut)
+        take(reachRanked);
+    else
+        take(followRanked);
     return best;
 }
 
 void CrmFeature::renderNextContact()
 {
-    if (!m_nextCard || !m_sheet)
+    if (!m_nextCard || !m_sheet || !m_nextCardHolder)
         return;
-    auto *cardLayout = qobject_cast<QHBoxLayout *>(m_nextCard->layout());
-    while (QLayoutItem *item = cardLayout->takeAt(0)) {
+    auto *holder = qobject_cast<QVBoxLayout *>(m_nextCardHolder->layout());
+    while (QLayoutItem *item = holder->takeAt(0)) {
         if (QWidget *widget = item->widget()) {
             widget->hide();
             widget->deleteLater();
@@ -4341,15 +4422,269 @@ void CrmFeature::renderNextContact()
         delete item;
     }
     m_nextPhotos.clear();
-    if (m_snapshot.sheetRows.value(m_sheet->currentData().toString()).isEmpty() &&
-        m_nextSkipped.isEmpty()) {
+    m_nextRanked.clear();
+    const bool hasCard = !m_snapshot.sheetRows.value(m_sheet->currentData().toString()).isEmpty() ||
+                         !m_nextSkipped.isEmpty();
+    m_nextCard->setProperty("crmHasCard", hasCard);
+    if (!hasCard) {
         m_nextCard->hide();
         return;
     }
-    cardLayout->addWidget(nextContactCard(NextMode::ReachOut), 1);
-    cardLayout->addWidget(nextContactCard(NextMode::FollowUp), 1);
+    const NextContact reach = nextContact(NextMode::ReachOut);
+    const NextContact follow = nextContact(NextMode::FollowUp);
+    const QLocale locale;
+    const QList<std::tuple<QToolButton *, NextMode, QString, int>> tabs{
+        {m_reachTab, NextMode::ReachOut, QStringLiteral("Reach out"), reach.due},
+        {m_followTab, NextMode::FollowUp, QStringLiteral("Follow up"), follow.due}};
+    for (const auto &[tab, mode, label, due] : tabs) {
+        const bool active = mode == m_nextMode;
+        tab->setText(due > 0 ? QStringLiteral("%1  %2").arg(label, locale.toString(due)) : label);
+        tab->setChecked(active);
+        if (tab->property("active").toBool() != active) {
+            tab->setProperty("active", active);
+            tab->style()->unpolish(tab);
+            tab->style()->polish(tab);
+        }
+    }
+    const NextContact &shown = m_nextMode == NextMode::ReachOut ? reach : follow;
+    m_nextRanked = shown.ranked;
+    holder->addWidget(nextContactCard(m_nextMode, shown));
+    holder->addStretch(1);
+    m_nextCard->setVisible(!sheetTabId(m_tabs->currentIndex()).isEmpty());
+    queueReachMastodon(reach.ranked);
+}
+
+void CrmFeature::showEmailPanel(const QString &contactId, const QString &mode,
+                                const QString &reason)
+{
+    const QJsonObject contact = contactById(contactId);
+    if (!m_emailPanel || text(contact, "email").isEmpty())
+        return;
+    m_emailContactId = contactId;
+    m_emailMode = mode;
+    m_emailReason = reason;
+    m_emailPrompt.clear();
+    m_emailModel.clear();
+    m_emailTitle->setText(QStringLiteral("Write to %1").arg(
+        text(contact, "name").isEmpty() ? text(contact, "email") : text(contact, "name")));
+    m_emailTo->setText(QStringLiteral("To %1").arg(text(contact, "email")));
+    m_emailSubject->clear();
+    m_emailBody->clear();
+    while (QLayoutItem *item = m_emailOffers->layout()->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    m_nextTabs->hide();
+    m_nextScroll->hide();
+    m_emailPanel->show();
     m_nextCard->show();
-    queueReachMastodon(nextContact(NextMode::ReachOut).ranked);
+    writeEmailDraft();
+}
+
+void CrmFeature::writeEmailDraft()
+{
+    if (m_emailContactId.isEmpty())
+        return;
+    const quint64 generation = ++m_emailGeneration;
+    const QString contactId = m_emailContactId;
+    m_emailSend->setEnabled(false);
+    m_emailRewrite->setEnabled(false);
+    m_emailSubject->setEnabled(false);
+    m_emailBody->setEnabled(false);
+    const QString agent = m_agentName ? m_agentName() : QString();
+    const bool useAgent = m_askAgent && !agent.isEmpty();
+    const auto write = [this, generation, contactId, agent, useAgent] {
+        if (useAgent) {
+            m_emailStatus->setText(QString::fromUtf8("%1 is writing it\xE2\x80\xA6").arg(agent));
+            QPointer<CrmFeature> self(this);
+            m_askAgent(m_emailPrompt, [self, generation, agent](const QString &reply,
+                                                               const QString &error) {
+                if (!self || generation != self->m_emailGeneration)
+                    return;
+                QString subject;
+                QString body;
+                if (!error.isEmpty() || !parseEmailDraft(reply, QString(), &subject, &body)) {
+                    self->fillEmailDraft(QString(), QString(), QString());
+                    self->m_emailStatus->setText(
+                        QStringLiteral("%1 did not write it: %2. Write it yourself or try Rewrite.")
+                            .arg(agent, error.isEmpty() ? QStringLiteral("the reply was empty")
+                                                        : error));
+                    return;
+                }
+                self->fillEmailDraft(subject, body, agent);
+            });
+            return;
+        }
+        m_emailStatus->setText(QString::fromUtf8("The host model is writing it\xE2\x80\xA6"));
+        request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/outreach/auto")),
+                QJsonObject{{QStringLiteral("contactId"), contactId},
+                            {QStringLiteral("mode"), m_emailMode},
+                            {QStringLiteral("reason"), m_emailReason},
+                            {QStringLiteral("list"), text(activeSheet(), "name")},
+                            {QStringLiteral("preview"), true}},
+                [this, generation](bool ok, const QJsonObject &payload, const QString &error) {
+            if (generation != m_emailGeneration)
+                return;
+            if (!ok) {
+                fillEmailDraft(QString(), QString(), QString());
+                m_emailStatus->setText(QStringLiteral("No draft: %1. Write it yourself.")
+                                           .arg(autoEmailError(text(payload, "error"), error)));
+                return;
+            }
+            fillEmailDraft(text(payload, "subject"), text(payload, "text"), text(payload, "model"));
+        });
+    };
+    if (!m_emailPrompt.isEmpty()) {
+        write();
+        return;
+    }
+    m_emailStatus->setText(QString::fromUtf8("Gathering what we know about them, us and our "
+                                             "pages\xE2\x80\xA6"));
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/outreach/auto")),
+            QJsonObject{{QStringLiteral("contactId"), contactId},
+                        {QStringLiteral("mode"), m_emailMode},
+                        {QStringLiteral("reason"), m_emailReason},
+                        {QStringLiteral("list"), text(activeSheet(), "name")},
+                        {QStringLiteral("promptOnly"), true}},
+            [this, generation, write](bool ok, const QJsonObject &payload, const QString &error) {
+        if (generation != m_emailGeneration)
+            return;
+        if (!ok) {
+            fillEmailDraft(QString(), QString(), QString());
+            m_emailStatus->setText(autoEmailError(text(payload, "error"), error));
+            return;
+        }
+        m_emailPrompt = text(payload, "prompt");
+        m_emailTo->setText(QStringLiteral("To %1%2").arg(
+            text(payload, "to"),
+            text(payload, "fromEmail").isEmpty()
+                ? QString()
+                : QStringLiteral("\nFrom %1 <%2>").arg(text(payload, "fromName"),
+                                                       text(payload, "fromEmail"))));
+        QList<QPair<QString, QString>> links;
+        if (!text(payload, "link").isEmpty() && text(payload, "linkKind") != QLatin1String("deck"))
+            links.append({QStringLiteral("Our referral link"), text(payload, "link")});
+        for (const QJsonValue &value : payload.value(QStringLiteral("offers")).toArray())
+            links.append({text(value.toObject(), "label"), text(value.toObject(), "url")});
+        auto *offers = qobject_cast<QVBoxLayout *>(m_emailOffers->layout());
+        if (!links.isEmpty()) {
+            auto *heading = new QLabel(QStringLiteral("Add a link (each is tracked)"));
+            heading->setObjectName(QStringLiteral("mutedLabel"));
+            heading->setProperty("crmRole", QStringLiteral("fieldKey"));
+            offers->addWidget(heading);
+        }
+        for (const auto &[label, url] : std::as_const(links)) {
+            auto *insert = new QPushButton(QStringLiteral("+ %1").arg(label));
+            insert->setProperty("crmVariant", QStringLiteral("ghost"));
+            insert->setProperty("crmRole", QStringLiteral("offer"));
+            insert->setCursor(Qt::PointingHandCursor);
+            insert->setToolTip(url);
+            const QString link = url;
+            connect(insert, &QPushButton::clicked, this, [this, link] {
+                if (m_emailBody->toPlainText().contains(link))
+                    return;
+                m_emailBody->appendPlainText(QStringLiteral("\n") + link);
+            });
+            offers->addWidget(insert);
+        }
+        write();
+    });
+}
+
+void CrmFeature::fillEmailDraft(const QString &subject, const QString &body, const QString &model)
+{
+    m_emailModel = model;
+    if (!subject.isEmpty() || !body.isEmpty()) {
+        m_emailSubject->setText(subject);
+        m_emailBody->setPlainText(body);
+    }
+    m_emailStatus->setText(model.isEmpty()
+        ? QString()
+        : QStringLiteral("Written by %1. Edit anything before sending; opens and clicks ping you.")
+              .arg(model));
+    m_emailSend->setEnabled(true);
+    m_emailRewrite->setEnabled(!m_emailPrompt.isEmpty());
+    m_emailSubject->setEnabled(true);
+    m_emailBody->setEnabled(true);
+}
+
+void CrmFeature::sendEmailPanel()
+{
+    const QString contactId = m_emailContactId;
+    const QString subject = m_emailSubject->text().trimmed();
+    const QString body = m_emailBody->toPlainText().trimmed();
+    if (contactId.isEmpty() || m_autoSending.contains(contactId))
+        return;
+    if (subject.isEmpty() || body.isEmpty()) {
+        m_emailStatus->setText(QStringLiteral("Add a subject and a message first."));
+        return;
+    }
+    const quint64 generation = ++m_emailGeneration;
+    m_autoSending.insert(contactId);
+    m_emailSend->setEnabled(false);
+    m_emailRewrite->setEnabled(false);
+    m_emailStatus->setText(QString::fromUtf8("Sending\xE2\x80\xA6"));
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/outreach/auto")),
+            QJsonObject{{QStringLiteral("contactId"), contactId},
+                        {QStringLiteral("mode"), m_emailMode},
+                        {QStringLiteral("reason"), m_emailReason},
+                        {QStringLiteral("list"), text(activeSheet(), "name")},
+                        {QStringLiteral("subject"), subject},
+                        {QStringLiteral("text"), body},
+                        {QStringLiteral("model"), m_emailModel.isEmpty() ? QStringLiteral("edited")
+                                                                         : m_emailModel}},
+            [this, contactId, generation](bool ok, const QJsonObject &payload, const QString &error) {
+        m_autoSending.remove(contactId);
+        const QString label = contactLabel(contactById(contactId));
+        if (!ok) {
+            if (generation == m_emailGeneration) {
+                m_emailSend->setEnabled(true);
+                m_emailRewrite->setEnabled(true);
+                m_emailStatus->setText(QStringLiteral("Not sent: %1")
+                                           .arg(autoEmailError(text(payload, "error"), error)));
+            }
+            if (text(payload, "error") == QLatin1String("zoho_send_not_allowed"))
+                markZohoReadOnly();
+            return;
+        }
+        if (generation == m_emailGeneration)
+            closeEmailPanel();
+        setStatus(QString::fromUtf8("Sent \xE2\x80\x9C%1\xE2\x80\x9D to %2 and marked them "
+                                    "contacted. You get a ping when they open it or click.")
+                      .arg(text(payload, "subject"), label));
+        m_statusHeldUntil = QDateTime::currentMSecsSinceEpoch() + kStatusShownMs;
+        loadOrganization();
+    });
+}
+
+void CrmFeature::closeEmailPanel()
+{
+    ++m_emailGeneration;
+    m_emailContactId.clear();
+    m_emailPrompt.clear();
+    if (!m_emailPanel)
+        return;
+    m_emailPanel->hide();
+    m_nextTabs->show();
+    m_nextScroll->show();
+    m_nextCard->setVisible(!sheetTabId(m_tabs->currentIndex()).isEmpty() &&
+                           m_nextCard->property("crmHasCard").toBool());
+}
+
+void CrmFeature::selectNextMode(NextMode mode)
+{
+    m_nextMode = mode;
+    if (!m_sortId.isEmpty()) {
+        m_sortId.clear();
+        m_sortDescending = false;
+        QHeaderView *header = m_contactsTable->horizontalHeader();
+        const QSignalBlocker blocker(header);
+        header->setSortIndicator(-1, Qt::AscendingOrder);
+        refreshContactSnapshot();
+        return;
+    }
+    renderContacts();
 }
 
 void CrmFeature::queueReachMastodon(const QStringList &ranked)
@@ -4380,10 +4715,14 @@ void CrmFeature::scheduleNextRender()
     QTimer::singleShot(kNextRenderDelayMs, this, [this] {
         m_nextRenderQueued = false;
         renderNextContact();
+        const QWidget *focus = QApplication::focusWidget();
+        const bool editing = focus && focus != m_contactsTable && m_contactsTable->isAncestorOf(focus);
+        if (m_sortId.isEmpty() && m_nextRanked != m_tableRanked && !editing)
+            renderContacts();
     });
 }
 
-QLabel *CrmFeature::nextPostLabel(const QJsonObject &contact, bool compact) const
+QLabel *CrmFeature::nextPostLabel(const QJsonObject &contact) const
 {
     const QString key = mastodonHandleKey(text(contact, "mastodon"));
     if (key.isEmpty())
@@ -4391,7 +4730,7 @@ QLabel *CrmFeature::nextPostLabel(const QJsonObject &contact, bool compact) cons
     const auto latest = m_mastodonLatest.constFind(key);
     auto *label = new QLabel;
     label->setObjectName(QStringLiteral("crmNextPost"));
-    label->setWordWrap(!compact);
+    label->setWordWrap(true);
     if (latest == m_mastodonLatest.constEnd() || !latest->error.isEmpty() || latest->postedAt <= 0) {
         QString note;
         if (latest == m_mastodonLatest.constEnd()) {
@@ -4416,7 +4755,7 @@ QLabel *CrmFeature::nextPostLabel(const QJsonObject &contact, bool compact) cons
     const QString when = days <= 0 ? QStringLiteral("today")
                        : days == 1 ? QStringLiteral("yesterday")
                                    : QStringLiteral("%1 days ago").arg(days);
-    const QString excerpt = compact ? plainExcerpt(latest->text, 90) : latest->excerpt;
+    const QString excerpt = latest->excerpt;
     const QUrl url(latest->url);
     label->setTextFormat(Qt::RichText);
     label->setText(QString::fromUtf8("%1 \xC2\xB7 %2")
@@ -4431,10 +4770,9 @@ QLabel *CrmFeature::nextPostLabel(const QJsonObject &contact, bool compact) cons
     return label;
 }
 
-QWidget *CrmFeature::nextContactCard(NextMode mode)
+QWidget *CrmFeature::nextContactCard(NextMode mode, const NextContact &next)
 {
     const bool reach = mode == NextMode::ReachOut;
-    const NextContact next = nextContact(mode);
     const QJsonObject contact = contactById(next.id);
     const QString dot = QString::fromUtf8(" \xC2\xB7 ");
     const QString dash = QString::fromUtf8("\xE2\x80\x94");
@@ -4480,16 +4818,19 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     headLayout->addWidget(title);
     auto *head = new QHBoxLayout;
     head->setSpacing(6);
-    const auto addButton = [head](const QString &label, const QString &tip) {
+    auto *tail = new QHBoxLayout;
+    tail->setSpacing(6);
+    const auto addButton = [](QHBoxLayout *row, const QString &label, const QString &tip) {
         auto *button = new QPushButton(label);
         button->setToolTip(tip);
         button->setCursor(Qt::PointingHandCursor);
-        head->addWidget(button);
+        row->addWidget(button);
         return button;
     };
 
     if (contact.isEmpty()) {
-        title->setText(reach ? QStringLiteral("Reach out") : QStringLiteral("Follow up"));
+        title->setText(reach ? QStringLiteral("No new lead on %1").arg(onList)
+                             : QStringLiteral("No follow-up due on %1").arg(onList));
         auto *none = new QLabel(!m_nextSkipped.isEmpty()
             ? QStringLiteral("No one else on %1 is waiting here. You skipped %2 this session.")
                   .arg(onList)
@@ -4509,13 +4850,13 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
             none->setProperty("crmRole", QStringLiteral("note"));
         mainLayout->addWidget(none);
         if (!m_nextSkipped.isEmpty()) {
-            QPushButton *again = addButton(QStringLiteral("Show skipped again"),
+            QPushButton *again = addButton(head, QStringLiteral("Show skipped again"),
                                            QStringLiteral("Put the people you skipped back in line"));
             if (nextLook)
                 again->setProperty("crmVariant", QStringLiteral("outline"));
             connect(again, &QPushButton::clicked, this, [this] {
                 m_nextSkipped.clear();
-                renderNextContact();
+                renderContacts();
             });
         }
         head->addStretch(1);
@@ -4526,28 +4867,31 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
 
     const QString contactId = next.id;
     title->setText(reach
-        ? QStringLiteral("Reach out%1best new lead on %2%1%3 never contacted")
-              .arg(dot, onList, locale.toString(next.due))
-        : QStringLiteral("Follow up%1%2%1%3 due").arg(dot, onList, locale.toString(next.due)));
+        ? QStringLiteral("Best new lead on %1%2%3 never contacted")
+              .arg(onList, dot, locale.toString(next.due))
+        : QStringLiteral("%1%2%3 due a follow-up").arg(onList, dot, locale.toString(next.due)));
     const QString email = text(contact, "email");
-    QPushButton *write = addButton(
+    QPushButton *write = addButton(head,
         email.isEmpty() ? QStringLiteral("Open Mastodon") : QStringLiteral("Write email"),
         email.isEmpty() ? QStringLiteral("Open their Mastodon profile")
-                        : QStringLiteral("Open a message to %1").arg(email));
+                        : QStringLiteral("Write to %1 here: a model drafts it from everything we "
+                                         "know, you edit it, and it goes out tracked")
+                              .arg(email));
     write->setObjectName(QStringLiteral("primaryButton"));
-    QPushButton *ai = addButton(QStringLiteral("Write with AI"),
+    QPushButton *ai = addButton(head, QStringLiteral("Write with AI"),
                                 QStringLiteral("Gather everything about them and us into a prompt "
                                                "for ChatGPT or Claude to write the message"));
     QPushButton *autoSend = email.isEmpty() ? nullptr : addButton(
-        QStringLiteral("Send AI email"), autoEmailTip());
-    QPushButton *open = addButton(QStringLiteral("Open contact"),
+        head, QStringLiteral("Send AI email"), autoEmailTip());
+    head->addStretch(1);
+    QPushButton *open = addButton(tail, QStringLiteral("Open contact"),
                                   QStringLiteral("Show everything about them in the side panel"));
-    QPushButton *contacted = addButton(QStringLiteral("Mark contacted"),
+    QPushButton *contacted = addButton(tail, QStringLiteral("Mark contacted"),
                                        QStringLiteral("Set last contacted to now and move on"));
-    QPushButton *skip = addButton(QStringLiteral("Skip"),
+    tail->addStretch(1);
+    QPushButton *skip = addButton(tail, QStringLiteral("Skip"),
                                   QStringLiteral("Show the next person in line for this session"));
     if (nextLook) {
-        head->insertStretch(head->indexOf(skip), 1);
         const auto dress = [](QPushButton *button, const QString &variant, const QString &icon,
                               Theme::Role tint) {
             if (!button)
@@ -4567,17 +4911,16 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
         dress(open, QStringLiteral("ghost"), QString(), Theme::Role::FgMuted);
         dress(contacted, QStringLiteral("ghost"), QStringLiteral("check"), Theme::Role::FgMuted);
         dress(skip, QStringLiteral("ghost"), QStringLiteral("chevron-right"), Theme::Role::FgMuted);
-    } else {
-        head->addStretch(1);
     }
-    connect(write, &QPushButton::clicked, this, [this, contactId] {
+    const QString reason = next.reason;
+    connect(write, &QPushButton::clicked, this, [this, contactId, reach, reason] {
         const QJsonObject target = contactById(contactId);
         if (!text(target, "email").isEmpty())
-            openMailCompose(text(target, "email"));
+            showEmailPanel(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"),
+                           reason);
         else
             QDesktopServices::openUrl(mastodonProfileUrl(text(target, "mastodon")));
     });
-    const QString reason = next.reason;
     connect(ai, &QPushButton::clicked, this, [this, contactId, reach, reason] {
         showAiWriter(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"), reason);
     });
@@ -4594,7 +4937,7 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     });
     connect(skip, &QPushButton::clicked, this, [this, contactId] {
         m_nextSkipped.insert(contactId);
-        renderNextContact();
+        renderContacts();
     });
 
     auto *photo = new QLabel;
@@ -4660,7 +5003,7 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     }
     heading->addWidget(subtitle);
     if (reach) {
-        if (QLabel *post = nextPostLabel(contact, false))
+        if (QLabel *post = nextPostLabel(contact))
             heading->addWidget(post);
     }
     heading->addWidget(why);
@@ -4671,76 +5014,12 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     mainLayout->addLayout(who);
     if (nextLook) {
         who->setSpacing(14);
-        section(QStringLiteral("crmNextCardActions"), QMargins(16, 10, 16, 10), 0)->addLayout(head);
+        QVBoxLayout *actions = section(QStringLiteral("crmNextCardActions"), QMargins(16, 10, 16, 10), 6);
+        actions->addLayout(head);
+        actions->addLayout(tail);
     } else {
         layout->addLayout(head);
-    }
-    if (reach && !next.upcoming.isEmpty()) {
-        QVBoxLayout *queueLayout = nextLook
-            ? section(QStringLiteral("crmNextCardQueue"), QMargins(8, 8, 8, 8), 0)
-            : layout;
-        auto *lineTitle = new QLabel(QString::fromUtf8("Next in line \xC2\xB7 newest Mastodon post first"));
-        lineTitle->setObjectName(QStringLiteral("mutedLabel"));
-        if (nextLook) {
-            lineTitle->setProperty("crmRole", QStringLiteral("queueTitle"));
-            lineTitle->setContentsMargins(8, 0, 8, 4);
-            QFont queueFont = lineTitle->font();
-            queueFont.setCapitalization(QFont::AllUppercase);
-            queueFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
-            lineTitle->setFont(queueFont);
-        }
-        queueLayout->addWidget(lineTitle);
-        auto *upcoming = new QVBoxLayout;
-        upcoming->setSpacing(nextLook ? 0 : 2);
-        for (const QString &upcomingId : next.upcoming) {
-            const QJsonObject person = contactById(upcomingId);
-            auto *row = new QHBoxLayout;
-            row->setSpacing(6);
-            QWidget *rowBox = nullptr;
-            if (nextLook) {
-                rowBox = new QWidget;
-                rowBox->setProperty("crmRole", QStringLiteral("queueRow"));
-                rowBox->setAttribute(Qt::WA_StyledBackground, true);
-                rowBox->setAttribute(Qt::WA_Hover, true);
-                rowBox->setLayout(row);
-                row->setContentsMargins(8, 5, 8, 5);
-                row->setSpacing(10);
-                auto *face = new QLabel;
-                face->setFixedSize(20, 20);
-                face->setPixmap(initialsPixmap(contactInitials(person), contactAvatarTone(person),
-                                               Theme::color(Theme::Role::FgSecondary), 20,
-                                               devicePixelRatioF()));
-                row->addWidget(face, 0, Qt::AlignVCenter);
-            }
-            auto *open = new QPushButton(text(person, "name").isEmpty()
-                ? (text(person, "email").isEmpty() ? QStringLiteral("Unnamed contact") : text(person, "email"))
-                : text(person, "name"));
-            open->setObjectName(QStringLiteral("crmNextUpcoming"));
-            open->setFlat(true);
-            open->setCursor(Qt::PointingHandCursor);
-            open->setToolTip(QStringLiteral("Show everything about them in the side panel"));
-            connect(open, &QPushButton::clicked, this,
-                    [this, upcomingId] { showContactDetail(upcomingId); });
-            if (nextLook) {
-                open->setMaximumWidth(150);
-                row->addWidget(open, 0, Qt::AlignVCenter);
-            } else {
-                row->addWidget(open, 0, Qt::AlignTop);
-            }
-            if (QLabel *post = nextPostLabel(person, true)) {
-                post->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-                if (nextLook)
-                    post->setProperty("crmRole", QStringLiteral("post"));
-                row->addWidget(post, 1);
-            } else {
-                row->addStretch(1);
-            }
-            if (rowBox)
-                upcoming->addWidget(rowBox);
-            else
-                upcoming->addLayout(row);
-        }
-        queueLayout->addLayout(upcoming);
+        layout->addLayout(tail);
     }
 
     const auto valueLabel = [&dash, nextLook](const QString &value, const QUrl &link) {
@@ -4764,7 +5043,7 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     auto *grid = new QGridLayout;
     grid->setHorizontalSpacing(10);
     grid->setVerticalSpacing(3);
-    constexpr int kPairs = 2;
+    constexpr int kPairs = 1;
     int placed = 0;
     const auto addField = [&](const QString &label, QLabel *value, bool wide) {
         if (wide && placed % kPairs)
@@ -5616,6 +5895,7 @@ void CrmFeature::syncSheetTab()
     const QString id = sheetTabId(index);
     m_tabs->setVisible(id.isEmpty());
     m_contactsBody->setVisible(!id.isEmpty());
+    m_nextCard->setVisible(!id.isEmpty() && m_nextCard->property("crmHasCard").toBool());
     if (id.isEmpty())
         return;
     // Selecting the tab's list or pipeline applies its fields and puts its
@@ -5723,15 +6003,7 @@ void CrmFeature::arrangeNextHeader(QHBoxLayout *heading, QLabel *title,
     mailMenu->setCount(int(noteDrafts().size()));
     m_mailMenuButton = mailMenu;
 
-    auto *titleColumn = new QVBoxLayout;
-    titleColumn->setContentsMargins(0, 0, 0, 0);
-    titleColumn->setSpacing(2);
-    titleColumn->addWidget(title);
-    outer->removeWidget(m_summary);
-    m_summary->setProperty("crmRole", QStringLiteral("summary"));
-    m_summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    titleColumn->addWidget(m_summary);
-    heading->addLayout(titleColumn, 1);
+    heading->addWidget(title, 1, Qt::AlignVCenter);
     heading->addSpacing(12);
 
     m_organization->setProperty("crmRole", QStringLiteral("organization"));
@@ -5739,7 +6011,23 @@ void CrmFeature::arrangeNextHeader(QHBoxLayout *heading, QLabel *title,
     heading->addSpacing(4);
     heading->addWidget(importMenu, 0, Qt::AlignVCenter);
     heading->addWidget(mailMenu, 0, Qt::AlignVCenter);
-    for (QToolButton *button : {m_settingsButton, refreshButton}) {
+    const QList<QToolButton *> moreButtons{m_peopleButton, m_pipelinesButton, m_historyButton,
+                                           nullptr, extensionButton};
+    for (QToolButton *button : moreButtons) {
+        if (button)
+            holderLayout->addWidget(button);
+    }
+    auto *moreMenu = new QToolButton;
+    moreMenu->setObjectName(QStringLiteral("crmMoreMenu"));
+    moreMenu->setToolTip(QStringLiteral("People, pipelines, the open list's history and the "
+                                        "browser extension"));
+    moreMenu->setAccessibleName(QStringLiteral("More"));
+    moreMenu->setCursor(Qt::PointingHandCursor);
+    moreMenu->setPopupMode(QToolButton::InstantPopup);
+    m_toolIcons.append({moreMenu, QStringLiteral("kebab-horizontal")});
+    mirror(moreMenu, moreButtons);
+    m_moreMenuButton = moreMenu;
+    for (QToolButton *button : {moreMenu, m_settingsButton, refreshButton}) {
         button->setStyleSheet(QString());
         button->setProperty("crmRole", QStringLiteral("icon"));
         button->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -5759,60 +6047,7 @@ void CrmFeature::arrangeNextHeader(QHBoxLayout *heading, QLabel *title,
     m_newButton->setIconSize(QSize(14, 14));
     heading->addWidget(m_newButton, 0, Qt::AlignVCenter);
 
-    auto *tabRow = new QWidget;
-    tabRow->setObjectName(QStringLiteral("crmHeaderTabs"));
-    tabRow->setAttribute(Qt::WA_StyledBackground, true);
-    auto *tabLayout = new QHBoxLayout(tabRow);
-    tabLayout->setContentsMargins(0, 0, 0, 0);
-    tabLayout->setSpacing(2);
-    m_overviewTab = new QToolButton;
-    m_overviewTab->setObjectName(QStringLiteral("crmOverviewTab"));
-    m_overviewTab->setText(QStringLiteral("Overview"));
-    m_overviewTab->setAccessibleName(QStringLiteral("Overview"));
-    m_overviewTab->setToolTip(QStringLiteral("The open list: who to contact next and its contacts"));
-    m_overviewTab->setCursor(Qt::PointingHandCursor);
-    for (QToolButton *tab : {m_overviewTab, m_peopleButton, m_pipelinesButton, m_historyButton,
-                             extensionButton}) {
-        tab->setStyleSheet(QString());
-        tab->setProperty("crmRole", QStringLiteral("tab"));
-        tab->setToolButtonStyle(Qt::ToolButtonTextOnly);
-        tab->setAutoRaise(true);
-        tabLayout->addWidget(tab);
-    }
-    tabLayout->addStretch(1);
-    outer->insertWidget(outer->indexOf(heading) + 1, tabRow);
-
-    connect(m_overviewTab, &QToolButton::clicked, this, [this] {
-        if (!sheetTabId(m_tabs->currentIndex()).isEmpty())
-            return;
-        int index = sheetTabIndex(m_sheet->currentData().toString());
-        for (int at = 0; index < 0 && at < m_tabs->count(); ++at) {
-            if (!sheetTabId(at).isEmpty())
-                index = at;
-        }
-        if (index >= 0)
-            m_tabs->setCurrentIndex(index);
-    });
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { syncHeaderTabs(); });
-    syncHeaderTabs();
     tintToolbar();
-}
-
-void CrmFeature::syncHeaderTabs()
-{
-    if (!m_overviewTab || !m_tabs)
-        return;
-    const bool people = m_tabs->currentWidget() == m_peoplePage;
-    const QList<QPair<QToolButton *, bool>> tabs{{m_overviewTab, !people},
-                                                 {m_peopleButton, people}};
-    for (const auto &[tab, active] : tabs) {
-        if (tab->property("active").toBool() == active)
-            continue;
-        tab->setProperty("active", active);
-        tab->style()->unpolish(tab);
-        tab->style()->polish(tab);
-        tab->update();
-    }
 }
 
 void CrmFeature::applyNextStyle()
@@ -5831,13 +6066,17 @@ void CrmFeature::applyNextStyle()
         if (!m_nextCard->property("crmClassicSheet").isValid())
             m_nextCard->setProperty("crmClassicSheet", m_nextCard->styleSheet());
         const QString cardSheet = next ? expand(QStringLiteral(
-            "QFrame#crmReachOutCard, QFrame#crmFollowUpCard {"
+            "QFrame#crmReachOutCard, QFrame#crmFollowUpCard, QFrame#crmEmailPanel {"
             " background-color: @surface; border: 1px solid @border; border-radius: 12px; }"
-            "QFrame#crmReachOutCard QLabel, QFrame#crmFollowUpCard QLabel { background: transparent; }"
+            "QFrame#crmReachOutCard QLabel, QFrame#crmFollowUpCard QLabel,"
+            " QFrame#crmEmailPanel QLabel { background: transparent; }"
+            "QFrame#crmEmailPanel QPushButton { min-height: 26px; max-height: 28px; padding: 0px 10px;"
+            " border-radius: 6px; font-size: 12px; font-weight: 500; }"
+            "QFrame#crmEmailPanel QPushButton[crmRole=\"offer\"] { text-align: left; }"
             "QWidget#crmNextCardMain { background: transparent; border: none; }"
             "QWidget#crmNextCardHead { background: transparent; border: none;"
             " border-bottom: 1px solid @border; }"
-            "QWidget#crmNextCardActions, QWidget#crmNextCardQueue { background: transparent;"
+            "QWidget#crmNextCardActions { background: transparent;"
             " border: none; border-top: 1px solid @border; }"
             "QLabel[crmRole=\"cardTitle\"] { color: @fg; font-size: 12px; font-weight: 500; }"
             "QLabel[crmRole=\"cardEyebrow\"] { color: @fgSubtle; font-size: 12px; }"
@@ -5847,7 +6086,6 @@ void CrmFeature::applyNextStyle()
             "QLabel[crmRole=\"fieldKey\"] { color: @fgSubtle; font-size: 12px; }"
             "QLabel[crmRole=\"fieldValue\"] { color: @fgSecondary; font-size: 12px; }"
             "QLabel[crmRole=\"note\"] { color: @fgMuted; font-size: 12px; }"
-            "QLabel[crmRole=\"queueTitle\"] { color: @fgSubtle; font-size: 11px; font-weight: 500; }"
             "QLabel[crmRole=\"post\"], QLabel#crmNextPost { color: @fgMuted; font-size: 12px; }"
             "QLabel#crmStagePill { color: @fgMuted; background-color: @surfaceActive;"
             " border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 500; }"
@@ -5862,12 +6100,7 @@ void CrmFeature::applyNextStyle()
             " border: 1px solid transparent; color: @fgMuted; }"
             "QPushButton[crmVariant=\"ghost\"]:hover { background-color: @surfaceRaised; color: @fg; }"
             "QPushButton[crmVariant=\"outline\"]:disabled, QPushButton[crmVariant=\"ghost\"]:disabled"
-            " { color: @fgSubtle; }"
-            "QWidget[crmRole=\"queueRow\"] { background: transparent; border-radius: 8px; }"
-            "QWidget[crmRole=\"queueRow\"]:hover { background-color: @surfaceRaised; }"
-            "QPushButton#crmNextUpcoming { background: transparent; border: none; padding: 0px;"
-            " min-height: 0px; color: @fg; font-size: 13px; font-weight: 500; text-align: left; }"
-            "QPushButton#crmNextUpcoming:hover { color: @accentFg; }"))
+            " { color: @fgSubtle; }"))
             : m_nextCard->property("crmClassicSheet").toString();
         if (m_nextCard->styleSheet() != cardSheet)
             m_nextCard->setStyleSheet(cardSheet);
@@ -5879,12 +6112,15 @@ void CrmFeature::applyNextStyle()
         "QToolButton[crmRole=\"tab\"]:hover { color: @fg; }"
         "QToolButton[crmRole=\"tab\"][active=\"true\"] { color: @fg; border-bottom: 2px solid @fg; }"
         "QToolButton[crmRole=\"tab\"]:disabled { color: @fgSubtle; }"
-        "QWidget#crmHeaderTabs { background: transparent; border: none;"
+        "QWidget#crmNextTabs { background: transparent; border: none;"
         " border-bottom: 1px solid @border; }"
+        "QFrame#crmNextContact { background: transparent; border: none; }"
+        "QScrollArea#crmNextScroll, QWidget#crmNextHolder { background: transparent; border: none; }"
         "QToolButton[crmRole=\"icon\"] { background: transparent; border: none; border-radius: 6px;"
         " padding: 0px; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; }"
         "QToolButton[crmRole=\"icon\"]:hover { background-color: @surfaceRaised; }"
         "QToolButton[crmRole=\"icon\"]:pressed { background-color: @surfaceActive; }"
+        "QToolButton#crmMoreMenu::menu-indicator { image: none; width: 0px; }"
         "QToolButton[crmRole=\"create\"] { background-color: @fg; color: @bg; border: none;"
         " border-radius: 8px; padding: 0px 10px 0px 8px; min-height: 28px; max-height: 28px;"
         " font-size: 12px; font-weight: 500; }"
@@ -5892,7 +6128,6 @@ void CrmFeature::applyNextStyle()
         "QToolButton[crmRole=\"create\"]:pressed { background-color: @fgMuted; }"
         "QToolButton[crmRole=\"create\"]:disabled { background-color: @surfaceRaised; color: @fgSubtle; }"
         "QFrame#crmHeaderDivider { background-color: @border; border: none; }"
-        "QLabel#mutedLabel[crmRole=\"summary\"] { color: @fgMuted; font-size: 12px; background: transparent; }"
         "QComboBox[crmRole=\"organization\"] { min-height: 26px; max-height: 28px; font-size: 12px; }"
         "QWidget#firewallBanner { background-color: @warningSubtle; border: 1px solid @warningEdge;"
         " border-radius: 12px; }"
@@ -5930,7 +6165,6 @@ void CrmFeature::renderSheetList()
     const QIcon share = shareIcon(ink);
     const qreal scale = devicePixelRatioF();
     const QLocale locale;
-    const QString dot = QString::fromUtf8(" \xC2\xB7 ");
     const QColor base = palette().color(QPalette::Base);
     const QColor accent = palette().color(QPalette::Highlight);
     QColor edge = ink;
@@ -5968,8 +6202,7 @@ void CrmFeature::renderSheetList()
             "QFrame#crmSheetRow QToolButton:hover { background-color: @surfaceActive; border-radius: 4px; }"
             "QFrame#crmSheetRow QLabel { color: @fg; font-size: 13px; }"
             "QFrame#crmSheetRow QLabel[crmRole=\"listName\"] { color: @fg; font-size: 13px; font-weight: 500; }"
-            "QFrame#crmSheetRow QLabel#mutedLabel { color: @fgMuted; font-size: 12px; }"
-            "QFrame#crmSheetRow QLabel#mutedLabel[crmRole=\"stages\"] { color: @fgSubtle; font-size: 11px; }"),
+            "QFrame#crmSheetRow QLabel#mutedLabel { color: @fgMuted; font-size: 12px; }"),
             Theme::Design::Next, Theme::activeDark());
     }
     if (m_sheetList->styleSheet() != css)
@@ -6034,16 +6267,14 @@ void CrmFeature::renderSheetList()
         item->setToolTip(m_tabs->tabToolTip(index));
         item->setData(Qt::AccessibleTextRole, m_tabs->tabText(index));
 
-        auto *rowLayout = new QVBoxLayout(card);
-        rowLayout->setContentsMargins(8, 6, 8, 6);
-        rowLayout->setSpacing(4);
-        if (next) {
-            cellLayout->setContentsMargins(6, 2, 6, 2);
-            rowLayout->setContentsMargins(12, 10, 12, 10);
-            rowLayout->setSpacing(8);
-        }
-        auto *top = new QHBoxLayout;
+        auto *top = new QHBoxLayout(card);
+        top->setContentsMargins(8, 5, 8, 5);
         top->setSpacing(6);
+        if (next) {
+            cellLayout->setContentsMargins(6, 1, 6, 1);
+            top->setContentsMargins(12, 7, 12, 7);
+            top->setSpacing(10);
+        }
         auto *kind = new QLabel;
         kind->setPixmap((!flow.isEmpty() ? flowIcon(flow)
                          : id == QLatin1String(kNoPipelineTabId) ? octicon(QStringLiteral("circle-slash"), ink, 16)
@@ -6059,8 +6290,17 @@ void CrmFeature::renderSheetList()
             name->setProperty("crmRole", QStringLiteral("listName"));
         name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         top->addWidget(name, 1);
-        auto *count = new QLabel(locale.toString(qsizetype(rows.size())));
+        int uncontacted = 0;
+        for (int at : rows) {
+            if (m_snapshot.rows.at(at).lastContactedAt <= 0)
+                ++uncontacted;
+        }
+        auto *count = new QLabel(QStringLiteral("%1/%2").arg(locale.toString(uncontacted),
+                                                             locale.toString(qsizetype(rows.size()))));
         count->setObjectName(QStringLiteral("mutedLabel"));
+        count->setToolTip(QStringLiteral("%1 of %2 not contacted yet")
+                              .arg(locale.toString(uncontacted),
+                                   locale.toString(qsizetype(rows.size()))));
         top->addWidget(count);
         if (id != QLatin1String(kNoPipelineTabId)) {
             const QStringList names = sheetShareNames(sheet);
@@ -6115,84 +6355,6 @@ void CrmFeature::renderSheetList()
                 showSheetTabMenu(id, badge->mapToGlobal(QPoint(0, badge->height())));
             });
             top->addWidget(badge);
-        }
-        rowLayout->addLayout(top);
-
-        QVector<int> faces = rows;
-        std::stable_sort(faces.begin(), faces.end(), [this](int a, int b) {
-            const ContactRow &left = m_snapshot.rows.at(a);
-            const ContactRow &right = m_snapshot.rows.at(b);
-            const bool leftPicture = m_avatarImages.contains(avatarSource(left));
-            const bool rightPicture = m_avatarImages.contains(avatarSource(right));
-            if (leftPicture != rightPicture)
-                return leftPicture;
-            return left.createdAt > right.createdAt;
-        });
-        const int shown = int(qMin<qsizetype>(faces.size(), kListAvatars));
-        if (shown > 0) {
-            const int step = kListAvatarSize - 7;
-            const int width = kListAvatarSize + step * (shown - 1);
-            QPixmap strip(QSize(width + 2, kListAvatarSize + 2) * scale);
-            strip.setDevicePixelRatio(scale);
-            strip.fill(Qt::transparent);
-            QPainter painter(&strip);
-            painter.setRenderHint(QPainter::Antialiasing);
-            QStringList people;
-            for (int at = 0; at < shown; ++at) {
-                const ContactRow &contact = m_snapshot.rows.at(faces.at(at));
-                people << contact.name;
-                const QRectF circle(1 + at * step, 1, kListAvatarSize, kListAvatarSize);
-                painter.drawPixmap(circle.topLeft(),
-                                   contactPicture(contact, kListAvatarSize)
-                                       .pixmap(QSize(kListAvatarSize, kListAvatarSize), scale));
-                painter.setPen(QPen(palette().color(QPalette::Base), 1.5));
-                painter.setBrush(Qt::NoBrush);
-                painter.drawEllipse(circle);
-            }
-            painter.end();
-            auto *avatars = new QHBoxLayout;
-            avatars->setSpacing(6);
-            auto *faceLabel = new QLabel;
-            faceLabel->setPixmap(strip);
-            faceLabel->setToolTip(people.join(QLatin1Char('\n')));
-            avatars->addWidget(faceLabel);
-            if (rows.size() > shown) {
-                auto *rest = new QLabel(QStringLiteral("+%1").arg(locale.toString(
-                    qsizetype(rows.size() - shown))));
-                rest->setObjectName(QStringLiteral("mutedLabel"));
-                avatars->addWidget(rest);
-            }
-            avatars->addStretch(1);
-            rowLayout->addLayout(avatars);
-        }
-
-        const QStringList stages = flowStages(flow);
-        if (!stages.isEmpty()) {
-            QHash<QString, int> counts;
-            for (int at : rows)
-                ++counts[m_snapshot.rows.at(at).stage];
-            QList<ListStageBar::Segment> segments;
-            QStringList parts;
-            for (int at = 0; at < stages.size(); ++at) {
-                const QString &stage = stages.at(at);
-                segments.append({CrmStageStrip::stageColor(stage, at), counts.value(stage)});
-                parts << QStringLiteral("%1 %2").arg(CrmStageStrip::stageLabel(stage),
-                                                      locale.toString(counts.value(stage)));
-            }
-            auto *bar = new ListStageBar(segments);
-            bar->setToolTip(parts.join(QLatin1Char('\n')));
-            rowLayout->addWidget(bar);
-            auto *caption = new QLabel(parts.join(dot));
-            caption->setObjectName(QStringLiteral("mutedLabel"));
-            if (next)
-                caption->setProperty("crmRole", QStringLiteral("stages"));
-            caption->setTextFormat(Qt::PlainText);
-            caption->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-            QFont captionFont = caption->font();
-            captionFont.setPointSizeF(captionFont.pointSizeF() * 0.85);
-            caption->setFont(captionFont);
-            caption->setToolTip(parts.join(QLatin1Char('\n')));
-            rowLayout->addWidget(caption);
         }
         item->setSizeHint(QSize(0, row->sizeHint().height()));
         m_sheetList->setItemWidget(item, row);
@@ -6602,6 +6764,17 @@ void CrmFeature::showSheetTabMenu(const QString &id, const QPoint &globalPositio
         menu.addAction(QStringLiteral("Copy link"), this, [this, id] { copySheetLink(id); });
         menu.addAction(QString::fromUtf8("Activity history\xE2\x80\xA6"), this,
                        [this, id] { showSheetHistory(id); });
+        if (m_openWebPage) {
+            QAction *sheet = menu.addAction(QStringLiteral("Open in spreadsheet"), this, [this, id] {
+                QUrlQuery query;
+                query.addQueryItem(QStringLiteral("crmOrg"), m_organization->currentData().toString());
+                query.addQueryItem(QStringLiteral("crmList"), id);
+                m_openWebPage(QStringLiteral("/dashboard/spreadsheets?") +
+                              query.toString(QUrl::FullyEncoded));
+            });
+            sheet->setToolTip(QStringLiteral("Edit this list as a spreadsheet; saving it updates "
+                                             "the contacts here"));
+        }
     }
     if (stored && !m_usersButton->isHidden() && id == forkMeshUsersSheetId(m_views))
         menu.addAction(QStringLiteral("Refresh ForkMesh users"), this,
@@ -14292,6 +14465,16 @@ void CrmFeature::openProviderSend()
 
 void CrmFeature::setStatus(const QString &value, bool error)
 {
+    if (!error && QDateTime::currentMSecsSinceEpoch() < m_statusHeldUntil)
+        return;
+    const quint64 generation = ++m_statusGeneration;
+    m_status->setVisible(!value.isEmpty());
+    if (!error && !value.isEmpty()) {
+        QTimer::singleShot(kStatusShownMs, this, [this, generation] {
+            if (generation == m_statusGeneration)
+                m_status->hide();
+        });
+    }
     m_status->setText(value);
     m_status->setProperty("error", error);
     m_status->style()->unpolish(m_status);

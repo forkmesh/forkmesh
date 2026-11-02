@@ -66,6 +66,7 @@
                   <div class="grid gap-2 text-xs text-foreground">
                     <label class="flex items-center gap-2"><input data-survey-setting="oneResponsePerPerson" type="checkbox" />One response per person</label>
                     <label class="flex items-center gap-2"><input data-survey-setting="notifyOnResponse" type="checkbox" />Ping me when responses arrive</label>
+                    <label class="flex items-center gap-2"><input data-survey-setting="notifyOnVisit" type="checkbox" />Ping me when someone opens or starts it</label>
                     <label class="flex items-center gap-2"><input data-survey-setting="shuffleOptions" type="checkbox" />Shuffle choice order</label>
                   </div>
                 </div>
@@ -78,7 +79,7 @@
                 <div class="fm-dialog-header"><div data-survey-detail-head class="fm-dialog-title min-w-0"></div><button data-survey-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
                 <div class="fm-dialog-body"><div data-survey-dialog-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-survey-message-text class="fm-flash-body"></p></div><div data-survey-dialog-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-survey-message-text class="fm-flash-body"></p></div>
                   <div data-survey-detail-link></div>
-                  <div role="tablist" aria-label="Survey views" class="mb-3 flex gap-2 border-b border-border"><button data-survey-tab="results" role="tab" aria-selected="true" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Results</button><button data-survey-tab="responses" role="tab" aria-selected="false" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Responses</button></div>
+                  <div role="tablist" aria-label="Survey views" class="mb-3 flex gap-2 border-b border-border"><button data-survey-tab="results" role="tab" aria-selected="true" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Results</button><button data-survey-tab="responses" role="tab" aria-selected="false" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Responses</button><button data-survey-tab="activity" role="tab" aria-selected="false" type="button" class="sv-tab fm-btn fm-btn-invisible fm-btn-sm">Activity</button></div>
                   <div data-survey-detail-body></div>
                 </div>
                 <div data-survey-detail-actions class="fm-dialog-footer flex-wrap"></div>

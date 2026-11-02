@@ -518,3 +518,90 @@ def build_profile_contribution_response(
         "recentActivity": list(recent_activity or [])[:20],
         "coverage": aggregate_coverage(coverage_rows, from_value),
     }
+
+
+FORGE_ACTIVITY_KINDS = ("issues", "pulls", "reviews")
+FORGE_ACTIVITY_MAX_REPOS = 50
+FORGE_ACTIVITY_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1000
+
+
+def contribution_rolling_range(from_value, to_value, now_ms=None):
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    try:
+        from_date = _parse_date(from_value, "from")
+        to_date = _parse_date(to_value, "to")
+    except ValueError:
+        return False
+    today = _utc_date_from_ms(now_ms, "now_ms")
+    return to_date == today and from_date == date.fromordinal(max(
+        date.min.toordinal(), today.toordinal() - 364))
+
+
+def _forge_count(value):
+    try:
+        count = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(MAX_CONTRIBUTION_COUNT, count))
+
+
+def merge_forge_activity(summary, project_totals, forge_rows,
+                         from_value, to_value):
+    remaining = {}
+    for project_bi, totals in (project_totals or {}).items():
+        if project_bi:
+            remaining[project_bi] = {
+                kind: _forge_count((totals or {}).get(kind))
+                for kind in FORGE_ACTIVITY_KINDS
+            }
+    added = {kind: 0 for kind in FORGE_ACTIVITY_KINDS}
+    recent = []
+    repositories = 0
+    updated_at = 0
+    rows = sorted(
+        (row for row in forge_rows or () if isinstance(row, Mapping)),
+        key=lambda row: str(row.get("repo_bi") or ""))
+    for row in rows[:FORGE_ACTIVITY_MAX_REPOS]:
+        owner = str(row.get("owner") or "")
+        name = str(row.get("name") or "")
+        if not owner or not name:
+            continue
+        snapshot = remaining.setdefault(
+            str(row.get("project_bi") or "") or ("repo:" + owner + "/" + name),
+            {kind: 0 for kind in FORGE_ACTIVITY_KINDS})
+        last_day = str(row.get("last_day") or "")
+        if not (_DATE_RE.fullmatch(last_day)
+                and from_value <= last_day <= to_value):
+            last_day = to_value
+        contributed = False
+        for kind in FORGE_ACTIVITY_KINDS:
+            forge = _forge_count(row.get(kind))
+            extra = max(0, forge - snapshot[kind])
+            snapshot[kind] = max(0, snapshot[kind] - forge)
+            if not extra:
+                continue
+            contributed = True
+            added[kind] += extra
+            recent.append({
+                "date": last_day,
+                "kind": kind,
+                "count": extra,
+                "repository": {"owner": owner, "name": name},
+            })
+        if contributed:
+            repositories += 1
+            try:
+                updated_at = max(updated_at, int(row.get("updated_at") or 0))
+            except (TypeError, ValueError):
+                pass
+    if not repositories:
+        return summary, [], None
+    merged = dict(summary or {})
+    for kind, count in added.items():
+        merged[kind] = _forge_count(merged.get(kind)) + count
+    return merged, recent, {
+        "repositories": repositories,
+        "updatedAt": updated_at,
+        "kinds": [kind for kind in FORGE_ACTIVITY_KINDS if added[kind]],
+    }

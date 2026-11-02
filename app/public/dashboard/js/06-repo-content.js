@@ -3282,8 +3282,6 @@
     return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
   }
 
-  // Everyone on a pull, latest comment or review first, then its author if
-  // they have not spoken since. The first face sits on top of the stack.
   function renderPullRowPeople(item) {
     const names = [];
     const seen = new Set();
@@ -10015,8 +10013,18 @@
   async function handleRepoPullCheckDecision(repo, action, value, button) {
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls" || !value) return;
-    if (action === "approve" && !window.confirm(`Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`)) return;
-    if (action === "trust" && !window.confirm(`Always run checks for @${value} without asking? You can stop this from the Checks tab.`)) return;
+    if (action === "approve" && !await confirmAccountAction({
+      title: "Approve and run checks?",
+      body: `Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`,
+      confirmLabel: "Approve and run",
+      danger: false,
+    })) return;
+    if (action === "trust" && !await confirmAccountAction({
+      title: `Always run checks for @${value}?`,
+      body: "Checks for this contributor's pull requests will run without asking. You can stop this from the Checks tab.",
+      confirmLabel: "Always run",
+      danger: false,
+    })) return;
     if (button) button.disabled = true;
     try {
       await orgAgentRequest("POST", `${repoApiBase(repo)}/pulls/${detail.number}/checks`,
@@ -11130,7 +11138,7 @@ Your reply
     // Self-assignment is open to every visitor, not only issue managers
     // (issue #570): a claim moves only the caller's own name. Signed-out
     // clicks route through /login.
-    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
+    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 flex w-fit items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
       ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => {
         const row = `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`;

@@ -2443,7 +2443,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const targets = state.crmView.views.filter((other) => other.id !== id && other.canManage);
     const flows = crmFlows();
     const lastPipeline = flows.length === 1 && flows[0].id === flowId;
-    const items = [...crmSheetShareItems(view), { separator: true }];
+    const items = [...crmSheetShareItems(view), { separator: true },
+      { label: "Open in spreadsheet", title: "Edit this list's contacts in a spreadsheet linked to the CRM",
+        run: () => openCrmListInSpreadsheet(view) }];
     if (id !== CRM_NO_PIPELINE_TAB) {
       items.push(
         { label: "Rename…", disabled: !stored && !manages,
@@ -2853,6 +2855,24 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmSetListParam(viewId) {
     crmSetLinkParam("list", viewId);
+  }
+
+  function crmSpreadsheetPath(view) {
+    return `/dashboard/spreadsheets?crmOrg=${encodeURIComponent(state.crmView.organization)}`
+      + `&crmList=${encodeURIComponent(view.id)}`;
+  }
+
+  function openCrmListInSpreadsheet(view = crmActiveView()) {
+    closeCrmMenu();
+    if (state.crmView.activeShared && view === crmActiveView()) {
+      crmMessage("error", "A list shared from another organization cannot be linked to a spreadsheet. Copy it into your organization first.");
+      return;
+    }
+    if (!view || !state.crmView.organization) {
+      crmMessage("error", "Open a list first.");
+      return;
+    }
+    location.assign(crmSpreadsheetPath(view));
   }
 
   async function copyCrmListLink(view, button = null) {
@@ -7973,7 +7993,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-install]`)?.addEventListener("click", () => void installCrmPlugin());
     $(`[data-crm-export-all]`)?.addEventListener("click", () => void exportCrmAll());
     $(`[data-crm-uninstall]`)?.addEventListener("click", () => void uninstallCrmPlugin());
-    $(`[data-crm-import-file]`)?.addEventListener("change", (event) => void previewCrmCsv(event.target.files?.[0])); $(`[data-crm-export]`)?.addEventListener("click", () => void exportCrmCsv()); $(`[data-crm-account-evidence]`)?.addEventListener("click", () => void checkCrmAccounts()); $$(`[data-crm-bulk-edit]`).forEach((button) => button.addEventListener("click", () => void bulkEditShownCrmContacts(button.dataset.crmBulkEdit)));
+    $(`[data-crm-import-file]`)?.addEventListener("change", (event) => void previewCrmCsv(event.target.files?.[0])); $(`[data-crm-export]`)?.addEventListener("click", () => void exportCrmCsv()); $(`[data-crm-open-spreadsheet]`)?.addEventListener("click", () => openCrmListInSpreadsheet()); $(`[data-crm-account-evidence]`)?.addEventListener("click", () => void checkCrmAccounts()); $$(`[data-crm-bulk-edit]`).forEach((button) => button.addEventListener("click", () => void bulkEditShownCrmContacts(button.dataset.crmBulkEdit)));
     $(`[data-crm-import-errors-close]`)?.addEventListener("click", () => crmImportErrors());
     $(`[data-crm-import-map-form]`)?.addEventListener("submit", submitCrmImportMap);
     $(`[data-crm-mastodon-import]`)?.addEventListener("click", () => openCrmMastodonDialog(""));

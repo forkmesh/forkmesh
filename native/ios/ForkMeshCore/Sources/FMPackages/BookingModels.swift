@@ -173,6 +173,7 @@ public struct BookingSettings: Equatable, Sendable {
     public var emailOwner = true
     public var addToCalendar = true
     public var checkCalendar = true
+    public var notifyVisits = true
     public var types: [BookingType] = []
 
     public init() {}
@@ -203,6 +204,7 @@ public struct BookingSettings: Equatable, Sendable {
         emailOwner = json.optBool("emailOwner") ?? true
         addToCalendar = json.optBool("addToCalendar") ?? true
         checkCalendar = json.optBool("checkCalendar") ?? true
+        notifyVisits = json.optBool("notifyVisits") ?? true
         types = json.maps("types").map(BookingType.init(json:))
     }
 }
@@ -306,6 +308,7 @@ public struct BookingOverview: Equatable, Sendable {
     public var upcoming: [Booking]
     public var past: [Booking]
     public var stats: BookingStats
+    public var activity: PageActivity
 
     public init(json: JSONObject) {
         installed = json.optBool("installed") ?? true
@@ -323,6 +326,7 @@ public struct BookingOverview: Equatable, Sendable {
         upcoming = json.maps("upcoming").map(Booking.init(json:)).filter { PackagesText.isHexId($0.id) }
         past = json.maps("past").map(Booking.init(json:)).filter { PackagesText.isHexId($0.id) }
         stats = BookingStats(json: json.obj("stats"))
+        activity = PageActivity(json: json.obj("activity"))
     }
 
     public var displayLink: String { BookingText.displayLink(link) }
@@ -544,6 +548,7 @@ public struct BookingDraft: Equatable, Sendable {
     public var emailOwner: Bool
     public var addToCalendar: Bool
     public var checkCalendar: Bool
+    public var notifyVisits: Bool
     public var types: [BookingType]
 
     public static let lastMinute = "23:59"
@@ -575,6 +580,7 @@ public struct BookingDraft: Equatable, Sendable {
         emailOwner = settings.emailOwner
         addToCalendar = settings.addToCalendar
         checkCalendar = settings.checkCalendar
+        notifyVisits = settings.notifyVisits
         types = settings.types
     }
 
@@ -659,6 +665,7 @@ public struct BookingDraft: Equatable, Sendable {
             "emailOwner": .bool(emailOwner),
             "addToCalendar": .bool(addToCalendar),
             "checkCalendar": .bool(checkCalendar),
+            "notifyVisits": .bool(notifyVisits),
             "types": .array(types.map { .object($0.body) }),
         ]
     }

@@ -80,18 +80,87 @@ and the desktop rail button **Spreadsheets** opens that page on the active host.
 Charts are not written into Excel or OpenDocument files, and `.xls` notes,
 conditional formatting and validation are not read.
 
+## Linked CRM lists
+
+A workbook can be linked to one [CRM](../../marketplace/packages/crm/README.md)
+list, so the list can be edited as a sheet. **Open in spreadsheet** on a CRM
+list (its tab menu, or **More > Open list in spreadsheet**) goes to
+`/dashboard/spreadsheets?crmOrg=<organization>&crmList=<list id>`, where the
+list id is a list's 32-character id, `pipeline:<flow>` for a pipeline tab that
+has no list of its own, or `no-pipeline`. The page opens the workbook already
+linked to that list, or creates one, and pulls the list again. If Spreadsheets
+is not installed it asks for the install first and then carries on.
+
+- **Where the link lives.** The workbook's sealed data holds the link: the
+  organization, the list, its columns (field and header label), its stages and
+  members for the dropdowns, the snapshot of every contact as last pulled or
+  synced, the ids of rows being created, and when it last pulled and synced
+  (`wb.crm`, cleaned by `crmCleanLink`). The sealed title record also carries
+  `{kind, org, list}` so the workbook list can find the linked workbook without
+  opening every workbook; it is sealed like the title, and a copy of a
+  workbook is never linked.
+- **The sheet.** Row 1 holds the headers, frozen; hidden column A, **CRM ID**,
+  ties each row to its contact. Then name and email, the list's shown columns,
+  every other field the CRM lets a member edit (company, title, phone, the
+  social handles, website, location, stage, deal value, next step, owner,
+  source, tags, notes, last contacted) and the list's custom fields. Columns
+  are found by their header text, so they can be moved, and columns of your own
+  (formulas, notes) are left alone. Stage and owner get dropdowns.
+- **Sync to CRM** reads the rows (`crmReadRows`), compares each with the
+  snapshot (`crmDiff`) and sends only the changed cells, each with the value it
+  had in the snapshot, to `POST /api/crm/<org>/contacts/sync` in batches of at
+  most 500 rows and 1.5 MB, so a 1,000-row list is two requests. A row without
+  an id becomes a new contact on the list; it gets its id written into column A
+  and saved before it is sent, so a retry after a failure replays the same
+  contact instead of adding a second one. Rows are held back, with a reason,
+  when they repeat another row's id, carry an id that is not on the list, or
+  changed both name and email (a sign the id belongs to another row, for
+  example after sorting only part of the sheet).
+- **Conflicts.** The worker refuses a row whose CRM value no longer matches the
+  value the sheet started from, and answers with the contact as it is now
+  (`crmApply`, `crmThreeWay`). Cells the CRM changed and you did not are pulled
+  in; cells both sides changed to different values open a dialog showing both,
+  per cell **Keep mine** or **Use the CRM's**, or all at once. Keeping yours
+  re-bases on the CRM's value and syncs again; cells left unpicked stay as
+  they are and are asked about again. Nothing in the CRM is overwritten
+  without that choice.
+- **Refresh from CRM** pulls the list again (`crmMerge`): CRM changes to
+  cells you have not touched come in, contacts new on the list are added at the
+  bottom, rows whose contact left the list are removed unless you edited them,
+  and conflicting cells open the same dialog. Columns the list gained are
+  added at the right.
+- **Deleting a row never deletes a contact.** The CRM's contact delete cannot
+  be undone, so the sheet does not use it; a deleted row's contact comes back
+  on the next refresh. Delete contacts in the CRM.
+- **The bar** above the menus shows the list, when it last pulled and synced,
+  how many rows are not synced, rows that need attention (click for the list,
+  each row opens) and the last error. Its menu opens the list in the CRM or
+  unlinks the workbook.
+- **Access** is the CRM's own: the requests carry the dashboard session, so a
+  member sees only lists they can open, and a read-only role can refresh but
+  not sync.
+
+The diff and conflict rules are pure functions in `FMSheets.crm` and are
+checked by `tests/crm_link_checks.js`; the worker side is
+`marketplace/packages/crm/tests/test_spreadsheet_sync.py`.
+
 ## Code map
 
 | Path | What |
 | --- | --- |
-| `content/web/page.js` | Engine (`FMSheets`: formats, parser, `Calc`, functions, model, readers, writers, AI helpers) and the editor page |
+| `content/web/page.js` | Engine (`FMSheets`: formats, parser, `Calc`, functions, model, readers, writers, AI helpers, `crm` link rules) and the editor page |
 | `content/web/view.html` | Page markup and styles, using the [dashboard theme roles](../app/dashboard-colors.md) |
 | `content/worker/spreadsheets.py` | `/api/spreadsheets`: install, list, create, open, save, delete, export, uninstall, AI |
 | `content/desktop/SpreadsheetsLink.cpp` | Desktop rail link to `/dashboard/spreadsheets` |
 | `tests/engine_checks.js`, `tests/fixtures/` | Formula, format and round-trip checks, including `.xls` and `.xlsx` files written by LibreOffice |
-| `tests/test_spreadsheets.py` | Server tests; runs the engine checks with Node |
+| `tests/crm_link_checks.js` | Linked CRM list checks: reading rows, diff, conflicts, refresh, sync results |
+| `tests/test_spreadsheets.py` | Server tests; runs the engine and CRM link checks with Node |
 
 ## Not yet
+
+A linked workbook syncs when you press **Sync to CRM**, not on every save,
+and does not follow the CRM live; removing contacts from a list from the sheet
+is not built.
 
 Phones: the package is offered on desktop and the web only (`install.places`),
 so neither phone app shows it; adding it means one screen in each app

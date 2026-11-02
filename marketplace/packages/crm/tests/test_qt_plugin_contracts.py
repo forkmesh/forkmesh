@@ -1096,17 +1096,19 @@ def test_top_search_box_reaches_every_installed_package():
 
 def test_desktop_page_is_a_list_sidebar_a_table_and_a_contact_panel():
     setup = FEATURE.split("CrmFeature::CrmFeature(", 1)[1].split("\n}\n", 1)[0]
-    # The tab strip is gone: lists run down the left, the table sits in the
-    # middle, and the contact opens in a third column.
     assert "tabs->tabBar()->hide();" in setup
-    assert setup.index("body->addWidget(side);") < setup.index("body->addWidget(tabs);") < \
-        setup.index("body->addWidget(detail);")
+    assert setup.index("body->addWidget(side);") < setup.index("body->addWidget(center);") < \
+        setup.index("body->addWidget(m_nextCard);") < setup.index("body->addWidget(detail);")
     assert "showSheetTabMenu(id, m_sheetList->viewport()->mapToGlobal(position))" in setup
-    # Each list shows the faces on it and its pipeline's stages as a bar.
     side = FEATURE.split("void CrmFeature::renderSheetList()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "kListAvatars" in side and "contactPicture(contact, kListAvatarSize)" in side
-    assert "const QStringList stages = flowStages(flow);" in side
-    assert "new ListStageBar(segments)" in side
+    assert "auto *top = new QHBoxLayout(card);" in side
+    assert 'QStringLiteral("%1/%2").arg(locale.toString(uncontacted)' in side
+    for gone in ("kListAvatars", "ListStageBar", "flowStages(flow)", "new QVBoxLayout(card)"):
+        assert gone not in side, gone
+    header = FEATURE.split("void CrmFeature::arrangeNextHeader(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert "crmHeaderTabs" not in header and "titleColumn" not in header
+    assert "mirror(moreMenu, moreButtons);" in header
+    assert "m_summary->hide();" in setup
     # The toolbar's People button opens a grid of only the contacts with a
     # picture, sortable by most recent, each card naming its lists and pipeline.
     people = FEATURE.split("void CrmFeature::renderPeople()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
@@ -1295,20 +1297,28 @@ def test_desktop_list_heads_with_a_lead_to_reach_and_one_to_follow_up():
     assert "std::make_tuple(tier, step.isEmpty() ? 1 : 0, order, id)" in rank
     assert "step.isEmpty() ? 1 : 0, -marks.value," in rank
     assert "posted > 0 ? 0 : 1, -posted," in rank
-    assert "best.upcoming << reachRanked.at(at).id" in rank
+    assert "take(reachRanked);" in rank and "take(followRanked);" in rank
+    assert "best.ranked << entry.id;" in rank and "upcoming" not in rank
     assert "m_nextSkipped.contains(one)" in rank
     marks = FEATURE.split("LeadMarks leadMarks(const QJsonObject &contact)", 1)[1].split("\n}\n", 1)[0]
     assert 'endsWith(QLatin1String("_rank"))' in marks and 'endsWith(QLatin1String("_score"))' in marks
     pair = FEATURE.split("void CrmFeature::renderNextContact()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "nextContactCard(NextMode::ReachOut)" in pair and "nextContactCard(NextMode::FollowUp)" in pair
-    assert "queueReachMastodon(nextContact(NextMode::ReachOut).ranked)" in pair
-    card = FEATURE.split("QWidget *CrmFeature::nextContactCard(NextMode mode)", 1)[1].split("\nvoid CrmFeature::", 1)[0]
-    assert "<b>Why them:</b>" in card
-    assert "nextPostLabel(contact, false)" in card and "nextPostLabel(person, true)" in card
-    assert "openMailCompose(" in card and "markContacted(" in card and "showContactDetail(" in card
+    assert "nextContact(NextMode::ReachOut)" in pair and "nextContact(NextMode::FollowUp)" in pair
+    assert "holder->addWidget(nextContactCard(m_nextMode, shown));" in pair
+    assert "m_nextRanked = shown.ranked;" in pair and "queueReachMastodon(reach.ranked);" in pair
+    card = FEATURE.split("QWidget *CrmFeature::nextContactCard(NextMode mode, const NextContact &next)",
+                         1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert "<b>Why them:</b>" in card and "Next in line" not in card
+    assert "nextPostLabel(contact)" in card
+    assert "showEmailPanel(contactId" in card and "markContacted(" in card
+    assert "showContactDetail(" in card
     assert "contactColumns()" in card and "contactListNames(contactId)" in card
     render = FEATURE.split("void CrmFeature::renderContacts()", 1)[1].split("\n}\n", 1)[0]
     assert "renderNextContact();" in render
+    assert render.index("renderNextContact();") < render.index("std::stable_sort(m_fillRows.begin()")
+    assert "if (m_sortId.isEmpty() && !m_nextRanked.isEmpty())" in render
+    mode = FEATURE.split("void CrmFeature::selectNextMode(", 1)[1].split("\n}\n", 1)[0]
+    assert "m_sortId.clear();" in mode and "header->setSortIndicator(-1" in mode
     assert 'QStringLiteral("crmNextContact")' in FEATURE
 
 
@@ -1391,3 +1401,18 @@ def test_desktop_reads_a_first_page_of_contacts_then_the_rest_in_the_background(
     assert "constexpr int kContactFirstPage = 250;" in FEATURE
     assert "constexpr int kContactPageFetch = 1000;" in FEATURE
     assert 'summaryObject.value(QStringLiteral("customers")).toInt(customers)' in FEATURE
+
+
+def test_desktop_email_panel_drafts_with_the_selected_model_and_sends_tracked():
+    write = FEATURE.split("void CrmFeature::writeEmailDraft()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert '{QStringLiteral("promptOnly"), true}' in write
+    assert "m_askAgent(m_emailPrompt" in write and "parseEmailDraft(reply" in write
+    assert '{QStringLiteral("preview"), true}' in write
+    assert 'payload.value(QStringLiteral("offers")).toArray()' in write
+    send = FEATURE.split("void CrmFeature::sendEmailPanel()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
+    assert 'organizationPath(QStringLiteral("/outreach/auto"))' in send
+    assert '{QStringLiteral("subject"), subject}' in send and '{QStringLiteral("text"), body}' in send
+    assert "preview" not in send and "loadOrganization();" in send
+    worker = CRM_WORKER.split("async def _auto_email(", 1)[1].split("\nasync def ", 1)[0]
+    assert 'if data.get("promptOnly"):' in worker
+    assert worker.index('if data.get("promptOnly"):') < worker.index("_auto_email_write(")

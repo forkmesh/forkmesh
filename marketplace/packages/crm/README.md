@@ -161,6 +161,20 @@ into an update) instead of a `500`. A shared sheet's add still answers
   websites are ignored), **Paying members**, **Stage behind evidence**.
 - Bulk **Assign / Tag / Untag shown contacts** applies to the filtered rows in
   chunks of 500.
+- **Open in spreadsheet** (a list's menu on the web and the desktop, or the
+  web's **More > Open list in spreadsheet**, 1.48.0; the desktop opens it in
+  the browser) edits the list in a workbook linked to it
+  ([Spreadsheets](../../../docs/marketplace/spreadsheets.md#linked-crm-lists)).
+  `GET /api/crm/<org>/contacts/sync?list=<id>` returns the list (a list id,
+  `pipeline:<flow>` or `no-pipeline`), its contacts, the editable columns and
+  the members. `POST /contacts/sync` with `{"list", "updates": [{"id", "set",
+  "expect"}], "creates": [{"ref", "requestId", "set"}]}` (at most 500 rows)
+  answers one result per row: `updated`, `unchanged`, `created`, `conflict`
+  (a field no longer matches `expect`; the row is not written and the current
+  contact comes back), `missing` or `error` with a reason (`unknown_stage`
+  with the stages, `contact_email_exists`, `invalid_email`, `invalid_field`,
+  `list_cannot_add`). New contacts join the list (and its pipeline); a stage
+  must be one of the contact's pipeline stages. It never deletes a contact.
 
 ## Importing
 
@@ -282,14 +296,19 @@ people connected to its lists. Notes are separate from the free-text
 
 ## Reach out and follow up
 
-The top of the CRM shows two cards (desktop and web) or two sections (phones):
+The web shows two cards at the top of the CRM, the phones two sections. The
+desktop puts them in a column right of the table, as two tabs, **Reach out**
+and **Follow up**, each with how many are due (2026-11-02: the table was
+pushed below the fold by the cards, and the queue under Reach out repeated
+what the table can show). With no column sort chosen the table is in the open
+tab's order, the card's contact first; picking a tab drops a column sort.
 
 - **Reach out**: the best never-contacted, reachable lead outside a won or
   ended stage, ordered by their newest public Mastodon post (newest first;
   contacts without a handle or a post follow), then next step, deal value, a
   `rank`/`*_rank` column (lowest first), a `score`/`*_score` column (highest
   first), having an email, and age on the CRM. The card shows that post's
-  date, excerpt and link, and lists the next five in line with theirs.
+  date, excerpt and link; the web card also lists the next five in line.
 - **Follow up**: an unanswered reply first (newest first, any stage), then
   contacts last contacted 14 or more days ago with nothing back (longest
   silence first, open stages only); a next step goes first in each group.
@@ -732,6 +751,33 @@ emails; it was 50 until 1.38.0, when the iPhone's auto-send was paced at 100 a
 day) and recent sends; `POST /outreach/send` sends one email. Every attempt is written to
 `crm_outreach_log` with recipient and subject sealed.
 
+## Write email on the desktop
+
+**Write email** on the desktop's Reach out or Follow up card opens an email
+panel in that column instead of the mail app, so the send is tracked and the
+contact marked contacted without leaving ForkMesh:
+
+1. `POST /outreach/auto {…, promptOnly: true}` returns the prompt below, the
+   recipient and sender, the referral link, and `offers`: the sender's
+   Booking page (`/meet?<slug>`, from `booking_pages`) and up to five of the
+   organization's open surveys (`/survey?t=<token>`, from `survey_forms`).
+   Neither package installed means no offers. Nothing is written or sent.
+2. The desktop's selected agent (the model picked for agents) writes the
+   draft from that prompt; without one the host model writes it
+   (`preview: true`).
+3. Subject and body are editable; **+ Book a meeting with me** and the survey
+   buttons add a link. **Send with tracking** posts the edited draft to the
+   same route, so it goes out with open and click pings and stamps
+   `lastContactedAt` like **Send AI email**. **Rewrite** asks again.
+
+The prompt now also carries **About me, the sender** (the account sending)
+and, for the `forkmesh` organization, **Our mission**
+(`AUTO_EMAIL_FORKMESH_MISSION`, the product promise). Offered pages are in
+the prompt, so a draft that uses one passes the invented-link check. The
+pages log their own visits ([Booking](../../../docs/marketplace/booking.md),
+[Surveys](../../../docs/marketplace/surveys.md)). Tests:
+`tests/test_auto_email.py`, `tests/test_qt_plugin_contracts.py`.
+
 ## Automated outreach email
 
 **Send AI email** (the Reach out and Follow up cards and the contact detail
@@ -1140,9 +1186,13 @@ raising, so the caller can keep the lead.
   no step to show or while My Zoho Mail is open. Compose says which mailbox it
   sends from. Inbox groups that hold mail from your own mailbox carry **Only
   you**.
-- **Desktop** (`CrmFeature.cpp`): a three-column page (lists, table, detail
-  panel), spreadsheet-style editing, a People grid of contacts with pictures,
-  imports, and a rail count of never-contacted contacts. Data is read when the
+- **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
+  / Follow up and the detail panel, spreadsheet-style editing, a People grid
+  of contacts with pictures, imports, and a rail count of never-contacted
+  contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
+  who can open it. The header holds only the title, the organization, Import,
+  Mail, `⋯` (People, Pipelines, History, Extension), Settings, Refresh and
+  Add contact; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,

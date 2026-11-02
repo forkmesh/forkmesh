@@ -80,7 +80,7 @@ def test_controls_require_an_advertising_v2_executor():
         '"approve"', '"reject"', '"cancel"', '"rerun"',
     ):
         assert action in FRAGMENT, action
-    assert "window.confirm(" in FRAGMENT  # approval is a deliberate second step
+    assert "confirmAccountAction(" in FRAGMENT  # approval is a deliberate second step
 
 
 def test_quiet_unavailable_body_is_not_reported_as_an_error():

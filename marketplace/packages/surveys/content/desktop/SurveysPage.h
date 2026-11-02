@@ -66,6 +66,7 @@ private:
     void renderDetail();
     QWidget *resultsPage();
     QWidget *responsesPage();
+    QWidget *activityPage();
     void addDetailActions(QHBoxLayout *primary, QHBoxLayout *secondary);
     void loadResponses();
     void surveyChanged(const QJsonObject &survey, const QString &notice);

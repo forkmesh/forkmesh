@@ -16223,6 +16223,15 @@ async def _contribution_profile_revision(
                       sources.active_generation_bi, sources.captured_at,
                       sources.verified_from
                  FROM foreign_activity_sources AS sources
+               UNION ALL
+               SELECT 'forge' AS source_scope,
+                      activity.repo_bi, '', '', '', '', '',
+                      activity.updated_at, ''
+                 FROM member_repo_activity AS activity
+                 JOIN repositories
+                   ON repositories.key_bi=activity.repo_bi
+                  AND repositories.is_private=0
+                WHERE activity.user_bi=?
              )
              SELECT source_scope, source_repo_bi, source_account_bi,
                     owner_user_bi, project_bi, first_public_day,
@@ -16232,7 +16241,7 @@ async def _contribution_profile_revision(
               /* contribution_profile_revision */
               ORDER BY source_scope ASC, project_bi ASC, source_repo_bi ASC""",
         subject_user_bi, from_value, to_value,
-        subject_user_bi, subject_user_bi,
+        subject_user_bi, subject_user_bi, subject_user_bi,
     )
     canonical = [
         [
@@ -16469,11 +16478,95 @@ def _contribution_merge_reporter_activity(
     )
 
 
+async def _contribution_forge_rows(env, subject_user_bi, now_ms):
+    rows = await d1_all(
+        env,
+        """SELECT activity.repo_bi, activity.pulls, activity.issues,
+                  activity.reviews, activity.last_day, activity.updated_at,
+                  repositories.data
+             FROM member_repo_activity AS activity
+             JOIN repositories
+               ON repositories.key_bi=activity.repo_bi
+              AND repositories.is_private=0
+            WHERE activity.user_bi=?
+              AND activity.updated_at>=?
+              AND (activity.pulls>0 OR activity.issues>0
+                   OR activity.reviews>0)
+              AND NOT EXISTS (
+                  SELECT 1 FROM profile_contribution_projects AS projects
+                   WHERE projects.source_repo_bi=activity.repo_bi
+                     AND projects.is_public=0)
+            /* contribution_forge_rows */
+            ORDER BY activity.repo_bi ASC
+            LIMIT ?""",
+        subject_user_bi,
+        int(now_ms) - contributions.FORGE_ACTIVITY_MAX_AGE_MS,
+        contributions.FORGE_ACTIVITY_MAX_REPOS,
+    )
+    forge = []
+    memo = globals().get("_CATALOG_ROW_DECRYPT_MEMO") or {}
+    for row in rows or []:
+        blob = str(row.get("data") or "")
+        record = memo.get(blob) or await decrypt_row(env, blob) or {}
+        if (not isinstance(record, dict)
+                or record.get("visibility") != "public"
+                or record.get("isPrivate")):
+            continue
+        owner = clean_string(record.get("owner", ""), MAX_NODE_NAME).lower()
+        name = clean_string(
+            record.get("name", "") or record.get("repo", ""),
+            MAX_REPO_SEGMENT)
+        if not owner or not name:
+            continue
+        forge.append({
+            "repo_bi": row.get("repo_bi") or "",
+            "project_bi": await _contribution_project_bi(env, {
+                "rootCommit": record.get("rootCommit") or "",
+                "owner": owner, "name": name,
+            }),
+            "owner": owner,
+            "name": name,
+            "issues": row.get("issues"),
+            "pulls": row.get("pulls"),
+            "reviews": row.get("reviews"),
+            "last_day": row.get("last_day") or "",
+            "updated_at": row.get("updated_at"),
+        })
+    return forge
+
+
+def _contribution_merge_forge_activity(
+        summary, project_rows, recent_activity, forge_rows,
+        from_value, to_value):
+    """Fold forge-recorded collaboration into the summary and recent list."""
+    project_totals = {
+        str(row.get("project_bi") or ""): row for row in project_rows or []
+    }
+    summary, recent, note = contributions.merge_forge_activity(
+        summary, project_totals, forge_rows, from_value, to_value)
+    if note is None:
+        return summary, recent_activity, None
+    for entry in recent:
+        repository = entry["repository"]
+        repository["url"] = (
+            "/" + quote(repository["owner"], safe="") + "/"
+            + quote(repository["name"], safe=""))
+    kind_order = {"commits": 0, "issues": 1, "pulls": 2,
+                  "reviews": 3, "repositories": 4}
+    merged = list(recent_activity or []) + recent
+    merged.sort(key=lambda row: (
+        str(row.get("date") or ""),
+        -kind_order.get(str(row.get("kind") or ""), 99),
+    ), reverse=True)
+    return summary, merged[:20], note
+
+
 async def _contribution_profile_payload(
         env, profile_bi, profile_name, from_value, to_value,
         reporter_summary=None):
     # Four normal sequential D1 reads, plus one actor-key lookup only for a
-    # profile with reviewed reporter activity. These used to be gathered;
+    # profile with reviewed reporter activity and one forge-activity read only
+    # for the rolling window. These used to be gathered;
     # concurrent tasks on this path are the fan-out shape that wedges the
     # isolate (see the no-concurrent-tasks rule at the top of this module).
     activity_rows = await _contribution_activity_rows(
@@ -16489,6 +16582,9 @@ async def _contribution_profile_payload(
     )
     days = [
         row for row in activity_rows if row.get("row_kind") == "day"
+    ]
+    project_rows = [
+        row for row in activity_rows if row.get("row_kind") == "project"
     ]
 
     decrypted = {}
@@ -16520,6 +16616,16 @@ async def _contribution_profile_payload(
     summary, days, recent_activity = _contribution_merge_reporter_activity(
         summary, days, recent_activity, reporter_activity)
 
+    forge_note = None
+    now_ms = int(Date.now())
+    if contributions.contribution_rolling_range(
+            from_value, to_value, now_ms=now_ms):
+        forge_rows = await _contribution_forge_rows(env, profile_bi, now_ms)
+        summary, recent_activity, forge_note = (
+            _contribution_merge_forge_activity(
+                summary, project_rows, recent_activity, forge_rows,
+                from_value, to_value))
+
     decoded_coverage = []
     for row in coverage_rows:
         encrypted = row.get("data", "")
@@ -16529,10 +16635,13 @@ async def _contribution_profile_payload(
             **row,
             "coverage": decrypted[encrypted].get("coverage"),
         })
-    return contributions.build_profile_contribution_response(
+    response = contributions.build_profile_contribution_response(
         profile_name, from_value, to_value, summary, days,
         language_rows, recent_activity, decoded_coverage,
     )
+    if forge_note is not None:
+        response["coverage"]["forge"] = forge_note
+    return response
 
 
 async def _contribution_profile_api(env, request, raw_name,

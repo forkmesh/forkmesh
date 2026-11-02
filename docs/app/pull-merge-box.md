@@ -108,6 +108,9 @@ people are accounts, never the signing key in `author` (one person signs
 from several keys), so an event with no `authorName` adds no one. It is
 built in the same pass as `pullReviews` from every `NNNN-*.md` event whose
 type names a comment or review, latest file first with repeats dropped.
+Only `NNNN-review.md` files count toward `pullReviews`: a comment file
+whose front matter says `type: review` adds its author to `pullPeople`
+and nothing else.
 Comment files are many, so `pullPeople` has its own size check: when they do
 not fit the review bounds the listing leaves `pullPeople` out (rows show the
 author alone) and still carries `pullReviews`. `renderPullRowPeople` in

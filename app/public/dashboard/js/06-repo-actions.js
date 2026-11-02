@@ -875,8 +875,15 @@
       }[action];
       // Approval executes code nobody has run here before; make that a
       // deliberate second step rather than a stray click.
-      if (action === "approve" && !window.confirm(
-        `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`)) {
+      if (action === "approve") {
+        void confirmAccountAction({
+          title: `Approve run ${runId}?`,
+          body: `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`,
+          confirmLabel: "Approve and run",
+          danger: false,
+        }).then((approved) => {
+          if (approved) void sendRepoActionsControl(repo, action, { runId }, label);
+        });
         return true;
       }
       void sendRepoActionsControl(repo, action, { runId }, label);

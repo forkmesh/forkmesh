@@ -87,6 +87,7 @@ data class SurveySettings(
     val closesAt: Long = 0,
     val maxResponses: Int = 0,
     val notifyOnResponse: Boolean = true,
+    val notifyOnVisit: Boolean = true,
     val shuffleOptions: Boolean = false,
 ) {
     val body: Map<String, Any?>
@@ -96,6 +97,7 @@ data class SurveySettings(
             "closesAt" to maxOf(0L, closesAt),
             "maxResponses" to maxResponses.coerceIn(0, SurveyLimits.MAX_RESPONSES),
             "notifyOnResponse" to notifyOnResponse,
+            "notifyOnVisit" to notifyOnVisit,
             "shuffleOptions" to shuffleOptions,
         )
 
@@ -106,6 +108,7 @@ data class SurveySettings(
             closesAt = maxOf(0L, json.long("closesAt")),
             maxResponses = json.int("maxResponses").coerceIn(0, SurveyLimits.MAX_RESPONSES),
             notifyOnResponse = json.optBool("notifyOnResponse") ?: true,
+            notifyOnVisit = json.optBool("notifyOnVisit") ?: true,
             shuffleOptions = json.bool("shuffleOptions"),
         )
     }
@@ -240,6 +243,7 @@ data class Survey(
     val publicUrl: String = "",
     val questions: List<SurveyQuestion>? = null,
     val results: List<SurveyResult>? = null,
+    val activity: PageActivity = PageActivity(),
 ) {
     val state: String get() = displayStatus.ifEmpty { status }
 
@@ -324,6 +328,7 @@ data class Survey(
             publicUrl = json.str("publicUrl").trim().takeIf { it.startsWith("https://") && it.none(Char::isWhitespace) }.orEmpty(),
             questions = if (json.containsKey("questions")) json.maps("questions").map(SurveyQuestion::fromJson) else null,
             results = if (json.containsKey("results")) json.maps("results").map(SurveyResult::fromJson) else null,
+            activity = PageActivity.fromJson(json.obj("activity")),
         )
     }
 }
@@ -539,6 +544,7 @@ data class SurveyDraft(
     val thankYou: String = "",
     val oneResponsePerPerson: Boolean = false,
     val notifyOnResponse: Boolean = true,
+    val notifyOnVisit: Boolean = true,
     val shuffleOptions: Boolean = false,
     val opens: String = "",
     val closes: String = "",
@@ -557,6 +563,7 @@ data class SurveyDraft(
         closesAt = SurveyDates.parse(closes, zone) ?: 0L,
         maxResponses = maxResponses.trim().toIntOrNull()?.coerceIn(0, SurveyLimits.MAX_RESPONSES) ?: 0,
         notifyOnResponse = notifyOnResponse,
+        notifyOnVisit = notifyOnVisit,
         shuffleOptions = shuffleOptions,
     )
 
@@ -611,6 +618,7 @@ data class SurveyDraft(
             thankYou = survey.thankYou,
             oneResponsePerPerson = survey.settings.oneResponsePerPerson,
             notifyOnResponse = survey.settings.notifyOnResponse,
+            notifyOnVisit = survey.settings.notifyOnVisit,
             shuffleOptions = survey.settings.shuffleOptions,
             opens = SurveyDates.input(survey.settings.opensAt, zone),
             closes = SurveyDates.input(survey.settings.closesAt, zone),
@@ -777,7 +785,7 @@ class SurveysModel(val client: PackagesClient, var organization: String = "") {
 
     fun adopt(survey: Survey) {
         val current = overview ?: return
-        val listed = survey.copy(questions = null, results = null)
+        val listed = survey.copy(questions = null, results = null, activity = PageActivity())
         val surveys = if (current.surveys.any { it.id == survey.id }) {
             current.surveys.map { if (it.id == survey.id) listed else it }
         } else {
