@@ -226,11 +226,14 @@ api.state.homeOrganizationRepositories = [
 const views = () => 0;
 out.tree = api.nestRepositoryForks(api.homeRepositoryEntries(), views).map((group) => ({
   top: `${group.entry.repo.owner}/${group.entry.repo.name}`,
+  label: group.entry.label,
   organization: group.entry.organization,
   forks: group.forks.length,
 }));
 """)
     tops = {group["top"]: group for group in out["tree"]}
     assert tops["alice/widget"]["organization"] is True
+    assert tops["alice/widget"]["label"] == "acme/widget"
+    assert [group["top"] for group in out["tree"]].count("alice/widget") == 1
     assert tops["alice/widget"]["forks"] == 5
     assert "acme/widget" not in tops

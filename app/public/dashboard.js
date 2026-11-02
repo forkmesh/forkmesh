@@ -14591,6 +14591,7 @@
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
           repo: organizationEntryRepository(repo),
+          label: repoDisplayName(repo),
           href: repoPathUrl(repo),
           organization: true,
         })),
@@ -14601,7 +14602,8 @@
     ].map((entry) => ({ ...entry, label: entry.label || repoDisplayName(entry.repo) }))
       .filter((entry, index, values) =>
         values.findIndex((candidate) =>
-          candidate.label.toLowerCase() === entry.label.toLowerCase()) === index)
+          candidate.label.toLowerCase() === entry.label.toLowerCase()
+          || (candidate.organization && repoKey(candidate.repo).toLowerCase() === repoKey(entry.repo).toLowerCase())) === index)
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
