@@ -139,9 +139,9 @@ below say when each field arrived).
 
 ## iOS performance rules
 
-The shell's account avatar shares the phone-motion feed with the Genie view.
+The shell's account avatar does not follow phone motion; the Genie view does.
 Agent Watch feel defaults on unless the user turns it off; Reduce Motion stops
-the avatar movement but does not change that saved preference.
+its movement but does not change that saved preference.
 
 A tab hidden under Home or behind another tab starts only the work the shell
 needs from it (Agents: the list, for the counts); streams, follows and

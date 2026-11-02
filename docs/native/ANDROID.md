@@ -1291,8 +1291,9 @@ bottom bar.
   and 4 dp vertical padding; the 40 dp project icon (opens the project drawer;
   a long press closes hub and palette and selects Home), the chips (Glasses
   Alert, `StepsWalkChip`, `ShellMailChip`), the new-agent button and the
-  avatar (36 dp, corners 28%, as `AvatarWithDot(rounded:)`: picture or initial,
-  a 2 dp status ring 3 dp outside, the status emoji bottom-left; S014). A guest
+  avatar (38 dp, corners 28%, as `AvatarWithDot(rounded:)`: picture or initial,
+  a 2 dp status ring touching it with no gap, the status emoji bottom-left;
+  S014). A guest
   sees a person icon and a "Sign in" chip. Search is on Home, not the bar. The
   telemetry strip: 12 x 10 dp sparklines coloured by `TelemetryMetric.health`.
 - **New-agent button** (`PromptButton`): a 44 dp accent gradient circle with a
