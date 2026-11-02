@@ -14499,7 +14499,7 @@
       : [];
     const entries = [
       ...organizationRepositories.map((repo) => ({
-        repo,
+        repo: organizationEntryRepository(repo),
         key: repoHasShortAddress(repo) ? String(repo.name) : `${repo.owner}/${repo.name}`,
         href: repoPathUrl(repo),
         organization: true,
@@ -14576,12 +14576,21 @@
     loadHomeRepositoryViews(keys, signature);
   }
 
+  function organizationEntryRepository(repo) {
+    const node = String(repo?.linkedNode || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim().toLowerCase();
+    if (!node || !name) return repo;
+    return (Array.isArray(state.repositories) ? state.repositories : []).find((candidate) =>
+      String(candidate?.owner || "").toLowerCase() === node
+      && String(candidate?.name || "").toLowerCase() === name) || repo;
+  }
+
   function homeRepositoryEntries() {
     return [
       ...(Array.isArray(state.homeOrganizationRepositories)
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
-          repo,
+          repo: organizationEntryRepository(repo),
           href: repoPathUrl(repo),
           organization: true,
         })),

@@ -216,3 +216,21 @@ def test_toggles_rerender_both_lists_and_the_styles_and_docs_exist():
                      ".dashboard-nav-repo-fork-counts {"):
         assert selector in SHELL
     assert "/api/repo-fork-counts" in DOCS and "counts=1" in DOCS
+
+
+def test_an_organization_entry_takes_its_forks_from_the_repository_it_links():
+    out = run("""
+api.state.homeOrganizationRepositories = [
+  { owner: "acme", name: "widget", linkedNode: "alice", source: "organization-alias", organizationOwned: true, cloneOnline: true },
+];
+const views = () => 0;
+out.tree = api.nestRepositoryForks(api.homeRepositoryEntries(), views).map((group) => ({
+  top: `${group.entry.repo.owner}/${group.entry.repo.name}`,
+  organization: group.entry.organization,
+  forks: group.forks.length,
+}));
+""")
+    tops = {group["top"]: group for group in out["tree"]}
+    assert tops["alice/widget"]["organization"] is True
+    assert tops["alice/widget"]["forks"] == 5
+    assert "acme/widget" not in tops
