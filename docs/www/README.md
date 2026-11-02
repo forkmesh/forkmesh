@@ -19,6 +19,7 @@ robin, and everything dynamic is proxied or redirected to the App.
 | [genie-spider.md](genie-spider.md) | The Genie spider guide on web pages |
 | [cloud-dragon.md](cloud-dragon.md) | The Cloud Dragon, a second mascot for web pages |
 | [site-crawler.md](site-crawler.md) | Crawler, the special agent that inspects the live site |
+| [docs-reader.md](docs-reader.md) | The docs library on phones: data views, diagrams, page map, dock, link previews and on-device suggestions |
 
 How the site fits the network: [architecture](../architecture.md) and
 [censorship resilience](../censorship-resilience.md); the App behind it:
@@ -58,6 +59,7 @@ instead of creating a second Worker.
 | `docs/` | Public documentation library (Markdown and JSON schemas); see the note at the top of [docs/README.md](../README.md) |
 | `app/tools/build_site_assets.py www` | Stages `www/dist` (the upload), rendering the docs library into it |
 | `app/tools/docs_site.py`, `docs_markdown.py`, `docs_history.py` | Render `docs/**/*.md` to `/docs/<path>/`, `/docs/library/`, `/docs/history/`, `/docs/documents/` |
+| `app/tools/docs_figures.py`, `www/public/docs-explore.js` | Figures from code blocks, the page map, the phone dock, link previews and suggestions ([docs reader](docs-reader.md)) |
 | `www/public/robots.txt`, `sitemap.xml` (built) | Crawler rules and the sitemap they point to; see Security |
 | `www/tests/` | Python and Node tests for routing, the docs library, headers and scripts |
 | `www/deploy.sh` | Calls `app/deploy.sh www`; see Traps |
