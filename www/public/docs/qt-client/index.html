@@ -24,7 +24,7 @@
     <link rel="stylesheet" href="/styles.css" />
     <script src="/static-page.js?v=${version}" defer></script>
     <style>
-      .doc-wrap { max-width: 860px; margin: 0 auto; padding: 42px 20px 80px; }
+      .doc-wrap { overflow-wrap: break-word; max-width: 860px; margin: 0 auto; padding: 42px 20px 80px; }
       .doc-wrap h1 { font-size: clamp(32px, 5vw, 48px); margin: 0 0 12px; }
       .doc-intro { color: var(--muted); max-width: 68ch; font-size: 17px; margin: 0 0 8px; line-height: 1.6; }
       .doc-crumbs { margin: 0 0 18px; font-size: 13px; color: var(--muted); }
@@ -45,7 +45,7 @@
       .doc-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
       .doc-body ul, .doc-body ol { padding-left: 22px; margin: 0 0 14px; color: var(--muted); }
       .doc-body li { margin: 6px 0; line-height: 1.6; }
-      .doc-body code { font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: rgba(127,127,127,0.14); border-radius: 4px; padding: 0.12em 0.4em; }
+      .doc-body code { overflow-wrap: anywhere; font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: rgba(127,127,127,0.14); border-radius: 4px; padding: 0.12em 0.4em; }
       .doc-body pre { background: rgba(127,127,127,0.08); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
       .doc-body pre code { background: none; padding: 0; font-size: 0.86em; line-height: 1.55; }
       .doc-body blockquote { margin: 0 0 16px; padding: 4px 16px; border-left: 3px solid var(--border); color: var(--muted); }

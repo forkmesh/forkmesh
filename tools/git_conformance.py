@@ -1045,7 +1045,7 @@ def render_html(matrix: dict, published: dict) -> str:
     <script src="/site-footer.js?v=${{version}}" defer></script>
     <script src="/genie-spider.js?v=${{version}}" defer></script>
     <style>
-      .doc-wrap {{ max-width: 1180px; margin: 0 auto; padding: 42px 20px 80px; }}
+      .doc-wrap {{ overflow-wrap: break-word; max-width: 1180px; margin: 0 auto; padding: 42px 20px 80px; }}
       .doc-wrap h1 {{ font-size: clamp(32px, 5vw, 48px); margin: 0 0 12px; }}
       .intro {{ color: var(--muted); max-width: 78ch; font-size: 17px; line-height: 1.65; }}
       h2 {{ margin: 44px 0 14px; padding-top: 22px; border-top: 1px solid var(--border); }}
@@ -1071,7 +1071,7 @@ def render_html(matrix: dict, published: dict) -> str:
       dt {{ font-weight: 700; color: var(--foreground); }}
       dd {{ margin: 0; }}
       pre {{ padding: 16px; border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }}
-      @media (max-width: 640px) {{ dl {{ grid-template-columns: 1fr; }} .filters input, .filters select {{ min-width: 0; width: 100%; }} .filters label {{ flex: 1 1 100%; }} }}
+      @media (max-width: 640px) {{ dl {{ grid-template-columns: minmax(0, 1fr); }} .filters input, .filters select {{ min-width: 0; width: 100%; }} .filters label {{ flex: 1 1 100%; }} }}
     </style>
   </head>
   <body>

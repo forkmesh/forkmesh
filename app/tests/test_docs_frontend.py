@@ -5,7 +5,8 @@ import re
 from pathlib import Path
 
 
-PUBLIC = Path(__file__).resolve().parents[2] / "www" / "public"
+ROOT = Path(__file__).resolve().parents[2]
+PUBLIC = ROOT / "www" / "public"
 DOCS_PAGES = (PUBLIC / "docs" / "index.html",)
 CONTRIBUTION_GUIDE = PUBLIC / "docs" / "contributions" / "index.html"
 
@@ -52,15 +53,49 @@ def test_docs_pages_use_local_tailwind_and_page_local_styles():
         assert "<style>" in html
 
 
-def test_docs_pages_expose_platform_tabs_with_coming_soon_states():
+def test_docs_pages_link_the_platform_tabs():
     for page in DOCS_PAGES:
         html = _read(page)
 
         assert ">Desktop<" in html
-        assert ">Extension<" in html
-        assert ">Mobile<" in html
-        assert html.count("Coming soon") >= 2
-        assert 'aria-disabled="true"' in html
+        assert '<a class="docs-tab" href="/docs/browser-extension/"><span>Extension</span></a>' in html
+        assert '<a class="docs-tab" href="/docs/mobile/"><span>Mobile</span></a>' in html
+        assert "Coming soon" not in html
+        assert "coming soon" not in html
+        assert 'aria-disabled="true"' not in html
+        assert (ROOT / "docs" / "browser-extension.md").is_file()
+        assert (ROOT / "docs" / "mobile" / "README.md").is_file()
+
+
+def test_docs_top_nav_stays_put_on_a_phone_and_tabs_only_scroll_sideways():
+    for page in DOCS_PAGES:
+        html = _read(page)
+
+        tabs = re.search(r"\.docs-tabs \{(.*?)\}", html, flags=re.DOTALL)
+        assert tabs, page
+        assert "overflow-y: hidden" in tabs.group(1)
+        assert "touch-action: pan-x" in tabs.group(1)
+        phone = re.search(r"@media \(max-width: 767px\) \{(.*?)\n      \}", html, flags=re.DOTALL)
+        assert phone, page
+        assert "position: sticky" in phone.group(1)
+        assert ".docs-top-nav" in phone.group(1)
+
+
+def test_docs_grids_cannot_widen_the_page_on_a_phone():
+    pages = {
+        PUBLIC / "docs" / "index.html": ".route-row",
+        PUBLIC / "mirror.html": ".mirror-grid",
+    }
+    for page, selector in pages.items():
+        html = _read(page)
+        assert "grid-template-columns: 1fr;" not in html, page
+        assert selector in html, page
+    assert "dl { grid-template-columns: minmax(0, 1fr); }" in _read(
+        PUBLIC / "docs" / "git-compatibility" / "index.html"
+    )
+    assert ".doc-body table { display: block; overflow-x: auto; }" in _read(
+        PUBLIC / "docs" / "protocol" / "index.html"
+    )
 
 
 def test_docs_nav_spans_the_viewport_with_edge_pinned_sidebars():

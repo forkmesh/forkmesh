@@ -245,6 +245,13 @@ Crawlers and scrapers:
   the first `:placeholder` or `*` rule as dynamic, even an exact path. Add exact
   redirects above the first dynamic rule. `wrangler deploy --dry-run` does not
   catch this: only the real upload fails (`code: 100324`).
+- One unshrinkable child makes a phone lay out the whole page wider than the
+  screen and zoom out. In a grid write `minmax(0, 1fr)`, never `1fr`, and give a
+  wide table its own horizontal scroll, and let long paths and code break
+  (`overflow-wrap`). Check at 320 and 390 px wide.
+- `/docs/` pins the site header and the tab strip on phones (below 768 px), and
+  the strip scrolls sideways only. The strip's tabs are exactly its height, so
+  it has nothing to scroll vertically.
 - `www/deploy.sh` (`app/deploy.sh www`) deploys `wrangler.production.toml`;
   `www/wrangler.toml` must keep no name or route.
 - Files in `SHARED_FILES` (`api-client.js`, `site-header.js`,
