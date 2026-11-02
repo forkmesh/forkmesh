@@ -270,7 +270,7 @@ struct InboxTitleBar: View {
         var parts: [String] = [model.filter.menuTitle]
         if model.unreadOnly {
             parts.append("unread only")
-        } else if model.loaded || model.signedOut {
+        } else if model.loaded && !model.signedOut {
             parts.append(unread == 0 ? "all read" : "\(unread) unread")
         }
         return parts.joined(separator: " · ")
@@ -301,6 +301,7 @@ struct InboxTitleBar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .tint(fm.textPrimary)
             .sensoryFeedback(.selection, trigger: model.filter)
             .accessibilityLabel(Text("Inbox, \(subtitle)"))
             .accessibilityHint(Text("Choose what the inbox shows"))
