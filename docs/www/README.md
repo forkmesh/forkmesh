@@ -241,6 +241,10 @@ Crawlers and scrapers:
   editing a post.
 - A blog post whose hero image is not committed breaks the website build
   (`build_www_feeds` stats every post image for the RSS enclosure).
+- Cloudflare allows 100 dynamic `_redirects` rules and counts every rule after
+  the first `:placeholder` or `*` rule as dynamic, even an exact path. Add exact
+  redirects above the first dynamic rule. `wrangler deploy --dry-run` does not
+  catch this: only the real upload fails (`code: 100324`).
 - `www/deploy.sh` (`app/deploy.sh www`) deploys `wrangler.production.toml`;
   `www/wrangler.toml` must keep no name or route.
 - Files in `SHARED_FILES` (`api-client.js`, `site-header.js`,
