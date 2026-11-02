@@ -414,3 +414,108 @@ def test_desktop_docs_package_mirrors_the_web_library():
     block = re.search(r"QList<DocsArea> list = \{(.*?)\n\s*\};", source, re.DOTALL)
     areas = re.findall(r'\{QStringLiteral\("([^"]*)"\), QStringLiteral\("([^"]*)"\)', block.group(1))
     assert areas == [(area.key, area.label) for area in docs_site.AREAS if area.key != "product"]
+
+
+def test_rich_rendering_turns_data_blocks_into_views():
+    source = (
+        "```json\n{\"name\": \"node\", \"port\": 8080, \"tls\": true, \"owner\": null,\n"
+        " \"tags\": [\"a\", \"b\"], \"peers\": [{\"host\": \"n1\", \"up\": true}, {\"host\": \"n2\", \"up\": false}]}\n```\n\n"
+        "```json\n\"fragment\": {\"key\": \"<value>\"}\n```\n\n"
+        "```json\n{\"a\": [...]}\n```\n\n"
+        "```toml\n[calls]\nenabled = true\nport = 3479  # the UDP port\n# extra = 1\n```\n\n"
+        "```dotenv\nTOKEN=<secret>\n```\n"
+    )
+    plain = docs_markdown.render(source).html
+    assert "dp-figure" not in plain and plain.count("<pre>") == 5
+    html = docs_markdown.render(source, rich=True).html
+    assert html.count('class="dp-figure dp-data"') == 4
+    assert "Object · 6 fields" in html
+    assert '<span class="dp-v dp-v-num">8080</span>' in html
+    assert '<span class="dp-v dp-v-bool dp-v-true">true</span>' in html
+    assert '<span class="dp-v dp-v-null">null</span>' in html
+    assert '<ul class="dp-chips">' in html
+    assert '<td data-label="host"><span class="dp-v dp-v-str">n1</span></td>' in html
+    assert '<span class="dp-v dp-v-hole">&lt;value&gt;</span>' in html
+    assert '<pre><code class="language-json" data-language="json">{&quot;a&quot;: [...]}' not in html
+    assert '<pre><code class="language-json" data-language="json">{"a": [...]}\n</code></pre>' in html
+    assert '<p class="dp-conf-name"><code>[calls]</code></p>' in html
+    assert '<small class="dp-kv-note">the UDP port</small>' in html
+    assert '<small class="dp-kv-note">extra = 1</small>' in html
+    assert "1 section · 2 settings" in html
+    assert '<span class="dp-v dp-v-hole">&lt;secret&gt;</span>' in html
+    assert html.count('<details class="dp-data-source"><summary>Show ') == 4
+
+
+def test_rich_rendering_frames_diagrams_and_draws_flows():
+    html = docs_markdown.render(
+        "```text\n a ──► b\n │\n c\n```\n\n"
+        "```text\nplain\nlines\nonly\n```\n\n"
+        "```flow\ntitle: Request path\nClient -> DNS -> Core\nCore -> DNS\nProbe -> DNS\n```\n\n"
+        "```flow\nnot a flow\n```\n",
+        rich=True,
+    ).html
+    assert html.count('class="dp-figure dp-diagram"') == 1
+    assert "--dp-diagram-columns:8" in html
+    assert html.count('class="dp-figure dp-flow"') == 1
+    assert '<span class="dp-figure-summary">Request path</span>' in html
+    ranks = re.findall(r'<div class="dp-flow-rank">(.*?)</div>', html)
+    assert [re.findall(r">([^<]+)</span>", rank) for rank in ranks] == [["Client", "Probe"], ["DNS"], ["Core"]]
+    assert '<li data-from="2" data-to="1">Core → DNS</li>' in html
+    assert '<pre><code class="language-flow" data-language="flow">not a flow\n</code></pre>' in html
+
+
+def test_rich_tables_carry_labels_for_stacked_phone_cards():
+    source = "| Part | Does | Code |\n| --- | --- | --- |\n| **Node** | Holds `repos` | `desktop/` |\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n"
+    html = docs_markdown.render(source, rich=True).html
+    assert '<div class="table-wrap table-stack" data-columns="3"><table>' in html
+    assert '<td data-label="Does">Holds <code>repos</code></td>' in html
+    assert "<td>1</td>" in html
+    assert "table-stack" not in docs_markdown.render(source).html
+
+
+def test_pages_carry_the_page_map_suggestions_and_reader_script():
+    catalog = docs_site.load_catalog()
+    entry = catalog.by_url()["/docs/architecture/"]
+    page = docs_site.page_html(catalog, entry)
+    assert '<section class="dp-map"' in page and "data-map-hub" in page
+    assert "Pages this one links to" in page
+    assert page.count('class="dp-map-node"') >= docs_site.MAP_VISIBLE
+    assert 'class="dp-map-more"' in page
+    assert '<section class="dp-suggest" data-suggest hidden' in page
+    assert f'data-reader-index="{docs_site.READER_INDEX_URL}"' in page
+    assert 'src="/docs-explore.js?v=${version}"' in page
+    assert 'class="dp-figure dp-flow"' in page
+    lonely = docs_site.Entry(url="/docs/lonely/", title="Lonely", description="", area="guides")
+    assert docs_site.page_map_html(lonely, []) == ""
+
+
+def test_reader_index_lists_pages_links_and_keywords(tmp_path):
+    catalog = docs_site.load_catalog()
+    index = docs_site.reader_index(catalog)
+    pages = index["pages"]
+    assert {page["u"] for page in pages} == {
+        entry.url for entry in catalog.entries if entry.kind in ("doc", "product")
+    }
+    by_url = {page["u"]: page for page in pages}
+    node = by_url["/docs/operations/mirror-node/"]
+    assert {"mirror", "node"} <= {word for word, _ in node["k"]}
+    assert 0 < len(node["k"]) <= docs_site.KEYWORDS_PER_PAGE
+    assert all(0 < weight <= 1 for _, weight in node["k"])
+    linked = {pages[position]["u"] for position in node["o"]}
+    assert linked == {url for url in catalog.by_url()["/docs/operations/mirror-node/"].outgoing if url in by_url}
+    assert set(index["areas"]) == {area.key for area in docs_site.AREAS}
+
+
+def test_reader_script_keeps_reading_history_on_the_device():
+    script = (PUBLIC / "docs-explore.js").read_text(encoding="utf-8")
+    node = shutil.which("node")
+    if node:
+        subprocess.run([node, "--check", str(PUBLIC / "docs-explore.js")], check=True, timeout=30)
+    assert "forkmesh.docs.reader.v1" in script and "localStorage" in script
+    assert re.findall(r"fetch\(([^,)]+)", script) == ["source"]
+    assert 'getAttribute("data-reader-index")' in script
+    assert "Nothing is sent anywhere." in script
+    assert "Forget my reading" in script
+    css = (PUBLIC / "docs-page.css").read_text(encoding="utf-8")
+    for selector in (".dp-dock", ".dp-sheet", ".dp-peek", ".dp-figure", ".table-stack", ".dp-map-grid", ".dp-viewer"):
+        assert selector in css, selector

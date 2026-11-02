@@ -20,6 +20,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
+import docs_figures
+
 
 LinkRewriter = Callable[[str, bool], str]
 
@@ -63,8 +65,9 @@ class RenderedDocument:
 
 
 class _Renderer:
-    def __init__(self, link_rewriter: LinkRewriter | None) -> None:
+    def __init__(self, link_rewriter: LinkRewriter | None, rich: bool = False) -> None:
         self.link_rewriter = link_rewriter
+        self.rich = rich
         self.headings: list[Heading] = []
         self.links: list[str] = []
         self.slug_counts: dict[str, int] = {}
@@ -154,11 +157,12 @@ class _Renderer:
             i += 1
         code = html.escape("\n".join(body), quote=False)
         attributes = ""
-        if language:
-            safe = re.sub(r"[^a-zA-Z0-9_+#.-]", "", language)
-            if safe:
-                attributes = f' class="language-{safe}" data-language="{safe}"'
-        out.append(f"<pre><code{attributes}>{code}\n</code></pre>")
+        safe = re.sub(r"[^a-zA-Z0-9_+#.-]", "", language) if language else ""
+        if safe:
+            attributes = f' class="language-{safe}" data-language="{safe}"'
+        block = f"<pre><code{attributes}>{code}\n</code></pre>"
+        figure = docs_figures.code_figure(safe, "\n".join(body), block) if self.rich else None
+        out.append(figure or block)
         self.plain_parts.append("\n".join(body))
         return i
 
@@ -220,12 +224,22 @@ class _Renderer:
             i += 1
         width = len(header)
 
+        stack = self.rich and width >= 3
+        labels: list[str] = []
+        if stack:
+            recorded = len(self.links)
+            labels = [_plain_text(self.render_inline(value.strip())) for value in header]
+            del self.links[recorded:]
+
         def cell(tag: str, index: int, value: str) -> str:
             align = alignments[index] if index < len(alignments) else ""
             attribute = f' style="text-align:{align}"' if align else ""
+            if stack and tag == "td" and index < len(labels):
+                attribute += f' data-label="{html.escape(labels[index], quote=True)}"'
             return f"<{tag}{attribute}>{self.render_inline(value.strip())}</{tag}>"
 
-        parts = ["<div class=\"table-wrap\"><table>", "<thead><tr>"]
+        wrap = f'<div class="table-wrap table-stack" data-columns="{width}">' if stack else '<div class="table-wrap">'
+        parts = [wrap + "<table>", "<thead><tr>"]
         parts.extend(cell("th", index, value) for index, value in enumerate(header))
         parts.append("</tr></thead>")
         if rows:
@@ -785,8 +799,8 @@ def slugify(text: str) -> str:
     return _slugify(text)
 
 
-def render(text: str, *, link_rewriter: LinkRewriter | None = None) -> RenderedDocument:
-    renderer = _Renderer(link_rewriter)
+def render(text: str, *, link_rewriter: LinkRewriter | None = None, rich: bool = False) -> RenderedDocument:
+    renderer = _Renderer(link_rewriter, rich)
     body = renderer.render_document(text)
     title = renderer.title or ""
     description = renderer.first_paragraph or ""

@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime
 import html
 import json
+import math
 import posixpath
 import re
 from dataclasses import dataclass, field
@@ -46,6 +47,23 @@ LIBRARY_PLACEHOLDER = "<!-- forkmesh-docs-library -->"
 LIBRARY_NAV_PLACEHOLDER = "<!-- forkmesh-docs-library-nav -->"
 LIBRARY_TOC_PLACEHOLDER = "<!-- forkmesh-docs-library-toc -->"
 DESCRIPTION_LIMIT = 180
+READER_INDEX_URL = "/docs/reader-index.json"
+MAP_VISIBLE = 6
+KEYWORDS_PER_PAGE = 12
+WORD_RE = re.compile(r"[a-z][a-z0-9]+")
+STOPWORDS = frozenset(
+    """
+    about above after again against all also and any are because been before being below
+    between both but can cannot could did does doing down during each few for from further
+    had has have having her here hers him his how into its itself just more most must
+    not now off once only other our ours out over own same she should some such than that
+    the their theirs them then there these they this those through too under until upon
+    use used uses using very was way were what when where which while who whom why will
+    with within without would you your yours one two three first second new set get gets
+    see page pages forkmesh docs doc file files line lines run runs see need needs make
+    makes like still even every many much may might shows show keep keeps without per
+    """.split()
+)
 
 
 @dataclass(frozen=True)
@@ -331,6 +349,7 @@ def load_catalog(docs_root: Path = DOCS_ROOT) -> Catalog:
         rendered = docs_markdown.render(
             (docs_root / relative).read_text(encoding="utf-8"),
             link_rewriter=rewriter,
+            rich=True,
         )
         entry.title = rendered.title or relative.rsplit("/", 1)[-1][: -len(".md")]
         entry.description = _truncate(rendered.description)
@@ -625,6 +644,104 @@ def _card_list(title: str, entries: list[Entry], current: Entry) -> str:
     return "\n".join(parts)
 
 
+def _map_column(kind: str, title: str, entries: list[Entry]) -> str:
+    if not entries:
+        return (
+            f'<div class="dp-map-col dp-map-{kind} dp-map-empty"><h3>{_e(title)}</h3>'
+            '<p>No pages yet.</p></div>'
+        )
+    nodes = [
+        f'<a class="dp-map-node" href="{_e(entry.url)}" data-map-node>'
+        f'<strong>{_e(entry.title)}</strong><span>{_e(entry.description)}</span></a>'
+        for entry in entries
+    ]
+    visible, hidden = nodes[:MAP_VISIBLE], nodes[MAP_VISIBLE:]
+    more = (
+        f'<details class="dp-map-more"><summary>Show {len(hidden)} more</summary>{"".join(hidden)}</details>'
+        if hidden
+        else ""
+    )
+    return (
+        f'<div class="dp-map-col dp-map-{kind}"><h3>{_e(title)}'
+        f' <span class="dp-map-count">{len(entries)}</span></h3>{"".join(visible)}{more}</div>'
+    )
+
+
+def page_map_html(entry: Entry, references: list[Entry]) -> str:
+    incoming = [other for other in entry.backlinks if other is not entry]
+    outgoing = [other for other in references if other is not entry]
+    if not incoming and not outgoing:
+        return ""
+    area = AREA_BY_KEY[entry.area]
+    return (
+        '<section class="dp-map" aria-labelledby="dp-page-map">'
+        '<h2 id="dp-page-map">Page map</h2>'
+        '<p class="dp-map-lead">How this page connects to the rest of the library.</p>'
+        '<div class="dp-map-grid" data-map>'
+        + _map_column("in", "Pages that link here", incoming)
+        + '<div class="dp-map-hub" data-map-hub><span>You are here</span>'
+        f"<strong>{_e(entry.title)}</strong><em>{_e(area.label)}</em></div>"
+        + _map_column("out", "Pages this one links to", outgoing)
+        + "</div></section>"
+    )
+
+
+def _words(text: str) -> list[str]:
+    return [word for word in WORD_RE.findall(text.lower()) if word not in STOPWORDS and len(word) > 2]
+
+
+def reader_index(catalog: Catalog) -> dict:
+    pages = [entry for entry in catalog.entries if entry.kind in ("doc", "product")]
+    position = {entry.url: index for index, entry in enumerate(pages)}
+    counts: list[dict[str, float]] = []
+    frequency: dict[str, int] = {}
+    for entry in pages:
+        weights: dict[str, float] = {}
+        for word in _words(entry.title):
+            weights[word] = weights.get(word, 0.0) + 4.0
+        for heading in entry.headings:
+            for word in _words(heading.text):
+                weights[word] = weights.get(word, 0.0) + 2.0
+        for word in _words(entry.description + " " + entry.plain_text):
+            weights[word] = weights.get(word, 0.0) + 1.0
+        counts.append(weights)
+        for word in weights:
+            frequency[word] = frequency.get(word, 0) + 1
+    total = len(pages) or 1
+    records = []
+    for entry, weights in zip(pages, counts):
+        scored = sorted(
+            (
+                count / (count + 4.0) * math.log(total / frequency[word]),
+                word,
+            )
+            for word, count in weights.items()
+            if 3 <= frequency[word] < total * 0.7
+        )[::-1]
+        peak = scored[0][0] if scored else 1.0
+        title_words = list(dict.fromkeys(word for word in _words(entry.title) if word in frequency))[:4]
+        keywords = [[word, 1.0] for word in title_words]
+        keywords += [
+            [word, round(score / peak, 2)] for score, word in scored if word not in title_words
+        ][: KEYWORDS_PER_PAGE - len(keywords)]
+        records.append(
+            {
+                "u": entry.url,
+                "t": entry.title,
+                "d": entry.description,
+                "a": entry.area,
+                "m": reading_minutes(entry.words),
+                "o": sorted(position[url] for url in entry.outgoing if url in position),
+                "k": keywords,
+            }
+        )
+    return {
+        "version": 1,
+        "areas": {area.key: area.label for area in AREAS},
+        "pages": records,
+    }
+
+
 def breadcrumbs_html(entry: Entry) -> str:
     area = AREA_BY_KEY[entry.area]
     crumbs = [f'<a href="/docs/">Docs</a>', f'<a href="{LIBRARY_URL}#library-{area.key}">{_e(area.label)}</a>']
@@ -679,8 +796,7 @@ def page_html(catalog: Catalog, entry: Entry) -> str:
         library=library_section,
         pager="".join(pager),
         related=_card_list(f"More in {area.label}", siblings, entry),
-        references=_card_list("Referenced from this page", references, entry),
-        backlinks=_card_list("Pages that link here", entry.backlinks, entry),
+        page_map=page_map_html(entry, references),
         outline=outline_html(entry),
     )
 
@@ -698,8 +814,7 @@ def render_shell(
     library: str = "",
     pager: str = "",
     related: str = "",
-    references: str = "",
-    backlinks: str = "",
+    page_map: str = "",
     outline: str = "",
     wide: bool = False,
 ) -> str:
@@ -720,8 +835,7 @@ def render_shell(
         library=library,
         pager=pager,
         related=related,
-        references=references,
-        backlinks=backlinks,
+        page_map=page_map,
         outline=outline,
     )
 
@@ -947,9 +1061,10 @@ PAGE_TEMPLATE = """<!doctype html>
     <link rel="stylesheet" href="/docs-page.css?v=${{version}}" />
     <script src="/site-header.js?v=${{version}}" defer></script>
     <script src="/docs-page.js?v=${{version}}" defer></script>
+    <script src="/docs-explore.js?v=${{version}}" defer></script>
     <script src="/genie-spider.js?v=${{version}}" defer></script>
   </head>
-  <body class="dp-body">
+  <body class="dp-body" data-reader-index="{reader_index}">
     <div data-forkmesh-header="simple"></div>
     <header class="dp-toolbar">
       <div class="dp-toolbar-inner">
@@ -999,9 +1114,9 @@ PAGE_TEMPLATE = """<!doctype html>
         </div>
         {library}
         {pager}
+        <section class="dp-suggest" data-suggest hidden aria-labelledby="dp-suggest-title"></section>
         {related}
-        {references}
-        {backlinks}
+        {page_map}
         <section class="dp-feedback">
           <p data-feedback-status>Was this page helpful?</p>
           <div>
@@ -1043,7 +1158,7 @@ PAGE_TEMPLATE = """<!doctype html>
     </div>
   </body>
 </html>
-""".replace("{library_url}", LIBRARY_URL)
+""".replace("{library_url}", LIBRARY_URL).replace("{reader_index}", READER_INDEX_URL)
 
 
 # ---------------------------------------------------------------- staging
@@ -1086,6 +1201,13 @@ def stage_docs(destination: Path, docs_root: Path = DOCS_ROOT) -> Catalog:
             raise RuntimeError(f"generated page {url} would overwrite {target}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(render(catalog), encoding="utf-8")
+    reader_target = destination / READER_INDEX_URL.lstrip("/")
+    if reader_target.exists():
+        raise RuntimeError(f"the reader index would overwrite {reader_target}")
+    reader_target.write_text(
+        json.dumps(reader_index(catalog), ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
     index_path = docs_destination / "index.html"
     index_path.write_text(
         inject_library(index_path.read_text(encoding="utf-8"), catalog),
