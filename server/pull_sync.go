@@ -92,7 +92,10 @@ func syncedPullHead(ctx context.Context, gitDir string, values map[string]string
 	if synced == "" {
 		return pullHead{}, false
 	}
-	if !gitObjectIDPattern.MatchString(synced) || synced != strings.ToLower(strings.TrimSpace(values["headOid"])) ||
+	if synced != strings.ToLower(strings.TrimSpace(values["headOid"])) {
+		return pullHead{}, false
+	}
+	if !gitObjectIDPattern.MatchString(synced) ||
 		gitValue(ctx, gitDir, "rev-parse", "--verify", "--quiet", "--end-of-options", synced+"^{commit}") != synced {
 		return pullHead{}, true
 	}

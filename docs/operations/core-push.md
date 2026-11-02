@@ -259,6 +259,12 @@ branch commit, not a replay of the signed series":
 - the merge trial, checks and merge box use `headOid` as before;
 - the merge executor merges that commit instead of replaying the series
   (`syncedPullHead`; an unresolvable synced head fails with `stale_head`);
+- when the two differ, a later revision was submitted as a patch after the
+  branch was synced, so the record is not synced: the web shows the ledger's
+  `changes.patch` and the executor replays that payload. The executor used to
+  treat the mismatch as an unresolvable synced head and answered `stale_head`
+  ("New commits were pushed…") on every attempt
+  (`TestMergeExecutorMergesARevisionSentAfterTheBranchWasSynced`);
 - anything else that reads `headOid` or `refs/pr/<n>/head` follows too.
 
 **Re-queued work.** When the node acknowledges the inbox rows, the relay looks
