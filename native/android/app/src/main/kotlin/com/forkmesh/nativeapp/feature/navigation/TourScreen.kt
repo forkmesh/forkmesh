@@ -2,6 +2,9 @@ package com.forkmesh.nativeapp.feature.navigation
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
+import com.forkmesh.nativeapp.ui.kit.FmRowDivider
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -294,42 +297,47 @@ private fun TourChooser(
         Row(Modifier.fillMaxWidth().padding(top = FmSpace.x1), horizontalArrangement = Arrangement.End) {
             FmIconButton("close", "Close the tour", onPressed = onSkip, color = c.textSecondary, iconSize = 20.dp)
         }
-        TourChooserHero()
         Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-            Text("Take the tour", style = Fm.text.titleLarge, color = c.textPrimary, modifier = Modifier.semantics { heading() })
-            Text("Pick how deep to go. Each stop shows the real screen, and you can try it right there.", style = Fm.text.bodyLarge, color = c.textSecondary)
+            Text("Take the tour", style = Fm.text.displaySmall, color = c.textPrimary, modifier = Modifier.semantics { heading() })
+            Text("Pick how deep to go. Each stop shows the real screen.", style = Fm.text.bodyLarge, color = c.textSecondary)
         }
         if (finished != null) {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(c.bgRaised).padding(FmSpace.x3)
-                    .semantics(mergeDescendants = true) {}.testTag("tour-finished"),
-                horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FmIcon("verified", size = 28.dp, tint = c.success)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("${finished.title} done", style = Fm.text.titleSmall, color = c.textPrimary)
-                    Text("Keep going with the next track, or close the tour and explore.", style = Fm.text.bodySmall, color = c.textSecondary)
+            TourGroup {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)
+                        .semantics(mergeDescendants = true) {}.testTag("tour-finished"),
+                    horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("${finished.title} done", style = Fm.text.titleSmall, color = c.textPrimary)
+                        Text("Keep going, or close the tour and explore.", style = Fm.text.bodyMedium, color = c.textSecondary)
+                    }
+                    FmIcon("check", size = 18.dp, tint = c.success)
                 }
             }
         } else if (resume != null) {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(c.accentSubtle)
-                    .clickable(role = Role.Button) { onResume(resume.first, resume.second) }
-                    .padding(FmSpace.x3).testTag("tour-resume"),
-                horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FmIcon("play_circle", size = 28.dp, tint = c.accent)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Pick up where you left off", style = Fm.text.titleSmall, color = c.textPrimary)
-                    Text("${resume.first.track.title}, stop ${resume.second + 1} of ${resume.third}", style = Fm.text.bodySmall, color = c.textSecondary)
+            TourGroup {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 60.dp)
+                        .clickable(role = Role.Button) { onResume(resume.first, resume.second) }
+                        .padding(horizontal = FmSpace.x4, vertical = FmSpace.x2).testTag("tour-resume"),
+                    horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Pick up where you left off", style = Fm.text.titleSmall, color = c.accent)
+                        Text("${resume.first.track.title} · stop ${resume.second + 1} of ${resume.third}", style = Fm.text.bodyMedium, color = c.textSecondary)
+                    }
+                    FmIcon("chevron_right", size = 18.dp, tint = c.textDisabled)
                 }
-                FmIcon("chevron_right", size = 18.dp, tint = c.textTertiary)
             }
         }
-        TourTrack.entries.forEach { option ->
-            TourTrackCard(option, ShellTour.stops(option).size, option in done, suggested == option) { onPick(option) }
+        TourGroup {
+            TourTrack.entries.forEachIndexed { index, option ->
+                if (index > 0) FmRowDivider(indent = FmSpace.x4)
+                TourTrackRow(option, ShellTour.stops(option).size, option in done, suggested == option) { onPick(option) }
+            }
         }
         Text(
             if (finished == null) "Not now" else "Done for now",
@@ -339,75 +347,44 @@ private fun TourChooser(
             modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
                 .clickable(role = Role.Button, onClick = onSkip).padding(vertical = FmSpace.x3).testTag("tour-skip"),
         )
-        Text(
-            "Tour stays on Home, so you can come back for the next track.",
-            style = Fm.text.bodySmall,
-            color = c.textTertiary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 
 @Composable
-private fun TourChooserHero() {
-    val c = Fm.colors
-    Row(Modifier.clearAndSetSemantics {}, horizontalArrangement = Arrangement.spacedBy(FmSpace.x3), verticalAlignment = Alignment.CenterVertically) {
-        TourSparkleButton(stars = 6, size = 52.dp)
-        listOf("grid_view", "auto_awesome", "inbox", "library_books").forEach { icon ->
-            Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(c.bgRaised), contentAlignment = Alignment.Center) {
-                FmIcon(icon, size = 20.dp, tint = c.textSecondary)
-            }
-        }
-    }
+private fun TourGroup(content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Fm.colors.bgRaised)) { content() }
 }
 
 @Composable
-private fun TourTrackCard(track: TourTrack, count: Int, done: Boolean, suggested: Boolean, onPick: () -> Unit) {
+private fun TourTrackRow(track: TourTrack, count: Int, done: Boolean, suggested: Boolean, onPick: () -> Unit) {
     val c = Fm.colors
-    val shape = RoundedCornerShape(22.dp)
-    val meta = "$count stops, about ${TourCatalog.minutes(count)} min"
-    Column(
-        Modifier.fillMaxWidth().clip(shape).background(c.bgRaised)
-            .border(BorderStroke(if (suggested) 1.5.dp else 0.5.dp, if (suggested) c.accent.copy(alpha = 0.6f) else c.border), shape)
+    val meta = "$count stops · about ${TourCatalog.minutes(count)} min"
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 60.dp)
             .clickable(onClick = onPick)
             .clearAndSetSemantics {
                 role = Role.Button
                 contentDescription = "${track.title}. $meta. ${track.summary}${if (done) " Done." else ""}"
             }
-            .padding(FmSpace.x4)
+            .padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)
             .testTag("tour-track-${track.raw}"),
-        verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
+        horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x3), verticalAlignment = Alignment.Top) {
-            Box(Modifier.size(40.dp).background(c.accent, CircleShape), contentAlignment = Alignment.Center) {
-                FmIcon(track.icon, size = 20.dp, tint = c.onAccent)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
-                    Text(track.title, style = Fm.text.titleMedium, color = c.textPrimary)
-                    if (suggested) {
-                        Text(
-                            if (track == TourTrack.ESSENTIALS) "Start here" else "Up next",
-                            style = Fm.text.labelSmall,
-                            color = c.accent,
-                            modifier = Modifier.background(c.accentSubtle, CircleShape).padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
-                }
-                Text(meta, style = Fm.text.bodySmall, color = c.textSecondary)
-            }
-            if (done) FmIcon("verified", size = 20.dp, tint = c.success) else FmIcon("chevron_right", size = 16.dp, tint = c.textTertiary)
-        }
-        Text(track.summary, style = Fm.text.bodyMedium, color = c.textSecondary)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (track != TourTrack.ESSENTIALS) FmIcon("add", size = 12.dp, tint = c.textTertiary)
-            TourCatalog.symbols(track).forEach { icon ->
-                Box(Modifier.size(24.dp).clip(RoundedCornerShape(7.dp)).background(c.accentSubtle), contentAlignment = Alignment.Center) {
-                    FmIcon(icon, size = 13.dp, tint = c.accent)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
+                Text(track.title, style = Fm.text.titleSmall, color = c.textPrimary)
+                if (suggested) {
+                    Text(
+                        if (track == TourTrack.ESSENTIALS) "Start here" else "Up next",
+                        style = Fm.text.bodySmall.copy(fontWeight = FmType.emphasis),
+                        color = c.accent,
+                    )
                 }
             }
+            Text(meta, style = Fm.text.bodyMedium.copy(fontFeatureSettings = "tnum"), color = c.textSecondary)
         }
+        if (done) FmIcon("check", size = 18.dp, tint = c.success) else FmIcon("chevron_right", size = 18.dp, tint = c.textDisabled)
     }
 }
 
@@ -440,16 +417,16 @@ private fun TourPlayerHeader(track: TourTrack, index: Int, count: Int, onTracks:
                     true
                 }
             },
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             for (at in 0 until count) {
-                val height by animateDpAsState(if (at == index) 6.dp else 4.dp, label = "tour-segment")
+                val fill by animateColorAsState(if (at <= index) c.textPrimary else c.border, label = "tour-segment")
                 Box(
                     Modifier.weight(1f).height(16.dp).clickable(onClickLabel = "Go to stop ${at + 1}") { onSelect(at) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Box(Modifier.fillMaxWidth().height(height).background(if (at <= index) c.accent else c.border, CircleShape))
+                    Box(Modifier.fillMaxWidth().height(3.dp).background(fill, CircleShape))
                 }
             }
         }
@@ -468,29 +445,16 @@ private fun TourStopPage(stop: TourStop, active: Boolean) {
         }
         TourHint(stop.tryIt, active)
         Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
-                FmIcon(stop.icon, size = 20.dp, tint = c.accent)
-                Text(stop.title, style = Fm.text.titleLarge, color = c.textPrimary, modifier = Modifier.semantics { heading() })
-            }
+            Text(stop.title, style = Fm.text.displaySmall, color = c.textPrimary, modifier = Modifier.semantics { heading() })
             Text(stop.message, style = Fm.text.bodyLarge, color = c.textSecondary)
         }
-        Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-            stop.tips.forEach { tip ->
-                Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.Top) {
-                    FmIcon("check_circle", size = 15.dp, tint = c.accent, modifier = Modifier.padding(top = 2.dp))
-                    Text(tip, style = Fm.text.bodyMedium, color = c.textSecondary)
-                }
+        if (stop.tips.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                stop.tips.forEach { tip -> Text(tip, style = Fm.text.bodyMedium, color = c.textTertiary) }
             }
         }
         if (stop.fromMarket) {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.bgRaised).padding(FmSpace.x3).semantics(mergeDescendants = true) {},
-                horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FmIcon("shopping_bag", size = 18.dp, tint = c.accent)
-                Text("Not installed yet. Add it from the Market to use it.", style = Fm.text.bodySmall, color = c.textSecondary)
-            }
+            Text("Not installed yet. Add it from the Market to use it.", style = Fm.text.bodyMedium, color = c.textSecondary)
         }
     }
 }
@@ -501,13 +465,12 @@ private fun TourHint(text: String, active: Boolean) {
     val beat = rememberTourPulse(active)
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Row(
-            Modifier.background(c.accentSubtle, CircleShape).padding(horizontal = FmSpace.x3, vertical = 6.dp)
-                .clearAndSetSemantics { contentDescription = "Try it: $text" },
-            horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
+            Modifier.clearAndSetSemantics { contentDescription = "Try it: $text" },
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FmIcon("touch_app", size = 16.dp, tint = c.accent, modifier = Modifier.graphicsLayer { alpha = 0.55f + 0.45f * beat })
-            Text(text, style = Fm.text.labelMedium, color = c.accent)
+            FmIcon("touch_app", size = 14.dp, tint = c.textSecondary, modifier = Modifier.graphicsLayer { alpha = 0.55f + 0.45f * beat })
+            Text(text, style = Fm.text.bodyMedium, color = c.textSecondary)
         }
     }
 }

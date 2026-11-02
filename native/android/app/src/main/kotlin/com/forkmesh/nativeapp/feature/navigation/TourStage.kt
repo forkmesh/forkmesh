@@ -328,11 +328,11 @@ internal fun TourTitle(text: String, trailing: String? = null) {
 @Composable
 internal fun TourSectionLabel(text: String) {
     Text(
-        text.uppercase(),
-        color = Fm.colors.textTertiary,
-        fontSize = 11.sp,
+        text,
+        color = Fm.colors.textSecondary,
+        fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.6.sp,
+        letterSpacing = 0.sp,
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp),
     )
 }
