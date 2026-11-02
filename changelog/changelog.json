@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-11-02", "area": "Desktop", "text": "Saving agent tool statistics no longer briefly freezes the window while agents are working."},
+  {"date": "2026-11-02", "area": "Agents", "text": "With Diagnostics on, the agent token charts under the phone's camera are now little tanks: tokens rain in as grains of liquid that pile up as they flow, drains when agents go quiet, and sloshes around when you tilt or shake the phone."},
   {"date": "2026-11-01", "area": "Android", "text": "An inbox item no longer shows a second back link under its round glass back button."},
   {"date": "2026-11-01", "area": "iPhone", "text": "The back link on an inbox item is now a round glass button that stays in view as you scroll."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "The docs fit a phone screen without shifting sideways, the top navigation stays in place as you scroll, and the Extension and Mobile tabs now open their guides."},
