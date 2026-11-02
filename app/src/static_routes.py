@@ -153,6 +153,7 @@ WWW_SITE_ROUTES = frozenset({
     "pricing",
     "privacy",
     "security-report",
+    "sitemap.xml",
     "status",
     "terms",
 }) | PLUGIN_WWW_SITE_ROUTES

@@ -214,7 +214,9 @@ Crawlers and scrapers:
 - `sitemap.xml` is written by `build_www_sitemap` in
   `app/tools/build_site_assets.py`: each staged `.html` page at its canonical
   URL, without `404.html`, `ios-install.html`, `noindex` pages, off-site
-  canonicals and redirected paths. Blog posts carry `<lastmod>`.
+  canonicals and redirected paths. Blog posts carry `<lastmod>`. Only
+  forkmesh.com has one: `app.` and `world.forkmesh.com/sitemap.xml` 308 to it
+  (`WWW_SITE_ROUTES`) instead of answering 404 to crawlers that guess the path.
 - `stamp_canonical_links` gives every staged page without one a
   `<link rel="canonical">` on forkmesh.com, so the `www.` copy is not indexed
   as a second site.
