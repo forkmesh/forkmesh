@@ -543,6 +543,12 @@ def test_dashboard_profile_contribution_renderer_uses_one_native_request():
     assert "md:hidden" in account_js
     assert "Loading verified contribution activity" in account_js
     assert "Contribution activity is unavailable" in account_js
+    # Forge-recorded web activity is named in the coverage note rather than
+    # silently mixed in, and the "missing collaboration" label narrows to
+    # what the forge cannot see.
+    assert "function profileContributionForgeNote" in account_js
+    assert "profileContributionForgeNote(coverage?.forge)" in account_js
+    assert "collaboration events outside hosted repositories" in account_js
 
     for stale in (
         "loadProfileContributionHistories",
@@ -2125,7 +2131,10 @@ def test_dashboard_pull_timeline_includes_commits_and_live_branch_agents():
     assert "pullCommitPhrase(commits.length)" in refresh
     # Only signed-in members can read organization sessions, so a signed-out
     # visitor never starts the watch at all.
-    assert 'if (kind === "pulls" && state.session?.sessionToken) {' in dashboard_js
+    finish = dashboard_js[dashboard_js.index("async function finishRepoPullLiveState("):]
+    finish = finish[:finish.index("\n  }\n")]
+    assert "if (state.session?.sessionToken) {" in finish
+    assert "scheduleRepoPullActivityRefresh(repo, number," in finish
 
 
 def test_dashboard_pull_commits_follow_the_live_head_branch():

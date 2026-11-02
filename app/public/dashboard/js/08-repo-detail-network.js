@@ -365,6 +365,7 @@
        </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    keepRepoFirstViewPull(detail);
     const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
@@ -3837,12 +3838,6 @@
         return;
       }
 
-      const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
-      if (reviewPromptToggle) {
-        togglePullReviewPrompt(reviewPromptToggle);
-        return;
-      }
-
       const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
       if (mergeStatusButton) {
         showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
@@ -3855,6 +3850,7 @@
       if (recordTabButton) {
         const article = recordTabButton.closest("[data-repo-record-detail]");
         if (article) {
+          event.preventDefault();
           setRepoRecordSection(recordTabButton.dataset.repoRecordTab || "", article);
           // Sections are addressable: put the open tab in the address bar so
           // the link a reviewer copies from "Files changed" reopens there for
@@ -4648,6 +4644,9 @@
     state.nodeNameAvailability.timer = window.setTimeout(checkNodeNameAvailability, 250);
   });
   $("[data-profile-rename-password]")?.addEventListener("input", updateRenameButton);
+  $("[data-profile-page-name-case]")?.addEventListener("input", (event) => {
+    event.target.dataset.edited = "1";
+  });
   $("[data-profile-delete-confirm]")?.addEventListener("input", () => {
     const button = $("[data-profile-delete-account]");
     if (!button) return;

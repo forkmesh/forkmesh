@@ -1353,15 +1353,22 @@ def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
     (folder / "pull.md").write_text(
         "---\nnumber: 43\nstatus: open\nauthor: bob-key\n---\n",
         encoding="utf-8")
-    review = "---\ntype: review\nauthor: %s\nstate: %s\nsig: s\n---\n\nstate: approved\n"
+    review = ("---\ntype: review\nauthor: %s\nauthorName: carol\nstate: %s\n"
+              "sig: s\n---\n\nstate: approved\n")
     (folder / "0001-review.md").write_text(
         review % ("carol-key", "changes_requested"), encoding="utf-8")
     (folder / "0002-comment.md").write_text(
-        "---\ntype: comment\nauthor: dave-key\n---\n\nHi\n", encoding="utf-8")
+        "---\ntype: comment\nauthor: dave-key\nauthorName: dave\n---\n\nHi\n",
+        encoding="utf-8")
     (folder / "0003-review.md").write_text(
         review % ("carol-key", "approved"), encoding="utf-8")
+    (folder / "0003-comment.md").write_text(
+        "---\ntype: comment\nauthor: stray-key\n---\n\nHi\n", encoding="utf-8")
     (folder / "0004-review.md").write_text(
         "---\ntype: review\nauthor: \nstate: approved\n---\n", encoding="utf-8")
+    (folder / "0005-comment.md").write_text(
+        "---\ntype: review\nauthor: eve-key\nauthorName: eve\nstate: approved\n"
+        "sig: s\n---\n\nHi\n", encoding="utf-8")
     run(["git", "add", ".forkmesh/pulls/43"], source)
     run(["git", "commit", "-m", "pull #43 reviews"], source)
     run(["git", "push", "origin", "forkmesh/pulls"], source)
@@ -1390,6 +1397,8 @@ def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
         ["carol-key", "changes_requested"], ["carol-key", "approved"]]
     assert set(listing["pullReviews"]) == {"43"}
     assert "pullReviews" not in folder_listing
+    assert listing["pullPeople"] == {"43": ["eve", "carol", "dave"]}
+    assert "pullPeople" not in folder_listing
 
 def _commit_at(source, when, message):
     env = dict(os.environ, GIT_AUTHOR_DATE="@%d +0000" % when,
@@ -4443,6 +4452,73 @@ def _commit_with_file(git_dir, parent, path, content):
     git("update-index", "--add", "--cacheinfo", "100644,%s,%s" % (blob, path))
     tree = git("write-tree")
     return git("commit-tree", tree, "-p", parent, "-m", "change " + path)
+
+
+def _commit_as(git_dir, parent, name, email, message="change"):
+    env = dict(os.environ, GIT_AUTHOR_NAME=name, GIT_AUTHOR_EMAIL=email,
+               GIT_COMMITTER_NAME=name, GIT_COMMITTER_EMAIL=email)
+    tree = subprocess.run(["git", "--git-dir", str(git_dir), "rev-parse", parent + "^{tree}"],
+                          check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(["git", "--git-dir", str(git_dir), "commit-tree", tree, "-p", parent,
+                           "-m", message], env=env, check=True, capture_output=True,
+                          text=True).stdout.strip()
+
+
+def test_stats_contributors_match_shortlog_and_extend_after_a_push(
+    application, monkeypatch,
+):
+    app, commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    tip = commit
+    for name, email in [("Bea", "bea@example.com"), ("Al", "al@example.com"),
+                        ("Bea", "bea@example.com"), ("", "anon@example.com")]:
+        tip = _commit_as(repository.git_dir, tip, name or "x", email)
+    walks = []
+    original = gateway._git_lines
+
+    def recorded(git_dir, arguments, **kwargs):
+        arguments = list(arguments)
+        walks.append([value for value in arguments if not value.startswith("--")])
+        return original(git_dir, arguments, **kwargs)
+
+    monkeypatch.setattr(gateway, "_git_lines", recorded)
+
+    def shortlog(target):
+        rows = subprocess.run(
+            ["git", "--git-dir", str(repository.git_dir), "shortlog", "-nse", target],
+            check=True, capture_output=True, text=True).stdout.splitlines()
+        return [(int(count), name.rsplit(" <", 1)[0])
+                for count, name in (row.strip().split("\t", 1) for row in rows)]
+
+    def stats(target):
+        subprocess.run(["git", "--git-dir", str(repository.git_dir), "update-ref",
+                        "refs/heads/stats-walk", target], check=True)
+        return repository.stats({"ref": "stats-walk"})
+
+    payload = stats(tip)
+    assert [(item["commits"], item["name"]) for item in payload["contributors"]] \
+        == shortlog(tip)
+    assert walks == [["log", tip]]
+    bea = next(item for item in payload["contributors"] if item["name"] == "Bea")
+    assert len(bea["activityWeeks"]) == 52 and bea["activityWeeks"][-1] == 2
+
+    pushed = _commit_as(repository.git_dir, tip, "Al", "al@example.com")
+    pushed = _commit_as(repository.git_dir, pushed, "Al", "al@example.com")
+    repository.invalidate_memory_generation()
+    payload = stats(pushed)
+    assert walks[-1] == ["log", pushed, "^" + tip]
+    assert [(item["commits"], item["name"]) for item in payload["contributors"]] \
+        == shortlog(pushed)
+    al = next(item for item in payload["contributors"] if item["name"] == "Al")
+    assert al["commits"] == 3 and al["activityWeeks"][-1] == 3
+
+    rewritten = _commit_as(repository.git_dir, tip, "Cy", "cy@example.com")
+    payload = stats(rewritten)
+    assert walks[-1] == ["log", rewritten]
+    assert [(item["commits"], item["name"]) for item in payload["contributors"]] \
+        == shortlog(rewritten)
+    assert stats(rewritten) == payload
+    assert len(walks) == 3
 
 
 def test_tree_analysis_is_reused_when_only_forkmesh_metadata_moved(

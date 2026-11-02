@@ -754,6 +754,22 @@ def test_issue_list_rows_show_recent_commenters_with_imported_pictures(monkeypat
     assert faces.count("<img") == 1
 
 
+def test_pull_list_rows_stack_everyone_latest_first_author_last():
+    from types import SimpleNamespace
+    assert repo_views.pull_people(["carol", "Dave", "ann"], "ann") == ["carol", "Dave", "ann"]
+    assert repo_views.pull_people(None, "ann") == ["ann"]
+    assert repo_views.pull_people(["carol", "", 5, "dave"], "") == ["carol", "5", "dave"]
+    rows = [{"number": 4, "title": "Fix", "state": "open", "ts": "", "author": "ann",
+             "people": ["carol", "dave", "ann"]}]
+    bundle = SimpleNamespace(owner="o", repo="r", view="pulls", number=0, ref="main",
+                             model={"rows": rows})
+    html = repo_views._render(bundle)
+    faces = html.split("data-repo-pull-row-people", 1)[1].split("</span><a ", 1)[0]
+    assert 'title="Latest first: carol, dave, ann"' in faces
+    assert faces.count("h-5 w-5") == 3
+    assert [int(z) for z in re.findall(r"z-index:(\d+)", faces)] == [3, 2, 1]
+
+
 def test_the_server_list_is_newest_created_first_with_forum_lists_on(monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset())
