@@ -323,6 +323,10 @@ an allowlisted author's Checks tab offers *Stop running automatically*. The
 Actions tab shows a runner card (running / queued / awaiting-approval counts),
 a pull request chip on pull request runs, Approve and Reject on a waiting run,
 and on a fork without workflows a pointer to the parent repository.
+Approve and *Always run for* ask first in the dashboard's in-page dialog
+(`confirmAccountAction`), not `window.confirm()`, which returns false without
+showing anything where native dialogs are suppressed (embedded webviews,
+automated browsers) and left the button doing nothing.
 
 Required checks are separate: `.forkmesh/required-checks.json` needs signed
 `forkmesh-check-v1` attestations, which instance runners do not produce yet, so

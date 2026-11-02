@@ -874,9 +874,7 @@
         cancel: `Stop run ${runId}`, rerun: `Re-run of ${run.workflow}`,
       }[action];
       // Approval executes code nobody has run here before; make that a
-      // deliberate second step rather than a stray click. The dialog is
-      // in-page: the native confirm() returns false unseen where dialogs
-      // are suppressed (embedded webviews, automated browsers).
+      // deliberate second step rather than a stray click.
       if (action === "approve") {
         void confirmAccountAction({
           title: `Approve run ${runId}?`,

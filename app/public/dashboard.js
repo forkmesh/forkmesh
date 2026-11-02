@@ -19153,9 +19153,7 @@
         cancel: `Stop run ${runId}`, rerun: `Re-run of ${run.workflow}`,
       }[action];
       // Approval executes code nobody has run here before; make that a
-      // deliberate second step rather than a stray click. The dialog is
-      // in-page: the native confirm() returns false unseen where dialogs
-      // are suppressed (embedded webviews, automated browsers).
+      // deliberate second step rather than a stray click.
       if (action === "approve") {
         void confirmAccountAction({
           title: `Approve run ${runId}?`,
@@ -29394,9 +29392,6 @@
   async function handleRepoPullCheckDecision(repo, action, value, button) {
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls" || !value) return;
-    // An in-page dialog, not the native confirm(): embedded webviews and browsers
-    // that suppress native dialogs make confirm() return false without
-    // showing anything, which left "Approve and run" silently doing nothing.
     if (action === "approve" && !await confirmAccountAction({
       title: "Approve and run checks?",
       body: `Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`,

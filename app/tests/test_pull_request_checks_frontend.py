@@ -40,9 +40,6 @@ def test_decisions_post_the_reviewed_head_or_the_author():
 
 
 def test_approve_and_run_never_depends_on_a_native_confirm_dialog():
-    # Webviews and browsers that suppress native dialogs make window.confirm()
-    # return false without showing anything: "Approve and run" then sent no
-    # request at all. Both approve buttons ask with the in-page dialog.
     handler = function(CONTENT, "handleRepoPullCheckDecision")
     assert "window.confirm" not in handler
     assert handler.index("confirmAccountAction(") < handler.index("orgAgentRequest(")

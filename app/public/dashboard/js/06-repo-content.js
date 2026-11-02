@@ -10013,9 +10013,6 @@
   async function handleRepoPullCheckDecision(repo, action, value, button) {
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls" || !value) return;
-    // An in-page dialog, not the native confirm(): embedded webviews and browsers
-    // that suppress native dialogs make confirm() return false without
-    // showing anything, which left "Approve and run" silently doing nothing.
     if (action === "approve" && !await confirmAccountAction({
       title: "Approve and run checks?",
       body: `Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`,
