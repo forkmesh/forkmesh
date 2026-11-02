@@ -26,7 +26,7 @@ CHATGPT_URL = "https://chatgpt.com/"
 CHATGPT_URL_LIMIT = 14000
 CHATGPT_PROMPT_LIMIT = 8000
 FILE_LINKS_MAX = 50
-FILES_COLLAPSE = 5
+FILES_SHOWN = 3
 PATH_LIMIT = 300
 URL_SAFE = "-_.!~*'()"
 
@@ -208,56 +208,49 @@ def chatgpt_link(prompt, url, button):
              "prompt is copied to paste instead" if shortened else
              "Open ChatGPT in a new tab with this prompt")
     return ('<a href="%s" target="_blank" rel="noopener noreferrer"%s data-repo-pull-review-chatgpt '
-            'aria-label="%s" title="%s" class="%s">%s<span>Review with ChatGPT</span></a>' % (
+            'aria-label="%s" title="%s" class="%s">%s</a>' % (
                 esc(CHATGPT_URL + "?q=" + quote(text)), copy, label,
-                title, button, icon("bot", "h-3 w-3")))
+                title, button, icon("bot", "h-3.5 w-3.5")))
 
 
 def render(values, number, template=""):
     text = prompt_text(values, template)
     prompt = esc(text)
-    files = values.get("files") or []
+    files = (values.get("files") or [])[:FILES_SHOWN]
     more = values.get("fileCount", 0) - len(files)
-    toggle = len(files) + (1 if more > 0 else 0) > FILES_COLLAPSE
-    box_id = "repo-pull-review-prompt-%d" % int(number)
     raw = values.get("rawDiffUrl") or ""
     link = "font-medium text-[var(--dashboard-link)] hover:underline"
-    button = ("inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border "
-              "px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary")
+    button = ("inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md "
+              "text-muted-foreground hover:bg-secondary hover:text-foreground")
     diff_links = (
-        '\n            <span class="flex items-center gap-3"><a href="%s" '
-        'data-repo-pull-diff-link class="%s">Diff</a><a href="%s" data-repo-pull-patch-link '
-        'class="%s">Patch</a></span>' % (
+        '<a href="%s" data-repo-pull-diff-link class="%s">Diff</a><a href="%s" '
+        'data-repo-pull-patch-link class="%s">Patch</a>' % (
             esc(raw), link, esc(values["patchUrl"]), link)) if raw else ""
-    toggle_button = (
-        '<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" '
-        'aria-controls="%s" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md '
-        'px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary '
-        'hover:text-foreground">%s<span data-repo-pull-review-prompt-toggle-label>Show all'
-        '</span></button>' % (box_id, icon("chevron-down", "h-3 w-3"))) if toggle else ""
     rows = "".join(
         '<li class="truncate"><a href="%s" title="%s" class="text-[var(--dashboard-link)] '
-        'hover:underline">%s</a></li>' % (esc(href), esc(path), esc(path)) if href else
-        '<li class="truncate" title="%s">%s</li>' % (esc(path), esc(path))
+        'hover:underline">%s</a></li>' % (esc(href), esc(path), esc(path.rsplit("/", 1)[-1] or path))
+        if href else
+        '<li class="truncate" title="%s">%s</li>' % (esc(path), esc(path.rsplit("/", 1)[-1] or path))
         for path, href in files)
     if more > 0:
-        rows += '<li class="text-muted-foreground">and %d more</li>' % more
+        rows += ('<li><a href="%s" data-repo-record-tab="files" data-repo-pull-files-more '
+                 'class="font-sans text-muted-foreground hover:text-foreground hover:underline">'
+                 '+%d more %s</a></li>' % (esc(values["filesUrl"]), more,
+                                          "file" if more == 1 else "files"))
     listing = (
-        '\n            <ul id="%s" data-repo-pull-review-files class="%s min-w-0 overflow-hidden '
-        'rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 '
-        'font-mono text-[11px] leading-5 text-foreground">%s</ul>' % (
-            box_id, "max-h-28" if toggle else "max-h-none", rows)) if rows else ""
+        '\n            <ul data-repo-pull-review-files class="min-w-0 font-mono text-[11px] '
+        'leading-5 text-foreground">%s</ul>' % rows) if rows else ""
     return (
         '<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 '
-        'gap-1.5 text-[12px]">%s%s\n'
-        '            <span class="flex flex-wrap items-center gap-1"><button type="button" '
-        'data-dashboard-copy="%s" aria-label="Copy the review prompt for this pull request" '
-        'title="Copy a review prompt for your coding agent" class="copy-button %s">%s%s<span '
-        'class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span>'
-        '</button>%s<a href="%s" target="_blank" rel="noopener noreferrer" '
-        'data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this '
-        'pull request" class="%s">%sSummarize in ChatGPT</a>%s</span>\n'
+        'gap-1 text-[12px]">\n'
+        '            <span class="flex min-w-0 items-center gap-3">%s<span class="ml-auto flex '
+        'items-center gap-0.5"><button type="button" data-dashboard-copy="%s" '
+        'aria-label="Copy the review prompt for this pull request" title="Copy a review prompt '
+        'for your coding agent" class="copy-button %s">%s%s</button>%s<a href="%s" '
+        'target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary '
+        'aria-label="Summarize in ChatGPT" title="Open ChatGPT with a request to summarize this '
+        'pull request" class="%s">%s</a></span></span>%s\n'
         '          </div>' % (
-            diff_links, listing, prompt, button, icon("copy", "copy-icon h-3 w-3"),
-            icon("check", "copy-check h-3 w-3"), chatgpt_link(text, values["url"], button),
-            esc(chatgpt_url(values)), button, icon("external-link", "h-3 w-3"), toggle_button))
+            diff_links, prompt, button, icon("copy", "copy-icon h-3.5 w-3.5"),
+            icon("check", "copy-check h-3.5 w-3.5"), chatgpt_link(text, values["url"], button),
+            esc(chatgpt_url(values)), button, icon("external-link", "h-3.5 w-3.5"), listing))

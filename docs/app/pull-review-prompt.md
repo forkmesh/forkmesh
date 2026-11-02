@@ -15,19 +15,21 @@ instead.
 Until October 2026 it was a box between the merge line and the tabs. It
 moved to the sidebar, with compact `h-6` buttons and 11px text, so the
 header goes straight from the title to the conversation; the issue AI
-prompt moved to the sidebar at the same time.
+prompt moved to the sidebar at the same time. In November 2026 it shrank
+again: three file names and a link to the rest, and icon-only buttons on the
+Diff and Patch line, so it takes about five lines of the sidebar.
 
 ## What the page shows
 
 - **Diff** (`<pull>.diff`) and **Patch** (`<pull>.patch`) links when the
-  page has a diff to show.
-- The changed files, one per row, monospaced, collapsed to about five rows
-  (`max-h-28`). **Show all** expands the list and becomes **Show less**; the
-  button carries `aria-expanded` and `aria-controls`. At most 50 files are
-  listed, then "and N more".
-- A row of buttons: **Copy review prompt**, which turns into **Copied**;
-  **Review with ChatGPT**; **Summarize in ChatGPT**; and **Show all** when
-  the file list is longer than five rows.
+  page has a diff to show, and on the same line three icon buttons (each with
+  an `aria-label` and a `title`): copy the review prompt (the icon turns into
+  a check), **Review with ChatGPT** and **Summarize in ChatGPT**.
+- The first three changed files (`FILES_SHOWN`), one per row, monospaced,
+  by file name only; the full path is the row's `title`. Then
+  "+N more files", a link to `<pull>/files` that is also a record tab
+  (`data-repo-record-tab="files"`), so on the dashboard it opens
+  **Files changed** in place.
 - Each file links to the file at the pull request's head branch,
   `<repo>/blob/<path>?ref=<head>` (the file page's own address). A deleted
   file, or every file of a pull request whose head is on another node
@@ -248,8 +250,8 @@ markup and Tailwind utilities as the dashboard's `renderPullReviewPrompt`.
 `app/tests/host/test_pull_review_prompt.py`: the default prompt's security
 clauses and reply rules, template parsing and caps, hidden characters,
 placeholders filled once, escaping, the diff and text addresses, the file
-links (deleted files and other-node heads unlinked, the 50-file cap and the
-toggle), the ChatGPT summary link (no review rules in it, the length limit),
+links (deleted files and other-node heads unlinked, the 50-file cap, three
+names shown and "+N more files"), the ChatGPT summary link (no review rules in it, the length limit),
 the Review with ChatGPT link (the whole prompt, the cut to 8000 characters with
 the address kept and the full prompt copied, lone surrogates), the first view
 (open, closed, merged, branch-backed, per origin, signed out), and parity

@@ -10837,7 +10837,7 @@
   const PULL_SUMMARY_URL_LIMIT = 14000;
   const PULL_REVIEW_CHATGPT_MAX = 8000;
   const PULL_REVIEW_FILE_LINKS_MAX = 50;
-  const PULL_REVIEW_FILES_COLLAPSE = 5;
+  const PULL_REVIEW_FILES_SHOWN = 3;
   const PULL_REVIEW_PATH_LIMIT = 300;
   const PULL_REVIEW_LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
@@ -10984,48 +10984,34 @@ Your reply
     const title = chat.shortened
       ? "The prompt is too long for a link: ChatGPT opens with its start, and the full prompt is copied to paste instead"
       : "Open ChatGPT in a new tab with this prompt";
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="${button}"><i data-lucide="bot" class="h-3 w-3"></i><span>Review with ChatGPT</span></a>`;
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="${button}"><i data-lucide="bot" class="h-3.5 w-3.5"></i></a>`;
   }
 
   function renderPullReviewPrompt(fields, number, template = "") {
     const text = pullReviewPromptText(fields, template);
     const prompt = escapeHtml(text);
-    const files = fields.files || [];
+    const files = (fields.files || []).slice(0, PULL_REVIEW_FILES_SHOWN);
     const more = (fields.fileCount || 0) - files.length;
-    const toggle = files.length + (more > 0 ? 1 : 0) > PULL_REVIEW_FILES_COLLAPSE;
-    const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
     const link = "font-medium text-[var(--dashboard-link)] hover:underline";
-    const button = "inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary";
+    const button = "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground";
     const diffLinks = raw
-      ? `
-            <span class="flex items-center gap-3"><a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a></span>`
+      ? `<a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a>`
       : "";
-    const toggleButton = toggle
-      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="chevron-down" class="h-3 w-3"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
-      : "";
-    let rows = files.map(([path, href]) => (href
-      ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${escapeHtml(path)}</a></li>`
-      : `<li class="truncate" title="${escapeHtml(path)}">${escapeHtml(path)}</li>`)).join("");
-    if (more > 0) rows += `<li class="text-muted-foreground">and ${more} more</li>`;
+    let rows = files.map(([path, href]) => {
+      const name = escapeHtml(path.split("/").pop() || path);
+      return href
+        ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${name}</a></li>`
+        : `<li class="truncate" title="${escapeHtml(path)}">${name}</li>`;
+    }).join("");
+    if (more > 0) rows += `<li><a href="${escapeHtml(fields.filesUrl)}" data-repo-record-tab="files" data-repo-pull-files-more class="font-sans text-muted-foreground hover:text-foreground hover:underline">+${more} more ${more === 1 ? "file" : "files"}</a></li>`;
     const listing = rows
       ? `
-            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
+            <ul data-repo-pull-review-files class="min-w-0 font-mono text-[11px] leading-5 text-foreground">${rows}</ul>`
       : "";
-    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1.5 text-[12px]">${diffLinks}${listing}
-            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button>${renderPullReviewChatGptLink(text, fields.url, button)}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3 w-3"></i>Summarize in ChatGPT</a>${toggleButton}</span>
+    return `<div data-repo-pull-review-prompt aria-label="Diff and files" class="grid min-w-0 gap-1 text-[12px]">
+            <span class="flex min-w-0 items-center gap-3">${diffLinks}<span class="ml-auto flex items-center gap-0.5"><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button ${button}"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>${renderPullReviewChatGptLink(text, fields.url, button)}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary aria-label="Summarize in ChatGPT" title="Open ChatGPT with a request to summarize this pull request" class="${button}"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a></span></span>${listing}
           </div>`;
-  }
-
-  function togglePullReviewPrompt(button) {
-    const box = document.getElementById(button.getAttribute("aria-controls") || "");
-    if (!box) return;
-    const expand = button.getAttribute("aria-expanded") !== "true";
-    button.setAttribute("aria-expanded", expand ? "true" : "false");
-    box.classList.toggle("max-h-28", !expand);
-    box.classList.toggle("max-h-none", expand);
-    const label = button.querySelector("[data-repo-pull-review-prompt-toggle-label]");
-    if (label) label.textContent = expand ? "Show less" : "Show all";
   }
 
   function renderRepoIssueDetail(repo, number, parsed) {
