@@ -305,11 +305,11 @@ def test_history_and_documents_pages_date_every_entry(tmp_path):
         assert f'data-sort-value="{entry.updated}"' in documents, entry.url
     assert 'aria-sort="descending"' in documents
     assert '<a class="active" href="/docs/history/">Updates</a>' in documents
-    assert 'aria-current="page">All documents</a>' in documents
+    assert re.search(r'aria-current="page"><svg[^>]*>.*?</svg><span>All documents</span></a>', documents)
 
     history = (destination / "docs/history/index.html").read_text(encoding="utf-8")
     assert "Recent documentation updates" in history
-    assert 'aria-current="page">Recent updates</a>' in history
+    assert re.search(r'aria-current="page"><svg[^>]*>.*?</svg><span>Recent updates</span></a>', history)
     if catalog.history.available:
         newest = catalog.history.commits[0]
         assert newest.parent
