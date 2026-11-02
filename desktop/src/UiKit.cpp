@@ -821,6 +821,13 @@ QString cellDisplayText(const QString &text, int maxChars)
     return text.left(keep) + QChar(0x2026);
 }
 
+QString elideRightToWidth(const QString &text, const QFontMetrics &metrics, int width)
+{
+    const int narrowest = qMax(1, metrics.averageCharWidth() / 3);
+    return metrics.elidedText(cellDisplayText(text, qMax(0, width) / narrowest + 1),
+                              Qt::ElideRight, width);
+}
+
 QPixmap shownPixels(const QWidget *widget)
 {
     if (!widget || !widget->isVisible() || widget->size().isEmpty())

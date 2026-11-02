@@ -61,6 +61,7 @@
 #include <QUuid>
 
 #include "SectionViewport.h"
+#include "UiKit.h"
 
 #include <algorithm>
 #include <cmath>
@@ -86,6 +87,16 @@ public:
         QString text;
         bool mine = false;
         QPixmap avatar;
+
+        bool operator==(const Line &other) const
+        {
+            return conversation == other.conversation && where == other.where &&
+                   who == other.who && when == other.when && text == other.text &&
+                   mine == other.mine &&
+                   (avatar.cacheKey() == other.avatar.cacheKey() ||
+                    avatar.toImage() == other.avatar.toImage());
+        }
+        bool operator!=(const Line &other) const { return !(*this == other); }
     };
 
     static constexpr int kAvatarPx = 16;
@@ -110,6 +121,8 @@ public:
 
     void setLines(const QList<Line> &lines)
     {
+        if (lines == m_lines)
+            return;
         m_lines = lines;
         m_rowsKey.clear();
         rebuild();
@@ -200,7 +213,7 @@ protected:
                 if (part.isEmpty())
                     return;
                 const QString shown =
-                    partMetrics.elidedText(part, Qt::ElideRight, maxWidth);
+                    kit::elideRightToWidth(part, partMetrics, maxWidth);
                 painter.setFont(partFont);
                 painter.setPen(color);
                 painter.drawText(QRect(x, y, qMax(0, area.right() - x + 1), rowH),
@@ -216,7 +229,7 @@ protected:
             painter.setPen(body);
             painter.drawText(QRect(textX, y, room, rowH),
                              Qt::AlignLeft | Qt::AlignVCenter,
-                             metrics.elidedText(line.text, Qt::ElideRight, room));
+                             kit::elideRightToWidth(line.text, metrics, room));
             y += rowH + kRowGap;
         }
     }
@@ -240,7 +253,8 @@ private:
             rows << QStringList{line.where, line.who, line.when}
                             .join(QLatin1Char(' '))
                             .toHtmlEscaped() +
-                        QStringLiteral(": ") + line.text.toHtmlEscaped();
+                        QStringLiteral(": ") +
+                        kit::cellDisplayText(line.text).toHtmlEscaped();
         const QString html = rows.join(QStringLiteral("<br>"));
         if (text() != html)
             setText(html);
