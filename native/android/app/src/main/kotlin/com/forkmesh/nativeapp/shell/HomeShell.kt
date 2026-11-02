@@ -949,7 +949,7 @@ private fun AvatarWithDot(name: String, avatarPng: String, connection: RelayConn
                 .border(2.dp, ring, RoundedCornerShape(corner + 3.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            FmAvatar(name, size, avatarPng = avatarPng, corner = corner)
+            FmAvatar(name, size + 2.dp, avatarPng = avatarPng, corner = corner + 1.dp)
             if (statusEmoji.isNotEmpty()) {
                 Text(
                     statusEmoji,

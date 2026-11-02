@@ -282,7 +282,8 @@ in sections, with counts and activity:
 - The new agent button and the avatar (`AvatarWithDot`, rounded square). The
   connection status is a 2 pt stroke around the square (green online, amber
   away or connecting, red when diagnostics need attention, grey offline); the
-  status emoji sits off the bottom-left corner.
+  picture fills the ring with no gap, and the avatar stays still when the
+  phone tilts. The status emoji sits off the bottom-left corner.
 - No background: on a tab root (`HomeShell.floatsChrome`, empty path) the list
   scrolls under it; pushed pages start below it so Back is never covered. The
   offline strip appears only after the relay has been down
