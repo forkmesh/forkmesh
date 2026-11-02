@@ -181,6 +181,87 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return state.crmView.contacts.find((contact) => contact.id === id) || null;
   }
 
+  const CRM_GROUP_PEOPLE_KEY = "forkmesh-crm-group-people";
+  const crmPersonOpen = new Set();
+
+  function crmGroupingPeople() {
+    try { return localStorage.getItem(CRM_GROUP_PEOPLE_KEY) !== "0"; } catch { return state.crmView.groupPeople !== false; }
+  }
+
+  function setCrmGroupPeople(on) {
+    state.crmView.groupPeople = Boolean(on);
+    try { localStorage.setItem(CRM_GROUP_PEOPLE_KEY, on ? "1" : "0"); } catch {}
+    renderCrmContacts();
+  }
+
+  function crmPersonGroups(contacts = state.crmView.contacts) {
+    const parent = new Map(); const holder = new Map();
+    const root = (id) => {
+      let item = id;
+      while (parent.get(item) !== item) { parent.set(item, parent.get(parent.get(item))); item = parent.get(item); }
+      return item;
+    };
+    for (const contact of contacts || []) {
+      parent.set(contact.id, contact.id);
+      for (const key of contact.personKeys || []) {
+        if (holder.has(key)) parent.set(root(contact.id), root(holder.get(key)));
+        else holder.set(key, contact.id);
+      }
+    }
+    const groups = new Map();
+    for (const contact of contacts || []) {
+      const id = root(contact.id);
+      if (!groups.has(id)) groups.set(id, []);
+      groups.get(id).push(contact);
+    }
+    const people = new Map();
+    for (const [id, members] of groups) for (const contact of members) people.set(contact.id, { id, members });
+    return people;
+  }
+
+  function crmPersonOf(contact, people) {
+    return people?.get(contact.id) || { id: contact.id, members: [contact] };
+  }
+
+  function crmPersonKeysLabel(members) {
+    const keys = [...new Set(members.flatMap((contact) => contact.personKeys || []))].sort();
+    return keys.map((key) => key.startsWith("x:") ? `@${key.slice(2)} on X` : key.slice(6)).join(", ");
+  }
+
+  function crmPersonLastContacted(contact, people) {
+    return Math.max(0, ...crmPersonOf(contact, people).members.map((one) => Number(one.lastContactedAt || 0)));
+  }
+
+  function crmOnePerPerson(contacts, people) {
+    const leads = []; const rest = new Map();
+    for (const contact of contacts) {
+      const id = crmPersonOf(contact, people).id;
+      if (rest.has(id)) rest.get(id).push(contact);
+      else { rest.set(id, []); leads.push(contact); }
+    }
+    return leads.flatMap((lead) => {
+      const id = crmPersonOf(lead, people).id;
+      return crmPersonOpen.has(id) ? [lead, ...rest.get(id)] : [lead];
+    });
+  }
+
+  function crmPersonChip(contact, people, lead) {
+    const person = crmPersonOf(contact, people);
+    const others = person.members.filter((one) => one.id !== contact.id);
+    if (!others.length) return "";
+    const names = others.slice(0, 8).map(crmContactLabel).join(", ") + (others.length > 8 ? `, and ${others.length - 8} more` : "");
+    const why = `Same person by ${crmPersonKeysLabel(person.members)}: also ${names}.`;
+    if (!lead) return `<span title="${escapeHtml(why)}" class="rounded-full border border-border px-1.5 text-[10px] text-muted-foreground">same person</span>`;
+    const open = crmPersonOpen.has(person.id);
+    return `<button type="button" data-crm-person-open="${escapeHtml(person.id)}" aria-expanded="${open}" title="${escapeHtml(`${why} ${open ? "Click to fold them back under this row." : "Click to show them."}`)}" class="rounded-full border border-border px-1.5 text-[10px] text-primary hover:bg-secondary">${open ? "−" : "+"}${others.length} same person</button>`;
+  }
+
+  function toggleCrmPerson(id) {
+    if (crmPersonOpen.has(id)) crmPersonOpen.delete(id);
+    else crmPersonOpen.add(id);
+    renderCrmContacts();
+  }
+
   function crmStatusClass(status) {
     return ["failed", "reject", "bounce", "soft bounce", "suspension"].includes(status)
       ? "text-destructive" : ["delivery", "delivered", "open", "click"].includes(status)
@@ -314,16 +395,16 @@ window.ForkMeshDashboard.registerPage("crm", ({
     renderCrmContacts();
   }
 
-  function crmFocusMatches(contact, focus) {
+  function crmFocusMatches(contact, focus, people) {
     if (focus === "waiting") return crmWaitingOnUs(contact);
     if (focus === "my-queue") return crmInMyQueue(contact);
     if (focus === "duplicates") return Boolean(state.crmView.duplicates?.order.has(contact.id));
     if (focus === "paying") return Boolean(contact.account?.paid?.active);
     if (focus === "evidence-ahead") return Boolean(contact.account?.suggestedStage) && contact.account.suggestedStage !== contact.stage;
     if (focus === "next-step") return Boolean(String(contact.nextStep || "").trim());
-    if (focus === "uncontacted") return !Number(contact.lastContactedAt);
+    if (focus === "uncontacted") return !crmPersonLastContacted(contact, people);
     if (focus === "quiet") {
-      const days = crmDaysSince(contact.lastContactedAt);
+      const days = crmDaysSince(crmPersonLastContacted(contact, people));
       return days !== null && days >= CRM_QUIET_DAYS && !CRM_CLOSED_STAGES.has(String(contact.stage || ""));
     }
     return true;
@@ -690,11 +771,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
       linked.get(message.contactId).push(message);
     }
     const ranked = [];
+    const people = crmPersonGroups(state.crmView.contacts || []);
     for (const contact of state.crmView.contacts || []) {
-      if (state.crmView.nextSkipped.has(contact.id) || !crmNextChannels(contact).length) continue;
-      const last = Number(contact.lastContactedAt || 0);
+      const person = crmPersonOf(contact, people);
+      if (person.members.some((one) => state.crmView.nextSkipped.has(one.id)) || !crmNextChannels(contact).length) continue;
+      const last = crmPersonLastContacted(contact, people);
       let heardAt = 0; let wroteAt = 0; let heardSubject = "";
-      for (const message of linked.get(contact.id) || []) {
+      for (const message of person.members.flatMap((one) => linked.get(one.id) || [])) {
         const at = Number(message.sentAt || message.createdAt || 0);
         if (message.direction === "inbound") {
           if (at > heardAt) { heardAt = at; heardSubject = String(message.subject || ""); }
@@ -702,10 +785,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
           wroteAt = Math.max(wroteAt, at);
         }
       }
-      const stage = String(contact.stage || "").toLowerCase();
       const step = String(contact.nextStep || "").trim();
       const waiting = heardAt >= now - CRM_NEXT_REPLY_DAYS * day && heardAt > wroteAt && heardAt >= last;
-      const closed = CRM_NEXT_WON_STAGES.has(stage) || CRM_NEXT_ENDED_STAGES.has(stage);
+      const closed = person.members.some((one) => {
+        const stage = String(one.stage || "").toLowerCase();
+        return CRM_NEXT_WON_STAGES.has(stage) || CRM_NEXT_ENDED_STAGES.has(stage);
+      });
       let key; let reason;
       if (mode === "reach") {
         if (waiting || closed || last > 0) continue;
@@ -735,12 +820,15 @@ window.ForkMeshDashboard.registerPage("crm", ({
         continue;
       }
       if (mode !== "reach" && step) reason += ` Next step on the record: ${step}.`;
-      ranked.push({ contact, reason, key });
+      if (person.members.length > 1) reason += ` Same person as ${person.members.length - 1} other record${person.members.length === 2 ? "" : "s"} (${crmPersonKeysLabel(person.members)}), so they come up once.`;
+      ranked.push({ contact, reason, key, person: person.id });
     }
     ranked.sort((a, b) => (crmKeyBefore(a.key, b.key) ? -1 : crmKeyBefore(b.key, a.key) ? 1 : 0));
-    const best = ranked[0];
-    return { contact: best?.contact || null, reason: best?.reason || "", due: ranked.length,
-      upcoming: ranked.slice(1, 1 + CRM_NEXT_UPCOMING).map((entry) => entry.contact), ranked: ranked.map((entry) => entry.contact) };
+    const seen = new Set();
+    const once = ranked.filter((entry) => !seen.has(entry.person) && seen.add(entry.person));
+    const best = once[0];
+    return { contact: best?.contact || null, reason: best?.reason || "", due: once.length,
+      upcoming: once.slice(1, 1 + CRM_NEXT_UPCOMING).map((entry) => entry.contact), ranked: once.map((entry) => entry.contact) };
   }
 
   function crmMastodonPostedAt(contact) {
@@ -3049,8 +3137,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   // Everything under a contact's name: linked mail, then hidden profiles.
-  function crmNameMeta(contact, columns) {
-    const meta = crmEmailChips(contact) + crmProfileTiles(contact, columns) + crmDeckChip(contact) + crmAccountChip(contact);
+  function crmNameMeta(contact, columns, person = "") {
+    const meta = person + crmEmailChips(contact) + crmProfileTiles(contact, columns) + crmDeckChip(contact) + crmAccountChip(contact);
     return meta ? `<div class="mt-1 flex flex-wrap items-center gap-1">${meta}</div>` : "";
   }
 
@@ -3603,6 +3691,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
       `shared with every member of ${contact.organization || state.crmView.organization}`,
     ].filter(Boolean).join(" · ");
     const activity = crmContactActivity(contact);
+    const person = crmPersonOf(contact, crmPersonGroups());
+    const related = person.members.filter((one) => one.id !== contact.id);
+    const relatedHtml = related.length ? `
+        <section data-crm-detail-person>
+          <h3 class="crm-detail-heading">Same person</h3>
+          <p class="mb-2 text-xs text-muted-foreground">${escapeHtml(`${related.length} other record${related.length === 1 ? " shares" : "s share"} ${crmPersonKeysLabel(person.members)}. Contact them once: a contact on any of these records counts for all of them.`)}</p>
+          <ul class="grid gap-1">${related.map((one) => `<li class="flex min-w-0 items-baseline gap-2"><button type="button" data-crm-person-detail="${escapeHtml(one.id)}" class="crm-link truncate text-left text-sm">${escapeHtml(crmContactLabel(one))}</button><span class="truncate text-xs text-muted-foreground">${escapeHtml([one.company, titleCaseSlug(one.stage || "lead"), Number(one.lastContactedAt) ? `contacted ${relativeTimeLabel(one.lastContactedAt)}` : ""].filter(Boolean).join(" · "))}</span></li>`).join("")}</ul>
+        </section>` : "";
     const read = accounts.length
       ? `Read from ${accounts.map((account) => account.label).join(", ")} by this browser when the card opens; nothing is stored.`
       : "This record names no Mastodon, Bluesky or GitHub account to read.";
@@ -3612,7 +3708,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
           <h3 class="crm-detail-heading">Details</h3>
           <div class="grid gap-3 sm:grid-cols-2">${fields}</div>
           <p class="mt-2 text-xs text-muted-foreground">${escapeHtml(provenance)}.</p>
-        </section>
+        </section>${relatedHtml}
         <section>
           <h3 class="crm-detail-heading">Add a note</h3>
           <textarea data-crm-note-text rows="3" maxlength="4000" aria-label="Note" placeholder="What happened, what was agreed, what comes next" class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-control text-foreground focus:border-primary focus:outline-none"></textarea>
@@ -3898,12 +3994,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const source = shared
       ? (state.crmView.sharedCache[shared]?.contacts || []) : state.crmView.contacts;
     const pipelines = crmPipelineIds();
+    const people = shared ? null : crmPersonGroups();
     const matched = source.filter((contact) => {
       if (!shared && !(view && crmContactOnTab(contact, view, pipelines))) return false;
       if (flow && contact.flow !== flow) return false;
       if (stage && contact.stage !== stage) return false;
       if (owner && !crmOwnerMatches(contact, owner)) return false;
-      if (focus && !crmFocusMatches(contact, focus)) return false;
+      if (focus && !crmFocusMatches(contact, focus, people)) return false;
       return crmContactMatchesQuery(contact, query);
     });
     if (focus === "duplicates") {
@@ -3913,7 +4010,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       matched.sort((a, b) => Number(crmWaitingOnUs(b)) - Number(crmWaitingOnUs(a))
         || Number(a.lastContactedAt || 0) - Number(b.lastContactedAt || 0));
     }
-    return crmSortContacts(matched);
+    const sorted = crmSortContacts(matched);
+    return people && focus !== "duplicates" && crmGroupingPeople() ? crmOnePerPerson(sorted, people) : sorted;
   }
 
   function renderCrmTabs() {
@@ -4045,6 +4143,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const contacts = crmFilteredContacts();
     const shared = Boolean(crmActiveShared());
     const people = crmPeople.open && !shared;
+    const persons = shared ? null : crmPersonGroups();
+    const grouped = crmGroupingPeople() && String($(`[data-crm-focus]`)?.value || "") !== "duplicates";
+    const leads = new Set(); const placed = new Set();
+    for (const contact of contacts) {
+      const id = crmPersonOf(contact, persons).id;
+      if (!placed.has(id)) { placed.add(id); leads.add(contact.id); }
+    }
+    const personChip = (contact) => shared ? "" : crmPersonChip(contact, persons, grouped && leads.has(contact.id));
     const shownIds = new Set(contacts.map((contact) => contact.id));
     crmSelection.shown = contacts.map((contact) => contact.id);
     crmSelection.ids = new Set([...crmSelection.ids].filter((id) => !shared && shownIds.has(id)));
@@ -4064,6 +4170,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       button.setAttribute("aria-pressed", String(button.dataset.crmLayoutOption === state.crmView.layout)));
     const peopleButton = $(`[data-crm-people-toggle]`);
     if (peopleButton) { peopleButton.setAttribute("aria-pressed", String(people)); peopleButton.disabled = shared; }
+    const groupButton = $(`[data-crm-group-people]`);
+    if (groupButton) { groupButton.setAttribute("aria-pressed", String(crmGroupingPeople())); groupButton.disabled = shared; }
     for (const [selector, hidden] of [["[data-crm-board]", !board || people], ["[data-crm-table]", board || people], ["[data-crm-contact-cards]", board || people], ["[data-crm-people]", !people]]) {
       const node = $(selector); if (node) node.hidden = hidden;
     }
@@ -4096,7 +4204,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // profile whose column is hidden; a shared sheet is read-only, so it gets
     // neither chips nor row actions.
     const cell = (contact, column) => column.field === "name"
-      ? `<div class="flex items-start gap-2">${photo(contact)}<div class="min-w-0 flex-1">${name(contact, column)}${crmNameMeta(contact, columns)}</div></div>`
+      ? `<div class="flex items-start gap-2">${photo(contact)}<div class="min-w-0 flex-1">${name(contact, column)}${crmNameMeta(contact, columns, personChip(contact))}</div></div>`
       : crmContactControl(contact, column);
     const actions = (contact, compact) => shared ? "" : compact
       ? `<div class="mt-3 flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
@@ -4115,7 +4223,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         <div class="flex items-start justify-between gap-3">
           <div class="flex min-w-0 items-start gap-2">${photo(contact)}<div class="min-w-0">${columns.some((column) => column.field === "name")
             ? `<span class="block text-xs text-muted-foreground">Name</span>${name(contact, crmBaseColumn("name"))}`
-            : `<span class="block truncate text-sm font-semibold text-foreground">${escapeHtml(crmContactLabel(contact))}</span>`}${crmNameMeta(contact, columns)}</div></div>
+            : `<span class="block truncate text-sm font-semibold text-foreground">${escapeHtml(crmContactLabel(contact))}</span>`}${crmNameMeta(contact, columns, personChip(contact))}</div></div>
           <span class="crm-stage crm-tone-${crmStageTone(contact)}">${escapeHtml(titleCaseSlug(contact.stage || "lead"))}</span>
         </div>
         <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -7064,6 +7172,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function handleCrmParityClick(event) {
+    const person = event.target.closest("[data-crm-person-open]");
+    if (person) { toggleCrmPerson(person.dataset.crmPersonOpen); return; }
+    const related = event.target.closest("[data-crm-person-detail]");
+    if (related) { openCrmContactDetail(related.dataset.crmPersonDetail); return; }
     const now = event.target.closest("[data-crm-contacted-now]");
     if (now) { void crmMarkContacted([now.dataset.crmContactedNow], Date.now()); return; }
     const prompt = event.target.closest("[data-crm-contact-prompt]");
@@ -7115,6 +7227,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (cell) crmSortBy(cell.dataset.crmColumn);
     });
     $(`[data-crm-people-toggle]`)?.addEventListener("click", () => setCrmPeople(!crmPeople.open));
+    $(`[data-crm-group-people]`)?.addEventListener("click", () => setCrmGroupPeople(!crmGroupingPeople()));
     $(`[data-crm-pager]`)?.addEventListener("click", handleCrmPagerClick);
     $(`[data-crm-pager]`)?.addEventListener("change", (event) => {
       if (event.target.closest("[data-crm-page-size]")) handleCrmPageSizeChange(event);

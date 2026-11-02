@@ -1449,6 +1449,7 @@ def _contact_fields(row, data):
         "lastContactedAt": _integer(data.get("lastContactedAt")),
         "fields": _custom_fields(data.get("fields")),
         "views": _view_ids(data.get("views")),
+        "personKeys": _person_keys(data),
         "account": data.get("account") if isinstance(data.get("account"), dict) else {},
         "createdBy": str(row.get("created_by_name") or ""),
         "updatedBy": str(row.get("updated_by_name") or ""),
@@ -4971,6 +4972,20 @@ def _box_emails(data):
             if email:
                 found.add(email)
     return found
+
+
+def _person_keys(data):
+    emails = {_email(data.get("email"))} - {""}
+    fields = data.get("fields")
+    for key, value in (fields.items() if isinstance(fields, dict) else ()):
+        if "mail" not in str(key).lower():
+            continue
+        for match in BOX_EMAIL_ANY_RE.finditer(_text(value, MAX_CUSTOM_FIELD_BYTES)):
+            emails.add(_email(match.group(0)))
+    keys = {"email:" + item for item in emails if item}
+    keys |= {"x:" + item.split(":", 1)[1] for item in _box_profiles(data)
+             if item.startswith("twitter:")}
+    return sorted(keys)
 
 
 def _box_profiles(data):

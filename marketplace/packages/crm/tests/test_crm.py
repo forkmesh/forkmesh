@@ -2732,6 +2732,27 @@ def test_possible_duplicates_are_grouped_by_what_they_share():
     assert call(runtime.use("POST"), "/api/crm/acme/contacts/duplicates")["status"] == 405
 
 
+def test_each_contact_carries_the_email_and_x_keys_that_tie_it_to_one_person():
+    runtime = Runtime()
+    lead = _contact(runtime, name="sing-box", company="SagerNet",
+                    email="Contact@SagerNet.example", twitter="https://x.com/SagerNet")
+    _contact(runtime, name="cronet-go", company="SagerNet",
+             fields={"other_emails": "contact@sagernet.example, ops@sagernet.example",
+                     "mentioned_in": "write to someone@else.example"})
+    _contact(runtime, name="Tor", twitter="@torproject", website="https://github.com/tor")
+    _contact(runtime, name="Nobody")
+
+    contacts = {item["name"]: item for item in call(
+        runtime.use("GET", "charlie"), "/api/crm/acme/contacts")["data"]["contacts"]}
+    assert contacts["sing-box"]["id"] == lead
+    assert contacts["sing-box"]["personKeys"] == [
+        "email:contact@sagernet.example", "x:sagernet"]
+    assert contacts["cronet-go"]["personKeys"] == [
+        "email:contact@sagernet.example", "email:ops@sagernet.example"]
+    assert contacts["Tor"]["personKeys"] == ["x:torproject"]
+    assert contacts["Nobody"]["personKeys"] == []
+
+
 def test_a_link_without_an_organization_resolves_to_where_the_caller_can_open_it():
     runtime = Runtime()
     open_path = "/api/crm/-/open/"

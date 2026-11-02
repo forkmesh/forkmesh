@@ -75,6 +75,7 @@ public struct CrmContact: Equatable, Sendable, Identifiable {
     public var lastContactedAt: Int64
     public var fields: [String: String]
     public var views: [String]
+    public var personKeys: [String]
     public var createdBy: String
     public var updatedBy: String
     public var createdAt: Int64
@@ -108,6 +109,7 @@ public struct CrmContact: Equatable, Sendable, Identifiable {
         for (key, value) in json.obj("fields") where !value.text.isEmpty { custom[key] = value.text }
         fields = custom
         views = json.strings("views").filter(PackagesText.isHexId)
+        personKeys = json.strings("personKeys")
         createdBy = json.str("createdBy")
         updatedBy = json.str("updatedBy")
         createdAt = json.int64("createdAt")

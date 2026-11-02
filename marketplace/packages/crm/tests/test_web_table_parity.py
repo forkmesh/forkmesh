@@ -81,7 +81,7 @@ def test_column_headings_sort_and_the_plus_heading_adds_a_column():
     assert 'event.target.closest("[data-crm-add-column]")) { void addCrmCustomColumn(); return; }' in head
     assert "crmSortBy(cell.dataset.crmColumn)" in head
     assert "crmSort.descending = crmSort.field === field ? !crmSort.descending : false;" in _function("crmSortBy")
-    assert "return crmSortContacts(matched);" in _function("crmFilteredContacts")
+    assert "const sorted = crmSortContacts(matched);" in _function("crmFilteredContacts")
     add = _function("addCrmCustomColumn")
     assert "crmCustomColumnKey(label)" in add
     assert "await restoreCrmColumn(key)" in add and "crmShowColumn(key)" in add

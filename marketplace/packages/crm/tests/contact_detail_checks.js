@@ -21,6 +21,7 @@ const exported = [
   "crmOwnerMatches", "crmFocusMatches", "crmFlow", "crmInvestorFlow",
   "crmAccountChip", "crmAccountProof",
   "crmNextContact", "crmNextChannels", "crmZohoComposeUrl",
+  "crmPersonGroups", "crmOnePerPerson", "crmPersonOpen", "crmPersonChip",
   "crmQueueReachMastodon", "crmMastodonLatest", "crmNextCardHtml", "CRM_NEXT_MODES", "refreshCrmMastodonNow",
   "crmRetryAfterMs", "crmGrantsTarget",
   "crmAiPrompt", "crmAiAngle", "crmAiTargetUrl", "crmAiMessageText", "crmAiDefaultFormat", "crmAiMode", "crmAiBrief",
@@ -324,6 +325,51 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
     same(page.crmNextContact("follow", now).contact?.id, "new-reply", "a never-contacted lead who wrote in is a follow-up");
     check(page.crmNextContact("reach", now).contact?.id !== "new-reply", "and not a new lead");
     view.contacts = saved.contacts; view.emails = saved.emails; view.settings = saved.settings;
+  }
+
+  {
+    const view = page.state.crmView;
+    const saved = { contacts: view.contacts, emails: view.emails };
+    const day = 86400000; const now = 1_800_000_000_000;
+    view.emails = [];
+    view.contacts = [
+      { id: "box", name: "sing-box", email: "c@sager.example", personKeys: ["email:c@sager.example", "x:sager"], createdAt: now - day, fields: { rank: "1" } },
+      { id: "go", name: "cronet-go", twitter: "@sager", personKeys: ["x:sager"], createdAt: now - day, fields: { rank: "2" } },
+      { id: "net", name: "core", twitter: "@sagercore", personKeys: ["email:c@sager.example", "x:sagercore"], createdAt: now - day, fields: { rank: "3" } },
+      { id: "solo", name: "solo", email: "s@example.com", personKeys: ["email:s@example.com"], createdAt: now - day, fields: { rank: "9" } },
+    ];
+    let people = page.crmPersonGroups();
+    const person = people.get("box").id;
+    same(["go", "net"].map((id) => people.get(id).id), [person, person],
+         "records sharing an email or an X account, even through a third record, are one person");
+    same(people.get("solo").members.map((one) => one.id), ["solo"], "a record sharing nothing stands alone");
+    let reach = page.crmNextContact("reach", now);
+    same([reach.contact?.id, reach.due, reach.upcoming.map((one) => one.id)], ["box", 2, ["solo"]],
+         "reach out offers each person once, through their best-ranked record");
+    check(reach.reason.includes("Same person as 2 other records (c@sager.example, @sager on X, @sagercore on X)"),
+          `the reason says why the others are left out: ${reach.reason}`);
+    view.nextSkipped.add("go");
+    same(page.crmNextContact("reach", now).contact?.id, "solo", "skipping any record skips the person");
+    view.nextSkipped.clear();
+    view.contacts[1].lastContactedAt = now - 2 * day;
+    people = page.crmPersonGroups();
+    reach = page.crmNextContact("reach", now);
+    same([reach.contact?.id, reach.due], ["solo", 1], "contacting one record takes the whole person off reach out");
+    same(page.crmNextContact("follow", now).contact, null, "and the person is not due a follow-up two days later");
+    check(!page.crmFocusMatches(view.contacts[0], "uncontacted", people), "Never contacted leaves the person out");
+    view.contacts[1].lastContactedAt = now - 40 * day;
+    const follow = page.crmNextContact("follow", now);
+    same([follow.contact?.id, follow.due], ["box", 1], "a quiet person is followed up once");
+    same(page.crmOnePerPerson(view.contacts, people).map((one) => one.id), ["box", "solo"],
+         "the list keeps one row per person");
+    check(page.crmPersonChip(view.contacts[0], people, true).includes("+2 same person"), "and the kept row offers the other two");
+    page.crmPersonOpen.add(person);
+    same(page.crmOnePerPerson(view.contacts, people).map((one) => one.id), ["box", "go", "net", "solo"],
+         "opening the chip lists the others under it");
+    check(page.crmPersonChip(view.contacts[1], people, false).includes("same person"), "each marked as the same person");
+    page.crmPersonOpen.clear();
+    same(page.crmPersonChip(view.contacts[3], people, true), "", "a record alone gets no chip");
+    view.contacts = saved.contacts; view.emails = saved.emails;
   }
 
   {

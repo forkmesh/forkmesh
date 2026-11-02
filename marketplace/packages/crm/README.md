@@ -305,6 +305,33 @@ open list; the web ranks the whole organization. Code:
 `tests/test_qt_plugin_contracts.py`, `tests/test_web_layout.py`,
 `tests/contact_detail_checks.js`, `CrmParityTests.swift`, `CrmParityTest.kt`.
 
+### One person, several records
+
+An import can give one person several records with different names: the
+net4people list has a record per repository, so one maintainer or organization
+(Tor, v2fly, Signal) shows up under several repository names. Emails are unique
+per organization, so the import keeps a second record's address in an
+`other_emails` column instead. Records that share an email address (the email
+field or any custom column whose name contains "mail") or an X account are one
+person, also through a third record (A shares an email with B, B an X account
+with C). Nothing is merged or deleted. Every record keeps its own notes and
+fields, and the grouping is worked out again on every load.
+
+- The worker sends each contact's `personKeys` (`email:<address>`,
+  `x:<handle>`, lower case; `_person_keys` in `worker/crm.py`), and each
+  client joins records that share a key.
+- **Reach out** and **Follow up** offer each person once, through their best
+  record. A contact, a reply, a won or ended stage, or a **Skip** on any of
+  their records counts for all of them, and **Why them** names the other
+  records' shared keys. Desktop, web, iOS and Android all do this.
+- The web table shows one row per person (**One per person**, on by default,
+  off under **Possible duplicates**). A **+N same person** chip opens the other
+  records under the first row. **Never contacted** and **Quiet 30+ days** go by
+  the person, and the detail card lists the records under **Same person**.
+
+This differs from **Possible duplicates**, which also matches GitHub profiles
+and names, is meant for merging, and folds a record away for good.
+
 ### Newest Mastodon post on Reach out
 
 Rendering the cards queues the Mastodon handles of the first 40 reach-out
