@@ -437,6 +437,13 @@ compile. Each rule below comes from a failed archive:
 - The app targets iOS 17: use only APIs available there (for example the
   one-value `onGeometryChange`, and `getCurrentConfigurations` instead of the
   async `currentConfigurations()`).
+- Codemagic and the office Mac build with Xcode 26.6 (Swift 6.3.3, the iOS 26
+  SDK). `#available(iOS 27, *)` does not stop that SDK from failing on an
+  iOS 27 API, so put the call under `#if compiler(>=6.4)` with the plain
+  fallback in `#else` too (`ShellDuoColumn.swift`). A Codemagic ad hoc archive
+  of `a003eec2c5` failed on the Duo toolbar calls this way;
+  `tools/test_ios_newer_sdk_guards.py` flags any newer-SDK `#available` or
+  `@available` outside such a check.
 - Keep SwiftUI modifier chains under roughly fifteen; split large `body`s into
   typed pieces (as `HomeShell`, `GenieSpiderLayer` and `ShellNewAgentButton`
   do) to stay inside the type checker's budget. Prefer plain computed
