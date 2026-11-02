@@ -266,8 +266,9 @@ struct ProjectSwitcher: View {
                 .padding(.top, FmSpace.x5)
                 group {
                     if let active = model.rows.first(where: { $0.active })?.relay {
-                        actionRow("Invite people to \(active.label)", icon: "group_outlined", tint: nil, chevron: true,
+                        actionRow("Invite people", icon: "group_outlined", tint: nil, chevron: true,
                                   onTap: { inviting = true })
+                            .accessibilityLabel(Text("Invite people to \(active.label)"))
                             .accessibilityIdentifier("project-invite")
                         FmRowDivider(indent: 60)
                     }
