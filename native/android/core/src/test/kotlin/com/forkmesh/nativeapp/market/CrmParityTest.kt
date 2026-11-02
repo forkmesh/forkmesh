@@ -72,6 +72,36 @@ class CrmParityTest {
         expect(reach.contact?.id != "new-reply", "a lead who wrote in is a follow-up, not a new lead")
     }
 
+    fun testNextContactOffersEachPersonOnce() {
+        val day = 86_400_000L
+        val now = 1_800_000_000_000L
+        val contacts = mutableListOf(
+            CrmContact(id = "box", email = "c@sager.test", personKeys = listOf("email:c@sager.test", "x:sager"), fields = mapOf("rank" to "1")),
+            CrmContact(id = "go", twitter = "@sager", personKeys = listOf("x:sager"), fields = mapOf("rank" to "2")),
+            CrmContact(id = "net", twitter = "@sagercore", personKeys = listOf("email:c@sager.test", "x:sagercore"), fields = mapOf("rank" to "3")),
+            CrmContact(id = "solo", email = "s@x.test", personKeys = listOf("email:s@x.test"), fields = mapOf("rank" to "9")),
+        )
+        val people = CrmPeople.of(contacts)
+        assertEq(listOf("box", "go", "net"), people.getValue("net").map { it.id })
+        assertEq(listOf("solo"), people.getValue("solo").map { it.id })
+        var reach = CrmNextContact.pick(CrmNextContact.Mode.REACH_OUT, contacts, emptyList(), now = now)
+        assertEq("box", reach.contact?.id)
+        assertEq(2, reach.due)
+        expect("Same person as 2 other records (c@sager.test, @sager on X, @sagercore on X)" in reach.reason, reach.reason)
+        reach = CrmNextContact.pick(CrmNextContact.Mode.REACH_OUT, contacts, emptyList(), setOf("go"), now)
+        assertEq("solo", reach.contact?.id)
+        contacts[1] = contacts[1].copy(lastContactedAt = now - 2 * day)
+        reach = CrmNextContact.pick(CrmNextContact.Mode.REACH_OUT, contacts, emptyList(), now = now)
+        assertEq("solo", reach.contact?.id)
+        assertEq(1, reach.due)
+        assertEq(null, CrmNextContact.pick(CrmNextContact.Mode.FOLLOW_UP, contacts, emptyList(), now = now).contact)
+        contacts[1] = contacts[1].copy(lastContactedAt = now - 40 * day)
+        val follow = CrmNextContact.pick(CrmNextContact.Mode.FOLLOW_UP, contacts, emptyList(), now = now)
+        assertEq("box", follow.contact?.id)
+        assertEq(1, follow.due)
+        assertEq(listOf("email:a@x.test", "x:ada"), CrmContact.fromJson(mapOf("id" to hexA, "personKeys" to listOf("email:a@x.test", "x:ada"))).personKeys)
+    }
+
     fun testNoteDraftsParseLikeTheDesktop() {
         val data = CrmOrganizationData.fromJson(summary())
         val drafts = CrmNoteDraft.drafts(data.contacts, data.activity)

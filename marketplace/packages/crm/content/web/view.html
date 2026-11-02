@@ -55,6 +55,7 @@
               [data-view="crm"] .crm-person { display: grid; justify-items: center; gap: .25rem; min-width: 0; padding: .75rem .5rem; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-card-rgb)); text-align: center; cursor: pointer; }
               [data-view="crm"] .crm-person:hover { border-color: rgb(var(--dashboard-foreground-rgb) / .35); }
               [data-view="crm"] .crm-person:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
+              [data-view="crm"] [data-crm-group-people][aria-pressed="true"],
               [data-view="crm"] [data-crm-people-toggle][aria-pressed="true"] { background: rgb(var(--dashboard-foreground-rgb) / .08); font-weight: 600; }
               [data-view="crm"] .crm-hue-1 { background: rgb(125 138 156 / .3); }
               [data-view="crm"] .crm-hue-2 { background: rgb(56 139 253 / .26); }
@@ -307,6 +308,7 @@
                     <select data-crm-table-view aria-label="View" title="The columns the table shows" class="hidden rounded-md border border-border bg-background px-2 text-foreground sm:inline-block"></select>
                     <button data-crm-table-view-save type="button" title="Save these columns as a new view" class="hidden h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50">Save view</button>
                     <button data-crm-columns type="button" title="Choose which columns this view shows" class="hidden h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50 sm:inline-flex"><i data-lucide="sliders-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Columns</button>
+                    <button data-crm-group-people type="button" aria-pressed="true" title="One row per box: everyone at one company or project folds under the first, with +N to show the rest; click a box's name to open it" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="users" class="h-3.5 w-3.5 text-muted-foreground"></i>Group by box</button>
                     <button data-crm-people-toggle type="button" aria-pressed="false" title="Everyone whose picture loaded, as a grid; the search box filters it" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="contact" class="h-3.5 w-3.5 text-muted-foreground"></i>People</button>
                   </div>
                   <div data-crm-contact-cards class="grid gap-2 p-3 sm:hidden"></div>
@@ -513,6 +515,12 @@
               <div class="p-5">
                 <div class="mb-4 flex items-start justify-between gap-3"><div data-crm-detail-head class="min-w-0 flex-1"></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
                 <div data-crm-detail-body></div>
+              </div>
+            </dialog>
+            <dialog data-crm-box-dialog aria-label="Box" style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-4 flex items-start justify-between gap-3"><div data-crm-box-head class="min-w-0 flex-1"></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <div data-crm-box-body></div>
               </div>
             </dialog>
             <dialog data-crm-zoho-guide-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">

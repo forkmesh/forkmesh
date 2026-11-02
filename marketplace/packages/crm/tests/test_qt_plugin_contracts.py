@@ -861,7 +861,7 @@ def test_web_contact_rows_read_like_a_table():
     # name cell carries the avatar and the record's mail chips underneath, and
     # the row actions only show on hover.
     assert '<td class="px-3 py-2 align-top">' in render
-    assert "crmAvatar(contact)" in render and "crmNameMeta(contact, columns)" in render
+    assert "crmAvatar(contact)" in render and "crmNameMeta(contact, columns, personChip(contact))" in render
     assert '<tr data-crm-contact-row="${escapeHtml(contact.id)}" class="crm-row">' in render
     assert "crm-row-actions" in render
     # Notes still edit in a one-line field when a caller asks for the compact
@@ -1290,14 +1290,16 @@ def test_desktop_list_heads_with_a_lead_to_reach_and_one_to_follow_up():
             f"{_entry_constant('EMAIL_SUGGESTION_FOLLOW_UP_DAYS', CRM_WORKER)};") in FEATURE
     rank = FEATURE.split("NextContact CrmFeature::nextContact(NextMode mode) const", 1)[1].split("\n}\n", 1)[0]
     assert "heardAt > wroteAt && heardAt >= last" in rank
-    assert "kWonStages.contains(stage) || kEndedStages.contains(stage)" in rank
+    assert "kWonStages.contains(memberStage) || kEndedStages.contains(memberStage)" in rank
+    assert "personGroups(m_contacts)" in rank and "duePeople.insert(personIds.first());" in rank
+    assert "if (seen.contains(entry.person))" in rank
     assert "if (waiting || closed || last > 0)" in rank
     assert "std::make_tuple(tier, step.isEmpty() ? 1 : 0, order, id)" in rank
     assert "step.isEmpty() ? 1 : 0, -marks.value," in rank
     assert "posted > 0 ? 0 : 1, -posted," in rank
     assert "take(reachRanked);" in rank and "take(followRanked);" in rank
     assert "best.ranked << entry.id;" in rank and "upcoming" not in rank
-    assert "m_nextSkipped.contains(id)" in rank
+    assert "m_nextSkipped.contains(one)" in rank
     marks = FEATURE.split("LeadMarks leadMarks(const QJsonObject &contact)", 1)[1].split("\n}\n", 1)[0]
     assert 'endsWith(QLatin1String("_rank"))' in marks and 'endsWith(QLatin1String("_score"))' in marks
     pair = FEATURE.split("void CrmFeature::renderNextContact()", 1)[1].split("\nvoid CrmFeature::", 1)[0]

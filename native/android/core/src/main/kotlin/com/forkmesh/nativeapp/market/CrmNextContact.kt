@@ -26,6 +26,42 @@ data class CrmLeadMarks(
     }
 }
 
+object CrmPeople {
+    fun of(contacts: List<CrmContact>): Map<String, List<CrmContact>> {
+        val parent = HashMap<String, String>()
+        val holder = HashMap<String, String>()
+        fun root(start: String): String {
+            var id = start
+            while (parent[id] != id) {
+                parent[id] = parent.getValue(parent.getValue(id))
+                id = parent.getValue(id)
+            }
+            return id
+        }
+        for (contact in contacts) {
+            if (contact.id in parent) continue
+            parent[contact.id] = contact.id
+            for (key in contact.personKeys) {
+                val held = holder[key]
+                if (held == null) holder[key] = contact.id else parent[root(contact.id)] = root(held)
+            }
+        }
+        val groups = LinkedHashMap<String, MutableList<CrmContact>>()
+        val placed = HashSet<String>()
+        for (contact in contacts) if (placed.add(contact.id)) groups.getOrPut(root(contact.id)) { mutableListOf() }.add(contact)
+        val people = HashMap<String, List<CrmContact>>()
+        for (members in groups.values) {
+            val sorted = members.sortedBy { it.id }
+            for (contact in sorted) people[contact.id] = sorted
+        }
+        return people
+    }
+
+    fun keysLabel(members: List<CrmContact>): String =
+        members.flatMap { it.personKeys }.distinct().sorted()
+            .joinToString(", ") { if (it.startsWith("x:")) "@${it.drop(2)} on X" else it.removePrefix("email:") }
+}
+
 data class CrmNextContact(val contact: CrmContact? = null, val reason: String = "", val due: Int = 0) {
     enum class Mode(val title: String, val note: String) {
         REACH_OUT("Reach out", "Best new lead to contact"),
@@ -69,14 +105,16 @@ data class CrmNextContact(val contact: CrmContact? = null, val reason: String = 
             var best: CrmContact? = null
             var bestReason = ""
             var bestKey = emptyList<Double>()
-            var due = 0
+            val people = CrmPeople.of(contacts)
+            val duePeople = HashSet<String>()
             for (contact in contacts) {
-                if (contact.id in skipped || !reachable(contact)) continue
-                val last = contact.lastContactedAt
+                val members = people[contact.id] ?: listOf(contact)
+                if (members.any { it.id in skipped } || !reachable(contact)) continue
+                val last = members.maxOf { it.lastContactedAt }
                 var heardAt = 0L
                 var wroteAt = 0L
                 var heardSubject = ""
-                for (message in linked[contact.id].orEmpty()) {
+                for (message in members.flatMap { linked[it.id].orEmpty() }) {
                     if (message.incoming) {
                         if (message.at > heardAt) {
                             heardAt = message.at
@@ -86,10 +124,9 @@ data class CrmNextContact(val contact: CrmContact? = null, val reason: String = 
                         wroteAt = maxOf(wroteAt, message.at)
                     }
                 }
-                val stage = contact.stage.lowercase()
                 val step = contact.nextStep.trim()
                 val waiting = heardAt >= now - REPLY_DAYS * DAY_MS && heardAt > wroteAt && heardAt >= last
-                val closed = stage in WON_STAGES || stage in ENDED_STAGES
+                val closed = members.any { it.stage.lowercase().let { stage -> stage in WON_STAGES || stage in ENDED_STAGES } }
                 var reason: String
                 val key: List<Double>
                 when (mode) {
@@ -132,14 +169,18 @@ data class CrmNextContact(val contact: CrmContact? = null, val reason: String = 
                         if (step.isNotEmpty()) reason += " Next step on the record: $step."
                     }
                 }
-                due += 1
+                if (members.size > 1) {
+                    val others = members.size - 1
+                    reason += " Same person as $others other record${if (others == 1) "" else "s"} (${CrmPeople.keysLabel(members)}), so they come up once."
+                }
+                duePeople.add(members.first().id)
                 if (best == null || before(key, contact.id, bestKey, best.id)) {
                     best = contact
                     bestReason = reason
                     bestKey = key
                 }
             }
-            return CrmNextContact(best, bestReason, due)
+            return CrmNextContact(best, bestReason, duePeople.size)
         }
     }
 }

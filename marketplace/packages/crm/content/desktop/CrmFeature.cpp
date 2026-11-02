@@ -916,6 +916,62 @@ LeadMarks leadMarks(const QJsonObject &contact)
     return marks;
 }
 
+QHash<QString, QStringList> personGroups(const QJsonArray &contacts)
+{
+    QHash<QString, QString> parent;
+    QHash<QString, QString> holder;
+    const auto root = [&parent](QString id) {
+        while (parent.value(id) != id) {
+            parent.insert(id, parent.value(parent.value(id)));
+            id = parent.value(id);
+        }
+        return id;
+    };
+    QStringList ids;
+    for (const QJsonValue &value : contacts) {
+        const QJsonObject contact = value.toObject();
+        const QString id = contact.value(QStringLiteral("id")).toString();
+        if (id.isEmpty() || parent.contains(id))
+            continue;
+        parent.insert(id, id);
+        ids << id;
+        for (const QJsonValue &key : contact.value(QStringLiteral("personKeys")).toArray()) {
+            const QString name = key.toString();
+            const auto held = holder.constFind(name);
+            if (held == holder.constEnd())
+                holder.insert(name, id);
+            else
+                parent.insert(root(id), root(*held));
+        }
+    }
+    QHash<QString, QStringList> groups;
+    for (const QString &id : std::as_const(ids))
+        groups[root(id)] << id;
+    QHash<QString, QStringList> people;
+    for (auto group = groups.begin(); group != groups.end(); ++group) {
+        group->sort();
+        for (const QString &id : std::as_const(*group))
+            people.insert(id, *group);
+    }
+    return people;
+}
+
+QString personKeysLabel(const QList<QJsonObject> &members)
+{
+    QStringList keys;
+    for (const QJsonObject &contact : members) {
+        for (const QJsonValue &key : contact.value(QStringLiteral("personKeys")).toArray()) {
+            if (!keys.contains(key.toString()))
+                keys << key.toString();
+        }
+    }
+    std::sort(keys.begin(), keys.end());
+    for (QString &key : keys)
+        key = key.startsWith(QLatin1String("x:")) ? QStringLiteral("@%1 on X").arg(key.mid(2))
+                                                  : key.mid(6);
+    return keys.join(QStringLiteral(", "));
+}
+
 // Custom column keys follow the worker's CSV header rule: lowercase, digits and
 // underscores, so a column typed here lands on the same key a CSV header would.
 QString customColumnKey(const QString &label)
@@ -4194,6 +4250,7 @@ NextContact CrmFeature::nextContact(NextMode mode) const
         QString id;
         int row = -1;
         QString reason;
+        QString person;
     };
     QList<FollowEntry> followRanked;
     using ReachKey = std::tuple<int, qint64, int, qint64, double, double, int, qint64, QString>;
@@ -4203,24 +4260,40 @@ NextContact CrmFeature::nextContact(NextMode mode) const
         QString id;
         int row = -1;
         QString reason;
+        QString person;
     };
     QList<ReachEntry> reachRanked;
+    const QHash<QString, QStringList> people = personGroups(m_contacts);
+    QSet<QString> duePeople;
     for (const int index : m_snapshot.sheetRows.value(m_sheet->currentData().toString())) {
         if (index < 0 || index >= m_snapshot.rows.size())
             continue;
         const QString id = m_snapshot.rows.at(index).id;
         const QJsonObject contact = contactById(id);
-        if (contact.isEmpty() || m_nextSkipped.contains(id))
+        const QStringList personIds = people.value(id, QStringList{id});
+        if (contact.isEmpty() ||
+            std::any_of(personIds.cbegin(), personIds.cend(),
+                        [this](const QString &one) { return m_nextSkipped.contains(one); }))
             continue;
         const QString email = text(contact, "email");
         if (email.isEmpty() && mastodonHandleKey(text(contact, "mastodon")).isEmpty())
             continue;
-        const qint64 last = qint64(contact.value(QStringLiteral("lastContactedAt")).toDouble());
+        QList<QJsonObject> members;
+        qint64 last = 0;
+        bool closed = false;
+        QList<QJsonObject> linked;
+        for (const QString &one : personIds) {
+            const QJsonObject member = one == id ? contact : contactById(one);
+            members << member;
+            last = qMax(last, qint64(member.value(QStringLiteral("lastContactedAt")).toDouble()));
+            const QString memberStage = text(member, "stage").toLower();
+            closed = closed || kWonStages.contains(memberStage) || kEndedStages.contains(memberStage);
+            linked.append(m_contactEmails.value(one));
+            linked.append(m_contactToots.value(one));
+        }
         qint64 heardAt = 0;
         qint64 wroteAt = 0;
         QString heardSubject;
-        QList<QJsonObject> linked = m_contactEmails.value(id);
-        linked.append(m_contactToots.value(id));
         for (const QJsonObject &message : std::as_const(linked)) {
             const qint64 at = emailSentAt(message);
             if (text(message, "direction") == QLatin1String("inbound")) {
@@ -4232,11 +4305,16 @@ NextContact CrmFeature::nextContact(NextMode mode) const
                 wroteAt = qMax(wroteAt, at);
             }
         }
-        const QString stage = text(contact, "stage").toLower();
         const QString step = text(contact, "nextStep");
         const bool waiting =
             heardAt >= now - kNextReplyDays * kDayMs && heardAt > wroteAt && heardAt >= last;
-        const bool closed = kWonStages.contains(stage) || kEndedStages.contains(stage);
+        const QString samePerson =
+            personIds.size() > 1
+                ? QStringLiteral(" Same person as %1 other record%2 (%3), so they come up once.")
+                      .arg(personIds.size() - 1)
+                      .arg(personIds.size() == 2 ? QString() : QStringLiteral("s"))
+                      .arg(personKeysLabel(members))
+                : QString();
         QString reason;
         if (mode == NextMode::ReachOut) {
             if (waiting || closed || last > 0)
@@ -4266,12 +4344,13 @@ NextContact CrmFeature::nextContact(NextMode mode) const
                           ? QStringLiteral("Nothing on the record sets a new lead apart, so the "
                                            "longest on the list goes first.")
                           : QStringLiteral("Best qualified new lead: %1.")
-                                .arg(qualifies.join(QStringLiteral("; "))));
+                                .arg(qualifies.join(QStringLiteral("; ")))) +
+                     samePerson;
             reachRanked.append({std::make_tuple(
                 posted > 0 ? 0 : 1, -posted,
                 step.isEmpty() ? 1 : 0, -marks.value,
                 marks.rank > 0 ? marks.rank : std::numeric_limits<double>::infinity(), -marks.score,
-                email.isEmpty() ? 1 : 0, created, id), id, index, reason});
+                email.isEmpty() ? 1 : 0, created, id), id, index, reason, personIds.first()});
         } else {
             int tier = 0;
             qint64 order = 0;
@@ -4296,16 +4375,27 @@ NextContact CrmFeature::nextContact(NextMode mode) const
             }
             if (!step.isEmpty())
                 reason += QStringLiteral(" Next step on the record: %1.").arg(step);
+            reason += samePerson;
             followRanked.append({std::make_tuple(tier, step.isEmpty() ? 1 : 0, order, id), id,
-                                 index, reason});
+                                 index, reason, personIds.first()});
         }
-        ++best.due;
+        duePeople.insert(personIds.first());
     }
+    best.due = int(duePeople.size());
     const auto take = [&best](auto &ranked) {
         if (ranked.isEmpty())
             return;
         std::sort(ranked.begin(), ranked.end(),
                   [](const auto &a, const auto &b) { return a.key < b.key; });
+        QSet<QString> seen;
+        ranked.erase(std::remove_if(ranked.begin(), ranked.end(),
+                                    [&seen](const auto &entry) {
+                                        if (seen.contains(entry.person))
+                                            return true;
+                                        seen.insert(entry.person);
+                                        return false;
+                                    }),
+                     ranked.end());
         best.id = ranked.first().id;
         best.row = ranked.first().row;
         best.reason = ranked.first().reason;

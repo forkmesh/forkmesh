@@ -62,6 +62,7 @@ data class CrmContact(
     val lastContactedAt: Long = 0,
     val fields: Map<String, String> = emptyMap(),
     val views: List<String> = emptyList(),
+    val personKeys: List<String> = emptyList(),
     val createdBy: String = "",
     val updatedBy: String = "",
     val createdAt: Long = 0,
@@ -116,6 +117,7 @@ data class CrmContact(
             lastContactedAt = json.long("lastContactedAt"),
             fields = json.obj("fields").mapValues { jsonText(it.value) }.filterValues { it.isNotEmpty() },
             views = json.strings("views").filter(PackagesText::isHexId),
+            personKeys = json.strings("personKeys"),
             createdBy = json.str("createdBy"), updatedBy = json.str("updatedBy"),
             createdAt = json.long("createdAt"), updatedAt = json.long("updatedAt"),
         )

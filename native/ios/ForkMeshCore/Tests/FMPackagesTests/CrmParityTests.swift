@@ -92,6 +92,40 @@ final class CrmParityTests: XCTestCase {
         XCTAssertNotEqual(reach.contact?.id, "new-reply")
     }
 
+    func testNextContactOffersEachPersonOnce() {
+        let day: Int64 = 86_400_000
+        let now: Int64 = 1_800_000_000_000
+        func contact(_ id: String, _ extra: JSONObject) -> CrmContact {
+            var json: JSONObject = ["id": .string(id), "flow": "customers", "stage": "lead"]
+            for (key, value) in extra { json[key] = value }
+            return CrmContact(json: json)
+        }
+        var contacts = [
+            contact("box", ["email": "c@sager.test", "personKeys": ["email:c@sager.test", "x:sager"], "fields": ["rank": "1"]]),
+            contact("go", ["twitter": "@sager", "personKeys": ["x:sager"], "fields": ["rank": "2"]]),
+            contact("net", ["twitter": "@sagercore", "personKeys": ["email:c@sager.test", "x:sagercore"], "fields": ["rank": "3"]]),
+            contact("solo", ["email": "s@x.test", "personKeys": ["email:s@x.test"], "fields": ["rank": "9"]]),
+        ]
+        let people = CrmPeople.of(contacts)
+        XCTAssertEqual(people["net"]?.map(\.id), ["box", "go", "net"])
+        XCTAssertEqual(people["solo"]?.map(\.id), ["solo"])
+        var reach = CrmNextContact.pick(.reachOut, contacts: contacts, activity: [], now: now)
+        XCTAssertEqual(reach.contact?.id, "box")
+        XCTAssertEqual(reach.due, 2)
+        XCTAssertTrue(reach.reason.contains("Same person as 2 other records (c@sager.test, @sager on X, @sagercore on X)"), reach.reason)
+        reach = CrmNextContact.pick(.reachOut, contacts: contacts, activity: [], skipped: ["go"], now: now)
+        XCTAssertEqual(reach.contact?.id, "solo")
+        contacts[1].lastContactedAt = now - 2 * day
+        reach = CrmNextContact.pick(.reachOut, contacts: contacts, activity: [], now: now)
+        XCTAssertEqual(reach.contact?.id, "solo")
+        XCTAssertEqual(reach.due, 1)
+        XCTAssertNil(CrmNextContact.pick(.followUp, contacts: contacts, activity: [], now: now).contact)
+        contacts[1].lastContactedAt = now - 40 * day
+        let follow = CrmNextContact.pick(.followUp, contacts: contacts, activity: [], now: now)
+        XCTAssertEqual(follow.contact?.id, "box")
+        XCTAssertEqual(follow.due, 1)
+    }
+
     func testNoteDraftsParseLikeTheDesktop() {
         let data = CrmOrganizationData(json: summary())
         let drafts = CrmNoteDraft.drafts(data.contacts, activity: data.activity)

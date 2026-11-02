@@ -727,9 +727,30 @@ DATA_SCHEMA_UP = [
         updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
         data TEXT NOT NULL,
         PRIMARY KEY (org_bi, member_bi))""",
+    """CREATE TABLE IF NOT EXISTS crm_boxes (
+        box_id TEXT PRIMARY KEY,
+        org_bi TEXT NOT NULL,
+        org_name TEXT NOT NULL,
+        created_by_name TEXT NOT NULL,
+        updated_by_name TEXT NOT NULL,
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+        data TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_crm_boxes_org "
+    "ON crm_boxes(org_bi,created_at,box_id)",
+    """CREATE TABLE IF NOT EXISTS crm_box_members (
+        contact_id TEXT PRIMARY KEY,
+        org_bi TEXT NOT NULL,
+        box_id TEXT NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+        assigned_at INTEGER NOT NULL CHECK (assigned_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_crm_box_members_org_box "
+    "ON crm_box_members(org_bi,box_id)",
 ]
 # Indexes and triggers drop with their tables; children drop before contacts.
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS crm_box_members",
+    "DROP TABLE IF EXISTS crm_boxes",
     "DROP TABLE IF EXISTS crm_zoho_members",
     "DROP TABLE IF EXISTS crm_backfills",
     "DROP TABLE IF EXISTS crm_list_activity",
@@ -1275,8 +1296,9 @@ def _route(path):
         return "open", "", "open", opened.group(1)
     match = re.fullmatch(
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
-        r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
+        r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho|boxes)"
         r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge|sync"
+        r"|move"
         r"|toots|toot"
         r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
@@ -1462,6 +1484,7 @@ def _contact_fields(row, data):
         "lastContactedAt": _integer(data.get("lastContactedAt")),
         "fields": _custom_fields(data.get("fields")),
         "views": _view_ids(data.get("views")),
+        "personKeys": _person_keys(data),
         "account": data.get("account") if isinstance(data.get("account"), dict) else {},
         "createdBy": str(row.get("created_by_name") or ""),
         "updatedBy": str(row.get("updated_by_name") or ""),
@@ -1633,6 +1656,7 @@ async def _mail_message_project(runtime, row):
         "sourceFolder": str(data.get("sourceFolder") or ""),
         "threadId": str(data.get("threadId") or ""),
         "flag": str(data.get("flag") or ""),
+        "sent": bool(data.get("sent")),
         "hasAttachment": bool(data.get("hasAttachment")),
         "providerUrl": str(data.get("providerUrl") or ""),
         "receivedAt": _integer(row.get("received_at")),
@@ -3495,6 +3519,8 @@ async def _merge_contacts(runtime, org_bi, account_bi, actor, data):
     )
     await runtime.d1_run(
         "DELETE FROM crm_contacts WHERE org_bi=? AND contact_id=?", org_bi, source_id)
+    await runtime.d1_run(
+        "DELETE FROM crm_box_members WHERE org_bi=? AND contact_id=?", org_bi, source_id)
     await runtime.audit(actor, "crm.contact.merge", "crm_contact", target_id,
                         details={"merged": source_id})
     views = await _org_list_views(runtime, org_bi)
@@ -5326,6 +5352,20 @@ def _box_emails(data):
     return found
 
 
+def _person_keys(data):
+    emails = {_email(data.get("email"))} - {""}
+    fields = data.get("fields")
+    for key, value in (fields.items() if isinstance(fields, dict) else ()):
+        if "mail" not in str(key).lower():
+            continue
+        for match in BOX_EMAIL_ANY_RE.finditer(_text(value, MAX_CUSTOM_FIELD_BYTES)):
+            emails.add(_email(match.group(0)))
+    keys = {"email:" + item for item in emails if item}
+    keys |= {"x:" + item.split(":", 1)[1] for item in _box_profiles(data)
+             if item.startswith("twitter:")}
+    return sorted(keys)
+
+
 def _box_profiles(data):
     """The LinkedIn, GitHub and X accounts a box names, as "site:user"."""
     found = set()
@@ -5480,6 +5520,409 @@ def _contact_handles(data):
         if any(word in str(key).lower() for word in ("mastodon", "fedi")):
             found |= _handles_in(value)
     return found
+
+
+BOX_COMPANY_FREE_MAIL = BOX_FREE_MAIL | frozenset({
+    "126.com", "163.com", "aliyun.com", "bk.ru", "cock.li", "daum.net", "disroot.org",
+    "duck.com", "foxmail.com", "gmx.at", "gmx.ch", "hotmail.co.uk", "hotmail.de",
+    "hotmail.fr", "hushmail.com", "inbox.ru", "list.ru", "live.co.uk", "mail.com",
+    "mail.ru", "mailbox.org", "msn.cn", "naver.com", "outlook.de", "outlook.fr",
+    "posteo.de", "posteo.net", "protonmail.ch", "rambler.ru", "riseup.net",
+    "seznam.cz", "sina.com", "sohu.com", "tuta.com", "tuta.io", "tutamail.com",
+    "ya.ru", "yahoo.co.jp", "yahoo.co.uk", "yahoo.de", "yahoo.fr", "yandex.ru",
+    "yeah.net", "ymail.com"})
+BOX_PLATFORM_DOMAINS = frozenset({
+    "about.me", "academia.edu", "apple.com", "appspot.com", "archive.org", "arxiv.org",
+    "bio.link", "bit.ly", "bitbucket.org", "blogspot.com", "bsky.app",
+    "buymeacoffee.com", "carrd.co", "codeberg.org", "codeberg.page", "crates.io",
+    "dev.to", "discord.com", "discord.gg", "docker.com", "facebook.com",
+    "firebaseapp.com", "forkmesh.com", "gitbook.io", "gitee.com", "github.com",
+    "github.io", "githubusercontent.com", "gitlab.com", "gitlab.io", "ghost.io",
+    "goo.gl", "google.com", "hashnode.dev", "herokuapp.com", "huggingface.co",
+    "instagram.com", "keybase.io", "ko-fi.com", "liberapay.com", "linkedin.com",
+    "linktr.ee", "matrix.to", "medium.com", "netlify.app", "notion.site", "notion.so",
+    "npmjs.com", "opencollective.com", "orcid.org", "pages.dev", "patreon.com",
+    "pypi.org", "readthedocs.io", "reddit.com", "researchgate.net", "sourceforge.net",
+    "sr.ht", "substack.com", "t.co", "t.me", "telegram.me", "tiktok.com",
+    "tinyurl.com", "tumblr.com", "twitch.tv", "twitter.com", "vercel.app", "wa.me",
+    "web.app", "webflow.io", "wikipedia.org", "wixsite.com", "wordpress.com",
+    "workers.dev", "x.com", "youtu.be", "youtube.com"})
+BOX_SECOND_LEVEL = frozenset({
+    "ac", "co", "com", "edu", "go", "gob", "gov", "mil", "ne", "net", "or", "org"})
+BOX_GENERIC_COMPANIES = frozenset({
+    "consultant", "contractor", "freelance", "freelancer", "home", "independent",
+    "individual", "none", "other", "personal", "private", "retired", "self",
+    "selfemployed", "student", "unemployed", "unknown", "various"})
+BOX_KEY_ORDER = ("email", "x", "github", "domain", "company")
+BOX_NAME_LIMIT = 120
+BOX_NOTES_LIMIT = 8000
+
+
+def _registrable_domain(host):
+    labels = [part for part in str(host or "").lower().strip(".").split(".") if part]
+    if len(labels) < 2:
+        return ""
+    keep = 3 if (len(labels) >= 3 and len(labels[-1]) == 2
+                 and labels[-2] in BOX_SECOND_LEVEL) else 2
+    return ".".join(labels[-keep:])
+
+
+def _company_domain(host, website=False):
+    host = str(host or "").lower().strip(".")
+    domain = _registrable_domain(host)
+    if not domain or "noreply" in host or host in BOX_COMPANY_FREE_MAIL:
+        return ""
+    if domain in BOX_COMPANY_FREE_MAIL:
+        return ""
+    if website and (domain in BOX_PLATFORM_DOMAINS or host in BOX_PLATFORM_DOMAINS):
+        return ""
+    return domain
+
+
+def _company_keys(data):
+    data = data if isinstance(data, dict) else {}
+    keys = set(_person_keys(data))
+    for address in _box_emails(data):
+        domain = _company_domain(address.rsplit("@", 1)[1])
+        if domain:
+            keys.add("domain:" + domain)
+    website = _clean(data.get("website"), 320)
+    if website and not re.search(r"/[@~]", website):
+        domain = _company_domain(_box_host(website), website=True)
+        if domain:
+            keys.add("domain:" + domain)
+    keys |= {"github:" + item.split(":", 1)[1] for item in _box_profiles(data)
+             if item.startswith("github:")}
+    company = _box_squash(data.get("company"))
+    if len(company) >= 3 and company not in BOX_GENERIC_COMPANIES:
+        keys.add("company:" + company)
+    return keys
+
+
+def _box_key_rank(key):
+    kind = key.split(":", 1)[0]
+    return BOX_KEY_ORDER.index(kind) if kind in BOX_KEY_ORDER else len(BOX_KEY_ORDER)
+
+
+def _box_suggested_name(members):
+    counts = {}
+    for data in members:
+        company = _clean(data.get("company"), BOX_NAME_LIMIT)
+        squashed = _box_squash(company)
+        if len(squashed) >= 2 and squashed not in BOX_GENERIC_COMPANIES:
+            counts[company] = counts.get(company, 0) + 1
+    if counts:
+        return min(counts, key=lambda name: (-counts[name], len(name), name.lower()))
+    domains = {}
+    for data in members:
+        for key in _company_keys(data):
+            if key.startswith("domain:"):
+                domains[key[7:]] = domains.get(key[7:], 0) + 1
+    if domains:
+        return min(domains, key=lambda name: (-domains[name], len(name), name))
+    for data in members:
+        label = _clean(data.get("name"), BOX_NAME_LIMIT) or _email(data.get("email"))
+        if label:
+            return label
+    return "Unnamed box"
+
+
+def _box_data(value):
+    value = value if isinstance(value, dict) else {}
+    keys = value.get("keys")
+    return {
+        "name": _clean(value.get("name"), BOX_NAME_LIMIT) or "Unnamed box",
+        "named": bool(value.get("named")),
+        "notes": _text(value.get("notes"), BOX_NOTES_LIMIT),
+        "keys": sorted({_clean(item, 340).lower() for item in keys
+                        if isinstance(item, str) and ":" in item}
+                       if isinstance(keys, list) else []),
+    }
+
+
+async def _write_box_json(runtime, sql, args_before, chunk_values, args_after=()):
+    chunk, size = {}, 0
+    items = list(chunk_values.items())
+    for index, (key, value) in enumerate(items):
+        chunk[key] = value
+        size += len(json.dumps(value)) + 40
+        if size < BULK_WRITE_BYTES and index < len(items) - 1:
+            continue
+        await runtime.d1_run(sql, *args_before, json.dumps(chunk), *args_after)
+        chunk, size = {}, 0
+
+
+async def _save_boxes(runtime, org_bi, org_name, actor, now, created, changed):
+    if created:
+        await _write_box_json(
+            runtime,
+            "INSERT INTO crm_boxes(box_id,org_bi,org_name,created_by_name,"
+            "updated_by_name,created_at,updated_at,data) SELECT key,?1,?2,?3,?3,?4,?4,"
+            "value FROM json_each(?5)",
+            (org_bi, org_name, actor, now),
+            {box_id: await runtime.seal(data) for box_id, data in created.items()})
+    if changed:
+        await _write_box_json(
+            runtime,
+            "UPDATE crm_boxes SET updated_by_name=?1,updated_at=?2,"
+            "data=json_extract(?3,'$.\"'||box_id||'\"') "
+            "WHERE org_bi=?4 AND box_id IN (SELECT key FROM json_each(?3))",
+            (actor, now),
+            {box_id: await runtime.seal(data) for box_id, data in changed.items()},
+            (org_bi,))
+
+
+async def _save_members(runtime, org_bi, now, members):
+    if members:
+        await _write_box_json(
+            runtime,
+            "INSERT INTO crm_box_members(contact_id,org_bi,box_id,pinned,assigned_at) "
+            "SELECT key,?1,json_extract(value,'$.box'),json_extract(value,'$.pinned'),?2 "
+            "FROM json_each(?3) WHERE 1 ON CONFLICT(contact_id) DO UPDATE SET "
+            "org_bi=excluded.org_bi,box_id=excluded.box_id,pinned=excluded.pinned,"
+            "assigned_at=excluded.assigned_at",
+            (org_bi, now), members)
+
+
+async def _box_rows(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT box_id,created_by_name,updated_by_name,created_at,updated_at,data "
+        "FROM crm_boxes WHERE org_bi=? ORDER BY created_at,box_id", org_bi)
+    opened = {}
+    for row in rows or []:
+        opened[str(row.get("box_id") or "")] = (row, _box_data(await runtime.open(row.get("data"))))
+    return opened
+
+
+async def _drop_empty_boxes(runtime, org_bi):
+    if await runtime.d1_first(
+            "SELECT box_id FROM crm_boxes WHERE org_bi=?1 AND box_id NOT IN "
+            "(SELECT box_id FROM crm_box_members WHERE org_bi=?1) LIMIT 1", org_bi):
+        await runtime.d1_run(
+            "DELETE FROM crm_boxes WHERE org_bi=?1 AND box_id NOT IN "
+            "(SELECT box_id FROM crm_box_members WHERE org_bi=?1)", org_bi)
+
+
+async def _assign_boxes(runtime, org_bi, org_name, actor):
+    if await runtime.d1_first(
+            "SELECT contact_id FROM crm_box_members WHERE org_bi=?1 AND contact_id NOT IN "
+            "(SELECT contact_id FROM crm_contacts WHERE org_bi=?1) LIMIT 1", org_bi):
+        await runtime.d1_run(
+            "DELETE FROM crm_box_members WHERE org_bi=?1 AND contact_id NOT IN "
+            "(SELECT contact_id FROM crm_contacts WHERE org_bi=?1)", org_bi)
+    rows = await runtime.d1_all(
+        "SELECT c.contact_id,c.data FROM crm_contacts c LEFT JOIN crm_box_members m "
+        "ON m.contact_id=c.contact_id AND m.org_bi=c.org_bi "
+        "WHERE c.org_bi=? AND m.contact_id IS NULL ORDER BY c.created_at,c.contact_id "
+        "LIMIT ?", org_bi, MAX_CONTACTS)
+    if rows:
+        boxes = await _box_rows(runtime, org_bi)
+        holder = {}
+        for box_id, (_, data) in boxes.items():
+            for key in data["keys"]:
+                holder.setdefault(key, box_id)
+        parent, keys_of, data_of, order = {}, {}, {}, []
+        for row in rows:
+            contact_id = str(row.get("contact_id") or "")
+            data = await runtime.open(row.get("data"))
+            data_of[contact_id] = data if isinstance(data, dict) else {}
+            keys_of[contact_id] = _company_keys(data_of[contact_id])
+            parent[contact_id] = contact_id
+            order.append(contact_id)
+
+        def root(item):
+            while parent[item] != item:
+                parent[item] = parent[parent[item]]
+                item = parent[item]
+            return item
+
+        owner = {}
+        for contact_id in order:
+            for key in keys_of[contact_id]:
+                if key in owner:
+                    parent[root(contact_id)] = root(owner[key])
+                else:
+                    owner[key] = contact_id
+        groups = {}
+        for contact_id in order:
+            groups.setdefault(root(contact_id), []).append(contact_id)
+        created, changed, members = {}, {}, {}
+        for ids in groups.values():
+            keys = set().union(*(keys_of[item] for item in ids))
+            hits = sorted((_box_key_rank(key), key) for key in keys if key in holder)
+            if hits:
+                box_id = holder[hits[0][1]]
+                data = changed.get(box_id) or created.get(box_id) or dict(boxes[box_id][1])
+                target = created if box_id in created else changed
+            else:
+                box_id = runtime.new_id()
+                data = {"name": _box_suggested_name([data_of[item] for item in ids]),
+                        "named": False, "notes": "", "keys": []}
+                target = created
+            data["keys"] = sorted(set(data["keys"]) | keys)
+            target[box_id] = data
+            for key in keys:
+                holder.setdefault(key, box_id)
+            for item in ids:
+                members[item] = {"box": box_id, "pinned": 0}
+        now = runtime.now()
+        await _save_boxes(runtime, org_bi, org_name, actor, now, created, changed)
+        await _save_members(runtime, org_bi, now, members)
+    await _drop_empty_boxes(runtime, org_bi)
+
+
+async def _boxes(runtime, org_bi):
+    members = {}
+    for row in await runtime.d1_all(
+            "SELECT contact_id,box_id,pinned FROM crm_box_members WHERE org_bi=? "
+            "ORDER BY assigned_at,contact_id", org_bi) or []:
+        members.setdefault(str(row.get("box_id") or ""), []).append(
+            str(row.get("contact_id") or ""))
+    result = []
+    for box_id, (row, data) in (await _box_rows(runtime, org_bi)).items():
+        result.append({
+            "id": box_id, "name": data["name"], "named": data["named"],
+            "notes": data["notes"], "keys": data["keys"],
+            "contacts": members.get(box_id, []),
+            "createdBy": str(row.get("created_by_name") or ""),
+            "updatedBy": str(row.get("updated_by_name") or ""),
+            "createdAt": _integer(row.get("created_at")),
+            "updatedAt": _integer(row.get("updated_at")),
+        })
+    return result
+
+
+async def _box_keys_from_members(runtime, org_bi, box_id):
+    rows = await runtime.d1_all(
+        "SELECT c.data FROM crm_contacts c JOIN crm_box_members m "
+        "ON m.contact_id=c.contact_id AND m.org_bi=c.org_bi "
+        "WHERE m.org_bi=? AND m.box_id=?", org_bi, box_id)
+    keys = set()
+    for row in rows or []:
+        keys |= _company_keys(await runtime.open(row.get("data")))
+    return sorted(keys)
+
+
+async def _refresh_boxes(runtime, org_bi, org_name, actor, box_ids):
+    boxes = await _box_rows(runtime, org_bi)
+    changed = {}
+    for box_id in box_ids:
+        if box_id in boxes:
+            data = dict(boxes[box_id][1])
+            data["keys"] = await _box_keys_from_members(runtime, org_bi, box_id)
+            changed[box_id] = data
+    await _save_boxes(runtime, org_bi, org_name, actor, runtime.now(), {}, changed)
+    await _drop_empty_boxes(runtime, org_bi)
+
+
+def _box_contact_ids(value):
+    values = value if isinstance(value, list) else []
+    found = []
+    for item in values[:MAX_CONTACTS]:
+        contact_id = _clean(item, 64).lower()
+        if CONTACT_ID_RE.fullmatch(contact_id) and contact_id not in found:
+            found.append(contact_id)
+    return found
+
+
+async def _boxes_response(runtime, org_bi, extra=None, status=200):
+    payload = {"ok": True, "boxes": await _boxes(runtime, org_bi)}
+    payload.update(extra or {})
+    return _response(runtime, payload, status)
+
+
+async def _move_to_box(runtime, org_bi, org_name, actor, data):
+    contact_ids = _box_contact_ids(data.get("contacts"))
+    if not contact_ids:
+        return _response(runtime, {"error": "contacts_required"}, 400)
+    known = {str(row.get("contact_id") or "") for row in await runtime.d1_all(
+        "SELECT contact_id FROM crm_contacts WHERE org_bi=? AND contact_id IN "
+        "(SELECT value FROM json_each(?))", org_bi, json.dumps(contact_ids)) or []}
+    contact_ids = [item for item in contact_ids if item in known]
+    if not contact_ids:
+        return _response(runtime, {"error": "contact_not_found"}, 404)
+    await _assign_boxes(runtime, org_bi, org_name, actor)
+    boxes = await _box_rows(runtime, org_bi)
+    box_id = _clean(data.get("box"), 64).lower()
+    name = _clean(data.get("name"), BOX_NAME_LIMIT)
+    created = {}
+    if box_id:
+        if box_id not in boxes:
+            return _response(runtime, {"error": "box_not_found"}, 404)
+    elif name:
+        box_id = runtime.new_id()
+        created[box_id] = {"name": name, "named": True, "notes": "", "keys": []}
+    else:
+        return _response(runtime, {"error": "box_required"}, 400)
+    previous = {str(row.get("box_id") or "") for row in await runtime.d1_all(
+        "SELECT box_id FROM crm_box_members WHERE org_bi=? AND contact_id IN "
+        "(SELECT value FROM json_each(?))", org_bi, json.dumps(contact_ids)) or []}
+    now = runtime.now()
+    await _save_boxes(runtime, org_bi, org_name, actor, now, created, {})
+    await _save_members(runtime, org_bi, now,
+                        {item: {"box": box_id, "pinned": 1} for item in contact_ids})
+    await _refresh_boxes(runtime, org_bi, org_name, actor, sorted(previous | {box_id}))
+    await runtime.audit(actor, "crm.box.move", "crm_box", box_id,
+                        details={"contacts": len(contact_ids)})
+    return await _boxes_response(runtime, org_bi, {"box": box_id})
+
+
+async def _merge_boxes(runtime, org_bi, org_name, actor, data):
+    source = _clean(data.get("from"), 64).lower()
+    target = _clean(data.get("into"), 64).lower()
+    if source == target or not CONTACT_ID_RE.fullmatch(source) or not CONTACT_ID_RE.fullmatch(target):
+        return _response(runtime, {"error": "merge_needs_two_boxes"}, 400)
+    boxes = await _box_rows(runtime, org_bi)
+    if source not in boxes or target not in boxes:
+        return _response(runtime, {"error": "box_not_found"}, 404)
+    kept = dict(boxes[target][1])
+    gone = boxes[source][1]
+    kept["notes"] = _text("\n\n".join(item for item in (kept["notes"], gone["notes"])
+                                      if item.strip()), BOX_NOTES_LIMIT)
+    await runtime.d1_run(
+        "UPDATE crm_box_members SET box_id=?,pinned=1 WHERE org_bi=? AND box_id=?",
+        target, org_bi, source)
+    await _save_boxes(runtime, org_bi, org_name, actor, runtime.now(), {}, {target: kept})
+    await _refresh_boxes(runtime, org_bi, org_name, actor, [target])
+    await runtime.audit(actor, "crm.box.merge", "crm_box", target,
+                        details={"merged": source})
+    return await _boxes_response(runtime, org_bi, {"box": target, "merged": source})
+
+
+async def _update_box(runtime, org_bi, org_name, actor, box_id, data):
+    boxes = await _box_rows(runtime, org_bi)
+    if box_id not in boxes:
+        return _response(runtime, {"error": "box_not_found"}, 404)
+    box = dict(boxes[box_id][1])
+    if "name" in data:
+        name = _clean(data.get("name"), BOX_NAME_LIMIT)
+        if not name:
+            return _response(runtime, {"error": "box_name_required"}, 400)
+        box.update(name=name, named=True)
+    if "notes" in data:
+        box["notes"] = _text(data.get("notes"), BOX_NOTES_LIMIT)
+    await _save_boxes(runtime, org_bi, org_name, actor, runtime.now(), {}, {box_id: box})
+    await runtime.audit(actor, "crm.box.update", "crm_box", box_id)
+    return await _boxes_response(runtime, org_bi, {"box": box_id})
+
+
+async def _box_resource(runtime, method, org_bi, org_name, actor, item, data):
+    if not item:
+        if method == "GET":
+            await _assign_boxes(runtime, org_bi, org_name, actor)
+            return await _boxes_response(runtime, org_bi)
+        return await _move_to_box(runtime, org_bi, org_name, actor, dict(data, box=""))
+    if item == "move":
+        return await _move_to_box(runtime, org_bi, org_name, actor, data)
+    if item == "merge":
+        return await _merge_boxes(runtime, org_bi, org_name, actor, data)
+    if method == "PATCH":
+        return await _update_box(runtime, org_bi, org_name, actor, item, data)
+    boxes = await _boxes(runtime, org_bi)
+    box = next((entry for entry in boxes if entry["id"] == item), None)
+    if box is None:
+        return _response(runtime, {"error": "box_not_found"}, 404)
+    return _response(runtime, {"ok": True, "box": box})
 
 
 def _link_details(data):
@@ -8534,6 +8977,7 @@ async def export_org_data(runtime, org_bi, org_name):
             "SELECT token,org_bi,org_name,contact_id,deck,created_by_bi,"
             "created_by_name,created_at,revoked_at,data FROM crm_deck_links "
             "WHERE org_bi=? ORDER BY created_at DESC,token", org_bi)],
+        "boxes": await _boxes(runtime, org_bi),
     }
 
 
@@ -8554,6 +8998,8 @@ async def purge_org_data(runtime, org_bi):
     await runtime.d1_run("DELETE FROM crm_list_activity WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_view_shares WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_views WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_box_members WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_boxes WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_contacts WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_settings WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_backfills WHERE org_bi=?", org_bi)
@@ -8737,6 +9183,7 @@ async def handle(runtime, path):
         ("organization", "views"): ("GET", "POST"),
         ("organization", "outreach"): ("GET",),
         ("organization", "decks"): ("GET", "POST"),
+        ("organization", "boxes"): ("GET", "POST"),
         ("shared", "shared"): ("GET",),
         ("zoho-callback", "zoho"): ("GET",),
     }.get((route[0], resource), ())
@@ -8767,6 +9214,9 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "decks" and item:
         allowed = ("GET", "DELETE") if DECK_TOKEN_RE.fullmatch(item) else ()
+    elif resource == "boxes" and item:
+        allowed = (("POST",) if item in ("move", "merge")
+                   else ("GET", "PATCH") if CONTACT_ID_RE.fullmatch(item) else ())
     elif route[0] == "shared":
         allowed = ("GET",) if not item or CONTACT_ID_RE.fullmatch(item) else ()
     elif (resource in ("contacts", "emails", "mail", "views") and item
@@ -8962,6 +9412,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 return _response(runtime, {"error": "organization_admin_required"}, 403)
             data = {key: data[key] for key in TABLE_VIEW_SETTINGS if key in data}
         return await _save_settings(runtime, org_bi, account_bi, actor, data)
+    if resource == "boxes":
+        return await _box_resource(runtime, method, org_bi, org_name, actor, item, data)
     if resource == "contacts":
         if not item:
             if method == "GET":
@@ -9018,6 +9470,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
         removed = await runtime.open(row.get("data"))
         await runtime.d1_run(
             "DELETE FROM crm_contacts WHERE org_bi=? AND contact_id=?", org_bi, item)
+        await runtime.d1_run(
+            "DELETE FROM crm_box_members WHERE org_bi=? AND contact_id=?", org_bi, item)
         await runtime.audit(actor, "crm.contact.delete", "crm_contact", item)
         if isinstance(removed, dict):
             await _record_contact_changes(runtime, org_bi, account_bi, actor,
