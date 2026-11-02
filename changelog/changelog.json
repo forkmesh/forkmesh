@@ -11,7 +11,8 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
-  {"date": "2026-11-03", "area": "Android", "text": "The tour opens full screen with a short line and one animation per stop, and new accounts start Essentials right away."},
+  {"date": "2026-11-02", "area": "iPhone", "text": "Sign in and NEXUS open again after the first-run tour; before, the tour could leave every later sheet unable to open."},
+  {"date": "2026-11-02", "area": "Android", "text": "The tour now fills the screen, as on iPhone: each stop has a short line and one animation, and new accounts go straight into Essentials."},
   {"date": "2026-11-02", "area": "Projects", "text": "In Top repositories, forks of an organization's repository now sit under the organization's entry instead of under a separate copy of the repository."},
   {"date": "2026-11-02", "area": "Market", "text": "CRM: every contact now sits in a named box for its company or project, found automatically from work email domains, websites, GitHub organizations and company names, and the box card brings together everyone there with every email, open, click, read, note and inbox message, including mail from new people at the same company."},
   {"date": "2026-11-02", "area": "Market", "text": "CRM: records that share an email address or X account count as one person, so Reach out and Follow up suggest each person once, and the web table shows one row per person with the other records a click away."},
