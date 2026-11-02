@@ -581,7 +581,9 @@ describes, moves, and offers three depths.
   cover was then refused: Sign in did nothing and NEXUS left Home for Agents
   without opening. iOS now asks for the tour cover a moment after launch, and the
   header tips (`VoiceTip`, `PaletteTip`, `HubTip`) wait for
-  `VoiceTip.afterTour`, set once the tour is seen or when it does not open.
+  `VoiceTip.afterTour`, set when the tour closes or when it does not open
+  (the player records the first run with `ShellTour.markShown`, which leaves
+  the tips waiting).
   `SignInCoordinator.presentSignIn` dismisses a tip or sheet over the app
   before opening sign-in.
 - **Color scheme.** On iOS the player sets `preferredColorScheme` to the theme's
