@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-01", "area": "Other improvements", "text": "The docs fit a phone screen without shifting sideways, the top navigation stays in place as you scroll, and the Extension and Mobile tabs now open their guides."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "Old documentation links that moved now take you to the new page instead of a 404."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Sessions page now uses the main prompt composer, docked and centred under the transcript, instead of its own composer."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Network page no longer freezes the window for seconds while requests are flowing, and the running-agent squares in the top bar use far less CPU."},

@@ -283,6 +283,7 @@ body.dp-body {
 .dp-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: break-word;
   gap: 2rem;
   max-width: 1540px;
   margin: 0 auto;
@@ -1383,6 +1384,8 @@ body.dp-body {
 }
 
 .dp-prose .dp-history-changes li > span:not(.dp-change) {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--docs-muted);
   font-family: var(--docs-mono);
   font-size: 0.82rem;

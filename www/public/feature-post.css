@@ -195,6 +195,7 @@ h1 {
 }
 
 .body {
+  overflow-wrap: break-word;
   max-width: 790px;
   margin: 44px auto 0;
   font-size: 18px;
@@ -220,6 +221,7 @@ h1 {
 }
 
 .body code {
+  overflow-wrap: anywhere;
   padding: 0.12em 0.4em;
   border: 1px solid var(--line);
   border-radius: 6px;
