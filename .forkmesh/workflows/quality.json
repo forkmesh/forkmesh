@@ -37,8 +37,10 @@
                 "avatar": "quality",
                 "description": "Protects release quality through Discord bug intake, evidence-based triage, test automation, and release validation.",
                 "focus": "Test & Validate",
-                "improvementCycles": 35,
+                "improvementCycles": 37,
                 "improvementNotes": [
+                    "Before analysing a follow-up batch, list its stall ids against the ones already read this session; if they are all covered, answer with a short per-stall table and no new searching.",
+                    "When a stall's sample shows the main thread waiting in `ppoll` inside `QEventDispatcherGlib` with no app frame, it was idle, not busy. Count those and the starvation verdicts first, then spend the run on the few stalls that have real app frames.",
                     "For a \"style-sheet polish\" stall under a `build…` function, look at how the builder adds its widgets. If cards are built with no parent and moved by a helper like `addTab`, fixing one card doesn't help much; the shared helper needs to change.",
                     "Once several stalls share a library signature (here libpng inside FreeType under text shaping), count that signature across all reports before symbolizing each one. It points straight to one root cause and its call sites.",
                     "When `build/forkmesh` has been relinked under a running app, run `addr2line -e /proc/<pid>/exe` for that pid's offsets. Then group stalls by symbolized function: here four \"rich-text layout\" stalls with no app frame were all the same widget.",
@@ -48,9 +50,7 @@
                     "To confirm a \"nothing else shows before it has a parent\" claim, list every `setVisible`/`show` call in the file and keep only the ones that make a widget visible on a freshly created widget; skip calls that hide widgets and windows that are meant to be separate, like tooltip cards.",
                     "When a check is deferred until a fix lands, read the code it targets on current main straight away, so the later check has a known cause and baseline instead of starting from scratch.",
                     "Check `/dev/kvm` access and free memory before proposing a VM run; with KVM the local `clean_machine_vm.py` path takes minutes instead of the Action's hour-plus of emulation.",
-                    "Mapping merge numbers needs git, and this boundary forbids running git without asking, so put the read-only git request in the first message instead of guessing from \"adhoc #\" code comments.",
-                    "Before acting on another agent's \"X would also delete Y\" warning, open the delete path it names on current `main` and check its guards (here, `isExternalSession`). Then check the recycle bin for an entry with the same id before moving a record there.",
-                    "When asked to merge or deploy, run `next_autodeploy.py status` and check whether main already has the branch before doing anything; here the merge was already done and the real blocker was a deploy that failed on a full disk."
+                    "Mapping merge numbers needs git, and this boundary forbids running git without asking, so put the read-only git request in the first message instead of guessing from \"adhoc #\" code comments."
                 ],
                 "instructions": "Own product quality from incoming bug report through verified fix. Keep an eye on the application logs and UI stall diagnostics. When the configured monitor observes more than 50 UI stalls, start the UI-stall repair task, correlate stalls.log, actions.jsonl, and the app log, and use the captured backtraces to fix blocking work. Check Discord reports for duplicates and already-fixed behavior, reproduce valid issues, preserve reporter credit, and leave a concise evidence trail. Never dismiss or delete a report without repository evidence.",
                 "permissions": [
@@ -124,6 +124,6 @@
             "y": 120
         }
     ],
-    "updatedAtMs": 1793569705898,
+    "updatedAtMs": 1793604207436,
     "version": 1
 }

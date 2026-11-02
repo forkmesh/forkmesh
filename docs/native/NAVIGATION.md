@@ -399,12 +399,33 @@ light's bars carry the desktop's), each squeezed to the ear less 10 pt a side
 strip still leads with the desktop group, 2 pt apart with 4 pt before the
 phone's charts; notched iPhones, landscape and iPad keep it in the bar.
 
-**Agent token charts under the island.** While Diagnostics is on and the
-Agents package is installed, two charts (`ShellIslandTokenCharts`) hang from
+**Agent token tanks under the island.** While Diagnostics is on and the
+Agents package is installed, two tanks (`ShellIslandTokenCharts`) hang from
 the island's bottom edge: tokens in on the left (accent), out on the right
-(green), together spanning 126 pt, 6 pt apart, 12 pt tall. Each point is how
-much the summed agent totals grew in that second over the last 60 s
-(`AgentTokenSeries`), ticking on their own one-second clock. Totals
+(green), together spanning 126 pt, 6 pt apart, 12 pt tall, each on a faint
+track. Every second the tank pours in how much the summed agent totals grew
+in that second (`AgentTokenSeries`, on its own one-second clock) as 1 pt
+grains that rain in from the top over the next second and pile up as a
+liquid; see the tank model below.
+
+The tank (`AgentTokenTank`, `FMAgents` and Android's core `agents` package,
+the same code and constants on both) holds one grain per square point (720
+for a 60 × 12 tank; more pours spill). A second at the peak of the last 60 s
+(`AgentTokenTank.scale`: the 60 s maximum, at least 1,000 tokens in or 50
+out) pours capacity ÷ 12 grains, and the tank leaks from its lowest grain at
+its fill ÷ 12 s, so a steady flow at the peak keeps it full, a burst fills
+part of it and drains over a minute, and idle agents leave it empty. Grains
+are particles in a small position-based fluid (double density relaxation,
+2 pt radius, 60 steps a second, the steps capped at 0.1 s a frame so a
+stalled frame does not explode it), drawn on the point grid in four shades.
+Gravity is the accelerometer on the screen's axes (raw, so a shake sloshes
+too) plus a quarter of a g toward the bottom, so a phone lying flat still
+settles down, capped at 3 g; tilting pours the liquid to the low side and
+the surface stays level with the real ground. The frame clock (iOS
+`TimelineView(.animation)`, Android `withFrameNanos`) stops while both tanks
+are empty and nothing is owed, checked every second on iOS and every 200 ms
+on Android. A full tank costs about 13 ms of a desktop core per simulated
+second. Totals
 (`AgentTokenSeries.totals`): the desktop's `tokensIn` / `tokensOut` from each
 `diag.vitals` event while watching a desktop (`DesktopVitals`), else every
 desktop row's totals, plus every cloud and runner row's. Each total is keyed

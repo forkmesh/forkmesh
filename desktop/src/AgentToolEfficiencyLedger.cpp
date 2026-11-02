@@ -869,10 +869,22 @@ bool AgentToolEfficiencyLedger::save(QString *error) const
         error);
 }
 
+QByteArray AgentToolEfficiencyLedger::serialized() const
+{
+    return QJsonDocument(toJson()).toJson(QJsonDocument::Compact);
+}
+
 void AgentToolEfficiencyLedger::saveLater() const
 {
-    forkmesh::diskwrite::writeLater(
-        m_persistPath, QJsonDocument(toJson()).toJson(QJsonDocument::Compact));
+    ++m_saveGeneration;
+    forkmesh::diskwrite::writeLater(m_persistPath, serialized());
+}
+
+void AgentToolEfficiencyLedger::finishBackgroundSave(quint64 generation,
+                                                     const QByteArray &bytes) const
+{
+    if (generation == m_saveGeneration)
+        forkmesh::diskwrite::writeLater(m_persistPath, bytes);
 }
 
 void AgentToolEfficiencyLedger::clear()

@@ -1712,10 +1712,12 @@ earlier call pieces are in section 14, "Direct calls".
   read while a desktop link is open, every 15 minutes when healthy and every 2
   when not. Charts are filled at 35 %.
 - **Token charts** (`AgentTokenChartsOverlay`, `AgentTokenCharts.kt`, S145):
-  two 12 dp charts, 126 dp together, under the status bar centred on the top
-  cutout (screen centre otherwise), shown with Diagnostics
-  (`showTelemetryStrip`) and the Agents package, ticking every second over
-  60 s, ignoring touches.
+  two 12 dp token tanks, 126 dp together, under the status bar centred on the
+  top cutout (screen centre otherwise), shown with Diagnostics
+  (`showTelemetryStrip`) and the Agents package, poured every second and
+  ignoring touches. `core/.../agents/AgentTokenTank.kt` is the same liquid as
+  iOS ([NAVIGATION.md](NAVIGATION.md), agent token tanks); the accelerometer
+  goes through Genie's `screenVector` for the display rotation.
 - **Several desktops (S141).** `DesktopControlHub` keeps the chosen desktop
   (`desktop/preferred-key` in project preferences), its `choices` with presence
   (Running, Not running or not reachable, Checking…), and `checkDesktops`,
