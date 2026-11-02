@@ -212,8 +212,8 @@ diff stays a review surface for them.
 ## Merged at once, with a celebration
 
 When the mirror confirms the merge, `celebrateRepoPullMerge` sets the record's
-status to `merged`, turns the header pill and the sticky bar's pill purple
-("Merged") and repaints both merge panels, so nobody has to reload to see it.
+status to `merged`, turns the header pill and the sticky bar's pill to
+the merged tone (`bg-primary`, "Merged") and repaints both merge panels, so nobody has to reload to see it.
 Confetti (the 🎉 reaction's `commentReactionConfetti`) bursts from whichever
 merge panel is on screen; it is skipped under `prefers-reduced-motion`. The
 activity refresh that follows keeps `merged` even if it reads a ledger commit
