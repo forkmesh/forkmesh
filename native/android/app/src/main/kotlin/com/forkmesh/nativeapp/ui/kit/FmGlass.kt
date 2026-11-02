@@ -186,7 +186,7 @@ fun Modifier.fmGlass(shape: Shape, tint: Color? = null, shadow: Boolean = true, 
     val specular = Color.White.copy(alpha = if (c.dark) 0.06f else 0.22f)
     val rimTop = Color.White.copy(alpha = if (c.dark) 0.28f else 0.85f)
     val rimBottom = if (c.dark) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.06f)
-    val shadowColor = Color.Black.copy(alpha = if (c.dark) 0.45f else 0.10f)
+    val shadowColor = Color.Black.copy(alpha = if (c.dark) 0.45f else 0.07f)
     var pressed by remember { mutableStateOf(false) }
     var touch by remember { mutableStateOf(Offset.Unspecified) }
     val swell by androidx.compose.animation.core.animateFloatAsState(if (pressed) FmGlass.PRESS_SCALE else 1f, androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 600f), label = "fmGlassSwell")
