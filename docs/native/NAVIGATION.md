@@ -560,6 +560,15 @@ The `tour` package shows the tour once after sign-in (`ShellTour.seen`,
 `fm.tour.seen.v1`) and keeps a Tour icon on Home. It looks like the screens it
 describes, moves, and offers three depths.
 
+- **Opening it once.** SwiftUI presents one sheet at a time, and a sheet asked
+  for while another presentation is up (the data folder alert at launch, a tip
+  popover) could be dropped while `showTour` stayed true. Every later sheet and
+  cover was then refused: Sign in did nothing and NEXUS left Home for Agents
+  without opening. iOS now asks for the tour a moment after launch, and the
+  header tips (`VoiceTip`, `PaletteTip`, `HubTip`) wait for
+  `VoiceTip.afterTour`, set once the tour is seen or when it does not open.
+  `SignInCoordinator.presentSignIn` dismisses a tip or sheet over the app
+  before opening sign-in.
 - **Color scheme.** On iOS the sheet sets `preferredColorScheme` to the theme's
   scheme. `ForkMeshTheme` only sets the SwiftUI environment, and the tour opens
   right after the forced-dark onboarding, so on iPhone Duo the sheet and status

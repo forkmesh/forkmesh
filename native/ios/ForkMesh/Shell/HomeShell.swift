@@ -1499,7 +1499,12 @@ struct HomeShell: View {
         }
         ShellQuickActions.refresh(recents: router.recents)
         if !ShellTour.seen && PackageGateSync.isInstalled(PhonePackages.tour) {
-            showTour = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(700))
+                showTour = true
+            }
+        } else {
+            ShellTour.allowTips()
         }
         Task { await updateCheck.check() }
         Task { await updateCheck.checkStore() }
