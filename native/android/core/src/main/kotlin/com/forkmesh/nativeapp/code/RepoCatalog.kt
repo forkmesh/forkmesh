@@ -71,6 +71,18 @@ object RepoCatalog {
     fun listStateKey(filter: RepoFilter, sort: RepoSort, query: String, visibleCount: Int): String =
         "list-${filter.key}-${sort.key}-$query-$visibleCount"
 
+    fun metaLine(repo: Repository, nowMillis: Long = System.currentTimeMillis()): String = listOfNotNull(
+        countOrNull(repo.mirrors, singular = "mirror"),
+        if (repo.isPrivate) "Private" else "Public",
+        if (repo.updatedMs > 0) relativeTime(repo.updatedMs, nowMillis) else null,
+    ).joinToString(" · ")
+
+    fun matchesVisibility(repo: Repository, visibility: RepoFilter?): Boolean = visibility == null || matchesFilter(repo, visibility)
+
+    val reachFilters: List<RepoFilter> = listOf(RepoFilter.All, RepoFilter.Online, RepoFilter.Offline)
+
+    val visibilityFilters: List<RepoFilter> = listOf(RepoFilter.Public, RepoFilter.Private)
+
     fun metaItems(repo: Repository, nowMillis: Long = System.currentTimeMillis()): List<RepoMetaItem> {
         val items = ArrayList<RepoMetaItem>()
         if (repo.language.isNotEmpty()) items += RepoMetaItem("circle", repo.language, isLanguage = true)

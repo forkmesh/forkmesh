@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -105,24 +106,28 @@ fun FmSectionHeader(
     trailing: (@Composable () -> Unit)? = null,
     count: Int? = null,
 ) {
+    val c = Fm.colors
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {
-            FmIcon(icon, size = 14.dp, tint = Fm.colors.textTertiary)
+            FmIcon(icon, size = 15.dp, tint = c.textTertiary)
             Spacer(Modifier.width(FmSpace.x2))
         }
-        Text(
-            title.uppercase(),
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = Fm.text.labelSmall,
-        )
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title,
+                modifier = Modifier.weight(1f, fill = false).semantics { heading() },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = Fm.text.titleSmall.copy(color = c.textSecondary),
+            )
+            if (count != null) {
+                Spacer(Modifier.width(FmSpace.x2))
+                Text("$count", style = Fm.text.bodyLarge.copy(color = c.textTertiary, lineHeight = Fm.text.titleSmall.lineHeight, fontFeatureSettings = FmType.tabular))
+            }
+        }
         if (trailing != null) {
             Spacer(Modifier.width(FmSpace.x3))
             trailing()
-        } else if (count != null) {
-            Spacer(Modifier.width(FmSpace.x3))
-            Text("$count", style = Fm.text.bodySmall.copy(fontFeatureSettings = FmType.tabular))
         }
     }
 }
@@ -151,24 +156,38 @@ fun FmEmptyState(
     title: String,
     modifier: Modifier = Modifier,
     message: String? = null,
+    art: (@Composable () -> Unit)? = null,
+    action: (@Composable () -> Unit)? = null,
 ) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
-            Modifier
-                .padding(horizontal = FmSpace.x5, vertical = FmSpace.x7)
-                .fmMessageTools(message?.let { "$title\n$it" } ?: title),
+            Modifier.padding(horizontal = FmSpace.x5, vertical = FmSpace.x7),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            FmIcon(icon, size = 40.dp, tint = Fm.colors.textTertiary)
-            Spacer(Modifier.height(FmSpace.x4))
-            Text(title, textAlign = TextAlign.Center, style = Fm.text.titleMedium)
-            if (message != null) {
-                Spacer(Modifier.height(FmSpace.x2))
-                Text(
-                    message,
-                    textAlign = TextAlign.Center,
-                    style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
-                )
+            if (art != null) {
+                art()
+                Spacer(Modifier.height(FmSpace.x5))
+            } else {
+                FmIcon(icon, size = 40.dp, tint = Fm.colors.textTertiary)
+                Spacer(Modifier.height(FmSpace.x4))
+            }
+            Column(
+                Modifier.fmMessageTools(message?.let { "$title\n$it" } ?: title),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(title, textAlign = TextAlign.Center, style = if (art != null || action != null) Fm.text.titleLarge else Fm.text.titleMedium)
+                if (message != null) {
+                    Spacer(Modifier.height(FmSpace.x2))
+                    Text(
+                        message,
+                        textAlign = TextAlign.Center,
+                        style = (if (art != null || action != null) Fm.text.bodyLarge else Fm.text.bodyMedium).copy(color = Fm.colors.textSecondary),
+                    )
+                }
+            }
+            if (action != null) {
+                Spacer(Modifier.height(FmSpace.x5))
+                action()
             }
         }
     }
