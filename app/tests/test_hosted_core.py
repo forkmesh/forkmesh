@@ -649,6 +649,7 @@ def test_settings_describe_core_hosting():
     assert body["mode"] == "core" and body["privateSupported"] is True
     assert body["used"] == 1
     assert body["limits"]["repositoriesPerAccount"] == 3
+    assert body["coreNodeCount"] == len(CORES)
     assert body["organizations"] == ["acme"]
     assert "mit" in body["licenseTemplates"]
     assert "github.com" in body["importHosts"]
