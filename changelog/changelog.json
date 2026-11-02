@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Android", "text": "The tour opens full screen with a short line and one animation per stop, and new accounts start Essentials right away."},
   {"date": "2026-11-02", "area": "Projects", "text": "In Top repositories, forks of an organization's repository now sit under the organization's entry instead of under a separate copy of the repository."},
   {"date": "2026-11-02", "area": "Market", "text": "CRM: every contact now sits in a named box for its company or project, found automatically from work email domains, websites, GitHub organizations and company names, and the box card brings together everyone there with every email, open, click, read, note and inbox message, including mail from new people at the same company."},
   {"date": "2026-11-02", "area": "Market", "text": "CRM: records that share an email address or X account count as one person, so Reach out and Follow up suggest each person once, and the web table shows one row per person with the other records a click away."},
@@ -24,6 +25,9 @@
   {"date": "2026-11-02", "area": "Projects", "text": "Creating a repository on the web now asks first whether it lives on your own computer or phone or on the servers, shows how much of your allowance you have used, and walks you through cloning and pushing afterwards."},
   {"date": "2026-11-02", "area": "Agents", "text": "The agent token tanks under the phone's top island draw at 30 frames a second with about a quarter of the processor time they took, and stop reading the accelerometer while they are empty."},
   {"date": "2026-11-02", "area": "Other improvements", "text": "The dashboard home is simpler: your repositories on the left, a cleaner prompt box, your agent sessions and open pull requests and issues in the middle, and the latest changelog and blog posts on the right."},
+  {"date": "2026-11-02", "area": "iPhone", "text": "The tour opens full screen with a short line and one animation per stop, and new accounts start Essentials right away."},
+  {"date": "2026-11-02", "area": "Android", "text": "Agents, Inbox, Repos and the Projects drawer match the iPhone: large titles, an Inbox filter menu on the title, All, Online and Offline repository filters, and flat lists."},
+  {"date": "2026-11-02", "area": "iPhone", "text": "Agents, Inbox, Repos and the Projects drawer look cleaner: large titles, an Inbox filter menu on the title, All, Online and Offline repository filters, and flat lists without heavy shadows."},
   {"date": "2026-11-02", "area": "Android", "text": "Your picture in the header now fills its status ring."},
   {"date": "2026-11-02", "area": "iPhone", "text": "Your picture in the header no longer tilts with the phone and now fills its status ring."},
   {"date": "2026-11-02", "area": "Other improvements", "text": "The docs use the whole phone screen, show JSON and config examples as readable tables, draw diagrams and page maps, add a bottom dock with link previews, and suggest what to read next from your own reading, kept only in your browser."},
