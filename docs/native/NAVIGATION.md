@@ -560,6 +560,22 @@ The `tour` package shows the tour once after sign-in (`ShellTour.seen`,
 `fm.tour.seen.v1`) and keeps a Tour icon on Home. It looks like the screens it
 describes, moves, and offers three depths.
 
+- **Full screen.** The first run opens Essentials straight in `TourPlayer`
+  (`Navigation/TourPlayer.swift`), a full-screen cover with no picker. The Tour
+  icon opens the track list (`TourView`), and a track opens the same player.
+  The player has a close or back circle, page dots and Skip at the top, the
+  animation in the middle over a black (dark) or base (light) ground with one
+  light behind it, a short headline ending in an accent full stop
+  (`TourStop.short`, at most six words) and one line (at most twelve), then the
+  filled Next button and an optional "Show me" link. The long `message` is the
+  VoiceOver hint. A last page says "You're set." and offers the next track.
+- **Frames and objects.** Stops about a screen draw it inside a small phone
+  (`TourPhone`, a 360 × 500 screen scaled to fit). Stops about one thing draw it
+  on its own at large size (`TourObjects.swift`): agent cards, the + button and
+  composer, the Inbox title menu, the voice orb and waveform, a diff with Merge,
+  and the Market carousel. The bottom bar in the mocks is `ShellBarPreview`
+  with `plain`, spread across the width with no backdrop.
+
 - **Color scheme.** On iOS the sheet sets `preferredColorScheme` to the theme's
   scheme. `ForkMeshTheme` only sets the SwiftUI environment, and the tour opens
   right after the forced-dark onboarding, so on iPhone Duo the sheet and status
@@ -574,7 +590,7 @@ describes, moves, and offers three depths.
   grouped list: each track is a row with its name, "Start here" or "Up next"
   on the suggested one, and its stop count with an estimate at 20 s a stop. A
   stop page is the mock, a quiet hint, the title and its text; the tips are
-  plain lines under it ([SCREEN_POLISH.md](SCREEN_POLISH.md)).
+  plain lines under it.
 - **The package gate decides the stops.** A stop with `needs` (Agents, Inbox,
   Repos, Chat) is left out when that tab's package is not installed. A stop
   with `offers` (Desktops, Notes and the rest, personal tools) stays, but when
