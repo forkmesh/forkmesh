@@ -77,7 +77,8 @@ step when `CMakeCache.txt` and `build.ninja` (or `Makefile`) exist, the
 arguments match, and the cache is not newer than that file. It logs
 `build tree already configured; skipping the configure step`, the same line as
 the desktop's Rebuild & restart. Ninja itself re-runs CMake when
-`CMakeLists.txt` or a `CONFIGURE_DEPENDS` glob changes. Changing the arguments
+`CMakeLists.txt`, a `CONFIGURE_DEPENDS` glob or a marketplace catalog or
+manifest changes ([package system](../marketplace/package-system.md)). Changing the arguments
 (`run` after `test`, a new Qt prefix, installing ccache) or anything else that
 rewrites the cache (the desktop's own configure, Ninja's re-run) makes the next
 run configure again.

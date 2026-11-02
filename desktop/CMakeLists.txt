@@ -18,6 +18,14 @@ file(GLOB_RECURSE FORKMESH_MARKETPLACE_CONFIGURE_INPUTS CONFIGURE_DEPENDS
     "${FORKMESH_MARKETPLACE_ROOT}/packages/*/manifest.json"
     "${FORKMESH_MARKETPLACE_ROOT}/packages/*/content/*"
     "${FORKMESH_MARKETPLACE_ROOT}/packages/*/preview/*")
+file(GLOB FORKMESH_MARKETPLACE_GENERATOR_INPUTS CONFIGURE_DEPENDS
+    "${FORKMESH_MARKETPLACE_ROOT}/*.json"
+    "${FORKMESH_MARKETPLACE_ROOT}/tools/generate_desktop_packages.py"
+    "${FORKMESH_MARKETPLACE_ROOT}/tools/marketplace_lib.py"
+    "${FORKMESH_MARKETPLACE_ROOT}/packages/*/manifest.json"
+    "${FORKMESH_MARKETPLACE_ROOT}/packages/*/content/desktop/build.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${FORKMESH_MARKETPLACE_GENERATOR_INPUTS})
 execute_process(
     COMMAND "${Python3_EXECUTABLE}"
             "${FORKMESH_MARKETPLACE_ROOT}/tools/generate_desktop_packages.py"
