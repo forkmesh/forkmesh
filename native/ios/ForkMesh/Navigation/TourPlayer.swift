@@ -57,7 +57,7 @@ struct TourPlayer: View {
         .preferredColorScheme(fm.dark ? .dark : .light)
         .accessibilityIdentifier("tour-player")
         .onAppear {
-            ShellTour.markSeen()
+            ShellTour.markShown()
             remember()
         }
     }

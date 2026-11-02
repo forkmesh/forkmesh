@@ -225,8 +225,12 @@ enum ShellTour {
     static var seen: Bool { UserDefaults.standard.bool(forKey: seenKey) }
 
     static func markSeen() {
-        UserDefaults.standard.set(true, forKey: seenKey)
+        markShown()
         allowTips()
+    }
+
+    static func markShown() {
+        UserDefaults.standard.set(true, forKey: seenKey)
     }
 
     static func allowTips() {
