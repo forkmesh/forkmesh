@@ -765,6 +765,9 @@
       const active = button.dataset.repoRecordTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
     });
+    article.querySelectorAll("[data-repo-record-sticky-tab]").forEach((button) => {
+      button.setAttribute("aria-selected", button.dataset.repoRecordStickyTab === tab ? "true" : "false");
+    });
     article.querySelectorAll("[data-repo-record-panel]").forEach((panel) => {
       panel.classList.toggle(
         "hidden",
@@ -3846,12 +3849,12 @@
 
       // PR detail section tabs are isolated panels, matching the GitHub review
       // surface: only the selected section is visible at a time.
-      const recordTabButton = event.target.closest("[data-repo-record-tab]");
+      const recordTabButton = event.target.closest("[data-repo-record-tab], [data-repo-record-sticky-tab]");
       if (recordTabButton) {
         const article = recordTabButton.closest("[data-repo-record-detail]");
         if (article) {
           event.preventDefault();
-          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || "", article);
+          setRepoRecordSection(recordTabButton.dataset.repoRecordTab || recordTabButton.dataset.repoRecordStickyTab || "", article);
           // Sections are addressable: put the open tab in the address bar so
           // the link a reviewer copies from "Files changed" reopens there for
           // whoever they send it to (and survives a refresh).

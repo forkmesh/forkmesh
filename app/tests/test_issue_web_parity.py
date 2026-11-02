@@ -397,7 +397,7 @@ def test_issue_sidebar_edits_through_pickers_that_submit_the_metadata_form():
     assert "picker && editable" in detail
     assert 'sidebarSection("Development", developmentValue, "development", Boolean(state.session?.nodeName))' in detail
 
-    pickers = _slice(REPO_UI, "let issuePicker = null;", "function mountIssueStickyHeader(container)")
+    pickers = _slice(REPO_UI, "let issuePicker = null;", "function mountRecordStickyHeader(container)")
     assert "form.requestSubmit();" in pickers
     assert 'selected.length < 10' in pickers
     wiring = (ROOT / "public/dashboard/js/08-repo-detail-network.js").read_text()

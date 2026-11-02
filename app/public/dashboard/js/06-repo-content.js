@@ -1575,7 +1575,7 @@
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
         paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
-        mountIssueStickyHeader(container);
+        mountRecordStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
           if (body) body.value = draft;
@@ -6589,6 +6589,7 @@
         parsed.pullMetadataCommit = servedCommit;
         const freshParsed = parseFrontMatter(blobText(record));
         const freshValues = freshParsed.values || {};
+        if (parsed.pullMerge?.state === "merged") freshValues.status = "merged";
         const statusChanged =
           (freshValues.status || "open") !== (values.status || "open");
         parsed.values = freshValues;
@@ -6598,6 +6599,7 @@
           const container = $("[data-repo-pulls]");
           if (container) {
             container.innerHTML = renderRepoRecordDetail(repo, "pulls", number, parsed);
+            mountRecordStickyHeader(container);
             window.lucide?.createIcons();
           }
         }
@@ -6787,6 +6789,7 @@
     } catch (_) {
       return false;
     }
+    mountRecordStickyHeader(container);
     window.lucide?.createIcons();
     return true;
   }
@@ -9848,7 +9851,28 @@
     }
     parsed.pullMerge = outcome;
     updateRepoPullMergePanel(repo, number, parsed);
-    if (outcome?.state === "merged") refreshRepoPullActivity(repo, number);
+    if (outcome?.state === "merged") {
+      celebrateRepoPullMerge(repo, number, parsed);
+      refreshRepoPullActivity(repo, number);
+    }
+  }
+
+  function celebrateRepoPullMerge(repo, number, parsed) {
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.values = { ...(parsed.values || {}), status: "merged" };
+    const article = document.querySelector('[data-repo-record-detail="pulls"]');
+    article?.querySelectorAll("[data-repo-record-state], [data-repo-record-sticky-state]").forEach((pill) => {
+      pill.classList.remove("bg-success", "bg-destructive", "bg-[#6e7681]");
+      pill.classList.add("bg-primary");
+      const size = pill.hasAttribute("data-repo-record-sticky-state") ? "h-3.5 w-3.5" : "h-4 w-4";
+      pill.innerHTML = `<i data-lucide="git-merge" class="${size}"></i>Merged`;
+    });
+    updateRepoPullMergePanel(repo, number, parsed);
+    window.lucide?.createIcons();
+    if (!commentReactionMotionOk()) return;
+    const origin = [...document.querySelectorAll("[data-repo-pull-merge-panel]")]
+      .find((panel) => panel.getClientRects().length) || article?.querySelector("[data-repo-record-state]");
+    if (origin) commentReactionConfetti(origin.getBoundingClientRect());
   }
 
   async function handleRepoPullMergeOverride(repo) {
@@ -10509,6 +10533,17 @@
       ...(parsed.discussionConversation || []).map((ev) => ev.authorName || ev.author).filter(Boolean)]));
     return `
       <article data-repo-record-detail="${escapeHtml(kind)}" class="min-w-0 bg-background">
+        ${isPulls ? `<div data-repo-record-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
+          <div data-repo-record-sticky-bar class="flex w-full -translate-y-full flex-col gap-1 border-b border-border bg-background/95 px-3 pt-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
+            <div class="flex min-w-0 items-center gap-2">
+              <span data-repo-record-sticky-state class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${statePillTone} px-2 text-[12px] font-medium text-white"><i data-lucide="${stateIcon}" class="h-3.5 w-3.5"></i>${escapeHtml(stateLabel)}</span>
+              <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
+            </div>
+            <nav class="flex min-w-0 items-end overflow-x-auto" aria-label="Pull request sections">
+              ${[["conversation", "Conversation"], ["commits", "Commits"], ["checks", "Checks"], ["files", "Files changed"], ["badge", "Badge"]].map(([name, label]) => `<button type="button" data-repo-record-sticky-tab="${name}" aria-selected="${name === activeSection ? "true" : "false"}" class="-mb-px inline-flex h-8 shrink-0 items-center border-b-2 border-transparent px-3 text-[13px] text-muted-foreground hover:text-foreground aria-selected:border-[var(--dashboard-link)] aria-selected:text-foreground">${label}</button>`).join("")}
+            </nav>
+          </div>
+        </div>` : ""}
         <header data-repo-record-hero class="${isPulls ? "" : "border-b border-border pb-4"}">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
@@ -11852,9 +11887,9 @@ Your reply
   }
 
   // The compact title bar slides in once the full header scrolls away.
-  function mountIssueStickyHeader(container) {
-    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero]');
-    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar]");
+  function mountRecordStickyHeader(container) {
+    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero], [data-repo-record-detail="pulls"] [data-repo-record-hero]');
+    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar], [data-repo-record-sticky-bar]");
     state.issueStickyObserver?.disconnect?.();
     if (!hero || !bar || typeof IntersectionObserver !== "function") return;
     state.issueStickyObserver = new IntersectionObserver(([entry]) => {
@@ -12238,7 +12273,7 @@ Your reply
     const html = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") paintRepoIssueDetail(container, html);
     else container.innerHTML = html;
-    if (kind === "issues") mountIssueStickyHeader(container);
+    if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
     if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
@@ -12439,7 +12474,7 @@ Your reply
       if (kind === "issues") paintRepoIssueDetail(container, html);
       else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
-      if (kind === "issues") mountIssueStickyHeader(container);
+      if (kind === "issues" || kind === "pulls") mountRecordStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
       if (typeof scheduleCommentReactionCheer === "function") scheduleCommentReactionCheer(commentReactionSubject(kind, number));
       if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);

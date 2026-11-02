@@ -209,6 +209,26 @@ patches the live progress block in both slots, so the step list, timer and
 result read the same on either tab. Visitors who cannot merge see no bar: the
 diff stays a review surface for them.
 
+## Merged at once, with a celebration
+
+When the mirror confirms the merge, `celebrateRepoPullMerge` sets the record's
+status to `merged`, turns the header pill and the sticky bar's pill purple
+("Merged") and repaints both merge panels, so nobody has to reload to see it.
+Confetti (the 🎉 reaction's `commentReactionConfetti`) bursts from whichever
+merge panel is on screen; it is skipped under `prefers-reduced-motion`. The
+activity refresh that follows keeps `merged` even if it reads a ledger commit
+from before the merge (`parsed.pullMerge.state === "merged"`), so the pill
+cannot flip back to Open.
+
+## Sticky header
+
+Like the issue page, a pull keeps a compact bar at the top of the page once
+its full header scrolls away (`[data-repo-record-sticky-bar]`, shown by
+`mountRecordStickyHeader`): the state pill, the title and number, and the
+section tabs. The bar's tabs are `data-repo-record-sticky-tab` buttons that
+switch sections through the same handler and `setRepoRecordSection`, so the
+address bar and both tab strips stay in step.
+
 ## Live state arrives after the first paint
 
 The pull page paints once the record, diff, conversation and commits are read;

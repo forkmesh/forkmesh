@@ -1598,7 +1598,7 @@
       detail.number,
       detail.parsed,
     ));
-    mountIssueStickyHeader(container);
+    mountRecordStickyHeader(container);
     decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
