@@ -716,24 +716,18 @@ def _review(key, account, state):
 
 
 @pytest.mark.parametrize("reviews, merged", [
-    # One account, several keys: the latest review of the account wins.
     ([("bob-laptop", "bob", "changes_requested"),
       ("bob-phone", "Bob", "changes_requested"),
       ("bob-browser", "bob", "approved")], True),
-    # The pull author (key alice, account Alice) approving with a second key.
     ([("alice-phone", "alice", "approved")], False),
-    # ... and objecting with one: their own reviews never count either way.
     ([("bob-laptop", "bob", "approved"),
       ("alice-phone", "ALICE", "changes_requested")], True),
-    # Two accounts: one objection still open blocks the merge.
     ([("carol-laptop", "carol", "changes_requested"),
       ("bob-laptop", "bob", "changes_requested"),
       ("bob-phone", "bob", "approved")], False),
-    # A dismissed review clears that account's earlier objection.
     ([("carol-laptop", "carol", "changes_requested"),
       ("carol-phone", "carol", "dismissed"),
       ("bob-phone", "bob", "approved")], True),
-    # Reviews with no account name stay keyed on their signing key.
     ([("anon-1", "", "changes_requested"),
       ("anon-2", "", "approved")], False),
 ], ids=["same-account-keys", "author-second-key", "author-objection",

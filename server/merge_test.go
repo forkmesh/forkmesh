@@ -866,10 +866,6 @@ func keyedReviewRecord(key, account, state string) string {
 	}, "\n")
 }
 
-// A reviewer is an account, not a signing key: people sign from several
-// device and browser keys, and the Worker binds authorName to the account
-// that holds the key. The pull author (key "alice", account "alice") never
-// reviews their own pull, whichever key they sign with.
 func TestReviewGateKeysReviewersByAccount(t *testing.T) {
 	cases := []struct {
 		name    string

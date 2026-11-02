@@ -4376,7 +4376,6 @@ def _merge_front_matter_values(raw: bytes) -> dict[str, str] | None:
 
 
 def _merge_review_account(value: Any) -> str:
-    """The account a review or pull record names, as the Worker binds it."""
     return str(value or "").strip().lower()
 
 
@@ -4391,14 +4390,6 @@ def _merge_peer_review_gate(
     PullStore/Worker signature validation. This executor still parses only a
     bounded allowlisted projection and ignores any review authored by the PR
     signer.
-
-    A reviewer is an account, not a key: people sign from several device and
-    browser keys, so reviews are grouped by ``authorName``. The Worker sets
-    that field itself from the signed-in session or from the account the
-    signing key is bound to (never from the client), so it names the account
-    that holds the key. A review with no account name falls back to its
-    signing key. Reviews from the PR author's account, under any key, never
-    count.
     """
     metadata = _merge_front_matter_values(raw_metadata)
     pull_author = str((metadata or {}).get("author") or "")
