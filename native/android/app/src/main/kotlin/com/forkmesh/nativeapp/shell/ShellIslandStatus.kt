@@ -76,14 +76,14 @@ internal fun rememberShellIslandLayout(): ShellIslandLayout {
 @Composable
 internal fun rememberShellIslandEars(): Boolean {
     val settings = Services.get<SettingsService>()
-    val diagnostics = settings?.showTelemetryStrip?.collectAsState()?.value ?: true
+    val diagnostics = settings?.showTelemetryStrip?.collectAsState()?.value ?: false
     return diagnostics && rememberShellIslandLayout().inStatusBar
 }
 
 @Composable
 internal fun ShellIslandStatus(modifier: Modifier = Modifier) {
     val settings = Services.get<SettingsService>()
-    val diagnostics = settings?.showTelemetryStrip?.collectAsState()?.value ?: true
+    val diagnostics = settings?.showTelemetryStrip?.collectAsState()?.value ?: false
     if (!diagnostics) return
     val statusOn by StatusPageFeature.installed.collectAsState()
     val row by StatusPageFeature.row.collectAsState()

@@ -68,7 +68,7 @@ private object TokenCharts {
 @Composable
 fun AgentTokenChartsOverlay(modifier: Modifier = Modifier) {
     val settings = Services.get<SettingsService>()
-    val shown = settings?.showTelemetryStrip?.collectAsState()?.value ?: true
+    val shown = settings?.showTelemetryStrip?.collectAsState()?.value ?: false
     if (!shown) return
     WatchDesktopTokens()
     val center = cutoutCenter()

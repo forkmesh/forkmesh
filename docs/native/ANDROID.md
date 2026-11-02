@@ -1297,11 +1297,13 @@ bottom bar.
   avatar (38 dp, corners 28%, as `AvatarWithDot(rounded:)`: picture or initial,
   a 2 dp status ring touching it with no gap, the status emoji bottom-left;
   S014). A guest
-  sees a person icon and a "Sign in" chip. Search is on Home, not the bar. The
-  telemetry strip: 12 x 10 dp sparklines coloured by `TelemetryMetric.health`.
+  sees the person icon and "Sign in" in one glass capsule
+  (`GuestAccountCapsule`). Search is on Home, not the bar. The telemetry strip,
+  when the Diagnostics switch is on (off by default): 12 x 10 dp sparklines
+  coloured by `TelemetryMetric.health`.
 - **New-agent button** (`PromptButton`): a 44 dp accent gradient circle with a
-  white plus and a glow that grows with running agents; each running agent
-  adds a small static four-point star. Hold it for the voice prompt (section 30).
+  white plus and a neutral shadow ([SCREEN_POLISH.md](SCREEN_POLISH.md)); each
+  running agent adds a small static four-point star. Hold it for the voice prompt (section 30).
 - **Pushed-page header** (`FmNavBar`), the iOS 26 inline bar: page-coloured,
   52 dp, centred `titleMedium` title, a 44 dp glass Back circle, actions on the
   right. Actions get the bar width less 52 dp (at least 184 dp,
