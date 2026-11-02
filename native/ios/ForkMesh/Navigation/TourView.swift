@@ -554,6 +554,11 @@ enum ShellTour {
 
     static func markSeen() {
         UserDefaults.standard.set(true, forKey: seenKey)
+        allowTips()
+    }
+
+    static func allowTips() {
+        VoiceTip.afterTour = true
     }
 
     static var done: Set<TourTrack> {
@@ -597,18 +602,22 @@ enum ShellTour {
 }
 
 struct HubTip: Tip {
+    var rules: [Rule] { [#Rule(VoiceTip.$afterTour) { $0 }] }
     var title: Text { Text("Your hub") }
     var message: Text? { Text("Your status, Pocket mode, Settings and signing out live here.") }
     var image: Image? { Image(systemName: "person.crop.circle") }
 }
 
 struct VoiceTip: Tip {
+    @Parameter static var afterTour: Bool = false
+    var rules: [Rule] { [#Rule(VoiceTip.$afterTour) { $0 }] }
     var title: Text { Text("Hold to talk") }
     var message: Text? { Text("Hold the new agent button and say what the agent should do. It starts when you let go.") }
     var image: Image? { Image(systemName: "waveform") }
 }
 
 struct PaletteTip: Tip {
+    var rules: [Rule] { [#Rule(VoiceTip.$afterTour) { $0 }] }
     var title: Text { Text("Hold for commands") }
     var message: Text? { Text("Hold the new agent button to open the command palette.") }
     var image: Image? { Image(systemName: "command") }
