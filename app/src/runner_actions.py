@@ -302,9 +302,6 @@ async def sweep(runtime, now):
         "UPDATE repo_action_jobs SET status='queued',lease_id='',runner='',"
         "token_hash='',expires_at=0,updated_at=? "
         "WHERE status IN ('leased','running') AND expires_at<?", now, now)
-    # A queued job's day starts when it became queued: an approval moves an
-    # old waiting job to queued and stamps updated_at, so created_at would
-    # expire a freshly approved run on the very next sweep.
     await runtime.d1_run(
         "UPDATE repo_action_jobs SET status='expired',"
         "note='No runner took this job within a day.',updated_at=? "
