@@ -22,6 +22,8 @@ AI_RETRY_AFTER_MS = 30_000
 EXPECTED_DEGRADED_HEADER = "x-forkmesh-expected-degraded"
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 DATA_RE = re.compile(r"^H4sI[A-Za-z0-9+/]*={0,2}$")
+LINK_ORG_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+LINK_LIST_RE = re.compile(r"^(?:[0-9a-f]{32}|pipeline:[a-z][a-z0-9-]{0,39}|no-pipeline)$")
 AI_COLOR_RE = re.compile(r"^(#[0-9A-Fa-f]{3}|#[0-9A-Fa-f]{6}|[A-Za-z ]{3,20})$")
 AI_REF_RE = re.compile(r"^('(?:[^']|'')+'!|[A-Za-z0-9_.]+!)?\$?[A-Za-z]{1,3}\$?\d{0,7}(:\$?[A-Za-z]{1,3}\$?\d{0,7})?$")
 
@@ -247,6 +249,22 @@ def _title(value):
     return _clean(value, MAX_TITLE) or "Untitled spreadsheet"
 
 
+def _link(value):
+    if not isinstance(value, dict) or value.get("kind") != "crm":
+        return None
+    org, list_id = str(value.get("org") or ""), str(value.get("list") or "")
+    if not LINK_ORG_RE.fullmatch(org) or not LINK_LIST_RE.fullmatch(list_id):
+        return None
+    return {"kind": "crm", "org": org, "list": list_id}
+
+
+def _meta(title, link):
+    meta = {"title": _title(title)}
+    if link:
+        meta["link"] = link
+    return meta
+
+
 def _data(value):
     text = str(value or "")
     if not text or len(text) > MAX_DATA_CHARS or len(text) % 4 or not DATA_RE.fullmatch(text):
@@ -284,6 +302,9 @@ async def _project(runtime, account_bi, row, with_data=False):
         "revision": _integer(row.get("revision"), 1),
         "bytes": _integer(row.get("bytes")),
     }
+    link = _link(meta.get("link"))
+    if link:
+        out["link"] = link
     if with_data:
         opened = await runtime.open_for(account_bi, row.get("data"))
         out["data"] = str(opened.get("data") or "")
@@ -332,7 +353,7 @@ async def _create(runtime, account_bi, actor, data):
         "INSERT INTO spreadsheets_books(book_id,account_bi,created_at,updated_at,revision,bytes,meta,data) "
         "VALUES(?,?,?,?,?,?,?,?)",
         book_id, account_bi, now, now, 1, len(payload),
-        await runtime.seal_for(account_bi, {"title": _title(data.get("title"))}),
+        await runtime.seal_for(account_bi, _meta(data.get("title"), _link(data.get("link")))),
         await runtime.seal_for(account_bi, {"data": payload}))
     await runtime.audit(actor, "spreadsheets.create", "spreadsheet", book_id)
     row = await _book_row(runtime, account_bi, book_id)
@@ -343,13 +364,16 @@ async def _update(runtime, row, account_bi, actor, data):
     revision = _integer(row.get("revision"), 1)
     if not data.get("force") and _integer(data.get("revision"), -1) != revision:
         return _response(runtime, {"error": "workbook_changed", "revision": revision}, 409)
-    if "data" not in data and "title" not in data:
+    if "data" not in data and "title" not in data and "link" not in data:
         return _response(runtime, {"error": "nothing_to_update"}, 400)
     now = max(runtime.now(), _integer(row.get("updated_at")))
     meta_sql, meta_args = "", []
-    if "title" in data:
+    if "title" in data or "link" in data:
+        before = await runtime.open_for(account_bi, row.get("meta"))
         meta_sql = ",meta=?"
-        meta_args = [await runtime.seal_for(account_bi, {"title": _title(data.get("title"))})]
+        meta_args = [await runtime.seal_for(account_bi, _meta(
+            data.get("title") if "title" in data else before.get("title"),
+            _link(data.get("link") if "link" in data else before.get("link"))))]
     data_sql, data_args = "", []
     if "data" in data:
         payload = _data(data.get("data"))

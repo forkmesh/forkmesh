@@ -30,7 +30,28 @@ struct SurveySettings {
     qint64 closesAt = 0;
     int maxResponses = 0;
     bool notifyOnResponse = true;
+    bool notifyOnVisit = true;
     bool shuffleOptions = false;
+};
+
+struct VisitEvent {
+    QString kind;
+    QString detail;
+    QString label;
+    QString visitor;
+    qint64 at = 0;
+};
+
+struct SurveyActivity {
+    qint64 days = 30;
+    qint64 views = 0;
+    qint64 visitors = 0;
+    qint64 interactions = 0;
+    qint64 starts = 0;
+    qint64 submits = 0;
+    qint64 leaves = 0;
+    qint64 lastActivityAt = 0;
+    QList<VisitEvent> recent;
 };
 
 struct Question {
@@ -95,6 +116,7 @@ struct Survey {
     bool detailed = false;
     QList<Question> questions;
     QList<QuestionResult> results;
+    SurveyActivity activity;
 };
 
 struct SurveyResponse {
@@ -127,6 +149,7 @@ QList<Survey> parseSurveys(const QJsonArray &items);
 SurveyResponse parseResponse(const QJsonObject &object);
 QList<SurveyResponse> parseResponses(const QJsonArray &items);
 Summary parseSummary(const QJsonObject &object);
+SurveyActivity parseActivity(const QJsonObject &object);
 
 QString statusKey(const Survey &survey);
 QString statusLabel(const QString &key);
@@ -172,6 +195,8 @@ QString countPhrase(qint64 count, const QString &one, const QString &many = QStr
 QString responsesText(const Survey &survey, qint64 nowMs, const QTimeZone &zone = QTimeZone::systemTimeZone());
 QString scheduleText(const Survey &survey, qint64 nowMs, const QTimeZone &zone = QTimeZone::systemTimeZone());
 QStringList settingsLines(const SurveySettings &settings, const QTimeZone &zone = QTimeZone::systemTimeZone());
+QString activityText(const SurveyActivity &activity, qint64 nowMs, const QTimeZone &zone = QTimeZone::systemTimeZone());
+QString visitEventText(const VisitEvent &event, qint64 nowMs, const QTimeZone &zone = QTimeZone::systemTimeZone());
 
 QString notInstalledError(const QJsonObject &payload);
 QString readableError(const QString &error);

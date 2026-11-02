@@ -195,6 +195,7 @@ struct BookingSettingsScreen: View {
             TextField("Send my booking emails to", text: $draft.notifyEmail, prompt: Text("you@example.com"))
                 .keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
             Toggle("Email me when someone books, moves or cancels", isOn: $draft.emailOwner)
+            Toggle("Ping me when someone opens my page or starts picking a time", isOn: $draft.notifyVisits)
             Toggle("Add booked meetings to my ForkMesh calendar", isOn: $draft.addToCalendar)
         } header: {
             Text("Email and calendar")

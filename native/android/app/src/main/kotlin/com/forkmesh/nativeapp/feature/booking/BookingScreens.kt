@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.feature.market.ErrorLine
 import com.forkmesh.nativeapp.feature.market.MarketFeature
+import com.forkmesh.nativeapp.feature.market.PageActivityCard
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.rssreader.shareText
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
@@ -224,7 +225,7 @@ class BookingScreen(private val requested: String? = null) : Screen() {
                         focused = true
                         tab = if (overview.inPast(wanted)) 1 else 0
                         delay(50)
-                        var index = 4
+                        var index = 5
                         for ((_, items) in Booking.groupByDay(if (tab == 0) overview.upcoming else overview.past, zone)) {
                             val at = items.indexOfFirst { it.id == wanted }
                             if (at >= 0) { index += at + 1; break }
@@ -244,6 +245,7 @@ class BookingScreen(private val requested: String? = null) : Screen() {
                             )
                         }
                         item(key = "stats") { StatTiles(overview) }
+                        item(key = "activity") { PageActivityCard(overview.activity, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
                         item(key = "tabs") {
                             FmSegmentTabBar(
                                 listOf(FmSegmentTab("Upcoming", overview.upcoming.size), FmSegmentTab("Past & cancelled", overview.past.size)),
@@ -563,6 +565,7 @@ class BookingSettingsScreen internal constructor(private val store: BookingStore
                 FmTextField(settings.notifyEmail, { settings = settings.copy(notifyEmail = it.trim()) }, Modifier.fillMaxWidth(), hint = "Send my booking emails to",
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
                 SwitchRow("Email me when someone books, moves or cancels", settings.emailOwner) { settings = settings.copy(emailOwner = it) }
+                SwitchRow("Ping me when someone opens my page or starts picking a time", settings.notifyVisits) { settings = settings.copy(notifyVisits = it) }
                 SwitchRow("Add booked meetings to my ForkMesh calendar", settings.addToCalendar) { settings = settings.copy(addToCalendar = it) }
                 Text(
                     "You always get a ForkMesh notification. Guests always get a confirmation, a reminder the day before, and an email when the meeting moves or is cancelled.",

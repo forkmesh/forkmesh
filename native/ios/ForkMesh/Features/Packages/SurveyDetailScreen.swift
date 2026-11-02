@@ -61,6 +61,9 @@ struct SurveyDetailScreen: View {
                 headerSection(survey)
                 if let url = survey.shareURL { linkSection(url, survey: survey) }
                 actionsSection(survey)
+                if survey.questions != nil {
+                    PageActivitySection(activity: survey.activity, now: Int64(Date().timeIntervalSince1970 * 1000))
+                }
                 Section {
                     Picker("Show", selection: $tab) {
                         ForEach(SurveyDetailTab.allCases) { Text($0.title).tag($0) }
@@ -197,6 +200,7 @@ struct SurveyDetailScreen: View {
         var out = next
         out.questions = old.questions
         out.results = old.results
+        out.activity = old.activity
         return out
     }
 

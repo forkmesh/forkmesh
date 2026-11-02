@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "summary": "Build surveys with choice, text and rating questions, share a private link anyone can answer, and read the results and responses on the web, desktop and phones.",
   "screenshots": [
     {
@@ -72,12 +72,12 @@
     },
     {
       "id": "survey.public.link",
-      "label": "Let anyone with a survey's private link read its questions and send an answer while it is open",
+      "label": "Let anyone with a survey's private link answer it while it is open, and count their visits for you",
       "risk": "sensitive"
     },
     {
       "id": "notifications.plugin.send",
-      "label": "Ping a survey's creator when new responses arrive",
+      "label": "Ping a survey's creator when someone opens or starts it and when new responses arrive",
       "risk": "low"
     },
     {

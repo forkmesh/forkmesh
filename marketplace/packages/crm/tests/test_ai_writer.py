@@ -59,7 +59,7 @@ def test_the_web_prompt_reads_message_bodies_and_live_posts():
 
 def test_desktop_cards_and_detail_panel_open_the_writer():
     card = _desktop("QWidget *CrmFeature::nextContactCard")
-    assert 'addButton(QStringLiteral("Write with AI")' in card
+    assert 'addButton(head, QStringLiteral("Write with AI")' in card
     assert 'showAiWriter(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"), reason)' in card
     detail = _desktop("void CrmFeature::showContactDetail")
     assert 'new QPushButton(QStringLiteral("Write with AI"))' in detail

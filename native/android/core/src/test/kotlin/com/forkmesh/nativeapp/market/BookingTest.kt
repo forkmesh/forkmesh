@@ -107,6 +107,54 @@ class BookingTest {
         assertEq(listOf(listOf("08:00", "24:00")), endOfDay)
     }
 
+    fun testActivityDecodesAndSummarises() {
+        val old = BookingOverview.fromJson(overviewJson()).activity
+        assertEq(PageActivity(), old)
+        expect(old.isEmpty)
+        assertEq("No visits in the last 30 days", old.summary(nov3))
+        assertEq(emptyList<PageVisit>(), old.newest)
+        val recent = mutableListOf<Map<String, Any?>>(
+            mapOf("kind" to "form", "type" to "30min", "detail" to "", "label" to "Opened the details form for Meeting", "visitor" to "a3f9c1", "at" to nov3 - 7_200_000),
+            mapOf("kind" to "view", "type" to "", "label" to "Opened your page", "visitor" to "a3f9c1", "at" to nov3 - 7_300_000),
+            mapOf("kind" to "view", "label" to "", "at" to 1),
+        )
+        for (step in 1..4) recent.add(mapOf("kind" to "slot", "label" to "Picked a time $step", "visitor" to "b0b0b0", "at" to nov3 - 86_400_000L * step))
+        val json = overviewJson() + ("activity" to mapOf(
+            "days" to 30, "views" to 42, "visitors" to 12, "interactions" to 9, "starts" to 5, "submits" to 3, "leaves" to 7,
+            "lastActivityAt" to nov3 - 7_200_000, "recent" to recent,
+        ))
+        val activity = BookingOverview.fromJson(json).activity
+        assertEq(42, activity.views)
+        assertEq(12, activity.visitors)
+        assertEq(9, activity.interactions)
+        assertEq(5, activity.starts)
+        assertEq(3, activity.submits)
+        assertEq(7, activity.leaves)
+        expect(!activity.isEmpty)
+        assertEq(6, activity.recent.size)
+        assertEq(PageVisit("form", "30min", "", "Opened the details form for Meeting", "a3f9c1", nov3 - 7_200_000), activity.recent[0])
+        assertEq("Last 30 days: 42 views · 12 visitors · 5 started · 3 sent · last activity 2h ago", activity.summary(nov3))
+        assertEq(listOf("Opened the details form for Meeting", "Opened your page", "Picked a time 1", "Picked a time 2", "Picked a time 3"), activity.newest.map { it.label })
+        assertEq(listOf("2h ago", "2h ago", "1d ago", "2d ago", "3d ago"), activity.newest.map { it.whenLabel(nov3) })
+        assertEq("", PageVisit(label = "x").whenLabel(nov3))
+        assertEq("Last day: 1 view · 1 visitor · 0 started · 0 sent", PageActivity(days = 1, views = 1, visitors = 1).summary(nov3))
+        assertEq("Last 30 days: 0 views · 0 visitors · 0 started · 0 sent", PageActivity(interactions = 2).summary(nov3))
+        assertEq("No visits in the last day", PageActivity.fromJson(mapOf("days" to 0, "views" to -4)).summary(nov3))
+    }
+
+    fun testNotifyVisitsRoundTrips() {
+        val missing = BookingOverview.fromJson(overviewJson()).settings
+        expect(missing.notifyVisits)
+        expect(BookingSettings().notifyVisits)
+        assertEq(true, missing.body()["notifyVisits"])
+        val json = overviewJson().toMutableMap()
+        json["settings"] = (json["settings"] as Map<*, *>).entries.associate { it.key as String to it.value } + ("notifyVisits" to false)
+        val off = BookingOverview.fromJson(json).settings
+        expect(!off.notifyVisits)
+        assertEq(false, off.body()["notifyVisits"])
+        assertEq(true, off.copy(notifyVisits = true).body()["notifyVisits"])
+    }
+
     fun testErrorsAndSlugs() {
         assertEq("That link is taken. Try another.", BookingErrors.describe(PackagesException("slug_taken", 409)))
         assertEq("A video call link must start with https://.", BookingErrors.sentence("invalid_meeting_url"))
