@@ -21,6 +21,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -64,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.feature.chat.RelayConnection
 import com.forkmesh.nativeapp.navigation.TourScene
@@ -82,12 +89,23 @@ import kotlin.math.sin
 internal object TourBeat {
     const val BEAT_MS = 1900L
     const val QUIET_MS = 6000L
-    val height = 330.dp
+}
+
+internal val TourScene.isObject: Boolean
+    get() = when (this) {
+        TourScene.AGENTS, TourScene.NEW_AGENT, TourScene.INBOX, TourScene.VOICE, TourScene.CODE, TourScene.MARKET -> true
+        else -> false
+    }
+
+internal object TourPhone {
+    val screenWidth = 360.dp
+    val screenHeight = 500.dp
+    val bezel = 7.dp
+    val maxHeight = 440.dp
 }
 
 @Composable
 internal fun TourStage(scene: TourScene, title: String, active: Boolean, modifier: Modifier = Modifier) {
-    val c = Fm.colors
     val haptics = FmHaptics.current
     var phase by remember { mutableIntStateOf(0) }
     var quietUntil by remember { mutableLongStateOf(0L) }
@@ -106,38 +124,80 @@ internal fun TourStage(scene: TourScene, title: String, active: Boolean, modifie
         quietUntil = System.currentTimeMillis() + TourBeat.QUIET_MS
         phase = next
     }
-    val shape = RoundedCornerShape(30.dp)
-    val shadow = Color.Black.copy(alpha = if (c.dark) 0.5f else 0.12f)
-    Box(
-        modifier
-            .padding(horizontal = 8.dp)
-            .fillMaxWidth()
-            .height(TourBeat.height)
-            .shadow(18.dp, shape, ambientColor = shadow, spotColor = shadow)
-            .clip(shape)
-            .background(c.bgBase)
-            .border(1.dp, c.border, shape)
-            .semantics { contentDescription = "Preview: $title" },
-    ) {
-        when (scene) {
-            TourScene.HOME -> TourHomeScene(phase, act)
-            TourScene.AGENTS -> TourAgentsScene(phase, act)
-            TourScene.NEW_AGENT -> TourNewAgentScene(phase, act)
-            TourScene.INBOX -> TourInboxScene(phase, act)
-            TourScene.HUB -> TourHubScene(phase, act)
-            TourScene.VOICE -> TourVoiceScene(phase, act)
-            TourScene.CODE -> TourCodeScene(phase, act)
-            TourScene.PALETTE -> TourPaletteScene(phase, act)
-            TourScene.SEARCH -> TourSearchScene(phase, act)
-            TourScene.BAR -> TourBarScene(phase, act)
-            TourScene.CHAT -> TourChatScene(phase, act)
-            TourScene.PROJECTS -> TourProjectsScene(phase, act)
-            TourScene.DESKTOPS -> TourDesktopsScene(phase, act)
-            TourScene.WORKSPACE -> TourWorkspaceScene(phase, act)
-            TourScene.MARKET -> TourMarketScene(phase, act)
-            TourScene.PERSONAL -> TourPersonalScene(phase, act)
-            TourScene.SYSTEM -> TourSystemScene(phase, act)
-            TourScene.LOOKS -> TourLooksScene(phase, act)
+    Box(modifier.semantics { contentDescription = "Preview: $title" }, contentAlignment = Alignment.Center) {
+        if (scene.isObject) {
+            TourSceneContent(scene, phase, act)
+        } else {
+            TourPhoneFrame(fullBleed = scene == TourScene.SYSTEM) { TourSceneContent(scene, phase, act) }
+        }
+    }
+}
+
+@Composable
+private fun TourSceneContent(scene: TourScene, phase: Int, act: (Int) -> Unit) {
+    when (scene) {
+        TourScene.HOME -> TourHomeScene(phase, act)
+        TourScene.AGENTS -> TourAgentsScene(phase, act)
+        TourScene.NEW_AGENT -> TourNewAgentScene(phase, act)
+        TourScene.INBOX -> TourInboxScene(phase, act)
+        TourScene.HUB -> TourHubScene(phase, act)
+        TourScene.VOICE -> TourVoiceScene(phase, act)
+        TourScene.CODE -> TourCodeScene(phase, act)
+        TourScene.PALETTE -> TourPaletteScene(phase, act)
+        TourScene.SEARCH -> TourSearchScene(phase, act)
+        TourScene.BAR -> TourBarScene(phase, act)
+        TourScene.CHAT -> TourChatScene(phase, act)
+        TourScene.PROJECTS -> TourProjectsScene(phase, act)
+        TourScene.DESKTOPS -> TourDesktopsScene(phase, act)
+        TourScene.WORKSPACE -> TourWorkspaceScene(phase, act)
+        TourScene.MARKET -> TourMarketScene(phase, act)
+        TourScene.PERSONAL -> TourPersonalScene(phase, act)
+        TourScene.SYSTEM -> TourSystemScene(phase, act)
+        TourScene.LOOKS -> TourLooksScene(phase, act)
+    }
+}
+
+@Composable
+internal fun TourPhoneFrame(fullBleed: Boolean = false, screen: @Composable () -> Unit) {
+    val c = Fm.colors
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val height = minOf(maxHeight - 24.dp, TourPhone.maxHeight).coerceAtLeast(TourPhone.bezel * 4)
+        val scale = maxOf(0.3f, (height - TourPhone.bezel * 2) / TourPhone.screenHeight)
+        val width = TourPhone.screenWidth * scale + TourPhone.bezel * 2
+        val radius = 50.dp * scale + TourPhone.bezel
+        val shell = RoundedCornerShape(radius)
+        val glass = RoundedCornerShape(radius - TourPhone.bezel)
+        val shadow = Color.Black.copy(alpha = if (c.dark) 0.55f else 0.16f)
+        Box(
+            Modifier
+                .size(width, height)
+                .shadow(16.dp, shell, ambientColor = shadow, spotColor = shadow)
+                .background(if (c.dark) Color(0xFF1C1C1F) else Color(0xFFD9D9DE), shell)
+                .padding(TourPhone.bezel),
+        ) {
+            Box(Modifier.fillMaxSize().clip(glass).background(c.bgBase)) {
+                Box(
+                    Modifier
+                        .wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .requiredSize(TourPhone.screenWidth, TourPhone.screenHeight)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            transformOrigin = TransformOrigin(0f, 0f)
+                        }
+                        .background(c.bgBase)
+                        .padding(top = if (fullBleed) 0.dp else 38.dp, bottom = if (fullBleed) 0.dp else 12.dp)
+                        .clipToBounds(),
+                ) { screen() }
+            }
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 10.dp * scale)
+                    .size(100.dp * scale, 30.dp * scale)
+                    .background(Color.Black, CircleShape)
+                    .clearAndSetSemantics {},
+            )
         }
     }
 }
@@ -303,8 +363,8 @@ private val tourBarCells = listOf(
 
 @Composable
 internal fun TourBottomBar(style: ShellBarStyle = ShellBarStyle()) {
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp).clearAndSetSemantics {}) {
-        ShellBarRows(tourBarCells.map { ShellBarSlot.Single(it) }, style, maxWidth, interactive = false)
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 14.dp).clearAndSetSemantics {}) {
+        ShellBarRows(tourBarCells.map { ShellBarSlot.Single(it) }, style, maxWidth, interactive = false, plain = true)
     }
 }
 
@@ -328,11 +388,11 @@ internal fun TourTitle(text: String, trailing: String? = null) {
 @Composable
 internal fun TourSectionLabel(text: String) {
     Text(
-        text.uppercase(),
-        color = Fm.colors.textTertiary,
-        fontSize = 11.sp,
+        text,
+        color = Fm.colors.textSecondary,
+        fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.6.sp,
+        letterSpacing = 0.sp,
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp),
     )
 }
