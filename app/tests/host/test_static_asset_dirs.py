@@ -1,5 +1,3 @@
-"""Asset folders that two-segment repository routes must not swallow."""
-
 from pathlib import Path
 
 from forkmesh_host.asgi import WorkerFirstRules
@@ -9,8 +7,6 @@ RULES = WorkerFirstRules.from_toml(APP / "wrangler.toml")
 
 
 def test_chat_and_call_modules_are_served_as_assets():
-    # chat.js imports ./fmm/fmm-local.js statically: a 404 there stops the
-    # whole chat page before it reads the session or the channel list.
     files = sorted((APP / "public" / "fmm").glob("*.js"))
     assert any(path.name == "fmm-local.js" for path in files)
     for path in files:
