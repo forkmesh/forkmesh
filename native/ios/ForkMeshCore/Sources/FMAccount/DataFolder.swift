@@ -171,6 +171,13 @@ public enum DataFolder {
         return applied
     }
 
+    public static func withoutNestedFolders(_ index: [String: DataFolderIndexEntry]) -> [String: DataFolderIndexEntry] {
+        let marker = "/" + markerFile
+        let folders = index.values.map(\.local).filter { $0.hasSuffix(marker) }.map { String($0.dropLast(marker.count)) + "/" }
+        guard !folders.isEmpty else { return index }
+        return index.filter { _, entry in !folders.contains { entry.local.hasPrefix($0) } }
+    }
+
     public static func signature(size: Int64, modified: Date) -> String {
         "\(size):\(Int64((modified.timeIntervalSince1970 * 1_000).rounded()))"
     }
@@ -251,7 +258,7 @@ public final class DataFolderStore: @unchecked Sendable {
     public func backup(slug: String, trees: [DataFolderTree]) -> DataFolderCopyReport {
         var report = DataFolderCopyReport()
         let dir = projectDir(slug)
-        var index = readIndex(slug: slug)
+        var index = DataFolder.withoutNestedFolders(readIndex(slug: slug))
         for tree in trees {
             for (relative, url, signature) in walk(tree.local, skippedTopLevel: tree.skippedTopLevel) {
                 let key = DataFolder.folderPath(tree: tree.name, relative: relative)
@@ -279,7 +286,7 @@ public final class DataFolderStore: @unchecked Sendable {
         var report = DataFolderCopyReport()
         let dir = projectDir(slug)
         let byName = Dictionary(trees.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-        for (key, entry) in readIndex(slug: slug).sorted(by: { $0.key < $1.key }) {
+        for (key, entry) in DataFolder.withoutNestedFolders(readIndex(slug: slug)).sorted(by: { $0.key < $1.key }) {
             let parts = entry.local.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
             guard parts.count >= 2, let tree = byName[parts[0]],
                   !parts.contains(where: { $0 == ".." || $0 == "." || $0.isEmpty }),
@@ -325,7 +332,8 @@ public final class DataFolderStore: @unchecked Sendable {
         let basePath = base.standardizedFileURL.path
         guard files.fileExists(atPath: basePath),
               let enumerator = files.enumerator(
-                at: base, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
+                at: base, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey,
+                                                       .contentModificationDateKey])
         else { return [] }
         var found: [(String, URL, String)] = []
         for case let url as URL in enumerator {
@@ -341,7 +349,12 @@ public final class DataFolderStore: @unchecked Sendable {
                 enumerator.skipDescendants()
                 continue
             }
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
+            let values = try? url.resourceValues(
+                forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
+            if values?.isDirectory == true, files.fileExists(atPath: url.appendingPathComponent(DataFolder.markerFile).path) {
+                enumerator.skipDescendants()
+                continue
+            }
             guard values?.isSymbolicLink != true, values?.isRegularFile == true,
                   !relative.hasSuffix(DataFolder.partialSuffix) else { continue }
             let signature = DataFolder.signature(

@@ -135,6 +135,52 @@ final class DataFolderTests: XCTestCase {
         XCTAssertEqual(read("chat-history/relay.json", under: freshSupport), "chat")
     }
 
+    func testTheAppFolderInsideDocumentsIsNeverCopiedIntoItself() throws {
+        let documents = scratch.appendingPathComponent("app/Documents", isDirectory: true)
+        let support = scratch.appendingPathComponent("app/Support", isDirectory: true)
+        try write("hello", "notes/a.txt", under: documents)
+        let store = DataFolderStore(root: documents.appendingPathComponent(DataFolder.defaultFolderName))
+        let trees = [DataFolderTree(name: "documents", local: documents, skippedTopLevel: ["projects"]),
+                     DataFolderTree(name: "support", local: support, skippedTopLevel: ["projects"])]
+        let prefs = InMemoryKeyValueStore()
+        prefs.set("dark", forKey: "theme/mode")
+        for _ in 0..<3 {
+            try store.prepare(platform: "ios", nowMillis: 1)
+            try store.prepareProject(DataFolderProject(slug: "forkmesh", projectId: "", namespace: "", name: "ForkMesh", publicKey: "K"))
+            try store.writeSettings(DataFolder.exportSettings(prefs), slug: "forkmesh")
+            XCTAssertTrue(store.backup(slug: "forkmesh", trees: trees).failed.isEmpty)
+        }
+        let nested = "forkmesh/data/core/documents/\(DataFolder.defaultFolderName)"
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.root.appendingPathComponent(nested).path))
+        XCTAssertEqual(read("forkmesh/data/core/documents/notes/a.txt", under: store.root), "hello")
+        XCTAssertEqual(store.readSettings(slug: "forkmesh")?["values"]?.objectValue?.str("theme/mode"), "dark")
+    }
+
+    func testAnUpgradeKeepsTheOldNestedCopiesButStopsUsingThem() throws {
+        let documents = scratch.appendingPathComponent("app/Documents", isDirectory: true)
+        let store = DataFolderStore(root: documents.appendingPathComponent(DataFolder.defaultFolderName))
+        let folder = DataFolder.defaultFolderName
+        try store.prepare(platform: "ios", nowMillis: 1)
+        try write("old", "forkmesh/data/core/documents/\(folder)/forkmesh/\(DataFolder.settingsPath)", under: store.root)
+        try write("{}", "forkmesh/data/core/documents/\(folder)/\(DataFolder.markerFile)", under: store.root)
+        try write("""
+            {"data/core/documents/\(folder)/\(DataFolder.markerFile)":{"local":"documents/\(folder)/\(DataFolder.markerFile)","sig":"1:1"},\
+            "data/core/documents/\(folder)/forkmesh/\(DataFolder.settingsPath)":{"local":"documents/\(folder)/forkmesh/\(DataFolder.settingsPath)","sig":"1:1"},\
+            "data/core/documents/notes/a.txt":{"local":"documents/notes/a.txt","sig":"1:1"}}
+            """, "forkmesh/\(DataFolder.indexPath)", under: store.root)
+        try write("hello", "forkmesh/data/core/documents/notes/a.txt", under: store.root)
+
+        let fresh = scratch.appendingPathComponent("reinstalled/Documents", isDirectory: true)
+        let restored = store.restore(slug: "forkmesh", trees: [DataFolderTree(name: "documents", local: fresh)])
+        XCTAssertEqual(restored.copied, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fresh.appendingPathComponent(folder).path))
+
+        try write("hello", "notes/a.txt", under: documents)
+        _ = store.backup(slug: "forkmesh", trees: [DataFolderTree(name: "documents", local: documents)])
+        XCTAssertEqual(store.readIndex(slug: "forkmesh").keys.sorted(), ["data/core/documents/notes/a.txt"])
+        XCTAssertEqual(read("forkmesh/data/core/documents/\(folder)/forkmesh/\(DataFolder.settingsPath)", under: store.root), "old")
+    }
+
     func testProjectsAndSettingsAreReadBackFromTheFolder() throws {
         let store = DataFolderStore(root: scratch.appendingPathComponent("ForkMesh projects"))
         try store.prepare(platform: "ios", nowMillis: 1)

@@ -85,12 +85,23 @@ before sign-in, so a fresh install can restore first.
   - A file is copied when its size:mtime differs from the index.
   - `LocalModels`, `CodeInsight`, `.Trash` and `tmp` are skipped, and so is the
     legacy project's `projects/` folder, which holds the other projects.
+  - A folder holding `forkmesh-data.json` is a projects folder and is never
+    copied. The automatic folder sits inside a copied tree (iOS
+    `Documents/ForkMesh projects`, Android `filesDir/ForkMesh projects` without
+    external storage). Before November 2026 each copy put the folder inside
+    itself again, one level deeper, under
+    `forkmesh/data/core/<documents|support>/ForkMesh projects/`.
+    `DataFolder.withoutNestedFolders` drops those entries from the index, so
+    copying and restoring ignore them. The old copies stay in the folder, and
+    the user may remove them by hand.
   - A copy goes to a partial file that is then renamed over the old one.
     Nothing in the folder is ever deleted.
 - **Settings.** iOS writes `forkmesh.mobile-settings`. Android writes
   `forkmesh.android-settings`, raw values tagged with their type. Keys under
   `dataFolder/` and `install/` stay on the device. They live in `forkmesh/`
-  because most preference keys are app-wide (`ProjectKeyPolicy`).
+  because most preference keys are app-wide (`ProjectKeyPolicy`). The file is a
+  copy written from the preferences on every sync and read only by *Restore*:
+  editing it does not change the running app.
 - **Restore.** A folder that holds projects whose saved identity key differs
   from this install's offers *Restore* (one passphrase for all of them) or
   *Keep this install's data instead*.
