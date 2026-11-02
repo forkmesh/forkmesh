@@ -258,15 +258,15 @@ final class SettingsServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testTelemetryStripDefaultsOnAndIsRemembered() async {
+    func testTelemetryStripDefaultsOffAndIsRemembered() async {
         let prefs = InMemoryKeyValueStore()
         let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
-        XCTAssertTrue(settings.showTelemetryStrip)
-        settings.setShowTelemetryStrip(false)
-        XCTAssertEqual(prefs.bool(forKey: SettingsService.showTelemetryStripKey), false)
-        XCTAssertFalse(SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore()).showTelemetryStrip)
+        XCTAssertFalse(settings.showTelemetryStrip)
         settings.setShowTelemetryStrip(true)
-        XCTAssertTrue(settings.showTelemetryStrip)
+        XCTAssertEqual(prefs.bool(forKey: SettingsService.showTelemetryStripKey), true)
+        XCTAssertTrue(SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore()).showTelemetryStrip)
+        settings.setShowTelemetryStrip(false)
+        XCTAssertFalse(settings.showTelemetryStrip)
     }
 
     @MainActor
