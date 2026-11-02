@@ -531,7 +531,6 @@ def test_the_dashboard_shows_the_box_on_open_pulls_only():
 
 
 def test_more_files_and_copy_are_wired():
-    # "+N more files" is a record tab link: it opens Files changed in place.
     assert "togglePullReviewPrompt" not in NETWORK
     tab = NETWORK[NETWORK.index('closest("[data-repo-record-tab]'):]
     assert tab.index("event.preventDefault()") < tab.index("setRepoRecordSection(")
