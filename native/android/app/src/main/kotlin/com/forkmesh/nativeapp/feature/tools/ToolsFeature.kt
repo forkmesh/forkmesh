@@ -113,6 +113,7 @@ object ToolsFeature {
 
     @Composable
     fun TelemetryStripCompact(navigator: Navigator, modifier: Modifier = Modifier) {
+        if (!DiagnosticsRuntime.debuggable) return
         val telemetry = Services.get<AppTelemetry>() ?: return
         val settings = Services.get<SettingsService>()
         if (settings != null) {
@@ -124,6 +125,7 @@ object ToolsFeature {
 
     @Composable
     fun TelemetryEarSparks(width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+        if (!DiagnosticsRuntime.debuggable) return
         val telemetry = Services.get<AppTelemetry>() ?: return
         TelemetryEarSparksView(telemetry, width, height, modifier)
     }

@@ -312,7 +312,7 @@ fun PromptButton(
     val drafts = remember { ComposerFeature.drafts }
     val hasDraft = remember(tabLabel) { !drafts?.load(PromptDraftStore.SHELL).isNullOrBlank() }
     val accent = Fm.colors.accent
-    val glow = accent.copy(alpha = 0.35f + minOf(running, 8) / 8f * 0.25f)
+    val shade = Color.Black.copy(alpha = if (Fm.dark) 0.45f else 0.18f)
     FmHoldArea {
         Box(modifier) {
             Box(
@@ -323,7 +323,7 @@ fun PromptButton(
                         scaleX = squeeze
                         scaleY = squeeze
                     }
-                    .shadow(10.dp, CircleShape, ambientColor = glow, spotColor = glow)
+                    .shadow(4.dp, CircleShape, ambientColor = shade, spotColor = shade)
                     .clip(CircleShape)
                     .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.95f), accent, accent.copy(alpha = 0.7f))))
                     .drawBehind {
