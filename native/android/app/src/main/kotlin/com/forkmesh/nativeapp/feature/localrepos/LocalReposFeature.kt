@@ -122,10 +122,15 @@ object LocalReposFeature {
     }
 
     @Composable
-    fun LocalReposSection(navigator: Navigator) {
+    fun rememberActions(navigator: Navigator): LocalRepoActions? {
         val store by storeState.collectAsState()
-        val current = store ?: return
-        LocalReposSectionContent(current, navigator)
+        val current = store ?: return null
+        return rememberLocalRepoActions(current, navigator)
+    }
+
+    @Composable
+    fun LocalReposSection(actions: LocalRepoActions) {
+        LocalReposSectionContent(actions)
     }
 
     fun localRepoScreen(
