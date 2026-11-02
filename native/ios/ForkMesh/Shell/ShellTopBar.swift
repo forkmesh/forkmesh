@@ -77,19 +77,28 @@ struct ShellTopBar: View {
                     .padding(.leading, FmSpace.x1)
             }
             if state.guest {
-                Button(action: onOpenHub) {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 22, weight: .regular))
-                        .foregroundStyle(fm.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                HStack(spacing: 0) {
+                    Button(action: onOpenHub) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 21, weight: .regular))
+                            .foregroundStyle(fm.textPrimary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("You: projects, tools and settings"))
+                    .accessibilityIdentifier("top-settings-button")
+                    if showsSignIn {
+                        Rectangle()
+                            .fill(fm.border)
+                            .frame(width: 0.5, height: 20)
+                            .accessibilityHidden(true)
+                        ShellGuestSignInChip(onPressed: onSignIn)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("You: projects, tools and settings"))
-                .accessibilityIdentifier("top-settings-button")
-                if showsSignIn {
-                    ShellGuestSignInChip(onPressed: onSignIn)
-                }
+                .padding(.trailing, showsSignIn ? FmSpace.x1 : 0)
+                .shellGlass(Capsule())
+                .padding(.leading, FmSpace.x2)
             } else {
                 Button(action: onOpenHub) {
                     AvatarWithDot(
@@ -969,13 +978,20 @@ struct ShellGuestSignInChip: View {
     let onPressed: () -> Void
 
     var body: some View {
-        FmOutlinedButton(
-            "Sign in",
-            icon: "person_outline_rounded",
-            foreground: fm.textPrimary,
-            minHeight: 36,
-            onPressed: onPressed)
-            .accessibilityIdentifier("guest-top-sign-in")
+        Button {
+            FmHaptics.tap()
+            onPressed()
+        } label: {
+            Text("Sign in")
+                .fmText(.labelLarge, color: fm.textPrimary)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, FmSpace.x3)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("guest-top-sign-in")
     }
 }
 

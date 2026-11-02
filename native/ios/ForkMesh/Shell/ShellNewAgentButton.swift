@@ -398,7 +398,6 @@ struct ShellNewAgentButton: View {
 
     private var face: some View {
         let energy: Double = still ? 0 : tilt.energy
-        let lively: Double = Double(min(running, 8)) / 8
         return ZStack {
             fill
             ShellSparkleField(
@@ -415,7 +414,7 @@ struct ShellNewAgentButton: View {
         }
         .frame(width: diameter, height: diameter)
         .clipShape(Circle())
-        .shadow(color: accent.opacity(0.35 + lively * 0.25 + energy * 0.3), radius: 8 + lively * 6, y: 3)
+        .shadow(color: Color.black.opacity(fm.dark ? 0.4 : 0.16), radius: 6, y: 3)
         .contentShape(Circle())
     }
 
