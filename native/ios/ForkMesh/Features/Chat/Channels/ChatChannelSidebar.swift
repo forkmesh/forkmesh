@@ -770,28 +770,20 @@ struct ChatMemberRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: FmSpace.x3) {
-            Button(action: onProfile) {
-                ZStack(alignment: .bottomTrailing) {
-                    MessagesPersonAvatar(name: group.name, size: ChatChannelTile.leadingSize)
-                    PresenceDot(online: group.online, away: away, size: 10)
-                        .overlay { Circle().strokeBorder(fm.bgRaised, lineWidth: 1.5) }
-                        .offset(x: 2, y: 2)
-                }
-                .frame(width: ChatChannelTile.leadingSize, height: ChatChannelTile.leadingSize)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
+            if visitor {
+                avatar
+            } else {
+                Button(action: onProfile) { avatar }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(group.name)'s profile")
             }
-            .buttonStyle(.plain)
-            .disabled(visitor)
-            .accessibilityLabel("\(group.name)'s profile")
-            Button(action: { onTap?() }) {
-                details
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
+            if let onTap = onTap {
+                Button(action: onTap) { detailsBlock }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(group.isSelf ? "" : "Opens your direct messages with \(group.name)")
+            } else {
+                detailsBlock
             }
-            .buttonStyle(.plain)
-            .disabled(onTap == nil)
-            .accessibilityHint(group.isSelf ? "" : "Opens your direct messages with \(group.name)")
         }
         .padding(.horizontal, FmSpace.x2)
         .padding(.vertical, FmSpace.x2)
@@ -808,6 +800,24 @@ struct ChatMemberRow: View {
                 ChatRetentionMenu(hub: hub, conversation: "@\(group.id)")
             }
         }
+    }
+
+    private var avatar: some View {
+        ZStack(alignment: .bottomTrailing) {
+            MessagesPersonAvatar(name: group.name, size: ChatChannelTile.leadingSize)
+            PresenceDot(online: group.online, away: away, size: 10)
+                .overlay { Circle().strokeBorder(fm.bgRaised, lineWidth: 1.5) }
+                .offset(x: 2, y: 2)
+        }
+        .frame(width: ChatChannelTile.leadingSize, height: ChatChannelTile.leadingSize)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private var detailsBlock: some View {
+        details
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
     }
 
     private var details: some View {
