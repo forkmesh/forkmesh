@@ -438,12 +438,16 @@ async def handle(runtime, route):
         data.clear()
 
 
+def _unavailable(runtime):
+    return _error(runtime, "launch_unavailable", 503,
+                  "Instance setup is not available on this server right "
+                  "now. Try again in a few minutes.")
+
+
 async def _launch(runtime, data):
     helper = ssh_setup._helper(runtime)
     if helper is None:
-        return _error(runtime, "launch_unavailable", 503,
-                      "Instance setup is not available on this server right "
-                      "now. Try again in a few minutes.")
+        return _unavailable(runtime)
     form, problem = validate(data)
     if problem:
         return _error(runtime, problem[0], 400, problem[1], problem[2])
@@ -470,11 +474,12 @@ async def _launch(runtime, data):
                       "That server does not have a public address ForkMesh "
                       "can reach. Use its public IP.", "host")
     address = str(sorted(checked, key=lambda item: item.version)[0])
-    keys, scan_error = [], ""
+    keys, scan_error, scanned = [], "", False
     async for message in helper({"op": "keyscan", "address": address,
                                  "port": form["port"]}):
         if message.get("error"):
             scan_error = str(message["error"])[:200]
+        scanned = "keys" in message or scan_error == "no answer"
         for item in message.get("keys") or []:
             key_type = str((item or {}).get("type") or "")
             blob = str((item or {}).get("key") or "")
@@ -483,8 +488,10 @@ async def _launch(runtime, data):
                     ssh_setup.KEY_BLOB_RE.fullmatch(blob) and print_:
                 keys.append({"type": key_type, "key": blob,
                              "fingerprint": print_})
+    if not keys and not scanned:
+        return _unavailable(runtime)
     if not keys:
-        return _error(runtime, "ssh_unreachable", 502,
+        return _error(runtime, "ssh_unreachable", 400,
                       "No SSH server answered at %s port %d. Check the IP, "
                       "the port and the server's firewall. %s" % (
                           address, form["port"], ssh_setup.scrub(scan_error)),

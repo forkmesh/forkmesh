@@ -55,6 +55,7 @@ class Runtime:
                           "mixed.example.com": ["8.8.8.8", "10.0.0.2"]}
         self.keys = [{"type": "ssh-rsa", "key": RSA_BLOB},
                      {"type": "ssh-ed25519", "key": ED_BLOB}]
+        self.keyscan_events = None
         self.install_events = []
 
     def use(self, raw=b"", actor="", method="POST"):
@@ -107,7 +108,11 @@ class Runtime:
 
         async def events():
             if request.get("op") == "keyscan":
-                yield {"keys": [dict(item) for item in self.keys]}
+                scan = self.keyscan_events
+                if scan is None:
+                    scan = [{"keys": [dict(item) for item in self.keys]}]
+                for event in scan:
+                    yield dict(event)
                 return
             for event in self.install_events:
                 yield dict(event)
@@ -251,6 +256,22 @@ def test_no_domain_starts_on_sslip_and_a_wrong_fingerprint_stops():
     assert answer["data"]["error"] == "fingerprint_mismatch"
 
 
+def test_keyscan_helper_fault_is_not_blamed_on_the_visitors_server():
+    runtime = Runtime()
+    runtime.keyscan_events = [{"error": "no answer"}]
+    answer = post(runtime, form())
+    assert answer["status"] == 400
+    assert answer["data"]["error"] == "ssh_unreachable"
+    for events in ([{"error": "keyscan failed"}], []):
+        runtime = Runtime()
+        runtime.keyscan_events = events
+        answer = post(runtime, form())
+        assert answer["status"] == 503, events
+        assert answer["data"]["error"] == "launch_unavailable"
+        assert runtime.db.execute(
+            "SELECT COUNT(*) FROM instance_launches").fetchone()[0] == 0
+
+
 def test_private_addresses_unreachable_servers_and_limits():
     runtime = Runtime()
     for host in ("lan.example.com", "mixed.example.com", "10.77.0.2",
@@ -259,8 +280,9 @@ def test_private_addresses_unreachable_servers_and_limits():
         assert answer["status"] == 400 and answer["data"]["field"] == "host", host
     runtime.keys = []
     answer = post(runtime, form())
-    assert answer["status"] == 502
+    assert answer["status"] == 400
     assert answer["data"]["error"] == "ssh_unreachable"
+    assert answer["data"]["field"] == "host"
     runtime = Runtime()
     runtime.helper_available = False
     assert post(runtime, form())["status"] == 503
