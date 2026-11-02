@@ -9,7 +9,7 @@ the **OTF Feedback** note). It is the written half of the outreach; the
 8 to 12 interviews use the same questions.
 
 [`otf-survey.json`](otf-survey.json) is the survey, written as the body of a
-[Surveys](../../marketplace/surveys.md) create request: 27 questions, about 10
+[Surveys](../../marketplace/surveys.md) create request: 33 questions, about 10
 minutes. Only the first question is required.
 
 ## Send it
@@ -33,7 +33,9 @@ Mon Nov 16; export the CSV for the report.
 
 Respondents may be in countries that punish this work. The survey asks for
 regions, not countries, never requires a name, project or contact, and tells
-people to leave identifying details out of free text. Responses are sealed and
+people to leave identifying details out of free text. The contact fields are
+for follow-up only: all are optional, the first says blank stays anonymous, and they are
+left out of any published summary. Responses are sealed and
 visits are counted with a blinded key ([Activity](../../marketplace/surveys.md#activity)).
 Publish only anonymized summaries, and keep the CSV off shared drives. See the
 [threat model](../../protocol/threat-model.md) and
@@ -51,7 +53,11 @@ Publish only anonymized summaries, and keep the CSV off shared drives. See the
 | 16-18: running a mirror, budget, what setup needs | Whether small teams can self-host | 5 |
 | 19-23: tried it, ease, reliability, problems, intent to use | Prototype feedback | 8 |
 | 24: help testing from a censored network | Test environments and partners | 6 |
-| 25-27: interview, pilot, mirror host, reviewer, letter of support, contact | Buy-in, partners and letters | 1, 9 |
+| 25: interview, pilot, mirror host, reviewer, letter of support | Buy-in, partners and letters | 1, 9 |
+| 26-32: name, email, X, Mastodon, GitHub/GitLab/Codeberg profile, project repository or site, another channel | Who answered, so we can follow up, match answers to CRM contacts and check the project | 1, 9 |
+| 33: anything else | Open feedback | |
 
-Question ids are fixed (`0f000001` to `0f00001b`, in order), so results and
-the CSV keep their columns if the survey is edited after it opens.
+Question ids are fixed, so results and the CSV keep their columns if the
+survey is edited after it opens: `0f000001` to `0f000019` in order, then the
+contact fields `0f00001c` to `0f000021`, `0f00001a` (another channel) and
+`0f00001b` (anything else). A new question takes the next free id.

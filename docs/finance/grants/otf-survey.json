@@ -295,10 +295,44 @@
       ]
     },
     {
+      "id": "0f00001c",
+      "type": "text",
+      "title": "Your name",
+      "help": "Optional, like every question from here on. A first name or a handle is fine. Leave these blank to stay anonymous."
+    },
+    {
+      "id": "0f00001d",
+      "type": "text",
+      "title": "Email",
+      "help": "So we can follow up, send the research summary or ask about a pilot."
+    },
+    {
+      "id": "0f00001e",
+      "type": "text",
+      "title": "X (Twitter) handle"
+    },
+    {
+      "id": "0f00001f",
+      "type": "text",
+      "title": "Mastodon or Fediverse handle",
+      "help": "For example @name@example.social."
+    },
+    {
+      "id": "0f000020",
+      "type": "text",
+      "title": "GitHub, GitLab or Codeberg profile"
+    },
+    {
+      "id": "0f000021",
+      "type": "text",
+      "title": "Your project's repository or website",
+      "help": "A link we can look at, such as https://github.com/org/project."
+    },
+    {
       "id": "0f00001a",
       "type": "text",
-      "title": "If you would like us to follow up, how can we reach you?",
-      "help": "An email, Signal, Matrix or other handle. Leave it blank to stay anonymous. Add your project's name or link too if you are comfortable."
+      "title": "Any other way to reach you?",
+      "help": "Signal, Matrix, XMPP or another channel you prefer."
     },
     {
       "id": "0f00001b",
