@@ -140,8 +140,8 @@ MAX_PREVIEW_CONFLICTS = 200
 MAX_TREE_ENTRIES = 500
 MAX_COLLABORATION_TREE_ENTRIES = 50000
 MAX_SIZES_CHILDREN = 40
-PULL_REVIEW_FILE_RE = re.compile(
-    r"\.forkmesh/pulls/([1-9][0-9]{0,8})/([0-9]{4,})-review\.md")
+PULL_PEOPLE_FILE_RE = re.compile(
+    r"\.forkmesh/pulls/([1-9][0-9]{0,8})/([0-9]{4,})-([a-z-]*(?:comment|review)[a-z-]*)\.md")
 MAX_PULL_REVIEW_FILES = 4000
 MAX_PULL_REVIEW_FILE_BYTES = 64 * 1024
 MAX_PULL_REVIEW_TOTAL_BYTES = 8 * 1024 * 1024
@@ -5107,6 +5107,7 @@ class GitRepository:
         self._pull_reviews_lock = threading.Lock()
         self._pull_reviews_key = ""
         self._pull_reviews_value: dict[str, list[list[str]]] | None = None
+        self._pull_people_value: dict[str, list[str]] | None = None
         self._upload_objects_lock = threading.Lock()
         self._pulse_lock = threading.Lock()
         self._pulse_numstat_lock = threading.Lock()
@@ -6210,35 +6211,39 @@ class GitRepository:
                 pulls_commit = ""
             result["pullRefs"] = self._live_independent_pull_refs(
                 pulls_commit, self._independent_pull_refs()[1])
-            reviews = self._pull_reviews(commit)
+            reviews, people = self._pull_reviews(commit)
             if reviews is not None:
                 result["pullReviews"] = reviews
+            if people is not None:
+                result["pullPeople"] = people
         return result
 
-    def _pull_reviews(self, commit: str) -> dict[str, list[list[str]]] | None:
+    def _pull_reviews(
+        self, commit: str
+    ) -> tuple[dict[str, list[list[str]]] | None, dict[str, list[str]] | None]:
         """Every committed review under .forkmesh/pulls at ``commit``, as
-        ``{"<n>": [[reviewer, state], ...]}`` in file order, read with one
-        ls-tree and one cat-file. The web list derives each pull's review
-        state from it with the merge box's latest-review-per-reviewer rule.
-        None when the reviews do not fit the bounds."""
+        ``{"<n>": [[reviewer, state], ...]}`` in file order, and everyone who
+        commented or reviewed, as ``{"<n>": [name, ...]}`` latest first, read
+        with one ls-tree and one cat-file. The web list derives each pull's
+        review state from the first and stacks the second's avatars. Either is
+        None when its files do not fit the bounds."""
         with self._pull_reviews_lock:
             if self._pull_reviews_key == commit:
-                return self._pull_reviews_value
+                return self._pull_reviews_value, self._pull_people_value
         output = _run_git(
             self.git_dir,
             ["ls-tree", "-r", "-l", "-z", commit, "--",
              ":(top,literal).forkmesh/pulls/"],
             max_output=16 * 1024 * 1024,
         )
-        files: list[tuple[int, int, str]] = []
-        total = 0
-        value: dict[str, list[list[str]]] | None = {}
+        review_files: list[tuple[int, int, str, int]] = []
+        people_files: list[tuple[int, int, str, int]] = []
         for record in output.split(b"\0"):
             metadata, separator, raw_path = record.partition(b"\t")
             fields = metadata.split()
             if not separator or len(fields) < 4 or fields[1] != b"blob":
                 continue
-            match = PULL_REVIEW_FILE_RE.fullmatch(
+            match = PULL_PEOPLE_FILE_RE.fullmatch(
                 raw_path.decode("utf-8", "replace"))
             if not match:
                 continue
@@ -6248,47 +6253,76 @@ class GitRepository:
                 continue
             if size > MAX_PULL_REVIEW_FILE_BYTES:
                 continue
-            total += size
-            files.append((int(match.group(1)), int(match.group(2)),
-                          fields[2].decode("ascii", "replace")))
-        if len(files) > MAX_PULL_REVIEW_FILES \
-                or total > MAX_PULL_REVIEW_TOTAL_BYTES:
-            value = None
-        elif files:
-            files.sort()
-            payload = _run_git(
-                self.git_dir,
-                ["cat-file", "--batch"],
-                input_bytes=b"".join(
-                    oid.encode("ascii") + b"\n" for _n, _i, oid in files),
-                max_output=total + len(files) * 160,
-            )
-            cursor = 0
-            for number, _index, _oid in files:
-                line_end = payload.find(b"\n", cursor)
-                if line_end < 0:
-                    break
-                header = payload[cursor:line_end].split()
-                cursor = line_end + 1
-                if len(header) != 3 or header[1] != b"blob":
-                    continue
-                try:
-                    size = int(header[2])
-                except ValueError:
-                    break
-                body = payload[cursor:cursor + size]
-                cursor += size + 1
-                values = _front_matter_values(body.decode("utf-8", "replace"))
-                reviewer = values.get("author", "")
-                if values.get("type") != "review" or not reviewer \
-                        or not values.get("state"):
-                    continue
-                value.setdefault(str(number), []).append(
-                    [reviewer, values["state"]])
+            entry = (int(match.group(1)), int(match.group(2)),
+                     fields[2].decode("ascii", "replace"), size)
+            people_files.append(entry)
+            if match.group(3) == "review":
+                review_files.append(entry)
+
+        def fits(files: list[tuple[int, int, str, int]]) -> bool:
+            return len(files) <= MAX_PULL_REVIEW_FILES \
+                and sum(size for *_rest, size in files) <= MAX_PULL_REVIEW_TOTAL_BYTES
+
+        reviews: dict[str, list[list[str]]] | None = None
+        people: dict[str, list[str]] | None = None
+        if fits(people_files):
+            files, people = people_files, {}
+        elif fits(review_files):
+            files = review_files
+        else:
+            files = []
+        if fits(review_files):
+            reviews = {}
+        files.sort()
+        for number, _index, values in self._pull_event_values(files):
+            author = values.get("author", "")
+            kind = values.get("type") or "comment"
+            if reviews is not None and kind == "review" and author \
+                    and values.get("state"):
+                reviews.setdefault(str(number), []).append(
+                    [author, values["state"]])
+            name = values.get("authorName", "").strip()
+            if people is not None and name:
+                names = people.setdefault(str(number), [])
+                if name in names:
+                    names.remove(name)
+                names.insert(0, name)
         with self._pull_reviews_lock:
             self._pull_reviews_key = commit
-            self._pull_reviews_value = value
-        return value
+            self._pull_reviews_value = reviews
+            self._pull_people_value = people
+        return reviews, people
+
+    def _pull_event_values(
+        self, files: list[tuple[int, int, str, int]]
+    ) -> Iterable[tuple[int, int, dict[str, str]]]:
+        if not files:
+            return
+        total = sum(size for *_rest, size in files)
+        payload = _run_git(
+            self.git_dir,
+            ["cat-file", "--batch"],
+            input_bytes=b"".join(
+                oid.encode("ascii") + b"\n" for _n, _i, oid, _s in files),
+            max_output=total + len(files) * 160,
+        )
+        cursor = 0
+        for number, index, _oid, _size in files:
+            line_end = payload.find(b"\n", cursor)
+            if line_end < 0:
+                break
+            header = payload[cursor:line_end].split()
+            cursor = line_end + 1
+            if len(header) != 3 or header[1] != b"blob":
+                continue
+            try:
+                size = int(header[2])
+            except ValueError:
+                break
+            body = payload[cursor:cursor + size]
+            cursor += size + 1
+            yield number, index, _front_matter_values(
+                body.decode("utf-8", "replace"))
 
     def _tree_entries(
         self, commit: str, paths: Iterable[str]
