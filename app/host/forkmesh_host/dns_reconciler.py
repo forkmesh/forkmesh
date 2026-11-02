@@ -355,8 +355,13 @@ def from_runtime(runtime):
     def get(name):
         return (environ or {}).get(name) or os.environ.get(name) or ""
     targets = parse_targets(get("FORKMESH_DNS_TARGETS"))
-    names = [n for n in get("FORKMESH_DNS_NAMES").split(",") if n.strip()] \
-        or sorted(dns_rules.RECONCILER_NAMES)
+    listed = [n.strip() for n in get("FORKMESH_DNS_NAMES").split(",") if n.strip()]
+    names = [n for n in listed if n.lower().rstrip(".") in dns_rules.RECONCILER_NAMES]
+    if len(names) != len(listed):
+        print("dns: ignoring FORKMESH_DNS_NAMES outside %s: %s" % (
+            ", ".join(sorted(dns_rules.RECONCILER_NAMES)),
+            ", ".join(n for n in listed if n not in names)), flush=True)
+    names = names or sorted(dns_rules.RECONCILER_NAMES)
     if not targets:
         print("dns: FORKMESH_DNS_TARGETS is empty; reconciler off",
               flush=True)

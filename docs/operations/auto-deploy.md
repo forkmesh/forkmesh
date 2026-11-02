@@ -240,11 +240,23 @@ it starts no deploy; the agent takes it with the next green deploy.
 
 forkmesh.com is still the `forkmesh-www` Cloudflare Worker (`www/worker.js`).
 After a good deploy the agent compares its `x-forkmesh-deploy-fingerprint`
-with the hash of the target's `www/` tree and, if they differ, runs
-`npx wrangler deploy --config wrangler.production.toml` from the pinned
-worktree with Node 22 and credentials from `config/fleet/cloudflare.env`. The
-node roll runs before the website step, so a website failure never skips a
-roll.
+with the hash of the target's `www/`, `marketplace/` and `docs/` trees and, if
+they differ, runs `npx wrangler deploy --config wrangler.production.toml` from
+the pinned worktree with Node 22 and credentials from
+`config/fleet/cloudflare.env`. The node roll runs before the website step, so a
+website failure never skips a roll.
+
+`docs/` is not a release path: a docs-only push starts no deploy, and its pages
+go live with the next good deploy. The website step runs only after a good
+deploy, so to publish docs sooner, or while core deploys are failing, use the
+by-hand command in [the website page](../www/README.md#operations).
+
+A release must start with the `app.env` of the previous roll, because the roll
+that rewrites `app.env` runs after the release passes its gate. On 2026-11-01
+`dd3d453f92` narrowed the DNS guard to the production names while the nodes'
+`FORKMESH_DNS_NAMES` still listed `app.next`; every release crash-looped, failed
+with `vault: unseal after restart failed` and rolled back. The reconciler now
+ignores listed names it may not manage instead of stopping the app.
 
 ## Safety
 

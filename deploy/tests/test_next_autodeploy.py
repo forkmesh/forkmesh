@@ -686,13 +686,17 @@ def test_website_step_compares_the_www_tree_with_the_live_header():
         def call(self, *args, check=False):
             assert args[0] == "rev-parse"
             return SimpleNamespace(stdout=self.trees[args[1]] + "\n", returncode=0)
-    base = {"abc123:www": "tree0001", "abc123:marketplace": "tree0101"}
+    base = {"abc123:www": "tree0001", "abc123:marketplace": "tree0101",
+            "abc123:docs": "tree0201"}
     wanted = auto.website_fingerprint(FakeGit(base), "abc123")
     assert len(wanted) == 64 and wanted != auto.website_fingerprint(
         FakeGit({**base, "abc123:www": "tree0002"}), "abc123")
     assert wanted != auto.website_fingerprint(
         FakeGit({**base, "abc123:marketplace": "tree0102"}), "abc123"), (
         "a package page such as /design redeploys forkmesh.com")
+    assert wanted != auto.website_fingerprint(
+        FakeGit({**base, "abc123:docs": "tree0202"}), "abc123"), (
+        "a docs page rendered at /docs/ redeploys forkmesh.com")
 
     def fake_curl(argv, **_kwargs):
         assert argv[-1] == auto.WEBSITE_URL

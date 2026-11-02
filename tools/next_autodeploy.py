@@ -162,7 +162,7 @@ WEBSITE_HEADER = "x-forkmesh-deploy-fingerprint"
 WEBSITE_TIMEOUT = 900
 
 
-WEBSITE_TREES = ("www", "marketplace")
+WEBSITE_TREES = ("www", "marketplace", "docs")
 
 
 def website_fingerprint(git, target) -> str:
