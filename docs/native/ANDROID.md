@@ -1867,11 +1867,14 @@ earlier call pieces are in section 14, "Direct calls".
   New agent Quick Settings tile instead of Siri, the Live Activity and Control
   Center. Progress keeps `nav/tour.v1` and adds `nav/tour.done.v1` and
   `nav/tour.place.v1`. `TourScreen` (`A/feature/navigation/TourScreen.kt`) is
-  the chooser (three track cards, "Pick up where you left off", "Not now") and
-  the player (`HorizontalPager` of stops, Back, Show me, Next/Finish).
-  `TourStage.kt` holds the 330 dp stage, the 1.9 s autoplay a touch pauses for
-  6 s, the pulsing `tourTarget` ring and mock pieces; `TourScenes.kt` has the 18
-  scenes. With animations off the ring, ripples and sparkle stop and steps
+  the chooser (one grouped list of tracks, "Pick up where you left off", "Not
+  now") and the full-screen player (`HorizontalPager` of stops, close or back,
+  page dots, Skip, the `TourStop.short` headline and line, Next/Finish, Show
+  me). The first run (`ShellFirstRun`) opens Essentials straight in the player
+  ([NAVIGATION.md](NAVIGATION.md), the tour). `TourStage.kt` holds the stage,
+  the 1.9 s autoplay a touch pauses for 6 s, the pulsing `tourTarget` ring and
+  mock pieces; `TourScenes.kt` has the 18 scenes, drawn in a small phone or, for
+  single things, as large objects (`TourObjects.kt`). With animations off the ring, ripples and sparkle stop and steps
   still advance. Show me pops the tour and 300 ms later calls the shell or
   `NavigationFeature.open(route)`. Home's Tour icon counts tracks not done
   (`ShellTour.left`).
