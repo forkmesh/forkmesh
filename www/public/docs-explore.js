@@ -391,7 +391,7 @@
   const enhanceLinks = () => {
     if (!prose) return;
     prose.querySelectorAll("a[href]").forEach((link) => {
-      if (link.classList.contains("heading-anchor") || link.querySelector("img")) return;
+      if (link.classList.contains("heading-anchor") || link.classList.contains("dp-kicker") || link.querySelector("img")) return;
       const url = new URL(link.href, window.location.href);
       if (url.origin !== window.location.origin) {
         if (/^https?:$/.test(url.protocol)) link.classList.add("dp-link-ext");

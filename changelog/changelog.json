@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-02", "area": "Other improvements", "text": "The documentation has a new look: the home page opens with the six pillars that keep a project reachable and authentic, every page has an illustration in your light or dark theme, and the same sidebar and links run through every page."},
   {"date": "2026-11-02", "area": "Desktop", "text": "A rebuilt desktop no longer drops a package from the left rail after the package's version changes, so CRM is back."},
   {"date": "2026-11-02", "area": "Desktop", "text": "The chat preview above the prompt no longer freezes the window for up to a second when recent messages are long and full of emoji."},
   {"date": "2026-11-02", "area": "iPhone", "text": "Sign in and NEXUS open again after the first-run tour; before, the tour could leave every later sheet unable to open."},
