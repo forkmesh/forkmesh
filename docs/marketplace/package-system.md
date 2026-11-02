@@ -258,6 +258,14 @@ python3 app/tools/build_market_catalog.py        # after any catalog/manifest ch
 
 A desktop configure (`cmake`) reruns `generate_desktop_packages.py`; a broken
 catalog fails the configure with "Marketplace package discovery failed".
+The top-level marketplace JSON files, every `manifest.json`, every
+`content/desktop/build.json` and the generator's two scripts are
+`CMAKE_CONFIGURE_DEPENDS`, so editing one makes the next Ninja build configure
+again. A `CONFIGURE_DEPENDS` glob alone notices only added or removed files:
+before, a version bump kept the old `generated/marketplace/catalog.json`, while
+the app embeds `manifest.json` straight from the source, and the registry drops
+a package whose catalog and manifest versions differ ("Catalog identity does
+not match"), so CRM 1.49.0 vanished from the desktop's left rail.
 
 ## Operations
 
