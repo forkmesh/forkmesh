@@ -1,0 +1,6 @@
+{
+  "name": "forkmesh-www-deploy",
+  "private": true,
+  "engines": {"node": ">=22"},
+  "dependencies": {"wrangler": "4.136.3"}
+}

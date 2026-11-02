@@ -227,7 +227,8 @@ class SshMonitor:
         self.pending = {}
 
     def feed(self, entry):
-        if entry.get("SYSLOG_IDENTIFIER") not in SSHD_IDENTIFIERS:
+        if entry.get("SYSLOG_IDENTIFIER") not in SSHD_IDENTIFIERS or \
+                str(entry.get("_UID")) != "0":
             return []
         text = str(entry.get("MESSAGE") or "")
         match = ACCEPTED_RE.match(text)

@@ -121,6 +121,7 @@ async def recover_handler(env, request):
     for key in attempt_keys:
         await _login_clear(env, key)  # noqa: F821
     await _account_revoke_sessions(env, name_bi)  # noqa: F821
+    await _account_revoke_other_keys(env, name_bi, rec)  # noqa: F821
     await _audit_sensitive_action(  # noqa: F821
         env, name, "account.recovery_code_reset", "account", name, "success",
         {})

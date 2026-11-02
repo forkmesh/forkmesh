@@ -22,6 +22,16 @@ class ActionsNotificationsTest {
         expect(NotificationActionId.Approve.opensApp)
     }
 
+    fun testActionsThatDriveAnAgentNeedAnUnlockedPhone() {
+        for (action in listOf(NotificationActionId.Deny, NotificationActionId.Retry, NotificationActionId.ContinueRun)) {
+            expect(action.requiresAuthentication)
+            expect(!action.opensApp)
+        }
+        expect(NotificationActionId.ContinueRun.isTextInput)
+        expect(!NotificationActionId.MarkRead.requiresAuthentication)
+        expect(!NotificationActionId.Reply.requiresAuthentication)
+    }
+
     fun testApprovalPayloadRoutesAndCommands() {
         val fields = mapOf("repo" to "fm/app", "number" to "7", "head" to head, "runId" to "7000001", "href" to "/fm/app/pull/7/checks", "alertId" to "p1")
         val payload = NotificationPayload.from("actions-approval", fields)

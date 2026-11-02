@@ -51,7 +51,9 @@ picture) is kept in the phone's secure store (Keychain on the iPhone, the
 encrypted store on Android) under `mastodon.session.v1`, scoped to the
 project like other secrets. One account per phone; it is not synced to
 ForkMesh. Signing out revokes the token on the server (`POST /oauth/revoke`).
-A 401 anywhere forgets the sign-in and returns to sign-in with the server
+Losing the ForkMesh session (sign-out or expiry) also forgets and revokes the
+Mastodon sign-in, so the next account on the phone does not inherit it
+([why](../native/ARCHITECTURE.md)). A 401 anywhere forgets the sign-in and returns to sign-in with the server
 filled in.
 
 Every request goes from the phone straight to the user's server; nothing

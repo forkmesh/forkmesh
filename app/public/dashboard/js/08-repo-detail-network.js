@@ -1708,7 +1708,7 @@
       return SECTION_PATHS[section] + (rest ? `?${rest}` : "");
     }
     const repo = (params.get("repo") || "").trim();
-    if (repo.includes("/")) {
+    if (/^[^/\\]+\/[^/\\]+$/.test(repo)) {
       return "/" + repo.split("/").map(encodeURIComponent).join("/");
     }
     return "";

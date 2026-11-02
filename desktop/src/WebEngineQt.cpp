@@ -44,6 +44,8 @@ public:
     Page(QWebEngineProfile *profile, const PageOptions &options, QObject *parent)
         : QWebEnginePage(profile, parent), m_options(options)
     {
+        if (m_options.requestAllowed)
+            setUrlRequestInterceptor(new Interceptor(m_options.requestAllowed, this));
     }
 
     QJsonArray consoleMessages() const

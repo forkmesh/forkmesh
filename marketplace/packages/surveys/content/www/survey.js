@@ -151,6 +151,7 @@
       if (response.ok) { remember(); return done("Thank you", payload.thankYou); }
       if (payload.error === "already_responded") { remember(); return done("Already answered", "You have already answered this survey. Thank you."); }
       if (payload.error === "survey_closed") return done("This survey is closed", "It stopped taking answers before yours arrived.");
+      if (payload.error === "survey_storage_full") return done("This survey is full", "It cannot take more answers right now.");
       if (payload.error === "too_many_responses") return error("Too many answers came from your connection in the last hour. Try again later.");
       if (payload.error === "answer_required") return error("Please answer every question marked *.", payload.question);
       if (payload.error === "invalid_answer") return error("One answer could not be used. Check it and send again.", payload.question);

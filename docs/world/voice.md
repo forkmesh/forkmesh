@@ -65,6 +65,9 @@ the 16-person room limit are the ones `/chat` uses. A bubble's id is
 `bubble:` plus the first 16 hex of `SHA-256("forkmesh-world-bubble-v1\n" +
 secret)`; the route checks that the secret matches the id and keys the call
 room on the secret, so knowing a bubble's public id is not enough to get in.
+The same proof guards signalling: a presence frame naming a bubble needs the
+matching `voiceSecret`, which the server checks and never stores or forwards.
+Without it the sender is in no room and receives no frame keys.
 FM Media is off for World rooms because it needs a sealed-room signing
 identity; World rooms use the WebRTC engine.
 

@@ -55,6 +55,11 @@ data class DesktopChoice(val id: String, val name: String, val presence: Desktop
     val label: String get() = "Desktop $name, ${presence.label.lowercase()}" + if (active) ", in use" else ""
 }
 
+object LocalDesktopCopy {
+    fun confirmCode(name: String): String =
+        "Confirm only if $name showed this same code when you approved this phone. If it showed no code or a different one, cancel: another device on this network may be posing as it."
+}
+
 sealed class ShellLocalDesktop {
     data object Hidden : ShellLocalDesktop()
 
@@ -63,6 +68,8 @@ sealed class ShellLocalDesktop {
     data class Connecting(val name: String) : ShellLocalDesktop()
 
     data class AwaitingApproval(val name: String) : ShellLocalDesktop()
+
+    data class ConfirmingCode(val name: String) : ShellLocalDesktop()
 
     data class Lan(val name: String) : ShellLocalDesktop()
 
@@ -76,6 +83,7 @@ sealed class ShellLocalDesktop {
             InReach -> "A desktop is on this network"
             is Connecting -> "Connecting to $name"
             is AwaitingApproval -> "Approve this phone on $name"
+            is ConfirmingCode -> "Check the code for $name"
             is Lan -> "Connected to $name on this network"
             is Relay -> "Connected to $name through the relay"
         }
@@ -204,6 +212,7 @@ class DesktopControlHub(
                 LocalControlStatus.Connected -> ShellLocalDesktop.Lan(service.desktopName)
                 LocalControlStatus.Connecting -> ShellLocalDesktop.Connecting(service.desktopName)
                 LocalControlStatus.AwaitingApproval -> ShellLocalDesktop.AwaitingApproval(service.desktopName)
+                LocalControlStatus.ConfirmingCode -> ShellLocalDesktop.ConfirmingCode(service.desktopName)
                 else -> if (service != null && service.hosts.isNotEmpty()) ShellLocalDesktop.InReach else ShellLocalDesktop.Hidden
             }
             val now = reach

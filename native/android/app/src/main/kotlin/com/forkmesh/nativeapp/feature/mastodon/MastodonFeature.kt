@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.forkmesh.nativeapp.App
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.mastodon.MastodonClient
 import com.forkmesh.nativeapp.mastodon.MastodonException
@@ -19,6 +20,7 @@ import com.forkmesh.nativeapp.mastodon.MastodonStatus
 import com.forkmesh.nativeapp.mastodon.MastodonStore
 import com.forkmesh.nativeapp.mastodon.MastodonUnauthorized
 import com.forkmesh.nativeapp.navigation.Route
+import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import com.forkmesh.nativeapp.platform.SecureStore
 import com.forkmesh.nativeapp.security.SecretStore
 import kotlinx.coroutines.CancellationException
@@ -31,11 +33,13 @@ object MastodonFeature {
     private const val OWNER = "WS20"
 
     private var app: App? = null
-    private val scope = MainScope()
+    internal val scope = MainScope()
 
     fun install(app: App) {
         this.app = app
         NavigationFeature.register(Route.Kind.Mastodon, OWNER) { MastodonScreen() }
+        Services.get<AuthService>()?.core?.onLocalSessionCleared = { MastodonState.accountSignedOut() }
+        ProjectLifecycle.onClose { MastodonState.reset() }
     }
 
     fun store(): MastodonStore? {
@@ -79,6 +83,28 @@ object MastodonState {
     val patched = mutableStateMapOf<String, MastodonStatus>()
     val removed = mutableStateListOf<String>()
     val revealed = mutableStateMapOf<String, Boolean>()
+
+    fun reset() {
+        session = null
+        loaded = false
+        server = ""
+        busy = false
+        limits = MastodonInstanceLimits()
+        patched.clear()
+        removed.clear()
+        revealed.clear()
+        generation++
+        clearNotice()
+    }
+
+    fun accountSignedOut() {
+        val signIn = signIn()
+        val forgotten = signIn?.forgetLocally()
+        MastodonFeature.scope.launch {
+            reset()
+            if (signIn != null && forgotten != null) withContext(Dispatchers.IO) { runCatching { signIn.revoke(forgotten) } }
+        }
+    }
 
     fun load() {
         if (loaded) return

@@ -2883,13 +2883,24 @@ const FMSheets = (() => {
       }),
     };
   }
+  const safeColor = (value) => (/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(String(value ?? "")) ? String(value) : "");
+  function cleanStyle(style) {
+    const out = { ...style };
+    for (const key of ["color", "fill"]) if (key in out && !safeColor(out[key])) delete out[key];
+    for (const key of ["bl", "br", "bt", "bb"]) {
+      if (!(key in out)) continue;
+      if (out[key] && typeof out[key] === "object") out[key] = { ...out[key], c: safeColor(out[key].c) || "#000000" };
+      else delete out[key];
+    }
+    return out;
+  }
   function deserializeWorkbook(data) {
     const wb = createWorkbook();
     if (!data || typeof data !== "object" || !Array.isArray(data.sheets) || !data.sheets.length) return wb;
     wb.styles = [{}];
     wb.styleIndex = new Map([["{}", 0]]);
     const styleMap = [0];
-    (Array.isArray(data.styles) ? data.styles : []).forEach((style, i) => { if (i > 0) styleMap[i] = internStyle(wb, style && typeof style === "object" ? style : {}); });
+    (Array.isArray(data.styles) ? data.styles : []).forEach((style, i) => { if (i > 0) styleMap[i] = internStyle(wb, style && typeof style === "object" ? cleanStyle(style) : {}); });
     wb.defaultFont = typeof data.defaultFont === "string" ? data.defaultFont : "Arial";
     wb.defaultSize = Number(data.defaultSize) || 10;
     wb.names = new Map();
@@ -2900,7 +2911,7 @@ const FMSheets = (() => {
       while (used.has(name.toLowerCase())) name = name + " " + (index + 1);
       used.add(name.toLowerCase());
       const sheet = createSheet(name, { rowCount: clampInt(raw.rows, 1, MAX_ROWS, 1000), colCount: clampInt(raw.cols, 1, MAX_COLS, 26), defaultColWidth: clampInt(raw.dw, 8, 2000, DEFAULT_COL_WIDTH), defaultRowHeight: clampInt(raw.dh, 4, 800, DEFAULT_ROW_HEIGHT) });
-      sheet.color = typeof raw.color === "string" ? raw.color : "";
+      sheet.color = safeColor(raw.color);
       sheet.hidden = !!raw.hidden;
       sheet.showGrid = raw.grid !== false;
       if (Array.isArray(raw.freeze)) { sheet.freezeRows = clampInt(raw.freeze[0], 0, 1000, 0); sheet.freezeCols = clampInt(raw.freeze[1], 0, 200, 0); }
@@ -2919,7 +2930,11 @@ const FMSheets = (() => {
         const range = parseRange(raw.filter.range);
         if (range) sheet.filter = { range, criteria: new Map((raw.filter.criteria || []).map((rule) => [Number(rule.col), { hidden: rule.hidden ? new Set(rule.hidden.map(String)) : undefined, contains: rule.contains }])) };
       }
-      sheet.conditional = Array.isArray(raw.cf) ? raw.cf.filter((rule) => rule && rule.range) : [];
+      sheet.conditional = Array.isArray(raw.cf) ? raw.cf.filter((rule) => rule && rule.range).map((rule) => ({
+        ...rule,
+        ...(rule.style && typeof rule.style === "object" ? { style: cleanStyle(rule.style) } : {}),
+        ...(Array.isArray(rule.colors) ? { colors: rule.colors.map((color) => safeColor(color) || "#FFFFFF") } : {}),
+      })) : [];
       sheet.validations = Array.isArray(raw.dv) ? raw.dv.filter((rule) => rule && rule.range) : [];
       for (const [ref, text] of Object.entries(raw.notes || {})) { const at = parseAddr(ref); if (at) sheet.notes.set(cellKey(at.r, at.c), String(text)); }
       for (const [ref, url] of Object.entries(raw.links || {})) { const at = parseAddr(ref); if (at) sheet.links.set(cellKey(at.r, at.c), String(url)); }
@@ -2936,10 +2951,24 @@ const FMSheets = (() => {
   const utf8 = new TextDecoder("utf-8");
   const encoder = new TextEncoder();
   const MAX_UNPACKED = 400 * 1024 * 1024;
-  async function inflateRaw(bytes) {
+  async function readLimited(stream, limit) {
+    const reader = stream.getReader(), chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > limit) { await reader.cancel().catch(() => {}); throw new Error("This workbook is too large to open."); }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const chunk of chunks) { out.set(chunk, at); at += chunk.length; }
+    return out;
+  }
+  async function inflateRaw(bytes, limit = MAX_UNPACKED) {
     if (typeof DecompressionStream === "undefined") throw new Error("This browser cannot open compressed workbooks. Update it and try again.");
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    return readLimited(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")), limit);
   }
   async function deflateRaw(bytes) {
     if (typeof CompressionStream === "undefined") return null;
@@ -2951,8 +2980,7 @@ const FMSheets = (() => {
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
   async function gunzipText(bytes) {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-    return utf8.decode(new Uint8Array(await new Response(stream).arrayBuffer()));
+    return utf8.decode(await readLimited(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")), MAX_UNPACKED));
   }
   function readZip(bytes) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -2980,13 +3008,15 @@ const FMSheets = (() => {
         const e = entries.get(String(name).replace(/^\/+/, "").toLowerCase());
         if (!e) return null;
         if (view.getUint32(e.local, true) !== 0x04034b50) throw new Error("This workbook is damaged.");
-        unpacked += e.size;
-        if (unpacked > MAX_UNPACKED) throw new Error("This workbook is too large to open.");
+        const remaining = MAX_UNPACKED - unpacked;
+        if (e.size > remaining) throw new Error("This workbook is too large to open.");
         const start = e.local + 30 + view.getUint16(e.local + 26, true) + view.getUint16(e.local + 28, true);
         const data = bytes.subarray(start, start + e.compressed);
-        if (e.method === 0) return data;
-        if (e.method === 8) return inflateRaw(data);
-        throw new Error("This workbook uses a compression method that is not supported.");
+        if (e.method !== 0 && e.method !== 8) throw new Error("This workbook uses a compression method that is not supported.");
+        const out = e.method === 0 ? data : await inflateRaw(data, remaining);
+        if (out.length > remaining) throw new Error("This workbook is too large to open.");
+        unpacked += out.length;
+        return out;
       },
       async text(name) { const data = await this.read(name); return data ? utf8.decode(data) : null; },
     };
@@ -3132,7 +3162,7 @@ const FMSheets = (() => {
     if (a.rgb) hex = "#" + a.rgb.slice(-6).toUpperCase();
     else if (a.theme !== undefined) hex = "#" + (theme[Number(a.theme)] || "000000");
     else if (a.indexed !== undefined) { const i = Number(a.indexed); if (i >= 64) return ""; hex = palette[i] || ""; }
-    if (!hex) return "";
+    if (!safeColor(hex)) return "";
     return a.tint ? applyTint(hex, Number(a.tint)) : hex;
   }
   const H_ALIGN = { left: "left", center: "center", right: "right", justify: "justify", fill: "left", centerContinuous: "center", distributed: "center" };
@@ -3174,7 +3204,7 @@ const FMSheets = (() => {
       order.forEach((name, i) => {
         const node = kid(scheme, name);
         const value = kid(node, "srgbClr")?.attrs.val || kid(node, "sysClr")?.attrs.lastClr;
-        if (value) theme[i] = value.toUpperCase();
+        if (/^[0-9a-f]{6}$/i.test(value || "")) theme[i] = value.toUpperCase();
       });
     }
     const palette = PALETTE.slice();
@@ -4297,6 +4327,14 @@ const FMSheets = (() => {
   }
   async function packWorkbook(wb, calc) { return bytesToBase64(await gzipText(JSON.stringify(serializeWorkbook(wb, calc)))); }
   async function unpackWorkbook(text) { return deserializeWorkbook(JSON.parse(await gunzipText(base64ToBytes(text)))); }
+  async function readableExport(item) {
+    try {
+      const workbook = JSON.parse(await gunzipText(base64ToBytes(item.data)));
+      if (!workbook || typeof workbook !== "object" || Array.isArray(workbook)) return item;
+      const { data: _data, encoding: _encoding, ...rest } = item;
+      return { ...rest, workbook };
+    } catch { return item; }
+  }
 
   function writeCfb(stream) {
     const SECTOR = 512;
@@ -4919,6 +4957,7 @@ const FMSheets = (() => {
   }
 
   const htmlEscape = (value) => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const cssFont = (value) => String(value).replace(/[;{}\\]/g, " ");
   function cssBorder(b) {
     if (!b) return "";
     const width = { medium: 2, mediumDashed: 2, mediumDashDot: 2, mediumDashDotDot: 2, thick: 3, double: 3 }[b.w] || 1;
@@ -4945,7 +4984,7 @@ const FMSheets = (() => {
         const shown = formatValue(value, style.fmt);
         const css = [
           style.b ? "font-weight:bold" : "", style.i ? "font-style:italic" : "", style.u || style.s ? `text-decoration:${[style.u ? "underline" : "", style.s ? "line-through" : ""].join(" ").trim()}` : "",
-          shown.color || style.color ? `color:${shown.color || style.color}` : "", style.fill ? `background:${style.fill}` : "", style.font ? `font-family:${htmlEscape(style.font)}` : "", style.size ? `font-size:${style.size}pt` : "",
+          shown.color || style.color ? `color:${shown.color || style.color}` : "", style.fill ? `background:${style.fill}` : "", style.font ? `font-family:${cssFont(style.font)}` : "", style.size ? `font-size:${style.size}pt` : "",
           `text-align:${style.h || (typeof value === "number" ? "right" : typeof value === "boolean" || isErr(value) ? "center" : "left")}`, `vertical-align:${style.v || "bottom"}`, style.wrap ? "white-space:pre-wrap" : "white-space:pre",
           style.bl ? `border-left:${cssBorder(style.bl)}` : "", style.br ? `border-right:${cssBorder(style.br)}` : "", style.bt ? `border-top:${cssBorder(style.bt)}` : "", style.bb ? `border-bottom:${cssBorder(style.bb)}` : "",
         ].filter(Boolean).join(";");
@@ -4953,7 +4992,7 @@ const FMSheets = (() => {
         const span = m ? `${m.c2 > m.c1 ? ` colspan="${Math.min(m.c2, extent.c2) - c + 1}"` : ""}${m.r2 > m.r1 ? ` rowspan="${Math.min(m.r2, extent.r2) - r + 1}"` : ""}` : "";
         const link = sheet.links.get(k);
         const body = link && /^(https?:|mailto:)/i.test(link) ? `<a href="${htmlEscape(link)}">${htmlEscape(shown.text)}</a>` : htmlEscape(shown.text);
-        cells.push(`<td${span} style="${css}">${body}</td>`);
+        cells.push(`<td${span} style="${htmlEscape(css)}">${body}</td>`);
       }
       rows.push(`<tr style="height:${sheet.rowHeights.get(r) ?? sheet.defaultRowHeight}px">${cells.join("")}</tr>`);
     }
@@ -4962,7 +5001,7 @@ const FMSheets = (() => {
   function workbookHtml(wb, calc, title, options = {}) {
     const sheets = options.sheet ? [options.sheet] : wb.sheets.filter((sheet) => !sheet.hidden);
     const body = sheets.map((sheet) => `<section><h2>${htmlEscape(sheet.name)}</h2>${sheetHtmlTable(wb, sheet, calc, options.range)}</section>`).join("");
-    return `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscape(title)}</title><style>body{font-family:${htmlEscape(wb.defaultFont)},Arial,sans-serif;font-size:${wb.defaultSize}pt;margin:24px;color:#000;background:#fff}h2{font-size:14px;margin:24px 0 8px}table{border-collapse:collapse;table-layout:fixed}td{padding:2px 4px;overflow:hidden;font-size:inherit}table.grid td{outline:1px solid #e2e2e2}section{break-after:page}section:last-child{break-after:auto}@media print{body{margin:0}h2{margin-top:0}}</style></head><body>${body}</body></html>`;
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscape(title)}</title><style>body{font-family:${htmlEscape(cssFont(wb.defaultFont))},Arial,sans-serif;font-size:${wb.defaultSize}pt;margin:24px;color:#000;background:#fff}h2{font-size:14px;margin:24px 0 8px}table{border-collapse:collapse;table-layout:fixed}td{padding:2px 4px;overflow:hidden;font-size:inherit}table.grid td{outline:1px solid #e2e2e2}section{break-after:page}section:last-child{break-after:auto}@media print{body{margin:0}h2{margin-top:0}}</style></head><body>${body}</body></html>`;
   }
   function sheetToMarkdown(wb, sheet, calc) {
     const used = usedRange(sheet);
@@ -5220,7 +5259,7 @@ const FMSheets = (() => {
     insertRows, deleteRows, insertCols, deleteCols, renameSheet, removeSheet, cloneSheet, mergeAt, expandToMerges, usedRange, extentOf, dataRegion,
     fillValues, sortRows, computeFilterRows, displayText, conditionalContext, mixColors, luminance, parseHex, validationAt, validationOptions, validateValue,
     chartData, pivotTable, serializeWorkbook, deserializeWorkbook, uid, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT,
-    readZip, writeZip, parseXml, readXlsx, writeXlsx, readXls, readCfb, readSpreadsheetMl, r1c1ToA1, parseCsv, workbookFromRows, sheetToCsv, sniffFormat, importWorkbook,
+    readableExport, readZip, writeZip, parseXml, readXlsx, writeXlsx, readXls, readCfb, readSpreadsheetMl, r1c1ToA1, parseCsv, workbookFromRows, sheetToCsv, sniffFormat, importWorkbook,
     packWorkbook, unpackWorkbook, writeXls, writeCfb, compileBiffFormula, readOds, writeOds, openFormulaText, fromOpenFormula, workbookHtml, sheetHtmlTable, sheetToMarkdown, workbookJson, tablesToWorkbook, aiContext, applyAiActions, AI_ACTIONS, bytesToBase64, base64ToBytes, gzipText, gunzipText, MONTHS, DAYS,
   };
 })();
@@ -7651,6 +7690,17 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     input.value = "";
     input.click();
   }
+  async function exportEverything() {
+    const workbooks = [];
+    let start = 0, page;
+    do {
+      page = await request(`${API}/export?start=${start}`);
+      for (const item of page.export.workbooks) workbooks.push(await S.readableExport(item));
+      start = page.export.next || 0;
+    } while (start);
+    const { next: _next, ...head } = page.export;
+    return { filename: page.filename, export: { ...head, workbooks } };
+  }
   function printSheet() {
     const d = doc();
     recalc();
@@ -7660,6 +7710,7 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     const frame = document.createElement("iframe");
     frame.className = "sheets-print-frame";
     frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("sandbox", "allow-same-origin allow-modals");
     frame.srcdoc = html;
     frame.onload = () => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch { download(html, safeFilename(d.title) + ".html", "text/html"); } setTimeout(() => frame.remove(), 60000); };
     document.body.appendChild(frame);
@@ -8417,13 +8468,13 @@ window.ForkMeshDashboard.registerPage("spreadsheets", ({ select: $, session, esc
     q("[data-sheets-manage]")?.addEventListener("click", () => q("[data-sheets-manage-dialog]").showModal());
     q("[data-sheets-dialog-close]")?.addEventListener("click", () => q("[data-sheets-manage-dialog]").close());
     q("[data-sheets-export-data]")?.addEventListener("click", async () => {
-      try { const payload = await request(`${API}/export`); download(JSON.stringify(payload.export, null, 2), payload.filename || "forkmesh-spreadsheets.json", "application/json"); }
+      try { const payload = await exportEverything(); download(JSON.stringify(payload.export, null, 2), payload.filename || "forkmesh-spreadsheets.json", "application/json"); }
       catch (error) { flash("error", `Could not export: ${error.message}`); }
     });
     q("[data-sheets-uninstall]")?.addEventListener("click", async () => {
       if (!(await confirmDialog("Uninstall Spreadsheets", "This downloads every spreadsheet as one JSON file, then deletes them from your account on every device.", "Uninstall"))) return;
       try {
-        const exported = await request(`${API}/export`);
+        const exported = await exportEverything();
         download(JSON.stringify(exported.export, null, 2), exported.filename || "forkmesh-spreadsheets.json", "application/json");
         await request(`${API}/uninstall`, "POST", {});
         q("[data-sheets-manage-dialog]").close();

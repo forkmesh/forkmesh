@@ -165,7 +165,21 @@ systemd-run --scope --quiet --collect [--user] -p MemoryMax=<jobMemoryMax> -p Me
   no IP filter. No manager: `ulimit -v` plus the Go-side timeout.
 - Each session gets `<workRoot>/.homes/<id>` and an empty `TMPDIR`. Only the
   provider credential files are copied in (regular file, owned by the job
-  user, at most 256 KiB, valid JSON, no symlinks) and copied back atomically.
+  user, at most 256 KiB, valid JSON, no symlinks). See [provider
+  credentials](#provider-credentials) for what comes back.
+- An Actions step starts in `/` and enters its directory with `cd --` inside
+  the shell, as the job user. A root process that entered it would follow a
+  symlink the job planted (in the checkout, or over the job-owned `src`), and
+  the job would inherit a working directory inside the locked persistent home,
+  reaching the stored logins despite the root-owned parent. `uses:` steps are
+  not run, so every step is a shell step.
+- Sweeps of job-writable folders (shared `/tmp`, the persistent home scrub,
+  Actions run folders, a session's `tmp`) use `removeJobOwnedUnder`, so a
+  planted `.git` entry cannot keep a folder across jobs
+  ([destructive actions](../engineering/destructive-actions.md)).
+- `publish` streams the job's bundle to disk instead of reading it into the
+  daemon, whose unit has `MemoryMax=250M`, and the daemon's git runs with low
+  memory settings and a 16 MiB output cap.
 - The environment is an allowlist: locale and `PATH`, proxy variables,
   provider keys the operator set on the daemon, the job's own `HOME`,
   `TMPDIR`, `USER`, and `GIT_TERMINAL_PROMPT=0`.
@@ -376,6 +390,13 @@ no memory figures (`/proc` and `sysinfo` are Linux only).
   refuses new jobs with `409 runner_login_expired` when no runner can take
   them. `GET /api/runners/attention` lets the web, desktop and phones show a
   sign-in prompt; its shape is stable.
+- **Credential copy-back.** With a separate job user, a changed Codex
+  credential is kept only when the account id agrees across `access_token`,
+  `id_token` and `account_id`, with the same `id_token` email and no API key.
+  A changed Claude credential is kept, because refresh tokens rotate and a
+  refusal would spend the stored login.
+  A mirror's jobs run as the daemon's user and can write the login
+  directly, so this check does not apply there.
 - **Mode B (not built):** burst runners would receive the owner's provider
   token sealed to a one-time in-memory key, passed only through the job
   environment, for owners who opted in to cloud runs.

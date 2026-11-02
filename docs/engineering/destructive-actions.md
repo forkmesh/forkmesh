@@ -54,6 +54,13 @@ on macOS).
 | Shell | `fm_safe_rm_tree <parent> <target>...` in `tools/forkmesh-safe-rm.sh`; returns 64 on refusal | `FM_SAFE_RM_WORKTREE=1` | `mv` to a stamped sibling |
 | Go (`server/`) | `removeTreeUnder(parent, target)` in `server/safedelete.go` | `removeOwnWorktreeUnder`, `removeOwnCloneUnder` | `moveAside(target, label)` |
 
+`removeJobOwnedUnder(parent, target)` in `server/safedelete.go` is for sweeps
+of folders a runner job could write. A job could otherwise keep any folder by
+planting a `.git` entry in it, since the other helpers refuse those. It accepts
+a target that is or holds `.git`, but only a direct child of the parent, and
+only when the parent itself is outside git history. Every other refusal still
+applies.
+
 The Python helper also runs on Windows (the GitHub Windows jobs import it):
 `pwd` is optional there, so the account home falls back to the `HOME` paths it
 already checks, and paths are compared with forward slashes, a bare drive

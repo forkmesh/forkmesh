@@ -1761,3 +1761,20 @@ def test_the_creation_budget_counts_the_audit_log_not_live_rows():
     assert '"chat.channel.create"' in body
     assert "outcome='success'" in body
     assert "chat_channels" not in body
+
+
+@run_async_test
+async def test_closing_a_channel_kills_its_old_invite_link():
+    runtime = FakeRuntime()
+    created = await create_channel(runtime, "open-then-closed", actor="alice")
+    channel_id = created["data"]["channel"]["id"]
+    path = f"/api/chat/channels/{channel_id}"
+    made = await api.handle(runtime.use("POST", "alice", {}), path + "/invite")
+    token = _invite_token(made["data"]["invite"]["url"])
+    opened = await api.handle(runtime.use("PATCH", "alice", {"visibility": "public"}), path)
+    assert opened["status"] == 200
+    closed = await api.handle(runtime.use("PATCH", "alice", {"visibility": "private"}), path)
+    assert closed["status"] == 200
+    assert runtime.db.execute("SELECT COUNT(*) FROM chat_channel_invites").fetchone()[0] == 0
+    joined = await api.handle(runtime.use("POST", "bob", {"token": token}), "/api/chat/invites/accept")
+    assert joined["status"] != 201

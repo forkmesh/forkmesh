@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 const S = require(path.join(__dirname, "..", "content", "web", "page.js"));
 
 let failures = 0, checks = 0;
@@ -298,7 +299,78 @@ async function roundTrips() {
   return { xlsx, xls, ods };
 }
 
-roundTrips().then((files) => {
+function lyingZip(entries) {
+  const parts = [], central = [];
+  let offset = 0;
+  for (const { name, method, data, declared } of entries) {
+    const label = Buffer.from(name), head = Buffer.alloc(30), record = Buffer.alloc(46);
+    head.writeUInt32LE(0x04034b50, 0); head.writeUInt16LE(method, 8); head.writeUInt32LE(data.length, 18); head.writeUInt32LE(declared, 22); head.writeUInt16LE(label.length, 26);
+    record.writeUInt32LE(0x02014b50, 0); record.writeUInt16LE(method, 10); record.writeUInt32LE(data.length, 20); record.writeUInt32LE(declared, 24); record.writeUInt16LE(label.length, 28); record.writeUInt32LE(offset, 42);
+    parts.push(head, label, data);
+    central.push(record, label);
+    offset += head.length + label.length + data.length;
+  }
+  const directory = Buffer.concat(central), end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
+  return new Uint8Array(Buffer.concat([...parts, directory, end]));
+}
+
+function poisonedXlsx(fontColor, themeValue) {
+  const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main", rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const files = {
+    "[Content_Types].xml": `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>`,
+    "_rels/.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    "xl/workbook.xml": `<?xml version="1.0"?><workbook xmlns="${main}" xmlns:r="${rel}"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    "xl/_rels/workbook.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${rel}/styles" Target="styles.xml"/><Relationship Id="rId3" Type="${rel}/theme" Target="theme/theme1.xml"/></Relationships>`,
+    "xl/theme/theme1.xml": `<?xml version="1.0"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="x"><a:dk1><a:srgbClr val="${themeValue}"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1></a:clrScheme></a:themeElements></a:theme>`,
+    "xl/styles.xml": `<?xml version="1.0"?><styleSheet xmlns="${main}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><sz val="11"/>${fontColor}<name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellXfs count="2"><xf fontId="0"/><xf fontId="1"/></cellXfs></styleSheet>`,
+    "xl/worksheets/sheet1.xml": `<?xml version="1.0"?><worksheet xmlns="${main}"><sheetData><row r="1"><c r="A1" s="1" t="inlineStr"><is><t>hi</t></is></c></row></sheetData></worksheet>`,
+  };
+  return lyingZip(Object.entries(files).map(([name, text]) => ({ name, method: 0, data: Buffer.from(text), declared: Buffer.byteLength(text) })));
+}
+
+function printableCell(wb) {
+  const html = S.workbookHtml(wb, new S.Calc(wb), "t", {});
+  return /<td[^]*?<\/td>/.exec(html)[0];
+}
+
+async function securityChecks() {
+  const payload = "&quot;&gt;&lt;IMG SRC=X ONERROR=ALERT(1)&gt;";
+  const themed = (await S.importWorkbook(poisonedXlsx('<color theme="1"/>', payload), "a.xlsx", {})).wb;
+  same(/<img/i.test(printableCell(themed)), false, "a poisoned theme colour never reaches the printed page");
+  same(themed.styles.some((style) => style.color && !/^#[0-9A-F]{6}$/.test(style.color)), false, "a poisoned theme colour is dropped on import");
+  const direct = (await S.importWorkbook(poisonedXlsx('<color rgb="AA&quot;    "/>', "000000"), "a.xlsx", {})).wb;
+  same(direct.styles.some((style) => style.color), false, "a poisoned rgb colour is dropped on import");
+  const fine = (await S.importWorkbook(poisonedXlsx('<color rgb="FF112233"/>', "000000"), "a.xlsx", {})).wb;
+  same(fine.styles.some((style) => style.color === "#112233"), true, "an ordinary rgb colour still imports");
+
+  const stored = S.deserializeWorkbook({ format: "forkmesh-sheets", version: 1,
+    styles: [{}, { color: '"><img src=x onerror=alert(1)>', fill: "url(https://evil.example/)", bl: { w: "thin", c: '"><b>' } }, { color: "#ABCDEF" }],
+    sheets: [{ name: "S", color: '"><img>', cells: { A1: { v: "hi", s: 1 }, B1: { v: "ok", s: 2 } },
+      cf: [{ range: "A1", type: "scale", colors: ['"><img>', "#010203"], style: { color: '"><img>', fill: "#010203" } }] }] });
+  const cell = printableCell(stored);
+  same(/<img|<b>|evil\.example/.test(cell), false, "stored colours are checked when a workbook opens");
+  same(stored.sheets[0].color, "", "a stored tab colour is checked");
+  same(stored.sheets[0].conditional[0].colors, ["#FFFFFF", "#010203"], "stored colour scales are checked");
+  same(stored.sheets[0].conditional[0].style, { fill: "#010203" }, "stored rule styles are checked");
+  same(stored.styles.some((style) => style.color === "#ABCDEF"), true, "an ordinary stored colour survives");
+
+  const forced = S.createWorkbook();
+  forced.sheets[0].cells.set(S.cellKey(0, 0), S.makeCell("hi", undefined, S.internStyle(forced, { color: '"><img src=x>', font: 'x" onfocus="y;z' })));
+  const forcedCell = printableCell(forced);
+  same(/<img/.test(forcedCell) || /onfocus="/.test(forcedCell), false, "the whole style attribute is escaped");
+
+  const bomb = lyingZip([{ name: "big", method: 8, data: zlib.deflateRawSync(Buffer.alloc(401 * 1024 * 1024)), declared: 0 }]);
+  const bombed = await S.readZip(bomb).read("big").then(() => "read", (error) => error.message);
+  same(bombed, "This workbook is too large to open.", "a zip entry that lies about its size stops at the real limit");
+
+  const packed = Buffer.from(zlib.gzipSync(JSON.stringify({ format: "forkmesh-sheets", sheets: [] }))).toString("base64");
+  same(await S.readableExport({ id: "1", data: packed, encoding: "x" }), { id: "1", workbook: { format: "forkmesh-sheets", sheets: [] } }, "the download holds the workbook itself");
+  const broken = { id: "2", data: "H4sIAAAA", encoding: "x" };
+  same(await S.readableExport(broken), broken, "a workbook that cannot be read stays base64");
+}
+
+securityChecks().then(roundTrips).then((files) => {
   if (process.argv[2]) {
     fs.writeFileSync(path.join(process.argv[2], "out.xlsx"), files.xlsx);
     fs.writeFileSync(path.join(process.argv[2], "out.xls"), files.xls);

@@ -63,7 +63,10 @@ the others.
   hostile page can therefore never ask for a password or start a walk. Add a
   new popup-only message to `POPUP_ONLY`.
 - **Vault fill.** Fill goes through `activeTab` and `scripting` after a host
-  check against the tab Chrome reports: exact host, https, top frame. The
+  check against the tab Chrome reports: exact host and port (the scheme's
+  default port counts as none, since another port can be a different service),
+  https, top frame. The page repeats the host and port check when the fill
+  runs, in case the tab navigated. The
   keyset lives in `chrome.storage.session` only, with a 15-minute idle lock on
   an `alarms` timer.
 - **Marketing capture.** The dashboard page passes only the organization and

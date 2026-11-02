@@ -550,8 +550,16 @@ static void testTerminalRemoteMode()
 {
     UrlCatcher catcher;
     QDesktopServices::setUrlHandler("https", &catcher, "open");
+    TerminalWidget plain;
+    QSignalSpy plainUrl(&plain, &TerminalWidget::signInUrlDetected);
+    plain.feed("Open https://auth.openai.com/codex/device\r\n"
+               "https://claude.ai/oauth/authorize?code_challenge=abc \r\n");
+    check(plainUrl.isEmpty() && catcher.opened.isEmpty(),
+          "output in an ordinary terminal opens nothing in the browser");
+
     TerminalWidget terminal;
     terminal.resize(640, 320);
+    terminal.setOpensSignInLinks(true);
     terminal.setRemoteInput(true);
     check(terminal.remoteInput(), "remote input is on");
     QSignalSpy typed(&terminal, &TerminalWidget::inputTyped);
@@ -572,6 +580,7 @@ static void testTerminalRemoteMode()
           "fed output opens the authorize URL once it is complete");
 
     TerminalWidget codex;
+    codex.setOpensSignInLinks(true);
     codex.setRemoteInput(true);
     QSignalSpy codexUrl(&codex, &TerminalWidget::signInUrlDetected);
     codex.feed("1. Open this link\r\n   https://auth.openai.com/codex/device\r\n"

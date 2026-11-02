@@ -1,6 +1,7 @@
 package mirrornode
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -602,14 +603,83 @@ jobs:
 `}
 	status, logText, steps, _ := runInstanceWorkflow(t, runnerActionsJob{JobID: 1, RepositoryOwner: "alice",
 		RepositoryName: "proj", CloneURL: "https://core1.test/v1/runner/alice/proj.git"}, files,
-		func(capturedStep, io.Writer) int { return 0 })
-	if status != actionFailed || len(steps) != 1 || steps[0].script != "echo always" {
+		func(step capturedStep, _ io.Writer) int {
+			if strings.HasSuffix(step.dir, "nowhere") {
+				return 1
+			}
+			return 0
+		})
+	if status != actionFailed || len(steps) != 2 || steps[0].script != "echo x" || steps[1].script != "echo always" {
 		t.Fatalf("status %s steps %+v\n%s", status, steps, logText)
 	}
-	for _, want := range []string{"Skipped: Never", "working directory nowhere is not in the checkout"} {
+	for _, want := range []string{"Skipped: Never", `step "Missing dir" exited with status 1`} {
 		if !strings.Contains(logText, want) {
 			t.Fatalf("log lacks %q:\n%s", want, logText)
 		}
+	}
+}
+
+func runnerStepTestActions(t *testing.T, box jobSandbox) *runnerActions {
+	t.Helper()
+	backend := &runnerBackend{cfg: &RunnerConfig{WorkRoot: t.TempDir()}, node: "fmnext-r1", box: box}
+	return newRunnerActions(backend)
+}
+
+func TestRunnerStepNeverEntersAJobControlledPathAsTheDaemon(t *testing.T) {
+	root := t.TempDir()
+	locked := filepath.Join(root, "locked-home", ".claude")
+	if err := os.MkdirAll(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(root, "src")
+	if err := os.Mkdir(src, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(src, "link")
+	if err := os.Symlink(locked, link); err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(root, "start-dir")
+	manager := filepath.Join(root, "systemd-run")
+	script := "#!/bin/sh\npwd -P > '" + record + "'\n"
+	if err := os.WriteFile(manager, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a := runnerStepTestActions(t, jobSandbox{systemdRun: manager, memoryMax: "700M", cpuQuota: "90%"})
+	code, err := a.runStep(context.Background(), link, []string{"PATH=/usr/bin:/bin"}, "true", io.Discard)
+	if err != nil || code != 0 {
+		t.Fatalf("step: %d %v", code, err)
+	}
+	raw, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != runnerStepStartDir {
+		t.Fatalf("the privileged process started in %q, a path the job can redirect", got)
+	}
+}
+
+func TestRunnerStepEntersItsWorkingDirectoryInsideTheShell(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "it's here")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a := runnerStepTestActions(t, jobSandbox{memoryMax: "700M", cpuQuota: "90%"})
+	var out bytes.Buffer
+	code, err := a.runStep(context.Background(), dir, []string{"PATH=/usr/bin:/bin", "CDPATH=/"}, "pwd -P", &out)
+	if err != nil || code != 0 || strings.TrimSpace(out.String()) != dir {
+		t.Fatalf("step: %d %v %q", code, err, out.String())
+	}
+	out.Reset()
+	code, err = a.runStep(context.Background(), filepath.Join(root, "missing"), []string{"PATH=/usr/bin:/bin"},
+		"echo ran", &out)
+	if err != nil || code != 1 || strings.Contains(out.String(), "ran") ||
+		!strings.Contains(out.String(), "working directory is not in the checkout") {
+		t.Fatalf("missing directory: %d %v %q", code, err, out.String())
 	}
 }
 
@@ -790,7 +860,7 @@ func TestRunnerStepsReceiveTheirEnvironmentOnStdinNotArgv(t *testing.T) {
 	secret := "s3cr3t 'quoted' $HOME `x`\nsecond line"
 	env := []string{"PATH=/usr/bin:/bin", "API_TOKEN=" + secret, "EMPTY=",
 		"bad-name=ignored", "HOME=/tmp"}
-	args, stdin := runnerStepInvocation("/bin/sh", env,
+	args, stdin := runnerStepInvocation("/bin/sh", "", env,
 		"printf '%s|%s|%s' \"$API_TOKEN\" \"${EMPTY-unset}\" \"$PATH\"\n")
 	for _, arg := range args {
 		if strings.Contains(arg, "s3cr3t") || strings.Contains(arg, "=") {

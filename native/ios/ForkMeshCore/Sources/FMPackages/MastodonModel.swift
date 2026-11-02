@@ -49,6 +49,16 @@ public final class MastodonHub {
         if let server = session?.server ?? pending?.server { self.server = MastodonServer.host(server) }
     }
 
+    @discardableResult
+    public static func forgetSignIn(store: SecureStore, http: HTTPClient) -> Task<Void, Never>? {
+        let session = store.read(sessionKey).flatMap { MastodonSession(JSON.parseObject($0)) }
+        store.delete(sessionKey)
+        store.delete(pendingKey)
+        guard let session else { return nil }
+        let client = MastodonClient(server: session.server, token: session.token, http: http)
+        return Task { await client.revoke(clientId: session.clientId, clientSecret: session.clientSecret) }
+    }
+
     public var signedIn: Bool { session != nil }
 
     public var client: MastodonClient? {

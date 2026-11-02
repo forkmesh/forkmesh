@@ -241,10 +241,22 @@ it starts no deploy; the agent takes it with the next green deploy.
 forkmesh.com is still the `forkmesh-www` Cloudflare Worker (`www/worker.js`).
 After a good deploy the agent compares its `x-forkmesh-deploy-fingerprint`
 with the hash of the target's `www/`, `marketplace/` and `docs/` trees and, if
-they differ, runs `npx wrangler deploy --config wrangler.production.toml` from
-the pinned worktree with Node 22 and credentials from
+they differ, runs `npm ci --ignore-scripts` and then
+`node_modules/.bin/wrangler deploy --config wrangler.production.toml` from the
+pinned worktree's `www/`, with Node 22 and credentials from
 `config/fleet/cloudflare.env`. The node roll runs before the website step, so a
 website failure never skips a roll.
+
+Wrangler and everything under it are pinned by `www/package-lock.json`. An
+unpinned `npx wrangler` would run whatever npm served that day on the box that
+holds the fleet key and `DATA_KEY`, with the Cloudflare token in its
+environment. So install scripts are off, `npm ci` gets no token, and both steps
+get only `PATH`, a scratch `HOME` under `cache/node-deploy/website-home`, `LANG`
+and `WRANGLER_SEND_METRICS`; only wrangler also gets the two Cloudflare values.
+To move wrangler, change `www/package.json` and run `npm install
+--package-lock-only --ignore-scripts` in `www/`. A target with no lockfile (a
+rollback past this change) fails the website step and leaves the Worker alone.
+The wheelhouse has version pins but no hashes yet (`app/host/requirements.txt`).
 
 `docs/` is not a release path: a docs-only push starts no deploy, and its pages
 go live with the next good deploy. The website step runs only after a good

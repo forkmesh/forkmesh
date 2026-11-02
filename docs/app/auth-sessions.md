@@ -24,7 +24,15 @@ and the World. Part of [the App docs](README.md).
   (`_account_key_revoked`: owner signing keys, signed admin requests,
   heartbeat, finalize, rotate as the old or the new key), and a later desktop
   login replaces it. So revoking a stolen first desktop untrusts its key, and
-  it cannot rotate to a successor the owner cannot see.
+  it cannot rotate to a successor the owner cannot see. The key also comes off
+  every node this account owns, because a node record that kept it would still
+  accept its pushes, rotations and link grants; the owner relinks the node from
+  a new desktop.
+- A password reset or recovery-code reset also revokes every device key except
+  the account's primary key and its nodes' keys, and removes its SSH keys
+  (`_account_revoke_other_keys`), because someone who once had the password may
+  have bound their own key. The primary and node keys stay so a person who
+  forgot their password does not lose their identity.
 - `POST /api/accounts/rotate` also needs `newSig`: the successor key signs
   `forkmesh-rotate-accept-v1\n<account>\n<oldPubkey>\n<newPubkey>\n<ts>`
   (`ForkMeshIdentity::acceptRotation` on the desktop). A request without it
@@ -42,6 +50,18 @@ and the World. Part of [the App docs](README.md).
   `GET /api/accounts/devices`, `POST /api/accounts/devices/check`,
   `POST /api/accounts/devices/revoke-all`, `DELETE /api/accounts/devices/<id>`,
   `POST /api/accounts/logout`.
+
+## Guessing budgets stop correct guesses too
+
+A wrong password charges a source budget and a source+name budget. Once the
+source+name budget is spent, `_account_login` and `_password_git_account` answer
+429 before checking the password, so a correct guess looks like a wrong one.
+The budget belongs to the source, so a stranger cannot lock someone out by
+naming them. A source's own budget refuses correct passwords only past
+`LOGIN_SOURCE_HARD_FAILS` failures, so a few typos in a shared office do not
+block everyone there, while spraying many accounts from one address stops.
+A request with no client address metadata has only a name budget, so it stays
+unchecked until the password is verified.
 
 ## Password checks cost the same for unknown accounts
 

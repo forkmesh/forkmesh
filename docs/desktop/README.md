@@ -542,6 +542,12 @@ sandbox: false
   the same trust as running a shortcut from that checkout, plus the approval
   record. A manual run on another branch runs that branch's code, so only
   start one on a branch whose author you trust.
+- **Pull requests never leave the sandbox.** A pull request's checks read the
+  trigger from the base branch and the steps from the head, so a head copy
+  saying `on: [workflow_dispatch]` and `sandbox: false` used to run on the
+  host. `applyWorkflowScan` now skips any `sandbox: false` workflow for every
+  event, `ActionRunner` fails a run that has a pull number and says
+  `sandbox: false`, a rerun of one is refused, and the approval banner says so.
 - **What changes.** The steps run as the desktop user with plain `bash -se`
   (no bwrap) in the run's verified writable clone, still inside the
   `forkmesh-action-*.scope` systemd scope with the same memory, task, CPU
@@ -568,7 +574,9 @@ sandbox: false
 
 Tests: `desktop/tests/test_action_security.cpp` (parse rules, and a run that
 checks the uid, the real home, the local checkout and that `env:` cannot
-redirect it), `app/tests/test_workflow_files.py`.
+redirect it, and that a pull request run is refused),
+`desktop/tests/validate_repo_workflow_approval.py`,
+`app/tests/test_workflow_files.py`.
 
 ### Approval ping for a contributor's pull request
 
@@ -746,6 +754,12 @@ measured and keep the plain branch icon.
   `tools/qt64-build-check.sh` builds against the oldest supported Qt.
 - **OpenSSL 3.5 features fail closed on 3.0** with a message
   ([build-and-test.md](build-and-test.md#openssl)).
+- **A pull record's `base` or `head` is never a git option.** An unsigned
+  `pull.md` with `base: --output=/path/x` made `git log` and `git rev-list`
+  write files when the pull was read (the desktop side of S-28).
+  `PullStore` clears any `base`, `head`, `mergeBase` or `mergeHead` starting
+  with `-` when it reads a record, and the range reads pass
+  `--end-of-options`. Test: `desktop/tests/test_pull_store_retire.cpp`.
 - **A leftover `.git/rebase-apply` blocks every later `git am`.** `PullStore`
   tracks live conflict sessions; `mergePull` and `beginPullBranch` treat any
   other `rebase-apply`, or a `MERGE_HEAD` equal to the PR head being merged, as

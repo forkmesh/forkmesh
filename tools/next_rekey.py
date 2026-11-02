@@ -356,6 +356,7 @@ BI_COLUMNS = {
     "repo_archive_syncs": ("repo_bi",),
     "stale_pull_repos": ("repo_bi",),
     "stale_pulls": ("repo_bi",),
+    "retired_account_names": ("name_bi", "successor_bi"),
     "repo_remote_forks": ("repo_bi", "url_bi"),
     "repo_security_scan_leases": ("repo_bi", "lease_token_bi"),
     "repo_security_scan_reviews": ("repo_bi", "reviewer_bi"),

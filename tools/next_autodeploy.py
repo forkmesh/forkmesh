@@ -1336,6 +1336,12 @@ class Pipeline:
                 self.say("catch-up: %s: FAILED: %s" % (name, error))
         return outcome
 
+    def website_env(self, bin_dir, **extra) -> dict:
+        home = self.scratch() / "website-home"
+        home.mkdir(parents=True, exist_ok=True)
+        return {"PATH": "%s:/usr/local/bin:/usr/bin:/bin" % bin_dir, "HOME": str(home),
+                "LANG": "C.UTF-8", "WRANGLER_SEND_METRICS": "false", **extra}
+
     def website(self, target, result):
         try:
             wanted = website_fingerprint(self.git, target)
@@ -1348,17 +1354,23 @@ class Pipeline:
             bin_dir = node22_bin()
             if bin_dir is None:
                 raise ToolError("Node 22 (~/.nvm/versions/node/v22*) is needed for wrangler")
-            worktree = self.worktree(target)
-            env = dict(os.environ)
-            env["PATH"] = "%s:%s" % (bin_dir, env.get("PATH", ""))
-            env["CLOUDFLARE_API_TOKEN"] = common.credential("cloudflare.env",
-                                                            "CLOUDFLARE_API_TOKEN")
-            env["CLOUDFLARE_ACCOUNT_ID"] = common.credential("cloudflare.env",
-                                                             "CLOUDFLARE_ACCOUNT_ID")
-            code = stream([str(bin_dir / "npx"), "--yes", "wrangler", "deploy",
+            www = Path(self.worktree(target)) / "www"
+            code = stream([str(bin_dir / "npm"), "ci", "--ignore-scripts", "--no-audit",
+                           "--no-fund"], self.say, cwd=str(www),
+                          env=self.website_env(bin_dir),
+                          timeout=WEBSITE_TIMEOUT, popen=self.popen)
+            if code != 0:
+                raise ToolError("npm ci exited %d" % code)
+            env = self.website_env(
+                bin_dir,
+                CLOUDFLARE_API_TOKEN=common.credential("cloudflare.env",
+                                                       "CLOUDFLARE_API_TOKEN"),
+                CLOUDFLARE_ACCOUNT_ID=common.credential("cloudflare.env",
+                                                        "CLOUDFLARE_ACCOUNT_ID"))
+            code = stream([str(www / "node_modules" / ".bin" / "wrangler"), "deploy",
                            "--config", "wrangler.production.toml",
                            "--var", "DEPLOY_FINGERPRINT:%s" % wanted],
-                          self.say, cwd=str(Path(worktree) / "www"), env=env,
+                          self.say, cwd=str(www), env=env,
                           timeout=WEBSITE_TIMEOUT, popen=self.popen)
             if code != 0:
                 raise ToolError("wrangler deploy exited %d" % code)

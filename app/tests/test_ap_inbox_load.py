@@ -554,3 +554,41 @@ def test_gone_inbox_is_not_queued():
     _run(ns["_ap_handle_follow"](
         None, None, dict(_FOLLOW_ACTIVITY), dict(_REMOTE)))
     assert _outbox_inserts(log) == []
+
+
+def _remove_handler(existing):
+    import ast as _ast
+    path = ENTRY.parent / "fediverse_routes.py"
+    tree = _ast.parse(path.read_text(encoding="utf-8"))
+    node = next(item for item in tree.body
+                if isinstance(item, _ast.AsyncFunctionDef) and item.name == "_ap_handle_remove")
+    applied = []
+
+    async def comment_by_remote_id(_env, _target):
+        return {"id": 1}, existing, "bi"
+
+    class Threads:
+        @staticmethod
+        def apply_activity(*args, **kwargs):
+            applied.append(args)
+            return {"changed": False}
+
+    names = {
+        "_ap_comment_by_remote_id": comment_by_remote_id, "ap_threads": Threads,
+        "ap": type("Ap", (), {"activity_object_id": staticmethod(lambda value: value)}),
+        "json_response": lambda data, status=200: {"data": data, "status": status},
+        "Date": type("Date", (), {"now": staticmethod(lambda: 1)}),
+    }
+    exec(compile(_ast.Module([node], []), str(path), "exec"), names)
+    return names["_ap_handle_remove"], applied
+
+
+def test_only_the_author_can_remove_a_federated_comment():
+    existing = {"authorId": "https://shared.example/u/victim", "sourceInstance": "shared.example"}
+    handler, applied = _remove_handler(existing)
+    refused = _run(handler(None, {"object": "https://shared.example/comment/1"},
+                           {"actor_id": "https://shared.example/u/mallory"}))
+    assert refused["status"] == 401 and applied == []
+    _run(handler(None, {"object": "https://shared.example/comment/1"},
+                 {"actor_id": "https://shared.example/u/victim"}))
+    assert len(applied) == 1

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -669,5 +670,62 @@ func TestPullEventTypeCannotNameAPathOutsideThePull(t *testing.T) {
 		"type": "review", "id": "e2", "body": "ok",
 	}}); !wrote || err != nil {
 		t.Fatalf("plain review event refused: wrote=%v err=%v", wrote, err)
+	}
+}
+
+func directIssueRecord(t *testing.T, bare string, number int) map[string]any {
+	t.Helper()
+	raw := gitValue(context.Background(), bare, "show",
+		fmt.Sprintf("refs/heads/main:.forkmesh/issues/open/%d/issue-%d.json", number, number))
+	var record map[string]any
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		t.Fatalf("issue record is not the materialized one: %v\n%s", err, raw)
+	}
+	return record
+}
+
+func TestDirectIssueIntakeKeepsAttachmentsAndRelayFieldsOutOfTheRecord(t *testing.T) {
+	_, bare := makeBareRepo(t)
+	repo := Repository{Owner: "forkmesh", Name: "forkmesh", GitDir: bare}
+	ctx := context.Background()
+	number, err := materializeDirectCollaboration(ctx, repo, "issues", collaborationItem{
+		Event: map[string]any{"type": "open", "id": "open-1", "title": "real", "author": "alice",
+			"authorName": "alice", "ts": float64(1700000000000), "sig": "sig-1"},
+		Meta: map[string]any{"reporter": "victim", "rewardId": "reward-discord-0123456789abcdef01234567",
+			"rewardRecipient": "victim", "rewardEstimateLamports": float64(5000000),
+			"rewardCondition": "accepted_report", "rewardStatus": "pending_wallet"},
+	}, "mirror33")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := directIssueRecord(t, bare, number)
+	if record["authorName"] != "alice" {
+		t.Fatalf("a direct submitter set the author name: %v", record["authorName"])
+	}
+	if _, ok := record["rewardRecipient"]; ok {
+		t.Fatalf("a direct submitter set a reward: %v", record)
+	}
+	forged := base64.StdEncoding.EncodeToString([]byte(`{"number":1,"title":"forged"}`))
+	image := base64.StdEncoding.EncodeToString([]byte("image bytes"))
+	if _, err := materializeDirectCollaboration(ctx, repo, "issues", collaborationItem{
+		Number: number,
+		Event: map[string]any{"type": "comment", "id": "comment-1", "body": "hi", "author": "bob",
+			"ts": float64(1700000001000), "sig": "sig-2"},
+		AttachmentData: []map[string]any{
+			{"name": fmt.Sprintf("issue-%d.json", number), "data": forged},
+			{"name": ".gitattributes", "data": forged},
+			{"name": "..", "data": forged},
+			{"name": "0123abcd.png", "data": image},
+		},
+	}, "mirror33"); err != nil {
+		t.Fatal(err)
+	}
+	if record := directIssueRecord(t, bare, number); record["title"] != "real" {
+		t.Fatalf("an attachment replaced the issue record: %v", record)
+	}
+	listing := gitValue(ctx, bare, "ls-tree", "-r", "--name-only", "refs/heads/main",
+		"--", fmt.Sprintf(".forkmesh/issues/open/%d", number))
+	if strings.Contains(listing, ".gitattributes") || !strings.Contains(listing, "0123abcd.png") {
+		t.Fatalf("attachment names were not filtered: %s", listing)
 	}
 }

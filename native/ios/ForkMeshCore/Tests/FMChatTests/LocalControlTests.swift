@@ -304,6 +304,9 @@ final class LocalControlServiceTests: XCTestCase {
     private func pairedAndConnected() async {
         desktop.approveAtOnce = true
         await control.connect(host())
+        let checking = await waitUntil(5) { self.control.status == .confirmingCode }
+        XCTAssertTrue(checking)
+        control.confirmDesktop(desktop.publicKey)
         let connected = await waitUntil(5) { self.control.connected && self.control.agents != nil }
         XCTAssertTrue(connected)
     }
@@ -328,6 +331,11 @@ final class LocalControlServiceTests: XCTestCase {
         XCTAssertFalse(control.isPaired(desktop.publicKey))
 
         desktop.approve()
+        let checking = await waitUntil(5) { self.control.status == .confirmingCode }
+        XCTAssertTrue(checking)
+        XCTAssertFalse(control.isPaired(desktop.publicKey))
+        XCTAssertEqual(control.pairingCode, desktop.pairingCode)
+        control.confirmDesktop(desktop.publicKey)
         let connected = await waitUntil(5) { self.control.connected && self.control.agents != nil }
         XCTAssertTrue(connected)
         XCTAssertTrue(control.isPaired(desktop.publicKey))
@@ -377,13 +385,54 @@ final class LocalControlServiceTests: XCTestCase {
         XCTAssertEqual(desktop.badFrames, 0, "every frame authenticated in order")
     }
 
-    func testAPairedDesktopReconnectsStraightIntoControl() async {
+    func testAnAccountDesktopConnectsStraightIntoControl() async {
         desktop.approveAtOnce = true
+        control.setAccountDesktops([desktop.publicKey])
         await control.connect(host())
         let connected = await waitUntil(5) { self.control.connected }
         XCTAssertTrue(connected)
         XCTAssertEqual(control.pairingCode, "")
         XCTAssertEqual(control.localDesktop, .connected("desk"))
+    }
+
+    func testAnUnknownDesktopSayingPairedStaysUntilThePhoneConfirmsItsCode() async throws {
+        desktop.approveAtOnce = true
+        await control.connect(host())
+        let checking = await waitUntil(5) { self.control.status == .confirmingCode }
+        XCTAssertTrue(checking)
+        XCTAssertFalse(control.connected)
+        XCTAssertFalse(control.isPaired(desktop.publicKey))
+        XCTAssertEqual(control.pairingCode, desktop.pairingCode)
+        XCTAssertEqual(control.localDesktop, .confirmingCode("desk"))
+        XCTAssertNil(device.prefs.string(forKey: LocalControlService.lanAddressesKey))
+
+        desktop.send(["event": "agents.changed", "data": [:]])
+        desktop.send(["event": "file.begin", "data": ["transfer": "t1", "name": "evil.txt", "size": 1]])
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(control.agents)
+        XCTAssertTrue(desktop.requests.isEmpty)
+
+        control.confirmDesktop("some-other-key")
+        XCTAssertFalse(control.connected)
+
+        control.confirmDesktop(desktop.publicKey)
+        let connected = await waitUntil(5) { self.control.connected }
+        XCTAssertTrue(connected)
+        XCTAssertTrue(control.isPaired(desktop.publicKey))
+        XCTAssertEqual(control.pairingCode, "")
+    }
+
+    func testDesktopsTheAccountLinksConfirmWithoutATap() async {
+        desktop.approveAtOnce = true
+        await control.connect(host())
+        let checking = await waitUntil(5) { self.control.status == .confirmingCode }
+        XCTAssertTrue(checking)
+        control.setAccountDesktops(["another"])
+        XCTAssertFalse(control.connected)
+        control.setAccountDesktops([desktop.publicKey])
+        let connected = await waitUntil(5) { self.control.connected }
+        XCTAssertTrue(connected)
+        XCTAssertTrue(control.isPaired(desktop.publicKey))
     }
 
     func testTheDesktopsLastAddressIsProbedUntilItIsBack() async {
@@ -420,46 +469,20 @@ final class LocalControlServiceTests: XCTestCase {
         XCTAssertEqual(control.error, "The desktop could not be reached on this network.")
     }
 
-    func testADesktopOnThePhonesAccountIsConnectedToWithoutPairingFirst() {
-        func desk(_ id: String, owner: String) -> MeshControlHost {
+    func testOnlyPairedOrAccountDesktopsAreDialledAutomatically() {
+        func desk(_ id: String, owner: String = "") -> MeshControlHost {
             MeshControlHost(nodeId: id, address: .loopbackIPv4, port: 1, ownerUser: owner)
         }
-        let mine = desk("mine", owner: " Alice ")
-        let theirs = desk("theirs", owner: "mallory")
-        let paired = desk("paired", owner: "")
+        let owned = desk("owned")
+        let paired = desk("paired")
+        let stranger = desk("stranger", owner: "alice")
 
+        XCTAssertNil(LocalControlService.automaticTarget([stranger], paired: []))
         XCTAssertEqual(
-            LocalControlService.automaticTarget([theirs, mine], paired: [], account: "alice", tried: []), mine)
+            LocalControlService.automaticTarget([stranger, owned], paired: [], accountDesktops: ["owned"]), owned)
         XCTAssertEqual(
-            LocalControlService.automaticTarget([mine, paired], paired: ["paired"], account: "alice", tried: []),
-            paired)
-        XCTAssertNil(LocalControlService.automaticTarget([theirs], paired: [], account: "alice", tried: []))
-        XCTAssertNil(LocalControlService.automaticTarget([mine], paired: [], account: "", tried: []))
-        XCTAssertNil(LocalControlService.automaticTarget([mine], paired: [], account: "alice", tried: ["mine"]))
-        XCTAssertEqual(
-            LocalControlService.automaticTarget([paired], paired: ["paired"], account: "alice", tried: ["paired"]),
-            paired)
-    }
-
-    func testADesktopTheAccountListsIsDialledOnTheLANWithoutAnOwnerMatch() {
-        func desk(_ id: String, owner: String) -> MeshControlHost {
-            MeshControlHost(nodeId: id, address: .loopbackIPv4, port: 1, ownerUser: owner)
-        }
-        let owned = desk("owned", owner: "")
-        let paired = desk("paired", owner: "")
-        let stranger = desk("stranger", owner: "")
-
-        XCTAssertEqual(
-            LocalControlService.automaticTarget(
-                [stranger, owned], paired: [], accountDesktops: ["owned"], account: "", tried: ["owned"]),
-            owned)
-        XCTAssertEqual(
-            LocalControlService.automaticTarget(
-                [owned, paired], paired: ["paired"], accountDesktops: ["owned"], account: "alice", tried: []),
-            paired)
-        XCTAssertNil(
-            LocalControlService.automaticTarget(
-                [stranger], paired: [], accountDesktops: ["owned"], account: "alice", tried: []))
+            LocalControlService.automaticTarget([owned, paired], paired: ["paired"], accountDesktops: ["owned"]), paired)
+        XCTAssertNil(LocalControlService.automaticTarget([stranger], paired: [], accountDesktops: ["owned"]))
     }
 
     func testForgettingADesktopDropsItsApproval() async {

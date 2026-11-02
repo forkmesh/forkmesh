@@ -360,6 +360,8 @@ def _login_harness(rec, *, initial_devices=None):
         "valid_node_pubkey": lambda value: (
             isinstance(value, str) and len(value) == 43),
         "_login_attempt_keys": _login_attempt_keys,
+        "_login_guessing_stopped": lambda *_: asyncio.sleep(0, result=0),
+        "_account_last_owner_org": lambda *_: asyncio.sleep(0, result=None),
         "_login_failure_response": _login_failure_response,
         "_login_clear": _login_clear,
         "_save_account": _save_account,
@@ -613,6 +615,8 @@ REGISTRY_FUNCTIONS = {
     "_account_device_for_pubkey",
     "_account_key_revoked",
     "_account_drop_revoked_primary",
+    "_account_take_key_off_record",
+    "_owned_nodes",
 }
 
 
@@ -736,6 +740,8 @@ class _Registry:
             "_account_totp_ok": lambda _env, rec, code: totp_verify(
                 rec.get("totp_secret", ""), code),
             "_login_attempt_keys": _login_attempt_keys,
+            "_login_guessing_stopped": lambda *_: asyncio.sleep(0, result=0),
+            "_account_last_owner_org": lambda *_: asyncio.sleep(0, result=None),
             "_login_failure_response": _login_failure_response,
             "_audit_sensitive_action": _audit_sensitive_action,
             "_account_row": _account_row,
@@ -1470,3 +1476,29 @@ def test_mobile_bind_never_touches_desktop_only_paths():
     assert 'desktop_capable=False' in mobile
     assert '"device_added"' in TEXT[TEXT.index("NOTIFICATION_KINDS = frozenset({"):
                                    TEXT.index("NOTIFICATION_KINDS = frozenset({") + 2000]
+
+
+def test_revoking_a_device_takes_its_key_off_the_linked_node():
+    registry = _Registry()
+    registry.account("alice", pubkey=PHONE_KEY)
+    registry.account("studio", pubkey=DESKTOP_KEY)
+    registry.accounts["alice"]["nodes"] = ["studio"]
+    registry.accounts["studio"]["owner"] = "alice"
+    device_bi, _token = registry.bind("alice", DESKTOP_KEY, "desktop_node", "Studio Mac")
+    web_token = registry.web_session("alice")
+    response = registry.devices(web_token, method="DELETE", target=device_bi[:16], body=SUDO)
+    assert response["status"] == 200, response
+    assert registry.accounts["studio"]["pubkey"] == ""
+    assert registry.accounts["alice"]["pubkey"] == PHONE_KEY
+
+
+def test_revoking_a_device_leaves_a_node_someone_else_owns():
+    registry = _Registry()
+    registry.account("alice", pubkey=PHONE_KEY)
+    registry.account("studio", pubkey=DESKTOP_KEY)
+    registry.accounts["alice"]["nodes"] = ["studio"]
+    registry.accounts["studio"]["owner"] = "bob"
+    device_bi, _token = registry.bind("alice", DESKTOP_KEY, "desktop_node", "Studio Mac")
+    web_token = registry.web_session("alice")
+    registry.devices(web_token, method="DELETE", target=device_bi[:16], body=SUDO)
+    assert registry.accounts["studio"]["pubkey"] == DESKTOP_KEY

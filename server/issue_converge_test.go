@@ -212,23 +212,23 @@ func TestIssueDivergenceOfThreeCoresConvergesInEveryOrder(t *testing.T) {
 	f.intake("n2", 728, issueEvent("comment", "comment-728-n2", at+310,
 		map[string]any{"body": "still broken"}), nil)
 	yOpening := signedOpenEvent("Y", at+250)
-	if got := f.intake("n2", 730, yOpening, map[string]string{"trace.txt": "trace\n"}); got != 730 {
+	if got := f.intake("n2", 730, yOpening, map[string]string{"0000000a.bin": "trace\n"}); got != 730 {
 		t.Fatalf("n2 materialized Y at #%d", got)
 	}
 	f.intake("n2", 730, issueEvent("claim", "claim-y-n2", at+400,
 		map[string]any{"assignee": "mdkaif", "claimState": "assigned"}), nil)
 	f.intake("n2", 730, issueEvent("comment", "comment-y-n2", at+410,
-		map[string]any{"body": "log from n2"}), map[string]string{"log.txt": "n2 log\n"})
+		map[string]any{"body": "log from n2"}), map[string]string{"0000000b.bin": "n2 log\n"})
 
 	f.commitRecord("n3", 729, legacyPlaceholderRecord(729))
-	f.intake("n3", 730, yOpening, map[string]string{"trace.txt": "trace\n"})
+	f.intake("n3", 730, yOpening, map[string]string{"0000000a.bin": "trace\n"})
 	n1Early := f.heads["n1"]
 	f.heads["n3"] = f.converge(f.heads["n3"], n1Early)
 	if got := f.record(f.heads["n3"], "open", 731)["title"]; got != "Issue Y" {
 		t.Fatalf("n3 did not renumber Y to #731 on its first merge: %v", got)
 	}
 	f.intake("n3", 731, issueEvent("comment", "comment-y-n3", at+500,
-		map[string]any{"body": "log from n3"}), map[string]string{"log.txt": "n3 log\n"})
+		map[string]any{"body": "log from n3"}), map[string]string{"0000000b.bin": "n3 log\n"})
 
 	f.intake("n1", 730, issueEvent("comment", "comment-x-n1", at+600,
 		map[string]any{"body": "x detail"}), nil)
@@ -265,14 +265,14 @@ func TestIssueDivergenceOfThreeCoresConvergesInEveryOrder(t *testing.T) {
 	}
 	logs := 0
 	for _, path := range strings.Fields(listing) {
-		if strings.HasPrefix(path, ".forkmesh/issues/open/731/log.txt") {
+		if strings.HasPrefix(path, ".forkmesh/issues/open/731/0000000b.bin") {
 			logs++
 		}
 	}
-	if logs != 2 || !strings.Contains(listing, ".forkmesh/issues/open/731/trace.txt") {
+	if logs != 2 || !strings.Contains(listing, ".forkmesh/issues/open/731/0000000a.bin") {
 		t.Fatalf("Y's attachments were not all kept:\n%s", listing)
 	}
-	if got := f.git("show", final+":.forkmesh/issues/open/731/log.txt"); got != "n2 log" && got != "n3 log" {
+	if got := f.git("show", final+":.forkmesh/issues/open/731/0000000b.bin"); got != "n2 log" && got != "n3 log" {
 		t.Fatalf("Y's log attachment is %q", got)
 	}
 }
@@ -287,9 +287,9 @@ func TestIssueIdentityAtTwoNumbersKeepsTheHigherNumber(t *testing.T) {
 	f.intake("n2", 5, yOpening, nil)
 	f.heads["n3"] = f.converge(f.heads["n1"], f.heads["n2"])
 	f.intake("n2", 5, issueEvent("comment", "late-on-5", at+100, nil),
-		map[string]string{"a.txt": "from five\n"})
+		map[string]string{"0000000c.bin": "from five\n"})
 	f.intake("n3", 6, issueEvent("comment", "late-on-6", at+200, nil),
-		map[string]string{"b.txt": "from six\n"})
+		map[string]string{"0000000d.bin": "from six\n"})
 
 	for _, pair := range [][2]string{{"n2", "n3"}, {"n3", "n2"}} {
 		merged := f.converge(f.heads[pair[0]], f.heads[pair[1]])
@@ -304,7 +304,7 @@ func TestIssueIdentityAtTwoNumbersKeepsTheHigherNumber(t *testing.T) {
 		if ids := strings.Join(issueEventIDs(y), ","); ids != "open-Y,late-on-5,late-on-6" {
 			t.Fatalf("Y's events were not folded into #6: %v", y)
 		}
-		for _, name := range []string{"a.txt", "b.txt"} {
+		for _, name := range []string{"0000000c.bin", "0000000d.bin"} {
 			if !strings.Contains(listing, ".forkmesh/issues/open/6/"+name) ||
 				strings.Contains(listing, ".forkmesh/issues/open/5/"+name) {
 				t.Fatalf("attachment %s is not with Y at #6:\n%s", name, listing)
@@ -316,7 +316,7 @@ func TestIssueIdentityAtTwoNumbersKeepsTheHigherNumber(t *testing.T) {
 func TestIssueCommentAndCloseOnBothSidesConverge(t *testing.T) {
 	f := newIssueFleet(t)
 	const at = int64(1790617500000)
-	f.intake("main", 9, signedOpenEvent("A", at), map[string]string{"shot.png": "pixels"})
+	f.intake("main", 9, signedOpenEvent("A", at), map[string]string{"0000000e.png": "pixels"})
 	f.git("update-ref", "refs/heads/main", f.heads["main"])
 	f.fork("n1", "main")
 	f.fork("n2", "main")
@@ -329,7 +329,7 @@ func TestIssueCommentAndCloseOnBothSidesConverge(t *testing.T) {
 		merged := f.converge(f.heads[pair[0]], f.heads[pair[1]])
 		listing := f.git("ls-tree", "-r", "--name-only", merged, ".forkmesh/issues")
 		if strings.Contains(listing, "open/9/") ||
-			!strings.Contains(listing, "closed/9/shot.png") {
+			!strings.Contains(listing, "closed/9/0000000e.png") {
 			t.Fatalf("#9 should be closed with its attachment:\n%s", listing)
 		}
 		record := f.record(merged, "closed", 9)
@@ -486,11 +486,11 @@ func (f *issueFleet) issueNumbers(commit string) []int {
 func TestIssueCloseKeepsAttachments(t *testing.T) {
 	f := newIssueFleet(t)
 	const at = int64(1790617500000)
-	f.intake("n1", 4, signedOpenEvent("A", at), map[string]string{"shot.png": "pixels"})
+	f.intake("n1", 4, signedOpenEvent("A", at), map[string]string{"0000000e.png": "pixels"})
 	f.intake("n1", 4, issueEvent("status", "close", at+10,
 		map[string]any{"status": "closed"}), nil)
 	listing := f.git("ls-tree", "-r", "--name-only", f.heads["n1"], ".forkmesh/issues")
-	if listing != ".forkmesh/issues/closed/4/issue-4.json\n.forkmesh/issues/closed/4/shot.png" {
+	if listing != ".forkmesh/issues/closed/4/0000000e.png\n.forkmesh/issues/closed/4/issue-4.json" {
 		t.Fatalf("closing moved the record without its attachment:\n%s", listing)
 	}
 }

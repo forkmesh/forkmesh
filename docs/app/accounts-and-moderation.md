@@ -129,6 +129,18 @@ explains itself instead of failing:
   an address. Adding an email later under Settings unlocks them.
 - The "first 100 users" badge counts accounts with an indexed address only.
 
+## Names are not reused
+
+Many tables key access by the blind index of an account's name (organization
+roles, notes, shares, workflow credentials and more). So a name that was
+renamed away or deleted goes into `retired_account_names` and is refused to
+everyone else, on signup, reservation, availability and rename. Only the account
+that renamed away from it can take it back; deleting that account retires it for
+good. A deleted account's organization and team rows go and its private channels
+lose their owner, and a rename moves those rows to the new name. The sole owner
+of an organization must add an owner or dissolve it before deleting their
+account (`org_last_owner`); administrator deletions skip that check.
+
 ## Moderators
 
 Who moderates a repository (`moderation.can_moderate_repo`):

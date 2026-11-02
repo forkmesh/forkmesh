@@ -9770,6 +9770,60 @@ def _dashboard_issue_content(event: Mapping[str, Any]) -> str | None:
     return None
 
 
+DIRECT_ISSUE_ATTACHMENT_NAME = re.compile(
+    r"^[0-9a-f]{8}\.(?:png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|mov|bin)$"
+)
+MAX_DIRECT_ISSUE_ATTACHMENTS = 6
+MAX_DIRECT_ISSUE_ATTACHMENT_BYTES = 2 * 1024 * 1024
+
+
+def _direct_issue_attachments(value: Any) -> list[dict[str, str]] | None:
+    if not isinstance(value, list):
+        return []
+    if len(value) > MAX_DIRECT_ISSUE_ATTACHMENTS:
+        return None
+    cleaned = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            return None
+        name = entry.get("name")
+        data = entry.get("data")
+        if (
+            not isinstance(name, str)
+            or not DIRECT_ISSUE_ATTACHMENT_NAME.fullmatch(name)
+            or not isinstance(data, str)
+        ):
+            return None
+        try:
+            raw = base64.b64decode(data, validate=True)
+        except ValueError:
+            return None
+        if len(raw) > MAX_DIRECT_ISSUE_ATTACHMENT_BYTES:
+            return None
+        cleaned.append({"name": name, "data": base64.b64encode(raw).decode()})
+    return cleaned
+
+
+def _direct_issue_meta(value: Mapping[str, Any]) -> dict[str, Any]:
+    def names(key: str) -> list[str]:
+        items = value.get(key)
+        if not isinstance(items, list):
+            return []
+        return [str(item)[:60] for item in items if isinstance(item, str)][:20]
+
+    try:
+        priority = int(value.get("priority") or 0)
+    except (TypeError, ValueError):
+        priority = 0
+    return {
+        "labels": names("labels"),
+        "assignees": names("assignees"),
+        "milestone": str(value.get("milestone") or "")[:120],
+        "project": str(value.get("project") or "")[:120],
+        "priority": priority if 0 <= priority <= 99 else 0,
+    }
+
+
 def _verify_dashboard_issue(
     number: int, event: Mapping[str, Any], owner: str = "", name: str = "",
 ) -> bool:
@@ -10986,6 +11040,12 @@ class DashboardService:
                 return json_response(
                     {"ok": False, "error": "controller_required"}, 409
                 )
+            meta = _direct_issue_meta(meta)
+            attachments = _direct_issue_attachments(data.get("attachmentData"))
+            if attachments is None:
+                return json_response(
+                    {"ok": False, "error": "bad_attachment"}, 400
+                )
             event = dict(event)
             event["authorName"] = actor
             item = {
@@ -10994,9 +11054,7 @@ class DashboardService:
                 "titleIfNew": str(data.get("titleIfNew") or "")[:240],
                 "event": event,
                 "meta": meta,
-                "attachmentData": data.get("attachmentData")
-                if isinstance(data.get("attachmentData"), list)
-                else [],
+                "attachmentData": attachments,
             }
         elif operation == "pulls":
             if isinstance(event, dict):

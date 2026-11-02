@@ -269,7 +269,58 @@ def test_keyscan_helper_fault_is_not_blamed_on_the_visitors_server():
         assert answer["status"] == 503, events
         assert answer["data"]["error"] == "launch_unavailable"
         assert runtime.db.execute(
-            "SELECT COUNT(*) FROM instance_launches").fetchone()[0] == 0
+            "SELECT COUNT(*) FROM instance_launches WHERE project<>''"
+        ).fetchone()[0] == 0
+
+
+def test_failed_probes_spend_a_budget_before_any_keyscan():
+    runtime = Runtime()
+    runtime.keys = []
+    for _ in range(instance_launch.MAX_PROBES_PER_HOUR):
+        assert post(runtime, form())["data"]["error"] == "ssh_unreachable"
+    scans = len(runtime.requests)
+    assert scans == instance_launch.MAX_PROBES_PER_HOUR
+    answer = post(runtime, form())
+    assert answer["status"] == 429 and answer["data"]["error"] == "rate_limited"
+    assert len(runtime.requests) == scans
+    runtime.client = "client-b"
+    assert post(runtime, form())["data"]["error"] == "ssh_unreachable"
+    runtime.client = "client-a"
+    runtime.clock += instance_launch.HOUR_MS + 1
+    assert post(runtime, form())["data"]["error"] == "ssh_unreachable"
+    assert runtime.db.execute("SELECT COUNT(*) FROM instance_launches WHERE "
+                              "client_key='client-a'").fetchone()[0] == 1
+
+
+def test_private_address_answers_spend_the_same_budget():
+    runtime = Runtime()
+    for _ in range(instance_launch.MAX_PROBES_PER_HOUR):
+        assert post(runtime, form(host="lan.example.com"))["status"] == 400
+    assert post(runtime, form(host="lan.example.com"))["status"] == 429
+
+
+def test_a_launch_leaves_no_probe_row_and_probes_leave_the_launch_budget():
+    runtime = Runtime()
+    runtime.keys = []
+    for _ in range(instance_launch.MAX_LAUNCHES_PER_HOUR + 1):
+        assert post(runtime, form())["status"] == 400
+    runtime.keys = [{"type": "ssh-ed25519", "key": ED_BLOB}]
+    assert post(runtime, form())["status"] == 202
+    rows = runtime.db.execute("SELECT project FROM instance_launches").fetchall()
+    assert sorted(row[0] for row in rows).count("Acme Code") == 1
+    assert len(rows) == instance_launch.MAX_LAUNCHES_PER_HOUR + 2
+
+
+def test_probes_running_at_once_are_capped_and_released(monkeypatch):
+    runtime = Runtime()
+    monkeypatch.setattr(instance_launch, "_probes_running",
+                        instance_launch.MAX_PROBES_RUNNING)
+    answer = post(runtime, form())
+    assert answer["status"] == 503 and answer["data"]["error"] == "busy"
+    assert runtime.requests == []
+    monkeypatch.setattr(instance_launch, "_probes_running", 0)
+    assert post(runtime, form())["status"] == 202
+    assert instance_launch._probes_running == 0
 
 
 def test_private_addresses_unreachable_servers_and_limits():

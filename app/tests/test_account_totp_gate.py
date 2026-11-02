@@ -119,6 +119,8 @@ def _load(account, session_name=""):
         "verify_password": verify_password,
         "totp_verify": totp_verify,
         "_login_attempt_keys": _login_attempt_keys,
+        "_login_guessing_stopped": lambda *_: asyncio.sleep(0, result=0),
+        "_account_last_owner_org": lambda *_: asyncio.sleep(0, result=None),
         "_login_source_key": _login_source_key,
         "_account_email_unverified": lambda _rec: False,
         "_email_not_verified_response": lambda: json_response({}, 403),

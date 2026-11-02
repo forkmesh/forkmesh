@@ -1618,6 +1618,14 @@ void MainWindow::applyWorkflowScan(const QString &owner, const QString &name,
         }
         if (!wf.valid || !matchesTrigger)
             continue;
+        if (!wf.mayStartFromEvent()) {
+            logSystem(QString::fromUtf8(
+                          "Actions: \xE2\x80\x9C%1\xE2\x80\x9D for %2/%3 @ %4 says "
+                          "sandbox: false, which only Run workflow may start, so "
+                          "this event does not run it.")
+                          .arg(wf.name, owner, name, commit.left(8)));
+            continue;
+        }
         if (trigger == WorkflowTrigger::Push && entry.defaultBranchRetiresPush) {
             logSystem(QString::fromUtf8(
                 "Actions: \xE2\x80\x9C%1\xE2\x80\x9D no longer runs on push on"
@@ -9450,6 +9458,16 @@ void MainWindow::showRun(int runId)
         }
         const ActionWorkflow workflow =
             ActionFile::parse(run->workflowPath, run->workflowContent);
+        if (!workflow.sandbox)
+            reason += run->pullNumber > 0
+                          ? QStringLiteral(
+                                "\n\nThis workflow says sandbox: false. A pull request "
+                                "run outside the sandbox is refused even if you approve "
+                                "it.")
+                          : QStringLiteral(
+                                "\n\nThis workflow says sandbox: false: its steps run on "
+                                "this computer as you, with your files and network, "
+                                "outside the Actions sandbox.");
         QStringList graph;
         for (int index = 0; index < workflow.steps.size(); ++index) {
             const QString name = workflow.steps.at(index).name.trimmed();
@@ -10138,6 +10156,11 @@ int MainWindow::rerunActionRun(int runId)
         return 0;
     const ActionWorkflow rerunWorkflow =
         ActionFile::parse(run.workflowPath, run.workflowContent);
+    if (!rerunWorkflow.sandbox && prev->pullNumber > 0) {
+        flashMessage(QStringLiteral(
+            "This pull request's workflow says sandbox: false, so it cannot be rerun."));
+        return 0;
+    }
     if (!workflowRunsOnThisNode(m_repositories.at(repoIndex), rerunWorkflow)) {
         flashMessage(QString::fromUtf8(
                          "\xE2\x80\x9C%1\xE2\x80\x9D runs on %2 \xE2\x80\x94 "

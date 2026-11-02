@@ -29,6 +29,12 @@ struct ExternalCall {
     bool external = false;
     QString target;  // host, or a label such as "web search" when there is none
     QString summary; // one line naming what the call does
+    QStringList targets;
+
+    QStringList destinations() const
+    {
+        return targets.isEmpty() && !target.isEmpty() ? QStringList{target} : targets;
+    }
 };
 
 // Whether `command` (a shell command line) reaches the network, and where.
@@ -42,6 +48,9 @@ ExternalCall classifyToolCall(const QString &toolName, const QJsonObject &input,
 struct CommandRisk {
     QString destructive;
     QString permission;
+    QStringList destructiveKinds;
+    QHash<QString, std::pair<qsizetype, qsizetype>> kindSpans;
+    QStringList permissions;
     QString summary;
     QString command;
     qsizetype matchStart = -1;

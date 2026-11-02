@@ -2144,6 +2144,7 @@ AgentLoginDialogParts buildAgentLoginDialog(QWidget *parent,
     parts.layout->addWidget(parts.autoOpenStatus);
     parts.terminal = new TerminalWidget(parts.dialog);
     parts.terminal->setObjectName(QStringLiteral("hostAgentLoginTerminal"));
+    parts.terminal->setOpensSignInLinks(true);
     parts.layout->addWidget(parts.terminal, 1);
     QLabel *autoOpenStatus = parts.autoOpenStatus;
     QObject::connect(

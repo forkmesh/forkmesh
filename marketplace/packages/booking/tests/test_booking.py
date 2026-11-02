@@ -222,7 +222,7 @@ def test_booking_emails_both_sides_and_lands_on_the_calendar():
     guest_mail, owner_mail = runtime.mail
     assert guest_mail["to"] == [{"email": "grace@example.org"}]
     assert guest_mail["from"]["email"] == "alice@example.com"
-    assert guest_mail["organization"] == "bi:alice" and guest_mail["account"] == "bi:alice"
+    assert guest_mail["organization"] == "bi:alice"
     assert guest_mail["subject"] == "Confirmed: Meeting with alice on Tuesday, 3 November 2026"
     assert "10:00 AM – 10:30 AM" in guest_mail["text"] and "America/New York" in guest_mail["text"]
     assert "https://forkmesh.com/meet?b=" + result["token"] in guest_mail["text"]
@@ -414,3 +414,92 @@ def test_manifest_matches_the_worker():
     catalog = json.loads((REPO / "marketplace" / "catalog.json").read_text())
     entry = next(item for item in catalog["packages"] if item["id"] == "booking")
     assert entry["version"] == manifest["version"]
+
+
+def test_foreign_origin_never_reaches_the_emailed_links():
+    runtime = Runtime()
+    runtime.request_origin = lambda: "https://evil.example"
+    result = book(runtime, ms(2026, 11, 3, 15, 0))["data"]["booking"]
+    guest_mail, owner_mail = runtime.mail
+    assert "evil.example" not in guest_mail["html"] + guest_mail["text"]
+    assert "evil.example" not in owner_mail["html"] + owner_mail["text"]
+    assert "https://forkmesh.com/meet?b=" + result["token"] in guest_mail["text"]
+    assert "https://app.forkmesh.com/dashboard/booking?booking=" in owner_mail["text"]
+    runtime.public_origin = lambda: "https://book.example"
+    runtime.mail.clear()
+    book(runtime, ms(2026, 11, 3, 16, 0), email="ada@example.org")
+    assert "https://book.example/meet?b=" in runtime.mail[0]["text"]
+
+
+def test_guest_mail_carries_no_anonymous_text():
+    runtime = Runtime()
+    token = book(runtime, ms(2026, 11, 3, 15, 0), notes="Visit https://evil.example/login",
+                 name="https://evil.example/login Grace")["data"]["booking"]["token"]
+    guest_mail, owner_mail = runtime.mail
+    assert "evil.example" not in guest_mail["html"] + guest_mail["text"]
+    assert "Hi there," in guest_mail["text"]
+    assert "Visit https://evil.example/login" in owner_mail["text"]
+    runtime.mail.clear()
+    call(runtime.use("POST", actor="", body={"reason": "Pay at https://evil.example"}),
+         "/api/booking/-/b/" + token + "/cancel")
+    guest_mail, owner_mail = runtime.mail
+    assert "Pay at" not in guest_mail["html"] + guest_mail["text"]
+    assert "Pay at" in owner_mail["text"]
+
+
+def test_owner_reason_still_reaches_the_guest():
+    runtime = Runtime()
+    book(runtime, ms(2026, 11, 3, 15, 0))
+    runtime.mail.clear()
+    booking_id = owner(runtime)["upcoming"][0]["id"]
+    call(runtime.use("POST", body={"reason": "I am ill"}), f"/api/booking/bookings/{booking_id}/cancel")
+    assert "I am ill" in runtime.mail[0]["text"]
+
+
+def test_mail_is_capped_per_booking_and_per_recipient():
+    runtime = Runtime()
+    token = book(runtime, ms(2026, 11, 3, 9, 0))["data"]["booking"]["token"]
+    runtime.mail.clear()
+    moved = 0
+    for hour in range(10, 16):
+        for minute in (0, 30):
+            runtime.ip = "198.51.100.%d" % moved
+            answer = call(runtime.use("POST", actor="", body={"startAt": ms(2026, 11, 4, hour, minute)}),
+                          "/api/booking/-/b/" + token + "/reschedule")
+            assert answer["status"] == 200, answer
+            moved += 1
+    sent = [mail["to"][0]["email"] for mail in runtime.mail]
+    assert moved == 12
+    assert sent.count("grace@example.org") == booking.MAIL_PER_BOOKING_DAILY - 1
+    assert sent.count("alice@example.com") == booking.MAIL_PER_BOOKING_DAILY - 1
+
+    other = Runtime()
+    other.mail.clear()
+    hits = 0
+    for index in range(booking.MAIL_PER_GUEST_DAILY + 2):
+        other.db.execute("DELETE FROM booking_bookings")
+        other.ip = "192.0.2.%d" % index
+        answer = book(other, ms(2026, 11, 3 + index % 3, 9 + index % 8, 0))
+        assert answer["status"] == 201, answer
+        hits += answer["data"]["emailed"]
+    assert hits == booking.MAIL_PER_GUEST_DAILY
+
+
+def test_anonymous_mail_does_not_spend_the_owner_allowance():
+    runtime = Runtime()
+    book(runtime, ms(2026, 11, 3, 15, 0))
+    account = runtime.mail[0]["account"]
+    assert account != "bi:alice" and len(account) == 64
+    assert runtime.mail[0]["organization"] == "bi:alice"
+
+
+def test_ipv6_visitors_share_one_budget_per_64():
+    runtime = Runtime()
+    runtime.db.execute("DELETE FROM booking_rate")
+    for index, hour in enumerate((9, 10, 11, 12, 13, 14)):
+        runtime.ip = "2001:db8:1:2::%x" % (index + 1)
+        assert book(runtime, ms(2026, 11, 3, hour, 0), email=f"g{index}@example.org")["status"] == 201
+    runtime.ip = "2001:db8:1:2::ff"
+    assert book(runtime, ms(2026, 11, 3, 15, 0), email="late@example.org")["data"]["error"] == "rate_limited"
+    runtime.ip = "2001:db8:1:3::1"
+    assert book(runtime, ms(2026, 11, 3, 15, 0), email="late@example.org")["status"] == 201

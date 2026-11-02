@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "AgentHub.h"
 #include "AgentIntake.h"
 #include "AgentWindows.h"
 #include "AgentWorktree.h"
@@ -88,6 +89,36 @@ void MainWindow::ensureAgentIntakeServer()
         if (request.method.startsWith(intake::ReleaseMethodPrefix)) {
             handleAgentReleaseRequest(requester, request, std::move(reply));
             return;
+        }
+        if (request.method == forkmesh::agentwindows::BrowseMethod) {
+            forkmesh::agentwindows::BrowseRequest browse;
+            QString code;
+            if (forkmesh::agentwindows::parseBrowseRequest(request.params, &browse, &code)) {
+                gateAgentBrowserUrl(requester, browse.url,
+                                    [this, request, reply](const QString &refusal) {
+                                        reply(refusal.isEmpty()
+                                                  ? handleAgentIntakeRequest(request)
+                                                  : intake::errorReply(QStringLiteral("not_allowed"),
+                                                                       refusal));
+                                    });
+                return;
+            }
+        }
+        if (request.method == forkmesh::agentwindows::ActMethod) {
+            forkmesh::agentwindows::ActRequest act;
+            QString code;
+            if (forkmesh::agentwindows::parseActRequest(request.params, &act, &code) &&
+                act.action == QLatin1String("navigate")) {
+                gateAgentBrowserUrl(
+                    requester, act.url,
+                    [this, requester, params = request.params, reply](const QString &refusal) {
+                        if (refusal.isEmpty())
+                            agentWindows()->act(requester, params, reply);
+                        else
+                            reply(intake::errorReply(QStringLiteral("not_allowed"), refusal));
+                    });
+                return;
+            }
         }
         if (request.method == forkmesh::agentwindows::CaptureMethod) {
             agentWindows()->capture(requester, request.params, std::move(reply));
@@ -263,6 +294,16 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
                     .arg(requester, own, taskId));
         taskId = own;
     }
+    QString mode;
+    if (provider == QLatin1String("claude-code") || agentIsCodexProvider(provider)) {
+        const AgentSession *caller = findAgentSession(requesterId);
+        const QString wanted = m_quickAddModeSelector ? m_quickAddModeSelector->currentText()
+                                                      : agentEffectiveModeLabel(AgentSession());
+        mode = forkmesh::agenthub::cappedAgentMode(
+            wanted, caller ? agentEffectiveModeLabel(*caller) : QString());
+    }
+    const QScopedValueRollback<QStringList> inherited(
+        m_startingAgentDeniedPermissions, agentRunRules(requesterId).deniedPermissions);
     int id = 0;
     if (!branch.isEmpty()) {
         if (!forkmesh::localcontrol::handoffRefNameValid(branch))
@@ -283,12 +324,12 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
                                   : request.title;
         id = startAgentOnExistingBranch(repoIndex, branch, QString(), 0, title,
                                         request.prompt, provider,
-                                        codexChatGptModelId(model), request.paused);
+                                        codexChatGptModelId(model), request.paused, mode);
     } else {
         id = startAdHocAgentForRepo(repoIndex, request.prompt, provider,
                                     false, model, request.title,
                                     false, false, taskId,
-                                    QString(), QString(),
+                                    mode, QString(),
                                     request.hasPriority ? request.priority : 50,
                                     false, QString(), false,
                                     request.paused);

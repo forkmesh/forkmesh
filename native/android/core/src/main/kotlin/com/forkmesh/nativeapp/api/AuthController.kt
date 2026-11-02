@@ -33,6 +33,9 @@ class AuthController(
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     @Volatile
+    var onLocalSessionCleared: (() -> Unit)? = null
+
+    @Volatile
     var session: AuthSession? = session
         private set
 
@@ -261,6 +264,7 @@ class AuthController(
         notifyListeners()
         runBounded(STORE_TIMEOUT_MS) { sessionStore.delete(sessionKey) }
         prefs.remove(SESSION_KEY)
+        onLocalSessionCleared?.invoke()
     }
 
     private fun clearStoredSeed() {

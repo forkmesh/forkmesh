@@ -496,6 +496,70 @@ def live(tmp_path, monkeypatch):
     return root
 
 
+def test_git_reads_run_as_the_repository_user_when_the_agent_is_root(monkeypatch, tmp_path):
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append((command, kwargs["env"]))
+        return subprocess.CompletedProcess(command, 0, "", "")
+    config = {"node": "n1", "order": ["n1"], "repository": "forkmesh/forkmesh",
+              "gitDir": "/repo.git", "stateDir": str(tmp_path),
+              "repositoryUser": "forkmesh-node"}
+    agent = self_deploy.Agent(config, None, run=run)
+    monkeypatch.setattr(self_deploy.os, "geteuid", lambda: 0)
+    agent.git("rev-parse", "refs/heads/main")
+    command, env = seen[0]
+    assert command[:5] == ["runuser", "-u", "forkmesh-node", "--", "git"]
+    assert not any("safe.directory" in part for part in command)
+    assert env["GIT_NO_LAZY_FETCH"] == "1"
+    monkeypatch.setattr(self_deploy.os, "geteuid", lambda: 1000)
+    agent.git("rev-parse", "refs/heads/main")
+    assert seen[1][0][0] == "git"
+
+
+def test_a_repository_config_cannot_run_a_command_through_a_lazy_fetch(tmp_path):
+    bare = tmp_path / "r.git"
+    git(tmp_path, "init", "-q", "--bare", str(bare))
+    marker = tmp_path / "EXECUTED"
+    hook = tmp_path / "hook.sh"
+    hook.write_text("#!/bin/sh\ntouch %s\nexit 1\n" % marker)
+    hook.chmod(0o700)
+    for key, value in (("core.repositoryformatversion", "1"),
+                       ("extensions.partialClone", "origin"),
+                       ("remote.origin.url", "ssh://audit.invalid/x"),
+                       ("remote.origin.promisor", "true"),
+                       ("core.sshCommand", str(hook))):
+        git(bare, "config", key, value)
+    missing = "1" * 40
+    (bare / "refs" / "heads" / "main").write_text(missing + "\n")
+    config = {"node": "n1", "order": ["n1"], "repository": "forkmesh/forkmesh",
+              "gitDir": str(bare), "stateDir": str(tmp_path / "state")}
+    agent = self_deploy.Agent(config, None)
+    assert agent.git("log", "-1", "--format=%ct", missing, check=False).returncode != 0
+    assert not agent.has_commit(missing)
+    assert not marker.exists()
+
+
+def test_the_root_clone_of_the_daemons_repository_never_lazy_fetches(tmp_path):
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append((command, kwargs.get("env")))
+        return subprocess.CompletedProcess(command, 0, "", "")
+    config = {"node": "n1", "order": ["n1"], "repository": "forkmesh/forkmesh",
+              "gitDir": "/repo.git", "stateDir": str(tmp_path)}
+    self_deploy.Agent(config, None, run=run).checkout("a" * 40, "aaaaaaaaaaaa")
+    gits = [env for command, env in seen if command[0] == "git"]
+    assert len(gits) == 2
+    assert all(env["GIT_NO_LAZY_FETCH"] == "1" for env in gits)
+
+
+def test_the_rendered_config_names_the_repository_user():
+    settings = render.self_deploy_settings({"self_deploy": {"enabled": True,
+                                                            "admin_updates": True}})
+    assert settings["repositoryUser"] == "forkmesh-node"
+
+
 def roller(tmp_path, system, clock):
     config = {"node": "n1", "order": ["n1"], "repository": "forkmesh/forkmesh",
               "gitDir": "/nonexistent", "approverKeys": [],

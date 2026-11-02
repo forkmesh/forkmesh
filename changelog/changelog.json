@@ -11,6 +11,12 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-02", "area": "Android", "text": "The Android app now asks you to confirm a new desktop's pairing code, and signing out of ForkMesh also signs you out of Mastodon."},
+  {"date": "2026-11-02", "area": "Server", "text": "A renamed or deleted account's name can no longer be taken by someone else, and a password reset now removes other device and SSH keys."},
+  {"date": "2026-11-02", "area": "Desktop", "text": "A pull request's workflow can no longer run outside the Actions sandbox, and firewall rules now apply to every redirect."},
+  {"date": "2026-11-02", "area": "Agents", "text": "Agents whose commands are checked can no longer type into terminal tabs, and agent browser windows follow the project's network rules."},
+  {"date": "2026-11-02", "area": "Agents", "text": "Agent approval prompts now check and list every destination and every destructive step in a command, not just the first."},
+  {"date": "2026-11-02", "area": "iPhone", "text": "Pairing a new desktop now asks you to confirm its code on the phone, and signing out of ForkMesh also signs you out of Mastodon."},
   {"date": "2026-11-01", "area": "Other improvements", "text": "Old documentation links that moved now take you to the new page instead of a 404."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Sessions page now uses the main prompt composer, docked and centred under the transcript, instead of its own composer."},
   {"date": "2026-11-01", "area": "Desktop", "text": "The Network page no longer freezes the window for seconds while requests are flowing, and the running-agent squares in the top bar use far less CPU."},

@@ -130,7 +130,7 @@ iOS needs `NSLocalNetworkUsageDescription`; multicast also needs the
   `controlTranscript`, `deriveControlKeys`, `controlPairingCode`, `sealControlFrame`,
   `openControlFrame`. `LocalControlConnection.open(...)` gives `request(method, params)`,
   an `events` stream, `sendEvent`, `close`, and the pairing code.
-- `LocalControlService`: status (`idle`, `connecting`, `awaitingApproval`, `connected`,
+- `LocalControlService`: status (`idle`, `connecting`, `awaitingApproval`, `confirmingCode`, `connected`,
   `failed`), paired desktops (`localControl/pairedDesktops`), their last LAN addresses
   (`localControl/lanAddresses`, probed first through `LocalMeshService.rememberedBeaconTargets`),
   `lanPending`, the desktop's agents, and actions

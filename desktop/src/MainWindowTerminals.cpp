@@ -456,6 +456,13 @@ QJsonObject MainWindow::handleTerminalRequest(int sessionId, const QString &term
                                "with your account, so only agents in Auto mode may open, type "
                                "into or close terminals; reading them is allowed.")
                     .arg(mode.isEmpty() ? QStringLiteral("an unknown") : mode));
+        if (!forkmesh::agentrules::agentTerminalWritesAllowed(agentRunRules(sessionId)))
+            return terminalError(
+                QStringLiteral("rules_gated"),
+                QStringLiteral("This run's agent rules check its commands or lock its folders. "
+                               "A terminal runs outside those checks, so this agent may not "
+                               "open, type into or close terminals; reading them is allowed. "
+                               "Use your shell tool instead, or ask the user to do it."));
     }
     if (method == bridge::OpenMethod) {
         bridge::OpenRequest request;

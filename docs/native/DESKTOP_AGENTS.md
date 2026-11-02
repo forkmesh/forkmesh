@@ -78,6 +78,26 @@ rings `agents.changed`.
   approvals or voice numbers. Their delete and read keys carry the desktop key,
   and the host chip shows the desktop's name.
 
+### Confirming a desktop on the phone
+
+A beacon's room key proves no identity ([desktop networking](../desktop/networking.md)),
+so anyone on the network can offer a desktop under any name, sign its own key and
+answer `session {paired:true}`. `LocalControlService` therefore trusts `paired:true`
+only for a key that is already paired or on the account's desktop list. Any other
+key goes to `confirmingCode` (iOS) / `ConfirmingCode` (Android): the phone shows the
+code it derived from the handshake transcript, not one the desktop sent, and waits
+for a tap on Confirm (`confirmDesktop(key)`). Nothing is stored and no request is
+sent before that, and every event except `session` and `pairing-denied` is dropped
+until the phone is `connected`. If the account's list arrives while waiting and names
+the key, the phone confirms by itself, since a desktop that approves its own account
+shows no code. A first pairing is therefore two steps: approve on the desktop, then
+Confirm on the phone.
+
+Only paired and account-listed desktops are dialled automatically. The old third
+case, a mesh host whose `ownerUser` matched the signed-in name, is gone: `#mesh`
+frames carry no account, so nothing ever set that field, and a forged one would have
+meant a zero-click dial to a stranger.
+
 ### Preferring the LAN
 
 - Every load of the account's desktops goes to

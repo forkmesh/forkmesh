@@ -329,6 +329,13 @@ bool deriveFromRefs(const QString &dir, const QString &base, const QString &head
     return true;
 }
 
+void scrubPullRefOptions(PullRequest &pr)
+{
+    for (QString *ref : {&pr.base, &pr.head, &pr.mergeBase, &pr.mergeHead})
+        if (ref->trimmed().startsWith(QLatin1Char('-')))
+            ref->clear();
+}
+
 bool validCommitOid(const QString &oid)
 {
     if (oid.size() != 40 && oid.size() != 64)
@@ -1241,6 +1248,7 @@ PullRequest PullRequest::fromJson(const QJsonObject &obj)
     pr.rewardCondition = obj.value("rewardCondition").toString();
     pr.rewardStatus = obj.value("rewardStatus").toString();
     pr.rewardTxSignature = obj.value("rewardTxSignature").toString();
+    scrubPullRefOptions(pr);
     PullStore::computeStats(pr);
     return pr;
 }
@@ -3142,6 +3150,7 @@ bool PullStore::readPull(int number, PullRequest &out) const
     out.description = fm.body;
     out.patch.clear();
     out.commits.clear();
+    scrubPullRefOptions(out);
     const bool merged = !out.mergeBase.isEmpty() && !out.mergeHead.isEmpty();
     const QString rbase = merged ? out.mergeBase : out.base;
     const QString rhead = merged ? out.mergeHead : out.head;
@@ -6372,6 +6381,7 @@ QList<PullRequest> PullStore::loadFromMirror(QString *error, bool strict,
         pr.headOid = fm.get("headOid");
         pr.mergeBase = fm.get("mergeBase");
         pr.mergeHead = fm.get("mergeHead");
+        scrubPullRefOptions(pr);
         pr.client = fm.get("client");
         pr.clientSig = fm.get("clientSig");
         pr.description = fm.body;

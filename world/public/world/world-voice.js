@@ -185,6 +185,7 @@ export function createWorldVoice(host) {
   function presence() {
     return {
       voice: state.room?.id || "",
+      voiceSecret: state.room?.id?.startsWith("bubble:") ? state.room.secret || "" : "",
       voiceName: state.room?.id?.startsWith("adhoc:") ? state.room.name || "" : "",
       mic: Boolean(state.room && state.mic),
       cam: Boolean(state.room && state.cam),

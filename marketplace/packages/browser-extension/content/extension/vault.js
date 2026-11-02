@@ -109,8 +109,8 @@
     }
 
     // Runs inside the page. Self-contained: it is serialized into the tab.
-    function fillInPage(username, password, host) {
-      if (location.hostname.toLowerCase().replace(/^www\./, "") !== host) {
+    function fillInPage(username, password, host, port) {
+      if (location.hostname.toLowerCase().replace(/^www\./, "") !== host || location.port !== port) {
         return { filledUsername: false, filledPassword: false };
       }
       const usable = (node) => node instanceof HTMLInputElement && !node.disabled && !node.readOnly
@@ -164,7 +164,7 @@
       if (!Vault.matchesPage(item, tab.url)) throw new VaultApiError("site_mismatch", 409);
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id }, func: fillInPage,
-        args: [String(item.fields.username || ""), String(item.fields.password || ""), Vault.loginHost(tab.url)],
+        args: [String(item.fields.username || ""), String(item.fields.password || ""), Vault.loginHost(tab.url), Vault.loginPort(tab.url)],
       });
       return { ok: true, ...(result?.result || {}) };
     }

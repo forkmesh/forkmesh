@@ -14,12 +14,14 @@
 #include <QHostAddress>
 #include <QIODevice>
 #include <QNetworkReply>
+#include <QPointer>
 #include <QSet>
 #include <QStringList>
 #include <QTimer>
 
 #include <algorithm>
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -1476,6 +1478,116 @@ bool BackoffNetworkAccessManager::firewallAllows(const QUrl &url) const
     return !m_firewallEnabled || firewallMatch(url) == FirewallAllowed;
 }
 
+bool BackoffNetworkAccessManager::firewallAdmits(Operation op, const QUrl &url, bool decoration,
+                                                  int requestIndex)
+{
+    const FirewallMatch match =
+        m_firewallEnabled ? recordFirewallMatch(url) : FirewallAllowed;
+    if (match == FirewallDenied) {
+        noteEndpointBlocked(op, url, QStringLiteral("Firewall denied"),
+                            requestIndex);
+        return false;
+    }
+    if (match != FirewallUnlisted)
+        return true;
+    QString rule = firewallRuleForUrl(url);
+    const QString method = firewallMethodName(op);
+    if (firewallAllowingAll())
+        rule.clear();
+    const FirewallVerdict verdict =
+        firewallAllowingAll() ? FirewallAllowOnce
+        : m_firewallPrompt && !decoration
+            ? m_firewallPrompt(method, url, &rule)
+            : FirewallDenyOnce;
+    const QString canonical = canonicalFirewallRule(rule);
+    if (!canonical.isEmpty()) {
+        if (verdict == FirewallAllow)
+            addFirewallRule(canonical);
+        else if (verdict == FirewallDeny)
+            addFirewallDenyRule(canonical);
+    }
+    const bool allowed = verdict == FirewallAllow || verdict == FirewallAllowOnce;
+    if (!decoration)
+        emit firewallRequestDecided(method, url, canonical, allowed);
+    if (!allowed)
+        noteEndpointBlocked(op, url, QStringLiteral("Firewall blocked"), requestIndex);
+    return allowed;
+}
+
+bool BackoffNetworkAccessManager::firewallAnswerCoversUrl(FirewallVerdict verdict,
+                                                          const QString &rule, const QUrl &url)
+{
+    if (verdict == FirewallDeny || verdict == FirewallDenyOnce)
+        return true;
+    return verdict == FirewallAllow && firewallRuleMatches(canonicalFirewallRule(rule), url);
+}
+
+QString BackoffNetworkAccessManager::redirectRefusal(QNetworkRequest::RedirectPolicy policy,
+                                                     const QUrl &from, const QUrl &to)
+{
+    if (!isOnThisMachine(from) && isOnThisMachine(to))
+        return QStringLiteral("Redirect to this machine refused");
+    if (policy == QNetworkRequest::NoLessSafeRedirectPolicy &&
+        from.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) == 0 &&
+        to.scheme().compare(QLatin1String("http"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("Redirect from https to http refused");
+    if (policy == QNetworkRequest::SameOriginRedirectPolicy &&
+        (from.scheme().compare(to.scheme(), Qt::CaseInsensitive) != 0 ||
+         from.host().compare(to.host(), Qt::CaseInsensitive) != 0 ||
+         from.port() != to.port()))
+        return QStringLiteral("Redirect to another origin refused");
+    return {};
+}
+
+void BackoffNetworkAccessManager::guardRedirects(QNetworkReply *reply, Operation op,
+                                                 const QUrl &origin,
+                                                 QNetworkRequest::RedirectPolicy policy,
+                                                 bool decoration)
+{
+    const QPointer<QNetworkReply> guard(reply);
+    auto from = std::make_shared<QUrl>(origin);
+    connect(reply, &QNetworkReply::redirected, this,
+            [this, guard, from, op, policy, decoration](const QUrl &target) {
+        if (!guard)
+            return;
+        const QUrl to = from->resolved(target);
+        const int index = noteEndpointAttempt(op, to, QStringLiteral("Redirect"));
+        const auto refuse = [&](const QString &reason) {
+            noteEndpointBlocked(op, to, reason, index);
+            if (guard)
+                guard->abort();
+        };
+        const QString refusal = redirectRefusal(policy, *from, to);
+        if (!refusal.isEmpty()) {
+            refuse(refusal);
+            return;
+        }
+        if (m_clientVersionBlocked && !isOnThisMachine(to)) {
+            refuse(QStringLiteral("Update required"));
+            return;
+        }
+        if (m_offlineMode && !isOnThisMachine(to)) {
+            refuse(QStringLiteral("Offline mode"));
+            return;
+        }
+        if (m_offMachineBlocked && !isOnThisMachine(to)) {
+            refuse(QStringLiteral("Off-machine blocked"));
+            return;
+        }
+        if (!firewallAdmits(op, to, decoration, index)) {
+            if (guard)
+                guard->abort();
+            return;
+        }
+        if (!guard)
+            return;
+        *from = to;
+        noteEndpointAllowed(op, to);
+        noteEndpointFinished(op, to, 0, 0, 0, QString(), index, QStringLiteral("Redirect"));
+        emit guard->redirectAllowed();
+    });
+}
+
 QNetworkReply *BackoffNetworkAccessManager::createRequest(
     Operation op, const QNetworkRequest &request, QIODevice *outgoingData)
 {
@@ -1512,61 +1624,36 @@ QNetworkReply *BackoffNetworkAccessManager::createRequest(
                             requestIndex);
         return new DeniedReply(request, op, QStringLiteral("test build"), this);
     }
-    const FirewallMatch match =
-        m_firewallEnabled ? recordFirewallMatch(url) : FirewallAllowed;
-    if (match == FirewallDenied) {
-        // Already decided: a remembered denial blocks without asking again.
-        noteEndpointBlocked(op, url, QStringLiteral("Firewall denied"),
-                            requestIndex);
+    const bool decoration =
+        request.attribute(forkmesh::kFaviconProbeAttribute).toBool();
+    if (!firewallAdmits(op, url, decoration, requestIndex))
         return new DeniedReply(request, op, QStringLiteral("firewall"), this);
-    }
-    if (match == FirewallUnlisted) {
-        // No rule yet, so the request waits for a decision. With no prompt
-        // installed there is nobody to ask, and unlisted means blocked.
-        QString rule = firewallRuleForUrl(url);
-        const QString method = firewallMethodName(op);
-        // A favicon is decoration with a letter mark to fall back on, fetched
-        // for whatever host a log line names -- every Mastodon instance that
-        // hits the relay, for one. Asking about it put a modal prompt inside
-        // MainWindow's constructor (the footer paints log lines while the
-        // window is built), so on 2026-09-21 the window never appeared until
-        // a "wants to connect" dialog was answered. Skip it this time instead;
-        // nothing is remembered, so a rule added later still applies.
-        const bool decoration =
-            request.attribute(forkmesh::kFaviconProbeAttribute).toBool();
-        if (firewallAllowingAll())
-            rule.clear();
-        const FirewallVerdict verdict =
-            firewallAllowingAll() ? FirewallAllowOnce
-            : m_firewallPrompt && !decoration
-                ? m_firewallPrompt(method, url, &rule)
-                : FirewallDenyOnce;
-        const QString canonical = canonicalFirewallRule(rule);
-        if (!canonical.isEmpty()) {
-            if (verdict == FirewallAllow)
-                addFirewallRule(canonical);
-            else if (verdict == FirewallDeny)
-                addFirewallDenyRule(canonical);
-        }
-        const bool allowed =
-            verdict == FirewallAllow || verdict == FirewallAllowOnce;
-        if (!decoration)
-            emit firewallRequestDecided(method, url, canonical, allowed);
-        if (!allowed) {
-            noteEndpointBlocked(op, url, QStringLiteral("Firewall blocked"),
-                                requestIndex);
-            return new DeniedReply(request, op, QStringLiteral("firewall"),
-                                   this);
-        }
-    }
     noteEndpointAllowed(op, url);
+
+    QNetworkRequest gatedRequest = request;
+    const QVariant wantedRedirects =
+        request.attribute(QNetworkRequest::RedirectPolicyAttribute);
+    const auto redirectPolicy =
+        wantedRedirects.isValid()
+            ? static_cast<QNetworkRequest::RedirectPolicy>(wantedRedirects.toInt())
+            : this->redirectPolicy();
+    const bool guardsRedirects =
+        (url.scheme().compare(QLatin1String("http"), Qt::CaseInsensitive) == 0 ||
+         url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) == 0) &&
+        (redirectPolicy == QNetworkRequest::NoLessSafeRedirectPolicy ||
+         redirectPolicy == QNetworkRequest::SameOriginRedirectPolicy);
+    if (guardsRedirects)
+        gatedRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                                  QNetworkRequest::UserVerifiedRedirectPolicy);
 
     auto createTrackedRequest = [&]() {
         const qint64 outgoingKnown =
             (outgoingData && !outgoingData->isSequential())
                 ? qMax<qint64>(0, outgoingData->size())
                 : 0;
-        QNetworkReply *reply = createNetworkRequest(op, request, outgoingData);
+        QNetworkReply *reply = createNetworkRequest(op, gatedRequest, outgoingData);
+        if (guardsRedirects)
+            guardRedirects(reply, op, url, redirectPolicy, decoration);
         auto *tracker = new EndpointTransferTracker(reply);
         tracker->uploaded = outgoingKnown;
         const quint64 activity = forkmesh::BackgroundActivity::begin(

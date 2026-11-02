@@ -99,6 +99,12 @@ requests), `MainWindowSideRail.cpp` (the pane, `revealTerminals`,
 `TerminalWidget` (the existing pty terminal, which gained `sendInput`,
 `plainText` and an `outputArrived` signal).
 
+Only the sign-in terminals (the host agent login and the VM settings login)
+call `setOpensSignInLinks(true)`, so only they open a provider's sign-in page
+on their own when the output prints one. Any other terminal would open a
+real sign-in page for anything that prints its URL, such as `cat` on a repo
+file, which helps device-code phishing.
+
 - **One click.** The top bar's terminal button (in Next `topTerminalButton`,
   between the theme toggle and the side-rail toggle; in Classic a title-bar
   button with the `terminalLauncherButton` property, before the view
@@ -179,6 +185,11 @@ Rules:
 - An agent below Auto mode (`agenthub::permissionRank` < 3) may list and read
   but not open, type or close (`mode_too_low`), because typing runs commands
   with the user's account.
+- An Auto agent whose run rules check its commands (external calls, destructive
+  commands, teammate permissions) or lock its folders gets `rules_gated` for
+  the same calls (`agentrules::agentTerminalWritesAllowed`). A terminal runs
+  outside the hook and the Landlock lock, so typing there would skip every
+  check; see [agent boundaries](../security/agent-host-boundaries.md).
 - Private tabs are left out of the list and refuse reads and input
   (`not_shared`), except the caller's own tab.
 - Tabs the user opened are not closed for an agent (`user_terminal`).

@@ -17,6 +17,7 @@ MAX_EVENTS_PER_INVOICE = 300
 MAX_CONTACTS = 5000
 MAX_AMOUNT = 10 ** 12
 MANAGER_ROLES = frozenset({"owner", "admin"})
+ORG_READ_ONLY_ROLES = frozenset({"auditor"})
 STATUSES = ("draft", "sent", "paid", "void")
 EDITABLE = frozenset({"draft", "sent"})
 DELETABLE = frozenset({"draft", "void"})
@@ -137,6 +138,8 @@ DATA_SCHEMA_DOWN = [
     "DROP TABLE IF EXISTS invoice_records",
 ]
 
+
+_SCHEMA_READY = False
 
 RECORD_COLUMNS = (
     "invoice_id,org_name,number,status,contact_id,currency,total,paid_amount,"
@@ -403,11 +406,8 @@ def _track_origin(runtime):
     configured = str(secret("TRACK_ORIGIN") if secret else "").rstrip("/").lower()
     if ORIGIN_RE.fullmatch(configured):
         return configured
-    for source in ("request_origin", "public_origin"):
-        origin = str(getattr(runtime, source, lambda: "")() or "").rstrip("/").lower()
-        if ORIGIN_RE.fullmatch(origin):
-            return origin
-    return TRACK_ORIGIN
+    origin = str(getattr(runtime, "public_origin", lambda: "")() or "").rstrip("/").lower()
+    return origin if ORIGIN_RE.fullmatch(origin) else TRACK_ORIGIN
 
 
 def _view_url(origin, token):
@@ -603,7 +603,9 @@ async def _summary(runtime, org_bi, now):
 
 async def _actor(runtime, data=None):
     account_bi, record = await runtime.session(data or {})
-    return str(account_bi or ""), _clean((record or {}).get("name"), 64).lower()
+    record = record or {}
+    return (str(account_bi or ""), _clean(record.get("name"), 64).lower(),
+            bool(record.get("email_verified")))
 
 
 async def _organizations(runtime, account_bi):
@@ -916,6 +918,7 @@ async def _send(runtime, row, org_bi, account_bi, actor, data):
         "html": _email_html(invoice, settings, message, view_url, pixel_url),
         "category": "Invoice",
         "tracked": True,
+        "organization": org_bi,
         "custom_variables": {
             "forkmesh_invoice_id": invoice["id"],
             "forkmesh_sender": actor,
@@ -1219,12 +1222,20 @@ def _allowed(route):
     return ("GET", "PATCH", "DELETE")
 
 
+async def _ensure_tables(runtime):
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    for statement in DATA_SCHEMA_UP:
+        await runtime.d1_run(statement)
+    _SCHEMA_READY = True
+
+
 async def _public_schema_ready(runtime):
     if not await runtime.d1_first(
             "SELECT plugin FROM org_plugin_installs WHERE plugin=? LIMIT 1", PLUGIN_ID):
         return False
-    for statement in DATA_SCHEMA_UP:
-        await runtime.d1_run(statement)
+    await _ensure_tables(runtime)
     return True
 
 
@@ -1240,12 +1251,14 @@ async def handle(runtime, path):
         return _response(runtime, {"error": "method_not_allowed"}, 405, ", ".join(allowed))
     await runtime.ensure_schema()
     if route[0] == "track":
-        if not await _public_schema_ready(runtime):
+        if (not await _token_invoice(runtime, route[2])
+                or not await _public_schema_ready(runtime)):
             return _redirect(runtime, TRACK_LOGO) if route[1] == "o" else _response(
                 runtime, {"error": "invoice_not_found"}, 404)
         return await _track(runtime, route[1], route[2])
     if route[0] == "public":
-        if not await _public_schema_ready(runtime):
+        if (not await _token_invoice(runtime, route[1])
+                or not await _public_schema_ready(runtime)):
             return _response(runtime, {"error": "invoice_not_found"}, 404)
         return await _public(runtime, route[1])
     if method != "GET" and not runtime.same_origin():
@@ -1255,7 +1268,7 @@ async def handle(runtime, path):
         data, error = await runtime.json_body(MAX_BODY_BYTES)
         if error:
             return _response(runtime, {"error": error}, 413 if error == "payload_too_large" else 400)
-    account_bi, actor = await _actor(runtime, data)
+    account_bi, actor, verified = await _actor(runtime, data)
     if not account_bi or not actor:
         return _response(runtime, {"error": "invalid_session"}, 401)
     if route[0] == "organizations":
@@ -1267,11 +1280,12 @@ async def handle(runtime, path):
     org_bi, role = await runtime.organization(org_name, account_bi)
     if not org_bi or not role:
         return _response(runtime, {"error": "organization_not_found"}, 404)
+    if role in ORG_READ_ONLY_ROLES and method not in ("GET", "HEAD"):
+        return _response(runtime, {"error": "read_only_role"}, 403)
     if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
         return _response(runtime, {"error": "plugin_not_installed", "organization": org_name,
                                    "canInstall": role in MANAGER_ROLES}, 409)
-    for statement in DATA_SCHEMA_UP:
-        await runtime.d1_run(statement)
+    await _ensure_tables(runtime)
     if not resource:
         return await _overview(runtime, org_bi, org_name, role)
     if resource == "settings":
@@ -1300,6 +1314,8 @@ async def handle(runtime, path):
     if not row:
         return _response(runtime, {"error": "invoice_not_found"}, 404)
     if action == "send":
+        if role not in MANAGER_ROLES and not verified:
+            return _response(runtime, {"error": "send_requires_verified_email"}, 403)
         return await _send(runtime, row, org_bi, account_bi, actor, data)
     if action == "paid":
         return await _mark_paid(runtime, row, org_bi, account_bi, actor, data)

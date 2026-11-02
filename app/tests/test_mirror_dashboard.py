@@ -1009,6 +1009,92 @@ def test_signed_issue_open_is_committed_through_local_daemon(
     assert denied.status == 401
 
 
+def test_direct_issue_filters_attachment_names_and_relay_only_meta(
+    dashboard_app, monkeypatch,
+):
+    config = replace(
+        dashboard_app.config,
+        collaboration_control_url=(
+            "http://127.0.0.1:8791/v1/control/collaboration"
+        ),
+    )
+    dashboard_app.config = config
+    dashboard_app.dashboard.config = config
+    private_key = Ed25519PrivateKey.generate()
+    author = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+    ).decode().rstrip("=")
+    content = "Title\0Body\0"
+    canonical = (
+        "forkmesh-issue-event-v1\nopen\n0\n" + author + "\n" + str(NOW) + "\n"
+        + hashlib.sha256(content.encode()).hexdigest()
+    ).encode()
+    signature = base64.urlsafe_b64encode(
+        private_key.sign(canonical)
+    ).decode().rstrip("=")
+    event = {
+        "type": "open", "id": "open-filtered", "title": "Title", "body": "Body",
+        "attachments": [], "author": author, "ts": NOW, "sig": signature,
+    }
+    forwarded = {}
+
+    class LocalResponse:
+        status = 201
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _maximum):
+            return json.dumps({"ok": True, "number": 44, "durable": True}).encode()
+
+    def local_open(request, timeout):
+        forwarded.update(json.loads(request.data))
+        return LocalResponse()
+
+    monkeypatch.setattr(gateway, "_open_loopback_control", local_open)
+
+    def post(**fields):
+        return dashboard_app.dispatch(
+            "POST", "/api/repo/forkmesh/forkmesh/issues",
+            {"Content-Type": "application/json"},
+            json.dumps({"number": 0, "event": event, **fields}).encode(),
+        )
+
+    data = base64.b64encode(b"bytes").decode()
+    for bad in (
+        [{"name": "issue-44.json", "data": data}],
+        [{"name": "..", "data": data}],
+        [{"name": "0123abcd.png", "data": "not base64!"}],
+        [{"name": "0123abcd.png", "data": data}] * 7,
+        ["0123abcd.png"],
+    ):
+        assert post(attachmentData=bad).status == 400
+    assert forwarded == {}
+
+    response = post(
+        attachmentData=[{"name": "0123abcd.png", "data": data}],
+        meta={
+            "labels": ["bug"], "priority": 3, "reporter": "victim",
+            "rewardRecipient": "victim", "rewardStatus": "pending_wallet",
+            "rewardEstimateLamports": 5000000, "rewardId": "reward-x",
+            "rewardCondition": "accepted_report",
+        },
+    )
+    assert response.status == 201
+    meta = forwarded["item"]["meta"]
+    assert meta["labels"] == ["bug"] and meta["priority"] == 3
+    assert not {key for key in meta if key == "reporter" or key.startswith("reward")}
+    assert forwarded["item"]["attachmentData"] == [
+        {"name": "0123abcd.png", "data": data}
+    ]
+
+
 def test_direct_pull_and_discussion_signatures_match_browser_wire_format():
     private_key = Ed25519PrivateKey.generate()
     author = base64.urlsafe_b64encode(

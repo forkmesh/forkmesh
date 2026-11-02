@@ -505,6 +505,7 @@ async def _update_channel(runtime, actor, channel_id, data, row=None,
             "DELETE FROM chat_channel_webhooks WHERE channel_id=?",
             channel_id,
         )
+        await _drop_invite(runtime, channel_id)
         updated_row["key_version"] = key_version + 1
     for action, reason in changes:
         await runtime.audit(

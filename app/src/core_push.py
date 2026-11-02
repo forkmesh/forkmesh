@@ -476,6 +476,7 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
     total = int((report or {}).get("total") or len(updates))
     node = str((endpoint or {}).get("node") or "")
     target = owner + "/" + repo
+    forum_record = credential == "forum-record"
     for update in updates:
         details = {
             "ref": update["ref"], "old": update["old"], "new": update["new"],
@@ -523,7 +524,7 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
         except Exception:
             pass
     note_ai_review = globals().get("ai_review_note_push")
-    if updates and note_ai_review is not None:
+    if updates and note_ai_review is not None and not forum_record:
         try:
             await note_ai_review(env, owner, repo, updates)
         except Exception:
@@ -534,7 +535,8 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
         except Exception:
             pass
         try:
-            if (report or {}).get("actions") is not True and not contributor:
+            if ((report or {}).get("actions") is not True and not contributor
+                    and not forum_record):
                 await _queue_pushed_actions(env, owner, repo, node, account,
                                             updates)
         except Exception:

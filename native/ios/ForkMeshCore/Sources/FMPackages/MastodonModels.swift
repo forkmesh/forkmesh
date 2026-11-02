@@ -25,9 +25,9 @@ public struct MastodonAccount: Equatable, Identifiable, Sendable {
         acct = json.str("acct", username)
         let display = json.str("display_name").trimmingCharacters(in: .whitespaces)
         displayName = display.isEmpty ? username : display
-        avatar = json.firstStr("avatar_static", "avatar")
-        header = json.firstStr("header_static", "header")
-        url = json.str("url")
+        avatar = MastodonServer.webLink(json.firstStr("avatar_static", "avatar"))
+        header = MastodonServer.webLink(json.firstStr("header_static", "header"))
+        url = MastodonServer.webLink(json.str("url"))
         note = json.str("note")
         locked = json.bool("locked")
         bot = json.bool("bot")
@@ -53,8 +53,8 @@ public struct MastodonAttachment: Equatable, Identifiable, Sendable {
         guard !id.isEmpty else { return nil }
         self.id = id
         type = json.str("type", "unknown")
-        url = json.firstStr("url", "remote_url")
-        previewUrl = json.firstStr("preview_url", "url")
+        url = MastodonServer.webLink(json.firstStr("url", "remote_url"))
+        previewUrl = MastodonServer.webLink(json.firstStr("preview_url", "url"))
         description = json.str("description")
     }
 
@@ -151,7 +151,7 @@ public struct MastodonStatus: Equatable, Identifiable, Sendable {
         let id = json.str("id")
         guard !id.isEmpty else { return nil }
         self.id = id
-        url = json.firstStr("url", "uri")
+        url = MastodonServer.webLink(json.firstStr("url", "uri"))
         self.account = account
         content = json.str("content")
         spoiler = json.str("spoiler_text")

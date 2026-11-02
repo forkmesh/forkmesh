@@ -1,5 +1,6 @@
 #include "SessionSidePanels.h"
 
+#include "ChatLinkText.h"
 #include "DesignTokens.h"
 #include "DesktopUi.h"
 
@@ -1318,6 +1319,18 @@ void SessionSidePanels::startDrag(const QString &key)
     saveLayout();
 }
 
+QUrl SessionSidePanels::openTargetUrl(const QString &target)
+{
+    if (target.contains(QLatin1String("://")))
+        return ChatLinkText::externalLinkUrl(target);
+    if (!QDir::isAbsolutePath(target))
+        return {};
+    const QFileInfo info(target);
+    if (!info.exists())
+        return {};
+    return QUrl::fromLocalFile(info.isDir() ? info.absoluteFilePath() : info.absolutePath());
+}
+
 bool SessionSidePanels::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == m_inner) {
@@ -1404,10 +1417,8 @@ bool SessionSidePanels::eventFilter(QObject *watched, QEvent *event)
         const QString target = watched->property("sessionsOpen").toString();
         if (widget && mouse->button() == Qt::LeftButton && !target.isEmpty() &&
             widget->rect().contains(mouse->position().toPoint())) {
-            const QUrl url = target.contains(QLatin1String("://"))
-                                 ? QUrl(target)
-                                 : QUrl::fromLocalFile(target);
-            if (url.isLocalFile() && !QFileInfo::exists(url.toLocalFile()))
+            const QUrl url = openTargetUrl(target);
+            if (url.isEmpty())
                 return false;
             QDesktopServices::openUrl(url);
             return true;

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.mastodon
 
+import java.io.File
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.net.HttpClient
 import com.forkmesh.nativeapp.security.MemorySecretStore
@@ -273,5 +274,45 @@ class MastodonTest {
         signIn.withToken("social.example", " tok2 ")
         assertEq("tok2", store.session?.token)
         assertFails<MastodonException> { signIn.start("http://insecure.example") }
+    }
+
+    fun testLinksFromTheServerOnlyKeepWebSchemes() {
+        assertEq("https://a.example/x", MastodonServer.webLink(" https://a.example/x "))
+        assertEq("HTTP://a.example", MastodonServer.webLink("HTTP://a.example"))
+        for (bad in listOf("", "https://", "https:///x", "ftp://a.example", "tel:123", "forkmesh://compose?text=x", "shortcuts://run-shortcut?name=x", "javascript:alert(1)", "https://a b.example", "https://a.example/\nx")) {
+            assertEq("", MastodonServer.webLink(bad), bad)
+        }
+        val json = status(extra = mapOf("url" to "forkmesh://compose?text=x", "uri" to "tag:x", "media_attachments" to listOf(mapOf("id" to "m", "type" to "image", "url" to "tel:1", "preview_url" to "shortcuts://x"))))
+        val parsed = MastodonStatus.from(json)!!
+        assertEq("", parsed.url)
+        assertEq("", parsed.media.single().url)
+        assertEq("", parsed.media.single().previewUrl)
+        assertEq("", MastodonAccount.from(account() + mapOf("url" to "tel:1", "avatar_static" to "file:///x", "avatar" to null, "header_static" to "javascript:x", "header" to null))!!.url)
+        assertEq("", MastodonAccount.from(account() + mapOf("avatar_static" to "file:///x", "avatar" to null))!!.avatar)
+    }
+
+    fun testSigningOutForgetsTheSignInBeforeAskingTheServer() {
+        val secrets = MemorySecretStore()
+        val store = MastodonStore(secrets)
+        store.session = MastodonSession(server, "tok", "cid", "secret")
+        store.pending = MastodonPending(server, "cid", "secret", "st", "ver", Mastodon.REDIRECT)
+        var storedDuringRevoke: MastodonSession? = store.session
+        val fake = Fake { request ->
+            storedDuringRevoke = store.session
+            if (request.url.endsWith("/oauth/revoke")) throw java.io.IOException("offline")
+            response(404, emptyMap<String, Any?>())
+        }
+        val signIn = MastodonSignIn(store) { s, t -> MastodonClient(s, t, fake) }
+        signIn.signOut()
+        assertEq(null, storedDuringRevoke)
+        assertEq(null, store.session)
+        assertEq(null, store.pending)
+        assertEq("$server/oauth/revoke", fake.requests.last().url)
+    }
+
+    fun testTheAndroidMastodonStateFollowsTheProjectAndTheAccount() {
+        val feature = File("../app/src/main/kotlin/com/forkmesh/nativeapp/feature/mastodon/MastodonFeature.kt").readText()
+        expect("ProjectLifecycle.onClose { MastodonState.reset() }" in feature)
+        expect("onLocalSessionCleared = { MastodonState.accountSignedOut() }" in feature)
     }
 }
