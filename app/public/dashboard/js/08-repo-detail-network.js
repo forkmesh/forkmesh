@@ -4538,6 +4538,37 @@
   $$("[data-new-repo-visibility]").forEach((input) => {
     input.addEventListener("change", renderNewRepoVisibilityNote);
   });
+  $$("[data-new-repo-location]").forEach((button) => {
+    button.addEventListener("click", () => setNewRepoLocation(button.dataset.newRepoLocation));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const next = newRepoLocation() === "node" ? "hosted" : "node";
+      setNewRepoLocation(next);
+      $(`[data-new-repo-location="${next}"]`)?.focus();
+    });
+  });
+  $$("[data-new-repo-import-code], [data-new-repo-import-issues]").forEach((input) => {
+    input.addEventListener("change", renderNewRepoImportChoice);
+  });
+  $("[data-new-repo-name]")?.addEventListener("input", renderNewRepoNameCheck);
+  $("[data-new-repo-owner]")?.addEventListener("change", renderNewRepoNameCheck);
+  $$("[data-new-repo-push-copy-field]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const field = $(`[data-new-repo-push-${button.dataset.newRepoPushCopyField}]`);
+      try {
+        await navigator.clipboard.writeText(field?.textContent || "");
+        button.textContent = "Copied";
+      } catch (_) {
+        const range = document.createRange();
+        if (field) range.selectNodeContents(field);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
+        button.textContent = "Selected";
+      }
+      window.setTimeout(() => { button.textContent = "Copy"; }, 1600);
+    });
+  });
   $("[data-new-repo-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     handleNewRepoSubmit();

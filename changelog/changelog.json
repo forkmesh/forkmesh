@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-02", "area": "Projects", "text": "Creating a repository on the web now asks first whether it lives on your own computer or phone or on the servers, shows how much of your allowance you have used, and walks you through cloning and pushing afterwards."},
   {"date": "2026-11-02", "area": "Agents", "text": "The agent token tanks under the phone's top island draw at 30 frames a second with about a quarter of the processor time they took, and stop reading the accelerometer while they are empty."},
   {"date": "2026-11-02", "area": "Android", "text": "Your picture in the header now fills its status ring."},
   {"date": "2026-11-02", "area": "iPhone", "text": "Your picture in the header no longer tilts with the phone and now fills its status ring."},

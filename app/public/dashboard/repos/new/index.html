@@ -4215,7 +4215,6 @@
               .nr-head { margin: 16px 0 0; }
               .nr-head h1 { font-size: 24px; line-height: 1.25; font-weight: 400; }
               .nr-head p { margin-top: 4px; font-size: 14px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-required { margin-top: 16px; font-size: 12px; font-style: italic; color: rgb(var(--dashboard-muted-foreground-rgb)); }
               .nr-star { color: rgb(var(--dashboard-destructive-rgb)); font-style: normal; }
               .nr-rule { border: 0; border-top: 1px solid rgb(var(--dashboard-border-rgb) / .7); margin: 20px 0; }
               .nr-block { display: grid; gap: 20px; }
@@ -4254,10 +4253,6 @@
               .nr-desc { display: block; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
               .nr-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
               .nr-panel { display: grid; gap: 12px; padding: 16px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); }
-              .nr-info { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); font-size: 13px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-info svg { flex: none; margin-top: 2px; }
-              .nr-info a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
-              .nr-info a:hover { text-decoration: underline; }
               .nr-result { padding: 4px 0 0; }
               .nr-result-head { display: flex; align-items: center; gap: 12px; }
               .nr-result-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 999px; color: rgb(var(--dashboard-muted-foreground-rgb)); background: rgb(var(--dashboard-secondary-rgb)); }
@@ -4270,6 +4265,50 @@
               .nr-btn-primary { color: rgb(var(--dashboard-cta-foreground-rgb)); background: rgb(var(--dashboard-cta-rgb)); border: 1px solid rgb(var(--dashboard-foreground-rgb) / .1); }
               .nr-btn-primary:hover { background: rgb(var(--dashboard-cta-rgb) / .9); }
               .nr-btn-primary:disabled { opacity: .6; cursor: progress; }
+              .nr-where { display: grid; gap: 8px; }
+              @media (min-width: 560px) { .nr-where { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+              .nr-where [data-new-repo-location] { display: grid; gap: 4px; align-content: start; padding: 12px 14px; text-align: left; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); transition: border-color .12s, background-color .12s; }
+              .nr-where [data-new-repo-location]:hover { background: rgb(var(--dashboard-foreground-rgb) / .04); }
+              .nr-where [data-new-repo-location][aria-checked="true"] { border-color: rgb(var(--dashboard-primary-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / .06); }
+              .nr-where [data-new-repo-location]:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 2px; }
+              .nr-where-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; font-size: 14px; font-weight: 600; }
+              .nr-pill { font-size: 11px; font-weight: 500; line-height: 1; padding: 3px 6px; border-radius: 4px; color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / .12); }
+              .nr-pill-quiet { color: rgb(var(--dashboard-muted-foreground-rgb)); background: rgb(var(--dashboard-muted-foreground-rgb) / .14); }
+              .nr-where-meta { font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-guide { display: grid; gap: 16px; }
+              .nr-guide-cols { display: grid; gap: 12px; }
+              @media (min-width: 640px) { .nr-guide-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+              .nr-guide-col { display: grid; gap: 8px; align-content: start; padding: 14px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); }
+              .nr-guide-col ol { display: grid; gap: 4px; padding-left: 18px; list-style: decimal; font-size: 13px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-guide-col ol b { color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
+              .nr-guide-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+              .nr-guide-links a, .nr-help a, .nr-steps a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
+              .nr-guide-links a:hover, .nr-help a:hover, .nr-steps a:hover { text-decoration: underline; }
+              .nr-checks { display: grid; gap: 8px; }
+              .nr-name-check { font-size: 12px; color: rgb(var(--dashboard-destructive-rgb)); }
+              .nr-name-check:empty { display: none; }
+              .nr-meter { display: grid; gap: 6px; }
+              .nr-meter-bar { height: 6px; border-radius: 3px; background: rgb(var(--dashboard-border-rgb)); overflow: hidden; }
+              .nr-meter-bar i { display: block; height: 100%; background: rgb(var(--dashboard-primary-rgb)); }
+              .nr-meter-high .nr-meter-bar i { background: rgb(var(--dashboard-attention-rgb)); }
+              .nr-meter-row { display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-meter-row b { color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; font-variant-numeric: tabular-nums; }
+              .nr-warn { padding: 8px 12px; border-left: 3px solid rgb(var(--dashboard-attention-rgb)); border-radius: 0 var(--dashboard-control-radius) var(--dashboard-control-radius) 0; background: rgb(var(--dashboard-attention-rgb) / .1); font-size: 13px; line-height: 1.5; }
+              .nr-warn a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
+              .nr-warn a:hover { text-decoration: underline; }
+              .nr-steps { display: grid; gap: 16px; margin-top: 16px; padding: 0; list-style: none; counter-reset: nr-step; }
+              .nr-steps > li { display: grid; gap: 8px; grid-template-columns: 24px minmax(0, 1fr); counter-increment: nr-step; }
+              .nr-steps > li::before { content: counter(nr-step); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); }
+              .nr-steps > li > div { display: grid; gap: 8px; min-width: 0; }
+              .nr-step-title { font-size: 14px; font-weight: 600; line-height: 22px; }
+              .nr-cred { display: grid; gap: 8px; }
+              @media (min-width: 560px) { .nr-cred { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); } }
+              .nr-cred-field { display: grid; gap: 4px; align-content: start; min-width: 0; }
+              .nr-cred-label { font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-cred-value { display: flex; align-items: flex-start; gap: 8px; }
+              .nr-cred-value code { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+              .nr-copy-btn { flex: none; height: var(--dashboard-control-height-sm, 28px); padding: 0 10px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-secondary-rgb)); font-size: 12px; font-weight: 500; }
+              .nr-copy-btn:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); }
             </style>
 
             <div class="nr-page">
@@ -4281,112 +4320,158 @@
 
               <header class="nr-head">
                 <h1 id="newRepoModalTitle" data-new-repo-title>Create a new repository</h1>
-                <p data-new-repo-subtitle>A repository holds your project's files and history. <span data-platform-name>ForkMesh</span> keeps a copy on every core node.</p>
+                <p data-new-repo-subtitle>A repository holds your project's files and history.</p>
               </header>
-              <p class="nr-required">Required fields are marked with an asterisk (<span class="nr-star">*</span>).</p>
 
               <form data-new-repo-form aria-labelledby="newRepoModalTitle">
                 <hr class="nr-rule" />
                 <div data-new-repo-details>
-                  <div class="nr-block">
-                    <div class="nr-field">
-                      <span class="nr-label">Start from</span>
-                      <div data-new-repo-source-toggle class="nr-seg" role="group" aria-label="Source">
-                        <button data-new-repo-source="empty" type="button" aria-pressed="true"><i data-lucide="book-marked" class="h-4 w-4"></i>Empty</button>
-                        <button data-new-repo-source="remote" type="button" aria-pressed="false"><i data-lucide="link" class="h-4 w-4"></i>Clone URL</button>
-                        <button data-new-repo-source="local" type="button" aria-pressed="false"><i data-lucide="monitor" class="h-4 w-4"></i>Local folder</button>
-                        <button data-new-repo-source="provider" type="button" aria-pressed="false"><i data-lucide="download" class="h-4 w-4"></i>Import from GitHub, GitLab, Codeberg</button>
-                      </div>
-                      <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" style="margin-top:6px" />
-                      <p data-new-repo-source-hint class="nr-help">Copies the repository at this URL. Private repositories are backed up through the <span data-desktop-brand>ForkMesh </span>desktop app. Local paths never leave your machine.</p>
-                      <div data-new-repo-provider-options class="hidden nr-panel">
-                        <label class="nr-field">
-                          <span class="nr-label">What to import</span>
-                          <select data-new-repo-import-mode class="nr-input">
-                            <option value="import">Issues, pull requests &amp; history (not the code)</option>
-                            <option value="stub">Only a listing that links to the original</option>
-                          </select>
-                        </label>
-                        <label class="nr-field">
-                          <span class="nr-label">Read-only access token <span class="nr-optional">(required for private repositories)</span></span>
-                          <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Read-only GitHub, GitLab, or Codeberg token" class="nr-input" />
-                        </label>
-                        <p class="nr-help">This copies issues, pull requests and their history once; it does not copy the code or keep anything up to date. To back up the code, see <a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>.</p>
-                        <p class="nr-help">A read-only token is enough: on GitHub, a fine-grained token for that one repository with Contents, Issues and Pull requests set to Read-only. <span data-platform-name>ForkMesh</span> never needs permission to push to GitHub. The token is used for this request only and is never stored. Git contents stay on the normal mirror path; provider records and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
-                      </div>
-                    </div>
-
-                    <div class="nr-field">
-                      <div data-new-repo-name-row class="nr-name-row">
-                        <label data-new-repo-owner-wrap data-new-repo-hosted-options class="hidden nr-field">
-                          <span class="nr-label">Owner <span class="nr-star">*</span></span>
-                          <select data-new-repo-owner class="nr-input"></select>
-                        </label>
-                        <span class="nr-slash" aria-hidden="true">/</span>
-                        <label data-new-repo-name-wrap class="nr-field">
-                          <span class="nr-label">Repository name <span class="nr-star">*</span></span>
-                          <input data-new-repo-name type="text" autocomplete="off" spellcheck="false" placeholder="my-project" required class="nr-input" />
-                        </label>
-                      </div>
-                      <p class="nr-help">Great repository names are short and memorable. Letters, numbers, <code>.</code> <code>-</code> <code>_</code>, up to 64 characters.</p>
-                    </div>
-
-                    <label data-new-repo-description-wrap class="nr-field">
-                      <span class="nr-label">Description <span class="nr-optional">(optional)</span></span>
-                      <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" class="nr-input"></textarea>
-                    </label>
-                  </div>
-
-                  <div data-new-repo-visibility-wrap>
-                    <hr class="nr-rule" />
-                    <div class="nr-radios" role="radiogroup" aria-label="Visibility">
-                      <label class="nr-radio">
-                        <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="public" checked />
-                        <i data-lucide="book" class="h-6 w-6"></i>
-                        <span><span class="nr-title">Public</span><span class="nr-desc">Listed in the catalog. Anyone can browse and clone it.</span></span>
-                      </label>
-                      <label class="nr-radio">
-                        <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="private" />
-                        <i data-lucide="lock" class="h-6 w-6"></i>
-                        <span><span class="nr-title">Private</span><span data-new-repo-private-desc class="nr-desc">Encrypted mirror, contents stay hidden.</span></span>
-                      </label>
+                  <div class="nr-field">
+                    <span id="newRepoWhereLabel" class="nr-label">Where should it live?</span>
+                    <div class="nr-where" role="radiogroup" aria-labelledby="newRepoWhereLabel">
+                      <button data-new-repo-location="node" type="button" role="radio" aria-checked="false">
+                        <span class="nr-where-title"><span>Your own device</span><span class="nr-pill">Recommended</span></span>
+                        <span class="nr-desc">Your code stays on your computer or phone, and you decide what gets published.</span>
+                        <span data-new-repo-node-status class="nr-where-meta">No device linked yet</span>
+                      </button>
+                      <button data-new-repo-location="hosted" type="button" role="radio" aria-checked="true">
+                        <span class="nr-where-title"><span><span data-platform-name>ForkMesh</span> servers</span><span class="nr-pill nr-pill-quiet">Quick start</span></span>
+                        <span class="nr-desc">No app needed: push with plain git. You can move it to your own device later.</span>
+                        <span data-new-repo-hosted-meta class="nr-where-meta"></span>
+                      </button>
                     </div>
                   </div>
 
-                  <div data-new-repo-hosted-options class="hidden">
+                  <div data-new-repo-node-guide class="hidden nr-guide" style="margin-top:20px">
+                    <p class="nr-help" style="font-size:14px">Your device keeps the repository. <span data-platform-name>ForkMesh</span> shows it here and lets others find it, but your copy stays the original.</p>
+                    <div class="nr-guide-cols">
+                      <div class="nr-guide-col">
+                        <span class="nr-title">On your computer</span>
+                        <span class="nr-desc">The <span data-desktop-brand>ForkMesh </span>desktop app serves the repository from your computer while the app is running.</span>
+                        <ol>
+                          <li>Open the app's <b>Repos</b> page.</li>
+                          <li>Choose <b>New repository…</b>, or <b>Import folder…</b> for a project you already have.</li>
+                          <li>Turn on <b>Serve</b> for it on the <b>Control</b> page.</li>
+                        </ol>
+                        <div class="nr-guide-links"><a href="/desktop">Get the desktop app</a></div>
+                      </div>
+                      <div class="nr-guide-col">
+                        <span class="nr-title">On your phone</span>
+                        <span class="nr-desc">The iPhone and Android app keeps the repository on your phone. Publishing sends a copy to the network, so others can clone it while your phone is off.</span>
+                        <ol>
+                          <li>Open the <b>Repos</b> tab.</li>
+                          <li>Under <b>On this device</b>, tap <b>New repository</b>, or <b>Import from Files</b>.</li>
+                          <li>Open it and tap <b>Publish</b>.</li>
+                        </ol>
+                        <div class="nr-guide-links"><a href="https://forkmesh.com/mobile">Get the phone app</a></div>
+                      </div>
+                    </div>
+                    <p class="nr-help">Already installed? Link the app to this account in <a href="/dashboard/settings/nodes">Settings › Nodes</a>, and the repository appears in your list once it is published.</p>
+                  </div>
+
+                  <div data-new-repo-hosted-form>
                     <hr class="nr-rule" />
                     <div class="nr-block">
                       <div class="nr-field">
-                        <span class="nr-label">Initialize this repository with</span>
-                        <label data-new-repo-readme-wrap class="nr-check">
-                          <input data-new-repo-readme type="checkbox" checked />
-                          <span><span class="nr-title">Add a README file</span><span class="nr-desc">A first commit, so you can clone straight away.</span></span>
-                        </label>
+                        <span class="nr-label">Start from</span>
+                        <div data-new-repo-source-toggle class="nr-seg" role="group" aria-label="Source">
+                          <button data-new-repo-source="empty" type="button" aria-pressed="true"><i data-lucide="book-marked" class="h-4 w-4"></i>Empty</button>
+                          <button data-new-repo-source="remote" type="button" aria-pressed="false"><i data-lucide="download" class="h-4 w-4"></i>Import from a URL</button>
+                        </div>
+                        <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Repository URL" placeholder="https://github.com/owner/repo" class="nr-input font-mono" style="margin-top:6px" />
+                        <p data-new-repo-source-hint class="nr-help">Start empty and push with git over HTTPS.</p>
+                        <div data-new-repo-import-options class="hidden nr-panel">
+                          <span class="nr-label">What to bring over</span>
+                          <div class="nr-checks">
+                            <label class="nr-check">
+                              <input data-new-repo-import-code type="checkbox" checked />
+                              <span><span class="nr-title">Code</span><span class="nr-desc">Every branch and tag, copied once.</span></span>
+                            </label>
+                            <label class="nr-check">
+                              <input data-new-repo-import-issues type="checkbox" />
+                              <span><span class="nr-title">Issues and pull requests</span><span class="nr-desc">With comments and history, copied once. They are listed under External repositories.</span></span>
+                            </label>
+                          </div>
+                          <label data-new-repo-provider-token-wrap class="hidden nr-field">
+                            <span class="nr-label">Read-only access token <span class="nr-optional">(only for a private repository)</span></span>
+                            <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Read-only GitHub, GitLab, or Codeberg token" class="nr-input" />
+                            <span class="nr-help">Used for this import only and never stored. On GitHub, a fine-grained token for that one repository with Contents, Issues and Pull requests set to Read-only is enough.</span>
+                          </label>
+                          <select data-new-repo-import-mode class="hidden" aria-hidden="true" tabindex="-1"><option value="import" selected>import</option></select>
+                        </div>
                       </div>
-                      <div data-new-repo-init-wrap class="nr-two">
-                        <label class="nr-field">
-                          <span class="nr-label">.gitignore</span>
-                          <select data-new-repo-gitignore class="nr-input"><option value="">None</option></select>
-                        </label>
-                        <label class="nr-field">
-                          <span class="nr-label">License</span>
-                          <select data-new-repo-license class="nr-input"><option value="">None</option></select>
-                        </label>
-                      </div>
-                      <p data-new-repo-quota class="nr-help"></p>
-                    </div>
-                  </div>
 
-                  <hr class="nr-rule" />
-                  <div class="nr-info"><i data-lucide="info" class="h-4 w-4"></i><span>You get the clone URL and a push credential right after you create it. Local folders and private URLs finish on your <a href="/desktop"><span data-desktop-brand>ForkMesh </span>desktop node</a>.</span></div>
-                  <p data-new-repo-visibility-note role="status" aria-live="polite" class="nr-help" style="margin-top:12px"></p>
-                  <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground" style="margin-top:12px"></p>
-                  <div data-new-repo-migration-status class="hidden nr-panel text-xs" role="status" aria-live="polite">
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <span data-new-repo-setup-time class="text-foreground"></span>
-                      <span data-new-repo-transfer-time class="text-muted-foreground"></span>
+                      <div class="nr-field">
+                        <div data-new-repo-name-row class="nr-name-row">
+                          <label data-new-repo-owner-wrap data-new-repo-hosted-options class="hidden nr-field">
+                            <span class="nr-label">Owner <span class="nr-star">*</span></span>
+                            <select data-new-repo-owner class="nr-input"></select>
+                          </label>
+                          <span class="nr-slash" aria-hidden="true">/</span>
+                          <label data-new-repo-name-wrap class="nr-field">
+                            <span class="nr-label">Repository name <span class="nr-star">*</span></span>
+                            <input data-new-repo-name type="text" autocomplete="off" spellcheck="false" placeholder="my-project" required aria-describedby="newRepoNameCheck" class="nr-input" />
+                          </label>
+                        </div>
+                        <p id="newRepoNameCheck" data-new-repo-name-check role="status" aria-live="polite" class="nr-name-check"></p>
+                        <p class="nr-help">Short and memorable. Letters, numbers, <code>.</code> <code>-</code> <code>_</code>, up to 64 characters.</p>
+                      </div>
+
+                      <label data-new-repo-description-wrap class="nr-field">
+                        <span class="nr-label">Description <span class="nr-optional">(optional)</span></span>
+                        <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" class="nr-input"></textarea>
+                      </label>
                     </div>
-                    <p data-new-repo-migration-phase class="text-muted-foreground"></p>
+
+                    <div data-new-repo-visibility-wrap>
+                      <hr class="nr-rule" />
+                      <div class="nr-radios" role="radiogroup" aria-label="Visibility">
+                        <label class="nr-radio">
+                          <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="public" checked />
+                          <i data-lucide="book" class="h-6 w-6"></i>
+                          <span><span class="nr-title">Public</span><span class="nr-desc">Anyone can find, browse and clone it.</span></span>
+                        </label>
+                        <label class="nr-radio">
+                          <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="private" />
+                          <i data-lucide="lock" class="h-6 w-6"></i>
+                          <span><span class="nr-title">Private</span><span data-new-repo-private-desc class="nr-desc">Encrypted mirror, contents stay hidden.</span></span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div data-new-repo-hosted-options class="hidden">
+                      <hr class="nr-rule" />
+                      <div class="nr-block">
+                        <div data-new-repo-readme-wrap class="nr-field">
+                          <span class="nr-label">Initialize this repository with</span>
+                          <label class="nr-check">
+                            <input data-new-repo-readme type="checkbox" checked />
+                            <span><span class="nr-title">Add a README file</span><span class="nr-desc">A first commit, so you can clone straight away.</span></span>
+                          </label>
+                        </div>
+                        <div data-new-repo-init-wrap class="nr-two">
+                          <label class="nr-field">
+                            <span class="nr-label">.gitignore</span>
+                            <select data-new-repo-gitignore class="nr-input"><option value="">None</option></select>
+                          </label>
+                          <label class="nr-field">
+                            <span class="nr-label">License</span>
+                            <select data-new-repo-license class="nr-input"><option value="">None</option></select>
+                          </label>
+                        </div>
+                        <div data-new-repo-quota class="nr-meter"></div>
+                        <p data-new-repo-copies class="hidden nr-warn"></p>
+                      </div>
+                    </div>
+
+                    <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground" style="margin-top:16px"></p>
+                    <div data-new-repo-migration-status class="hidden nr-panel text-xs" role="status" aria-live="polite">
+                      <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span data-new-repo-setup-time class="text-foreground"></span>
+                        <span data-new-repo-transfer-time class="text-muted-foreground"></span>
+                      </div>
+                      <p data-new-repo-migration-phase class="text-muted-foreground"></p>
+                    </div>
                   </div>
                 </div>
 
@@ -4411,21 +4496,33 @@
                         <p class="text-sm text-muted-foreground"><span data-new-repo-push-repo class="font-mono text-foreground"></span></p>
                       </div>
                     </div>
-                    <p class="mt-4 text-sm leading-6 text-muted-foreground"><span data-platform-name>ForkMesh</span> hosts it <span data-new-repo-push-intro>and it stays empty until your first push. Run these in your project folder; git asks for the credential below.</span></p>
-                    <pre data-new-repo-push-commands class="nr-code mt-3"></pre>
-                    <div class="nr-two mt-4 text-xs">
-                      <label class="nr-field">
-                        <span class="nr-field-label">Username</span>
-                        <code data-new-repo-push-username class="nr-code select-all break-all" style="white-space:normal"></code>
-                      </label>
-                      <label class="nr-field">
-                        <span class="nr-field-label">Password</span>
-                        <code data-new-repo-push-password class="nr-code select-all break-all" style="white-space:normal"></code>
-                      </label>
-                    </div>
-                    <p class="nr-help mt-3">
-                      This credential belongs to the browser session you are signed in with, expires <span data-new-repo-push-expiry class="text-foreground"></span>, and is not stored by <span data-platform-name>ForkMesh</span>. Signing this session out revokes it. <span data-new-repo-push-visibility>Your repository is public; a private mirror is an owner-sealed archive only a ForkMesh node holding your key can publish.</span>
-                    </p>
+                    <p data-new-repo-push-where class="mt-4 text-sm leading-6 text-muted-foreground"></p>
+                    <ol class="nr-steps">
+                      <li><div>
+                        <span data-new-repo-push-clone-title class="nr-step-title">Clone it</span>
+                        <pre data-new-repo-push-commands class="nr-code"></pre>
+                      </div></li>
+                      <li><div>
+                        <span class="nr-step-title">When git asks, sign in with</span>
+                        <div class="nr-cred">
+                          <div class="nr-cred-field">
+                            <span class="nr-cred-label">Username</span>
+                            <span class="nr-cred-value"><code data-new-repo-push-username class="nr-code select-all"></code><button data-new-repo-push-copy-field="username" type="button" class="nr-copy-btn">Copy</button></span>
+                          </div>
+                          <div class="nr-cred-field">
+                            <span class="nr-cred-label">Password</span>
+                            <span class="nr-cred-value"><code data-new-repo-push-password class="nr-code select-all"></code><button data-new-repo-push-copy-field="password" type="button" class="nr-copy-btn">Copy</button></span>
+                          </div>
+                        </div>
+                        <p class="nr-help">Shown only once. It works until <span data-new-repo-push-expiry class="text-foreground"></span> or until you sign out of this browser, and <span data-platform-name>ForkMesh</span> does not store it. Get a new one any time in <a href="/dashboard/settings/ssh-keys">Settings › SSH keys › Push code over HTTPS</a>.</p>
+                      </div></li>
+                      <li><div>
+                        <span class="nr-step-title">Edit, commit and <code>git push</code></span>
+                        <p data-new-repo-push-visibility class="nr-help"></p>
+                      </div></li>
+                    </ol>
+                    <p data-new-repo-push-copies class="hidden nr-warn mt-4"></p>
+                    <p data-new-repo-push-issues role="status" aria-live="polite" class="hidden nr-help mt-3"></p>
                     <div class="mt-5 flex flex-wrap items-center gap-2">
                       <button data-new-repo-push-copy type="button" class="nr-btn nr-btn-ghost">
                         <i data-lucide="copy" class="h-3.5 w-3.5"></i>
