@@ -98,6 +98,21 @@ shows no chip. The mirror gateway's `.forkmesh/pulls` listing
 (`tools/mirror_gateway.py`) carries every committed review's
 `(reviewer, state)` in file order so the list can compute it.
 
+## People in the pull request list
+
+Each pull row stacks the avatars of everyone involved, latest first: whoever
+commented or reviewed last is the left face, drawn on top, and the author
+closes the stack unless they spoke since. Hovering the stack lists the names
+in that order. The same listing carries `pullPeople`, `{"<n>": [authorName, ...]}`:
+people are accounts, never the signing key in `author` (one person signs
+from several keys), so an event with no `authorName` adds no one. It is
+built in the same pass as `pullReviews` from every `NNNN-*.md` event whose
+type names a comment or review, latest file first with repeats dropped.
+Comment files are many, so `pullPeople` has its own size check: when they do
+not fit the review bounds the listing leaves `pullPeople` out (rows show the
+author alone) and still carries `pullReviews`. `renderPullRowPeople` in
+`06-repo-content.js` and `pull_people` in `repo_views.py` draw it.
+
 The chip is a summary, not the merge gate. On a protected branch only an
 owner's or admin's approval counts
 ([branch-protection.md](branch-protection.md#approvals)), so a pull approved

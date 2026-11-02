@@ -3166,6 +3166,10 @@
       && tree.pullReviews && typeof tree.pullReviews === "object"
       ? tree.pullReviews
       : null;
+    const pullPeople = config.dir === ".forkmesh/pulls"
+      && tree.pullPeople && typeof tree.pullPeople === "object"
+      ? tree.pullPeople
+      : null;
     const records = dirs.concat(branchOnlyDirs).map((entry) => {
       const number = Number(entry.name);
       const blob = blobs[recordPath(entry)];
@@ -3203,6 +3207,10 @@
         review: pullReviews && indexedNames.has(String(entry.name))
           ? pullListReviewState(pullReviews[String(entry.name)] || [], values.author || "",
             values.status || values.state || "open", pullListIsDraft(values))
+          : null,
+        people: pullPeople && indexedNames.has(String(entry.name))
+          && Array.isArray(pullPeople[String(entry.name)])
+          ? pullPeople[String(entry.name)]
           : null,
       };
     });
@@ -3272,6 +3280,22 @@
     if (!names.length) return "";
     const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
     return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
+  // Everyone on a pull, latest comment or review first, then its author if
+  // they have not spoken since. The first face sits on top of the stack.
+  function renderPullRowPeople(item) {
+    const names = [];
+    const seen = new Set();
+    for (const raw of [...(Array.isArray(item.people) ? item.people : []), item.author]) {
+      const name = String(raw || "").trim();
+      if (!name || name === "unknown" || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      names.push(name);
+    }
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-pull-row-people class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Latest first: ${shown.join(", ")}`)}">${names.map((name, index) => `<span class="relative rounded-full" style="z-index:${names.length - index}">${issueActorAvatarHtml(name, name, "h-5 w-5", false, false)}</span>`).join("")}</span>`;
   }
 
   function pullStateIconHtml(stateLabel, extra = "") {
@@ -3380,6 +3404,7 @@
           </span>
           <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
             ${item.wantsAgent ? '<i data-lucide="bot" class="h-4 w-4" title="Assigned to agent"></i>' : ""}
+            <span class="hidden justify-end sm:flex">${renderPullRowPeople(item)}</span>
           </span>`;
       const rowGrid = "grid-cols-[1rem_minmax(0,1fr)_auto]";
       if (item.unavailable) {

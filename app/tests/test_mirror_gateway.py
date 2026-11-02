@@ -1353,13 +1353,18 @@ def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
     (folder / "pull.md").write_text(
         "---\nnumber: 43\nstatus: open\nauthor: bob-key\n---\n",
         encoding="utf-8")
-    review = "---\ntype: review\nauthor: %s\nstate: %s\nsig: s\n---\n\nstate: approved\n"
+    review = ("---\ntype: review\nauthor: %s\nauthorName: carol\nstate: %s\n"
+              "sig: s\n---\n\nstate: approved\n")
     (folder / "0001-review.md").write_text(
         review % ("carol-key", "changes_requested"), encoding="utf-8")
     (folder / "0002-comment.md").write_text(
-        "---\ntype: comment\nauthor: dave-key\n---\n\nHi\n", encoding="utf-8")
+        "---\ntype: comment\nauthor: dave-key\nauthorName: dave\n---\n\nHi\n",
+        encoding="utf-8")
     (folder / "0003-review.md").write_text(
         review % ("carol-key", "approved"), encoding="utf-8")
+    # A key with no account name is never shown as a person.
+    (folder / "0003-comment.md").write_text(
+        "---\ntype: comment\nauthor: stray-key\n---\n\nHi\n", encoding="utf-8")
     (folder / "0004-review.md").write_text(
         "---\ntype: review\nauthor: \nstate: approved\n---\n", encoding="utf-8")
     run(["git", "add", ".forkmesh/pulls/43"], source)
@@ -1390,6 +1395,8 @@ def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
         ["carol-key", "changes_requested"], ["carol-key", "approved"]]
     assert set(listing["pullReviews"]) == {"43"}
     assert "pullReviews" not in folder_listing
+    assert listing["pullPeople"] == {"43": ["carol", "dave"]}
+    assert "pullPeople" not in folder_listing
 
 def _commit_at(source, when, message):
     env = dict(os.environ, GIT_AUTHOR_DATE="@%d +0000" % when,
