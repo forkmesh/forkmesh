@@ -2421,16 +2421,146 @@
     fillSelect($("[data-new-repo-license]"), hostedSettings?.licenseTemplates, {
       mit: "MIT", "bsd-3-clause": "BSD 3-Clause", isc: "ISC", unlicense: "Unlicense",
     });
+    renderNewRepoQuota();
+    renderNewRepoNodeStatus();
+    setNewRepoSource(newRepoSource());
+  }
+
+  function newRepoSizeLabel(bytes) {
+    const megabytes = Math.round(Number(bytes || 0) / 1048576);
+    if (megabytes >= 1024 && megabytes % 1024 === 0) return `${megabytes / 1024} GB`;
+    return `${megabytes} MB`;
+  }
+
+  function newRepoMoveGuideUrl() {
+    const path = "/docs/hosted-repositories/#moving-to-your-own-device";
+    return dashboardOnInstance() ? `https://forkmesh.com${path}` : path;
+  }
+
+  function serverCountLabel(count) {
+    return count === 1 ? "1 server" : `${count} servers`;
+  }
+
+  function newRepoCopiesWarning(count) {
+    return count === 1
+      ? `${escapeHtml(platformName())} runs on one server, so it keeps one copy of this repository. Keep your own clone as a backup, or <a href="${escapeHtml(newRepoMoveGuideUrl())}">move it to your own device</a>.`
+      : "";
+  }
+
+  function renderNewRepoQuota() {
+    const core = hostedCoreMode();
+    const limits = hostedSettings?.limits || {};
+    const perAccount = Number(limits.repositoriesPerAccount || 0);
+    const used = Number(hostedSettings?.used || 0);
+    const size = newRepoSizeLabel(limits.repositoryBytes);
+    const servers = Number(hostedSettings?.coreNodeCount || 0);
     const quota = $("[data-new-repo-quota]");
-    if (quota) {
-      const limits = hostedSettings?.limits || {};
-      const perAccount = Number(limits.repositoriesPerAccount || 0);
-      const megabytes = Math.round(Number(limits.repositoryBytes || 0) / 1048576);
+    if (quota && quota.classList.contains("nr-meter")) {
+      if (core && perAccount) {
+        const percent = Math.min(100, Math.round((used / perAccount) * 100));
+        quota.classList.toggle("nr-meter-high", used / perAccount >= 0.8);
+        quota.innerHTML = `<div class="nr-meter-bar" role="img" aria-label="${used} of ${perAccount} repositories used"><i style="width:${percent}%"></i></div>`
+          + `<div class="nr-meter-row"><span><b>${used} of ${perAccount}</b> repositories used</span>`
+          + `<span>Each up to <b>${escapeHtml(size)}</b></span>`
+          + `<a href="${escapeHtml(newRepoMoveGuideUrl())}" class="text-accent hover:underline">Need more?</a></div>`;
+      } else {
+        quota.textContent = "";
+      }
+    } else if (quota) {
       quota.textContent = core && perAccount
-        ? `${platformName()} hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
+        ? `You have used ${used} of your ${perAccount} repositories on ${platformName()}. Each one can be up to ${size}.`
         : "";
     }
-    setNewRepoSource(newRepoSource());
+    const meta = $("[data-new-repo-hosted-meta]");
+    if (meta) {
+      meta.textContent = core && perAccount
+        ? [servers ? serverCountLabel(servers) : "", `${used} of ${perAccount} used`, `up to ${size} each`].filter(Boolean).join(" · ")
+        : "";
+    }
+    const copies = $("[data-new-repo-copies]");
+    if (copies) {
+      const warning = core ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+  }
+
+  function renderNewRepoNodeStatus() {
+    const status = $("[data-new-repo-node-status]");
+    if (!status) return;
+    const nodes = Array.isArray(state.session?.nodes)
+      ? [...new Set(state.session.nodes.map((node) => String(node || "").trim()).filter(Boolean))]
+      : [];
+    status.textContent = nodes.length
+      ? `Linked: ${nodes.slice(0, 2).join(", ")}${nodes.length > 2 ? ` and ${nodes.length - 2} more` : ""}`
+      : "Desktop or phone app · no device linked yet";
+  }
+
+  function newRepoLocation() {
+    return $('[data-new-repo-location][aria-checked="true"]')?.dataset.newRepoLocation || "hosted";
+  }
+
+  function setNewRepoLocation(where) {
+    const buttons = $$("[data-new-repo-location]");
+    if (!buttons.length) return;
+    buttons.forEach((button) => {
+      const active = button.dataset.newRepoLocation === where;
+      button.setAttribute("aria-checked", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+    });
+    const node = where === "node";
+    $("[data-new-repo-node-guide]")?.classList.toggle("hidden", !node);
+    $("[data-new-repo-hosted-form]")?.classList.toggle("hidden", node);
+    $("[data-new-repo-submit]")?.classList.toggle("hidden", node);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !node && newRepoSource() !== "provider";
+    setNewRepoHint("");
+  }
+
+  function initialNewRepoLocation() {
+    const requested = new URLSearchParams(location.search).get("where") || "";
+    if (requested === "node" || requested === "hosted") return requested;
+    return Array.isArray(state.session?.nodes) && state.session.nodes.length ? "node" : "hosted";
+  }
+
+  function newRepoImportChoice() {
+    const code = $("[data-new-repo-import-code]");
+    const issues = $("[data-new-repo-import-issues]");
+    if (!code && !issues) return null;
+    return { code: code?.checked !== false, issues: Boolean(issues?.checked) };
+  }
+
+  function renderNewRepoImportChoice() {
+    const choice = newRepoImportChoice();
+    if (!choice) return;
+    $("[data-new-repo-provider-token-wrap]")?.classList.toggle("hidden", !choice.issues);
+    const issuesOnly = choice.issues && !choice.code;
+    $("[data-new-repo-name-row]")?.parentElement?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-description-wrap]")?.classList.toggle("hidden", issuesOnly);
+    $("[data-new-repo-visibility-wrap]")?.classList.toggle("hidden", issuesOnly);
+    const name = $("[data-new-repo-name]");
+    if (name) name.required = !issuesOnly;
+    renderNewRepoNameCheck();
+  }
+
+  function newRepoNameProblem(name) {
+    if (!name) return "";
+    if (name.length > 64) return "Use at most 64 characters.";
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) return "Use letters, numbers, dots, dashes, or underscores in the name.";
+    if (name.startsWith(".") || /\.git$/i.test(name)) return "A name can't start with a dot or end in .git.";
+    const owner = String($("[data-new-repo-owner]")?.value || state.session?.nodeName || "").toLowerCase();
+    const taken = (Array.isArray(state.repositories) ? state.repositories : []).some((repo) =>
+      String(repo?.name || "").toLowerCase() === name.toLowerCase()
+      && [String(repo?.owner || "").toLowerCase(), String(repoPublicOwner(repo) || "").toLowerCase()].includes(owner));
+    return taken ? `You already have a repository called ${name}.` : "";
+  }
+
+  function renderNewRepoNameCheck() {
+    const check = $("[data-new-repo-name-check]");
+    if (!check) return;
+    const field = $("[data-new-repo-name]");
+    const visible = field && !field.closest(".hidden");
+    check.textContent = visible ? newRepoNameProblem(String(field.value || "").trim()) : "";
   }
 
   function hostedImportAllowed(url) {
@@ -2463,10 +2593,15 @@
     // field visibility, hint, and submit label before the form is seen,
     // instead of waiting for the first click on a tab.
     setNewRepoSource(requestedNewRepoSource() || newRepoSource());
+    setNewRepoLocation(initialNewRepoLocation());
+    renderNewRepoNodeStatus();
     setNewRepoHint("");
     loadHostedSettings();
     $(`[data-new-repo-migration-status]`)?.classList.add("hidden");
-    window.setTimeout(() => $("[data-new-repo-name]")?.focus(), 0);
+    window.setTimeout(() => {
+      const name = $("[data-new-repo-name]");
+      if (name && !name.closest(".hidden")) name.focus();
+    }, 0);
     window.lucide?.createIcons();
   }
 
@@ -2512,7 +2647,7 @@
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
+    "A repository holds your project's files and history.";
 
   const NEW_REPO_BACKUP_GUIDE =
     `<a href="/docs/back-up-a-github-repository/" class="text-accent hover:underline">how to back up a GitHub repository</a>`;
@@ -2534,6 +2669,7 @@
   }
 
   function newRepoSubtitleFor(source) {
+    if ($("[data-new-repo-page]")) return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
     if (source === "empty") return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "remote" && hostedCoreMode()) {
@@ -2615,7 +2751,7 @@
     const name = $("[data-new-repo-name]");
     if (name) name.required = !provider;
     const submitLabel = $("[data-new-repo-submit-label]");
-    if (submitLabel) submitLabel.textContent = provider ? "Start resumable import" : "Create & mirror";
+    if (submitLabel) submitLabel.textContent = source === "empty" || source === "local" ? "Create repository" : "Import repository";
     const subtitle = $("[data-new-repo-subtitle]");
     if (subtitle) subtitle.textContent = newRepoSubtitleFor(source);
     // Switching tabs starts a different flow, so a previous run's steps panel
@@ -2630,7 +2766,6 @@
     // path or URL the flow never reads (issue #676).
     const empty = source === "empty";
     if (value) value.classList.toggle("hidden", empty);
-    if (submitLabel && empty) submitLabel.textContent = "Create empty repository";
     // A single hosted write node cannot hold a private repository (only a node
     // holding the account key can seal one). The Next core nodes can: they
     // serve it only to the owner and the organization's readers.
@@ -2642,7 +2777,7 @@
     if (privateOption) {
       privateOption.disabled = privateBlocked;
       const privateText = core && hostedHere
-        ? "Only you and your organization's readers can see and clone it."
+        ? "Only you and your organization's readers can see and clone it. The servers can read its contents."
         : "Encrypted mirror, contents stay hidden.";
       const privateDesc = $("[data-new-repo-private-desc]");
       if (privateDesc) privateDesc.textContent = privateText;
@@ -2656,14 +2791,17 @@
     const importing = source === "remote" && core;
     $("[data-new-repo-readme-wrap]")?.classList.toggle("hidden", importing);
     $("[data-new-repo-init-wrap]")?.classList.toggle("hidden", importing);
-    if (submitLabel && empty && core) submitLabel.textContent = "Create repository";
-    if (submitLabel && importing) submitLabel.textContent = "Import & host";
+    const importOptions = $("[data-new-repo-import-options]");
+    importOptions?.classList.toggle("hidden", source !== "remote");
     if (empty) {
       if (hint) {
         hint.textContent = core
           ? "Start empty and push with git over HTTPS."
           : "Start empty and push with git. It is public and stays empty until your first push.";
       }
+    } else if (importing && importOptions) {
+      if (value) value.placeholder = "https://github.com/owner/repo";
+      if (hint) hint.innerHTML = `Paste a link to a public repository on ${escapeHtml((hostedSettings.importHosts || []).join(", "))}. ${escapeHtml(platformName())} copies it once; later changes there are not brought over. A private repository needs your own device: clone it there and add the folder in the app.`;
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = `${escapeHtml(platformName())} makes a one-time copy of a public repository from ${escapeHtml((hostedSettings.importHosts || []).join(", "))} and hosts it on its core nodes. The copy is not updated when the original changes. Private repositories and other URLs need the ${escapeHtml(desktopBrand())}desktop app: see ${NEW_REPO_BACKUP_GUIDE}.`;
@@ -2677,7 +2815,10 @@
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.innerHTML = NEW_REPO_CLONE_HINT;
     }
+    if (source === "remote") renderNewRepoImportChoice();
+    else if (importOptions) $("[data-new-repo-name-row]")?.parentElement?.classList.remove("hidden");
     renderNewRepoVisibilityNote();
+    renderNewRepoNameCheck();
   }
 
   function setNewRepoHint(text, cls) {
@@ -2940,6 +3081,31 @@
             ? `on ${hosting.nodes?.length || 3} core nodes and it stays empty until your first push. Run these in your project folder; git asks for the credential below.`
             : "and it stays empty until your first push. Run these in your project folder; git asks for the credential below.";
     }
+    const servers = Number(hosting?.nodes?.length || hostedSettings?.coreNodeCount || 0);
+    const where = $("[data-new-repo-push-where]");
+    if (where) {
+      const stored = hosting?.mode === "core" && servers
+        ? `Stored on ${serverCountLabel(servers)} of ${platformName()}`
+        : `Hosted by ${platformName()}`;
+      where.textContent = hosting?.importing
+        ? `${stored}. The import is running now, so clone it once it finishes.`
+        : hosting?.initialized
+          ? `${stored}, with a first commit.`
+          : `${stored}. It stays empty until your first push.`;
+    }
+    const cloneTitle = $("[data-new-repo-push-clone-title]");
+    if (cloneTitle) {
+      cloneTitle.textContent = hosting?.initialized || hosting?.importing
+        ? "Clone it" : "Run these in your project folder";
+    }
+    const copies = $("[data-new-repo-push-copies]");
+    if (copies) {
+      const warning = hosting?.mode === "core" ? newRepoCopiesWarning(servers) : "";
+      copies.innerHTML = warning;
+      copies.classList.toggle("hidden", !warning);
+    }
+    $("[data-new-repo-push-issues]")?.classList.add("hidden");
+    $$("[data-new-repo-push-copy-field]").forEach((button) => { button.textContent = "Copy"; });
     const terms = $("[data-new-repo-push-visibility]");
     if (terms) {
       terms.textContent = repository?.visibility === "private"
@@ -2957,7 +3123,8 @@
     const expiry = $("[data-new-repo-push-expiry]");
     if (expiry) {
       expiry.textContent = push?.expiresAt
-        ? new Date(Number(push.expiresAt)).toLocaleString() : "soon";
+        ? new Date(Number(push.expiresAt)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+        : "soon";
     }
     const link = $("[data-new-repo-push-open]");
     if (link && repository) link.href = repoLinkUrl(repository);
@@ -3010,6 +3177,7 @@
       forgetDeletedRepository(body.repository);
       renderNewRepoPush(body.repository, body.push, body.hosting);
       await loadRepositories({ fresh: true });
+      return true;
     } catch (error) {
       const code = String(error?.message || "");
       if (code === "hosted_git_unavailable") {
@@ -3021,17 +3189,61 @@
           title: "Finish creating your repository",
           subtitle: "This relay hosts no ForkMesh git node, so the repository has to come from a node you run.",
         });
-        return;
+        return false;
       }
       setNewRepoHint(newRepoHostedErrorText(code), "bad");
     } finally {
       if (submit) submit.disabled = false;
     }
+    return false;
+  }
+
+  async function startNewRepoIssuesImport(sourceUrl, providerToken) {
+    const line = $("[data-new-repo-push-issues]");
+    const say = (text) => {
+      if (!line) return;
+      line.textContent = text;
+      line.classList.remove("hidden");
+    };
+    say("Importing issues and pull requests…");
+    try {
+      const response = await fetch("/api/repository-imports/migrations", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          sourceUrl,
+          providerToken,
+          mode: "import",
+          setupDurationMs: Math.max(0, Math.round(
+            (window.performance?.now?.() || Date.now()) - newRepoSetupStartedAt)),
+          sessionToken: state.session.sessionToken,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.migration) throw new Error(body.error || `HTTP ${response.status}`);
+      const finished = await advanceRepositoryMigration(body.migration, providerToken, (current) =>
+        say(`Importing issues and pull requests: ${current.processed || 0} items so far…`));
+      say(finished?.status === "completed"
+        ? "Issues and pull requests are imported. For now they are listed under External repositories."
+        : "The issues import paused at a checkpoint. Continue it from External repositories.");
+      await loadExternalRepositories({ fresh: true });
+    } catch (error) {
+      say(String(error?.message || "") === "provider_rate_limited"
+        ? "The provider's rate limit stopped the issues import. Try again later with only Issues and pull requests ticked."
+        : "The issues and pull requests could not be imported. Try again with only Issues and pull requests ticked.");
+    }
   }
 
   async function handleNewRepoSubmit() {
-    const source = newRepoSource();
+    if ($("[data-new-repo-location]") && newRepoLocation() === "node") return;
+    let source = newRepoSource();
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
+    const importChoice = source === "remote" ? newRepoImportChoice() : null;
+    if (importChoice && !importChoice.code && !importChoice.issues) {
+      setNewRepoHint("Tick Code, Issues and pull requests, or both.", "bad");
+      return;
+    }
+    if (importChoice?.issues && !importChoice.code) source = "provider";
     if (source === "provider") {
       if (!state.session?.sessionToken) {
         setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
@@ -3159,13 +3371,23 @@
       $("[data-new-repo-name]")?.focus();
       return;
     }
+    const nameProblem = $("[data-new-repo-name-check]") ? newRepoNameProblem(name) : "";
+    if (nameProblem) {
+      setNewRepoHint(nameProblem, "bad");
+      $("[data-new-repo-name]")?.focus();
+      return;
+    }
     if (source === "empty") {
       await createHostedRepository({ name, visibility, description, ...hostedCreateExtras() });
       return;
     }
     if (source === "remote" && hostedImportAllowed(sourceValue)) {
       const { organization } = hostedCreateExtras();
-      await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const providerToken = String($("[data-new-repo-provider-token]")?.value || "").trim();
+      const created = await createHostedRepository({ name, visibility, description, organization, importUrl: sourceValue });
+      const token = $("[data-new-repo-provider-token]");
+      if (token) token.value = "";
+      if (created && importChoice?.issues) void startNewRepoIssuesImport(sourceValue, providerToken);
       return;
     }
     if (!sourceValue) {

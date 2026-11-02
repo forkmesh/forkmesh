@@ -79,7 +79,7 @@ async function stubDashboard(page, apiHandler = null) {
   });
 }
 
-test("Create & mirror advances to a visible desktop handoff", async ({ page }) => {
+test("an import this relay cannot host advances to a visible desktop handoff", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 600 });
   await stubDashboard(page);
   await page.goto("/dashboard/repos");
@@ -87,16 +87,17 @@ test("Create & mirror advances to a visible desktop handoff", async ({ page }) =
   await page.getByRole("link", { name: "New repository" }).click();
   await expect(page).toHaveURL(/\/dashboard\/repos\/new$/);
   await expect(page.locator("[data-new-repo-submit-label]")).toHaveText(
-    "Create empty repository",
+    "Create repository",
   );
-  const cloneUrl = page.getByRole("button", { name: "Clone URL" });
+  await expect(page.locator("[data-new-repo-node-status]")).toContainText("Desktop or phone app");
+  const cloneUrl = page.getByRole("button", { name: "Import from a URL" });
   await cloneUrl.click();
   await expect(cloneUrl).toHaveAttribute("aria-pressed", "true");
   await page.locator("[data-new-repo-name]").fill("test-repo-for-playwright");
   await page.locator("[data-new-repo-source-value]").fill(
     "https://github.com/octocat/Hello-World.git",
   );
-  await page.getByRole("button", { name: "Create & mirror", exact: true }).click();
+  await page.getByRole("button", { name: "Import repository", exact: true }).click();
 
   await expect(page.locator("[data-new-repo-title]")).toHaveText(
     "Finish creating your repository",
@@ -215,18 +216,16 @@ test("provider setup starts a resumable transfer and clears its credential", asy
 
   await page.goto("/dashboard/repos/new");
   await expect(page.locator("[data-new-repo-submit-label]")).toHaveText(
-    "Create empty repository",
+    "Create repository",
   );
-  await page.getByRole("button", { name: "Import from GitHub, GitLab, Codeberg" }).click();
-  // Before anything starts, the tab states what an import produces, so the
-  // later receipt cannot be the first mention of it (issue #678).
-  await expect(page.locator("[data-new-repo-subtitle]")).toContainText(
-    "This does not copy the code");
-  await expect(page.locator("[data-new-repo-source-hint]")).toContainText(
-    "It does not copy the code and is not kept up to date, so it is not a backup.");
+  await expect(page.locator("[data-new-repo-node-status]")).toContainText("Desktop or phone app");
+  await page.getByRole("button", { name: "Import from a URL" }).click();
+  await page.locator("[data-new-repo-import-code]").uncheck();
+  await page.locator("[data-new-repo-import-issues]").check();
+  await expect(page.locator("[data-new-repo-name]")).toBeHidden();
   await page.locator("[data-new-repo-source-value]").fill("https://github.com/acme/widgets");
   await page.locator("[data-new-repo-provider-token]").fill(token);
-  await page.getByRole("button", { name: "Start resumable import" }).click();
+  await page.getByRole("button", { name: "Import repository" }).click();
 
   await expect(page.locator("[data-new-repo-hint]")).toContainText(
     "reached signed metadata completion");
@@ -278,8 +277,9 @@ test("home rail New reaches the new-repository flow", async ({ page }) => {
     "Create a new repository",
   );
   await expect(page.locator("[data-new-repo-submit-label]")).toHaveText(
-    "Create empty repository",
+    "Create repository",
   );
+  await expect(page.locator("[data-new-repo-node-status]")).toContainText("Desktop or phone app");
 
   await page.reload();
   await expect(page.locator("[data-new-repo-details]")).toBeVisible();
@@ -287,4 +287,76 @@ test("home rail New reaches the new-repository flow", async ({ page }) => {
   await page.goto("/dashboard/repos?new=1");
   await expect(page).toHaveURL(/\/dashboard\/repos\/new$/);
   await expect(page.locator("[data-new-repo-details]")).toBeVisible();
+});
+
+test("the page asks where the repository lives and explains the servers", async ({ page }) => {
+  await page.addInitScript((session) => {
+    localStorage.setItem("forkmesh.session", JSON.stringify(session));
+  }, SESSION);
+  await stubDashboard(page, (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === "/api/hosted-repositories" && request.method() === "GET") {
+      return {
+        body: {
+          ok: true, available: true, mode: "core", privateSupported: true,
+          initSupported: true, importSupported: true, importHosts: ["github.com"],
+          gitignoreTemplates: [], licenseTemplates: [], coreNodeCount: 1,
+          limits: { repositoriesPerAccount: 10, repositoryBytes: 1073741824 },
+          used: 1, organizations: [],
+        },
+      };
+    }
+    if (pathname === "/api/hosted-repositories" && request.method() === "POST") {
+      return {
+        status: 201,
+        body: {
+          ok: true,
+          repository: { owner: "alice", name: "demo", visibility: "public" },
+          push: {
+            commands: ["git clone https://example.test/alice/demo", "cd demo"],
+            username: "alice", password: "fmp1.fixture", expiresAt: Date.now() + 7 * 864e5,
+          },
+          hosting: { mode: "core", nodes: ["core-1"], initialized: true },
+        },
+      };
+    }
+    return null;
+  });
+  await page.goto("/dashboard/repos/new");
+  await expect(page.locator("[data-new-repo-node-status]")).toContainText("Desktop or phone app");
+
+  const device = page.getByRole("radio", { name: /Your own device/ });
+  const servers = page.getByRole("radio", { name: /ForkMesh servers/ });
+  await expect(servers).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("[data-new-repo-quota]")).toContainText("1 of 10 repositories used");
+  await expect(page.locator("[data-new-repo-quota]")).toContainText("Each up to 1 GB");
+  await expect(page.locator("[data-new-repo-copies]")).toContainText("keeps one copy");
+  await expect(page.locator("[data-new-repo-hosted-meta]")).toContainText("1 server");
+
+  await device.click();
+  await expect(device).toHaveAttribute("aria-checked", "true");
+  const guide = page.locator("[data-new-repo-node-guide]");
+  await expect(guide).toBeVisible();
+  await expect(guide).toContainText("Import folder…");
+  await expect(guide).toContainText("Import from Files");
+  await expect(page.locator("[data-new-repo-hosted-form]")).toBeHidden();
+  await expect(page.locator("[data-new-repo-submit]")).toBeHidden();
+
+  await servers.click();
+  await expect(page.locator("[data-new-repo-submit]")).toBeVisible();
+  await page.locator("[data-new-repo-name]").fill("bad name");
+  await expect(page.locator("[data-new-repo-name-check]")).toContainText("Use letters, numbers");
+  await page.locator("[data-new-repo-name]").fill("demo");
+  await expect(page.locator("[data-new-repo-name-check]")).toHaveText("");
+  await page.getByRole("button", { name: "Create repository", exact: true }).click();
+
+  const result = page.locator("[data-new-repo-push]");
+  await expect(result).toBeVisible();
+  await expect(page.locator("[data-new-repo-push-where]")).toHaveText(
+    "Stored on 1 server of ForkMesh, with a first commit.");
+  await expect(page.locator("[data-new-repo-push-copies]")).toContainText("keeps one copy");
+  await expect(result).toContainText("Shown only once");
+  await expect(result.getByRole("link", { name: /Push code over HTTPS/ })).toHaveAttribute(
+    "href", "/dashboard/settings/ssh-keys");
+  await expect(page.locator("[data-new-repo-push-copy-field]")).toHaveCount(2);
 });

@@ -60,6 +60,34 @@ ref transaction, then the same on every other core, each audited as
 push, so the cores wake and a push mirror with prune drops the branches on
 its next push, and updates the catalog's `branchCount`. Details: [branch ops](../app/branch-ops.md#deleting-branches).
 
+### The create page
+
+`/dashboard/repos/new` starts with **Where should it live?**: your own device
+(desktop or phone app, with the steps for each) or the instance's servers. It
+used to put every new repository on the servers without saying so, which hid
+the local-first model and told a user on a one-server instance that it "keeps
+a copy on every core node". The servers choice now shows the account's usage
+(`used` of `limits.repositoriesPerAccount`, the per-repository size) and the
+server count (`coreNodeCount` in `GET /api/hosted-repositories`), and warns
+when that count is 1. The device choice is preselected when the session has a
+linked node; `?where=node|hosted` overrides it.
+
+The servers form has two sources. **Empty** creates the repository as before.
+**Import from a URL** replaces the old Clone URL and "Import from GitHub,
+GitLab, Codeberg" tabs, which both took a GitHub link but copied different
+things: its **Code** box makes the one-time hosted import, and its **Issues and
+pull requests** box runs the metadata importer (`repository_imports.py`). With
+both ticked the metadata import starts after the repository is created and
+still lands under External repositories; attaching it to the hosted
+repository is a separate change. The Local folder tab is gone because a browser
+cannot read a path on the user's disk; the device choice covers it.
+
+The success page numbers the three steps (clone, sign in, push), puts copy
+buttons on the username and password, says when the password stops working and
+links to Settings › SSH keys › Push code over HTTPS for a new one. The name
+field checks the account's loaded repositories as you type, so a duplicate
+name is caught before the request.
+
 ## Design
 
 ```
