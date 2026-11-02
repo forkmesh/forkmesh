@@ -32,12 +32,16 @@ struct ShellDuoBars: ViewModifier {
         content.toolbar {
             if on {
                 if let onNewAgent {
+                    #if compiler(>=6.4)
                     if #available(iOS 27.0, *) {
                         ToolbarItem(placement: .topBarTrailing) { newAgent(onNewAgent) }
                             .visibilityPriority(.high)
                     } else {
                         ToolbarItem(placement: .topBarTrailing) { newAgent(onNewAgent) }
                     }
+                    #else
+                    ToolbarItem(placement: .topBarTrailing) { newAgent(onNewAgent) }
+                    #endif
                 }
                 if showsMore {
                     if #available(iOS 26.0, *) {
@@ -67,11 +71,15 @@ struct ShellDuoBars: ViewModifier {
 
 struct ShellDuoListBars: ViewModifier {
     func body(content: Content) -> some View {
+        #if compiler(>=6.4)
         if #available(iOS 27.1, *) {
             content.toolbarVerticalBehavior(.disabled)
         } else {
             content
         }
+        #else
+        content
+        #endif
     }
 }
 
@@ -79,6 +87,7 @@ struct ShellFoldReader: ViewModifier {
     @Binding var fold: CGRect?
 
     func body(content: Content) -> some View {
+        #if compiler(>=6.4)
         if #available(iOS 27.1, *) {
             content.onGeometryChange(for: CGRect?.self) { (proxy: GeometryProxy) -> CGRect? in
                 let frame: CGRect? = proxy.reservedRegions(kind: .division).first(where: \.isActive)?.frame
@@ -89,5 +98,8 @@ struct ShellFoldReader: ViewModifier {
         } else {
             content
         }
+        #else
+        content
+        #endif
     }
 }
