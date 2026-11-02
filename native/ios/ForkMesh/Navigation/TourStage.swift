@@ -21,7 +21,7 @@ struct TourStage: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                TourPhone { content }
+                TourPhone(fullBleed: scene == .system) { content }
             }
         }
         .accessibilityElement(children: .contain)
@@ -89,6 +89,7 @@ extension TourScene {
 
 struct TourPhone<Screen: View>: View {
     @Environment(\.fmPalette) private var fm
+    var fullBleed: Bool = false
     @ViewBuilder let screen: () -> Screen
 
     static var screenSize: CGSize { CGSize(width: 360, height: 500) }
@@ -102,10 +103,12 @@ struct TourPhone<Screen: View>: View {
             let radius: CGFloat = 50 * scale + TourPhone.bezel
             ZStack(alignment: .top) {
                 screen()
-                    .frame(width: TourPhone.screenSize.width, height: TourPhone.screenSize.height - 50, alignment: .top)
+                    .frame(
+                        width: TourPhone.screenSize.width,
+                        height: TourPhone.screenSize.height - (fullBleed ? 0 : 50), alignment: .top)
                     .clipped()
-                    .padding(.top, 38)
-                    .padding(.bottom, 12)
+                    .padding(.top, fullBleed ? 0 : 38)
+                    .padding(.bottom, fullBleed ? 0 : 12)
                     .background(fm.bgBase)
                     .scaleEffect(scale, anchor: .topLeading)
                     .frame(width: width - TourPhone.bezel * 2, height: height - TourPhone.bezel * 2, alignment: .topLeading)
@@ -270,9 +273,9 @@ struct TourBottomBar: View {
     var style: ShellBarStyle = ShellBarStyle()
 
     var body: some View {
-        ShellBarPreview(style: style, iconSize: iconSize, cellWidth: 50, cellHeight: 44)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
+        ShellBarPreview(style: style, iconSize: iconSize, cellWidth: 50, cellHeight: 44, plain: true)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 14)
             .contentShape(Rectangle())
             .accessibilityHidden(true)
     }

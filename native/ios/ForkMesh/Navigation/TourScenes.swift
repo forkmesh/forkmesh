@@ -895,14 +895,12 @@ struct TourSystemScene: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            LinearGradient(
-                colors: [fm.accent.opacity(0.85), Color.indigo.opacity(0.9), Color.black.opacity(0.85)],
-                startPoint: .topLeading, endPoint: .bottomTrailing)
+            TourLockWallpaper()
             VStack(spacing: 10) {
                 Text("9:41")
-                    .font(.system(size: 52, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.92))
-                    .padding(.top, 14)
+                    .font(.system(size: 56, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.95))
+                    .padding(.top, 56)
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles")
                     Text(approved ? "3 running" : "2 running · 1 needs you")
@@ -1024,6 +1022,21 @@ struct TourWave: View {
                         .frame(width: 6, height: max(6, 44 * TourWave.heights[at] * CGFloat(0.35 + wobble * 0.65)))
                 }
             }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+struct TourLockWallpaper: View {
+    var body: some View {
+        ZStack {
+            Color(fmARGB: 0xFF0B1220)
+            RadialGradient(
+                colors: [Color(fmARGB: 0xFF2F5FA8).opacity(0.9), Color(fmARGB: 0xFF0B1220).opacity(0)],
+                center: UnitPoint(x: 0.5, y: 0.05), startRadius: 0, endRadius: 360)
+            RadialGradient(
+                colors: [Color(fmARGB: 0xFF16324F).opacity(0.8), Color(fmARGB: 0xFF0B1220).opacity(0)],
+                center: UnitPoint(x: 0.85, y: 1), startRadius: 0, endRadius: 300)
         }
         .accessibilityHidden(true)
     }
