@@ -179,14 +179,23 @@ async def _contribution_activity_rows(
                     COALESCE(SUM(reviews), 0) AS reviews,
                     COALESCE(SUM(repositories), 0) AS repositories,
                     (SELECT COUNT(*) FROM owned_projects)
-                      AS repository_count
+                      AS repository_count,
+                    '' AS project_bi
                FROM combined_days
              UNION ALL
              SELECT 1 AS row_order, 'day' AS row_kind, day,
                     commits, issues, pulls, reviews, repositories,
-                    0 AS repository_count
+                    0 AS repository_count, '' AS project_bi
                FROM combined_days
-             ORDER BY row_order ASC, day ASC""",
+             UNION ALL
+             /* Per-project snapshot totals, so forge-recorded activity on
+                the same logical project is merged instead of doubled. */
+             SELECT 2 AS row_order, 'project' AS row_kind, '' AS day,
+                    SUM(commits) AS commits, SUM(issues) AS issues,
+                    SUM(pulls) AS pulls, SUM(reviews) AS reviews,
+                    0 AS repositories, 0 AS repository_count, project_bi
+               FROM selected_days GROUP BY project_bi
+             ORDER BY row_order ASC, day ASC, project_bi ASC""",
         subject_user_bi, from_value, to_value, subject_user_bi,
         subject_user_bi,
         from_value, to_value,

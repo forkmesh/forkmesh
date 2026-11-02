@@ -545,6 +545,12 @@ def test_dashboard_profile_contribution_renderer_uses_one_native_request():
     assert "md:hidden" in account_js
     assert "Loading verified contribution activity" in account_js
     assert "Contribution activity is unavailable" in account_js
+    # Forge-recorded web activity is named in the coverage note rather than
+    # silently mixed in, and the "missing collaboration" label narrows to
+    # what the forge cannot see.
+    assert "function profileContributionForgeNote" in account_js
+    assert "profileContributionForgeNote(coverage?.forge)" in account_js
+    assert "collaboration events outside hosted repositories" in account_js
 
     for stale in (
         "loadProfileContributionHistories",

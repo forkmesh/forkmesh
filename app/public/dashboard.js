@@ -10570,17 +10570,35 @@
       : range?.from;
     const missing = (Array.isArray(coverage?.missing) ? coverage.missing : [])
       .map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4);
+    const hasForge = Boolean(profileContributionCount(coverage?.forge?.repositories));
     const missingLabels = missing.map((item) => ({
       commits: "commit history",
-      collaboration: "collaboration events",
+      collaboration: hasForge ? "collaboration events outside hosted repositories" : "collaboration events",
       languages: "language footprint",
       history: "earlier history",
     })[item] || item);
+    const forgeNote = profileContributionForgeNote(coverage?.forge);
     if (coverage?.status === "partial") {
-      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}`;
+      return `Partial verified history from ${verifiedLabel || "the available sources"}${missingLabels.length ? `. Missing ${missingLabels.join(", ")}.` : "."}${forgeNote}`;
     }
-    if (coverage?.status === "unavailable") return "Verified contribution history is not available yet.";
-    return `Complete verified public history for ${range?.label || "this period"}.`;
+    if (coverage?.status === "unavailable") {
+      return forgeNote
+        ? `${forgeNote.trim()} Desktop-published contribution history is not available yet.`
+        : "Verified contribution history is not available yet.";
+    }
+    return `Complete verified public history for ${range?.label || "this period"}.${forgeNote}`;
+  }
+
+  function profileContributionForgeNote(forge) {
+    const repositories = profileContributionCount(forge?.repositories);
+    if (!repositories) return "";
+    const labels = { issues: "issues", pulls: "pull requests", reviews: "reviews" };
+    const kinds = (Array.isArray(forge?.kinds) ? forge.kinds : [])
+      .map((kind) => labels[kind]).filter(Boolean);
+    const what = kinds.length > 1
+      ? `${kinds.slice(0, -1).join(", ")} and ${kinds[kinds.length - 1]}`
+      : (kinds[0] || "collaboration");
+    return ` Includes ${what} recorded on ${formatCount(repositories)} public hosted repositor${repositories === 1 ? "y" : "ies"} in the last year.`;
   }
 
   function renderProfileContributionStatus(status, { hasData = false } = {}) {
