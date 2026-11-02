@@ -4482,7 +4482,6 @@ def test_stats_contributors_match_shortlog_and_extend_after_a_push(
                 for count, name in (row.strip().split("\t", 1) for row in rows)]
 
     def stats(target):
-        # Only commits reachable from a visible ref are served.
         subprocess.run(["git", "--git-dir", str(repository.git_dir), "update-ref",
                         "refs/heads/stats-walk", target], check=True)
         return repository.stats({"ref": "stats-walk"})
@@ -4504,8 +4503,6 @@ def test_stats_contributors_match_shortlog_and_extend_after_a_push(
     al = next(item for item in payload["contributors"] if item["name"] == "Al")
     assert al["commits"] == 3 and al["activityWeeks"][-1] == 3
 
-    # A tip that does not descend from the stored one (a force push) walks
-    # its whole history again.
     rewritten = _commit_as(repository.git_dir, tip, "Cy", "cy@example.com")
     payload = stats(rewritten)
     assert walks[-1] == ["log", rewritten]

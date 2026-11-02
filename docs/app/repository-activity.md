@@ -184,6 +184,16 @@ request:
   only new commits), issue records keyed by blob id and pull records keyed by
   folder tree id (a change re-reads only that record, through two
   `cat-file --batch` calls), and per-commit line counts (an LRU of 4,000).
+- The `stats` contributor table and its 52-week activity graph come from one
+  `git log --format=%aN%x1f%aE%x1f%ct` walk, streamed line by line
+  (`_git_lines`, one 64 KiB chunk in memory, killed at the process timeout).
+  `_contributor_history` keeps the result per repository keyed on the tip and
+  the `HEAD:.mailmap` blob (mailmap renames authors in every commit): a tip
+  that descends from the stored one walks only `stored..tip`, any other tip
+  walks the whole history again, and weekly counts older than the graph are
+  dropped. Rows are sorted the way `git shortlog -nse` sorts them. On a
+  64k-commit clone a cold answer went from 445 ms to 274 ms and the first
+  answer after a push from 446 ms to 52 ms.
 - Line counts use `git log --numstat --no-renames` with
   `core.bigFileThreshold=256k` (larger files count as changed files, not
   lines), at most 1,000 commits per window and 3 s of work per request. An

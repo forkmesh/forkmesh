@@ -3338,13 +3338,6 @@ def _git_lines(
     *,
     timeout: int = PROCESS_TIMEOUT_SECONDS,
 ) -> Iterable[bytes]:
-    """Yield a git command's output line by line.
-
-    A walk of a large history prints more than a single read should hold;
-    this keeps one 64 KiB chunk in memory at a time. A failure or timeout
-    raises ``GitError`` after the lines already yielded, so callers that
-    aggregate must discard a partial result.
-    """
     try:
         process = subprocess.Popen(
             _git_prefix(git_dir) + list(arguments),
@@ -3354,14 +3347,22 @@ def _git_lines(
         )
     except OSError as exc:
         raise GitError("git operation unavailable") from exc
-    deadline = time.monotonic() + timeout
+    timed_out = threading.Event()
+
+    def expire() -> None:
+        timed_out.set()
+        process.kill()
+
+    timer = threading.Timer(timeout, expire)
+    timer.daemon = True
+    timer.start()
     assert process.stdout is not None
     try:
         buffer = b""
         while True:
-            if time.monotonic() > deadline:
-                raise GitError("git operation timed out")
             chunk = process.stdout.read1(65536)
+            if timed_out.is_set():
+                raise GitError("git operation timed out")
             if not chunk:
                 break
             rows = (buffer + chunk).split(b"\n")
@@ -3369,11 +3370,12 @@ def _git_lines(
             yield from rows
         if buffer:
             yield buffer
-        if process.wait(timeout=max(1.0, deadline - time.monotonic())) != 0:
+        if process.wait() != 0:
+            if timed_out.is_set():
+                raise GitError("git operation timed out")
             raise GitError("git operation failed")
-    except subprocess.TimeoutExpired as exc:
-        raise GitError("git operation timed out") from exc
     finally:
+        timer.cancel()
         if process.poll() is None:
             process.kill()
             process.wait()
@@ -3381,7 +3383,6 @@ def _git_lines(
 
 
 def _history_week(seconds: int) -> int:
-    """Monday-based UTC week number (week 0 starts Monday 1970-01-05)."""
     return (seconds - 4 * 86400) // (7 * 86400)
 
 
@@ -5155,9 +5156,6 @@ class GitRepository:
         self._counts_lock = threading.Lock()
         self._counts_key: tuple[str, str, str] = ("", "", "")
         self._counts_value: dict[str, int] = {}
-        # Contributor history for stats, keyed on (tip, mailmap blob). It
-        # survives pushes: a new tip that descends from the stored one only
-        # walks the commits in between.
         self._history_lock = threading.Lock()
         self._history_key: tuple[str, str] = ("", "")
         self._history_counts: dict[tuple[str, str], int] = {}
@@ -7182,9 +7180,6 @@ class GitRepository:
             bucket = extensions.setdefault(extension, {"bytes": 0, "files": 0})
             bucket["bytes"] += size
             bucket["files"] += 1
-        # Counts cover the complete selected history; the tiny activity graph
-        # shows its last 52 weeks. Both come from one history walk, which a
-        # later tip extends instead of repeating (see _contributor_history).
         now = datetime.now(timezone.utc)
         this_week = datetime(
             now.year, now.month, now.day, tzinfo=timezone.utc
@@ -7194,7 +7189,6 @@ class GitRepository:
         counts, weeks = self._contributor_history(commit)
         contributor_avatars = self._contributor_avatars(commit)
         contributors = []
-        # git shortlog -nse order: most commits first, then "Name <email>".
         for (name, email), number in sorted(
             counts.items(),
             key=lambda item: (-item[1], f"{item[0][0]} <{item[0][1]}>"),
@@ -7238,15 +7232,6 @@ class GitRepository:
     def _contributor_history(
         self, commit: str
     ) -> tuple[dict[tuple[str, str], int], dict[str, dict[int, int]]]:
-        """Commits per mailmapped (name, email), and per identity and week.
-
-        Walking the whole history is the cost of a cold stats request
-        (seconds on a small node for ~60k commits), and every push used to
-        repeat it. A tip that descends from the stored one walks only
-        ``stored..tip``. Weekly counts older than the activity graph are
-        dropped. The mailmap blob is part of the key because it renames
-        authors in every commit.
-        """
         code, output = _run_git_status(
             self.git_dir,
             ["rev-parse", "-q", "--verify", "HEAD:.mailmap"],
