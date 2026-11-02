@@ -628,3 +628,26 @@ def test_visits_are_pruned_and_removed_with_the_survey():
     track(runtime, other, "view")
     asyncio.run(surveys.purge_org_data(runtime, "org:acme"))
     assert runtime.db.execute("SELECT COUNT(*) FROM survey_visits").fetchone()[0] == 0
+
+
+def test_otf_feedback_survey_creates_unchanged_and_takes_answers():
+    body = json.loads((REPO / "docs/finance/grants/otf-survey.json").read_text(encoding="utf-8"))
+    runtime = Runtime()
+    response = call(runtime.use("POST", body=body), "/api/surveys/acme/items")
+    assert response["status"] == 201, response
+    survey = response["data"]["survey"]
+    assert survey["title"] == body["title"] and survey["description"] == body["description"]
+    assert survey["thankYou"] == body["thankYou"]
+    assert survey["settings"] == surveys.DEFAULT_SETTINGS
+    expected = [{"help": "", "required": False, "options": [], "scale": 0, **question}
+                for question in body["questions"]]
+    assert survey["questions"] == expected
+    assert [question["id"] for question in expected] == ["%08x" % (0x0f000000 + n) for n in range(1, 28)]
+    assert [question["id"] for question in expected if question["required"]] == ["0f000001"]
+    survey = publish(runtime, survey)
+    refused = submit(runtime, survey, {"0f000007": 4})
+    assert refused["data"]["error"] == "answer_required"
+    answered = submit(runtime, survey, {
+        "0f000001": expected[0]["options"][0], "0f000003": expected[2]["options"][:2],
+        "0f000007": 5, "0f00001b": "Mirrors please."})
+    assert answered["status"] == 201, answered

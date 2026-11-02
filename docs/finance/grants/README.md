@@ -10,6 +10,7 @@ application asks for, and a one-click ChatGPT draft for each. Researched on
 | [ranked.md](ranked.md) | The ranked list: a summary table, then one section per grant |
 | [forkmesh-grants.csv](forkmesh-grants.csv) | The same list as a CRM import for the **Grants** pipeline |
 | `grants.json` | The source they are built from (`tools/grants_build.py`), with the CRM's bundled copy of the CSV |
+| [otf-survey.md](otf-survey.md) | The survey that gathers evidence for the OTF proposal, and how to send it |
 
 ## Apply in three clicks
 
