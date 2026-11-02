@@ -1,7 +1,7 @@
 {
   "title": "Keeping internet freedom code and releases reachable",
   "description": "ForkMesh keeps Git repositories, releases and downloads reachable when a host is blocked or a project is taken down, using signed, integrity-checked mirrors run by independent hosts. We are applying to the Open Technology Fund and want to build what developers of internet freedom tools actually need, so we are asking the people who build and run them.\n\nIt takes about 10 minutes. Only the first question is required; skip anything you prefer not to answer.\n\nYou do not need to name yourself, your project or your country. Regions are enough. Answers are stored sealed, only the ForkMesh team reads them, and we publish only anonymized summaries.",
-  "thankYou": "Thank you. Your answers shape what we build and what we ask the Open Technology Fund to fund. If you left a way to reach you, we will follow up within a week. Questions: hello@forkmesh.com.",
+  "thankYou": "Thank you. Your answers shape what we build and what we ask the Open Technology Fund to fund. If you left a way to reach you, we will follow up within a week. Questions: founders@forkmesh.com.",
   "settings": {
     "oneResponsePerPerson": false,
     "opensAt": 0,
