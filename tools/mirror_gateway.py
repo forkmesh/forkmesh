@@ -3332,6 +3332,59 @@ def _run_git_status(
     return completed.returncode, completed.stdout
 
 
+def _git_lines(
+    git_dir: Path,
+    arguments: Iterable[str],
+    *,
+    timeout: int = PROCESS_TIMEOUT_SECONDS,
+) -> Iterable[bytes]:
+    """Yield a git command's output line by line.
+
+    A walk of a large history prints more than a single read should hold;
+    this keeps one 64 KiB chunk in memory at a time. A failure or timeout
+    raises ``GitError`` after the lines already yielded, so callers that
+    aggregate must discard a partial result.
+    """
+    try:
+        process = subprocess.Popen(
+            _git_prefix(git_dir) + list(arguments),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=_git_environment(),
+        )
+    except OSError as exc:
+        raise GitError("git operation unavailable") from exc
+    deadline = time.monotonic() + timeout
+    assert process.stdout is not None
+    try:
+        buffer = b""
+        while True:
+            if time.monotonic() > deadline:
+                raise GitError("git operation timed out")
+            chunk = process.stdout.read1(65536)
+            if not chunk:
+                break
+            rows = (buffer + chunk).split(b"\n")
+            buffer = rows.pop()
+            yield from rows
+        if buffer:
+            yield buffer
+        if process.wait(timeout=max(1.0, deadline - time.monotonic())) != 0:
+            raise GitError("git operation failed")
+    except subprocess.TimeoutExpired as exc:
+        raise GitError("git operation timed out") from exc
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        process.stdout.close()
+
+
+def _history_week(seconds: int) -> int:
+    """Monday-based UTC week number (week 0 starts Monday 1970-01-05)."""
+    return (seconds - 4 * 86400) // (7 * 86400)
+
+
 def refs_canonical(git_dir: Path) -> str:
     output = _run_git(
         git_dir,
@@ -5102,6 +5155,13 @@ class GitRepository:
         self._counts_lock = threading.Lock()
         self._counts_key: tuple[str, str, str] = ("", "", "")
         self._counts_value: dict[str, int] = {}
+        # Contributor history for stats, keyed on (tip, mailmap blob). It
+        # survives pushes: a new tip that descends from the stored one only
+        # walks the commits in between.
+        self._history_lock = threading.Lock()
+        self._history_key: tuple[str, str] = ("", "")
+        self._history_counts: dict[tuple[str, str], int] = {}
+        self._history_weeks: dict[str, dict[int, int]] = {}
         self._deleted_pulls_key = ""
         self._deleted_pulls_value: dict[str, int] = {}
         self._pull_reviews_lock = threading.Lock()
@@ -7122,65 +7182,33 @@ class GitRepository:
             bucket = extensions.setdefault(extension, {"bytes": 0, "files": 0})
             bucket["bytes"] += size
             bucket["files"] += 1
-        shortlog = _run_git(
-            self.git_dir,
-            ["shortlog", "-nse", commit],
-            max_output=2 * 1024 * 1024,
-        )
-        contributor_avatars = self._contributor_avatars(commit)
-        contributors = []
-        for row in shortlog.decode("utf-8", "replace").splitlines():
-            match = re.match(r"^\s*([0-9]+)\s+(.+?)(?:\s+<([^>]*)>)?\s*$", row)
-            if match:
-                name = match.group(2)
-                contributor = {
-                    "name": name,
-                    "commits": int(match.group(1)),
-                    "_identity": (
-                        (match.group(3) or name).strip().casefold()
-                    ),
-                }
-                avatar = contributor_avatars.get(name.strip().casefold(), "") \
-                    or _github_noreply_avatar(match.group(3) or "")
-                if avatar:
-                    contributor["avatarUrl"] = avatar
-                contributors.append(contributor)
-
-        # Keep the response compact while still giving the Insights table a
-        # useful, shared-scale view of recent work. Counts come from shortlog
-        # across the complete selected history; only the tiny activity graph is
-        # bounded to 52 weeks and 50k commits (the same safety ceiling as the
-        # native Insights view).
+        # Counts cover the complete selected history; the tiny activity graph
+        # shows its last 52 weeks. Both come from one history walk, which a
+        # later tip extends instead of repeating (see _contributor_history).
         now = datetime.now(timezone.utc)
         this_week = datetime(
             now.year, now.month, now.day, tzinfo=timezone.utc
         ) - timedelta(days=now.weekday())
         activity_start = this_week - timedelta(weeks=51)
-        activity_by_identity: dict[str, list[int]] = {}
-        activity_log = _run_git(
-            self.git_dir,
-            [
-                "log", "-n", "50000",
-                f"--since=@{int(activity_start.timestamp())}",
-                "--format=%aN%x1f%aE%x1f%ct", commit,
-            ],
-            max_output=MAX_JSON_OUTPUT,
-        )
-        for row in activity_log.decode("utf-8", "replace").splitlines():
-            fields = row.split("\x1f", 2)
-            if len(fields) != 3:
-                continue
-            identity = (fields[1] or fields[0]).strip().casefold()
-            try:
-                timestamp = int(fields[2])
-            except ValueError:
-                continue
-            bucket = int(
-                (timestamp - int(activity_start.timestamp())) // (7 * 86400)
-            )
-            if 0 <= bucket < 52:
-                series = activity_by_identity.setdefault(identity, [0] * 52)
-                series[bucket] += 1
+        first_week = _history_week(int(activity_start.timestamp()))
+        counts, weeks = self._contributor_history(commit)
+        contributor_avatars = self._contributor_avatars(commit)
+        contributors = []
+        # git shortlog -nse order: most commits first, then "Name <email>".
+        for (name, email), number in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], f"{item[0][0]} <{item[0][1]}>"),
+        ):
+            contributor = {
+                "name": name,
+                "commits": number,
+                "_identity": (email or name).strip().casefold(),
+            }
+            avatar = contributor_avatars.get(name.strip().casefold(), "") \
+                or _github_noreply_avatar(email)
+            if avatar:
+                contributor["avatarUrl"] = avatar
+            contributors.append(contributor)
 
         contributor_count = len(contributors)
         commit_count = sum(item["commits"] for item in contributors)
@@ -7189,9 +7217,10 @@ class GitRepository:
         # than risking an unbounded public JSON response.
         returned_contributors = contributors[:500]
         for contributor in returned_contributors:
-            contributor["activityWeeks"] = activity_by_identity.get(
-                contributor.pop("_identity"), [0] * 52
-            )
+            series = weeks.get(contributor.pop("_identity"), {})
+            contributor["activityWeeks"] = [
+                series.get(first_week + offset, 0) for offset in range(52)
+            ]
         return {
             "ok": True,
             "commit": commit,
@@ -7205,6 +7234,81 @@ class GitRepository:
             "activityStart": activity_start.isoformat(),
             "counts": self._root_collaboration_counts(commit),
         }
+
+    def _contributor_history(
+        self, commit: str
+    ) -> tuple[dict[tuple[str, str], int], dict[str, dict[int, int]]]:
+        """Commits per mailmapped (name, email), and per identity and week.
+
+        Walking the whole history is the cost of a cold stats request
+        (seconds on a small node for ~60k commits), and every push used to
+        repeat it. A tip that descends from the stored one walks only
+        ``stored..tip``. Weekly counts older than the activity graph are
+        dropped. The mailmap blob is part of the key because it renames
+        authors in every commit.
+        """
+        code, output = _run_git_status(
+            self.git_dir,
+            ["rev-parse", "-q", "--verify", "HEAD:.mailmap"],
+            max_output=1024,
+            allowed_codes=(0, 1, 128),
+        )
+        mailmap = output.decode("ascii", "replace").strip() if code == 0 else ""
+        with self._history_lock:
+            stored, stored_mailmap = self._history_key
+            if (stored, stored_mailmap) == (commit, mailmap):
+                return self._history_counts, self._history_weeks
+            span = [commit]
+            counts: dict[tuple[str, str], int] = {}
+            weeks: dict[str, dict[int, int]] = {}
+            if stored and stored_mailmap == mailmap:
+                try:
+                    descends, _ = _run_git_status(
+                        self.git_dir,
+                        ["merge-base", "--is-ancestor", stored, commit],
+                        max_output=0,
+                        allowed_codes=(0, 1),
+                    )
+                except GitError:
+                    descends = 1
+                if descends == 0:
+                    span = [commit, "^" + stored]
+                    counts = dict(self._history_counts)
+                    weeks = {
+                        identity: dict(series)
+                        for identity, series in self._history_weeks.items()
+                    }
+            oldest_week = _history_week(int(time.time())) - 52
+            for raw in _git_lines(
+                self.git_dir,
+                ["log", "--format=%aN%x1f%aE%x1f%ct", *span, "--"],
+            ):
+                fields = raw.decode("utf-8", "replace").split("\x1f", 2)
+                if len(fields) != 3:
+                    continue
+                name, email = fields[0].strip(), fields[1].strip()
+                counts[(name, email)] = counts.get((name, email), 0) + 1
+                try:
+                    week = _history_week(int(fields[2]))
+                except ValueError:
+                    continue
+                if week >= oldest_week:
+                    series = weeks.setdefault(
+                        (email or name).casefold(), {})
+                    series[week] = series.get(week, 0) + 1
+            for identity in list(weeks):
+                series = {
+                    week: number for week, number in weeks[identity].items()
+                    if week >= oldest_week
+                }
+                if series:
+                    weeks[identity] = series
+                else:
+                    del weeks[identity]
+            self._history_key = (commit, mailmap)
+            self._history_counts = counts
+            self._history_weeks = weeks
+            return counts, weeks
 
     def _contributor_avatars(self, commit: str) -> dict[str, str]:
         avatars: dict[str, str] = {}
@@ -11936,7 +12040,7 @@ class GatewayApplication:
         ``prewarm=False`` returns as soon as the swap is complete. The live
         server uses it so the daemon's acknowledgement and every request
         waiting behind the swap are not held for the full metadata warmup
-        (stats/sizes walk every blob and shortlog walks all history, which
+        (stats/sizes walk every blob and stats walks all history once, which
         takes many seconds on a small node serving a large repository); the
         server warms the new generation in the background afterwards.
         """
