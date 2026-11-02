@@ -44,9 +44,7 @@ public final class LocalReposSectionModel {
         "Creates README.md and an initial commit on \(defaultBranch). Stays on this device until you publish it."
     }
 
-    public static let emptyMessage =
-        "No local repositories yet. Create one or import a folder from "
-        + "Files — everything stays on this phone until you publish."
+    public static let emptyMessage = "None yet. They stay on this device until you publish."
     public static let createHint =
         "Creates README.md and an initial commit on main. Stays on this device until you publish it."
 
