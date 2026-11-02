@@ -65,7 +65,7 @@ struct ChatChannelSidebar: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if onSearch != nil || onCompose != nil || onClose != nil {
-                    jumpBar.padding(.bottom, FmSpace.x3)
+                    jumpBar.genieKeepsClear().padding(.bottom, FmSpace.x3)
                 }
                 recentSection(directRows, people: people, online: memberGroups.filter(\.online).count).padding(.bottom, FmSpace.x4)
                 if !hub.workspace.starred.isEmpty {
@@ -92,8 +92,12 @@ struct ChatChannelSidebar: View {
                 }
                 directMessages(directRows)
                 if !memberGroups.isEmpty {
-                    sectionTitle("People", count: memberGroups.count)
-                        .padding(.top, FmSpace.x4)
+                    sectionTitle("People", count: memberGroups.count) {
+                        if hub.recentConversations(limit: ChatChannelSidebar.recentLimit, directRows: directRows).isEmpty {
+                            onlineButton(memberGroups.filter(\.online).count)
+                        }
+                    }
+                    .padding(.top, FmSpace.x4)
                     card {
                         ForEach(memberGroups) { (group: MemberGroup) in
                             ChatMemberRow(
@@ -277,7 +281,6 @@ struct ChatChannelSidebar: View {
             .padding(FmSpace.x1)
             .background(
                 FmRoundedShape(radius: FmRadius.lg).fill(cardFill)
-                    .shadow(color: Color.black.opacity(fm.dark ? 0 : 0.05), radius: 5, y: 2)
             )
             .overlay(FmRoundedShape(radius: FmRadius.lg).stroke(fm.border.opacity(fm.wallpaper ? 0.35 : 0.6), lineWidth: 0.5))
     }
@@ -287,16 +290,14 @@ struct ChatChannelSidebar: View {
     }
 
     private func sectionTitle<Trailing: View>(_ title: String, count: Int, @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(spacing: FmSpace.x2) {
-            Text(title.uppercased())
-                .fmText(.labelMedium, color: fm.textSecondary, tracking: 0.6)
+        HStack(alignment: .firstTextBaseline, spacing: FmSpace.x1 + 2) {
+            Text(title)
+                .fmText(.labelLarge, color: fm.textSecondary)
                 .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
             if count > 0 {
                 Text("\(count)")
-                    .fmText(.labelSmall, color: fm.textTertiary, tabular: true)
-                    .padding(.horizontal, 7)
-                    .frame(minHeight: 18)
-                    .background(Capsule().fill(fm.textPrimary.opacity(0.08)))
+                    .fmText(.bodyLarge, color: fm.textTertiary, height: FmType.leadingTight, tabular: true)
             }
             Spacer(minLength: 0)
             trailing()
@@ -309,8 +310,8 @@ struct ChatChannelSidebar: View {
         _ directRows: [ChatDirectRow], people: [String: ChatDirectRow], online: Int
     ) -> some View {
         let recent: [String] = hub.recentConversations(limit: ChatChannelSidebar.recentLimit, directRows: directRows)
-        sectionTitle("Recent", count: 0) { onlineButton(online) }
         if !recent.isEmpty {
+            sectionTitle("Recent", count: 0) { onlineButton(online) }
             card {
                 ForEach(recent, id: \.self) { (conversation: String) in
                     if ChatHub.isPersonConversation(conversation) || conversation == meshConversation {
@@ -407,6 +408,10 @@ struct ChatChannelSidebar: View {
                         conversationTile(row.conversation, direct: row)
                     }
                 }
+            } else {
+                Text("No messages yet. Tap + to start one.")
+                    .fmText(.bodyMedium, color: fm.textTertiary)
+                    .padding(.horizontal, FmSpace.x2)
             }
         }
     }
@@ -809,7 +814,7 @@ struct ChatMemberRow: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
                 Text(group.isSelf ? "\(group.name) (you)" : group.name)
-                    .fmText(.bodyLarge, color: selected ? fm.textPrimary : fm.textSecondary,
+                    .fmText(.bodyLarge, color: fm.textPrimary,
                             weight: selected ? FmType.emphasis : FmType.regular)
                     .lineLimit(1)
                 UserStatusEmoji(status: group.userStatus, size: FmType.body)
