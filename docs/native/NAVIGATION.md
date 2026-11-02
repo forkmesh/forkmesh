@@ -1234,7 +1234,9 @@ left, the detail on the right.
 - **Build.** Until the app is built with Xcode 27 (the iOS 27 SDK; the office
   Mac has Xcode 26.6), iOS runs it on the Duo in compatibility mode and the
   layout above does not show. Edge-to-edge and the system's vertical bars need
-  the iOS 27.1 SDK.
+  the iOS 27.1 SDK. Their calls in `ShellDuoColumn.swift` sit under
+  `#if compiler(>=6.4)` as well as `#available`, because Xcode 26 cannot compile
+  an API its SDK lacks.
 - **App Store sizes.** 2007 × 2853 (or 2853 × 2007) for the inner display,
   1398 × 2034 (or 2034 × 1398) for the cover screen. Xcode 26 has no Duo
   simulator; Duo-sized simulator types letterbox third-party apps on the iOS
