@@ -39,7 +39,7 @@ public enum PerformanceReport {
             Part("Stalls by time since shown", eventGroups(events.filter(\.isStall), lastSeen: timeZone, key: stallMoment), rank: 8),
             Part("Slow operations by name", eventGroups(events.filter { !$0.isStall }), rank: 8),
             Part("Main-actor work during stalls", stallSections(events), rank: 9),
-            Part("Main thread during stalls (leaf images < app frames)", mainStacks(events), rank: 9),
+            Part("Main thread during stalls (leaf images < app frames)", mainStacks(events), rank: 9, keep: 1 + topRows),
             Part("In flight or finished during stalls", stallCulprits(events), rank: 7),
             Part("HTTP endpoints, last \(minutes) min", endpoints(telemetry.log, now), rank: 6),
             Part("MetricKit", metricKitLines(metricKit), rank: 8),
@@ -61,13 +61,15 @@ public enum PerformanceReport {
         var lines: [String]
         let rank: Int
         let keepsNewest: Bool
+        let keep: Int
         var trimmed = 0
 
-        init(_ title: String, _ body: String, rank: Int, keepsNewest: Bool = false) {
+        init(_ title: String, _ body: String, rank: Int, keepsNewest: Bool = false, keep: Int = 0) {
             self.title = title
             self.lines = body.isEmpty ? [] : body.components(separatedBy: "\n")
             self.rank = rank
             self.keepsNewest = keepsNewest
+            self.keep = keep
         }
 
         mutating func dropOne() {
@@ -96,7 +98,8 @@ public enum PerformanceReport {
         let order = parts.indices.filter { parts[$0].rank != headerRank }.sorted { parts[$0].rank < parts[$1].rank }
         for floor in [3, 1, 0] {
             for index in order {
-                while text.unicodeScalars.count > limit && parts[index].lines.count > floor {
+                let least = floor == 0 ? 0 : max(floor, parts[index].keep)
+                while text.unicodeScalars.count > limit && parts[index].lines.count > least {
                     parts[index].dropOne()
                     text = render(parts)
                 }

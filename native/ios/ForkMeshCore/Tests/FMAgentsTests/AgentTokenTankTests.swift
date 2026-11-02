@@ -113,4 +113,36 @@ final class AgentTokenTankTests: XCTestCase {
         run(tank, 1)
         XCTAssertEqual(tank.grains, 0)
     }
+
+    func testThePairAsksForTheAccelerometerOnlyWhileGrainsAreInATank() {
+        let pair = AgentTokenTanks(width: 60, height: 12)
+        XCTAssertFalse(pair.wantsMotion)
+        pair.output.pour(tokens: 500, scale: 1_000)
+        XCTAssertTrue(pair.wantsMotion)
+        for frame in 0...(30 * 200) {
+            pair.advance(to: Date(timeIntervalSinceReferenceDate: Double(frame) * AgentTokenTanks.frameSeconds))
+        }
+        XCTAssertTrue(pair.idle)
+        XCTAssertFalse(pair.wantsMotion)
+    }
+
+    func testThirtyFramesASecondRunTheSameSimulationAsTheDisplayRate() {
+        XCTAssertEqual(AgentTokenTanks.frameSeconds, 1.0 / 30, accuracy: 1e-12)
+        let paced = AgentTokenTanks(width: 60, height: 12)
+        let fast = AgentTokenTanks(width: 60, height: 12)
+        for pair in [paced, fast] {
+            pair.input.drop(300)
+            pair.output.drop(100)
+            pair.tilt(x: 0.4, y: 0.1)
+        }
+        for frame in 0...(32 * 3) { paced.advance(to: Date(timeIntervalSinceReferenceDate: Double(frame) / 32)) }
+        for frame in 0...(128 * 3) { fast.advance(to: Date(timeIntervalSinceReferenceDate: Double(frame) / 128)) }
+        XCTAssertEqual(paced.input.stepsTaken, 180)
+        XCTAssertEqual(fast.input.stepsTaken, 180)
+        for (a, b) in [(paced.input, fast.input), (paced.output, fast.output)] {
+            XCTAssertEqual(a.grains, b.grains)
+            XCTAssertEqual(Array(a.xs.prefix(a.grains)), Array(b.xs.prefix(b.grains)))
+            XCTAssertEqual(Array(a.ys.prefix(a.grains)), Array(b.ys.prefix(b.grains)))
+        }
+    }
 }

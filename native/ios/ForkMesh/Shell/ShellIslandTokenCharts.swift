@@ -1,4 +1,5 @@
 import CoreMotion
+import FMAccount
 import FMAgents
 import FMBase
 import FMDesktopRemote
@@ -30,12 +31,15 @@ struct ShellIslandTokenCharts: View {
     private var chartWidth: CGFloat { max(0, (width - ShellIslandTokenCharts.gap) / 2) }
 
     var body: some View {
-        TimelineView(.animation(paused: resting)) { (timeline: TimelineViewDefaultContext) in
+        TimelineView(.animation(minimumInterval: AgentTokenTanks.frameSeconds, paused: resting)) {
+            (timeline: TimelineViewDefaultContext) in
             Canvas { (context: inout GraphicsContext, _: CGSize) in
                 guard let tanks else { return }
-                tanks.advance(to: timeline.date)
-                draw(tanks.input, tone: fm.accent, left: 0, in: &context)
-                draw(tanks.output, tone: fm.success, left: chartWidth + ShellIslandTokenCharts.gap, in: &context)
+                PerformanceMonitorService.section("shell.tokenTanks") {
+                    tanks.pair.advance(to: timeline.date)
+                    draw(tanks.pair.input, tone: fm.accent, left: 0, in: &context)
+                    draw(tanks.pair.output, tone: fm.success, left: chartWidth + ShellIslandTokenCharts.gap, in: &context)
+                }
             }
         }
         .frame(width: width, height: height)
@@ -46,7 +50,6 @@ struct ShellIslandTokenCharts: View {
         .task {
             let tanks = self.tanks ?? ShellTokenTanks(width: Double(chartWidth), height: Double(height))
             self.tanks = tanks
-            tanks.startTilt()
             tick(tanks)
             while !Task.isCancelled {
                 try? await Task.sleep(for: ShellIslandTokenCharts.every)
@@ -59,13 +62,14 @@ struct ShellIslandTokenCharts: View {
     private func tick(_ tanks: ShellTokenTanks) {
         let desktop = vitals?.watching == true ? vitals?.tokenTotals ?? [] : []
         series.tick(AgentTokenSeries.totals(desktop: desktop, rows: HostsFeature.agents?.rows ?? []))
-        tanks.input.pour(
+        tanks.pair.input.pour(
             tokens: series.input.last ?? 0,
             scale: AgentTokenTank.scale(series.input, floor: ShellIslandTokenCharts.inputFloor))
-        tanks.output.pour(
+        tanks.pair.output.pour(
             tokens: series.output.last ?? 0,
             scale: AgentTokenTank.scale(series.output, floor: ShellIslandTokenCharts.outputFloor))
-        let idle = tanks.idle
+        tanks.syncTilt()
+        let idle = tanks.pair.idle
         if resting != idle { resting = idle }
     }
 
@@ -79,11 +83,14 @@ struct ShellIslandTokenCharts: View {
         let columns = Int(tank.width) - 1
         let rows = Int(tank.height) - 1
         let opacities = ShellIslandTokenCharts.shadeOpacities
+        let xs = tank.xs
+        let ys = tank.ys
+        let shades = tank.shades
         var paths = [Path](repeating: Path(), count: opacities.count)
         for i in 0..<tank.grains {
-            let x = min(max(Int(tank.xs[i]), 0), columns)
-            let y = min(max(Int(tank.ys[i]), 0), rows)
-            let shade = min(max(tank.shades[i] - 1, 0), opacities.count - 1)
+            let x = min(max(Int(xs[i]), 0), columns)
+            let y = min(max(Int(ys[i]), 0), rows)
+            let shade = min(max(shades[i] - 1, 0), opacities.count - 1)
             paths[shade].addRect(CGRect(x: left + CGFloat(x) * unit, y: CGFloat(y) * unit, width: unit, height: unit))
         }
         for (shade, path) in paths.enumerated() {
@@ -104,25 +111,15 @@ struct ShellIslandTokenCharts: View {
 final class ShellTokenTanks {
     static let tiltInterval = 1.0 / 30.0
 
-    let input: AgentTokenTank
-    let output: AgentTokenTank
+    let pair: AgentTokenTanks
     private let motion = CMMotionManager()
-    private var last: Date?
 
     init(width: Double, height: Double) {
-        input = AgentTokenTank(width: width, height: height, seed: 1)
-        output = AgentTokenTank(width: width, height: height, seed: 2)
+        pair = AgentTokenTanks(width: width, height: height)
     }
 
-    var idle: Bool { input.idle && output.idle }
-
-    func advance(to date: Date) {
-        if let last {
-            let seconds = date.timeIntervalSince(last)
-            input.advance(seconds)
-            output.advance(seconds)
-        }
-        last = date
+    func syncTilt() {
+        if pair.wantsMotion { startTilt() } else { stopTilt() }
     }
 
     func startTilt() {
@@ -131,16 +128,11 @@ final class ShellTokenTanks {
         motion.startAccelerometerUpdates(to: .main) { [weak self] (data: CMAccelerometerData?, _: Error?) in
             guard let data else { return }
             let pull = data.acceleration
-            MainActor.assumeIsolated { self?.tilt(x: pull.x, y: -pull.y) }
+            MainActor.assumeIsolated { self?.pair.tilt(x: pull.x, y: -pull.y) }
         }
     }
 
     func stopTilt() {
         if motion.isAccelerometerActive { motion.stopAccelerometerUpdates() }
-    }
-
-    private func tilt(x: Double, y: Double) {
-        input.tilt(x: x, y: y)
-        output.tilt(x: x, y: y)
     }
 }

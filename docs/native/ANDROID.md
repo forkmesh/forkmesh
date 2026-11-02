@@ -1718,7 +1718,9 @@ earlier call pieces are in section 14, "Direct calls".
   (`showTelemetryStrip`) and the Agents package, poured every second and
   ignoring touches. `core/.../agents/AgentTokenTank.kt` is the same liquid as
   iOS ([NAVIGATION.md](NAVIGATION.md), agent token tanks); the accelerometer
-  goes through Genie's `screenVector` for the display rotation.
+  goes through Genie's `screenVector` for the display rotation and is
+  registered only while a tank holds or owes grains. The tanks advance and
+  redraw at most 30 times a second (`AgentTokenTank.FRAME_NANOS`).
 - **Several desktops (S141).** `DesktopControlHub` keeps the chosen desktop
   (`desktop/preferred-key` in project preferences), its `choices` with presence
   (Running, Not running or not reachable, Checking…), and `checkDesktops`,

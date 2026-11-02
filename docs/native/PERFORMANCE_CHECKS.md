@@ -41,9 +41,14 @@ below say when each field arrived).
   - An average `LOOP` of 10-20 ms means the main thread is rarely idle; a high
     `max` alone is one stall.
   - An `uptime` of a few seconds makes every average a launch figure.
-  - Compare the 5 minute average with the hour's: a `FRAME` average of 40-50 ms
-    over an hour is this phone's usual level, so only a rise above it points at
-    the last few minutes.
+  - Take the stalls out before reading an average: (sum of the per-second
+    worsts, `avg` x seconds sampled, minus the stalls' total) / the other
+    seconds. What is left above about 20 ms is work on every second, not this
+    phone's normal level: on 2026-11-02 a `LOOP` of 43 ms over 57 s left about
+    30 ms a second after 779 ms of stalls (the token tanks, below). Earlier
+    checks (from 2026-10-18) read 40-50 ms as normal, but from 2026-10-15
+    until ef737b7 the header avatar also redrew with the motion feed 30 times
+    a second, so the main thread was not idle then either.
   - An off-main watch timer (`PerformanceMonitorService`, same rate as the
     heartbeat) sees a process suspension too, and the missed time is taken out
     of heartbeat lags, frame gaps and the telemetry `FRAME`. In a build without
@@ -85,16 +90,18 @@ below say when each field arrived).
   - `libsystem_kernel` at the leaf means the thread waited: a lock, a file
     read, a Keychain or XPC round trip.
   - A sample is taken 100 ms into a block and then once per heartbeat
-    interval, so a 350 ms block gives about three. This section and the one
-    above rank over the operation and endpoint tables, so they are not
-    trimmed first.
+    interval, so a 350 ms block gives about three. Before 2026-11-02 trimming
+    cut every section to three lines before cutting any further, so this one
+    lost all but two signatures (`... 3 lines trimmed`); it now keeps its count
+    line and six rows until the last pass (`Part.keep`).
   - Launch: `startup.services` holds everything `AppServices.start` does on the
     main thread after the identity load: `startup.init` (with
     `startup.auth`), `startup.projects`, `startup.features` (one
     `startup.feature.<area>` each), `startup.wire` and one `startup.<area>` per
     installer. Over 200 ms it is its own `sync startup.services` stall.
     `shell.start` is the shell's first-appearance work, `chat.history.restore`
-    the stored history going back into the chat services.
+    the stored history going back into the chat services, `shell.tokenTanks`
+    one frame of the token tanks under the island.
   - `surfaces.publish` is the widget, Live Activity and Shortcuts snapshot
     after agent row changes. `watchSections` hands every section of 1 ms or
     more to one watcher; the DJ studio uses it.
@@ -133,7 +140,12 @@ below say when each field arrived).
   the other stacks are where slow operations and `sync` sections started. Each frame
   gives `+0x<offset>` from its image's load address: `atos -o
   ForkMesh.app.dSYM/Contents/Resources/DWARF/ForkMesh -l 0x100000000
-  <0x100000000 + offset>` with the build's dSYM names it.
+  <0x100000000 + offset>` with the build's dSYM names it. Without a Mac:
+  ad hoc builds since 2026-11-02 keep `ForkMesh-native-<version>-<build>-symbols.txt.gz`
+  (`nm -n` of the dSYM) next to the IPA (Codemagic artifacts; the Mac
+  pipeline's `data/actions/artifacts/<repo>/<run>/mac-adhoc/<commit>/ipa/`),
+  and `native/ios/tools/symbolize_offsets.py <symbols> < report.txt` names
+  every `ForkMesh +0x...` frame, demangled with the local Swift toolchain.
 - **`App log`** and **`Busiest log lines`** are optional. `Connected to ...
   room` counts relay (re)connects; each follows a resume or a dropped socket.
 
@@ -201,6 +213,10 @@ the first, so a default does no reads or parsing in `init`
   `TranscriptBeatCache` parses in a detached task once per transcript length;
   live feeds re-read only the transcript that moved
   (`ControlWatchFeeds.revision`, `AgentEagleFeed`).
+- A frame-rate simulation (the token tanks) draws at most 30 times a second,
+  keeps its sensor on only while something moves, and keeps its hot loops in
+  a struct: element access to a class's stored arrays pays a dynamic
+  exclusivity check each time (`AgentTokenFluid`, about 4x).
 - Wrap main-actor work that grows with the account's data in
   `PerformanceMonitorService.section(name)`. A section over 8 ms is named in
   the `sections` detail of any stall it falls inside; one over 200 ms is its
@@ -210,6 +226,43 @@ the first, so a default does no reads or parsing in `init`
 
 Newest first. Each entry: date and branch; what the bundle showed; the cause;
 the fix; what was ruled out; what the bundle lacked.
+
+- **2026-11-02, `106-ios-home-freeze-diagnosis`** (1.5.0 (22), 266bf12,
+  iPhone16,2, `uptime 57s`; 10 agent lines, 8 running, Eagle, no watch app).
+  Showed: event-loop stalls of 508 and 271 ms and a 322 ms frame, all
+  `launch, first 10s` on `Home` at 09:49:24, 756 ms of them outside any
+  section (`shell.start` 23 ms); two of five main-thread samples survived
+  trimming: SwiftUI's graph under the app's entry and an `@Observable` write
+  (`libswiftObservation`) from app code. Also `LOOP avg 43ms`, `FRAME avg
+  45ms`, `FPS 54.5` over the whole minute: about 30 ms of lag every second
+  after the launch stalls. Cause of the constant load (measured): this build
+  was the first with the liquid token tanks under the island (053aa2a). Two
+  60 x 12 particle fluids ran 60 steps a second on the main thread inside a
+  `TimelineView(.animation)` Canvas redrawn at up to 120 Hz, rebuilding up to
+  1,440 rects a frame, with an accelerometer feed on the main queue at 30 Hz
+  even while empty. With 8 agents running they were rarely empty. A full
+  pair cost 127 ms of a desktop core per simulated second, about 70 % of it
+  Swift's dynamic exclusivity checks on the class's arrays. Fix: the fluid
+  is a struct (`AgentTokenFluid`, bit-identical results, 33 ms); the tanks
+  draw at 30 fps; the accelerometer runs only while a tank holds or owes
+  grains (`AgentTokenTanks.wantsMotion`); each frame is a `shell.tokenTanks`
+  section. Android gets the same pacing and sensor rule. Not fixed, not
+  proven: the launch stalls themselves. The tanks were empty and paused
+  then, so they did not cause them; what is left is SwiftUI's first build of
+  the shell with the Agents tab under Home and an observed write during it,
+  as in the previous check, which the trimmed, unsymbolicated samples cannot
+  name. The header avatar's 30 Hz motion redraw (since 06715ef) was removed
+  on main after this build (ef737b7). Tests:
+  `testThirtyFramesASecondRunTheSameSimulationAsTheDisplayRate` (iOS and
+  Android), `testThePairAsksForTheAccelerometerOnlyWhileGrainsAreInATank`,
+  `testTrimmingKeepsEveryMainThreadSampleRowUntilTheLastPass`,
+  `tools/test_symbolize_offsets.py`. Ruled out: the repository tree 403s and
+  slow reads (after the stalls), chat history (262 KB), the watch bridge, the
+  1.4.1 MetricKit CPU exceptions. Bundle gaps closed: the samples section is
+  no longer trimmed to two rows; ad hoc builds keep a symbol list and
+  `symbolize_offsets.py` names offsets on Linux (the previous check's "still
+  missing"). Still missing: build 22's own symbols, so this bundle's offsets
+  stay unnamed; the next launch bundle from a new build can name them.
 
 - **2026-11-01, `46-app-detected-performance-issue`** (1.5.0 (327), 421a5f2,
   iPhone16,2, `uptime 49s`; 22 agent lines, 15 running, Eagle view, no watch

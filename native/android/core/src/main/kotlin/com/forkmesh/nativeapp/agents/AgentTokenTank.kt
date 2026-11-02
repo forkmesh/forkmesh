@@ -17,6 +17,8 @@ class AgentTokenTank(
         const val LEAK_SECONDS = 12.0
         const val POUR_SECONDS = 1.0
         const val STEPS_PER_SECOND = 60.0
+        const val FRAMES_PER_SECOND = 30
+        const val FRAME_NANOS = 1_000_000_000L / FRAMES_PER_SECOND
         const val MAX_ADVANCE_SECONDS = 0.1
         const val GRAVITY = 180.0
         const val FLAT_BIAS = 0.25
