@@ -43,6 +43,8 @@ ACTOR_KEY_B = base64.urlsafe_b64encode(b"\x01" * 32).decode("ascii").rstrip("=")
 NOW_MS = int(datetime(2026, 7, 13, 12, tzinfo=timezone.utc).timestamp() * 1000)
 ROOT = Path(__file__).resolve().parents[1]
 CONTRIBUTION_MIGRATION = ROOT / "migrations" / "0036_profile_contributions.sql"
+MEMBER_ACTIVITY_MIGRATION = (
+    ROOT / "migrations" / "0281_member_repo_activity.sql")
 ENTRY = ROOT / "src" / "entry.py"
 CATALOG_ROUTES = ROOT / "src" / "catalog_routes.py"
 ROUTE_HANDLERS = ROOT / "src" / "route_handlers.py"
@@ -755,6 +757,10 @@ class _IngestHarness:
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row
         self.db.executescript(CONTRIBUTION_MIGRATION.read_text(encoding="utf-8"))
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS schema_meta (k TEXT PRIMARY KEY, v TEXT)")
+        self.db.executescript(
+            MEMBER_ACTIVITY_MIGRATION.read_text(encoding="utf-8"))
         self.db.executescript(
             """
             CREATE TABLE nodes (
@@ -2842,6 +2848,194 @@ def test_contribution_api_revalidates_revision_before_cache_put_and_response(
     assert revision_values[0] not in put_key
     assert revision_values[-1] in put_key
     assert response["cacheControl"] == "no-store, max-age=0, must-revalidate"
+
+
+def _add_forge_activity(
+        harness, repo_bi, *, user="alice", owner="bob", name="web",
+        root_commit="", pulls=0, issues=0, reviews=0, commits=0,
+        last_day="2026-07-01", updated_at=NOW_MS - 60_000,
+        repository_private=0, visibility="public"):
+    record = {"owner": owner, "name": name, "visibility": visibility,
+              "source": "hosted-web"}
+    if root_commit:
+        record["rootCommit"] = root_commit
+    harness.db.execute(
+        "INSERT OR REPLACE INTO repositories "
+        "(key_bi, owner_bi, data, is_private) VALUES (?,?,?,?)",
+        (repo_bi, "account:" + owner,
+         "enc:" + json.dumps(record, sort_keys=True), repository_private),
+    )
+    harness.db.execute(
+        "INSERT OR REPLACE INTO member_repo_activity (repo_bi, user_bi, "
+        "commits, pulls, issues, reviews, day_start, day_mask, last_day, "
+        "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (repo_bi, _blind(user), commits, pulls, issues, reviews,
+         "2025-07-13", "", last_day, updated_at),
+    )
+    harness.db.commit()
+
+
+def test_contribution_api_counts_forge_activity_for_web_only_member(
+        contribution_api_harness):
+    harness = contribution_api_harness
+    _add_forge_activity(
+        harness, "repo:web", pulls=3, issues=2, reviews=40, commits=99,
+        last_day="2026-07-12")
+    # Never counted: private repo, a stale projection, a catalog record that
+    # is not public, and another member's row.
+    _add_forge_activity(
+        harness, "repo:web-private", name="secret", reviews=7,
+        repository_private=1)
+    _add_forge_activity(
+        harness, "repo:web-stale", name="stale", reviews=11,
+        updated_at=NOW_MS - 3 * 86_400_000)
+    _add_forge_activity(
+        harness, "repo:web-unlisted", name="unlisted", reviews=13,
+        visibility="private")
+    _add_forge_activity(
+        harness, "repo:web-bob", user="bob", name="other", reviews=17)
+    harness.select_statements.clear()
+
+    data = harness.api()["data"]
+
+    assert data["range"] == {"from": "2025-07-14", "to": "2026-07-13"}
+    assert data["typeTotals"] == {
+        "commits": 0, "issues": 2, "pulls": 3, "reviews": 40,
+        "repositories": 0,
+    }
+    assert data["total"] == 45
+    # The projection has no per-day counts, so the calendar is unchanged.
+    assert data["days"] == []
+    assert data["recentActivity"] == [
+        {"date": "2026-07-12", "kind": kind, "count": count,
+         "repository": {"owner": "bob", "name": "web", "url": "/bob/web"}}
+        for kind, count in (("issues", 2), ("pulls", 3), ("reviews", 40))
+    ]
+    assert data["coverage"] == {
+        "status": "unavailable",
+        "verifiedFrom": None,
+        "updatedAt": 0,
+        "missing": ["commits", "collaboration", "languages"],
+        "forge": {
+            "repositories": 1,
+            "updatedAt": NOW_MS - 60_000,
+            "kinds": ["issues", "pulls", "reviews"],
+        },
+    }
+    forge_reads = [
+        sql for sql, _args in harness.select_statements
+        if "contribution_forge_rows" in sql
+    ]
+    assert len(forge_reads) == 1
+    assert "is_private=0" in forge_reads[0] and "LIMIT ?" in forge_reads[0]
+    assert len(harness.select_statements) <= 7
+
+
+def test_contribution_api_forge_activity_only_joins_rolling_window(
+        contribution_api_harness):
+    _add_forge_activity(contribution_api_harness, "repo:web", reviews=40)
+
+    data = contribution_api_harness.api("from=2026-01-01&to=2026-12-31")["data"]
+
+    assert data["total"] == 0
+    assert "forge" not in data["coverage"]
+    assert not any(
+        "contribution_forge_rows" in sql
+        for sql, _args in contribution_api_harness.select_statements
+    )
+
+
+def test_contribution_api_forge_activity_merges_with_snapshot_project(
+        contribution_api_harness):
+    harness = contribution_api_harness
+    project_bi = _blind("profile-project:shared-root")
+    generation = harness.add_source(
+        "repo:snap", project_bi, owner_user_bi=_blind("bob"),
+        owner="bob", name="web",
+    )
+    harness.add_day(
+        generation, "repo:snap", project_bi, "2026-07-10",
+        commits=4, pulls=3, reviews=5, owner="bob", name="web",
+    )
+    # The same logical project recorded by the forge, plus a second repo the
+    # snapshot does not cover.
+    _add_forge_activity(
+        harness, "repo:web", root_commit="shared-root",
+        pulls=2, reviews=8, issues=1, last_day="2026-07-11")
+    _add_forge_activity(
+        harness, "repo:web-two", name="two", reviews=2,
+        last_day="2026-07-09")
+
+    data = harness.api()["data"]
+
+    assert data["typeTotals"] == {
+        "commits": 4, "issues": 1, "pulls": 3, "reviews": 10,
+        "repositories": 0,
+    }
+    assert data["total"] == 18
+    assert data["coverage"]["forge"]["repositories"] == 2
+    assert [
+        (row["date"], row["kind"], row["count"], row["repository"]["name"])
+        for row in data["recentActivity"]
+    ] == [
+        ("2026-07-11", "issues", 1, "web"),
+        ("2026-07-11", "reviews", 3, "web"),
+        ("2026-07-10", "commits", 4, "web"),
+        ("2026-07-10", "pulls", 3, "web"),
+        ("2026-07-10", "reviews", 5, "web"),
+        ("2026-07-09", "reviews", 2, "two"),
+    ]
+
+
+def test_contribution_api_forge_refresh_changes_revision(
+        contribution_api_harness):
+    revision = contribution_api_harness.namespace[
+        "_contribution_profile_revision"]
+    _add_forge_activity(contribution_api_harness, "repo:web", reviews=4)
+    before = asyncio.run(revision(
+        contribution_api_harness.env, _blind("alice"),
+        "2025-07-14", "2026-07-13"))
+    _add_forge_activity(
+        contribution_api_harness, "repo:web", reviews=5,
+        updated_at=NOW_MS - 1_000)
+    after = asyncio.run(revision(
+        contribution_api_harness.env, _blind("alice"),
+        "2025-07-14", "2026-07-13"))
+    assert before != after
+
+
+def test_merge_forge_activity_takes_per_project_maximum():
+    summary, recent, note = contributions.merge_forge_activity(
+        {"commits": 1, "issues": 0, "pulls": 2, "reviews": 3},
+        {"p1": {"issues": 0, "pulls": 2, "reviews": 3}},
+        [
+            {"repo_bi": "a", "project_bi": "p1", "owner": "bob",
+             "name": "one", "pulls": 1, "reviews": 9, "issues": "x",
+             "last_day": "2020-01-01", "updated_at": 5},
+            {"repo_bi": "b", "project_bi": "p2", "owner": "bob",
+             "name": "two", "pulls": 0, "reviews": 0, "issues": 0},
+        ],
+        "2025-07-14", "2026-07-13")
+    assert summary == {"commits": 1, "issues": 0, "pulls": 2, "reviews": 9}
+    assert recent == [{
+        "date": "2026-07-13", "kind": "reviews", "count": 6,
+        "repository": {"owner": "bob", "name": "one"},
+    }]
+    assert note == {"repositories": 1, "updatedAt": 5, "kinds": ["reviews"]}
+    assert contributions.merge_forge_activity(
+        {"issues": 1}, {}, [], "2025-07-14", "2026-07-13"
+    ) == ({"issues": 1}, [], None)
+
+
+def test_contribution_rolling_range_is_only_the_default_window():
+    assert contributions.contribution_rolling_range(
+        "2025-07-14", "2026-07-13", now_ms=NOW_MS)
+    assert not contributions.contribution_rolling_range(
+        "2026-01-01", "2026-12-31", now_ms=NOW_MS)
+    assert not contributions.contribution_rolling_range(
+        "2025-07-13", "2026-07-12", now_ms=NOW_MS)
+    assert not contributions.contribution_rolling_range(
+        "bad", "2026-07-13", now_ms=NOW_MS)
 
 
 def test_language_name_colors_are_stable_for_stored_language_rows():
