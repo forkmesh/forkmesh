@@ -805,9 +805,11 @@ def test_home_right_rail_shows_the_latest_changelog_notes():
     assert "data-home-changelog-list" in home
     assert 'href="/changelog"' in home
     assert home.index("data-home-changelog-card") < home.index("data-home-blog-card")
+    assert 'data-home-changelog-card data-instance-plugin="changelog"' in home
     for marker in (
         'const HOME_CHANGELOG_URL = "/changelog.json";',
         "const HOME_CHANGELOG_NOTE_LIMIT = 4;",
+        ".sort((a, b) => b.date.localeCompare(a.date))",
         ".slice(0, HOME_CHANGELOG_NOTE_LIMIT);",
         "${escapeHtml(note.text)}",
         "void loadHomeChangelog();",

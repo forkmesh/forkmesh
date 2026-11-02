@@ -39,9 +39,12 @@ and almost no description text. Markup and its scoped styles are in
 
 ## Right rail
 
-- **Latest from our changelog**: the four newest notes from
+- **Latest from our changelog**: the four newest notes by date from
   `/changelog.json`, the file every site serves from
-  `changelog/changelog.json`.
+  `changelog/changelog.json`. Notes are not stored in date order (a merge
+  can land an older note above a newer one), so the page sorts them. The
+  card carries `data-instance-plugin="changelog"`, so an instance that turns
+  the changelog plugin off hides it instead of showing it as unavailable.
 - **Latest from the blog**: the three newest posts (or the instance's dev.to
   posts), as titles only. The post artwork was dropped to keep the rail
   minimal, so the image-host allowlist it needed is gone too.

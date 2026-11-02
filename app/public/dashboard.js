@@ -14803,6 +14803,7 @@
       state.homeChangelogNotes = (Array.isArray(data?.notes) ? data.notes : [])
         .filter((note) => note && note.text && note.date)
         .map((note) => ({ date: String(note.date), text: String(note.text) }))
+        .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, HOME_CHANGELOG_NOTE_LIMIT);
     } catch (_) {
       state.homeChangelogNotes = [];
