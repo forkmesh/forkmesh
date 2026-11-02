@@ -3282,8 +3282,6 @@
     return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
   }
 
-  // Everyone on a pull, latest comment or review first, then its author if
-  // they have not spoken since. The first face sits on top of the stack.
   function renderPullRowPeople(item) {
     const names = [];
     const seen = new Set();

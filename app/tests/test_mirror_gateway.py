@@ -1362,11 +1362,13 @@ def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
         encoding="utf-8")
     (folder / "0003-review.md").write_text(
         review % ("carol-key", "approved"), encoding="utf-8")
-    # A key with no account name is never shown as a person.
     (folder / "0003-comment.md").write_text(
         "---\ntype: comment\nauthor: stray-key\n---\n\nHi\n", encoding="utf-8")
     (folder / "0004-review.md").write_text(
         "---\ntype: review\nauthor: \nstate: approved\n---\n", encoding="utf-8")
+    (folder / "0005-comment.md").write_text(
+        "---\ntype: review\nauthor: eve-key\nauthorName: eve\nstate: approved\n"
+        "sig: s\n---\n\nHi\n", encoding="utf-8")
     run(["git", "add", ".forkmesh/pulls/43"], source)
     run(["git", "commit", "-m", "pull #43 reviews"], source)
     run(["git", "push", "origin", "forkmesh/pulls"], source)
@@ -1395,7 +1397,7 @@ def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
         ["carol-key", "changes_requested"], ["carol-key", "approved"]]
     assert set(listing["pullReviews"]) == {"43"}
     assert "pullReviews" not in folder_listing
-    assert listing["pullPeople"] == {"43": ["carol", "dave"]}
+    assert listing["pullPeople"] == {"43": ["eve", "carol", "dave"]}
     assert "pullPeople" not in folder_listing
 
 def _commit_at(source, when, message):

@@ -6332,10 +6332,11 @@ class GitRepository:
         if fits(review_files):
             reviews = {}
         files.sort()
-        for number, _index, values in self._pull_event_values(files):
+        review_keys = {(n, i, oid) for n, i, oid, _s in review_files}
+        for number, index, oid, values in self._pull_event_values(files):
             author = values.get("author", "")
-            kind = values.get("type") or "comment"
-            if reviews is not None and kind == "review" and author \
+            if reviews is not None and (number, index, oid) in review_keys \
+                    and values.get("type") == "review" and author \
                     and values.get("state"):
                 reviews.setdefault(str(number), []).append(
                     [author, values["state"]])
@@ -6353,7 +6354,7 @@ class GitRepository:
 
     def _pull_event_values(
         self, files: list[tuple[int, int, str, int]]
-    ) -> Iterable[tuple[int, int, dict[str, str]]]:
+    ) -> Iterable[tuple[int, int, str, dict[str, str]]]:
         if not files:
             return
         total = sum(size for *_rest, size in files)
@@ -6365,7 +6366,7 @@ class GitRepository:
             max_output=total + len(files) * 160,
         )
         cursor = 0
-        for number, index, _oid, _size in files:
+        for number, index, oid, _size in files:
             line_end = payload.find(b"\n", cursor)
             if line_end < 0:
                 break
@@ -6379,7 +6380,7 @@ class GitRepository:
                 break
             body = payload[cursor:cursor + size]
             cursor += size + 1
-            yield number, index, _front_matter_values(
+            yield number, index, oid, _front_matter_values(
                 body.decode("utf-8", "replace"))
 
     def _tree_entries(
