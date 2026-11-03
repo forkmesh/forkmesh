@@ -212,6 +212,10 @@ therefore run on a worker, and the result streams into the view.
   Viewed tick during a stream re-renders rather than swapping in place.
 - The image-preview memo (`diffImageInlineFor()`) is locked because renders run
   on several threads.
+- **Merge-health chips.** `applyDiffHealthMetric()` sets a chip's style sheet
+  only when the tone changes. Re-setting the same sheet re-polishes the chip
+  under the application style sheet each time a render lands (a 557 ms stall
+  under `updateBranchDiffHealth()`).
 
 ### Scrolling a paged diff
 

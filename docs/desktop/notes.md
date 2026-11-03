@@ -224,7 +224,13 @@ caption under it in small muted text in the same paragraph; or a dashed rule
 labelled "Page break". `href`s that do not start with `data:` or `#` are
 removed from the SVG before it is drawn, so a shared diagram cannot read a
 file on this computer. When the preview gets narrower or wider the images are
-redrawn in place (80 ms after the last resize). Comment anchoring is
+redrawn in place (80 ms after the last resize). A figure not yet in the
+page's `NoteRenderCache` is drawn on a worker (`NoteRenderCache::defer`,
+`QtConcurrent`): the preview shows the empty card at its final size, and the
+same 80 ms timer swaps the diagram in when it is ready, so opening a note
+with large diagrams no longer blocks the window (a 1.4 s stall in
+`paintSvgFigure()` under `NotesPage::selectNote()`). PDF export and the tests
+leave `defer` unset and draw synchronously. Comment anchoring is
 unchanged: an image is one object character, and the caption is text that is
 also in the Markdown.
 

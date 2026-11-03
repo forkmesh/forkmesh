@@ -54,6 +54,7 @@
 #include <QNetworkRequest>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QFutureWatcher>
 #include <QPointer>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -72,6 +73,7 @@
 #include <QVBoxLayout>
 #include <QSet>
 #include <QSignalBlocker>
+#include <QtConcurrent>
 
 #include <memory>
 #include <utility>
@@ -2329,6 +2331,18 @@ void NotesPage::setupNotePreview()
     auto *watch = new NotePreviewResizeWatch([timer] { timer->start(); }, preview);
     preview->viewport()->installEventFilter(watch);
     state->resizeWatch = watch;
+    state->cache.defer = [this, state](const QString &key, std::function<QImage()> make) {
+        auto *watcher = new QFutureWatcher<QImage>(this);
+        connect(watcher, &QFutureWatcherBase::finished, this, [this, state, watcher, key] {
+            watcher->deleteLater();
+            if (m_notePreview.get() != state)
+                return;
+            state->cache.store(key, watcher->result());
+            if (state->resizeTimer)
+                state->resizeTimer->start();
+        });
+        watcher->setFuture(QtConcurrent::run(std::move(make)));
+    };
     m_noteEditor->setPreviewHooks(
         [state](const QString &markdown) {
             PlaceholderMarkdown out = withObjectPlaceholders(markdown, state->token);

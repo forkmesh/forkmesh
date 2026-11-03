@@ -20,6 +20,7 @@
 #include <QPixmap>
 #include <QPdfWriter>
 #include <QSaveFile>
+#include <QSet>
 #include <QSvgRenderer>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -84,17 +85,40 @@ inline QImage svgFigureImage(const QString &svg, const QSize &pixels,
 
 struct NoteRenderCache {
     QHash<QString, QImage> images;
+    QSet<QString> pending;
+    std::function<void(const QString &, std::function<QImage()>)> defer;
+
+    void store(const QString &key, const QImage &image)
+    {
+        pending.remove(key);
+        if (images.size() >= 48)
+            images.clear();
+        images.insert(key, image);
+    }
 
     QImage take(const QString &key, const std::function<QImage()> &make)
     {
         const auto found = images.constFind(key);
         if (found != images.constEnd())
             return found.value();
-        if (images.size() >= 48)
-            images.clear();
         const QImage image = make();
-        images.insert(key, image);
+        store(key, image);
         return image;
+    }
+
+    QImage takeOrDefer(const QString &key, std::function<QImage()> make,
+                       const std::function<QImage()> &placeholder)
+    {
+        const auto found = images.constFind(key);
+        if (found != images.constEnd())
+            return found.value();
+        if (!defer)
+            return take(key, make);
+        if (!pending.contains(key)) {
+            pending.insert(key);
+            defer(key, std::move(make));
+        }
+        return placeholder();
     }
 };
 
@@ -114,7 +138,8 @@ inline QString noteObjectToken()
            QUuid::createUuid().toString(QUuid::Id128) + QStringLiteral("x");
 }
 
-inline QImage previewFigureCard(const NoteFigure &figure, const QSizeF &card, qreal dpr)
+inline QImage previewFigureCard(const NoteFigure &figure, const QSizeF &card, qreal dpr,
+                                bool paintFigure = true)
 {
     const QSize pixels(qMax(1, qRound(card.width() * dpr)), qMax(1, qRound(card.height() * dpr)));
     QImage image(pixels, QImage::Format_ARGB32_Premultiplied);
@@ -127,10 +152,11 @@ inline QImage previewFigureCard(const NoteFigure &figure, const QSizeF &card, qr
     painter.fillPath(path, QColor(Qt::white));
     painter.setPen(QPen(QColor(QStringLiteral("#d0d7de")), 1));
     painter.drawPath(path);
-    paintSvgFigure(&painter, figure.svg,
-                   QRectF(kPreviewCardPadding, kPreviewCardPadding,
-                          card.width() - 2 * kPreviewCardPadding,
-                          card.height() - 2 * kPreviewCardPadding));
+    if (paintFigure)
+        paintSvgFigure(&painter, figure.svg,
+                       QRectF(kPreviewCardPadding, kPreviewCardPadding,
+                              card.width() - 2 * kPreviewCardPadding,
+                              card.height() - 2 * kPreviewCardPadding));
     painter.end();
     return image;
 }
@@ -185,9 +211,9 @@ inline QTextImageFormat previewObjectImage(QTextDocument *doc, const NotePart &p
                                 .arg(card.width())
                                 .arg(card.height())
                                 .arg(dpr);
-        const QImage image = cache.take(key, [&] {
-            return previewFigureCard(part.figure, card, dpr);
-        });
+        const QImage image = cache.takeOrDefer(
+            key, [figure = part.figure, card, dpr] { return previewFigureCard(figure, card, dpr); },
+            [&] { return previewFigureCard(part.figure, card, dpr, false); });
         doc->addResource(QTextDocument::ImageResource, QUrl(key), image);
         format.setName(key);
         format.setWidth(card.width());
