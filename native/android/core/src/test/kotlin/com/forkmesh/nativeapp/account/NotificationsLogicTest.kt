@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.account
 
+import com.forkmesh.nativeapp.inbox.InboxItem
 import com.forkmesh.nativeapp.model.ForkNotification
 import com.forkmesh.nativeapp.model.NotificationDeepLink
 import com.forkmesh.nativeapp.model.RepoDetailTab
@@ -78,6 +79,34 @@ class NotificationsLogicTest {
         for ((kind, icon) in expected) assertEq(icon, notificationIconForKind(kind), kind)
         assertEq("alternate_email_rounded", notificationIconForKind(" Mention "))
         assertEq(NOTIFICATION_LINE_ICON, notificationIconForKind("a_future_kind"))
+    }
+
+    fun testRecoveriesAreGreenChecksLabelledGoodNews() {
+        val up = ForkNotification(
+            id = "r1",
+            kind = "operational_alert",
+            title = "GitHub Actions: Disaster recovery passes again",
+            meta = mapOf("state" to "up"),
+        )
+        val down = ForkNotification(id = "r2", kind = "operational_alert", title = "Mainnode needs attention", meta = mapOf("state" to "down"))
+        expect(up.isGoodNews)
+        assertEq("Good news", up.kindLabel)
+        assertEq("Alert", up.typeLabel)
+        assertEq("check_circle_outline", notificationIcon(up.kind, up.meta))
+        assertEq(PingTone.Success, notificationTone(up.kind, up.meta))
+        expect(!down.isGoodNews)
+        assertEq("Alert", down.kindLabel)
+        assertEq("warning_amber_outlined", notificationIcon(down.kind, down.meta))
+        assertEq(PingTone.Danger, notificationTone(down.kind, down.meta))
+        val row = InboxItem.fromPing(up)
+        assertEq("check_circle_outline", row.icon)
+        assertEq(PingTone.Success, row.tone)
+        assertEq("Good news", row.kindLabel)
+        assertEq(PingTone.Danger, InboxItem.fromPing(down).tone)
+        assertEq(PingTone.Success, notificationTone("desktop_ping", mapOf("category" to "agent-finished")))
+        assertEq(PingTone.Danger, notificationTone("desktop_ping", mapOf("category" to "ci-failed")))
+        assertEq(PingTone.Danger, notificationToneForKind("action_failed"))
+        assertEq(PingTone.Warning, notificationToneForKind("action_approval"))
     }
 
     fun testTheListShowsEveryUpdateWithItsLabels() {

@@ -14949,7 +14949,7 @@
     ].filter(Boolean).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="fm-home-row">
-        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="text-muted-foreground"></i></span>
+        <span class="fm-home-row-icon"><i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="${notificationItemIconTone(item) || "text-muted-foreground"}"></i></span>
         <span class="min-w-0 flex-1">
           <span class="fm-home-row-title">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
           ${item.body ? `<span class="fm-home-row-meta line-clamp-2">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
@@ -49483,6 +49483,19 @@ Your reply
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
   }
 
+  function pingIsGoodNews(item) {
+    return String(item?.kind || "").trim().toLowerCase() === "operational_alert"
+      && String(item?.meta?.state || "").trim().toLowerCase() === "up";
+  }
+
+  function notificationItemIcon(item) {
+    return pingIsGoodNews(item) ? "circle-check" : notificationIcon(item?.kind);
+  }
+
+  function notificationItemIconTone(item) {
+    return pingIsGoodNews(item) ? "text-success" : "";
+  }
+
   function notificationInstanceLogoHtml() {
     const name = escapeHtml(platformName());
     return `<img data-notification-instance-logo src="/assets/logo.svg" alt="${name}" title="${name}" class="h-4 w-4 shrink-0 rounded-sm object-contain" />`;
@@ -49511,7 +49524,7 @@ Your reply
   }
 
   function notificationAvatarHtml(item, lead) {
-    const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+    const icon = `<i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"} ${notificationItemIconTone(item)}"></i>`;
     const login = lead.actor.replace(/^@/, "");
     return lead.actor
       ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(login) ? botAvatarSvg(botAvatarKind(login), "h-4 w-4") : escapeHtml(login.charAt(0) || "?")}</span>
@@ -49580,7 +49593,7 @@ Your reply
     return `
       <div class="flex items-start gap-3">
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">
-          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
+          <i data-notification-kind-icon data-lucide="${notificationItemIcon(item)}" class="h-4 w-4 ${notificationItemIconTone(item)}"></i>
         </span>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">${textWithMentionsHtml(repoPublicText(item.title) || "Ping")}</p>

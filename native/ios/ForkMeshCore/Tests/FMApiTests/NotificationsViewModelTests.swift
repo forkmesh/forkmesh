@@ -69,6 +69,32 @@ final class NotificationsViewModelTests: XCTestCase {
         XCTAssertEqual(notificationIconForKind("a_future_kind"), notificationLineIcon)
     }
 
+    func testRecoveriesAreGreenChecksLabelledGoodNews() {
+        let up = ForkNotification(
+            id: "r1", kind: "operational_alert", title: "GitHub Actions: Disaster recovery passes again",
+            meta: ["state": .string("up")])
+        let down = ForkNotification(id: "r2", kind: "operational_alert", title: "Mainnode needs attention",
+                                    meta: ["state": .string("down")])
+        XCTAssertTrue(up.isGoodNews)
+        XCTAssertEqual(up.kindLabel, "Good news")
+        XCTAssertEqual(up.typeLabel, "Alert")
+        XCTAssertEqual(notificationIcon(kind: up.kind, meta: up.meta), "check_circle_outline")
+        XCTAssertEqual(notificationTone(kind: up.kind, meta: up.meta), .success)
+        XCTAssertFalse(down.isGoodNews)
+        XCTAssertEqual(down.kindLabel, "Alert")
+        XCTAssertEqual(notificationIcon(kind: down.kind, meta: down.meta), "warning_amber_outlined")
+        XCTAssertEqual(notificationTone(kind: down.kind, meta: down.meta), .danger)
+        let row = InboxItem(ping: up)
+        XCTAssertEqual(row.icon, "check_circle_outline")
+        XCTAssertEqual(row.tone, .success)
+        XCTAssertEqual(row.kindLabel, "Good news")
+        XCTAssertEqual(InboxItem(ping: down).tone, .danger)
+        XCTAssertEqual(notificationTone(kind: "desktop_ping", meta: ["category": .string("agent-finished")]), .success)
+        XCTAssertEqual(notificationTone(kind: "desktop_ping", meta: ["category": .string("ci-failed")]), .danger)
+        XCTAssertEqual(notificationToneForKind("action_failed"), .danger)
+        XCTAssertEqual(notificationToneForKind("action_approval"), .warning)
+    }
+
     func testTheListShowsEveryUpdateWithItsLabels() {
         XCTAssertEqual(notificationFilters, ["All", "Unread", "Mentions", "Repo", "System"])
         let body = notificationsBody(loading: false, error: "", all: items, filter: "All")

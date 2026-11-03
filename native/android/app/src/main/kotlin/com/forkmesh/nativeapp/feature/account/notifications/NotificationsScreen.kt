@@ -54,7 +54,7 @@ import com.forkmesh.nativeapp.account.NotificationsBody
 import com.forkmesh.nativeapp.account.canDeleteAllNotifications
 import com.forkmesh.nativeapp.account.canMarkAllRead
 import com.forkmesh.nativeapp.account.notificationContextLabel
-import com.forkmesh.nativeapp.account.notificationIconForKind
+import com.forkmesh.nativeapp.account.notificationIcon
 import com.forkmesh.nativeapp.account.notificationPills
 import com.forkmesh.nativeapp.account.notificationPreview
 import com.forkmesh.nativeapp.account.notificationTimeLabel
@@ -411,7 +411,11 @@ private fun NotificationRow(notification: ForkNotification, onTap: () -> Unit, o
     var menu by remember { mutableStateOf(false) }
     val time = notificationTimeLabel(notification.ts)
     val unread = notification.isUnread
-    val accent = if (unread) c.accent else c.textTertiary
+    val accent = when {
+        notification.isGoodNews -> c.success
+        unread -> c.accent
+        else -> c.textTertiary
+    }
     val rule = c.border
     FmHoldArea {
         Row(
@@ -420,7 +424,7 @@ private fun NotificationRow(notification: ForkNotification, onTap: () -> Unit, o
                 .clip(RoundedCornerShape(FmRadius.md))
                 .combinedClickable(
                     onClick = onTap,
-                    onLongClickLabel = pingKindSettingsLabel(notification.kindLabel),
+                    onLongClickLabel = pingKindSettingsLabel(notification.typeLabel),
                     onLongClick = { menu = true },
                 )
                 .drawBehind {
@@ -437,7 +441,7 @@ private fun NotificationRow(notification: ForkNotification, onTap: () -> Unit, o
                     .background(if (unread) c.accentSubtle else c.bgRaised, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                FmIcon(notificationIconForKind(notification.kind), size = 24.dp, tint = accent)
+                FmIcon(notificationIcon(notification.kind, notification.meta), size = 24.dp, tint = accent)
             }
             HGap(FmSpace.x3)
             Column(Modifier.weight(1f)) {
@@ -485,7 +489,7 @@ private fun NotificationRow(notification: ForkNotification, onTap: () -> Unit, o
                 Box {
                     FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         FmDropdownMenuItem(
-                            text = pingKindSettingsLabel(notification.kindLabel),
+                            text = pingKindSettingsLabel(notification.typeLabel),
                             icon = "tune_rounded",
                             onClick = {
                                 menu = false

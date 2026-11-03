@@ -42,7 +42,7 @@ import com.forkmesh.nativeapp.account.PING_DELETE_LABEL
 import com.forkmesh.nativeapp.account.PING_DELETE_TITLE
 import com.forkmesh.nativeapp.account.PING_DETAIL_TITLE
 import com.forkmesh.nativeapp.account.PingDetailFact
-import com.forkmesh.nativeapp.account.notificationIconForKind
+import com.forkmesh.nativeapp.account.notificationIcon
 import com.forkmesh.nativeapp.account.notificationPills
 import com.forkmesh.nativeapp.account.pingAgentPrompt
 import com.forkmesh.nativeapp.account.pingDeleteErrorText
@@ -249,7 +249,7 @@ class PingDetailScreen(
                         )
                         FmRowDivider()
                         FmListRow(
-                            title = pingKindSettingsLabel(ping.kindLabel),
+                            title = pingKindSettingsLabel(ping.typeLabel),
                             leading = { FmIconTile(icon = "tune_rounded") },
                             onTap = { navigator.push(PingSettingsScreen(ping.kind)) },
                         )
@@ -293,7 +293,7 @@ private fun PingHero(ping: ForkNotification) {
                     .background(if (ping.isUnread) c.accentSubtle else c.bgRaised, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                FmIcon(notificationIconForKind(ping.kind), size = 24.dp, tint = c.accent)
+                FmIcon(notificationIcon(ping.kind, ping.meta), size = 24.dp, tint = if (ping.isGoodNews) c.success else c.accent)
             }
             HGap(FmSpace.x3)
             FlowRow(

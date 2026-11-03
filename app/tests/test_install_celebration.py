@@ -39,6 +39,7 @@ def test_successful_done_diag_triggers_admin_pings():
     assert '"operational_alert"' in pings
     assert '"install-celebration:" + run' in pings
     assert 'href="/world/"' in pings
+    assert '"state": "up"' in pings
 
 
 def test_world_installs_endpoint_serves_only_fresh_anonymous_installs():
