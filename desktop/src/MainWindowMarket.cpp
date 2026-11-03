@@ -4889,6 +4889,40 @@ forkmesh::market::NativePackageHost MainWindow::nativePackageHost(
                 done({false, false, QStringLiteral("No password manager is installed."), {}});
         };
     }
+    if (permissionIds.contains(QStringLiteral("social.mastodon.signin")))
+        host.mastodonSignIn = [this] {
+            const QString mastodon = QStringLiteral("mastodon");
+            if (!m_packageRegistry || !m_packageRegistry->isInstalledHere(mastodon))
+                return QJsonObject();
+            const QJsonArray accounts =
+                QJsonDocument::fromJson(m_packageRegistry
+                                            ->packageSetting(mastodon, QStringLiteral("accounts"))
+                                            .toString()
+                                            .toUtf8())
+                    .array();
+            const QString active =
+                m_packageRegistry->packageSetting(mastodon, QStringLiteral("active")).toString();
+            QJsonObject chosen;
+            for (const QJsonValue &value : accounts) {
+                const QJsonObject account = value.toObject();
+                const QString instance = account.value(QStringLiteral("instance")).toString();
+                const QString id = account.value(QStringLiteral("id")).toString();
+                const QString acct = account.value(QStringLiteral("acct")).toString();
+                if (instance.isEmpty() || acct.isEmpty() ||
+                    account.value(QStringLiteral("token")).toString().isEmpty())
+                    continue;
+                const bool isActive =
+                    instance + QLatin1Char('|') + (id.isEmpty() ? acct : id) == active;
+                if (chosen.isEmpty() || isActive)
+                    chosen = QJsonObject{
+                        {QStringLiteral("instance"), instance},
+                        {QStringLiteral("token"), account.value(QStringLiteral("token"))},
+                        {QStringLiteral("acct"), acct}};
+                if (isActive)
+                    break;
+            }
+            return chosen;
+        };
     if (permissionIds.contains(QStringLiteral("repository.read")) ||
         permissionIds.contains(QStringLiteral("repository.activity.read"))) {
         host.repositories = [this] { return nativePackageRepositories(); };

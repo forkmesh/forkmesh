@@ -109,6 +109,7 @@ struct NativePackageHost {
     std::function<void(const QString &, QWidget *, NativePackageLoginHandler)>
         findLogins;
     std::function<void(const QString &)> openWebPage;
+    std::function<QJsonObject()> mastodonSignIn;
     std::function<QJsonObject()> repositoryWorkflows;
     std::function<void(const QString &, const QString &, const QString &,
                        const QJsonObject &, NativePackageReplyHandler)>

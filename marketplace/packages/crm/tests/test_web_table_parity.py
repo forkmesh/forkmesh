@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 
@@ -204,9 +205,11 @@ def test_mastodon_network_list_offers_follow_back_like_the_desktop():
     assert "void loadCrmFollowBack();" in render
     load = _function("loadCrmFollowBack")
     assert 'crmRequest(crmOrganizationPath("/mastodon/follow-back"))' in load
+    assert "crmMastodonPluginFollowBack(follower.session)" in load
     assert "CRM_MASTODON_FRESH_MS" in load and 'crmActiveView()?.network !== "mastodon"' in load
     follow = _function("crmFollowMastodonBack")
     assert 'crmOrganizationPath("/mastodon/follow"), "POST", { handle: key }' in follow
+    assert "crmMastodonPluginFollow(follower.session, key)" in follow
     assert "crmFollowBack.handles.delete(key)" in follow
     assert "crmFollowBack.followed.add(key)" in follow
     assert "crmFollowBack.followed = keys(payload.following)" in load
@@ -217,3 +220,6 @@ def test_mastodon_network_list_offers_follow_back_like_the_desktop():
     assert "<div data-crm-mastodon-banner" in WEB_VIEW
     click = _function("handleCrmParityClick")
     assert "crmFollowMastodonBack(follow.dataset.crmFollowBack)" in click
+    mastodon_page = (CRM_PACKAGE.parent / "mastodon" / "content" / "web" / "page.js").read_text()
+    store = re.search(r'const STORE = "([^"]+)"', mastodon_page).group(1)
+    assert f'const CRM_MASTODON_SESSION = "{store}";' in WEB_SCRIPT
