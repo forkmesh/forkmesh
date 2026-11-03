@@ -19,7 +19,9 @@ class QComboBox;
 class QLabel;
 class QProcess;
 class QPushButton;
+class QShowEvent;
 class QTimer;
+class QVBoxLayout;
 class QWebEnginePage;
 class QWebEngineView;
 
@@ -44,6 +46,9 @@ public:
 
     static QUrl engineOrigin(const QString &hostUrl);
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private:
     QString setting(const QString &key, const QString &fallback = QString()) const;
     void setSetting(const QString &key, const QString &value);
@@ -66,6 +71,7 @@ private:
     std::function<void(const QString &)> m_openWebPage;
     QUrl m_origin;
     QWebEngineView *m_view = nullptr;
+    QVBoxLayout *m_previewBody = nullptr;
     QWebEnginePage *m_page = nullptr;
     QTimer *m_tick = nullptr;
     QProcess *m_setup = nullptr;

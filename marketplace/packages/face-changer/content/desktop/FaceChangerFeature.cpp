@@ -173,11 +173,7 @@ FaceChangerFeature::FaceChangerFeature(const forkmesh::market::NativePackageHost
 
     QVBoxLayout *previewBody = nullptr;
     layout->addWidget(card(QStringLiteral("Your camera"), &previewBody));
-    buildEngine();
-#ifdef FORKMESH_HAVE_WEBENGINE
-    if (m_view)
-        previewBody->addWidget(m_view, 1);
-#endif
+    m_previewBody = previewBody;
     auto *startRow = new QHBoxLayout;
     m_startButton = new QPushButton(QStringLiteral("Start camera"));
     m_startButton->setObjectName(QStringLiteral("primaryButton"));
@@ -280,12 +276,25 @@ FaceChangerFeature::FaceChangerFeature(const forkmesh::market::NativePackageHost
     connect(m_setupButton, &QPushButton::clicked, this, [this]() { setUpCamera(); });
     connect(m_rescanButton, &QPushButton::clicked, this, [this]() { refresh(); });
 
-    if (!m_view)
-        setStatus(QStringLiteral("This build of ForkMesh has no web engine, so the face changer "
-                                 "opens in your browser instead."));
-    else
-        setStatus(QStringLiteral("Loading the face changer…"));
+#ifdef FORKMESH_HAVE_WEBENGINE
+    setStatus(QStringLiteral("Loading the face changer…"));
+#else
+    setStatus(QStringLiteral("This build of ForkMesh has no web engine, so the face changer "
+                             "opens in your browser instead."));
+#endif
     updateState();
+}
+
+void FaceChangerFeature::showEvent(QShowEvent *event)
+{
+    forkmesh::market::NativePackageWidget::showEvent(event);
+#ifdef FORKMESH_HAVE_WEBENGINE
+    if (m_view || !m_previewBody)
+        return;
+    buildEngine();
+    if (m_view)
+        m_previewBody->insertWidget(0, m_view, 1);
+#endif
 }
 
 FaceChangerFeature::~FaceChangerFeature()
