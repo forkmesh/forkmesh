@@ -12,6 +12,7 @@
  ],
  "notes": [
   {"date": "2026-11-03", "area": "Market", "text": "The web CRM's Networks → Mastodon list shows a Follow back button next to each follower the organization's Mastodon account does not follow yet."},
+  {"date": "2026-11-03", "area": "Chat", "text": "On the web, approving or blocking a new chat device now says when it did not finish, and keyboard focus moves to the message box instead of the top of the page."},
   {"date": "2026-11-03", "area": "Market", "text": "CRM: contacting a Customers lead by Mastodon or email now moves it to a new Contacted stage, so it shows under the contacted filter."},
   {"date": "2026-11-03", "area": "Desktop", "text": "The desktop CRM's Mastodon network tab shows a Follow back button next to each follower the organization's Mastodon account does not follow yet."},
   {"date": "2026-11-03", "area": "iPhone", "text": "Long logs and code in an agent's transcript now show their text instead of an empty gray box."},

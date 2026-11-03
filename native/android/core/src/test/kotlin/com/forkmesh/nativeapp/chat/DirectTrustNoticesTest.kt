@@ -47,6 +47,27 @@ class DirectTrustNoticesTest {
         expect(DirectTrustText.ownDevices(3).startsWith("3 new devices "))
         assertEq("Block this device?", DirectTrustText.blockTitle(1))
         assertEq("Block these 2 devices?", DirectTrustText.blockTitle(2))
+        assertEq("Approving did not finish. Try again, or reopen the chat if it keeps failing.", DirectTrustText.decideFailed(true))
+        expect(DirectTrustText.decideFailed(false).startsWith("Blocking did not finish. "))
         assertEq(emptyList<DirectTrustNotice>(), DirectTrustNotices.pending("direct:x", devices.filter { it.state != TrustState.PENDING }, "pat"))
+    }
+
+    fun testADecisionThatThrowsOrRefusesStopsAndReportsFailure() {
+        val tried = mutableListOf<String>()
+        expect(DirectTrustDecision.run(listOf("k1", "k2")) { tried += it; true })
+        assertEq(listOf("k1", "k2"), tried)
+        tried.clear()
+        expect(!DirectTrustDecision.run(listOf("k1", "k2", "k3")) { tried += it; it != "k2" })
+        assertEq(listOf("k1", "k2"), tried)
+        tried.clear()
+        expect(!DirectTrustDecision.run(listOf("k1", "k2")) { tried += it; error("disk full") })
+        assertEq(listOf("k1"), tried)
+        var cancelled = false
+        try {
+            DirectTrustDecision.run(listOf("k1")) { throw kotlin.coroutines.cancellation.CancellationException("left") }
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            cancelled = true
+        }
+        expect(cancelled, "leaving the screen still cancels the coroutine")
     }
 }

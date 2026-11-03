@@ -72,6 +72,10 @@ extension DirectTrustText {
         return "\(count) new devices\(who) want to join this chat. Check the safety number, then approve or block."
     }
 
+    public static func decideFailed(approve: Bool) -> String {
+        "\(approve ? "Approving" : "Blocking") did not finish. Try again, or reopen the chat if it keeps failing."
+    }
+
     public static func blockTitle(_ count: Int) -> String {
         count == 1 ? "Block this device?" : "Block these \(count) devices?"
     }
