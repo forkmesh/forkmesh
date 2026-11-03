@@ -375,6 +375,52 @@ running build stay as they were, and a person syncs by hand. A clean merge
 is published to the source repository with `instance-repo` (a root-only
 push, like the operator's) and the ordinary update deploys it.
 
+#### Patches the instance sent to ForkMesh
+
+An instance that builds features on its own branch and sends them to
+ForkMesh as pull requests gets them back revised: ForkMesh merges the patch
+and then edits it (comments move to docs, review fixes, a migration
+renumbered, the instance's name taken out of docs). Git merges against the
+two branches' merge base, the last ForkMesh commit the instance merged, so
+the instance's original and ForkMesh's revision look like two different
+additions to the same lines, and every such file stopped the follow. On
+OWASP BLT (git.owaspblt.org, source `forkmesh-blt`) the follow merged by
+itself until 2026-10-24 (`d415d9ae51`); after that it stopped on 62 files by
+2026-11-01, an agent synced by hand (`091b9bf7a2`), and the next day it
+stopped again on 21 files, so the ForkMesh dashboard changes merged on
+2026-11-02 (the GitHub-style home, the new repository page, Top
+repositories) never reached the instance, which kept serving its own
+`main` (`/api/version` rev `0c352a1a8a`).
+
+So a file the merge leaves in conflict gets two more tries before the
+follow gives up on it (`same_migrations`, `shared_merge`):
+
+- **Only migration numbers differ.** When every conflict block is the same
+  on both sides once `NNNN_name.sql` loses its number, the instance's side
+  stays: its numbering is the one the database applied, and the migration
+  step above keeps the instance's copy too.
+- **A newer shared version.** The tool walks the instance's first-parent
+  history of the file (at most 200 changes) for the newest version ForkMesh
+  also held since the merge base. That version is a common ancestor of both
+  sides, so it serves as the base of a three-way merge of that file
+  (`git merge-file`). Instance commits after it whose change to the file
+  is byte-for-byte a change ForkMesh made after it (`git patch-id --stable`
+  of the file's diff) are taken back out of the instance's side first, the
+  way `git rebase` skips a commit already upstream, so ForkMesh's revision
+  wins and the instance's own changes stay. A merge that still conflicts
+  stops the follow as before.
+
+On BLT's history this resolves 13 of the 21 files; the 8 left are real
+divergence (the instance kept an earlier revision of its pull list people
+patch in `06-repo-content.js`, `tools/mirror_gateway.py` and its test, its
+own Top repositories code in `05-repo-list-explorer.js` and
+`08-repo-detail-network.js`, and its own wording in three docs) and need
+the hand sync once.
+`tools/test_instance_follow.py` covers both rules. The tool runs from the
+instance's own source (`install-instance.sh` installs
+`$SRC/tools/instance_follow.py`), so an instance gets this after its next
+update that includes it.
+
 Following pushes ForkMesh's code to the protected branch without a pull
 request, so turn it on only when the instance means to run whatever
 ForkMesh ships. Every follow also deploys whatever else is on the source
