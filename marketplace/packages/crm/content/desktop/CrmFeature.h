@@ -7,6 +7,7 @@
 #include <QIcon>
 #include <QImage>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QList>
 #include <QPair>
@@ -489,6 +490,25 @@ private:
     // thing that reads a contact's instance.
     void refreshMastodonNow(const QString &key);
     void fetchMastodonLatest(const QString &key);
+    struct MastodonFollower {
+        QString account;
+        QString instance;
+        QString token;
+        bool plugin = false;
+    };
+    MastodonFollower mastodonFollower() const;
+    using MastodonReplyHandler =
+        std::function<void(int, const QJsonDocument &, const QUrl &)>;
+    void mastodonSignedCall(const QByteArray &verb, const QUrl &url, const QString &token,
+                            MastodonReplyHandler done);
+    using MastodonHandlesHandler =
+        std::function<void(const QSet<QString> &, const QString &)>;
+    void readMastodonHandles(const QUrl &url, const MastodonFollower &follower, int pages,
+                             const QSet<QString> &found, MastodonHandlesHandler done);
+    void loadPluginFollowBack(const QString &org, const MastodonFollower &follower);
+    void followFromPlugin(const QString &key, const MastodonFollower &follower);
+    void finishMastodonFollow(const QString &key, bool ok, const QJsonObject &payload,
+                              const QString &error);
     void loadMastodonFollowBack();
     void followMastodonBack(const QString &key);
     void rebuildFollowBackRows(const QString &key);
@@ -671,6 +691,7 @@ private:
     std::function<QString(const QUrl &)> m_accountSessionToken;
     std::function<bool(const QString &, const QString &, QString *, QString *, QString *)> m_signProof;
     std::function<void(const QString &)> m_openWebPage;
+    std::function<QJsonObject()> m_mastodonSignIn;
     QJsonArray m_decks;
     QSet<QString> m_drafting;
     QSet<QString> m_autoSending;
@@ -847,6 +868,7 @@ private:
     QSet<QString> m_mastodonFollowed;
     QString m_mastodonFollowError;
     QString m_mastodonFollowBackOrg;
+    QString m_mastodonFollowBackAccount;
     qint64 m_mastodonFollowBackAt = 0;
     bool m_mastodonFollowBackLoading = false;
     bool m_nextRenderQueued = false;

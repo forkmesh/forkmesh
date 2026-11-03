@@ -1467,8 +1467,9 @@ def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
     assert "kMastodonFreshMs" in load and "rebuildFollowBackRows(QString())" in load
     follow = _feature_body("followMastodonBack")
     assert '"/mastodon/follow"' in follow and 'QByteArrayLiteral("POST")' in follow
-    assert "m_mastodonFollowBack.remove(key)" in follow
-    assert "m_mastodonFollowed.insert(key)" in follow
+    finish = _feature_body("finishMastodonFollow")
+    assert "m_mastodonFollowBack.remove(key)" in finish
+    assert "m_mastodonFollowed.insert(key)" in finish
     assert 'keys("following")' in load and 'text(payload, "warning")' in load
     fill = _feature_body("fillContactRows")
     assert fill.index("updateMastodonBar();") < fill.index("loadMastodonFollowBack();")
@@ -1477,3 +1478,30 @@ def test_mastodon_network_tab_offers_follow_back_for_followers_not_followed():
     assert 'text(activeSheet(), "network") == QLatin1String("mastodon")' in bar
     assert '"follow-back": ("GET",), "follow": ("POST",)' in CRM_WORKER
     assert "follow back its followers" in MANIFEST
+
+
+def test_mastodon_follow_uses_the_mastodon_plugin_sign_in_without_an_org_token():
+    market = (REPO / "desktop" / "src" / "MainWindowMarket.cpp").read_text(encoding="utf-8")
+    grant = market.split('permissionIds.contains(QStringLiteral("social.mastodon.signin"))', 1)[1]
+    grant = grant.split("        };\n", 1)[0]
+    assert "host.mastodonSignIn = " in grant
+    assert "isInstalledHere(mastodon)" in grant
+    assert 'packageSetting(mastodon, QStringLiteral("accounts"))' in grant
+    assert 'packageSetting(mastodon, QStringLiteral("active"))' in grant
+    assert '"social.mastodon.signin"' in MANIFEST
+    assert "m_mastodonSignIn(host.mastodonSignIn)" in FEATURE
+    follower = _feature_body("mastodonFollower")
+    assert follower.index('"connected"') < follower.index("m_mastodonSignIn()")
+    assert "follower.plugin = " in follower
+    load = _feature_body("loadMastodonFollowBack")
+    assert "follower.account.isEmpty()" in load
+    assert load.index("loadPluginFollowBack(org, follower)") < load.index('"/mastodon/follow-back"')
+    follow = _feature_body("followMastodonBack")
+    assert follow.index("followFromPlugin(key, follower)") < follow.index('"/mastodon/follow"')
+    plugin = _feature_body("loadPluginFollowBack")
+    assert "/api/v1/accounts/verify_credentials" in plugin
+    assert 'page("followers")' in plugin and "following = page(\"following\")" in plugin
+    assert "m_mastodonFollowBack = followers - followed" in plugin
+    assert "/api/v2/search" in _feature_body("followFromPlugin")
+    assert '"Authorization"' in _feature_body("mastodonSignedCall")
+    assert "pluginMastodonErrorText" in _feature_body("updateMastodonBar")

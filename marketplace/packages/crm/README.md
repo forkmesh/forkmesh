@@ -1348,6 +1348,26 @@ raising, so the caller can keep the lead.
   `_follow_handle` (worker); `loadMastodonFollowBack`, `followMastodonBack`,
   `updateMastodonBar` (desktop); `loadCrmFollowBack`, `crmFollowMastodonBack`,
   `renderCrmMastodonBanner` (web).
+
+  <a id="mastodon-plugin-sign-in"></a>**The Mastodon plugin's sign-in**: an
+  organization with no Mastodon token saved follows from the account the
+  member signed in to in the [Mastodon](../mastodon/) package instead, so
+  being signed in there is enough. The CRM never stores or sends that token
+  to the worker: the desktop and the web read the followers and following
+  lists (`verify_credentials`, then up to 25 pages of 80 each by the `Link`
+  header) and follow (`/api/v2/search?resolve=true`, then
+  `/api/v1/accounts/<id>/follow`) straight on that account's own instance, so
+  any instance works and the follow is not audited as `crm.mastodon.follow`.
+  A saved organization token still wins. On the desktop the host hands the
+  CRM the Mastodon package's active account through `mastodonSignIn()` only
+  when the CRM declares `social.mastodon.signin` and the Mastodon package is
+  installed on this desktop; on the web the CRM reads the Mastodon page's
+  sign-in from the tab's `sessionStorage` (`forkmesh.mastodon.session.v1`), so
+  it works in the tab where you signed in. A rejected sign-in tells the member
+  to sign in to the Mastodon plugin again. Code: `mastodonFollower`,
+  `loadPluginFollowBack`, `followFromPlugin` (desktop);
+  `crmFollowAccount`, `crmMastodonPluginFollowBack`, `crmMastodonPluginFollow`
+  (web).
 - **Desktop** (`CrmFeature.cpp`): columns for the lists, the table, Reach out
   / Follow up and the detail panel, spreadsheet-style editing, a People grid
   of contacts with pictures, imports, and a rail count of never-contacted

@@ -105,6 +105,11 @@
       "risk": "sensitive"
     },
     {
+      "id": "social.mastodon.signin",
+      "label": "Follow contacts from the account signed in to the Mastodon package when the organization has no Mastodon token",
+      "risk": "high"
+    },
+    {
       "id": "organization.members.email",
       "label": "Read the verified email addresses of your organization's other members to cc them on email the spider suggests",
       "risk": "sensitive"
