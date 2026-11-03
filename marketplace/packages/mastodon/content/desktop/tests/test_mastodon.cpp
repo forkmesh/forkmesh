@@ -370,6 +370,29 @@ void testBodies()
           "editing a filter to never expire clears the expiry");
 }
 
+void testClientOutlivesNetwork()
+{
+    auto *server = new FakeServer;
+    server->json("GET", QStringLiteral("/api/v1/timelines/home"), QJsonArray());
+    Client client(server);
+    client.setAccount(QStringLiteral("https://social.example"), QStringLiteral("tok"));
+    int firstAnswers = 0;
+    client.get(QStringLiteral("/api/v1/timelines/home"), {}, [&firstAnswers](const Result &) { ++firstAnswers; });
+    client.image(QStringLiteral("https://social.example/a.png"), [](const QImage &) {});
+    check(server->requests.size() == 2, "both requests are in flight before the network goes away");
+    delete server;
+    client.cancelAll();
+    Result late;
+    bool lateAnswered = false;
+    client.get(QStringLiteral("/api/v1/timelines/home"), {}, [&](const Result &result) {
+        late = result;
+        lateAnswered = true;
+    });
+    check(waitFor([&] { return lateAnswered; }), "a request after the network went away still answers");
+    check(!late.ok && !late.error.isEmpty() && firstAnswers == 0,
+          "requests cancelled with the network report nothing and later ones fail cleanly", late.error);
+}
+
 void testFeature()
 {
     FakeServer server;
@@ -728,6 +751,7 @@ int main(int argc, char **argv)
     testContent();
     testHelpers();
     testBodies();
+    testClientOutlivesNetwork();
     testFeature();
 
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "OK", failures);

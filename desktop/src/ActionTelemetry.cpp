@@ -15,6 +15,7 @@
 #include <QThread>
 
 #include <condition_variable>
+#include <cstdlib>
 #include <deque>
 #include <fstream>
 #include <mutex>
@@ -161,8 +162,12 @@ struct ActionTelemetry::Writer {
 
 std::shared_ptr<ActionTelemetry::Writer> ActionTelemetry::writer()
 {
-    static const std::shared_ptr<Writer> instance = std::make_shared<Writer>();
-    return instance;
+    static const std::shared_ptr<Writer> *instance = [] {
+        auto *created = new std::shared_ptr<Writer>(std::make_shared<Writer>());
+        std::atexit([] { (*instance)->stop(); });
+        return created;
+    }();
+    return *instance;
 }
 
 void ActionTelemetry::initialize(const QString &path)

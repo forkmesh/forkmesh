@@ -4705,16 +4705,14 @@ void MainWindow::resetPromptOverlayPlacement()
 
 void MainWindow::savePromptOverlayPlacement()
 {
-    QSettings settings;
-    using forkmesh::settings::put;
-    put(settings, QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
-    put(settings, QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
-    put(settings, QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
-    put(settings, QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
     if (m_promptOverlayDetached && m_promptDetachWindow)
         m_promptDetachGeometry = m_promptDetachWindow->geometry();
-    put(settings, QLatin1String(kPromptDetachGeometrySetting),
-        m_promptDetachGeometry);
+    QSettings settings;
+    if (m_promptDetachGeometry.isNull() &&
+        !settings.contains(QLatin1String(kPromptDetachGeometrySetting)))
+        return;
+    forkmesh::settings::put(settings, QLatin1String(kPromptDetachGeometrySetting),
+                            m_promptDetachGeometry);
 }
 
 void MainWindow::loadPromptOverlayPlacement()
@@ -4724,11 +4722,13 @@ void MainWindow::loadPromptOverlayPlacement()
     QSettings settings;
     m_promptDetachGeometry =
         settings.value(QLatin1String(kPromptDetachGeometrySetting)).toRect();
+    for (const char *stale : {kPromptFloatingSetting, kPromptFloatPosSetting,
+                              kPromptFloatSizeSetting, kPromptDetachedSetting})
+        forkmesh::settings::drop(settings, QLatin1String(stale));
     m_promptOverlayFloating = false;
     m_promptOverlayDetached = false;
     m_promptOverlaySize = QSize();
     m_promptOverlayPos = QPoint();
-    savePromptOverlayPlacement();
 }
 
 bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)

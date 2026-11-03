@@ -62,7 +62,8 @@ only for unread); text labels over icon-with-caption.
 | `accent` | `#4d7ef7` | `#2f6fed` | Primary button, selection, focus, toggle on |
 | `accentHover`, `accentPressed` | `#6b93fa`, `#3d6be0` | `#2860d6`, `#2254bd` | Button states |
 | `accentFg` | `#7ea4ff` | `#2f6fed` | Links, active tab underline |
-| `accentSubtle` | `#1a2338` | `#eaf1fe` | Current-item background |
+| `accentSubtle` | `#1d2438` | `#d6e2fb` | Current-item background |
+| `selection` | `#1d2438` | `#c6d6f8` | Selected rows and text (`QPalette::Highlight`) |
 | `onAccent` | `#ffffff` | `#ffffff` | Text on accent, danger and success fills |
 | `success` | `#3fb871` | `#1f9d55` | Status only |
 | `warning` | `#d9a440` | `#b7791f` | Status only |
@@ -70,6 +71,11 @@ only for unread); text labels over icon-with-caption.
 
 `success`, `warning` and `danger` each have a `Subtle` background. Chat has its
 own tone table (`kChatTones`, `@chat*` in QSS, `Theme::chatColor` in code).
+
+The light `selection` and `accentSubtle` were `#e8eefb`, too faint to see a
+selected row on the near-white page; they are now a clear pale blue that
+still keeps `fg` text readable. An instance theme blends them at 32% and 24%
+of its primary colour in light mode for the same reason.
 
 **Type.** Base 14 px; the Next sheet caps `font-weight` at 600. Next uses the
 bundled Geist and Geist Mono (`desktop/resources/fonts`, SIL OFL, registered by

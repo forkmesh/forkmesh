@@ -126,6 +126,13 @@ other host are marked as decoration (`markFaviconProbe`) so they are skipped
 silently instead of opening a firewall prompt per remote server, and a letter
 avatar is shown instead.
 
+The client holds the host's network manager and its in-flight replies through
+`QPointer`. The replies are children of that manager, and when the main window
+closes the manager is destroyed before the page, so `cancelAll()` from
+`~MastodonFeature` used to call `disconnect()` on freed replies (SIGSEGV in
+`Client::cancelAll`, report #23). `testClientOutlivesNetwork` deletes the
+manager with requests in flight and then cancels.
+
 ### What the page covers
 
 - Timelines: Home (with a compose prompt), Local, Federated, Bookmarks,

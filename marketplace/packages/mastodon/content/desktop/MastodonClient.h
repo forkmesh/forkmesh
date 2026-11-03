@@ -73,11 +73,11 @@ private:
     void track(QNetworkReply *reply, Handler done, bool authorized);
     QUrl apiUrl(const QString &path, const QUrlQuery &query = {}) const;
 
-    QNetworkAccessManager *m_network = nullptr;
+    QPointer<QNetworkAccessManager> m_network;
     QObject *m_context = nullptr;
     QList<QPointer<QObject>> m_retired;
     quint64 m_epoch = 0;
-    QSet<QNetworkReply *> m_replies;
+    QList<QPointer<QNetworkReply>> m_replies;
     QString m_instance;
     QString m_token;
     std::function<void()> m_unauthorized;
