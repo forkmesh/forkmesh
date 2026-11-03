@@ -98,15 +98,49 @@ private, unversioned state and it holds them in memory.
   itself whenever an agent finished, which looked like ForkMesh starting the
   app at random. The menu action works either way.
 
+## Continuing in either place
+
+An agent opened in the Claude app is one conversation in both apps: the
+Claude app's CLI resumes the same session id and appends to the same
+`.jsonl` (through the `~/.claude/projects` symlink), tagging its lines
+`entrypoint: claude-desktop` (`cli` from a terminal `claude --resume`), while
+ForkMesh's own runs write `sdk-cli`.
+
+- **Claude app turns show in ForkMesh.** Every 3 s tick
+  (`onExternalClaudeTick` -> `syncClaudeAppSessions`) reads what a stored,
+  non-running Claude Code agent with a `claudeAppSessionId` gained since
+  `claudeApp.bytes` (`meta.json` `claudeApp: {path, bytes}`; the path is
+  found once in the account folders, then `~/.claude`).
+  `ClaudeSessionImport::convertForeign` keeps only lines with a non-`sdk-*`
+  entrypoint, and on the first read (offset 0) only those after ForkMesh's
+  first own line, so history a fork copied in is not shown twice. The turns
+  are converted like an import ([../desktop/agents-ui.md](../desktop/agents-ui.md#importing-claude-code-sessions)),
+  stamped with the account whose folder holds the transcript, and a typed
+  prompt is preceded by a "Continued in the Claude app." notice. A prompt's
+  text blocks are filtered one by one, so the `<system-reminder>` the Claude
+  app puts before the first message there does not hide it.
+- **ForkMesh's next turn sees them.** When outside turns arrive, ForkMesh
+  disconnects and stops its idle Claude Code process for that agent, so its
+  exit runs none of the end-of-run steps (an auto-merge agent's worktree
+  cleanup among them), and the next follow-up relaunches with `--resume <id>` and
+  reads the whole transcript, instead of answering from the old process's
+  memory and forking the conversation.
+- **ForkMesh turns show in the Claude app** because they are written to the
+  same file; the Claude app reads them when it opens the session.
+
 ## Limits
 
 - The Claude app switches to every session the deep link adds; there is no
   quiet import. A burst of finishing agents moves the Claude window through
   them, two seconds apart. That is why the setting is off by default.
-- ForkMesh keeps a Claude Code process alive between turns. If you send a
-  message to the same agent in the Claude app while ForkMesh also continues
-  it, both append to one transcript. Continue an agent in one place at a
-  time.
+- Continue an agent in one place at a time. ForkMesh does not mirror while
+  its own run is going, and a Claude app window that already has the session
+  open may not reload ForkMesh's newer turns until the session is reopened
+  there; typing into both at once forks the conversation inside one
+  transcript.
+- An imported Claude app session ([../desktop/agents-ui.md](../desktop/agents-ui.md#importing-claude-code-sessions))
+  is the other way round: ForkMesh continues it with `--fork-session`, so
+  ForkMesh's turns go to a new session the Claude app does not show.
 - Deleting the session in the Claude app may delete the transcript through
   the symlink. ForkMesh's own copy of the stream in `data/agents/sessions/`
   is untouched.

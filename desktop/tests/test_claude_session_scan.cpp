@@ -253,6 +253,62 @@ static void importTests(const QString &home, const QString &repo)
           "staging into the folder the transcript already lives in is a no-op");
     check(!ClaudeSessionImport::stage(source, account, repo, QStringLiteral("../x"), &why),
           "a session id that is not a plain id is refused");
+
+    const ClaudeImportBatch reminded = ClaudeSessionImport::convertLines(
+        {userLine(repo,
+                  QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                         {QStringLiteral("text"),
+                                          QStringLiteral("<system-reminder>\nNow in the Claude "
+                                                         "app.\n</system-reminder>")}},
+                             QJsonObject{{QStringLiteral("type"), QStringLiteral("text")},
+                                         {QStringLiteral("text"),
+                                          QStringLiteral("where did it go?")}}})},
+        QStringLiteral("s1"));
+    check(reminded.events.size() == 1 &&
+              reminded.events.first().value(QStringLiteral("text")).toString() ==
+                  QStringLiteral("where did it go?"),
+          "a prompt behind a system reminder block still shows");
+
+    const auto entry = [](QJsonObject o, const QString &entrypoint) {
+        o.insert(QStringLiteral("entrypoint"), entrypoint);
+        return o;
+    };
+    const QString shared = home + QStringLiteral("/shared/a7d4.jsonl");
+    writeLines(shared,
+               {entry(userLine(repo, QStringLiteral("copied history")), QStringLiteral("claude-desktop")),
+                entry(userLine(repo, QStringLiteral("relink the wallet")), QStringLiteral("sdk-cli")),
+                entry(assistantLine(QStringLiteral("Not linked.")), QStringLiteral("sdk-cli")),
+                QJsonObject{{QStringLiteral("type"), QStringLiteral("last-prompt")}},
+                entry(userLine(repo, QStringLiteral("where did it go?")),
+                      QStringLiteral("claude-desktop")),
+                entry(assistantLine(QStringLiteral("It was erased.")),
+                      QStringLiteral("claude-desktop"))});
+    const ClaudeImportBatch foreign =
+        ClaudeSessionImport::convertForeign(shared, 0, QStringLiteral("a7d4"));
+    check(foreign.events.size() == 3, "only the turns taken outside ForkMesh are mirrored");
+    check(foreign.events.value(0).value(QStringLiteral("type")).toString() ==
+                  QStringLiteral("_local_notice") &&
+              foreign.events.value(0).value(QStringLiteral("text")).toString().contains(
+                  QStringLiteral("Claude app")),
+          "a turn typed in the Claude app is marked as such");
+    check(foreign.events.value(1).value(QStringLiteral("text")).toString() ==
+              QStringLiteral("where did it go?"),
+          "the Claude app's prompt is the user's turn");
+    check(foreign.events.value(2).value(QStringLiteral("session_id")).toString() ==
+              QStringLiteral("a7d4"),
+          "a mirrored answer carries the session id ForkMesh resumes");
+    check(!foreign.log.contains(QStringLiteral("copied history")) &&
+              !foreign.log.contains(QStringLiteral("relink the wallet")),
+          "history before ForkMesh's own first turn and ForkMesh's turns are not mirrored");
+    check(foreign.newOffset == QFileInfo(shared).size(), "the whole transcript is consumed");
+    check(ClaudeSessionImport::convertForeign(shared, foreign.newOffset, QStringLiteral("a7d4"))
+              .events.isEmpty(),
+          "nothing new means nothing mirrored");
+    const QList<QJsonObject> later{
+        entry(assistantLine(QStringLiteral("more")), QStringLiteral("cli"))};
+    check(ClaudeSessionImport::foreignLines(later, true).size() == 1 &&
+              ClaudeSessionImport::foreignLines(later, false).isEmpty(),
+          "a read that starts past ForkMesh's own lines keeps every outside line");
 }
 
 static void orphanedTranscriptTests(const QString &home)
