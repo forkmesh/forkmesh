@@ -161,9 +161,13 @@ browser; people wanted the editor to stay in the app.
   while you switch to other pages, so an open workbook, its selection and
   undo history are still there when you come back. It can also be popped out
   into its own window like other package pages.
-- **Signed in as the desktop.** The page gets the desktop's account session
-  through `accountSessionToken`, which is why the contribution declares the
-  `/api/spreadsheets` boundary. The token goes into a memory-only profile as
+- **Signed in as the desktop.** The page asks `accountSignedIn` whether the
+  desktop is signed in, then gets the account session through
+  `accountSessionToken`, which is why the contribution declares the
+  `/api/spreadsheets` boundary. A desktop signed in by its key gets that
+  session through `requestAccountSession`
+  ([checking sign-in](../desktop/package-modules.md#checking-sign-in)); an empty
+  token alone no longer shows "Sign in". The token goes into a memory-only profile as
   the `forkmesh_account` cookie and the `forkmesh.session` marker
   ([sessions](../app/auth-sessions.md)), both limited to the host's origin;
   nothing is written to disk. When the account, the token or the host

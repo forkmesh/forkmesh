@@ -19,6 +19,7 @@ the [browser extension guide](../browser-extension.md). Back to the
   │   │   ├── popup*.{html,js}   toolbar popup and its cards
   │   │   ├── content.js         Gmail and Zoho Mail reader, send tracking
   │   │   ├── mastodon.js x.js reddit.js forum.js   page readers
+  │   │   ├── mastodon-sent.js   in the Mastodon page: the posts you send
   │   │   └── refresh-*          side panel
   │   └── web/                   /dashboard/extension install and update page
   ├── preview/                   Market screenshot
@@ -116,6 +117,7 @@ zip and loads only when the 3D view opens.
 | `tests/test_browser_extension.py` | Narrowest permissions, bearer-only requests, the mail, Mastodon, Zoho, X, Reddit, capture, refresh panel and repository flows, the CRM contract |
 | `tests/test_extension_vault.py` | The vault background code under a fake browser against the real vault worker module |
 | `tests/test_extension_forum.py` | Discourse detection and the mirror setup link |
+| `tests/mastodon_harness.html` | Mastodon 5's post page and a sent post, read by the real scripts in headless Chrome |
 | `tests/background_*_harness.js` | Node harnesses for capture, Mastodon, Reddit, refresh panel, repositories, vault, X posts, X and Zoho setup |
 | `tests/repo_map_harness.js` | The repository map's tree and source reads under a fake `fetch` |
 | `tests/zoho_tidy_harness.js` | Zoho Mail search, sender grouping and toolbar button matching |

@@ -161,9 +161,11 @@ send to unknown people.
 **Mastodon.** Add each instance under **Mastodon instances** in the popup, or
 press **Record this toot in the CRM** on one you have not added; Chrome asks
 for that site once. With **Add people I mention on Mastodon** on (the
-default), opening one of your own posts on its permalink links everyone it
-mentions to the CRM, up to ten people, creating contacts for new ones.
-Timelines, profiles and other people's posts send nothing.
+default), every post you send, private mentions included, links everyone it
+mentions to the CRM as soon as Mastodon accepts it, up to ten people, creating
+contacts for new ones. Opening one of your own posts on its permalink does the
+same for posts sent elsewhere. Timelines, profiles and other people's posts
+send nothing.
 
 **Save this page to a contact** adds a dated line with the page's title and
 address to a contact's notes.

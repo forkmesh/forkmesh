@@ -384,6 +384,8 @@ async function unlink({ emailId, organization }) {
 
 const MASTODON_SCRIPT = "fm-mastodon-";
 const MASTODON_FILES = { js: ["panel.js", "mastodon.js"], css: ["content.css"] };
+const MASTODON_SENT_SCRIPT = "fm-toot-sent-";
+const MASTODON_SENT_FILES = { js: ["mastodon-sent.js"], world: "MAIN" };
 
 // "mastodon.social", "https://mastodon.social/", or the instance half of a
 // handle typed in whole ("@grace@mastodon.social").
@@ -400,6 +402,10 @@ function instanceHost(value) {
 }
 
 const hostPattern = (host) => `https://${host}/*`;
+const mastodonScripts = (host) => [
+  { id: MASTODON_SCRIPT + host, matches: [hostPattern(host)], ...MASTODON_FILES, runAt: "document_idle" },
+  { id: MASTODON_SENT_SCRIPT + host, matches: [hostPattern(host)], ...MASTODON_SENT_FILES, runAt: "document_start" },
+];
 
 async function storedHosts() {
   const stored = await chrome.storage.local.get(["mastodonHosts"]);
@@ -414,18 +420,15 @@ async function syncMastodon() {
     if (await chrome.permissions.contains({ origins: [hostPattern(host)] })) wanted.push(host);
   }
   const registered = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
-  const ours = registered.filter((script) => script.id.startsWith(MASTODON_SCRIPT));
-  const keep = new Set(wanted.map((host) => MASTODON_SCRIPT + host));
+  const ours = registered.filter((script) => script.id.startsWith(MASTODON_SCRIPT)
+    || script.id.startsWith(MASTODON_SENT_SCRIPT));
+  const scripts = wanted.flatMap(mastodonScripts);
+  const keep = new Set(scripts.map((script) => script.id));
   const stale = ours.filter((script) => !keep.has(script.id)).map((script) => script.id);
   if (stale.length) await chrome.scripting.unregisterContentScripts({ ids: stale }).catch(() => null);
   const have = new Set(ours.map((script) => script.id));
-  const missing = wanted.filter((host) => !have.has(MASTODON_SCRIPT + host));
-  if (missing.length) {
-    await chrome.scripting.registerContentScripts(missing.map((host) => ({
-      id: MASTODON_SCRIPT + host, matches: [hostPattern(host)],
-      ...MASTODON_FILES, runAt: "document_idle",
-    }))).catch(() => null);
-  }
+  const missing = scripts.filter((script) => !have.has(script.id));
+  if (missing.length) await chrome.scripting.registerContentScripts(missing).catch(() => null);
   await chrome.storage.local.set({ mastodonHosts: wanted });
   return { ok: true, hosts: wanted };
 }
@@ -447,6 +450,7 @@ async function addMastodon({ host, tabId }) {
     const target = { tabId };
     await chrome.scripting.insertCSS({ target, files: MASTODON_FILES.css }).catch(() => null);
     await chrome.scripting.executeScript({ target, files: MASTODON_FILES.js }).catch(() => null);
+    await chrome.scripting.executeScript({ target, world: MASTODON_SENT_FILES.world, files: MASTODON_SENT_FILES.js }).catch(() => null);
   }
   return result;
 }
