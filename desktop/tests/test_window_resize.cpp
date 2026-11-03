@@ -18932,6 +18932,49 @@ else:
                           "(closed=%1)")
                       .arg(closedWidth));
 
+            {
+                QWidget *pagesPanel = window.testAgentPagesPanel();
+                QTabWidget *pagesTabs = window.testAgentPagesTabs();
+                auto *agentPage = new QWidget(&window, Qt::Tool);
+                agentPage->setAttribute(Qt::WA_DeleteOnClose);
+                agentPage->setWindowTitle(QStringLiteral("Agent five - Dev server"));
+                const bool docked = window.testDockAgentPage(agentPage);
+                settleRail();
+                const bool pageShown = docked && pagesPanel && pagesPanel->isVisible() &&
+                                       pagesTabs && pagesTabs->count() == 1 &&
+                                       pagesTabs->tabText(0) ==
+                                           QLatin1String("Agent five - Dev server") &&
+                                       !agentPage->isWindow() && agentPage->isVisible();
+                if (!railShot.isEmpty())
+                    window.grab().save(railShot + QStringLiteral(".agent-pages.png"));
+                const forkmesh::ui::LayoutMode startMode = forkmesh::ui::layoutMode();
+                const forkmesh::ui::LayoutMode otherMode =
+                    startMode == forkmesh::ui::LayoutMode::Focus
+                        ? forkmesh::ui::LayoutMode::ControlTower
+                        : forkmesh::ui::LayoutMode::Focus;
+                forkmesh::ui::setLayoutMode(otherMode);
+                settleRail();
+                const bool keptInOther = pagesPanel && pagesPanel->isVisible() &&
+                                         pagesTabs && pagesTabs->count() == 1;
+                forkmesh::ui::setLayoutMode(startMode);
+                settleRail();
+                const bool keptBack = pagesPanel && pagesPanel->isVisible() &&
+                                      pagesTabs && pagesTabs->count() == 1;
+                if (pagesTabs)
+                    emit pagesTabs->tabCloseRequested(0);
+                for (int i = 0; i < 20; ++i)
+                    QApplication::processEvents(QEventLoop::AllEvents, 10);
+                settleRail();
+                check(pageShown && keptInOther && keptBack && pagesTabs &&
+                          pagesTabs->count() == 0 && pagesPanel && !pagesPanel->isVisible(),
+                      QString("an agent's browser page docks as a tab in the Agent pages panel "
+                              "on the right, stays there in both layout modes, and closing its "
+                              "tab hides the panel (shown=%1 other=%2 back=%3)")
+                          .arg(pageShown)
+                          .arg(keptInOther)
+                          .arg(keptBack));
+            }
+
             window.testSetSideRailEnabled(false);
             settleRail();
             const bool railHidden = rail && !rail->isVisible() &&

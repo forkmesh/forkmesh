@@ -29,6 +29,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -343,6 +345,62 @@ QWidget *MainWindow::buildSideRail()
     auto *row = new QHBoxLayout(rail);
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(0);
+
+    auto *pages = new QWidget;
+    pages->setObjectName(QStringLiteral("agentPagesPanel"));
+    pages->setAccessibleName(QStringLiteral("Agent pages"));
+    pages->setAttribute(Qt::WA_StyledBackground, true);
+    pages->setFixedWidth(sr::clampBrowserWidth(
+        QSettings().value(sr::kAgentPagesWidthSetting, sr::kDefaultAgentPagesWidth).toInt()));
+    auto *pagesRow = new QHBoxLayout(pages);
+    pagesRow->setContentsMargins(0, kRepoTabRowTopInset, 4, 8);
+    pagesRow->setSpacing(0);
+    auto *pagesHandle = new PanelResizeHandle(pages, QStringLiteral("agentPagesHandle"));
+    pagesHandle->resized = [pages](int width) { pages->setFixedWidth(sr::clampBrowserWidth(width)); };
+    pagesHandle->finished = [pages] {
+        QSettings().setValue(sr::kAgentPagesWidthSetting, pages->width());
+    };
+    pagesRow->addWidget(pagesHandle);
+    auto *pagesColumn = new QVBoxLayout;
+    pagesColumn->setContentsMargins(0, 0, 0, 0);
+    pagesColumn->setSpacing(4);
+    auto *pagesHeader = new QHBoxLayout;
+    pagesHeader->setContentsMargins(4, 0, 0, 0);
+    auto *pagesTitle = new QLabel(QStringLiteral("Agent pages"));
+    pagesTitle->setObjectName(QStringLiteral("sideRailBrowserTitle"));
+    pagesHeader->addWidget(pagesTitle);
+    pagesHeader->addStretch(1);
+    auto *pagesClose = new QPushButton;
+    pagesClose->setObjectName(QStringLiteral("windowChromeButton"));
+    pagesClose->setCursor(Qt::PointingHandCursor);
+    pagesClose->setFocusPolicy(Qt::NoFocus);
+    pagesClose->setFixedSize(26, 24);
+    pagesClose->setToolTip(QStringLiteral("Close every agent page"));
+    setOcticon(pagesClose, QStringLiteral("x"), 12);
+    pagesHeader->addWidget(pagesClose);
+    pagesColumn->addLayout(pagesHeader);
+    auto *pagesTabs = new QTabWidget;
+    pagesTabs->setObjectName(QStringLiteral("agentPagesTabs"));
+    pagesTabs->setDocumentMode(true);
+    pagesTabs->setTabsClosable(true);
+    pagesTabs->setMovable(true);
+    pagesTabs->tabBar()->setElideMode(Qt::ElideRight);
+    connect(pagesTabs, &QTabWidget::tabCloseRequested, this, [pagesTabs](int index) {
+        if (QWidget *page = pagesTabs->widget(index))
+            page->close();
+    });
+    connect(pagesClose, &QPushButton::clicked, this, [pagesTabs] {
+        for (int i = pagesTabs->count() - 1; i >= 0; --i) {
+            if (QWidget *page = pagesTabs->widget(i))
+                page->close();
+        }
+    });
+    pagesColumn->addWidget(pagesTabs, 1);
+    pagesRow->addLayout(pagesColumn, 1);
+    pages->hide();
+    m_agentPagesPanel = pages;
+    m_agentPagesTabs = pagesTabs;
+    row->addWidget(pages);
 
     auto *panel = new QWidget;
     panel->setObjectName(QStringLiteral("sideRailBrowserPanel"));
@@ -886,6 +944,35 @@ void MainWindow::revealTerminals()
         showSection(kTerminalsSectionIndex);
         m_terminalsPage->focusCurrent();
     }
+}
+
+bool MainWindow::dockAgentPage(QWidget *frame)
+{
+    if (!frame || !m_agentPagesPanel || !m_agentPagesTabs || !sideRailFits())
+        return false;
+    if (!sideRailEnabled())
+        setSideRailEnabled(true);
+    int index = m_agentPagesTabs->indexOf(frame);
+    if (index < 0) {
+        if (frame->isWindow())
+            frame->setParent(m_agentPagesTabs, Qt::Widget);
+        index = m_agentPagesTabs->addTab(frame, QString());
+        QPointer<QTabWidget> tabs = m_agentPagesTabs;
+        QPointer<QWidget> panel = m_agentPagesPanel;
+        connect(frame, &QObject::destroyed, this, [tabs, panel] {
+            QTimer::singleShot(0, panel, [tabs, panel] {
+                if (tabs && panel && tabs->count() == 0)
+                    panel->hide();
+            });
+        });
+    }
+    const QString title = frame->windowTitle();
+    m_agentPagesTabs->setTabText(index, title);
+    m_agentPagesTabs->setTabToolTip(index, title);
+    m_agentPagesTabs->setCurrentIndex(index);
+    frame->show();
+    m_agentPagesPanel->show();
+    return true;
 }
 
 void MainWindow::openInSideRailBrowser(const QString &address)

@@ -88,7 +88,22 @@ pages in the system browser. Only `http` and `https` load. The panel's width is
 dragged on its left edge (280 to 1200 px, `ui/sideRailBrowserWidth`, default
 420); whether it is open and the last address are kept in
 `ui/sideRailBrowserOpen` and `ui/sideRailBrowserUrl`. Agents keep using their
-own browser windows (`open_browser_window`); the side browser is the user's.
+own browser pages (`open_browser_window`, below); the side browser is the user's.
+
+## Agent pages
+
+`#agentPagesPanel` sits to the left of the side browser and holds the pages
+agents open with `open_browser_window`, one tab each (`#agentPagesTabs`,
+closable and movable, titled with the agent and page title). Opening a page
+turns the side rail on if it was off, shows the panel and selects the page's
+tab; a transcript link to the page selects it again. Closing a tab closes the
+agent's window, and the panel hides when its last tab goes; the **x** in the
+header closes every page. The width is dragged on the left edge (280 to
+1200 px, `ui/agentPagesWidth`, default 640). Pages still float in their own
+window when the side rail does not fit. Why: a floating window covered the
+transcript and had to be moved by hand on every page; docked, the page and
+the agent's work are side by side. Details:
+[MCP desktop tools](../tools/mcp-desktop-tools.md#browser-windows).
 
 ## Terminal pane and launcher
 

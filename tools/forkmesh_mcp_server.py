@@ -81,6 +81,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zoneinfo
 from pathlib import Path, PurePosixPath
 
 try:
@@ -141,7 +142,7 @@ WRITE_TOOLS = {
     "create_task", "update_task", "complete_task", "reopen_task",
     "attach_work_item", "detach_work_item", "delete_task", "restore_task",
     "create_agent", "link_branch", "create_release", "publish_release",
-    "record_expense", "send_email",
+    "record_expense", "send_email", "booking_update_page",
 }
 DESTRUCTIVE_TOOLS = {"delete_task", "crm_merge_contacts"}
 WINDOW_TOOLS = {"show_window", "read_window", "close_window",
@@ -269,10 +270,11 @@ def access_level():
 def require_write_access(name):
     if access_level() != "read":
         return
-    if name in CRM_TOOLS or name in MARKETING_TOOLS or name in TASK_READ_TOOLS:
+    if (name in CRM_TOOLS or name in MARKETING_TOOLS or name in BOOKING_TOOLS or
+            name in TASK_READ_TOOLS):
         raise ValueError(
-            f"{name} needs the connector token: CRM, Marketing and task tools read "
-            "and change organization records with this account's authority, so "
+            f"{name} needs the connector token: CRM, Marketing, Booking and task "
+            "tools read and change records with this account's authority, so "
             "once this node publishes an MCP connector they require a matching "
             "FORKMESH_MCP_TOKEN. Copy the config from the desktop client's "
             "Settings -> MCP tab and restart the agent.")
@@ -2468,6 +2470,161 @@ def marketing_save_ready_post(organization, text, image_path=None, image_alt=Non
                          if item.get("status") == "replaced"][:1]}
 
 
+BOOKING_PREFIX = "/api/booking"
+BOOKING_REQUEST_PROOF = "forkmesh-booking-request-v1"
+BOOKING_TOOLS = {"booking_get_page", "booking_update_page"}
+BOOKING_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+BOOKING_CLOCK_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$")
+BOOKING_TYPE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$")
+BOOKING_LOCATIONS = ("video", "phone", "place", "custom", "none")
+BOOKING_TEXT_FIELDS = {"displayName": 80, "headline": 140, "welcome": 1500}
+BOOKING_CHOICE_FIELDS = {"minNoticeMinutes": "notices", "maxDaysAhead": "horizons",
+                         "bufferMinutes": "buffers", "slotStepMinutes": "steps"}
+BOOKING_FLAGS = ("enabled", "emailOwner", "addToCalendar", "checkCalendar",
+                 "notifyVisits")
+BOOKING_OPTIONS = {
+    "durations": (10, 15, 20, 25, 30, 45, 50, 60, 75, 90, 120, 180, 240),
+    "steps": (0, 5, 10, 15, 20, 30, 60),
+    "buffers": (0, 5, 10, 15, 30, 45, 60),
+    "notices": (0, 30, 60, 120, 240, 480, 720, 1440, 2880, 4320, 10080),
+    "horizons": (7, 14, 21, 30, 45, 60, 90, 120, 180, 365),
+}
+BOOKING_MAX_TYPES = 12
+BOOKING_UPCOMING_SHOWN = 20
+
+
+def booking_request(method, path, body=None):
+    return package_request("Booking", BOOKING_PREFIX, BOOKING_REQUEST_PROOF,
+                           method, path, body)
+
+
+def booking_minutes(clock):
+    hours, minutes = clock.split(":")
+    return int(hours) * 60 + int(minutes)
+
+
+def booking_availability(value):
+    if not isinstance(value, dict) or any(day not in BOOKING_DAYS for day in value):
+        raise ValueError("availability maps mon..sun to lists of "
+                         "[\"HH:MM\", \"HH:MM\"] windows")
+    result = {}
+    for day in BOOKING_DAYS:
+        windows = value.get(day) or []
+        if not isinstance(windows, list) or len(windows) > 6:
+            raise ValueError(f"availability.{day} must be a list of at most 6 windows")
+        result[day] = []
+        for window in windows:
+            if (not isinstance(window, (list, tuple)) or len(window) != 2 or
+                    not all(isinstance(clock, str) and BOOKING_CLOCK_RE.match(clock)
+                            for clock in window) or window[0] == "24:00" or
+                    booking_minutes(window[1]) <= booking_minutes(window[0])):
+                raise ValueError(
+                    f"availability.{day} window {window!r} must be [start, end] "
+                    "in 24-hour HH:MM with end after start (24:00 ends the day)")
+            result[day].append([window[0], window[1]])
+    return result
+
+
+def booking_types(value, durations):
+    if not isinstance(value, list) or not 0 < len(value) <= BOOKING_MAX_TYPES:
+        raise ValueError(f"types must list 1 to {BOOKING_MAX_TYPES} meeting types")
+    result = []
+    for item in value:
+        if not isinstance(item, dict) or not str(item.get("title") or "").strip():
+            raise ValueError("every meeting type needs a title")
+        minutes = item.get("minutes")
+        if minutes not in durations:
+            raise ValueError(
+                f"minutes must be one of {', '.join(str(d) for d in durations)}")
+        kind = dict(item.get("location") or {}).get("kind", "video")
+        if kind not in BOOKING_LOCATIONS:
+            raise ValueError(f"location.kind must be one of {', '.join(BOOKING_LOCATIONS)}")
+        type_id = str(item.get("id") or "").strip().lower()
+        if type_id and not BOOKING_TYPE_ID_RE.match(type_id):
+            raise ValueError(f"meeting type id {type_id!r} must be lowercase "
+                             "letters, digits and dashes")
+        result.append({
+            "id": type_id, "title": str(item["title"]).strip()[:80],
+            "minutes": minutes,
+            "description": str(item.get("description") or "").strip()[:600],
+            "location": {"kind": kind,
+                         "detail": str(dict(item.get("location") or {}).get("detail")
+                                       or "").strip()[:500]},
+            "enabled": item.get("enabled") is not False})
+    return result
+
+
+def booking_view(overview):
+    if not overview.get("installed"):
+        return {"installed": False,
+                "suggestedSlug": overview.get("suggestedSlug") or ""}
+    upcoming = overview.get("upcoming") or []
+    return {
+        "installed": True, "slug": overview.get("slug") or "",
+        "enabled": bool(overview.get("enabled")),
+        "link": overview.get("link") or "", "links": overview.get("links") or {},
+        "settings": overview.get("settings") or {},
+        "upcomingCount": len(upcoming),
+        "upcoming": [{key: item.get(key) for key in (
+            "id", "typeTitle", "minutes", "startAt", "endAt")}
+            for item in upcoming[:BOOKING_UPCOMING_SHOWN]],
+    }
+
+
+def booking_get_page():
+    return booking_view(booking_request("GET", BOOKING_PREFIX))
+
+
+def booking_update_page(changes):
+    if not isinstance(changes, dict) or not changes:
+        raise ValueError("nothing to update")
+    overview = booking_request("GET", BOOKING_PREFIX)
+    options = dict(BOOKING_OPTIONS, **(overview.get("options") or {}))
+    body = {}
+    for key, value in changes.items():
+        if key in BOOKING_TEXT_FIELDS:
+            if not isinstance(value, str):
+                raise ValueError(f"{key} must be text")
+            body[key] = value.strip()[:BOOKING_TEXT_FIELDS[key]]
+        elif key == "timezone":
+            try:
+                zoneinfo.ZoneInfo(str(value))
+            except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+                raise ValueError(f"unknown time zone {value!r}; use an IANA "
+                                 "name such as America/New_York") from None
+            body[key] = str(value)
+        elif key == "timeFormat":
+            if value not in ("12h", "24h"):
+                raise ValueError("timeFormat must be 12h or 24h")
+            body[key] = value
+        elif key == "availability":
+            body[key] = booking_availability(value)
+        elif key == "types":
+            body[key] = booking_types(value, options["durations"])
+        elif key in BOOKING_CHOICE_FIELDS:
+            allowed = options[BOOKING_CHOICE_FIELDS[key]]
+            if value not in allowed:
+                raise ValueError(f"{key} must be one of "
+                                 f"{', '.join(str(v) for v in allowed)}")
+            body[key] = value
+        elif key == "dailyLimit":
+            if not isinstance(value, int) or not 0 <= value <= 50:
+                raise ValueError("dailyLimit must be 0 (no limit) to 50")
+            body[key] = value
+        elif key in BOOKING_FLAGS:
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be true or false")
+            body[key] = value
+        else:
+            raise ValueError(f"unknown booking setting {key!r}")
+    created = not overview.get("installed")
+    if created:
+        booking_request("POST", f"{BOOKING_PREFIX}/install",
+                        {k: v for k, v in body.items() if k != "enabled"})
+    saved = booking_request("PUT", f"{BOOKING_PREFIX}/page", body)
+    return dict(booking_view(saved), created=created)
+
+
 def crm_limit(value):
     try:
         limit = int(CRM_DEFAULT_LIMIT if value is None else value)
@@ -4063,6 +4220,14 @@ def tool_marketing_save_ready_post(args):
         args.get("model")), indent=2)
 
 
+def tool_booking_get_page(args):
+    return json.dumps(booking_get_page(), indent=2)
+
+
+def tool_booking_update_page(args):
+    return json.dumps(booking_update_page(args.get("changes")), indent=2)
+
+
 def tool_crm_find_duplicates(args):
     return json.dumps(crm_find_duplicates(args.get("organization")), indent=2)
 
@@ -5106,6 +5271,69 @@ TOOLS = [
         "handler": tool_marketing_save_ready_post,
     },
     {
+        "name": "booking_get_page",
+        "description": "The signed-in account's Booking Page (the public "
+                       "forkmesh.com/meet link): its link, whether it is on, "
+                       "the settings (time zone, weekly hours, meeting types, "
+                       "notice, buffers, emails) and the next booked meetings' "
+                       "times, without guest details.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "handler": tool_booking_get_page,
+    },
+    {
+        "name": "booking_update_page",
+        "description": "Change the signed-in account's Booking Page; it is "
+                       "set up first if the account has none. Only the keys "
+                       "given change. availability replaces the whole week "
+                       "(a day left out is unavailable) and types replaces "
+                       "every meeting type, so read booking_get_page first "
+                       "to keep the ones you are not changing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"changes": {
+                "type": "object",
+                "properties": {
+                    "timezone": {"type": "string",
+                                 "description": "IANA name, e.g. America/New_York"},
+                    "availability": {
+                        "type": "object",
+                        "description": "mon..sun -> [[\"11:00\", \"23:00\"]], "
+                                       "24-hour, up to 6 windows a day",
+                        "additionalProperties": {"type": "array"}},
+                    "types": {
+                        "type": "array",
+                        "items": {"type": "object", "properties": {
+                            "id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "minutes": {"type": "integer"},
+                            "description": {"type": "string"},
+                            "location": {"type": "object", "properties": {
+                                "kind": {"type": "string",
+                                         "enum": list(BOOKING_LOCATIONS)},
+                                "detail": {"type": "string"}}},
+                            "enabled": {"type": "boolean"}},
+                            "required": ["title", "minutes"]}},
+                    "displayName": {"type": "string"},
+                    "headline": {"type": "string"},
+                    "welcome": {"type": "string"},
+                    "timeFormat": {"type": "string", "enum": ["12h", "24h"]},
+                    "minNoticeMinutes": {"type": "integer"},
+                    "maxDaysAhead": {"type": "integer"},
+                    "bufferMinutes": {"type": "integer"},
+                    "slotStepMinutes": {"type": "integer",
+                                        "description": "0 steps by the meeting length"},
+                    "dailyLimit": {"type": "integer"},
+                    "enabled": {"type": "boolean"},
+                    "emailOwner": {"type": "boolean"},
+                    "addToCalendar": {"type": "boolean"},
+                    "checkCalendar": {"type": "boolean"},
+                    "notifyVisits": {"type": "boolean"}},
+                "additionalProperties": False}},
+            "required": ["changes"],
+        },
+        "handler": tool_booking_update_page,
+    },
+    {
         "name": "crm_find_duplicates",
         "description": "Groups of contacts that may be one person: they share "
                        "a primary email address, a GitHub, LinkedIn or X "
@@ -5554,8 +5782,10 @@ TOOLS += [
     },
     {
         "name": "open_browser_window",
-        "description": "Open a web page in a small browser window inside the "
-                       "ForkMesh desktop, for example a local dev server "
+        "description": "Open a web page as a tab in the Agent pages panel on "
+                       "the right of the ForkMesh desktop's main window (its "
+                       "own small window when the main window is too narrow "
+                       "for the panel), for example a local dev server "
                        "(http://localhost:3000), a deployed preview, docs or "
                        "a pull request, so the user can look at it next to "
                        "the agent. http and https only; the window has its "
@@ -5941,7 +6171,7 @@ def tools_list_payload():
             "openWorldHint": tool["name"] in {
                 "read_chat_messages", "post_chat_message", "send_email"} or
             tool["name"] in CRM_TOOLS or tool["name"] in MARKETING_TOOLS or
-            tool["name"] in TASK_READ_TOOLS,
+            tool["name"] in BOOKING_TOOLS or tool["name"] in TASK_READ_TOOLS,
         }
         tools.append(item)
     return {"tools": tools}
@@ -5981,6 +6211,10 @@ def handle_request(msg):
             "reads the X channel's posts, engagement, follower trend, open "
             "campaigns and the ready post; marketing_save_ready_post stores the "
             "next X post (text and image) for the team to post, and never posts. "
+            "Booking Page (the account's public forkmesh.com/meet link, signed "
+            "as the desktop's account): booking_get_page reads its link, hours, "
+            "meeting types and upcoming times; booking_update_page changes "
+            "them. "
             "Organization tasks (the Tasks page, signed as the desktop's "
             "account): list_tasks (status deleted lists the trash), get_task, "
             "create_task, update_task, complete_task, reopen_task, "
@@ -6002,7 +6236,8 @@ def handle_request(msg):
             "Desktop windows (same condition): show_window opens a small "
             "window to show the user a result or ask a question with buttons "
             "or a text field, open_browser_window opens a web page (such as a "
-            "local dev server) in a small browser window, read_window reads "
+            "local dev server) in the main window's Agent pages panel, "
+            "read_window reads "
             "the answer or current page, read_browser_page returns the page's "
             "text, console messages and optionally a screenshot, "
             "close_window closes either; browser_action clicks, types, "
