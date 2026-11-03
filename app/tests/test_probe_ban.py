@@ -129,6 +129,9 @@ SCANNER_PATHS = {
     "/v2/api-docs": "config",
     "/MAIL_HOST": "secret",
     "/SENDGRID_TEMPLATE_ID": "secret",
+    "/GIT_TOKEN": "secret",
+    "/BUILD_REV": "recon",
+    "/GIT_SHA": "recon",
     "/internal/v2/config/mps_secret/ADM_SESSIONID": "secret",
     "/_environment": "secret",
     "/_netrc": "secret",
@@ -304,6 +307,14 @@ def test_mixed_families_add_up_and_one_stray_404_does_not():
     assert h.visitor()["score"] == 2
     assert h.scan("/kafka/") == "banned"
     assert h.bans()[0]["kinds"] == "config,recon"
+
+
+def test_checking_the_deployed_build_does_not_ban_the_operator():
+    h = ProbeHarness()
+    assert h.scan("/BUILD_REV") == "scored"
+    assert h.scan("/version") == "scored"
+    assert h.visitor()["score"] == 2
+    assert h.rules() == [] and h.bans() == []
 
 
 def test_one_script_probe_bans_and_one_backup_probe_does_not():
