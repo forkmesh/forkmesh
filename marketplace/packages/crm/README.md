@@ -691,7 +691,7 @@ marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
   a sheet bound to a pipeline also sets the contact's `flow`, keeping a stage
   that pipeline has. Any `flow` and `stage` on the same request are ignored.
   A list the account cannot read answers `404 list_not_found`.
-- **Open tracking for extension sends** (1.50.0): `POST /emails/pixel` returns
+- **Open tracking for extension sends** (1.51.0): `POST /emails/pixel` returns
   a signed open-image address (`token` = `<id>.<blind sig>`, `url` under
   `/api/crm/-/t/o/`), storing nothing. A link carrying that `trackToken` uses
   its id as the email's id (once; a forged or used token is ignored) and marks
