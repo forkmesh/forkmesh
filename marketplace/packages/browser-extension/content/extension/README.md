@@ -72,9 +72,16 @@ Safety properties:
 ## CRM
 
 Open an email. A compact **CRM header** above the message names the other
-party and offers **Look up**; nothing is requested from ForkMesh until you press
-it. **Look up** shows the record (name, lists, pipeline, stage, owner, last
-email, linked emails, company, title, deal value, next step, tags). The **FM** button
+party with their address and a **+N more** for the other people on it. With
+**Look up and link emails I open** on in the popup (the default, 2.32.0) the
+header looks the address up at once behind a spinner, and when a contact has
+that exact address the email is linked to them (**Linked · this one · auto**);
+a record found only by name, profile or phone is shown with a **Found by** chip
+and never linked by itself. A lookup or link that fails or gets no answer in
+20 seconds says why and offers **Retry**. With the setting off nothing is
+requested from ForkMesh until you press **Look up**. The record shows name,
+lists, pipeline, stage, owner, last email, linked emails, company, title, deal
+value, next step and tags. The **FM** button
 (or the toolbar popup) opens the panel, prefilled from the message (contact,
 name, company, website, signature details, date and subject, all editable):
 
