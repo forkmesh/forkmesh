@@ -146,8 +146,8 @@ def test_contacts_inbox_outreach_and_team_are_separate_tabs():
     assert re.search(r'<div data-crm-sections data-crm-org-only role="tablist" aria-label="CRM sections"', WEB_VIEW)
     app = WEB_VIEW.split("<div data-crm-app", 1)[1]
     panels = re.findall(r'<div data-crm-section="([a-z]+)" id="crm-section-\1" role="tabpanel" aria-labelledby="crm-section-tab-\1"', app)
-    assert panels == ["contacts", "inbox", "outreach", "team", "zoho"]
-    for section in ("contacts", "inbox", "outreach", "team", "zoho"):
+    assert panels == ["contacts", "inbox", "outreach", "team", "cleanup", "zoho"]
+    for section in ("contacts", "inbox", "outreach", "team", "cleanup", "zoho"):
         assert f'data-crm-section-tab="{section}"' in WEB_VIEW, section
 
     def panel(name):
@@ -210,7 +210,7 @@ def test_reads_retry_a_wedged_isolate_blip_and_writes_are_never_replayed():
 
 
 def test_the_team_tab_ranks_members_and_charts_their_days_in_local_time():
-    assert 'const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "zoho"];' in WEB_SCRIPT
+    assert 'const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "cleanup", "zoho"];' in WEB_SCRIPT
     assert "tz: String(-new Date().getTimezoneOffset())" in WEB_SCRIPT
     assert "state.crmView.activity = payload.activity" in WEB_SCRIPT
     assert "renderCrmTeam();" in WEB_SCRIPT.split("function renderCrm() {", 1)[1].split("\n  }", 1)[0]

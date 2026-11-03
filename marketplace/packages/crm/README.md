@@ -177,6 +177,42 @@ into an update) instead of a `500`. A shared sheet's add still answers
   `list_cannot_add`). New contacts join the list (and its pipeline); a stage
   must be one of the contact's pipeline stages. It never deletes a contact.
 
+### List cleanup
+
+**List cleanup** (web: under More, `?section=cleanup`; desktop: `⋯` > List
+cleanup, a window) lists the people who show on more than one list, so each
+can be kept on one. A person is the
+records that share a `personKeys` key (see
+[One person, several records](#one-person-several-records)), and their lists
+are the saved lists any of those records shows on (`crmContactInView`, the
+desktop's `contactInSheet`).
+Someone counts when they have several records on two or more lists, or one
+record on two or more plain lists. One record on a plain list and on its own
+pipeline's list does not count: every contact is in a pipeline, so that is
+the normal shape of an imported list.
+
+- Columns are Name, Email, Lists, Records, Last contacted and Last edit; a
+  header click sorts, again reverses. Lists sorts by the list names, so people
+  on the same lists sit together. A search narrows by name or email, the list
+  picker narrows to one list's people, and at most 500 rows are drawn.
+- Clicking a list on a row keeps the person on that list only, after a
+  confirm. The record already on that list (the newest edit when several are)
+  is kept and every other record is merged into it through
+  `POST /contacts/merge`, so their fields, tags, notes, email history and deck
+  links move over. Then one `POST /contacts/bulk` edit sets its lists
+  (`setViews`): a pipeline list also sets the pipeline (the stage carries over
+  when the pipeline has it, else the first); a plain list keeps the pipeline
+  list the record was put on, because the contact stays in its pipeline.
+- With a list picked, **Keep N on <list>** does the same for every person
+  shown (at most the 500 drawn), one after the other, with one confirm.
+- Moves wait until every contact has loaded (paging), so a person's records
+  are all known. A failure stops the run, reports how many finished and reads
+  the organization again.
+- The desktop window redraws whenever the contacts change. A list button's
+  click is queued, because the redraw that follows a move deletes the button.
+- It differs from **Possible duplicates**, which also matches names and
+  GitHub profiles and merges one pair at a time from the table.
+
 ## Importing
 
 - **CSV import**: up to 2000 rows per file; contacts are matched by email, so
@@ -1216,9 +1252,10 @@ raising, so the caller can keep the lead.
   list and pipeline (icon, name, share count, contact count, `⋯` menu;
   right-click, double-click to rename and drag to reorder as before), then
   **Shared with me**, then **More**: Inbox (Zoho boxes and email activity),
-  Outreach, Team leaderboard, **My Zoho Mail**, People with pictures, Import
-  CSV list and CRM settings. The open page fills the right; `?section=` is one
-  of `contacts`, `inbox`, `outreach`, `team`, `zoho`, and opening a list
+  Outreach, Team leaderboard, [List cleanup](#list-cleanup), **My Zoho Mail**,
+  People with pictures, Import CSV list and CRM settings. The open page fills
+  the right; `?section=` is one of `contacts`, `inbox`, `outreach`, `team`,
+  `cleanup`, `zoho`, and opening a list
   switches back to its contacts. Arrow keys move along the More pages. The
   column stacks above the page on phones. Controls use the compact sizes, the
   header's **Add contact** is the page's one `cta` button, and **Hide
@@ -1243,9 +1280,9 @@ raising, so the caller can keep the lead.
   of contacts with pictures, imports, and a rail count of never-contacted
   contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
   who can open it. The header holds only the title, the organization, Import,
-  Mail, `⋯` (People, Pipelines, History, Extension), Settings, Refresh and
-  Add contact; **Networks** follows the lists, with a globe icon per network,
-  as client-side tabs with no list menu, rename or sharing; a status message other than an error fades after six seconds. Data is read when the
+  Mail, `⋯` (People, Pipelines, History, List cleanup, Extension), Settings,
+  Refresh and Add contact; **Networks** follows the lists, with a globe icon
+  per network, as client-side tabs with no list menu, rename or sharing; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,
@@ -1271,8 +1308,8 @@ raising, so the caller can keep the lead.
 - **iOS and Android**: under Business in the You hub; read `GET /api/crm` and
   `GET /api/crm/<org>?since=<revision>&tz=<minutes>` and offer the same
   editing, sharing, email, outreach, deck, drafts and Zoho Self Client
-  connection. GitHub, Mastodon and ForkMesh-user imports and Recent updates
-  are desktop/web only.
+  connection. GitHub, Mastodon and ForkMesh-user imports, Recent updates and
+  List cleanup are desktop/web only.
 - **Browser extension** (`marketplace/packages/browser-extension`): links Gmail,
   Zoho Mail and Mastodon conversations to contacts. This package pins the
   oldest compatible extension build (`CRM_EXTENSION_MINIMUM` in

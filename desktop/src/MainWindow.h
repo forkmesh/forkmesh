@@ -8353,7 +8353,8 @@ private:
     };
     QSet<QString> m_worktreeGitBusy;
     void resolveWorktreeConflicts();
-    void commitWorktreeChanges(const QString &worktreePath, const QString &branch);
+    void commitWorktreeChanges(const QString &worktreePath, const QString &branch,
+                               std::function<void(bool)> onDone = {});
     void removeWorktree(const QString &worktreePath, const QString &branch,
                         bool confirm, bool alsoDeleteBranch = true,
                         std::function<void()> onDone = {});

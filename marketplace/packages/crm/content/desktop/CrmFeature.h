@@ -202,6 +202,29 @@ struct NextContact
     QStringList ranked;
 };
 
+struct CleanupPerson
+{
+    QString id;
+    QString name;
+    QString email;
+    QString leadId;
+    QList<QJsonObject> records;
+    QList<QStringList> recordLists;
+    QStringList lists;
+    qint64 contacted = 0;
+    qint64 updated = 0;
+};
+
+struct CleanupPlan
+{
+    QString keepId;
+    QString keepLabel;
+    QString listName;
+    bool pipeline = false;
+    QStringList merge;
+    QJsonObject edit;
+};
+
 struct NoteDraft
 {
     QString contactId;
@@ -581,6 +604,11 @@ private:
     void syncNoteDrafts();
     void showNoteDrafts();
     void fillNoteDrafts();
+    QList<CleanupPerson> cleanupPeople() const;
+    CleanupPlan cleanupPlan(const CleanupPerson &person, const QJsonObject &list) const;
+    void showListCleanup();
+    void fillListCleanup();
+    void keepPeopleOnList(const QStringList &personIds, const QString &listId);
     void sendNoteDraft(const NoteDraft &draft);
     void markNoteDraftSent(const QString &contactId, bool stampContacted);
     void importCsv();
@@ -694,6 +722,13 @@ private:
     QToolButton *m_noteDraftsButton = nullptr;
     QPointer<QTableWidget> m_noteDraftsTable;
     QPointer<QLabel> m_noteDraftsCount;
+    QToolButton *m_cleanupButton = nullptr;
+    QPointer<QTableWidget> m_cleanupTable;
+    QPointer<QLabel> m_cleanupNote;
+    QPointer<QLineEdit> m_cleanupSearch;
+    QPointer<QComboBox> m_cleanupList;
+    QPointer<QPushButton> m_cleanupKeepAll;
+    bool m_cleanupBusy = false;
     QToolButton *m_importButton = nullptr;
     QToolButton *m_githubButton = nullptr;
     QToolButton *m_usersButton = nullptr;

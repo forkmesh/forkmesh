@@ -141,7 +141,7 @@ public:
         update();
     }
 
-    QSize sizeHint() const override { return QSize(120, 6); }
+    QSize sizeHint() const override { return QSize(120, 4); }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -163,7 +163,7 @@ protected:
             const qreal width = track.width() * qreal(segment.first) / qreal(m_total);
             if (width <= 0.0)
                 continue;
-            painter.fillRect(QRectF(x, track.top(), qMax<qreal>(1.0, width - 1.0), track.height()),
+            painter.fillRect(QRectF(x, track.top(), qMax<qreal>(1.0, width - 2.0), track.height()),
                              segment.second);
             x += width;
         }
@@ -217,7 +217,7 @@ QString cardTitle(const QString &key)
         {QStringLiteral("subsessions"), QStringLiteral("Sub-sessions")},
         {QStringLiteral("outputs"), QStringLiteral("Outputs")},
         {QStringLiteral("sources"), QStringLiteral("Sources")},
-        {QStringLiteral("background"), QStringLiteral("Background")},
+        {QStringLiteral("background"), QStringLiteral("Background tasks")},
         {QStringLiteral("changes"), QStringLiteral("Changes")},
         {QStringLiteral("context"), QStringLiteral("Context")},
         {QStringLiteral("environment"), QStringLiteral("Environment")},
@@ -292,12 +292,12 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
         addRow(env);
     m_remoteRow = new QWidget(env.body);
     m_remoteRow->setObjectName(QStringLiteral("sessionsDetailRow"));
-    m_remoteRow->setFixedHeight(26);
+    m_remoteRow->setFixedHeight(30);
     auto *remoteLayout = new QHBoxLayout(m_remoteRow);
     remoteLayout->setContentsMargins(0, 0, 0, 0);
     remoteLayout->setSpacing(10);
     auto *remoteIcon = new QLabel(m_remoteRow);
-    setPanelIcon(remoteIcon, QStringLiteral("device-mobile"), 14);
+    setPanelIcon(remoteIcon, QStringLiteral("device-mobile"), 16);
     auto *remoteText = new QLabel(QStringLiteral("Phone remote control"), m_remoteRow);
     remoteText->setObjectName(QStringLiteral("sessionsDetailText"));
     m_remoteSwitch = new RemoteSwitch(m_remoteRow);
@@ -313,7 +313,7 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_remoteStatus->setObjectName(QStringLiteral("sessionsRemoteStatus"));
     m_remoteStatus->setTextFormat(Qt::RichText);
     m_remoteStatus->setWordWrap(true);
-    m_remoteStatus->setContentsMargins(24, 0, 0, 4);
+    m_remoteStatus->setContentsMargins(26, 0, 0, 4);
     m_remoteStatus->setTextInteractionFlags(Qt::LinksAccessibleByMouse |
                                             Qt::LinksAccessibleByKeyboard);
     env.body->layout()->addWidget(m_remoteStatus);
@@ -330,8 +330,8 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_contextBarRow = new QWidget(context.body);
     m_contextBarRow->setObjectName(QStringLiteral("sessionsDetailRow"));
     auto *barLayout = new QVBoxLayout(m_contextBarRow);
-    barLayout->setContentsMargins(0, 0, 0, 8);
-    barLayout->setSpacing(6);
+    barLayout->setContentsMargins(0, 2, 0, 8);
+    barLayout->setSpacing(8);
     auto *summary = new QHBoxLayout;
     summary->setContentsMargins(0, 0, 0, 0);
     m_contextUsed = new QLabel(m_contextBarRow);
@@ -344,7 +344,7 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     barLayout->addLayout(summary);
     m_contextBar = new ContextBar(m_contextBarRow);
     m_contextBar->setObjectName(QStringLiteral("sessionsContextBar"));
-    m_contextBar->setFixedHeight(6);
+    m_contextBar->setFixedHeight(4);
     barLayout->addWidget(m_contextBar);
     context.body->layout()->addWidget(m_contextBarRow);
     for (int row = 0; row < kContextRows; ++row)
@@ -358,7 +358,7 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     m_memoryToggle = new QPushButton(context.body);
     m_memoryToggle->setObjectName(QStringLiteral("sessionsMemoryToggle"));
     m_memoryToggle->setCursor(Qt::PointingHandCursor);
-    m_memoryToggle->setFixedHeight(26);
+    m_memoryToggle->setFixedHeight(24);
     m_memoryToggle->setAccessibleName(QStringLiteral("Memory files"));
     m_memoryToggle->setToolTip(QStringLiteral("CLAUDE.md, AGENTS.md and auto memory files the "
                                               "agent loads at the start of the session"));
@@ -372,7 +372,7 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     memoryText->setObjectName(QStringLiteral("sessionsDetailText"));
     memoryText->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_memoryCount = new QLabel(m_memoryToggle);
-    m_memoryCount->setObjectName(QStringLiteral("sessionsDetailShare"));
+    m_memoryCount->setObjectName(QStringLiteral("sessionsDetailCount"));
     m_memoryCount->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     memoryLayout->addWidget(m_memoryChevron);
     memoryLayout->addWidget(memoryText, 1);
@@ -394,6 +394,22 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     changes.meta->setTextFormat(Qt::RichText);
     for (int row = 0; row < kChangesRows; ++row)
         addRow(changes);
+    changes.rows.first().trailing->setTextFormat(Qt::RichText);
+    m_commitButton = new QPushButton(QStringLiteral("Commit changes"), changes.rows.at(1).row);
+    m_commitButton->setObjectName(QStringLiteral("sessionsCommitButton"));
+    m_commitButton->setCursor(Qt::PointingHandCursor);
+    m_commitButton->setToolTip(QStringLiteral("Commit every uncommitted file in this session's "
+                                              "worktree to its branch"));
+    m_commitButton->hide();
+    changes.rows.at(1).row->layout()->addWidget(m_commitButton);
+    QObject::connect(m_commitButton, &QPushButton::clicked, this, [this] {
+        if (m_commit)
+            m_commit();
+    });
+
+    m_elapsedTimer = new QTimer(this);
+    m_elapsedTimer->setSingleShot(true);
+    QObject::connect(m_elapsedTimer, &QTimer::timeout, this, [this] { refreshBackground(); });
 
     m_layout->addStretch(1);
     setWidget(m_inner);
@@ -412,12 +428,12 @@ SessionSidePanels::Card &SessionSidePanels::makeCard(const QString &key, const Q
     card.frame->setProperty("sessionsPanel", key);
     card.frame->setAttribute(Qt::WA_StyledBackground, true);
     auto *layout = new QVBoxLayout(card.frame);
-    layout->setContentsMargins(0, 0, 0, 10);
+    layout->setContentsMargins(0, 0, 0, 12);
     layout->setSpacing(0);
     card.head = new QPushButton(card.frame);
     card.head->setObjectName(QStringLiteral("sessionsDetailHeader"));
     card.head->setCursor(Qt::OpenHandCursor);
-    card.head->setFixedHeight(38);
+    card.head->setFixedHeight(40);
     card.head->setProperty("sessionsPanel", key);
     card.head->setToolTip(QStringLiteral("Click to fold %1, drag to move it, right-click for "
                                          "more")
@@ -464,7 +480,8 @@ SessionSidePanels::Card &SessionSidePanels::makeCard(const QString &key, const Q
 
 SessionSidePanels::Row &SessionSidePanels::addRow(Card &card)
 {
-    const Row row = makeRow(card.body, card.key == QLatin1String("subsessions"));
+    const Row row = makeRow(card.body, card.key == QLatin1String("subsessions"),
+                            card.key == QLatin1String("context") ? 24 : 32);
     auto *body = qobject_cast<QVBoxLayout *>(card.body->layout());
     const int at = card.more ? body->indexOf(card.more) : body->count();
     body->insertWidget(at, row.row);
@@ -472,12 +489,12 @@ SessionSidePanels::Row &SessionSidePanels::addRow(Card &card)
     return card.rows.last();
 }
 
-SessionSidePanels::Row SessionSidePanels::makeRow(QWidget *parent, bool stop)
+SessionSidePanels::Row SessionSidePanels::makeRow(QWidget *parent, bool stop, int height)
 {
     Row row;
     row.row = new QWidget(parent);
     row.row->setObjectName(QStringLiteral("sessionsDetailRow"));
-    row.row->setFixedHeight(26);
+    row.row->setFixedHeight(height);
     row.row->installEventFilter(this);
     auto *layout = new QHBoxLayout(row.row);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -536,7 +553,7 @@ void SessionSidePanels::setRow(const Row &row, const Item &item)
     if (row.swatch) {
         row.swatch->setVisible(item.swatch.isValid());
         if (item.swatch.isValid()) {
-            const QString style = QStringLiteral("background-color:%1;border-radius:3px;")
+            const QString style = QStringLiteral("background-color:%1;border-radius:2px;")
                                       .arg(item.swatch.name());
             if (row.swatch->styleSheet() != style)
                 row.swatch->setStyleSheet(style);
@@ -550,7 +567,7 @@ void SessionSidePanels::setRow(const Row &row, const Item &item)
         row.icon->hide();
     } else {
         if (row.icon->property("forkmeshOcticon").toString() != item.icon)
-            setPanelIcon(row.icon, item.icon, 14);
+            setPanelIcon(row.icon, item.icon, 16);
         row.icon->show();
     }
     if (row.text->text() != item.text)
@@ -653,7 +670,7 @@ void SessionSidePanels::refreshActivity()
         QList<Item> items;
         for (const si::Entry &entry : m_collector.outputs()) {
             Item item;
-            item.icon = entry.icon;
+            item.icon = QStringLiteral("code");
             item.text = entry.label;
             item.trailing = entry.created ? QStringLiteral("new")
                                           : lineStats(entry.added, entry.removed);
@@ -681,26 +698,7 @@ void SessionSidePanels::refreshActivity()
         }
         fillList(card, items, items.isEmpty() ? QString() : QString::number(items.size()));
     }
-    {
-        Card &card = m_cards[QStringLiteral("background")];
-        QList<Item> items;
-        for (const si::Background &task : m_collector.background()) {
-            Item item;
-            item.icon = task.kind == QLatin1String("agent") ? QStringLiteral("smart-toy")
-                                                            : QStringLiteral("terminal");
-            item.text = task.label;
-            item.trailing = statusLabel(task.status);
-            item.tip = QStringLiteral("%1 · %2")
-                           .arg(task.kind == QLatin1String("agent") ? QStringLiteral("Subagent")
-                                                                    : QStringLiteral("Background shell"),
-                                statusLabel(task.status));
-            items << item;
-        }
-        const int running = m_collector.runningBackground();
-        fillList(card, items,
-                 running > 0 ? QStringLiteral("%1 running").arg(running)
-                             : items.isEmpty() ? QString() : QString::number(items.size()));
-    }
+    refreshBackground();
     {
         Card &card = m_cards[QStringLiteral("tools")];
         QList<Item> items;
@@ -718,6 +716,57 @@ void SessionSidePanels::refreshActivity()
                  calls > 0 ? (calls == 1 ? QStringLiteral("1 call") : QStringLiteral("%1 calls").arg(calls))
                            : QString());
     }
+}
+
+void SessionSidePanels::refreshBackground()
+{
+    namespace si = sessioninsights;
+    Card &card = m_cards[QStringLiteral("background")];
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    qint64 nextTick = -1;
+    QList<Item> items;
+    QStringList finished;
+    for (const si::Background &task : m_collector.background()) {
+        if (task.status == QLatin1String("completed") || task.status == QLatin1String("stopped")) {
+            finished << task.label;
+            continue;
+        }
+        const bool timed = task.running() && task.startedMs > 0 && task.startedMs <= now;
+        if (timed) {
+            const qint64 age = now - task.startedMs;
+            const qint64 wait = age < 60000 ? 1000 - age % 1000 : 60000 - age % 60000;
+            nextTick = nextTick < 0 ? wait : qMin(nextTick, wait);
+        }
+        Item item;
+        item.icon = task.kind == QLatin1String("agent") ? QStringLiteral("smart-toy")
+                                                        : QStringLiteral("terminal");
+        item.text = task.label;
+        item.trailing = timed ? si::elapsedText(now - task.startedMs) : statusLabel(task.status);
+        item.tip = QStringLiteral("%1 · %2")
+                       .arg(task.kind == QLatin1String("agent") ? QStringLiteral("Subagent")
+                                                                : QStringLiteral("Background shell"),
+                            timed ? QStringLiteral("running since %1")
+                                        .arg(QDateTime::fromMSecsSinceEpoch(task.startedMs)
+                                                 .toString(QStringLiteral("HH:mm")))
+                                  : statusLabel(task.status));
+        items << item;
+    }
+    if (!finished.isEmpty())
+        items << Item{QStringLiteral("check-circle"),
+                      QStringLiteral("%1 finished").arg(finished.size()), QString(),
+                      finished.mid(0, 20).join(QLatin1Char('\n')), QString()};
+    const int running = m_collector.runningBackground();
+    fillList(card, items,
+             running > 0 ? QStringLiteral("%1 running").arg(running)
+             : items.isEmpty()
+                 ? QString()
+                 : QString::number(int(m_collector.background().size())));
+    if (!m_elapsedTimer)
+        return;
+    if (nextTick < 0 || !isVisible())
+        m_elapsedTimer->stop();
+    else
+        m_elapsedTimer->start(int(nextTick) + 20);
 }
 
 void SessionSidePanels::refreshDetails()
@@ -743,9 +792,17 @@ void SessionSidePanels::refreshDetails()
                                      "it with /config in Claude Code, or start it for one "
                                      "session with /remote-control.");
         }
+        const QString shownPath = homePath(d.path);
+        const QString folder = QFileInfo(shownPath).fileName().isEmpty()
+                                   ? shownPath
+                                   : QFileInfo(shownPath).fileName();
+        const QString parentName = QFileInfo(QFileInfo(shownPath).path()).fileName();
+        const QString folderParent = folder == shownPath || parentName.isEmpty()
+                                         ? QString()
+                                         : QStringLiteral("· %1").arg(parentName);
         fillFixed(env,
                   {{d.machineIcon, d.machine, d.machineNote, QString(), QString()},
-                   {QStringLiteral("file-directory"), homePath(d.path), QString(), d.pathFull,
+                   {QStringLiteral("file-directory"), folder, folderParent, d.pathFull,
                     QFileInfo(d.pathFull).isDir() ? d.pathFull : QString()},
                    {QStringLiteral("git-branch"), d.branch, d.branchNote, d.branch, QString()},
                    {QStringLiteral("smart-toy"), d.agent, QString(), QString(), QString()},
@@ -884,12 +941,20 @@ void SessionSidePanels::refreshDetails()
     {
         Card &changes = m_cards[QStringLiteral("changes")];
         const bool hasStat = d.files >= 0;
+        const QString stats = hasStat && d.added >= 0 && d.removed >= 0
+                                  ? QStringLiteral("<span style=\"color:%1\">+%2</span>&nbsp;"
+                                                   "<span style=\"color:%3\">−%4</span>")
+                                        .arg(Theme::hex(Theme::Role::Success))
+                                        .arg(d.added)
+                                        .arg(Theme::hex(Theme::Role::Danger))
+                                        .arg(d.removed)
+                                  : QString();
         fillFixed(changes,
-                  {{QStringLiteral("file-diff"),
+                  {{QStringLiteral("diff"),
                     !hasStat || d.files == 0 ? QString()
                     : d.files == 1           ? QStringLiteral("1 file changed")
                                              : QStringLiteral("%1 files changed").arg(d.files),
-                    QString(), QString(), QString()},
+                    stats, QString(), QString()},
                    {QStringLiteral("pencil"),
                     d.dirty > 0 ? QStringLiteral("%1 uncommitted").arg(d.dirty) : QString(),
                     QString(), QString(), QString()},
@@ -900,16 +965,25 @@ void SessionSidePanels::refreshDetails()
                    {QStringLiteral("alert"),
                     d.conflicted ? QStringLiteral("Conflicts with the base branch") : QString(),
                     QString(), QString(), QString()}},
-                  hasStat && d.added >= 0 && d.removed >= 0
-                      ? QStringLiteral("<span style=\"color:%1\">+%2</span>&nbsp;"
-                                       "<span style=\"color:%3\">−%4</span>")
-                            .arg(Theme::hex(Theme::Role::Success))
-                            .arg(d.added)
-                            .arg(Theme::hex(Theme::Role::Danger))
-                            .arg(d.removed)
-                      : QString());
+                  stats);
     }
+    refreshCommit();
     refreshRemote();
+}
+
+void SessionSidePanels::refreshCommit()
+{
+    if (!m_commitButton)
+        return;
+    const bool show = m_commit != nullptr && m_details.canCommit && m_details.dirty > 0;
+    if (m_commitButton->isVisibleTo(m_commitButton->parentWidget()) != show)
+        m_commitButton->setVisible(show);
+}
+
+void SessionSidePanels::setCommitAction(std::function<void()> commit)
+{
+    m_commit = std::move(commit);
+    refreshCommit();
 }
 
 void SessionSidePanels::refreshRemote()
@@ -986,7 +1060,7 @@ void SessionSidePanels::refreshMemory()
     if (!open)
         return;
     while (m_memoryRows.size() < m_memoryFiles.size()) {
-        m_memoryRows << makeRow(m_memoryList, false);
+        m_memoryRows << makeRow(m_memoryList, false, 24);
         m_memoryList->layout()->addWidget(m_memoryRows.last().row);
     }
     for (int index = 0; index < m_memoryRows.size(); ++index) {
@@ -1122,6 +1196,7 @@ void SessionSidePanels::showEvent(QShowEvent *event)
     QScrollArea::showEvent(event);
     reloadLayout();
     scheduleSlice();
+    refreshBackground();
 }
 
 void SessionSidePanels::reloadLayout()
@@ -1218,11 +1293,13 @@ void SessionSidePanels::applyCollapsed(Card &card)
     const bool open = !m_collapsed.contains(card.key);
     if (card.body)
         card.body->setVisible(open);
-    if (card.meta && card.key == QLatin1String("context"))
+    if (card.meta &&
+        (card.key == QLatin1String("context") || card.key == QLatin1String("changes")))
         card.meta->setVisible(!open);
-    if (card.chevron)
-        setPanelIcon(card.chevron,
-                        open ? QStringLiteral("chevron-down") : QStringLiteral("chevron-right"), 12);
+    if (card.chevron) {
+        setPanelIcon(card.chevron, QStringLiteral("chevron-right"), 12);
+        card.chevron->setVisible(!open);
+    }
 }
 
 QStringList SessionSidePanels::visibleCards() const

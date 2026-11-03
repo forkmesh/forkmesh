@@ -1853,6 +1853,9 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
                                 QStringLiteral("Export every contact as CSV"));
     m_peopleButton = toolButton(QStringLiteral("people"), QStringLiteral("People"),
                                 QStringLiteral("Only the contacts with a picture, as a grid"));
+    m_cleanupButton = toolButton(QStringLiteral("checklist"), QStringLiteral("List cleanup"),
+                                 QStringLiteral("People on more than one list: keep each on "
+                                                "one list, with every record merged"));
     m_historyButton = toolButton(QStringLiteral("history"), QStringLiteral("History"),
                                  QStringLiteral("Who opened the open list and what they "
                                                 "changed in it"));
@@ -2651,6 +2654,7 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     connect(extensionButton, &QToolButton::clicked, this,
             [this] { openBrowserExtension(); });
     connect(m_peopleButton, &QToolButton::clicked, this, [this] { showPeople(); });
+    connect(m_cleanupButton, &QToolButton::clicked, this, [this] { showListCleanup(); });
     connect(m_historyButton, &QToolButton::clicked, this,
             [this] { showSheetHistory(text(activeSheet(), "id")); });
     connect(m_peopleSort, &QComboBox::currentIndexChanged, this, [this] { renderPeople(); });
@@ -2906,7 +2910,7 @@ void CrmFeature::applyInstallState()
     for (QToolButton *button :
          {m_importButton, m_githubButton, m_exportButton, m_settingsButton, m_newButton,
           m_zohoGuideButton, m_noteDraftsButton,
-          m_historyButton, m_peopleButton, m_pipelinesButton})
+          m_historyButton, m_peopleButton, m_pipelinesButton, m_cleanupButton})
         button->setVisible(m_installed);
     m_zohoSyncButton->setVisible(m_installed);
     m_zohoSyncButton->setEnabled(m_installed && canManage);
@@ -3765,6 +3769,8 @@ void CrmFeature::rebuildContactIndex()
 void CrmFeature::refreshContactSnapshot()
 {
     syncNoteDrafts();
+    if (m_cleanupTable)
+        fillListCleanup();
     int uncontacted = 0;
     for (const QJsonValue &value : std::as_const(m_contacts)) {
         if (value.toObject().value(QStringLiteral("lastContactedAt")).toDouble() <= 0)
@@ -6061,15 +6067,15 @@ void CrmFeature::arrangeNextHeader(QHBoxLayout *heading, QLabel *title,
     heading->addWidget(importMenu, 0, Qt::AlignVCenter);
     heading->addWidget(mailMenu, 0, Qt::AlignVCenter);
     const QList<QToolButton *> moreButtons{m_peopleButton, m_pipelinesButton, m_historyButton,
-                                           nullptr, extensionButton};
+                                           m_cleanupButton, nullptr, extensionButton};
     for (QToolButton *button : moreButtons) {
         if (button)
             holderLayout->addWidget(button);
     }
     auto *moreMenu = new QToolButton;
     moreMenu->setObjectName(QStringLiteral("crmMoreMenu"));
-    moreMenu->setToolTip(QStringLiteral("People, pipelines, the open list's history and the "
-                                        "browser extension"));
+    moreMenu->setToolTip(QStringLiteral("People, pipelines, the open list's history, list "
+                                        "cleanup and the browser extension"));
     moreMenu->setAccessibleName(QStringLiteral("More"));
     moreMenu->setCursor(Qt::PointingHandCursor);
     moreMenu->setPopupMode(QToolButton::InstantPopup);
@@ -13404,6 +13410,489 @@ void CrmFeature::fillNoteDrafts()
     m_noteDraftsTable->resizeColumnToContents(1);
     m_noteDraftsTable->resizeColumnToContents(2);
     m_noteDraftsTable->resizeColumnToContents(4);
+}
+
+namespace {
+
+constexpr int kCleanupShown = 500;
+constexpr int kCleanupSortRole = Qt::UserRole + 1;
+
+class CleanupItem final : public QTableWidgetItem
+{
+public:
+    CleanupItem(const QString &shown, const QVariant &key)
+        : QTableWidgetItem(shown)
+    {
+        setData(kCleanupSortRole, key);
+    }
+
+    bool operator<(const QTableWidgetItem &other) const override
+    {
+        const QVariant mine = data(kCleanupSortRole);
+        const QVariant theirs = other.data(kCleanupSortRole);
+        if (mine.typeId() == QMetaType::QString)
+            return QString::localeAwareCompare(mine.toString(), theirs.toString()) < 0;
+        return mine.toLongLong() < theirs.toLongLong();
+    }
+};
+
+qint64 cleanupStamp(const QJsonObject &contact, const char *key)
+{
+    return qint64(contact.value(QLatin1String(key)).toDouble());
+}
+
+QString cleanupWhen(qint64 at)
+{
+    if (at <= 0)
+        return QStringLiteral("never");
+    const qint64 days = (QDateTime::currentMSecsSinceEpoch() - at) / kDayMs;
+    return days <= 0 ? QStringLiteral("today")
+         : days == 1 ? QStringLiteral("yesterday")
+                     : QStringLiteral("%1 days ago").arg(days);
+}
+
+QString cleanupQuoted(const QString &value)
+{
+    return QString::fromUtf8("\xE2\x80\x9C%1\xE2\x80\x9D").arg(value);
+}
+
+} // namespace
+
+QList<CleanupPerson> CrmFeature::cleanupPeople() const
+{
+    const QHash<QString, QStringList> people = personGroups(m_contacts);
+    const QHash<QString, QStringList> lists = pipelineLists(m_views);
+    QHash<QString, QJsonObject> byId;
+    for (const QJsonValue &value : std::as_const(m_contacts)) {
+        const QJsonObject contact = value.toObject();
+        byId.insert(text(contact, "id"), contact);
+    }
+    QSet<QString> seen;
+    QList<CleanupPerson> rows;
+    for (const QJsonValue &value : std::as_const(m_contacts)) {
+        const QString id = text(value.toObject(), "id");
+        const QStringList members = people.value(id, QStringList{id});
+        if (id.isEmpty() || seen.contains(members.value(0)))
+            continue;
+        seen.insert(members.value(0));
+        CleanupPerson person;
+        person.id = members.value(0);
+        QSet<QString> anywhere;
+        for (const QString &member : members) {
+            const QJsonObject contact = byId.value(member);
+            QStringList on;
+            for (const QJsonValue &view : std::as_const(m_views)) {
+                const QJsonObject sheet = view.toObject();
+                if (contactInSheet(contact, sheet, lists)) {
+                    on << text(sheet, "id");
+                    anywhere.insert(text(sheet, "id"));
+                }
+            }
+            person.records << contact;
+            person.recordLists << on;
+            person.contacted = std::max(person.contacted, cleanupStamp(contact, "lastContactedAt"));
+            person.updated = std::max(person.updated, cleanupStamp(contact, "updatedAt"));
+        }
+        int plain = 0;
+        for (const QJsonValue &view : std::as_const(m_views)) {
+            const QJsonObject sheet = view.toObject();
+            if (!anywhere.contains(text(sheet, "id")))
+                continue;
+            person.lists << text(sheet, "id");
+            if (text(sheet, "flow").isEmpty() && person.recordLists.value(0).contains(text(sheet, "id")))
+                ++plain;
+        }
+        const bool crowded = person.records.size() > 1 ? person.lists.size() > 1 : plain > 1;
+        if (!crowded)
+            continue;
+        int lead = -1;
+        for (int at = 0; at < person.records.size(); ++at) {
+            const QJsonObject &record = person.records.at(at);
+            if (lead < 0)
+                lead = at;
+            const QJsonObject &best = person.records.at(lead);
+            const bool named = !text(record, "name").trimmed().isEmpty();
+            const bool bestNamed = !text(best, "name").trimmed().isEmpty();
+            if ((named && !bestNamed) || (named == bestNamed &&
+                cleanupStamp(record, "updatedAt") > cleanupStamp(best, "updatedAt")))
+                lead = at;
+            if (person.email.isEmpty())
+                person.email = text(record, "email");
+        }
+        const QJsonObject &chosen = person.records.at(lead);
+        person.leadId = text(chosen, "id");
+        person.name = !text(chosen, "name").trimmed().isEmpty() ? text(chosen, "name")
+                    : !text(chosen, "email").isEmpty() ? text(chosen, "email")
+                                                       : QStringLiteral("Unnamed contact");
+        rows << person;
+    }
+    return rows;
+}
+
+CleanupPlan CrmFeature::cleanupPlan(const CleanupPerson &person, const QJsonObject &list) const
+{
+    CleanupPlan plan;
+    const QString listId = text(list, "id");
+    const QString flow = text(list, "flow");
+    int keep = -1;
+    for (int at = 0; at < person.records.size(); ++at) {
+        if (!person.recordLists.at(at).contains(listId))
+            continue;
+        if (keep < 0 || cleanupStamp(person.records.at(at), "updatedAt") >
+                            cleanupStamp(person.records.at(keep), "updatedAt"))
+            keep = at;
+    }
+    if (keep < 0)
+        return plan;
+    const QJsonObject kept = person.records.at(keep);
+    QJsonArray views{listId};
+    if (flow.isEmpty()) {
+        const QJsonArray memberships = kept.value(QStringLiteral("views")).toArray();
+        for (const QJsonValue &value : std::as_const(m_views)) {
+            const QJsonObject sheet = value.toObject();
+            const QString id = text(sheet, "id");
+            if (!text(sheet, "flow").isEmpty() && person.recordLists.at(keep).contains(id) &&
+                memberships.contains(QJsonValue(id)))
+                views.append(id);
+        }
+    }
+    plan.keepId = text(kept, "id");
+    plan.keepLabel = contactLabel(kept);
+    plan.listName = text(list, "name");
+    plan.pipeline = !flow.isEmpty();
+    plan.edit = QJsonObject{{QStringLiteral("id"), plan.keepId},
+                            {QStringLiteral("setViews"), views}};
+    if (!flow.isEmpty() && text(kept, "flow") != flow) {
+        plan.edit.insert(QStringLiteral("flow"), flow);
+        plan.edit.insert(QStringLiteral("stage"), text(kept, "stage"));
+    }
+    for (const QJsonObject &record : person.records) {
+        if (text(record, "id") != plan.keepId)
+            plan.merge << text(record, "id");
+    }
+    return plan;
+}
+
+void CrmFeature::showListCleanup()
+{
+    if (m_cleanupTable) {
+        m_cleanupTable->window()->raise();
+        m_cleanupTable->window()->activateWindow();
+        return;
+    }
+    auto *dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QStringLiteral("List cleanup"));
+    dialog->resize(1000, 520);
+    auto *layout = new QVBoxLayout(dialog);
+    m_cleanupNote = new QLabel;
+    m_cleanupNote->setWordWrap(true);
+    layout->addWidget(m_cleanupNote);
+    auto *filters = new QHBoxLayout;
+    m_cleanupSearch = new QLineEdit;
+    m_cleanupSearch->setPlaceholderText(QStringLiteral("Search name or email"));
+    m_cleanupSearch->setClearButtonEnabled(true);
+    m_cleanupSearch->setAccessibleName(QStringLiteral("Search the people on more than one list"));
+    filters->addWidget(m_cleanupSearch, 1);
+    m_cleanupList = new QComboBox;
+    m_cleanupList->setAccessibleName(QStringLiteral("Only people on this list"));
+    filters->addWidget(m_cleanupList);
+    m_cleanupKeepAll = new QPushButton;
+    m_cleanupKeepAll->hide();
+    filters->addWidget(m_cleanupKeepAll);
+    layout->addLayout(filters);
+    m_cleanupTable = new QTableWidget(0, 6);
+    m_cleanupTable->setHorizontalHeaderLabels(
+        {QStringLiteral("Name"), QStringLiteral("Email"), QStringLiteral("Lists"),
+         QStringLiteral("Records"), QStringLiteral("Last contacted"), QStringLiteral("Last edit")});
+    m_cleanupTable->setAccessibleName(QStringLiteral("People on more than one list"));
+    m_cleanupTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_cleanupTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_cleanupTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_cleanupTable->setWordWrap(false);
+    m_cleanupTable->verticalHeader()->hide();
+    m_cleanupTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_cleanupTable->horizontalHeader()->setSortIndicator(2, Qt::AscendingOrder);
+    layout->addWidget(m_cleanupTable, 1);
+    connect(m_cleanupTable, &QTableWidget::cellClicked, this, [this](int row, int column) {
+        QTableWidgetItem *item = m_cleanupTable ? m_cleanupTable->item(row, 0) : nullptr;
+        if (item && column == 0)
+            showContactDetail(item->data(Qt::UserRole + 2).toString());
+    });
+    connect(m_cleanupSearch, &QLineEdit::textChanged, this, [this] { fillListCleanup(); });
+    connect(m_cleanupList, &QComboBox::currentIndexChanged, this, [this] { fillListCleanup(); });
+    connect(m_cleanupKeepAll, &QPushButton::clicked, this, [this] {
+        if (!m_cleanupTable || !m_cleanupList)
+            return;
+        QStringList ids;
+        for (int row = 0; row < m_cleanupTable->rowCount(); ++row) {
+            if (QTableWidgetItem *item = m_cleanupTable->item(row, 0))
+                ids << item->data(Qt::UserRole).toString();
+        }
+        keepPeopleOnList(ids, m_cleanupList->currentData().toString());
+    });
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    fillListCleanup();
+    dialog->show();
+}
+
+void CrmFeature::fillListCleanup()
+{
+    if (!m_cleanupTable || !m_cleanupList || !m_cleanupSearch)
+        return;
+    const QList<CleanupPerson> people = cleanupPeople();
+    QHash<QString, int> counts;
+    for (const CleanupPerson &person : people) {
+        for (const QString &id : person.lists)
+            ++counts[id];
+    }
+    QHash<QString, QJsonObject> sheets;
+    {
+        const QSignalBlocker block(m_cleanupList);
+        const QString picked = m_cleanupList->currentData().toString();
+        m_cleanupList->clear();
+        m_cleanupList->addItem(QStringLiteral("Every list"), QString());
+        for (const QJsonValue &value : std::as_const(m_views)) {
+            const QJsonObject sheet = value.toObject();
+            sheets.insert(text(sheet, "id"), sheet);
+            if (counts.contains(text(sheet, "id")))
+                m_cleanupList->addItem(QStringLiteral("%1 (%2)").arg(text(sheet, "name"))
+                                           .arg(counts.value(text(sheet, "id"))),
+                                       text(sheet, "id"));
+        }
+        const int at = m_cleanupList->findData(picked);
+        m_cleanupList->setCurrentIndex(at < 0 ? 0 : at);
+    }
+    const QString list = m_cleanupList->currentData().toString();
+    const QString query = m_cleanupSearch->text().trimmed().toLower();
+    QList<CleanupPerson> shown;
+    for (const CleanupPerson &person : people) {
+        if (!list.isEmpty() && !person.lists.contains(list))
+            continue;
+        bool match = query.isEmpty();
+        for (const QJsonObject &record : person.records) {
+            if (!match)
+                match = (text(record, "name") + QLatin1Char(' ') + text(record, "email"))
+                            .toLower().contains(query);
+        }
+        if (match)
+            shown << person;
+    }
+    const bool loading = !m_pagedSummary.isEmpty();
+    const bool locked = loading || m_cleanupBusy;
+    const int rows = int(std::min<qsizetype>(shown.size(), kCleanupShown));
+    m_cleanupTable->setSortingEnabled(false);
+    m_cleanupTable->clearContents();
+    m_cleanupTable->setRowCount(rows);
+    for (int row = 0; row < rows; ++row) {
+        const CleanupPerson &person = shown.at(row);
+        auto *name = new CleanupItem(person.name, person.name.toLower());
+        name->setData(Qt::UserRole, person.id);
+        name->setData(Qt::UserRole + 2, person.leadId);
+        name->setToolTip(QStringLiteral("Click to open the contact"));
+        m_cleanupTable->setItem(row, 0, name);
+        m_cleanupTable->setItem(row, 1, new CleanupItem(person.email, person.email.toLower()));
+        QStringList names;
+        auto *chips = new QWidget;
+        auto *chipLayout = new QHBoxLayout(chips);
+        chipLayout->setContentsMargins(2, 1, 2, 1);
+        chipLayout->setSpacing(4);
+        for (const QString &id : person.lists) {
+            const QJsonObject sheet = sheets.value(id);
+            names << text(sheet, "name").toLower();
+            const QString flow = text(sheet, "flow");
+            auto *chip = new QToolButton;
+            chip->setText(flow.isEmpty() ? text(sheet, "name")
+                                         : QString::fromUtf8("%1 \xC2\xB7 %2")
+                                               .arg(text(sheet, "name"), flowLabel(flow)));
+            chip->setToolTip(QStringLiteral("Keep %1 on %2 only").arg(person.name, text(sheet, "name")));
+            chip->setAccessibleName(chip->toolTip());
+            chip->setCursor(Qt::PointingHandCursor);
+            chip->setEnabled(!locked);
+            connect(chip, &QToolButton::clicked, this,
+                    [this, personId = person.id, id] { keepPeopleOnList({personId}, id); },
+                    Qt::QueuedConnection);
+            chipLayout->addWidget(chip);
+        }
+        chipLayout->addStretch();
+        m_cleanupTable->setItem(row, 2, new CleanupItem(QString(), names.join(QChar(0x1F))));
+        m_cleanupTable->setCellWidget(row, 2, chips);
+        QStringList recordLines;
+        for (int at = 0; at < person.records.size(); ++at) {
+            QStringList on;
+            for (const QString &id : person.recordLists.at(at))
+                on << text(sheets.value(id), "name");
+            recordLines << QStringLiteral("%1: %2").arg(
+                contactLabel(person.records.at(at)),
+                on.isEmpty() ? QStringLiteral("no list") : on.join(QStringLiteral(", ")));
+        }
+        auto *records = new CleanupItem(QLocale().toString(person.records.size()),
+                                        qlonglong(person.records.size()));
+        records->setToolTip(recordLines.join(QLatin1Char('\n')));
+        m_cleanupTable->setItem(row, 3, records);
+        m_cleanupTable->setItem(row, 4, new CleanupItem(cleanupWhen(person.contacted),
+                                                        qlonglong(person.contacted)));
+        m_cleanupTable->setItem(row, 5, new CleanupItem(cleanupWhen(person.updated),
+                                                        qlonglong(person.updated)));
+    }
+    m_cleanupTable->setSortingEnabled(true);
+    m_cleanupTable->resizeColumnToContents(0);
+    m_cleanupTable->resizeColumnToContents(1);
+    m_cleanupTable->resizeColumnToContents(3);
+    m_cleanupTable->resizeColumnToContents(4);
+    m_cleanupTable->resizeColumnToContents(5);
+    m_cleanupTable->resizeRowsToContents();
+    QStringList note{QStringLiteral(
+        "People who show on more than one list, as one record or as several records of the "
+        "same person (a shared email address or X account). Click a list to keep them there "
+        "only: their records merge into one with every field, tag, note and email, and they "
+        "leave the other lists. Click a header to sort.")};
+    if (people.isEmpty())
+        note << QStringLiteral("Nobody is on more than one list.");
+    else if (shown.isEmpty())
+        note << QStringLiteral("Nobody here matches.");
+    if (shown.size() > kCleanupShown)
+        note << QStringLiteral("Showing %1 of %2: search or pick a list to see the rest.")
+                    .arg(QLocale().toString(kCleanupShown), QLocale().toString(shown.size()));
+    if (loading)
+        note << QStringLiteral("Loading contacts, %1 of %2; moves wait until every contact is here.")
+                    .arg(QLocale().toString(m_contacts.size()),
+                         QLocale().toString(m_pagedSummary.value(QStringLiteral("contactsTotal"))
+                                                .toInt(int(m_contacts.size()))));
+    m_cleanupNote->setText(note.join(QLatin1Char(' ')));
+    if (m_cleanupKeepAll) {
+        m_cleanupKeepAll->setVisible(!list.isEmpty() && !shown.isEmpty());
+        m_cleanupKeepAll->setEnabled(!locked);
+        m_cleanupKeepAll->setText(QStringLiteral("Keep %1 on %2")
+                                      .arg(QLocale().toString(rows), text(sheets.value(list), "name")));
+    }
+}
+
+void CrmFeature::keepPeopleOnList(const QStringList &personIds, const QString &listId)
+{
+    if (m_cleanupBusy || !m_pagedSummary.isEmpty())
+        return;
+    QJsonObject list;
+    for (const QJsonValue &value : std::as_const(m_views)) {
+        if (text(value.toObject(), "id") == listId)
+            list = value.toObject();
+    }
+    if (list.isEmpty())
+        return;
+    const QSet<QString> wanted(personIds.cbegin(), personIds.cend());
+    QList<CleanupPlan> plans;
+    for (const CleanupPerson &person : cleanupPeople()) {
+        if (!wanted.contains(person.id))
+            continue;
+        const CleanupPlan plan = cleanupPlan(person, list);
+        if (!plan.keepId.isEmpty())
+            plans << plan;
+    }
+    if (plans.isEmpty())
+        return;
+    const QString where = QStringLiteral("on %1").arg(cleanupQuoted(text(list, "name")));
+    int merged = 0;
+    for (const CleanupPlan &plan : std::as_const(plans))
+        merged += int(plan.merge.size());
+    QString question;
+    if (plans.size() == 1) {
+        const CleanupPlan &plan = plans.first();
+        const QString name = cleanupQuoted(plan.keepLabel);
+        question = QStringLiteral("Keep %1 %2 only?\n\n").arg(name, where);
+        if (!plan.merge.isEmpty())
+            question += QStringLiteral("%1 other %2 into %3: it keeps what it has and gains "
+                                       "their blanks, tags, notes and email history, and they "
+                                       "are deleted. ")
+                            .arg(plan.merge.size())
+                            .arg(plan.merge.size() == 1
+                                     ? QStringLiteral("record of this person merges")
+                                     : QStringLiteral("records of this person merge"), name);
+        question += QStringLiteral("%1 leaves every other list%2.")
+                        .arg(name, plan.pipeline ? QString()
+                                                 : QStringLiteral(" but stays in its pipeline"));
+    } else {
+        question = QStringLiteral("Keep %1 people %2 only?\n\n").arg(plans.size()).arg(where);
+        if (merged > 0)
+            question += QStringLiteral("%1 extra %2 into the record %3, with every field, "
+                                       "tag, note and email, and are then deleted. ")
+                            .arg(merged)
+                            .arg(merged == 1 ? QStringLiteral("record merges")
+                                             : QStringLiteral("records merge"), where);
+        question += QStringLiteral("Each person leaves every other list%1.")
+                        .arg(plans.first().pipeline ? QString()
+                                                    : QStringLiteral(" but stays in their pipeline"));
+    }
+    QWidget *parent = m_cleanupTable ? m_cleanupTable->window() : this;
+    if (QMessageBox::question(parent, QStringLiteral("List cleanup"), question)
+        != QMessageBox::Yes)
+        return;
+    struct Step
+    {
+        int plan = 0;
+        QString from;
+    };
+    QList<Step> steps;
+    for (int at = 0; at < plans.size(); ++at) {
+        for (const QString &from : plans.at(at).merge)
+            steps << Step{at, from};
+        steps << Step{at, QString()};
+    }
+    m_cleanupBusy = true;
+    fillListCleanup();
+    const auto next = std::make_shared<std::function<void(int)>>();
+    *next = [this, weak = std::weak_ptr(next), plans, steps, where](int at) {
+        if (at >= steps.size()) {
+            m_cleanupBusy = false;
+            refreshContactSnapshot();
+            setStatus(plans.size() == 1
+                ? QStringLiteral("Kept %1 %2 only.").arg(cleanupQuoted(plans.first().keepLabel), where)
+                : QStringLiteral("Kept %1 people %2 only.").arg(plans.size()).arg(where));
+            return;
+        }
+        const Step step = steps.at(at);
+        const CleanupPlan &plan = plans.at(step.plan);
+        if (plans.size() > 1)
+            setStatus(QString::fromUtf8("Keeping %1 of %2 people %3\xE2\x80\xA6")
+                          .arg(step.plan + 1).arg(plans.size()).arg(where));
+        const bool merging = !step.from.isEmpty();
+        request(QByteArrayLiteral("POST"),
+                organizationPath(merging ? QStringLiteral("/contacts/merge")
+                                         : QStringLiteral("/contacts/bulk")),
+                merging ? QJsonObject{{QStringLiteral("from"), step.from},
+                                      {QStringLiteral("into"), plan.keepId}}
+                        : QJsonObject{{QStringLiteral("edits"), QJsonArray{plan.edit}}},
+                [this, next = weak.lock(), at, step, merging, count = int(plans.size()),
+                 keepId = plan.keepId, where](bool ok, const QJsonObject &reply,
+                                              const QString &error) {
+            if (!ok) {
+                m_cleanupBusy = false;
+                setStatus(count == 1
+                    ? QStringLiteral("The move did not finish: %1").arg(error)
+                    : QStringLiteral("Kept %1 of %2 people %3; the rest did not finish: %4")
+                          .arg(step.plan).arg(count).arg(where, error), true);
+                loadOrganization();
+                return;
+            }
+            for (qsizetype index = 0; index < m_contacts.size(); ++index) {
+                const QString id = text(m_contacts.at(index).toObject(), "id");
+                if (merging && id == step.from) {
+                    m_contacts.removeAt(index);
+                    break;
+                }
+                if (!merging && id == keepId) {
+                    for (const QJsonValue &saved : reply.value(QStringLiteral("contacts")).toArray()) {
+                        if (text(saved.toObject(), "id") == keepId)
+                            m_contacts.replace(index, saved);
+                    }
+                    break;
+                }
+            }
+            (*next)(at + 1);
+        });
+    };
+    (*next)(0);
 }
 
 void CrmFeature::sendNoteDraft(const NoteDraft &draft)

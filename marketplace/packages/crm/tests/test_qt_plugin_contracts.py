@@ -1213,7 +1213,7 @@ def test_desktop_list_cards_mark_the_open_list_merge_by_submenu_and_show_access(
     assert 'toolButton(QStringLiteral("workflow"), QStringLiteral("Pipelines")' in header
     assert "connect(m_pipelinesButton, &QToolButton::clicked" in FEATURE
     assert "m_pipelinesButton->setEnabled(m_canManageSettings);" in FEATURE
-    assert "m_peopleButton, m_pipelinesButton})" in FEATURE
+    assert "m_peopleButton, m_pipelinesButton, m_cleanupButton})" in FEATURE
     assert "QToolButton *m_pipelinesButton = nullptr;" in FEATURE_HEADER
 
 

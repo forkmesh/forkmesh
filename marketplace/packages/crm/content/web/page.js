@@ -4799,7 +4799,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // Contacts, Inbox (linked email and Zoho boxes) and Outreach are tabs. The
   // open one is in the address as ?section= so it survives a reload or a link.
 
-  const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "zoho"];
+  const CRM_SECTIONS = ["contacts", "inbox", "outreach", "team", "cleanup", "zoho"];
 
   function crmSectionFromUrl() {
     const section = new URL(location.href).searchParams.get("section") || "";
@@ -4846,6 +4846,222 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $$(`[data-crm-section-count]`).forEach((badge) => {
       badge.textContent = Number(counts[badge.dataset.crmSectionCount] || 0).toLocaleString();
     });
+    renderCrmCleanup();
+  }
+
+  const CRM_CLEANUP_SHOWN = 500;
+  const CRM_CLEANUP_COLUMNS = [
+    { field: "name", label: "Name" },
+    { field: "email", label: "Email" },
+    { field: "lists", label: "Lists" },
+    { field: "records", label: "Records" },
+    { field: "contacted", label: "Last contacted" },
+    { field: "updated", label: "Last edit" },
+  ];
+  const crmCleanup = { sort: "lists", descending: false, list: "", busy: false };
+
+  function crmCleanupPeople(contacts = state.crmView.contacts, views = state.crmView.views) {
+    const people = crmPersonGroups(contacts);
+    const seen = new Set(); const rows = [];
+    for (const contact of contacts || []) {
+      const person = crmPersonOf(contact, people);
+      if (seen.has(person.id)) continue;
+      seen.add(person.id);
+      const records = person.members.map((one) => ({ contact: one, lists: views.filter((view) => crmContactInView(one, view)) }));
+      const lists = views.filter((view) => records.some((record) => record.lists.includes(view)));
+      const crowded = records.length > 1 ? lists.length > 1
+        : records[0].lists.filter((view) => !view.flow).length > 1;
+      if (!crowded) continue;
+      const newest = [...person.members].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+      const lead = newest.find((one) => String(one.name || "").trim()) || newest[0];
+      rows.push({
+        id: person.id, lead, records, lists,
+        name: crmContactLabel(lead),
+        email: String(person.members.map((one) => one.email).find(Boolean) || ""),
+        contacted: Math.max(0, ...person.members.map((one) => Number(one.lastContactedAt || 0))),
+        updated: Math.max(0, ...person.members.map((one) => Number(one.updatedAt || 0))),
+      });
+    }
+    return rows;
+  }
+
+  function crmCleanupSorted(rows, sort = crmCleanup.sort, descending = crmCleanup.descending) {
+    const text = (value) => String(value || "").toLowerCase();
+    const key = {
+      name: (row) => text(row.name),
+      email: (row) => text(row.email),
+      lists: (row) => row.lists.map((view) => text(view.name)).join("\u0000"),
+      records: (row) => row.records.length,
+      contacted: (row) => row.contacted,
+      updated: (row) => row.updated,
+    }[sort] || ((row) => text(row.name));
+    const sign = descending ? -1 : 1;
+    return [...rows].sort((a, b) => {
+      const left = key(a); const right = key(b);
+      if (left < right) return -sign;
+      if (left > right) return sign;
+      return text(a.name) < text(b.name) ? -1 : text(a.name) > text(b.name) ? 1 : 0;
+    });
+  }
+
+  function crmCleanupShown(rows) {
+    const query = String($(`[data-crm-cleanup-search]`)?.value || "").trim().toLowerCase();
+    return crmCleanupSorted(rows.filter((row) =>
+      (!crmCleanup.list || row.lists.some((view) => view.id === crmCleanup.list))
+      && (!query || row.records.some(({ contact }) =>
+        `${contact.name || ""} ${contact.email || ""}`.toLowerCase().includes(query)))));
+  }
+
+  function crmCleanupWhen(at) {
+    return at ? relativeTimeLabel(at) : "never";
+  }
+
+  function crmCleanupRecordsTitle(row) {
+    return row.records.map(({ contact, lists }) =>
+      `${crmMergeLabel(contact)}: ${lists.map((view) => view.name).join(", ") || "no list"}`).join("\n");
+  }
+
+  function renderCrmCleanup() {
+    const body = $(`[data-crm-cleanup-rows]`);
+    if (!body || state.crmView.section !== "cleanup") return;
+    const rows = crmCleanupPeople();
+    if (crmCleanup.list && !state.crmView.views.some((view) => view.id === crmCleanup.list)) crmCleanup.list = "";
+    const counts = new Map();
+    for (const row of rows) for (const view of row.lists) counts.set(view.id, (counts.get(view.id) || 0) + 1);
+    const select = $(`[data-crm-cleanup-list]`);
+    if (select) {
+      select.innerHTML = `<option value="">Every list</option>${state.crmView.views.filter((view) => counts.has(view.id))
+        .map((view) => `<option value="${escapeHtml(view.id)}">${escapeHtml(view.name)} (${counts.get(view.id).toLocaleString()})</option>`).join("")}`;
+      select.value = crmCleanup.list;
+    }
+    const shown = crmCleanupShown(rows);
+    const loading = state.crmView.contactsLoading;
+    const locked = loading || crmCleanup.busy;
+    const head = $(`[data-crm-cleanup-head]`);
+    if (head) {
+      head.innerHTML = `<tr>${CRM_CLEANUP_COLUMNS.map((column) => {
+        const on = crmCleanup.sort === column.field;
+        return `<th${on ? ` aria-sort="${crmCleanup.descending ? "descending" : "ascending"}"` : ""} class="whitespace-nowrap px-2 py-2 font-semibold"><button type="button" data-crm-cleanup-sort="${column.field}" title="Click to sort" class="font-semibold">${escapeHtml(column.label)}${on ? `<span aria-hidden="true" class="ml-1">${crmCleanup.descending ? "▼" : "▲"}</span>` : ""}</button></th>`;
+      }).join("")}</tr>`;
+    }
+    body.innerHTML = shown.slice(0, CRM_CLEANUP_SHOWN).map((row) => `<tr data-crm-cleanup-row="${escapeHtml(row.id)}">`
+      + `<td class="px-2 py-2"><button type="button" data-crm-cleanup-open="${escapeHtml(row.lead.id)}" class="text-left font-medium text-primary hover:underline">${escapeHtml(row.name)}</button></td>`
+      + `<td class="max-w-56 truncate px-2 py-2 text-xs text-muted-foreground">${escapeHtml(row.email)}</td>`
+      + `<td class="px-2 py-2"><div class="flex flex-wrap gap-1">${row.lists.map((view) => `<button type="button" data-crm-cleanup-keep="${escapeHtml(row.id)}" data-crm-cleanup-keep-list="${escapeHtml(view.id)}"${locked ? " disabled" : ""} title="${escapeHtml(`Keep ${row.name} on ${view.name} only`)}" class="rounded-full border border-border px-2 py-0.5 text-xs text-foreground hover:bg-secondary disabled:opacity-50">${escapeHtml(view.name)}${view.flow ? ` <span class="text-muted-foreground">· ${escapeHtml(crmFlowName(view.flow))}</span>` : ""}</button>`).join("")}</div></td>`
+      + `<td class="px-2 py-2 text-xs text-muted-foreground" title="${escapeHtml(crmCleanupRecordsTitle(row))}">${row.records.length.toLocaleString()}</td>`
+      + `<td class="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">${escapeHtml(crmCleanupWhen(row.contacted))}</td>`
+      + `<td class="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">${escapeHtml(crmCleanupWhen(row.updated))}</td></tr>`).join("");
+    const empty = $(`[data-crm-cleanup-empty]`);
+    if (empty) {
+      empty.hidden = shown.length > 0 && shown.length <= CRM_CLEANUP_SHOWN && !loading;
+      empty.textContent = [
+        !rows.length ? "Nobody is on more than one list." : !shown.length ? "Nobody here matches." : "",
+        shown.length > CRM_CLEANUP_SHOWN ? `Showing ${CRM_CLEANUP_SHOWN.toLocaleString()} of ${shown.length.toLocaleString()}: search or pick a list to see the rest.` : "",
+        loading ? `Loading contacts, ${state.crmView.contacts.length.toLocaleString()} of ${Number(state.crmView.contactsTotal || 0).toLocaleString()}; moves wait until every contact is here.` : "",
+      ].filter(Boolean).join(" ");
+    }
+    const all = $(`[data-crm-cleanup-keep-all]`);
+    if (all) {
+      const list = state.crmView.views.find((view) => view.id === crmCleanup.list);
+      all.hidden = !list || !shown.length;
+      all.disabled = locked;
+      if (list) all.textContent = `Keep ${Math.min(shown.length, CRM_CLEANUP_SHOWN).toLocaleString()} on ${list.name}`;
+    }
+  }
+
+  function crmCleanupPlan(row, listId) {
+    const list = row.lists.find((view) => view.id === listId);
+    if (!list) return null;
+    const on = row.records.filter((record) => record.lists.includes(list))
+      .sort((a, b) => Number(b.contact.updatedAt || 0) - Number(a.contact.updatedAt || 0));
+    const keep = on[0] || row.records[0];
+    const stay = list.flow ? [] : keep.lists
+      .filter((view) => view.flow && (keep.contact.views || []).includes(view.id)).map((view) => view.id);
+    const edit = { id: keep.contact.id, setViews: [list.id, ...stay] };
+    if (list.flow && keep.contact.flow !== list.flow) {
+      edit.flow = list.flow;
+      edit.stage = String(keep.contact.stage || "");
+    }
+    return {
+      list, keep: keep.contact, edit,
+      merge: row.records.map((record) => record.contact.id).filter((id) => id !== keep.contact.id),
+    };
+  }
+
+  async function crmCleanupApply(plan) {
+    let kept = null;
+    for (const id of plan.merge) {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/merge"), "POST", { from: id, into: plan.keep.id });
+      kept = payload.contact || kept;
+      state.crmView.contacts = state.crmView.contacts.filter((contact) => contact.id !== id);
+    }
+    const payload = await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits: [plan.edit] });
+    kept = (payload.contacts || []).find((contact) => contact.id === plan.keep.id) || kept;
+    if (kept) state.crmView.contacts = state.crmView.contacts.map((contact) => contact.id === kept.id ? kept : contact);
+  }
+
+  function crmCleanupAsk(plans) {
+    const merged = plans.reduce((total, plan) => total + plan.merge.length, 0);
+    if (plans.length === 1) {
+      const [plan] = plans;
+      const name = `“${crmMergeLabel(plan.keep)}”`;
+      return confirm(`Keep ${name} on “${plan.list.name}” only?\n\n`
+        + (plan.merge.length ? `${plan.merge.length} other record${plan.merge.length === 1 ? " of this person merges" : "s of this person merge"} into ${name}: it keeps what it has and gains their blanks, tags, notes and email history, and they are deleted. ` : "")
+        + `${name} leaves every other list${plan.list.flow ? "" : " but stays in its pipeline"}.`);
+    }
+    return confirm(`Keep ${plans.length} people on “${plans[0].list.name}” only?\n\n`
+      + (merged ? `${merged} extra record${merged === 1 ? " merges" : "s merge"} into the record on “${plans[0].list.name}”, with every field, tag, note and email, and are then deleted. ` : "")
+      + `Each person leaves every other list${plans[0].list.flow ? "" : " but stays in their pipeline"}.`);
+  }
+
+  async function keepCrmPeopleOnList(personIds, listId) {
+    if (crmCleanup.busy || state.crmView.contactsLoading || crmActiveShared()) return;
+    const wanted = new Set(personIds);
+    const plans = crmCleanupPeople().filter((row) => wanted.has(row.id))
+      .map((row) => crmCleanupPlan(row, listId)).filter(Boolean);
+    if (!plans.length || !crmCleanupAsk(plans)) return;
+    const where = `on “${plans[0].list.name}”`;
+    crmCleanup.busy = true; renderCrmCleanup();
+    let done = 0;
+    try {
+      for (const plan of plans) {
+        if (plans.length > 1) crmMessage("notice", `Keeping ${done + 1} of ${plans.length} people ${where}…`);
+        await crmCleanupApply(plan);
+        done += 1;
+      }
+      crmMessage("notice", plans.length === 1 ? `Kept “${crmMergeLabel(plans[0].keep)}” ${where} only.` : `Kept ${done} people ${where} only.`);
+      crmCleanup.busy = false;
+      state.crmView.duplicates = null;
+      renderCrm();
+    } catch (error) {
+      crmMessage("error", `${plans.length === 1 ? "The move" : `Kept ${done} of ${plans.length} people ${where}; the rest`} did not finish: ${error.message}`);
+      crmCleanup.busy = false;
+      await loadCrm();
+    }
+  }
+
+  function wireCrmCleanup() {
+    const section = $(`[data-crm-cleanup]`);
+    if (!section) return;
+    section.addEventListener("click", (event) => {
+      const sort = event.target.closest("[data-crm-cleanup-sort]");
+      if (sort) {
+        const field = sort.dataset.crmCleanupSort;
+        crmCleanup.descending = crmCleanup.sort === field ? !crmCleanup.descending : ["contacted", "updated", "records"].includes(field);
+        crmCleanup.sort = field;
+        renderCrmCleanup();
+        return;
+      }
+      const open = event.target.closest("[data-crm-cleanup-open]");
+      if (open) { openCrmContactDetail(open.dataset.crmCleanupOpen); return; }
+      const keep = event.target.closest("[data-crm-cleanup-keep]");
+      if (keep) { void keepCrmPeopleOnList([keep.dataset.crmCleanupKeep], keep.dataset.crmCleanupKeepList); return; }
+      if (event.target.closest("[data-crm-cleanup-keep-all]") && crmCleanup.list) {
+        void keepCrmPeopleOnList(crmCleanupShown(crmCleanupPeople()).slice(0, CRM_CLEANUP_SHOWN).map((row) => row.id), crmCleanup.list);
+      }
+    });
+    $(`[data-crm-cleanup-search]`)?.addEventListener("input", renderCrmCleanup);
+    $(`[data-crm-cleanup-list]`)?.addEventListener("change", (event) => { crmCleanup.list = event.target.value; renderCrmCleanup(); });
   }
 
   function crmOutreach() {
@@ -7744,6 +7960,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-team-table-toggle]`)?.addEventListener("click", () => {
       state.crmView.teamTable = !state.crmView.teamTable; renderCrmTeam();
     });
+    wireCrmCleanup();
     const sections = $(`[data-crm-sections]`);
     sections?.addEventListener("click", (event) => {
       const tab = event.target.closest("[data-crm-section-tab]");

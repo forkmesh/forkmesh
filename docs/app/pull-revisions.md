@@ -80,9 +80,32 @@ The pull page shows the author of an open patch-backed pull an **Update pull
 request** row above the review form, with the source branch prefilled
 (`renderPullRevisionPanel`, `submitWebPullRevision` in
 `03-issues-profile-io.js`). It compares base against that branch (on the fork
-for a fork pull), refuses when nothing changed (`no_new_commits`), signs both
+for a fork pull), refuses when neither the head nor the base changed (`no_new_commits`), signs both
 signatures and posts the revision. The timeline shows "updated this pull
 request to revision N".
+
+### Fork pulls compare against the parent
+
+The mirror's `compare` diffs from `merge-base(base, head)`, and a fork pull is
+compared on the fork. Comparing against the base branch's name therefore used
+the fork's own `main`. When that `main` was behind the parent, the patch carried
+every parent change since then, the commit series came back empty (`compare`
+drops it when the range holds a merge commit, and the parent's `main` is made of
+them), and `creationBaseOid` named the fork's old tip, so the pull showed
+dozens of files, no commits and conflicts. Updating it from the same branch
+then failed as `no_new_commits`, because the bad revision had already recorded
+that head.
+
+Opening and revising a fork pull (`fetchPullComparison` in
+`03-issues-profile-io.js`) now read the parent's base tip from its branch list
+and compare the fork's branch against that commit id; `resolve_commit` accepts
+it because it is an ancestor of a branch that was rebased onto the parent. When
+the fork cannot see that commit (the branch was not rebased onto the parent's
+current tip) the comparison falls back to the base branch name as before. `no_new_commits`
+now needs both the head and the base to match the stored `creationHeadOid` and
+`creationBaseOid`, so a pull left wrong by the old comparison is fixed by
+updating it again from the same branch: the head is unchanged but the base is
+now the parent's tip.
 
 Tests: `app/tests/test_pull_revisions.py` (including the browser code run in
 node and verified by the relay), `server/pull_revision_test.go`.
