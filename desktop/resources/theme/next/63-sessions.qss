@@ -103,19 +103,22 @@ QPushButton#sessionsDetailHeader {
 QPushButton#sessionsDetailHeader:hover, QPushButton#sessionsDetailHeader:pressed {
     background: transparent;
 }
-#sessionsDetailTitle { color: @fg; font-size: 13px; font-weight: 600; background: transparent; }
+#sessionsDetailTitle { color: @fgMuted; font-size: 13px; font-weight: 500; background: transparent; }
 #sessionsDetailMeta { color: @fgMuted; font-size: 12px; background: transparent; }
 QWidget#sessionsDetailBody, QWidget#sessionsDetailRow { background: transparent; }
-#sessionsDetailText { color: @fgSecondary; font-size: 13px; background: transparent; }
-#sessionsDetailTrailing { color: @fgSubtle; font-size: 11px; background: transparent; }
-#sessionsContextUsed { color: @fg; font-size: 13px; font-weight: 600; background: transparent; }
+#sessionsDetailText { color: @fg; font-size: 13px; background: transparent; }
+#sessionsDetailTrailing { color: @fgMuted; font-size: 12px; background: transparent; }
+#sessionsContextUsed { color: @fg; font-size: 13px; font-weight: 500; background: transparent; }
 #sessionsContextUsed[sessionsLevel="high"] { color: @warning; }
 #sessionsContextUsed[sessionsLevel="full"] { color: @danger; }
 QPushButton#sessionsMemoryToggle {
     background: transparent; border: none; padding: 0px; text-align: left;
 }
 #sessionsContextWindow { color: @fgMuted; font-size: 12px; background: transparent; }
-#sessionsDetailShare { color: @fgMuted; font-size: 11px; background: transparent; }
+#sessionsDetailShare { color: @fgMuted; font-size: 12px; background: transparent; }
+#sessionsDetailCount { color: @fgSubtle; font-size: 12px; background: transparent; }
+QFrame#sessionsDetailCard[sessionsPanel="context"] #sessionsDetailTrailing,
+QFrame#sessionsDetailCard[sessionsPanel="context"] #sessionsDetailShare { color: @fgSecondary; }
 #sessionsRemoteStatus { color: @fgMuted; font-size: 12px; background: transparent; }
 QFrame#sessionsDetailCard[sessionsDragging="true"] {
     background-color: @surfaceRaised; border-bottom-color: @accent;
@@ -132,3 +135,9 @@ QToolButton#sessionsSubSessionStop {
     border-radius: 6px; font-size: 11px; padding: 1px 8px;
 }
 QToolButton#sessionsSubSessionStop:hover { color: @danger; border-color: @danger; }
+QPushButton#sessionsCommitButton {
+    color: @fgSecondary; background-color: @surfaceRaised; border: none; border-radius: 6px;
+    font-size: 12px; padding: 3px 10px; min-height: 18px;
+}
+QPushButton#sessionsCommitButton:hover { color: @fg; background-color: @surfaceActive; }
+QPushButton#sessionsCommitButton:focus { border: 1px solid @accent; }

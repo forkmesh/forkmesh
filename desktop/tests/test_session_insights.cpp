@@ -118,6 +118,43 @@ static void testBackground()
     check(items.size() == 2, "both background items listed");
 }
 
+static void testBackgroundStart()
+{
+    Collector c;
+    QJsonObject first = toolUse(QStringLiteral("a1"), QStringLiteral("Task"),
+                                {{QStringLiteral("description"), QStringLiteral("Scan")}});
+    first.insert(QStringLiteral("_ts"), 1700000000000.0);
+    c.ingest(first);
+    QJsonObject second = toolUse(QStringLiteral("a2"), QStringLiteral("Task"),
+                                 {{QStringLiteral("description"), QStringLiteral("Read")}});
+    second.insert(QStringLiteral("timestamp"), QStringLiteral("2023-11-14T22:15:00.000Z"));
+    c.ingest(second);
+    c.ingest(toolUse(QStringLiteral("a3"), QStringLiteral("Task"),
+                     {{QStringLiteral("description"), QStringLiteral("Later")}}));
+    qint64 scan = 0, read = 0, later = 0;
+    for (const Background &task : c.background()) {
+        if (task.label == QLatin1String("Scan"))
+            scan = task.startedMs;
+        else if (task.label == QLatin1String("Read"))
+            read = task.startedMs;
+        else
+            later = task.startedMs;
+    }
+    check(scan == 1700000000000LL, "a task starts at its event's _ts");
+    check(read == 1700000100000LL, "an imported event's ISO timestamp is used");
+    check(later == read, "an unstamped event takes the last time seen");
+    Collector fresh;
+    fresh.ingest(toolUse(QStringLiteral("b1"), QStringLiteral("Task"),
+                         {{QStringLiteral("description"), QStringLiteral("x")}}));
+    check(fresh.background().first().startedMs == 0, "no time seen, no start time");
+    check(elapsedText(45000) == QStringLiteral("45s") &&
+              elapsedText(22 * 60000 + 5000) == QStringLiteral("22m") &&
+              elapsedText(3600000) == QStringLiteral("1h") &&
+              elapsedText(3900000) == QStringLiteral("1h 5m") &&
+              elapsedText(-5) == QStringLiteral("0s"),
+          "elapsed time reads 45s, 22m, 1h, 1h 5m");
+}
+
 static void testProgressAndClear()
 {
     Collector c;
@@ -283,6 +320,7 @@ int main()
     testOutputs();
     testSources();
     testBackground();
+    testBackgroundStart();
     testProgressAndClear();
     testCardOrder();
     testContext();

@@ -11,6 +11,8 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Desktop", "text": "The session side panel's Changes card has a Commit changes button, and running background tasks show how long they have been running."},
+  {"date": "2026-11-03", "area": "Desktop", "text": "The session side panels now look like the Claude app's: muted section titles, roomier rows, a slimmer context bar, line counts on the Changes row and finished background tasks folded into one row."},
   {"date": "2026-11-03", "area": "Desktop", "text": "Opening a note with large diagrams no longer freezes the window, and the Git page's merge-health chips no longer stall it when a diff finishes loading."},
   {"date": "2026-11-03", "area": "Market", "text": "The CRM has a List cleanup page that finds people on more than one list, sorts them, and with one click keeps each on the list you pick, merging their records with every note, field and email."},
   {"date": "2026-11-03", "area": "Market", "text": "CRM 1.52.0: once your Mastodon account is connected, the CRM keeps a list of your followers up to date, adding each new follower as a contact so your conversations with them are tracked."},
