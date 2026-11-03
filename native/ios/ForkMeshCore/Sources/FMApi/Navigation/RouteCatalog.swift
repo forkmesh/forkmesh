@@ -179,6 +179,7 @@ public enum RouteCatalog {
         case .glassesAlert: return "Glasses Alert"
         case .phoneSecurity: return "Phone Security"
         case .eyeControl: return "Eye Control"
+        case .silentSpeech: return "Silent Speech"
         case .ember: return "Ember"
         case .strata: return "Strata"
         case .synapse: return "Synapse"
@@ -274,6 +275,7 @@ public enum RouteCatalog {
         case .glassesAlert: return "eyeglasses"
         case .phoneSecurity: return "checkmark.shield"
         case .eyeControl: return "eye"
+        case .silentSpeech: return "airpodspro"
         case .ember: return "flame"
         case .strata: return "square.3.layers.3d"
         case .synapse: return "brain"
@@ -426,6 +428,7 @@ public enum HubCatalog {
         .destination(.glassesAlert),
         .destination(.phoneSecurity),
         .destination(.eyeControl),
+        .destination(.silentSpeech),
         .destination(.openWrtRouter),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),

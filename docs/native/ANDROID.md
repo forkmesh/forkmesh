@@ -543,6 +543,13 @@ How repositories reach mirrors is in [mirroring.md](../mirroring.md).
   cannot name every private address. It is used only for addresses
   `OpenWrtModel.isLocalHost` accepts
   ([openwrt.md](../marketplace/openwrt.md#phones)).
+- **Silent Speech** (`feature/silentspeech/`, core `silentspeech/`) reads
+  `Sensor.TYPE_HEAD_TRACKER` (Android 13+), found through
+  `getDynamicSensorList` and `registerDynamicSensorCallback` while the page is
+  open, at `SENSOR_DELAY_GAME`. The recogniser is a line-for-line port of the
+  iOS core with the same tests (`./gradlew :core:coreTest -Pfilter=SilentSpeech`);
+  head trackers report no acceleration, so the Movement channel is iPhone only
+  ([silent-speech.md](../marketplace/silent-speech.md)).
 - **Phone Security** (`feature/phonesecurity/`, core `phonesecurity/`) is the
   local checkup in [phone-security.md](../marketplace/phone-security.md).
   `PhoneSecurityProbe` fills `PhoneSecurityFacts` on `Dispatchers.IO` when the
@@ -608,6 +615,8 @@ iOS features Android does not have, because they need an Apple-only API:
   for it on Android; the Android spider is unchanged and Android has no mascot
   choice yet.
 - **Eye Control** (S050): a gaze cursor needs ARKit TrueDepth face tracking.
+- **Silent Speech's Movement channel**: Android head trackers report rotation
+  and turning speed but no acceleration, so only the iPhone (AirPods) offers it.
 - **Spider Room** (S051): an ARKit and RealityKit scene; ARCore would be a
   new dependency.
 - **App Store update gate** (S052): Android is distributed directly and has

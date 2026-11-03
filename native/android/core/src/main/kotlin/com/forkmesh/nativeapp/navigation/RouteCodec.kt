@@ -191,6 +191,7 @@ object RouteCodec {
             Route.Kind.Speech -> Route.Speech
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.PhoneSecurity -> Route.PhoneSecurity
+            Route.Kind.SilentSpeech -> Route.SilentSpeech
             Route.Kind.Ember -> Route.Ember(repo)
             Route.Kind.Strata -> Route.Strata(repo)
             Route.Kind.Synapse -> Route.Synapse(repo)

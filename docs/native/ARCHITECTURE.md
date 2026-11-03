@@ -281,6 +281,9 @@ Threat model for phones: [threat-model.md](../protocol/threat-model.md).
 - **Eye Control** (`eye-control`, iOS only, experimental) moves a cursor with
   ARKit face tracking and taps on a firm blink (route `eyeControl`;
   [../marketplace/eye-control.md](../marketplace/eye-control.md)).
+- **Silent Speech** (`silent-speech`, experimental) recognises words mouthed
+  without a sound from AirPods or Android head-tracker motion (route
+  `silentSpeech`; [../marketplace/silent-speech.md](../marketplace/silent-speech.md)).
 - **Router** (`openwrt`) manages an OpenWrt router on the phone's Wi-Fi (route
   `openWrtRouter`, web path `/dashboard/openwrt`). Logic in
   `FMPackages/OpenWrt*.swift` and core `openwrt/`; screens in
