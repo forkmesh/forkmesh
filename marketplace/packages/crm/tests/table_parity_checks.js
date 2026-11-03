@@ -14,7 +14,7 @@ const exported = [
   "crmMarkContacted", "crmSelection", "crmSelectContact", "crmMenuSelection", "crmSort", "crmFilteredContacts",
   "crmVisibleColumns", "crmColumnLabel", "crmDeleteColumnItems", "crmListColumns",
   "crmFollowBack", "crmFollowBackButton", "crmFollowAccount", "crmMastodonPluginFollowBack",
-  "crmMastodonPluginFollow",
+  "crmMastodonPluginFollow", "crmContactControl", "crmBaseColumn",
 ];
 const page = new Function(
   "$", "$$", "session", "escapeHtml", "relativeTimeLabel",
@@ -313,7 +313,11 @@ same(page.crmCustomColumnLabel("deal_size"), "Deal size", "the key reads back as
   same(page.crmFollowBackButton({ id: "me", mastodon: "@forkmesh@mastodon.social" }), "", "the organization's own account gets no button");
   same(page.crmFollowBackButton({ id: "n", name: "No handle" }), "", "a contact without a Mastodon handle gets no button");
   view.activeView = "list-a";
-  same(page.crmFollowBackButton(follower), "", "other lists do not show it");
+  check(page.crmFollowBackButton(follower).includes(">Follow back</button>"), "other lists show it too");
+  check(page.crmContactControl(follower, page.crmBaseColumn("mastodon")).includes('data-crm-follow-back="grace@fosstodon.org"'),
+        "next to the handle in the Mastodon column");
+  same(page.crmContactControl({ id: "e", email: "e@example.org" }, page.crmBaseColumn("email")).includes("data-crm-follow-back"), false,
+       "and in no other column");
   view.activeView = "network:mastodon";
   view.organization = "other";
   check(page.crmFollowBackButton(follower).includes(">Follow</button>"), "another organization's answer is not used");

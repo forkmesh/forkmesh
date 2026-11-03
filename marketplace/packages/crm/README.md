@@ -1336,6 +1336,18 @@ raising, so the caller can keep the lead.
   request the account sent earlier and is still waiting on is not in its
   following list, so that row gets the button again after a reload.
 
+  <a id="follow-in-mastodon-column"></a>**Follow in the Mastodon column**
+  (2026-11-03): the button sits beside the handle in the **Mastodon** column
+  of every list, pipeline, network tab and table view that shows that column
+  (the web cards too), not only on the Mastodon tab, and the follow lists are
+  loaded whenever the column is shown. Only the Mastodon tab with that column
+  hidden keeps the button in the Actions strip. The login warning stays on the
+  Mastodon tab; elsewhere a disabled button's tooltip says to log in. On the
+  desktop the column opens 280 px wide so a handle and **Follow back** fit, and
+  the button's width is kept clear of the handle text (`kRowButtonRole` holds
+  that room). Code: `mastodonFollowButton`, `mastodonColumnShown` (desktop);
+  `crmContactControl`, `crmMastodonFollowShown` (web).
+
   <a id="mastodon-login-warning"></a>Before Follow can work the organization
   must be logged in to Mastodon, that is have an account and access token
   saved. Without one the buttons still show, disabled, and a warning at the

@@ -771,7 +771,7 @@ const QVector<ContactColumn> &contactColumns()
         {"name", "Name", 170}, {"email", "Email", 230},
         {"company", "Company", 180}, {"title", "Title", 170},
         {"phone", "Phone", 140}, {"twitter", "Twitter", 160},
-        {"mastodon", "Mastodon", 200}, {"bluesky", "Bluesky", 190},
+        {"mastodon", "Mastodon", 280}, {"bluesky", "Bluesky", 190},
         {"linkedin", "LinkedIn", 210}, {"github", "GitHub", 150},
         {"website", "Website", 200}, {"location", "Location", 160},
         {"flow", "Flow", 140}, {"stage", "Stage", 180},
@@ -1516,10 +1516,10 @@ protected:
         QStyledItemDelegate::initStyleOption(option, index);
         if (index.data(kAvatarRole).toBool())
             option->decorationSize = QSize(kAvatarSize, kAvatarSize);
-        if (index.data(kRowButtonRole).toBool())
+        if (const int room = index.data(kRowButtonRole).toInt(); room > 0)
             option->text = option->fontMetrics.elidedText(
                 option->text, Qt::ElideRight,
-                qMax(0, option->rect.width() - kRowButtonWidth - 8));
+                qMax(0, option->rect.width() - room - 8));
     }
 
 public:
@@ -4187,7 +4187,7 @@ void CrmFeature::fillContactRows()
                 fillMastodonItem(item, source.mastodonKey);
                 item->setFlags(item->flags() & ~Qt::ItemIsEditable);
                 if (!source.mastodonKey.isEmpty())
-                    item->setData(kRowButtonRole, true);
+                    item->setData(kRowButtonRole, kRowButtonWidth);
                 break;
             }
             case ContactColumnSpec::LastContacted:
@@ -4334,32 +4334,11 @@ void CrmFeature::attachRowWidgets(int row)
             auto *actionLayout = new QHBoxLayout(actions);
             actionLayout->setContentsMargins(8, 0, 8, 0);
             actionLayout->setSpacing(4);
-            QPushButton *followBack = nullptr;
-            const MastodonFollower follower = mastodonFollower();
-            const QString account = follower.plugin
-                ? follower.account
-                : mastodonHandleKey(text(m_settings.value(QStringLiteral("mastodon")).toObject(),
-                                         "account"));
-            const QString key = source.mastodonKey;
-            if (!key.isEmpty() && key != account && !m_mastodonFollowed.contains(key) &&
-                text(activeSheet(), "network") == QLatin1String("mastodon")) {
-                const bool connected = !follower.account.isEmpty();
-                const bool back = connected && m_mastodonFollowBack.contains(key);
-                followBack = new QPushButton(back ? QStringLiteral("Follow back")
-                                                  : QStringLiteral("Follow"), actions);
-                followBack->setObjectName(QStringLiteral("primaryButton"));
-                followBack->setToolTip(
-                    !connected
-                        ? QStringLiteral("Log in first: sign in in the Mastodon plugin, or connect "
-                                         "the organization's Mastodon account in CRM settings, "
-                                         "to follow @%1.").arg(key)
-                    : back ? QStringLiteral("@%1 follows @%2. Follow them back from @%2.")
-                                 .arg(key, account)
-                           : QStringLiteral("Follow @%1 from @%2.").arg(key, account));
-                followBack->setEnabled(connected && !m_mastodonFollowing.contains(key));
-                connect(followBack, &QPushButton::clicked, this,
-                        [this, key] { followMastodonBack(key); });
-            }
+            QPushButton *followBack =
+                text(activeSheet(), "network") == QLatin1String("mastodon") &&
+                        !mastodonColumnShown()
+                    ? mastodonFollowButton(source.mastodonKey, actions)
+                    : nullptr;
             auto *email = new QPushButton(QStringLiteral("Email"), actions);
             auto *prompt = new QPushButton(QStringLiteral("Copy prompt"), actions);
             prompt->setToolTip(QStringLiteral(
@@ -4399,6 +4378,35 @@ void CrmFeature::attachRowWidgets(int row)
                 deleteContact(contactById(contactId));
             });
             m_contactsTable->setCellWidget(row, column, actions);
+            continue;
+        }
+        if (spec.kind == ContactColumnSpec::Field && spec.key == QLatin1String("mastodon")) {
+            auto *holder = new QWidget(m_contactsTable);
+            QPushButton *follow = mastodonFollowButton(source.mastodonKey, holder);
+            int room = 0;
+            if (follow) {
+                QFont labelFont = follow->font();
+                labelFont.setWeight(QFont::DemiBold);
+                follow->setFixedHeight(26);
+                follow->setMinimumWidth(
+                    QFontMetrics(labelFont).horizontalAdvance(follow->text()) + 26);
+                follow->setCursor(Qt::PointingHandCursor);
+                room = follow->minimumWidth() + 4;
+            }
+            if (QTableWidgetItem *item = m_contactsTable->item(row, column)) {
+                const QSignalBlocker blocker(m_contactsTable);
+                item->setData(kRowButtonRole, room > 0 ? QVariant(room) : QVariant());
+            }
+            if (!follow) {
+                delete holder;
+                m_contactsTable->removeCellWidget(row, column);
+                continue;
+            }
+            auto *holderLayout = new QHBoxLayout(holder);
+            holderLayout->setContentsMargins(0, 0, 4, 0);
+            holderLayout->addStretch(1);
+            holderLayout->addWidget(follow);
+            m_contactsTable->setCellWidget(row, column, holder);
             continue;
         }
         if (spec.kind == ContactColumnSpec::MastodonLatest) {
@@ -10022,7 +10030,7 @@ void CrmFeature::loadMastodonFollowBack()
         m_mastodonFollowBackAccount = follower.account;
     }
     if (m_mastodonFollowBackLoading ||
-        text(activeSheet(), "network") != QLatin1String("mastodon") ||
+        (text(activeSheet(), "network") != QLatin1String("mastodon") && !mastodonColumnShown()) ||
         follower.account.isEmpty())
         return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -10076,7 +10084,7 @@ void CrmFeature::followMastodonBack(const QString &key)
         return;
     m_mastodonFollowing.insert(key);
     rebuildFollowBackRows(key);
-    setStatus(QString::fromUtf8("Following @%1 back\xE2\x80\xA6").arg(key));
+    setStatus(QString::fromUtf8("Following @%1\xE2\x80\xA6").arg(key));
     if (follower.plugin) {
         followFromPlugin(key, follower);
         return;
@@ -10354,6 +10362,39 @@ void CrmFeature::updateMastodonBar()
                                        : connected ? QStringLiteral("Open CRM settings")
                                                    : QStringLiteral("Log in to Mastodon"));
     m_mastodonBarButton->setVisible(retry || (m_canManageSettings && !follower.plugin));
+}
+
+bool CrmFeature::mastodonColumnShown() const
+{
+    const int column = columnIndex(ContactColumnSpec::Field, QStringLiteral("mastodon"));
+    return column >= 0 && !m_contactsTable->isColumnHidden(column);
+}
+
+QPushButton *CrmFeature::mastodonFollowButton(const QString &key, QWidget *parent)
+{
+    const MastodonFollower follower = mastodonFollower();
+    const QString account = follower.plugin
+        ? follower.account
+        : mastodonHandleKey(text(m_settings.value(QStringLiteral("mastodon")).toObject(),
+                                 "account"));
+    if (key.isEmpty() || key == account || m_mastodonFollowed.contains(key))
+        return nullptr;
+    const bool connected = !follower.account.isEmpty();
+    const bool back = connected && m_mastodonFollowBack.contains(key);
+    auto *button = new QPushButton(back ? QStringLiteral("Follow back")
+                                        : QStringLiteral("Follow"), parent);
+    button->setObjectName(QStringLiteral("primaryButton"));
+    button->setToolTip(
+        !connected
+            ? QStringLiteral("Log in first: sign in in the Mastodon plugin, or connect "
+                             "the organization's Mastodon account in CRM settings, "
+                             "to follow @%1.").arg(key)
+        : back ? QStringLiteral("@%1 follows @%2. Follow them back from @%2.")
+                     .arg(key, account)
+               : QStringLiteral("Follow @%1 from @%2.").arg(key, account));
+    button->setEnabled(connected && !m_mastodonFollowing.contains(key));
+    connect(button, &QPushButton::clicked, this, [this, key] { followMastodonBack(key); });
+    return button;
 }
 
 void CrmFeature::rebuildFollowBackRows(const QString &key)
