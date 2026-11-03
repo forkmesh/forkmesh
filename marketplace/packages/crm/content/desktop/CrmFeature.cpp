@@ -118,6 +118,15 @@ constexpr int kContactPageFetch = 1000;
 // this id prefix, and "No pipeline" holds contacts whose flow is none of them.
 constexpr char kPipelineTabPrefix[] = "pipeline:";
 constexpr char kNoPipelineTabId[] = "no-pipeline";
+constexpr char kNetworkTabPrefix[] = "network:";
+struct CrmNetwork
+{
+    const char *field;
+    const char *name;
+};
+constexpr CrmNetwork kNetworks[] = {
+    {"mastodon", "Mastodon"}, {"bluesky", "Bluesky"}, {"twitter", "X (Twitter)"},
+    {"linkedin", "LinkedIn"}, {"github", "GitHub"}};
 constexpr char kSheetIdProperty[] = "crmSheetId";
 const QStringList kKeptColumns{QStringLiteral("name"), QStringLiteral("email"),
                                QStringLiteral("flow"), QStringLiteral("stage")};
@@ -140,6 +149,17 @@ QString crmPageLink(const QString &param, const QString &id)
 bool storedSheet(const QJsonObject &sheet)
 {
     return !sheet.isEmpty() && !sheet.value(QStringLiteral("virtual")).toBool();
+}
+
+bool networkSheet(const QJsonObject &sheet)
+{
+    return !sheet.value(QStringLiteral("network")).toString().isEmpty();
+}
+
+bool sheetIsList(const QJsonObject &sheet)
+{
+    return !sheet.isEmpty() && !networkSheet(sheet) &&
+           sheet.value(QStringLiteral("id")).toString() != QLatin1String(kNoPipelineTabId);
 }
 
 // The share glyph on a list's tab and in the lists table: three linked nodes.
@@ -326,6 +346,26 @@ QIcon flowTypeIcon(const QString &id)
 }
 
 // A plain list's tab: three ruled lines.
+QIcon networkIcon(const QColor &color)
+{
+    QIcon icon;
+    for (const qreal scale : {1.0, 2.0}) {
+        QPixmap pixmap(QSize(16, 16) * scale);
+        pixmap.setDevicePixelRatio(scale);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(color, 1.3, Qt::SolidLine, Qt::RoundCap));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(QPointF(8, 8), 6, 6);
+        painter.drawEllipse(QPointF(8, 8), 2.5, 6);
+        painter.drawLine(QPointF(2, 8), QPointF(14, 8));
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
+
 QIcon plainListIcon(const QColor &color)
 {
     QIcon icon;
@@ -2648,7 +2688,7 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     connect(m_sheetList, &QListWidget::itemDoubleClicked, this,
             [this](QListWidgetItem *item) {
         const QString id = item ? item->data(Qt::UserRole + 1).toString() : QString();
-        if (!id.isEmpty() && id != QLatin1String(kNoPipelineTabId))
+        if (sheetIsList(sheetById(id)))
             renameSheet(id);
     });
     connect(m_stage, &QComboBox::currentIndexChanged, this, [this] {
@@ -5156,6 +5196,11 @@ void CrmFeature::selectFirstStage()
     const QString sheetId = m_sheet->currentData().toString();
     if (sheetId.isEmpty() || sheetId == m_stageSheet)
         return;
+    if (networkSheet(sheetById(sheetId))) {
+        m_stageSheet = sheetId;
+        m_stage->setCurrentIndex(qMax(0, m_stage->findData(QString())));
+        return;
+    }
     const QStringList stages = stripStages(nullptr);
     if (stages.isEmpty())
         return;
@@ -5865,8 +5910,12 @@ void CrmFeature::renderSheetTabs(const QString &select)
             // ruled lines for a plain list.
             m_tabs->setTabIcon(index, !text(sheet, "flow").isEmpty()
                 ? flowIcon(text(sheet, "flow"))
+                : networkSheet(sheet) ? networkIcon(palette().color(QPalette::WindowText))
                 : id == QLatin1String(kNoPipelineTabId) ? QIcon() : listIcon);
-            m_tabs->setTabToolTip(index, id == QLatin1String(kNoPipelineTabId)
+            m_tabs->setTabToolTip(index, networkSheet(sheet)
+                ? QStringLiteral("Every contact with a %1 profile, from every list and pipeline")
+                      .arg(text(sheet, "name"))
+                : id == QLatin1String(kNoPipelineTabId)
                 ? QStringLiteral("Contacts whose pipeline was deleted. Right-click "
                                  "them to move them into another one.")
                 : text(sheet, "flow").isEmpty() ? summary
@@ -6208,12 +6257,16 @@ void CrmFeature::renderSheetList()
     if (m_sheetList->styleSheet() != css)
         m_sheetList->setStyleSheet(css);
     bool more = false;
+    bool networks = false;
     for (int index = 0; index < m_tabs->count(); ++index) {
         QWidget *page = m_tabs->widget(index);
         const QString id = sheetTabId(index);
-        if (id.isEmpty() && !more) {
-            more = true;
-            auto *heading = new QListWidgetItem(QStringLiteral("More"), m_sheetList);
+        const bool network = id.startsWith(QLatin1String(kNetworkTabPrefix));
+        if ((id.isEmpty() && !more) || (network && !networks)) {
+            more = more || id.isEmpty();
+            networks = true;
+            auto *heading = new QListWidgetItem(
+                id.isEmpty() ? QStringLiteral("More") : QStringLiteral("Networks"), m_sheetList);
             heading->setFlags(Qt::NoItemFlags);
             QFont font = heading->font();
             font.setPointSizeF(font.pointSizeF() * 0.85);
@@ -6277,6 +6330,7 @@ void CrmFeature::renderSheetList()
         }
         auto *kind = new QLabel;
         kind->setPixmap((!flow.isEmpty() ? flowIcon(flow)
+                         : network ? networkIcon(ink)
                          : id == QLatin1String(kNoPipelineTabId) ? octicon(QStringLiteral("circle-slash"), ink, 16)
                                                                  : listIcon)
                             .pixmap(QSize(16, 16), scale));
@@ -6302,7 +6356,7 @@ void CrmFeature::renderSheetList()
                               .arg(locale.toString(uncontacted),
                                    locale.toString(qsizetype(rows.size()))));
         top->addWidget(count);
-        if (id != QLatin1String(kNoPipelineTabId)) {
+        if (sheetIsList(sheet)) {
             const QStringList names = sheetShareNames(sheet);
             QStringList access;
             if (!text(sheet, "owner").isEmpty())
@@ -6416,8 +6470,7 @@ QStringList CrmFeature::contactListNames(const QString &contactId) const
         return names;
     const QHash<QString, QStringList> lists = pipelineLists(m_views);
     for (const QJsonObject &sheet : tabSheets()) {
-        if (text(sheet, "id") != QLatin1String(kNoPipelineTabId) &&
-            contactInSheet(contact, sheet, lists))
+        if (sheetIsList(sheet) && contactInSheet(contact, sheet, lists))
             names << text(sheet, "name");
     }
     return names;
@@ -6434,7 +6487,7 @@ void CrmFeature::renderPeople()
         return;
     QHash<int, QStringList> lists;
     for (const QJsonObject &sheet : tabSheets()) {
-        if (text(sheet, "id") == QLatin1String(kNoPipelineTabId))
+        if (!sheetIsList(sheet))
             continue;
         for (int index : m_snapshot.sheetRows.value(text(sheet, "id")))
             lists[index] << text(sheet, "name");
@@ -6719,7 +6772,7 @@ void CrmFeature::mergeSheetInto(const QString &id, const QString &targetId)
 void CrmFeature::showSheetTabMenu(const QString &id, const QPoint &globalPosition)
 {
     const QJsonObject sheet = sheetById(id);
-    if (sheet.isEmpty())
+    if (sheet.isEmpty() || networkSheet(sheet))
         return;
     // A client-side tab (a pipeline no list is bound to, or "No pipeline") has
     // no list on the worker to move, retype or delete.
@@ -6902,7 +6955,7 @@ void CrmFeature::userDirectoryChanged()
 void CrmFeature::addSheetMembers(const QString &id)
 {
     const QJsonObject sheet = sheetById(id);
-    if (sheet.isEmpty() || id == QLatin1String(kNoPipelineTabId))
+    if (!sheetIsList(sheet))
         return;
     const bool stored = storedSheet(sheet);
     const QString name = text(sheet, "name");
@@ -7091,9 +7144,8 @@ QList<QJsonObject> CrmFeature::tabSheets() const
     for (const QJsonValue &value : m_views)
         sheets << value.toObject();
     for (const QJsonObject &sheet : m_virtualSheets) {
-        // "No pipeline" only shows while it has someone to show.
-        if (text(sheet, "id") != QLatin1String(kNoPipelineTabId) ||
-            sheetContactCount(sheet) > 0)
+        // "No pipeline" and each network only show while they have someone to show.
+        if (sheetIsList(sheet) || sheetContactCount(sheet) > 0)
             sheets << sheet;
     }
     return sheets;
@@ -7123,6 +7175,13 @@ void CrmFeature::rebuildVirtualSheets()
         {QStringLiteral("id"), QLatin1String(kNoPipelineTabId)},
         {QStringLiteral("name"), QStringLiteral("No pipeline")},
         {QStringLiteral("virtual"), true}};
+    for (const CrmNetwork &network : kNetworks) {
+        m_virtualSheets << QJsonObject{
+            {QStringLiteral("id"), QLatin1String(kNetworkTabPrefix) + QLatin1String(network.field)},
+            {QStringLiteral("name"), QString::fromUtf8(network.name)},
+            {QStringLiteral("network"), QLatin1String(network.field)},
+            {QStringLiteral("virtual"), true}};
+    }
 }
 
 QJsonObject CrmFeature::activeSheet() const
@@ -7144,6 +7203,8 @@ QHash<QString, QStringList> CrmFeature::pipelineLists(const QJsonArray &views)
 bool CrmFeature::contactInSheet(const QJsonObject &contact, const QJsonObject &sheet,
                                 const QHash<QString, QStringList> &pipelineLists)
 {
+    if (networkSheet(sheet))
+        return !text(contact, text(sheet, "network")).isEmpty();
     const QString id = text(sheet, "id");
     QStringList memberships;
     for (const QJsonValue &member : contact.value(QStringLiteral("views")).toArray())
@@ -7922,7 +7983,7 @@ void CrmFeature::showContactMenu(const QPoint &position)
     const QHash<QString, QStringList> sharedPipelines = pipelineLists(m_views);
     for (const QJsonObject &sheet : tabSheets()) {
         const QString sheetId = text(sheet, "id");
-        if (sheetId == QLatin1String(kNoPipelineTabId))
+        if (!sheetIsList(sheet))
             continue;
         const bool pipeline = !text(sheet, "flow").isEmpty();
         bool allThere = true;
@@ -8422,7 +8483,7 @@ void CrmFeature::renameSheet(const QString &id)
 {
     const QJsonObject target = sheetById(id);
     const QString previous = text(target, "name");
-    if (previous.isEmpty() || id == QLatin1String(kNoPipelineTabId))
+    if (previous.isEmpty() || !sheetIsList(target))
         return;
     // A pipeline tab no list is bound to is the flow itself, so renaming it
     // renames the pipeline in the shared settings, which owners and admins keep.
@@ -9553,7 +9614,8 @@ void CrmFeature::activateSearchHit(const QString &id)
         if (!tab.isEmpty())
             break;
         const QString sheetId = text(sheet, "id");
-        if (sheetId == QLatin1String(kNoPipelineTabId) || contactInSheet(contact, sheet))
+        if (sheetId == QLatin1String(kNoPipelineTabId) ||
+            (!networkSheet(sheet) && contactInSheet(contact, sheet)))
             tab = sheetId;
     }
     const int index = sheetTabIndex(tab);

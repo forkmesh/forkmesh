@@ -1243,7 +1243,8 @@ raising, so the caller can keep the lead.
   contacts. Each list is one line: icon, name, `<not contacted>/<total>` and
   who can open it. The header holds only the title, the organization, Import,
   Mail, `⋯` (People, Pipelines, History, Extension), Settings, Refresh and
-  Add contact; a status message other than an error fades after six seconds. Data is read when the
+  Add contact; **Networks** follows the lists, with a globe icon per network,
+  as client-side tabs with no list menu, rename or sharing; a status message other than an error fades after six seconds. Data is read when the
   CRM opens and on **Refresh**; nothing re-reads itself. Sorting and list
   membership are computed off the GUI thread.
 - **iPhone layout**: a section bar under the title holds **Home** (greeting,
