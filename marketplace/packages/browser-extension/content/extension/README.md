@@ -134,9 +134,10 @@ press **Record this toot in the CRM** on an instance not added yet; Chrome asks
 for that host once. Conversations are linked by `@name@instance`.
 
 **Your Mastodon posts** (on by default, **Add people I mention on Mastodon**):
-open one of your own posts on its permalink, like
-`https://mastodon.social/@forkmesh/113489…`, and after the page settles
-(1.5 s) everyone the post mentions is linked to the CRM, one record each
+a post you send from an added instance is logged the moment Mastodon accepts
+it, and one you open on its permalink, like
+`https://mastodon.social/@forkmesh/113489…`, is logged after the page settles
+(1.5 s): everyone the post mentions is linked to the CRM, one record each
 (hashtags and your own accounts are skipped, at most ten people). Someone the
 CRM does not know becomes a contact named from the page, or `@name@instance`.
 The CRM pings you for each person ("🎉 New CRM contact from Mastodon"). The
@@ -145,6 +146,16 @@ or the Mastodon account saved in the CRM's settings (read once per ten
 minutes). A post is logged once: the extension remembers the last 500, and the
 popup shows who was logged last. Timelines, profiles and other people's posts
 send nothing.
+
+To see a post as it is sent, `mastodon-sent.js` runs in the page itself
+(Chrome's `MAIN` world, registered per added instance next to the reader). It
+watches only the answer to Mastodon's own `POST /api/v1/statuses`, passes the
+post's id, address, time, content warning, text and mentioned accounts to
+`mastodon.js` with `window.postMessage`, and never reads the page's access
+token. Mastodon 5's redesigned post page (`article[data-variant="page"]`, the
+one with "Message by …" over a private mention) and the older
+`.detailed-status` page are both read; the CRM header there stops key presses
+so typing in it does not fire Mastodon's shortcuts (`f`, `b`, `r`).
 
 **Mail you send** (on by default, **Track emails I send**): sends from Gmail or
 Zoho Mail are linked to the first recipient that already has a record (To
@@ -489,10 +500,11 @@ answer the popup only.
 ## What leaves the browser
 
 - **CRM**: only when you press a button, send a message, or open your own
-  Mastodon post on its permalink: provider message and thread ids, subject, addresses or handles, direction, date, permalink,
+  Mastodon post on its permalink or send one: provider message and thread ids, subject, addresses or handles, direction, date, permalink,
   the contact details shown in the panel, and the chosen flow and stage. The
   email body is read in the page only to prefill fields and is never sent. A
-  Mastodon post's content warning or opening line stands in for a subject. A
+  Mastodon post's content warning or opening line stands in for a subject, also
+  for a post logged as you send it. A
   tracked send carries its subject, sending mailbox, up to five recipients and
   the time, never its body.
 - **Marketing**: the counts, page title, description, image, handle, address
@@ -532,6 +544,7 @@ extension's storage with the host permission Chrome granted.
 | `zoho-sort.js`     | The sort header and inbox-zero tools above a Zoho Mail list. |
 | `zoho-tidy.js`     | Search, sender grouping and Zoho button matching for `zoho-sort.js`. |
 | `mastodon.js`      | Reads the open conversation on a Mastodon instance.           |
+| `mastodon-sent.js` | In the Mastodon page: hands each post you send to `mastodon.js`. |
 | `x.js`             | Reads the tracked X profile's counts for Marketing.           |
 | `x-developer.js`   | Guides Connect X through X's developer console and reads the keys. |
 | `reddit.js`        | Reads watched Reddit pages you open, and monitored threads' views, for the Reddit desk. |
