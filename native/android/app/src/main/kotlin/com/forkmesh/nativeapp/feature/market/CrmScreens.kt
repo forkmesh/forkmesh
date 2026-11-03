@@ -64,6 +64,7 @@ import com.forkmesh.nativeapp.market.CrmTab
 import com.forkmesh.nativeapp.market.CrmTabItem
 import com.forkmesh.nativeapp.market.CrmText
 import com.forkmesh.nativeapp.market.contactTabs
+import com.forkmesh.nativeapp.market.networkTabs
 import com.forkmesh.nativeapp.market.listViews
 import com.forkmesh.nativeapp.market.next
 import com.forkmesh.nativeapp.market.owners
@@ -317,7 +318,7 @@ private fun CrmHeader(model: CrmModel, data: CrmOrganizationData, selecting: Boo
             }, Modifier.padding(horizontal = 16.dp), hint = if (model.section == CrmArea.ACTIVITY) "Search activity" else "Search contacts")
         }
         when (model.section) {
-            CrmArea.CONTACTS -> CrmTabChips(model, data.contactTabs)
+            CrmArea.CONTACTS -> CrmTabChips(model, data.contactTabs, data.networkTabs)
             CrmArea.ACTIVITY -> CrmTabChips(model, data.workspaceTabs)
             else -> Unit
         }

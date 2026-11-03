@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -141,38 +142,66 @@ internal fun CrmSectionBar(model: CrmModel, data: CrmOrganizationData) {
 }
 
 @Composable
-internal fun CrmTabChips(model: CrmModel, items: List<CrmTabItem>) {
-    val haptics = FmHaptics.current
+internal fun CrmTabChips(model: CrmModel, items: List<CrmTabItem>, networks: List<CrmTabItem> = emptyList()) {
     val state = rememberLazyListState()
-    LaunchedEffect(items.size) {
-        val index = items.indexOfFirst { it.tab == model.activeTab }
+    LaunchedEffect(items.size, networks.size) {
+        val listed = items.indexOfFirst { it.tab == model.activeTab }
+        val network = networks.indexOfFirst { it.tab == model.activeTab }
+        val index = if (listed >= 0) listed else if (network >= 0) items.size + 1 + network else -1
         if (index > 0) state.scrollToItem(index)
     }
-    LazyRow(state = state, horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
-        items(items, key = { it.tab.id }) { item ->
-            val active = model.activeTab == item.tab
-            val accent = Fm.colors.accent
-            Row(
-                Modifier.height(30.dp).clip(RoundedCornerShape(50))
-                    .background(if (active) accent.copy(alpha = 0.16f) else Fm.colors.textSecondary.copy(alpha = 0.1f))
-                    .semantics { selected = active }
-                    .combinedClickableCompat({
-                        haptics.selection()
-                        model.select(item.tab)
-                        CrmRevision.bump()
-                        (item.tab as? com.forkmesh.nativeapp.market.CrmTab.Sheet)?.let { sheet -> Thread { model.recordListView(sheet.viewId) }.start() }
-                    })
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                val color = if (active) accent else Fm.colors.textPrimary
-                FmIcon(item.icon, size = 14.dp, tint = color)
-                Text(item.title, maxLines = 1, style = Fm.text.bodySmall.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal), color = color)
-                item.count?.let { count ->
-                    Text("$count", style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold), color = color.copy(alpha = 0.75f))
-                }
-            }
+    LazyRow(
+        state = state, horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items(items, key = { it.tab.id }) { item -> CrmTabChip(model, item) }
+        if (networks.isNotEmpty()) {
+            item(key = "networks") { CrmNetworksHeading() }
+            items(networks, key = { it.tab.id }) { item -> CrmTabChip(model, item) }
+        }
+    }
+}
+
+@Composable
+private fun CrmNetworksHeading() {
+    Row(
+        Modifier.padding(start = 4.dp).testTag("crm-networks")
+            .semantics(mergeDescendants = true) { heading() },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(Modifier.width(1.dp).height(18.dp).background(Fm.colors.textSecondary.copy(alpha = 0.3f)))
+        Text(
+            "Networks", maxLines = 1,
+            style = Fm.text.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Fm.colors.textSecondary,
+        )
+    }
+}
+
+@Composable
+private fun CrmTabChip(model: CrmModel, item: CrmTabItem) {
+    val haptics = FmHaptics.current
+    val active = model.activeTab == item.tab
+    val accent = Fm.colors.accent
+    Row(
+        Modifier.height(30.dp).clip(RoundedCornerShape(50))
+            .background(if (active) accent.copy(alpha = 0.16f) else Fm.colors.textSecondary.copy(alpha = 0.1f))
+            .semantics { selected = active }
+            .combinedClickableCompat({
+                haptics.selection()
+                model.select(item.tab)
+                CrmRevision.bump()
+                (item.tab as? com.forkmesh.nativeapp.market.CrmTab.Sheet)?.let { sheet -> Thread { model.recordListView(sheet.viewId) }.start() }
+            })
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        val color = if (active) accent else Fm.colors.textPrimary
+        FmIcon(item.icon, size = 14.dp, tint = color)
+        Text(item.title, maxLines = 1, style = Fm.text.bodySmall.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal), color = color)
+        item.count?.let { count ->
+            Text("$count", style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Bold), color = color.copy(alpha = 0.75f))
         }
     }
 }

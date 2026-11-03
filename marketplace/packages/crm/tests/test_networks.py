@@ -3,8 +3,13 @@ from pathlib import Path
 
 
 CRM_PACKAGE = Path(__file__).resolve().parents[1]
+REPO = CRM_PACKAGE.parents[2]
 WEB_SCRIPT = (CRM_PACKAGE / "content" / "web" / "page.js").read_text(encoding="utf-8")
 FEATURE = (CRM_PACKAGE / "content" / "desktop" / "CrmFeature.cpp").read_text(encoding="utf-8")
+IOS_MODELS = (REPO / "native" / "ios" / "ForkMeshCore" / "Sources" / "FMPackages"
+              / "CrmWorkspaceModels.swift").read_text(encoding="utf-8")
+ANDROID_WORKSPACE = (REPO / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com"
+                     / "forkmesh" / "nativeapp" / "market" / "CrmWorkspace.kt").read_text(encoding="utf-8")
 NETWORKS = [
     ("mastodon", "Mastodon"), ("bluesky", "Bluesky"), ("twitter", "X (Twitter)"),
     ("linkedin", "LinkedIn"), ("github", "GitHub"),
@@ -15,11 +20,15 @@ def _block(source, start, end):
     return source.split(start, 1)[1].split(end, 1)[0]
 
 
-def test_web_and_desktop_offer_the_same_networks_in_the_same_order():
+def test_every_surface_offers_the_same_networks_in_the_same_order():
     web = _block(WEB_SCRIPT, "const CRM_NETWORKS = [", "];")
     assert re.findall(r'\{ id: "([a-z]+)", name: "([^"]+)" \}', web) == NETWORKS
     desktop = _block(FEATURE, "constexpr CrmNetwork kNetworks[] = {", "};")
     assert re.findall(r'\{"([a-z]+)", "([^"]+)"\}', desktop) == NETWORKS
+    ios = _block(IOS_MODELS, "public static let all = [", "]\n")
+    assert re.findall(r'CrmNetwork\(id: "([a-z]+)", name: "([^"]+)"\)', ios) == NETWORKS
+    android = _block(ANDROID_WORKSPACE, "val ALL = listOf(", "\n        )")
+    assert re.findall(r'CrmNetwork\("([a-z]+)", "([^"]+)"\)', android) == NETWORKS
 
 
 def test_a_network_holds_everyone_whose_profile_field_is_filled_in():
