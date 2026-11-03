@@ -3237,18 +3237,41 @@ async def _refused():
 
 
 class MastodonRuntime(Runtime):
-    def __init__(self, statuses=(), single=None, status=200):
+    def __init__(self, statuses=(), single=None, status=200, followers=(),
+                 followers_count=None, followers_status=200):
         super().__init__()
         self.statuses = list(statuses)
         self.single = single or {}
         self.mastodon_status = status
+        self.followers = list(followers)
+        self.followers_count = followers_count
+        self.followers_status = followers_status
+
+    async def outbound_text(self, url, method="GET", headers=None, body=""):
+        self.outbound_calls.append((url, method, dict(headers or {}), body))
+        parsed = urlparse(url)
+        if parsed.path != "/api/v1/accounts/42/followers":
+            return {"ok": False, "status": 404, "error": "unexpected_test_url"}
+        if self.followers_status != 200 and dict(headers or {}).get("authorization"):
+            return {"ok": True, "status": self.followers_status, "data": "{}"}
+        start = int(parse_qs(parsed.query).get("max_id", ["0"])[0])
+        page = self.followers[start:start + 2]
+        result = {"ok": True, "status": 200, "data": json.dumps(page)}
+        if start + 2 < len(self.followers):
+            result["link"] = (
+                f'<https://mastodon.social/api/v1/accounts/42/followers?limit=80&max_id={start + 2}>; '
+                'rel="next", <https://mastodon.social/api/v1/accounts/42/followers?min_id=1>; rel="prev"')
+        return result
 
     async def outbound_json(self, url, method="GET", headers=None, body=""):
         self.outbound_calls.append((url, method, dict(headers or {}), body))
         parsed = urlparse(url)
         query = parse_qs(parsed.query)
         if parsed.path == "/api/v1/accounts/lookup":
-            return {"ok": True, "status": 200, "data": {"id": "42"}}
+            count = (len(self.followers) if self.followers_count is None
+                     else self.followers_count)
+            return {"ok": True, "status": 200,
+                    "data": {"id": "42", "followers_count": count}}
         if parsed.path == "/api/v1/accounts/42/statuses":
             if self.mastodon_status != 200:
                 return {"ok": True, "status": self.mastodon_status, "data": {}}
@@ -3355,6 +3378,88 @@ def test_toot_sync_logs_sent_toots_that_mention_known_contacts():
     assert (now["data"]["checked"], now["data"]["logged"]) == (1, 1)
     assert "min_id=117441498168443300" in next(
         item[0] for item in runtime.outbound_calls if "/statuses?" in item[0])
+
+
+def _follower(acct, name="", note=""):
+    return {"acct": acct, "username": acct.split("@")[0], "display_name": name,
+            "note": note}
+
+
+def _followers_list(runtime):
+    views = call(runtime.use("GET"), "/api/crm/acme/views")["data"]["views"]
+    return [view for view in views if view["name"].startswith("Followers of")]
+
+
+def test_toot_sync_keeps_a_list_of_the_accounts_followers():
+    runtime = MastodonRuntime(followers=[
+        _follower("newbie", "New :blobcat: Person", "<p>Builds &amp; maintains a VPN</p>"),
+        _follower("ada@hachyderm.io", "Ada L."),
+        _follower("grace@fosstodon.org", "Grace"),
+    ])
+    _connect_mastodon(runtime)
+    ada = call(runtime.use("POST", body={
+        "name": "Ada", "website": "https://hachyderm.io/@ada"}),
+        "/api/crm/acme/contacts")["data"]["contact"]
+
+    synced = call(runtime.use("POST", actor="charlie", body={"auto": True}),
+                  "/api/crm/acme/emails/toots")
+    assert synced["status"] == 200
+    followers = synced["data"]["followers"]
+    assert (followers["read"], followers["created"], followers["listed"]) == (3, 2, 1)
+    lists = _followers_list(runtime)
+    assert [view["name"] for view in lists] == ["Followers of @forkmesh@mastodon.social"]
+    assert followers["list"] == lists[0]["id"]
+    contacts = call(runtime.use("GET"), "/api/crm/acme/contacts")["data"]["contacts"]
+    on_list = {contact["mastodon"] or contact["website"]: contact for contact in contacts
+               if lists[0]["id"] in contact["views"]}
+    assert set(on_list) == {"@newbie@mastodon.social", "@grace@fosstodon.org",
+                            "https://hachyderm.io/@ada"}
+    newbie = on_list["@newbie@mastodon.social"]
+    assert newbie["name"] == "New Person"
+    assert newbie["fields"]["bio"] == "Builds & maintains a VPN"
+    assert on_list["https://hachyderm.io/@ada"]["name"] == ada["name"]
+    assert len(contacts) == 3
+    assert [ping["recipient"] for ping in runtime.pings
+            if ping["title"] == "3 new Mastodon followers added to the CRM"] == [
+        "charlie", "alice"]
+
+    runtime.outbound_calls.clear()
+    again = call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
+    assert again["data"]["followers"]["created"] == 0
+    assert len([item for item in runtime.outbound_calls if "/followers" in item[0]]) == 1
+
+    runtime.followers.insert(0, _follower("late@mas.to", "Late"))
+    later = call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
+    assert (later["data"]["followers"]["created"], later["data"]["followers"]["list"]) == (
+        1, lists[0]["id"])
+    assert len(_followers_list(runtime)) == 1
+    assert call(runtime.use("GET"), "/api/crm/acme/settings")["data"]["settings"][
+        "mastodon"]["lastError"] == ""
+
+
+def test_follower_sync_reuses_an_imported_list_and_reads_without_a_token_scope():
+    runtime = MastodonRuntime(followers=[_follower("grace@fosstodon.org", "Grace")],
+                              followers_status=403)
+    _connect_mastodon(runtime)
+    imported = call(runtime.use("POST", body={
+        "csv": "Name,Mastodon\r\nGrace,@grace@fosstodon.org\r\n",
+        "fileName": "followers.csv",
+        "sheetName": "Followers of @forkmesh@mastodon.social"}),
+        "/api/crm/acme/contacts/import")["data"]
+    synced = call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")["data"]
+    assert synced["followers"] == {"list": imported["view"]["id"], "read": 1,
+                                   "created": 0, "listed": 0}
+    calls = [item for item in runtime.outbound_calls if "/followers" in item[0]]
+    assert [bool(item[2].get("authorization")) for item in calls] == [True, False]
+
+
+def test_follower_sync_reports_a_hidden_list_without_failing_the_toots():
+    runtime = MastodonRuntime(followers_count=269)
+    _connect_mastodon(runtime)
+    synced = call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
+    assert synced["status"] == 200
+    assert synced["data"]["followers"]["error"] == "mastodon_followers_hidden"
+    assert _followers_list(runtime) == []
 
 
 def test_toot_sync_reports_a_rejected_token():

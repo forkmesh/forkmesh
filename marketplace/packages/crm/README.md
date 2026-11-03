@@ -223,7 +223,11 @@ into an update) instead of a `500`. A shared sheet's add still answers
   directory (`GET /api/accounts/users`), newest first, as the list **ForkMesh
   users**; **Refresh** re-imports and never removes. The same read supplies
   profile pictures for contacts whose address belongs to a ForkMesh user.
-- **Mastodon followers** (desktop).
+- **Mastodon followers** (desktop): **Import Mastodon followers…** reads an
+  account's public followers into the list **Followers of @user@host**
+  (`Name,Mastodon,Notes`). Once the organization's Mastodon account is saved
+  (Settings → Mastodon toots), its followers list keeps itself up to date:
+  see [Followers list](#followers-list).
 
 ## Sharing
 
@@ -746,6 +750,28 @@ marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
     the CRM" otherwise; owners and admins get "Mastodon post linked in the
     CRM". Switch it off with **Add people I mention on Mastodon** in the
     extension's popup.
+- <a id="followers-list"></a>**Followers list** (1.52.0): every toots check
+  that runs (not one skipped inside the ten minutes) first reads the saved
+  account's followers, newest first (`/api/v1/accounts/<id>/followers`, 80 a
+  page, following the `Link` header through `outbound_text`, at most 25 pages)
+  and puts each one not yet on the list **Followers of @user@host** on it: a
+  follower the CRM already knows by handle (`_contact_handles`) only joins the
+  list, so nothing it holds is overwritten; anyone else becomes a contact with
+  **Name**, **Mastodon** and a **Bio** column (source `mastodon`). The list is
+  the one saved as `followersList` in the Mastodon settings, else a list with
+  that name (so a desktop or CSV import of the same account is reused), else a
+  new one. Reading stops at the first page with nobody new, so a usual check
+  costs one request. The token is sent so an account that hides its followers
+  still sees its own; a token without `read:accounts` is answered 403, and the
+  read is retried without it, which works while the list is public. An empty
+  read from an account with followers is `mastodon_followers_hidden` in the
+  response's `followers` (with `followersError` in the settings); a follower
+  error never fails the toots check. New people ping the team ("N new Mastodon
+  followers added to the CRM"), add a `contacts.imported` entry to the list's
+  history and audit `crm.followers.sync`. Unfollowing removes no one. The sync
+  runs before the toots are matched, so a toot to a brand-new follower is
+  linked in the same check. Changing the saved account forgets `followersList`.
+  Code: `_sync_followers`, `_mastodon_page`, `_followers_view`.
 - **Unsent drafts**: a note paragraph starting `DRAFT, not sent.` (optional
   `Subject:` line). **Drafts (N)** lists them; sending or confirming a
   Mastodon reply rewrites the marker to `DRAFT, sent <date> by <name>.`.

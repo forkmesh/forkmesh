@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-11-03", "area": "Market", "text": "CRM 1.52.0: once your Mastodon account is connected, the CRM keeps a list of your followers up to date, adding each new follower as a contact so your conversations with them are tracked."},
   {"date": "2026-11-03", "area": "Chat", "text": "Updating or reinstalling the app no longer makes the people you message approve your device again or see a safety number change, as long as the app keeps your account key."},
   {"date": "2026-11-03", "area": "Chat", "text": "Approving a new device in a direct message now approves every device waiting at once, so you no longer click through a queue of approvals on the desktop or the web."},
   {"date": "2026-11-03", "area": "Market", "text": "On a GitHub, Codeberg or Gitea repository, the Chrome extension's popup now opens a size map and a code map of it in a new tab, and the popup is wider with a cleaner look."},
