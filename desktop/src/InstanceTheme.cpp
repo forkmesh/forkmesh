@@ -100,9 +100,10 @@ QMap<QString, QString> roleColors(const QJsonObject &tokens, bool dark)
             dark ? primary.darker(110) : primary.darker(130));
         put(Theme::Role::AccentFg, link.isValid() ? link : primary);
         if (background.isValid()) {
-            put(Theme::Role::AccentSubtle, blend(primary, background, 0.82));
+            put(Theme::Role::AccentSubtle,
+                blend(primary, background, dark ? 0.82 : 0.76));
             put(Theme::Role::Selection,
-                blend(primary, background, dark ? 0.6 : 0.78));
+                blend(primary, background, dark ? 0.6 : 0.68));
         }
     }
     put(Theme::Role::OnAccent, onPrimary);
