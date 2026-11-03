@@ -42,7 +42,7 @@ constexpr char kHiddenSetting[] = "sessions/panelHidden";
 constexpr char kCollapsedSetting[] = "sessions/panelCollapsed";
 constexpr char kMime[] = "application/x-forkmesh-session-panel";
 constexpr int kVisibleRows = 8;
-constexpr int kEnvironmentRows = 5;
+constexpr int kEnvironmentRows = 6;
 constexpr int kContextRows = 5;
 constexpr int kSessionRows = 7;
 constexpr int kChangesRows = 4;
@@ -298,11 +298,11 @@ SessionSidePanels::SessionSidePanels(QWidget *parent) : QScrollArea(parent)
     remoteLayout->setSpacing(10);
     auto *remoteIcon = new QLabel(m_remoteRow);
     setPanelIcon(remoteIcon, QStringLiteral("device-mobile"), 14);
-    auto *remoteText = new QLabel(QStringLiteral("Remote control"), m_remoteRow);
+    auto *remoteText = new QLabel(QStringLiteral("Phone remote control"), m_remoteRow);
     remoteText->setObjectName(QStringLiteral("sessionsDetailText"));
     m_remoteSwitch = new RemoteSwitch(m_remoteRow);
     m_remoteSwitch->setObjectName(QStringLiteral("sessionsRemoteSwitch"));
-    m_remoteSwitch->setAccessibleName(QStringLiteral("Remote control"));
+    m_remoteSwitch->setAccessibleName(QStringLiteral("Phone remote control"));
     m_remoteSwitch->setToolTip(QStringLiteral("Let your paired phone follow and steer this "
                                               "desktop's sessions"));
     remoteLayout->addWidget(remoteIcon);
@@ -562,7 +562,7 @@ void SessionSidePanels::setRow(const Row &row, const Item &item)
     row.row->setCursor(item.open.isEmpty() ? Qt::ArrowCursor : Qt::PointingHandCursor);
 }
 
-void SessionSidePanels::fillFixed(Card &card, const QList<Item> &items, const QString &meta)
+bool SessionSidePanels::fillFixed(Card &card, const QList<Item> &items, const QString &meta)
 {
     bool any = false;
     for (int index = 0; index < card.rows.size(); ++index) {
@@ -574,6 +574,16 @@ void SessionSidePanels::fillFixed(Card &card, const QList<Item> &items, const QS
         card.meta->setText(meta);
     if (card.hint)
         card.hint->setVisible(!any);
+    setCardEmpty(card, !any);
+    return any;
+}
+
+void SessionSidePanels::setCardEmpty(Card &card, bool empty)
+{
+    if (card.empty == empty)
+        return;
+    card.empty = empty;
+    applyVisibility();
 }
 
 void SessionSidePanels::fillList(Card &card, const QList<Item> &items, const QString &meta)
@@ -587,6 +597,7 @@ void SessionSidePanels::fillList(Card &card, const QList<Item> &items, const QSt
         card.meta->setText(meta);
     if (card.hint)
         card.hint->setVisible(items.isEmpty());
+    setCardEmpty(card, items.isEmpty());
     const bool needMore = items.size() > kVisibleRows;
     if (needMore && !card.more) {
         card.more = new QPushButton(card.body);
@@ -714,6 +725,24 @@ void SessionSidePanels::refreshDetails()
     const Details &d = m_details;
     {
         Card &env = m_cards[QStringLiteral("environment")];
+        Item claudeRemote;
+        if (!d.claudeRemote.isEmpty()) {
+            const bool set = d.claudeRemote != QLatin1String("default");
+            claudeRemote.icon = QStringLiteral("broadcast");
+            claudeRemote.text = QStringLiteral("Claude Remote Control");
+            claudeRemote.trailing = d.claudeRemote == QLatin1String("on")    ? QStringLiteral("On")
+                                    : d.claudeRemote == QLatin1String("off") ? QStringLiteral("Off")
+                                                                             : QStringLiteral("Default");
+            claudeRemote.tip =
+                set ? QStringLiteral("Claude Code's \"Enable Remote Control for all sessions\" "
+                                     "is %1 (remoteControlAtStartup in %2). Change it with "
+                                     "/config in Claude Code.")
+                          .arg(claudeRemote.trailing.toLower(), homePath(d.claudeRemoteSource))
+                    : QStringLiteral("Claude Code's \"Enable Remote Control for all sessions\" "
+                                     "is not set, so Claude Code uses its own default. Change "
+                                     "it with /config in Claude Code, or start it for one "
+                                     "session with /remote-control.");
+        }
         fillFixed(env,
                   {{d.machineIcon, d.machine, d.machineNote, QString(), QString()},
                    {QStringLiteral("file-directory"), homePath(d.path), QString(), d.pathFull,
@@ -722,8 +751,10 @@ void SessionSidePanels::refreshDetails()
                    {QStringLiteral("smart-toy"), d.agent, QString(), QString(), QString()},
                    {QStringLiteral("shield-check"),
                     d.mode.isEmpty() ? QString() : QStringLiteral("%1 mode").arg(d.mode),
-                    QString(), QString(), QString()}},
+                    QString(), QString(), QString()},
+                   claudeRemote},
                   QString());
+        setCardEmpty(env, false);
     }
     {
         namespace si = sessioninsights;
@@ -845,19 +876,19 @@ void SessionSidePanels::refreshDetails()
             sessionRows |= !items.at(index).text.isEmpty();
         if (m_contextGap)
             m_contextGap->setVisible(hasWindow && sessionRows);
+        const bool contextEmpty = !hasWindow && !sessionRows && m_memoryFiles.isEmpty();
         if (context.hint)
-            context.hint->setVisible(!hasWindow && tokens <= 0 && d.turns <= 0 &&
-                                     d.costUsd <= 0.0);
+            context.hint->setVisible(contextEmpty);
+        setCardEmpty(context, contextEmpty);
     }
     {
         Card &changes = m_cards[QStringLiteral("changes")];
         const bool hasStat = d.files >= 0;
         fillFixed(changes,
                   {{QStringLiteral("file-diff"),
-                    !hasStat        ? QString()
-                    : d.files == 0  ? QStringLiteral("No files changed")
-                    : d.files == 1  ? QStringLiteral("1 file changed")
-                                    : QStringLiteral("%1 files changed").arg(d.files),
+                    !hasStat || d.files == 0 ? QString()
+                    : d.files == 1           ? QStringLiteral("1 file changed")
+                                             : QStringLiteral("%1 files changed").arg(d.files),
                     QString(), QString(), QString()},
                    {QStringLiteral("pencil"),
                     d.dirty > 0 ? QStringLiteral("%1 uncommitted").arg(d.dirty) : QString(),
@@ -1007,6 +1038,7 @@ void SessionSidePanels::setSubSessions(const QList<SubSession> &subSessions, boo
         card.meta->setText(meta);
     if (card.hint)
         card.hint->setVisible(subSessions.isEmpty());
+    setCardEmpty(card, subSessions.isEmpty());
 }
 
 void SessionSidePanels::clearActivity()
@@ -1115,7 +1147,10 @@ void SessionSidePanels::reloadLayout()
 void SessionSidePanels::saveLayout() const
 {
     QSettings settings;
-    settings.setValue(QLatin1String(kOrderSetting), m_order);
+    if (sessioninsights::customCardOrder(m_order))
+        settings.setValue(QLatin1String(kOrderSetting), m_order);
+    else
+        settings.remove(QLatin1String(kOrderSetting));
     settings.setValue(QLatin1String(kHiddenSetting), QStringList(m_hidden.cbegin(), m_hidden.cend()));
     settings.setValue(QLatin1String(kCollapsedSetting),
                       QStringList(m_collapsed.cbegin(), m_collapsed.cend()));
@@ -1129,14 +1164,41 @@ void SessionSidePanels::applyOrder()
             m_layout->removeWidget(card.frame);
     }
     int at = 0;
-    QString last;
     for (const QString &key : std::as_const(m_order)) {
         const Card &card = m_cards[key];
         if (!card.frame)
             continue;
         m_layout->insertWidget(at++, card.frame);
-        card.frame->setVisible(!m_hidden.contains(key));
-        if (!m_hidden.contains(key))
+    }
+    applyVisibility();
+}
+
+bool SessionSidePanels::cardShown(const QString &key) const
+{
+    const auto it = m_cards.constFind(key);
+    return it != m_cards.constEnd() && !it->empty && !m_hidden.contains(key);
+}
+
+int SessionSidePanels::neighbourIndex(const QString &key, int step) const
+{
+    for (qsizetype index = m_order.indexOf(key) + step; index >= 0 && index < m_order.size();
+         index += step)
+        if (cardShown(m_order.at(index)))
+            return int(index);
+    return -1;
+}
+
+void SessionSidePanels::applyVisibility()
+{
+    QString last;
+    for (const QString &key : std::as_const(m_order)) {
+        const Card &card = m_cards[key];
+        if (!card.frame)
+            continue;
+        const bool shown = cardShown(key);
+        if (card.frame->isVisibleTo(m_inner) != shown)
+            card.frame->setVisible(shown);
+        if (shown)
             last = key;
     }
     for (const Card &card : std::as_const(m_cards)) {
@@ -1227,11 +1289,12 @@ void SessionSidePanels::resetCards()
 void SessionSidePanels::cardMenu(const QString &key, const QPoint &globalPos)
 {
     QMenu menu(this);
-    const qsizetype index = m_order.indexOf(key);
+    const int above = neighbourIndex(key, -1);
+    const int below = neighbourIndex(key, 1);
     QAction *up = menu.addAction(QStringLiteral("Move up"));
-    up->setEnabled(index > 0);
+    up->setEnabled(above >= 0);
     QAction *down = menu.addAction(QStringLiteral("Move down"));
-    down->setEnabled(index >= 0 && index < m_order.size() - 1);
+    down->setEnabled(below >= 0);
     QAction *fold = menu.addAction(m_collapsed.contains(key) ? QStringLiteral("Unfold")
                                                              : QStringLiteral("Fold"));
     QAction *hide = menu.addAction(QStringLiteral("Hide %1").arg(cardTitle(key)));
@@ -1249,9 +1312,9 @@ void SessionSidePanels::cardMenu(const QString &key, const QPoint &globalPos)
     if (!chosen)
         return;
     if (chosen == up)
-        moveCard(key, int(index) - 1);
+        moveCard(key, above);
     else if (chosen == down)
-        moveCard(key, int(index) + 1);
+        moveCard(key, below);
     else if (chosen == fold)
         setCardCollapsed(key, !m_collapsed.contains(key));
     else if (chosen == hide)

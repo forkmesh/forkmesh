@@ -2176,11 +2176,7 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
     addProxy(menu, window.m_agentSignInRunnerButton, QStringLiteral("key"));
     menu->addSeparator();
     addProxy(menu, window.m_agentOutputModeButton, QStringLiteral("terminal"),
-             window.m_agentOutputModeButton &&
-                     window.m_agentOutputModeButton->text() ==
-                         QLatin1String("Raw")
-                 ? QStringLiteral("Show raw output")
-                 : QStringLiteral("Show transcript"));
+             QStringLiteral("Raw output window"));
     addProxy(menu, window.m_agentListenButton, QStringLiteral("unmute"));
     QAction *details =
         menu->addAction(glyph(QStringLiteral("info"), Theme::Role::FgMuted),

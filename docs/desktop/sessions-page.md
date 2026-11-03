@@ -164,12 +164,13 @@ right column in Control Tower
 
 | Card | Shows |
 | --- | --- |
+| **Environment**, **Context** | Where the session runs and its context use (below) |
 | **Progress** | The to-do list from `TodoWrite`/`TaskCreate` and Codex plans, through `agenttasks::Tracker` |
 | **Sub-sessions** | Live subagents, shells and workflows with Stop ([agents-ui.md](agents-ui.md#sub-sessions)) |
 | **Outputs** | Files the agent wrote or edited, newest first, with line counts; a failed edit is taken back |
 | **Sources** | Files read, pages fetched, web searches, skills and connectors |
 | **Background** | Subagents and background shells with running/done/failed/stopped |
-| **Changes**, **Context**, **Environment** | The session's diff, context use and environment (below) |
+| **Changes** | Files changed on the branch, uncommitted files, the pull request and conflicts |
 | **Tools** | Calls per tool and failures |
 
 - Outputs, Sources and Background come from `sessioninsights::Collector`
@@ -177,8 +178,11 @@ right column in Control Tower
   events the transcript gets: `renderSessionsTranscriptSlice` hands every
   queued event to the panel, and the panel folds them in 8 ms slices only
   while it is visible.
-- Every card is always shown, with a one-line hint while it is empty, so a
-  new session shows the full set from the first prompt.
+- A card shows only once it has something in it (`Card::empty`,
+  `applyVisibility`): an empty Progress, Sub-sessions, Outputs, Sources,
+  Background or Tools card is hidden, and so is Changes while the branch has
+  no changed or uncommitted files. Environment always shows. Move up and Move
+  down skip the hidden cards.
 - Drag a card's header to move it; the others make room as it passes and the
   list scrolls at the edges. Click the header to fold it. Right-click for
   Move up, Move down, Fold, Hide, Show panel and Reset panels.
@@ -186,6 +190,11 @@ right column in Control Tower
   `sessions/panelHidden` and `sessions/panelCollapsed`, shared by every
   place the stack shows. `normalizedCardOrder` keeps a saved order valid when
   a card is added: a new card goes after its default neighbour.
+- The default order starts with Environment, then Context. Only an order the
+  user changed is saved (`customCardOrder`): `sessions/panelOrder` is removed
+  while the order is the default, and a saved copy of an earlier default
+  (folding a card used to save the whole order) counts as not customised, so
+  it takes the new default while a real custom order stays.
 - Clicking an output or a read file shows it in the file manager (its folder,
   or the folder itself), never through the file's own handler, so an agent
   cannot plant a script and have a click run it. A page opens in the browser
@@ -233,7 +242,14 @@ right column in Control Tower
     the configured window. "N% used" turns amber at 80% and red at 95%
     (`sessionsLevel` on `sessionsContextUsed`). The header's percentage shows
     only while the card is folded, since the open card already says it.
-- **Environment** ends with a **Remote control** switch, the global
+- **Environment** shows Claude Code's own **Claude Remote Control** setting
+  for Claude sessions on this desktop: On, Off or Default, from
+  `remoteControlAtStartup` ("Enable Remote Control for all sessions" in
+  Claude Code's `/config`), read from the active Claude account's
+  `settings.json` and then its `.claude.json`
+  (`agentaccounts::readClaudeRemoteControl`, cached by file time and size).
+  It is shown, not changed: Claude Code rewrites `.claude.json` while it runs.
+- **Environment** ends with a **Phone remote control** switch, the global
   phone-control switch (`localControl/remoteControl`, on by default;
   `MainWindow::setRemoteControlOn`). Under it, a connected phone shows its
   name and whether it reached the desktop on this network or through the
