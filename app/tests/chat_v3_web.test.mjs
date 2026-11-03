@@ -24,6 +24,7 @@ import {
   unsealFrame,
   acceptSealKey,
   verifyBundle,
+  verifyNodeBinding,
   x25519Shared,
 } from "../public/chat-seal.js";
 
@@ -297,6 +298,159 @@ test("safety numbers match the vectors in any order", async () => {
     assert.equal((await safetyNumber(s.scope, [...idks].reverse())).digits, s.digits);
   }
   assert.notEqual(VECTORS.safety.twoDevices.digits, VECTORS.safety.threeDevices.digits);
+});
+
+async function successorSetup() {
+  const time = clock();
+  const make = (acct, storage = memoryStorage(), node = "") =>
+    ({ storage, store: createRoomSealStore({ storage, acct, node, now: time.now, wrappingKey: null }) });
+  const bob = make("bob");
+  const alice = make("alice");
+  const bobSeal = await bob.store.resolve(SCOPE, ROOM, "", DM);
+  const aliceSeal = await alice.store.resolve(SCOPE, ROOM, "", DM);
+  assert.equal((await acceptSealKey(await sealKeyFrame(aliceSeal), bobSeal)).state, "approved");
+  await bobSeal.markVerified();
+  const events = [];
+  bob.store.subscribe((event) => events.push(event.type));
+  const sameNode = memoryStorage();
+  sameNode.setItem(PREFIX + "ed25519NodeV1", alice.storage.getItem(PREFIX + "ed25519NodeV1"));
+  time.value += 60 * 1000;
+  const next = make("alice", sameNode);
+  const nextSeal = await next.store.resolve(SCOPE, ROOM, "", DM);
+  assert.equal(next.store.node, alice.store.node);
+  assert.notEqual(nextSeal.keyId, aliceSeal.keyId);
+  return { time, make, bob, bobSeal, alice, aliceSeal, next, nextSeal, events };
+}
+
+test("a web DM bundle carries the node binding when the node key matches its node", async () => {
+  const { aliceSeal, alice } = await successorSetup();
+  const bundle = await sealKeyFrame(aliceSeal);
+  assert.equal(bundle.node, alice.store.node);
+  assert.ok(bundle.nsig);
+  assert.ok(await verifyNodeBinding(bundle, ROOM));
+  const fixed = deviceStore("alice", "alice");
+  const plain = await sealKeyFrame(await fixed.store.resolve(SCOPE, ROOM, "", DM));
+  assert.equal(Object.hasOwn(plain, "nsig"), false);
+});
+
+test("a same-node successor takes over an approved, verified device quietly", async () => {
+  const { bobSeal, aliceSeal, nextSeal, events } = await successorSetup();
+  const before = await bobSeal.safetyNumber();
+  const firstSeen = bobSeal.devices()[0].firstSeen;
+  const accepted = await acceptSealKey(await sealKeyFrame(nextSeal), bobSeal);
+  assert.equal(accepted.state, "approved");
+  const record = bobSeal.devices().find((entry) => entry.kid === nextSeal.keyId);
+  assert.equal(record.firstSeen, bobSeal.ctx.now());
+  assert.ok(record.firstSeen > firstSeen);
+  assert.deepEqual(accepted.replaced, [aliceSeal.keyId]);
+  const kids = bobSeal.devices().map((record) => record.kid);
+  assert.ok(kids.includes(nextSeal.keyId));
+  assert.ok(!kids.includes(aliceSeal.keyId));
+  assert.deepEqual(bobSeal.pendingDevices(), []);
+  assert.deepEqual(bobSeal.recipientKeyIds(), [nextSeal.keyId]);
+  const after = await bobSeal.safetyNumber();
+  assert.notEqual(after.digits, before.digits);
+  assert.equal(after.verified, true);
+  assert.ok(!events.includes("pending"));
+  assert.ok(!events.includes("safety-changed"));
+  assert.ok(events.includes("replaced"));
+  await bobSeal.approve(nextSeal.keyId);
+  assert.ok(!events.includes("safety-changed"));
+  assert.equal((await acceptSealKey(await sealKeyFrame(bobSeal), nextSeal)).state, "approved");
+  assert.equal((await nextSeal.safetyNumber()).digits, after.digits);
+  const reply = await sealFrame({ type: "chat", id: "s2", senderId: nextSeal.node, text: "again" }, nextSeal);
+  assert.equal((await unsealFrame(reply, bobSeal)).plain.text, "again");
+});
+
+test("a replayed predecessor bundle is dropped after the takeover", async () => {
+  const { bobSeal, aliceSeal, nextSeal, events } = await successorSetup();
+  const old = await sealKeyFrame(aliceSeal);
+  const fresh = await sealKeyFrame(nextSeal);
+  assert.ok(fresh.spk.ts > old.spk.ts);
+  assert.equal((await acceptSealKey(fresh, bobSeal)).state, "approved");
+  assert.equal(await acceptSealKey(old, bobSeal), null);
+  assert.deepEqual(bobSeal.devices().map((record) => [record.kid, record.state]), [[nextSeal.keyId, "approved"]]);
+  assert.ok(!events.includes("pending"));
+  assert.equal((await bobSeal.safetyNumber()).verified, true);
+});
+
+test("an older key of this device's own node is dropped", async () => {
+  const { time, make, bob, bobSeal, events } = await successorSetup();
+  const before = bobSeal.devices();
+  const sameNode = memoryStorage();
+  sameNode.setItem(PREFIX + "ed25519NodeV1", bob.storage.getItem(PREFIX + "ed25519NodeV1"));
+  const now = time.value;
+  time.value = NOW;
+  const olderSeal = await make("bob", sameNode).store.resolve(SCOPE, ROOM, "", DM);
+  const older = await sealKeyFrame(olderSeal);
+  time.value = now;
+  assert.equal(older.node, bob.store.node);
+  assert.ok(await verifyNodeBinding(older, ROOM));
+  assert.equal(await acceptSealKey(older, bobSeal), null);
+  assert.deepEqual(bobSeal.devices(), before);
+  assert.ok(!events.includes("pending"));
+});
+
+test("a successor inherits a pending or blocked state", async () => {
+  const pendingCase = await successorSetup();
+  const tablet = pendingCase.make("alice");
+  const tabletSeal = await tablet.store.resolve(SCOPE, ROOM, "", DM);
+  assert.equal((await acceptSealKey(await sealKeyFrame(tabletSeal), pendingCase.bobSeal)).state, "pending");
+  pendingCase.time.value += 60 * 1000;
+  const tabletStorage = memoryStorage();
+  tabletStorage.setItem(PREFIX + "ed25519NodeV1", tablet.storage.getItem(PREFIX + "ed25519NodeV1"));
+  const tabletNext = await pendingCase.make("alice", tabletStorage).store.resolve(SCOPE, ROOM, "", DM);
+  const pendingEvents = [];
+  pendingCase.bob.store.subscribe((event) => pendingEvents.push([event.type, event.kid]));
+  const inherited = await acceptSealKey(await sealKeyFrame(tabletNext), pendingCase.bobSeal);
+  assert.equal(inherited.state, "pending");
+  assert.deepEqual(inherited.replaced, [tabletSeal.keyId]);
+  assert.deepEqual(pendingCase.bobSeal.pendingDevices().map((record) => record.kid), [tabletNext.keyId]);
+  assert.deepEqual(pendingEvents, [["replaced", tabletNext.keyId], ["pending", tabletNext.keyId]]);
+
+  const { bobSeal, aliceSeal, nextSeal, events } = await successorSetup();
+  await bobSeal.block(aliceSeal.keyId);
+  const accepted = await acceptSealKey(await sealKeyFrame(nextSeal), bobSeal);
+  assert.equal(accepted.state, "blocked");
+  assert.deepEqual(bobSeal.devices().map((record) => [record.kid, record.state]), [[nextSeal.keyId, "blocked"]]);
+  assert.ok(!events.includes("pending"));
+});
+
+test("a new key without a node binding is pending as before", async () => {
+  const { bobSeal, aliceSeal, nextSeal, events } = await successorSetup();
+  const bundle = await sealKeyFrame(nextSeal);
+  delete bundle.nsig;
+  assert.ok(await verifyBundle(bundle, ROOM, bobSeal.ctx.now()));
+  const accepted = await acceptSealKey(bundle, bobSeal);
+  assert.equal(accepted.state, "pending");
+  assert.ok(bobSeal.devices().some((record) => record.kid === aliceSeal.keyId && record.state === "approved"));
+  assert.ok(events.includes("pending"));
+});
+
+test("a node binding from another node key does not take over a device", async () => {
+  const { make, bobSeal, aliceSeal, alice, nextSeal, next, events } = await successorSetup();
+  const other = make("alice");
+  const otherSeal = await other.store.resolve(SCOPE, ROOM, "", DM);
+  const elsewhere = await acceptSealKey(await sealKeyFrame(otherSeal), bobSeal);
+  assert.equal(elsewhere.state, "pending");
+  assert.ok(bobSeal.devices().some((record) => record.kid === aliceSeal.keyId && record.state === "approved"));
+
+  const identity = memoryStorage();
+  identity.setItem(PREFIX + "ed25519IdentityV3", next.storage.getItem(PREFIX + "ed25519IdentityV3"));
+  const claimed = await make("alice", identity, alice.store.node).store.resolve(SCOPE, ROOM, "", DM);
+  const bundle = await sealKeyFrame(claimed);
+  assert.equal(bundle.kid, nextSeal.keyId);
+  assert.equal(Object.hasOwn(bundle, "nsig"), false);
+  const signer = memoryStorage();
+  signer.setItem(PREFIX + "ed25519IdentityV3", next.storage.getItem(PREFIX + "ed25519IdentityV3"));
+  const foreign = await sealKeyFrame(await make("alice", signer).store.resolve(SCOPE, ROOM, "", DM));
+  assert.equal(foreign.kid, bundle.kid);
+  bundle.nsig = foreign.nsig;
+  assert.equal(await verifyNodeBinding(bundle, ROOM), false);
+  const forged = await acceptSealKey(bundle, bobSeal);
+  assert.equal(forged.state, "pending");
+  assert.ok(bobSeal.devices().some((record) => record.kid === aliceSeal.keyId && record.state === "approved"));
+  assert.equal(events.filter((type) => type === "safety-changed").length, 0);
 });
 
 test("the seal's safety number follows the approved set and reports the change", async () => {

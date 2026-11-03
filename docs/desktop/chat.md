@@ -321,10 +321,13 @@ present, and "Direct only" while the focus rule holds.
 
 A pending device (a second device of an account that already has one) adds a
 "ForkMesh" line to the conversation and shows the banner with Approve, Block
-and Safety number. The details dialog (the info button, or the encryption
-badge, on a DM) shows the 60 digits in 12 groups, the QR code of the QR string
-(`src/QrCode.*`) and the string itself, every device with its state, and
-"Mark as verified". A change to the approved set after both accounts have a
+and Safety number. Further devices that arrive while one is waiting add no
+line: the banner counts them all and its buttons (Approve all, Block all)
+decide every waiting device at once (`decideDirectDevices`), so approving
+never leaves a queue behind. The details dialog (the info button, or the
+encryption badge, on a DM) shows the 60 digits in 12 groups, the QR code of the
+QR string (`src/QrCode.*`) and the string itself, every device with its state,
+one Approve and Block for all waiting devices, and "Mark as verified". A change to the approved set after both accounts have a
 device clears verified and adds "Your safety number with @name changed."
 
 ## Relay hardening

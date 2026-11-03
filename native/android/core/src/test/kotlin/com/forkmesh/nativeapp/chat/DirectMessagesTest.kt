@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.crypto.ChatNodeKey
+import com.forkmesh.nativeapp.crypto.ChatV3
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -105,7 +107,7 @@ class DirectMessagesTest {
         val store: MemorySecretStore,
     )
 
-    private fun rig(): Rig {
+    private fun rig(peer: RoomSeal = peerSeal()): Rig {
         val store = MemorySecretStore()
         val connector = FakeOfficeConnector()
         val dm = service(preparedApi(), connector, store)
@@ -116,7 +118,6 @@ class DirectMessagesTest {
         hub.select(conversation)
         val socket = connector.last!!
         socket.onText(historyEnd)
-        val peer = peerSeal()
         peer.acceptKeyFrame(mySeal(store).keyFrame())
         socket.onText(envelope(peer.keyFrame()))
         return Rig(dm, hub, socket, peer, conversation, store)
@@ -485,6 +486,52 @@ class DirectMessagesTest {
         expect(!r.dm.verifyScanned(r.conversation, before.qr))
         expect(r.dm.markVerified(r.conversation))
         expect(r.dm.isVerified(r.conversation))
+    }
+
+    fun testAnUpdatedAppOnTheSameNodeTakesOverWithoutAskingAgain() {
+        val node = ChatNodeKey.generate()
+        val installed = System.currentTimeMillis() - 3_600_000L
+        val first = RoomSeal.loadOrCreate(
+            room, scope = scope, policy = SealPolicy.STRICT, acct = "pat", secureStore = MemorySecretStore(), clock = { installed }, nodeKey = node,
+        )
+        val r = rig(first)
+        val before = r.dm.safetyNumber(r.conversation)!!
+        expect(r.dm.verifyScanned(r.conversation, before.qr))
+        val updated = RoomSeal.loadOrCreate(room, scope = scope, policy = SealPolicy.STRICT, acct = "pat", secureStore = MemorySecretStore(), nodeKey = node)
+        updated.acceptKeyFrame(mySeal(r.store).keyFrame())
+        r.socket.onText(envelope(updated.keyFrame()))
+        expect(r.dm.pendingDevices(r.conversation).isEmpty(), "no approval asked again")
+        assertEq(listOf(updated.keyId), r.dm.deviceKeys(r.conversation))
+        expect(r.dm.isVerified(r.conversation), "verified stays")
+        expect(r.dm.messages(r.conversation).none { it.senderId == DirectMessageFrames.SYSTEM_SENDER }, "no pending or safety line")
+        expect(r.dm.safetyNumber(r.conversation)!!.digits != before.digits)
+        r.socket.onText(envelope(updated.seal(peerChat("pat-u1", "after the update") + ("senderId" to node.node))))
+        expect(r.dm.messages(r.conversation).any { it.text == "after the update" })
+        r.socket.onText(envelope(first.keyFrame(installed)))
+        assertEq(listOf(updated.keyId), r.dm.deviceKeys(r.conversation), "a replayed old bundle does not come back")
+    }
+
+    fun testTheServiceSignsItsBundleWithTheNodeKey() {
+        val node = ChatNodeKey.generate()
+        val connector = FakeOfficeConnector()
+        val dm = DirectMessageService(
+            preparedApi(), connector, MemorySecretStore(), { "https://app.forkmesh.com" }, { node.node }, { "Me" },
+            loop = EventLoop("direct-messages-test", virtualTime = true), nodeKey = { node },
+        )
+        dm.refresh()
+        val hub = ChatHub(FakeChatRelay())
+        hub.direct = dm
+        hub.select(dm.conversations.single())
+        val socket = connector.last!!
+        socket.onText(historyEnd)
+        val peer = peerSeal()
+        socket.onText(envelope(peer.keyFrame()))
+        val bundles = sentFrames(socket).mapNotNull { crypto.decrypt(it) }.filter { RoomSeal.isKeyFrame(it) }
+        expect(bundles.isNotEmpty())
+        for (bundle in bundles) {
+            assertEq(node.node, bundle["node"])
+            expect(ChatV3.verifyNodeBinding(bundle, room), "the direct-message bundle carries nsig")
+        }
     }
 
     fun testSeveralNewDevicesShareOneLineAndOneBanner() {

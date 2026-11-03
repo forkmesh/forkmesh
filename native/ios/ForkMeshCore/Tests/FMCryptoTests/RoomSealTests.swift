@@ -596,3 +596,159 @@ final class RoomSealNodeBindingVectorTests: XCTestCase {
         }
     }
 }
+
+final class RoomSealSuccessorTests: XCTestCase {
+    let room = "chat-direct:0123456789abcdef0123456789abcdef:v1"
+    let scope = "direct:0123456789abcdef0123456789abcdef"
+    let now: Int64 = 1_790_000_000_000
+
+    func install(
+        _ acct: String, node: DeviceIdentity, signs: DeviceIdentity? = nil, store: SecureStore = InMemorySecureStore(),
+        at time: Int64? = nil
+    ) throws -> RoomSeal {
+        try RoomSeal.loadOrCreate(
+            room, scope: scope, policy: .strict, acct: acct, node: node.nodeId, secureStore: store,
+            nodeIdentity: signs ?? node, now: time ?? now)
+    }
+
+    func bobAndAlice() throws -> (bob: RoomSeal, alice: RoomSeal, aliceKey: Identity, aliceFrame: JSONObject) {
+        let bob = try install("bob", node: try Identity.fromSeed(Ed25519.generateSeed()))
+        let aliceKey = try Identity.fromSeed(Ed25519.generateSeed())
+        let alice = try install("alice", node: aliceKey)
+        _ = bob.keyFrame(now: now)
+        let aliceFrame = alice.keyFrame(now: now)
+        XCTAssertEqual(bob.acceptBundle(aliceFrame, now: now)?.state, .approved)
+        bob.trust.markVerified()
+        XCTAssertTrue(bob.safetyNumber().verified)
+        return (bob, alice, aliceKey, aliceFrame)
+    }
+
+    func testADirectBundleCarriesTheNodeSignatureWhenTheNodeKeyMatches() throws {
+        let key = try Identity.fromSeed(Ed25519.generateSeed())
+        let bound = try install("alice", node: key)
+        let frame = bound.keyFrame(now: now)
+        XCTAssertNotNil(frame["nsig"])
+        XCTAssertTrue(RoomSeal.verifyNodeBinding(frame, room: room))
+        let other = try Identity.fromSeed(Ed25519.generateSeed())
+        let mismatched = try install("alice", node: key, signs: other)
+        let plain = mismatched.keyFrame(now: now)
+        XCTAssertFalse(plain.isEmpty, "a node key mismatch still sends the bundle")
+        XCTAssertNil(plain["nsig"])
+        XCTAssertTrue(RoomSeal.verifyBundle(plain, room: room, now: now))
+    }
+
+    func testANewKeyFromTheSameNodeTakesOverTheApprovedVerifiedDevice() throws {
+        let (bob, alice, aliceKey, _) = try bobAndAlice()
+        let later = now + 60_000
+        let reinstalled = try install("alice", node: aliceKey, at: later)
+        XCTAssertNotEqual(reinstalled.keyId, alice.keyId)
+        let result = try XCTUnwrap(bob.acceptBundle(reinstalled.keyFrame(now: later), now: later))
+        XCTAssertEqual(result.state, .approved)
+        XCTAssertTrue(result.isNew)
+        XCTAssertNil(bob.trust.record(alice.keyId), "the old key is gone")
+        let record = try XCTUnwrap(bob.trust.record(reinstalled.keyId))
+        XCTAssertEqual(record.state, .approved)
+        XCTAssertTrue(record.verified)
+        XCTAssertEqual(record.firstSeen, later)
+        XCTAssertTrue(bob.trust.records(in: .pending).isEmpty)
+        let safety = bob.safetyNumber()
+        XCTAssertTrue(safety.verified)
+        XCTAssertFalse(safety.changed)
+        XCTAssertFalse(bob.trust.safetyNumberChanged)
+        XCTAssertEqual(bob.approvedKeyIds, [reinstalled.keyId])
+        reinstalled.acceptBundle(bob.keyFrame(now: later), now: later)
+        XCTAssertEqual(reinstalled.safetyNumber().digits, safety.digits)
+        let frame = try reinstalled.seal(
+            ["type": "chat", "id": "r1", "senderId": .string(aliceKey.nodeId), "text": "back"], now: later)
+        XCTAssertEqual(bob.open(frame, now: later).plain?["text"], "back")
+    }
+
+    func testAReplayedOldBundleIsDroppedAfterTheTakeover() throws {
+        let (bob, alice, aliceKey, aliceFrame) = try bobAndAlice()
+        let later = now + 60_000
+        let reinstalled = try install("alice", node: aliceKey, at: later)
+        let successorFrame = reinstalled.keyFrame(now: later)
+        XCTAssertEqual(bob.acceptBundle(successorFrame, now: later)?.state, .approved)
+        XCTAssertNil(bob.acceptBundle(aliceFrame, now: later), "an older bundle from the same node is dropped")
+        XCTAssertNil(bob.trust.record(alice.keyId))
+        XCTAssertEqual(bob.approvedKeyIds, [reinstalled.keyId])
+        XCTAssertTrue(bob.trust.records(in: .pending).isEmpty)
+        XCTAssertTrue(bob.safetyNumber().verified)
+        let sameTime = try install("alice", node: aliceKey, at: later)
+        XCTAssertNil(bob.acceptBundle(sameTime.keyFrame(now: later), now: later), "an equal prekey time is not newer")
+        XCTAssertEqual(bob.approvedKeyIds, [reinstalled.keyId])
+        XCTAssertEqual(bob.acceptBundle(successorFrame, now: later)?.isNew, false)
+    }
+
+    func testANewKeyWithoutTheNodeSignatureWaitsForApproval() throws {
+        let (bob, alice, aliceKey, _) = try bobAndAlice()
+        let unsigned = try RoomSeal.loadOrCreate(
+            room, scope: scope, policy: .strict, acct: "alice", node: aliceKey.nodeId, secureStore: InMemorySecureStore(),
+            now: now)
+        let frame = unsigned.keyFrame(now: now)
+        XCTAssertNil(frame["nsig"])
+        XCTAssertEqual(bob.acceptBundle(frame, now: now)?.state, .pending)
+        XCTAssertEqual(bob.trust.record(alice.keyId)?.state, .approved)
+        XCTAssertEqual(bob.trust.records(in: .pending).map(\.kid), [unsigned.keyId])
+        XCTAssertTrue(bob.safetyNumber().verified)
+    }
+
+    func testANodeSignatureFromAnotherNodeWaitsForApproval() throws {
+        let (bob, alice, aliceKey, _) = try bobAndAlice()
+        let thief = try Identity.fromSeed(Ed25519.generateSeed())
+        let moved = try install("alice", node: thief)
+        XCTAssertEqual(bob.acceptBundle(moved.keyFrame(now: now), now: now)?.state, .pending, "another node is a new device")
+        let forger = try RoomSeal.loadOrCreate(
+            room, scope: scope, policy: .strict, acct: "alice", node: aliceKey.nodeId, secureStore: InMemorySecureStore(),
+            now: now)
+        var forged = forger.keyFrame(now: now)
+        forged["nsig"] = .string(
+            thief.sign(RoomSeal.nodeBindingMessage(room, forger.keyId, forger.keyring.idk, "alice")))
+        XCTAssertFalse(RoomSeal.verifyNodeBinding(forged, room: room))
+        XCTAssertEqual(bob.acceptBundle(forged, now: now)?.state, .pending, "an nsig by another node key")
+        XCTAssertEqual(bob.trust.record(alice.keyId)?.state, .approved)
+        XCTAssertEqual(Set(bob.trust.records(in: .pending).map(\.kid)), [moved.keyId, forger.keyId])
+    }
+
+    func testASuccessorKeepsAPendingOrBlockedState() throws {
+        let (bob, _, _, _) = try bobAndAlice()
+        let phoneKey = try Identity.fromSeed(Ed25519.generateSeed())
+        let phone = try install("alice", node: phoneKey)
+        XCTAssertEqual(bob.acceptBundle(phone.keyFrame(now: now), now: now)?.state, .pending)
+        let phoneAgain = try install("alice", node: phoneKey, at: now + 1)
+        XCTAssertEqual(bob.acceptBundle(phoneAgain.keyFrame(now: now + 1), now: now + 1)?.state, .pending)
+        XCTAssertEqual(bob.trust.records(in: .pending).map(\.kid), [phoneAgain.keyId])
+        bob.block(phoneAgain.keyId)
+        let phoneThird = try install("alice", node: phoneKey, at: now + 2)
+        XCTAssertEqual(bob.acceptBundle(phoneThird.keyFrame(now: now + 2), now: now + 2)?.state, .blocked)
+        XCTAssertEqual(bob.trust.records(in: .blocked).map(\.kid), [phoneThird.keyId])
+        XCTAssertTrue(bob.trust.records(in: .pending).isEmpty)
+    }
+
+    func testOwnNewKeyReplacesTheOldKeyOfTheSameInstall() throws {
+        let (bob, alice, aliceKey, _) = try bobAndAlice()
+        let store = InMemorySecureStore()
+        let mine = try install("alice", node: aliceKey, store: store)
+        _ = mine.keyFrame(now: now)
+        mine.acceptBundle(bob.keyFrame(now: now), now: now)
+        mine.trust.markVerified()
+        let digitsBefore = mine.safetyNumber().digits
+        let newKeyring = try ChatKeyring.fromSecrets(identitySeed: Ed25519.generateSeed(), store: store)
+        newKeyring.addPrekey(
+            try ChatPrekeySecret(xPriv: X25519.generatePrivateKey(), pqSeed: CryptoBytes.random(64), ts: now + 5))
+        let renewed = try RoomSeal(
+            room: room, scope: scope, policy: .strict, acct: "alice", node: aliceKey.nodeId, keyring: newKeyring,
+            store: store, nodeIdentity: aliceKey)
+        XCTAssertEqual(Set(renewed.trust.all.map(\.kid)), [mine.keyId, bob.keyId])
+        let frame = renewed.keyFrame(now: now + 5)
+        XCTAssertEqual(Set(renewed.trust.all.map(\.kid)), [renewed.keyId, bob.keyId], "the old own key is removed")
+        XCTAssertEqual(renewed.trust.record(renewed.keyId)?.state, .approved)
+        let own = renewed.safetyNumber()
+        XCTAssertNotEqual(own.digits, digitsBefore)
+        XCTAssertFalse(own.changed)
+        XCTAssertTrue(own.verified)
+        XCTAssertEqual(bob.acceptBundle(frame, now: now + 5)?.state, .approved)
+        XCTAssertNil(bob.trust.record(alice.keyId))
+        XCTAssertEqual(bob.safetyNumber().digits, own.digits)
+    }
+}

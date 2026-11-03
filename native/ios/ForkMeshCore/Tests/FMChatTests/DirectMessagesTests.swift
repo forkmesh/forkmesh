@@ -933,6 +933,51 @@ final class DirectMessagesTests: XCTestCase {
         await service.closeAll()
     }
 
+    @MainActor func testANewKeyFromTheSameNodeTakesOverQuietly() async throws {
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let myKey = try Identity.fromSeed(Ed25519.generateSeed())
+        let service = DirectMessageService(
+            api: api, connector: ws, secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.next.forkmesh.com") }, selfId: { myKey.nodeId }, displayName: { "Me" },
+            nodeIdentity: myKey)
+        var events: [DirectTrustEvent] = []
+        service.onTrustEvent = { events.append($0) }
+        await service.refresh()
+        let conversation = service.conversations[0]
+        _ = await service.open(conversation)
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let crypto = await roomCrypto()
+        let patKey = try Identity.fromSeed(Ed25519.generateSeed())
+        let earlier = Date().epochMillis - 60_000
+        let patOld = try RoomSeal.loadOrCreate(
+            DirectMessagesTests.room, scope: DirectMessagesTests.scope, policy: .strict, acct: "pat",
+            node: patKey.nodeId, secureStore: InMemorySecureStore(), nodeIdentity: patKey, now: earlier)
+        _ = await teach(patOld, from: connection, crypto)
+        let advert = try XCTUnwrap(keyAdverts(connection, crypto).compactMap { crypto.decrypt($0) }.last)
+        XCTAssertNotNil(advert["nsig"], "a direct bundle carries the node signature")
+        XCTAssertTrue(RoomSeal.verifyNodeBinding(advert, room: DirectMessagesTests.room))
+        connection.receive(text: JSON.encode(try crypto.encrypt(patOld.keyFrame(now: earlier))))
+        let known = await waitUntil { service.deviceKeys(conversation) == [patOld.keyId] }
+        XCTAssertTrue(known)
+        service.markVerified(conversation)
+        XCTAssertEqual(service.safetyNumber(conversation)?.verified, true)
+
+        let patNew = try RoomSeal.loadOrCreate(
+            DirectMessagesTests.room, scope: DirectMessagesTests.scope, policy: .strict, acct: "pat",
+            node: patKey.nodeId, secureStore: InMemorySecureStore(), nodeIdentity: patKey)
+        connection.receive(text: JSON.encode(try crypto.encrypt(patNew.keyFrame())))
+        let replaced = await waitUntil { service.deviceKeys(conversation) == [patNew.keyId] }
+        XCTAssertTrue(replaced)
+        XCTAssertTrue(service.pendingDevices(conversation).isEmpty)
+        XCTAssertFalse(service.devices(conversation).contains { $0.kid == patOld.keyId })
+        XCTAssertEqual(service.safetyNumber(conversation)?.verified, true)
+        XCTAssertEqual(service.safetyNumber(conversation)?.changed, false)
+        XCTAssertFalse(service.safetyNumberChanged(conversation))
+        XCTAssertEqual(events, [])
+        await service.closeAll()
+    }
+
     @MainActor func testUnreadCountsFeedTheShellBadge() async throws {
         let api = preparedApi()
         let service = makeService(api: api, ws: FakeWebSocketConnector())

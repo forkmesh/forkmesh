@@ -11,8 +11,8 @@ One extension, one sign-in:
   Reddit, any configured channel) for the `marketing` package, only when you
   ask.
 - **Repositories.** On a GitHub, GitLab, Codeberg or Gitea repository, the
-  popup shows its size and other details and mirrors it to your ForkMesh
-  account in one click.
+  popup shows its size and other details, opens a size map and a code map of
+  it, and mirrors it to your ForkMesh account in one click.
 
 The CRM half works in Gmail (`mail.google.com`), Zoho Mail (`mail.zoho.com`,
 `.eu`, `.in`, `.com.au`, `.jp`, `mail.zohocloud.ca`) and any Mastodon instance
@@ -483,6 +483,42 @@ How it works, and why:
 
 `tests/background_repo_harness.js` drives `repo.js` under a fake browser; the
 pytest wrapper checks its ids and canonical URLs against the server module.
+
+### Size map and code map
+
+**Size map** and **Code map** on the card open `map.html` in a new tab for the
+repository's default branch:
+
+- **Size map**: a sunburst of folders and files sized by bytes. Click a
+  folder to zoom in, the centre, **Up** or a breadcrumb to zoom out, and a
+  file to open it on the provider. **Rings** picks how many levels show at
+  once. The side lists the focused folder's contents, its largest files and
+  its file types, each with its share.
+- **Code map**: ForkMesh's own full-screen code map (the one on a
+  repository's page on ForkMesh), with each file's source drawn in its cell
+  and a 3D view. **Close** returns to the size map.
+
+How it works:
+
+- `map-source.js` reads the branch's commit, then the whole tree at that
+  commit in one request (`api.github.com/repos/…/git/trees/<sha>?recursive=1`,
+  or Gitea's `/api/v1/repos/…/git/trees/<sha>` in pages of 1000), so every
+  later read is pinned to one commit. Source text comes from
+  `raw.githubusercontent.com/<owner>/<name>/<sha>/<path>` or Gitea's
+  `/api/v1/repos/…/raw/<path>?ref=<sha>`, without cookies, at most 512 KB per
+  file and six at a time; a file with a NUL byte in its first 8000 bytes is
+  drawn as a binary card.
+- The page needs no sign-in and touches no ForkMesh API or extension storage:
+  all three providers answer any origin, so no host permission is needed.
+  A map costs two GitHub API requests of the 60 an hour; raw reads do not
+  count.
+- GitLab has no map: its public tree API lists no file sizes. The buttons are
+  greyed out there, and hidden on private repositories.
+- `codemap.js` and `vendor/three-0.184.0/` are copies of
+  `app/public/assets/codemap/`: never edit them here; run
+  `python3 marketplace/packages/browser-extension/tools/sync_codemap.py`.
+
+`tests/repo_map_harness.js` drives `map-source.js` under a fake `fetch`.
 
 ## Mirroring a Discourse forum
 
