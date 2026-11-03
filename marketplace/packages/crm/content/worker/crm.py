@@ -249,6 +249,10 @@ TOOT_URL_RE = re.compile(
 TOOT_PAGE_SIZE = 40
 TOOT_SYNC_PAGES = 5
 TOOT_SYNC_INTERVAL_MS = 10 * 60 * 1000
+FOLLOWER_PAGE_SIZE = 80
+FOLLOWER_SYNC_PAGES = 25
+FOLLOWER_COLUMNS = ("Name", "Mastodon", "Bio")
+LINK_NEXT_RE = re.compile(r'<(https://[^>\s]+)>\s*;\s*rel="next"')
 EMAIL_TRACKED_CELEBRATION = "crm-email-tracked"
 SEND_STATUSES = frozenset({
     "draft", "external", "sending", "accepted", "delivery", "delivered",
@@ -6297,7 +6301,8 @@ def _mastodon_settings(value, existing=None):
     if "account" in source:
         account = _handle(source.get("account"))
         if account != result.get("account"):
-            for key in ("sinceId", "lastSyncAt", "lastError"):
+            for key in ("sinceId", "lastSyncAt", "lastError", "followersList",
+                        "followersSyncAt", "followersError"):
                 result.pop(key, None)
         result["account"] = account
     if source.get("token"):
@@ -6470,6 +6475,161 @@ def _toot_link(status, ref, contact_id, handle, account, direction, now, index):
     }
 
 
+async def _mastodon_page(runtime, host, path, token=""):
+    headers = {"accept": "application/json"}
+    if token:
+        headers["authorization"] = "Bearer " + token
+    result = await runtime.outbound_text("https://" + host + path, "GET", headers)
+    status = _integer((result or {}).get("status"))
+    if not (result or {}).get("ok") or not 200 <= status < 300:
+        return None, "", ("mastodon_token_rejected" if status in (401, 403)
+                          else "mastodon_not_found" if status == 404
+                          else "mastodon_unavailable")
+    try:
+        page = json.loads(str(result.get("data") or "") or "[]")
+    except ValueError:
+        return None, "", "mastodon_unavailable"
+    following = LINK_NEXT_RE.search(str(result.get("link") or ""))
+    next_path = ""
+    if following:
+        url = following.group(1)
+        prefix = "https://" + host + "/"
+        next_path = url[len(prefix) - 1:] if url.startswith(prefix) else ""
+    return page if isinstance(page, list) else [], next_path, ""
+
+
+async def _contact_index(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT contact_id,data FROM crm_contacts WHERE org_bi=? "
+        "ORDER BY updated_at DESC,contact_id LIMIT ?", org_bi, MAX_CONTACTS)
+    found = {}
+    for row in rows or []:
+        data = await runtime.open(row.get("data"))
+        data = data if isinstance(data, dict) else {}
+        entry = {"id": str(row.get("contact_id") or ""),
+                 "views": _view_ids(data.get("views"))}
+        for handle in _contact_handles(data):
+            found.setdefault(handle, entry)
+    return found
+
+
+async def _followers_view(runtime, org_bi, config, name):
+    stored = _clean(config.get("followersList"), 32).lower()
+    if CONTACT_ID_RE.fullmatch(stored) and await _view_row(runtime, org_bi, stored):
+        return stored
+    for row in await runtime.d1_all(
+            "SELECT view_id,data FROM crm_views WHERE org_bi=?", org_bi) or []:
+        data = await runtime.open(row.get("data"))
+        if isinstance(data, dict) and _clean(data.get("name"), 60) == name:
+            return str(row.get("view_id") or "")
+    return ""
+
+
+async def _add_contact_to_view(runtime, org_bi, contact_id, view_id, account_bi,
+                               actor, now):
+    row = await runtime.d1_first(
+        "SELECT data FROM crm_contacts WHERE org_bi=? AND contact_id=?",
+        org_bi, contact_id)
+    data = await runtime.open(row.get("data")) if row else None
+    if not isinstance(data, dict):
+        return False
+    data = dict(data, views=_view_ids([view_id], data.get("views")))
+    await runtime.d1_run(
+        "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+        "data=? WHERE org_bi=? AND contact_id=?",
+        account_bi, actor, now, await runtime.seal(data), org_bi, contact_id)
+    return True
+
+
+async def _sync_followers(runtime, org_bi, org_name, account_bi, actor, host,
+                          account, token, config, known, now):
+    profile, error = await _mastodon_get(
+        runtime, host, "/api/v1/accounts/lookup?acct=" + quote(account.rsplit("@", 1)[0]))
+    account_id = str((profile or {}).get("id") or "") if isinstance(profile, dict) else ""
+    if error or not account_id.isdigit():
+        return {"error": error or "mastodon_account_not_found"}
+    name = ("Followers of @" + account)[:60]
+    view_id = await _followers_view(runtime, org_bi, config, name)
+    path = "/api/v1/accounts/%s/followers?limit=%d" % (account_id, FOLLOWER_PAGE_SIZE)
+    fresh, seen, read = [], set(), 0
+    for _ in range(FOLLOWER_SYNC_PAGES):
+        page, next_path, error = await _mastodon_page(runtime, host, path, token)
+        if error == "mastodon_token_rejected" and token:
+            token = ""
+            page, next_path, error = await _mastodon_page(runtime, host, path)
+        if error:
+            return {"error": error, "list": view_id}
+        added = 0
+        for item in page:
+            acct = str((item or {}).get("acct") or "") if isinstance(item, dict) else ""
+            handle = _handle(acct if "@" in acct else "%s@%s" % (acct, host)) if acct else ""
+            if not handle or handle in seen:
+                continue
+            seen.add(handle)
+            read += 1
+            entry = known.get(handle)
+            if entry and view_id and view_id in entry["views"]:
+                continue
+            fresh.append((handle, item, entry))
+            added += 1
+        if not added or not next_path:
+            break
+        path = next_path
+    if not read and _integer((profile or {}).get("followers_count")):
+        return {"error": "mastodon_followers_hidden", "list": view_id}
+    if not fresh:
+        return {"list": view_id, "read": read, "created": 0, "listed": 0}
+    if not view_id:
+        mapping = _csv_mapping(list(FOLLOWER_COLUMNS), {})
+        view_id, _, _ = await _import_sheet(
+            runtime, org_bi, org_name, account_bi, actor,
+            {"fileName": "mastodon-followers-%s.csv" % account, "sheetName": name},
+            list(FOLLOWER_COLUMNS), mapping)
+    mapping = _csv_mapping(list(FOLLOWER_COLUMNS), {})
+    flows = await _org_flows(runtime, org_bi)
+    shortcode = re.compile(r":[\w+-]+:")
+    created = listed = skipped = 0
+    for handle, item, entry in reversed(fresh):
+        if entry:
+            listed += await _add_contact_to_view(
+                runtime, org_bi, entry["id"], view_id, account_bi, actor, now)
+            continue
+        display = " ".join(shortcode.sub("", unescape(
+            str(item.get("display_name") or ""))).split())
+        incoming = _normalized_csv_row({
+            "Name": display or str(item.get("username") or "") or handle,
+            "Mastodon": "@" + handle,
+            "Bio": " ".join(_status_text(item.get("note")).split())[:500],
+        }, list(FOLLOWER_COLUMNS), mapping)
+        supplied = {key: value for key, value in incoming.items()
+                    if str(value or "").strip()}
+        outcome, _ = await _upsert_contact(
+            runtime, org_bi, org_name, account_bi, actor, supplied, view_id, now,
+            "mastodon", flows)
+        if outcome == "created":
+            created += 1
+        elif outcome == "updated":
+            listed += 1
+        else:
+            skipped += 1
+    total = created + listed
+    if total:
+        await _record_list_activity(
+            runtime, org_bi, [view_id], account_bi, actor, "contacts.imported",
+            {"created": created, "updated": listed, "skipped": skipped,
+             "rows": total + skipped,
+             "fileName": "mastodon-followers-%s.csv" % account})
+        await runtime.audit(actor, "crm.followers.sync", "organization", org_name,
+                            details={"created": created, "listed": listed,
+                                     "view": view_id})
+        await _activity_notify(
+            runtime, org_bi, org_name, actor,
+            "%d new Mastodon follower%s added to the CRM" % (
+                total, "" if total == 1 else "s"), "team", False)
+    return {"list": view_id, "read": read, "created": created, "listed": listed,
+            "skipped": skipped}
+
+
 async def _sync_toots(runtime, org_bi, org_name, account_bi, actor, data):
     opened, config = await _mastodon_config(runtime, org_bi)
     account = _handle(config.get("account"))
@@ -6488,7 +6648,16 @@ async def _sync_toots(runtime, org_bi, org_name, account_bi, actor, data):
         config["lastError"] = error
         await _save_mastodon_state(runtime, org_bi, opened, config, account_bi, actor)
         return _response(runtime, {"error": error}, 502)
-    known = await _contacts_by_handle(runtime, org_bi)
+    index = await _contact_index(runtime, org_bi)
+    followers = await _sync_followers(
+        runtime, org_bi, org_name, account_bi, actor, host, account, token,
+        config, index, now)
+    config.update({"followersList": followers.get("list") or "",
+                   "followersError": followers.get("error") or ""})
+    if not followers.get("error"):
+        config["followersSyncAt"] = now
+    known = (await _contacts_by_handle(runtime, org_bi) if followers.get("created")
+             else {handle: entry["id"] for handle, entry in index.items()})
     logged, contacts = 0, []
     for status in sorted(statuses, key=lambda item: int(item["id"])):
         _, mentioned = _status_handles(status, host)
@@ -6525,7 +6694,8 @@ async def _sync_toots(runtime, org_bi, org_name, account_bi, actor, data):
             "team", False)
     return _response(runtime, {
         "ok": True, "skipped": False, "checked": len(statuses), "logged": logged,
-        "contacts": contacts, "mastodon": _mastodon_project(config)})
+        "contacts": contacts, "followers": followers,
+        "mastodon": _mastodon_project(config)})
 
 
 async def _log_toot(runtime, org_bi, org_name, account_bi, actor, data):

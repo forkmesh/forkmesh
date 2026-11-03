@@ -1005,6 +1005,7 @@ class RoomSeal {
 
   async accept(bundle) {
     const result = await this.ctx.exclusive(() => this.acceptLocked(bundle));
+    if (result?.trust) this.ctx.emit(result.trust);
     if (result?.event) this.ctx.emit(result.event);
     if (result?.safety) this.ctx.emit(result.safety);
     return result;
@@ -1035,6 +1036,11 @@ class RoomSeal {
       return {
         state: known.state, kid: bundle.kid, acct: known.acct, node: known.node, isNew: false, refreshed, released,
       };
+    }
+    if (this.policy === "strict" && await verifyNodeBinding(bundle, this.roomName)) {
+      if (this.staleSameNode(records, bundle)) return null;
+      const succeeded = await this.succeedLocked(trust, bundle, spk, now);
+      if (succeeded) return succeeded;
     }
     let state = "approved";
     if (this.policy === "strict") {
@@ -1067,6 +1073,63 @@ class RoomSeal {
       ? this.event("pending", { kid: bundle.kid, acct: bundle.acct, node: bundle.node })
       : null;
     return { state, kid: bundle.kid, acct: bundle.acct, node: bundle.node, isNew: true, released, event, safety };
+  }
+
+  staleSameNode(records, bundle) {
+    const ts = bundle.spk.ts;
+    if (bundle.acct === this.acct && bundle.node === this.node) {
+      const own = this.ctx.prekeys[this.ctx.prekeys.length - 1];
+      if (own && own.ts >= ts) return true;
+    }
+    return Object.values(records).some(
+      (record) => record.acct === bundle.acct && record.node === bundle.node && record.spk.ts >= ts,
+    );
+  }
+
+  async succeedLocked(trust, bundle, spk, now) {
+    const records = trust.data.records;
+    const predecessors = Object.values(records).filter(
+      (record) => record.kid !== bundle.kid && record.kid !== this.keyId &&
+        record.acct === bundle.acct && record.node === bundle.node,
+    );
+    if (!predecessors.length) return null;
+    const previous = predecessors.reduce(
+      (newest, record) => ((record.lastSeen || 0) > (newest.lastSeen || 0) ? record : newest),
+    );
+    const replaced = predecessors.map((record) => record.kid);
+    for (const kid of replaced) {
+      delete records[kid];
+      this.dropHeld(kid);
+    }
+    const state = previous.state;
+    records[bundle.kid] = {
+      kid: bundle.kid,
+      idk: bundle.idk,
+      acct: bundle.acct,
+      node: bundle.node,
+      spk,
+      state,
+      firstSeen: now,
+      lastSeen: now,
+      verified: previous.verified === true,
+    };
+    trust.data.approvedKey = this.approvedIdks(trust).join(",");
+    persistTrust(this.ctx, trust);
+    this.trustVersion += 1;
+    const released = state === "approved" ? await this.releaseLocked(bundle.kid) : [];
+    const detail = { kid: bundle.kid, acct: bundle.acct, node: bundle.node, replaced };
+    return {
+      state,
+      kid: bundle.kid,
+      acct: bundle.acct,
+      node: bundle.node,
+      isNew: true,
+      replaced,
+      released,
+      trust: this.event("replaced", detail),
+      event: state === "pending" ? this.event("pending", detail) : null,
+      safety: null,
+    };
   }
 
   trimOpenRecords(records) {

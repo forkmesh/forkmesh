@@ -83,6 +83,11 @@ the others.
   derives the server's `external_repository_id` (`ext_` and the first 24 hex
   digits of SHA-256 of `<provider>\n<provider id>\n`), so the status is one
   `GET /api/repository-imports/<id>` with no list downloaded.
+- **Repository maps.** **Size map** and **Code map** open `map.html` in a
+  tab. `map-source.js` pins the default branch to one commit and reads the
+  whole tree from the provider's public API, so the page needs no sign-in,
+  storage or host permission. The code map is the dashboard's own viewer,
+  copied (below); GitLab gets none because its tree API lists no sizes.
 
 The full feature reference, with every endpoint and message, is
 `content/extension/README.md` beside the code.
@@ -96,6 +101,15 @@ Never edit them in the extension: edit
 `python3 marketplace/packages/vault/tools/sync_crypto.py`. Both packages' test
 suites fail when a copy drifts.
 
+## Copied code map
+
+`content/extension/codemap.js` and `vendor/three-0.184.0/` are copies of
+`app/public/assets/codemap/`, because an MV3 page may run only packaged code.
+Edit the originals and run
+`python3 marketplace/packages/browser-extension/tools/sync_codemap.py`; the
+extension's tests fail when a copy drifts. three.js adds about 750 KB to the
+zip and loads only when the 3D view opens.
+
 ## Tests
 
 | Test | Covers |
@@ -105,6 +119,7 @@ suites fail when a copy drifts.
 | `tests/test_extension_forum.py` | Discourse detection and the mirror setup link |
 | `tests/mastodon_harness.html` | Mastodon 5's post page and a sent post, read by the real scripts in headless Chrome |
 | `tests/background_*_harness.js` | Node harnesses for capture, Mastodon, Reddit, refresh panel, repositories, vault, X posts, X and Zoho setup |
+| `tests/repo_map_harness.js` | The repository map's tree and source reads under a fake `fetch` |
 | `tests/zoho_tidy_harness.js` | Zoho Mail search, sender grouping and toolbar button matching |
 
 The pytest wrappers run the harnesses with Node and stand up
@@ -145,8 +160,9 @@ The pytest wrappers run the harnesses with Node and stand up
   `/dashboard/extension`.
 - Chrome limits the manifest `description` to 132 characters;
   `minimum_chrome_version` is 137 for WebCrypto Ed25519 and X25519.
-- In `popup.html`, dark-mode overrides must come after the base rules: they
-  have equal specificity, and placed first they lose.
+- `popup.html` is 600 px wide (Chrome caps a popup at 800 by 600) and takes
+  every colour from CSS variables set once for light and once for dark, so
+  no rule needs its own dark override.
 - A user who loaded the extension from a different folder gets a new Chrome
   extension id and must sign in again.
 

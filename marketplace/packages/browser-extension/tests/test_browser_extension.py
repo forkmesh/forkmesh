@@ -76,7 +76,7 @@ def test_extension_is_manifest_v3_with_the_narrowest_permissions():
                  "dashboard.js", "popup.js", "popup.html", "popup-vault.js",
                  "vault.js", "vault-crypto.js", "vault-client.js", "x.js", "reddit.js",
                  "marketing-capture.js", "capture.html", "capture.js", "x-developer.js",
-                 "zoho-tidy.js", "zoho-sort.js"):
+                 "zoho-tidy.js", "zoho-sort.js", "map.html", "map.js", "map-source.js", "codemap.js"):
         assert (EXTENSION / name).is_file()
     for size in ("16", "32", "48", "128"):
         assert (EXTENSION / MANIFEST["icons"][size]).is_file()
@@ -941,3 +941,32 @@ def test_the_repository_card_agrees_with_the_import_service():
         assert value == repository_imports.external_repository_id(provider, external)
     for url in found["canonical"]:
         assert repository_imports.parse_provider_source(url)["canonicalUrl"] == url
+
+
+def test_a_repository_opens_its_size_map_and_code_map_from_the_popup():
+    repo_popup = (EXTENSION / "popup-repo.js").read_text(encoding="utf-8")
+    map_html = (EXTENSION / "map.html").read_text(encoding="utf-8")
+    map_page = (EXTENSION / "map.js").read_text(encoding="utf-8")
+    map_source = (EXTENSION / "map-source.js").read_text(encoding="utf-8")
+    assert 'data-repo-map="size"' in POPUP_HTML and 'data-repo-map="code"' in POPUP_HTML
+    assert 'chrome.runtime.getURL(`map.html?${query}`)' in repo_popup
+    for script in ("repo.js", "map-source.js", "codemap.js", "map.js"):
+        assert f'<script src="{script}"></script>' in map_html
+    for source in (map_page, map_source):
+        assert "chrome.storage" not in source and "sessionToken" not in source
+        assert "eval(" not in source and "new Function" not in source
+    assert map_source.count('credentials: "omit"') == 3
+    assert "https://" not in map_html
+    result = subprocess.run(
+        [sys.executable, str(PACKAGE / "tools" / "sync_codemap.py"), "--check"],
+        capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_repository_map_reads_the_tree_at_one_commit():
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings", str(PACKAGE / "tests" / "repo_map_harness.js")],
+        capture_output=True, text=True, timeout=120, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout

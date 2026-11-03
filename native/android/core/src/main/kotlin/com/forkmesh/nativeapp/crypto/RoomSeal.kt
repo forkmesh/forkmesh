@@ -229,6 +229,13 @@ class RoomSeal private constructor(
         val bound = nodeKey
         if (policy == SealPolicy.OPEN && bound != null && bound.node == node) {
             frame["nsig"] = ChatV3.b64u(bound.sign(ChatV3.nodeMessage(room, keys.kid, idk, acct)))
+        } else if (policy == SealPolicy.STRICT && bound != null && bound.node == node && ChatV3.nodeKeyBytes(node) != null) {
+            try {
+                frame["nsig"] = ChatV3.b64u(bound.sign(ChatV3.nodeMessage(room, keys.kid, idk, acct)))
+                if (!ChatV3.verifyNodeBinding(frame, room)) frame.remove("nsig")
+            } catch (_: RuntimeException) {
+                frame.remove("nsig")
+            }
         }
         return frame
     }
@@ -258,7 +265,7 @@ class RoomSeal private constructor(
         if (!ChatV3.verifyBundle(frame, room, now)) return null
         if (policy == SealPolicy.OPEN && !ChatV3.verifyNodeBinding(frame, room)) return null
         if (frame["kid"] == keys.kid && frame["idk"] != keys.idkText) return null
-        return trust.accept(frame, policy, keys.kid, now, participants)
+        return trust.accept(frame, policy, keys.kid, now, participants) { ChatV3.verifyNodeBinding(frame, room) }
     }
 
     fun approve(kid: String): TrustChange? = trust.approve(kid, acct)

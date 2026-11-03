@@ -7385,10 +7385,18 @@ function notePendingDevice(channel, kid, acct) {
   );
 }
 
+function otherDevicePending(channel, kid) {
+  if (channel !== roomScopeForChannel()) return false;
+  const transport = activeTrustTransport();
+  return Boolean(transport?.pendingDevices().some((record) => record.kid !== kid));
+}
+
 function handleSealEvent(event) {
   const channel = String(event?.channelScope || "");
   if (!isDirectMessageKey(channel) || event.controllerScope !== RELAY_HOST) return;
-  if (event.type === "pending") notePendingDevice(channel, event.kid, event.acct);
+  if (event.type === "pending" && !otherDevicePending(channel, event.kid)) {
+    notePendingDevice(channel, event.kid, event.acct);
+  }
   if (event.type === "safety-changed") {
     addTrustNotice(
       channel,
@@ -7414,30 +7422,37 @@ function renderTrustBanner() {
   const pending = transport ? transport.pendingDevices() : [];
   if (!pending.length) {
     trustBanner.hidden = true;
-    delete trustBanner.dataset.kid;
+    delete trustBanner.dataset.kids;
     return;
   }
   const device = pending[0];
-  for (const record of pending) notePendingDevice(activeChannel, record.kid, record.acct);
-  trustBanner.dataset.kid = device.kid;
+  notePendingDevice(activeChannel, device.kid, device.acct);
+  trustBanner.dataset.kids = pending.map((record) => record.kid).join(" ");
   if (trustBannerCopy) {
-    const more = pending.length > 1 ? ` (${pending.length} devices are waiting)` : "";
+    const owners = new Set(pending.map((record) => trustDeviceOwner(record.acct, activeChannel)));
+    const owner = owners.size === 1 ? ` for ${[...owners][0]}` : "";
     trustBannerCopy.textContent =
-      `A new device for ${trustDeviceOwner(device.acct, activeChannel)} wants to join this chat${more}. ` +
+      (pending.length === 1
+        ? `A new device for ${trustDeviceOwner(device.acct, activeChannel)} wants to join this chat. `
+        : `${pending.length} new devices${owner} want to join this chat. `) +
       "Check the safety number, then approve or block.";
   }
+  if (trustApproveBtn) trustApproveBtn.textContent = pending.length === 1 ? "Approve" : "Approve all";
+  if (trustBlockBtn) trustBlockBtn.textContent = pending.length === 1 ? "Block" : "Block all";
   trustBanner.hidden = false;
 }
 
 async function decideTrustBanner(approve) {
-  const kid = trustBanner?.dataset.kid;
+  const kids = String(trustBanner?.dataset.kids || "").split(" ").filter(Boolean);
   const transport = activeTrustTransport();
-  if (!kid || !transport) return;
+  if (!kids.length || !transport) return;
   if (trustApproveBtn) trustApproveBtn.disabled = true;
   if (trustBlockBtn) trustBlockBtn.disabled = true;
   try {
-    if (approve) await transport.approveDevice(kid);
-    else await transport.blockDevice(kid);
+    for (const kid of kids) {
+      if (approve) await transport.approveDevice(kid);
+      else await transport.blockDevice(kid);
+    }
   } finally {
     if (trustApproveBtn) trustApproveBtn.disabled = false;
     if (trustBlockBtn) trustBlockBtn.disabled = false;
