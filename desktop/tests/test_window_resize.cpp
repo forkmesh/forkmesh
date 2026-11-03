@@ -12451,11 +12451,20 @@ void checkAgentCodeView(MainWindow &window)
 
     rawButton->click();
     QApplication::processEvents();
-    check(codePage && codePage->isVisible() && codeButton->isChecked() &&
-              outputStack && outputStack->isVisible(),
-          QStringLiteral("Raw swaps the transcript and keeps the Code pane beside it"));
+    QWidget *rawWindow = window.findChild<QWidget *>(QStringLiteral("agentRawWindow"));
+    auto *transcriptStack = qobject_cast<QStackedWidget *>(outputStack);
+    check(rawWindow && rawWindow->isVisible() && rawWindow->isWindow() &&
+              rawButton->isChecked() && codePage && codePage->isVisible() &&
+              codeButton->isChecked() && outputStack && outputStack->isVisible() &&
+              (!transcriptStack ||
+               (transcriptStack->currentWidget() &&
+                transcriptStack->currentWidget()->objectName() != QLatin1String("actionLog"))),
+          QStringLiteral("Raw opens a side window and leaves the transcript and the Code "
+                         "pane in place"));
     rawButton->click();
     QApplication::processEvents();
+    check(rawWindow && !rawWindow->isVisible() && !rawButton->isChecked(),
+          QStringLiteral("Raw again closes the side window"));
     codeButton->click();
     QApplication::processEvents();
     check(codePage && !codePage->isVisible() && !codeButton->isChecked() &&

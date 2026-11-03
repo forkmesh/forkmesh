@@ -7360,7 +7360,6 @@ private:
     QStringList runningAgentBlockers() const;
     void onAgentLog(int sessionId, const QString &text);
     void appendAgentRawLog(const QString &text);
-    void showAgentRawOutput();
     void showAgentRawLogEvent(const QJsonObject &event);
     void onAgentStatusChanged(int sessionId, const QString &status);
     void onAgentFinished(int sessionId, bool ok);
@@ -14611,6 +14610,11 @@ private:
     ActivityRailButton *m_agentOutputModeButton = nullptr;
     bool m_agentRawOutputMode = false;
     void setAgentRawOutputMode(bool raw);
+    QPointer<QWidget> m_agentRawWindow;
+    QPointer<QPlainTextEdit> m_agentRawWindowLog;
+    int m_agentRawWindowSession = -1;
+    void ensureAgentRawWindow();
+    void refreshAgentRawWindow(bool force);
     // "Listen": the selected run's stream played as music (AgentSonifier.h).
     // One sonifier for the whole window, so any number of agents can be heard
     // at once, each in its own register and stereo seat.

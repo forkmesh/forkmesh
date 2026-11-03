@@ -8,6 +8,7 @@
 #include "AgentResumeIdentity.h"
 #include "AgentWorktree.h"
 #include "AppPaths.h"
+#include "ClaudeAccountRouting.h"
 #include "ClaudeDesktopSessions.h"
 #include "ClaudeDesktopSidebar.h"
 #include "ClaudePeerMessaging.h"
@@ -2291,6 +2292,15 @@ void forkmesh::ui::NextAccess::fillSessionSidePanels(MainWindow &window,
         agent = model.isEmpty() ? QStringLiteral("Claude Code")
                                 : QStringLiteral("Claude Code \u00B7 ") + model;
     details.agent = agent.trimmed();
+    if (!cloud && (outside || agentIsClaudeProvider(session->provider))) {
+        const AgentAccountProfile account = activeAgentAccount(QStringLiteral("claude-code"));
+        const forkmesh::agentaccounts::ClaudeRemoteControl remote =
+            forkmesh::agentaccounts::readClaudeRemoteControl(
+                QDir(account.configDir).filePath(QStringLiteral("settings.json")),
+                claudeAccountStateFile(account));
+        details.claudeRemote = remote.state;
+        details.claudeRemoteSource = remote.source;
+    }
     details.mode = window.sessionsModeLabel(*session);
     details.contextUsed = session->contextTokens;
     details.contextWindow = session->contextWindow;

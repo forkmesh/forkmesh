@@ -597,18 +597,31 @@ int Collector::runningBackground() const
 
 QStringList defaultCardOrder()
 {
-    return {QStringLiteral("progress"),   QStringLiteral("subsessions"),
-            QStringLiteral("outputs"),    QStringLiteral("sources"),
-            QStringLiteral("background"),
-            QStringLiteral("changes"),    QStringLiteral("context"),
-            QStringLiteral("environment"), QStringLiteral("tools")};
+    return {QStringLiteral("environment"), QStringLiteral("context"),
+            QStringLiteral("progress"),    QStringLiteral("subsessions"),
+            QStringLiteral("outputs"),     QStringLiteral("sources"),
+            QStringLiteral("background"),  QStringLiteral("changes"),
+            QStringLiteral("tools")};
+}
+
+bool customCardOrder(const QStringList &saved)
+{
+    static const QList<QStringList> former{
+        {QStringLiteral("progress"), QStringLiteral("outputs"), QStringLiteral("sources"),
+         QStringLiteral("background"), QStringLiteral("changes"), QStringLiteral("context"),
+         QStringLiteral("environment"), QStringLiteral("tools")},
+        {QStringLiteral("progress"), QStringLiteral("subsessions"), QStringLiteral("outputs"),
+         QStringLiteral("sources"), QStringLiteral("background"), QStringLiteral("changes"),
+         QStringLiteral("context"), QStringLiteral("environment"), QStringLiteral("tools")},
+    };
+    return !saved.isEmpty() && !former.contains(saved) && saved != defaultCardOrder();
 }
 
 QStringList normalizedCardOrder(const QStringList &saved)
 {
     const QStringList known = defaultCardOrder();
     QStringList order;
-    for (const QString &key : saved)
+    for (const QString &key : customCardOrder(saved) ? saved : QStringList())
         if (known.contains(key) && !order.contains(key))
             order << key;
     for (int index = 0; index < known.size(); ++index) {
